@@ -4,6 +4,8 @@ The bottom Python Console is a live REPL in a child process. History survives re
 
 Owns AT-26 and console completion (AT-74 console).
 
+<!-- dune-owners: platform.runner -->
+
 ## Sub-features
 
 - `repl-exec` executes a typed expression and prints the result.

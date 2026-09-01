@@ -4,6 +4,8 @@ The user exports an installable project artifact from **Package Project**, and t
 
 Owns AT-78, AT-81, AT-82, AT-84, AT-95, AT-104, AT-105.
 
+<!-- dune-owners: platform.packaging -->
+
 ## Sub-features
 
 - `pkg-preflight` explains blockers before export (AT-78).

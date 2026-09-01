@@ -4,6 +4,8 @@ With no project loaded, the center pane is a welcome screen with New/Open and re
 
 Owns section-14 Runtime Center / onboarding ATs (the AT-73/AT-74 numbers in that section, not the completion ATs). AT-76 and AT-77 are run-failure flows, not this landing surface. Also AT-80, smoke M2.
 
+<!-- dune-owners: platform.shell -->
+
 ## Sub-features
 
 - `welcome-visible` shows `#shell.welcome` when no project is open.
