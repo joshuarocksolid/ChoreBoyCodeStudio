@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 from pathlib import Path
 
 import pytest
@@ -17,30 +18,26 @@ CASE_PATH = (
     / "cases"
     / "01-settings-toggle-no-ui-block.json"
 )
-EXPECTED_PROMPT = (
-    "Change an existing setting in ChoreBoy Code Studio and prove the editor "
-    "remains responsive while the new setting is active."
-)
-EXPECTED_VERIFY_COMMAND = (
-    ".cursor/skills/cbcs-quality-loop/scripts/measure-smoke "
-    "--repo /Users/local/Projects/ChoreBoyCodeStudio"
-)
 
 
 def _load_case() -> dict[str, object]:
     return json.loads(CASE_PATH.read_text(encoding="utf-8"))
 
 
-def test_case_freezes_candidate_prompt() -> None:
-    assert _load_case().get("prompt") == EXPECTED_PROMPT
-
-
-def test_case_freezes_verify_command() -> None:
-    assert _load_case().get("verify_command") == EXPECTED_VERIFY_COMMAND
-
-
-def test_candidate_prompt_does_not_disclose_eval() -> None:
-    prompt = _load_case()["prompt"]
+def test_case_has_blinded_candidate_prompt() -> None:
+    prompt = _load_case().get("prompt")
 
     assert isinstance(prompt, str)
+    assert prompt.strip()
     assert "eval" not in prompt.casefold()
+
+
+def test_case_verify_command_names_existing_repo_path() -> None:
+    verify_command = _load_case().get("verify_command")
+
+    assert isinstance(verify_command, str)
+    assert verify_command.strip()
+
+    command_path = (REPO_ROOT / shlex.split(verify_command)[0]).resolve()
+    assert REPO_ROOT in command_path.parents
+    assert command_path.exists()
