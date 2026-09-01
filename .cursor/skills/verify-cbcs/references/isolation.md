@@ -1,6 +1,6 @@
 # Isolation
 
-The ChoreBoy VM has one desktop **and one guest app runner**. The runner processes one `cbapp` session at a time. If another session is `running` (STATE heartbeat updating), your `START` file will sit unclaimed until that session stops. `wait-ready` then times out with no STATE file.
+The lab has two named desktops (`ChoreBoy`, `ChoreBoyTim`). Each slot still has one desktop **and one guest app runner**. The runner processes one `cbapp` session at a time. If another session is `running` (STATE heartbeat updating), your `START` file will sit unclaimed until that session stops. `wait-ready` then times out with no STATE file. `control-cbcs launch` acquires a slot so two agents can use two desktops.
 
 Do not stop a session you did not start. Wait, or refuse. Stale `running` rows whose STATE timestamp is hours old are orphans, not the active runner job.
 
@@ -30,7 +30,7 @@ Per-project metadata lives in `<project>/cbcs/`. Put scratch projects under `/mn
 
 | Resource | Shared? | What to do |
 |----------|---------|------------|
-| VM desktop / DISPLAY `:0` | Yes | One verify session at a time |
+| VM desktop / DISPLAY `:0` | Per slot | One verify session per leased desktop |
 | Loopback debug / REPL ports | No (ephemeral) | Fine |
 | virtiofs `/mnt/cbprobe` | Yes | Use only your `<run-id>` subtree |
 | `repo/vendor` on the Mac | Yes | Rsync copies into the run tree |
