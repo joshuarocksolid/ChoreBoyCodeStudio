@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from app.editors.markdown_preview_styles import (
+from app.features.markdown.markdown_preview_styles import (
     build_preview_document_stylesheet,
     build_preview_paused_html,
     build_preview_widget_stylesheet,

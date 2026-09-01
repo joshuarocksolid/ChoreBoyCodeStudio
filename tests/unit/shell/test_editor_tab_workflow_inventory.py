@@ -14,7 +14,7 @@ from app.editors.editor_manager import EditorManager
 from app.shell.editor_tab_content_registry import EditorTabContentRegistry
 from app.shell.editor_tab_poll_workflow import EditorTabPollWorkflow
 from app.shell.editor_tab_workflow import EditorTabWorkflow
-from app.shell.markdown_tab_registry import MarkdownTabRegistry
+from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
 
 pytestmark = pytest.mark.unit
 
