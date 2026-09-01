@@ -4,6 +4,8 @@ Plugin Manager installs from a local package, enables/disables, supports safe mo
 
 Owns AT-37–42, AT-85–89.
 
+<!-- dune-owners: platform.plugins -->
+
 ## Sub-features
 
 - `plugin-install` installs a local `.cbcs-plugin.zip`.

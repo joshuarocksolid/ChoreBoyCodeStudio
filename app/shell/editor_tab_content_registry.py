@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from app.editors.markdown_editor_pane import MarkdownEditorPane
-from app.shell.markdown_tab_registry import MarkdownTabRegistry
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
+from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.theme_tokens import ShellThemeTokens
 
 

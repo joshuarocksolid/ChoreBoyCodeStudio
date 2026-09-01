@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_editor_pane import MarkdownEditorPane
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.shell.theme_tokens import ShellThemeTokens
 
 

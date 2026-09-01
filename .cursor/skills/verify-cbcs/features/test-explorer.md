@@ -4,6 +4,8 @@ The Test Explorer activity discovers pytest nodes, runs all or a selection, reru
 
 Owns AT-96–101, AT-62, smoke M4.
 
+<!-- dune-owners: platform.pytest -->
+
 ## Sub-features
 
 - `tx-discover` populates `#shell.testExplorer.tree` after project-open collect.

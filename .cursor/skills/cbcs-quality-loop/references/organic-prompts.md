@@ -18,6 +18,10 @@ State the goal. Do not mention skills, principles, judging, or other arms.
 
 > Switch ChoreBoy Code Studio through Light, Dark, High Contrast Light, and High Contrast Dark and prove each one is still readable.
 
+## Settings toggle without UI blocking
+
+> Change an existing setting in ChoreBoy Code Studio and prove the editor remains responsive while the new setting is active.
+
 ## Drop a file
 
 > Prove that dropping a Python file onto the ChoreBoy Code Studio window opens it as an editor tab.

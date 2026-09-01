@@ -10,10 +10,10 @@ from PySide2.QtWidgets import QMenu, QTabWidget, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
-from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
 from app.editors.markdown_rendering import is_markdown_path, qt_markdown_supported
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
+from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.editor_tab_host_protocols import EditorTabMarkdownHost
-from app.shell.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.theme_tokens import ShellThemeTokens
 
 

@@ -17,7 +17,11 @@ from app.bootstrap.paths import (
     project_plugins_path,
 )
 from app.core.models import RuntimeIssueReport
-from app.support.diagnostics import ProjectHealthReport
+from app.support.diagnostics import (
+    ProjectHealthReport,
+    render_build_identity_text,
+    resolve_build_identity,
+)
 
 _LOGGER = get_subsystem_logger("support")
 
@@ -32,6 +36,7 @@ def build_support_bundle(
     state_root: PathInput | None = None,
     destination_dir: PathInput | None = None,
     last_run_log_path: PathInput | None = None,
+    identity_root: PathInput | None = None,
 ) -> Path:
     """Build a zip bundle containing key diagnostics artifacts."""
     resolved_project_root = Path(project_root).expanduser().resolve()
@@ -80,6 +85,8 @@ def build_support_bundle(
             archive.writestr("diagnostics/local_history.json", json.dumps(local_history_diagnostics, indent=2, sort_keys=True))
         if plugin_diagnostics is not None:
             archive.writestr("diagnostics/plugins.json", json.dumps(plugin_diagnostics, indent=2, sort_keys=True))
+        app_version, git_sha = resolve_build_identity(repo_root=identity_root)
+        archive.writestr("build.txt", render_build_identity_text(app_version, git_sha))
 
     _LOGGER.info("Support bundle written to %s", bundle_path)
     return bundle_path

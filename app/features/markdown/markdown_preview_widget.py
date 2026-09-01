@@ -9,12 +9,6 @@ from PySide2.QtCore import QUrl
 from PySide2.QtGui import QDesktopServices
 from PySide2.QtWidgets import QTextBrowser, QWidget
 
-from app.editors.markdown_preview_enhancements import enhance_preview_document
-from app.editors.markdown_preview_styles import (
-    build_preview_document_stylesheet,
-    build_preview_paused_html,
-    build_preview_widget_stylesheet,
-)
 from app.editors.markdown_rendering import (
     LINK_KIND_ANCHOR,
     LINK_KIND_EXTERNAL,
@@ -22,6 +16,12 @@ from app.editors.markdown_rendering import (
     LINK_KIND_MISSING,
     resolve_markdown_link,
     safe_markdown_features,
+)
+from app.features.markdown.markdown_preview_enhancements import enhance_preview_document
+from app.features.markdown.markdown_preview_styles import (
+    build_preview_document_stylesheet,
+    build_preview_paused_html,
+    build_preview_widget_stylesheet,
 )
 from app.shell.theme_tokens import ShellThemeTokens
 

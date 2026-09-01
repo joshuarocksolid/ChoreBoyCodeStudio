@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Collection, Mapping
 
+from app.plugins.rpc_protocol import require_declared_permissions
 from app.plugins.runtime_manager import PluginRuntimeJob, PluginRuntimeManager
 
 
@@ -9,7 +10,19 @@ class PluginApiBroker:
     def __init__(self, runtime_manager: PluginRuntimeManager) -> None:
         self._runtime_manager = runtime_manager
 
-    def invoke_runtime_command(self, command_id: str, payload: dict[str, object]) -> object:
+    def invoke_runtime_command(
+        self,
+        command_id: str,
+        payload: dict[str, object],
+        *,
+        required_permissions: Collection[str] = (),
+        manifest_permissions: Collection[str] = (),
+    ) -> object:
+        require_declared_permissions(
+            target=command_id,
+            required_permissions=required_permissions,
+            manifest_permissions=manifest_permissions,
+        )
         return self._runtime_manager.invoke_command(command_id, payload)
 
     def invoke_runtime_command_for_event(
@@ -18,7 +31,14 @@ class PluginApiBroker:
         payload: dict[str, object],
         *,
         activation_event: str | None,
+        required_permissions: Collection[str] = (),
+        manifest_permissions: Collection[str] = (),
     ) -> object:
+        require_declared_permissions(
+            target=command_id,
+            required_permissions=required_permissions,
+            manifest_permissions=manifest_permissions,
+        )
         return self._runtime_manager.invoke_command(
             command_id,
             payload,
@@ -31,7 +51,14 @@ class PluginApiBroker:
         request: Mapping[str, Any],
         *,
         activation_event: str | None = None,
+        required_permissions: Collection[str] = (),
+        manifest_permissions: Collection[str] = (),
     ) -> object:
+        require_declared_permissions(
+            target=provider_key,
+            required_permissions=required_permissions,
+            manifest_permissions=manifest_permissions,
+        )
         return self._runtime_manager.invoke_workflow_query(
             provider_key,
             request,
@@ -45,7 +72,14 @@ class PluginApiBroker:
         *,
         on_event: Callable[[str, Mapping[str, Any]], None] | None = None,
         activation_event: str | None = None,
+        required_permissions: Collection[str] = (),
+        manifest_permissions: Collection[str] = (),
     ) -> PluginRuntimeJob:
+        require_declared_permissions(
+            target=provider_key,
+            required_permissions=required_permissions,
+            manifest_permissions=manifest_permissions,
+        )
         return self._runtime_manager.start_workflow_job(
             provider_key,
             request,

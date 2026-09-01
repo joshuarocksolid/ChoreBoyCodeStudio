@@ -9,9 +9,9 @@ from PySide2.QtWidgets import QMenu
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
+from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
-from app.shell.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 
 
 class EditorTabLifecycleWorkflow:

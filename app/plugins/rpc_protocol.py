@@ -1,7 +1,31 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
+
+
+class PluginPermissionDeniedError(PermissionError):
+    error_type = "permission_denied"
+
+    def __init__(self, *, target: str, permission: str) -> None:
+        self.target = target
+        self.permission = permission
+        super().__init__(
+            f"Plugin invoke denied for '{target}': permission '{permission}' "
+            "is not declared in the manifest."
+        )
+
+
+def require_declared_permissions(
+    *,
+    target: str,
+    required_permissions: Iterable[str],
+    manifest_permissions: Iterable[str],
+) -> None:
+    declared = set(manifest_permissions)
+    for permission in required_permissions:
+        if permission not in declared:
+            raise PluginPermissionDeniedError(target=target, permission=permission)
 
 
 def encode_message(payload: Mapping[str, Any]) -> str:

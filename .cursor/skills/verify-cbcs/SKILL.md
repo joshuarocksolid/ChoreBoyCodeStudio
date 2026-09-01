@@ -7,9 +7,9 @@ description: Drive the live ChoreBoy Code Studio Qt desktop editor on the ChoreB
 
 ChoreBoy Code Studio is a PySide2 desktop IDE that runs inside confined FreeCAD AppRun. There is no browser, no CDP port, and no DOM. The user touches the Qt window. This skill is the recipe for launching an isolated instance on the ChoreBoy VM, driving it with `#shell.*` handles, and keeping proof artifacts after teardown.
 
-You are on the Mac cockpit. Execution is on the lab VM. Read [references/isolation.md](references/isolation.md) before launch and [references/handles.md](references/handles.md) before picking a selector. Read [features/README.md](features/README.md) and the matching feature file before driving a surface.
+You are on the Mac cockpit. Execution is on a leased lab desktop. Read [references/isolation.md](references/isolation.md) before launch and [references/handles.md](references/handles.md) before picking a selector. Read [features/README.md](features/README.md) and the matching feature file before driving a surface.
 
-Do not drive an instance this run did not start. One VM desktop: refusing to double-drive beats corrupting a human session.
+`control-cbcs launch` acquires a slot. Do not drive an instance this run did not start. One desktop per slot: refusing to double-drive beats corrupting a human session.
 
 ## Launch
 

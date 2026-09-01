@@ -4,6 +4,8 @@ The user runs the active file or the project in a separate runner process, sees 
 
 Owns AT-10–16, AT-29, AT-75, AT-RUN-ARGS-AD-HOC, AT-RUN-ARGS-PERSIST, AT-RUN-ARGS-QUOTING, AT-RUN-ARGS-THEME.
 
+<!-- dune-owners: platform.run -->
+
 ## Sub-features
 
 - `run-file` starts the focused buffer (F5 / `#shell.toolbar.btn.run`).

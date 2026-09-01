@@ -8,7 +8,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from app.editors.markdown_preview_enhancements import enhance_preview_document  # noqa: E402
+from app.features.markdown.markdown_preview_enhancements import enhance_preview_document  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit

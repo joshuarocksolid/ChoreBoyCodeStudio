@@ -9,7 +9,7 @@ from PySide2.QtCore import QPoint
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_editor_pane import MarkdownEditorPane
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 

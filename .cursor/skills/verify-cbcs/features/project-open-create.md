@@ -4,6 +4,8 @@ A user opens a folder with `cbcs/project.json`, imports a plain Python folder, c
 
 Owns AT-03, AT-04, AT-17, AT-19, AT-20, AT-21, AT-24, AT-33.
 
+<!-- dune-owners: platform.project -->
+
 ## Sub-features
 
 - `project-open-valid` opens a folder that already has `cbcs/project.json`.

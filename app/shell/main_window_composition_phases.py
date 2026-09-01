@@ -17,7 +17,6 @@ from app.debug.debug_models import DebugExceptionPolicy
 from app.debug.debug_session import DebugSession
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
-from app.editors.markdown_editor_pane import MarkdownEditorPane
 from app.examples.example_project_service import ExampleProjectService
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.local_history_store import LocalHistoryStore
@@ -35,7 +34,6 @@ from app.shell.command_broker import CommandBroker
 from app.shell.console_model import ConsoleModel
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow, MainWindowDebugInspectorHost
-from app.shell.editor_tab_content_registry import EditorTabContentRegistry
 from app.shell.editor_tab_factory import EditorTabFactory
 from app.shell.editor_tab_workflow import build_editor_tab_workflow
 from app.shell.editor_workspace_controller import EditorWorkspaceController
@@ -241,15 +239,12 @@ def install_editors(ctx: ShellCompositionContext) -> None:
     window = ctx.w
     workspace_controller = EditorWorkspaceController()
     editor_manager = EditorManager()
-    markdown_panes_by_path: dict[str, MarkdownEditorPane] = {}
     bind_private_attrs(
         window,
         {
             "_workspace_controller": workspace_controller,
             "_editor_manager": editor_manager,
             "_editor_widgets_by_path": workspace_controller.editor_widgets_by_path,
-            "_markdown_panes_by_path": markdown_panes_by_path,
-            "_tab_content_registry": EditorTabContentRegistry(markdown_panes_by_path),
             "_editor_tab_factory": EditorTabFactory(window),
             "_indent_source_by_path": {},
             "_debug_exception_policy": DebugExceptionPolicy(),

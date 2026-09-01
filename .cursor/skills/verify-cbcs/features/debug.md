@@ -4,6 +4,8 @@ The user sets breakpoints, starts a debug session, steps, inspects frames and wa
 
 Owns AT-30, AT-31, AT-59, AT-60, AT-61, AT-62, AT-63, AT-64.
 
+<!-- dune-owners: platform.debug -->
+
 ## Sub-features
 
 - `debug-breakpoint` toggles a breakpoint (F9 / gutter).

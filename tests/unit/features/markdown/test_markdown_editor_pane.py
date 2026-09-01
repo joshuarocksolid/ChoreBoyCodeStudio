@@ -9,8 +9,8 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
-from app.editors.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode  # noqa: E402
-from app.editors.markdown_preview_styles import build_preview_document_stylesheet  # noqa: E402
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode  # noqa: E402
+from app.features.markdown.markdown_preview_styles import build_preview_document_stylesheet  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit

@@ -1,0 +1,10 @@
+/tools/dune/** @joshuarocksolid
+/dune.yaml @joshuarocksolid
+/CODEOWNERS @joshuarocksolid
+/package.py @joshuarocksolid
+/app/packaging/** @joshuarocksolid
+/.cursor/skills/release-cbcs/** @joshuarocksolid
+/.cursor/skills/verify-cbcs/** @joshuarocksolid
+/.cursor/skills/cbcs-quality-loop/** @joshuarocksolid
+/.cursor/rules/choreboy_release_gate.mdc @joshuarocksolid
+/tests/integration/performance/** @joshuarocksolid

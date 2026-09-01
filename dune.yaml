@@ -1,0 +1,49 @@
+owners:
+  platform.bootstrap:
+    - app/bootstrap/**
+  platform.core:
+    - app/__init__.py
+    - app/core/**
+  platform.debug:
+    - app/debug/**
+  platform.editors:
+    - app/editors/**
+  platform.examples:
+    - app/examples/**
+  platform.filesystem:
+    - app/filesystem/**
+  platform.features:
+    - app/features/__init__.py
+    - app/features/spec.py
+  markdown:
+    - app/features/markdown/**
+  platform.intelligence:
+    - app/intelligence/**
+  platform.packaging:
+    - app/packaging/**
+  platform.persistence:
+    - app/persistence/**
+  platform.plugins:
+    - app/plugins/**
+  platform.project:
+    - app/project/**
+  platform.pytest:
+    - app/pytest/**
+  platform.python_tools:
+    - app/python_tools/**
+  platform.run:
+    - app/run/**
+  platform.runner:
+    - app/runner/**
+  platform.shell:
+    - app/shell/**
+  platform.support:
+    - app/support/**
+  platform.syntax:
+    - app/syntax/**
+  platform.templates:
+    - app/templates/**
+  platform.treesitter:
+    - app/treesitter/**
+  platform.ui:
+    - app/ui/**

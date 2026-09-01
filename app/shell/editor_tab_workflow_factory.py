@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.editors.editor_manager import EditorManager
+from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsWorkflow
 from app.shell.editor_tab_buffer_workflow import EditorTabBufferWorkflow
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
@@ -18,7 +19,6 @@ from app.shell.editor_latency_recorder import EditorLatencyRecorder
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
 from app.shell.editor_sync_workflow import EditorSyncWorkflow
-from app.shell.markdown_tab_registry import MarkdownTabRegistry
 
 
 @dataclass(frozen=True)

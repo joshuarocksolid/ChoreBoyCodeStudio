@@ -4,6 +4,8 @@ The user adds a local wheel, zip, or folder to `vendor/` without a terminal, ins
 
 Owns AT-90–95.
 
+<!-- dune-owners: platform.project -->
+
 ## Sub-features
 
 - `dep-add` **Tools → Add Dependency...** ingests a local package into `vendor/` and `cbcs/dependencies.json`.

@@ -4,6 +4,8 @@ The Explorer activity shows the project tree, creates/renames/trashes files, mar
 
 Owns AT-05, AT-27, AT-28, AT-83.
 
+<!-- dune-owners: platform.filesystem -->
+
 ## Sub-features
 
 - `explorer-show` lists project files in `#shell.projectTree`.

@@ -214,6 +214,8 @@ class WorkflowBroker:
                     descriptor.provider_key,
                     dict(request),
                     activation_event=f"on_provider:{kind}",
+                    required_permissions=descriptor.permissions,
+                    manifest_permissions=self._manifest_permissions_for(descriptor),
                 )
         except Exception as exc:
             self._record_provider_outcome(
@@ -263,6 +265,8 @@ class WorkflowBroker:
                     dict(request),
                     on_event=on_event,
                     activation_event=f"on_provider:{kind}",
+                    required_permissions=descriptor.permissions,
+                    manifest_permissions=self._manifest_permissions_for(descriptor),
                 )
                 result = self._plugin_api_broker.wait_for_workflow_job(
                     job,
@@ -373,6 +377,15 @@ class WorkflowBroker:
             max_elapsed_ms=max_elapsed_ms,
             last_error=error,
         )
+
+    def _manifest_permissions_for(
+        self,
+        descriptor: WorkflowProviderDescriptor,
+    ) -> tuple[str, ...]:
+        provider = self._catalog.get(descriptor.provider_key)
+        if provider is None:
+            return ()
+        return tuple(provider.manifest.permissions)
 
 
 def _default_builtin_provider_key(*, kind: str, lane: str) -> str | None:
