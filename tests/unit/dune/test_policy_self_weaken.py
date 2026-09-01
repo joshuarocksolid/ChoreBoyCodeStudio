@@ -269,6 +269,7 @@ def test_handles_law_and_checker_cannot_hide_removed_object_name(
         "class WelcomeWidget:\n"
         "    def configure(self) -> None:\n"
         '        self.setObjectName("shell.welcome")\n'
+        "        pass\n"
     )
     for root in (baseline_root, current_root):
         app_path = root / relative_app_path
