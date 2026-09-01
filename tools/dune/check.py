@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Iterable, Optional
 
 if __package__:
+    from .composition import CompositionError, find_composition_violations
     from .concurrency import ConcurrencyError, find_concurrency_violations
     from .file_roles import FileRoleError, find_file_role_violations
     from .handles import HandlesError, find_handle_violations
@@ -16,6 +17,7 @@ if __package__:
     )
     from .policy import find_policy_violations
 else:
+    from composition import CompositionError, find_composition_violations
     from concurrency import ConcurrencyError, find_concurrency_violations
     from file_roles import FileRoleError, find_file_role_violations
     from handles import HandlesError, find_handle_violations
@@ -50,7 +52,9 @@ def run(
         violations.extend(find_file_role_violations(repo_root, app_files))
         violations.extend(find_concurrency_violations(repo_root, app_files))
         violations.extend(find_handle_violations(repo_root, app_files))
+        violations.extend(find_composition_violations(repo_root, app_files))
     except (
+        CompositionError,
         ConcurrencyError,
         FileRoleError,
         HandlesError,
