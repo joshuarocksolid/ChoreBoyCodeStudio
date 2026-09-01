@@ -302,7 +302,12 @@ def _blocking_call_name(call_name: str) -> str:
 
 def _analyze_tree(tree: ast.AST) -> tuple[dict[str, str], set[int]]:
     aliases: dict[str, str] = {}
-    definitions: dict[str, list[ast.AST]] = {}
+    parents = {
+        id(child): parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    definitions: dict[tuple[int, str], list[ast.AST]] = {}
     calls: list[ast.Call] = []
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
@@ -317,15 +322,22 @@ def _analyze_tree(tree: ast.AST) -> tuple[dict[str, str], set[int]]:
                     f"{node.module}.{alias.name}"
                 )
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            definitions.setdefault(node.name, []).append(node)
+            scope = next(_enclosing_scopes(node, parents))
+            definitions.setdefault((id(scope), node.name), []).append(node)
         elif isinstance(node, ast.Call):
             calls.append(node)
-    return aliases, _scheduled_task_nodes(calls, definitions, aliases)
+    return aliases, _scheduled_task_nodes(
+        calls,
+        definitions,
+        parents,
+        aliases,
+    )
 
 
 def _scheduled_task_nodes(
     calls: Iterable[ast.Call],
-    definitions: dict[str, list[ast.AST]],
+    definitions: dict[tuple[int, str], list[ast.AST]],
+    parents: dict[int, ast.AST],
     aliases: dict[str, str],
 ) -> set[int]:
     scheduled: set[int] = set()
@@ -346,11 +358,50 @@ def _scheduled_task_nodes(
         if isinstance(task_value, ast.Name):
             scheduled.update(
                 id(definition)
-                for definition in definitions.get(task_value.id, ())
+                for definition in _resolve_definitions(
+                    task_value.id,
+                    node,
+                    definitions,
+                    parents,
+                )
             )
         elif isinstance(task_value, ast.Lambda):
             scheduled.add(id(task_value))
     return scheduled
+
+
+def _resolve_definitions(
+    name: str,
+    node: ast.AST,
+    definitions: dict[tuple[int, str], list[ast.AST]],
+    parents: dict[int, ast.AST],
+) -> Iterable[ast.AST]:
+    for scope in _enclosing_scopes(node, parents):
+        matches = definitions.get((id(scope), name))
+        if matches:
+            return matches
+    return ()
+
+
+def _enclosing_scopes(
+    node: ast.AST,
+    parents: dict[int, ast.AST],
+) -> Iterable[ast.AST]:
+    current = parents.get(id(node))
+    inside_function = False
+    while current is not None:
+        if isinstance(
+            current,
+            (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda),
+        ):
+            inside_function = True
+            yield current
+        elif isinstance(current, ast.ClassDef):
+            if not inside_function:
+                yield current
+        elif isinstance(current, ast.Module):
+            yield current
+        current = parents.get(id(current))
 
 
 def _qualified_name(
