@@ -248,3 +248,91 @@ def test_current_checker_error_does_not_suppress_policy(
         "policy: judge edit would fail baseline checker: "
         "unowned: app/new/unowned.py\n"
     )
+
+
+def test_handles_law_and_checker_cannot_hide_removed_object_name(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    baseline_root = tmp_path / "baseline"
+    current_root = tmp_path / "current"
+    manifest = (
+        "owners:\n"
+        "  shell:\n"
+        "    - app/shell/**\n"
+    )
+    _write_checker_tree(baseline_root, manifest)
+    _write_checker_tree(current_root, manifest)
+
+    relative_app_path = "app/shell/welcome_widget.py"
+    app_source = (
+        "class WelcomeWidget:\n"
+        "    def configure(self) -> None:\n"
+        '        self.setObjectName("shell.welcome")\n'
+    )
+    for root in (baseline_root, current_root):
+        app_path = root / relative_app_path
+        app_path.parent.mkdir(parents=True)
+        app_path.write_text(app_source, encoding="utf-8")
+        handles_path = (
+            root
+            / ".cursor"
+            / "skills"
+            / "verify-cbcs"
+            / "references"
+            / "handles.md"
+        )
+        handles_path.parent.mkdir(parents=True)
+        handles_path.write_text(
+            "| Handle | What |\n"
+            "| --- | --- |\n"
+            "| `#shell.welcome` | Welcome pane |\n",
+            encoding="utf-8",
+        )
+
+    checker_path = current_root / "tools" / "dune" / "check.py"
+    checker_source = checker_path.read_text(encoding="utf-8")
+    weakened_checker = checker_source.replace(
+        "        violations.extend(find_handle_violations(repo_root, app_files))\n",
+        "",
+    )
+    assert weakened_checker != checker_source
+    checker_path.write_text(weakened_checker, encoding="utf-8")
+
+    app_path = current_root / relative_app_path
+    app_path.write_text(
+        app_source.replace(
+            '        self.setObjectName("shell.welcome")\n',
+            "",
+        ),
+        encoding="utf-8",
+    )
+    handles_path = (
+        current_root
+        / ".cursor"
+        / "skills"
+        / "verify-cbcs"
+        / "references"
+        / "handles.md"
+    )
+    handles_path.write_text(
+        handles_path.read_text(encoding="utf-8").replace(
+            "| `#shell.welcome` | Welcome pane |\n",
+            "",
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = run(
+        current_root,
+        [relative_app_path],
+        baseline_root=baseline_root,
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert captured.err == (
+        "policy: judge edit would fail baseline checker: "
+        "handles: shell.welcome is documented but has no setObjectName in app\n"
+    )
