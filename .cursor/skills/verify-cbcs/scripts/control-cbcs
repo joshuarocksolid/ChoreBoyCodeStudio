@@ -37,8 +37,22 @@ from typing import List, Optional, Sequence, Tuple
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_ARTIFACTS = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs"
-REMOTE_SHARE = os.environ.get("CHOREBOY_REMOTE_SHARE", "/home/joshua/shared-usb")
+_SLOT_LIB = Path.home() / "ChoreBoy" / "lib"
+if str(_SLOT_LIB) not in sys.path:
+    sys.path.insert(0, str(_SLOT_LIB))
 GUEST_SHARE = "/mnt/cbprobe"
+_LEASE_KEYS = (
+    "CB_SLOT_TOKEN",
+    "CB_SLOT_HOLDER",
+    "CB_SLOT_NAME",
+    "CB_DOMAIN",
+    "CHOREBOY_DOMAIN",
+    "CB_SHARE",
+    "CHOREBOY_REMOTE_SHARE",
+    "CBPROBE_SHARE_HOST",
+    "CBAPP_DOMAIN",
+    "CBPROBE_DOMAIN",
+)
 SESSION_NAME = "cbcs-verify"
 READY_NEEDLE = "Runtime ready"
 WINDOW_NEEDLE = "ChoreBoy Code Studio"
@@ -105,6 +119,48 @@ def _cb_virsh(args: Sequence[str]) -> subprocess.CompletedProcess:
     return _run([_which("cb-virsh")] + list(args))
 
 
+def _remote_share() -> str:
+    return (
+        os.environ.get("CHOREBOY_REMOTE_SHARE")
+        or os.environ.get("CB_SHARE")
+        or "/home/joshua/shared-usb"
+    )
+
+
+def _apply_lease_env(env: dict) -> None:
+    for key in _LEASE_KEYS:
+        val = env.get(key)
+        if val:
+            os.environ[key] = str(val)
+
+
+def _apply_record_lease(rec: Optional[dict]) -> None:
+    if rec:
+        _apply_lease_env(rec)
+
+
+def _acquire_slot() -> dict:
+    from choreboy_slot import acquire
+
+    slot = acquire(wait=True)
+    env = dict(slot.exports())
+    _apply_lease_env(env)
+    return env
+
+
+def _release_slot(rec: Optional[dict] = None) -> None:
+    token = (rec or {}).get("CB_SLOT_TOKEN") or os.environ.get("CB_SLOT_TOKEN")
+    holder = (rec or {}).get("CB_SLOT_HOLDER") or os.environ.get("CB_SLOT_HOLDER")
+    if not token:
+        return
+    from choreboy_slot import release
+
+    try:
+        release(token=token, holder=holder or None)
+    except Exception as exc:
+        print("note: slot release failed: {}".format(exc), file=sys.stderr)
+
+
 def _artifacts_root() -> Path:
     root = Path(os.environ.get("CBCS_VERIFY_ARTIFACTS", str(DEFAULT_ARTIFACTS)))
     root.mkdir(parents=True, exist_ok=True)
@@ -145,6 +201,7 @@ def _record_for_sid(sid: str) -> dict:
     rec = _find_run_record(sid)
     if rec is None:
         _die("no run.json for session " + sid + " (this run did not start it)")
+    _apply_record_lease(rec)
     return rec
 
 
@@ -152,10 +209,26 @@ def _lab_up() -> None:
     ping = _run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=15", "debian", "true"])
     if ping.returncode != 0:
         _die("cannot reach debian (is Tailscale up?). Try: ssh debian true", 2)
+    if not os.environ.get("CB_SLOT_TOKEN"):
+        _die("no slot lease; launch acquires one, or eval $(cb-slot acquire --export)")
     status = _cb_virsh(["status"])
-    text = ((status.stdout or "") + (status.stderr or "")).lower()
-    if status.returncode != 0 or "running" not in text:
-        _die("ChoreBoy VM is not running. Start it: cb-virsh start (wait ~45-60s)")
+    first = ((status.stdout or "") + (status.stderr or "")).strip().splitlines()
+    first = first[0].strip().lower() if first else ""
+    if status.returncode == 0 and first == "running":
+        return
+    if first in ("shut off", "shutdown"):
+        start = _cb_virsh(["start"])
+        if start.returncode != 0:
+            _die("could not start leased domain: " + ((start.stderr or start.stdout or "").strip()))
+        for _ in range(45):
+            time.sleep(2)
+            again = _cb_virsh(["status"])
+            line = ((again.stdout or "") + (again.stderr or "")).strip().splitlines()
+            if line and line[0].strip().lower() == "running":
+                time.sleep(45)
+                return
+        _die("timed out waiting for leased domain to reach running")
+    _die("leased domain is not running (cb-virsh status: {})".format(first or "unknown"))
 
 
 def _parse_sessions(text: str) -> List[Tuple[str, str]]:
@@ -328,12 +401,17 @@ def _shot_path_from_output(stdout: str, stderr: str) -> Optional[str]:
 
 
 def cmd_launch(args: argparse.Namespace) -> int:
-    _lab_up()
-    _refuse_shared()
+    lease = _acquire_slot()
+    try:
+        _lab_up()
+        _refuse_shared()
+    except SystemExit:
+        _release_slot(lease)
+        raise
     run_id = args.run_id or _now_stamp()
     run_dir = _run_dir(run_id)
     mode = "install" if args.install else "source"
-    remote_root = "{}/cbcs-verify/{}".format(REMOTE_SHARE, run_id)
+    remote_root = "{}/cbcs-verify/{}".format(_remote_share(), run_id)
     guest_root = "{}/cbcs-verify/{}".format(GUEST_SHARE, run_id)
     guest_src = guest_root + "/src"
     # SQLite (local history) deadlocks on virtiofs. HOME must be on the guest disk.
@@ -400,6 +478,7 @@ def cmd_launch(args: argparse.Namespace) -> int:
             run_dir / "launch-failed.json",
             {"returncode": proc.returncode, "stdout": proc.stdout, "stderr": proc.stderr},
         )
+        _release_slot(lease)
         _die("launch did not print a session id")
     record = {
         "sid": sid,
@@ -414,6 +493,7 @@ def cmd_launch(args: argparse.Namespace) -> int:
         "extract_dest": dest if mode == "install" else None,
         "zip_path": zip_path if mode == "install" else None,
     }
+    record.update(lease)
     _write_json(run_dir / "run.json", record)
     print("SID=" + sid)
     print("RUN_ID=" + run_id)
@@ -462,12 +542,13 @@ def _exec_stdout(payload: dict) -> str:
 
 
 def cmd_doctor(args: argparse.Namespace) -> int:
-    _lab_up()
     sid = args.sid
     rec = _find_run_record(sid)
     if rec is None:
         print("DOCTOR: FAIL (session was not started by control-cbcs)")
         return 1
+    _apply_record_lease(rec)
+    _lab_up()
     payload = _status_payload(sid)
     state = _session_state(payload)
     (rec.get("artifact_dir") and Path(rec["artifact_dir"]).mkdir(parents=True, exist_ok=True))
@@ -724,6 +805,7 @@ def cmd_shot(args: argparse.Namespace) -> int:
 
 def cmd_stop(args: argparse.Namespace) -> int:
     rec = _find_run_record(args.sid)
+    _apply_record_lease(rec)
     if rec:
         guest_home = rec.get("guest_home") or ""
         if guest_home.startswith("/home/default/cbcs-verify-"):
@@ -740,11 +822,12 @@ def cmd_stop(args: argparse.Namespace) -> int:
     sys.stderr.write(proc.stderr or "")
     if rec:
         remote_root = rec.get("remote_root")
-        if remote_root and remote_root.startswith(REMOTE_SHARE + "/cbcs-verify/"):
+        if remote_root and remote_root.startswith(_remote_share() + "/cbcs-verify/"):
             _run(["ssh", "-o", "BatchMode=yes", "debian", "rm -rf " + remote_root])
         rec["stopped_at"] = datetime.now(timezone.utc).isoformat()
         _write_json(Path(rec["artifact_dir"]) / "run.json", rec)
         print("ARTIFACTS_REMAIN: " + rec["artifact_dir"])
+    _release_slot(rec)
     return proc.returncode
 
 
@@ -807,11 +890,16 @@ def cmd_prove_launch(args: argparse.Namespace) -> int:
 
 def cmd_shard(args: argparse.Namespace) -> int:
     """Run pytest in-process on the ChoreBoy guest. Mac Darwin AppRun is not this path."""
-    _lab_up()
-    _refuse_shared()
+    lease = _acquire_slot()
+    try:
+        _lab_up()
+        _refuse_shared()
+    except SystemExit:
+        _release_slot(lease)
+        raise
     run_id = args.run_id or _now_stamp()
     run_dir = _run_dir(run_id)
-    remote_root = "{}/cbcs-verify/{}".format(REMOTE_SHARE, run_id)
+    remote_root = "{}/cbcs-verify/{}".format(_remote_share(), run_id)
     guest_root = "{}/cbcs-verify/{}".format(GUEST_SHARE, run_id)
     guest_src = guest_root + "/src"
     guest_home = "/home/default/cbcs-verify-" + run_id
@@ -866,6 +954,7 @@ def cmd_shard(args: argparse.Namespace) -> int:
         "started_at": datetime.now(timezone.utc).isoformat(),
         "app_run_rc": proc.returncode,
     }
+    record.update(lease)
     _write_json(run_dir / "run.json", record)
     if sid:
         print("SID=" + sid)
@@ -897,7 +986,7 @@ def cmd_shard(args: argparse.Namespace) -> int:
 
     if sid:
         _cbapp(["stop", sid])
-    if remote_root.startswith(REMOTE_SHARE + "/cbcs-verify/"):
+    if remote_root.startswith(_remote_share() + "/cbcs-verify/"):
         _run(["ssh", "-o", "BatchMode=yes", "debian", "rm -rf " + remote_root])
 
     result = {
@@ -930,6 +1019,7 @@ def cmd_shard(args: argparse.Namespace) -> int:
     if local_log.is_file():
         print("LOG: " + str(local_log))
     print("ARTIFACTS_REMAIN: " + str(run_dir))
+    _release_slot(lease)
     if not done:
         return 2
     return 0 if pytest_rc == 0 else 1
