@@ -14,6 +14,7 @@ if __package__:
         find_ownership_violations,
         parse_ownership_manifest,
     )
+    from .policy import find_policy_violations
 else:
     from concurrency import ConcurrencyError, find_concurrency_violations
     from file_roles import FileRoleError, find_file_role_violations
@@ -23,6 +24,7 @@ else:
         find_ownership_violations,
         parse_ownership_manifest,
     )
+    from policy import find_policy_violations
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -31,15 +33,19 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 def run(
     repo_root: Path = REPO_ROOT,
     tracked_files: Optional[Iterable[str]] = None,
+    baseline_root: Optional[Path] = None,
 ) -> int:
+    app_files: list[str] = []
+    violations: list[str] = []
+    current_error: Optional[Exception] = None
     try:
-        manifest_text = (repo_root / "dune.yaml").read_text(encoding="utf-8")
-        owners = parse_ownership_manifest(manifest_text)
         app_files = (
             _tracked_app_files(repo_root)
             if tracked_files is None
             else list(tracked_files)
         )
+        manifest_text = (repo_root / "dune.yaml").read_text(encoding="utf-8")
+        owners = parse_ownership_manifest(manifest_text)
         violations = find_ownership_violations(owners, app_files)
         violations.extend(find_file_role_violations(repo_root, app_files))
         violations.extend(find_concurrency_violations(repo_root, app_files))
@@ -52,12 +58,24 @@ def run(
         OwnershipManifestError,
         RuntimeError,
     ) as exc:
-        print(f"dune check error: {exc}", file=sys.stderr)
-        return 1
+        current_error = exc
 
-    if violations:
+    policy_violations = find_policy_violations(
+        repo_root,
+        None if tracked_files is None else app_files,
+        baseline_root,
+    )
+
+    if current_error is not None:
+        print(f"dune check error: {current_error}", file=sys.stderr)
+    else:
         for violation in violations:
             print(violation, file=sys.stderr)
+
+    for violation in policy_violations:
+        print(violation, file=sys.stderr)
+
+    if current_error is not None or violations or policy_violations:
         return 1
 
     print("dune check ok")
