@@ -8,7 +8,7 @@ Duplicate names exist (`shell.welcome.onboardingActionBtn` on several welcome bu
 
 `CodeEditorWidget` itself is unnamed. The factory sets `shell.editorTabs.textEditor` on every tab — use `class:` + index or in-app Python if you need a specific buffer.
 
-The installer wizard (`packaging/install.py`) has no `shell.*` names. Use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`.
+The installer wizard (`packaging/install.py`) has no `shell.*` names. When driving it by hand, use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`. `control-cbcs launch --install` uses `cbapp install-test`, which auto-walks those pages — those handles are not reachable in that lane. When install-test finishes the SID is exited; do not doctor that SID. Proof is the `01_welcome`…`05_done` shots; Runtime-ready needs a later launch of the installed app.
 
 Recovery Center has no object names. Arm `shell.action.file.recoveryCenter` and click `text:Open Timeline` / `text:Restore Latest to Buffer`.
 
@@ -120,9 +120,9 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
-| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. |
-| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104) |
-| `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked) |
+| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). AT-104/105 checkboxes are `vis=False` on Step 1 and visible/unchecked on Step 2. |
+| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104). Not on page 0 / Step 1. |
+| `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked). Not on page 0 / Step 1. |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |

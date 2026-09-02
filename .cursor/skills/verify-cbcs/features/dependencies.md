@@ -27,10 +27,10 @@ Preconditions:
 - A pure-Python wheel or folder staged on the share.
 - Doctor passed.
 
-- **Add.** `control-cbcs arm "$SID" shell.action.tools.addDependency` (modal wizard). Complete it with the staged package. Guest `vendor/` contains the package. `cbcs/dependencies.json` has an entry. Shot `dep-added`.
+- **Add.** `control-cbcs arm "$SID" shell.action.tools.addDependency` (modal wizard). Complete it with the staged package. After add, a blocking **Add Dependency** info `QMessageBox` appears — dismiss it (virsh `KEY_ENTER` or `reject()` / Accept via `ctl exec`) before the next drive. Guest `vendor/` contains the package. `cbcs/dependencies.json` has an entry. Shot `dep-added`.
 - **Native warning.** If you have a native wheel fixture, add it. The wizard shows a warning before finish. Cancel leaves the manifest unchanged.
 - **Inspect.** `control-cbcs trigger "$SID" shell.action.tools.dependencyInspector` (`show()`, not `exec_()`). Window title is **Project Dependencies**. There is no `#shell.dependency*` handle. The row shows name / version / source.
-- **Remove.** Remove the entry. The row stays with `status=removed`. Manifest updates.
+- **Remove.** Remove the entry. Confirm dialog is Yes / No / Cancel with default **No** — choose Yes to confirm. The row stays with `status=removed`. Manifest updates. Dismiss any follow-up info box the same way as add.
 - **Proof.** Copied `cbcs/dependencies.json` plus a listing of `vendor/` in artifacts, and the inspector shot.
 
 ## Gotchas
@@ -38,3 +38,4 @@ Preconditions:
 - Only local artifacts. There is no pip-from-internet path.
 - Native wheels may be uninstallable on the guest ABI — the warning is the proof, not a successful import.
 - Packaging (AT-95) fails closed if the manifest is incomplete. That failure is success for this sub-feature.
+- Add/remove drive paths leave blocking message boxes; leave them up and later commands time out.

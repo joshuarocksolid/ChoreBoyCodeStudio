@@ -32,10 +32,10 @@ Preconditions:
 - Doctor passed. Runner/debug transport available on the guest.
 
 - **Breakpoint.** Open the file; place the cursor on the target line; `control-cbcs trigger "$SID" shell.action.run.toggleBreakpoint`. Gutter / `#shell.debug.breakpointsTree` shows the break.
-- **Start.** `control-cbcs ctl "$SID" click '#shell.toolbar.btn.debug'`. The first stop can be runner bootstrap (`Paused at runner_main.py:…`). Click `#shell.toolbar.btn.continue` to reach the user breakpoint. Start focuses **Run Log** (`auto_open_console_on_run_output`), not Debug. Click `text:Debug` or set `#shell.bottomRegion.tabs` to index 1 before a panel shot. Shot `debug-paused`.
+- **Start.** `control-cbcs ctl "$SID" click '#shell.toolbar.btn.debug'`. The first stop is often runner bootstrap (`Paused at runner_main.py:…`). Toolbar **Continue** click may be disabled at that stop — use `control-cbcs trigger "$SID" shell.action.run.continue` to reach the user breakpoint (prefer that over `#shell.toolbar.btn.continue` when the button is grey). Start focuses **Run Log** (`auto_open_console_on_run_output`), not Debug. Click `text:Debug` or set `#shell.bottomRegion.tabs` to index 1 before a panel shot. Shot `debug-paused`.
 - **Inspect.** `#shell.debug.stackTree` has a frame. `#shell.debug.variablesTree` is populated. Add a watch via `#shell.debug.watchInput` + Return. Watch row shows a value or an explicit error.
-- **Step.** `control-cbcs ctl "$SID" click '#shell.toolbar.btn.stepOver'`. Current line advances. Continue with `#shell.toolbar.btn.continue`.
-- **Stop.** `#shell.toolbar.btn.stop` ends the session. Editor remains usable.
+- **Step.** `control-cbcs ctl "$SID" click '#shell.toolbar.btn.stepOver'`. Current line advances. Continue with `trigger shell.action.run.continue` (or the toolbar button when enabled).
+- **Stop.** `#shell.toolbar.btn.stop` ends the debug session. Stop can also tear down the whole `cbapp` session — run `control-cbcs doctor "$SID"` after Stop; if the session is gone, relaunch before the next recipe. When the session survives, the editor remains usable.
 - **Proof.** Shot of the paused debug panel (stack + breakpoint) and the startup/run chips still healthy.
 
 ## Gotchas
@@ -46,3 +46,4 @@ Preconditions:
 - `removeAllBp` clears breaks. Do not leave them if a later recipe assumes a clean file.
 - AT-62 is **Debug Current Test** and **Rerun Last Debug Target**, not the Test Explorer **Debug Failed** button (that is AT-99).
 - `toggleBreakpoint` with no current editor file shows **Open a Python file first.** and blocks the bridge if you used `trigger`. Restore `#shell.editorStatusLabel` first.
+- Stop ending the `cbapp` session is a harness gotcha, not a product acceptance failure — doctor and relaunch.
