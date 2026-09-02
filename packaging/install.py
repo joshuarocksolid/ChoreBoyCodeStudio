@@ -385,12 +385,54 @@ def publish_launcher_copy(launcher_path: Path, destination_dir: Path) -> Shortcu
     return ShortcutPublishResult(ok=True, path=str(destination_path))
 
 
+def _icon_lives_under_xdg_local(icon_path: Path) -> bool:
+    return ".local" in Path(icon_path).expanduser().parts
+
+
+def _rewrite_desktop_icon(desktop_text: str, icon_path: Path) -> str:
+    icon_value = str(Path(icon_path).expanduser().resolve())
+    lines = []
+    replaced = False
+    for line in desktop_text.splitlines():
+        if line.startswith("Icon="):
+            lines.append(f"Icon={icon_value}")
+            replaced = True
+        else:
+            lines.append(line)
+    if not replaced:
+        lines.append(f"Icon={icon_value}")
+    return "\n".join(lines) + "\n"
+
+
 def publish_desktop_shortcut(
     launcher_path: Path,
     destination_dir: Path,
     source_icon: Optional[Path] = None,
 ) -> ShortcutPublishResult:
-    return publish_launcher_copy(launcher_path, destination_dir)
+    result = publish_launcher_copy(launcher_path, destination_dir)
+    if not result.ok:
+        return result
+    if source_icon is None:
+        return result
+    resolved_icon = Path(source_icon).expanduser()
+    if not resolved_icon.is_file() or not _icon_lives_under_xdg_local(resolved_icon):
+        return result
+    suffix = resolved_icon.suffix or ".png"
+    icon_dest = destination_dir / f".{Path(launcher_path).stem}{suffix}"
+    try:
+        shutil.copy2(str(resolved_icon), str(icon_dest))
+        published = Path(result.path)
+        published.write_text(
+            _rewrite_desktop_icon(published.read_text(encoding="utf-8"), icon_dest),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        return ShortcutPublishResult(
+            ok=False,
+            path=result.path,
+            error=f"{exc.__class__.__name__}: {exc}",
+        )
+    return result
 
 
 class InstallWorker(QThread):
