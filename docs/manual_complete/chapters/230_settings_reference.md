@@ -173,7 +173,7 @@ A few settings interact:
 
 ## Where settings are stored
 
-- Global: `~/choreboy_code_studio_state/settings.json`
+- Global: `<state_root>/settings.json` (default `/home/default/FreeCAD/choreboy_code_studio_state/settings.json`; existing `~/choreboy_code_studio_state/` is kept)
 - Project: `<project>/cbcs/settings.json`
 
 Both are plain JSON. The exact keys are listed in Part V, "File & folder reference".

@@ -79,7 +79,7 @@ A one-page summary of the most useful commands and shortcuts. For the complete l
 | Project metadata | `<project>/cbcs/project.json` |
 | Per-project settings | `<project>/cbcs/settings.json` |
 | Per-run logs | `<project>/cbcs/logs/` |
-| Global settings & logs | `~/choreboy_code_studio_state/` |
+| Global settings & logs | `/home/default/FreeCAD/choreboy_code_studio_state/` (or existing `~/choreboy_code_studio_state/`) |
 
 ## Remember
 

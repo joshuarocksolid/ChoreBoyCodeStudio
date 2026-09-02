@@ -176,10 +176,15 @@ bootstrap/config error, `3` invalid manifest, `130` terminated by the user.
 
 ## Global state directory
 
-Application-wide state lives in a single visible folder under your home directory:
+Application-wide state lives in a single visible folder named
+`choreboy_code_studio_state`. New machines use
+`/home/default/FreeCAD/choreboy_code_studio_state`. If `~/choreboy_code_studio_state`
+already exists, that older location is kept. Shared shop state is opt-in via
+`CBCS_STATE_ROOT` or a `cbcs_state_root` pointer file; two writers on one NFS state
+directory can clobber each other.
 
 ```text
-~/choreboy_code_studio_state/
+/home/default/FreeCAD/choreboy_code_studio_state/
   settings.json                 # global settings
   recent_projects.json          # recent projects list
   python_console_history.json   # console history

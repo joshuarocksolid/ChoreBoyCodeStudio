@@ -86,7 +86,8 @@ recent version.
 ## Where history is stored, and limits
 
 Local History is stored in the visible global app-state folder
-(`~/choreboy_code_studio_state/history/`), not inside your project, so a deleted project
+(`/home/default/FreeCAD/choreboy_code_studio_state/history/`, or the resolved state
+root), not inside your project, so a deleted project
 file can still be recovered.
 
 You can tune retention in **Settings > Local History**:

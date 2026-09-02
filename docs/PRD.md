@@ -262,7 +262,7 @@ myapp/
 
 ## Where settings live
 
-- Global settings: `~/choreboy_code_studio_state/settings.json` (or under Home)
+- Global settings: `<state_root>/settings.json`. Product default state root is `/home/default/FreeCAD/choreboy_code_studio_state`. An existing `~/choreboy_code_studio_state` directory is still used. Shared shop state is opt-in via `CBCS_STATE_ROOT` or a `cbcs_state_root` pointer file.
 - Per-project settings overrides: `<project>/cbcs/settings.json`
 - Per-project metadata: `<project>/cbcs/project.json`
 
