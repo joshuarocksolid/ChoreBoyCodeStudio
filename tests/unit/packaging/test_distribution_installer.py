@@ -458,6 +458,95 @@ def test_publish_launcher_copy_returns_warning_on_permission_error(
     assert result.path.endswith("applications/app.desktop")
 
 
+def _icon_path_from_desktop(text: str) -> Path:
+    for line in text.splitlines():
+        if line.startswith("Icon="):
+            return Path(line.split("=", 1)[1])
+    raise AssertionError("Icon= missing from desktop entry")
+
+
+def test_desktop_shortcut_icon_is_copied_off_xdg_local(tmp_path: Path) -> None:
+    installer_module = _load_module("distribution_installer_desktop_icon", "packaging/install.py")
+    install_dir = tmp_path / ".local" / "share" / "FreeCAD" / "Macro" / "Apps" / "invoice_app"
+    source_icon = install_dir / "app_files" / "icon.png"
+    source_icon.parent.mkdir(parents=True)
+    source_icon.write_bytes(b"png-bytes")
+    desktop_dir = tmp_path / "Desktop"
+    desktop_dir.mkdir()
+    launcher_path = install_dir / "invoice_app.desktop"
+    launcher_path.write_text(
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Invoice App\n"
+        f"Icon={source_icon.resolve()}\n",
+        encoding="utf-8",
+    )
+
+    result = installer_module.publish_desktop_shortcut(
+        launcher_path,
+        desktop_dir,
+        source_icon,
+    )
+
+    assert result.ok is True
+    published = Path(result.path)
+    published_icon = _icon_path_from_desktop(published.read_text(encoding="utf-8"))
+    assert ".local" not in published_icon.parts
+    assert published_icon.parent == desktop_dir.resolve()
+    assert published_icon.name == ".invoice_app.png"
+    assert published_icon.read_bytes() == b"png-bytes"
+    assert f"Icon={source_icon.resolve()}" in launcher_path.read_text(encoding="utf-8")
+    visible_pngs = [
+        path
+        for path in desktop_dir.iterdir()
+        if path.suffix == ".png" and not path.name.startswith(".")
+    ]
+    assert visible_pngs == []
+
+
+@pytest.mark.parametrize(
+    "install_parts",
+    (
+        ("choreboy_code_studio_v0.2.0",),
+        ("Desktop", ".Apps", "invoice_app"),
+    ),
+)
+def test_desktop_shortcut_keeps_icon_outside_xdg_local(
+    tmp_path: Path,
+    install_parts: tuple[str, ...],
+) -> None:
+    installer_module = _load_module(
+        "distribution_installer_desktop_icon_keep",
+        "packaging/install.py",
+    )
+    install_dir = tmp_path.joinpath(*install_parts)
+    source_icon = install_dir / "app" / "ui" / "icons" / "Python_Icon.png"
+    source_icon.parent.mkdir(parents=True)
+    source_icon.write_bytes(b"product-icon")
+    desktop_dir = tmp_path / "published_desktop"
+    desktop_dir.mkdir()
+    launcher_path = install_dir / "app.desktop"
+    launcher_path.write_text(
+        "[Desktop Entry]\n"
+        f"Icon={source_icon.resolve()}\n",
+        encoding="utf-8",
+    )
+
+    result = installer_module.publish_desktop_shortcut(
+        launcher_path,
+        desktop_dir,
+        source_icon,
+    )
+
+    assert result.ok is True
+    published_icon = _icon_path_from_desktop(
+        Path(result.path).read_text(encoding="utf-8")
+    )
+    assert published_icon == source_icon.resolve()
+    assert list(desktop_dir.glob("*.png")) == []
+    assert list(desktop_dir.glob(".*.png")) == []
+
+
 def test_build_staging_location_warning_requires_home_default_staging() -> None:
     installer_module = _load_module("distribution_installer", "packaging/install.py")
     manifest = _build_installer_manifest(installer_module)

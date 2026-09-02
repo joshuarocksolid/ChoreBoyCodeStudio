@@ -385,6 +385,14 @@ def publish_launcher_copy(launcher_path: Path, destination_dir: Path) -> Shortcu
     return ShortcutPublishResult(ok=True, path=str(destination_path))
 
 
+def publish_desktop_shortcut(
+    launcher_path: Path,
+    destination_dir: Path,
+    source_icon: Optional[Path] = None,
+) -> ShortcutPublishResult:
+    return publish_launcher_copy(launcher_path, destination_dir)
+
+
 class InstallWorker(QThread):
     progress = Signal(int)
     status = Signal(str)
@@ -494,9 +502,15 @@ class InstallWorker(QThread):
                     f"Application-menu launcher was not published at {menu_result.path}: {menu_result.error}"
                 )
         if self.publish_desktop_shortcut:
-            desktop_result = publish_launcher_copy(
+            source_icon = (
+                self.install_dir / self.manifest.icon_relative_path
+                if self.manifest.icon_relative_path
+                else None
+            )
+            desktop_result = publish_desktop_shortcut(
                 final_launcher_path,
                 Path.home() / "Desktop",
+                source_icon,
             )
             if not desktop_result.ok:
                 raise RuntimeError(
