@@ -14,7 +14,7 @@ Owns AT-32, AT-36, AT-45–58, AT-73 (editor completion).
 - `lint-problems` realtime overlays + `#shell.problemsPanel`; provider Default or Pyflakes.
 - `lint-safe-fixes` **Apply Safe Fixes** clears stale squiggles without requiring Save.
 - `complete-dot` editor `.` completion shows attributes without running project code (AT-73).
-- `rename-preview` F2 shows preview / apply / rollback (AT-49).
+- `rename-preview` F2 / Rename Symbol: `QInputDialog` then Rename Preview `QMessageBox` (AT-49). No in-dialog rollback.
 - `highlight` tree-sitter colors for supported languages (AT-32).
 
 ## How to get to it (user POV)
@@ -31,11 +31,11 @@ Preconditions:
 - Doctor passed. Vendor Black/isort/jedi available on the guest copy, or record degraded tooling on `#shell.pythonToolingStatusLabel`.
 
 - **Format.** Open the messy file. `control-cbcs arm "$SID" shell.action.tools.formatCurrentFile`. A modal **Formatting applied via Built-in Python Formatter** OK box blocks `trigger`. Dismiss with virsh `KEY_ENTER` if you already blocked the bridge (`KEY_RETURN` is invalid). Buffer matches Black. Shot `format-after`.
-- **Organize.** `control-cbcs arm "$SID" shell.action.tools.organizeImportsCurrentFile`. Same modal OK box (**Imports organized…**). Import block is sorted.
+- **Organize.** `control-cbcs arm "$SID" shell.action.tools.organizeImportsCurrentFile`. Modal OK box (**Imports are already organized.** when sorted, or an organized confirmation when imports changed). Import block is sorted.
 - **Lint.** `control-cbcs trigger "$SID" shell.action.tools.lintCurrentFile`. `#shell.problemsPanel.tree` has rows or `#shell.diagnosticsStatusLabel` shows counts. Click a row; editor jumps.
-- **Safe fix.** Apply safe fixes; squiggles clear without Save. Re-lint is clean for that rule.
+- **Safe fix.** `control-cbcs arm "$SID" shell.action.tools.applySafeFixes`. Modal may say **No safe fixes available…** when clean; otherwise squiggles clear without Save. Re-lint is clean for that rule.
 - **Completion.** In a Python buffer type `json.` after `import json`. Popup lists attributes; Enter inserts. Down at the last row does not crash.
-- **Rename.** On a local function name, `control-cbcs trigger "$SID" shell.action.edit.renameSymbol`. Preview lists edits; apply updates the buffer; rollback restores.
+- **Rename.** On a local function name, `control-cbcs arm "$SID" shell.action.edit.renameSymbol`. Flow is `QInputDialog` then a Rename Preview `QMessageBox` — there is no in-dialog rollback. Apply updates the buffer. Undo in the editor restores if needed.
 - **Proof.** Shot of formatted buffer + Problems (or empty Problems after fix), and the saved file on disk if you saved.
 
 ## Gotchas

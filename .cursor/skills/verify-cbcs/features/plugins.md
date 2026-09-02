@@ -35,6 +35,7 @@ Preconditions:
 - **Safe mode.** Enable safe mode. Contributions stop. Disable safe mode; they return.
 - **Pin.** With a project open, Pin To Project. `<project>/cbcs/` records the pin. Clear Pin removes it.
 - **Isolation.** If you have a crashing plugin fixture, install it. Editor window stays up; plugin is quarantined / disabled. Shot `plugin-survived`.
+- **Invoke-time permission deny (PR #54).** There is no Plugin Manager UI to click-deny an undeclared permission at invoke time. Without a fixture plugin whose invoke lacks a declared permission, this path is `verified-unreachable` / uncovered. Do not invent a click-deny recipe.
 - **Proof.** Shot of the manager row (version + enabled), plus copied `registry.json` from `$HOME/choreboy_code_studio_state/plugins/`.
 
 ## Gotchas
@@ -44,3 +45,4 @@ Preconditions:
 - Quarantine is after 3 host failures. Pin file is `cbcs/plugins.json`.
 - Plugin host is a child process. `CBCS_DISABLE_BACKGROUND_RUNTIME` prevents this feature; do not set it here.
 - Compatibility failures must be explicit in the UI, not a silent skip.
+- Invoke-time permission deny has no manager surface — record uncovered rather than forging a deny click.

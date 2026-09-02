@@ -8,7 +8,7 @@ Duplicate names exist (`shell.welcome.onboardingActionBtn` on several welcome bu
 
 `CodeEditorWidget` itself is unnamed. The factory sets `shell.editorTabs.textEditor` on every tab — use `class:` + index or in-app Python if you need a specific buffer.
 
-The installer wizard (`packaging/install.py`) has no `shell.*` names. Use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`.
+The installer wizard (`packaging/install.py`) has no `shell.*` names. When driving it by hand, use `#__qt__passive_wizardbutton1` and `#qt_wizard_commit`. `control-cbcs launch --install` uses `cbapp install-test`, which auto-walks those pages — those handles are not reachable in that lane.
 
 Recovery Center has no object names. Arm `shell.action.file.recoveryCenter` and click `text:Open Timeline` / `text:Restore Latest to Buffer`.
 
@@ -120,9 +120,9 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
-| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. |
-| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104) |
-| `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked) |
+| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Page 0 is destination (primary chrome **Package**); AT-104/105 checkboxes are `vis=False` until you advance. |
+| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104). Not on page 0. |
+| `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked). Not on page 0. |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |

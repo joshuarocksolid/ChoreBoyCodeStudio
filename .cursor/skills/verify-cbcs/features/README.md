@@ -39,7 +39,7 @@ Each file: H1, one paragraph, then exactly four H2s in this order.
 ## Features
 
 - [Launch and runtime](./launch-runtime.md) — AT-01, AT-02, smoke M1
-- [Welcome and onboarding](./welcome-onboarding.md) — AT-73, AT-74, AT-76, AT-77, AT-80, M2
+- [Welcome and onboarding](./welcome-onboarding.md) — AT-73, AT-74 (section-14), AT-80, M2
 - [Project open and create](./project-open-create.md) — AT-03, AT-04, AT-17, AT-19–21, AT-24, AT-33
 - [Explorer and files](./explorer-files.md) — AT-05, AT-27, AT-28, AT-83
 - [Editor, save, tabs](./editor-save-tabs.md) — AT-06–09, AT-44, drag-drop open
