@@ -14,7 +14,9 @@ Choose **File > Settings...**. The dialog has a scope toggle at the top (**Globa
 ## Global vs project scope
 
 - **Global** settings apply to every project by default. They are stored in
-  `~/choreboy_code_studio_state/settings.json`.
+  `<state_root>/settings.json` (product default
+  `/home/default/FreeCAD/choreboy_code_studio_state/settings.json`; an existing
+  `~/choreboy_code_studio_state/` folder is still used).
 - **Project** settings override the global defaults for one project only. They are stored
   in that project's `cbcs/settings.json`.
 
@@ -25,7 +27,7 @@ The **Project** scope is only available when a project is open.
 Effective settings are resolved in three layers, each overriding the one before:
 
 1. **Built-in defaults** (shipped with the application).
-2. **Global settings** (`~/choreboy_code_studio_state/settings.json`).
+2. **Global settings** (`<state_root>/settings.json`).
 3. **Project overrides** (`<project>/cbcs/settings.json`).
 
 So a value you set at project scope wins over your global value, which wins over the

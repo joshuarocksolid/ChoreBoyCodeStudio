@@ -55,6 +55,7 @@ Each file: H1, one paragraph, then exactly four H2s in this order.
 - [Recovery and history](./recovery-history.md) — AT-18, AT-65–71
 - [Dependencies](./dependencies.md) — AT-90–95
 - [Packaging and installer](./packaging-installer.md) — AT-78, AT-81, AT-82, AT-84, AT-95, AT-104, AT-105
+- [Shop-LAN state](./shop-lan-state.md) — opt-in shared state root; product default `/home/default/FreeCAD/choreboy_code_studio_state`
 - [Diagnostics and support](./diagnostics-support.md) — AT-22, AT-23, AT-79
 - [Layout and status](./layout-status.md) — AT-25, zoom, status chips
 - [Flat-Python paste](./edit-flat-python-paste.md) — AT-EDIT-FLAT-PYTHON-PASTE

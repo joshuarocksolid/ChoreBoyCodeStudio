@@ -51,7 +51,8 @@ ChoreBoy Code Studio always writes a log of its own activity:
 - **Help > Open Application Log** opens `app.log` in an editor tab.
 - **Help > Open Log Folder** reveals the global logs folder in the file manager.
 
-The editor log lives at `~/choreboy_code_studio_state/logs/app.log`. Each run also writes
+The editor log lives at `<state_root>/logs/app.log` (default
+`/home/default/FreeCAD/choreboy_code_studio_state/logs/app.log`). Each run also writes
 a per-run log to `<project>/cbcs/logs/`. Logs include timestamps, levels, and the
 subsystem that produced each message, and tracebacks are preserved in full.
 

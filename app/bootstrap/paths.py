@@ -1,6 +1,7 @@
 """Deterministic path helpers for application bootstrap."""
 
 from pathlib import Path
+import os
 import tempfile
 from typing import Optional, Tuple, Union
 
@@ -14,11 +15,41 @@ def resolve_app_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
+def normalize_state_root_identity(path: PathInput) -> Path:
+    """Return an absolute state-root path without following the final symlink hop."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("state_root must be an absolute path")
+    return Path(os.path.abspath(str(candidate)))
+
+
 def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
     """Return the global app state root path."""
     if state_root is not None:
-        return _normalize_absolute_path(state_root, "state_root")
-    return Path.home().expanduser().resolve() / constants.GLOBAL_STATE_DIRNAME
+        return normalize_state_root_identity(state_root)
+
+    env_root = _state_root_from_env()
+    if env_root is not None:
+        return env_root
+
+    install_pointer = resolve_app_root().parent / constants.CBCS_STATE_ROOT_POINTER_FILENAME
+    pointer_root = _state_root_from_pointer_file(install_pointer)
+    if pointer_root is not None:
+        return pointer_root
+
+    shop_root = _state_root_from_pointer_file(Path(constants.SHOP_STATE_ROOT_POINTER_PATH))
+    if shop_root is not None:
+        return shop_root
+
+    legacy = Path.home().expanduser() / constants.GLOBAL_STATE_DIRNAME
+    if _is_existing_directory(legacy):
+        return normalize_state_root_identity(legacy)
+
+    return normalize_state_root_identity(
+        Path("/home/default")
+        / constants.GLOBAL_STATE_FREECAD_PARENT_DIRNAME
+        / constants.GLOBAL_STATE_DIRNAME
+    )
 
 
 def global_settings_path(state_root: Optional[PathInput] = None) -> Path:
@@ -203,6 +234,41 @@ def _normalize_project_root(project_root: PathInput) -> Path:
 
 def _global_state_child(name: str, state_root: Optional[PathInput]) -> Path:
     return resolve_global_state_root(state_root) / name
+
+
+def _state_root_from_env() -> Optional[Path]:
+    raw = os.environ.get(constants.CBCS_STATE_ROOT_ENV_NAME, "")
+    if not raw.strip():
+        return None
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        return None
+    return normalize_state_root_identity(candidate)
+
+
+def _state_root_from_pointer_file(pointer_path: Path) -> Optional[Path]:
+    try:
+        if not pointer_path.is_file():
+            return None
+        text = pointer_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        candidate = Path(stripped).expanduser()
+        if not candidate.is_absolute():
+            continue
+        return normalize_state_root_identity(candidate)
+    return None
+
+
+def _is_existing_directory(path: Path) -> bool:
+    try:
+        return path.is_dir()
+    except OSError:
+        return False
 
 
 def _normalize_absolute_path(path: PathInput, field_name: str) -> Path:

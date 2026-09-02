@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Mapping
 
-from app.bootstrap.paths import PathInput, resolve_app_root
+from app.bootstrap.paths import PathInput, normalize_state_root_identity, resolve_app_root
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
@@ -52,7 +52,11 @@ class PluginHostSupervisor:
 
     def _build_command(self) -> list[str]:
         runtime_executable = self._resolve_runtime_executable()
-        state_root = None if self._state_root is None else str(Path(self._state_root).expanduser().resolve())
+        state_root = (
+            None
+            if self._state_root is None
+            else str(normalize_state_root_identity(self._state_root))
+        )
         if is_freecad_runtime_executable(runtime_executable):
             argv = [self._host_boot_path]
             if state_root is not None:

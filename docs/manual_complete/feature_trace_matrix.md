@@ -115,6 +115,7 @@ written, source-verified chapter section.
 | --- | --- | --- |
 | `cbcs/project.json` | 050, 280 | done |
 | `cbcs/settings.json` / global settings.json | 220, 280 | done |
+| Global state root (FreeCAD-adjacent default, legacy home, opt-in share) | 020, 215, 280 | done |
 | `cbcs/plugins.json` | 190, 280 | done |
 | `cbcs/dependencies.json` | 180, 280 | done |
 | `cbcs/package.json` / package manifest/report | 200, 280 | done |

@@ -12,7 +12,10 @@ throughout the manual, in one place.
   instead.
 - **Restricted writable storage; visible folders only.** Hidden (dot-prefixed) folders are
   unreliable, so all metadata uses visible names (`cbcs/`,
-  `choreboy_code_studio_state/`).
+  `choreboy_code_studio_state/`). Global state defaults to
+  `/home/default/FreeCAD/choreboy_code_studio_state` (legacy `~/choreboy_code_studio_state`
+  is kept if it already exists). Shared shop state is opt-in; two writers on one NFS
+  state directory can clobber each other.
 
 ## FreeCAD / headless
 
