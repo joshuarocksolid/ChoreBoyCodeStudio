@@ -1,6 +1,7 @@
 """Unit tests for deterministic bootstrap/path helpers."""
 
 from pathlib import Path
+import os
 import tempfile
 
 import pytest
@@ -10,6 +11,24 @@ from app.core import constants
 
 pytestmark = pytest.mark.unit
 
+_PRODUCT_DEFAULT_STATE_ROOT = Path("/home/default/FreeCAD/choreboy_code_studio_state")
+
+
+def _isolate_state_resolution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
+    fake_home = tmp_path / "fake_home"
+    fake_home.mkdir(parents=True)
+    install_root = tmp_path / "install" / "choreboy_code_studio_vX"
+    install_root.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+    monkeypatch.delenv("CBCS_STATE_ROOT", raising=False)
+    monkeypatch.setattr(paths, "resolve_app_root", lambda: install_root)
+    monkeypatch.setattr(
+        constants,
+        "SHOP_STATE_ROOT_POINTER_PATH",
+        str(tmp_path / "missing_shop_pointer"),
+    )
+    return fake_home
+
 
 def test_resolve_app_root_is_absolute_and_cwd_independent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """App root must come from module location, not current working directory."""
@@ -18,13 +37,75 @@ def test_resolve_app_root_is_absolute_and_cwd_independent(monkeypatch: pytest.Mo
     assert paths.resolve_app_root() == expected
 
 
-def test_global_state_root_defaults_under_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """Default global state root should derive from HOME."""
-    fake_home = tmp_path / "fake_home"
-    fake_home.mkdir(parents=True)
-    monkeypatch.setenv("HOME", str(fake_home))
-    expected = fake_home / constants.GLOBAL_STATE_DIRNAME
-    assert paths.resolve_global_state_root() == expected
+def test_global_state_root_defaults_to_freecad_adjacent_path(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate_state_resolution(monkeypatch, tmp_path)
+    assert paths.resolve_global_state_root() == _PRODUCT_DEFAULT_STATE_ROOT
+
+
+def test_legacy_home_state_dir_wins_when_present(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
+    legacy = fake_home / constants.GLOBAL_STATE_DIRNAME
+    legacy.mkdir()
+    assert paths.resolve_global_state_root() == legacy
+
+
+def test_cbcs_state_root_env_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
+    (fake_home / constants.GLOBAL_STATE_DIRNAME).mkdir()
+    env_root = tmp_path / "from_env"
+    monkeypatch.setenv("CBCS_STATE_ROOT", str(env_root))
+    assert paths.resolve_global_state_root() == env_root
+
+
+def test_install_parent_pointer_wins_when_env_unset(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
+    (fake_home / constants.GLOBAL_STATE_DIRNAME).mkdir()
+    pointed = tmp_path / "from_install_pointer"
+    pointer = tmp_path / "install" / "cbcs_state_root"
+    pointer.write_text(f"# shop pointer\n\n{pointed}\n", encoding="utf-8")
+    assert paths.resolve_global_state_root() == pointed
+
+
+def test_explicit_state_root_wins_over_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _isolate_state_resolution(monkeypatch, tmp_path)
+    monkeypatch.setenv("CBCS_STATE_ROOT", str(tmp_path / "from_env"))
+    explicit = tmp_path / "explicit"
+    assert paths.resolve_global_state_root(explicit) == explicit
+
+
+def test_state_root_symlink_keeps_logical_path(tmp_path: Path) -> None:
+    target = tmp_path / "real_state"
+    target.mkdir()
+    link = tmp_path / "link_state"
+    link.symlink_to(target)
+    got = paths.resolve_global_state_root(link)
+    assert got == Path(os.path.abspath(str(link)))
+    assert got != target.resolve()
+    assert got.name == link.name
+
+
+def test_default_state_root_has_no_hidden_components(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate_state_resolution(monkeypatch, tmp_path)
+    root = paths.resolve_global_state_root()
+    assert not any(part.startswith(".") for part in root.parts if part not in {"/", ""})
+
+
+def test_empty_or_relative_env_does_not_select_state_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate_state_resolution(monkeypatch, tmp_path)
+    monkeypatch.setenv("CBCS_STATE_ROOT", "   ")
+    assert paths.resolve_global_state_root() == _PRODUCT_DEFAULT_STATE_ROOT
+    monkeypatch.setenv("CBCS_STATE_ROOT", "relative/state")
+    assert paths.resolve_global_state_root() == _PRODUCT_DEFAULT_STATE_ROOT
 
 
 def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:

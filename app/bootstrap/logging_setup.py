@@ -10,6 +10,7 @@ from typing import List, NamedTuple, Optional
 from app.bootstrap.paths import (
     PathInput,
     global_app_log_path,
+    normalize_state_root_identity,
     resolve_global_state_root,
     resolve_temp_root,
     try_ensure_directory,
@@ -64,7 +65,7 @@ def get_subsystem_logger(subsystem: str) -> logging.Logger:
 
 def get_active_log_path(state_root: Optional[PathInput] = None) -> Optional[Path]:
     """Return currently configured app log path, falling back to canonical path if present."""
-    requested_state_root = resolve_global_state_root(state_root).resolve()
+    requested_state_root = normalize_state_root_identity(resolve_global_state_root(state_root))
     if _ACTIVE_LOG_PATH is not None and _ACTIVE_STATE_ROOT == requested_state_root:
         resolved = _ACTIVE_LOG_PATH.resolve()
         if resolved.exists():
@@ -152,4 +153,4 @@ def _configure_stderr_handler(
 def _set_active_log_path(log_path: Optional[Path], *, state_root: Optional[PathInput] = None) -> None:
     global _ACTIVE_LOG_PATH, _ACTIVE_STATE_ROOT
     _ACTIVE_LOG_PATH = None if log_path is None else log_path.resolve()
-    _ACTIVE_STATE_ROOT = resolve_global_state_root(state_root).resolve()
+    _ACTIVE_STATE_ROOT = normalize_state_root_identity(resolve_global_state_root(state_root))

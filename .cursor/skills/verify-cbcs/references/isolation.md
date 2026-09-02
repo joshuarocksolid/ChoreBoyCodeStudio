@@ -12,13 +12,14 @@ Do not drive a Code Studio window that is already open on the guest unless `run.
 
 ## Disposable HOME
 
-The live app writes global state to `$HOME/choreboy_code_studio_state/` (settings, recents, logs, history, plugins). There is no `CBCS_STATE_ROOT` env var.
-
-`control-cbcs launch` sets:
+The live app writes global state to one resolved root (settings, recents, logs, history, plugins). `control-cbcs launch` isolates that root with:
 
 ```text
 HOME=/home/default/cbcs-verify-<run-id>
+CBCS_STATE_ROOT=/home/default/cbcs-verify-<run-id>/choreboy_code_studio_state
 ```
+
+Without `CBCS_STATE_ROOT`, a fresh HOME would fall through to the product default `/home/default/FreeCAD/choreboy_code_studio_state` and share state across verify sessions. Shop share pointers are opt-in; do not write `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` on the human share.
 
 That path is on the guest disk. Do not put HOME on virtiofs (`/mnt/cbprobe/...`): SQLite local-history WAL locks there and the editor exits during startup.
 

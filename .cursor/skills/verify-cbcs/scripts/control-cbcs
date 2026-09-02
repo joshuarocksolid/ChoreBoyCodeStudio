@@ -435,6 +435,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
             SESSION_NAME,
             "--env",
             "HOME=" + guest_home,
+            "--env",
+            "CBCS_STATE_ROOT=" + guest_home + "/choreboy_code_studio_state",
             "--wait-ready",
             str(args.wait_ready),
         ]
@@ -463,6 +465,8 @@ def cmd_launch(args: argparse.Namespace) -> int:
             SESSION_NAME,
             "--env",
             "HOME=" + guest_home,
+            "--env",
+            "CBCS_STATE_ROOT=" + guest_home + "/choreboy_code_studio_state",
         ]
 
     print("launching mode={} run_id={}".format(mode, run_id), file=sys.stderr)
@@ -920,6 +924,8 @@ def cmd_shard(args: argparse.Namespace) -> int:
         SESSION_NAME,
         "--env",
         "HOME=" + guest_home,
+        "--env",
+        "CBCS_STATE_ROOT=" + guest_home + "/choreboy_code_studio_state",
         "--env",
         "CBCS_SHARD=" + args.shard,
         "--env",
