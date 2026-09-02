@@ -2,11 +2,23 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.10.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.11.
 
 ## [Unreleased]
+
+## [0.4.11] - 2026-09-01
+
+Follow-up to the v0.4.10 ELF hotfix. Desktop icons for packaged apps, and a shop-LAN default for Code Studio state.
+
+### Fixed
+
+- Desktop shortcuts for packaged apps that install under `~/.local` now copy the icon next to the shortcut as a hidden sibling and rewrite `Icon=` on the published copy so the ChoreBoy file manager can show it (Ervin Newswanger, PR #66 / ops thread 27258, `email:48687`). Apps stay in `$HOME/.local/share/FreeCAD/Macro/Apps/`; they are not moved to Desktop.
+
+### Changed
+
+- New machines default Code Studio state to `/home/default/FreeCAD/choreboy_code_studio_state` instead of `$HOME/choreboy_code_studio_state`. Boxes that already have the home directory keep it. Shared shop state is opt-in via env or pointer, never implied by installing onto the share (PR #67). Clair's home→share symlink stays the logical identity.
 
 ## [0.4.10] - 2026-08-31
 
