@@ -138,6 +138,7 @@ The installer must:
 - perform a staged copy before switching the final install directory
 - write the installed launcher into the final install root
 - optionally publish a Desktop shortcut
+- when that shortcut's `Icon=` would point under `~/.local`, copy the icon next to the Desktop file as a hidden sibling and rewrite `Icon=` so the ChoreBoy file manager can fetch it
 - publish an application-menu launcher on a best-effort basis when selected
 - detect older installs of the same `package_id`
 - classify occupancy of the destination folder itself before copying

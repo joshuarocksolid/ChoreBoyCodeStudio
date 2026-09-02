@@ -2537,6 +2537,7 @@ Verify that a shop project package installs into the FreeCAD Apps slot without a
 - the default destination is the FreeCAD Apps slot, not `/home/default/<name>_v<version>`
 - `package_manifest.json` stores `default_install_base` as `~/.local/share/FreeCAD/Macro/Apps`
 - a Desktop shortcut launches the installed app
+- the Desktop shortcut icon is fetchable by the file manager (`Icon=` is not under `~/.local`)
 - a foreign or unmarked occupant in that slot is refused
 - the same `package_id` can replace the previous version after confirm
 - product packages still use `/home/default/choreboy_code_studio_v{version}` and still show a folder picker
