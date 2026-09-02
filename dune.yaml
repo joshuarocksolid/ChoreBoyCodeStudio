@@ -47,3 +47,5 @@ owners:
     - app/treesitter/**
   platform.ui:
     - app/ui/**
+  shop-lan-state:
+    - app/features/shop-lan-state/**

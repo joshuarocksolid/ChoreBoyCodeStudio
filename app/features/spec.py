@@ -24,7 +24,10 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         ownership_globs=("app/features/markdown/**",),
         install=install_markdown,
     ),
+    FeatureSpec(
+        key="shop-lan-state",
+        ownership_globs=("app/features/shop-lan-state/**",),
+    ),
 )
-
 
 __all__ = ["FEATURE_SPECS", "FeatureInstall", "FeatureSpec"]
