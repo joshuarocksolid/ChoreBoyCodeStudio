@@ -12,7 +12,7 @@ offline-first distribution model that fits ChoreBoy's real constraints:
 
 - the guaranteed runtime is `/opt/freecad/AppRun`
 - writable locations may be `noexec`
-- hidden folders are unreliable for project/app-owned state
+- hidden paths are allowed only under a parent that a live probe or recorded evidence proved for that kind (`docs/DISCOVERY.md` §4A); project/app-owned state keeps visible leaf names
 - users should not need a terminal
 
 ## Supported Profiles

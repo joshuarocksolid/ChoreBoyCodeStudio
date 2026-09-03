@@ -417,22 +417,28 @@ def publish_desktop_shortcut(
     resolved_icon = Path(source_icon).expanduser()
     if not resolved_icon.is_file() or not _icon_lives_under_xdg_local(resolved_icon):
         return result
-    suffix = resolved_icon.suffix or ".png"
-    icon_dest = destination_dir / f".{Path(launcher_path).stem}{suffix}"
-    try:
-        shutil.copy2(str(resolved_icon), str(icon_dest))
-        published = Path(result.path)
-        published.write_text(
-            _rewrite_desktop_icon(published.read_text(encoding="utf-8"), icon_dest),
-            encoding="utf-8",
-        )
-    except OSError as exc:
-        return ShortcutPublishResult(
-            ok=False,
-            path=result.path,
-            error=f"{exc.__class__.__name__}: {exc}",
-        )
-    return result
+    published = Path(result.path)
+    errors: list[str] = []
+    for icon_dest in _desktop_icon_sidecars(destination_dir, Path(launcher_path).stem, resolved_icon.suffix or ".png"):
+        try:
+            shutil.copy2(str(resolved_icon), str(icon_dest))
+            published.write_text(
+                _rewrite_desktop_icon(published.read_text(encoding="utf-8"), icon_dest),
+                encoding="utf-8",
+            )
+        except OSError as exc:
+            errors.append(f"{icon_dest.name}: {exc.__class__.__name__}: {exc}")
+            continue
+        return result
+    return ShortcutPublishResult(ok=False, path=result.path, error="; ".join(errors))
+
+
+def _desktop_icon_sidecars(destination_dir: Path, stem: str, suffix: str) -> tuple[Path, Path]:
+    """Hidden sibling first (stays out of the Desktop view), visible sidecar when the hidden name is denied."""
+    return (
+        destination_dir / f".{stem}{suffix}",
+        destination_dir / f"{stem}.icon{suffix}",
+    )
 
 
 class InstallWorker(QThread):
