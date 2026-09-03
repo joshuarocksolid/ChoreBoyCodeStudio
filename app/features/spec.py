@@ -28,6 +28,10 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         key="shop-lan-state",
         ownership_globs=("app/features/shop-lan-state/**",),
     ),
+    FeatureSpec(
+        key="hidden-path-policy",
+        ownership_globs=("app/features/hidden-path-policy/**",),
+    ),
 )
 
 __all__ = ["FEATURE_SPECS", "FeatureInstall", "FeatureSpec"]
