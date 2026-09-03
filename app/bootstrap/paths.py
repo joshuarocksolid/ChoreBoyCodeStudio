@@ -3,24 +3,15 @@
 from pathlib import Path
 import os
 import tempfile
-from typing import Optional, Tuple, Union
+from typing import Optional, Tuple
 
+from app.bootstrap.hidden_path_policy import PathInput, normalize_state_root_identity
 from app.core import constants
-
-PathInput = Union[str, Path]
 
 
 def resolve_app_root() -> Path:
     """Return the repository root based on this module location."""
     return Path(__file__).resolve().parents[2]
-
-
-def normalize_state_root_identity(path: PathInput) -> Path:
-    """Return an absolute state-root path without following the final symlink hop."""
-    candidate = Path(path).expanduser()
-    if not candidate.is_absolute():
-        raise ValueError("state_root must be an absolute path")
-    return Path(os.path.abspath(str(candidate)))
 
 
 def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
