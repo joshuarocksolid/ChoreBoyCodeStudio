@@ -2,11 +2,23 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.11.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.12.
 
 ## [Unreleased]
+
+## [0.4.12] - 2026-09-03
+
+Follow-up to the v0.4.11 shop-LAN state default. A probed state-root default per parent directory, and a visible icon fallback for packaged-app shortcuts.
+
+### Changed
+
+- Code Studio probes each candidate parent directory before it chooses where to keep its state, instead of always using a hard-coded hidden path. Where a hidden file or hidden directory is denied, or the parent is unknown, it falls back to a safe visible name. Machines that already have a root from the env var, a pointer, or a legacy state directory keep the root they have (PR #69).
+
+### Fixed
+
+- Desktop shortcuts for packaged apps no longer fail the install when the hidden icon name is denied. The shortcut copies a visible sidecar icon instead and points `Icon=` at whichever copy succeeded (PR #69).
 
 ## [0.4.11] - 2026-09-01
 
