@@ -10,12 +10,14 @@ throughout the manual, in one place.
 - **Restricted execution.** The appliance restricts running arbitrary programs. Features
   that would normally shell out are designed to run in-process or through the runner
   instead.
-- **Restricted writable storage; visible folders only.** Hidden (dot-prefixed) folders are
-  unreliable, so all metadata uses visible names (`cbcs/`,
-  `choreboy_code_studio_state/`). Global state defaults to
-  `/home/default/FreeCAD/choreboy_code_studio_state` (legacy `~/choreboy_code_studio_state`
-  is kept if it already exists). Shared shop state is opt-in; two writers on one NFS
-  state directory can clobber each other.
+- **Restricted writable storage; visible leaf names.** Hidden (dot-prefixed) paths work
+  under some parents and not others, and the file manager hides them either way, so all
+  metadata leaves use visible names (`cbcs/`, `choreboy_code_studio_state/`). On first
+  launch the app probes three candidate parents and keeps the first that accepts the
+  state tree: `/home/default/.local/share/FreeCAD`, then `/home/default/.cache/FreeCAD`
+  (may be wiped with the cache), then `/home/default/FreeCAD`. A legacy
+  `~/choreboy_code_studio_state` is kept if it already exists. Shared shop state is
+  opt-in; two writers on one NFS state directory can clobber each other.
 
 ## FreeCAD / headless
 

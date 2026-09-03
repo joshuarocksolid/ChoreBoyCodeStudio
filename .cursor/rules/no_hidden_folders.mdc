@@ -1,34 +1,30 @@
 ---
-description: Avoid hidden (dot-prefixed) folders on ChoreBoy
+description: Hidden (dot-prefixed) paths on ChoreBoy are allowed only under a probed or evidenced parent
 alwaysApply: true
 ---
 
-# No Hidden Folders on ChoreBoy
+# Hidden Paths on ChoreBoy: Probe the Parent
 
-ChoreBoy's locked-down environment does not reliably support hidden (dot-prefixed) directories. See `docs/DISCOVERY.md` section 4A for full details.
+Hidden-path support on ChoreBoy is a per-parent, per-kind fact, not a global ban. See `docs/DISCOVERY.md` section 4A for the evidence table and the runtime rule.
 
 ## Constraint
 
-Never use dot-prefixed directory names for project metadata, app state, logs, caches, or any user-facing storage paths.
+- Never create an **unprobed** hidden path. A hidden file or directory is allowed only when its parent is on the ALLOWED row of the section 4A table for that kind (file vs directory), or a live `probe_hidden_path_support(parent)` result for that parent says that kind works.
+- A **visible fallback is mandatory** whenever the probe fails, the parent is UNKNOWN, or the parent does not exist. Never fail a user-facing operation solely because a hidden name was denied.
+- The probe SSOT is `app/bootstrap/hidden_path_policy.py`. Do not write a second probe or a second evidence table in code.
 
-## Reason
+## What stays visible regardless of ACL
 
-- The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
-- Permission and ACL behavior for dot-prefixed directories may differ under ChoreBoy's security policies.
-- Directory creation can silently fail or be denied for hidden paths.
+- Per-project metadata is `cbcs/` (`PROJECT_META_DIRNAME`). Users must see it in the file manager. pcmanfm hides dot-prefixed entries, so this is a visibility rule, not an ACL rule.
+- The global state leaf is `choreboy_code_studio_state/` (`GLOBAL_STATE_DIRNAME`). Nesting that visible leaf under an allowed hidden parent (`.local/share/FreeCAD`, `.cache/FreeCAD`) is intended.
+- Plugin packages must not ship hidden paths. The plugin auditor keeps that rule.
 
-## What to use instead
+## Known evidence (section 4A)
 
-Use visible (non-dot-prefixed) directory names:
+- BLOCKED: a new hidden state *directory* under home (`.choreboy_code_studio/`, commit `f6c6b96`).
+- ALLOWED: a hidden *file* on Desktop (`Desktop/.invoice_app.png`, AT-105 live pass 2026-09-02).
+- UNKNOWN until probed: `/home/default/.cache/FreeCAD`, `/home/default/.local/share/FreeCAD`, `/home/default/FreeCAD`, `/home/default/share/Chore_Boy/CBCS`.
 
-- `cbcs/` not `.cbcs/` for per-project metadata.
-- `choreboy_code_studio_state/` not `.choreboy_code_studio/` for global app state.
-- Same principle for any new directories: logs, caches, run state, etc.
+## Product state default
 
-## Scope
-
-Applies to both per-project metadata directories and global app state directories. This includes any new storage paths introduced in future work.
-
-## Current migration status
-
-Migration complete: `app/core/constants.py` defines `PROJECT_META_DIRNAME = "cbcs"` and `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`. Agents must not introduce new dot-prefixed paths.
+`resolve_global_state_root` picks the product default from a probed trio: (a) `.local/share/FreeCAD` when it exists and accepts a visible child, (b) `.cache/FreeCAD` when hidden and visible directories probe ok there (wipe risk, see section 4A), (c) `/home/default/FreeCAD` otherwise. Explicit argument, `CBCS_STATE_ROOT`, pointer files, and the legacy home directory still win over the probe.

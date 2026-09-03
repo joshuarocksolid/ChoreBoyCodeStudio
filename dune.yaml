@@ -49,3 +49,5 @@ owners:
     - app/ui/**
   shop-lan-state:
     - app/features/shop-lan-state/**
+  hidden-path-policy:
+    - app/features/hidden-path-policy/**

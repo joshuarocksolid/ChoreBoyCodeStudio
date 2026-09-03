@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.util
 import json
 from pathlib import Path
+import shutil
 import sys
 from types import ModuleType
 import zipfile
@@ -502,6 +503,49 @@ def test_desktop_shortcut_icon_is_copied_off_xdg_local(tmp_path: Path) -> None:
         if path.suffix == ".png" and not path.name.startswith(".")
     ]
     assert visible_pngs == []
+
+
+def test_desktop_shortcut_icon_falls_back_to_visible_sidecar_when_hidden_name_is_denied(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    installer_module = _load_module(
+        "distribution_installer_desktop_icon_sidecar",
+        "packaging/install.py",
+    )
+    install_dir = tmp_path / ".local" / "share" / "FreeCAD" / "Macro" / "Apps" / "invoice_app"
+    source_icon = install_dir / "app_files" / "icon.png"
+    source_icon.parent.mkdir(parents=True)
+    source_icon.write_bytes(b"png-bytes")
+    desktop_dir = tmp_path / "Desktop"
+    desktop_dir.mkdir()
+    launcher_path = install_dir / "invoice_app.desktop"
+    launcher_path.write_text(
+        "[Desktop Entry]\n"
+        f"Icon={source_icon.resolve()}\n",
+        encoding="utf-8",
+    )
+    real_copy2 = shutil.copy2
+
+    def _deny_hidden_names(src: str, dst: str) -> str:
+        if Path(dst).name.startswith("."):
+            raise PermissionError(f"hidden name denied: {dst}")
+        return real_copy2(src, dst)
+
+    monkeypatch.setattr(installer_module.shutil, "copy2", _deny_hidden_names)
+
+    result = installer_module.publish_desktop_shortcut(
+        launcher_path,
+        desktop_dir,
+        source_icon,
+    )
+
+    assert result.ok is True
+    published_icon = _icon_path_from_desktop(Path(result.path).read_text(encoding="utf-8"))
+    assert published_icon == (desktop_dir / "invoice_app.icon.png").resolve()
+    assert published_icon.read_bytes() == b"png-bytes"
+    assert ".local" not in published_icon.parts
+    assert list(desktop_dir.glob(".*.png")) == []
 
 
 @pytest.mark.parametrize(
