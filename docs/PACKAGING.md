@@ -138,7 +138,7 @@ The installer must:
 - perform a staged copy before switching the final install directory
 - write the installed launcher into the final install root
 - optionally publish a Desktop shortcut
-- when that shortcut's `Icon=` would point under `~/.local`, copy the icon next to the Desktop file as a hidden sibling and rewrite `Icon=` so the ChoreBoy file manager can fetch it
+- when that shortcut's `Icon=` would point under `~/.local`, copy the icon next to the Desktop file as a hidden sibling `.{stem}{suffix}` and rewrite `Icon=` so the ChoreBoy file manager can fetch it; when the hidden file write is denied, copy a visible `{stem}.icon{suffix}` sidecar instead and rewrite `Icon=` to it. A denied hidden name never fails the install; only failure of both copies is reported
 - publish an application-menu launcher on a best-effort basis when selected
 - detect older installs of the same `package_id`
 - classify occupancy of the destination folder itself before copying
