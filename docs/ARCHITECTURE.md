@@ -604,7 +604,12 @@ settings are opt-in; two writers on one NFS state directory can clobber each oth
 3. Pointer file sibling of the install: `<install_parent>/cbcs_state_root` when that file exists. Contents: one absolute path (blank and `#` lines ignored). Visible name — not hidden.
 4. Optional shop canonical pointer if present: `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` (same file format). Skip if missing.
 5. Legacy stickiness: `$HOME/choreboy_code_studio_state` if that path already exists as a directory (or a symlink to a directory).
-6. New product default: `/home/default/FreeCAD/choreboy_code_studio_state`.
+6. Probed product default (`app/bootstrap/hidden_path_policy.py`, evidence in `docs/DISCOVERY.md` §4A), first parent that probes ok:
+   a. `/home/default/.local/share/FreeCAD/choreboy_code_studio_state` when the FreeCAD XDG tree already exists and accepts a visible child directory.
+   b. `/home/default/.cache/FreeCAD/choreboy_code_studio_state` when `.cache/FreeCAD` (or `.cache`) exists and hidden plus visible directories probe ok there. `.cache` is never created. Cache wipe risk applies.
+   c. `/home/default/FreeCAD/choreboy_code_studio_state` otherwise.
+
+Steps 1 to 5 never run the probe. The probe runs once per parent per process and leaves no canaries.
 
 State-root identity is normalized to an absolute path without following the final symlink hop, so a home→share symlink stays meaningful.
 

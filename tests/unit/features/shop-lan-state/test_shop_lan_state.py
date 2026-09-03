@@ -21,6 +21,8 @@ def _isolate_state_resolution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         "SHOP_STATE_ROOT_POINTER_PATH",
         str(tmp_path / "missing_shop_pointer"),
     )
+    monkeypatch.setattr(paths, "PRODUCT_STATE_XDG_PARENT", tmp_path / "missing_xdg" / "FreeCAD")
+    monkeypatch.setattr(paths, "PRODUCT_STATE_CACHE_PARENT", tmp_path / "missing_cache" / "FreeCAD")
     return fake_home
 
 

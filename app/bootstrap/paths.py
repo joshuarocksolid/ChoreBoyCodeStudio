@@ -5,8 +5,16 @@ import os
 import tempfile
 from typing import Optional, Tuple
 
-from app.bootstrap.hidden_path_policy import PathInput, normalize_state_root_identity
+from app.bootstrap.hidden_path_policy import (
+    PathInput,
+    normalize_state_root_identity,
+    probe_hidden_path_support,
+)
 from app.core import constants
+
+PRODUCT_STATE_XDG_PARENT = Path("/home/default/.local/share/FreeCAD")
+PRODUCT_STATE_CACHE_PARENT = Path("/home/default/.cache/FreeCAD")
+PRODUCT_STATE_VISIBLE_PARENT = Path("/home/default") / constants.GLOBAL_STATE_FREECAD_PARENT_DIRNAME
 
 
 def resolve_app_root() -> Path:
@@ -36,11 +44,34 @@ def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
     if _is_existing_directory(legacy):
         return normalize_state_root_identity(legacy)
 
-    return normalize_state_root_identity(
-        Path("/home/default")
-        / constants.GLOBAL_STATE_FREECAD_PARENT_DIRNAME
-        / constants.GLOBAL_STATE_DIRNAME
-    )
+    return normalize_state_root_identity(_probed_product_state_parent() / constants.GLOBAL_STATE_DIRNAME)
+
+
+def _probed_product_state_parent() -> Path:
+    """Return the first product default parent whose live probe accepts the state tree.
+
+    Order and evidence: docs/DISCOVERY.md section 4A. (a) the existing FreeCAD XDG
+    tree, (b) the FreeCAD cache tree when hidden and visible directories both probe
+    ok there, (c) the visible FreeCAD directory under home.
+    """
+    if probe_hidden_path_support(PRODUCT_STATE_XDG_PARENT).visible_dir_ok:
+        return PRODUCT_STATE_XDG_PARENT
+    if _hidden_cache_tree_accepts_state(PRODUCT_STATE_CACHE_PARENT):
+        return PRODUCT_STATE_CACHE_PARENT
+    return PRODUCT_STATE_VISIBLE_PARENT
+
+
+def _hidden_cache_tree_accepts_state(cache_parent: Path) -> bool:
+    """Probe the cache parent, or its parent when only that exists so ``FreeCAD/`` can be created.
+
+    ``.cache`` itself is never created: a new hidden directory under home is BLOCKED
+    (docs/DISCOVERY.md section 4A).
+    """
+    for existing in (cache_parent, cache_parent.parent):
+        if _is_existing_directory(existing):
+            result = probe_hidden_path_support(existing)
+            return result.hidden_dir_ok and result.visible_dir_ok
+    return False
 
 
 def global_settings_path(state_root: Optional[PathInput] = None) -> Path:
