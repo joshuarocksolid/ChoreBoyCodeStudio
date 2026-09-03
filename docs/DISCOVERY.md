@@ -257,39 +257,56 @@ database backend. For direct PostgreSQL access, use raw pg8000.
 
 ---
 
-## 4A. Hidden Folders Are Unreliable on ChoreBoy
+## 4A. Hidden Paths on ChoreBoy Are a Per-Parent Fact
 
-**Date discovered:** 2026-03-02
+**Date discovered:** 2026-03-02. **Rewritten:** 2026-09-03.
 
 ### Finding
 
-Hidden (dot-prefixed) directories such as `.cbcs/` or `.choreboy_code_studio/` are **not reliably usable** on the ChoreBoy locked-down environment. Observed problems include:
+Hidden (dot-prefixed) path support on ChoreBoy is not one global yes or no. It varies by parent directory and by kind. A hidden *file* and a hidden *directory* under the same parent can behave differently. The 2026-03-02 finding ("hidden folders are unreliable everywhere") over-generalized one failure: creating a new hidden state directory under home.
 
-- The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
-- Permission and ACL behavior for dot-prefixed directories may differ from normal directories under ChoreBoy's security policies.
-- Directory creation can silently fail or be denied for hidden paths that would succeed for visible equivalents.
+Two axes are separate and must not be conflated:
 
-### Evidence
+- **ACL / create / write.** Whether the filesystem lets the app create and write the entry. This is what the live probe measures.
+- **File-manager visibility.** pcmanfm hides dot-prefixed entries by default. A path can be fully writable and still invisible to the user. Per-project metadata (`cbcs/`) must stay visible for that reason alone, regardless of ACL.
 
-Commit `f6c6b96` (2026-03-02) had to introduce a three-tier fallback chain for logging (primary path, temp path, stderr) because the hidden `.choreboy_code_studio/` global state directory was not always writable or accessible.
+### Evidence table (2026-09-03)
 
-### Recommendation
+| Parent | Hidden file | Hidden directory | Visible directory | Source |
+| --- | --- | --- | --- | --- |
+| `/home/default` (home) | UNKNOWN | **BLOCKED** | UNKNOWN | commit `f6c6b96` (2026-03-02): new `.choreboy_code_studio/` under home was not reliably writable; Joshua: `.state` on home failed; Kevin: CTS-in-home failed |
+| `/home/default/Desktop` | **ALLOWED** | UNKNOWN | UNKNOWN | CBCS Verifier live pass, PR 66, AT-105 on ChoreBoy2, artifacts `20260902T023323Z`: `Desktop/.invoice_app.png` was written and fetched by pcmanfm as the launcher icon |
+| `/home/default/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product state fallback (c); never probed live |
+| `/home/default/.cache/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product state candidate (b); never probed live |
+| `/home/default/.local/share/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product state candidate (a); FreeCAD's own XDG tree, project apps install under `Macro/Apps` |
+| `/home/default/share/Chore_Boy/CBCS` | UNKNOWN | UNKNOWN | UNKNOWN | human share; probe only with cleanup |
 
-All project metadata directories, app state directories, log directories, and cache directories should use **visible (non-dot-prefixed) names**:
+BLOCKED and ALLOWED rows are recorded observations. UNKNOWN rows stay UNKNOWN until the live matrix in `.cursor/skills/verify-cbcs/features/hidden-path-policy.md` is driven on a leased ChoreBoy slot. This table is documentation. It is not a second runtime truth. The runtime decision is always the live probe.
 
-- Use `cbcs/` instead of `.cbcs/` for per-project metadata.
-- Use `choreboy_code_studio_state/` instead of `.choreboy_code_studio/` for global app state.
+### Runtime rule
 
-This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
+`app/bootstrap/hidden_path_policy.py` owns `probe_hidden_path_support(parent)`. For one parent it creates, writes, reads, and removes a hidden file canary, a hidden directory canary (with one file inside), and a visible directory canary (control). The result is a frozen `HiddenPathProbeResult` cached per parent identity for the life of the process. Parent identity uses `normalize_state_root_identity` (absolute, `expanduser`, `os.path.abspath`, no final symlink hop). A missing parent probes as all-False; the probe never creates ancestors.
+
+Policy that follows from it:
+
+- A hidden path is allowed only when its parent is on the ALLOWED row for that kind (file vs directory) or a live probe of that parent said that kind works.
+- Unprobed hidden paths are banned.
+- A visible fallback is mandatory whenever the probe fails or the parent is UNKNOWN.
+- Leaf names stay visible: `cbcs/` for per-project metadata, `choreboy_code_studio_state/` for global state. A visible leaf may sit under an allowed parent that is itself hidden (`.local`, `.cache`).
+
+### Product state default (probed)
+
+`resolve_global_state_root` keeps the explicit, env, pointer, and legacy steps from section 11 of `docs/ARCHITECTURE.md`. Only the final default is probed, in this order:
+
+1. (a) `/home/default/.local/share/FreeCAD/choreboy_code_studio_state` when `/home/default/.local/share/FreeCAD` already exists and accepts a visible child directory. The XDG tree is never created by the app.
+2. (b) `/home/default/.cache/FreeCAD/choreboy_code_studio_state` when `/home/default/.cache/FreeCAD` exists (or `/home/default/.cache` exists, so `FreeCAD/` can be created) and the probe of that existing parent reports both hidden-directory and visible-directory support. `.cache` itself is never created.
+3. (c) `/home/default/FreeCAD/choreboy_code_studio_state` otherwise.
+
+Wipe risk: `.cache/` is a cache location by XDG convention and may be cleared by the OS or the user. State under (b) survives only as long as the cache does. Recovery is a fresh default state (settings, recents, history) and not data loss in projects. (a) has no such risk.
 
 ### Migration status
 
-The migration is complete in current code:
-
-- `PROJECT_META_DIRNAME = "cbcs"`
-- `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`
-
-in `app/core/constants.py`, so new project metadata and app state paths are visible (non-dot-prefixed).
+`PROJECT_META_DIRNAME = "cbcs"` and `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"` in `app/core/constants.py` stay visible. The desktop icon publish in `packaging/install.py` writes a hidden Desktop sibling first (ALLOWED row) and falls back to a visible `{stem}.icon{suffix}` sidecar when the hidden file write is denied.
 
 ---
 
@@ -1354,7 +1371,7 @@ myapp/
     main_window.py
 ```
 
-> **Note:** All metadata directories use visible (non-dot-prefixed) names. Hidden folders are unreliable on ChoreBoy (see section 4A).
+> **Note:** All metadata directories use visible (non-dot-prefixed) names. Hidden path support is a per-parent fact on ChoreBoy and per-project metadata must stay visible in the file manager (see section 4A).
 
 Key ideas:
 
