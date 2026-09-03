@@ -428,8 +428,8 @@ def publish_desktop_shortcut(
             )
         except OSError as exc:
             errors.append(f"{icon_dest.name}: {exc.__class__.__name__}: {exc}")
-            continue
-        return result
+        else:
+            return result
     return ShortcutPublishResult(ok=False, path=result.path, error="; ".join(errors))
 
 
