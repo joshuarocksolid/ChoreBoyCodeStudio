@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import cast
 
 import pytest
@@ -67,6 +68,20 @@ def test_start_sanitizes_virtualenv_for_apprun_command(monkeypatch: pytest.Monke
     assert kwargs["env"] == {"PATH": "/usr/bin"}
 
 
+def test_start_wraps_eacces_popen_as_run_lifecycle_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_popen(command: list[str], **kwargs: object) -> _FakeRunningProcess:
+        raise PermissionError(13, "Permission denied", "/opt/freecad/AppRun")
+
+    monkeypatch.setattr(process_supervisor_module.subprocess, "Popen", fake_popen)
+
+    supervisor = ProcessSupervisor()
+    with pytest.raises(process_supervisor_module.RunLifecycleError, match="Permission denied") as caught:
+        supervisor.start(["/opt/freecad/AppRun", "-c", "print('ok')"], cwd="/tmp")
+
+    assert isinstance(caught.value.__cause__, PermissionError)
+    assert caught.value.__cause__.errno == 13
+
+
 def test_start_preserves_default_env_for_plain_python_command(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: dict[str, object] = {}
 
@@ -83,6 +98,26 @@ def test_start_preserves_default_env_for_plain_python_command(monkeypatch: pytes
 
     kwargs = cast(dict[str, object], calls["kwargs"])
     assert kwargs["env"] is None
+
+
+def test_start_forked_script_runs_script_without_execve(tmp_path) -> None:
+    script = tmp_path / "child.py"
+    script.write_text("import sys\nprint('fork-ok')\nsys.exit(0)\n", encoding="utf-8")
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+
+    supervisor.start_forked_script(
+        script_path=str(script),
+        argv=[str(script)],
+        cwd=str(tmp_path),
+    )
+    deadline = time.monotonic() + 2.0
+    while supervisor.is_running() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    output_text = "".join(event.text or "" for event in events if event.event_type == "output")
+    assert "fork-ok" in output_text
+    assert supervisor.is_running() is False
 
 
 def test_wait_for_exit_ignores_stale_process_when_new_process_is_active() -> None:

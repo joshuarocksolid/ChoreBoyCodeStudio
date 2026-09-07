@@ -20,6 +20,7 @@ from app.bootstrap.paths import (
 from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.python_tools.vendor_runtime import import_python_tooling_modules, initialize_python_tooling_runtime
+from app.run.runtime_launch import format_nested_runtime_exec_error
 
 
 APP_RUN_PRESENCE_CHECK_ID = "apprun_presence"
@@ -97,23 +98,59 @@ def run_minimal_startup_capability_probe(
 
 
 def check_apprun_presence(app_run_path: Optional[PathInput] = None) -> CapabilityCheckResult:
-    """Check whether the expected AppRun path exists."""
+    """Check that AppRun exists and a nested trivial `-c` launch is not blocked."""
     configured = Path(app_run_path or constants.APP_RUN_PATH).expanduser()
     target_path = configured.resolve()
-    path_exists = target_path.exists()
-
-    if path_exists:
+    if not target_path.exists():
         return CapabilityCheckResult(
             check_id=APP_RUN_PRESENCE_CHECK_ID,
-            is_available=True,
-            message="AppRun path is available.",
+            is_available=False,
+            message=f"AppRun path not found: {target_path}",
             details={"path": str(target_path)},
         )
+    return check_apprun_nested_exec(target_path)
 
+
+def check_apprun_nested_exec(app_run_path: PathInput) -> CapabilityCheckResult:
+    """Probe a nested AppRun `-c` launch and report EACCES, timeout, or other OSError."""
+    target_path = Path(app_run_path).expanduser().resolve()
+    try:
+        subprocess.run(
+            [str(target_path), "-c", "import sys; sys.exit(0)"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
+        )
+    except OSError as exc:
+        return CapabilityCheckResult(
+            check_id=APP_RUN_PRESENCE_CHECK_ID,
+            is_available=False,
+            message=format_nested_runtime_exec_error(exc, str(target_path)),
+            details={
+                "path": str(target_path),
+                "error_type": type(exc).__name__,
+                "errno": exc.errno,
+            },
+        )
+    except subprocess.TimeoutExpired:
+        return CapabilityCheckResult(
+            check_id=APP_RUN_PRESENCE_CHECK_ID,
+            is_available=False,
+            message=(
+                f"Nested AppRun launch timed out after {MODULE_IMPORT_PROBE_TIMEOUT_SECONDS}s: "
+                f"{target_path}"
+            ),
+            details={
+                "path": str(target_path),
+                "error_type": "TimeoutExpired",
+                "timeout_seconds": MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
+            },
+        )
     return CapabilityCheckResult(
         check_id=APP_RUN_PRESENCE_CHECK_ID,
-        is_available=False,
-        message=f"AppRun path not found: {target_path}",
+        is_available=True,
+        message="AppRun path is available and nested launch succeeded.",
         details={"path": str(target_path)},
     )
 

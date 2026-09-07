@@ -257,6 +257,12 @@ class ShellStatusBarController:
         style.polish(widget)
         widget.update()
 
+    def set_runtime_warning(self, text: str) -> None:
+        self._startup_label.setText(f"Startup: {text}")
+        self._startup_label.setToolTip(text)
+        self._startup_label.setProperty("startupSeverity", "warning")
+        self._refresh_widget_style(self._startup_label)
+
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Update startup status label from the latest probe output."""
         startup_status = map_startup_report_to_status(report)

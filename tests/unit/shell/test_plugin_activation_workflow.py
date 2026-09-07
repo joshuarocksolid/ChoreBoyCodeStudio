@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 import pytest
 
 from app.core import constants
+from app.core.errors import RunLifecycleError
 from app.plugins.models import (
     DiscoveredPlugin,
     PluginManifest,
@@ -19,6 +20,7 @@ from app.plugins.workflow_catalog import WorkflowProviderCatalog, provider_key
 from app.shell.plugin_activation_workflow import (
     PluginActivationWorkflow,
     build_effective_enabled_map,
+    reload_plugins_during_finalize,
 )
 
 pytestmark = pytest.mark.unit
@@ -175,6 +177,83 @@ def test_reload_applies_contributions_catalog_and_runtime_reload() -> None:
     assert len(workflow_broker.calls) == 1
     assert workflow_broker.calls[0][0].providers[0].provider_key == provider_key("acme.formatter", "formatter")
     assert published_catalogs == [workflow_broker.calls[0][0]]
+
+
+@dataclass
+class RaisingApiBroker:
+    def reload_runtime_plugins(self) -> None:
+        exc = PermissionError(13, "Permission denied", "/opt/freecad/AppRun")
+        raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
+
+
+def test_reload_survives_runtime_reload_failure() -> None:
+    contribution_manager = RecordingContributionManager()
+    workflow_broker = RecordingWorkflowBroker()
+    workflow = PluginActivationWorkflow(
+        state_root=None,
+        project_root_provider=lambda: None,
+        safe_mode_enabled=lambda: False,
+        contribution_manager=contribution_manager,
+        runtime_manager=RecordingRuntimeManager(),
+        plugin_api_broker=RaisingApiBroker(),
+        workflow_broker=workflow_broker,
+        registry_loader=lambda _state_root: _registry(
+            [PluginRegistryEntry("acme.formatter", "1.0.0", "/plugins/acme.formatter/1.0.0", enabled=True)]
+        ),
+        discovery_loader=lambda **_kwargs: [_plugin("acme.formatter", "1.0.0")],
+        project_config_loader=lambda _project_root: None,
+    )
+
+    workflow.reload()
+
+    assert len(contribution_manager.applied) == 1
+    assert len(workflow_broker.calls) == 1
+
+
+def test_finalize_reload_does_not_abort_when_workflow_raises() -> None:
+    surfaced: list[str] = []
+
+    class _RaisingWorkflow:
+        def reload(self) -> None:
+            exc = PermissionError(13, "Permission denied", "/opt/freecad/AppRun")
+            raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
+
+    window = type("Window", (), {
+        "_plugin_activation_workflow": _RaisingWorkflow(),
+        "_plugin_api_broker": type("Broker", (), {"last_runtime_error": staticmethod(lambda: None)})(),
+    })()
+
+    reload_plugins_during_finalize(window, surface_error=surfaced.append)
+
+    assert surfaced
+    assert "/opt/freecad/AppRun" in surfaced[0]
+    assert "13" in surfaced[0]
+
+
+def test_finalize_reload_surfaces_last_error_when_start_swallows() -> None:
+    surfaced: list[str] = []
+
+    class _QuietWorkflow:
+        def reload(self) -> None:
+            return None
+
+    class _QuietBroker:
+        def last_runtime_error(self) -> str:
+            return (
+                "Cannot execute /opt/freecad/AppRun (PermissionError errno 13). "
+                "Plugin host and runner child processes need a working nested runtime."
+            )
+
+    window = type("Window", (), {
+        "_plugin_activation_workflow": _QuietWorkflow(),
+        "_plugin_api_broker": _QuietBroker(),
+    })()
+
+    reload_plugins_during_finalize(window, surface_error=surfaced.append)
+
+    assert surfaced
+    assert "PermissionError" in surfaced[0]
+    assert "/opt/freecad/AppRun" in surfaced[0]
 
 
 def test_reload_refreshes_discovery_after_install() -> None:
