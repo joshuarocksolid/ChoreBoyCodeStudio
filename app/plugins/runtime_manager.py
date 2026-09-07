@@ -22,7 +22,6 @@ from app.plugins.rpc_protocol import (
     encode_message,
 )
 from app.run.process_supervisor import ProcessEvent
-from app.run.runtime_launch import format_nested_runtime_exec_error
 
 _PLUGIN_RUNTIME_LOG_FILENAME = "plugin_host.log"
 _LOGGER = logging.getLogger(__name__)
@@ -71,12 +70,7 @@ class PluginRuntimeManager:
         if self._host_supervisor.is_running():
             return
         self._append_runtime_log("starting plugin host")
-        self._last_error = None
-        try:
-            self._host_supervisor.start()
-        except (RunLifecycleError, OSError) as exc:
-            self._last_error = format_nested_runtime_exec_error(exc)
-            self._append_runtime_log(self._last_error)
+        self._host_supervisor.start()
 
     def stop(self) -> None:
         self._host_supervisor.stop()
@@ -93,8 +87,6 @@ class PluginRuntimeManager:
         if background_runtime_disabled():
             return
         self.start()
-        if not self._host_supervisor.is_running():
-            return
         self._append_runtime_log("reloading plugin host commands")
         self._host_supervisor.send_input(encode_message({"type": "reload"}))
 
