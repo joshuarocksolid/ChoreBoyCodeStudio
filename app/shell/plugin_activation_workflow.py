@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from typing import Callable, Mapping, Protocol, Sequence
 
 from app.bootstrap.paths import PathInput
-from app.core.errors import RunLifecycleError
-from app.run.runtime_launch import format_nested_runtime_exec_error
 from app.plugins.discovery import discover_installed_plugins
 from app.plugins.models import DiscoveredPlugin, PluginRegistry, PluginRegistryEntry
 from app.plugins.project_config import (
@@ -144,10 +142,7 @@ class PluginActivationWorkflow:
             project_config=snapshot.project_config,
         )
         self._publish_catalog(snapshot.workflow_provider_catalog)
-        try:
-            self._plugin_api_broker.reload_runtime_plugins()
-        except (RunLifecycleError, OSError):
-            return
+        self._plugin_api_broker.reload_runtime_plugins()
 
     def snapshot(self, *, project_root: str | None = None) -> PluginActivationSnapshot:
         resolved_project_root = self._project_root_provider() if project_root is None else project_root
@@ -199,26 +194,6 @@ class PluginActivationWorkflow:
     def _publish_catalog(self, catalog: WorkflowProviderCatalog) -> None:
         if self._on_catalog_changed is not None:
             self._on_catalog_changed(catalog)
-
-
-def reload_plugins_during_finalize(window: object, surface_error: Callable[[str], None] | None = None) -> None:
-    workflow = getattr(window, "_plugin_activation_workflow", None)
-    if workflow is None:
-        return
-    try:
-        workflow.reload()
-    except (RunLifecycleError, OSError) as exc:
-        message = format_nested_runtime_exec_error(exc)
-        if surface_error is not None:
-            surface_error(message)
-        return
-    broker = getattr(window, "_plugin_api_broker", None)
-    last_error_reader = getattr(broker, "last_runtime_error", None)
-    if last_error_reader is None:
-        return
-    last_error = last_error_reader()
-    if last_error and surface_error is not None:
-        surface_error(last_error)
 
 
 def build_effective_enabled_map(

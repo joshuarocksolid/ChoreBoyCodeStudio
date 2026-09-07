@@ -198,25 +198,6 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
         return None
     evidence = {"check_id": check.check_id, "details": dict(check.details), "message": check.message}
     if check.check_id == APP_RUN_PRESENCE_CHECK_ID:
-        if check.details.get("errno") == 13 or "PermissionError" in check.message:
-            return RuntimeIssue(
-                issue_id="runtime.apprun_exec_denied",
-                workflow=workflow,
-                severity="blocking",
-                title="AppRun nested launch is blocked",
-                summary=check.message,
-                why_it_happened=(
-                    "Inside FreeCAD AppRun, AppArmor allows essentially only /bin/sh for "
-                    "subprocess exec. Re-execing AppRun raises PermissionError errno 13."
-                ),
-                next_steps=[
-                    "Keep the editor open. Plugin host now prefers an in-interpreter fork when already inside FreeCAD.",
-                    "If plugins or Run still fail, capture the application log and a support bundle.",
-                    "Do not treat a FreeCAD 1.0 upgrade as the only product fix.",
-                ],
-                help_topic=HELP_TOPIC_GETTING_STARTED,
-                evidence=evidence,
-            )
         return RuntimeIssue(
             issue_id="runtime.apprun_missing",
             workflow=workflow,

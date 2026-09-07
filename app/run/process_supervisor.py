@@ -8,17 +8,10 @@ import os
 import signal
 import subprocess
 import threading
-from typing import IO, Callable, Literal, Mapping, Sequence, Union
+from typing import IO, Callable, Literal, Mapping, Sequence
 
 from app.core.errors import RunLifecycleError
-from app.run.runtime_launch import (
-    ForkedInterpreterProcess,
-    fork_interpreter_script,
-    is_freecad_runtime_executable,
-    sanitize_apprun_child_env,
-)
-
-_SupervisedProcess = Union[subprocess.Popen[str], ForkedInterpreterProcess]
+from app.run.runtime_launch import is_freecad_runtime_executable, sanitize_apprun_child_env
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -57,7 +50,7 @@ class ProcessSupervisor:
 
     def __init__(self, on_event: Callable[[ProcessEvent], None] | None = None) -> None:
         self._on_event = on_event
-        self._process: _SupervisedProcess | None = None
+        self._process: subprocess.Popen[str] | None = None
         self._state: ProcessState = "idle"
         self._terminated_by_user = False
         self._lock = threading.RLock()
@@ -107,57 +100,17 @@ class ProcessSupervisor:
                 )
             except OSError as exc:
                 raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
-            process_id = self._attach_started_process(process)
+
+            self._process = process
+            self._terminated_by_user = False
+            self._process_resources[process.pid] = _ProcessResources(reader_threads=[], reader_streams=[])
+            self._state = "running"
             state_event = self._build_state_event("running")
+            process_id = process.pid
 
         self._emit_event(state_event)
         self._start_reader_threads(process=process)
         self._start_waiter_thread(process)
-        return process_id
-
-    def start_forked_script(
-        self,
-        *,
-        script_path: str,
-        argv: list[str],
-        cwd: str,
-        env: Mapping[str, str] | None = None,
-    ) -> int:
-        state_event: ProcessEvent
-        with self._lock:
-            if self._process is not None and self._process.poll() is None:
-                raise RunLifecycleError("Runner process is already active.")
-            pending_waiter = self._waiter_thread
-
-        if pending_waiter is not None and pending_waiter.is_alive():
-            pending_waiter.join()
-
-        with self._lock:
-            if self._process is not None and self._process.poll() is None:
-                raise RunLifecycleError("Runner process is already active.")
-            try:
-                process = fork_interpreter_script(
-                    script_path=script_path,
-                    argv=argv,
-                    cwd=cwd,
-                    env=None if env is None else dict(env),
-                )
-            except OSError as exc:
-                raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
-            process_id = self._attach_started_process(process)
-            state_event = self._build_state_event("running")
-
-        self._emit_event(state_event)
-        self._start_reader_threads(process=process)
-        self._start_waiter_thread(process)
-        return process_id
-
-    def _attach_started_process(self, process: _SupervisedProcess) -> int:
-        self._process = process
-        self._terminated_by_user = False
-        process_id = process.pid
-        self._process_resources[process_id] = _ProcessResources(reader_threads=[], reader_streams=[])
-        self._state = "running"
         return process_id
 
     def stop(self, *, terminate_timeout_seconds: float = 2.0) -> int | None:
@@ -245,7 +198,7 @@ class ProcessSupervisor:
         except OSError as exc:
             raise RunLifecycleError(f"Failed to write to runner stdin: {exc}") from exc
 
-    def _start_reader_threads(self, *, process: _SupervisedProcess) -> None:
+    def _start_reader_threads(self, *, process: subprocess.Popen[str]) -> None:
         with self._lock:
             resources = self._process_resources.get(process.pid)
         if resources is None:
@@ -272,7 +225,7 @@ class ProcessSupervisor:
             current_resources.reader_threads.extend(reader_threads)
             current_resources.reader_streams.extend(reader_streams)
 
-    def _start_waiter_thread(self, process: _SupervisedProcess) -> None:
+    def _start_waiter_thread(self, process: subprocess.Popen[str]) -> None:
         self._waiter_thread = threading.Thread(target=self._wait_for_exit, args=(process,), daemon=True)
         self._waiter_thread.start()
 
@@ -298,7 +251,7 @@ class ProcessSupervisor:
             except OSError:
                 pass
 
-    def _wait_for_exit(self, process: _SupervisedProcess) -> None:
+    def _wait_for_exit(self, process: subprocess.Popen[str]) -> None:
         return_code = process.wait()
         self._cleanup_process_resources(process)
         with self._lock:
@@ -324,7 +277,7 @@ class ProcessSupervisor:
             terminated_by_user=self._terminated_by_user,
         )
 
-    def _cleanup_process_resources(self, process: _SupervisedProcess) -> None:
+    def _cleanup_process_resources(self, process: subprocess.Popen[str]) -> None:
         with self._lock:
             resources = self._process_resources.get(process.pid)
             if resources is None or resources.cleaned:

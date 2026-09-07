@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import queue
 
-from PySide2.QtWidgets import QMessageBox, QVBoxLayout, QWidget
+from PySide2.QtWidgets import QVBoxLayout, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_cache_dir, global_python_console_history_path
@@ -52,7 +52,6 @@ from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.main_window_layout import build_layout_shell, configure_window_frame
 from app.shell.menu_wiring import build_main_window_menus, connect_test_explorer_navigation
 from app.shell.output_tail_buffer import OutputTailBuffer
-from app.shell.plugin_activation_workflow import reload_plugins_during_finalize
 from app.shell.plugin_dialog_workflow import build_plugin_dialog_workflow
 from app.shell.project_controller import ProjectController
 from app.shell.project_inventory_orchestrator import ProjectInventoryOrchestrator
@@ -438,21 +437,7 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     window._run_event_workflow.refresh_run_action_states()
     window._editor_tab_workflow.refresh_markdown_action_states()
     window._test_runner_workflow.refresh_discovery()
-    reload_plugins_during_finalize(
-        window,
-        surface_error=lambda message: _surface_plugin_host_startup_failure(window, message),
-    )
-
-
-def _surface_plugin_host_startup_failure(window, message: str) -> None:
-    logger = get_subsystem_logger("editor")
-    logger.error(message)
-    status_controller = getattr(window, "_status_controller", None)
-    if status_controller is not None:
-        set_warning = getattr(status_controller, "set_runtime_warning", None)
-        if set_warning is not None:
-            set_warning(message)
-    QMessageBox.warning(window, "Plugin runtime unavailable", message)
+    window._plugin_activation_workflow.reload()
 
 
 __all__ = [

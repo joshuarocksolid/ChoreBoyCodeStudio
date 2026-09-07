@@ -7,9 +7,7 @@ from app.bootstrap.paths import PathInput, normalize_state_root_identity, resolv
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
-    is_running_inside_freecad_runtime,
     resolve_runtime_executable,
-    should_reexec_runtime,
 )
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 
@@ -37,28 +35,11 @@ class PluginHostSupervisor:
         return self._supervisor
 
     def start(self, *, env: Mapping[str, str] | None = None) -> int:
-        if self.uses_forked_interpreter_child():
-            return self._supervisor.start_forked_script(
-                script_path=self._host_boot_path,
-                argv=self._host_argv(),
-                cwd=str(resolve_app_root()),
-                env=env,
-            )
         return self._supervisor.start(
             self._build_command(),
             cwd=str(resolve_app_root()),
             env=env,
         )
-
-    def uses_forked_interpreter_child(self) -> bool:
-        runtime_executable = self._resolve_runtime_executable()
-        return is_freecad_runtime_executable(runtime_executable) and is_running_inside_freecad_runtime()
-
-    def _host_argv(self) -> list[str]:
-        argv = [self._host_boot_path]
-        if self._state_root is not None:
-            argv.extend(["--state-root", str(normalize_state_root_identity(self._state_root))])
-        return argv
 
     def stop(self) -> int | None:
         return self._supervisor.stop()
@@ -70,20 +51,25 @@ class PluginHostSupervisor:
         self._supervisor.send_input(text)
 
     def _build_command(self) -> list[str]:
-        if self.uses_forked_interpreter_child():
-            return self._host_argv()
         runtime_executable = self._resolve_runtime_executable()
-        if should_reexec_runtime(
-            runtime_executable,
-            inside_freecad=is_running_inside_freecad_runtime(),
-        ):
+        state_root = (
+            None
+            if self._state_root is None
+            else str(normalize_state_root_identity(self._state_root))
+        )
+        if is_freecad_runtime_executable(runtime_executable):
+            argv = [self._host_boot_path]
+            if state_root is not None:
+                argv.extend(["--state-root", state_root])
             payload = build_runpy_bootstrap_payload(
                 script_path=self._host_boot_path,
                 path_entry=str(Path(self._host_boot_path).parent),
-                argv=self._host_argv(),
+                argv=argv,
             )
             return [runtime_executable, "-c", payload]
-        command = [runtime_executable, *self._host_argv()]
+        command = [runtime_executable, self._host_boot_path]
+        if state_root is not None:
+            command.extend(["--state-root", state_root])
         return command
 
     def _resolve_runtime_executable(self) -> str:
