@@ -8,7 +8,7 @@ import os
 import signal
 import subprocess
 import threading
-from typing import IO, Callable, Literal, Mapping, Sequence
+from typing import IO, Callable, Literal, Mapping, Sequence, Union
 
 from app.core.errors import RunLifecycleError
 from app.run.runtime_launch import (
@@ -18,7 +18,7 @@ from app.run.runtime_launch import (
     sanitize_apprun_child_env,
 )
 
-_SupervisedProcess = subprocess.Popen[str] | ForkedInterpreterProcess
+_SupervisedProcess = Union[subprocess.Popen[str], ForkedInterpreterProcess]
 
 _LOGGER = logging.getLogger(__name__)
 
