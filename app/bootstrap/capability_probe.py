@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import importlib
 import os
 import subprocess
@@ -20,6 +21,7 @@ from app.bootstrap.paths import (
 from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.python_tools.vendor_runtime import import_python_tooling_modules, initialize_python_tooling_runtime
+from app.run.runtime_launch import format_nested_runtime_exec_error
 
 
 APP_RUN_PRESENCE_CHECK_ID = "apprun_presence"
@@ -102,20 +104,51 @@ def check_apprun_presence(app_run_path: Optional[PathInput] = None) -> Capabilit
     target_path = configured.resolve()
     path_exists = target_path.exists()
 
-    if path_exists:
+    if not path_exists:
         return CapabilityCheckResult(
             check_id=APP_RUN_PRESENCE_CHECK_ID,
-            is_available=True,
-            message="AppRun path is available.",
+            is_available=False,
+            message=f"AppRun path not found: {target_path}",
             details={"path": str(target_path)},
         )
 
+    nested_failure = _probe_nested_runtime_exec(target_path)
+    if nested_failure is not None:
+        return nested_failure
+
     return CapabilityCheckResult(
         check_id=APP_RUN_PRESENCE_CHECK_ID,
-        is_available=False,
-        message=f"AppRun path not found: {target_path}",
+        is_available=True,
+        message="AppRun path is available.",
         details={"path": str(target_path)},
     )
+
+
+def _probe_nested_runtime_exec(target_path: Path) -> CapabilityCheckResult | None:
+    try:
+        subprocess.run(
+            [str(target_path), "-c", "import sys; sys.exit(0)"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=MODULE_IMPORT_PROBE_TIMEOUT_SECONDS,
+        )
+    except OSError as exc:
+        if exc.errno == errno.EACCES or isinstance(exc, PermissionError):
+            return CapabilityCheckResult(
+                check_id=APP_RUN_PRESENCE_CHECK_ID,
+                is_available=False,
+                message=format_nested_runtime_exec_error(exc, str(target_path)),
+                details={
+                    "path": str(target_path),
+                    "error_type": type(exc).__name__,
+                    "errno": exc.errno,
+                },
+            )
+        return None
+    except subprocess.TimeoutExpired:
+        return None
+    return None
 
 
 def check_pyside2_availability() -> CapabilityCheckResult:

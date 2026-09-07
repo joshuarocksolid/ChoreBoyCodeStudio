@@ -11,7 +11,11 @@ import threading
 from typing import IO, Callable, Literal, Mapping, Sequence
 
 from app.core.errors import RunLifecycleError
-from app.run.runtime_launch import is_freecad_runtime_executable, sanitize_apprun_child_env
+from app.run.runtime_launch import (
+    fork_interpreter_script,
+    is_freecad_runtime_executable,
+    sanitize_apprun_child_env,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -50,7 +54,7 @@ class ProcessSupervisor:
 
     def __init__(self, on_event: Callable[[ProcessEvent], None] | None = None) -> None:
         self._on_event = on_event
-        self._process: subprocess.Popen[str] | None = None
+        self._process: subprocess.Popen[str] | object | None = None
         self._state: ProcessState = "idle"
         self._terminated_by_user = False
         self._lock = threading.RLock()
@@ -100,17 +104,57 @@ class ProcessSupervisor:
                 )
             except OSError as exc:
                 raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
-
-            self._process = process
-            self._terminated_by_user = False
-            self._process_resources[process.pid] = _ProcessResources(reader_threads=[], reader_streams=[])
-            self._state = "running"
+            process_id = self._attach_started_process(process)
             state_event = self._build_state_event("running")
-            process_id = process.pid
 
         self._emit_event(state_event)
         self._start_reader_threads(process=process)
         self._start_waiter_thread(process)
+        return process_id
+
+    def start_forked_script(
+        self,
+        *,
+        script_path: str,
+        argv: list[str],
+        cwd: str,
+        env: Mapping[str, str] | None = None,
+    ) -> int:
+        state_event: ProcessEvent
+        with self._lock:
+            if self._process is not None and self._process.poll() is None:  # type: ignore[union-attr]
+                raise RunLifecycleError("Runner process is already active.")
+            pending_waiter = self._waiter_thread
+
+        if pending_waiter is not None and pending_waiter.is_alive():
+            pending_waiter.join()
+
+        with self._lock:
+            if self._process is not None and self._process.poll() is None:  # type: ignore[union-attr]
+                raise RunLifecycleError("Runner process is already active.")
+            try:
+                process = fork_interpreter_script(
+                    script_path=script_path,
+                    argv=argv,
+                    cwd=cwd,
+                    env=None if env is None else dict(env),
+                )
+            except OSError as exc:
+                raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
+            process_id = self._attach_started_process(process)
+            state_event = self._build_state_event("running")
+
+        self._emit_event(state_event)
+        self._start_reader_threads(process=process)
+        self._start_waiter_thread(process)
+        return process_id
+
+    def _attach_started_process(self, process: object) -> int:
+        self._process = process
+        self._terminated_by_user = False
+        process_id = process.pid  # type: ignore[attr-defined]
+        self._process_resources[process_id] = _ProcessResources(reader_threads=[], reader_streams=[])
+        self._state = "running"
         return process_id
 
     def stop(self, *, terminate_timeout_seconds: float = 2.0) -> int | None:
