@@ -10,8 +10,10 @@ import app.run.runtime_launch as runtime_launch_module
 from app.run.runtime_launch import (
     build_runpy_bootstrap_payload,
     is_freecad_runtime_executable,
+    is_running_inside_freecad_runtime,
     resolve_runtime_executable,
     sanitize_apprun_child_env,
+    should_reexec_runtime,
 )
 
 pytestmark = pytest.mark.unit
@@ -22,6 +24,38 @@ def test_is_freecad_runtime_executable_supports_apprun_and_appimage_names() -> N
     assert is_freecad_runtime_executable("/opt/freecad/usr/bin/freecad") is True
     assert is_freecad_runtime_executable("/tmp/FreeCAD.AppImage") is True
     assert is_freecad_runtime_executable("/usr/bin/python3") is False
+
+
+def test_is_running_inside_freecad_runtime_when_freecad_is_loaded() -> None:
+    assert is_running_inside_freecad_runtime(
+        executable="/usr/bin/python3",
+        modules={"FreeCAD": object()},
+        environ={},
+        argv=["run_editor.py"],
+    )
+
+
+def test_is_running_inside_freecad_runtime_when_executable_is_apprun() -> None:
+    assert is_running_inside_freecad_runtime(
+        executable="/opt/freecad/AppRun",
+        modules={},
+        environ={},
+        argv=["run_editor.py"],
+    )
+
+
+def test_should_reexec_runtime_is_false_when_already_inside_freecad() -> None:
+    assert should_reexec_runtime(
+        "/opt/freecad/AppRun",
+        inside_freecad=True,
+    ) is False
+
+
+def test_should_reexec_runtime_is_true_for_apprun_outside_freecad() -> None:
+    assert should_reexec_runtime(
+        "/opt/freecad/AppRun",
+        inside_freecad=False,
+    ) is True
 
 
 def test_build_runpy_bootstrap_payload_includes_path_and_argv() -> None:

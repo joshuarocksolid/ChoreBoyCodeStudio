@@ -67,6 +67,20 @@ def test_start_sanitizes_virtualenv_for_apprun_command(monkeypatch: pytest.Monke
     assert kwargs["env"] == {"PATH": "/usr/bin"}
 
 
+def test_start_wraps_eacces_popen_as_run_lifecycle_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_popen(command: list[str], **kwargs: object) -> _FakeRunningProcess:
+        raise PermissionError(13, "Permission denied", "/opt/freecad/AppRun")
+
+    monkeypatch.setattr(process_supervisor_module.subprocess, "Popen", fake_popen)
+
+    supervisor = ProcessSupervisor()
+    with pytest.raises(process_supervisor_module.RunLifecycleError, match="Permission denied") as caught:
+        supervisor.start(["/opt/freecad/AppRun", "-c", "print('ok')"], cwd="/tmp")
+
+    assert isinstance(caught.value.__cause__, PermissionError)
+    assert caught.value.__cause__.errno == 13
+
+
 def test_start_preserves_default_env_for_plain_python_command(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: dict[str, object] = {}
 
