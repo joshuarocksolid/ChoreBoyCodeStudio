@@ -147,6 +147,9 @@ def fork_interpreter_script(
             os.close(stdin_read)
             os.close(stdout_write)
             os.close(stderr_write)
+            sys.stdin = os.fdopen(0, "r")
+            sys.stdout = os.fdopen(1, "w", buffering=1)
+            sys.stderr = os.fdopen(2, "w", buffering=1)
             os.chdir(cwd)
             if env is not None:
                 os.environ.clear()
@@ -158,6 +161,7 @@ def fork_interpreter_script(
             sys.argv = [str(item) for item in argv]
             runpy.run_path(resolved_script, run_name="__main__")
         except SystemExit as exc:
+            _flush_stdio()
             code = exc.code
             if code is None:
                 os._exit(0)
@@ -165,7 +169,9 @@ def fork_interpreter_script(
                 os._exit(code)
             os._exit(1)
         except BaseException:
+            _flush_stdio()
             os._exit(1)
+        _flush_stdio()
         os._exit(0)
     os.close(stdin_read)
     os.close(stdout_write)
@@ -176,6 +182,14 @@ def fork_interpreter_script(
         os.fdopen(stdout_read, "r", buffering=1),
         os.fdopen(stderr_read, "r", buffering=1),
     )
+
+
+def _flush_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.flush()
+        except OSError:
+            continue
 
 
 def _wait_status_to_returncode(status: int) -> int:
