@@ -164,7 +164,7 @@ def fork_interpreter_script(
             if isinstance(code, int):
                 os._exit(code)
             os._exit(1)
-        except Exception:
+        except BaseException:
             os._exit(1)
         os._exit(0)
     os.close(stdin_read)
