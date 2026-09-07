@@ -64,6 +64,41 @@ def test_check_apprun_presence_reports_nested_exec_eacces(tmp_path: Path, monkey
     assert result.details.get("errno") == errno.EACCES
 
 
+def test_check_apprun_nested_exec_reports_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("", encoding="utf-8")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise subprocess.TimeoutExpired(cmd=command, timeout=capability_probe.MODULE_IMPORT_PROBE_TIMEOUT_SECONDS)
+
+    monkeypatch.setattr(capability_probe.subprocess, "run", fake_run)
+
+    result = capability_probe.check_apprun_nested_exec(app_run)
+
+    assert result.check_id == "apprun_presence"
+    assert result.is_available is False
+    assert "timed out" in result.message
+    assert result.details.get("error_type") == "TimeoutExpired"
+
+
+def test_check_apprun_nested_exec_reports_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    app_run = tmp_path / "AppRun"
+    app_run.write_text("", encoding="utf-8")
+
+    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        raise FileNotFoundError(errno.ENOENT, "No such file or directory", str(app_run))
+
+    monkeypatch.setattr(capability_probe.subprocess, "run", fake_run)
+
+    result = capability_probe.check_apprun_nested_exec(app_run)
+
+    assert result.check_id == "apprun_presence"
+    assert result.is_available is False
+    assert str(app_run) in result.message
+    assert result.details.get("error_type") == "FileNotFoundError"
+    assert result.details.get("errno") == errno.ENOENT
+
+
 def test_check_pyside2_availability_reports_import_success(monkeypatch: pytest.MonkeyPatch) -> None:
     """PySide2 check should succeed when import works."""
 

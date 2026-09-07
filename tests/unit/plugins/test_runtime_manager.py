@@ -261,7 +261,7 @@ def test_cancel_workflow_job_round_trip(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 class _EaccesHostSupervisor:
-    def __init__(self, *, on_event, **_kwargs) -> None:  # type: ignore[no-untyped-def]
+    def __init__(self, *, on_event: object, **_kwargs: object) -> None:
         self._on_event = on_event
         self.started = False
 

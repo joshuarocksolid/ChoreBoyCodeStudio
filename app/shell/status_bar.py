@@ -260,7 +260,7 @@ class ShellStatusBarController:
     def set_runtime_warning(self, text: str) -> None:
         self._startup_label.setText(f"Startup: {text}")
         self._startup_label.setToolTip(text)
-        self._startup_label.setProperty("startupSeverity", "warning")  # type: ignore[arg-type]
+        self._startup_label.setProperty("startupSeverity", "warning")
         self._refresh_widget_style(self._startup_label)
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:

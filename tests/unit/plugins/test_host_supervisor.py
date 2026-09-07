@@ -1,5 +1,3 @@
-"""Unit tests for plugin host launch path selection."""
-
 from __future__ import annotations
 
 from pathlib import Path
@@ -7,6 +5,7 @@ from pathlib import Path
 import pytest
 
 from app.plugins.host_supervisor import PluginHostSupervisor
+from app.run.process_supervisor import ProcessSupervisor
 import app.plugins.host_supervisor as host_supervisor_module
 
 pytestmark = pytest.mark.unit
@@ -67,11 +66,11 @@ def test_start_uses_forked_script_when_inside_freecad(
     monkeypatch.setattr(host_supervisor_module, "is_running_inside_freecad_runtime", lambda: True)
     calls: dict[str, object] = {}
 
-    def fake_start_forked(self, **kwargs: object) -> int:  # type: ignore[no-untyped-def]
+    def fake_start_forked(_self: ProcessSupervisor, **kwargs: object) -> int:
         calls["kwargs"] = kwargs
         return 4242
 
-    def fake_popen_start(self, command: list[str], **kwargs: object) -> int:  # type: ignore[no-untyped-def]
+    def fake_popen_start(_self: ProcessSupervisor, command: list[str], **kwargs: object) -> int:
         raise AssertionError(f"Popen start must not run inside FreeCAD: {command}")
 
     monkeypatch.setattr(
