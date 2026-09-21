@@ -2541,7 +2541,7 @@ Verify that a shop project package installs into the FreeCAD Apps slot without a
 - app files stay under `~/.local`; only the icon copy lands on the Desktop
 - a foreign or unmarked occupant in that slot is refused
 - the same `package_id` can replace the previous version after confirm
-- product packages still use `/home/default/choreboy_code_studio_v{version}` and still show a folder picker
+- product packages still use `/home/default/FreeCAD/CBCS/choreboy_code_studio_v{version}` and still show a folder picker
 
 ---
 

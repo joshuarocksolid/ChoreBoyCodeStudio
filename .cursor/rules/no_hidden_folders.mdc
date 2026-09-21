@@ -16,7 +16,7 @@ Hidden-path support on ChoreBoy is a per-parent, per-kind fact, not a global ban
 ## What stays visible regardless of ACL
 
 - Per-project metadata is `cbcs/` (`PROJECT_META_DIRNAME`). Users must see it in the file manager. pcmanfm hides dot-prefixed entries, so this is a visibility rule, not an ACL rule.
-- The global state leaf is `choreboy_code_studio_state/` (`GLOBAL_STATE_DIRNAME`). Nesting that visible leaf under an allowed hidden parent (`.local/share/FreeCAD`, `.cache/FreeCAD`) is intended.
+- The product state dest is `/home/default/FreeCAD/CBCS/state` (`PRODUCT_STATE_ROOT`). The leftover and verify isolation leaf is `choreboy_code_studio_state/` (`GLOBAL_STATE_DIRNAME`). Both names are visible.
 - Plugin packages must not ship hidden paths. The plugin auditor keeps that rule.
 
 ## Known evidence (section 4A)
@@ -27,4 +27,4 @@ Hidden-path support on ChoreBoy is a per-parent, per-kind fact, not a global ban
 
 ## Product state default
 
-`resolve_global_state_root` picks the product default from a probed trio: (a) `.local/share/FreeCAD` when it exists and accepts a visible child, (b) `.cache/FreeCAD` when hidden and visible directories probe ok there (wipe risk, see section 4A), (c) `/home/default/FreeCAD` otherwise. Explicit argument, `CBCS_STATE_ROOT`, pointer files, and the legacy home directory still win over the probe.
+`resolve_global_state_root` dest is `/home/default/FreeCAD/CBCS/state`. Explicit argument, `CBCS_STATE_ROOT`, and the shop pointer `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` still win. The hidden-path probe does not pick this dest. Leftover `choreboy_code_studio_state` trees are copied once by `migrate_legacy_global_state` before logging.

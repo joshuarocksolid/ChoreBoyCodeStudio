@@ -12,11 +12,9 @@ throughout the manual, in one place.
   instead.
 - **Restricted writable storage; visible leaf names.** Hidden (dot-prefixed) paths work
   under some parents and not others, and the file manager hides them either way, so all
-  metadata leaves use visible names (`cbcs/`, `choreboy_code_studio_state/`). On first
-  launch the app probes three candidate parents and keeps the first that accepts the
-  state tree: `/home/default/.local/share/FreeCAD`, then `/home/default/.cache/FreeCAD`
-  (may be wiped with the cache), then `/home/default/FreeCAD`. A legacy
-  `~/choreboy_code_studio_state` is kept if it already exists. Shared shop state is
+  metadata leaves use visible names (`cbcs/`, `CBCS/state`). On first launch of this
+  update, leftover `choreboy_code_studio_state` trees are copied into
+  `/home/default/FreeCAD/CBCS/state`. Shared shop state is
   opt-in; two writers on one NFS state directory can clobber each other.
 
 ## FreeCAD / headless

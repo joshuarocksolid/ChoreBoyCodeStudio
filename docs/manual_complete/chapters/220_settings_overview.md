@@ -15,8 +15,8 @@ Choose **File > Settings...**. The dialog has a scope toggle at the top (**Globa
 
 - **Global** settings apply to every project by default. They are stored in
   `<state_root>/settings.json` (product default
-  `/home/default/FreeCAD/choreboy_code_studio_state/settings.json`; an existing
-  `~/choreboy_code_studio_state/` folder is still used).
+  `/home/default/FreeCAD/CBCS/state/settings.json`). An older
+  `choreboy_code_studio_state` folder is copied there on first launch of this update.
 - **Project** settings override the global defaults for one project only. They are stored
   in that project's `cbcs/settings.json`.
 

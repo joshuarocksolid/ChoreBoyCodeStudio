@@ -593,30 +593,27 @@ Global-only settings (for example theme mode, keybindings, syntax color override
 
 ## 11. Global App State
 
-Global app state lives under one visible directory named `choreboy_code_studio_state`.
+Global app state lives under `/home/default/FreeCAD/CBCS/state`.
 That directory is never inside a versioned install (`choreboy_code_studio_vX`). Shared
-settings are opt-in; two writers on one NFS state directory can clobber each other.
+settings are opt-in. Two writers on one NFS state directory can clobber each other.
 
 `resolve_global_state_root` is the single source of truth. Resolution order:
 
 1. Explicit `state_root` argument if provided.
 2. Env `CBCS_STATE_ROOT` if set (non-empty, absolute after expanduser).
-3. Pointer file sibling of the install: `<install_parent>/cbcs_state_root` when that file exists. Contents: one absolute path (blank and `#` lines ignored). Visible name — not hidden.
-4. Optional shop canonical pointer if present: `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` (same file format). Skip if missing.
-5. Legacy stickiness: `$HOME/choreboy_code_studio_state` if that path already exists as a directory (or a symlink to a directory).
-6. Probed product default (`app/bootstrap/hidden_path_policy.py`, evidence in `docs/DISCOVERY.md` §4A), first parent that probes ok:
-   a. `/home/default/.local/share/FreeCAD/choreboy_code_studio_state` when the FreeCAD XDG tree already exists and accepts a visible child directory.
-   b. `/home/default/.cache/FreeCAD/choreboy_code_studio_state` when `.cache/FreeCAD` (or `.cache`) exists and hidden plus visible directories probe ok there. `.cache` is never created. Cache wipe risk applies.
-   c. `/home/default/FreeCAD/choreboy_code_studio_state` otherwise.
+3. Shop pointer `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` when that file exists. Contents: one absolute path (blank and `#` lines ignored). Visible name. Not hidden.
+4. Product dest `/home/default/FreeCAD/CBCS/state`.
 
-Steps 1 to 5 never run the probe. The probe runs once per parent per process and leaves no canaries.
+There is no install-parent pointer hunt, no leftover-home stickiness, and no hidden-path probe in this picker.
 
 State-root identity is normalized to an absolute path without following the final symlink hop, so a home→share symlink stays meaningful.
+
+`run_editor.main` copies leftover state before logging. Occupancy is `dest/settings.json` as a file. The first leftover that is not dest wins: `$HOME/choreboy_code_studio_state`, then `$HOME/.local/share/FreeCAD/choreboy_code_studio_state`, then `$HOME/.cache/FreeCAD/choreboy_code_studio_state`, then `$HOME/FreeCAD/choreboy_code_studio_state`. Copy goes through `state.migrating`. Promote never `rmtree`s dest. Sources stay. `CBCS_STATE_ROOT` and the shop pointer still isolate verify and Clair.
 
 Recommended contents:
 
 ```text
-/home/default/FreeCAD/choreboy_code_studio_state/
+/home/default/FreeCAD/CBCS/state/
   settings.json
   recent_projects.json
   logs/
@@ -632,7 +629,7 @@ Recommended contents:
   crash_reports/
 ```
 
-Shop product install stays at `/home/default/choreboy_code_studio_vX` by default. Shop recipe: use the installer folder picker to install to `/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. That does not automatically share settings; point `CBCS_STATE_ROOT` or a `cbcs_state_root` file at a shared directory to opt in.
+Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. The installer still asks for a folder. Shop recipe: pick `/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. That does not automatically share settings. Point `CBCS_STATE_ROOT` or the shop `cbcs_state_root` file at a shared directory to opt in.
 
 ## 11.1 What belongs here
 
@@ -1081,7 +1078,7 @@ The editor must write a persistent app log for the shell itself.
 Editor log:
 
 ```text
-/home/default/FreeCAD/choreboy_code_studio_state/logs/app.log
+/home/default/FreeCAD/CBCS/state/logs/app.log
 ```
 
 Project run logs:
@@ -1187,7 +1184,7 @@ points across saves and high-risk multi-file edits
 The shipped local-history design should follow these rules:
 
 - store history in a visible global app-state location under
-`/home/default/FreeCAD/choreboy_code_studio_state/history/` (or the resolved state root)
+`/home/default/FreeCAD/CBCS/state/history/` (or the resolved state root)
 - use a metadata index plus content-addressed full-text blobs rather than
 fragile patch chains as the canonical source of truth
 - treat diffs as a derived presentation layer, generated lazily for review UI

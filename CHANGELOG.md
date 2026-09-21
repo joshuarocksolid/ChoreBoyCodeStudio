@@ -8,6 +8,10 @@ LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 20
 
 ## [Unreleased]
 
+### Changed
+
+- Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. Global state dest is `/home/default/FreeCAD/CBCS/state`. The XDG, cache, leftover-home, and install-parent pointer fallbacks are gone from the picker. Settings from those leftover folders are copied once into the new dest on first launch of the update. Shared shop state is still opt-in via `CBCS_STATE_ROOT` or `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`.
+
 ## [0.4.12] - 2026-09-03
 
 Follow-up to the v0.4.11 shop-LAN state default. A probed state-root default per parent directory, and a visible icon fallback for packaged-app shortcuts.
