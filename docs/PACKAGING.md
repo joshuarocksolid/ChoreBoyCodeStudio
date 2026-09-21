@@ -164,7 +164,7 @@ Occupancy is the destination folder itself, not only sibling folders:
 
 If the Apps parent directory cannot be created, the installer raises and does not rewrite the path to `/home/default`.
 
-Product packages keep `/home/default/choreboy_code_studio_v{version}` and still ask for an install folder.
+Product packages keep `/home/default/FreeCAD/CBCS/choreboy_code_studio_v{version}` and still ask for an install folder.
 
 That is deliberate. If the installed folder moves later, the supported recovery path is:
 

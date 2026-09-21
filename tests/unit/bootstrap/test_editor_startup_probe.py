@@ -46,6 +46,8 @@ def test_main_runs_minimal_startup_probe_and_stores_report(monkeypatch: pytest.M
         return report
 
     monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
+    monkeypatch.setattr(run_editor, "migrate_legacy_global_state", lambda: object())
+    monkeypatch.setattr(run_editor, "_log_migration_outcome", lambda logger, outcome: None)
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
     monkeypatch.setattr(run_editor, "run_minimal_startup_capability_probe", fake_probe)
@@ -72,6 +74,8 @@ def test_main_logs_failed_probe_checks_clearly(monkeypatch: pytest.MonkeyPatch) 
     )
 
     monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
+    monkeypatch.setattr(run_editor, "migrate_legacy_global_state", lambda: object())
+    monkeypatch.setattr(run_editor, "_log_migration_outcome", lambda logger, outcome: None)
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
     monkeypatch.setattr(run_editor, "run_minimal_startup_capability_probe", lambda: report)
@@ -108,6 +112,8 @@ def test_main_sets_startup_report_before_shell_launch(monkeypatch: pytest.Monkey
         return 0
 
     monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
+    monkeypatch.setattr(run_editor, "migrate_legacy_global_state", lambda: object())
+    monkeypatch.setattr(run_editor, "_log_migration_outcome", lambda logger, outcome: None)
     monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
     monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
     monkeypatch.setattr(run_editor, "run_minimal_startup_capability_probe", fake_probe)

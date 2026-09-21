@@ -122,7 +122,7 @@ your draft. For saved versions, use **Local History...**. See "Local History & r
 
 - The runtime may be initializing — wait a few seconds.
 - Check the application log at `<state_root>/logs/app.log` (default
-  `/home/default/FreeCAD/choreboy_code_studio_state/logs/app.log`) (or the
+  `/home/default/FreeCAD/CBCS/state/logs/app.log`) (or the
   fallback under the temp folder) for a startup error.
 - If a previous instance is stuck, the single-instance guard may be blocking a new one;
   ensure the old window is fully closed.

@@ -82,7 +82,6 @@ CHOREBOY_PYTHON_TOOLING_ISORT_APIS = (
     "Config",
     "api",
 )
-CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
 ZIP_COMPRESSION_LEVEL = 9
 CHOREBOY_PRODUCT_TREE_SITTER_SOABI = CP39_TREE_SITTER_SOABI
@@ -140,7 +139,7 @@ def resolve_product_vendor_dir(artifacts_dir: Path) -> Path:
 def build_product_manifest(
     *,
     version: str,
-    staging_parent: str = CHOREBOY_STAGING_ROOT,
+    staging_parent: str = "/home/default",
 ) -> DistributionManifest:
     return create_distribution_manifest(
         package_kind=PACKAGE_KIND_PRODUCT,
@@ -152,7 +151,7 @@ def build_product_manifest(
         entry_relative_path="run_editor.py",
         icon_relative_path="app/ui/icons/Python_Icon.png",
         launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
-        default_install_base=CHOREBOY_STAGING_ROOT,
+        default_install_base=constants.PRODUCT_INSTALL_BASE,
         default_install_dirname=f"choreboy_code_studio_v{version}",
         staging_parent=staging_parent,
         app_run_path=constants.APP_RUN_PATH,
@@ -224,7 +223,7 @@ def build_product_artifact(
     include_dirs: Sequence[str] = INCLUDE_DIRS,
     include_files: Sequence[str] = INCLUDE_FILES,
     vendor_allowlist: Sequence[str] = VENDOR_ALLOWLIST,
-    staging_parent: str = CHOREBOY_STAGING_ROOT,
+    staging_parent: str = "/home/default",
     archive_password: str | None = None,
     tree_sitter_core_stager: TreeSitterCoreStager = stage_cp39_tree_sitter_core_binding,
     strip_shared_objects: bool = True,

@@ -13,6 +13,13 @@ from app.bootstrap.capability_probe import (
     run_startup_capability_probe,
 )
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
+from app.bootstrap.state_migration import (
+    CopiedLegacyState,
+    MigrationFailed,
+    MigrationOutcome,
+    PromotedStaging,
+    migrate_legacy_global_state,
+)
 from app.core.models import CapabilityProbeReport
 from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
 
@@ -127,12 +134,31 @@ def _enable_fault_handler(logger: logging.Logger) -> None:
         logger.warning("Failed to enable faulthandler.", exc_info=True)
 
 
+def _log_migration_outcome(logger: logging.Logger, outcome: MigrationOutcome) -> None:
+    if isinstance(outcome, CopiedLegacyState):
+        logger.info("Copied leftover global state from %s to %s.", outcome.source, outcome.dest)
+        return
+    if isinstance(outcome, PromotedStaging):
+        logger.info("Promoted leftover migrating state into %s.", outcome.dest)
+        return
+    if isinstance(outcome, MigrationFailed):
+        logger.warning(
+            "Legacy state migration failed; continuing startup. dest=%s source=%s staging=%s error=%s",
+            outcome.dest,
+            outcome.source,
+            outcome.staging,
+            outcome.error,
+        )
+
+
 def main() -> int:
-    """Initialize logging first, then run editor startup safely."""
+    """Copy leftover state first, then initialize logging, then run editor startup."""
     global _LAST_STARTUP_CAPABILITY_REPORT
+    outcome = migrate_legacy_global_state()
     logging_result = configure_app_logging()
 
     logger = get_subsystem_logger("editor")
+    _log_migration_outcome(logger, outcome)
     _enable_fault_handler(logger)
     _install_unhandled_exception_hook(logger)
 

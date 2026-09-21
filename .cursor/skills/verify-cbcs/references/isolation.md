@@ -19,7 +19,7 @@ HOME=/home/default/cbcs-verify-<run-id>
 CBCS_STATE_ROOT=/home/default/cbcs-verify-<run-id>/choreboy_code_studio_state
 ```
 
-Without `CBCS_STATE_ROOT`, a fresh HOME would fall through to the product default `/home/default/FreeCAD/choreboy_code_studio_state` and share state across verify sessions. Shop share pointers are opt-in; do not write `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` on the human share.
+Without `CBCS_STATE_ROOT`, a fresh HOME would fall through to the product dest `/home/default/FreeCAD/CBCS/state` and share state across verify sessions. Shop share pointers are opt-in; do not write `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` on the human share.
 
 That path is on the guest disk. Do not put HOME on virtiofs (`/mnt/cbprobe/...`): SQLite local-history WAL locks there and the editor exits during startup.
 

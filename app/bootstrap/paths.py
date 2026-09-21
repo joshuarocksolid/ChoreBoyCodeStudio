@@ -1,20 +1,61 @@
 """Deterministic path helpers for application bootstrap."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
 import os
 import tempfile
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
-from app.bootstrap.hidden_path_policy import (
-    PathInput,
-    normalize_state_root_identity,
-    probe_hidden_path_support,
-)
 from app.core import constants
 
-PRODUCT_STATE_XDG_PARENT = Path("/home/default/.local/share/FreeCAD")
-PRODUCT_STATE_CACHE_PARENT = Path("/home/default/.cache/FreeCAD")
-PRODUCT_STATE_VISIBLE_PARENT = Path("/home/default") / constants.GLOBAL_STATE_FREECAD_PARENT_DIRNAME
+PathInput = Union[str, Path]
+
+
+@dataclass(frozen=True)
+class ProductStateLayout:
+    """ChoreBoy product nest. Install is versioned; state is not."""
+
+    install_base: Path
+    state_root: Path
+    shop_pointer_path: Path
+    occupancy_filename: str
+    migrating_suffix: str
+    legacy_leaf: str
+
+    def occupancy_path(self, dest: Path) -> Path:
+        return dest / self.occupancy_filename
+
+    def staging_path(self, dest: Path) -> Path:
+        return dest.with_name(dest.name + self.migrating_suffix)
+
+    def legacy_source_roots(self, home: Path) -> tuple[Path, ...]:
+        leaf = self.legacy_leaf
+        return (
+            home / leaf,
+            home / ".local" / "share" / "FreeCAD" / leaf,
+            home / ".cache" / "FreeCAD" / leaf,
+            home / "FreeCAD" / leaf,
+        )
+
+
+DEFAULT_PRODUCT_STATE_LAYOUT = ProductStateLayout(
+    install_base=Path(constants.PRODUCT_INSTALL_BASE),
+    state_root=Path(constants.PRODUCT_STATE_ROOT),
+    shop_pointer_path=Path(constants.SHOP_STATE_ROOT_POINTER_PATH),
+    occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
+    migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
+    legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
+)
+
+
+def normalize_state_root_identity(path: PathInput) -> Path:
+    """Return an absolute path without following the final symlink hop."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("state_root must be an absolute path")
+    return Path(os.path.abspath(str(candidate)))
 
 
 def resolve_app_root() -> Path:
@@ -23,7 +64,7 @@ def resolve_app_root() -> Path:
 
 
 def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global app state root path."""
+    """Return the global app state root. No filesystem copy. No hidden-path probe."""
     if state_root is not None:
         return normalize_state_root_identity(state_root)
 
@@ -31,47 +72,11 @@ def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
     if env_root is not None:
         return env_root
 
-    install_pointer = resolve_app_root().parent / constants.CBCS_STATE_ROOT_POINTER_FILENAME
-    pointer_root = _state_root_from_pointer_file(install_pointer)
-    if pointer_root is not None:
-        return pointer_root
-
-    shop_root = _state_root_from_pointer_file(Path(constants.SHOP_STATE_ROOT_POINTER_PATH))
+    shop_root = _state_root_from_pointer_file(DEFAULT_PRODUCT_STATE_LAYOUT.shop_pointer_path)
     if shop_root is not None:
         return shop_root
 
-    legacy = Path.home().expanduser() / constants.GLOBAL_STATE_DIRNAME
-    if _is_existing_directory(legacy):
-        return normalize_state_root_identity(legacy)
-
-    return normalize_state_root_identity(_probed_product_state_parent() / constants.GLOBAL_STATE_DIRNAME)
-
-
-def _probed_product_state_parent() -> Path:
-    """Return the first product default parent whose live probe accepts the state tree.
-
-    Order and evidence: docs/DISCOVERY.md section 4A. (a) the existing FreeCAD XDG
-    tree, (b) the FreeCAD cache tree when hidden and visible directories both probe
-    ok there, (c) the visible FreeCAD directory under home.
-    """
-    if probe_hidden_path_support(PRODUCT_STATE_XDG_PARENT).visible_dir_ok:
-        return PRODUCT_STATE_XDG_PARENT
-    if _hidden_cache_tree_accepts_state(PRODUCT_STATE_CACHE_PARENT):
-        return PRODUCT_STATE_CACHE_PARENT
-    return PRODUCT_STATE_VISIBLE_PARENT
-
-
-def _hidden_cache_tree_accepts_state(cache_parent: Path) -> bool:
-    """Probe the cache parent, or its parent when only that exists so ``FreeCAD/`` can be created.
-
-    ``.cache`` itself is never created: a new hidden directory under home is BLOCKED
-    (docs/DISCOVERY.md section 4A).
-    """
-    for existing in (cache_parent, cache_parent.parent):
-        if _is_existing_directory(existing):
-            result = probe_hidden_path_support(existing)
-            return result.hidden_dir_ok and result.visible_dir_ok
-    return False
+    return normalize_state_root_identity(DEFAULT_PRODUCT_STATE_LAYOUT.state_root)
 
 
 def global_settings_path(state_root: Optional[PathInput] = None) -> Path:
@@ -284,13 +289,6 @@ def _state_root_from_pointer_file(pointer_path: Path) -> Optional[Path]:
             continue
         return normalize_state_root_identity(candidate)
     return None
-
-
-def _is_existing_directory(path: Path) -> bool:
-    try:
-        return path.is_dir()
-    except OSError:
-        return False
 
 
 def _normalize_absolute_path(path: PathInput, field_name: str) -> Path:

@@ -276,9 +276,9 @@ Two axes are separate and must not be conflated:
 | --- | --- | --- | --- | --- |
 | `/home/default` (home) | UNKNOWN | **BLOCKED** | UNKNOWN | commit `f6c6b96` (2026-03-02): new `.choreboy_code_studio/` under home was not reliably writable; Joshua: `.state` on home failed; Kevin: CTS-in-home failed |
 | `/home/default/Desktop` | **ALLOWED** | UNKNOWN | UNKNOWN | CBCS Verifier live pass, PR 66, AT-105 on ChoreBoy2, artifacts `20260902T023323Z`: `Desktop/.invoice_app.png` was written and fetched by pcmanfm as the launcher icon |
-| `/home/default/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product state fallback (c); never probed live |
-| `/home/default/.cache/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product state candidate (b); never probed live |
-| `/home/default/.local/share/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product state candidate (a); FreeCAD's own XDG tree, project apps install under `Macro/Apps` |
+| `/home/default/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product nest parent; never probed live |
+| `/home/default/.cache/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | leftover catalog only; never probed live |
+| `/home/default/.local/share/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | leftover catalog and FreeCAD XDG tree; project apps install under `Macro/Apps` |
 | `/home/default/share/Chore_Boy/CBCS` | UNKNOWN | UNKNOWN | UNKNOWN | human share; probe only with cleanup |
 
 BLOCKED and ALLOWED rows are recorded observations. UNKNOWN rows stay UNKNOWN until the live matrix in `.cursor/skills/verify-cbcs/features/hidden-path-policy.md` is driven on a leased ChoreBoy slot. This table is documentation. It is not a second runtime truth. The runtime decision is always the live probe.
@@ -292,21 +292,19 @@ Policy that follows from it:
 - A hidden path is allowed only when its parent is on the ALLOWED row for that kind (file vs directory) or a live probe of that parent said that kind works.
 - Unprobed hidden paths are banned.
 - A visible fallback is mandatory whenever the probe fails or the parent is UNKNOWN.
-- Leaf names stay visible: `cbcs/` for per-project metadata, `choreboy_code_studio_state/` for global state. A visible leaf may sit under an allowed parent that is itself hidden (`.local`, `.cache`).
+- Leaf names stay visible: `cbcs/` for per-project metadata, `CBCS/state` for product global state, `choreboy_code_studio_state/` for leftover and verify isolation.
 
-### Product state default (probed)
+### Product state dest
 
-`resolve_global_state_root` keeps the explicit, env, pointer, and legacy steps from section 11 of `docs/ARCHITECTURE.md`. Only the final default is probed, in this order:
+Product dest is `/home/default/FreeCAD/CBCS/state`. `resolve_global_state_root` does not probe parents to pick it. Explicit argument, `CBCS_STATE_ROOT`, and the shop pointer still win. See `docs/ARCHITECTURE.md` §11.
 
-1. (a) `/home/default/.local/share/FreeCAD/choreboy_code_studio_state` when `/home/default/.local/share/FreeCAD` already exists and accepts a visible child directory. The XDG tree is never created by the app.
-2. (b) `/home/default/.cache/FreeCAD/choreboy_code_studio_state` when `/home/default/.cache/FreeCAD` exists (or `/home/default/.cache` exists, so `FreeCAD/` can be created) and the probe of that existing parent reports both hidden-directory and visible-directory support. `.cache` itself is never created.
-3. (c) `/home/default/FreeCAD/choreboy_code_studio_state` otherwise.
+Leftover `choreboy_code_studio_state` trees from earlier releases are copied once into dest on first launch of the update. Occupancy is dest `settings.json`. Sources stay.
 
-Wipe risk: `.cache/` is a cache location by XDG convention and may be cleared by the OS or the user. State under (b) survives only as long as the cache does. Recovery is a fresh default state (settings, recents, history) and not data loss in projects. (a) has no such risk.
+The hidden-path probe still exists for Desktop icon publish. It is not the state picker.
 
 ### Migration status
 
-`PROJECT_META_DIRNAME = "cbcs"` and `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"` in `app/core/constants.py` stay visible. The desktop icon publish in `packaging/install.py` writes a hidden Desktop sibling first (ALLOWED row) and falls back to a visible `{stem}.icon{suffix}` sidecar when the hidden file write is denied.
+`PROJECT_META_DIRNAME = "cbcs"`, `PRODUCT_STATE_ROOT = "/home/default/FreeCAD/CBCS/state"`, and `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"` in `app/core/constants.py` stay visible. The desktop icon publish in `packaging/install.py` writes a hidden Desktop sibling first (ALLOWED row) and falls back to a visible `{stem}.icon{suffix}` sidecar when the hidden file write is denied.
 
 ---
 

@@ -144,8 +144,8 @@ machine. Shared settings are a separate opt-in (`CBCS_STATE_ROOT` or a `cbcs_sta
 pointer). Two writers on one NFS state directory can overwrite each other.
 
 **Find the global settings folder**
-New machines: `/home/default/FreeCAD/choreboy_code_studio_state`. If
-`~/choreboy_code_studio_state` already exists, that older folder is still used.
+`/home/default/FreeCAD/CBCS/state`. An older `choreboy_code_studio_state` folder is
+copied there on first launch of this update.
 
 ## Recovery & support
 

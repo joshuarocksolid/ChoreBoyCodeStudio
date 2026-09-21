@@ -878,10 +878,10 @@ def test_project_export_seeds_silent_apps_slot(tmp_path: Path) -> None:
     assert "/home/default" not in manifest_payload["default_install_base"]
 
 
-def test_product_manifest_stays_versioned_under_home_default() -> None:
+def test_product_manifest_stays_versioned_under_freecad_cbcs() -> None:
     manifest = product_package.build_product_manifest(version="0.2.0")
 
-    assert manifest.default_install_base == "/home/default"
+    assert manifest.default_install_base == "/home/default/FreeCAD/CBCS"
     assert manifest.default_install_dirname == "choreboy_code_studio_v0.2.0"
     assert manifest.ask_install_location is True
 
