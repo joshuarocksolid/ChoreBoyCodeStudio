@@ -2,15 +2,19 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.12.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.13.
 
 ## [Unreleased]
 
+## [0.4.13] - 2026-09-21
+
+Follow-up to the v0.4.12 probed state-root default. Nest product install and global state under FreeCAD/CBCS, and copy leftover settings once.
+
 ### Changed
 
-- Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. Global state dest is `/home/default/FreeCAD/CBCS/state`. The XDG, cache, leftover-home, and install-parent pointer fallbacks are gone from the picker. Settings from those leftover folders are copied once into the new dest on first launch of the update. Shared shop state is still opt-in via `CBCS_STATE_ROOT` or `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`.
+- Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. Global state dest is `/home/default/FreeCAD/CBCS/state`. The old XDG/cache/leftover-home/install-parent pointer fallbacks are gone from the picker. On first launch of the update, settings from leftover `choreboy_code_studio_state` folders are copied once into the new dest when dest has no `settings.json`. Shared shop state remains opt-in via `CBCS_STATE_ROOT` or `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` (PR #74).
 
 ## [0.4.12] - 2026-09-03
 
