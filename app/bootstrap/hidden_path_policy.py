@@ -5,9 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import os
 from pathlib import Path
-from typing import Union
 
-PathInput = Union[str, Path]
+from app.bootstrap.paths import PathInput, normalize_state_root_identity
 
 _CANARY_BYTES = b"cbcs probe\n"
 
@@ -22,14 +21,6 @@ class HiddenPathProbeResult:
 
 
 _PROBE_CACHE: dict[Path, HiddenPathProbeResult] = {}
-
-
-def normalize_state_root_identity(path: PathInput) -> Path:
-    """Return an absolute path without following the final symlink hop."""
-    candidate = Path(path).expanduser()
-    if not candidate.is_absolute():
-        raise ValueError("state_root must be an absolute path")
-    return Path(os.path.abspath(str(candidate)))
 
 
 def probe_hidden_path_support(parent: PathInput) -> HiddenPathProbeResult:

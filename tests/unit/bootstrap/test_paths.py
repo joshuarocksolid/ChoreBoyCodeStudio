@@ -1,7 +1,6 @@
 """Unit tests for deterministic bootstrap/path helpers."""
 
 from pathlib import Path
-from typing import Callable, Iterator, Optional
 import os
 import tempfile
 
@@ -12,62 +11,25 @@ from app.core import constants
 
 pytestmark = pytest.mark.unit
 
-_PRODUCT_DEFAULT_STATE_ROOT = Path("/home/default/FreeCAD/choreboy_code_studio_state")
-
-StateRootSelector = Callable[[pytest.MonkeyPatch, Path, Path], tuple[Optional[Path], Path]]
-
-
-@pytest.fixture(autouse=True)
-def _fresh_probe_cache() -> Iterator[None]:
-    hidden_path_policy.clear_hidden_path_probe_cache()
-    yield
-    hidden_path_policy.clear_hidden_path_probe_cache()
-
 
 def _isolate_state_resolution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
     fake_home = tmp_path / "fake_home"
     fake_home.mkdir(parents=True)
-    install_root = tmp_path / "install" / "choreboy_code_studio_vX"
-    install_root.mkdir(parents=True)
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.delenv("CBCS_STATE_ROOT", raising=False)
-    monkeypatch.setattr(paths, "resolve_app_root", lambda: install_root)
     monkeypatch.setattr(
-        constants,
-        "SHOP_STATE_ROOT_POINTER_PATH",
-        str(tmp_path / "missing_shop_pointer"),
+        paths,
+        "DEFAULT_PRODUCT_STATE_LAYOUT",
+        paths.ProductStateLayout(
+            install_base=Path(constants.PRODUCT_INSTALL_BASE),
+            state_root=Path(constants.PRODUCT_STATE_ROOT),
+            shop_pointer_path=tmp_path / "missing_shop_pointer",
+            occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
+            migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
+            legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
+        ),
     )
-    monkeypatch.setattr(paths, "PRODUCT_STATE_XDG_PARENT", tmp_path / "missing_xdg" / "FreeCAD")
-    monkeypatch.setattr(paths, "PRODUCT_STATE_CACHE_PARENT", tmp_path / "missing_cache" / "FreeCAD")
     return fake_home
-
-
-def _deny_parent(parent: Path) -> None:
-    parent.parent.mkdir(parents=True, exist_ok=True)
-    parent.write_text("not a directory", encoding="utf-8")
-
-
-def _select_explicit(_monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_home: Path) -> tuple[Optional[Path], Path]:
-    root = tmp_path / "explicit"
-    return root, root
-
-
-def _select_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_home: Path) -> tuple[Optional[Path], Path]:
-    root = tmp_path / "from_env"
-    monkeypatch.setenv("CBCS_STATE_ROOT", str(root))
-    return None, root
-
-
-def _select_install_pointer(_monkeypatch: pytest.MonkeyPatch, tmp_path: Path, _fake_home: Path) -> tuple[Optional[Path], Path]:
-    root = tmp_path / "from_install_pointer"
-    (tmp_path / "install" / "cbcs_state_root").write_text(f"{root}\n", encoding="utf-8")
-    return None, root
-
-
-def _select_legacy_home(_monkeypatch: pytest.MonkeyPatch, _tmp_path: Path, fake_home: Path) -> tuple[Optional[Path], Path]:
-    root = fake_home / constants.GLOBAL_STATE_DIRNAME
-    root.mkdir()
-    return None, root
 
 
 def test_resolve_app_root_is_absolute_and_cwd_independent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -77,20 +39,23 @@ def test_resolve_app_root_is_absolute_and_cwd_independent(monkeypatch: pytest.Mo
     assert paths.resolve_app_root() == expected
 
 
-def test_global_state_root_defaults_to_freecad_adjacent_path(
+def test_global_state_root_defaults_to_product_state_leaf(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _isolate_state_resolution(monkeypatch, tmp_path)
-    assert paths.resolve_global_state_root() == _PRODUCT_DEFAULT_STATE_ROOT
+    root = paths.resolve_global_state_root()
+    assert root == Path("/home/default/FreeCAD/CBCS/state")
+    assert root.name == "state"
 
 
-def test_legacy_home_state_dir_wins_when_present(
+def test_leftover_home_state_dir_does_not_win_resolve(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
-    legacy = fake_home / constants.GLOBAL_STATE_DIRNAME
-    legacy.mkdir()
-    assert paths.resolve_global_state_root() == legacy
+    leftover = fake_home / constants.GLOBAL_STATE_DIRNAME
+    leftover.mkdir()
+    (leftover / constants.GLOBAL_SETTINGS_FILENAME).write_text("{}", encoding="utf-8")
+    assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
 
 
 def test_cbcs_state_root_env_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -101,15 +66,18 @@ def test_cbcs_state_root_env_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Pat
     assert paths.resolve_global_state_root() == env_root
 
 
-def test_install_parent_pointer_wins_when_env_unset(
+def test_install_parent_pointer_is_not_consulted(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
-    (fake_home / constants.GLOBAL_STATE_DIRNAME).mkdir()
+    _isolate_state_resolution(monkeypatch, tmp_path)
+    install_root = tmp_path / "install" / "choreboy_code_studio_vX"
+    install_root.mkdir(parents=True)
     pointed = tmp_path / "from_install_pointer"
-    pointer = tmp_path / "install" / "cbcs_state_root"
-    pointer.write_text(f"# shop pointer\n\n{pointed}\n", encoding="utf-8")
-    assert paths.resolve_global_state_root() == pointed
+    (install_root.parent / constants.CBCS_STATE_ROOT_POINTER_FILENAME).write_text(
+        f"{pointed}\n", encoding="utf-8"
+    )
+    monkeypatch.setattr(paths, "resolve_app_root", lambda: install_root)
+    assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
 
 
 def test_explicit_state_root_wins_over_env(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -130,75 +98,16 @@ def test_state_root_symlink_keeps_logical_path(tmp_path: Path) -> None:
     assert got.name == link.name
 
 
-@pytest.mark.parametrize(
-    ("xdg_ok", "cache_ok", "expected_parent_name"),
-    (
-        (True, True, "PRODUCT_STATE_XDG_PARENT"),
-        (False, True, "PRODUCT_STATE_CACHE_PARENT"),
-        (False, False, "PRODUCT_STATE_VISIBLE_PARENT"),
-    ),
-    ids=("xdg_visible_dir_wins", "cache_hidden_dir_wins_when_xdg_fails", "visible_freecad_fallback_when_both_fail"),
-)
-def test_product_default_picks_first_parent_that_probes_ok(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    xdg_ok: bool,
-    cache_ok: bool,
-    expected_parent_name: str,
-) -> None:
-    _isolate_state_resolution(monkeypatch, tmp_path)
-    xdg_parent = tmp_path / ".local" / "share" / "FreeCAD"
-    cache_parent = tmp_path / ".cache" / "FreeCAD"
-    if xdg_ok:
-        xdg_parent.mkdir(parents=True)
-    else:
-        _deny_parent(xdg_parent)
-    if cache_ok:
-        cache_parent.mkdir(parents=True)
-    else:
-        _deny_parent(cache_parent.parent)
-    monkeypatch.setattr(paths, "PRODUCT_STATE_XDG_PARENT", xdg_parent)
-    monkeypatch.setattr(paths, "PRODUCT_STATE_CACHE_PARENT", cache_parent)
-
-    root = paths.resolve_global_state_root()
-
-    assert root == getattr(paths, expected_parent_name) / constants.GLOBAL_STATE_DIRNAME
-
-
-def test_default_state_root_leaf_stays_visible_under_hidden_parent(
+def test_resolve_does_not_run_hidden_path_probe(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _isolate_state_resolution(monkeypatch, tmp_path)
-    xdg_parent = tmp_path / ".local" / "share" / "FreeCAD"
-    xdg_parent.mkdir(parents=True)
-    monkeypatch.setattr(paths, "PRODUCT_STATE_XDG_PARENT", xdg_parent)
-
-    root = paths.resolve_global_state_root()
-
-    assert root.parent == xdg_parent
-    assert not root.name.startswith(".")
-    assert any(part.startswith(".") for part in root.parent.parts)
-
-
-@pytest.mark.parametrize(
-    "select",
-    (_select_explicit, _select_env, _select_install_pointer, _select_legacy_home),
-    ids=("explicit", "env", "install_pointer", "legacy_home"),
-)
-def test_probe_is_not_invoked_when_an_earlier_step_selects_the_root(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    select: StateRootSelector,
-) -> None:
-    fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
-    state_root, expected = select(monkeypatch, tmp_path, fake_home)
 
     def _explode(parent: Path) -> hidden_path_policy.HiddenPathProbeResult:
         raise AssertionError(f"probe invoked for {parent}")
 
-    monkeypatch.setattr(paths, "probe_hidden_path_support", _explode)
-
-    assert paths.resolve_global_state_root(state_root) == expected
+    monkeypatch.setattr(hidden_path_policy, "probe_hidden_path_support", _explode)
+    assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
 
 
 def test_empty_or_relative_env_does_not_select_state_root(
@@ -206,9 +115,37 @@ def test_empty_or_relative_env_does_not_select_state_root(
 ) -> None:
     _isolate_state_resolution(monkeypatch, tmp_path)
     monkeypatch.setenv("CBCS_STATE_ROOT", "   ")
-    assert paths.resolve_global_state_root() == _PRODUCT_DEFAULT_STATE_ROOT
+    assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
     monkeypatch.setenv("CBCS_STATE_ROOT", "relative/state")
-    assert paths.resolve_global_state_root() == _PRODUCT_DEFAULT_STATE_ROOT
+    assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
+
+
+def test_shop_pointer_uses_first_absolute_path_ignoring_comments(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate_state_resolution(monkeypatch, tmp_path)
+    pointed = tmp_path / "shop_state"
+    shop_pointer = tmp_path / "shop_cbcs_state_root"
+    shop_pointer.write_text(
+        "\n# canonical shop root\nrelative/not/used\n{0}\n{1}\n".format(
+            pointed,
+            tmp_path / "ignored_second",
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        paths,
+        "DEFAULT_PRODUCT_STATE_LAYOUT",
+        paths.ProductStateLayout(
+            install_base=Path(constants.PRODUCT_INSTALL_BASE),
+            state_root=Path(constants.PRODUCT_STATE_ROOT),
+            shop_pointer_path=shop_pointer,
+            occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
+            migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
+            legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
+        ),
+    )
+    assert paths.resolve_global_state_root() == pointed
 
 
 def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:

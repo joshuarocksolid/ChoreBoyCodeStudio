@@ -374,6 +374,6 @@ def _check_writable_directory(directory: Path, check_id: str, label: str) -> Cap
 def _verify_writable_directory(directory: Path) -> None:
     """Create directory and verify write permissions with a probe file."""
     ensured_dir = ensure_directory(directory)
-    probe_file = ensured_dir / f".capability_probe_{uuid.uuid4().hex}.tmp"
+    probe_file = ensured_dir / f"{constants.CAPABILITY_PROBE_CANARY_PREFIX}{uuid.uuid4().hex}.tmp"
     probe_file.write_text("ok", encoding="utf-8")
     probe_file.unlink()

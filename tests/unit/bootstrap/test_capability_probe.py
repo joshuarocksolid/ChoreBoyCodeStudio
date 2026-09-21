@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.bootstrap import capability_probe
+from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 
 pytestmark = pytest.mark.unit
@@ -141,11 +142,15 @@ def test_check_freecad_availability_uses_apprun_fallback_after_probe_launch_erro
 
 def test_check_writable_state_path_uses_resolved_state_root(tmp_path: Path) -> None:
     """State-root writability should succeed for writable locations."""
-    result = capability_probe.check_writable_state_path(state_root=tmp_path / "state")
+    state_root = tmp_path / "state"
+    result = capability_probe.check_writable_state_path(state_root=state_root)
 
     assert result.check_id == "state_root_writable"
     assert result.is_available is True
-    assert result.details["path"] == str((tmp_path / "state").resolve())
+    assert result.details["path"] == str(state_root.resolve())
+    leftovers = [path.name for path in state_root.iterdir()]
+    assert leftovers == []
+    assert not constants.CAPABILITY_PROBE_CANARY_PREFIX.startswith(".")
 
 
 def test_check_writable_logs_path_returns_failure_on_permission_error(monkeypatch: pytest.MonkeyPatch) -> None:
