@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind, CompletionResolveResult
 from app.shell.editor_completion_workflow import EditorCompletionWorkflow
 
@@ -143,3 +144,7 @@ def test_request_editor_completions_uses_worker_lane_not_ui_sync_fast() -> None:
 
     assert len(host.intelligence_controller().editor_completion_calls) == 1
     assert not hasattr(host.intelligence_controller(), "complete_fast_sync")
+    request = host.intelligence_controller().editor_completion_calls[0]["request"]
+    completion_context = host.intelligence_controller().editor_completion_calls[0]["completion_context"]
+    assert request.max_results == UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT == 500
+    assert completion_context.max_results == UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT

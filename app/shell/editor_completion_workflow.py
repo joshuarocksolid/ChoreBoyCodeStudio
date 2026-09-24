@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.intelligence.completion_context import build_completion_context
 from app.intelligence.completion_models import (
@@ -72,7 +73,7 @@ class EditorCompletionWorkflow:
             project_root=project_root,
             trigger_is_manual=manual_trigger,
             min_prefix_chars=self._host.completion_min_chars(),
-            max_results=100,
+            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             trigger_kind=trigger_kind,
             trigger_character=trigger_character,
             buffer_revision=requested_revision,
@@ -87,7 +88,7 @@ class EditorCompletionWorkflow:
             project_root=project_root,
             trigger_is_manual=manual_trigger,
             min_prefix_chars=self._host.completion_min_chars(),
-            max_results=100,
+            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             trigger_kind=trigger_kind,
             trigger_character=trigger_character,
             buffer_revision=requested_revision,

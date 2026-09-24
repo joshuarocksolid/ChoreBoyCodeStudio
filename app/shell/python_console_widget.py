@@ -27,6 +27,7 @@ from PySide2.QtGui import (
 from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
 
 from app.editors.completion_popup import CompletionController
+from app.intelligence.completion_context import is_dot_after_numeric_literal
 from app.intelligence.completion_models import CompletionItem
 from app.shell.run_log_panel import _classify_line
 from app.shell.theme_tokens import ShellThemeTokens
@@ -144,6 +145,11 @@ class PythonConsoleWidget(QTextEdit):
         """Toggle the completion docs panel loading state."""
 
         self._completion_popup.set_docs_resolving(resolving)
+
+    def set_auto_trigger_period(self, enabled: bool) -> None:
+        """Apply the shared intelligence.auto_trigger_period preference."""
+
+        self._auto_trigger_period = bool(enabled)
 
     def completion_request_generation(self) -> int:
         return self._completion_request_generation
@@ -372,6 +378,9 @@ class PythonConsoleWidget(QTextEdit):
         if event.text() and self._completion_popup.is_visible() and self._active_completion_prefix:
             self._trigger_completion(trigger_kind="typing", trigger_character="")
         elif event.text() == "." and self._auto_trigger_period:
+            line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+            if is_dot_after_numeric_literal(line_buffer, cursor_offset):
+                return
             self._trigger_completion(trigger_kind="trigger_character", trigger_character=".")
 
     def _trigger_completion(self, *, trigger_kind: str, trigger_character: str) -> None:

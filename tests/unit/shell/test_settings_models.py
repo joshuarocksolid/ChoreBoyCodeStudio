@@ -525,6 +525,22 @@ def test_effective_font_size_clamping(base_size: int, delta: int, expected: int)
     assert effective == expected
 
 
+def test_auto_trigger_period_round_trips_through_intelligence_settings() -> None:
+    disabled = parse_editor_settings_snapshot(
+        {"intelligence": {constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_KEY: False}}
+    )
+    assert disabled.completion_auto_trigger_period is False
+
+    merged = merge_editor_settings_snapshot({}, disabled)
+    assert merged["intelligence"][constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_KEY] is False
+    assert parse_editor_settings_snapshot(merged).completion_auto_trigger_period is False
+
+    defaulted = parse_editor_settings_snapshot({})
+    assert defaulted.completion_auto_trigger_period is True
+    grouped = parse_main_window_settings({})
+    assert grouped.completion_preferences[3] is True
+
+
 def test_parse_main_window_settings_builds_grouped_preferences() -> None:
     grouped = parse_main_window_settings(
         {
@@ -581,7 +597,7 @@ def test_parse_main_window_settings_builds_grouped_preferences() -> None:
         False,
         False,
     )
-    assert grouped.completion_preferences == (False, False, 4)
+    assert grouped.completion_preferences == (False, False, 4, True)
     assert grouped.diagnostics_preferences == (False, False, False, False)
     assert grouped.output_preferences == (False, False)
     runtime = grouped.intelligence_runtime_settings

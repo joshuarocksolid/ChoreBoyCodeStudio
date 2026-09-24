@@ -40,6 +40,7 @@ def test_general_tab_state_roundtrips_snapshot_fields() -> None:
         completion_enabled=False,
         completion_auto_trigger=True,
         completion_min_chars=4,
+        completion_auto_trigger_period=False,
         diagnostics_realtime=False,
         quick_fixes_enabled=True,
         quick_fix_require_preview_for_multifile=False,

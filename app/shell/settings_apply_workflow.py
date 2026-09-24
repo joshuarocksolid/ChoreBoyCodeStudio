@@ -24,6 +24,7 @@ _EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
     "completion_enabled",
     "completion_auto_trigger",
     "completion_min_chars",
+    "completion_auto_trigger_period",
 )
 
 _INTELLIGENCE_HIGHLIGHTING_FIELDS: tuple[str, ...] = (
@@ -329,6 +330,7 @@ class MainWindowSettingsApplyHost:
 
     def apply_editor_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
+        self._window._python_console_workflow.apply_completion_preferences()
 
     def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()

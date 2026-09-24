@@ -217,6 +217,10 @@ def build_general_tab(
     dialog._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)
     intelligence_form.addRow("Auto-trigger completion", dialog._completion_auto_trigger_input)
 
+    dialog._completion_auto_trigger_period_input = QCheckBox(intelligence_group)
+    dialog._completion_auto_trigger_period_input.setChecked(snapshot.completion_auto_trigger_period)
+    intelligence_form.addRow("Auto-trigger on period (.)", dialog._completion_auto_trigger_period_input)
+
     dialog._completion_min_chars_input = QSpinBox(intelligence_group)
     dialog._completion_min_chars_input.setRange(1, 8)
     dialog._completion_min_chars_input.setValue(snapshot.completion_min_chars)
@@ -281,6 +285,7 @@ def general_tab_state_from_controls(dialog: "SettingsDialog") -> GeneralTabState
         completion_enabled=dialog._completion_enabled_input.isChecked(),
         completion_auto_trigger=dialog._completion_auto_trigger_input.isChecked(),
         completion_min_chars=int(dialog._completion_min_chars_input.value()),
+        completion_auto_trigger_period=dialog._completion_auto_trigger_period_input.isChecked(),
         diagnostics_realtime=dialog._diagnostics_realtime_input.isChecked(),
         quick_fixes_enabled=dialog._quick_fixes_enabled_input.isChecked(),
         quick_fix_require_preview_for_multifile=dialog._quick_fix_multifile_preview_input.isChecked(),
@@ -320,6 +325,7 @@ def apply_general_tab_state_to_controls(dialog: "SettingsDialog", state: General
     dialog._completion_enabled_input.setChecked(state.completion_enabled)
     dialog._completion_auto_trigger_input.setChecked(state.completion_auto_trigger)
     dialog._completion_min_chars_input.setValue(state.completion_min_chars)
+    dialog._completion_auto_trigger_period_input.setChecked(state.completion_auto_trigger_period)
     dialog._diagnostics_realtime_input.setChecked(state.diagnostics_realtime)
     dialog._quick_fixes_enabled_input.setChecked(state.quick_fixes_enabled)
     dialog._quick_fix_multifile_preview_input.setChecked(state.quick_fix_require_preview_for_multifile)

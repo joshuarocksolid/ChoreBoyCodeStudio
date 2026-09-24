@@ -8,7 +8,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import Qt
 from PySide2.QtGui import QFont, QKeySequence
-from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QPushButton
+from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QLabel, QPushButton
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
@@ -19,6 +19,17 @@ pytestmark = pytest.mark.unit
 @pytest.fixture(scope="module", autouse=True)
 def _qapp(qapp):  # type: ignore[no-untyped-def]
     return qapp
+
+
+def test_settings_dialog_round_trips_auto_trigger_period() -> None:
+    dialog = SettingsDialog(EditorSettingsSnapshot(completion_auto_trigger_period=False))
+    checkbox = dialog._completion_auto_trigger_period_input
+    assert checkbox.isChecked() is False
+    labels = [label.text() for label in dialog.findChildren(QLabel)]
+    assert "Auto-trigger on period (.)" in labels
+
+    checkbox.setChecked(True)
+    assert dialog.snapshot().completion_auto_trigger_period is True
 
 
 def test_settings_dialog_snapshot_includes_shortcut_overrides() -> None:

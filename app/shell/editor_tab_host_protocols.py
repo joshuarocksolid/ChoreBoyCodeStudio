@@ -111,6 +111,9 @@ class EditorTabPreferencesHost(Protocol):
     def completion_min_chars(self) -> int:
         ...
 
+    def completion_auto_trigger_period(self) -> bool:
+        ...
+
     def intelligence_runtime_settings(self) -> Any:
         ...
 

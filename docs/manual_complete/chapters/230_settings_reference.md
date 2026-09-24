@@ -60,6 +60,7 @@ diagnostics behavior, quick fixes, and the symbol index.
 | --- | --- | --- |
 | Enable completion | On | Offer code completion. |
 | Auto-trigger completion | Off | Show completions automatically while typing. |
+| Auto-trigger on period (.) | On | Open completion after typing `.` in the editor and the Python Console (independent of Auto-trigger completion). |
 | Completion min chars | 2 | Characters typed before auto-completion triggers. |
 | Realtime diagnostics | On | Update problems as you type. |
 | Enable quick fixes | On | Offer automatic fixes for problems. |

@@ -123,6 +123,7 @@ class SettingsScopeHandlersMixin:
         self._completion_enabled_input.setChecked(baseline.completion_enabled)
         self._completion_auto_trigger_input.setChecked(baseline.completion_auto_trigger)
         self._completion_min_chars_input.setValue(baseline.completion_min_chars)
+        self._completion_auto_trigger_period_input.setChecked(baseline.completion_auto_trigger_period)
         self._linter_enabled_input.setChecked(baseline.diagnostics_enabled)
         self._diagnostics_realtime_input.setChecked(baseline.diagnostics_realtime)
         self._quick_fixes_enabled_input.setChecked(baseline.quick_fixes_enabled)

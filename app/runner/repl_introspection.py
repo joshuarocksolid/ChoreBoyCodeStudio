@@ -8,6 +8,7 @@ import inspect
 import logging
 from typing import Any
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind
 from app.intelligence.trusted_runtime_whitelist import is_whitelisted_target_path
 
@@ -37,7 +38,7 @@ class ReplIntrospectionRequest:
     target_path: str
     member_prefix: str = ""
     include_private: bool = True
-    max_results: int = 100
+    max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 
 
 class ReplIntrospectionService:
