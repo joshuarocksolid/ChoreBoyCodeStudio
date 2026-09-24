@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QColor
+from PySide2.QtCore import Qt, Signal
+from PySide2.QtGui import QColor, QHideEvent
 from PySide2.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -23,6 +23,8 @@ _SHADOW_OFFSET_Y = 4
 
 class CompletionPopupContainer(QFrame):
     """Top-level frameless popup hosting the list view and docs panel."""
+
+    closed = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -74,6 +76,12 @@ class CompletionPopupContainer(QFrame):
         self._shadow = shadow
 
         self._list_view.current_item_changed.connect(self._docs_panel.set_item)
+
+    def hideEvent(self, event: QHideEvent) -> None:  # type: ignore[override]
+        """Emit :pyattr:`closed` so the controller drops retained refine state."""
+
+        super().hideEvent(event)
+        self.closed.emit()
 
     # ------------------------------------------------------------------
     # Theme

@@ -420,23 +420,34 @@ class PythonConsoleWidget(QTextEdit):
     def _refine_completion_after_buffer_edit(self) -> None:
         context = self._completion_context_for_input(trigger_kind="typing", trigger_character="")
         current_prefix = context.prefix
+        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
         if self._completion_popup.is_visible():
-            if self._completion_popup.reuse_items_for_prefix(current_prefix):
+            if self._completion_popup.reuse_items_for_prefix(
+                current_prefix,
+                source_text=line_buffer,
+                cursor_position=cursor_offset,
+            ):
                 self._active_completion_prefix = current_prefix
                 self._completion_request_generation += 1
                 self._present_refined_completion()
                 return
             self._completion_popup.hide()
             return
-        if (
-            self._auto_trigger_period
-            and self._completion_popup.has_base_items()
-            and context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
-        ):
-            if self._completion_popup.reuse_items_for_prefix(current_prefix):
+        if not self._auto_trigger_period:
+            return
+        if context.syntactic_context != CompletionSyntacticContext.DOTTED_MEMBER:
+            return
+        if self._completion_popup.has_base_items():
+            if self._completion_popup.reuse_items_for_prefix(
+                current_prefix,
+                source_text=line_buffer,
+                cursor_position=cursor_offset,
+            ):
                 self._active_completion_prefix = current_prefix
                 self._completion_request_generation += 1
                 self._present_refined_completion()
+                return
+        self._trigger_completion(trigger_kind="typing", trigger_character="")
 
     def _present_refined_completion(self) -> None:
         rect = self.cursorRect()

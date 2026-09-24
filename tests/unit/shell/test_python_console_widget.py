@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
+from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt, QEvent  # noqa: E402
 from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent, QPalette  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
@@ -32,6 +32,7 @@ def widget() -> Iterator[PythonConsoleWidget]:
     console._completion_popup.hide()  # noqa: SLF001
     console.hide()
     console.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
     app = QApplication.instance()
     if app is not None:
         app.processEvents()
@@ -306,22 +307,40 @@ class TestCompletion:
     ) -> None:
         self._show_dot_popup(active_widget, ["pardir", "path", "pathsep"])
 
-        for ch in "pas":
+        for ch in "par":
             _press(active_widget, Qt.Key(ord(ch.upper())), ch)
         _press(active_widget, Qt.Key_Backspace)
         current = active_widget._completion_popup.current_item()  # noqa: SLF001
         assert current is not None
         assert current.label == "pardir"
+        assert active_widget._completion_popup.is_visible()  # noqa: SLF001
         _press(active_widget, Qt.Key_Tab)
 
         assert _get_plain_text(active_widget).endswith(_PROMPT + "os.pardir")
 
     def test_backspace_reopens_popup_after_no_match_close(self, active_widget: PythonConsoleWidget) -> None:
         active_widget.show()
+        items = [self._symbol("getcwd"), self._symbol("getenv")]
+
+        def _requester(
+            _line: str,
+            _cursor: int,
+            request_generation: int,
+            _trigger_kind: str,
+            _trigger_character: str,
+        ) -> None:
+            active_widget.show_completion_items_for_request(
+                request_generation=request_generation,
+                prefix="",
+                items=items,
+            )
+
         self._show_dot_popup(active_widget, ["getcwd", "getenv"])
+        active_widget.set_completion_requester(_requester)
 
         _press(active_widget, Qt.Key_Z, "z")
         assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+        assert active_widget._completion_popup.has_base_items() is False  # noqa: SLF001
 
         _press(active_widget, Qt.Key_Backspace)
 
@@ -329,6 +348,29 @@ class TestCompletion:
         popup = active_widget._completion_popup  # noqa: SLF001
         assert popup.is_visible()
         assert [item.label for item in popup.model().items()] == ["getcwd", "getenv"]
+
+    def test_dismissed_dot_popup_does_not_delete_other_expression_on_tab(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        active_widget.show()
+        self._show_dot_popup(active_widget, ["pardir", "path", "pathsep"])
+        for ch in "pa":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+        active_widget._completion_popup.hide()  # noqa: SLF001
+        assert active_widget._completion_popup.has_base_items() is False  # noqa: SLF001
+
+        _type_text(active_widget, " + sys.pat")
+        _press(active_widget, Qt.Key_Backspace)
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.pa + sys.pa")
+
+        stale = self._symbol("pardir", replacement_start=len("os."), replacement_end=len("os."))
+        active_widget._insert_completion_from_item(stale)  # noqa: SLF001
+        after = _get_plain_text(active_widget)
+        assert after.endswith(_PROMPT + "os.pa + sys.pardir")
+        assert "os.pardir" not in after or after.endswith("sys.pardir")
+        assert "+ sys.pardir" in after
 
     def test_backspace_does_not_reopen_when_period_auto_trigger_disabled(
         self,

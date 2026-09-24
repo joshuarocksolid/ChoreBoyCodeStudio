@@ -29,6 +29,7 @@ from app.editors.completion_popup.completion_popup_container import (
 )
 from app.editors.completion_popup.completion_replacement import (
     items_with_prefix_replacement_range,
+    retained_replacement_matches_cursor,
 )
 from app.core.completion_tier import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
@@ -66,6 +67,7 @@ class CompletionController(QObject):
         # ``Qt.Popup``) and forward typed characters back to the host widget so
         # the user can keep typing to refine the visible completion list.
         self._popup.installEventFilter(self)
+        self._popup.closed.connect(self._on_popup_closed)
         self._tokens: ShellThemeTokens | None = None
         self._last_selection_identity = ""
         self._base_items: list[CompletionItem] = []
@@ -123,9 +125,23 @@ class CompletionController(QObject):
 
         self._popup.docs_panel().set_resolving(resolving)
 
-    def reuse_items_for_prefix(self, prefix: str) -> bool:
+    def reuse_items_for_prefix(
+        self,
+        prefix: str,
+        *,
+        source_text: str | None = None,
+        cursor_position: int | None = None,
+    ) -> bool:
         """Filter the retained base list to ``prefix`` (lengthen or shorten)."""
 
+        if source_text is not None and cursor_position is not None:
+            if not retained_replacement_matches_cursor(
+                self._base_items,
+                source_text,
+                cursor_position,
+            ):
+                self.clear_base_items()
+                return False
         filtered = _filter_items_preserving_tier_headers(self._base_items, prefix)
         if not filtered or not any(not is_tier_header_item(item) for item in filtered):
             return False
@@ -147,6 +163,11 @@ class CompletionController(QObject):
         self._base_items = []
         self._model.clear()
         self._popup.hide()
+
+    def _on_popup_closed(self) -> None:
+        """Drop retained refine state on every hide (Escape, accept, click-away)."""
+
+        self.clear_base_items()
 
     def _apply_items(self, items: list[CompletionItem], prefix: str) -> None:
         self._model.set_items(items, prefix)

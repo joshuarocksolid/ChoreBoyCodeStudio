@@ -23,6 +23,7 @@ from app.editors.completion_popup.completion_replacement import (
     identifier_span_before,
     items_with_prefix_replacement_range,
     resolve_insert_replacement_range,
+    retained_replacement_matches_cursor,
 )
 
 __all__ = [
@@ -42,4 +43,5 @@ __all__ = [
     "kind_style_for",
     "kind_styles_for_tokens",
     "resolve_insert_replacement_range",
+    "retained_replacement_matches_cursor",
 ]

@@ -183,7 +183,11 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             and not effective_trigger_character
             and self._completion_popup.is_visible()
         ):
-            if self._completion_popup.reuse_items_for_prefix(current_prefix):
+            if self._completion_popup.reuse_items_for_prefix(
+                current_prefix,
+                source_text=source_text,
+                cursor_position=cursor_position,
+            ):
                 self._active_completion_prefix = current_prefix
                 # Drop in-flight paints from the earlier trigger (usually bare ".")
                 # so a late empty-prefix envelope cannot wipe the filtered list.
@@ -407,7 +411,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         if self._completion_popup.is_visible():
             self.trigger_completion(manual=False)
             return
-        if not self._completion_auto_trigger_period or not self._completion_popup.has_base_items():
+        if not self._completion_auto_trigger_period:
             return
         source_text = self.toPlainText()
         cursor_position = self.textCursor().position()
@@ -421,12 +425,19 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         )
         if context.syntactic_context != CompletionSyntacticContext.DOTTED_MEMBER:
             return
-        if not self._completion_popup.reuse_items_for_prefix(context.prefix):
-            return
-        self._active_completion_prefix = context.prefix
-        self._completion_request_generation += 1
-        self._completion_popup.complete(self.cursorRect())
-
+        if self._completion_popup.has_base_items():
+            if self._completion_popup.reuse_items_for_prefix(
+                context.prefix,
+                source_text=source_text,
+                cursor_position=cursor_position,
+            ):
+                self._active_completion_prefix = context.prefix
+                self._completion_request_generation += 1
+                self._completion_popup.complete(self.cursorRect())
+                return
+        # Popup was dismissed (or retained starts no longer match this cursor):
+        # request a fresh paint instead of resurrecting a stale base list.
+        self.trigger_completion(manual=False)
     def _hide_completion_popup(self) -> None:
         self._completion_debounce_timer.stop()
         self._debounced_completion_request = None

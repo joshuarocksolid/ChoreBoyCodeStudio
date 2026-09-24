@@ -21,6 +21,34 @@ def identifier_span_before(source_text: str, cursor_position: int) -> tuple[int,
     return start, end
 
 
+def retained_replacement_matches_cursor(
+    items: list[CompletionItem],
+    source_text: str,
+    cursor_position: int,
+) -> bool:
+    """Return whether retained replacement starts still anchor the live identifier.
+
+    Stale starts from a dismissed ``.`` paint must not be reused after the cursor
+    moves to a different member access (possibly on another line).
+    """
+
+    live_start, live_end = identifier_span_before(source_text, cursor_position)
+    stored_starts = {
+        item.replacement_start
+        for item in items
+        if item.replacement_start is not None
+    }
+    if not stored_starts:
+        return True
+    if stored_starts != {live_start}:
+        return False
+    for index in range(live_start, live_end):
+        ch = source_text[index]
+        if ch == "\n" or ch == "\r" or not (ch.isalnum() or ch == "_"):
+            return False
+    return True
+
+
 def items_with_prefix_replacement_range(
     items: list[CompletionItem],
     prefix: str,
@@ -60,14 +88,11 @@ def resolve_insert_replacement_range(
 ) -> tuple[int, int]:
     """Return the buffer span to replace when accepting ``item``.
 
-    Prefers the live identifier under the cursor when a stored range is missing
-    or lags behind typed characters (stale empty-prefix paint).
+    Always replaces only the live identifier under the cursor. Stored item
+    ranges must never widen the left edge past that identifier start (a stale
+    empty-prefix start from an earlier ``.`` paint would delete intervening
+    text).
     """
 
-    live_start, live_end = identifier_span_before(source_text, cursor_position)
-    if item.replacement_start is None or item.replacement_end is None:
-        return live_start, live_end
-    return (
-        min(item.replacement_start, live_start),
-        max(item.replacement_end, live_end),
-    )
+    _ = item
+    return identifier_span_before(source_text, cursor_position)
