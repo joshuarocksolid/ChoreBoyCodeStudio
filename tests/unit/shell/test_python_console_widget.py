@@ -166,6 +166,38 @@ class TestCompletion:
         assert requests[-1][3] == "trigger_character"
         assert requests[-1][4] == "."
 
+    def test_dot_does_not_trigger_when_auto_trigger_period_disabled(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        requests: list[tuple[str, int, int, str, str]] = []
+        active_widget.set_completion_requester(
+            lambda line, cursor, generation, trigger_kind, trigger_character: requests.append(
+                (line, cursor, generation, trigger_kind, trigger_character)
+            )
+        )
+        active_widget.set_auto_trigger_period(False)
+
+        _type_text(active_widget, "FreeCAD.")
+
+        assert requests == []
+
+    def test_numeric_dot_does_not_trigger_completion(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        requests: list[tuple[str, int, int, str, str]] = []
+        active_widget.set_completion_requester(
+            lambda line, cursor, generation, trigger_kind, trigger_character: requests.append(
+                (line, cursor, generation, trigger_kind, trigger_character)
+            )
+        )
+        active_widget.set_auto_trigger_period(True)
+
+        _type_text(active_widget, "1.")
+
+        assert requests == []
+
     def test_completion_insert_respects_prompt_anchor(self, active_widget: PythonConsoleWidget) -> None:
         _type_text(active_widget, "FreeCAD.new")
         item = CompletionItem(

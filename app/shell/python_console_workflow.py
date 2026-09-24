@@ -61,6 +61,9 @@ class PythonConsoleBindingPort(Protocol):
     def set_completion_docs_resolving(self, resolving: bool) -> None:
         ...
 
+    def set_auto_trigger_period(self, enabled: bool) -> None:
+        ...
+
     def completion_request_generation(self) -> int:
         ...
 
@@ -126,6 +129,9 @@ class PythonConsoleWorkflowHost(Protocol):
     def clear_console_host(self) -> ClearConsoleHost:
         ...
 
+    def completion_auto_trigger_period(self) -> bool:
+        ...
+
 
 class MainWindowPythonConsoleHost:
     """Host ports for ``PythonConsoleWorkflow`` backed by a MainWindow instance."""
@@ -155,6 +161,9 @@ class MainWindowPythonConsoleHost:
 
     def clear_console_host(self) -> MainWindowClearConsoleHost:
         return MainWindowClearConsoleHost(self._window)
+
+    def completion_auto_trigger_period(self) -> bool:
+        return self._window._shell_preferences_runtime.completion_auto_trigger_period()
 
 
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]
@@ -202,6 +211,21 @@ class PythonConsoleWorkflow:
         widget.interrupt_requested.connect(self.handle_interrupt)
         widget.restart_requested.connect(self.handle_start_python_console_action)
         widget.set_completion_requester(self.request_completion_async)
+        self.apply_completion_preferences(widget)
+
+    def apply_completion_preferences(
+        self,
+        widget: PythonConsoleBindingPort | None = None,
+    ) -> None:
+        """Push shared intelligence completion prefs onto the console widget."""
+
+        target = widget
+        if target is None:
+            live = self._host.python_console_widget()
+            if live is None:
+                return
+            target = cast(PythonConsoleBindingPort, live)
+        target.set_auto_trigger_period(self._host.completion_auto_trigger_period())
 
     def handle_start_python_console_action(self) -> bool:
         """Restart the REPL session and focus the Python Console tab."""

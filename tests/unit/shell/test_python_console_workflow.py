@@ -20,6 +20,7 @@ pytestmark = pytest.mark.unit
 class FakeConsoleWidget:
     shown_generations: list[int] = field(default_factory=list)
     shown_items: list[list[CompletionItem]] = field(default_factory=list)
+    auto_trigger_period: bool | None = None
 
     def show_completion_items_for_request(
         self,
@@ -31,6 +32,9 @@ class FakeConsoleWidget:
         self.shown_generations.append(request_generation)
         self.shown_items.append(list(items))
 
+    def set_auto_trigger_period(self, enabled: bool) -> None:
+        self.auto_trigger_period = bool(enabled)
+
 
 @dataclass
 class FakePythonConsoleHost:
@@ -41,6 +45,7 @@ class FakePythonConsoleHost:
     repl_warnings: list[tuple[str, Exception]] = field(default_factory=list)
     clear_console_calls: int = 0
     last_clear_host: FakeClearConsoleHost | None = None
+    period_auto_trigger: bool = True
 
     def python_console_widget(self) -> FakeConsoleWidget | None:
         return self.console_widget
@@ -62,6 +67,9 @@ class FakePythonConsoleHost:
         self.clear_console_calls += 1
         self.last_clear_host = FakeClearConsoleHost()
         return self.last_clear_host
+
+    def completion_auto_trigger_period(self) -> bool:
+        return self.period_auto_trigger
 
 
 @dataclass
@@ -384,3 +392,13 @@ def test_handle_clear_display_action_clears_python_console_display_only() -> Non
     assert host.last_clear_host is not None
     assert host.last_clear_host.display_cleared is True
     assert host.last_clear_host.cleared is False
+
+
+def test_apply_completion_preferences_pushes_period_flag_to_console() -> None:
+    host = FakePythonConsoleHost(period_auto_trigger=False)
+    workflow = PythonConsoleWorkflow(repl_manager=FakeReplSession(), host=host)
+
+    workflow.apply_completion_preferences()
+
+    assert host.console_widget is not None
+    assert host.console_widget.auto_trigger_period is False

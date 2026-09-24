@@ -330,6 +330,7 @@ class MainWindowSettingsApplyHost:
 
     def apply_editor_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
+        self._window._python_console_workflow.apply_completion_preferences()
 
     def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
