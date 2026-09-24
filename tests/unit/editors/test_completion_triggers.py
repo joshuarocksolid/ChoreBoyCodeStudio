@@ -417,6 +417,82 @@ def test_backspace_does_not_reopen_when_period_auto_trigger_disabled(
     assert editor._completion_popup.is_visible() is False
 
 
+def _dot_member_symbol(label: str, *, member_start: int = 3) -> CompletionItem:
+    """Match live `.` trigger items: empty prefix with a collapsed replacement span."""
+
+    return CompletionItem(
+        label=label,
+        insert_text=label,
+        kind=CompletionKind.SYMBOL,
+        replacement_start=member_start,
+        replacement_end=member_start,
+    )
+
+
+def test_editor_dot_popup_tab_replaces_typed_prefix(editor: CodeEditorWidget) -> None:
+    editor.show()
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [
+            _dot_member_symbol("abc"),
+            _dot_member_symbol("pardir"),
+            _dot_member_symbol("path"),
+            _dot_member_symbol("pathsep"),
+        ],
+        prefix="",
+    )
+    assert editor._completion_popup.is_visible()
+
+    for typed, key in (("p", Qt.Key_P), ("a", Qt.Key_A)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    current = editor._completion_popup.current_item()
+    assert current is not None
+    assert current.label == "pardir"
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Tab, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os.pardir"
+    assert editor._completion_popup.is_visible() is False
+
+
+def test_editor_dot_popup_enter_replaces_typed_prefix(editor: CodeEditorWidget) -> None:
+    editor.show()
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [
+            _dot_member_symbol("pardir"),
+            _dot_member_symbol("path"),
+            _dot_member_symbol("pathsep"),
+        ],
+        prefix="",
+    )
+
+    for typed, key in (("p", Qt.Key_P), ("a", Qt.Key_A)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier, "\n"))
+
+    assert editor.toPlainText() == "os.pardir"
+    assert editor._completion_popup.is_visible() is False
+
+
 def test_editor_completion_context_uses_raised_max_results(editor: CodeEditorWidget) -> None:
     context = editor._build_editor_completion_context(
         source_text="obj.",
