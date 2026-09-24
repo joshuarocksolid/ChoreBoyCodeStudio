@@ -9,6 +9,7 @@ import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT  # noqa: E402
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind  # noqa: E402
 from app.shell.python_console_workflow import PythonConsoleWorkflow  # noqa: E402
 
@@ -177,7 +178,7 @@ def test_request_completion_async_applies_items_on_main_thread() -> None:
             "cursor_offset": 3,
             "trigger_kind": "manual",
             "trigger_character": "",
-            "max_results": 100,
+            "max_results": UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
         }
     ]
     assert host.console_widget is not None
