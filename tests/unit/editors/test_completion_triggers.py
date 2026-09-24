@@ -302,6 +302,114 @@ def test_shortened_prefix_redispatches_completion(editor: CodeEditorWidget) -> N
     assert editor._completion_popup.is_visible()
 
 
+def test_backspace_refilters_toward_empty_prefix(editor: CodeEditorWidget) -> None:
+    calls: list[object] = []
+    editor.set_completion_requester(lambda *args: calls.append(args))
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [_symbol("abc"), _symbol("getcwd"), _symbol("getenv"), _symbol("getpid")],
+        prefix="",
+    )
+    assert editor._completion_popup.is_visible()
+
+    for typed, key in (("g", Qt.Key_G), ("e", Qt.Key_E), ("t", Qt.Key_T), ("c", Qt.Key_C)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    assert [item.label for item in editor._completion_popup.model().items()] == ["getcwd"]
+    assert editor.toPlainText() == "os.getc"
+
+    for _ in range(4):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os."
+    assert editor._completion_popup.is_visible()
+    assert [item.label for item in editor._completion_popup.model().items()] == [
+        "abc",
+        "getcwd",
+        "getenv",
+        "getpid",
+    ]
+    assert editor._completion_popup.model().prefix() == ""
+    assert calls == []
+
+
+def test_backspace_past_dot_closes_completion_popup(editor: CodeEditorWidget) -> None:
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(editor, [_symbol("getcwd"), _symbol("getenv")], prefix="")
+    assert editor._completion_popup.is_visible()
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os"
+    assert editor._completion_popup.is_visible() is False
+
+
+def test_backspace_reopens_popup_after_no_match_close(editor: CodeEditorWidget) -> None:
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(editor, [_symbol("getcwd"), _symbol("getenv")], prefix="")
+    assert editor._completion_popup.is_visible()
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Z, Qt.NoModifier, "z"))
+    assert editor._completion_popup.is_visible() is False
+    assert editor.toPlainText() == "os.z"
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os."
+    assert editor._completion_popup.is_visible()
+    assert [item.label for item in editor._completion_popup.model().items()] == [
+        "getcwd",
+        "getenv",
+    ]
+
+
+def test_backspace_does_not_reopen_when_period_auto_trigger_disabled(
+    editor: CodeEditorWidget,
+) -> None:
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=False,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(editor, [_symbol("getcwd"), _symbol("getenv")], prefix="")
+    assert editor._completion_popup.is_visible()
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Z, Qt.NoModifier, "z"))
+    assert editor._completion_popup.is_visible() is False
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os."
+    assert editor._completion_popup.is_visible() is False
+
+
 def test_editor_completion_context_uses_raised_max_results(editor: CodeEditorWidget) -> None:
     context = editor._build_editor_completion_context(
         source_text="obj.",
