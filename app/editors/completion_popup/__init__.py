@@ -19,6 +19,11 @@ from app.editors.completion_popup.completion_kind_style import (
 )
 from app.editors.completion_popup.completion_list_view import CompletionListView
 from app.editors.completion_popup.completion_popup_container import CompletionPopupContainer
+from app.editors.completion_popup.completion_replacement import (
+    identifier_span_before,
+    items_with_prefix_replacement_range,
+    resolve_insert_replacement_range,
+)
 
 __all__ = [
     "CompletionController",
@@ -32,6 +37,9 @@ __all__ = [
     "KindStyleRole",
     "MatchRangesRole",
     "compute_match_ranges",
+    "identifier_span_before",
+    "items_with_prefix_replacement_range",
     "kind_style_for",
     "kind_styles_for_tokens",
+    "resolve_insert_replacement_range",
 ]

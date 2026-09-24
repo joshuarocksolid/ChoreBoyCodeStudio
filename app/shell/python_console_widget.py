@@ -28,6 +28,9 @@ from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
 
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.editors.completion_popup import CompletionController
+from app.editors.completion_popup.completion_replacement import (
+    resolve_insert_replacement_range,
+)
 from app.intelligence.completion_context import (
     CompletionContext,
     CompletionSyntacticContext,
@@ -496,15 +499,11 @@ class PythonConsoleWidget(QTextEdit):
             return
         cursor = self.textCursor()
         line_buffer, cursor_offset = self._current_input_and_cursor_offset()
-        replacement_start = item.replacement_start
-        replacement_end = item.replacement_end
-        if replacement_start is None or replacement_end is None:
-            replacement_end = cursor_offset
-            replacement_start = cursor_offset
-            while replacement_start > 0 and (
-                line_buffer[replacement_start - 1].isalnum() or line_buffer[replacement_start - 1] == "_"
-            ):
-                replacement_start -= 1
+        replacement_start, replacement_end = resolve_insert_replacement_range(
+            line_buffer,
+            cursor_offset,
+            item,
+        )
         start = self._prompt_anchor + max(0, min(replacement_start, len(line_buffer)))
         end = self._prompt_anchor + max(0, min(replacement_end, len(line_buffer)))
         cursor.setPosition(start)

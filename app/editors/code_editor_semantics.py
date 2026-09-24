@@ -9,6 +9,9 @@ from PySide2.QtGui import QKeyEvent, QTextCursor
 from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
+from app.editors.completion_popup.completion_replacement import (
+    resolve_insert_replacement_range,
+)
 from app.core.completion_tier import is_tier_header_item
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import (
@@ -463,24 +466,13 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
 
         cursor = self.textCursor()
-        if item.replacement_start is not None and item.replacement_end is not None:
-            cursor.setPosition(item.replacement_start)
-            cursor.setPosition(item.replacement_end, QTextCursor.KeepAnchor)
+        source_text = self.toPlainText()
+        cursor_position = cursor.position()
+        start, end = resolve_insert_replacement_range(source_text, cursor_position, item)
+        if start < end:
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
-        else:
-            context = self._build_editor_completion_context(
-                source_text=self.toPlainText(),
-                cursor_position=cursor.position(),
-                manual=True,
-                force_empty_prefix=True,
-                trigger_kind="invoked",
-                trigger_character="",
-            )
-            replacement = context.replacement_range
-            if replacement.start < replacement.end:
-                cursor.setPosition(replacement.start)
-                cursor.setPosition(replacement.end, QTextCursor.KeepAnchor)
-                cursor.removeSelectedText()
         cursor.insertText(item.insert_text)
         self.setTextCursor(cursor)
         if self._completion_accepted_callback is not None:

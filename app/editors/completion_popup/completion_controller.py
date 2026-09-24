@@ -27,6 +27,9 @@ from app.editors.completion_popup.completion_item_model import CompletionItemMod
 from app.editors.completion_popup.completion_popup_container import (
     CompletionPopupContainer,
 )
+from app.editors.completion_popup.completion_replacement import (
+    items_with_prefix_replacement_range,
+)
 from app.core.completion_tier import is_tier_header_item
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
@@ -126,7 +129,7 @@ class CompletionController(QObject):
         filtered = _filter_items_preserving_tier_headers(self._base_items, prefix)
         if not filtered or not any(not is_tier_header_item(item) for item in filtered):
             return False
-        self._apply_items(filtered, prefix)
+        self._apply_items(items_with_prefix_replacement_range(filtered, prefix), prefix)
         return True
 
     def has_base_items(self) -> bool:
