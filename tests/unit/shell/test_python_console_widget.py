@@ -271,6 +271,7 @@ class TestCompletion:
         assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
 
     def test_backspace_reopens_popup_after_no_match_close(self, active_widget: PythonConsoleWidget) -> None:
+        active_widget.show()
         self._show_dot_popup(active_widget, ["getcwd", "getenv"])
 
         _press(active_widget, Qt.Key_Z, "z")

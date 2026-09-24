@@ -26,8 +26,13 @@ from PySide2.QtGui import (
 )
 from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.editors.completion_popup import CompletionController
-from app.intelligence.completion_context import is_dot_after_numeric_literal
+from app.intelligence.completion_context import (
+    CompletionSyntacticContext,
+    build_completion_context,
+    is_dot_after_numeric_literal,
+)
 from app.intelligence.completion_models import CompletionItem
 from app.shell.run_log_panel import _classify_line
 from app.shell.theme_tokens import ShellThemeTokens
@@ -38,6 +43,7 @@ _PROMPT = ">>> "
 _CONT_PROMPT = "... "
 _PROMPT_LEN = len(_PROMPT)
 _MAX_HISTORY = 200
+_PYTHON_CONSOLE_FILE_PATH = "<python_console>"
 
 # FreeCAD prints module-load messages during process teardown that are not
 # meaningful to the user.  Filter them out of the console output.
@@ -360,6 +366,7 @@ class PythonConsoleWidget(QTextEdit):
             if not cursor.hasSelection() and cursor.position() <= self._prompt_anchor:
                 return
             super().keyPressEvent(event)
+            self._refine_completion_after_buffer_edit()
             return
 
         # Delete: block deletion of the prompt character.
@@ -375,13 +382,53 @@ class PythonConsoleWidget(QTextEdit):
             self.setTextCursor(cursor)
 
         super().keyPressEvent(event)
-        if event.text() and self._completion_popup.is_visible() and self._active_completion_prefix:
-            self._trigger_completion(trigger_kind="typing", trigger_character="")
-        elif event.text() == "." and self._auto_trigger_period:
+        inserted_text = event.text()
+        if inserted_text and self._completion_popup.is_visible():
+            if inserted_text.isalnum() or inserted_text == "_":
+                self._refine_completion_after_buffer_edit()
+            elif inserted_text.isprintable():
+                self._completion_popup.hide()
+            return
+        if inserted_text == "." and self._auto_trigger_period:
             line_buffer, cursor_offset = self._current_input_and_cursor_offset()
             if is_dot_after_numeric_literal(line_buffer, cursor_offset):
                 return
             self._trigger_completion(trigger_kind="trigger_character", trigger_character=".")
+
+    def _completion_context_for_input(self, *, trigger_kind: str, trigger_character: str):
+        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+        return build_completion_context(
+            source_text=line_buffer,
+            cursor_position=cursor_offset,
+            current_file_path=_PYTHON_CONSOLE_FILE_PATH,
+            project_root=None,
+            trigger_is_manual=trigger_kind == "manual",
+            min_prefix_chars=1,
+            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
+            trigger_kind=trigger_kind,
+            trigger_character=trigger_character,
+        )
+
+    def _refine_completion_after_buffer_edit(self) -> None:
+        context = self._completion_context_for_input(trigger_kind="typing", trigger_character="")
+        current_prefix = context.prefix
+        if self._completion_popup.is_visible():
+            if self._completion_popup.reuse_items_for_prefix(current_prefix):
+                self._active_completion_prefix = current_prefix
+                self._completion_request_generation += 1
+                self._completion_popup.complete(self.cursorRect())
+                return
+            self._completion_popup.hide()
+            return
+        if (
+            self._auto_trigger_period
+            and self._completion_popup.has_base_items()
+            and context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
+        ):
+            if self._completion_popup.reuse_items_for_prefix(current_prefix):
+                self._active_completion_prefix = current_prefix
+                self._completion_request_generation += 1
+                self._completion_popup.complete(self.cursorRect())
 
     def _trigger_completion(self, *, trigger_kind: str, trigger_character: str) -> None:
         if self._completion_requester is None or self._prompt_anchor < 0:
@@ -389,8 +436,9 @@ class PythonConsoleWidget(QTextEdit):
         cursor = self.textCursor()
         if cursor.position() < self._prompt_anchor:
             return
-        if self._completion_popup.is_visible() and self._active_completion_prefix:
-            self._completion_popup.reuse_items_for_prefix(self._active_completion_prefix)
+        if self._completion_popup.is_visible() and trigger_kind == "typing":
+            self._refine_completion_after_buffer_edit()
+            return
         self._completion_request_generation += 1
         line_buffer, cursor_offset = self._current_input_and_cursor_offset()
         self._completion_requester(

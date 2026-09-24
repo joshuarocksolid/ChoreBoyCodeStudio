@@ -65,6 +65,9 @@ class CompletionController(QObject):
         self._popup.installEventFilter(self)
         self._tokens: ShellThemeTokens | None = None
         self._last_selection_identity = ""
+        # Retained across prefix refine/shorten so backspace can widen the list
+        # without waiting for an async re-request. Cleared on accept/dismiss.
+        self._base_items: list[CompletionItem] = []
 
     # ------------------------------------------------------------------
     # Wiring
@@ -102,9 +105,8 @@ class CompletionController(QObject):
 
     def set_items(self, items: list[CompletionItem], prefix: str) -> None:
         """Populate the model with new candidates."""
-        self._model.set_items(items, prefix)
-        self._last_selection_identity = ""
-        self._popup.list_view().select_first_row()
+        self._base_items = list(items)
+        self._apply_items(items, prefix)
 
     def replace_item(self, item: CompletionItem) -> bool:
         """Replace a displayed item with lazily resolved metadata."""
@@ -121,21 +123,35 @@ class CompletionController(QObject):
         self._popup.docs_panel().set_resolving(resolving)
 
     def reuse_items_for_prefix(self, prefix: str) -> bool:
-        """Filter visible results for a longer prefix while async work runs."""
+        """Filter the retained base list to ``prefix`` (lengthen or shorten)."""
 
-        previous_prefix = self._model.prefix()
-        if previous_prefix and not prefix.startswith(previous_prefix):
-            return False
-        filtered = _filter_items_preserving_tier_headers(self._model.items(), prefix)
+        source = self._base_items if self._base_items else self._model.items()
+        filtered = _filter_items_preserving_tier_headers(source, prefix)
         if not filtered or not any(not is_tier_header_item(item) for item in filtered):
             return False
-        self.set_items(filtered, prefix)
+        self._apply_items(filtered, prefix)
         return True
+
+    def has_base_items(self) -> bool:
+        """Return whether a retained candidate base is available for refine/reopen."""
+
+        return any(not is_tier_header_item(item) for item in self._base_items)
+
+    def clear_base_items(self) -> None:
+        """Drop the retained base so reopen-after-hide cannot resurrect it."""
+
+        self._base_items = []
 
     def clear(self) -> None:
         """Drop all rows and hide the popup."""
+        self._base_items = []
         self._model.clear()
         self._popup.hide()
+
+    def _apply_items(self, items: list[CompletionItem], prefix: str) -> None:
+        self._model.set_items(items, prefix)
+        self._last_selection_identity = ""
+        self._popup.list_view().select_first_row()
 
     def complete(self, anchor_rect: QRect) -> None:
         """Show the popup near ``anchor_rect`` (host-widget coordinates)."""
@@ -213,6 +229,7 @@ class CompletionController(QObject):
             return False
         key = key_event.key()
         if key == Qt.Key_Escape:
+            self.clear_base_items()
             self._popup.hide()
             key_event.accept()
             return True
@@ -232,8 +249,10 @@ class CompletionController(QObject):
             self._popup.list_view().move_to_next_selectable()
             next_item = self.current_item()
             if next_item is None or is_tier_header_item(next_item):
+                self.clear_base_items()
                 self._popup.hide()
             return
+        self.clear_base_items()
         self._popup.hide()
         if item is not None:
             self.activated.emit(item)

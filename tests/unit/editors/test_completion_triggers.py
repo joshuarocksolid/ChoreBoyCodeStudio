@@ -280,7 +280,9 @@ def test_visible_popup_hides_on_space_when_auto_trigger_disabled(editor: CodeEdi
     assert calls == []
 
 
-def test_shortened_prefix_redispatches_completion(editor: CodeEditorWidget) -> None:
+def test_shortened_prefix_refilters_from_base_without_redispatch(
+    editor: CodeEditorWidget,
+) -> None:
     calls: list[object] = []
     editor.set_completion_requester(lambda *args: calls.append(args))
     editor.set_completion_preferences(
@@ -291,15 +293,19 @@ def test_shortened_prefix_redispatches_completion(editor: CodeEditorWidget) -> N
     )
     editor.setPlainText("ab")
     _set_cursor(editor, 2)
-    _show_completion_popup(editor, [_symbol("abc"), _symbol("abd")], prefix="ab")
+    _show_completion_popup(editor, [_symbol("abc"), _symbol("abd"), _symbol("xyz")], prefix="")
     assert editor._completion_popup.is_visible()
+    assert editor._completion_popup.reuse_items_for_prefix("ab") is True
+    assert [item.label for item in editor._completion_popup.model().items()] == ["abc", "abd"]
 
     editor.setPlainText("a")
     _set_cursor(editor, 1)
     editor.trigger_completion(manual=False)
 
-    assert len(calls) == 1
+    assert calls == []
     assert editor._completion_popup.is_visible()
+    assert [item.label for item in editor._completion_popup.model().items()] == ["abc", "abd"]
+    assert editor._completion_popup.model().prefix() == "a"
 
 
 def test_backspace_refilters_toward_empty_prefix(editor: CodeEditorWidget) -> None:
@@ -360,6 +366,7 @@ def test_backspace_past_dot_closes_completion_popup(editor: CodeEditorWidget) ->
 
 
 def test_backspace_reopens_popup_after_no_match_close(editor: CodeEditorWidget) -> None:
+    editor.show()
     editor.set_completion_requester(lambda *args: None)
     editor.set_completion_preferences(
         enabled=True,
