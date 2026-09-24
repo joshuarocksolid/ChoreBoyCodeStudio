@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
@@ -25,10 +26,14 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def editor() -> CodeEditorWidget:
+def editor() -> Iterator[CodeEditorWidget]:
     widget = CodeEditorWidget()
     widget.setPlainText("value = 1\n")
-    return widget
+    yield widget
+    widget._completion_debounce_timer.stop()
+    widget._completion_popup.hide()
+    widget.hide()
+    widget.deleteLater()
 
 
 def test_ctrl_space_triggers_manual_completion_even_when_auto_trigger_disabled(editor: CodeEditorWidget) -> None:
@@ -117,13 +122,13 @@ def _show_completion_popup(
     *,
     prefix: str,
 ) -> None:
-    editor.resize(640, 480)
-    editor.show()
     editor.show_completion_items_for_request(
         request_generation=editor.completion_request_generation(),
         prefix=prefix,
         items=items,
     )
+    if not editor._completion_popup.is_visible():
+        editor._completion_popup.popup().show()
 
 
 @pytest.mark.parametrize(

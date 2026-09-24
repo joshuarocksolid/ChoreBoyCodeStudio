@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Protocol, cast
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import (
     CompletionEnvelope,
@@ -256,7 +257,7 @@ class PythonConsoleWorkflow:
                 cursor_offset=cursor_offset,
                 trigger_kind=trigger_kind,
                 trigger_character=trigger_character,
-                max_results=100,
+                max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             )
             completion_prefix = resolve_completion_prefix(
                 source_text=line_buffer,
@@ -265,7 +266,7 @@ class PythonConsoleWorkflow:
                 project_root=None,
                 trigger_is_manual=trigger_kind == "manual",
                 min_prefix_chars=1,
-                max_results=100,
+                max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
                 trigger_kind=trigger_kind,
                 trigger_character=trigger_character,
             )

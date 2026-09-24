@@ -10,7 +10,12 @@ from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
 from app.core.completion_tier import is_tier_header_item
-from app.intelligence.completion_context import CompletionContext, build_completion_context
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
+from app.intelligence.completion_context import (
+    CompletionContext,
+    build_completion_context,
+    is_dot_after_numeric_literal,
+)
 from app.intelligence.completion_models import CompletionItem
 from app.shell.editor_completion_contracts import CompletionRequester
 
@@ -30,6 +35,7 @@ if TYPE_CHECKING:
         _signature_help_requester: Callable[[str, int, int], None] | None
         _completion_enabled: bool
         _completion_auto_trigger: bool
+        _completion_auto_trigger_period: bool
         _completion_min_chars: int
         _completion_request_generation: int
         _pending_completion_trigger_character: str
@@ -114,9 +120,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         self._completion_auto_trigger_period = auto_trigger_period
         self._completion_min_chars = max(1, min_chars)
         if not enabled:
-            self._completion_debounce_timer.stop()
-            self._debounced_completion_request = None
-            self._completion_popup.hide()
+            self._hide_completion_popup()
 
     def _build_editor_completion_context(
         self,
@@ -135,7 +139,7 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             project_root=None,
             trigger_is_manual=manual or force_empty_prefix,
             min_prefix_chars=self._completion_min_chars,
-            max_results=100,
+            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             trigger_kind=trigger_kind,
             trigger_character=trigger_character,
         )
@@ -174,20 +178,25 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             and not force_empty_prefix
             and not effective_trigger_character
             and self._completion_popup.is_visible()
-            and self._completion_popup.reuse_items_for_prefix(current_prefix)
         ):
-            self._active_completion_prefix = current_prefix
-            self._completion_popup.complete(self.cursorRect())
-            self._debounced_completion_request = (
-                source_text,
-                cursor_position,
-                manual or force_empty_prefix,
-                trigger_kind,
-                effective_trigger_character,
-            )
-            self._completion_debounce_timer.start()
-            self._pending_completion_trigger_character = ""
-            return
+            model_prefix = self._completion_popup.model().prefix()
+            prefix_extends_visible = current_prefix.startswith(model_prefix) or not model_prefix
+            if prefix_extends_visible:
+                if self._completion_popup.reuse_items_for_prefix(current_prefix):
+                    self._active_completion_prefix = current_prefix
+                    self._completion_popup.complete(self.cursorRect())
+                    self._debounced_completion_request = (
+                        source_text,
+                        cursor_position,
+                        manual or force_empty_prefix,
+                        trigger_kind,
+                        effective_trigger_character,
+                    )
+                    self._completion_debounce_timer.start()
+                    self._pending_completion_trigger_character = ""
+                    return
+                self._hide_completion_popup()
+                return
 
         self._completion_debounce_timer.stop()
         self._debounced_completion_request = None
@@ -361,9 +370,17 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             inserted_text == "."
             and self._completion_enabled
             and self._completion_auto_trigger_period
+            and not is_dot_after_numeric_literal(self.toPlainText(), self.textCursor().position())
         ):
             self._pending_completion_trigger_character = "."
             self.trigger_completion(manual=True, force_empty_prefix=True)
+            return
+
+        if self._completion_enabled and self._completion_popup.is_visible() and inserted_text:
+            if inserted_text.isalnum() or inserted_text == "_":
+                self.trigger_completion(manual=False)
+            elif inserted_text.isprintable():
+                self._hide_completion_popup()
             return
 
         if not self._completion_enabled or not self._completion_auto_trigger:
@@ -373,7 +390,13 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             self.trigger_completion(manual=False)
             return
         if self._completion_popup.is_visible():
-            self._completion_popup.hide()
+            self._hide_completion_popup()
+
+    def _hide_completion_popup(self) -> None:
+        self._completion_debounce_timer.stop()
+        self._debounced_completion_request = None
+        self._pending_completion_trigger_character = ""
+        self._completion_popup.hide()
 
     def _show_signature_help(self) -> None:
         if self._signature_help_requester is not None:

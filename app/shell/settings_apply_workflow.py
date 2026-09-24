@@ -24,6 +24,7 @@ _EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
     "completion_enabled",
     "completion_auto_trigger",
     "completion_min_chars",
+    "completion_auto_trigger_period",
 )
 
 _INTELLIGENCE_HIGHLIGHTING_FIELDS: tuple[str, ...] = (

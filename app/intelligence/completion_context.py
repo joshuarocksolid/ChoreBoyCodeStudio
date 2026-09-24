@@ -101,6 +101,29 @@ _IMPORT_MODULE_CONTEXT_PATTERN = re.compile(
     r"\bimport\s+(" + _DOTTED_NAME + r")\.([A-Za-z_][A-Za-z0-9_]*)?$"
 )
 
+
+def is_dot_after_numeric_literal(source_text: str, cursor_position: int) -> bool:
+    """Return whether the cursor sits immediately after a numeric-literal dot.
+
+    ``1.``, ``0.5``, and ``3.14`` are numeric literals and return True. ``obj.``,
+    ``foo1.``, and ``).`` are member access and return False. A leading letter
+    or ``_`` before the digit run makes the token an identifier.
+    """
+
+    if cursor_position < 1 or cursor_position > len(source_text):
+        return False
+    if source_text[cursor_position - 1] != ".":
+        return False
+    index = cursor_position - 2
+    if index < 0 or not source_text[index].isdigit():
+        return False
+    while index >= 0 and (source_text[index].isdigit() or source_text[index] == "_"):
+        index -= 1
+    if index >= 0 and source_text[index].isalpha():
+        return False
+    return source_text[index + 1] != "_"
+
+
 def build_completion_context(
     *,
     source_text: str,

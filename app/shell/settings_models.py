@@ -46,6 +46,7 @@ class EditorSettingsSnapshot:
     completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
     completion_auto_trigger: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
     completion_min_chars: int = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
+    completion_auto_trigger_period: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_DEFAULT
     diagnostics_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT
     diagnostics_realtime: bool = constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT
     quick_fixes_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT
@@ -87,7 +88,7 @@ class MainWindowSettingsSnapshot:
     """Facade snapshot for MainWindow runtime preference loading."""
 
     editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, str, bool, bool]
-    completion_preferences: tuple[bool, bool, int]
+    completion_preferences: tuple[bool, bool, int, bool]
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
     intelligence_runtime_settings: IntelligenceRuntimeSettings
@@ -260,6 +261,10 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
             default=constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
             minimum=1,
         ),
+        completion_auto_trigger_period=_coerce_bool(
+            intelligence_settings.get(constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_KEY),
+            default=constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_DEFAULT,
+        ),
         diagnostics_enabled=diagnostics_enabled,
         diagnostics_realtime=_coerce_bool(
             intelligence_settings.get(constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY),
@@ -346,6 +351,7 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             snapshot.completion_enabled,
             snapshot.completion_auto_trigger,
             snapshot.completion_min_chars,
+            snapshot.completion_auto_trigger_period,
         ),
         diagnostics_preferences=(
             snapshot.diagnostics_enabled,
@@ -457,6 +463,7 @@ def merge_editor_settings_snapshot(
     merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = {
         constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: bool(snapshot.completion_enabled),
         constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY: bool(snapshot.completion_auto_trigger),
+        constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_KEY: bool(snapshot.completion_auto_trigger_period),
         constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY: max(1, int(snapshot.completion_min_chars)),
         constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY: bool(snapshot.diagnostics_enabled),
         constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY: bool(snapshot.diagnostics_realtime),

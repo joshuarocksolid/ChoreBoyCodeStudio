@@ -103,6 +103,7 @@ class EditorTabFactory:
             enabled=window._completion_enabled,
             auto_trigger=window._completion_auto_trigger,
             min_chars=window._completion_min_chars,
+            auto_trigger_period=window._shell_preferences_runtime.completion_auto_trigger_period(),
         )
         window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
         editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())

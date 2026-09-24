@@ -53,6 +53,7 @@ class EditorTabPreferencesWorkflow:
                 enabled=self._host.completion_enabled(),
                 auto_trigger=self._host.completion_auto_trigger(),
                 min_chars=self._host.completion_min_chars(),
+                auto_trigger_period=self._host.completion_auto_trigger_period(),
             )
 
     def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:

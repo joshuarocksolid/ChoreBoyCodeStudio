@@ -245,6 +245,14 @@ class ShellPreferencesRuntime:
     def load_completion_preferences(self) -> tuple[Any, ...]:
         return self.load_main_window_settings().completion_preferences
 
+    def completion_auto_trigger_period(self) -> bool:
+        """Return whether typing ``.`` should open completion."""
+
+        preferences = self.load_completion_preferences()
+        if len(preferences) < 4:
+            return constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_DEFAULT
+        return bool(preferences[3])
+
     def load_diagnostics_preferences(self) -> tuple[Any, ...]:
         return self.load_main_window_settings().diagnostics_preferences
 
@@ -393,11 +401,12 @@ class MainWindowShellPreferencesRuntimeHost:
         ) = editor_preferences
 
     def apply_completion_preferences_tuple(self, completion_preferences: tuple[Any, ...]) -> None:
-        (
-            self._window._completion_enabled,
-            self._window._completion_auto_trigger,
-            self._window._completion_min_chars,
-        ) = completion_preferences
+        # auto_trigger_period stays on the settings tuple. Editors read it via
+        # ShellPreferencesRuntime.completion_auto_trigger_period.
+        enabled, auto_trigger, min_chars = completion_preferences[:3]
+        self._window._completion_enabled = enabled
+        self._window._completion_auto_trigger = auto_trigger
+        self._window._completion_min_chars = min_chars
 
     def apply_diagnostics_preferences_tuple(self, diagnostics_preferences: tuple[Any, ...]) -> None:
         (
