@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 from typing import Any, Protocol
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import collect_import_module_bindings
@@ -25,7 +26,7 @@ class RuntimeIntrospectionPort(Protocol):
         target_path: str,
         member_prefix: str,
         include_private: bool = True,
-        max_results: int = 100,
+        max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
     ) -> Any:
         ...
 
@@ -221,7 +222,7 @@ class RuntimeIntrospectionCoordinator:
         query: RuntimeIntrospectionQuery,
         *,
         include_private: bool = True,
-        max_results: int = 100,
+        max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
     ) -> list[CompletionItem]:
         """Fetch members from the runner, store in cache, and return prefix-filtered items."""
 

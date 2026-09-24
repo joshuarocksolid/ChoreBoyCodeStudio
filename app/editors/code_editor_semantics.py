@@ -184,6 +184,9 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             if prefix_extends_visible:
                 if self._completion_popup.reuse_items_for_prefix(current_prefix):
                     self._active_completion_prefix = current_prefix
+                    # Drop in-flight paints from the earlier trigger (usually bare ".")
+                    # so a late empty-prefix envelope cannot wipe the filtered list.
+                    self._completion_request_generation += 1
                     self._completion_popup.complete(self.cursorRect())
                     self._debounced_completion_request = (
                         source_text,

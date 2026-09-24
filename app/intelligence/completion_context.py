@@ -103,12 +103,7 @@ _IMPORT_MODULE_CONTEXT_PATTERN = re.compile(
 
 
 def is_dot_after_numeric_literal(source_text: str, cursor_position: int) -> bool:
-    """Return whether the cursor sits immediately after a numeric-literal dot.
-
-    ``1.``, ``0.5``, and ``3.14`` are numeric literals and return True. ``obj.``,
-    ``foo1.``, and ``).`` are member access and return False. A leading letter
-    or ``_`` before the digit run makes the token an identifier.
-    """
+    """Return True when the cursor sits immediately after a numeric-literal dot."""
 
     if cursor_position < 1 or cursor_position > len(source_text):
         return False

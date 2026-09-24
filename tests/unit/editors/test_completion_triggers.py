@@ -228,6 +228,38 @@ def test_visible_popup_hides_when_typed_prefix_matches_nothing(editor: CodeEdito
     assert calls == []
 
 
+def test_prefix_reuse_invalidates_stale_empty_prefix_paint(editor: CodeEditorWidget) -> None:
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("")
+    _set_cursor(editor, 0)
+    stale_generation = editor.completion_request_generation()
+    _show_completion_popup(
+        editor,
+        [_symbol("alpha"), _symbol("beta"), _symbol("gamma")],
+        prefix="",
+    )
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.NoModifier, "a"))
+    labels_after_filter = [item.label for item in editor._completion_popup.model().items()]
+    assert labels_after_filter == ["alpha"]
+    assert editor.completion_request_generation() == stale_generation + 1
+
+    editor.show_completion_items_for_request(
+        request_generation=stale_generation,
+        prefix="",
+        items=[_symbol("alpha"), _symbol("beta"), _symbol("gamma")],
+    )
+
+    assert [item.label for item in editor._completion_popup.model().items()] == ["alpha"]
+    assert editor._completion_popup.is_visible()
+
+
 def test_visible_popup_hides_on_space_when_auto_trigger_disabled(editor: CodeEditorWidget) -> None:
     calls: list[object] = []
     editor.set_completion_requester(lambda *args: calls.append(args))

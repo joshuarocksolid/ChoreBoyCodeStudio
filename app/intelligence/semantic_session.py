@@ -8,6 +8,7 @@ T = TypeVar("T")
 U = TypeVar("U")
 
 from app.bootstrap.paths import PathInput
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import CompletionContext
 from app.intelligence.completion_models import (
     CompletionFastResult,
@@ -181,7 +182,7 @@ class SemanticSession:
         fast: CompletionEnvelope | None = None,
         semantic: CompletionEnvelope | None = None,
         runtime_items: list[CompletionItem] | None = None,
-        max_results: int = 100,
+        max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
     ) -> CompletionEnvelope:
         """Merge tiered completion envelopes for editor popup display."""
         return self._completion_service.merge_for_editor_display(
@@ -226,6 +227,7 @@ class SemanticSession:
                 fast=fast,
                 semantic=semantic,
                 runtime_items=runtime_items,
+                max_results=request.max_results,
             )
             if not merged.items:
                 return
@@ -256,7 +258,10 @@ class SemanticSession:
             introspection_key = f"runtime_introspect:{runtime_query.target_path}"
 
             def introspection_task(_cancellation: object) -> list[CompletionItem]:
-                return runtime_coordinator.fetch_and_cache_from_runner(runtime_query)
+                return runtime_coordinator.fetch_and_cache_from_runner(
+                    runtime_query,
+                    max_results=request.max_results,
+                )
 
             def introspection_success(items: list[CompletionItem]) -> None:
                 attached = self._completion_service.attach_runtime_replacement_metadata(
