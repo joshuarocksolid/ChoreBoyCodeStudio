@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QEvent, QMimeData, QPoint, QUrl, Qt  # noqa: E402
+from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
 from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent, QPalette  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
@@ -25,9 +26,15 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def widget() -> PythonConsoleWidget:
-    w = PythonConsoleWidget()
-    return w
+def widget() -> Iterator[PythonConsoleWidget]:
+    console = PythonConsoleWidget()
+    yield console
+    console._completion_popup.hide()  # noqa: SLF001
+    console.hide()
+    console.deleteLater()
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
 
 
 @pytest.fixture()

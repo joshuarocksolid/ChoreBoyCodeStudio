@@ -65,8 +65,6 @@ class CompletionController(QObject):
         self._popup.installEventFilter(self)
         self._tokens: ShellThemeTokens | None = None
         self._last_selection_identity = ""
-        # Retained across prefix refine/shorten so backspace can widen the list
-        # without waiting for an async re-request. Cleared on accept/dismiss.
         self._base_items: list[CompletionItem] = []
 
     # ------------------------------------------------------------------
@@ -125,8 +123,7 @@ class CompletionController(QObject):
     def reuse_items_for_prefix(self, prefix: str) -> bool:
         """Filter the retained base list to ``prefix`` (lengthen or shorten)."""
 
-        source = self._base_items if self._base_items else self._model.items()
-        filtered = _filter_items_preserving_tier_headers(source, prefix)
+        filtered = _filter_items_preserving_tier_headers(self._base_items, prefix)
         if not filtered or not any(not is_tier_header_item(item) for item in filtered):
             return False
         self._apply_items(filtered, prefix)

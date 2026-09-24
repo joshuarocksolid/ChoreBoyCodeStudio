@@ -199,22 +199,6 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             self._hide_completion_popup()
             return
 
-        if (
-            not manual
-            and not force_empty_prefix
-            and not effective_trigger_character
-            and not self._completion_popup.is_visible()
-            and self._completion_auto_trigger_period
-            and self._completion_popup.has_base_items()
-            and context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
-        ):
-            if self._completion_popup.reuse_items_for_prefix(current_prefix):
-                self._active_completion_prefix = current_prefix
-                self._completion_request_generation += 1
-                self._completion_popup.complete(self.cursorRect())
-                self._pending_completion_trigger_character = ""
-                return
-
         self._completion_debounce_timer.stop()
         self._debounced_completion_request = None
         self._dispatch_completion_request(
@@ -417,10 +401,28 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             self._hide_completion_popup()
 
     def _refine_completion_after_buffer_edit(self) -> None:
-        if self._completion_popup.is_visible() or (
-            self._completion_auto_trigger_period and self._completion_popup.has_base_items()
-        ):
+        if self._completion_popup.is_visible():
             self.trigger_completion(manual=False)
+            return
+        if not self._completion_auto_trigger_period or not self._completion_popup.has_base_items():
+            return
+        source_text = self.toPlainText()
+        cursor_position = self.textCursor().position()
+        context = self._build_editor_completion_context(
+            source_text=source_text,
+            cursor_position=cursor_position,
+            manual=False,
+            force_empty_prefix=False,
+            trigger_kind="typing",
+            trigger_character="",
+        )
+        if context.syntactic_context != CompletionSyntacticContext.DOTTED_MEMBER:
+            return
+        if not self._completion_popup.reuse_items_for_prefix(context.prefix):
+            return
+        self._active_completion_prefix = context.prefix
+        self._completion_request_generation += 1
+        self._completion_popup.complete(self.cursorRect())
 
     def _hide_completion_popup(self) -> None:
         self._completion_debounce_timer.stop()
