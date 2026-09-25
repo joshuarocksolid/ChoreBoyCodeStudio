@@ -2,11 +2,27 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`, `v0.4.13`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.13.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.14.
 
 ## [Unreleased]
+
+## [0.4.14] - 2026-09-24
+
+Tame the completion popup that opens when you type a period, in both the editor and the Python Console (PR #75, follow-up PR #76).
+
+### Fixed
+
+- Typing a period inside a number (`0.5`, `1.`, `3.14`) no longer opens the completion popup, in the editor or the Python Console.
+- After a period opens the popup, typing more letters now filters the list and auto-selects the best match, and the popup closes when nothing matches or the word ends. This works with the shipped default where auto-trigger on letters is Off, and it works in the Python Console the same way as the editor (e.g. `os.` then `pa` then Tab inserts `os.pardir`).
+- Accepting a completion no longer leaves leftover characters from a stale replacement range.
+- Backspace after dismissing a period popup can reopen the list briefly in that same member-access spot; bare Backspace inside a dotted name does not reopen the popup when you were not already in one.
+
+### Changed
+
+- Settings > Intelligence has a new **Auto-trigger on period (.)** checkbox (default On). Unchecking it stops the popup from opening on `.` in editors and the Python Console. Ctrl+Space still opens completion on demand.
+- Long member lists now show up to 500 entries instead of cutting off at 100.
 
 ## [0.4.13] - 2026-09-21
 
