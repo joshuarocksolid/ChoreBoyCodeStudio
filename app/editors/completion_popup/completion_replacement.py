@@ -21,6 +21,17 @@ def identifier_span_before(source_text: str, cursor_position: int) -> tuple[int,
     return start, end
 
 
+def member_access_anchor(source_text: str, cursor_position: int) -> int | None:
+    """Return the member-name start after ``.``, or ``None`` when not in member access."""
+
+    live_start, _live_end = identifier_span_before(source_text, cursor_position)
+    if live_start <= 0:
+        return None
+    if source_text[live_start - 1] != ".":
+        return None
+    return live_start
+
+
 def retained_replacement_matches_cursor(
     items: list[CompletionItem],
     source_text: str,
@@ -32,7 +43,7 @@ def retained_replacement_matches_cursor(
     moves to a different member access (possibly on another line).
     """
 
-    live_start, live_end = identifier_span_before(source_text, cursor_position)
+    live_start, _live_end = identifier_span_before(source_text, cursor_position)
     stored_starts = {
         item.replacement_start
         for item in items
@@ -40,13 +51,7 @@ def retained_replacement_matches_cursor(
     }
     if not stored_starts:
         return True
-    if stored_starts != {live_start}:
-        return False
-    for index in range(live_start, live_end):
-        ch = source_text[index]
-        if ch == "\n" or ch == "\r" or not (ch.isalnum() or ch == "_"):
-            return False
-    return True
+    return stored_starts == {live_start}
 
 
 def items_with_prefix_replacement_range(
@@ -84,15 +89,7 @@ def items_with_prefix_replacement_range(
 def resolve_insert_replacement_range(
     source_text: str,
     cursor_position: int,
-    item: CompletionItem,
 ) -> tuple[int, int]:
-    """Return the buffer span to replace when accepting ``item``.
+    """Return the live identifier span to replace when accepting a completion."""
 
-    Always replaces only the live identifier under the cursor. Stored item
-    ranges must never widen the left edge past that identifier start (a stale
-    empty-prefix start from an earlier ``.`` paint would delete intervening
-    text).
-    """
-
-    _ = item
     return identifier_span_before(source_text, cursor_position)

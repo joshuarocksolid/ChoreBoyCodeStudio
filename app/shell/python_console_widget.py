@@ -29,11 +29,11 @@ from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.editors.completion_popup import CompletionController
 from app.editors.completion_popup.completion_replacement import (
+    member_access_anchor,
     resolve_insert_replacement_range,
 )
 from app.intelligence.completion_context import (
     CompletionContext,
-    CompletionSyntacticContext,
     build_completion_context,
     is_dot_after_numeric_literal,
 )
@@ -88,6 +88,7 @@ class PythonConsoleWidget(QTextEdit):
         self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
         self._completion_requester = None
         self._completion_resolve_requester = None
+        self.cursorPositionChanged.connect(self._on_completion_cursor_moved)
 
         # Token-derived colors (set proper values via apply_theme).
         self._col_text: str = "#E9ECEF"
@@ -331,6 +332,7 @@ class PythonConsoleWidget(QTextEdit):
             return
 
         if key in (Qt.Key_Return, Qt.Key_Enter):
+            self._completion_popup.clear_reopen_marker()
             self._submit()
             return
 
@@ -390,7 +392,8 @@ class PythonConsoleWidget(QTextEdit):
             if inserted_text.isalnum() or inserted_text == "_":
                 self._refine_completion_after_buffer_edit()
             elif inserted_text.isprintable():
-                self._completion_popup.hide()
+                line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+                self._dismiss_completion_popup_by_typing(line_buffer, cursor_offset)
             return
         if inserted_text == "." and self._auto_trigger_period:
             line_buffer, cursor_offset = self._current_input_and_cursor_offset()
@@ -431,23 +434,35 @@ class PythonConsoleWidget(QTextEdit):
                 self._completion_request_generation += 1
                 self._present_refined_completion()
                 return
-            self._completion_popup.hide()
+            self._dismiss_completion_popup_by_typing(line_buffer, cursor_offset)
             return
         if not self._auto_trigger_period:
+            self._completion_popup.clear_reopen_marker()
             return
-        if context.syntactic_context != CompletionSyntacticContext.DOTTED_MEMBER:
+        anchor = member_access_anchor(line_buffer, cursor_offset)
+        if not self._completion_popup.consume_reopen_for_anchor(anchor):
             return
-        if self._completion_popup.has_base_items():
-            if self._completion_popup.reuse_items_for_prefix(
-                current_prefix,
-                source_text=line_buffer,
-                cursor_position=cursor_offset,
-            ):
-                self._active_completion_prefix = current_prefix
-                self._completion_request_generation += 1
-                self._present_refined_completion()
-                return
         self._trigger_completion(trigger_kind="typing", trigger_character="")
+
+    def _dismiss_completion_popup_by_typing(self, line_buffer: str, cursor_offset: int) -> None:
+        anchor = member_access_anchor(line_buffer, cursor_offset)
+        if anchor is None:
+            self._completion_popup.hide()
+            return
+        self._completion_popup.dismiss_by_typing(
+            anchor,
+            allow_reopen=self._auto_trigger_period,
+        )
+
+    def _on_completion_cursor_moved(self) -> None:
+        if self._completion_popup.is_visible():
+            return
+        if self._prompt_anchor < 0:
+            return
+        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+        self._completion_popup.expire_reopen_if_anchor_changed(
+            member_access_anchor(line_buffer, cursor_offset)
+        )
 
     def _present_refined_completion(self) -> None:
         rect = self.cursorRect()
@@ -513,7 +528,6 @@ class PythonConsoleWidget(QTextEdit):
         replacement_start, replacement_end = resolve_insert_replacement_range(
             line_buffer,
             cursor_offset,
-            item,
         )
         start = self._prompt_anchor + max(0, min(replacement_start, len(line_buffer)))
         end = self._prompt_anchor + max(0, min(replacement_end, len(line_buffer)))

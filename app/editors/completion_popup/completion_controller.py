@@ -71,6 +71,9 @@ class CompletionController(QObject):
         self._tokens: ShellThemeTokens | None = None
         self._last_selection_identity = ""
         self._base_items: list[CompletionItem] = []
+        self._reopen_anchor: int | None = None
+        self._reopen_budget: int = 0
+        self._preserve_reopen_on_close = False
 
     # ------------------------------------------------------------------
     # Wiring
@@ -158,8 +161,55 @@ class CompletionController(QObject):
 
         self._base_items = []
 
+    def clear_reopen_marker(self) -> None:
+        """Forget a typing-dismiss reopen hint."""
+
+        self._reopen_anchor = None
+        self._reopen_budget = 0
+        self._preserve_reopen_on_close = False
+
+    def dismiss_by_typing(self, member_anchor: int, *, allow_reopen: bool) -> None:
+        """Hide after a no-match / finishing-character dismiss.
+
+        When ``allow_reopen`` is true (period auto-trigger enabled), remember
+        ``member_anchor`` so the next Backspace or two on that same member can
+        request a fresh paint. Other hides clear the marker.
+        """
+
+        if allow_reopen:
+            self._reopen_anchor = member_anchor
+            self._reopen_budget = 2
+            self._preserve_reopen_on_close = True
+        else:
+            self.clear_reopen_marker()
+        self._popup.hide()
+
+    def consume_reopen_for_anchor(self, member_anchor: int | None) -> bool:
+        """Return whether Backspace may request a reopen for ``member_anchor``."""
+
+        if member_anchor is None or self._reopen_anchor is None or self._reopen_budget <= 0:
+            if member_anchor != self._reopen_anchor:
+                self.clear_reopen_marker()
+            return False
+        if member_anchor != self._reopen_anchor:
+            self.clear_reopen_marker()
+            return False
+        self._reopen_budget -= 1
+        if self._reopen_budget <= 0:
+            self._reopen_anchor = None
+        return True
+
+    def expire_reopen_if_anchor_changed(self, member_anchor: int | None) -> None:
+        """Clear the reopen hint once the cursor leaves the dismissed member."""
+
+        if self._reopen_anchor is None:
+            return
+        if member_anchor != self._reopen_anchor:
+            self.clear_reopen_marker()
+
     def clear(self) -> None:
         """Drop all rows and hide the popup."""
+        self.clear_reopen_marker()
         self._base_items = []
         self._model.clear()
         self._popup.hide()
@@ -168,6 +218,10 @@ class CompletionController(QObject):
         """Drop retained refine state on every hide (Escape, accept, click-away)."""
 
         self.clear_base_items()
+        if self._preserve_reopen_on_close:
+            self._preserve_reopen_on_close = False
+        else:
+            self.clear_reopen_marker()
 
     def _apply_items(self, items: list[CompletionItem], prefix: str) -> None:
         self._model.set_items(items, prefix)
@@ -223,6 +277,7 @@ class CompletionController(QObject):
             self._popup.raise_()
 
     def hide(self) -> None:
+        self.clear_reopen_marker()
         self._popup.hide()
 
     def is_visible(self) -> bool:
@@ -250,7 +305,7 @@ class CompletionController(QObject):
             return False
         key = key_event.key()
         if key == Qt.Key_Escape:
-            self.clear_base_items()
+            self.clear_reopen_marker()
             self._popup.hide()
             key_event.accept()
             return True
@@ -270,10 +325,10 @@ class CompletionController(QObject):
             self._popup.list_view().move_to_next_selectable()
             next_item = self.current_item()
             if next_item is None or is_tier_header_item(next_item):
-                self.clear_base_items()
+                self.clear_reopen_marker()
                 self._popup.hide()
             return
-        self.clear_base_items()
+        self.clear_reopen_marker()
         self._popup.hide()
         if item is not None:
             self.activated.emit(item)

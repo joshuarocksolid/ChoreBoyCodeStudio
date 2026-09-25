@@ -411,6 +411,31 @@ def test_backspace_reopens_popup_after_no_match_close(editor: CodeEditorWidget) 
     ]
 
 
+def test_backspace_without_prior_popup_does_not_request_completion(
+    editor: CodeEditorWidget,
+) -> None:
+    requests: list[object] = []
+
+    def _requester(*args: object) -> None:
+        requests.append(args)
+
+    editor.set_completion_requester(_requester)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("x = obj.valuee")
+    _set_cursor(editor, len("x = obj.valuee"))
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "x = obj.value"
+    assert requests == []
+    assert editor._completion_popup.is_visible() is False
+
+
 def test_backspace_does_not_reopen_when_period_auto_trigger_disabled(
     editor: CodeEditorWidget,
 ) -> None:

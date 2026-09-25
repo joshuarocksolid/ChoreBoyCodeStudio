@@ -349,6 +349,26 @@ class TestCompletion:
         assert popup.is_visible()
         assert [item.label for item in popup.model().items()] == ["getcwd", "getenv"]
 
+    def test_backspace_without_prior_popup_does_not_request_completion(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        requests: list[object] = []
+
+        def _requester(*args: object) -> None:
+            requests.append(args)
+
+        active_widget.set_auto_trigger_period(True)
+        # Type first without a requester so '.' does not open a popup.
+        _type_text(active_widget, "x = obj.valuee")
+        active_widget.set_completion_requester(_requester)
+
+        _press(active_widget, Qt.Key_Backspace)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "x = obj.value")
+        assert requests == []
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
     def test_dismissed_dot_popup_does_not_delete_other_expression_on_tab(
         self,
         active_widget: PythonConsoleWidget,
