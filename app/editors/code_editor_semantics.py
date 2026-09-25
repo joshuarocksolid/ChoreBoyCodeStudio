@@ -17,7 +17,6 @@ from app.core.completion_tier import is_tier_header_item
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import (
     CompletionContext,
-    CompletionSyntacticContext,
     build_completion_context,
     is_dot_after_numeric_literal,
 )
