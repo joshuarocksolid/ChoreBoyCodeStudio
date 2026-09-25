@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
+from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt, QEvent  # noqa: E402
 from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent, QPalette  # noqa: E402
 from PySide2.QtWidgets import QApplication  # noqa: E402
 
@@ -25,9 +26,16 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def widget() -> PythonConsoleWidget:
-    w = PythonConsoleWidget()
-    return w
+def widget() -> Iterator[PythonConsoleWidget]:
+    console = PythonConsoleWidget()
+    yield console
+    console._completion_popup.hide()  # noqa: SLF001
+    console.hide()
+    console.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
 
 
 @pytest.fixture()
@@ -216,6 +224,196 @@ class TestCompletion:
         active_widget._insert_completion_from_item(item)  # noqa: SLF001
 
         assert _get_plain_text(active_widget).endswith(_PROMPT + "FreeCAD.newDocument")
+
+    def _symbol(self, label: str, *, replacement_start: int | None = None, replacement_end: int | None = None) -> CompletionItem:
+        return CompletionItem(
+            label=label,
+            insert_text=label,
+            kind=CompletionKind.SYMBOL,
+            replacement_start=replacement_start,
+            replacement_end=replacement_end,
+        )
+
+    def _show_dot_popup(self, active_widget: PythonConsoleWidget, labels: list[str]) -> None:
+        active_widget.set_completion_requester(lambda *args: None)
+        _type_text(active_widget, "os.")
+        member_start = len("os.")
+        active_widget.show_completion_items_for_request(
+            request_generation=active_widget.completion_request_generation(),
+            prefix="",
+            items=[
+                self._symbol(label, replacement_start=member_start, replacement_end=member_start)
+                for label in labels
+            ],
+        )
+        if not active_widget._completion_popup.is_visible():  # noqa: SLF001
+            active_widget._completion_popup.popup().show()  # noqa: SLF001
+        assert active_widget._completion_popup.is_visible()  # noqa: SLF001
+
+    def test_dot_popup_typing_filters_and_auto_selects(self, active_widget: PythonConsoleWidget) -> None:
+        self._show_dot_popup(active_widget, ["abc", "getcwd", "getenv", "getpid"])
+
+        for ch in "getc":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+
+        popup = active_widget._completion_popup  # noqa: SLF001
+        assert popup.is_visible()
+        assert [item.label for item in popup.model().items()] == ["getcwd"]
+        current = popup.current_item()
+        assert current is not None
+        assert current.label == "getcwd"
+
+    def test_dot_popup_no_match_closes(self, active_widget: PythonConsoleWidget) -> None:
+        self._show_dot_popup(active_widget, ["getcwd", "getenv"])
+
+        for ch in "zzq":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+    def test_dot_popup_space_closes(self, active_widget: PythonConsoleWidget) -> None:
+        self._show_dot_popup(active_widget, ["getcwd", "getenv"])
+
+        _press(active_widget, Qt.Key_Space, " ")
+
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+    def test_dot_popup_tab_accepts_filtered_selection(self, active_widget: PythonConsoleWidget) -> None:
+        self._show_dot_popup(active_widget, ["abc", "pardir", "path", "pathsep", "getcwd", "getpid"])
+
+        for ch in "pa":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+        current = active_widget._completion_popup.current_item()  # noqa: SLF001
+        assert current is not None
+        assert current.label == "pardir"
+        _press(active_widget, Qt.Key_Tab)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.pardir")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+    def test_dot_popup_enter_accepts_filtered_selection(self, active_widget: PythonConsoleWidget) -> None:
+        self._show_dot_popup(active_widget, ["abc", "pardir", "path", "pathsep"])
+
+        for ch in "pa":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+        _press(active_widget, Qt.Key_Return)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.pardir")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+    def test_dot_popup_tab_after_backspace_inserts_current_prefix(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        self._show_dot_popup(active_widget, ["pardir", "path", "pathsep"])
+
+        for ch in "par":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+        _press(active_widget, Qt.Key_Backspace)
+        current = active_widget._completion_popup.current_item()  # noqa: SLF001
+        assert current is not None
+        assert current.label == "pardir"
+        assert active_widget._completion_popup.is_visible()  # noqa: SLF001
+        _press(active_widget, Qt.Key_Tab)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.pardir")
+
+    def test_backspace_reopens_popup_after_no_match_close(self, active_widget: PythonConsoleWidget) -> None:
+        active_widget.show()
+        items = [self._symbol("getcwd"), self._symbol("getenv")]
+
+        def _requester(
+            _line: str,
+            _cursor: int,
+            request_generation: int,
+            _trigger_kind: str,
+            _trigger_character: str,
+        ) -> None:
+            active_widget.show_completion_items_for_request(
+                request_generation=request_generation,
+                prefix="",
+                items=items,
+            )
+
+        self._show_dot_popup(active_widget, ["getcwd", "getenv"])
+        active_widget.set_completion_requester(_requester)
+
+        _press(active_widget, Qt.Key_Z, "z")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+        assert active_widget._completion_popup.has_base_items() is False  # noqa: SLF001
+
+        _press(active_widget, Qt.Key_Backspace)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.")
+        popup = active_widget._completion_popup  # noqa: SLF001
+        assert popup.is_visible()
+        assert [item.label for item in popup.model().items()] == ["getcwd", "getenv"]
+
+    def test_backspace_without_prior_popup_does_not_request_completion(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        requests: list[object] = []
+
+        def _requester(*args: object) -> None:
+            requests.append(args)
+
+        active_widget.set_auto_trigger_period(True)
+        # Type first without a requester so '.' does not open a popup.
+        _type_text(active_widget, "x = obj.valuee")
+        active_widget.set_completion_requester(_requester)
+
+        _press(active_widget, Qt.Key_Backspace)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "x = obj.value")
+        assert requests == []
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+    def test_dismissed_dot_popup_does_not_delete_other_expression_on_tab(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        active_widget.show()
+        self._show_dot_popup(active_widget, ["pardir", "path", "pathsep"])
+        for ch in "pa":
+            _press(active_widget, Qt.Key(ord(ch.upper())), ch)
+        active_widget._completion_popup.hide()  # noqa: SLF001
+        assert active_widget._completion_popup.has_base_items() is False  # noqa: SLF001
+
+        _type_text(active_widget, " + sys.pat")
+        _press(active_widget, Qt.Key_Backspace)
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.pa + sys.pa")
+
+        stale = self._symbol("pardir", replacement_start=len("os."), replacement_end=len("os."))
+        active_widget._insert_completion_from_item(stale)  # noqa: SLF001
+        after = _get_plain_text(active_widget)
+        assert after.endswith(_PROMPT + "os.pa + sys.pardir")
+        assert "os.pardir" not in after or after.endswith("sys.pardir")
+        assert "+ sys.pardir" in after
+
+    def test_backspace_does_not_reopen_when_period_auto_trigger_disabled(
+        self,
+        active_widget: PythonConsoleWidget,
+    ) -> None:
+        active_widget.set_auto_trigger_period(False)
+        active_widget.set_completion_requester(lambda *args: None)
+        _type_text(active_widget, "os.")
+        active_widget.show_completion_items_for_request(
+            request_generation=active_widget.completion_request_generation(),
+            prefix="",
+            items=[self._symbol("getcwd"), self._symbol("getenv")],
+        )
+        if not active_widget._completion_popup.is_visible():  # noqa: SLF001
+            active_widget._completion_popup.popup().show()  # noqa: SLF001
+
+        _press(active_widget, Qt.Key_Z, "z")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+        _press(active_widget, Qt.Key_Backspace)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
 
 
 # ---------------------------------------------------------------------------

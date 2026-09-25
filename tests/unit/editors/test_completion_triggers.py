@@ -34,6 +34,7 @@ def editor() -> Iterator[CodeEditorWidget]:
     widget._completion_popup.hide()
     widget.hide()
     widget.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
 
 
 def test_ctrl_space_triggers_manual_completion_even_when_auto_trigger_disabled(editor: CodeEditorWidget) -> None:
@@ -280,7 +281,9 @@ def test_visible_popup_hides_on_space_when_auto_trigger_disabled(editor: CodeEdi
     assert calls == []
 
 
-def test_shortened_prefix_redispatches_completion(editor: CodeEditorWidget) -> None:
+def test_shortened_prefix_refilters_from_base_without_redispatch(
+    editor: CodeEditorWidget,
+) -> None:
     calls: list[object] = []
     editor.set_completion_requester(lambda *args: calls.append(args))
     editor.set_completion_preferences(
@@ -291,15 +294,330 @@ def test_shortened_prefix_redispatches_completion(editor: CodeEditorWidget) -> N
     )
     editor.setPlainText("ab")
     _set_cursor(editor, 2)
-    _show_completion_popup(editor, [_symbol("abc"), _symbol("abd")], prefix="ab")
+    _show_completion_popup(editor, [_symbol("abc"), _symbol("abd"), _symbol("xyz")], prefix="")
     assert editor._completion_popup.is_visible()
+    assert editor._completion_popup.reuse_items_for_prefix("ab") is True
+    assert [item.label for item in editor._completion_popup.model().items()] == ["abc", "abd"]
 
     editor.setPlainText("a")
     _set_cursor(editor, 1)
     editor.trigger_completion(manual=False)
 
-    assert len(calls) == 1
+    assert calls == []
     assert editor._completion_popup.is_visible()
+    assert [item.label for item in editor._completion_popup.model().items()] == ["abc", "abd"]
+    assert editor._completion_popup.model().prefix() == "a"
+
+
+def test_backspace_refilters_toward_empty_prefix(editor: CodeEditorWidget) -> None:
+    calls: list[object] = []
+    editor.set_completion_requester(lambda *args: calls.append(args))
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [_symbol("abc"), _symbol("getcwd"), _symbol("getenv"), _symbol("getpid")],
+        prefix="",
+    )
+    assert editor._completion_popup.is_visible()
+
+    for typed, key in (("g", Qt.Key_G), ("e", Qt.Key_E), ("t", Qt.Key_T), ("c", Qt.Key_C)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    assert [item.label for item in editor._completion_popup.model().items()] == ["getcwd"]
+    assert editor.toPlainText() == "os.getc"
+
+    for _ in range(4):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os."
+    assert editor._completion_popup.is_visible()
+    assert [item.label for item in editor._completion_popup.model().items()] == [
+        "abc",
+        "getcwd",
+        "getenv",
+        "getpid",
+    ]
+    assert editor._completion_popup.model().prefix() == ""
+    assert calls == []
+
+
+def test_backspace_past_dot_closes_completion_popup(editor: CodeEditorWidget) -> None:
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(editor, [_symbol("getcwd"), _symbol("getenv")], prefix="")
+    assert editor._completion_popup.is_visible()
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os"
+    assert editor._completion_popup.is_visible() is False
+
+
+def test_backspace_reopens_popup_after_no_match_close(editor: CodeEditorWidget) -> None:
+    editor.show()
+    items = [_symbol("getcwd"), _symbol("getenv")]
+
+    def _requester(
+        _source: str,
+        _cursor: int,
+        _manual: bool,
+        request_generation: int,
+        _trigger_kind: str,
+        _trigger_character: str,
+    ) -> None:
+        editor.show_completion_items_for_request(
+            request_generation=request_generation,
+            prefix="",
+            items=items,
+        )
+
+    editor.set_completion_requester(_requester)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(editor, items, prefix="")
+    assert editor._completion_popup.is_visible()
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Z, Qt.NoModifier, "z"))
+    assert editor._completion_popup.is_visible() is False
+    assert editor._completion_popup.has_base_items() is False
+    assert editor.toPlainText() == "os.z"
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os."
+    assert editor._completion_popup.is_visible()
+    assert [item.label for item in editor._completion_popup.model().items()] == [
+        "getcwd",
+        "getenv",
+    ]
+
+
+def test_backspace_without_prior_popup_does_not_request_completion(
+    editor: CodeEditorWidget,
+) -> None:
+    requests: list[object] = []
+
+    def _requester(*args: object) -> None:
+        requests.append(args)
+
+    editor.set_completion_requester(_requester)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("x = obj.valuee")
+    _set_cursor(editor, len("x = obj.valuee"))
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "x = obj.value"
+    assert requests == []
+    assert editor._completion_popup.is_visible() is False
+
+
+def test_backspace_does_not_reopen_when_period_auto_trigger_disabled(
+    editor: CodeEditorWidget,
+) -> None:
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=False,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(editor, [_symbol("getcwd"), _symbol("getenv")], prefix="")
+    assert editor._completion_popup.is_visible()
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Z, Qt.NoModifier, "z"))
+    assert editor._completion_popup.is_visible() is False
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os."
+    assert editor._completion_popup.is_visible() is False
+
+
+def _dot_member_symbol(label: str, *, member_start: int = 3) -> CompletionItem:
+    """Match live `.` trigger items: empty prefix with a collapsed replacement span."""
+
+    return CompletionItem(
+        label=label,
+        insert_text=label,
+        kind=CompletionKind.SYMBOL,
+        replacement_start=member_start,
+        replacement_end=member_start,
+    )
+
+
+def test_editor_dot_popup_tab_replaces_typed_prefix(editor: CodeEditorWidget) -> None:
+    editor.show()
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [
+            _dot_member_symbol("abc"),
+            _dot_member_symbol("pardir"),
+            _dot_member_symbol("path"),
+            _dot_member_symbol("pathsep"),
+        ],
+        prefix="",
+    )
+    assert editor._completion_popup.is_visible()
+
+    for typed, key in (("p", Qt.Key_P), ("a", Qt.Key_A)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    current = editor._completion_popup.current_item()
+    assert current is not None
+    assert current.label == "pardir"
+
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Tab, Qt.NoModifier, ""))
+
+    assert editor.toPlainText() == "os.pardir"
+    assert editor._completion_popup.is_visible() is False
+
+
+def test_editor_dot_popup_enter_replaces_typed_prefix(editor: CodeEditorWidget) -> None:
+    editor.show()
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [
+            _dot_member_symbol("pardir"),
+            _dot_member_symbol("path"),
+            _dot_member_symbol("pathsep"),
+        ],
+        prefix="",
+    )
+
+    for typed, key in (("p", Qt.Key_P), ("a", Qt.Key_A)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Return, Qt.NoModifier, "\n"))
+
+    assert editor.toPlainText() == "os.pardir"
+    assert editor._completion_popup.is_visible() is False
+
+
+def test_dismissed_dot_popup_does_not_delete_across_lines_on_accept(
+    editor: CodeEditorWidget,
+) -> None:
+    """Click-away must drop retained items so a later accept cannot wipe lines."""
+
+    editor.show()
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [
+            _dot_member_symbol("pardir"),
+            _dot_member_symbol("path"),
+            _dot_member_symbol("pathsep"),
+        ],
+        prefix="",
+    )
+    for typed, key in (("p", Qt.Key_P), ("a", Qt.Key_A)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    editor._completion_popup.hide()
+    assert editor._completion_popup.has_base_items() is False
+
+    buffer = "os.pa\nfoo = sys.pat\nbar = 1\n"
+    editor.setPlainText(buffer)
+    _set_cursor(editor, len("os.pa\nfoo = sys.pat"))
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+    assert editor._completion_popup.is_visible() is False
+    assert editor.toPlainText() == "os.pa\nfoo = sys.pa\nbar = 1\n"
+
+    # Even if a stale popup were forced visible, accept must not widen past the
+    # live identifier under the cursor.
+    stale = _dot_member_symbol("path", member_start=3)
+    editor._insert_completion_from_item(stale)
+    assert editor.toPlainText() == "os.pa\nfoo = sys.path\nbar = 1\n"
+    assert "bar = 1" in editor.toPlainText()
+
+
+def test_space_dismissed_dot_popup_does_not_delete_following_line_on_tab(
+    editor: CodeEditorWidget,
+) -> None:
+    editor.show()
+    editor.set_completion_requester(lambda *args: None)
+    editor.set_completion_preferences(
+        enabled=True,
+        auto_trigger=False,
+        min_chars=2,
+        auto_trigger_period=True,
+    )
+    editor.setPlainText("os.")
+    _set_cursor(editor, 3)
+    _show_completion_popup(
+        editor,
+        [
+            _dot_member_symbol("pardir"),
+            _dot_member_symbol("path"),
+            _dot_member_symbol("pathsep"),
+        ],
+        prefix="",
+    )
+    for typed, key in (("p", Qt.Key_P), ("a", Qt.Key_A)):
+        editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier, typed))
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.NoModifier, " "))
+    assert editor._completion_popup.is_visible() is False
+    assert editor._completion_popup.has_base_items() is False
+
+    editor.setPlainText("os.pa \nfoo = x.pat")
+    _set_cursor(editor, len("os.pa \nfoo = x.pat"))
+    editor.keyPressEvent(QKeyEvent(QEvent.KeyPress, Qt.Key_Backspace, Qt.NoModifier, ""))
+    assert editor._completion_popup.is_visible() is False
+    assert editor.toPlainText() == "os.pa \nfoo = x.pa"
+
+    stale = _dot_member_symbol("pardir", member_start=3)
+    editor._insert_completion_from_item(stale)
+    assert editor.toPlainText() == "os.pa \nfoo = x.pardir"
+    assert editor.toPlainText().startswith("os.pa")
 
 
 def test_editor_completion_context_uses_raised_max_results(editor: CodeEditorWidget) -> None:

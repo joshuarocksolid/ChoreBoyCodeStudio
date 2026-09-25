@@ -9,6 +9,10 @@ from PySide2.QtGui import QKeyEvent, QTextCursor
 from PySide2.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
+from app.editors.completion_popup.completion_replacement import (
+    member_access_anchor,
+    resolve_insert_replacement_range,
+)
 from app.core.completion_tier import is_tier_header_item
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import (
@@ -179,27 +183,28 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             and not effective_trigger_character
             and self._completion_popup.is_visible()
         ):
-            model_prefix = self._completion_popup.model().prefix()
-            prefix_extends_visible = current_prefix.startswith(model_prefix) or not model_prefix
-            if prefix_extends_visible:
-                if self._completion_popup.reuse_items_for_prefix(current_prefix):
-                    self._active_completion_prefix = current_prefix
-                    # Drop in-flight paints from the earlier trigger (usually bare ".")
-                    # so a late empty-prefix envelope cannot wipe the filtered list.
-                    self._completion_request_generation += 1
-                    self._completion_popup.complete(self.cursorRect())
-                    self._debounced_completion_request = (
-                        source_text,
-                        cursor_position,
-                        manual or force_empty_prefix,
-                        trigger_kind,
-                        effective_trigger_character,
-                    )
-                    self._completion_debounce_timer.start()
-                    self._pending_completion_trigger_character = ""
-                    return
-                self._hide_completion_popup()
+            if self._completion_popup.reuse_items_for_prefix(
+                current_prefix,
+                source_text=source_text,
+                cursor_position=cursor_position,
+            ):
+                self._active_completion_prefix = current_prefix
+                # Drop in-flight paints from the earlier trigger (usually bare ".")
+                # so a late empty-prefix envelope cannot wipe the filtered list.
+                self._completion_request_generation += 1
+                self._completion_popup.complete(self.cursorRect())
+                self._debounced_completion_request = (
+                    source_text,
+                    cursor_position,
+                    manual or force_empty_prefix,
+                    trigger_kind,
+                    effective_trigger_character,
+                )
+                self._completion_debounce_timer.start()
+                self._pending_completion_trigger_character = ""
                 return
+            self._dismiss_completion_popup_by_typing(source_text, cursor_position)
+            return
 
         self._completion_debounce_timer.stop()
         self._debounced_completion_request = None
@@ -356,14 +361,22 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         if e.key() == Qt.Key_Backspace and not e.modifiers():
             if self._handle_smart_backspace():
                 e.accept()
+                if self._completion_enabled:
+                    self._refine_completion_after_buffer_edit()
                 return
         if e.key() in {Qt.Key_Return, Qt.Key_Enter} and not (e.modifiers() & (Qt.ControlModifier | Qt.AltModifier)):
+            self._completion_popup.clear_reopen_marker()
             self._insert_newline_with_auto_indent()
             e.accept()
             return
 
         super().keyPressEvent(e)
         inserted_text = e.text()
+        if e.key() == Qt.Key_Backspace and not e.modifiers():
+            if self._completion_enabled:
+                self._refine_completion_after_buffer_edit()
+            return
+
         if inserted_text in {"(", ","}:
             self._show_signature_help()
         elif inserted_text == ")":
@@ -383,7 +396,10 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             if inserted_text.isalnum() or inserted_text == "_":
                 self.trigger_completion(manual=False)
             elif inserted_text.isprintable():
-                self._hide_completion_popup()
+                self._dismiss_completion_popup_by_typing(
+                    self.toPlainText(),
+                    self.textCursor().position(),
+                )
             return
 
         if not self._completion_enabled or not self._completion_auto_trigger:
@@ -394,6 +410,42 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
         if self._completion_popup.is_visible():
             self._hide_completion_popup()
+
+    def _refine_completion_after_buffer_edit(self) -> None:
+        if self._completion_popup.is_visible():
+            self.trigger_completion(manual=False)
+            return
+        if not self._completion_auto_trigger_period:
+            self._completion_popup.clear_reopen_marker()
+            return
+        source_text = self.toPlainText()
+        cursor_position = self.textCursor().position()
+        anchor = member_access_anchor(source_text, cursor_position)
+        if not self._completion_popup.consume_reopen_for_anchor(anchor):
+            return
+        self.trigger_completion(manual=False)
+
+    def _dismiss_completion_popup_by_typing(self, source_text: str, cursor_position: int) -> None:
+        self._completion_debounce_timer.stop()
+        self._debounced_completion_request = None
+        self._pending_completion_trigger_character = ""
+        anchor = member_access_anchor(source_text, cursor_position)
+        if anchor is None:
+            self._hide_completion_popup()
+            return
+        self._completion_popup.dismiss_by_typing(
+            anchor,
+            allow_reopen=self._completion_auto_trigger_period,
+        )
+
+    def _on_completion_cursor_moved(self) -> None:
+        if self._completion_popup.is_visible():
+            return
+        source_text = self.toPlainText()
+        cursor_position = self.textCursor().position()
+        self._completion_popup.expire_reopen_if_anchor_changed(
+            member_access_anchor(source_text, cursor_position)
+        )
 
     def _hide_completion_popup(self) -> None:
         self._completion_debounce_timer.stop()
@@ -434,24 +486,13 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
 
         cursor = self.textCursor()
-        if item.replacement_start is not None and item.replacement_end is not None:
-            cursor.setPosition(item.replacement_start)
-            cursor.setPosition(item.replacement_end, QTextCursor.KeepAnchor)
+        source_text = self.toPlainText()
+        cursor_position = cursor.position()
+        start, end = resolve_insert_replacement_range(source_text, cursor_position)
+        if start < end:
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
             cursor.removeSelectedText()
-        else:
-            context = self._build_editor_completion_context(
-                source_text=self.toPlainText(),
-                cursor_position=cursor.position(),
-                manual=True,
-                force_empty_prefix=True,
-                trigger_kind="invoked",
-                trigger_character="",
-            )
-            replacement = context.replacement_range
-            if replacement.start < replacement.end:
-                cursor.setPosition(replacement.start)
-                cursor.setPosition(replacement.end, QTextCursor.KeepAnchor)
-                cursor.removeSelectedText()
         cursor.insertText(item.insert_text)
         self.setTextCursor(cursor)
         if self._completion_accepted_callback is not None:

@@ -109,6 +109,7 @@ class CodeEditorWidget(
         self.setMouseTracking(True)
         self.cursorPositionChanged.connect(self._highlight_current_line)
         self.cursorPositionChanged.connect(self._maybe_dismiss_paste_hint_for_cursor)
+        self.cursorPositionChanged.connect(self._on_completion_cursor_moved)
         self.verticalScrollBar().valueChanged.connect(self._handle_viewport_changed)
         self._highlight_current_line()
         self.setLineWrapMode(QPlainTextEdit.NoWrap)
