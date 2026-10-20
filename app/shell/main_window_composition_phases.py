@@ -271,7 +271,7 @@ def install_persistence(ctx: ShellCompositionContext) -> None:
 def install_editors(ctx: ShellCompositionContext) -> None:
     """Wire editor workspace, tab factory, and core editor workflows."""
     window = ctx.w
-    workspace_controller = EditorWorkspaceController()
+    workspace_controller = EditorWorkspaceController(lambda: window._editor_manager)
     editor_manager = EditorManager()
     bind_private_attrs(
         window,
@@ -395,7 +395,9 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
     window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
     window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=window._project_tree_controller,
-        editor_widgets_by_path=window._editor_widgets_by_path,
+        open_editor_paths=window._workspace_controller.open_editor_paths,
+        widget_for_path=window._workspace_controller.widget_for_path,
+        pop_editor_for_path=window._workspace_controller.pop_editor_for_path,
         tab_index_for_path=window._editor_tab_workflow.tab_index_for_path,
         remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
         if window._editor_tabs_widget is not None
@@ -415,6 +417,7 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         refresh_project=window._project_tree_ui_workflow.refresh_project_tree,
         record_deleted_path=window._local_history_workflow.record_deleted_path,
         remap_file_lineage=window._local_history_workflow.remap_file_lineage,
+        migrate_buffer_state=window._project_tree_ui_workflow.migrate_moved_buffer_state,
     )
     window._project_tree_action_workflow = build_project_tree_action_workflow(ctx)
     window._shell_layout_workflow = build_shell_layout_workflow(window)

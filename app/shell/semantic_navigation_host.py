@@ -26,22 +26,19 @@ class SemanticNavigationHost(Protocol):
     def editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
         ...
 
-    def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        ...
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> CodeEditorWidget | None:
+        ...
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
         ...
 
     def intelligence_controller(self) -> Any:
         ...
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
-        ...
-
     def open_file_at_line(self, file_path: str, line_number: int) -> None:
-        ...
-
-    def outline_symbols_for_path(self, file_path: str) -> list[object] | None:
-        ...
-
-    def set_outline_symbols_for_path(self, file_path: str, symbols: list[object]) -> None:
         ...
 
     def background_tasks(self) -> Any:
@@ -143,25 +140,22 @@ class MainWindowSemanticNavigationHost:
         return self._window._editor_tab_workflow.active_editor_widget()
 
     def editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
-        return self._window._editor_widgets_by_path.get(file_path)
+        return self._window._workspace_controller.widget_for_path(file_path)
 
-    def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
-        return self._window._editor_widgets_by_path
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return self._window._workspace_controller.buffer_id_for_path(file_path)
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> CodeEditorWidget | None:
+        return self._window._workspace_controller.widget_for_buffer_id(buffer_id)
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
+        return self._window._workspace_controller.buffer_revision_for_buffer_id(buffer_id)
 
     def intelligence_controller(self) -> Any:
         return self._window._intelligence_controller
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
-        return self._window._editor_tab_workflow.buffer_revision(file_path)
-
     def open_file_at_line(self, file_path: str, line_number: int) -> None:
         self._window._editor_tab_workflow.open_file_at_line(file_path, line_number)
-
-    def outline_symbols_for_path(self, file_path: str) -> list[object] | None:
-        return self._window._outline_symbols_by_path.get(file_path)
-
-    def set_outline_symbols_for_path(self, file_path: str, symbols: list[object]) -> None:
-        self._window._outline_symbols_by_path[file_path] = symbols
 
     def background_tasks(self) -> Any:
         return self._window._background_tasks

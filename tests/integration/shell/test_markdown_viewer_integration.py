@@ -40,7 +40,7 @@ def test_open_markdown_file_uses_preview_pane_without_breaking_save_state(
 
     markdown_pane = window._markdown_panes_by_path.get(readme_path)
     assert isinstance(markdown_pane, MarkdownEditorPane)
-    source_editor = window._editor_widgets_by_path[readme_path]
+    source_editor = window._workspace_controller.widget_for_path(readme_path)
     assert markdown_pane.source_editor() is source_editor
 
     source_editor.setPlainText("# Changed\n")

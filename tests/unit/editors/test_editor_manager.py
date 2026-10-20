@@ -50,8 +50,8 @@ def test_opening_second_preview_replaces_existing_preview(tmp_path: Path) -> Non
     first_open = manager.open_file(str(first_path), preview=True)
     second_open = manager.open_file(str(second_path), preview=True)
 
-    assert first_open.closed_preview_path is None
-    assert second_open.closed_preview_path == str(first_path.resolve())
+    assert first_open.closed_preview_tab is None
+    assert second_open.closed_preview_tab is first_open.tab
     assert manager.get_tab(str(first_path.resolve())) is None
     assert manager.get_tab(str(second_path.resolve())) is not None
     assert manager.preview_tab() is second_open.tab
@@ -114,7 +114,7 @@ def test_editing_preview_tab_promotes_to_permanent(tmp_path: Path) -> None:
     assert first_open.tab.is_preview is False
     assert updated.is_preview is False
     assert manager.preview_tab() is second_open.tab
-    assert second_open.closed_preview_path is None
+    assert second_open.closed_preview_tab is None
     assert manager.get_tab(str(first_path.resolve())) is not None
 
 
@@ -197,6 +197,71 @@ def test_remap_paths_for_move_updates_open_tabs_and_active_file(tmp_path: Path) 
     assert list(remapped.values()) == [new_path]
     assert manager.get_tab(new_path) is not None
     assert manager.active_tab() is manager.get_tab(new_path)
+
+
+def test_remap_paths_for_move_keeps_buffer_identity_and_frees_old_path(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    root.mkdir()
+    source = root / "old.py"
+    source.write_text("x=1\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(source)).tab
+    manager.update_tab_content(str(source), "x=2\n")
+
+    manager.remap_paths_for_move(str(source), str(root / "new.py"))
+
+    new_path = str((root / "new.py").resolve())
+    assert manager.get_tab(str(source)) is None
+    assert manager.get_tab(new_path) is tab
+    assert manager.get_tab_by_id(tab.buffer_id) is tab
+    assert manager.open_paths() == [new_path]
+    assert tab.display_name == "new.py"
+    assert tab.is_dirty is True
+
+
+def test_remap_paths_for_move_ignores_sibling_with_shared_prefix(tmp_path: Path) -> None:
+    root = tmp_path / "project"
+    (root / "pkg").mkdir(parents=True)
+    (root / "pkg_extra").mkdir()
+    inside = root / "pkg" / "a.py"
+    sibling = root / "pkg_extra" / "b.py"
+    inside.write_text("a=1\n", encoding="utf-8")
+    sibling.write_text("b=1\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file(str(inside))
+    manager.open_file(str(sibling))
+
+    remapped = manager.remap_paths_for_move(str(root / "pkg"), str(root / "lib"))
+
+    assert remapped == {str(inside.resolve()): str((root / "lib" / "a.py").resolve())}
+    assert manager.open_paths() == [str((root / "lib" / "a.py").resolve()), str(sibling.resolve())]
+
+
+def test_missing_open_paths_reports_deleted_file_and_stale_skips_it(tmp_path: Path) -> None:
+    kept = tmp_path / "kept.py"
+    gone = tmp_path / "gone.py"
+    kept.write_text("k=1\n", encoding="utf-8")
+    gone.write_text("g=1\n", encoding="utf-8")
+    manager = EditorManager()
+    manager.open_file(str(kept))
+    manager.open_file(str(gone))
+
+    gone.unlink()
+
+    assert manager.missing_open_paths() == [str(gone.resolve())]
+    assert manager.stale_open_paths() == []
+
+
+def test_save_tab_clears_disk_conflict(tmp_path: Path) -> None:
+    file_path = tmp_path / "conflict.py"
+    file_path.write_text("a=1\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path)).tab
+    tab.set_disk_conflict("changed", 99.0)
+
+    manager.save_tab(str(file_path))
+
+    assert tab.disk_conflict is None
 
 
 def test_remap_paths_for_move_updates_preview_tracking(tmp_path: Path) -> None:

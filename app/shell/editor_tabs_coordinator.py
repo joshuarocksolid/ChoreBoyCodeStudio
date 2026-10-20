@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
 from PySide2.QtWidgets import QInputDialog, QMessageBox, QTabBar
 
 from app.core import constants
+from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
 from app.editors.text_editing import FlatPythonIndentRepairResult
+
+
+def tab_presentation_data(tab_state: EditorTabState) -> dict[str, object]:
+    conflict_kind = None if tab_state.disk_conflict is None else tab_state.disk_conflict.kind
+    return {
+        "buffer_id": tab_state.buffer_id,
+        "file_path": tab_state.file_path,
+        "is_preview": tab_state.is_preview,
+        "is_stale": conflict_kind == DISK_CONFLICT_CHANGED,
+        "is_missing": conflict_kind == DISK_CONFLICT_MISSING,
+    }
 
 
 class EditorTabsCoordinator:
@@ -18,34 +29,56 @@ class EditorTabsCoordinator:
         self._window = window
 
     def tab_index_for_path(self, file_path: str) -> int:
+        tab_state = self._window._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return -1
+        return self.tab_index_for_buffer_id(tab_state.buffer_id)
+
+    def file_path_for_tab_index(self, tab_index: int) -> str | None:
+        window = self._window
+        widget = window._editor_tabs_widget
+        if widget is None or tab_index < 0 or tab_index >= widget.count():
+            return None
+        data = widget.tabBar().tabData(tab_index)
+        if not isinstance(data, dict):
+            return None
+        buffer_id = data.get("buffer_id")
+        if not isinstance(buffer_id, str):
+            return None
+        tab_state = window._editor_manager.get_tab_by_id(buffer_id)
+        if tab_state is None:
+            return None
+        return tab_state.file_path
+
+    def tab_index_for_buffer_id(self, buffer_id: str) -> int:
         window = self._window
         if window._editor_tabs_widget is None:
             return -1
-
-        normalized_path = str(Path(file_path).expanduser().resolve())
+        tab_bar = window._editor_tabs_widget.tabBar()
         for index in range(window._editor_tabs_widget.count()):
-            if window._editor_tabs_widget.tabToolTip(index) == normalized_path:
+            data = tab_bar.tabData(index)
+            if isinstance(data, dict) and data.get("buffer_id") == buffer_id:
                 return index
         return -1
 
     def refresh_tab_presentation(self, file_path: str) -> None:
-        window = self._window
-        if window._editor_tabs_widget is None:
-            return
-        tab_state = window._editor_manager.get_tab(file_path)
+        tab_state = self._window._editor_manager.get_tab(file_path)
         if tab_state is None:
             return
-        tab_index = window._editor_tab_workflow.tab_index_for_path(file_path)
+        tab_index = self.tab_index_for_buffer_id(tab_state.buffer_id)
         if tab_index < 0:
+            return
+        self.present_tab_at(tab_index, tab_state)
+
+    def present_tab_at(self, tab_index: int, tab_state: EditorTabState) -> None:
+        window = self._window
+        if window._editor_tabs_widget is None:
             return
         suffix = " *" if tab_state.is_dirty else ""
         window._editor_tabs_widget.setTabText(tab_index, f"{tab_state.display_name}{suffix}")
         tab_bar = window._editor_tabs_widget.tabBar()
         if isinstance(tab_bar, QTabBar):
-            tab_bar.setTabData(
-                tab_index,
-                {"is_preview": tab_state.is_preview, "file_path": tab_state.file_path},
-            )
+            tab_bar.setTabData(tab_index, tab_presentation_data(tab_state))
             tab_bar.update()
 
     def replace_tab_content_widget(self, file_path: str, new_widget: object) -> None:
@@ -58,9 +91,11 @@ class EditorTabsCoordinator:
         tabs = window._editor_tabs_widget
         label = tabs.tabText(tab_index)
         tooltip = tabs.tabToolTip(tab_index)
+        data = tabs.tabBar().tabData(tab_index)
         tabs.removeTab(tab_index)
         tabs.insertTab(tab_index, new_widget, label)
         tabs.setTabToolTip(tab_index, tooltip)
+        tabs.tabBar().setTabData(tab_index, data)
         tabs.setCurrentIndex(tab_index)
         tab_bar = tabs.tabBar()
         if isinstance(tab_bar, QTabBar):
@@ -90,7 +125,7 @@ class EditorTabsCoordinator:
         active_tab = window._editor_manager.active_tab()
         if active_tab is None:
             return None
-        return window._editor_widgets_by_path.get(active_tab.file_path)
+        return window._editor_widgets_by_path.get(active_tab.buffer_id)
 
     def advance_buffer_revision(self, file_path: str) -> int:
         return self._window._workspace_controller.advance_buffer_revision(file_path)

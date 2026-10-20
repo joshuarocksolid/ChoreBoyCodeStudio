@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Mapping
 
 from PySide2.QtWidgets import QMessageBox
@@ -141,7 +140,7 @@ def connect_test_explorer_navigation(window: Any) -> None:
 
     def navigate_to_test(file_path: str, line_number: int) -> None:
         if window._editor_tab_factory.open_file_in_editor(file_path, preview=False):
-            editor_widget = window._editor_widgets_by_path.get(str(Path(file_path).expanduser().resolve()))
+            editor_widget = window._workspace_controller.widget_for_path(file_path)
             if editor_widget is not None:
                 editor_widget.go_to_line(max(1, line_number))
 

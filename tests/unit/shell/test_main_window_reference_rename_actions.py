@@ -60,22 +60,19 @@ class _ReferenceRenameHost:
     def editor_widget_for_path(self, file_path: str) -> Any:
         return None
 
-    def editor_widgets_by_path(self) -> dict[str, Any]:
-        return {}
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return None
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> Any:
+        return None
 
     def intelligence_controller(self) -> _FakeIntelligenceController:
         return self._intelligence_controller
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
         return None
 
     def open_file_at_line(self, file_path: str, line_number: int) -> None:
-        return None
-
-    def outline_symbols_for_path(self, file_path: str) -> list[object] | None:
-        return None
-
-    def set_outline_symbols_for_path(self, file_path: str, symbols: list[object]) -> None:
         return None
 
     def background_tasks(self) -> Any:

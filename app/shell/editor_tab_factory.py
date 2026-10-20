@@ -76,8 +76,8 @@ class EditorTabFactory:
         if window._editor_tabs_widget is None:
             return False
 
-        if opened_result.closed_preview_path:
-            window._editor_tab_workflow.remove_tab_widget_for_path(opened_result.closed_preview_path)
+        if opened_result.closed_preview_tab is not None:
+            window._editor_tab_workflow.remove_tab_widget_for_buffer_id(opened_result.closed_preview_tab.buffer_id)
 
         if opened_result.was_already_open:
             existing_index = window._editor_tab_workflow.tab_index_for_path(opened_result.tab.file_path)
@@ -112,8 +112,8 @@ class EditorTabFactory:
         tab_file_path = opened_result.tab.file_path
 
         bindings_host: EditorTabBindingsHost = MainWindowEditorBindingsHost(window)
-        window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, tab_file_path)
-        window._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
+        window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, opened_result.tab)
+        window._workspace_controller.register_editor(opened_result.tab.buffer_id, editor_widget)
 
         tab_content: QWidget = window._editor_tab_workflow.wrap_tab_content_if_markdown(
             editor_widget=editor_widget,
@@ -125,8 +125,8 @@ class EditorTabFactory:
 
         tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
         window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
+        window._editor_tabs_coordinator.present_tab_at(tab_index, opened_result.tab)
         window._editor_tabs_widget.setCurrentIndex(tab_index)
-        window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
         if restore_draft:
             window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
         window._editor_tab_workflow.apply_detected_indentation_for_widget(

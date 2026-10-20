@@ -9,6 +9,17 @@ from PySide2.QtGui import QFont, QFontMetrics, QMouseEvent
 from PySide2.QtWidgets import QStyle, QStyleOptionTab, QStylePainter, QTabBar, QWidget
 
 
+def conflict_marker_suffix(tab_data: object) -> str:
+    """Placeholder glyph for a buffer that diverges from disk."""
+    if not isinstance(tab_data, dict):
+        return ""
+    if tab_data.get("is_missing"):
+        return " !"
+    if tab_data.get("is_stale"):
+        return " •"
+    return ""
+
+
 class MiddleClickTabBar(QTabBar):
     """Editor tab bar with middle-click close and preview-tab styling."""
 
@@ -42,6 +53,9 @@ class MiddleClickTabBar(QTabBar):
             self.initStyleOption(option, index)
             data = self.tabData(index)
             is_preview = isinstance(data, dict) and bool(data.get("is_preview"))
+            marker = conflict_marker_suffix(data)
+            if marker:
+                option.text = f"{option.text}{marker}"
             if is_preview:
                 preview_font = QFont(self.font())
                 preview_font.setItalic(True)

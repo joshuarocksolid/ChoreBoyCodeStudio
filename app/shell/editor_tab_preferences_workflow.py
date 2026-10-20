@@ -123,9 +123,11 @@ class EditorTabPreferencesWorkflow:
         size: int,
         source: str,
     ) -> None:
-        self._host.indent_source_by_path()[file_path] = (style, int(size), source)
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is not None and active_tab.file_path == file_path:
+        tab = self._editor_manager.get_tab(file_path)
+        if tab is None:
+            return
+        self._host.indent_source_by_path()[tab.buffer_id] = (style, int(size), source)
+        if self._editor_manager.active_tab() is tab:
             self.update_indent_status_for_path(file_path)
 
     def update_indent_status_for_path(self, file_path: str | None) -> None:
@@ -135,7 +137,8 @@ class EditorTabPreferencesWorkflow:
         if file_path is None:
             status_controller.set_indent_status(style=None, size=None, source=None)
             return
-        record = self._host.indent_source_by_path().get(file_path)
+        tab = self._editor_manager.get_tab(file_path)
+        record = None if tab is None else self._host.indent_source_by_path().get(tab.buffer_id)
         if record is None:
             status_controller.set_indent_status(style=None, size=None, source=None)
             return
