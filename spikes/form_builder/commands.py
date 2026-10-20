@@ -1215,3 +1215,43 @@ class RemoveLayout:
         moved = {id(item_content(item)) for item in layout_items(self.saved)}
         owner.body = [part for part in owner.body if id(part) not in moved]
         owner.body.insert(self.index, self.saved)
+
+
+class MoveChild:
+    """Reorder a page of a tab widget, stack, toolbox, or splitter (widget children, no layout)."""
+
+    def __init__(self, widget_id: str, delta: int):
+        self.widget_id = widget_id
+        self.delta = delta
+        self.parent_id = ""
+        self.old_body: list = []
+
+    def redo(self, doc: Document) -> None:
+        located = locate(doc, self.widget_id)
+        if located is None or not isinstance(located[0], Widget):
+            raise KeyError(self.widget_id)
+        parent, index = located
+        self.parent_id = parent.id
+        self.old_body = list(parent.body)
+        pages = [i for i, part in enumerate(parent.body) if isinstance(part, Widget)]
+        position = pages.index(index)
+        target = position + self.delta
+        if not 0 <= target < len(pages):
+            return
+        a, b = pages[position], pages[target]
+        parent.body[a], parent.body[b] = parent.body[b], parent.body[a]
+
+    def undo(self, doc: Document) -> None:
+        parent = find_node(doc, self.parent_id)
+        parent.body = list(self.old_body)
+
+
+def page_parent(doc: Document, node_id: str):
+    """The tab widget, stack, toolbox, or splitter that holds this widget directly, if any."""
+    located = locate(doc, node_id)
+    if located is None or not isinstance(located[0], Widget):
+        return None
+    parent = located[0]
+    if parent.class_name in ("QTabWidget", "QStackedWidget", "QToolBox", "QSplitter"):
+        return parent
+    return None

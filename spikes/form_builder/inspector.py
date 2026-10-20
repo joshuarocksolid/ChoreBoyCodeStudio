@@ -1285,10 +1285,15 @@ class Inspector(QWidget):
         section = Section("Connections", "connections")
         intro = "When this widget emits a signal, call a slot on another widget or the form." if node is not self.doc.root else "Every signal-to-slot connection on this form."
         section.add(label(intro, "Faint", wrap=True))
+        fresh = getattr(self, "_fresh_connection", None)
+        self._fresh_connection = None
         for position, link in rows:
             line = QHBoxLayout()
             line.setSpacing(6)
             text = label(f"{link.sender}.{link.signal.split('(')[0]}  →  {link.receiver}.{link.slot.split('(')[0]}", "Small", wrap=True)
+            if link is fresh:
+                # Pain 16: a new connection is never "somewhere off screen"; it is marked.
+                text.setStyleSheet(f"background: {current().accent_soft}; border-radius: 4px; padding: 3px 6px; color: {current().text};")
             text.setToolTip(f"{link.sender}.{link.signal} → {link.receiver}.{link.slot}")
             line.addWidget(text, 1)
             remove = IconButton("close", "Remove this connection")
@@ -1352,7 +1357,9 @@ class Inspector(QWidget):
             if not signal.currentText() or not slot.currentText():
                 self.status.emit("Pick a signal and a slot first.")
                 return
-            self._execute(AddConnection(Connection(node.object_name, signal.currentText(), receiver.currentText(), slot.currentText())))
+            link = Connection(node.object_name, signal.currentText(), receiver.currentText(), slot.currentText())
+            self._fresh_connection = link
+            self._execute(AddConnection(link))
             self.status.emit("Connection added.")
 
         add.clicked.connect(commit)

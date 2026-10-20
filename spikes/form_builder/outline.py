@@ -379,6 +379,16 @@ class Outline(QTreeWidget):
             self.selection_made.emit([node_id])
 
     def move_selection(self, node_id, delta):
+        from spikes.form_builder.commands import MoveChild, page_parent
+
+        holder = page_parent(self.doc, node_id)
+        if holder is not None:
+            pages = child_widgets(holder)
+            position = [page.id for page in pages].index(node_id)
+            if 0 <= position + delta < len(pages):
+                self.history.execute(MoveChild(node_id, delta))
+                self.select_ids([node_id])
+            return
         item = resolve_layout_item(self.doc, node_id)
         if item is None:
             return
@@ -420,6 +430,8 @@ class Outline(QTreeWidget):
             return
         target = self.itemAt(event.position().toPoint())
         source_id = self.currentItem().data(0, ROLE_ID)
+        if target is not None and self._drop_page(source_id, target.data(0, ROLE_ID)):
+            return
         item = resolve_layout_item(self.doc, source_id)
         if item is None or target is None:
             return
@@ -432,6 +444,22 @@ class Outline(QTreeWidget):
             self.history.execute(command)
             self.select_ids([source_id])
             self.selection_made.emit([source_id])
+
+    def _drop_page(self, source_id, target_id) -> bool:
+        """Dragging a tab page onto a sibling page moves it there (a wide target, not a 3 px bar)."""
+        from spikes.form_builder.commands import MoveChild, page_parent
+
+        holder = page_parent(self.doc, source_id)
+        if holder is None or page_parent(self.doc, target_id) is not holder:
+            return False
+        ids = [page.id for page in child_widgets(holder)]
+        delta = ids.index(target_id) - ids.index(source_id)
+        steps = [MoveChild(source_id, 1 if delta > 0 else -1) for _ in range(abs(delta))]
+        if steps:
+            self.history.execute(Compound(steps) if len(steps) > 1 else steps[0])
+            self.select_ids([source_id])
+            self.selection_made.emit([source_id])
+        return True
 
     def _drop_command(self, item, target_id, position):
         dest = find_node(self.doc, target_id)

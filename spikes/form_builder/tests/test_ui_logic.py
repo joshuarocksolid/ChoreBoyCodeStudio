@@ -203,6 +203,35 @@ class BuddyAndMorphTest(unittest.TestCase):
         self.assertEqual(document_signature(doc), before)
 
 
+class TabPageOrderTest(unittest.TestCase):
+    """Pain 20: tab pages reorder from the outline, and the live tab widget follows."""
+
+    def test_move_page(self):
+        from spikes.form_builder.commands import MoveChild
+        from spikes.form_builder.model import child_widgets, set_attribute
+        from spikes.form_builder.realize import Realization
+
+        doc, layout = _box(("before",))
+        tabs = make_widget(doc, "QTabWidget", "tabs")
+        for title in ("One", "Two", "Three"):
+            page = make_widget(doc, "QWidget", title.lower())
+            set_attribute(page, "title", title)
+            page.body.append(make_layout(doc, "QVBoxLayout"))
+            tabs.body.append(page)
+        History(doc).execute(InsertItem(layout.id, 1, make_item(doc, tabs)))
+        live = Realization()
+        live.build(doc)
+        history = History(doc)
+        history.execute(MoveChild(_named(doc, "three").id, -1))
+        self.assertEqual([page.object_name for page in child_widgets(tabs)], ["one", "three", "two"])
+        self.assertTrue(live.reconcile())
+        widget = live.widgets[tabs.id]
+        self.assertEqual([widget.tabText(i) for i in range(widget.count())], ["One", "Three", "Two"])
+        history.undo()
+        self.assertTrue(live.reconcile())
+        self.assertEqual([widget.tabText(i) for i in range(widget.count())], ["One", "Two", "Three"])
+
+
 class MenuTest(unittest.TestCase):
     """Type here on a main window menu writes Designer's XML and runs."""
 
