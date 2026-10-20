@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import resource
 import statistics
 import sys
@@ -43,12 +44,15 @@ class PerfBudgetTest(unittest.TestCase):
         rss_before = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
 
         opens = []
+        open_cpu = []
         for _index in range(5):
             started = time.perf_counter()
+            cpu_started = time.process_time()
             doc = load_path(str(FORM))
             window.load_document(doc, str(FORM))
             app.processEvents()
             opens.append((time.perf_counter() - started) * 1000)
+            open_cpu.append((time.process_time() - cpu_started) * 1000)
         widget_count = sum(1 for _widget in iter_widgets(window.doc))
         rss_after = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
         rss_delta = rss_after - rss_before
@@ -84,6 +88,8 @@ class PerfBudgetTest(unittest.TestCase):
         numbers = {
             "widgets": widget_count,
             "open_ms": opens,
+            "open_cpu_ms": open_cpu,
+            "load": os.getloadavg()[0],
             "insert_ms": inserts,
             "undo_ms": undos,
             "property_ms": props,
@@ -119,6 +125,7 @@ def _render(numbers) -> str:
         [
             f"widgets {numbers['widgets']}",
             "open " + span(numbers["open_ms"]) + "  budget 150",
+            "open cpu " + span(numbers["open_cpu_ms"]) + "  (process time; wall time above includes waiting for a busy machine)",
             "insert " + span(numbers["insert_ms"]) + "  budget 16",
             "property " + span(numbers["property_ms"]) + "  budget 16",
             "undo " + span(numbers["undo_ms"]) + "  budget 16",
@@ -126,6 +133,7 @@ def _render(numbers) -> str:
             f"rss extra {numbers['rss_extra_bytes'] / (1024 * 1024):.2f} MB  budget 30",
             "open times load plus the workbench, after QApplication already exists.",
             "edit times are command apply plus the canvas patch. The geometry index refreshes on the next pointer event.",
+            f"machine load average at the run: {numbers['load']:.1f}",
             "rss extra is ru_maxrss after five opens minus ru_maxrss of the empty window. It is a high-water mark, so it can include caches from the repeats. On macOS the unit is bytes.",
             "",
         ]

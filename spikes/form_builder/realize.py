@@ -481,6 +481,10 @@ class Realization:
             return existing
         child = self._create_widget(node, parent, False)
         self._fill(node, child, False)
+        if parent is not None and parent.isVisible():
+            visible = get_property(node, "visible")
+            if visible is None or visible.body.text != "false":
+                child.show()
         return child
 
     # ------------------------------------------------------------- properties

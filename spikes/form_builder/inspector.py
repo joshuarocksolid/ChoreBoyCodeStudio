@@ -1042,12 +1042,21 @@ class Inspector(QWidget):
         for widget in widgets[1:]:
             shared &= set(CURATED.get(widget.class_name, [])) | set(COMMON)
         for prop_name in sorted(shared):
-            values = {get_property(widget, prop_name).body.text if get_property(widget, prop_name) else "" for widget in widgets}
-            edit = QLineEdit(values.pop() if len(values) == 1 else "")
-            edit.setPlaceholderText("Mixed" if len(values) > 0 else "")
-            edit.setProperty("inspectorKey", f"multi:{prop_name}")
-            edit.editingFinished.connect(lambda name=prop_name, box=edit: self._set_many(widgets, name, box.text()))
-            self._row(grid, WORD_LABELS.get(prop_name, prop_name), edit)
+            live = [self._realized(widget.id) for widget in widgets]
+            values = {str(item.property(prop_name)) if item is not None else "" for item in live}
+            sample = live[0].property(prop_name) if live and live[0] is not None else None
+            if isinstance(sample, bool):
+                box = QCheckBox("Mixed" if len(values) > 1 else "")
+                box.setTristate(len(values) > 1)
+                box.setCheckState(Qt.PartiallyChecked if len(values) > 1 else (Qt.Checked if sample else Qt.Unchecked))
+                box.clicked.connect(lambda checked, name=prop_name: self._execute(SetProperties([w.id for w in widgets], name, prop_bool(name, checked))))
+                editor = box
+            else:
+                editor = QLineEdit(values.pop() if len(values) == 1 else "")
+                editor.setPlaceholderText("Mixed" if len(values) > 1 else "")
+                editor.editingFinished.connect(lambda name=prop_name, box=editor: self._set_many(widgets, name, box.text()))
+            editor.setProperty("inspectorKey", f"multi:{prop_name}")
+            self._row(grid, WORD_LABELS.get(prop_name, prop_name), editor)
         page.addWidget(section)
         size = Section("Size", "multi-size")
         size_grid = self._grid(size)
@@ -1125,19 +1134,22 @@ class Inspector(QWidget):
         listing.setDragDropMode(QAbstractItemView.InternalMove)
         listing.setFixedHeight(min(26 * max(len(order), 1) + 8, 220))
         listing.setUniformItemSizes(True)
-        for number, name in enumerate(order, start=1):
+        shown, rest = order[:40], order[40:]
+        for number, name in enumerate(shown, start=1):
             item = QListWidgetItem(f"{number}   {name}")
             item.setData(Qt.UserRole, name)
             listing.addItem(item)
 
         def reordered(*_args):
-            names = [listing.item(i).data(Qt.UserRole) for i in range(listing.count())]
+            names = [listing.item(i).data(Qt.UserRole) for i in range(listing.count())] + rest
             if names != order:
                 self._execute(SetTabStops(names))
 
         listing.model().rowsMoved.connect(reordered)
         if order:
             section.add(listing)
+            if rest:
+                section.add(label(f"…and {len(rest)} more. Use Tab order in the top bar to see them all on the form.", "Faint", wrap=True))
         else:
             listing.deleteLater()
             section.add(label("No fields yet. Inputs join the order as you add them.", "Small", wrap=True))

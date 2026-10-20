@@ -906,6 +906,10 @@ class Surface(QGraphicsView):
         self.form.setPalette(runtime_palette())
         self.form.setFont(self.form_font)
         self.page_layout.addWidget(self.form)
+        # Show now: a hidden widget is skipped by its layout, and the hit index would
+        # record the form at the page corner until the queued show ran.
+        self.form.show()
+        self.form.installEventFilter(self)
         self.apply_size()
         self.index_dirty = True
         self.refresh_overlay()
@@ -1665,6 +1669,10 @@ class Surface(QGraphicsView):
 
     # -- events
     def eventFilter(self, watched, event):
+        if watched is self.form and event.type() in (QEvent.Resize, QEvent.Move, QEvent.LayoutRequest):
+            self.index_dirty = True
+            self.overlay.update()
+            return False
         if watched is not self.overlay or self.doc is None:
             return False
         kind = event.type()

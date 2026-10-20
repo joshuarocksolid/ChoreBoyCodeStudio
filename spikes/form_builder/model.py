@@ -371,30 +371,26 @@ def set_attribute(widget: Widget, name: str, text: str, kind: str = "string") ->
 
 
 def iter_nodes(doc: Document) -> Iterator[Node]:
-    def walk_widget(widget: Widget) -> Iterator[Node]:
-        yield widget
-        for part in widget.body:
-            if isinstance(part, Layout):
-                yield from walk_layout(part)
-            elif isinstance(part, Widget):
-                yield from walk_widget(part)
-            elif isinstance(part, Action):
-                yield part
-
-    def walk_layout(layout: Layout) -> Iterator[Node]:
-        yield layout
-        for part in layout.body:
-            if isinstance(part, LayoutItem):
-                yield part
-                for child in part.body:
-                    if isinstance(child, Widget):
-                        yield from walk_widget(child)
-                    elif isinstance(child, Layout):
-                        yield from walk_layout(child)
-                    elif isinstance(child, Spacer):
-                        yield child
-
-    yield from walk_widget(doc.root)
+    """Depth-first, document order. An explicit stack: nested generators cost O(depth) per node."""
+    stack = [doc.root]
+    while stack:
+        node = stack.pop()
+        yield node
+        if isinstance(node, Widget):
+            children = []
+            for part in node.body:
+                if isinstance(part, (Layout, Widget, Action)):
+                    children.append(part)
+            stack.extend(reversed(children))
+        elif isinstance(node, Layout):
+            children = []
+            for part in node.body:
+                if isinstance(part, LayoutItem):
+                    children.append(part)
+            stack.extend(reversed(children))
+        elif isinstance(node, LayoutItem):
+            children = [child for child in node.body if isinstance(child, (Widget, Layout, Spacer))]
+            stack.extend(reversed(children))
 
 
 def find_node(doc: Document, node_id: str):
@@ -562,7 +558,9 @@ def effective_tab_order(doc: Document) -> list[str]:
 def problems(doc: Document) -> list[str]:
     found = []
     seen: dict[str, int] = {}
-    for widget in iter_widgets(doc):
+    widgets = list(iter_widgets(doc))
+    known = {w.object_name for w in widgets}
+    for widget in widgets:
         name = widget.object_name
         if not valid_identifier(name):
             found.append(f"'{name or '(blank)'}' is not a Python identifier")
@@ -570,12 +568,11 @@ def problems(doc: Document) -> list[str]:
         buddy = get_property(widget, "buddy")
         if buddy is not None and buddy.body.tag == "cstring":
             target = buddy.body.text
-            if target and not any(w.object_name == target for w in iter_widgets(doc)):
+            if target and target not in known:
                 found.append(f"'{name}' buddies missing widget '{target}'")
     for name, count in seen.items():
         if name and count > 1:
             found.append(f"'{name}' is used {count} times")
-    known = {w.object_name for w in iter_widgets(doc)}
     stops = tabstops_of(doc)
     if stops:
         for name in stops.names:

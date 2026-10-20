@@ -60,6 +60,9 @@ ROLE_ID = Qt.UserRole
 ROLE_KIND = Qt.UserRole + 1
 ROLE_CLASS = Qt.UserRole + 2
 ROLE_HINT = Qt.UserRole + 3
+# PySide enum arithmetic runs in Python; build the flag sets once, not per row.
+FLAGS = Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
+EDITABLE_FLAGS = FLAGS | Qt.ItemIsEditable
 
 
 class OutlineDelegate(QStyledItemDelegate):
@@ -185,7 +188,10 @@ class Outline(QTreeWidget):
             for part in self.doc.root.body:
                 if isinstance(part, Action):
                     root.addChild(self._action_item(part))
-            self._expand(root)
+            if self._collapsed:
+                self._expand(root)
+            else:
+                self.expandAll()
         self._quiet = False
         if selected:
             self.select_ids([node_id for node_id in selected if node_id in self._items], current_id)
@@ -203,10 +209,7 @@ class Outline(QTreeWidget):
         item.setData(0, ROLE_KIND, kind)
         item.setData(0, ROLE_CLASS, class_name)
         item.setData(0, ROLE_HINT, hint)
-        flags = Qt.ItemIsSelectable | Qt.ItemIsEnabled | Qt.ItemIsDragEnabled | Qt.ItemIsDropEnabled
-        if editable:
-            flags |= Qt.ItemIsEditable
-        item.setFlags(flags)
+        item.setFlags(EDITABLE_FLAGS if editable else FLAGS)
         self._items[node_id] = item
         return item
 

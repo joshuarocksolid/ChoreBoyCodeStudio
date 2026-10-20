@@ -165,6 +165,13 @@ def main(only=()) -> None:
         settle(app)
         grab(window, "inspector-size.png", crop=(SIZE[0] - 520, 0, 520, SIZE[1]))
 
+    if want("window-selected"):
+        window.load_document(data_entry(), None)
+        settle(app)
+        window._select([window.doc.root.id])
+        settle(app)
+        grab(window, "window-selected.png")
+
     if want("empty-form"):
         window.load_document(blank_page(), None)
         settle(app)
