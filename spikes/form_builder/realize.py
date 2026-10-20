@@ -599,7 +599,10 @@ class Realization:
             widget.setToolTip(node.class_name)
         if isinstance(widget, QtWidgets.QMenuBar):
             widget.setNativeMenuBar(False)
-        widget.installEventFilter(self._filter)
+        # The canvas overlay takes every pointer event, so the widgets only need to
+        # stay out of the focus chain. A Python event filter per widget cost ~20 ms
+        # per open on the 302-widget form.
+        widget.setFocusPolicy(Qt.NoFocus)
         self.widgets[node.id] = widget
         self._fresh.add(node.id)
         for prop in properties_of(node):

@@ -974,3 +974,244 @@ def insert_form_row(doc: Document, layout: Layout, row: int, item: LayoutItem):
             steps.append(SetItemAttrib(existing.id, attrib))
     steps.append(InsertItem(layout.id, len(layout_items(layout)), item))
     return Compound(steps)
+
+
+def add_menu_command(doc: Document, bar_id: str, title: str):
+    """A new menu on a menu bar: the QMenu child plus the bar's addaction reference."""
+    from spikes.form_builder.model import prop_string
+
+    bar = find_node(doc, bar_id)
+    base = "menu" + "".join(part.capitalize() for part in _words(title)) or "menu"
+    menu = make_widget(doc, "QMenu", unique_name(doc, base))
+    menu.body.append(prop_string("title", title))
+    widgets = [part for part in bar.body if isinstance(part, Widget)]
+    index = bar.body.index(widgets[-1]) + 1 if widgets else len(bar.body)
+    steps = [InsertPart(bar.id, index, menu), InsertPart(bar.id, -1, ActionRef(menu.object_name))]
+    return Compound(steps), menu.id
+
+
+def add_action_command(doc: Document, menu_id: str, text: str):
+    """Type-here on a menu: '-' adds a separator, anything else a new QAction on the form."""
+    from spikes.form_builder.model import Action, prop_string
+
+    menu = find_node(doc, menu_id)
+    if text.strip() == "-":
+        return InsertPart(menu.id, -1, ActionRef("separator")), ""
+    base = "action" + "".join(part.capitalize() for part in _words(text)) or "action"
+    action = Action(id=doc.alloc(), name=unique_name(doc, base))
+    action.body.append(prop_string("text", text))
+    actions = [i for i, part in enumerate(doc.root.body) if isinstance(part, Action)]
+    if actions:
+        at = actions[-1] + 1
+    else:
+        at = next((i for i, part in enumerate(doc.root.body) if isinstance(part, (Widget, Layout))), len(doc.root.body))
+    steps = [InsertPart(doc.root.id, at, action), InsertPart(menu.id, -1, ActionRef(action.name))]
+    return Compound(steps), action.id
+
+
+def remove_action_ref_command(doc: Document, menu_id: str, action_name: str):
+    menu = find_node(doc, menu_id)
+    for index, part in enumerate(menu.body):
+        if isinstance(part, ActionRef) and part.name == action_name:
+            return RemovePart(menu.id, index)
+    return None
+
+
+def _words(text: str) -> list[str]:
+    cleaned = "".join(char if char.isalnum() else " " for char in text.replace("&", ""))
+    return [word for word in cleaned.split() if word]
+
+
+def insert_near(doc: Document, ids: list[str], content):
+    """Where quick insert, palette double-click, and paste put a new control.
+
+    A selected container (or layout) receives it at its next free slot. A selected
+    leaf gets it right after itself in its own layout: the next index in a box, the
+    empty field beside a label or a new row below in a form, the next free cell in a
+    grid. With nothing selected it goes to the end of the form, creating the first
+    layout if the form has none.
+    """
+    target = find_node(doc, ids[0]) if ids else None
+    if isinstance(target, Widget) and target.class_name == "QSplitter":
+        if isinstance(content, Widget):
+            return InsertChild(target.id, 10**6, content)
+        return None
+    if isinstance(target, Layout):
+        return with_tab_splice(doc, _append(doc, target, content), content)
+    if isinstance(target, Widget) and widget_layout(target) is not None and (target is doc.root or _is_box(target)):
+        return with_tab_splice(doc, _append(doc, widget_layout(target), content), content)
+    item = resolve_layout_item(doc, target.id) if target is not None and getattr(target, "id", None) else None
+    if item is not None:
+        located = locate(doc, item.id)
+        layout = located[0] if located is not None else None
+        if isinstance(layout, Layout):
+            return with_tab_splice(doc, _after(doc, layout, item, content), content)
+    if isinstance(target, Widget) and target.class_name in ("QTabWidget", "QStackedWidget"):
+        pages = child_widgets(target)
+        if pages:
+            page = pages[0]
+            if widget_layout(page) is None:
+                layout_id = doc.alloc()
+                steps = [EnsureLayout(page.id, "QVBoxLayout", layout_id, unique_name(doc, "verticalLayout")),
+                         InsertItem(layout_id, 0, make_item(doc, content))]
+                return with_tab_splice(doc, Compound(steps), content)
+            return with_tab_splice(doc, _append(doc, widget_layout(page), content), content)
+    root = doc.root
+    if root.class_name == "QMainWindow":
+        central = next((child for child in child_widgets(root) if child.class_name not in ("QMenuBar", "QToolBar", "QStatusBar", "QDockWidget")), None)
+        if central is not None:
+            root = central
+    layout = widget_layout(root)
+    if layout is None:
+        layout_id = doc.alloc()
+        steps = [EnsureLayout(root.id, "QVBoxLayout", layout_id, unique_name(doc, "verticalLayout")),
+                 InsertItem(layout_id, 0, make_item(doc, content))]
+        return with_tab_splice(doc, Compound(steps), content)
+    return with_tab_splice(doc, _append(doc, layout, content), content)
+
+
+def _is_box(widget: Widget) -> bool:
+    return widget.class_name in ("QWidget", "QFrame", "QGroupBox", "QScrollArea", "QDialog", "QWizardPage") or not widget.class_name.startswith("Q")
+
+
+def _append(doc: Document, layout: Layout, content):
+    return InsertItem(layout.id, 10**6, make_item(doc, content, **next_cell(layout, content)))
+
+
+def _after(doc: Document, layout: Layout, item: LayoutItem, content):
+    if layout.class_name in ("QVBoxLayout", "QHBoxLayout"):
+        index = layout_items(layout).index(item) + 1
+        return InsertItem(layout.id, index, make_item(doc, content))
+    if layout.class_name == "QFormLayout":
+        row = int(item.attrib.get("row", "0") or 0)
+        column = item.attrib.get("column", "0")
+        is_label = isinstance(content, Widget) and content.class_name == "QLabel"
+        taken = {(it.attrib.get("row"), it.attrib.get("column", "0")) for it in layout_items(layout)}
+        if column == "0" and not is_label and (str(row), "1") not in taken and int(item.attrib.get("colspan", "1") or 1) < 2:
+            return InsertItem(layout.id, 10**6, make_item(doc, content, row=str(row), column="1"))
+        return insert_form_row(doc, layout, row + 1, make_item(doc, content, row=str(row + 1), column="0" if is_label else "1"))
+    attrib = next_cell(layout, content)
+    return InsertItem(layout.id, 10**6, make_item(doc, content, **attrib))
+
+
+class MorphLayout:
+    """Change a layout's kind in place. Children keep their reading order.
+
+    To a box: cells are dropped. To a grid: a vertical box becomes one column, a
+    horizontal box one row, a form keeps its rows. To a form: each label starts a
+    row and the next control fills that row's field.
+    """
+
+    def __init__(self, layout_id: str, new_class: str):
+        self.layout_id = layout_id
+        self.new_class = new_class
+        self.old_class = ""
+        self.old_attrib: dict = {}
+        self.old_body: list = []
+        self.old_items: dict = {}
+
+    def redo(self, doc: Document) -> None:
+        layout = find_node(doc, self.layout_id)
+        if not isinstance(layout, Layout):
+            raise KeyError(self.layout_id)
+        self.old_class = layout.class_name
+        self.old_attrib = dict(layout.attrib)
+        self.old_body = list(layout.body)
+        items = layout_items(layout)
+        self.old_items = {item.id: dict(item.attrib) for item in items}
+        if layout.class_name in ("QGridLayout", "QFormLayout"):
+            ordered = sorted(items, key=lambda item: (int(item.attrib.get("row", "0") or 0), int(item.attrib.get("column", "0") or 0)))
+        else:
+            ordered = list(items)
+        new_attribs = _morph_attribs(layout.class_name, self.new_class, ordered)
+        others = [part for part in layout.body if not isinstance(part, LayoutItem)]
+        for item, attrib in zip(ordered, new_attribs):
+            item.attrib = attrib
+        layout.body = others + ordered
+        layout.class_name = self.new_class
+        for key in ("stretch", "rowstretch", "columnstretch", "rowminimumheight", "columnminimumwidth"):
+            layout.attrib.pop(key, None)
+
+    def undo(self, doc: Document) -> None:
+        layout = find_node(doc, self.layout_id)
+        layout.class_name = self.old_class
+        layout.attrib = dict(self.old_attrib)
+        layout.body = list(self.old_body)
+        for item in layout_items(layout):
+            if item.id in self.old_items:
+                item.attrib = dict(self.old_items[item.id])
+
+
+def _morph_attribs(old: str, new: str, ordered: list) -> list[dict]:
+    if new in ("QVBoxLayout", "QHBoxLayout"):
+        return [{} for _item in ordered]
+    if new == "QGridLayout":
+        if old == "QHBoxLayout":
+            return [{"row": "0", "column": str(i)} for i, _item in enumerate(ordered)]
+        if old == "QFormLayout":
+            result = []
+            for item in ordered:
+                spans = item.attrib.get("column") == "2" or int(item.attrib.get("colspan", "1") or 1) > 1
+                attrib = {"row": item.attrib.get("row", "0"), "column": "0" if spans else item.attrib.get("column", "0")}
+                if spans:
+                    attrib["colspan"] = "2"
+                result.append(attrib)
+            return result
+        return [{"row": str(i), "column": "0"} for i, _item in enumerate(ordered)]
+    if new == "QFormLayout":
+        result = []
+        row = -1
+        label_open = False
+        for item in ordered:
+            content = item_content(item)
+            is_label = isinstance(content, Widget) and content.class_name == "QLabel"
+            if is_label:
+                row += 1
+                result.append({"row": str(row), "column": "0"})
+                label_open = True
+            elif label_open:
+                result.append({"row": str(row), "column": "1"})
+                label_open = False
+            else:
+                row += 1
+                spans = isinstance(content, Widget) and content.class_name in ("QDialogButtonBox", "QGroupBox", "QTabWidget")
+                result.append({"row": str(row), "column": "0", "colspan": "2"} if spans else {"row": str(row), "column": "1"})
+        return result
+    return [dict(item.attrib) for item in ordered]
+
+
+def morph_layout(doc: Document, layout_id: str, new_class: str):
+    layout = find_node(doc, layout_id)
+    if not isinstance(layout, Layout) or layout.class_name == new_class:
+        return None
+    return MorphLayout(layout_id, new_class)
+
+
+class RemoveLayout:
+    """Remove a widget's layout; its widgets stay as plain children. One undo step."""
+
+    def __init__(self, owner_id: str):
+        self.owner_id = owner_id
+        self.saved: Optional[Layout] = None
+        self.index = 0
+
+    def redo(self, doc: Document) -> None:
+        owner = find_node(doc, self.owner_id)
+        layout = widget_layout(owner)
+        if layout is None:
+            return
+        self.index = owner.body.index(layout)
+        self.saved = layout
+        owner.body.pop(self.index)
+        for item in layout_items(layout):
+            content = item_content(item)
+            if isinstance(content, Widget):
+                owner.body.append(content)
+
+    def undo(self, doc: Document) -> None:
+        if self.saved is None:
+            return
+        owner = find_node(doc, self.owner_id)
+        moved = {id(item_content(item)) for item in layout_items(self.saved)}
+        owner.body = [part for part in owner.body if id(part) not in moved]
+        owner.body.insert(self.index, self.saved)

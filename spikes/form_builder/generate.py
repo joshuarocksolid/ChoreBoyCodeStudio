@@ -303,7 +303,7 @@ class _Context:
             self._emit_widget(status, expr, root_name, False)
             self.setup.append(f"        {expr}.setStatusBar(self.{status.object_name})")
         for child in child_widgets(widget):
-            if child in {central, menubar, status} or child in toolbars:
+            if any(child is known for known in (central, menubar, status, *toolbars)):
                 continue
             self._emit_widget(child, expr, root_name, False)
 
