@@ -98,7 +98,7 @@ def test_apply_menu_bar_icons_delegates_to_apply_menu_icons(_ensure_qapp) -> Non
     registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
     refs = ShellThemeSurfaceRefs(
         editor_manager=None,
-        editor_widgets_by_path={},
+        editor_widgets_by_buffer_id={},
         tab_content_registry=None,
         python_console_widget=None,
         run_log_panel=None,

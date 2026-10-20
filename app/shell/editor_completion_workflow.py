@@ -15,7 +15,7 @@ from app.intelligence.completion_models import (
     CompletionResolveResult,
 )
 from app.intelligence.completion_service import CompletionRequest
-from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.shell.editor_stale_result_policy import capture_buffer_revision, deliver_revision_gated_editor_result
 from app.shell.semantic_navigation_host import SemanticNavigationHost
 
 
@@ -25,21 +25,28 @@ class EditorCompletionWorkflow:
     def __init__(self, host: SemanticNavigationHost) -> None:
         self._host = host
 
+    def _capture_buffer_revision(self, file_path: str) -> tuple[str | None, int | None]:
+        return capture_buffer_revision(
+            file_path,
+            buffer_id_for_path=self._host.editor_buffer_id_for_path,
+            buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
+        )
+
     def _deliver_gated_completion_result(
         self,
         *,
-        file_path: str,
+        buffer_id: str | None,
         editor_widget: CodeEditorWidget,
         requested_revision: int | None,
         request_generation: int,
         deliver: Callable[[], None],
     ) -> None:
         deliver_revision_gated_editor_result(
-            file_path=file_path,
+            buffer_id=buffer_id,
             editor_widget=editor_widget,
             requested_revision=requested_revision,
-            editor_widget_for_path=self._host.editor_widget_for_path,
-            buffer_revision=self._host.editor_buffer_revision,
+            editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
+            buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
             deliver=deliver,
             requested_generation=request_generation,
             current_generation=editor_widget.completion_request_generation(),
@@ -63,7 +70,7 @@ class EditorCompletionWorkflow:
         trigger_character: str,
     ) -> None:
         started_at = time.perf_counter()
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
         completion_context = build_completion_context(
@@ -131,7 +138,7 @@ class EditorCompletionWorkflow:
                 )
 
             self._deliver_gated_completion_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
                 request_generation=request_generation,
@@ -159,7 +166,7 @@ class EditorCompletionWorkflow:
         cursor_position: int,
         request_generation: int,
     ) -> None:
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
         loaded_project = self._host.loaded_project()
         request = CompletionResolveRequest(
             item=item,
@@ -180,7 +187,7 @@ class EditorCompletionWorkflow:
                 )
 
             self._deliver_gated_completion_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
                 request_generation=request_generation,
@@ -194,7 +201,7 @@ class EditorCompletionWorkflow:
                 editor_widget.set_completion_docs_resolving(False)
 
             self._deliver_gated_completion_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
                 request_generation=request_generation,

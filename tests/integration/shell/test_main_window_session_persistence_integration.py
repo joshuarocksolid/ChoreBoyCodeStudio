@@ -59,8 +59,8 @@ def test_main_window_restores_saved_project_session(
     assert window._editor_tab_factory.open_file_in_editor(file_one_path) is True
     assert window._editor_tab_factory.open_file_in_editor(file_two_path) is True
 
-    first_widget = window._editor_widgets_by_path[file_one_path]
-    second_widget = window._editor_widgets_by_path[file_two_path]
+    first_widget = window._workspace_controller.widget_for_path(file_one_path)
+    second_widget = window._workspace_controller.widget_for_path(file_two_path)
     _set_cursor_position(first_widget, line=4, column=3)
     _set_cursor_position(second_widget, line=2, column=2)
 
@@ -87,8 +87,8 @@ def test_main_window_restores_saved_project_session(
     assert breakpoint_store.lines_for_file(file_one_path) == {2, 5}
     assert breakpoint_store.lines_for_file(file_two_path) == {3}
 
-    restored_first_widget = window._editor_widgets_by_path[file_one_path]
-    restored_second_widget = window._editor_widgets_by_path[file_two_path]
+    restored_first_widget = window._workspace_controller.widget_for_path(file_one_path)
+    restored_second_widget = window._workspace_controller.widget_for_path(file_two_path)
     assert restored_first_widget.textCursor().blockNumber() + 1 == 4
     assert restored_first_widget.textCursor().positionInBlock() + 1 == 3
     assert restored_second_widget.textCursor().blockNumber() + 1 == 2
@@ -122,7 +122,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     project_one_path = str(project_one_file.resolve())
     assert window._editor_tab_factory.open_file_in_editor(project_one_path) is True
-    widget_one = window._editor_widgets_by_path[project_one_path]
+    widget_one = window._workspace_controller.widget_for_path(project_one_path)
     _set_cursor_position(widget_one, line=3, column=2)
     breakpoint_store = window._debug_control_workflow.breakpoint_store
     breakpoint_store.set_line_enabled(project_one_path, 2, enabled=True)
@@ -133,7 +133,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
 
     assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     _wait_for_open_paths(app, window, [project_one_path])
-    restored_widget = window._editor_widgets_by_path[project_one_path]
+    restored_widget = window._workspace_controller.widget_for_path(project_one_path)
     assert restored_widget.textCursor().blockNumber() + 1 == 3
     assert restored_widget.textCursor().positionInBlock() + 1 == 2
     assert breakpoint_store.lines_for_file(project_one_path) == {2}

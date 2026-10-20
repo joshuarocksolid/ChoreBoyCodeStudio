@@ -52,6 +52,13 @@ class DebugEditorWidgetPort(Protocol):
         ...
 
 
+class DebugWorkspacePort(Protocol):
+    """Path lookup for open editor widgets."""
+
+    def widget_for_path(self, file_path: str) -> DebugEditorWidgetPort | None:
+        ...
+
+
 class DebugPanelPort(Protocol):
     """Minimal debug panel surface for breakpoint list refresh."""
 
@@ -84,6 +91,10 @@ class DebugShellHost(Protocol):
 
     @property
     def _editor_widgets_by_path(self) -> Mapping[str, DebugEditorWidgetPort]:
+        ...
+
+    @property
+    def _workspace_controller(self) -> DebugWorkspacePort:
         ...
 
     @property

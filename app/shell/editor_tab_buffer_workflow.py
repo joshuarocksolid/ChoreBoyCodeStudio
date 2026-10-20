@@ -98,7 +98,7 @@ class EditorTabBufferWorkflow:
         if tab_index < 0 or editor_tabs_widget is None:
             return
 
-        tab_path = editor_tabs_widget.tabToolTip(tab_index)
+        tab_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not tab_path:
             return
         self._editor_manager.set_active_file(tab_path)

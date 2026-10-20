@@ -291,7 +291,7 @@ class MainWindow(QMainWindow):
         if tab_state.current_content == replacement_text:
             return
         self._editor_manager.replace_tab_content(file_path, replacement_text)
-        editor_widget = self._editor_widgets_by_path.get(file_path)
+        editor_widget = self._workspace_controller.widget_for_path(file_path)
         if editor_widget is not None and editor_widget.toPlainText() != replacement_text:
             editor_widget.replace_document_text(replacement_text)
 

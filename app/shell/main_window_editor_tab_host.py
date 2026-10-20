@@ -26,7 +26,7 @@ class MainWindowEditorTabHost:
         return self._window._editor_tabs_widget
 
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
-        return self._window._editor_widgets_by_path
+        return self._window._workspace_controller.widgets_by_open_path()
 
     def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
         return self._window._tab_content_registry.markdown_panes_by_path

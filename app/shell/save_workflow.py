@@ -9,6 +9,7 @@ from PySide2.QtWidgets import QMessageBox, QWidget
 
 from app.core import constants
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import DiskConflict
 from app.intelligence.cache_controls import should_refresh_index_after_save
 from app.editors.formatting_service import format_text_basic
 from app.plugins.workflow_adapters import format_python_with_workflow, organize_imports_with_workflow
@@ -273,8 +274,11 @@ class MainWindowSaveDocumentHost:
     def resolve_external_change_before_save(self, file_path: str) -> str:
         from app.shell.external_file_change_workflow import ExternalFileChangeOutcome
 
-        outcome = self._window._external_file_change_workflow.check_and_handle(file_path)
-        if outcome is ExternalFileChangeOutcome.CANCELLED:
+        outcome = self._window._external_file_change_workflow.check_and_handle(file_path, force=True)
+        if outcome in (
+            ExternalFileChangeOutcome.CANCELLED,
+            ExternalFileChangeOutcome.DECLINED,
+        ):
             return "abort"
         if outcome in (
             ExternalFileChangeOutcome.RELOADED,
@@ -427,7 +431,7 @@ class SaveWorkflow:
         for tab in self._editor_manager().all_tabs():
             if not tab.is_dirty:
                 continue
-            if self._tab_is_stale_on_disk(tab.file_path):
+            if self._tab_has_disk_conflict(tab.file_path) or self._tab_is_stale_on_disk(tab.file_path):
                 continue
             try:
                 self.save_tab(
@@ -442,6 +446,13 @@ class SaveWorkflow:
                     tab.file_path,
                     exc_info=True,
                 )
+
+    def _tab_has_disk_conflict(self, file_path: str) -> bool:
+        getter = getattr(self._editor_manager(), "get_tab", None)
+        if not callable(getter):
+            return False
+        tab = getter(file_path)
+        return isinstance(getattr(tab, "disk_conflict", None), DiskConflict)
 
     def _tab_is_stale_on_disk(self, file_path: str) -> bool:
         manager = self._editor_manager()
@@ -458,7 +469,8 @@ class SaveWorkflow:
         return normalized in stale_paths
 
     def _decide_stale_save(self, file_path: str, *, prompt: bool) -> str:
-        if not self._tab_is_stale_on_disk(file_path):
+        needs_resolution = self._tab_has_disk_conflict(file_path) or self._tab_is_stale_on_disk(file_path)
+        if not needs_resolution:
             return "proceed"
         if not prompt:
             return "abort"

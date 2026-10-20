@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,16 +12,19 @@ import pytest
 pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
-from app.editors.editor_tab import EditorTabState  # noqa: E402
+from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState  # noqa: E402
 from app.shell.document_safety import (  # noqa: E402
     DocumentCloseIntent,
     DocumentSafetyDecision,
     DocumentScope,
 )
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow, EditorWidgetPort  # noqa: E402
+from app.shell.editor_tabs_coordinator import tab_presentation_data  # noqa: E402
 from app.shell.external_file_change_workflow import (  # noqa: E402
     ExternalFileChangeOutcome,
     ExternalFileChangeWorkflow,
+    MissingFileAction,
+    MissingFileChoice,
 )
 
 pytestmark = pytest.mark.unit
@@ -76,12 +80,22 @@ class _RecordingExternalHost:
     widgets: dict[str, _FakeEditorWidget] = field(default_factory=dict)
     confirm_reload: bool = True
     save_refreshes: int = 0
+    confirm_calls: int = 0
     status_updates: list[str] = field(default_factory=list)
+    conflict_refreshes: list[str] = field(default_factory=list)
+    missing_presentations: list[str] = field(default_factory=list)
+    missing_action: MissingFileAction = field(
+        default_factory=lambda: MissingFileAction(MissingFileChoice.KEEP)
+    )
+    saved_as: list[tuple[str, str]] = field(default_factory=list)
+    save_as_result: bool = True
+    closed_missing: list[str] = field(default_factory=list)
 
     def editor_widget_for_path(self, file_path: str) -> _FakeEditorWidget | None:
         return self.widgets.get(file_path)
 
     def confirm_clean_tab_reload(self) -> bool:
+        self.confirm_calls += 1
         return self.confirm_reload
 
     def refresh_save_action_states(self) -> None:
@@ -92,6 +106,20 @@ class _RecordingExternalHost:
 
     def render_lint_diagnostics_for_file(self, file_path: str, *, trigger: str) -> None:
         del file_path, trigger
+
+    def present_missing_file(self, file_path: str) -> MissingFileAction:
+        self.missing_presentations.append(file_path)
+        return self.missing_action
+
+    def save_missing_buffer_as(self, file_path: str, destination_path: str) -> bool:
+        self.saved_as.append((file_path, destination_path))
+        return self.save_as_result
+
+    def close_missing_tab(self, file_path: str) -> None:
+        self.closed_missing.append(file_path)
+
+    def refresh_conflict_presentation(self, file_path: str) -> None:
+        self.conflict_refreshes.append(file_path)
 
 
 @dataclass
@@ -278,7 +306,7 @@ def test_check_and_handle_reloads_clean_tab_when_confirmed(tmp_path: Path) -> No
     assert external_host.status_updates == [tab.file_path]
 
 
-def test_check_and_handle_declines_clean_tab_and_acknowledges_mtime(tmp_path: Path) -> None:
+def test_check_and_handle_declines_clean_tab_and_keeps_the_conflict(tmp_path: Path) -> None:
     file_path = tmp_path / "main.py"
     manager = EditorManager()
     sync_host = _RecordingSyncHost()
@@ -307,11 +335,15 @@ def test_check_and_handle_declines_clean_tab_and_acknowledges_mtime(tmp_path: Pa
 
     assert outcome is ExternalFileChangeOutcome.DECLINED
     assert tab.current_content == "print('old')\n"
-    assert tab.last_known_mtime == new_mtime
+    assert tab.last_known_mtime == 1.0
+    assert tab.disk_conflict is not None
+    assert tab.disk_conflict.kind == DISK_CONFLICT_CHANGED
+    assert tab.disk_conflict.conflict_mtime == new_mtime
+    assert tab_presentation_data(tab)["is_stale"] is True
     assert tab.is_dirty is False
 
 
-def test_check_and_handle_dirty_cancel_acknowledges_mtime(tmp_path: Path) -> None:
+def test_check_and_handle_dirty_cancel_keeps_the_conflict(tmp_path: Path) -> None:
     file_path = tmp_path / "main.py"
     manager = EditorManager()
     sync_host = _RecordingSyncHost()
@@ -347,7 +379,9 @@ def test_check_and_handle_dirty_cancel_acknowledges_mtime(tmp_path: Path) -> Non
     assert outcome is ExternalFileChangeOutcome.CANCELLED
     assert save_workflow.requests == [("request", DocumentScope.EXTERNAL_RELOAD)]
     assert tab.current_content == "print('draft')\n"
-    assert tab.last_known_mtime == new_mtime
+    assert tab.last_known_mtime == 1.0
+    assert tab.disk_conflict is not None
+    assert tab.disk_conflict.conflict_mtime == new_mtime
 
 
 def test_check_and_handle_dirty_discard_records_buffer_checkpoint_and_reloads(tmp_path: Path) -> None:
@@ -508,3 +542,134 @@ def test_check_and_handle_follows_replaced_editor_manager(tmp_path: Path) -> Non
 
     assert outcome is ExternalFileChangeOutcome.RELOADED
     assert tab.current_content == "print('new')\n"
+
+
+def test_declined_conflict_does_not_prompt_again_until_mtime_changes(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost(confirm_reload=False)
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="print('old')\n",
+        mtime=1.0,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    file_path.write_text("print('new')\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.DECLINED
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.SKIPPED
+    assert external_host.confirm_calls == 1
+
+    later = file_path.stat().st_mtime + 5
+    file_path.write_text("print('newer')\n", encoding="utf-8")
+    os.utime(file_path, (later, later))
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.DECLINED
+    assert external_host.confirm_calls == 2
+    assert tab.disk_conflict is not None
+    assert tab.disk_conflict.conflict_mtime == manager.current_disk_mtime(tab.file_path)
+
+
+def test_save_forces_a_prompt_for_the_same_conflict_mtime(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost(confirm_reload=False)
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="print('old')\n",
+        mtime=1.0,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    file_path.write_text("print('new')\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    workflow.check_and_handle(tab.file_path)
+    outcome = workflow.check_and_handle(tab.file_path, force=True)
+
+    assert outcome is ExternalFileChangeOutcome.DECLINED
+    assert external_host.confirm_calls == 2
+
+
+def test_missing_file_sets_missing_conflict_once(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost()
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="print('old')\n",
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    file_path.unlink()
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.DECLINED
+    assert tab.disk_conflict is not None
+    assert tab.disk_conflict.kind == DISK_CONFLICT_MISSING
+    assert tab_presentation_data(tab)["is_missing"] is True
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.SKIPPED
+    assert external_host.missing_presentations == [tab.file_path]
+
+
+def test_save_as_clears_missing_conflict(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    destination = str(tmp_path / "kept.py")
+    external_host = _RecordingExternalHost(
+        missing_action=MissingFileAction(MissingFileChoice.SAVE_AS, destination_path=destination)
+    )
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="print('old')\n",
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    file_path.unlink()
+    tab.set_disk_conflict(DISK_CONFLICT_MISSING, None)
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    assert workflow.check_and_handle(tab.file_path, force=True) is ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
+    assert tab.disk_conflict is None
+    assert external_host.saved_as == [(tab.file_path, destination)]

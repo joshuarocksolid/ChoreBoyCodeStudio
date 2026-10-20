@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-from typing import Any, Mapping, Protocol
+from typing import Any, Protocol
 
 from app.debug.debug_models import DebugExecutionState
 from app.debug.debug_session import DebugSession
@@ -45,8 +44,7 @@ class DebugInspectorWorkflowHost(Protocol):
     def debug_control_workflow(self) -> DebugControlWorkflow:
         ...
 
-    @property
-    def editor_widgets_by_path(self) -> Mapping[str, DebugInspectorEditorPort]:
+    def editor_widget_for_path(self, file_path: str) -> DebugInspectorEditorPort | None:
         ...
 
     @property
@@ -86,8 +84,7 @@ class DebugInspectorWorkflow:
                 self.clear_debug_execution_indicator()
                 return
             self._host.open_file_at_line(frame.file_path, frame.line_number)
-            resolved = str(Path(frame.file_path).expanduser().resolve())
-            editor = self._host.editor_widgets_by_path.get(resolved)
+            editor = self._host.editor_widget_for_path(frame.file_path)
             if editor is not None:
                 if self._host.debug_execution_editor is not None and self._host.debug_execution_editor is not editor:
                     self.clear_debug_execution_indicator()
@@ -126,9 +123,8 @@ class MainWindowDebugInspectorHost:
     def debug_control_workflow(self) -> DebugControlWorkflow:
         return self._window._debug_control_workflow
 
-    @property
-    def editor_widgets_by_path(self) -> Mapping[str, DebugInspectorEditorPort]:
-        return self._window._editor_widgets_by_path
+    def editor_widget_for_path(self, file_path: str) -> DebugInspectorEditorPort | None:
+        return self._window._workspace_controller.widget_for_path(file_path)
 
     @property
     def debug_execution_editor(self) -> DebugInspectorEditorPort | None:

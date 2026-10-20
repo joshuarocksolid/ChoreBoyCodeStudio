@@ -553,6 +553,9 @@ class LocalHistoryWorkflow:
     def delete_draft(self, file_path: str) -> None:
         self._draft_autosave.delete_draft(file_path)
 
+    def migrate_draft_for_move(self, old_path: str, new_path: str) -> None:
+        self._draft_autosave.migrate_draft_for_move(old_path, new_path)
+
     def flush_pending_autosaves(
         self,
         file_paths: Sequence[str] | None = None,

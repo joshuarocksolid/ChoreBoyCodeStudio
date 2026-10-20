@@ -49,18 +49,18 @@ class EditorTabLifecycleWorkflow:
             clear_debug_execution_indicator=self._host.clear_debug_execution_indicator,
         )
 
-    def remove_tab_widget_for_path(self, file_path: str) -> None:
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
+        tab_index = self._editor_tabs_coordinator.tab_index_for_buffer_id(buffer_id)
         if tab_index < 0:
             return
         editor_tabs_widget.removeTab(tab_index)
-        widget = self._host.workspace_controller().pop_editor(file_path)
+        widget = self._host.workspace_controller().pop_editor(buffer_id)
         if widget is not None:
             self.release_editor_widget(widget)
-        self._host.indent_source_by_path().pop(file_path, None)
+        self._host.indent_source_by_path().pop(buffer_id, None)
         self._host.refresh_save_action_states()
         self._host.refresh_run_action_states()
         status_controller = self._host.status_controller()
@@ -71,7 +71,7 @@ class EditorTabLifecycleWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        file_path = editor_tabs_widget.tabToolTip(tab_index)
+        file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return
         self._editor_tabs_coordinator.promote_preview_tab(file_path)
@@ -92,7 +92,7 @@ class EditorTabLifecycleWorkflow:
         tab_index = tab_bar.tabAt(position)
         if tab_index < 0:
             return
-        file_path = editor_tabs_widget.tabToolTip(tab_index)
+        file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return
 
@@ -118,16 +118,16 @@ class EditorTabLifecycleWorkflow:
         elif chosen == close_action:
             self.handle_tab_close_requested(tab_index)
 
-    def handle_tab_close_requested(self, tab_index: int) -> None:
+    def handle_tab_close_requested(self, tab_index: int, *, discard_dirty: bool = False) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        file_path = editor_tabs_widget.tabToolTip(tab_index)
+        file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return
 
         tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is not None and tab_state.is_dirty:
+        if tab_state is not None and tab_state.is_dirty and not discard_dirty:
             decision = self._save_workflow.request_unsaved_changes_decision(
                 "closing this tab",
                 scope=DocumentScope.TAB,
@@ -140,17 +140,26 @@ class EditorTabLifecycleWorkflow:
                 return
 
         editor_tabs_widget.removeTab(tab_index)
-        widget = self._host.workspace_controller().pop_editor(file_path)
-        if widget is not None:
-            self.release_editor_widget(widget)
+        if tab_state is not None:
+            widget = self._host.workspace_controller().pop_editor(tab_state.buffer_id)
+            if widget is not None:
+                self.release_editor_widget(widget)
+            self._host.stored_lint_diagnostics().pop(tab_state.buffer_id, None)
+            self._host.indent_source_by_path().pop(tab_state.buffer_id, None)
         self._editor_manager.close_file(file_path)
         self._debug_control_workflow.breakpoint_store.clear_file(file_path)
-        self._host.stored_lint_diagnostics().pop(file_path, None)
         self._host.render_merged_problems_panel()
         self._debug_control_workflow.refresh_breakpoints_list()
         self._host.refresh_save_action_states()
         self._host.refresh_run_action_states()
         self._markdown_workflow.refresh_markdown_action_states()
+
+    def close_tab_discarding_edits(self, file_path: str) -> None:
+        tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
+        if tab_index >= 0:
+            self.handle_tab_close_requested(tab_index, discard_dirty=True)
+            return
+        self._editor_manager.close_file(file_path)
 
     def close_active_tab(self) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
@@ -163,8 +172,9 @@ class EditorTabLifecycleWorkflow:
     def reset_editor_tabs(self) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is not None:
-            for path in list(self._host.workspace_controller().open_editor_paths()):
-                widget = self._host.workspace_controller().pop_editor(path)
+            workspace_controller = self._host.workspace_controller()
+            for buffer_id in list(workspace_controller.editor_widgets_by_path):
+                widget = workspace_controller.pop_editor(buffer_id)
                 if widget is not None:
                     self.release_editor_widget(widget)
             editor_tabs_widget.clear()

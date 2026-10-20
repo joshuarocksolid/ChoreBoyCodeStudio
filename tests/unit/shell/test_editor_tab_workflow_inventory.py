@@ -226,3 +226,27 @@ def test_poll_prompts_every_stale_path_active_first() -> None:
     poll.poll_external_file_changes()
 
     assert handled == ["/a.py", "/b.py"]
+
+
+def test_poll_prompts_for_missing_open_paths() -> None:
+    handled: list[str] = []
+    host = MagicMock()
+    host.loaded_project.return_value = None
+    editor_manager = SimpleNamespace(
+        stale_open_paths=lambda: [],
+        missing_open_paths=lambda: ["/gone.py"],
+        active_tab=lambda: None,
+    )
+    poll = EditorTabPollWorkflow(
+        host=host,
+        editor_manager=cast(EditorManager, editor_manager),
+        editor_sync_workflow=SimpleNamespace(),
+        external_file_change_workflow=SimpleNamespace(
+            check_and_handle=lambda path: handled.append(path)
+        ),
+        refresh_save_action_states=lambda: None,
+    )
+
+    poll.poll_external_file_changes()
+
+    assert handled == ["/gone.py"]

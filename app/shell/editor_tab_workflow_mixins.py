@@ -116,8 +116,8 @@ class EditorTabLifecycleDelegates:
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
 
-    def remove_tab_widget_for_path(self, file_path: str) -> None:
-        self._lifecycle_workflow.remove_tab_widget_for_path(file_path)
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str) -> None:
+        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id)
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._editor_tabs_coordinator.refresh_tab_presentation(file_path)
@@ -139,6 +139,9 @@ class EditorTabLifecycleDelegates:
 
     def handle_tab_close_requested(self, tab_index: int) -> None:
         self._lifecycle_workflow.handle_tab_close_requested(tab_index)
+
+    def close_tab_discarding_edits(self, file_path: str) -> None:
+        self._lifecycle_workflow.close_tab_discarding_edits(file_path)
 
     def close_active_tab(self) -> None:
         self._lifecycle_workflow.close_active_tab()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -22,18 +23,27 @@ class EditorTabBindingsHost(Protocol):
 
 
 class EditorTabBindingsWorkflow:
-    """Wires intelligence, debug, and tab lifecycle callbacks onto editor widgets."""
+    """Wires intelligence, debug, and tab lifecycle callbacks onto editor widgets.
+
+    Callbacks capture the buffer id, not the path, and resolve the buffer's
+    current path when they fire so they follow renames and moves.
+    """
 
     def attach(
         self,
         host: EditorTabBindingsHost,
         editor_widget: CodeEditorWidget,
-        file_path: str,
         *,
+        buffer_id: str,
+        initial_path: str,
+        path_for_buffer_id: Callable[[str], str | None],
         tab_workflow: Any,
         debug_control_workflow: Any,
     ) -> None:
         semantic_navigation = host.semantic_navigation_workflow()
+
+        def current_path() -> str | None:
+            return path_for_buffer_id(buffer_id)
 
         def completion_requester(
             source_text: str,
@@ -43,6 +53,9 @@ class EditorTabBindingsWorkflow:
             trigger_kind: str,
             trigger_character: str,
         ) -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             semantic_navigation.request_editor_completions_async(
                 file_path=file_path,
                 editor_widget=editor_widget,
@@ -55,6 +68,9 @@ class EditorTabBindingsWorkflow:
             )
 
         def hover_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             semantic_navigation.request_inline_hover_text_async(
                 file_path=file_path,
                 editor_widget=editor_widget,
@@ -64,6 +80,9 @@ class EditorTabBindingsWorkflow:
             )
 
         def signature_requester(source_text: str, cursor_position: int, request_generation: int) -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             semantic_navigation.request_inline_signature_text_async(
                 file_path=file_path,
                 editor_widget=editor_widget,
@@ -78,6 +97,9 @@ class EditorTabBindingsWorkflow:
             cursor_position: int,
             request_generation: int,
         ) -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             semantic_navigation.request_completion_item_resolve_async(
                 file_path=file_path,
                 editor_widget=editor_widget,
@@ -88,15 +110,27 @@ class EditorTabBindingsWorkflow:
             )
 
         def on_breakpoint_toggled(line_number: int, enabled: bool) -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             debug_control_workflow.handle_editor_breakpoint_toggled(file_path, line_number, enabled)
 
         def on_text_changed() -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             tab_workflow.handle_editor_text_changed(file_path, editor_widget)
 
         def on_cursor_position_changed() -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             tab_workflow.handle_editor_cursor_position_changed(file_path, editor_widget)
 
         def on_completion_accepted(item: CompletionItem) -> None:
+            file_path = current_path()
+            if file_path is None:
+                return
             semantic_navigation.record_editor_completion_acceptance(
                 file_path=file_path,
                 item=item,
@@ -113,7 +147,7 @@ class EditorTabBindingsWorkflow:
         )
         editor_widget.set_paste_hint_status_callback(host.handle_paste_hint_repair_result())
         editor_widget.set_breakpoints(
-            debug_control_workflow.breakpoint_store.lines_for_file(file_path)
+            debug_control_workflow.breakpoint_store.lines_for_file(initial_path)
         )
         editor_widget.textChanged.connect(on_text_changed)
         editor_widget.cursorPositionChanged.connect(on_cursor_position_changed)

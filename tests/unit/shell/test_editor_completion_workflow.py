@@ -39,10 +39,16 @@ class _FakeHost:
     def intelligence_controller(self) -> _FakeIntelligenceController:
         return self._intelligence_controller
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return "buf-a"
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
         return 1
 
     def editor_widget_for_path(self, file_path: str) -> object | None:
+        return self._editor_widget
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> object | None:
         return self._editor_widget
 
     def log_warning(self, message: str, *args: object) -> None:
