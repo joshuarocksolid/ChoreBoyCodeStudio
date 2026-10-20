@@ -7,20 +7,31 @@ import json
 from typing import Any
 
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind
+from app.intelligence.runtime_members import (
+    RuntimeListingResult,
+    RuntimeMember,
+    RuntimeMemberDetail,
+    RuntimeMemberListing,
+    RuntimeUnavailable,
+)
 
 REPL_CONTROL_PROTOCOL = "cbcs_repl_control_v1"
 
 REPL_METHOD_COMPLETE = "complete"
-REPL_METHOD_INTROSPECT = "introspect"
+REPL_METHOD_LIST_MEMBERS = "list_members"
+REPL_METHOD_RESOLVE_MEMBER = "resolve_member"
 REPL_METHOD_PING = "ping"
 
 SUPPORTED_REPL_METHODS = frozenset(
     {
         REPL_METHOD_COMPLETE,
-        REPL_METHOD_INTROSPECT,
+        REPL_METHOD_LIST_MEMBERS,
+        REPL_METHOD_RESOLVE_MEMBER,
         REPL_METHOD_PING,
     }
 )
+
+REPL_DEGRADATION_INVALID_RESPONSE = "repl_invalid_response"
 
 REPL_ERROR_INCOMPATIBLE_PROTOCOL = "Incompatible REPL control protocol."
 REPL_ERROR_INVALID_SESSION_TOKEN = "Invalid REPL control session token."
@@ -143,25 +154,73 @@ def build_complete_request(
     )
 
 
-def build_introspect_request(
-    *,
-    protocol: str,
-    session_token: str,
-    target_path: str,
-    member_prefix: str = "",
-    include_private: bool = True,
-    max_results: int = 100,
-) -> dict[str, Any]:
-    """Build an introspection request envelope."""
+def build_list_members_request(*, protocol: str, session_token: str, target_path: str) -> dict[str, Any]:
+    """Build a full member listing request envelope."""
 
     return build_repl_request(
         protocol=protocol,
         session_token=session_token,
-        method=REPL_METHOD_INTROSPECT,
+        method=REPL_METHOD_LIST_MEMBERS,
         target_path=target_path,
-        member_prefix=member_prefix,
-        include_private=include_private,
-        max_results=max_results,
+    )
+
+
+def build_resolve_member_request(
+    *,
+    protocol: str,
+    session_token: str,
+    target_path: str,
+    member_name: str,
+) -> dict[str, Any]:
+    """Build a one-member resolve request envelope."""
+
+    return build_repl_request(
+        protocol=protocol,
+        session_token=session_token,
+        method=REPL_METHOD_RESOLVE_MEMBER,
+        target_path=target_path,
+        member_name=member_name,
+    )
+
+
+def listing_to_wire(listing: RuntimeMemberListing) -> dict[str, Any]:
+    """Serialize a listing as ``[name, kind]`` pairs, public then private."""
+
+    return {
+        "target_path": listing.target_path,
+        "members": [[member.name, member.kind.value] for member in (*listing.public, *listing.private)],
+    }
+
+
+def listing_from_wire(payload: dict[str, Any]) -> RuntimeListingResult:
+    """Parse a listing. A bad kind becomes ATTRIBUTE so no name is dropped for it."""
+
+    target_path = payload.get("target_path")
+    raw_members = payload.get("members")
+    if not isinstance(target_path, str) or not isinstance(raw_members, list):
+        return RuntimeUnavailable(reason=REPL_DEGRADATION_INVALID_RESPONSE)
+    members: list[RuntimeMember] = []
+    for entry in raw_members:
+        if not isinstance(entry, list) or not entry or not isinstance(entry[0], str):
+            continue
+        members.append(RuntimeMember(name=entry[0], kind=_kind_from_wire(entry[1] if len(entry) > 1 else None)))
+    return RuntimeMemberListing.from_members(target_path, members)
+
+
+def detail_to_wire(detail: RuntimeMemberDetail) -> dict[str, Any]:
+    """Serialize resolved member metadata."""
+
+    return {"signature": detail.signature, "documentation": detail.documentation}
+
+
+def detail_from_wire(payload: dict[str, Any]) -> RuntimeMemberDetail:
+    """Parse resolved member metadata."""
+
+    signature = payload.get("signature")
+    documentation = payload.get("documentation")
+    return RuntimeMemberDetail(
+        signature=signature if isinstance(signature, str) else "",
+        documentation=documentation if isinstance(documentation, str) else "",
     )
 
 
@@ -218,6 +277,13 @@ def loads_message(raw_line: bytes) -> dict[str, Any]:
     if not isinstance(payload, dict):
         raise ValueError("REPL control message must be a JSON object.")
     return payload
+
+
+def _kind_from_wire(value: object) -> CompletionKind:
+    try:
+        return CompletionKind(str(value))
+    except ValueError:
+        return CompletionKind.ATTRIBUTE
 
 
 def _optional_int(value: object) -> int | None:

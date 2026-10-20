@@ -7,6 +7,7 @@ from pathlib import Path
 
 from typing import Callable
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_broker import CompletionBroker
 from app.intelligence.completion_context import CompletionContext
 from app.intelligence.completion_merge_policy import merge_completion_display
@@ -79,7 +80,7 @@ class CompletionService:
         fast: CompletionEnvelope | None = None,
         semantic: CompletionEnvelope | None = None,
         runtime_items: list[CompletionItem] | None = None,
-        max_results: int = 100,
+        max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
     ) -> CompletionEnvelope:
         """Merge tiered completion results for editor popup display."""
         return merge_completion_display(
@@ -112,7 +113,7 @@ class CompletionService:
         )
         runtime_items: list[CompletionItem] = []
         if coordinator is not None and runtime_query is not None:
-            cached = coordinator.cached_items(runtime_query)
+            cached = coordinator.cached_items(runtime_query, max_results=context.max_results)
             if cached:
                 runtime_items = attach_replacement_metadata(cached, context=context)
         return runtime_query, runtime_items

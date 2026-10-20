@@ -215,6 +215,7 @@ class SemanticSession:
         """Orchestrate fast, semantic, and runtime completion tiers for one editor request."""
 
         popup_prefix = completion_context.prefix
+        self._completion_resolver.bind_runtime_members(runtime_coordinator)
         runtime_query, runtime_items = self._completion_service.runtime_completion_items(
             completion_context,
             coordinator=runtime_coordinator,
