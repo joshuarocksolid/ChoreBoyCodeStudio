@@ -66,6 +66,24 @@ def test_map_startup_report_to_status_handles_partial_minimal_report() -> None:
     assert status.text == "Startup: Runtime ready (5/5 checks)"
 
 
+def test_map_startup_report_to_status_names_treesitter_source() -> None:
+    report = CapabilityProbeReport(
+        checks=[
+            CapabilityCheckResult("apprun_presence", True, "ok"),
+            CapabilityCheckResult(
+                "treesitter_runtime",
+                True,
+                "ok",
+                details={"source": "runtime", "version": "0.26.0"},
+            ),
+        ]
+    )
+
+    status = map_startup_report_to_status(report)
+
+    assert status.text == "Startup: Runtime ready (2/2 checks) | tree-sitter runtime 0.26.0"
+
+
 def test_map_startup_report_to_status_appends_syntax_highlighting_warning() -> None:
     report = CapabilityProbeReport(
         checks=[

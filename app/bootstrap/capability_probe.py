@@ -187,17 +187,27 @@ def check_treesitter_runtime() -> CapabilityCheckResult:
     status = initialize_tree_sitter_runtime()
     if status.is_available:
         grammar_count = len(status.available_language_keys)
+        source_label = status.source or "unknown"
+        version_label = status.version or "unknown"
         return CapabilityCheckResult(
             check_id=TREESITTER_RUNTIME_CHECK_ID,
             is_available=True,
-            message=f"Tree-sitter runtime ready ({grammar_count} grammars).",
+            message=(
+                f"Tree-sitter runtime ready ({source_label} {version_label}, {grammar_count} grammars)."
+            ),
             details={
                 "grammars": list(status.available_language_keys),
                 "status": status.message,
+                "source": status.source,
+                "version": status.version,
             },
         )
 
-    details: dict[str, object] = {"status": status.message}
+    details: dict[str, object] = {
+        "status": status.message,
+        "source": status.source,
+        "version": status.version,
+    }
     failure_traceback = runtime_traceback()
     if failure_traceback:
         details["traceback"] = failure_traceback

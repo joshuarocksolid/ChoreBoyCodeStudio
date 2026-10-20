@@ -72,8 +72,14 @@ class IndentStatusView:
     details: str
 
 
+def _treesitter_source_suffix(source: object, version: object) -> str:
+    if isinstance(source, str) and source and isinstance(version, str) and version:
+        return f" | tree-sitter {source} {version}"
+    return ""
+
+
 def _syntax_highlighting_status_suffix(report: Optional[CapabilityProbeReport]) -> str:
-    """Return a status-bar suffix when editor syntax highlighting is unavailable."""
+    """Return a status-bar suffix for the tree-sitter runtime."""
     if report is not None:
         treesitter_check = next(
             (check for check in report.checks if check.check_id == TREESITTER_RUNTIME_CHECK_ID),
@@ -82,16 +88,20 @@ def _syntax_highlighting_status_suffix(report: Optional[CapabilityProbeReport]) 
         if treesitter_check is not None:
             if not treesitter_check.is_available:
                 return " | Syntax highlighting off"
-            return ""
+            return _treesitter_source_suffix(
+                treesitter_check.details.get("source"),
+                treesitter_check.details.get("version"),
+            )
 
     try:
         from app.treesitter.loader import runtime_status
 
-        if not runtime_status().is_available:
+        status = runtime_status()
+        if not status.is_available:
             return " | Syntax highlighting off"
+        return _treesitter_source_suffix(status.source, status.version)
     except Exception:
         return " | Syntax highlighting off"
-    return ""
 
 
 def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
