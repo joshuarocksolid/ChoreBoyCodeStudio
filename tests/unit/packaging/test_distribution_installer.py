@@ -1154,3 +1154,26 @@ def test_launcher_failure_is_a_warning_after_files_are_installed(tmp_path: Path)
     assert outcome.warnings
     assert (install_dir / "app.py").is_file()
     assert "print('installed')" in (install_dir / "app.py").read_text(encoding="utf-8")
+
+
+def test_denied_menu_copy_is_not_a_done_page_warning(tmp_path: Path) -> None:
+    # ChoreBoy denies ~/.local/share/applications; the home launcher still has to land.
+    installer = _load_module("distribution_installer_menu_denied", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    home = tmp_path / "home"
+    (home / ".local" / "share").mkdir(parents=True)
+    (home / ".local" / "share" / "applications").write_text("not a folder", encoding="utf-8")
+
+    outcome = installer.perform_install(
+        manifest=_project_manifest(),
+        package_root=package_root,
+        install_dir=install_dir,
+        home_roots=[home],
+    )
+
+    assert outcome.ok is True
+    assert outcome.warnings == ()
+    assert str(home / "shop_tracker.desktop") in outcome.published_paths
+    assert not any(".local/share/applications" in path for path in outcome.published_paths)

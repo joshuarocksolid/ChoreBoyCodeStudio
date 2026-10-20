@@ -8,8 +8,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
+from html import escape
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import stat
@@ -18,12 +20,14 @@ import traceback
 from pathlib import Path
 from typing import Any, Optional
 
-from PySide2.QtCore import Qt, QThread, Signal
-from PySide2.QtGui import QIcon
+from PySide2.QtCore import Qt, QThread, QTimer, Signal
+from PySide2.QtGui import QFont, QFontDatabase, QIcon
 from PySide2.QtWidgets import (
     QApplication,
+    QButtonGroup,
     QCheckBox,
     QFileDialog,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -32,7 +36,9 @@ from PySide2.QtWidgets import (
     QProgressBar,
     QPushButton,
     QRadioButton,
+    QScrollArea,
     QVBoxLayout,
+    QWidget,
     QWizard,
     QWizardPage,
 )
@@ -50,6 +56,8 @@ SLOT_ACTION_CONFIRM_REPLACE = "confirm_replace"
 SLOT_ACTION_REFUSE = "refuse"
 
 LEGACY_MACRO_APPS_BASE = "~/.local/share/FreeCAD/Macro/Apps"
+
+_LOG = logging.getLogger("cbcs.installer")
 
 
 @dataclass(frozen=True)
@@ -499,7 +507,12 @@ def discover_same_package_slots(
 
 
 def iter_launcher_destinations(home_root: Path) -> list[tuple[str, Path]]:
-    """Home copy, Desktop when that folder already exists, and the applications menu."""
+    """Home copy, Desktop when that folder already exists, and the applications menu.
+
+    The menu copy is best-effort. ChoreBoy denies ``~/.local/share/applications``
+    to confined AppRun, so :func:`publish_home_launchers` only logs that failure,
+    the same way the proven IntellaQuote installer does.
+    """
     destinations = [("home", Path(home_root))]
     desktop = Path(home_root) / "Desktop"
     if desktop.is_dir():
@@ -514,7 +527,11 @@ def publish_home_launchers(
     *,
     home_roots: list[Path],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Write launcher copies. Failures become warnings and do not raise."""
+    """Write launcher copies. Failures do not raise.
+
+    A home or Desktop failure is a warning for the done page. A menu failure is
+    only logged: the menu copy is best-effort and ChoreBoy denies it.
+    """
     published: list[str] = []
     warnings: list[str] = []
     for home_root in home_roots:
@@ -526,9 +543,11 @@ def publish_home_launchers(
                 destination.write_text(launcher_text, encoding="utf-8")
                 destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             except OSError as exc:
-                warnings.append(
-                    f"Could not write the {kind} launcher at {destination}: {exc.__class__.__name__}: {exc}"
-                )
+                message = f"Could not write the {kind} launcher at {destination}: {exc.__class__.__name__}: {exc}"
+                if kind == "menu":
+                    _LOG.info("Skipped the optional menu launcher. %s", message)
+                else:
+                    warnings.append(message)
             else:
                 published.append(str(destination))
     return tuple(published), tuple(warnings)
@@ -1226,6 +1245,164 @@ class InstallPage(QWizardPage):
         return wizard.page_id("done")
 
 
+HELP_LINE = "click Copy Details and post them to the LibrePy group."
+COPIED_RESET_MS = 2000
+
+
+def format_byte_size(size_bytes: int) -> str:
+    """Short size for the uninstall data box: ``512 bytes``, ``12 KB``, ``1.4 MB``."""
+    if size_bytes < 1024:
+        return "1 byte" if size_bytes == 1 else f"{size_bytes} bytes"
+    if size_bytes < 1024 * 1024:
+        return f"{round(size_bytes / 1024)} KB"
+    if size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024 * 1024):.1f} MB"
+    return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
+
+
+def _count_label(count: int, one: str, many: str) -> str:
+    return f"{count} {one}" if count == 1 else f"{count} {many}"
+
+
+def launcher_kind_label(path: Path, home_roots: list[Path]) -> str:
+    """Name a launcher copy by where it lives, for the install and uninstall pages."""
+    parent = str(Path(path).parent)
+    for home_root in home_roots:
+        root = Path(home_root)
+        if parent == str(root):
+            return "Home launcher"
+        if parent == str(root / "Desktop"):
+            return "Desktop shortcut"
+        if parent == str(root / ".local" / "share" / "applications"):
+            return "Menu entry"
+    return "Launcher"
+
+
+@dataclass(frozen=True)
+class UninstallPlan:
+    """What the uninstall confirm page lists. Paths are shown, not changed."""
+
+    app_file_count: int
+    launchers: tuple[tuple[str, str], ...]
+    icon_path: str
+    data_files: tuple[str, ...]
+    data_bytes: int
+
+
+def plan_uninstall(install_dir: Path, *, marker_filename: str, home_roots: list[Path]) -> UninstallPlan:
+    marker = read_installed_marker(install_dir, marker_filename)
+    owned = {str(item) for item in marker.get("owned_relative_paths", []) if isinstance(item, str)}
+    app_files = [rel for rel in owned if (install_dir / rel).is_file()]
+    launcher_name = marker.get("launcher_filename")
+    skip = {marker_filename}
+    if isinstance(launcher_name, str) and launcher_name:
+        skip.add(launcher_name)
+    data_files: list[str] = []
+    data_bytes = 0
+    for rel in _relative_files(install_dir):
+        if rel in owned or rel in skip:
+            continue
+        data_files.append(rel)
+        try:
+            data_bytes += (install_dir / rel).stat().st_size
+        except OSError:
+            pass
+    try:
+        install_key = str(install_dir.resolve())
+    except OSError:
+        install_key = str(install_dir)
+    launchers: list[tuple[str, str]] = []
+    for path in launcher_removal_paths(marker, home_roots=home_roots):
+        if not path.is_file() or str(path.parent) in (str(install_dir), install_key):
+            continue
+        launchers.append((launcher_kind_label(path, home_roots), str(path)))
+    icon = marker.get("icon_path")
+    icon_path = icon if isinstance(icon, str) and icon.strip() and Path(icon).is_file() else ""
+    return UninstallPlan(
+        app_file_count=len(app_files),
+        launchers=tuple(launchers),
+        icon_path=icon_path,
+        data_files=tuple(data_files),
+        data_bytes=data_bytes,
+    )
+
+
+def describe_install_failure(error_text: str) -> str:
+    """One plain sentence for "What went wrong:", read from the error text."""
+    text = error_text or ""
+    if "No space left" in text or "Errno 28" in text:
+        return "the disk is full, so the installer could not copy the program files."
+    if "Package file size changed unexpectedly" in text or "Package checksum mismatch" in text:
+        return "a file in this installer does not match what was packaged, so the installer may be damaged or incomplete."
+    if "Expected package file is missing" in text or "Payload directory not found" in text:
+        return "this installer is missing some of its files, so it may have been copied only in part."
+    if "Could not switch the install folder into place" in text:
+        return "the installer copied the new program files but could not move them into the app folder."
+    if "Could not create the install folder parent" in text:
+        return "the installer could not create the folder that holds the app."
+    if "PermissionError" in text or "Permission denied" in text or "Errno 13" in text:
+        return "the installer could not copy the program files, because ChoreBoy denied access to the app folder."
+    if "FileNotFoundError" in text:
+        return "a file or folder the installer needed was not there."
+    return "the installer stopped with an error it did not expect."
+
+
+def _runtime_summary_line() -> str:
+    import datetime
+
+    freecad_version = "unknown"
+    try:
+        freecad = sys.modules.get("FreeCAD") or importlib.import_module("FreeCAD")
+        parts = [str(part) for part in list(freecad.Version())[:3] if str(part)]
+        if parts:
+            freecad_version = ".".join(parts)
+    except Exception:
+        pass
+    stamp = datetime.datetime.now().strftime("%d %b %Y %H:%M")
+    return f"FreeCAD {freecad_version} | Python {sys.version.split()[0]} | {stamp}"
+
+
+def _code(value: object) -> str:
+    return f"<code>{escape(str(value))}</code>"
+
+
+def _html_label(html: str) -> QLabel:
+    label = QLabel(html)
+    label.setTextFormat(Qt.RichText)
+    label.setWordWrap(True)
+    label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+    return label
+
+
+def _fixed_font(point_size: int = 8) -> QFont:
+    font = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+    font.setPointSize(point_size)
+    return font
+
+
+def _copy_row(button: QPushButton) -> QHBoxLayout:
+    row = QHBoxLayout()
+    row.addWidget(button)
+    row.addStretch(1)
+    return row
+
+
+def _copy_with_feedback(button: QPushButton, text: str) -> None:
+    clipboard = QApplication.clipboard()
+    if clipboard is not None:
+        clipboard.setText(text)
+    button.setText("Copied")
+    QTimer.singleShot(COPIED_RESET_MS, lambda: button.setText("Copy Details"))
+
+
+def _join_items(items: list[str]) -> str:
+    if len(items) <= 1:
+        return "".join(items)
+    if len(items) == 2:
+        return f"{items[0]} and {items[1]}"
+    return ", ".join(items[:-1]) + f", and {items[-1]}"
+
+
 class DonePage(QWizardPage):
     def __init__(self, manifest: PackageManifest, parent: Optional[QWizard] = None) -> None:
         super().__init__(parent)
@@ -1234,20 +1411,23 @@ class DonePage(QWizardPage):
         self.setFinalPage(True)
 
         layout = QVBoxLayout(self)
-        self.done_label = QLabel()
-        self.done_label.setWordWrap(True)
-        self.done_label.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.done_label = _html_label("")
         layout.addWidget(self.done_label)
         self._warning_details = QPlainTextEdit()
         self._warning_details.setReadOnly(True)
+        self._warning_details.setFont(_fixed_font(8))
         self._warning_details.setMaximumHeight(72)
         self._warning_details.hide()
         layout.addWidget(self._warning_details)
         self._copy_button = QPushButton("Copy Details")
         self._copy_button.hide()
         self._copy_button.clicked.connect(self._copy_warning)
-        layout.addWidget(self._copy_button)
+        layout.addLayout(_copy_row(self._copy_button))
+        self._installed_label = _html_label("")
+        self._installed_label.hide()
+        layout.addWidget(self._installed_label)
         layout.addStretch()
+        self._copy_text = ""
 
     def nextId(self) -> int:
         return -1
@@ -1262,64 +1442,97 @@ class DonePage(QWizardPage):
 
     def _show_uninstall_done(self, worker: object) -> None:
         outcome = getattr(worker, "uninstall_outcome", None)
-        kept = getattr(outcome, "kept_data_dir", "")
+        kept = str(getattr(outcome, "kept_data_dir", "") or "")
+        removed_paths = tuple(getattr(outcome, "removed_paths", ()) or ())
+        install_dir = Path(str(getattr(worker, "install_dir", "") or ""))
         name = self._manifest.display_name
-        lines = [
-            f"<b>{name} was uninstalled.</b>",
-            "Removed the app folder's program files, the home launcher, the desktop shortcut, the menu entry, and the app icon.",
-        ]
-        if kept:
-            lines.append(f"Kept: {name}'s data in <code>{kept}</code>")
-        else:
-            lines.append(f"Also deleted {name}'s data.")
-        lines.append(f"To install {name} again, run its installer.")
+        home_roots = _home_roots_for_manifest(self._manifest)
+        removed: list[str] = []
+        icon = ""
+        marker_icon_dir = install_dir / self._manifest.icon_relative_path if self._manifest.icon_relative_path else None
+        for raw in removed_paths:
+            path = Path(raw)
+            if marker_icon_dir is not None and path == marker_icon_dir:
+                icon = "the app icon"
+                continue
+            if path == install_dir or install_dir in path.parents:
+                if "the app folder" not in removed:
+                    removed.insert(0, "the app folder")
+                continue
+            label = "the " + launcher_kind_label(path, home_roots).lower()
+            if label not in removed:
+                removed.append(label)
+        if icon:
+            removed.append(icon)
+        self._warning_details.hide()
+        self._copy_button.hide()
+        self._installed_label.hide()
         self.setTitle(f"{name} was uninstalled")
-        self.done_label.setText("<br>".join(lines))
+        self.setSubTitle("")
+        lines: list[str] = []
+        if removed:
+            lines.append(f"Removed {_join_items(removed)}.")
+        if kept:
+            lines.append(f"<b>Kept:</b> {escape(name)}'s data in<br>{_code(kept)}")
+        else:
+            lines.append(f"Also deleted {escape(name)}'s data.")
+        lines.append(f"To install {escape(name)} again, run its installer.")
+        self.done_label.setText("<br><br>".join(lines))
 
     def _show_install_done(self, worker: object) -> None:
-        install_dir = Path(str(self.field("install_dir"))).expanduser().resolve()
-        warnings = tuple(getattr(worker, "shortcut_warnings", ()))
+        outcome = getattr(worker, "install_outcome", None)
+        install_dir = str(getattr(outcome, "install_dir", "") or "") or str(
+            Path(str(self.field("install_dir"))).expanduser().resolve()
+        )
+        warnings: tuple[str, ...] = tuple(str(item) for item in (getattr(worker, "shortcut_warnings", None) or ()))
+        published = tuple(getattr(outcome, "published_paths", ()) or ())
         name = self._manifest.display_name
-        home = Path(self._manifest.staging_parent)
+        version = self._manifest.version
+        replaced = str(getattr(outcome, "replaced_version", "") or "")
+        self.setTitle(f"{name} is installed")
+        if replaced and version_relation(replaced, version) == "same":
+            self.setSubTitle(f"Version {version} was installed again. The app's data was kept.")
+        elif replaced:
+            self.setSubTitle(f"Version {version} replaced version {replaced}. The app's data was kept.")
+        else:
+            self.setSubTitle(f"Version {version} is installed.")
         if warnings:
-            self.setTitle(f"{name} is installed")
+            launcher_failed = any(" launcher at " in warning for warning in warnings)
+            headline = (
+                "The app is installed, but the <b>shortcut could not be made</b>."
+                if launcher_failed
+                else "The app is installed, but <b>one clean-up step did not finish</b>."
+            )
+            again = "try the shortcut again" if launcher_failed else "try again"
             warning_text = "\n".join(warnings)
+            self._copy_text = f"{warning_text}\nInstalled in: {install_dir}"
             self._warning_details.setPlainText(warning_text)
             self._warning_details.show()
+            self._copy_button.setText("Copy Details")
             self._copy_button.show()
             self.done_label.setText(
-                "<br>".join(
-                    [
-                        "<b>The app is installed, but a shortcut could not be made.</b>",
-                        "Run this installer again and choose Replace to try the shortcut again. "
-                        "If it still fails, click Copy Details and post them to the LibrePy group.",
-                        f"Installed in: <code>{install_dir}</code>",
-                        f"To uninstall, run this installer again and choose Uninstall {name}.",
-                    ]
-                )
+                f"{headline}<br>Run this installer again and choose Replace to {again}. "
+                f"If it still fails, {escape(HELP_LINE)}"
             )
+            self._installed_label.setText(f"<b>Installed in:</b><br>{_code(install_dir)}")
+            self._installed_label.show()
             return
         self._warning_details.hide()
         self._copy_button.hide()
-        self.setTitle(f"{name} is installed")
-        self.done_label.setText(
-            "<br>".join(
-                [
-                    f"<b>{name}</b> is installed.",
-                    f"Installed in: <code>{install_dir}</code>",
-                    f"Home launcher: <code>{home / self._manifest.launcher_filename}</code>",
-                    f"Menu entry: <code>{home / '.local' / 'share' / 'applications' / self._manifest.launcher_filename}</code>",
-                    "If you move the app folder, run this installer again so the shortcut still works.",
-                    f"To uninstall, run this installer again and choose Uninstall {name}.",
-                ]
-            )
-        )
+        self._installed_label.hide()
+        home_roots = _home_roots_for_manifest(self._manifest)
+        launchers = [(launcher_kind_label(Path(path), home_roots), path) for path in published]
+        lines: list[str] = []
+        if any(label == "Home launcher" for label, _path in launchers):
+            lines.append(f"Start {escape(name)} from the <b>{escape(name)}</b> launcher in your home folder.")
+        lines.append(f"<b>Installed in:</b><br>{_code(install_dir)}")
+        for label, path in launchers:
+            lines.append(f"<b>{escape(label)}:</b><br>{_code(path)}")
+        lines.append("If you move the app folder, run this installer again so the shortcut still works.")
+        self.done_label.setText("<br><br>".join(lines))
 
     def _copy_warning(self) -> None:
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(self._warning_details.toPlainText())
-        self._copy_button.setText("Copied")
+        _copy_with_feedback(self._copy_button, self._copy_text or self._warning_details.toPlainText())
 
 
 class ExistingInstallPage(QWizardPage):
@@ -1327,28 +1540,40 @@ class ExistingInstallPage(QWizardPage):
         super().__init__(parent)
         self._manifest = manifest
         layout = QVBoxLayout(self)
-        self._summary = QLabel()
-        self._summary.setWordWrap(True)
+        self._summary = _html_label("")
         layout.addWidget(self._summary)
-        self._replace_radio = QRadioButton(self)
-        self._uninstall_radio = QRadioButton("Uninstall", self)
+        layout.addSpacing(6)
+        layout.addWidget(QLabel("What do you want to do?"))
+        self._choices = QButtonGroup(self)
+        self._replace_radio, self._replace_help = self._choice(layout)
+        self._uninstall_radio, self._uninstall_help = self._choice(layout)
+        self._uninstall_radio.setText("Uninstall")
+        self._uninstall_help.setText("Removes the app, its desktop shortcut, and its menu entry. Nothing new is installed.")
         self._replace_radio.setChecked(True)
-        layout.addWidget(self._replace_radio)
-        self._replace_help = QLabel()
-        self._replace_help.setWordWrap(True)
-        layout.addWidget(self._replace_help)
-        layout.addWidget(self._uninstall_radio)
-        self._uninstall_help = QLabel(
-            f"Removes the app, its desktop shortcut, and its menu entry. Nothing new is installed."
-        )
-        self._uninstall_help.setWordWrap(True)
-        layout.addWidget(self._uninstall_help)
         self._warning = QLabel()
         self._warning.setWordWrap(True)
         layout.addWidget(self._warning)
         layout.addStretch()
         self._replace_radio.toggled.connect(self._refresh_button)
         self._uninstall_radio.toggled.connect(self._refresh_button)
+
+    def _choice(self, layout: QVBoxLayout) -> tuple[QRadioButton, QLabel]:
+        holder = QWidget(self)
+        holder_layout = QVBoxLayout(holder)
+        holder_layout.setContentsMargins(0, 4, 0, 4)
+        holder_layout.setSpacing(2)
+        radio = QRadioButton(holder)
+        font = radio.font()
+        font.setBold(True)
+        radio.setFont(font)
+        self._choices.addButton(radio)
+        holder_layout.addWidget(radio)
+        detail = QLabel(holder)
+        detail.setWordWrap(True)
+        detail.setContentsMargins(24, 0, 0, 0)
+        holder_layout.addWidget(detail)
+        layout.addWidget(holder)
+        return radio, detail
 
     def initializePage(self) -> None:
         wizard = self.wizard()
@@ -1358,11 +1583,14 @@ class ExistingInstallPage(QWizardPage):
         relation = version_relation(installed, self._manifest.version)
         action = replace_action_label(installed, self._manifest.version)
         self.setTitle(f"{name} is already installed")
-        self.setSubTitle(f"Version {installed or 'unknown'} is on this computer. This installer has version {self._manifest.version}.")
-        self._summary.setText(f"Installed in: {occupancy.path if occupancy is not None else ''}")
+        self.setSubTitle(
+            f"Version {installed or 'unknown'} is on this ChoreBoy. This installer has version {self._manifest.version}."
+        )
+        self._summary.setText(f"Installed in:<br>{_code(occupancy.path if occupancy is not None else '')}")
         self._replace_radio.setText(f"{action} it with version {self._manifest.version}")
+        replaced_files = f"from version {installed} " if installed and relation != "same" else ""
         self._replace_help.setText(
-            "Keeps the app's data, like its database and saved settings. Only the program files are replaced."
+            f"Keeps the app's data, like its database and saved settings. Only the program files {replaced_files}are replaced."
         )
         self._uninstall_radio.setText(f"Uninstall {name}")
         if relation == "older":
@@ -1405,14 +1633,22 @@ class UninstallConfirmPage(QWizardPage):
         self.setCommitPage(True)
         self.setButtonText(QWizard.CommitButton, "Uninstall")
         layout = QVBoxLayout(self)
-        self._summary = QLabel()
-        self._summary.setWordWrap(True)
-        self._summary.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        layout.addWidget(self._summary)
+        self._summary = _html_label("")
+        # Two home roots plus Desktop and the icon can outgrow the page; scroll instead of clipping.
+        items = QScrollArea(self)
+        items.setFrameShape(QFrame.NoFrame)
+        items.setWidgetResizable(True)
+        items.setWidget(self._summary)
+        items.viewport().setAutoFillBackground(False)
+        self._summary.setAutoFillBackground(False)
+        self._summary.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        layout.addWidget(items)
+        layout.addSpacing(8)
         self._delete_data = QCheckBox(self)
         layout.addWidget(self._delete_data)
         self._data_note = QLabel()
         self._data_note.setWordWrap(True)
+        self._data_note.setContentsMargins(24, 0, 0, 0)
         layout.addWidget(self._data_note)
         layout.addStretch()
 
@@ -1423,21 +1659,29 @@ class UninstallConfirmPage(QWizardPage):
         name = self._manifest.display_name
         version = occupancy.occupant_version if occupancy is not None else self._manifest.version
         self.setTitle(f"Uninstall {name} {version}?")
-        self.setSubTitle("These items will be removed from this computer.")
-        home = Path(self._manifest.staging_parent)
-        lines = [
-            f"App folder: {install_dir}",
-            f"Home launcher: {home / self._manifest.launcher_filename}",
-            f"Menu entry: {home / '.local' / 'share' / 'applications' / self._manifest.launcher_filename}",
-            f"Desktop shortcut: {home / 'Desktop' / self._manifest.launcher_filename}",
-        ]
-        if self._manifest.icon_relative_path and install_dir:
-            lines.append(f"App icon: {Path(install_dir) / self._manifest.icon_relative_path}")
-        self._summary.setText("<br>".join(lines))
-        self._delete_data.setText(f"Also delete {name}'s data")
+        self.setSubTitle("These items will be removed from this ChoreBoy.")
+        plan = plan_uninstall(
+            Path(install_dir),
+            marker_filename=self._manifest.install_marker_filename,
+            home_roots=_home_roots_for_manifest(self._manifest),
+        ) if install_dir else UninstallPlan(0, (), "", (), 0)
+        rows = [(f"App folder ({_count_label(plan.app_file_count, 'file', 'files')})", install_dir)]
+        rows.extend(plan.launchers)
+        if plan.icon_path:
+            rows.append(("App icon", plan.icon_path))
+        self._summary.setText("<br><br>".join(f"<b>{escape(label)}</b><br>{_code(path)}" for label, path in rows))
+        if plan.data_files:
+            size = f"{_count_label(len(plan.data_files), 'file', 'files')}, {format_byte_size(plan.data_bytes)}"
+        else:
+            size = "no data files found"
+        self._delete_data.setText(f"Also delete {name}'s data ({size})")
         self._delete_data.setChecked(False)
+        shown = list(plan.data_files[:4])
+        if len(plan.data_files) > len(shown):
+            shown.append(f"and {len(plan.data_files) - len(shown)} more")
+        data_line = f"Data: {', '.join(shown)}. " if shown else ""
         self._data_note.setText(
-            "If you leave this box unchecked, the data stays in the app folder so a later install can use it again."
+            f"{data_line}If you leave this box unchecked, the data stays in the app folder so a later install can use it again."
         )
 
     def validatePage(self) -> bool:
@@ -1460,40 +1704,63 @@ class FailurePage(QWizardPage):
         self._manifest = manifest
         self.setFinalPage(True)
         layout = QVBoxLayout(self)
-        self._summary = QLabel()
-        self._summary.setWordWrap(True)
+        self._summary = _html_label("")
         layout.addWidget(self._summary)
         self._details = QPlainTextEdit()
         self._details.setReadOnly(True)
+        self._details.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self._details.setFont(_fixed_font(8))
         layout.addWidget(self._details, 1)
         self._copy_button = QPushButton("Copy Details")
         self._copy_button.clicked.connect(self._copy)
-        layout.addWidget(self._copy_button)
+        layout.addLayout(_copy_row(self._copy_button))
 
     def initializePage(self) -> None:
         wizard = self.wizard()
         name = self._manifest.display_name
-        self.setTitle("Installation failed")
+        version = self._manifest.version
+        failure_text = str(getattr(wizard, "failure_text", ""))
+        uninstalling = bool(getattr(wizard, "uninstall_requested", False))
         unchanged = bool(getattr(wizard, "failure_unchanged", True))
-        if unchanged:
-            subtitle = f"{name} {self._manifest.version} was not installed. What was already installed was left unchanged."
+        if uninstalling:
+            self.setTitle("Uninstall failed")
+            subtitle = f"{name} was not fully uninstalled. Some of its files may already be removed."
+            went_wrong = "the installer could not remove every file of the app."
+            try_text = f"close {escape(name)} if it is open, then run the installer again and choose Uninstall."
         else:
-            subtitle = f"The program files for {name} were copied. Shortcut publishing did not finish."
+            self.setTitle("Installation failed")
+            previous = wizard.same_package_occupancy() if isinstance(wizard, Installer) and unchanged else None
+            if not unchanged:
+                subtitle = f"The program files for {name} were copied. Shortcut publishing did not finish."
+            elif previous is not None and previous.occupant_version:
+                subtitle = (
+                    f"{name} {version} was not installed. "
+                    f"Version {previous.occupant_version} is still installed and was not changed."
+                )
+            else:
+                subtitle = f"{name} {version} was not installed. Nothing on this ChoreBoy was changed."
+            went_wrong = describe_install_failure(failure_text)
+            try_text = f"close {escape(name)} if it is open, then run the installer again."
         self.setSubTitle(subtitle)
         self._summary.setText(
-            "What to try: close the app if it is open, then run the installer again. "
-            "If it fails again, click Copy Details and post them to the LibrePy group."
+            f"<b>What went wrong:</b> {escape(went_wrong)}<br>"
+            f"<b>What to try:</b> {try_text} If it fails again, {escape(HELP_LINE)}"
         )
-        self._details.setPlainText(str(getattr(wizard, "failure_text", "")))
+        details = [
+            failure_text.rstrip(),
+            "",
+            f"Installer for {name} {version} (package {self._manifest.package_id})",
+            _runtime_summary_line(),
+        ]
+        self._details.setPlainText("\n".join(details).lstrip("\n"))
+        if isinstance(wizard, QWizard):
+            wizard.setButtonText(QWizard.FinishButton, "Close")
 
     def nextId(self) -> int:
         return -1
 
     def _copy(self) -> None:
-        clipboard = QApplication.clipboard()
-        if clipboard is not None:
-            clipboard.setText(self._details.toPlainText())
-        self._copy_button.setText("Copied")
+        _copy_with_feedback(self._copy_button, self._details.toPlainText())
 
 
 class Installer(QWizard):

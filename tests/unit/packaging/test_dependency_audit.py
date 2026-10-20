@@ -168,6 +168,15 @@ def test_denied_programs_cite_freecad_1_measurement(tmp_path: Path) -> None:
     assert all("FreeCAD 1.0.0" in issue.why_it_happened for issue in denied)
 
 
+def test_denied_program_is_blocked_from_any_system_bin_folder(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    report = _audit(project_root, 'import subprocess\nsubprocess.Popen(["/usr/bin/pcmanfm", "."])\n')
+
+    denied = [issue for issue in report.issues if issue.issue_id.startswith("package.subprocess.denied")]
+    assert [issue.evidence["command_name"] for issue in denied] == ["/usr/bin/pcmanfm"]
+
+
 def test_unknown_program_is_a_warning(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
