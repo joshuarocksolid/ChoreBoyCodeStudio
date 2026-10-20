@@ -140,10 +140,21 @@ MEASURED_EXEC: dict[str, dict[str, MeasuredExec]] = {
 }
 
 
+_SYSTEM_BIN_FOLDERS = frozenset({"/bin", "/usr/bin", "/usr/local/bin", "/sbin", "/usr/sbin"})
+
+
 def lookup_measured_exec(program: str, *, freecad_version: str = TARGET_FREECAD_VERSION) -> MeasuredExec | None:
     """Return the measured row for *program* on *freecad_version*, if one exists."""
     table = MEASURED_EXEC.get(freecad_version, {})
-    return table.get(program.strip())
+    name = program.strip()
+    row = table.get(name)
+    if row is not None:
+        return row
+    # A system program is the same binary whichever system bin folder names it.
+    folder, _, bare = name.rpartition("/")
+    if folder in _SYSTEM_BIN_FOLDERS and bare:
+        return table.get(bare)
+    return None
 
 
 def tested_on_phrase(measurement: MeasuredExec | None = None) -> str:

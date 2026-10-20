@@ -250,34 +250,6 @@ Validation covers:
 - `shell=True` subprocess calls, which stop export
 - a missing import, which stops export only when the entry file loads it at module level outside `try` / `except ImportError` and `TYPE_CHECKING`. Other missing imports warn and name the import path. A vendored native extension still stops export
 
-Also add os.system test. And compile-check before pytest.
-
-There's a potential bug: `_preserved_relative_paths` when previous_owned is empty (legacy) keeps files not in new payload. The legacy marker file is in skip only if we pass skip. We pass slot_skip including marker and launchers. data/keep.txt is kept. Good.
-
-When the current install_dir doesn't exist, _relative_files returns []. preserved starts empty. Legacy adds data/keep.txt. Good.
-
-Replace test: previous_owned has app.py, marker, desktop. notes.txt not owned. new payload is app.py and icon.png. notes.txt preserved. icon.png is new. app.py replaced. Good.
-
-Uninstall delete_data True after we already removed owned files. The marker was unlinked as an owned file, so the second uninstall reads an empty marker. delete_data True still rmtree if install_dir exists. notes.txt goes with the tree. Good.
-
-First uninstall unlinks icon which is also owned. Order is icon first then owned. Fine.
-
-Launcher in install dir is owned and unlinked. Home copies unlinked. Good.
-
-If icon_path points inside install dir and we unlink it, then owned loop tries app.py, icon.png (already gone), launcher, marker. notes.txt stays. Good.
-
-Need to check write_installed records icon_path as resolved path of install_dir / icon.png. After swap the file exists there. Uninstall unlinks it. Good.
-
-Desktop exists so home, desktop, and menu are published. Good.
-
-No Desktop test is the replace test. It asserts not (home / "Desktop").exists(). publish doesn't create it. Good.
-
-Launcher failure: home is a file. mkdir of home / ".local" fails. write of home / launcher fails. warnings nonempty. install dir has files. Good.
-
-Title test: package_project might fail validation if missing imports or something. main.py is print. Should succeed. package_id from package.json. Need resolve_project_package_config to prefer package.json over project name. I'll see if the test fails.
-
-Also package_project might rewrite display_name from project_name argument. Check.
-
 Packaging excludes transient/support content such as:
 
 - `cbcs/runs/`
