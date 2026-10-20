@@ -5,8 +5,11 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+from app.core.constants import APP_RUN_PATH
 from app.core.models import RuntimeIssue
 from app.support.runtime_explainer import HELP_TOPIC_PACKAGING
+
+_ALLOWED_SUBPROCESS_TARGETS = frozenset({"/bin/sh", APP_RUN_PATH})
 
 _SUBPROCESS_CALL_NAMES = {"Popen", "call", "check_call", "check_output", "run"}
 
@@ -30,8 +33,11 @@ def subprocess_issues(
                 summary="This project imports `subprocess`, which can behave differently on constrained ChoreBoy systems.",
                 why_it_happened="Inside the validated AppRun environment, subprocess execution is intentionally restricted and should not assume arbitrary executables are available.",
                 next_steps=[
-                    "Review subprocess calls for reliance on executables other than `/bin/sh`.",
-                    "Prefer in-process Python or documented shell entrypoints where possible.",
+                    "Prefer in-process Python when the work can run inside the editor.",
+                    (
+                        f"When a child process is required, exec `{APP_RUN_PATH}` with an argv list. "
+                        "`/bin/sh` still runs on the current image and does not run on FreeCAD 1.1."
+                    ),
                 ],
                 help_topic=HELP_TOPIC_PACKAGING,
                 evidence={"source_file": rel_file},
@@ -44,10 +50,14 @@ def subprocess_issues(
                 workflow="package",
                 severity="blocking",
                 title="Package hardcodes a subprocess target that is unlikely to work on ChoreBoy",
-                summary=f"A subprocess call launches `{command_name}` directly instead of `/bin/sh`.",
-                why_it_happened="The validated ChoreBoy runtime only guarantees subprocess compatibility through `/bin/sh` inside AppRun.",
+                summary=f"A subprocess call launches `{command_name}` directly.",
+                why_it_happened=(
+                    f"FreeCAD 1.1 denies `/bin/sh`, `/bin/bash`, shell=True, and git. "
+                    f"Exec `{APP_RUN_PATH}` with an argv list, or stay in-process. "
+                    "`/bin/sh` remains allowed on the current image."
+                ),
                 next_steps=[
-                    "Rewrite the subprocess call to use a supported shell entrypoint or an in-process alternative.",
+                    f"Rewrite the call as an argv list passed to `{APP_RUN_PATH}`, or do the work in-process.",
                     "Re-run packaging after removing the direct binary assumption.",
                 ],
                 help_topic=HELP_TOPIC_PACKAGING,
@@ -68,8 +78,8 @@ def subprocess_issues(
                 summary="A subprocess call opts into shell parsing, which is not part of the supported ChoreBoy packaging contract.",
                 why_it_happened="Shell-mediated subprocesses hide the executable boundary and are difficult to validate under ChoreBoy's restricted runtime.",
                 next_steps=[
-                    "Replace shell=True with an explicit argv-list launch.",
-                    "If a shell is required, call `/bin/sh` explicitly and document the command contract.",
+                    "Replace shell=True with an explicit argv list.",
+                    f"Exec that argv through `{APP_RUN_PATH}`, or do the work in-process.",
                 ],
                 help_topic=HELP_TOPIC_PACKAGING,
                 evidence={"source_file": rel_file, "line_number": lineno},
@@ -114,7 +124,7 @@ def _literal_external_commands(tree: ast.AST) -> list[tuple[int, str]]:
                 command_name = _first_command_name(node)
         if not command_name:
             continue
-        if command_name != "/bin/sh":
+        if command_name not in _ALLOWED_SUBPROCESS_TARGETS:
             commands.append((int(getattr(node, "lineno", 1) or 1), command_name))
     return commands
 

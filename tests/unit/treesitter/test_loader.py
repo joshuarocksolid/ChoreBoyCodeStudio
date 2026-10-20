@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -30,6 +31,7 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
 ) -> None:
     _reset_loader_state(monkeypatch)
     _force_choreboy_soabi(monkeypatch)
+    monkeypatch.setenv("CBCS_TREE_SITTER_SOURCE", "vendored")
     tree_sitter_dir = tmp_path / "vendor" / "tree_sitter"
     tree_sitter_dir.mkdir(parents=True)
     (tree_sitter_dir / "_binding.cpython-39-x86_64-linux-gnu.so").write_bytes(b"core")
@@ -77,6 +79,7 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
         sorted(set(loader.DEFAULT_LANGUAGE_KEYS) - {"json", "python"})
     )
     assert status.skipped_optional_language_keys == ("fake_optional",)
+    assert status.source == "vendored"
     assert f"2/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in status.message
     assert "optional skipped: fake_optional" in status.message
 
@@ -139,3 +142,109 @@ def test_resolve_extension_path_rejects_mixed_binding_candidates(
 
     with pytest.raises(RuntimeError, match="expected one exact binding artifact"):
         loader._resolve_extension_path(package_dir, preferred_stem="_binding")
+
+
+def _write_runtime_site(site: Path, *, version: str) -> None:
+    core = site / "tree_sitter"
+    core.mkdir(parents=True)
+    (core / "__init__.py").write_text(
+        f"__version__ = {version!r}\n"
+        "class Language:\n"
+        "    def __init__(self, handle, name=None):\n"
+        "        self.handle = handle\n",
+        encoding="utf-8",
+    )
+    grammar = site / "tree_sitter_python"
+    grammar.mkdir()
+    (grammar / "__init__.py").write_text("def language():\n    return 1\n", encoding="utf-8")
+
+
+def _restore_treesitter_modules(saved: dict[str, ModuleType]) -> None:
+    for name in list(sys.modules):
+        if loader._is_treesitter_module_name(name):
+            sys.modules.pop(name, None)
+    sys.modules.update(saved)
+    loader._RUNTIME_INITIALIZED = False
+    loader._RUNTIME_STATUS = loader.TreeSitterRuntimeStatus(False, "not_initialized")
+    loader._TREE_SITTER_MODULE = None
+    loader._LANGUAGE_MODULES = {}
+
+
+def test_runtime_source_uses_external_package_and_skips_memfd(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    saved_modules = {
+        name: module
+        for name, module in sys.modules.items()
+        if loader._is_treesitter_module_name(name)
+    }
+    saved_path = sys.path[:]
+    _reset_loader_state(monkeypatch)
+    monkeypatch.delenv("CBCS_TREE_SITTER_SOURCE", raising=False)
+    site = tmp_path / "site"
+    _write_runtime_site(site, version="0.26.0")
+    monkeypatch.syspath_prepend(str(site))
+    def refuse_memfd(*_args: object, **_kwargs: object) -> ModuleType:
+        raise AssertionError("memfd loader ran")
+
+    monkeypatch.setattr(loader, "_load_extension_module", refuse_memfd)
+    app_root = tmp_path / "app"
+    (app_root / "vendor").mkdir(parents=True)
+    try:
+        status = loader.initialize_tree_sitter_runtime(app_root)
+    finally:
+        sys.path[:] = saved_path
+        _restore_treesitter_modules(saved_modules)
+
+    assert status.is_available is True
+    assert status.source == "runtime"
+    assert status.version == "0.26.0"
+    assert "python" in status.available_language_keys
+
+
+def test_vendored_override_ignores_runtime_site(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _reset_loader_state(monkeypatch)
+    monkeypatch.setenv("CBCS_TREE_SITTER_SOURCE", "vendored")
+    site = tmp_path / "site"
+    _write_runtime_site(site, version="0.26.0")
+    monkeypatch.syspath_prepend(str(site))
+    app_root = tmp_path / "app"
+    (app_root / "vendor").mkdir(parents=True)
+
+    status = loader.initialize_tree_sitter_runtime(app_root)
+
+    assert status.is_available is False
+    assert status.source == ""
+    assert "missing tree-sitter binding" in status.message
+
+
+def test_runtime_override_without_external_package_is_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    _reset_loader_state(monkeypatch)
+    monkeypatch.setenv("CBCS_TREE_SITTER_SOURCE", "runtime")
+    from app.bootstrap.vendor_paths import resolve_vendor_root
+
+    repo_vendor = resolve_vendor_root()
+    filtered: list[str] = []
+    for entry in sys.path:
+        if not entry:
+            filtered.append(entry)
+            continue
+        entry_path = Path(entry)
+        if (entry_path / "tree_sitter" / "__init__.py").is_file() and not loader._is_under(entry_path, repo_vendor):
+            continue
+        filtered.append(entry)
+    monkeypatch.setattr(sys, "path", filtered)
+    app_root = tmp_path / "app"
+    (app_root / "vendor").mkdir(parents=True)
+
+    status = loader.initialize_tree_sitter_runtime(app_root)
+
+    assert status.is_available is False
+    assert "CBCS_TREE_SITTER_SOURCE=runtime" in status.message

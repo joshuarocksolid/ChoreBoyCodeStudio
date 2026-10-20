@@ -18,6 +18,7 @@ from typing import Any, Iterable, Optional
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.treesitter.language_registry import default_tree_sitter_language_registry
 from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_status
+from app.treesitter.ts_api import make_parser
 
 _LOGGER = get_subsystem_logger("outline")
 
@@ -118,15 +119,9 @@ def _treesitter_parser_for_language(resolved: Any) -> Any | None:
     if _TREESITTER_PARSER is not None and _TREESITTER_PARSER_KEY == cache_key:
         return _TREESITTER_PARSER
     try:
-        import tree_sitter  # type: ignore
+        parser: Any = make_parser(resolved.language)
     except ImportError:
         return None
-
-    parser: Any = tree_sitter.Parser()
-    if hasattr(parser, "set_language"):
-        parser.set_language(resolved.language)
-    else:
-        parser.language = resolved.language
     _TREESITTER_PARSER = parser
     _TREESITTER_PARSER_KEY = cache_key
     return parser

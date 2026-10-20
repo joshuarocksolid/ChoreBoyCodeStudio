@@ -7,6 +7,7 @@ from PySide2.QtGui import QTextDocument
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.treesitter.capture_pipeline import _CaptureSpan
 from app.treesitter.language_registry import TreeSitterResolvedLanguage
+from app.treesitter.ts_api import matches as query_matches
 
 _MAX_INJECTION_DEPTH = 2
 _LOGGER = get_subsystem_logger("treesitter")
@@ -57,7 +58,7 @@ class TreeSitterInjectionMixin:
         if host._tree is None or host._injections_query is None or host._injection_depth >= _MAX_INJECTION_DEPTH:
             return
         try:
-            matches = host._injections_query.matches(host._tree.root_node)
+            matches = query_matches(host._injections_query, host._tree.root_node)
         except Exception:  # pragma: no cover - defensive path
             _LOGGER.warning("Failed to evaluate injections query for %s.", host._language_key, exc_info=True)
             return

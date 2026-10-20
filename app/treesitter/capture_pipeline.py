@@ -6,6 +6,7 @@ from typing import Any, Iterator, Protocol, cast
 
 from app.core import constants
 from app.treesitter.python_tokens import PYTHON_BUILTIN_FUNCTIONS, PYTHON_SPECIAL_VARIABLES
+from app.treesitter.ts_api import captures as query_captures
 
 _QUERY_MARGIN_LINES = 220
 _RANGE_EXPANSION_LINES = 3
@@ -17,7 +18,6 @@ class _HighlighterHost(Protocol):
     _parser: Any
     _tree: Any | None
     _query: Any | None
-    _query_supports_range_kwargs: bool | None
     _language_key: str
     _viewport_lines: tuple[int, int]
 
@@ -392,20 +392,12 @@ class TreeSitterCapturePipelineMixin:
         query = host._query
         if tree is None or query is None:
             return []
-        raw_captures: Any
-        if host._query_supports_range_kwargs is not False:
-            try:
-                raw_captures = query.captures(
-                    tree.root_node,
-                    start_point=(start_line, 0),
-                    end_point=(end_line + 1, 0),
-                )
-                host._query_supports_range_kwargs = True
-            except TypeError:
-                host._query_supports_range_kwargs = False
-                raw_captures = query.captures(tree.root_node)
-        else:
-            raw_captures = query.captures(tree.root_node)
+        raw_captures = query_captures(
+            query,
+            tree.root_node,
+            start_point=(start_line, 0),
+            end_point=(end_line + 1, 0),
+        )
         return self._normalize_captures(
             raw_captures,
             start_line=start_line,
