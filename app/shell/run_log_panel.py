@@ -98,6 +98,7 @@ class RunLogPanel(QWidget):
 
         self._log_path: str | None = None
         self._in_traceback = False
+        self._saw_freecad_window_start = False
         self._col_text = "#E9ECEF"
         self._col_muted = "#ADB5BD"
         self._col_error = "#FF6B6B"
@@ -182,9 +183,19 @@ class RunLogPanel(QWidget):
 
         self._reformat_current_content()
 
+    @property
+    def saw_freecad_window_start(self) -> bool:
+        """True once the current run printed libspnav's line, i.e. it opened a FreeCAD window.
+
+        ChoreBoy's AppArmor profile denies ``/proc``, so this output is the only
+        sign CBCS gets that a run started a GUI FreeCAD.
+        """
+        return self._saw_freecad_window_start
+
     def begin_run(self, run_info: RunInfo | None = None) -> None:
         """Clear display and set toolbar to 'running' for a new session."""
         self._in_traceback = False
+        self._saw_freecad_window_start = False
         self._log_path = None
         self._open_btn.setVisible(False)
         self._text.clear()
@@ -204,6 +215,8 @@ class RunLogPanel(QWidget):
             display = f"{prefix}{raw_line}" if prefix else raw_line
             category, self._in_traceback = _classify_line(display, self._in_traceback)
             fmt = self._format_for_category(category, display)
+            if category == "noise" and _SPNAV_CONNECT_FAILED_RE.match(display):
+                self._saw_freecad_window_start = True
 
             cursor = self._text.textCursor()
             cursor.movePosition(QTextCursor.End)

@@ -58,10 +58,12 @@ class MainWindowLifecycle:
         run_service = window._run_service
         if not run_service.supervisor.is_running():
             return None
+        run_log_panel = getattr(window, "_run_log_panel", None)
         summary = build_running_program_summary(
             run_service.current_session,
             loaded_project=getattr(window, "_loaded_project", None),
             process_id=run_service.supervisor.process_id,
+            freecad_window_seen=bool(run_log_panel is not None and run_log_panel.saw_freecad_window_start),
         )
         return close_while_running_dialog.prompt_close_while_running(window, summary)
 

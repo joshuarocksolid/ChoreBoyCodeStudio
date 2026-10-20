@@ -137,3 +137,7 @@ def test_startup_noise_stays_visible_dimmed_with_explanation(panel: RunLogPanel)
         assert fmt.toolTip()
         assert fmt.foreground().color().name().lower() == panel._col_muted.lower()
     assert _format_of_line(panel, "real output").toolTip() == ""
+    # The spacenav line is how CBCS learns the run opened a FreeCAD window (no /proc on ChoreBoy).
+    assert panel.saw_freecad_window_start is True
+    panel.begin_run()
+    assert panel.saw_freecad_window_start is False

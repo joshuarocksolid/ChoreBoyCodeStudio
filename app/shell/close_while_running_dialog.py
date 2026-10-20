@@ -158,6 +158,7 @@ def build_running_program_summary(
     *,
     loaded_project: Any,
     process_id: Optional[int],
+    freecad_window_seen: bool = False,
     now: Optional[datetime] = None,
 ) -> RunningProgramSummary:
     """Describe the active run for the prompt. ``session`` is a ``RunSession``."""
@@ -191,6 +192,9 @@ def build_running_program_summary(
         started_with = "started with Run File"
 
     also_opened = find_opened_windows(process_id) if process_id else ()
+    if not also_opened and freecad_window_seen:
+        # Confined AppRun cannot read /proc; the run's own output said FreeCAD opened.
+        also_opened = ("FreeCAD",)
     return RunningProgramSummary(
         name=name,
         running_for=running_for,
