@@ -69,3 +69,23 @@ def test_debug_runs_offer_stop_but_not_keep(qapp) -> None:  # type: ignore[no-un
     assert dialog.choice == CloseRunChoice.CANCEL
     dialog.stop_button.click()
     assert dialog.choice == CloseRunChoice.STOP
+
+
+def test_summary_says_run_project_for_the_project_entry() -> None:
+    from datetime import datetime, timedelta
+    from types import SimpleNamespace
+
+    from app.shell.close_while_running_dialog import build_running_program_summary
+
+    started = datetime(2026, 10, 20, 12, 0, 0)
+    session = SimpleNamespace(entry_file="main.py", mode="python_script", started_at=started)
+    project = SimpleNamespace(project_root="/p/ShopTracker", metadata=SimpleNamespace(name="ShopTracker", default_entry="main.py"))
+
+    summary = build_running_program_summary(
+        session, loaded_project=project, process_id=None, now=started + timedelta(minutes=12)
+    )
+
+    assert summary.name == "main.py  (ShopTracker)"
+    assert summary.running_for == "Running for 12 minutes"
+    assert summary.started_with == "started with Run Project"
+    assert summary.can_keep_running is True

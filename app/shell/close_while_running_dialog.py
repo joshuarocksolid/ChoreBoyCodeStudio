@@ -172,8 +172,12 @@ def build_running_program_summary(
         project_name = str(getattr(metadata, "name", "") or "")
         default_entry = str(getattr(metadata, "default_entry", "") or "")
         project_root = str(getattr(loaded_project, "project_root", "") or "")
-        if default_entry and project_root:
-            default_entry = str(Path(project_root, default_entry))
+        if project_root:
+            # RunSession.entry_file is project-relative for project runs.
+            if default_entry:
+                default_entry = str(Path(project_root, default_entry))
+            if entry_file and not Path(entry_file).is_absolute():
+                entry_file = str(Path(project_root, entry_file))
     if project_name:
         name = f"{name}  ({project_name})"
 
