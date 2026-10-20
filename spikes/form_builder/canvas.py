@@ -1698,7 +1698,7 @@ class Surface(QGraphicsView):
                 return True
             edge = self._page_edge_at(pos)
             if edge:
-                self.page_drag = {"axis": edge, "start": pos, "size": self.form_size()}
+                self.page_drag = {"axis": edge, "start": view_pos, "size": self.form_size()}
                 return True
         if mode == "buddy":
             node_id = self.hit(pos)
@@ -1724,7 +1724,7 @@ class Surface(QGraphicsView):
             self._live_gap(pos, event.modifiers())
             return True
         if self.page_drag is not None:
-            self._live_page(pos, event.modifiers())
+            self._live_page(view_pos, event.modifiers())
             return True
         if self.overlay.buddy_drag is not None:
             self.overlay.buddy_drag = (self.overlay.buddy_drag[0], pos)
@@ -1991,13 +1991,17 @@ class Surface(QGraphicsView):
         if steps:
             self.history.execute(steps[0] if len(steps) == 1 else Compound(steps))
 
-    def _live_page(self, pos, modifiers):
+    def _live_page(self, view_pos, modifiers):
+        """Measured in view pixels: the page stays centred, so each edge moves half the change."""
         drag = self.page_drag
         width, height = drag["size"]
+        scale = max(self.scale_value, 0.1)
+        centred_x = 1 if self.horizontalScrollBar().isVisible() else 2
+        centred_y = 1 if self.verticalScrollBar().isVisible() else 2
         if "h" in drag["axis"]:
-            width = max(120, self._snap(width + (pos.x() - drag["start"].x()) * 2, modifiers))
+            width = max(120, self._snap(width + (view_pos.x() - drag["start"].x()) * centred_x / scale, modifiers))
         if "v" in drag["axis"]:
-            height = max(80, self._snap(height + pos.y() - drag["start"].y(), modifiers))
+            height = max(80, self._snap(height + (view_pos.y() - drag["start"].y()) * centred_y / scale, modifiers))
         drag["live"] = (width, height)
         self.form.setFixedSize(max(width, self.form.minimumSizeHint().width()), max(height, self.form.minimumSizeHint().height()))
         self.page.setFixedSize(self.form.width() + 16, self.form.height() + TITLE_STRIP + 16)
