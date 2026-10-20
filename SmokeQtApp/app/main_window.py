@@ -1,4 +1,4 @@
-from PySide2.QtWidgets import QLabel, QMainWindow
+from PySide.QtWidgets import QLabel, QMainWindow
 
 
 class MainWindow(QMainWindow):

@@ -1,7 +1,7 @@
 {
   "template_id": "qt_app",
   "display_name": "Qt App",
-  "description": "Starter GUI app using PySide2 imports in AppRun runtime.",
+  "description": "Starter GUI app. Imports Qt through FreeCAD's PySide package.",
   "template_version": 1,
   "default_entry": "main.py"
 }
