@@ -599,11 +599,13 @@ class MainWindow(QMainWindow):
         self.canvas.set_selection(ids)
         self.inspector.show_selection(ids)
         self._syncing = False
+        self._hint("")
 
     def _select(self, ids):
         self.canvas.set_selection(ids)
         self.outline.select_ids(ids)
         self.inspector.show_selection(ids)
+        self._hint("")
 
     def set_mode(self, mode):
         self.top.modes.set_current(mode)

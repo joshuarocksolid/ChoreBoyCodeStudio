@@ -1,10 +1,12 @@
 widgets 302
-open median 36.26 ms  min 34.08  max 40.87  n=5  ['37.75', '36.26', '34.08', '35.89', '40.87']  budget 150
-insert median 0.80 ms  min 0.75  max 0.86  n=5  ['0.80', '0.79', '0.80', '0.86', '0.75']  budget 16
-property median 2.74 ms  min 2.63  max 2.88  n=5  ['2.88', '2.85', '2.63', '2.67', '2.74']  budget 16
-undo median 0.45 ms  min 0.42  max 0.49  n=5  ['0.45', '0.49', '0.47', '0.44', '0.42']  budget 16
-save median 2.96 ms  min 2.67  max 3.45  n=5  ['3.45', '2.77', '2.97', '2.67', '2.96']  budget 50
-rss extra 15.97 MB  budget 30
+open median 930.86 ms  min 688.44  max 982.09  n=5  ['937.31', '982.09', '732.84', '930.86', '688.44']  budget 150
+open cpu median 58.15 ms  min 55.47  max 66.59  n=5  ['66.59', '59.90', '58.15', '55.47', '56.35']  (process time; wall time above includes waiting for a busy machine)
+insert median 1.98 ms  min 1.68  max 261.82  n=5  ['1.68', '2.58', '1.98', '1.96', '261.82']  budget 16
+property median 4.58 ms  min 0.11  max 6.72  n=5  ['4.58', '6.09', '0.15', '6.72', '0.11']  budget 16
+undo median 1.53 ms  min 1.35  max 2.20  n=5  ['2.20', '1.63', '1.50', '1.35', '1.53']  budget 16
+save median 12.33 ms  min 6.08  max 358.68  n=5  ['7.18', '6.08', '358.68', '12.33', '14.36']  budget 50
+rss extra 0.00 MB  budget 30
 open times load plus the workbench, after QApplication already exists.
 edit times are command apply plus the canvas patch. The geometry index refreshes on the next pointer event.
+machine load average at the run: 105.3
 rss extra is ru_maxrss after five opens minus ru_maxrss of the empty window. It is a high-water mark, so it can include caches from the repeats. On macOS the unit is bytes.
