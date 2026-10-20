@@ -197,13 +197,24 @@ Release builders may override the zip password with `archive_password` on
 `build_product_artifact(...)` or by setting `CBCS_PACKAGE_ZIP_PASSWORD`.
 
 During staging, the product builder copies allowlisted packages from
-`CBCS_ARTIFACTS_DIR/vendor_py39/` (populate with `./scripts/setup_vendor_py39.sh`),
-auto-fetches the cp39 manylinux `tree-sitter` wheel, and overlays
-`_binding.cpython-39-x86_64-linux-gnu.so` onto
-`payload/vendor/tree_sitter/`. The wheel is cached under
-`CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so subsequent builds are
-offline-friendly. Product packaging does not read from repo `vendor/` or
-`vendor_py311/`; only the cp39 artifacts tree is the packaging source.
+`CBCS_ARTIFACTS_DIR/vendor_py39/` (populate with `./scripts/setup_vendor_py39.sh`).
+It then downloads every pin in `TREE_SITTER_WHEEL_PINS`
+(`app/packaging/tree_sitter_cp39.py`) as a `manylinux_2_17_x86_64` wheel for
+Python 3.9 and overlays the Linux binding onto the staged payload. The core
+file is `_binding.cpython-39-x86_64-linux-gnu.so`. Each grammar file is
+`_binding.abi3.so`. Wheels are cached under
+`CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so a later build can run offline.
+`require_linux_x86_64_elf` still rejects a binding that is not little-endian
+ELF64 x86-64.
+
+Staging reads each grammar binding's language ABI. A grammar outside the
+range supported by the pinned `tree-sitter` core fails the build.
+`tree_sitter_sql` is the explicit exception. Staging removes that package
+and records the reason, because its published ABI is newer than the pinned
+core. The editor still ignores an incompatible grammar at runtime.
+
+Product packaging does not read from repo `vendor/` or `vendor_py311/`.
+Only the cp39 artifacts tree is the packaging source.
 
 The product archive budget applies to Code Studio distribution only.
 It does **not** define the size budget for user-project packages.
