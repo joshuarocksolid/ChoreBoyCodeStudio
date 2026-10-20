@@ -40,6 +40,24 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
 
+## Editor tabs and groups
+
+Tabs are movable. A stale tab (changed on disk, user kept their version) shows an amber triangle; a missing tab shows a red x and a struck-through name. Tab data (`tabBar().tabData(i)`) carries `buffer_id`, `is_preview`, `is_stale`, `is_missing`.
+
+| Handle | What |
+|--------|------|
+| `#shell.editorTabPage` | One tab's page: info bar above the editor |
+| `#shell.editorInfoBar` | Stale / missing info bar (hidden when the buffer matches disk) |
+| `#shell.editorInfoBar.icon` | Info bar icon |
+| `#shell.editorInfoBar.message` | Info bar text |
+| `#shell.editorInfoBar.reloadBtn` | Reload from Disk (stale) |
+| `#shell.editorInfoBar.compareBtn` | Compare... (stale) |
+| `#shell.editorInfoBar.saveAsBtn` | Save As... (missing) |
+| `#shell.editorInfoBar.closeTabBtn` | Close Tab (missing) |
+| `#shell.missingFileDialog` | File Missing: Close Tab / Keep Editing / Save As... (default). Modal. |
+| `#shell.staleSaveDialog` | Save on a stale tab: Cancel / Compare... / Reload from Disk / Save My Version (default). Modal. |
+| `#shell.diskCompareDialog` | Side-by-side On Disk / Your Version diff. Modal. |
+
 ## Welcome
 
 | Handle | What |

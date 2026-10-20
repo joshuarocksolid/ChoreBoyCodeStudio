@@ -30,6 +30,7 @@ class ShellThemeSurfaceRefs:
     outline_panel: Any | None
     problems_panel: Any | None
     shell_style_setter: Callable[[str], None]
+    apply_editor_tab_chrome_theme: Callable[[ShellThemeTokens], None] | None = None
 
     @classmethod
     def from_main_window(cls, window: Any) -> ShellThemeSurfaceRefs:
@@ -46,7 +47,13 @@ class ShellThemeSurfaceRefs:
             outline_panel=window._outline_panel,
             problems_panel=window._problems_panel,
             shell_style_setter=window.setStyleSheet,
+            apply_editor_tab_chrome_theme=_tab_chrome_theme_applier(window),
         )
+
+
+def _tab_chrome_theme_applier(window: Any) -> Callable[[ShellThemeTokens], None] | None:
+    coordinator = getattr(window, "_editor_tabs_coordinator", None)
+    return None if coordinator is None else coordinator.apply_tab_chrome_theme
 
 
 def set_app_tooltip_style_sheet(style_sheet: str) -> None:
@@ -66,6 +73,8 @@ def apply_editor_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -
             deferred_widgets.append(editor_widget)
     for editor_widget in deferred_widgets:
         editor_widget.flush_pending_syntax_theme_refresh()
+    if refs.apply_editor_tab_chrome_theme is not None:
+        refs.apply_editor_tab_chrome_theme(tokens)
 
 
 def apply_markdown_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:

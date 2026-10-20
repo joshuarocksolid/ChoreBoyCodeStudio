@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import time
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from PySide2.QtWidgets import QMessageBox, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
+from app.shell.editor_tab_page import EditorTabPage
 
 
 class MainWindowEditorBindingsHost:
@@ -123,8 +124,8 @@ class EditorTabFactory:
             open_linked_file=lambda linked_path: self.open_file_in_editor(linked_path, preview=False),
         )
 
-        tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
-        window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
+        page = self.build_tab_page(tab_content, opened_result.tab.buffer_id)
+        tab_index = window._editor_tabs_widget.addTab(page, opened_result.tab.display_name)
         window._editor_tabs_coordinator.present_tab_at(tab_index, opened_result.tab)
         window._editor_tabs_widget.setCurrentIndex(tab_index)
         if restore_draft:
@@ -144,6 +145,28 @@ class EditorTabFactory:
                 (time.perf_counter() - started_at) * 1000.0,
             )
         return True
+
+
+    def build_tab_page(self, content: QWidget, buffer_id: str) -> EditorTabPage:
+        """Wrap tab content with the disk-conflict info bar and wire its buttons."""
+        window = self._window
+        page = EditorTabPage(content, buffer_id=buffer_id)
+        page.info_bar.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+        conflicts = window._external_file_change_workflow
+
+        def path() -> str | None:
+            return window._editor_tab_workflow.path_for_buffer_id(buffer_id)
+
+        def run(action: Callable[[str], object]) -> None:
+            file_path = path()
+            if file_path is not None:
+                action(file_path)
+
+        page.info_bar.reload_requested.connect(lambda: run(conflicts.reload_from_disk))
+        page.info_bar.compare_requested.connect(lambda: run(conflicts.compare_with_disk))
+        page.info_bar.save_as_requested.connect(lambda: run(conflicts.save_buffer_as))
+        page.info_bar.close_tab_requested.connect(lambda: run(window._editor_tab_workflow.close_tab_for_path))
+        return page
 
 
 __all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost"]

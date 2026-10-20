@@ -18,8 +18,7 @@ from app.shell.document_safety import (  # noqa: E402
     DocumentSafetyDecision,
     DocumentScope,
 )
-from app.shell.external_file_change_workflow import ExternalFileChangeOutcome  # noqa: E402
-from app.shell.save_workflow import MainWindowSaveDocumentHost, SaveWorkflow  # noqa: E402
+from app.shell.save_workflow import SaveWorkflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -288,17 +287,3 @@ def test_auto_save_skips_a_conflicted_buffer(tmp_path: Path) -> None:
     assert prompts == []
     assert file_path.read_text(encoding="utf-8") == "other\n"
     assert tab.current_content == "mine\n"
-
-
-def test_resolve_external_change_before_save_aborts_a_declined_reload() -> None:
-    calls: list[tuple[str, bool]] = []
-
-    def check_and_handle(file_path: str, force: bool = False) -> ExternalFileChangeOutcome:
-        calls.append((file_path, force))
-        return ExternalFileChangeOutcome.DECLINED
-
-    window = SimpleNamespace(_external_file_change_workflow=SimpleNamespace(check_and_handle=check_and_handle))
-    host = MainWindowSaveDocumentHost(window)
-
-    assert host.resolve_external_change_before_save("/tmp/a.py") == "abort"
-    assert calls == [("/tmp/a.py", True)]

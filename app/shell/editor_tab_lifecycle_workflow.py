@@ -12,6 +12,7 @@ from app.editors.editor_manager import EditorManager
 from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
+from app.shell.editor_tab_page import EditorTabPage
 
 
 class EditorTabLifecycleWorkflow:
@@ -56,7 +57,7 @@ class EditorTabLifecycleWorkflow:
         tab_index = self._editor_tabs_coordinator.tab_index_for_buffer_id(buffer_id)
         if tab_index < 0:
             return
-        editor_tabs_widget.removeTab(tab_index)
+        remove_tab_and_page(editor_tabs_widget, tab_index)
         widget = self._host.workspace_controller().pop_editor(buffer_id)
         if widget is not None:
             self.release_editor_widget(widget)
@@ -139,7 +140,7 @@ class EditorTabLifecycleWorkflow:
             if not self._save_workflow.apply_unsaved_changes_decision(decision):
                 return
 
-        editor_tabs_widget.removeTab(tab_index)
+        remove_tab_and_page(editor_tabs_widget, tab_index)
         if tab_state is not None:
             widget = self._host.workspace_controller().pop_editor(tab_state.buffer_id)
             if widget is not None:
@@ -161,6 +162,12 @@ class EditorTabLifecycleWorkflow:
             return
         self._editor_manager.close_file(file_path)
 
+    def close_tab_for_path(self, file_path: str) -> None:
+        """Close the buffer's tab in the focused group, asking about unsaved changes."""
+        tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
+        if tab_index >= 0:
+            self.handle_tab_close_requested(tab_index)
+
     def close_active_tab(self) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
@@ -177,7 +184,8 @@ class EditorTabLifecycleWorkflow:
                 widget = workspace_controller.pop_editor(buffer_id)
                 if widget is not None:
                     self.release_editor_widget(widget)
-            editor_tabs_widget.clear()
+            while editor_tabs_widget.count():
+                remove_tab_and_page(editor_tabs_widget, 0)
         self._host.local_history_stop_autosave_timer()
         self._host.stop_auto_save_to_file_timer()
         self._host.stop_realtime_lint_timer()
@@ -204,4 +212,13 @@ class EditorTabLifecycleWorkflow:
             status_controller.set_indent_status(style=None, size=None, source=None)
 
 
-__all__ = ["EditorTabLifecycleWorkflow"]
+def remove_tab_and_page(tabs: Any, tab_index: int) -> None:
+    """Remove a tab and delete its page; the editor inside is released separately."""
+    page = tabs.widget(tab_index)
+    tabs.removeTab(tab_index)
+    if isinstance(page, EditorTabPage):
+        page.hide()
+        page.deleteLater()
+
+
+__all__ = ["EditorTabLifecycleWorkflow", "remove_tab_and_page"]

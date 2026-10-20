@@ -18,6 +18,7 @@ from app.shell.document_safety import (  # noqa: E402
     DocumentSafetyDecision,
     DocumentScope,
 )
+from app.shell.disk_conflict_dialogs import StaleSaveChoice  # noqa: E402
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow, EditorWidgetPort  # noqa: E402
 from app.shell.editor_tabs_coordinator import tab_presentation_data  # noqa: E402
 from app.shell.external_file_change_workflow import (  # noqa: E402
@@ -673,3 +674,71 @@ def test_save_as_clears_missing_conflict(tmp_path: Path) -> None:
     assert workflow.check_and_handle(tab.file_path, force=True) is ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
     assert tab.disk_conflict is None
     assert external_host.saved_as == [(tab.file_path, destination)]
+
+
+@dataclass
+class _StaleSaveHost(_RecordingExternalHost):
+    stale_choices: list[StaleSaveChoice] = field(default_factory=list)
+    compares: list[tuple[str, str]] = field(default_factory=list)
+
+    def present_stale_save(self, file_path: str, *, disk_mtime: float | None, buffer_is_dirty: bool) -> StaleSaveChoice:
+        del file_path, disk_mtime, buffer_is_dirty
+        return self.stale_choices.pop(0)
+
+    def show_disk_compare(self, file_path: str, *, disk_text: str, buffer_text: str) -> None:
+        del file_path
+        self.compares.append((disk_text, buffer_text))
+
+
+def _stale_dirty_tab(tmp_path: Path, choices: list[StaleSaveChoice]):  # type: ignore[no-untyped-def]
+    file_path = tmp_path / "report.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _StaleSaveHost(stale_choices=list(choices))
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="disk v1\n",
+        mtime=1.0,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    manager.update_tab_content(tab.file_path, "mine\n")
+    file_path.write_text("disk v2\n", encoding="utf-8")
+    history = _RecordingLocalHistory()
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.CANCEL, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=history,
+    )
+    return workflow, tab, external_host, sync_host, history
+
+
+def test_stale_save_compare_then_save_my_version_writes_the_buffer(tmp_path: Path) -> None:
+    workflow, tab, host, _sync_host, _history = _stale_dirty_tab(
+        tmp_path, [StaleSaveChoice.COMPARE, StaleSaveChoice.SAVE_MY_VERSION]
+    )
+
+    assert workflow.resolve_before_save(tab.file_path) == "proceed"
+    assert host.compares == [("disk v2\n", "mine\n")]
+
+
+def test_stale_save_reload_from_disk_keeps_the_buffer_in_history(tmp_path: Path) -> None:
+    workflow, tab, _host, sync_host, history = _stale_dirty_tab(tmp_path, [StaleSaveChoice.RELOAD_FROM_DISK])
+
+    assert workflow.resolve_before_save(tab.file_path) == "already_synced"
+    assert sync_host.widgets[tab.file_path].text == "disk v2\n"
+    assert not tab.is_dirty and tab.disk_conflict is None
+    assert (tab.file_path, "mine\n", "external_reload_discarded_buffer") in [entry[:3] for entry in history.checkpoints]
+
+
+def test_stale_save_cancel_keeps_the_conflict_and_does_not_save(tmp_path: Path) -> None:
+    workflow, tab, _host, _sync_host, _history = _stale_dirty_tab(tmp_path, [StaleSaveChoice.CANCEL])
+
+    assert workflow.resolve_before_save(tab.file_path) == "abort"
+    assert tab.disk_conflict is not None and tab.disk_conflict.kind == DISK_CONFLICT_CHANGED
+    assert tab.current_content == "mine\n"

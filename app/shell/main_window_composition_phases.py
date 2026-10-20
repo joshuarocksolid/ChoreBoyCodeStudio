@@ -48,6 +48,7 @@ from app.shell.console_model import ConsoleModel
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow, MainWindowDebugInspectorHost
 from app.shell.editor_tab_factory import EditorTabFactory
+from app.shell.editor_tab_lifecycle_workflow import remove_tab_and_page
 from app.shell.editor_tab_workflow import build_editor_tab_workflow
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.events import ShellEventBus
@@ -399,7 +400,7 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         widget_for_path=window._workspace_controller.widget_for_path,
         pop_editor_for_path=window._workspace_controller.pop_editor_for_path,
         tab_index_for_path=window._editor_tab_workflow.tab_index_for_path,
-        remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
+        remove_tab_at_index=lambda tab_index: remove_tab_and_page(window._editor_tabs_widget, tab_index)
         if window._editor_tabs_widget is not None
         else None,
         release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
