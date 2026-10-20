@@ -51,7 +51,8 @@ if TYPE_CHECKING:
         _completion_popup: CompletionController
         _completion_debounce_timer: QTimer
         _debounced_completion_request: tuple[str, int, bool, str, str] | None
-        _active_file_path: str | None
+        @property
+        def _active_file_path(self) -> str | None: ...
 
         def indent_selection(self) -> None: ...
         def outdent_selection(self) -> None: ...

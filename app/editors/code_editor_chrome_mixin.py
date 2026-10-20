@@ -60,9 +60,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
 
     def _init_chrome_state(self) -> None:
         self._line_number_area = _LineNumberArea(self)
-        self._breakpoints: set[int] = set()
         self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
-        self._debug_execution_line: int | None = None
         self._debug_execution_color = QColor("#D97706")
         self._debug_execution_line_bg = QColor("#D0E2FF")
         self._gutter_bg = QColor("#F1F3F5")

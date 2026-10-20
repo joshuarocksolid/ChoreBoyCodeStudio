@@ -54,8 +54,6 @@ class CodeEditorWidget(
         self.setDocument(self._buffer.document)
         self._buffer.attach(self)
         self._logger = get_subsystem_logger("editors")
-        self._active_file_path: str | None = None
-        self._language_override_key: str | None = None
         self._highlighting_adaptive_mode = constants.HIGHLIGHTING_MODE_NORMAL
         self._highlighting_reduced_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
         self._highlighting_lexical_only_threshold_chars = (
@@ -66,7 +64,6 @@ class CodeEditorWidget(
         self._init_bracket_overlay_state()
         self._init_paste_hint_state()
         self._init_extra_selections_overlay_state()
-        self._highlighter: object | None = None
         self._syntax_theme_refresh_pending = False
         self._syntax_registry = default_syntax_highlighter_registry()
         self._syntax_palette: dict[str, str] = {}

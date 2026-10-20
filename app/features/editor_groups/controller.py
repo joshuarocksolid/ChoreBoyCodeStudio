@@ -263,7 +263,7 @@ class EditorGroupsController:
         groups = self.groups_showing(buffer_id)
         if not groups:
             return False
-        group = self._focused if self._focused in groups else groups[0]
+        group = self._focused if self._focused is not None and self._focused in groups else groups[0]
         self._set_focused(group)
         group.tabs.setCurrentIndex(group.index_of_buffer(buffer_id))
         return True
@@ -330,7 +330,7 @@ class EditorGroupsController:
         groups = self.groups_showing(tab.buffer_id)
         if not groups:
             return -1
-        group = self._focused if self._focused in groups else groups[0]
+        group = self._focused if self._focused is not None and self._focused in groups else groups[0]
         return group.index_of_buffer(tab.buffer_id)
 
     def remove_tabs_for_last_path(self, _tab_index: int) -> None:
@@ -501,7 +501,7 @@ class EditorGroupsController:
         self._ghost.move(local + QPoint(12, 8))
         target = self._group_at(global_pos)
         self._drag_new_group = False
-        if target is self._drag_source and len(self._groups) < MAX_EDITOR_GROUPS:
+        if target is not None and target is self._drag_source and len(self._groups) < MAX_EDITOR_GROUPS:
             group_local = target.mapFromGlobal(global_pos)
             self._drag_new_group = group_local.x() > target.width() * _NEW_GROUP_DROP_FRACTION
         self._drag_target = target if target is not self._drag_source or self._drag_new_group else None
