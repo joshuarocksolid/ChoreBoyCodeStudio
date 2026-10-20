@@ -20,7 +20,7 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
     return qapp
 
 
-def _split(text: str = "def f():\n    return 1\n") -> tuple[CodeEditorWidget, CodeEditorWidget]:
+def _split(text: str = "def f():\n    return 1\n" * 6) -> tuple[CodeEditorWidget, CodeEditorWidget]:
     first = CodeEditorWidget()
     first.setPlainText(text)
     first.set_language_for_path("/tmp/example.py")
@@ -35,6 +35,7 @@ def test_second_view_reuses_the_buffer_highlighter() -> None:
     highlighters = first.document().findChildren(QSyntaxHighlighter)
 
     assert second.document() is first.document()
+    assert second.viewportMargins().left() == first.viewportMargins().left()
     assert len(highlighters) <= 1
     assert second._highlighter is first._highlighter
     second.set_language_for_path("/tmp/example.py")

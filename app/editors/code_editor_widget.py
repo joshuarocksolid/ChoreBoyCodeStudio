@@ -182,6 +182,8 @@ class CodeEditorWidget(
         self.setDocument(self._buffer.document)
         self._buffer.attach(self)
         self._render_diagnostics(self._buffer.diagnostics)
+        # No blockCountChanged fires for a document that already has its text.
+        self._update_line_number_area_width(0)
         self._mark_overlay_cache_dirty()
         self._line_number_area.update()
         self._highlight_current_line()
