@@ -26,7 +26,7 @@ from app.run.launch_context import (
     build_run_manifest_path,
     plan_launch,
 )
-from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
+from app.run.process_supervisor import DetachResult, ProcessEvent, ProcessSupervisor
 from app.run.run_manifest import ReplControlConfig, RunManifest, save_run_manifest
 from app.run.runner_command_builder import build_runner_command
 from app.run.runtime_launch import resolve_runtime_executable
@@ -81,6 +81,7 @@ __all__ = [
     "build_repl_manifest_path",
     "build_run_log_path",
     "build_run_manifest_path",
+    "detached_output_path",
     "generate_run_id",
 ]
 
@@ -95,6 +96,7 @@ class RunSession:
     project_root: str
     entry_file: str
     mode: str
+    started_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -160,8 +162,9 @@ class RunService:
     ) -> RunSession:
         """Create run artifacts and launch a supervised runner process."""
         self._assert_idle()
+        started_at = self._now_factory()
         launch = plan_launch(
-            run_id=generate_run_id(now=self._now_factory()),
+            run_id=generate_run_id(now=started_at),
             loaded_project=loaded_project,
             entry_file=entry_file,
             mode=mode,
@@ -189,6 +192,7 @@ class RunService:
             project_root=launch.project_root,
             entry_file=launch.entry_file,
             mode=launch.mode,
+            started_at=started_at,
         )
         return self._current_session
 
@@ -215,6 +219,20 @@ class RunService:
     def stop_run(self) -> int | None:
         """Stop active run process if running."""
         return self._supervisor.stop()
+
+    def detach_run(self) -> DetachResult | None:
+        """Stop supervising the active run without signalling it (it keeps running).
+
+        Output printed after this point is appended to ``<run log>.after_close.log``.
+        """
+        session = self._current_session
+        output_path = None
+        if session is not None and session.log_file_path:
+            output_path = detached_output_path(session.log_file_path)
+        result = self._supervisor.detach(output_path=output_path)
+        self._current_session = None
+        self._close_debug_transport_server()
+        return result
 
     def pause_run(self) -> bool:
         """Interrupt active run process to enter paused/debug interaction."""
@@ -346,6 +364,12 @@ class RunService:
     def _assert_idle(self) -> None:
         if self._supervisor.is_running():
             raise RunLifecycleError("A run session is already active.")
+
+
+def detached_output_path(log_file_path: str) -> str:
+    """Return where a detached run's later output is appended."""
+    log_path = Path(log_file_path)
+    return str(log_path.with_name(log_path.stem + ".after_close.log"))
 
 
 def generate_run_id(*, now: datetime | None = None) -> str:
