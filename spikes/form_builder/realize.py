@@ -658,7 +658,9 @@ class Realization:
         if layout is None or layout_items(layout):
             return
         if get_property(node, "minimumSize") is None:
-            widget.setMinimumSize(max(widget.minimumWidth(), 48), max(widget.minimumHeight(), 36))
+            # Canvas only: an empty container stays big enough to drop into. Not saved.
+            tall = 84 if node.class_name in ("QGroupBox", "QTabWidget") else 60
+            widget.setMinimumSize(max(widget.minimumWidth(), 140), max(widget.minimumHeight(), tall))
             widget.setProperty("formDesignMin", True)
 
     def _design_min_reset(self, host: QWidget, layout: Layout) -> None:

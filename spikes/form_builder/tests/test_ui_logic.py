@@ -73,12 +73,12 @@ def _run_generated(doc, host_cls=QWidget):
     from spikes.form_builder.model import form_class_name
 
     code = generate_ui(doc, "form.ui")
-    folder = Path(tempfile.mkdtemp())
-    path = folder / "ui_form.py"
-    path.write_text(code, encoding="utf-8")
-    spec = importlib.util.spec_from_file_location("ui_form_" + str(abs(hash(code))), path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    with tempfile.TemporaryDirectory() as folder:
+        path = Path(folder) / "ui_form.py"
+        path.write_text(code, encoding="utf-8")
+        spec = importlib.util.spec_from_file_location("ui_form_" + str(abs(hash(code))), path)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
     host = host_cls()
     getattr(module, "Ui_" + _py_name(form_class_name(doc)))().setupUi(host)
     return host, code

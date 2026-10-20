@@ -78,6 +78,9 @@ class PerfBudgetTest(unittest.TestCase):
             window._write(str(target))
             saves.append((time.perf_counter() - started) * 1000)
 
+        import shutil
+
+        shutil.rmtree(folder, ignore_errors=True)
         numbers = {
             "widgets": widget_count,
             "open_ms": opens,

@@ -196,6 +196,36 @@ def main(only=()) -> None:
         grab(window, "layout-selected.png")
         surface.overlay.gap_hover = None
 
+    if want("inspector-behavior"):
+        window.load_document(demo_box_doc(), None)
+        settle(app)
+        window._select([find(window.doc, "saveButton").id])
+        window.inspector.show_tab("behavior")
+        settle(app)
+        grab(window, "inspector-behavior.png", crop=(SIZE[0] - 520, 0, 520, SIZE[1]))
+        window.inspector.show_tab("data")
+        settle(app)
+        grab(window, "inspector-data.png", crop=(SIZE[0] - 520, 0, 520, SIZE[1]))
+        window.inspector.show_tab("properties")
+
+    if want("empty-group"):
+        from spikes.form_builder.canvas import content_for
+        from spikes.form_builder.catalog import CATALOG
+        from spikes.form_builder.commands import insert_near
+
+        window.load_document(demo_box_doc(), None)
+        settle(app)
+        entry = next(item for item in CATALOG if item.class_name == "QGroupBox")
+        content = content_for(window.doc, entry)
+        window.history.execute(insert_near(window.doc, [find(window.doc, "receiptGroup").id], content))
+        window._select([content.id])
+        settle(app)
+        surface = window.canvas.primary
+        surface.rebuild_index()
+        surface.overlay.hover = find(window.doc, "shopName").id
+        grab(window, "empty-group.png")
+        surface.overlay.hover = None
+
     if want("drag-grid"):
         window.load_document(demo_grid_doc(), None)
         settle(app)

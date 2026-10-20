@@ -372,6 +372,10 @@ class Overlay(QWidget):
                 p.setFont(font)
                 p.setPen(qcolor(t.layout, 220))
                 p.drawText(fill, Qt.AlignCenter, "Drop widgets here")
+            if self.mode == "design":
+                for item in geo.items:
+                    if item.kind == "spacer":
+                        self._paint_spring(p, t, self.v(item.rect), strong or item.content_id in self.selection)
             if strong:
                 words = LAYOUT_WORDS.get(geo.cls, geo.cls)
                 if geo.cls == "QGridLayout" and geo.cells:
@@ -385,6 +389,32 @@ class Overlay(QWidget):
                     # Top-right: titles and labels sit top-left, so the chip stays out of their way.
                     chip(p, QPointF(rect.right() + 0.5, rect.top() + 1), words, t.layout, "#FFFFFF", align="right", glyph=geo.cls, pixel_size=10)
 
+    def _paint_spring(self, p, t, rect: QRectF, strong: bool):
+        """Spacers are drawn as springs, the way Designer users expect to find them."""
+        horizontal = rect.width() >= rect.height()
+        length = (rect.width() if horizontal else rect.height()) - 8
+        if length < 12:
+            return
+        p.save()
+        p.translate(rect.center())
+        if not horizontal:
+            p.rotate(90)
+        half = length / 2
+        pen = QPen(qcolor(t.gap, 220 if strong else 120), 1.25)
+        pen.setCapStyle(Qt.RoundCap)
+        p.setPen(pen)
+        p.setBrush(Qt.NoBrush)
+        p.drawLine(QPointF(-half, -4), QPointF(-half, 4))
+        p.drawLine(QPointF(half, -4), QPointF(half, 4))
+        path = QPainterPath(QPointF(-half, 0))
+        coils = max(3, min(int(length / 16), 40))
+        step = length / (coils * 2)
+        for index in range(coils * 2):
+            path.lineTo(QPointF(-half + step * (index + 0.5), -3 if index % 2 == 0 else 3))
+        path.lineTo(QPointF(half, 0))
+        p.drawPath(path)
+        p.restore()
+
     def _paint_details(self, p, t, index):
         """Margins and gaps of the selected container, so space is something you can see and drag."""
         if len(self.selection) != 1:
@@ -397,6 +427,8 @@ class Overlay(QWidget):
             self._paint_gap(p, t, gap)
 
     def _paint_margins(self, p, t, geo):
+        if not geo.items:
+            return
         outer = self.v(geo.rect)
         inner = self.v(geo.content)
         bands = [

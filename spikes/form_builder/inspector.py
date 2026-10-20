@@ -224,6 +224,10 @@ class Inspector(QWidget):
         self.path = path
 
     def show_selection(self, ids):
+        from PySide6.QtCore import QCoreApplication, QEvent
+
+        # Sizes in the why-sentence must be the ones after this edit's layout pass.
+        QCoreApplication.sendPostedEvents(None, QEvent.LayoutRequest)
         self.selection = [node_id for node_id in ids if self.doc is not None and find_node(self.doc, node_id) is not None]
         self._remember_focus()
         self._rebuild()
@@ -549,7 +553,8 @@ class Inspector(QWidget):
                 return self._flags_editor(node, prop_name, enum, value)
             combo = QComboBox()
             keys = [enum.key(i) for i in range(enum.keyCount())]
-            combo.addItems(keys)
+            for key in keys:
+                combo.addItem(_human(key), key)
             key = getattr(value, "name", None)
             if key is None:
                 try:
@@ -557,10 +562,13 @@ class Inspector(QWidget):
                 except (TypeError, ValueError):
                     key = None
             if key in keys:
-                combo.setCurrentText(key)
+                combo.setCurrentIndex(keys.index(key))
+            combo.setToolTip(f"{enum.scope()}::{key}" if key else "")
             scope = enum.scope() or widget.metaObject().className()
-            combo.currentTextChanged.connect(
-                lambda text, name=prop_name, scope=scope: self._execute(SetProperty(node.id, name, prop_enum(name, f"{scope}::{text}")))
+            combo.currentIndexChanged.connect(
+                lambda _index, name=prop_name, scope=scope, box=combo: self._execute(
+                    SetProperty(node.id, name, prop_enum(name, f"{scope}::{box.currentData()}"))
+                )
             )
             return combo
         kind = current_prop.body.tag if current_prop is not None else None
@@ -623,12 +631,12 @@ class Inspector(QWidget):
         keys = [enum.key(i) for i in range(enum.keyCount())]
         values = {key: enum.value(i) for i, key in enumerate(keys)}
         chosen = [key for key in keys if values[key] and (number & values[key]) == values[key] and bin(values[key]).count("1") == 1]
-        button.setText(", ".join(_short(key) for key in chosen) or "None")
+        button.setText(", ".join(_human(_short(key)) for key in chosen) or "None")
         menu = QMenu(button)
         for key in keys:
             if bin(values[key]).count("1") != 1:
                 continue
-            action = menu.addAction(_short(key))
+            action = menu.addAction(_human(_short(key)))
             action.setCheckable(True)
             action.setChecked(key in chosen)
             action.toggled.connect(lambda checked, k=key: self._toggle_flag(node, prop_name, scope, chosen, k, checked))
@@ -840,6 +848,9 @@ class Inspector(QWidget):
             facts["h_mode"] = "fill"
         if v_mode == "auto" and policy.verticalPolicy().name in sizing.FILL:
             facts["v_mode"] = "fill"
+        if widget.property("formDesignMin"):
+            facts["min_w"] = facts["min_h"] = 0
+            return sizing.why_sentence(facts) + " The canvas keeps empty containers big enough to drop into; that minimum is not saved."
         return sizing.why_sentence(facts)
 
     # ------------------------------------------------------------------ layout
@@ -925,13 +936,16 @@ class Inspector(QWidget):
         else:
             editor = QComboBox()
             keys = [enum.key(i) for i in range(enum.keyCount())]
-            editor.addItems(keys)
+            for key in keys:
+                editor.addItem(_human(key), key)
             value = qlayout.property(prop_name)
             key = getattr(value, "name", None)
             if key in keys:
-                editor.setCurrentText(key)
+                editor.setCurrentIndex(keys.index(key))
             scope = enum.scope()
-            editor.currentTextChanged.connect(lambda text: self._execute(SetProperty(layout.id, prop_name, prop_enum(prop_name, f"{scope}::{text}"))))
+            editor.currentIndexChanged.connect(
+                lambda _index: self._execute(SetProperty(layout.id, prop_name, prop_enum(prop_name, f"{scope}::{editor.currentData()}")))
+            )
         reset = lambda _checked=False: self._execute(SetProperty(layout.id, prop_name, None))  # noqa: E731
         words = {"fieldGrowthPolicy": "Fields grow", "labelAlignment": "Labels"}
         self._row(grid, words[prop_name], editor, current_prop is not None, reset)
@@ -1379,6 +1393,26 @@ def _node_name(node) -> str:
     if isinstance(node, (Widget, Layout)):
         return node.object_name
     return getattr(node, "name", "")
+
+
+def _human(key: str) -> str:
+    """AllNonFixedFieldsGrow -> All non fixed fields grow. The raw key stays in the data."""
+    special = {"VCenter": "Vertical centre", "HCenter": "Horizontal centre", "Ok": "OK"}
+    if key in special:
+        return special[key]
+    words = []
+    current_word = ""
+    for index, char in enumerate(key):
+        upper_run = index + 1 < len(key) and key[index + 1].isupper()
+        if char.isupper() and current_word and not (current_word[-1].isupper() and upper_run):
+            words.append(current_word)
+            current_word = char
+        else:
+            current_word += char
+    if current_word:
+        words.append(current_word)
+    text = " ".join(word if word.isupper() and len(word) > 1 else word.lower() for word in words)
+    return text[:1].upper() + text[1:]
 
 
 def _short(key: str) -> str:
