@@ -324,6 +324,9 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.settingsDialog.appearanceGroup`
 - `#shell.settingsDialog.buttonBox`
 - `#shell.settingsDialog.cancelBtn`
+- `#shell.settingsDialog.completionMode`
+- `#shell.settingsDialog.completionModeEffective`
+- `#shell.settingsDialog.completionModeHelp`
 - `#shell.settingsDialog.editorGroup`
 - `#shell.settingsDialog.editorResetGlobal`
 - `#shell.settingsDialog.fileExcludeInput`
