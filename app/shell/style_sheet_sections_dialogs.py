@@ -409,6 +409,46 @@ QPushButton#shell\\.runtimeCenterDialog\\.closeButton:hover {{
 QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
     background: {tokens.accent_pressed};
 }}
+QPushButton#shell\\.runtimeCenterDialog\\.copyDetails,
+QPushButton#shell\\.runtimeCenterDialog\\.goToFile {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 5px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.copyDetails:hover,
+QPushButton#shell\\.runtimeCenterDialog\\.goToFile:hover {{
+    background: {tokens.tree_hover_bg};
+    border-color: {tokens.accent};
+}}
+QPushButton#shell\\.runtimeCenterDialog\\.goToFile:disabled {{
+    color: {tokens.text_muted};
+}}
+QDialog#shell\\.runtimeCenterDialog[presentation="packaging"] QPushButton#shell\\.runtimeCenterDialog\\.helpButton {{
+    background: transparent;
+    color: {tokens.accent};
+    border: none;
+    padding: 6px 4px;
+    font-size: 12px;
+    font-weight: 600;
+}}
+QDialog#shell\\.runtimeCenterDialog[presentation="packaging"] QPushButton#shell\\.runtimeCenterDialog\\.helpButton:hover {{
+    color: {tokens.accent_hover or tokens.accent};
+    text-decoration: underline;
+}}
+QDialog#shell\\.runtimeCenterDialog[presentation="packaging"] QPushButton#shell\\.runtimeCenterDialog\\.helpButton:disabled {{
+    color: {tokens.text_muted};
+}}
+QLabel#shell\\.runtimeCenterDialog\\.appRunNote {{
+    color: {tokens.text_muted};
+    font-size: 12px;
+}}
+QLabel#shell\\.runtimeCenterDialog\\.titleIcon {{
+    background: transparent;
+}}
 """
 
 

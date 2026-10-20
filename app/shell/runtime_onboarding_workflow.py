@@ -327,6 +327,7 @@ class RuntimeOnboardingWorkflow:
         *,
         title: str = "Runtime Center",
         report: RuntimeIssueReport | None = None,
+        package_location: str = "",
     ) -> None:
         presentation = "packaging" if title.startswith("Packaging") else "runtime"
         dialog = RuntimeCenterDialog(
@@ -336,6 +337,7 @@ class RuntimeOnboardingWorkflow:
             open_help_topic=self._host.open_runtime_help_topic,
             open_location=self._open_packaging_location if presentation == "packaging" else None,
             presentation=presentation,
+            package_location=package_location,
             parent=self._host.dialog_parent(),
         )
         dialog.exec_()
