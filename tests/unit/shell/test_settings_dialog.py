@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QFont, QKeySequence
-from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QLabel, QPushButton
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QFont, QKeySequence
+from app.qt.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QLabel, QPushButton
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT

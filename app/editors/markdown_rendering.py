@@ -37,7 +37,7 @@ def is_markdown_path(file_path: str) -> bool:
 def qt_markdown_supported() -> bool:
     """Return whether the current PySide2 runtime exposes Qt Markdown APIs."""
     try:
-        from PySide2.QtWidgets import QTextBrowser
+        from app.qt.QtWidgets import QTextBrowser
     except ImportError:
         return False
     return hasattr(QTextBrowser, "setMarkdown")
@@ -46,7 +46,7 @@ def qt_markdown_supported() -> bool:
 def safe_markdown_features() -> Any | None:
     """Return Qt Markdown features that disable raw HTML when available."""
     try:
-        from PySide2.QtGui import QTextDocument
+        from app.qt.QtGui import QTextDocument
     except ImportError:
         return None
     dialect = getattr(QTextDocument, "MarkdownDialectGitHub", None)

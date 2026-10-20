@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import time
 
-from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox
+from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox
 
 from app.shell.semantic_navigation_host import SemanticNavigationHost
 

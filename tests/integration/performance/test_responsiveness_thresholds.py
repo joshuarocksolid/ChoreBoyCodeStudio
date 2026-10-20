@@ -8,9 +8,9 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from app.qt.QtWidgets import QApplication
 
 from app.editors.editor_manager import EditorManager
 from app.editors.search_panel import find_in_files
@@ -37,8 +37,8 @@ def _write_project_manifest(project_root: Path, name: str) -> None:
 
 def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch) -> QApplication:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    import PySide2.QtGui as qt_gui
-    import PySide2.QtWidgets as qt_widgets
+    from app.qt import QtGui as qt_gui
+    from app.qt import QtWidgets as qt_widgets
 
     if not hasattr(qt_widgets, "QActionGroup"):
         qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]

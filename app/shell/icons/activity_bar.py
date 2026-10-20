@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import QPointF, QRectF, Qt
-from PySide2.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
+from app.qt.QtCore import QPointF, QRectF, Qt
+from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
 
 def _make_pixmap(

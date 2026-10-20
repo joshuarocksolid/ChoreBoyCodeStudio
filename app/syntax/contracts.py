@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from PySide2.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
+from app.qt.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 
 from app.syntax.palette import SyntaxPalette, build_syntax_palette
 

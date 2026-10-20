@@ -37,7 +37,9 @@ def _start_editor() -> int:
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
     window.showMaximized()
-    exit_code = application.exec_()
+    from app.qt.qt_compat import exec_qt
+
+    exit_code = exec_qt(application)
 
     del window
     _clear_qt_module_caches()

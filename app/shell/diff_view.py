@@ -25,14 +25,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import (
+from app.qt.QtCore import Qt
+from app.qt.QtGui import (
     QColor,
     QFontDatabase,
     QSyntaxHighlighter,
     QTextCharFormat,
 )
-from PySide2.QtWidgets import (
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,

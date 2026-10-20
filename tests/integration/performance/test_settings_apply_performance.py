@@ -6,7 +6,7 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings  # noqa: E402

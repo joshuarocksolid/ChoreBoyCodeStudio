@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Iterator, Protocol, cast
 
-from PySide2.QtGui import QTextDocument
+from app.qt.QtGui import QTextDocument
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.treesitter.capture_pipeline import _CaptureSpan

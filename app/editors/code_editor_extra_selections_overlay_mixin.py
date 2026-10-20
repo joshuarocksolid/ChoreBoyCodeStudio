@@ -6,9 +6,9 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtCore import QPoint
-from PySide2.QtGui import QColor, QTextFormat
-from PySide2.QtWidgets import QTextEdit
+from app.qt.QtCore import QPoint
+from app.qt.QtGui import QColor, QTextFormat
+from app.qt.QtWidgets import QTextEdit
 
 from app.core import constants
 from app.editors.editor_overlay_policy import (
@@ -24,7 +24,7 @@ VIEWPORT_CHAR_MARGIN = 8000
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorExtraSelectionsOverlayBase(QPlainTextEdit):
         _line_highlight: QColor

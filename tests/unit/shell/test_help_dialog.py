@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 from app.ui.help.help_dialog import HelpDialog, markdown_to_html  # noqa: E402

@@ -4,8 +4,8 @@ from __future__ import annotations
 from html import escape
 from typing import Callable
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,

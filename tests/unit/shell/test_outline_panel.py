@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QRect  # noqa: E402
-from PySide2.QtGui import QPainter, QPixmap  # noqa: E402
+from app.qt.QtCore import QRect  # noqa: E402
+from app.qt.QtGui import QPainter, QPixmap  # noqa: E402
 
 from app.intelligence.outline_service import OutlineSymbol  # noqa: E402
 from app.shell.outline import (  # noqa: E402
@@ -435,7 +435,7 @@ def test_hide_requested_emitted_from_more_menu(_ensure_qapp) -> None:  # type: i
 
 
 def test_apply_theme_tokens_refreshes_icons_without_rebuilding_tree(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-    from PySide2.QtGui import QPalette  # noqa: WPS433
+    from app.qt.QtGui import QPalette  # noqa: WPS433
 
     from app.shell.theme_tokens import tokens_from_palette  # noqa: WPS433
 

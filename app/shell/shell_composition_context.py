@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Mapping, Optional, Protocol
 
-from PySide2.QtCore import QTimer
+from app.qt.QtCore import QTimer
 
 from app.core.models import CapabilityProbeReport, RuntimeIssueReport
 from app.persistence.autosave_store import AutosaveStore

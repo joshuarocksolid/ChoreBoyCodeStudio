@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt  # noqa: E402
-from PySide2.QtWidgets import QApplication, QTreeWidget  # noqa: E402
+from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtWidgets import QApplication, QTreeWidget  # noqa: E402
 
 from app.debug.debug_breakpoints import build_breakpoint  # noqa: E402
 from app.debug.debug_models import (  # noqa: E402

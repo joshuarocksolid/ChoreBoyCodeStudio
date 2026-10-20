@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.intelligence.outline_service import OutlineSymbol
 from app.shell.editor_tab_outline_workflow import EditorTabOutlineWorkflow

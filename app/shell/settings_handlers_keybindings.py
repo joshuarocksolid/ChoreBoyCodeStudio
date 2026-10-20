@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import QMessageBox, QKeySequenceEdit, QPushButton, QTableWidgetItem
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QKeySequence
+from app.qt.QtWidgets import QMessageBox, QKeySequenceEdit, QPushButton, QTableWidgetItem
 
 from app.shell.settings_models import EditorSettingsSnapshot
 from app.shell.shortcut_preferences import (

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QHBoxLayout, QPushButton, QStyle, QWidget
+from app.qt.QtCore import Signal
+from app.qt.QtWidgets import QHBoxLayout, QPushButton, QStyle, QWidget
 
 
 class SegmentedControl(QWidget):

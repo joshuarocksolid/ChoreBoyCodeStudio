@@ -15,8 +15,8 @@ Layout per row::
 
 from __future__ import annotations
 
-from PySide2.QtCore import QModelIndex, QPointF, QRect, QRectF, QSize, Qt
-from PySide2.QtGui import (
+from app.qt.QtCore import QModelIndex, QPointF, QRect, QRectF, QSize, Qt
+from app.qt.QtGui import (
     QBrush,
     QColor,
     QFont,
@@ -29,7 +29,7 @@ from PySide2.QtGui import (
     QTextDocument,
     QTextOption,
 )
-from PySide2.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
+from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from app.editors.completion_popup.completion_item_model import (
     ItemRole,

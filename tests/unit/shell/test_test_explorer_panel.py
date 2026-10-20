@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from app.qt.QtWidgets import QApplication
 
 from app.pytest.discovery_service import DiscoveredTestNode, DiscoveryResult
 from app.pytest.outcome_types import TestOutcome
@@ -68,7 +68,7 @@ def test_all_kind_builders_exist() -> None:
 
 class TestOutcomeIconCache:
     def test_outcome_icon_returns_qicon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from PySide2.QtGui import QIcon
+        from app.qt.QtGui import QIcon
         from app.shell.test_explorer_icons import _OUTCOME_ICON_CACHE, outcome_icon
         _OUTCOME_ICON_CACHE.clear()
         icon = outcome_icon("passed", "#3FB950")
@@ -99,7 +99,7 @@ class TestOutcomeIconCache:
 
 class TestKindIconCache:
     def test_kind_icon_returns_qicon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from PySide2.QtGui import QIcon
+        from app.qt.QtGui import QIcon
         from app.shell.test_explorer_icons import _KIND_ICON_CACHE, kind_icon
         _KIND_ICON_CACHE.clear()
         icon = kind_icon("file", "#5B8CFF")
@@ -117,7 +117,7 @@ class TestKindIconCache:
 
 class TestActionIconCache:
     def test_action_icon_returns_qicon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from PySide2.QtGui import QIcon
+        from app.qt.QtGui import QIcon
         from app.shell.test_explorer_icons import _ACTION_ICON_CACHE, action_icon
         _ACTION_ICON_CACHE.clear()
         icon = action_icon("play", "#CED4DA")

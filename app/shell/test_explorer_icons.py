@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide2.QtCore import QPoint, Qt
-from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygon
+from app.qt.QtCore import QPoint, Qt
+from app.qt.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap, QPolygon
 
 from app.pytest.outcome_types import TestOutcome
 

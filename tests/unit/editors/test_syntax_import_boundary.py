@@ -23,7 +23,7 @@ def test_treesitter_highlighter_core_does_not_import_editor_modules() -> None:
 
 
 def test_syntax_palette_from_tokens_round_trips_theme_fields() -> None:
-    from PySide2.QtGui import QPalette
+    from app.qt.QtGui import QPalette
 
     from app.syntax.palette import SYNTAX_PALETTE_FIELD_MAP, syntax_palette_from_tokens
     from app.shell.theme_tokens import tokens_from_palette

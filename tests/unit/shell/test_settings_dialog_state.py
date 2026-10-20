@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from app.qt.QtWidgets import QApplication
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_dialog_state import GeneralTabState

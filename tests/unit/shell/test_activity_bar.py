@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.activity_bar import ActivityBar
 
@@ -73,7 +73,7 @@ class TestActivityBar:
         assert bar.active_view() == "search"
 
     def test_add_view_with_icon_sets_icon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from PySide2.QtGui import QIcon, QPixmap
+        from app.qt.QtGui import QIcon, QPixmap
 
         bar = ActivityBar()
         icon = QIcon(QPixmap(20, 20))
@@ -90,7 +90,7 @@ class TestActivityBar:
         assert btn.text() == "E"
 
     def test_set_view_icon_updates_existing_button_icon(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from PySide2.QtGui import QIcon, QPixmap
+        from app.qt.QtGui import QIcon, QPixmap
 
         bar = ActivityBar()
         bar.add_view("explorer", "E", "Explorer")
@@ -101,7 +101,7 @@ class TestActivityBar:
         assert not bar._buttons["explorer"].icon().isNull()
 
     def test_set_view_icon_ignores_missing_view_id(self, _ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-        from PySide2.QtGui import QIcon, QPixmap
+        from app.qt.QtGui import QIcon, QPixmap
 
         bar = ActivityBar()
         bar.add_view("explorer", "E", "Explorer")

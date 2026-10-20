@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QApplication
+from app.qt.QtGui import QColor
+from app.qt.QtWidgets import QApplication
 
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.menu_icons import apply_menu_icons

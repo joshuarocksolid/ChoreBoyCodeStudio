@@ -5,8 +5,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -17,6 +17,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.ui.theme_tokens import HelpThemeTokens
+from app.qt.qt_compat import exec_qt
 
 
 def markdown_to_html(text: str, tokens: HelpThemeTokens) -> str:
@@ -211,7 +212,7 @@ def show_help_file(
     parent: QWidget | None = None,
 ) -> None:
     """Load a markdown help file and show it in a themed dialog."""
-    from PySide2.QtWidgets import QMessageBox
+    from app.qt.QtWidgets import QMessageBox
 
     help_path = Path(__file__).resolve().parent / file_name
     if not help_path.exists():
@@ -219,7 +220,7 @@ def show_help_file(
         return
     text = help_path.read_text(encoding="utf-8")
     dlg = HelpDialog(title, text, tokens, parent=parent)
-    dlg.exec_()
+    exec_qt(dlg)
 
 
 def show_help_markdown(
@@ -230,4 +231,4 @@ def show_help_markdown(
 ) -> None:
     """Show inline markdown content in the themed help dialog."""
     dlg = HelpDialog(title, markdown_text, tokens, parent=parent)
-    dlg.exec_()
+    exec_qt(dlg)

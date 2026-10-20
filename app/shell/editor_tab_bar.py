@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide2.QtCore import QEvent, Qt
-from PySide2.QtGui import QFont, QFontMetrics, QMouseEvent
-from PySide2.QtWidgets import QStyle, QStyleOptionTab, QStylePainter, QTabBar, QWidget
+from app.qt.QtCore import QEvent, Qt
+from app.qt.QtGui import QFont, QFontMetrics, QMouseEvent
+from app.qt.QtWidgets import QStyle, QStyleOptionTab, QStylePainter, QTabBar, QWidget
 
 
 class MiddleClickTabBar(QTabBar):

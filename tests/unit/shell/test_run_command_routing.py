@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata

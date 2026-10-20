@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QUrl, Qt, Signal
-from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
+from app.qt.QtCore import QUrl, Qt, Signal
+from app.qt.QtGui import QKeySequence
+from app.qt.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
 
 
 class ProjectTreeWidget(QTreeWidget):

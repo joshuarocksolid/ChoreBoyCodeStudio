@@ -5,9 +5,9 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import QUrl
-from PySide2.QtGui import QDesktopServices
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtCore import QUrl
+from app.qt.QtGui import QDesktopServices
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.bootstrap.paths import global_app_log_path, global_logs_dir
 from app.core import constants

@@ -17,7 +17,7 @@ from app.shell.python_tooling_status_copy import format_python_tooling_status_co
 from app.support.runtime_explainer import build_startup_issue_report
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QLabel, QMainWindow, QStatusBar
+    from app.qt.QtWidgets import QLabel, QMainWindow, QStatusBar
 
 
 class _EmittableSignal(Protocol):
@@ -353,8 +353,8 @@ def create_shell_status_bar(
     on_startup_activated: object | None = None,
 ) -> ShellStatusBarController:
     """Create and attach a status bar shell to the given window."""
-    from PySide2 import QtCore, QtGui
-    from PySide2.QtWidgets import QLabel, QStatusBar
+    from app.qt import QtCore, QtGui
+    from app.qt.QtWidgets import QLabel, QStatusBar
 
     class _ClickableLabel(QLabel):
         clicked = QtCore.Signal()

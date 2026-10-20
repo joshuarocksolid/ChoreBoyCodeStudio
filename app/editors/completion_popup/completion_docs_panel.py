@@ -6,9 +6,9 @@ footer, and an optional side-effect-risk pill for the highlighted item.
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QFont, QFontDatabase
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QFont, QFontDatabase
+from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,

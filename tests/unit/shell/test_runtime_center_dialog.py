@@ -3,9 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QTextBrowser
+from app.qt.QtWidgets import QApplication, QTextBrowser
 
 from app.core.models import RuntimeIssue, RuntimeIssueReport
 from app.shell.runtime_center_dialog import RuntimeCenterDialog

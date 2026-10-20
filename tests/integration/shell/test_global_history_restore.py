@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QDialog
+from app.qt.QtWidgets import QDialog
 
 from app.project.project_service import create_blank_project
 from app.shell.history_restore_picker import HISTORY_RESTORE_ACTION_RESTORE_LATEST

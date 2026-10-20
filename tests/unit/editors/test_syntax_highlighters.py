@@ -8,10 +8,10 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QTextCharFormat, QTextCursor, QTextDocument  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtGui import QTextCharFormat, QTextCursor, QTextDocument  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.syntax_engine import DEFAULT_DARK_PALETTE, DEFAULT_LIGHT_PALETTE  # noqa: E402
 from app.editors.syntax_registry import default_syntax_highlighter_registry  # noqa: E402

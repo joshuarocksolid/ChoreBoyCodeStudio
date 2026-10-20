@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import QPoint, Qt
-from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPolygon
+from app.qt.QtCore import QPoint, Qt
+from app.qt.QtGui import QColor, QFont, QIcon, QPainter, QPolygon
 
 from app.shell.icons.render import render_painted_icon
 from app.shell.theme_tokens import ShellThemeTokens

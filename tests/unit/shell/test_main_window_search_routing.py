@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.project_tree_ui_workflow import ProjectTreeUiWorkflow
 

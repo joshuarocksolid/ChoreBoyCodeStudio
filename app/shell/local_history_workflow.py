@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Protocol, Sequence
 
-from PySide2.QtWidgets import QDialog, QMessageBox, QWidget
+from app.qt.QtWidgets import QDialog, QMessageBox, QWidget
 
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -44,6 +44,7 @@ from app.shell.recovery_center_dialog import (
     RecoveryCenterDialog,
     RecoveryCenterEntry,
 )
+from app.qt.qt_compat import exec_qt
 
 
 class LocalHistoryEditorHost(Protocol):
@@ -476,7 +477,7 @@ class LocalHistoryWorkflow:
             tokens=self._resolve_parent_tokens(),
             parent=self._host.parent_widget(),
         )
-        dialog.exec_()
+        exec_qt(dialog)
 
     def open_global_history(self) -> None:
         if self._background_tasks is None:
@@ -715,7 +716,7 @@ class LocalHistoryWorkflow:
             draft_saved_at=draft_entry.saved_at,
             parent=self._host.parent_widget(),
         )
-        response = dialog.exec_()
+        response = exec_qt(dialog)
         if response == QDialog.Accepted:
             if restore_closed_file or editor_widget is None:
                 self.restore_local_history_content_to_buffer(draft_entry.file_path, draft_entry.content)

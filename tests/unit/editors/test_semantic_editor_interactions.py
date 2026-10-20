@@ -5,11 +5,11 @@ from unittest.mock import patch
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QEvent, Qt  # noqa: E402
-from PySide2.QtGui import QHelpEvent, QKeyEvent  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtCore import QEvent, Qt  # noqa: E402
+from app.qt.QtGui import QHelpEvent, QKeyEvent  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.intelligence.completion_models import CompletionItem, CompletionKind  # noqa: E402

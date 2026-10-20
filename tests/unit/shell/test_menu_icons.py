@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtGui as qt_gui
-import PySide2.QtWidgets as qt_widgets
-from PySide2.QtWidgets import QMainWindow
+from app.qt import QtGui as qt_gui
+from app.qt import QtWidgets as qt_widgets
+from app.qt.QtWidgets import QMainWindow
 
 from app.shell.menu_icons import all_static_menu_icon_action_ids, apply_menu_icons, build_menu_icon
 from app.shell.menus import MenuCallbacks, build_menu_stubs

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, Signal
+from app.qt.QtWidgets import (
     QAction,
     QMenu,
     QSplitter,
@@ -42,6 +42,7 @@ from app.shell.debug_panel.debug_panel_trees import (
     build_watch_section,
     make_section,
 )
+from app.qt.qt_compat import exec_qt
 
 
 class DebugPanelWidget(QWidget):
@@ -382,7 +383,7 @@ class DebugPanelWidget(QWidget):
         )
         menu.addAction(edit_action)
         menu.addAction(remove_action)
-        menu.exec_(self._bp_tree.viewport().mapToGlobal(pos))
+        exec_qt(menu, self._bp_tree.viewport().mapToGlobal(pos))
 
     def _remove_breakpoint(self, file_path: str | None, line_number: int | None) -> None:
         if file_path and line_number is not None:
@@ -437,7 +438,7 @@ class DebugPanelWidget(QWidget):
         remove_all_action.triggered.connect(self._clear_all_watches)
         menu.addAction(remove_all_action)
 
-        menu.exec_(self._watch_tree.viewport().mapToGlobal(pos))
+        exec_qt(menu, self._watch_tree.viewport().mapToGlobal(pos))
 
     def _remove_watch_item(self, item: QTreeWidgetItem) -> None:
         idx = self._watch_tree.indexOfTopLevelItem(item)

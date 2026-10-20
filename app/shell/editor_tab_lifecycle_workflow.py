@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QPoint
-from PySide2.QtWidgets import QMenu
+from app.qt.QtCore import QPoint
+from app.qt.QtWidgets import QMenu
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
+from app.qt.qt_compat import exec_qt
 
 
 class EditorTabLifecycleWorkflow:
@@ -104,7 +105,7 @@ class EditorTabLifecycleWorkflow:
         local_history_action = menu.addAction("Local History...")
         menu.addSeparator()
         close_action = menu.addAction("Close")
-        chosen = menu.exec_(tab_bar.mapToGlobal(position))
+        chosen = exec_qt(menu, tab_bar.mapToGlobal(position))
         if self._markdown_workflow.handle_context_menu_choice(
             markdown_pane=markdown_pane,
             chosen=chosen,

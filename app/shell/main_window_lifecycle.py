@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtGui import QCloseEvent
+from app.qt.QtGui import QCloseEvent
 
 from app.shell.document_safety import DocumentScope
 from app.shell.python_console_history import save_python_console_history

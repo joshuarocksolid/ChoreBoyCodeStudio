@@ -5,8 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QButtonGroup,
     QDialog,
     QHBoxLayout,

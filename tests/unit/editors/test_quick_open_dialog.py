@@ -6,9 +6,9 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.quick_open import QuickOpenCandidate, rank_candidates as real_rank_candidates
 from app.editors.quick_open_dialog import QuickOpenDialog

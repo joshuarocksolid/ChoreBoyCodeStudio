@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QPoint, Qt, QTimer, Signal
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QPoint, Qt, QTimer, Signal
+from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QPushButton,

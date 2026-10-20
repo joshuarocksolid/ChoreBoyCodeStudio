@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QDialog  # noqa: E402
+from app.qt.QtWidgets import QDialog  # noqa: E402
 
 from app.persistence.history_models import LocalHistoryCheckpoint  # noqa: E402
 from app.shell.local_history_dialog import LocalHistoryDialog  # noqa: E402

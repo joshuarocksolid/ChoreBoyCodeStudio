@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtGui import (
+from app.qt.QtGui import (
     QColor,
     QFont,
     QTextCharFormat,

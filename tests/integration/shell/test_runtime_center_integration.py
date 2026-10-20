@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QLabel
+from app.qt.QtWidgets import QLabel
 
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.main_window import MainWindow

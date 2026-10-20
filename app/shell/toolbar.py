@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, List
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QSizePolicy,

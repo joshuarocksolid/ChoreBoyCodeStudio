@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Optional, TypeVar
 
-from PySide2.QtCore import QEvent
-from PySide2.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QIcon
-from PySide2.QtWidgets import QInputDialog, QMainWindow, QMessageBox
+from app.qt.QtCore import QEvent
+from app.qt.QtGui import QCloseEvent, QDragEnterEvent, QDropEvent, QIcon
+from app.qt.QtWidgets import QInputDialog, QMainWindow, QMessageBox
 
 from app.core import constants
 from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssueReport
@@ -33,7 +33,7 @@ from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_icons import icon_run
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QLabel, QStackedWidget, QTabWidget, QToolButton, QWidget
+    from app.qt.QtWidgets import QLabel, QStackedWidget, QTabWidget, QToolButton, QWidget
 
     from app.editors.quick_open_dialog import QuickOpenDialog
     from app.project.project_tree_widget import ProjectTreeWidget

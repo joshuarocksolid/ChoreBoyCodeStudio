@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from PySide2.QtCore import QAbstractListModel, QModelIndex, Qt
+from app.qt.QtCore import QAbstractListModel, QModelIndex, Qt
 
 from app.editors.completion_popup.completion_kind_style import (
     KindGlyphStyle,

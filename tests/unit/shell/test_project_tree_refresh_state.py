@@ -8,9 +8,9 @@ from typing import Any, cast
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
+from app.qt.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata  # noqa: E402
 from app.shell.editor_tab_workflow import EditorTabWorkflow

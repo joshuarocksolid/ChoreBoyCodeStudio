@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result

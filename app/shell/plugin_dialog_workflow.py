@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Protocol, cast
 
-from PySide2.QtWidgets import QDialog, QMessageBox
+from app.qt.QtWidgets import QDialog, QMessageBox
 
 from app.core import constants
 from app.plugins.registry_store import (
@@ -14,6 +14,7 @@ from app.plugins.registry_store import (
 from app.shell.dependency_panel import DependencyInspectorDialog
 from app.shell.dependency_wizard_dialog import AddDependencyWizardDialog
 from app.shell.plugins_panel import PluginManagerDialog
+from app.qt.qt_compat import exec_qt
 
 
 class _ConnectableSignal(Protocol):
@@ -120,7 +121,7 @@ class PluginDialogWorkflow:
             QMessageBox.warning(parent, "Add Dependency", "Open a project first.")
             return
         dialog = AddDependencyWizardDialog(project_root=project_root, parent=parent)
-        if dialog.exec_() != QDialog.Accepted:
+        if exec_qt(dialog) != QDialog.Accepted:
             return
         result = dialog.last_result
         if result is None:

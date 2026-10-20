@@ -6,9 +6,9 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QFileDialog
+from app.qt.QtWidgets import QFileDialog
 
 from app.shell import file_dialogs
 
