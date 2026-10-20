@@ -298,6 +298,7 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.runWithArgumentsDialog.prefill`
 - `#shell.runWithArgumentsDialog.wdHelper`
 - `#shell.runWithArgumentsDialog.workingDir`
+- `#shell.runtimeCenterDialog.appRunNote`
 - `#shell.runtimeCenterDialog.closeButton`
 - `#shell.runtimeCenterDialog.detailBrowser`
 - `#shell.runtimeCenterDialog.footer`
@@ -306,6 +307,7 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.runtimeCenterDialog.issueList`
 - `#shell.runtimeCenterDialog.summary`
 - `#shell.runtimeCenterDialog.title`
+- `#shell.runtimeCenterDialog.titleIcon`
 - `#shell.searchSidebar.caseBtn`
 - `#shell.searchSidebar.clearBtn`
 - `#shell.searchSidebar.excludeInput`
