@@ -31,6 +31,8 @@ owners:
     - app/pytest/**
   platform.python_tools:
     - app/python_tools/**
+  platform.qt:
+    - app/qt/**
   platform.run:
     - app/run/**
   platform.runner:

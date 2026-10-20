@@ -16,14 +16,14 @@ pytestmark = pytest.mark.unit
 def test_capability_check_result_serializes_to_stable_schema() -> None:
     """Check model serialization should keep a predictable shape."""
     check = CapabilityCheckResult(
-        check_id="pyside2_import",
+        check_id="qt_binding_import",
         is_available=True,
         message="PySide2 import succeeded.",
         details={"module": "PySide2"},
     )
 
     assert check.to_dict() == {
-        "check_id": "pyside2_import",
+        "check_id": "qt_binding_import",
         "is_available": True,
         "message": "PySide2 import succeeded.",
         "details": {"module": "PySide2"},
@@ -50,7 +50,7 @@ def test_capability_probe_report_exposes_aggregate_fields() -> None:
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_path", True, "found"),
-            CapabilityCheckResult("pyside2_import", False, "missing"),
+            CapabilityCheckResult("qt_binding_import", False, "missing"),
             CapabilityCheckResult("freecad_import", False, "missing"),
         ]
     )
@@ -59,7 +59,7 @@ def test_capability_probe_report_exposes_aggregate_fields() -> None:
     assert payload["all_available"] is False
     assert payload["available_count"] == 1
     assert payload["total_count"] == 3
-    assert payload["failed_check_ids"] == ["pyside2_import", "freecad_import"]
+    assert payload["failed_check_ids"] == ["qt_binding_import", "freecad_import"]
 
 
 def test_project_metadata_defaults_are_explicit_and_stable() -> None:
