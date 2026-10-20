@@ -124,7 +124,7 @@ def blank_main_window() -> Document:
     return doc
 
 
-def from_columns(table: str, columns: list[ColumnPlan]) -> Document:
+def from_columns(table: str, columns: list[ColumnPlan], labels: dict | None = None) -> Document:
     class_name = "".join(part.capitalize() for part in table.split("_")) or "Form"
     doc = blank_widget("QWidget", class_name)
     _title(doc, table.replace("_", " ").title())
@@ -139,7 +139,7 @@ def from_columns(table: str, columns: list[ColumnPlan]) -> Document:
             from spikes.form_builder.model import ItemEntry, Property, XmlNode
 
             field.body.append(ItemEntry(body=[Property({"name": "text"}, XmlNode("string", {}, ""))]))
-        label = column.name.replace("_", " ").capitalize()
+        label = (labels or {}).get(column.name) or column.name.replace("_", " ").capitalize()
         _form_row(doc, layout, index, label, field, column.required_marker)
         names.append(column.name)
     _button_box(doc, layout, len(columns))
