@@ -1,0 +1,13 @@
+{
+  "captured_at": "2026-10-20T21:24:57.634280+00:00",
+  "sh": {
+    "argv": [
+      "/bin/sh",
+      "-c",
+      "\necho '## mounts'\ncat /proc/mounts\necho '## ideskrc'\nls -la /home/default/.ideskrc /home/default/.idesktop /home/default/share /home/default/.nfs_log.txt\necho '## ideskrc body'\ncat /home/default/.ideskrc\necho '## idesktop'\nls -la /home/default/.idesktop\nfor f in /home/default/.idesktop/*; do\n  echo \"FILE $f\"\n  cat \"$f\"\n  echo\ndone\necho '## nfs log head'\nhead -c 2000 /home/default/.nfs_log.txt\necho\necho '## share stat'\nstat -c 'share dev=%d ino=%i %F' /home/default/share\nstat -c 'home dev=%d ino=%i %F' /home/default\n"
+    ],
+    "returncode": 126,
+    "stdout": "## mounts\n## ideskrc\n-rwxr-xr-x 1 default default  870 Oct 19 18:52 /home/default/.ideskrc\n-rw-r--r-- 1 root    root    5648 Oct 19 18:52 /home/default/.nfs_log.txt\n\n/home/default/share:\ntotal 24\ndrwxr-xr-x  3 default root     4096 Oct 20 17:22 .\ndrwxr-xr-x 84 default default 16384 Oct 20 17:22 ..\ndrwxr-xr-x 13 default default  4096 Sep 28 16:33 IntellaQuote Backup\n## ideskrc body\n## idesktop\nFILE /home/default/.idesktop/*\n\n## nfs log head\n\n## share stat\n",
+    "stderr": "/bin/sh: 3: cat: Permission denied\nls: cannot open directory '/home/default/.idesktop': Permission denied\n/bin/sh: 7: cat: Permission denied\nls: cannot open directory '/home/default/.idesktop': Permission denied\n/bin/sh: 12: cat: Permission denied\n/bin/sh: 16: head: Permission denied\n/bin/sh: 19: stat: Permission denied\n/bin/sh: 20: stat: Permission denied\n"
+  }
+}
