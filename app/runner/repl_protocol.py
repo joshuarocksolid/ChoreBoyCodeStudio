@@ -155,8 +155,6 @@ def build_complete_request(
 
 
 def build_list_members_request(*, protocol: str, session_token: str, target_path: str) -> dict[str, Any]:
-    """Build a full member listing request envelope."""
-
     return build_repl_request(
         protocol=protocol,
         session_token=session_token,
@@ -172,8 +170,6 @@ def build_resolve_member_request(
     target_path: str,
     member_name: str,
 ) -> dict[str, Any]:
-    """Build a one-member resolve request envelope."""
-
     return build_repl_request(
         protocol=protocol,
         session_token=session_token,
@@ -184,8 +180,6 @@ def build_resolve_member_request(
 
 
 def listing_to_wire(listing: RuntimeMemberListing) -> dict[str, Any]:
-    """Serialize a listing as ``[name, kind]`` pairs, public then private."""
-
     return {
         "target_path": listing.target_path,
         "members": [[member.name, member.kind.value] for member in (*listing.public, *listing.private)],
@@ -193,8 +187,6 @@ def listing_to_wire(listing: RuntimeMemberListing) -> dict[str, Any]:
 
 
 def listing_from_wire(payload: dict[str, Any]) -> RuntimeListingResult:
-    """Parse a listing. A bad kind becomes ATTRIBUTE so no name is dropped for it."""
-
     target_path = payload.get("target_path")
     raw_members = payload.get("members")
     if not isinstance(target_path, str) or not isinstance(raw_members, list):
@@ -208,14 +200,10 @@ def listing_from_wire(payload: dict[str, Any]) -> RuntimeListingResult:
 
 
 def detail_to_wire(detail: RuntimeMemberDetail) -> dict[str, Any]:
-    """Serialize resolved member metadata."""
-
     return {"signature": detail.signature, "documentation": detail.documentation}
 
 
 def detail_from_wire(payload: dict[str, Any]) -> RuntimeMemberDetail:
-    """Parse resolved member metadata."""
-
     signature = payload.get("signature")
     documentation = payload.get("documentation")
     return RuntimeMemberDetail(

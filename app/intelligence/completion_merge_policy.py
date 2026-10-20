@@ -122,7 +122,6 @@ def merge_completion_metadata(
     resolve_provider = primary.resolve_provider
     item_id = primary.item_id
     if not documentation and not signature and incoming.resolve_provider:
-        # The provider resolves by item_id, so both must come from the same item.
         resolve_provider = incoming.resolve_provider
         item_id = incoming.item_id or primary.item_id
     return CompletionItem(

@@ -143,8 +143,6 @@ class ReplSessionManager:
         return envelope_from_dict(result)
 
     def list_members(self, *, target_path: str) -> RuntimeListingResult:
-        """Request the full trusted runtime member listing for ``target_path``."""
-
         result = self._round_trip(
             lambda config: build_list_members_request(
                 protocol=config.protocol,
@@ -157,8 +155,6 @@ class ReplSessionManager:
         return listing_from_wire(result)
 
     def resolve_member(self, ref: RuntimeMemberRef) -> RuntimeDetailResult:
-        """Request signature and documentation for one runtime member."""
-
         result = self._round_trip(
             lambda config: build_resolve_member_request(
                 protocol=config.protocol,

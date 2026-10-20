@@ -1,5 +1,3 @@
-"""Session-scoped LRU cache of full runtime member listings."""
-
 from __future__ import annotations
 
 from collections import OrderedDict

@@ -1,5 +1,3 @@
-"""Runtime member listing for whitelisted REPL targets, shared by runner and editor."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -15,21 +13,12 @@ _ITEM_ID_PREFIX = RUNTIME_INTROSPECTION_PROVIDER + ":"
 
 @dataclass(frozen=True)
 class RuntimeMember:
-    """One name on a runtime target plus a kind derived without calling getattr."""
-
     name: str
     kind: CompletionKind
 
 
 @dataclass(frozen=True)
 class RuntimeMemberListing:
-    """Every non-dunder name of one target, partitioned by a leading underscore.
-
-    Build it with ``from_members``. The listing is never capped. ``visible`` is
-    the only place a display limit applies, and it never spends a slot on a
-    private name.
-    """
-
     target_path: str
     public: tuple[RuntimeMember, ...]
     private: tuple[RuntimeMember, ...]
@@ -43,8 +32,6 @@ class RuntimeMemberListing:
         )
 
     def visible(self, prefix: str, *, limit: Optional[int] = None) -> list[CompletionItem]:
-        """Popup items for ``prefix``. A ``_`` prefix reads private names uncapped."""
-
         lowered = prefix.lower()
         if prefix.startswith("_"):
             matches = [member for member in self.private if member.name.lower().startswith(lowered)]
@@ -71,12 +58,6 @@ class RuntimeMemberListing:
 
 @dataclass(frozen=True)
 class RuntimeMemberRef:
-    """Address of one member. Owns the ``item_id`` format for runtime items.
-
-    Target paths are dotted identifiers and names are identifiers, so ``:``
-    separates them unambiguously.
-    """
-
     target_path: str
     name: str
 
@@ -96,16 +77,12 @@ class RuntimeMemberRef:
 
 @dataclass(frozen=True)
 class RuntimeMemberDetail:
-    """Lazily resolved metadata for one member."""
-
     signature: str
     documentation: str
 
 
 @dataclass(frozen=True)
 class RuntimeUnavailable:
-    """Why a runtime listing or resolve produced nothing. Never cached."""
-
     reason: str
 
 
@@ -114,8 +91,6 @@ RuntimeDetailResult = Union[RuntimeMemberDetail, RuntimeUnavailable]
 
 
 def first_paragraph(doc: str) -> str:
-    """Return text up to the first blank line, stripped."""
-
     lines: list[str] = []
     for line in doc.strip().splitlines():
         if not line.strip():

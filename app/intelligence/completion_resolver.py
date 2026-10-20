@@ -15,8 +15,6 @@ from app.intelligence.semantic_facade import SemanticFacade
 
 
 class RuntimeMemberResolver(Protocol):
-    """Resolves one runtime member. RuntimeIntrospectionCoordinator satisfies it."""
-
     def resolve_member(self, ref: RuntimeMemberRef) -> Optional[RuntimeMemberDetail]:
         ...
 
@@ -30,8 +28,6 @@ class CompletionResolver:
         self._resolved_cache: dict[str, CompletionItem] = {}
 
     def bind_runtime_members(self, runtime_members: Optional[RuntimeMemberResolver]) -> None:
-        """Attach the runtime member resolver that produced the runtime items."""
-
         self._runtime_members = runtime_members
 
     def resolve(self, request: CompletionResolveRequest) -> CompletionItem:

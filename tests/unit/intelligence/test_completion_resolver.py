@@ -1,5 +1,3 @@
-"""Unit tests for lazy runtime member resolution in the completion resolver."""
-
 from __future__ import annotations
 
 from typing import Any, Optional, cast

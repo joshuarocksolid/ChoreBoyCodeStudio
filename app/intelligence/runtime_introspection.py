@@ -24,8 +24,6 @@ _logger = logging.getLogger(__name__)
 
 
 class RuntimeIntrospectionPort(Protocol):
-    """Runner-side surface. Domain types only; the wire stays inside the adapter."""
-
     def list_members(self, *, target_path: str) -> RuntimeListingResult:
         ...
 
@@ -219,8 +217,6 @@ class RuntimeIntrospectionCoordinator:
         *,
         max_results: Optional[int] = None,
     ) -> Optional[list[CompletionItem]]:
-        """None when the target was never listed, else the visible items for the prefix."""
-
         listing = self._cache.get(query.target_path)
         if listing is None:
             return None
@@ -232,8 +228,6 @@ class RuntimeIntrospectionCoordinator:
         *,
         max_results: Optional[int] = None,
     ) -> list[CompletionItem]:
-        """Cache the runner's full listing and return the visible items for the prefix."""
-
         if self._runner_port is None:
             return []
         listing = self._runner_port.list_members(target_path=query.target_path)
@@ -243,8 +237,6 @@ class RuntimeIntrospectionCoordinator:
         return listing.visible(query.member_prefix, limit=max_results)
 
     def resolve_member(self, ref: RuntimeMemberRef) -> Optional[RuntimeMemberDetail]:
-        """None when no runner is attached or the runner cannot resolve the member."""
-
         if self._runner_port is None:
             return None
         detail = self._runner_port.resolve_member(ref)

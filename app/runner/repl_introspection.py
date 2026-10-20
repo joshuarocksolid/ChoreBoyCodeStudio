@@ -77,11 +77,7 @@ class _TargetUnavailable(Exception):
 
 
 class ReplIntrospectionService:
-    """Runner-side owner of whitelisted runtime member listing and resolution."""
-
     def list_members(self, target_path: str) -> RuntimeListingResult:
-        """Every non-dunder name with a static kind. Never getattrs a member."""
-
         try:
             path, target = _load_target(target_path)
         except _TargetUnavailable as exc:
@@ -89,8 +85,6 @@ class ReplIntrospectionService:
         return RuntimeMemberListing.from_members(path, _static_members(target))
 
     def resolve_member(self, ref: RuntimeMemberRef) -> RuntimeDetailResult:
-        """Signature plus first doc paragraph for one name, via one guarded getattr."""
-
         try:
             _path, target = _load_target(ref.target_path)
         except _TargetUnavailable as exc:
@@ -105,8 +99,6 @@ class ReplIntrospectionService:
         )
 
     def introspect(self, request: ReplIntrospectionRequest) -> CompletionEnvelope:
-        """Console contract: visible members, each eagerly resolved."""
-
         listing = self.list_members(request.target_path)
         if isinstance(listing, RuntimeUnavailable):
             return CompletionEnvelope(items=[], degradation_reason=listing.reason)
@@ -151,8 +143,6 @@ def resolve_whitelisted_target(target_path: str) -> Any:
 
 
 def classify_static_member(raw: Any, *, owner_is_type: bool) -> CompletionKind:
-    """Map an ``inspect.getattr_static`` result to a kind without calling it."""
-
     for raw_types, kind in _STATIC_KIND_TABLE:
         if isinstance(raw, raw_types):
             return kind
