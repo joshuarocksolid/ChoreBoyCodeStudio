@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.bootstrap import capability_probe
+from app.bootstrap.state_lock_probe import StateLockProbeResult, probe_state_dir
 from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 
@@ -371,3 +372,50 @@ def test_run_minimal_startup_capability_probe_excludes_heavy_checks(
         capability_probe.GLOBAL_LOGS_WRITABLE_CHECK_ID,
         capability_probe.TEMP_ROOT_WRITABLE_CHECK_ID,
     ]
+
+
+def test_probe_state_dir_succeeds_in_temp_folder(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    result = probe_state_dir(state_dir)
+
+    assert result.ok is True
+    assert result.operation == "sqlite"
+    assert result.errno is None
+    assert list(state_dir.iterdir()) == []
+
+
+def test_probe_state_dir_reports_lock_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def deny_lock(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("app.bootstrap.state_lock_probe.fcntl.lockf", deny_lock)
+    result = probe_state_dir(tmp_path / "state")
+
+    assert result.ok is False
+    assert result.operation == "lock"
+    assert result.errno == 13
+    assert "Permission denied" in result.message
+
+
+def test_check_writable_state_path_reports_lock_probe_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        capability_probe,
+        "probe_state_dir",
+        lambda _path: StateLockProbeResult(
+            ok=False,
+            operation="lock",
+            errno=13,
+            message="Permission denied",
+        ),
+    )
+
+    result = capability_probe.check_writable_state_path(state_root=tmp_path)
+
+    assert result.check_id == "state_root_writable"
+    assert result.is_available is False
+    assert result.details["operation"] == "lock"
+    assert result.details["errno"] == 13
+    assert "lock" in result.message

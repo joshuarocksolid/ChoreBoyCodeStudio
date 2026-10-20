@@ -17,6 +17,7 @@ from app.bootstrap.paths import (
     resolve_global_state_root,
     resolve_temp_root,
 )
+from app.bootstrap.state_lock_probe import probe_state_dir
 from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.python_tools.vendor_runtime import import_python_tooling_modules, initialize_python_tooling_runtime
@@ -163,9 +164,29 @@ def check_freecad_availability() -> CapabilityCheckResult:
 
 
 def check_writable_state_path(state_root: Optional[PathInput] = None) -> CapabilityCheckResult:
-    """Check that global state root path is writable."""
+    """Check that the global state root accepts a file lock and a SQLite write."""
     directory = resolve_global_state_root(state_root)
-    return _check_writable_directory(directory, STATE_ROOT_WRITABLE_CHECK_ID, "Global state root")
+    result = probe_state_dir(directory)
+    try:
+        resolved = str(Path(directory).expanduser().resolve())
+    except OSError:
+        resolved = str(directory)
+    details: dict[str, object] = {"path": resolved, "operation": result.operation}
+    if result.errno is not None:
+        details["errno"] = result.errno
+    if result.ok:
+        return CapabilityCheckResult(
+            check_id=STATE_ROOT_WRITABLE_CHECK_ID,
+            is_available=True,
+            message="Global state root is writable.",
+            details=details,
+        )
+    return CapabilityCheckResult(
+        check_id=STATE_ROOT_WRITABLE_CHECK_ID,
+        is_available=False,
+        message=f"Global state root is not writable ({result.operation}): {result.message}",
+        details=details,
+    )
 
 
 def check_writable_logs_path(state_root: Optional[PathInput] = None) -> CapabilityCheckResult:
