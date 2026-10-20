@@ -6,6 +6,7 @@ import copy
 from typing import Callable, Optional
 
 from spikes.form_builder.model import (
+    INPUT_CLASSES,
     ActionRef,
     Attribute,
     Connection,
@@ -34,6 +35,7 @@ from spikes.form_builder.model import (
     make_item,
     make_layout,
     make_widget,
+    reading_order,
     set_attribute,
     set_property,
     tabstops_of,
@@ -741,3 +743,234 @@ def duplicate_item(doc: Document, item_id: str) -> Optional[InsertItem]:
     cloned = clone_widget(doc, content)
     item = LayoutItem(id=doc.alloc(), attrib=dict(original.attrib), body=[cloned])
     return InsertItem(parent.id, index + 1, item)
+
+
+class SetLayoutAttrib:
+    """Set or remove a ui4 layout attribute such as stretch or columnstretch."""
+
+    def __init__(self, layout_id: str, key: str, value: Optional[str]):
+        self.layout_id = layout_id
+        self.key = key
+        self.value = value
+        self.old: Optional[str] = None
+        self.captured = False
+
+    def redo(self, doc: Document) -> None:
+        layout = find_node(doc, self.layout_id)
+        if not isinstance(layout, Layout):
+            raise KeyError(self.layout_id)
+        if not self.captured:
+            self.old = layout.attrib.get(self.key)
+            self.captured = True
+        _put(layout.attrib, self.key, self.value)
+
+    def undo(self, doc: Document) -> None:
+        layout = find_node(doc, self.layout_id)
+        _put(layout.attrib, self.key, self.old)
+
+
+class SetItemAttrib:
+    """Change a layout item's row, column, or span without moving it."""
+
+    def __init__(self, item_id: str, attrib: dict):
+        self.item_id = item_id
+        self.attrib = dict(attrib)
+        self.old: Optional[dict] = None
+
+    def redo(self, doc: Document) -> None:
+        item = find_node(doc, self.item_id)
+        if not isinstance(item, LayoutItem):
+            raise KeyError(self.item_id)
+        if self.old is None:
+            self.old = dict(item.attrib)
+        item.attrib = dict(self.attrib)
+
+    def undo(self, doc: Document) -> None:
+        item = find_node(doc, self.item_id)
+        item.attrib = dict(self.old or {})
+
+
+class InsertPart:
+    """Insert any body part (an action, an action reference, a menu) at an index."""
+
+    def __init__(self, parent_id: str, index: int, part):
+        self.parent_id = parent_id
+        self.index = index
+        self.part = part
+        self.at = -1
+
+    def redo(self, doc: Document) -> None:
+        parent = find_node(doc, self.parent_id)
+        if parent is None:
+            raise KeyError(self.parent_id)
+        index = len(parent.body) if self.index < 0 or self.index > len(parent.body) else self.index
+        parent.body.insert(index, self.part)
+        self.at = index
+
+    def undo(self, doc: Document) -> None:
+        parent = find_node(doc, self.parent_id)
+        for index, part in enumerate(parent.body):
+            if part is self.part:
+                parent.body.pop(index)
+                return
+
+
+class RemovePart:
+    def __init__(self, parent_id: str, index: int):
+        self.parent_id = parent_id
+        self.index = index
+        self.part = None
+
+    def redo(self, doc: Document) -> None:
+        parent = find_node(doc, self.parent_id)
+        self.part = parent.body.pop(self.index)
+
+    def undo(self, doc: Document) -> None:
+        parent = find_node(doc, self.parent_id)
+        parent.body.insert(self.index, self.part)
+
+
+class SpliceTabStops:
+    """After an insert, put the new inputs into the saved tab order by reading order.
+
+    Runs inside the same Compound as the insert, so it sees the new widgets.
+    Does nothing when the form has no explicit tab order.
+    """
+
+    def __init__(self, names: list[str]):
+        self.names = list(names)
+        self.old: Optional[list[str]] = None
+
+    def redo(self, doc: Document) -> None:
+        stops = tabstops_of(doc)
+        if stops is None or not stops.names:
+            self.old = None
+            return
+        self.old = list(stops.names)
+        stops.names = splice_names(stops.names, reading_order(doc.root), self.names)
+
+    def undo(self, doc: Document) -> None:
+        stops = tabstops_of(doc)
+        if stops is not None and self.old is not None:
+            stops.names = list(self.old)
+
+
+def _put(attrib: dict, key: str, value: Optional[str]) -> None:
+    if value is None or value == "":
+        attrib.pop(key, None)
+    else:
+        attrib[key] = value
+
+
+def splice_names(order: list[str], reading: list[str], new_names: list[str]) -> list[str]:
+    """Insert new_names into order, each after the nearest earlier name in reading order."""
+    result = [name for name in order]
+    for name in new_names:
+        if name in result or name not in reading:
+            continue
+        position = reading.index(name)
+        anchor = None
+        for earlier in reversed(reading[:position]):
+            if earlier in result:
+                anchor = earlier
+                break
+        if anchor is None:
+            following = next((later for later in reading[position + 1:] if later in result), None)
+            index = result.index(following) if following is not None else len(result)
+        else:
+            index = result.index(anchor) + 1
+        result.insert(index, name)
+    return result
+
+
+def input_names(node) -> list[str]:
+    """Object names of focusable inputs inside a widget subtree, in reading order."""
+    if not isinstance(node, Widget):
+        return []
+    return reading_order(node)
+
+
+def with_tab_splice(doc: Document, command, content):
+    """Wrap an insert so new inputs join the saved tab order in reading position."""
+    names = input_names(content)
+    if not names or tabstops_of(doc) is None or not tabstops_of(doc).names:
+        return command
+    return Compound([command, SpliceTabStops(names)])
+
+
+def pair_buddies(doc: Document) -> list:
+    """Buddy every unpaired label in a form layout to the field in its row."""
+    from spikes.form_builder.model import iter_nodes, prop_cstring
+
+    steps = []
+    for node in iter_nodes(doc):
+        if not isinstance(node, Layout) or node.class_name not in ("QFormLayout", "QGridLayout"):
+            continue
+        cells = {}
+        for item in layout_items(node):
+            content = item_content(item)
+            if isinstance(content, Widget):
+                cells[(item.attrib.get("row", "0"), item.attrib.get("column", "0"))] = content
+        for (row, column), content in cells.items():
+            if content.class_name != "QLabel" or get_property(content, "buddy") is not None:
+                continue
+            field = cells.get((row, str(int(column) + 1)))
+            if field is None or field.class_name not in INPUT_CLASSES or field.class_name in BUTTONISH:
+                continue
+            steps.append(SetProperty(content.id, "buddy", prop_cstring("buddy", field.object_name)))
+    return steps
+
+
+BUTTONISH = {"QPushButton", "QToolButton", "QCommandLinkButton", "QCheckBox", "QRadioButton"}
+
+
+def next_cell(layout: Layout, content=None) -> dict:
+    """Where the next control goes when no cell was pointed at.
+
+    Form layout: a field fills the empty field column of the last row; anything
+    else starts a new row. Grid: the first empty cell in reading order inside the
+    current bounds, else a new row. Box layouts have no cells.
+    """
+    items = layout_items(layout)
+    if layout.class_name == "QFormLayout":
+        rows: dict[int, set] = {}
+        for item in items:
+            row = int(item.attrib.get("row", "0") or 0)
+            rows.setdefault(row, set()).add(item.attrib.get("column", "0"))
+        last = max(rows) if rows else -1
+        is_label = isinstance(content, Widget) and content.class_name == "QLabel"
+        if last >= 0 and not is_label and rows[last] == {"0"}:
+            return {"row": str(last), "column": "1"}
+        return {"row": str(last + 1), "column": "0" if is_label else "1"}
+    if layout.class_name == "QGridLayout":
+        taken = set()
+        rows = cols = 0
+        for item in items:
+            row = int(item.attrib.get("row", "0") or 0)
+            col = int(item.attrib.get("column", "0") or 0)
+            rowspan = int(item.attrib.get("rowspan", "1") or 1)
+            colspan = int(item.attrib.get("colspan", "1") or 1)
+            for r in range(row, row + rowspan):
+                for c in range(col, col + colspan):
+                    taken.add((r, c))
+            rows = max(rows, row + rowspan)
+            cols = max(cols, col + colspan)
+        for r in range(rows):
+            for c in range(max(cols, 1)):
+                if (r, c) not in taken:
+                    return {"row": str(r), "column": str(c)}
+        return {"row": str(rows), "column": "0"}
+    return {}
+
+
+def insert_form_row(doc: Document, layout: Layout, row: int, item: LayoutItem):
+    """Insert a new row in a form or grid layout: rows at and below move down by one."""
+    steps = []
+    for existing in layout_items(layout):
+        current = int(existing.attrib.get("row", "0") or 0)
+        if current >= row:
+            attrib = dict(existing.attrib)
+            attrib["row"] = str(current + 1)
+            steps.append(SetItemAttrib(existing.id, attrib))
+    steps.append(InsertItem(layout.id, len(layout_items(layout)), item))
+    return Compound(steps)
