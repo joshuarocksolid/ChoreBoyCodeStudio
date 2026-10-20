@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
 from PySide2.QtWidgets import QDialog, QStackedWidget, QVBoxLayout, QWidget
@@ -327,14 +328,26 @@ class RuntimeOnboardingWorkflow:
         title: str = "Runtime Center",
         report: RuntimeIssueReport | None = None,
     ) -> None:
+        presentation = "packaging" if title.startswith("Packaging") else "runtime"
         dialog = RuntimeCenterDialog(
             title=title,
             report=report or self._host.latest_runtime_issue_report,
             tokens=self._host.resolve_theme_tokens(),
             open_help_topic=self._host.open_runtime_help_topic,
+            open_location=self._open_packaging_location if presentation == "packaging" else None,
+            presentation=presentation,
             parent=self._host.dialog_parent(),
         )
         dialog.exec_()
+
+    def _open_packaging_location(self, relative_path: str, line_number: int) -> None:
+        opener = getattr(self._host, "open_file_at_line", None)
+        getter = getattr(self._host, "loaded_project", None)
+        loaded = getter() if callable(getter) else None
+        project_root = getattr(loaded, "project_root", None)
+        if opener is None or not project_root:
+            return
+        opener(str(Path(project_root) / relative_path), line_number)
 
     def handle_runtime_center_action(self) -> None:
         self.refresh_latest_runtime_issue_report()

@@ -6,6 +6,7 @@ from typing import Callable
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import (
+    QApplication,
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -27,6 +28,14 @@ _SEVERITY_LABELS = {
     "clear": "Clear",
 }
 
+_PACKAGING_SEVERITY_LABELS = {
+    "blocking": "Stops export",
+    "degraded": "Warning: export continues",
+    "advisory": "Warning: export continues",
+}
+
+PACKAGING_HELP_TEXT = "Click Copy Details and post them to the LibrePy group."
+
 
 class RuntimeCenterDialog(QDialog):
     """Drill-down surface for startup/runtime/project explanation."""
@@ -38,11 +47,15 @@ class RuntimeCenterDialog(QDialog):
         report: RuntimeIssueReport,
         tokens: ShellThemeTokens,
         open_help_topic: Callable[[str], None] | None = None,
+        open_location: Callable[[str, int], None] | None = None,
+        presentation: str = "runtime",
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._tokens = tokens
         self._open_help_topic = open_help_topic
+        self._open_location = open_location
+        self._presentation = presentation
         self._report = report
         self._issues_by_row: list[RuntimeIssue] = []
 
@@ -69,6 +82,10 @@ class RuntimeCenterDialog(QDialog):
         self._summary_label.setObjectName("shell.runtimeCenterDialog.summary")
         self._summary_label.setWordWrap(True)
         header_layout.addWidget(self._summary_label)
+        self._help_line = QLabel(PACKAGING_HELP_TEXT, header)
+        self._help_line.setWordWrap(True)
+        self._help_line.setVisible(presentation == "packaging")
+        header_layout.addWidget(self._help_line)
 
         outer.addWidget(header)
 
@@ -81,6 +98,7 @@ class RuntimeCenterDialog(QDialog):
         self._issue_list.setObjectName("shell.runtimeCenterDialog.issueList")
         self._issue_list.setMinimumWidth(290)
         self._issue_list.setAlternatingRowColors(True)
+        self._issue_list.setUniformItemSizes(False)
         self._issue_list.currentRowChanged.connect(self._handle_issue_selection_changed)
         body_layout.addWidget(self._issue_list, 0)
 
@@ -97,7 +115,22 @@ class RuntimeCenterDialog(QDialog):
         footer_layout.setContentsMargins(18, 10, 18, 14)
         footer_layout.setSpacing(8)
 
-        self._help_button = QPushButton("Open Related Help", footer)
+        self._copy_button = QPushButton("Copy Details", footer)
+        self._copy_button.setObjectName("shell.runtimeCenterDialog.copyDetails")
+        self._copy_button.clicked.connect(self._copy_details)
+        self._copy_button.setVisible(presentation == "packaging")
+        footer_layout.addWidget(self._copy_button, 0, Qt.AlignLeft)
+
+        self._goto_button = QPushButton("Go to file", footer)
+        self._goto_button.setObjectName("shell.runtimeCenterDialog.goToFile")
+        self._goto_button.clicked.connect(self._go_to_file)
+        self._goto_button.setVisible(presentation == "packaging")
+        footer_layout.addWidget(self._goto_button, 0, Qt.AlignLeft)
+
+        self._help_button = QPushButton(
+            "Packaging Help" if presentation == "packaging" else "Open Related Help",
+            footer,
+        )
         self._help_button.setObjectName("shell.runtimeCenterDialog.helpButton")
         self._help_button.clicked.connect(self._handle_open_help)
         footer_layout.addWidget(self._help_button, 0, Qt.AlignLeft)
@@ -117,7 +150,12 @@ class RuntimeCenterDialog(QDialog):
         self._report = report
         self._issue_list.clear()
         self._issues_by_row = list(report.issues)
-        self._summary_label.setText(_summarize_report(report))
+        if self._presentation == "packaging":
+            heading, summary = _summarize_packaging_report(report)
+            self._title_label.setText(heading)
+            self._summary_label.setText(summary)
+        else:
+            self._summary_label.setText(_summarize_report(report))
 
         if not report.issues:
             self._detail_browser.setHtml(_render_clear_html(self._tokens))
@@ -125,9 +163,14 @@ class RuntimeCenterDialog(QDialog):
             return
 
         for issue in report.issues:
-            item = QListWidgetItem(
-                f"{_SEVERITY_LABELS.get(issue.severity, issue.severity.title())} | {issue.title}"
-            )
+            if self._presentation == "packaging":
+                label = _PACKAGING_SEVERITY_LABELS.get(issue.severity, "Warning: export continues")
+                row = str(issue.evidence.get("report_row") or issue.title)
+                item = QListWidgetItem(f"{row}\n{label}")
+            else:
+                item = QListWidgetItem(
+                    f"{_SEVERITY_LABELS.get(issue.severity, issue.severity.title())} | {issue.title}"
+                )
             item.setToolTip(issue.summary)
             self._issue_list.addItem(item)
         self._issue_list.setCurrentRow(0)
@@ -150,7 +193,15 @@ class RuntimeCenterDialog(QDialog):
             self._help_button.setEnabled(False)
             return
         issue = self._issues_by_row[row]
-        self._detail_browser.setHtml(_render_issue_html(issue, self._tokens))
+        if self._presentation == "packaging":
+            self._detail_browser.setHtml(_render_packaging_issue_html(issue, self._tokens))
+            source = issue.evidence.get("source_file")
+            self._goto_button.setEnabled(bool(source))
+            if source:
+                line = issue.evidence.get("line_number", 1)
+                self._goto_button.setText(f"Go to {source}:{line}")
+        else:
+            self._detail_browser.setHtml(_render_issue_html(issue, self._tokens))
         self._help_button.setEnabled(bool(issue.help_topic and self._open_help_topic))
 
     def _handle_open_help(self) -> None:
@@ -161,6 +212,79 @@ class RuntimeCenterDialog(QDialog):
         if not issue.help_topic or self._open_help_topic is None:
             return
         self._open_help_topic(issue.help_topic)
+
+    def _copy_details(self) -> None:
+        lines = [PACKAGING_HELP_TEXT, ""]
+        for issue in self._issues_by_row:
+            label = _PACKAGING_SEVERITY_LABELS.get(issue.severity, "Warning: export continues")
+            where = issue.evidence.get("source_file", "")
+            line = issue.evidence.get("line_number", "")
+            lines.append(f"[{label}] {issue.title} ({where}:{line})")
+            lines.append(issue.summary)
+            lines.append(issue.why_it_happened)
+        lines.append("Calls to /opt/freecad/AppRun are allowed and are not listed.")
+        clipboard = QApplication.clipboard()
+        if clipboard is not None:
+            clipboard.setText("\n".join(lines))
+        self._copy_button.setText("Copied")
+
+    def _go_to_file(self) -> None:
+        row = self._issue_list.currentRow()
+        if row < 0 or row >= len(self._issues_by_row) or self._open_location is None:
+            return
+        issue = self._issues_by_row[row]
+        source = issue.evidence.get("source_file")
+        if not isinstance(source, str) or not source:
+            return
+        line_number = issue.evidence.get("line_number", 1)
+        try:
+            line = int(line_number)
+        except (TypeError, ValueError):
+            line = 1
+        self._open_location(source, line)
+
+
+def _summarize_packaging_report(report: RuntimeIssueReport) -> tuple[str, str]:
+    warnings = report.degraded_count + report.advisory_count
+    if report.blocking_count:
+        heading = "Packaging stopped"
+        summary = (
+            f"{report.blocking_count} problems stop the export. "
+            "Fix them, then run Package Project again. "
+            f"{warnings} warnings do not stop the export."
+        )
+    else:
+        heading = f"Package created with {warnings} warnings"
+        summary = "Read the warnings before you share it. Calls to /opt/freecad/AppRun are allowed and are not listed."
+    if report.blocking_count:
+        summary += " Calls to /opt/freecad/AppRun are allowed and are not listed."
+    return heading, summary
+
+
+def _render_packaging_issue_html(issue: RuntimeIssue, tokens: ShellThemeTokens) -> str:
+    label = _PACKAGING_SEVERITY_LABELS.get(issue.severity, "Warning: export continues")
+    badge_color = _severity_color(issue.severity, tokens)
+    steps = "".join(f"<li>{escape(step)}</li>" for step in issue.next_steps)
+    source = escape(str(issue.evidence.get("source_file", "")))
+    line = escape(str(issue.evidence.get("line_number", "")))
+    import_path = escape(str(issue.evidence.get("import_path", "")))
+    return (
+        f'<div style="font-family:sans-serif;color:{tokens.text_primary};font-size:13px;">'
+        f'<div style="display:inline-block;background:{tokens.badge_bg};color:{badge_color};'
+        'padding:4px 8px;border-radius:10px;font-weight:600;margin-bottom:10px;">'
+        f"{escape(label)}</div>"
+        f"<h2 style=\"margin:8px 0 6px 0;\">{escape(issue.title)}</h2>"
+        f"<p style=\"margin:0 0 8px 0;line-height:1.45;\">{escape(issue.summary)}</p>"
+        "<h3 style=\"margin:10px 0 4px 0;\">Why</h3>"
+        f"<p style=\"margin:0 0 8px 0;line-height:1.45;\">{escape(issue.why_it_happened)}</p>"
+        "<h3 style=\"margin:10px 0 4px 0;\">How to fix it</h3>"
+        f"<ul style=\"margin:2px 0 8px 18px;\">{steps}</ul>"
+        "<h3 style=\"margin:10px 0 4px 0;\">Where</h3>"
+        f"<p style=\"margin:0;\"><code>{source}:{line}</code></p>"
+        f"<p style=\"margin:2px 0 0 0;color:{tokens.text_muted};\">Import path: {import_path}</p>"
+        f"<p style=\"margin:10px 0 0 0;color:{tokens.text_muted};\">{escape(PACKAGING_HELP_TEXT)}</p>"
+        "</div>"
+    )
 
 
 def _summarize_report(report: RuntimeIssueReport) -> str:

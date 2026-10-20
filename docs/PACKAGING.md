@@ -47,8 +47,9 @@ This is intentionally separate from:
 - `description`
 - packaging entry-file override
 - optional icon path
-- optional `skip_missing_dependency_blockers` (missing imports become warnings; native extensions and unsafe subprocess calls still block)
-- optional `ask_install_location` (when true, the installer asks for a folder; omitted or false uses the FreeCAD Apps slot)
+- optional `ask_install_location` (when true, the installer asks for a folder; omitted or false uses `/home/default/FreeCAD/Apps/<package_id>`)
+
+An old `cbcs/package.json` may still contain `skip_missing_dependency_blockers`. The loader ignores that key. Missing imports are classified by reachability instead.
 
 ### Exported artifact metadata
 
@@ -135,22 +136,26 @@ The installer must:
 
 - load `package_manifest.json`
 - verify checksums before copying files
-- perform a staged copy before switching the final install directory
-- write the installed launcher into the final install root
-- optionally publish a Desktop shortcut
-- when that shortcut's `Icon=` would point under `~/.local`, copy the icon next to the Desktop file as a hidden sibling `.{stem}{suffix}` and rewrite `Icon=` so the ChoreBoy file manager can fetch it; when the hidden file write is denied, copy a visible `{stem}.icon{suffix}` sidecar instead and rewrite `Icon=` to it. A denied hidden name never fails the install; only failure of both copies is reported
-- publish an application-menu launcher on a best-effort basis when selected
-- detect older installs of the same `package_id`
-- classify occupancy of the destination folder itself before copying
-- allow side-by-side installs and optional cleanup of older versions
+- stage the new payload, keep files that are not in the previous payload-owned list, then switch the install directory
+- record that payload-owned list in `cbcs_installed_package.json`
+- write the installed launcher into the install folder
+- write a `/home/default` launcher copy
+- write a Desktop copy only when `~/Desktop` already exists
+- write a `~/.local/share/applications` menu copy
+- point `Icon=` at the icon inside the install folder
+- treat a launcher or icon failure after the files are installed as a warning on the done page
+- show the full error text, with Copy Details, when the install itself fails, and say what was left unchanged
+- when the same `package_id` is already installed, offer Replace (Reinstall when the version matches) or Uninstall
+- on Replace, migrate an existing install out of `~/.local/share/FreeCAD/Macro/Apps/<slug>`, move the app's data, and remove the old slot and old launchers
+- on Uninstall, remove the payload-owned files, every launcher copy, the menu entry, and the icon, and keep the app's data unless the user checks the delete-data box
 
 The installed launcher is expected to hardcode the final install directory.
 
 ### Project install destination
 
-Project packages install to `$HOME/.local/share/FreeCAD/Macro/Apps/<sanitized display_name>`.
-The folder name is the display-name slug and does not include a version suffix.
-Export writes `default_install_base` as `~/.local/share/FreeCAD/Macro/Apps` so the installer calls `expanduser()` at install time and follows that machine's `HOME`.
+Project packages install to `/home/default/FreeCAD/Apps/<sanitized package_id>`.
+The folder name follows `package_id`, so a display-name change keeps the same slot.
+The display name is used in `Name=` and in installer titles.
 
 `ask_install_location` defaults to false. The installer still shows DirectoryPage, but the path is read-only and Browse is hidden.
 Set `ask_install_location` to true in `cbcs/package.json` when the app must live somewhere else. That restores Browse and a choosable path.
@@ -241,8 +246,37 @@ Validation covers:
 - hidden/excluded paths
 - package metadata completeness
 - dependency audit against project files, `vendor/`, and AppRun
-- direct subprocess assumptions that are likely unsafe on ChoreBoy
-- `shell=True` subprocess calls, which are blocked by the dependency audit
+- subprocess programs checked against the FreeCAD 1.0.0 table measured on 2026-10-20 (`docs/DISCOVERY.md` §4G). `/opt/freecad/AppRun`, `/bin/sh`, and `/bin/ls` are allowed. Denied programs stop export and the report cites that version and date. A program that is not in the table is a warning. `/bin/sh -c` is checked by the program inside the string. Do not advise rewriting a denied program through `/bin/sh`
+- `shell=True` subprocess calls, which stop export
+- a missing import, which stops export only when the entry file loads it at module level outside `try` / `except ImportError` and `TYPE_CHECKING`. Other missing imports warn and name the import path. A vendored native extension still stops export
+
+Also add os.system test. And compile-check before pytest.
+
+There's a potential bug: `_preserved_relative_paths` when previous_owned is empty (legacy) keeps files not in new payload. The legacy marker file is in skip only if we pass skip. We pass slot_skip including marker and launchers. data/keep.txt is kept. Good.
+
+When the current install_dir doesn't exist, _relative_files returns []. preserved starts empty. Legacy adds data/keep.txt. Good.
+
+Replace test: previous_owned has app.py, marker, desktop. notes.txt not owned. new payload is app.py and icon.png. notes.txt preserved. icon.png is new. app.py replaced. Good.
+
+Uninstall delete_data True after we already removed owned files. The marker was unlinked as an owned file, so the second uninstall reads an empty marker. delete_data True still rmtree if install_dir exists. notes.txt goes with the tree. Good.
+
+First uninstall unlinks icon which is also owned. Order is icon first then owned. Fine.
+
+Launcher in install dir is owned and unlinked. Home copies unlinked. Good.
+
+If icon_path points inside install dir and we unlink it, then owned loop tries app.py, icon.png (already gone), launcher, marker. notes.txt stays. Good.
+
+Need to check write_installed records icon_path as resolved path of install_dir / icon.png. After swap the file exists there. Uninstall unlinks it. Good.
+
+Desktop exists so home, desktop, and menu are published. Good.
+
+No Desktop test is the replace test. It asserts not (home / "Desktop").exists(). publish doesn't create it. Good.
+
+Launcher failure: home is a file. mkdir of home / ".local" fails. write of home / launcher fails. warnings nonempty. install dir has files. Good.
+
+Title test: package_project might fail validation if missing imports or something. main.py is print. Should succeed. package_id from package.json. Need resolve_project_package_config to prefer package.json over project name. I'll see if the test fails.
+
+Also package_project might rewrite display_name from project_name argument. Check.
 
 Packaging excludes transient/support content such as:
 
