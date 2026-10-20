@@ -10,6 +10,7 @@ import pytest
 from app.run.run_manifest import ReplControlConfig
 from app.runner.repl_control import ReplControlServer
 from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, dumps_message, envelope_from_dict, loads_message
+from app.qt.qt_compat import QT_API  # noqa: E402
 
 pytestmark = pytest.mark.integration
 
@@ -77,7 +78,7 @@ def test_repl_control_complete_and_introspect_round_trip() -> None:
             "protocol": REPL_CONTROL_PROTOCOL,
             "session_token": "integration-token",
             "method": "introspect",
-            "target_path": "PySide2.QtCore",
+            "target_path": QT_API + ".QtCore",
             "member_prefix": "",
             "include_private": False,
             "max_results": 20,

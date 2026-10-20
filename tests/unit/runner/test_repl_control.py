@@ -8,6 +8,7 @@ import pytest
 
 from app.runner.repl_control import _handle_request
 from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, build_ping_request
+from app.qt.qt_compat import QT_API  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -79,7 +80,7 @@ def test_handle_request_introspect_returns_envelope() -> None:
     response = _handle_request(
         _request(
             method="introspect",
-            target_path="PySide2.QtCore",
+            target_path=QT_API + ".QtCore",
             member_prefix="",
             include_private=False,
             max_results=10,

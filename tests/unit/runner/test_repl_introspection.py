@@ -9,6 +9,7 @@ from app.runner.repl_introspection import (
     ReplIntrospectionService,
     is_whitelisted_target_path,
 )
+from app.qt.qt_compat import QT_API  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -24,7 +25,7 @@ def test_introspect_returns_pyside_members() -> None:
 
     envelope = service.introspect(
         ReplIntrospectionRequest(
-            target_path="PySide2.QtCore",
+            target_path=QT_API + ".QtCore",
             include_private=False,
             max_results=50,
         )
