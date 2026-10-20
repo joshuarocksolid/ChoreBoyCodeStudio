@@ -46,6 +46,7 @@ Tabs are movable. Split Right (tab context menu, View menu, `Ctrl+\`) shows the 
 
 | Handle | What |
 |--------|------|
+| `#shell.editorGroupsHost` | Editor area: the groups splitter plus the drag ghost and drop overlay |
 | `#shell.editorGroups` | Splitter holding the editor groups (one or two) |
 | `#shell.editorGroup` | One group's frame (accent border when focused and split). `groupNumber` property is 1 or 2. |
 | `#shell.editorTabs.group2` | Second group's tab widget (the first is `#shell.editorTabs`). The focused group's tab widget is `window._editor_tabs_widget`. |

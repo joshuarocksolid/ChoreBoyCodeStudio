@@ -10,7 +10,7 @@ pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
 
 from PySide2.QtCore import QEvent, QPoint, Qt  # noqa: E402
 from PySide2.QtGui import QMouseEvent, QTextCursor  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from PySide2.QtWidgets import QApplication, QFrame, QSplitter  # noqa: E402
 
 from app.project.project_service import create_blank_project  # noqa: E402
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision  # noqa: E402
@@ -151,7 +151,12 @@ def test_dragging_a_tab_down_into_the_other_group_moves_it(tmp_path: Path, shell
     mouse(QEvent.MouseButtonPress, start, Qt.LeftButton)
     for step in range(1, 6):
         mouse(QEvent.MouseMove, start + (drop - start) * step / 5, Qt.LeftButton)
+    overlay = window.findChild(QFrame, "shell.editorGroups.dropOverlay")
+    assert overlay is not None and overlay.isVisible()
+    assert overlay.geometry().width() == groups.groups()[1].width()
+    assert window.findChild(QSplitter, "shell.editorGroups").count() == 2
     mouse(QEvent.MouseButtonRelease, drop, Qt.NoButton)
+    assert not overlay.isVisible()
     app.processEvents()
 
     assert [label.rstrip(" *") for label in _labels(first)] == ["beta.py"]

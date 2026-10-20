@@ -64,6 +64,9 @@ class EditorTabBufferWorkflow:
         status_controller = self._host.status_controller()
         if tab_state is None or status_controller is None:
             return
+        if self._editor_manager.active_tab() is not tab_state:
+            # A background tab's cursor moved (session restore, an edit in another view).
+            return
         line_number = editor_widget.textCursor().blockNumber() + 1
         status_controller.set_editor_status(
             file_name=tab_state.display_name,

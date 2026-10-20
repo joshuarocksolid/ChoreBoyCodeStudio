@@ -94,6 +94,7 @@ class EditorGroupsController:
         self._groups: list[EditorGroup] = []
         self._focused: Optional[EditorGroup] = None
         self._splitter: Optional[QSplitter] = None
+        self._host: Optional[QWidget] = None
         self._collapse_pending = False
         self._drag_source: Optional[EditorGroup] = None
         self._drag_buffer_id: Optional[str] = None
@@ -107,17 +108,27 @@ class EditorGroupsController:
     # -- Construction ------------------------------------------------------
 
     def build(self, parent: QWidget) -> QWidget:
-        """Create the splitter with the first group and make it focused."""
-        splitter = QSplitter(Qt.Horizontal, parent)
+        """Create the groups area with the first group and make it focused."""
+        # The drag ghost and drop overlay float over the groups. They are
+        # children of this host, not of the splitter: QSplitter adopts every
+        # child widget as a pane.
+        host = QWidget(parent)
+        host.setObjectName("shell.editorGroupsHost")
+        host_layout = QVBoxLayout(host)
+        host_layout.setContentsMargins(0, 0, 0, 0)
+        host_layout.setSpacing(0)
+        splitter = QSplitter(Qt.Horizontal, host)
         splitter.setObjectName("shell.editorGroups")
         splitter.setChildrenCollapsible(False)
         splitter.setHandleWidth(3)
+        host_layout.addWidget(splitter)
+        self._host = host
         self._splitter = splitter
-        self._ghost = QLabel(splitter)
+        self._ghost = QLabel(host)
         self._ghost.setObjectName("shell.editorGroups.dragGhost")
         self._ghost.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._ghost.hide()
-        self._drop_overlay = QFrame(splitter)
+        self._drop_overlay = QFrame(host)
         self._drop_overlay.setObjectName("shell.editorGroups.dropOverlay")
         self._drop_overlay.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         self._drop_overlay.hide()
@@ -126,7 +137,7 @@ class EditorGroupsController:
         app = QApplication.instance()
         if isinstance(app, QApplication):
             app.focusChanged.connect(self._handle_focus_changed)
-        return splitter
+        return host
 
     def apply_theme_colors(self, *, accent: str) -> None:
         self._accent_color = accent or "#3366FF"
@@ -495,9 +506,9 @@ class EditorGroupsController:
         self._ghost.raise_()
 
     def _update_drag(self, global_pos: QPoint) -> None:
-        if self._drag_source is None or self._splitter is None or self._ghost is None or self._drop_overlay is None:
+        if self._drag_source is None or self._host is None or self._ghost is None or self._drop_overlay is None:
             return
-        local = self._splitter.mapFromGlobal(global_pos)
+        local = self._host.mapFromGlobal(global_pos)
         self._ghost.move(local + QPoint(12, 8))
         target = self._group_at(global_pos)
         self._drag_new_group = False
@@ -508,7 +519,7 @@ class EditorGroupsController:
         if self._drag_target is None:
             self._drop_overlay.hide()
             return
-        top_left = self._drag_target.mapTo(self._splitter, QPoint(0, 0))
+        top_left = self._drag_target.mapTo(self._host, QPoint(0, 0))
         rect = QRect(top_left, self._drag_target.size())
         if self._drag_new_group:
             rect.setLeft(rect.left() + rect.width() // 2)
