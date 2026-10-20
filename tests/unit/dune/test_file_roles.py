@@ -156,4 +156,6 @@ def test_check_reports_planted_core_qt_import(
     assert captured.err == (
         "file-role: app/core/constants.py:1: "
         "app.core must not import PySide2\n"
+        "qt-portability: app/core/constants.py:1: "
+        "import PySide2 through app.qt\n"
     )

@@ -69,7 +69,7 @@ def test_planted_status_bar_thread_fails(
         tmp_path,
         relative_path,
         "import threading\n"
-        "from PySide2.QtWidgets import QLabel\n"
+        "from app.qt.QtWidgets import QLabel\n"
         "\n"
         "class ShellStatusBarController(QLabel):\n"
         "    def refresh(self):\n"
@@ -92,7 +92,7 @@ def test_planted_status_bar_thread_fails(
 def test_planted_thread_in_real_status_bar_factory_fails(tmp_path: Path) -> None:
     relative_path = "app/shell/status_bar.py"
     source = (REPO_ROOT / relative_path).read_text(encoding="utf-8")
-    import_line = "    from PySide2.QtWidgets import QLabel, QStatusBar\n"
+    import_line = "    from app.qt.QtWidgets import QLabel, QStatusBar\n"
     assert import_line in source
     planted_source = source.replace(
         import_line,
@@ -123,7 +123,7 @@ def test_planted_gui_thread_invoke_fails(
     _write_source(
         tmp_path,
         relative_path,
-        "from PySide2.QtWidgets import QWidget\n"
+        "from app.qt.QtWidgets import QWidget\n"
         "\n"
         "class PluginWidget(QWidget):\n"
         "    def invoke(self):\n"
@@ -191,7 +191,7 @@ def test_scheduled_task_name_collision_does_not_hide_gui_thread_call(
     ("source", "expected"),
     [
         (
-            "from PySide2.QtCore import QThread\nQThread()\n",
+            "from app.qt.QtCore import QThread\nQThread()\n",
             "app.shell and app.editors must not create QThread",
         ),
         (
