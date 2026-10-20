@@ -402,3 +402,31 @@ def test_apply_completion_preferences_pushes_mode_to_console() -> None:
 
     assert host.console_widget is not None
     assert host.console_widget.completion_mode == "typing"
+
+
+def test_console_bound_after_the_intelligence_runtime_still_resolves_docs() -> None:
+    class _Signal:
+        def connect(self, _slot: object) -> None:
+            return None
+
+    class _BindableConsole(FakeConsoleWidget):
+        input_submitted = _Signal()
+        interrupt_requested = _Signal()
+        restart_requested = _Signal()
+        resolve_requester: object = None
+
+        def set_completion_requester(self, _requester: object) -> None:
+            return None
+
+        def set_completion_resolve_requester(self, requester: object) -> None:
+            self.resolve_requester = requester
+
+    host = FakePythonConsoleHost(console_widget=None)
+    workflow = PythonConsoleWorkflow(repl_manager=FakeReplSession(), host=host)
+    workflow.bind_intelligence_controller(object())
+    console = _BindableConsole()
+    host.console_widget = console
+
+    workflow.bind_widget(console)  # type: ignore[arg-type]
+
+    assert console.resolve_requester is not None

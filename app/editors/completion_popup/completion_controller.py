@@ -633,13 +633,30 @@ class CompletionController(QObject):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         popup = getattr(self, "_popup", None)
-        if popup is None or watched is not popup or event.type() != QEvent.KeyPress:
+        if popup is None or watched is not popup:
+            return super().eventFilter(watched, event)
+        if event.type() == QEvent.ShortcutOverride:
+            # Window shortcuts (Tab is Edit > Indent) must not steal popup keys.
+            if isinstance(event, QKeyEvent) and _is_popup_key(event):
+                event.accept()
+                return True
+            return super().eventFilter(watched, event)
+        if event.type() != QEvent.KeyPress:
             return super().eventFilter(watched, event)
         widget = self._widget
         if widget is None:
             return super().eventFilter(watched, event)
         QApplication.sendEvent(widget, event)
         return True
+
+
+_POPUP_KEYS = (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape, Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown)
+
+
+def _is_popup_key(event: QKeyEvent) -> bool:
+    if event.key() == Qt.Key_Space and event.modifiers() & Qt.ControlModifier:
+        return True
+    return event.key() in _POPUP_KEYS and not event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier)
 
 
 def base_labels_equal(left: List[CompletionItem], right: List[CompletionItem]) -> bool:

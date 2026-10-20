@@ -112,9 +112,14 @@ def merge_completion_metadata(
     resolvable_fields = primary.resolvable_fields
     resolve_provider = primary.resolve_provider
     item_id = primary.item_id
-    if not documentation and not signature and incoming.resolvable_fields and not primary.resolve_provider:
+    # Runtime introspection knows overloads and the defining class; prefer it.
+    adopt = not documentation and not signature and bool(incoming.resolve_provider) and (
+        not primary.resolve_provider
+        or (incoming.resolve_provider == "runtime_introspection" and primary.resolve_provider != incoming.resolve_provider)
+    )
+    if adopt and incoming.resolvable_fields:
         resolvable_fields = incoming.resolvable_fields
-    if not documentation and not signature and incoming.resolve_provider and not primary.resolve_provider:
+    if adopt:
         resolve_provider = incoming.resolve_provider
         item_id = incoming.item_id or primary.item_id
     return CompletionItem(

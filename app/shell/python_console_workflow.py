@@ -211,6 +211,9 @@ class PythonConsoleWorkflow:
         widget.interrupt_requested.connect(self.handle_interrupt)
         widget.restart_requested.connect(self.handle_start_python_console_action)
         widget.set_completion_requester(self.request_completion_async)
+        if self._intelligence_controller is not None:
+            # The intelligence runtime can be bound before the console panel exists.
+            widget.set_completion_resolve_requester(self.request_completion_item_resolve_async)
         self.apply_completion_preferences(widget)
 
     def apply_completion_preferences(

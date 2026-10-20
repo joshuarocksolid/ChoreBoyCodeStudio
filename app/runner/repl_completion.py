@@ -165,11 +165,9 @@ class ReplCompletionService:
                 return self._introspect_for_context(context, target_path=target_path, limit=limit)
 
         if context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER:
-            module_candidates = [
-                context.base_expression,
-                context.module_name,
-                context.base_expression.split(".")[0] if context.base_expression else "",
-            ]
+            # Only the receiver itself: falling back to its root module would list
+            # ``os`` members for ``os.path.``.
+            module_candidates = [context.base_expression, context.module_name]
             for module_name in module_candidates:
                 if not module_name:
                     continue
