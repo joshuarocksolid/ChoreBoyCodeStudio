@@ -20,6 +20,7 @@ from app.bootstrap.state_roots import SettingsRootChoice
 from app.core.models import RuntimeIssue
 
 HELP_LINE = "Click Copy Details and post them to the LibrePy group."
+_HELP_CLAUSE = "click Copy Details and post them to the LibrePy group."
 DISMISSALS_FILENAME = "startup_dismissals.json"
 SHARED_SETTINGS_PROBLEM_ID = "shared-settings-unavailable"
 HISTORY_PROBLEM_ID = "local-history-off"
@@ -168,7 +169,7 @@ def _problem_from_issue(
             ),
             folder=history_folder,
             error=reason,
-            fix=f"Restart CBCS. If you see this again, {HELP_LINE}",
+            fix=f"Restart CBCS. If you see this again, {_HELP_CLAUSE}",
         )
     return StartupProblem(
         problem_id=problem_id,
@@ -179,7 +180,7 @@ def _problem_from_issue(
         ),
         folder=symbol_folder,
         error=reason,
-        fix=f"Restart CBCS. If you see this again, {HELP_LINE}",
+        fix=f"Restart CBCS. If you see this again, {_HELP_CLAUSE}",
     )
 
 
