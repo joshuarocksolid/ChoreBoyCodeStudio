@@ -29,7 +29,7 @@ ordinary tools. There is no hidden database.
 
 | Template | Use it for | What you get |
 | --- | --- | --- |
-| **Qt App** (`qt_app`) | Windowed applications | A starter PySide2/Qt window with logging and error handling. |
+| **Qt App** (`qt_app`) | Windowed applications | A starter Qt window that imports `PySide`, with logging and error handling. |
 | **Headless FreeCAD Tool** (`headless_tool`) | Backend tools using the FreeCAD engine without a window | A script that uses `import FreeCAD` along headless-safe paths. |
 | **Utility Script** (`utility_script`) | Simple scripts and automation | A minimal, runnable script that prints output. |
 

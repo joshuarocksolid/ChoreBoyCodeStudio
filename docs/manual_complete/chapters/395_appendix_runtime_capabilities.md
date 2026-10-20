@@ -11,10 +11,14 @@ need none of them.
 
 ## The runtime in one paragraph
 
-Your code runs inside FreeCAD's bundled Python (version 3.9) with the Qt toolkit
-(PySide2) available. You can write files, use SQLite, spawn limited subprocesses, and
-`import FreeCAD` for headless geometry. Several heavier capabilities are available through
-in-process techniques because the appliance blocks running external binaries directly.
+Your code runs inside FreeCAD's bundled Python with Qt available through `PySide`.
+Today's image is Python 3.9 and PySide2. The FreeCAD 1.1 image is Python 3.11 and
+PySide6. `PySide` re-exports whichever binding that image was built with. Import
+`QAction`, `QActionGroup`, and `QShortcut` from `PySide.QtGui`. Start the event loop
+with `(getattr(app, "exec", None) or app.exec_)()`. You can write files, use SQLite,
+spawn limited subprocesses, and `import FreeCAD` for headless geometry. Several heavier
+capabilities are available through in-process techniques because the appliance blocks
+running external binaries directly.
 
 ## Local data storage
 

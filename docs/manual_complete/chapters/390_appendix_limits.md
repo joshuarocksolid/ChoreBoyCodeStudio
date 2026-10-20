@@ -38,8 +38,8 @@ throughout the manual, in one place.
 - Editor intelligence is **static** and never executes your project code. Some highly
   dynamic Python cannot be analyzed precisely; in those cases results are clearly labeled
   as approximate or unsupported rather than presented as fact.
-- FreeCAD and PySide2 are partly C++-backed; completion for them relies on a shipped
-  trusted API index.
+- FreeCAD and Qt are partly C++-backed. Completion for `PySide`, PySide2, and PySide6
+  relies on a shipped trusted API index. PySide2 remains so older projects still complete.
 - The symbol index is an accelerator. If it is stale or missing the editor still works;
   rebuild it with **Tools > Rebuild Intelligence Cache**.
 

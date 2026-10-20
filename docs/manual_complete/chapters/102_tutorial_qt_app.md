@@ -36,17 +36,24 @@ Open the files in the **Explorer**. A Qt App project typically contains:
 Open `main.py` and read it. Notice the shape of a Qt program:
 
 ```python
-from PySide2.QtWidgets import QApplication
+from PySide.QtWidgets import QApplication
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
     # ... build and show the window ...
-    return app.exec_()
+    return (getattr(app, "exec", None) or app.exec_)()
 ```
 
-> [!NOTE] `app.exec_()` starts the Qt event loop, which runs until the window closes. That
+> [!NOTE] That call starts the Qt event loop, which runs until the window closes. That
 > is why a windowed program stays "running" in Code Studio until you close its window or
 > press **Stop**.
+
+> [!NOTE] Import Qt from `PySide`, the package FreeCAD ships. On today's image `PySide`
+> re-exports PySide2. On the FreeCAD 1.1 image it re-exports PySide6, so the same source
+> runs on both. Import `QAction`, `QActionGroup`, and `QShortcut` from `PySide.QtGui`.
+> On FreeCAD 1.1, `PySide.QtWidgets` does not provide those three. PySide2's application
+> object has no `exec`, so the `getattr` line uses `exec` when it exists and `exec_` on
+> today's image.
 
 ## Step 3 — Run it for the first time
 
@@ -62,9 +69,9 @@ Open the window module under `app/` and find where the UI is built. Add a label 
 button, and connect the button to a handler that updates the label. Save with `Ctrl+S`,
 then run again (`Shift+F5`) to see your change.
 
-> [!TIP] Use code completion (`Ctrl+Space`) as you type Qt calls — the editor ships a
-> trusted PySide2 API index so member completion works even though Qt is C++-backed. See
-> "Code intelligence".
+> [!TIP] Use code completion (`Ctrl+Space`) as you type Qt calls. The editor ships a
+> trusted API index for `PySide`, PySide2, and PySide6, so member completion works even
+> though Qt is C++-backed. See "Code intelligence".
 
 ## Step 5 — Debug a problem
 

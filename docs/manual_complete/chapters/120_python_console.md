@@ -81,12 +81,17 @@ The console shines for exploring unfamiliar objects. For example, to discover wh
 widget offers:
 
 ```python
->>> from PySide2.QtWidgets import QLabel
+>>> from PySide.QtWidgets import QLabel
 >>> label = QLabel("hi")
 >>> label.text()
 'hi'
 >>> label.       # press Ctrl+Space here to list real methods on this live object
 ```
+
+Import `QAction`, `QActionGroup`, and `QShortcut` from `PySide.QtGui`. On FreeCAD 1.1,
+`PySide.QtWidgets` does not provide them. When you start a window from the console, run
+the event loop with `(getattr(app, "exec", None) or app.exec_)()`. That calls `exec` on
+PySide6 and `exec_` on today's PySide2 image.
 
 Because the console inspects the **live** `label` object, completion can reveal attributes
 that static analysis of source files cannot. This is especially useful for FreeCAD and Qt
