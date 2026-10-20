@@ -9,6 +9,7 @@ from PySide2.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QFrame,
     QGroupBox,
     QLabel,
     QPushButton,
@@ -21,8 +22,16 @@ from PySide2.QtWidgets import (
 )
 
 from app.core import constants
+from app.intelligence.completion_mode import (
+    COMPLETION_MODE_DEFAULT,
+    COMPLETION_MODE_HELP,
+    COMPLETION_MODES,
+    completion_mode_label,
+    describe_effective_completion_mode,
+    normalize_completion_mode,
+)
 from app.shell.settings_dialog_state import GeneralTabState
-from app.shell.settings_models import EditorSettingsSnapshot
+from app.shell.settings_models import SETTINGS_SCOPE_GLOBAL, SETTINGS_SCOPE_PROJECT, EditorSettingsSnapshot
 
 if TYPE_CHECKING:
     from app.shell.settings_dialog import SettingsDialog
@@ -209,22 +218,7 @@ def build_general_tab(
     intelligence_form = QFormLayout(intelligence_group)
     intelligence_form.setVerticalSpacing(10)
     intelligence_form.setHorizontalSpacing(16)
-    dialog._completion_enabled_input = QCheckBox(intelligence_group)
-    dialog._completion_enabled_input.setChecked(snapshot.completion_enabled)
-    intelligence_form.addRow("Enable completion", dialog._completion_enabled_input)
-
-    dialog._completion_auto_trigger_input = QCheckBox(intelligence_group)
-    dialog._completion_auto_trigger_input.setChecked(snapshot.completion_auto_trigger)
-    intelligence_form.addRow("Auto-trigger completion", dialog._completion_auto_trigger_input)
-
-    dialog._completion_auto_trigger_period_input = QCheckBox(intelligence_group)
-    dialog._completion_auto_trigger_period_input.setChecked(snapshot.completion_auto_trigger_period)
-    intelligence_form.addRow("Auto-trigger on period (.)", dialog._completion_auto_trigger_period_input)
-
-    dialog._completion_min_chars_input = QSpinBox(intelligence_group)
-    dialog._completion_min_chars_input.setRange(1, 8)
-    dialog._completion_min_chars_input.setValue(snapshot.completion_min_chars)
-    intelligence_form.addRow("Completion min chars", dialog._completion_min_chars_input)
+    build_completion_mode_row(dialog, intelligence_group, intelligence_form, snapshot)
 
     dialog._diagnostics_realtime_input = QCheckBox(intelligence_group)
     dialog._diagnostics_realtime_input.setChecked(snapshot.diagnostics_realtime)
@@ -282,10 +276,8 @@ def general_tab_state_from_controls(dialog: "SettingsDialog") -> GeneralTabState
         exit_behavior=str(dialog._exit_behavior_input.currentData()),
         hover_tooltip_enabled=dialog._hover_tooltip_enabled_input.isChecked(),
         auto_reindent_flat_python_paste=dialog._auto_reindent_flat_python_paste_input.isChecked(),
-        completion_enabled=dialog._completion_enabled_input.isChecked(),
-        completion_auto_trigger=dialog._completion_auto_trigger_input.isChecked(),
-        completion_min_chars=int(dialog._completion_min_chars_input.value()),
-        completion_auto_trigger_period=dialog._completion_auto_trigger_period_input.isChecked(),
+        completion_mode=completion_mode_from_controls(dialog),
+        completion_min_chars=dialog._completion_min_chars_value,
         diagnostics_realtime=dialog._diagnostics_realtime_input.isChecked(),
         quick_fixes_enabled=dialog._quick_fixes_enabled_input.isChecked(),
         quick_fix_require_preview_for_multifile=dialog._quick_fix_multifile_preview_input.isChecked(),
@@ -322,10 +314,8 @@ def apply_general_tab_state_to_controls(dialog: "SettingsDialog", state: General
     dialog._hover_tooltip_enabled_input.setChecked(state.hover_tooltip_enabled)
     dialog._auto_reindent_flat_python_paste_input.setChecked(state.auto_reindent_flat_python_paste)
 
-    dialog._completion_enabled_input.setChecked(state.completion_enabled)
-    dialog._completion_auto_trigger_input.setChecked(state.completion_auto_trigger)
-    dialog._completion_min_chars_input.setValue(state.completion_min_chars)
-    dialog._completion_auto_trigger_period_input.setChecked(state.completion_auto_trigger_period)
+    dialog._completion_min_chars_value = state.completion_min_chars
+    apply_completion_mode_to_controls(dialog, state.completion_mode)
     dialog._diagnostics_realtime_input.setChecked(state.diagnostics_realtime)
     dialog._quick_fixes_enabled_input.setChecked(state.quick_fixes_enabled)
     dialog._quick_fix_multifile_preview_input.setChecked(state.quick_fix_require_preview_for_multifile)
@@ -347,3 +337,129 @@ def apply_general_tab_state_to_controls(dialog: "SettingsDialog", state: General
     dialog._baseline_highlighting_adaptive_mode = state.highlighting_adaptive_mode
     dialog._baseline_highlighting_reduced_threshold_chars = state.highlighting_reduced_threshold_chars
     dialog._baseline_highlighting_lexical_only_threshold_chars = state.highlighting_lexical_only_threshold_chars
+
+
+_USE_GLOBAL = ""
+_PROJECT_FOLLOWS_GLOBAL_HELP = "This project follows the Global setting."
+
+
+def build_completion_mode_row(
+    dialog: "SettingsDialog",
+    group: QGroupBox,
+    form: QFormLayout,
+    snapshot: EditorSettingsSnapshot,
+) -> None:
+    """One control for code completion, plus which value is in effect and why."""
+
+    box = QWidget(group)
+    layout = QVBoxLayout(box)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(6)
+    dialog._completion_mode_input = QComboBox(box)
+    dialog._completion_mode_input.setObjectName("shell.settingsDialog.completionMode")
+    layout.addWidget(dialog._completion_mode_input)
+    dialog._completion_mode_help = QLabel(box)
+    dialog._completion_mode_help.setObjectName("shell.settingsDialog.completionModeHelp")
+    dialog._completion_mode_help.setWordWrap(True)
+    layout.addWidget(dialog._completion_mode_help)
+    dialog._completion_mode_effective = QLabel(box)
+    dialog._completion_mode_effective.setObjectName("shell.settingsDialog.completionModeEffective")
+    dialog._completion_mode_effective.setWordWrap(True)
+    dialog._completion_mode_effective.setFrameShape(QFrame.StyledPanel)
+    dialog._completion_mode_effective.setMargin(6)
+    layout.addWidget(dialog._completion_mode_effective)
+    form.addRow("Code completion", box)
+
+    dialog._completion_min_chars_value = snapshot.completion_min_chars
+    dialog._completion_mode_refreshing = False
+    project = dialog._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
+    dialog._completion_project_follows_global = (
+        project is None or project.completion_mode == snapshot.completion_mode
+    )
+    dialog._completion_mode_input.currentIndexChanged.connect(
+        lambda _index: _handle_completion_mode_changed(dialog)
+    )
+    apply_completion_mode_to_controls(dialog, snapshot.completion_mode)
+
+
+def global_completion_mode(dialog: "SettingsDialog") -> str:
+    """Return the Global value, reading the combo when the Global scope is shown."""
+
+    if dialog._active_scope == SETTINGS_SCOPE_GLOBAL:
+        data = dialog._completion_mode_input.currentData()
+        mode = normalize_completion_mode(data)
+        if mode is not None:
+            return mode
+    return dialog._scope_snapshots[SETTINGS_SCOPE_GLOBAL].completion_mode
+
+
+def completion_mode_from_controls(dialog: "SettingsDialog") -> str:
+    mode = normalize_completion_mode(dialog._completion_mode_input.currentData())
+    if mode is None:
+        return global_completion_mode(dialog)
+    return mode
+
+
+def project_completion_mode(dialog: "SettingsDialog", project_mode: str) -> str:
+    """Return the mode to save for the project scope (the Global one when it follows Global)."""
+
+    if dialog._completion_project_follows_global:
+        return global_completion_mode(dialog)
+    return project_mode
+
+
+def apply_completion_mode_to_controls(dialog: "SettingsDialog", mode: str) -> None:
+    combo = dialog._completion_mode_input
+    is_project = dialog._active_scope == SETTINGS_SCOPE_PROJECT and dialog._project_scope_available
+    global_mode = dialog._scope_snapshots[SETTINGS_SCOPE_GLOBAL].completion_mode
+    dialog._completion_mode_refreshing = True
+    try:
+        combo.clear()
+        if is_project:
+            combo.addItem("Use Global ({})".format(completion_mode_label(global_mode)), _USE_GLOBAL)
+        for value in COMPLETION_MODES:
+            label = completion_mode_label(value)
+            if value == COMPLETION_MODE_DEFAULT:
+                label += "  (default)"
+            combo.addItem(label, value)
+        selected: str = mode
+        if is_project and (dialog._completion_project_follows_global or mode == global_mode):
+            dialog._completion_project_follows_global = True
+            selected = _USE_GLOBAL
+        index = combo.findData(selected)
+        combo.setCurrentIndex(index if index >= 0 else combo.findData(COMPLETION_MODE_DEFAULT))
+    finally:
+        dialog._completion_mode_refreshing = False
+    refresh_completion_mode_explanation(dialog)
+
+
+def refresh_completion_mode_explanation(dialog: "SettingsDialog") -> None:
+    data = dialog._completion_mode_input.currentData()
+    mode = normalize_completion_mode(data)
+    dialog._completion_mode_help.setText(
+        COMPLETION_MODE_HELP[mode] if mode is not None else _PROJECT_FOLLOWS_GLOBAL_HELP
+    )
+    project_available = bool(dialog._project_scope_available)
+    project_mode = None
+    if project_available and not dialog._completion_project_follows_global:
+        if dialog._active_scope == SETTINGS_SCOPE_PROJECT and mode is not None:
+            project_mode = mode
+        else:
+            project_mode = dialog._scope_snapshots[SETTINGS_SCOPE_PROJECT].completion_mode
+    dialog._completion_mode_effective.setText(
+        describe_effective_completion_mode(
+            global_mode=global_completion_mode(dialog),
+            project_mode=project_mode,
+            project_available=project_available,
+        )
+    )
+
+
+def _handle_completion_mode_changed(dialog: "SettingsDialog") -> None:
+    if dialog._completion_mode_refreshing:
+        return
+    if dialog._active_scope == SETTINGS_SCOPE_PROJECT and dialog._project_scope_available:
+        dialog._completion_project_follows_global = (
+            normalize_completion_mode(dialog._completion_mode_input.currentData()) is None
+        )
+    refresh_completion_mode_explanation(dialog)

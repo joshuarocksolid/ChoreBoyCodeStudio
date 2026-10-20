@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from PySide2.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -32,6 +34,7 @@ from PySide2.QtGui import QKeySequence
 
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
 from app.shell.settings_dialog_general import (
+    project_completion_mode,
     apply_general_tab_state_to_controls,
     build_general_tab,
     general_tab_state_from_controls,
@@ -255,7 +258,10 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         if not self._project_scope_available:
             return None
         self._capture_active_scope_snapshot()
-        return self._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
+        project = self._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
+        if project is None:
+            return None
+        return replace(project, completion_mode=project_completion_mode(self, project.completion_mode))
 
     def _finalize_keybindings_columns(self) -> None:
         finalize_keybindings_columns(self)

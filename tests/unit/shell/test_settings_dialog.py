@@ -21,15 +21,24 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
     return qapp
 
 
-def test_settings_dialog_round_trips_auto_trigger_period() -> None:
-    dialog = SettingsDialog(EditorSettingsSnapshot(completion_auto_trigger_period=False))
-    checkbox = dialog._completion_auto_trigger_period_input
-    assert checkbox.isChecked() is False
-    labels = [label.text() for label in dialog.findChildren(QLabel)]
-    assert "Auto-trigger on period (.)" in labels
+def test_project_scope_use_global_saves_the_current_global_mode() -> None:
+    dialog = SettingsDialog(
+        EditorSettingsSnapshot(completion_mode="manual"),
+        project_snapshot=EditorSettingsSnapshot(completion_mode="typing"),
+        project_scope_available=True,
+        initial_scope=SETTINGS_SCOPE_PROJECT,
+    )
+    combo = dialog._completion_mode_input
+    assert combo.currentData() == "typing"
+    assert "overrides Global" in dialog._completion_mode_effective.text()
 
-    checkbox.setChecked(True)
-    assert dialog.snapshot().completion_auto_trigger_period is True
+    combo.setCurrentIndex(combo.findData(""))
+    dialog._set_scope("global", apply_snapshot=True)
+    combo.setCurrentIndex(combo.findData("off"))
+
+    project = dialog.project_scope_snapshot()
+    assert project is not None and project.completion_mode == "off"
+    assert "Use Global" in dialog._completion_mode_effective.text()
 
 
 def test_settings_dialog_snapshot_includes_shortcut_overrides() -> None:

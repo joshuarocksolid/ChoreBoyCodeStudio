@@ -21,10 +21,8 @@ _EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
     "detect_indentation_from_file",
     "hover_tooltip_enabled",
     "auto_reindent_flat_python_paste",
-    "completion_enabled",
-    "completion_auto_trigger",
+    "completion_mode",
     "completion_min_chars",
-    "completion_auto_trigger_period",
 )
 
 _INTELLIGENCE_HIGHLIGHTING_FIELDS: tuple[str, ...] = (

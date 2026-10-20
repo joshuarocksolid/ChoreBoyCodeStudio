@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide2.QtGui import QFont
 
+from app.shell.settings_dialog_general import apply_completion_mode_to_controls
 from app.shell.settings_models import (
     EditorSettingsSnapshot,
     SETTINGS_SCOPE_GLOBAL,
@@ -120,10 +121,9 @@ class SettingsScopeHandlersMixin:
 
     def _handle_reset_intelligence_group_to_global(self) -> None:
         baseline = self._scope_snapshots[SETTINGS_SCOPE_GLOBAL]
-        self._completion_enabled_input.setChecked(baseline.completion_enabled)
-        self._completion_auto_trigger_input.setChecked(baseline.completion_auto_trigger)
-        self._completion_min_chars_input.setValue(baseline.completion_min_chars)
-        self._completion_auto_trigger_period_input.setChecked(baseline.completion_auto_trigger_period)
+        self._completion_project_follows_global = True
+        self._completion_min_chars_value = baseline.completion_min_chars
+        apply_completion_mode_to_controls(self, baseline.completion_mode)
         self._linter_enabled_input.setChecked(baseline.diagnostics_enabled)
         self._diagnostics_realtime_input.setChecked(baseline.diagnostics_realtime)
         self._quick_fixes_enabled_input.setChecked(baseline.quick_fixes_enabled)
