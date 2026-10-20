@@ -8,10 +8,21 @@ ChoreBoy Code Studio (CBCS) has to start and run on two runtimes from one codeba
 
 | Runtime | Python | Qt binding | Where we can test it today |
 | --- | --- | --- | --- |
-| ChoreBoy production, current | 3.9.2 | PySide2 / Qt 5.15.2 | ChoreBoy VM, `/opt/freecad/AppRun` on Cloud (3.11.13, PySide2 5.15.15) |
-| ChoreBoy FreeCAD 1.1 (test update, about 2026-09-29) | 3.11 (assumed) | PySide6 only (assumed) | `/Applications/FreeCAD.app` on the Mac: FreeCAD 1.1.3, Python 3.11.14, PySide6 6.8.3 |
+| ChoreBoy production, current | 3.9.2 | PySide2 / Qt 5.15.2 | ChoreBoy VM slots (`cbprobe`), `/opt/freecad/AppRun` on Cloud (3.11.13, PySide2 5.15.15) |
+| ChoreBoy FreeCAD 1.1 (test update, about 2026-09-29) | 3.11.14 | PySide6 6.8.3, PySide2 absent | `/Applications/FreeCAD.app` on the Mac: FreeCAD 1.1.3, Python 3.11.14, PySide6 6.8.3 |
 
-All code stays Python 3.9 syntax. The 1.1 image itself has not been probed. Its Python and PySide versions above come from the upstream release and the Mac app. Probing it is step 0.1.
+All code stays Python 3.9 syntax.
+
+The 1.1 row comes from the `v11_capability` probe run on 2026-10-19 on a confined FreeCAD 1.1 ChoreBoy (`~/Projects/cb_probes/harness/probes/v11_capability/results/`). That run reported 12 pass, 0 fail. Its results matter for this plan:
+
+- `sys.executable` is `/opt/freecad/usr/bin/freecad`, Python 3.11.14.
+- PySide6 6.8.3 imports; PySide2 raises `ModuleNotFoundError`.
+- **`os.memfd_create` is gone.**
+- **ctypes can only load libraries under `/opt/freecad`**: `PermissionError("ctypes: loading libraries is restricted to files under /opt/freecad…")`.
+- psycopg 3.3.4 (binary backend) and pg8000 1.31.5 ship in the image.
+- A local TCP listen socket is allowed.
+
+The everyday VM slots, for example `ChoreBoy` on 2026-10-20, are still the 3.9.2 / PySide2 image.
 
 Background research: `docs/form_builder/research/B_qt_runtime_platform.md`. It has the module matrix for every local FreeCAD tree. This plan doesn't repeat that matrix. It does re-measure the API breaks on CBCS's own code.
 
@@ -20,11 +31,83 @@ Background research: `docs/form_builder/research/B_qt_runtime_platform.md`. It h
 - **The port is smaller than the import count suggests.** We aliased `PySide2` onto PySide6 6.8.3 in-process and patched `QAction`, `QActionGroup` and `QShortcut` back onto `QtWidgets`. With that alone, the real editor starts and shows its main window on two runtimes: Python 3.9.23 and FreeCAD.app 1.1.3 (Python 3.11.14). In both cases the only warning was `exec_` deprecation.
 - **Unit suite under the same alias:** 2330 tests. 2240 pass, 45 skip and 37 fail. Of the 37 failures, 20 also fail on PySide2 on this Mac. 8 more tests segfault the process, so they were deselected. That leaves **25 PySide6-only regressions**. They come from 4 root causes, and 3 of those 4 live in test code.
 - **The real hazards are runtime-only.** Several PySide6 enum types reject `int()`. A Python exception raised inside a Qt virtual override now propagates out of a synchronous `sendEvent`, and under `QTest.keyPress` it segfaults. The test suite only exercises a few of these paths.
+- **FreeCAD's own `PySide` shim** (§0) is FreeCAD's `import PySide` package. It already selects the right binding inside any FreeCAD-started process, and that was verified live on production ChoreBoy. It is a pure rename layer: it fixes none of the API breaks, has no `QtTest` or `QtPrintSupport`, and is invisible to plain `python`. **Use it for user templates.** CBCS itself keeps a thin `app/qt/` that follows the shim's binding choice.
 - **The compat layer is one self-contained file plus thin submodules.** It is `app/qt/qt_compat.py`, which imports only the standard library. `app/qt/QtCore.py`, `QtGui.py`, `QtWidgets.py` and the other submodules re-export from it. The same `qt_compat.py` gets copied into user projects and builder output.
 - **A mechanical codemod covers most of the work.** It rewrites 563 `PySide2` import sites in 273 files. About 15 call sites need hand edits.
 - **Effort:** about **12–16 engineer-days** from compat module to a PySide6 CI lane, plus ChoreBoy 1.1 image verification. That excludes the cp311 vendor bundle (Phase 4), which adds about 3–4 days.
 
 ---
+
+## 0. Can FreeCAD's `PySide` shim handle the switch for us?
+
+FreeCAD ships a package named `PySide` (no version number). Its own workbenches import from it, for example `from PySide import QtGui`. Writing `from PySide.QtWidgets import QLabel` gets the matching binding on either runtime. We measured how far that goes.
+
+### 0.1 What the shim is
+
+- CMake generates it at build time. The source is `cMake/FreeCAD_Helpers/SetupShibokenAndPyside.cmake`, which is the same in tag `1.1.0` and on `main`. It is installed to `<prefix>/Ext/PySide/`. Every file is a one-line star-import from one binding that is fixed when FreeCAD is built:
+
+  ```text
+  __init__.py   from PySide{5→2|6} import __version__, __version_info__
+  QtCore.py     from PySide{2|6}.QtCore import *
+  QtGui.py      from PySide{2|6}.QtGui import *  +  from PySide{2|6}.QtWidgets import *
+                QHeaderView.setResizeMode = QHeaderView.setSectionResizeMode
+  QtWidgets.py  from PySide{2|6}.QtWidgets import *
+  QtSvg.py, QtUiTools.py, QtNetwork.py, QtWebEngineWidgets.py   star-imports
+  QtSvgWidgets.py   Qt5: QSvgWidget, QGraphicsSvgItem from QtSvg;  Qt6: from QtSvgWidgets import *
+  ```
+
+  It is a rename layer and nothing more. Apart from the Qt4-style "widgets live in `QtGui`" and the `setResizeMode` alias, it smooths over no API differences. `main`, which becomes 1.2, has dropped the Qt5 branch and kept the shim. That is a sign the shim will stay around.
+- **Production ChoreBoy (3.9.2, probed live 2026-10-20 on the `ChoreBoy` slot under `/opt/freecad/AppRun`):**
+  - `import PySide` resolves to `/opt/freecad/usr/Ext/PySide/__init__.py`, version 5.15.2.
+  - `PySide.QtSvgWidgets` and `PySide.QtUiTools` import.
+  - `PySide.QtWidgets.QAction` and `PySide.QtGui.QAction` both exist.
+  - **`PySide.QtTest` and `PySide.QtPrintSupport` do not exist.** `PySide.QtWebEngineWidgets` fails because PySide2's WebEngine is missing.
+  - `PySide6` and `shiboken6` are absent.
+- **FreeCAD 1.1.3 (Mac app):**
+  - The shim files bind PySide6.
+  - `PySide.QtWidgets.QAction` is **False** and `PySide.QtGui.QAction` is True.
+  - Compared with PySide6 itself, the shim's `QtWidgets` is missing no public classes. `QtCore` lacks only `__version__`.
+  - `QtTest` and `QtPrintSupport` are absent here too.
+- **The shim is only on `sys.path` when the FreeCAD binary started the process.** That is true for `AppRun -c` on ChoreBoy, Cloud, and the 1.1 image, whose `sys.executable` is `/opt/freecad/usr/bin/freecad`. It is not true for a bare `bin/python`: `/Applications/FreeCAD.app/…/bin/python -I` gives `find_spec("PySide") is None`. The Mac dev launcher `/Users/local/opt/freecad/AppRun` execs `bin/python`, so it doesn't see the shim either. In addition, that hybrid prefix's `Ext/PySide` binds **PySide6** even though the launcher is used as the PySide2 parity runtime (research B).
+
+### 0.2 Measured: CBCS through the shim
+
+- We aliased `PySide2.*` onto `PySide.*` on FreeCAD.app 1.1.3 with `PYTHONPATH=…/Ext`. To simulate a codemod we imported `QAction`, `QActionGroup` and `QShortcut` from `PySide.QtGui`, and we took `QtTest` and `QtPrintSupport` from PySide6 because the shim lacks them.
+- **The editor started and showed its main window**, with the same single `exec_` deprecation warning as the direct-PySide6 spike.
+- Every class the shim hands out is the PySide6 class itself, so the results in §2 and §5.2 apply unchanged:
+  - the 25 unit regressions;
+  - the `int(enum)` crash;
+  - exception propagation from overrides;
+  - `exec_` deprecation.
+
+### 0.3 What the shim solves and what it doesn't
+
+| Concern | Shim | Own `qt_compat` |
+| --- | --- | --- |
+| Pick the binding without code | yes, and always the one FreeCAD itself was built with, so no dual-Qt crash | yes, by `find_spec` order or `CBCS_QT_API` |
+| `QAction` / `QActionGroup` / `QShortcut` | only if imported from `PySide.QtGui`; `from PySide.QtWidgets import QAction` **fails on 1.1** | re-exported on `QtWidgets` |
+| `QSvgWidget` home | yes (`PySide.QtSvgWidgets` on both) | yes |
+| `exec_`, `int(enum)`, override exceptions, `QMouseEvent.pos`, … | no | helpers (`exec_qt`, `enum_value`, `event_pos`) |
+| `QtTest` (Test Explorer, 106 test modules), `QtPrintSupport`, `shiboken` | **no module** | yes |
+| Works outside a FreeCAD-started process (Mac dev `bin/python`, pyright, plain `python3` tools) | **no** | yes |
+| Mac hybrid dev prefix gives ChoreBoy parity | **no**, its shim binds PySide6 | yes, `CBCS_QT_API=pyside2` |
+| pyright types | only with `Ext` on `extraPaths` and the right binding's stubs behind the star-import | `TYPE_CHECKING` import of PySide2 stubs |
+| Extra file in user projects | none | one `qt_compat.py` (copied, drift-checked) |
+| Codemod size for CBCS | same 563 sites (`PySide2.X` → `PySide.X`), plus moving `QAction`-family imports to `QtGui` | same 563 sites |
+
+### 0.4 Recommendation
+
+1. **Use the shim for user-facing app code.** That covers `templates/qt_app`, `example_projects`, and possibly form-builder output.
+   - User apps on ChoreBoy always start through `AppRun -c`, so the shim is always there.
+   - Writing `from PySide import QtCore, QtGui, QtWidgets` is the documented FreeCAD idiom. It needs no extra file in the project, and it runs today on 3.9.2/PySide2 and on 1.1/PySide6.
+   - The one rule users have to learn is: **import `QAction`, `QActionGroup` and `QShortcut` from `PySide.QtGui`, never from `QtWidgets`.**
+   - Writing `app.exec_()` still works on 6.8.3, with a warning. The template can write `getattr(app, "exec", None) or app.exec_` to avoid even that.
+   - The intelligence index and the manual should teach the `PySide.` names.
+   - This **replaces** the "copy `qt_compat.py` into every user project" part of §3.2 for templates. The form-builder track should choose between the shim and its emitted `qt_compat.py`. The shim is simpler, but emitted code would then only run inside FreeCAD-launched processes, which on ChoreBoy is every process.
+2. **Keep `app/qt/` for CBCS itself, and have it defer to the shim when present.** The shim can't replace it, because CBCS needs `QtTest` and `QtPrintSupport`, runs under plain `bin/python` in dev and pyright, and needs the helpers in §3.2. One refinement to `binding_candidates()`:
+   - If `CBCS_QT_API` is unset and `importlib.util.find_spec("PySide")` resolves under an `Ext/` directory, read the binding name from the shim's `__init__.py` text (`from PySide6 import …` or `from PySide2 import …`) without importing anything.
+   - Pick that binding.
+   - This keeps the editor on the same Qt as FreeCAD on every image and avoids the dual-Qt crash on hybrid trees.
 
 ## 1. Inventory
 
@@ -251,7 +334,8 @@ The codemod is a one-shot script, `tools/qt_codemod.py`. It is deleted after use
 | `pytest.importorskip("PySide2.QtX")` (106) | `pytest.importorskip("app.qt.QtX")` (skips cleanly when no binding) |
 | the 11 copied `if not hasattr(qt_widgets, "QActionGroup")` blocks + `testing/main_window_test_helpers.py` | delete; compat handles it |
 | `x.exec_(…)` (36) | `exec_qt(x, …)` + add `from app.qt.qt_compat import exec_qt` |
-| user-facing outside `app/` (`templates/`, `example_projects/`, `Smoke*`, `TaskTracker`, `packaging/install.py`) | `from qt_compat import QtWidgets` style with a copied `qt_compat.py` next to `main.py` |
+| user-facing outside `app/` (`templates/`, `example_projects/`, `Smoke*`, `TaskTracker`) | `PySide2.X` → `PySide.X` (FreeCAD shim, §0.4); `QAction`/`QActionGroup`/`QShortcut` imports → `PySide.QtGui` |
+| `packaging/install.py` | same shim rewrite, because the installer also runs under `AppRun -c`; confirm on the 1.1 image in Phase 0.1 |
 
 Hand edits that the codemod flags but does not fix (about 15 sites):
 
@@ -384,11 +468,11 @@ Estimates are focused engineer-days for someone who knows CBCS. Test runs are co
 
 | Phase | Work | Days | Exit criterion |
 | --- | --- | ---: | --- |
-| **0. Facts** | 0.1 Probe the real ChoreBoy 1.1 test update with `run-choreboy-probe`: Python version, SOABI, `PySide2` and `PySide6` import, `QtUiTools`, `QtSvgWidgets`, how `AppRun -c` sets `sys.path` (does `Ext/PySide` bind PySide6?), whether `/bin/sh` is the only subprocess, and whether tree_sitter, psycopg and pg8000 are present. 0.2 Commit this plan's spike harness under `testing/` | 1 | probe report in `docs/DISCOVERY.md` §1.1-update |
+| **0. Facts** | 0.1 Python, PySide, memfd, ctypes and DB drivers are already known from `v11_capability` (2026-10-19). Still open on the 1.1 image: whether `Ext/PySide` binds PySide6 under `AppRun -c` (expected yes); `QtUiTools` and `QtTest`; whether `/home` is still `noexec`; **whether a Python extension `.so` (not ctypes) can load from outside `/opt/freecad`, for example the CBCS install dir or `/tmp`**; and whether `/bin/sh` is the only subprocess. Re-run `~/ChoreBoy/artifacts/pyside_shim_probe` on that image. 0.2 Commit this plan's spike harness under `testing/` | 1 | probe report in `docs/DISCOVERY.md` |
 | **1. Compat module + probe** | `app/qt/` (§3.2), `qt_binding_choice.py`, probe rename and QtUiTools check (§4), `runtime_explainer` text, `file_roles` changes (§3.1, deny `app.qt` in non-UI roles), `CBCS_QT_API` passthrough into runner, plugin host and Test Explorer env | 3 | lane A green; probe tests green; `npx pyright` 0 errors |
 | **2. Codemod + hand edits** | run `tools/qt_codemod.py` across `app/`, `tests/`, `testing/`, `run_editor.py`; the ~15 hand edits in §3.3; delete the 11 copied test patches; enable the binding-confinement `file_roles` rule; static gate (§5.4) | 3–4 | lane A green; lane C green except known Mac-only failures; 0 raw `PySide2` imports outside `app/qt/` |
-| **3. User-facing code** | `templates/qt_app` (+`qt_compat.py`, `exec_qt`), `example_projects/crud_showcase`, `SmokeQtApp`, `SmokeCrudExample`, `TaskTracker`, `packaging/install.py` (inline copy of `qt_compat.py`, because the installer runs before CBCS is installed); intelligence index keyed by active binding; `template.json`/README/manual chapters 102, 120, 130, 210, 290, 390, 395 | 2–3 | template smoke (§5.3.4) green on lanes A and B |
-| **4. Python 3.11 vendor bundle** | the 1.1 image is Python 3.11, so `vendor/tree_sitter/_binding.cpython-39-…so` will not load. `app/treesitter/loader.py:127` already resolves the binding by `SOABI`, so a **dual-ABI** product payload (cp39 and cp311 `_binding` side by side; grammar wheels are abi3) works without a loader change. Generalize `app/packaging/tree_sitter_cp39.py` and `product_builder.py` to a list of target SOABIs; confirm `black==24.10.0`, `jedi`, `rope` on 3.11 (pure Python in `vendor_py39`) | 3–4 | `python package.py` produces a payload whose `validate_choreboy_tree_sitter_bundle` passes for both SOABIs; editor on lane B shows syntax highlighting |
+| **3. User-facing code** | `templates/qt_app`, `example_projects/crud_showcase`, `SmokeQtApp`, `SmokeCrudExample`, `TaskTracker` move to FreeCAD's `from PySide import …` shim (§0.4), with the `QAction` family imported from `PySide.QtGui`. Also handle `packaging/install.py` (inline copy of `qt_compat.py`, because the installer runs before CBCS is installed); intelligence index keyed by active binding; `template.json`/README/manual chapters 102, 120, 130, 210, 290, 390, 395 | 2–3 | template smoke (§5.3.4) green on lanes A and B |
+| **4. Python 3.11 vendor bundle** | **Scope depends on 0.1.** On 1.1, `memfd_create` is gone and ctypes only loads libraries under `/opt/freecad`. If extension imports are also blocked outside `/opt/freecad`, the memfd path for tree-sitter (DISCOVERY §4E) is dead. tree-sitter would then stay off on 1.1 until the image ships it; psycopg and pg8000 already ship. If they are allowed: the 1.1 image is Python 3.11, so `vendor/tree_sitter/_binding.cpython-39-…so` will not load. `app/treesitter/loader.py:127` already resolves the binding by `SOABI`, so a **dual-ABI** product payload (cp39 and cp311 `_binding` side by side; grammar wheels are abi3) works without a loader change. Generalize `app/packaging/tree_sitter_cp39.py` and `product_builder.py` to a list of target SOABIs; confirm `black==24.10.0`, `jedi`, `rope` on 3.11 (pure Python in `vendor_py39`) | 3–4 | `python package.py` produces a payload whose `validate_choreboy_tree_sitter_bundle` passes for both SOABIs; editor on lane B shows syntax highlighting |
 | **5. CI and dev tooling** | lane B/C in `run_test_shard.py` (`--qt pyside6`), `testing/` AppRun wrapper for FreeCAD.app, `run_dev.sh --qt pyside6`, `scripts/setup_freecad_dev.sh` pin, `resolve_pyright_extrapaths.sh` (a second pyright config against PySide6 stubs is optional), `AGENTS.md`/`docs/LOCAL_DEV.md`/`docs/TESTS.md` | 2 | `run_test_shard.py fast` and `fast --qt pyside6` both documented with checkpoint numbers |
 | **6. ChoreBoy 1.1 verification** | install the packaged build on the ChoreBoy VM with the 1.1 test update via `run-choreboy-app`; smoke: open project, edit, run `qt_app` template, debug session, REPL, Test Explorer, plugin host, packaging export; repeat on current production image | 2 | both images pass the smoke list in `docs/ACCEPTANCE_TESTS.md` |
 | **Total** | | **16–19** (12–16 without Phase 4) | |
@@ -416,7 +500,7 @@ Each phase leaves PySide2 production working, so we can stop between phases. Pha
 | **Two bindings in one process** on hybrid dev trees or in user apps that import FreeCADGui | low on ChoreBoy (one binding), high on Mac dev | signal 139 | `find_spec` before import; `CBCS_QT_API` exported to children; dev scripts pin the binding |
 | **User projects already on disk** import `PySide2` and break on the 1.1 image | certain for existing projects | user apps don't start after the update | Phase 3 templates fix *new* projects only; offer a "Port project to qt_compat" command that runs the same codemod on a user project (stretch); document in manual |
 | **FreeCAD's `PySide` shim.** User code that does `import PySide` gets PySide6 on 1.1, and `QtWidgets.QAction` is gone (research B) | medium | user app break | manual chapter + template use `qt_compat`; intelligence index stops suggesting `PySide.QtWidgets.QAction` |
-| **Python 3.11 vendor bundle** (Phase 4) not ready when the image ships | medium | editor starts, tree-sitter off ("Syntax highlighting off") | the editor degrades rather than failing; dual-ABI payload |
+| **Native extensions on 1.1.** `memfd_create` is removed and ctypes is jailed to `/opt/freecad` (v11 probe), so vendored tree-sitter may not be loadable at all | high | editor starts with tree-sitter off ("Syntax highlighting off"); any other vendored `.so` is affected the same way | the editor already degrades instead of failing. Phase 0.1 answers whether `ExtensionFileLoader` works outside `/opt/freecad`; if not, ask for tree-sitter in the image or keep the non-tree-sitter highlighter path |
 | **Pyright typing through dynamic re-exports** | low | type noise | `TYPE_CHECKING` star-import from PySide2 in `app/qt/Qt*.py` keeps current stubs; a separate PySide6 pyright config is optional |
 | **The codemod changes 274 files in one PR** | low | review fatigue, merge conflicts with in-flight branches | mechanical-only commit separated from hand edits; `--check` mode; land at a quiet point; rerun on rebases |
 | **Visual and behavioral drift on Qt 6**: fonts (§2.4.3), high DPI is always on, style differences | medium | cosmetic | Phase 6 screenshot pass on the VM; fix case by case |
