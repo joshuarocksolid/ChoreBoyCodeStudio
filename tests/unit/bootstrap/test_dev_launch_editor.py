@@ -322,3 +322,12 @@ def test_main_returns_actionable_error_when_apprun_missing(
     assert exit_code == 2
     assert "not found" in error_output.lower()
     assert dev_launch_editor.APP_RUN_ENV_VAR in error_output
+
+
+def test_qt_flag_forces_the_editor_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CBCS_QT_API", raising=False)
+    monkeypatch.setattr("app.run.runtime_launch.loaded_binding_env_value", lambda: None)
+    args = dev_launch_editor.parse_args(["--qt", "pyside2"])
+
+    assert dev_launch_editor.build_launch_env(args.qt)["CBCS_QT_API"] == "pyside2"
+    assert "CBCS_QT_API" not in dev_launch_editor.build_launch_env(None)
