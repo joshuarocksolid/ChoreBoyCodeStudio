@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import pytest
 
@@ -54,14 +54,19 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
     def fake_import_module(module_name: str) -> ModuleType:
         if module_name == "tree_sitter":
             module = ModuleType("tree_sitter")
-            module.Language = lambda handle, name: (handle, name)  # type: ignore[attr-defined]
+            # The fake language handle is the grammar's language ABI version.
+            module.Language = lambda handle, name: SimpleNamespace(version=handle)  # type: ignore[attr-defined]
+            module.LANGUAGE_VERSION = 14  # type: ignore[attr-defined]
+            module.MIN_COMPATIBLE_LANGUAGE_VERSION = 13  # type: ignore[attr-defined]
             return module
         raise AssertionError(f"unexpected import {module_name}")
 
     def fake_load_language_module(spec, vendor_root: Path) -> ModuleType | None:
-        if spec.key in {"python", "json"}:
+        if spec.key in {"python", "json", "sql"}:
             module = ModuleType(spec.package_name)
-            module.language = lambda: 11  # type: ignore[attr-defined]
+            # sql mimics tree-sitter-sql 0.3.9: ABI 15 against a 0.23 core (max 14).
+            abi = 15 if spec.key == "sql" else 14
+            module.language = lambda: abi  # type: ignore[attr-defined]
             return module
         if spec.key == "fake_optional":
             raise RuntimeError("broken optional package")
@@ -76,12 +81,12 @@ def test_initialize_runtime_tracks_bundled_and_optional_languages(
     assert status.is_available is True
     assert status.available_language_keys == ("json", "python")
     assert status.missing_default_language_keys == tuple(
-        sorted(set(loader.DEFAULT_LANGUAGE_KEYS) - {"json", "python"})
+        sorted(set(loader.DEFAULT_LANGUAGE_KEYS) - {"json", "python", "sql"})
     )
-    assert status.skipped_optional_language_keys == ("fake_optional",)
+    assert set(status.skipped_optional_language_keys) == {"fake_optional", "sql"}
     assert status.source == "vendored"
     assert f"2/{len(loader.DEFAULT_LANGUAGE_KEYS)} bundled grammars loaded" in status.message
-    assert "optional skipped: fake_optional" in status.message
+    assert "optional skipped: " in status.message and "sql" in status.message
 
 
 def test_load_language_module_requires_language_callable(

@@ -382,6 +382,13 @@ def _initialize_from_vendor(vendor_root: Path) -> None:
             if spec.included_by_default:
                 missing_default_languages.append(spec.key)
             continue
+        try:
+            _require_compatible_language(module, spec, getattr(language, spec.language_callable_name))
+        except RuntimeError:
+            # A grammar built for a newer language ABI than this core supports
+            # crashes the process at query compile time; skip it instead.
+            skipped_optional_languages.append(spec.key)
+            continue
         loaded_language_modules[spec.key] = language
     if not loaded_language_modules:
         raise FileNotFoundError(

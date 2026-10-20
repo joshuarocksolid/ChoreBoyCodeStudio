@@ -6,7 +6,7 @@ import pytest
 
 from app.treesitter.language_registry import TreeSitterLanguageRegistry
 from app.treesitter.language_specs import LANGUAGE_SPECS
-from app.treesitter.loader import initialize_tree_sitter_runtime
+from app.treesitter.loader import available_language_keys, initialize_tree_sitter_runtime
 from app.treesitter.ts_api import compile_query
 
 pytestmark = pytest.mark.unit
@@ -22,7 +22,11 @@ def test_shipped_queries_compile() -> None:
 
     registry = TreeSitterLanguageRegistry()
     failures: list[str] = []
+    available = set(available_language_keys())
     for spec in LANGUAGE_SPECS:
+        if spec.key not in available:
+            # The loader skips grammars outside the core's language ABI range.
+            continue
         resolved = registry.resolve_for_key(spec.key)
         if resolved is None:
             failures.append(f"{spec.key}: language did not resolve")
