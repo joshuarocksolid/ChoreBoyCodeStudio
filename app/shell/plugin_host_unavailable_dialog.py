@@ -29,15 +29,18 @@ def freecad_version_label() -> str:
 
 def plugin_host_unavailable_message(detail: str, freecad_version: str) -> str:
     """Return the dialog body. ``freecad_version`` is ``unknown`` when Version() is missing."""
-    return f"Plugins need FreeCAD 1.0. This runtime is {freecad_version}.\n\n{detail}"
+    return (
+        "Plugins need FreeCAD 1.0. "
+        "Running, debugging, and the Python console need FreeCAD 1.0 too, "
+        "because all of them start /opt/freecad/AppRun, which FreeCAD 0.21 blocks. "
+        f"This runtime is {freecad_version}.\n\n"
+        f"{detail}\n\n"
+        "Click Copy Details and post them to the LibrePy group."
+    )
 
 
 def present_plugin_host_unavailable(parent: object, detail: str) -> None:
-    """Show the one dialog that names the FreeCAD version and the host error."""
-    from PySide2.QtWidgets import QMessageBox
+    """Show the FreeCAD 1.0 explanation for a plugin-host start failure."""
+    from app.shell.startup_dialogs import present_freecad_requirement
 
-    QMessageBox.warning(
-        parent,  # type: ignore[arg-type]
-        "Plugin runtime unavailable",
-        plugin_host_unavailable_message(detail, freecad_version_label()),
-    )
+    present_freecad_requirement(parent, detail)  # type: ignore[arg-type]
