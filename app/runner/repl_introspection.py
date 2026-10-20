@@ -269,7 +269,7 @@ def prewarm_signature_machinery() -> None:
         from PySide2 import QtCore  # noqa: WPS433 - optional, runner side only
 
         _signatures("setObjectName", QtCore.QObject.setObjectName)
-    except Exception:
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         pass
 
 
@@ -281,10 +281,8 @@ def start_prewarm_thread() -> None:
 def _signatures(name: str, value: Any) -> List[str]:
     try:
         return [name + str(inspect.signature(value))]
-    except (TypeError, ValueError):
+    except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
         pass
-    except Exception:
-        return []
     raw = getattr(value, "__signature__", None)
     if isinstance(raw, (list, tuple)):
         lines: List[str] = []
