@@ -171,7 +171,8 @@ BackgroundWorkStarter = Callable[[Callable[[], None]], None]
 
 def _completion_degradation_message(reason: str) -> str:
     if reason == "repl_runtime_inspection":
-        return "Python Console completion is using live runtime inspection."
+        # Live inspection is the normal console path now; saying so on every list is noise.
+        return ""
     if reason == "repl_jedi_unavailable":
         return "Python Console semantic completion is unavailable (Jedi not loaded)."
     if reason in {"repl_no_completions", "repl_jedi_fallback"}:
@@ -307,8 +308,8 @@ class PythonConsoleWorkflow:
                     prefix=completion_prefix,
                     items=envelope.items,
                 )
-                if envelope.degradation_reason:
-                    message = _completion_degradation_message(envelope.degradation_reason)
+                message = _completion_degradation_message(envelope.degradation_reason)
+                if envelope.degradation_reason and message:
                     self._host.show_status_message(message, 4000)
 
             self._host.dispatch_to_main_thread(apply)

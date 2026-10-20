@@ -9,7 +9,7 @@ U = TypeVar("U")
 
 from app.bootstrap.paths import PathInput
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
-from app.intelligence.completion_context import CompletionContext
+from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
 from app.intelligence.completion_models import (
     CompletionFastResult,
     CompletionEnvelope,
@@ -20,7 +20,12 @@ from app.intelligence.completion_models import (
 )
 from app.intelligence.completion_resolver import CompletionResolver
 from app.intelligence.completion_service import CompletionRequest, CompletionService
-from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator
+from app.intelligence.runtime_introspection import (
+    RuntimeIntrospectionCoordinator,
+    RuntimeIntrospectionQuery,
+    resolve_runtime_introspection_query,
+    resolve_runtime_introspection_query_with_inference,
+)
 from app.intelligence.semantic_facade import SemanticFacade
 from app.intelligence.semantic_models import (
     SemanticDefinitionResult,
@@ -221,10 +226,7 @@ class SemanticSession:
 
         popup_prefix = completion_context.prefix
         self._completion_resolver.bind_runtime_members(runtime_coordinator)
-        runtime_query, runtime_items = self._completion_service.runtime_completion_items(
-            completion_context,
-            coordinator=runtime_coordinator,
-        )
+        runtime_items: list[CompletionItem] = []
         fast_envelope: list[CompletionEnvelope | None] = [None]
         semantic_envelope: list[CompletionEnvelope | None] = [None]
 
@@ -238,6 +240,43 @@ class SemanticSession:
             if not merged.items:
                 return
             on_paint(popup_prefix, merged.items, merged)
+
+        def add_runtime_items(items: list[CompletionItem]) -> None:
+            attached = self._completion_service.attach_runtime_replacement_metadata(
+                items,
+                context=completion_context,
+            )
+            if not attached:
+                return
+            runtime_items.extend(attached)
+            paint_merged(fast=fast_envelope[0], semantic=semantic_envelope[0])
+
+        def start_runtime_tier(runtime_query: RuntimeIntrospectionQuery | None) -> None:
+            if runtime_coordinator is None or runtime_query is None:
+                return
+            cached = runtime_coordinator.cached_items(runtime_query)
+            if cached is not None:
+                add_runtime_items(cached)
+                return
+            if schedule_background_task is None:
+                return
+
+            def introspection_task(_cancellation: object) -> list[CompletionItem]:
+                return runtime_coordinator.fetch_and_cache_from_runner(
+                    runtime_query,
+                    max_results=request.max_results,
+                )
+
+            def introspection_error(exc: Exception) -> None:
+                if on_error is not None:
+                    on_error(exc)
+
+            schedule_background_task(
+                f"runtime_introspect:{runtime_query.target_path}",
+                introspection_task,
+                add_runtime_items,
+                introspection_error,
+            )
 
         def on_fast_success(result: CompletionFastResult) -> None:
             fast_envelope[0] = result.envelope
@@ -255,39 +294,26 @@ class SemanticSession:
             on_error=on_fast_error,
         )
 
-        if (
+        direct_query = resolve_runtime_introspection_query(completion_context)
+        if direct_query is not None:
+            start_runtime_tier(direct_query)
+        elif (
             runtime_coordinator is not None
-            and runtime_query is not None
-            and schedule_background_task is not None
-            and runtime_coordinator.cached_items(runtime_query) is None
+            and completion_context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
         ):
-            introspection_key = f"runtime_introspect:{runtime_query.target_path}"
-
-            def introspection_task(_cancellation: object) -> list[CompletionItem]:
-                return runtime_coordinator.fetch_and_cache_from_runner(
-                    runtime_query,
-                    max_results=request.max_results,
-                )
-
-            def introspection_success(items: list[CompletionItem]) -> None:
-                attached = self._completion_service.attach_runtime_replacement_metadata(
-                    items,
+            # Jedi inference takes 70-160 ms on ChoreBoy; keep it off the UI thread
+            # and on the serialized lane with the other Jedi work.
+            self._submit(
+                key=f"runtime_infer:{request.current_file_path}",
+                priority=1,
+                task=lambda: resolve_runtime_introspection_query_with_inference(
                     context=completion_context,
-                )
-                if not attached:
-                    return
-                runtime_items.extend(attached)
-                paint_merged(fast=fast_envelope[0], semantic=semantic_envelope[0])
-
-            def introspection_error(exc: Exception) -> None:
-                if on_error is not None:
-                    on_error(exc)
-
-            schedule_background_task(
-                introspection_key,
-                introspection_task,
-                introspection_success,
-                introspection_error,
+                    project_root=completion_context.project_root,
+                    current_file_path=completion_context.file_path,
+                    source_text=completion_context.source_text,
+                ),
+                on_success=start_runtime_tier,
+                on_error=on_fast_error,
             )
 
         def on_semantic_success(result: CompletionRequestResult) -> None:
