@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from typing import Mapping
 
+from app.bootstrap.qt_binding_choice import ENV_VAR as QT_API_ENV_VAR, loaded_binding_env_value
 from app.core import constants
 
 _APPRUN_ENV_KEYS_TO_DROP = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
@@ -32,6 +33,11 @@ def sanitize_apprun_child_env(env: Mapping[str, str] | None = None) -> dict[str,
     resolved = dict(os.environ if env is None else env)
     for key in _APPRUN_ENV_KEYS_TO_DROP:
         resolved.pop(key, None)
+    if not resolved.get(QT_API_ENV_VAR, "").strip():
+        # Keep runner, plugin-host and pytest children on the editor's binding.
+        binding = loaded_binding_env_value()
+        if binding is not None:
+            resolved[QT_API_ENV_VAR] = binding
     return resolved
 
 

@@ -63,7 +63,7 @@ def _clear_qt_module_caches() -> None:
 
 def _load_qt_runtime() -> tuple[Any, Any]:
     """Load runtime-only Qt dependencies lazily."""
-    application_class = importlib.import_module("PySide2.QtWidgets").QApplication
+    application_class = importlib.import_module("app.qt.QtWidgets").QApplication
     main_window_class = importlib.import_module("app.shell.main_window").MainWindow
     return application_class, main_window_class
 

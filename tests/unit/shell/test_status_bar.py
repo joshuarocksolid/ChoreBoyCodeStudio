@@ -38,7 +38,7 @@ def test_map_startup_report_to_status_handles_all_checks_passing() -> None:
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
-            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("qt_binding_import", True, "ok"),
             CapabilityCheckResult("treesitter_runtime", True, "ok"),
         ]
     )
@@ -54,7 +54,7 @@ def test_map_startup_report_to_status_handles_partial_minimal_report() -> None:
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
-            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("qt_binding_import", True, "ok"),
             CapabilityCheckResult("state_root_writable", True, "ok"),
             CapabilityCheckResult("global_logs_writable", True, "ok"),
             CapabilityCheckResult("temp_root_writable", True, "ok"),

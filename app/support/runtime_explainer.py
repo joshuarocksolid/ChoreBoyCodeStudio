@@ -9,6 +9,7 @@ from app.bootstrap.capability_probe import (
     GLOBAL_LOGS_WRITABLE_CHECK_ID,
     PYSIDE2_IMPORT_CHECK_ID,
     PYTHON_TOOLING_RUNTIME_CHECK_ID,
+    QT_BINDING_CHECK_ID,
     STATE_ROOT_WRITABLE_CHECK_ID,
     TEMP_ROOT_WRITABLE_CHECK_ID,
     TREESITTER_RUNTIME_CHECK_ID,
@@ -216,20 +217,29 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence=evidence,
         )
-    if check.check_id == PYSIDE2_IMPORT_CHECK_ID:
+    if check.check_id in (QT_BINDING_CHECK_ID, PYSIDE2_IMPORT_CHECK_ID):
+        binding = check.details.get("binding")
+        active_binding = " Active binding: %s." % binding if binding else ""
         return RuntimeIssue(
             issue_id="runtime.pyside2_unavailable",
             workflow=workflow,
             severity="blocking",
             title="Qt runtime is unavailable",
-            summary="PySide2 could not be imported in the active runtime, so the editor cannot rely on its normal UI stack.",
+            summary=(
+                "Qt for Python (PySide6 or PySide2) could not be imported in the active runtime, "
+                "so the editor cannot open its UI."
+                + active_binding
+                + " CBCS_QT_API overrides the choice."
+            ),
             why_it_happened=(
-                "Code Studio is built around the PySide2 runtime bundled with FreeCAD AppRun."
+                "Code Studio needs Qt for Python (PySide6 or PySide2) from the FreeCAD runtime."
+                + active_binding
+                + " CBCS_QT_API names the binding when the default choice is wrong."
             ),
             next_steps=[
+                "Set CBCS_QT_API to pyside6 or pyside2 to override the Qt binding.",
                 "Confirm that the expected FreeCAD runtime is installed correctly.",
                 "If this is a packaged deployment, reinstall or repair it before relying on GUI workflows.",
-                "Capture logs/support bundle details if the runtime should already include PySide2.",
             ],
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence=evidence,
