@@ -76,8 +76,8 @@ class EditorTabFactory:
         if window._editor_tabs_widget is None:
             return False
 
-        if opened_result.closed_preview_path:
-            window._editor_tab_workflow.remove_tab_widget_for_path(opened_result.closed_preview_path)
+        if opened_result.closed_preview_tab is not None:
+            window._editor_tab_workflow.remove_tab_widget_for_path(opened_result.closed_preview_tab.file_path)
 
         if opened_result.was_already_open:
             existing_index = window._editor_tab_workflow.tab_index_for_path(opened_result.tab.file_path)
