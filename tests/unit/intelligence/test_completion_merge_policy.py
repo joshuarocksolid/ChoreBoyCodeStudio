@@ -32,7 +32,7 @@ def _item(label: str, *, source: str = "semantic", confidence: str = "exact") ->
     )
 
 
-def test_merge_completion_display_adds_tier_headers_and_dedupes_labels() -> None:
+def test_merge_completion_display_dedupes_labels_without_headers() -> None:
     fast = CompletionEnvelope(
         items=[_item("alpha", source="static_api_index", confidence="approximate")],
         source_phase="fast",
@@ -47,14 +47,8 @@ def test_merge_completion_display_adds_tier_headers_and_dedupes_labels() -> None
     merged = merge_completion_display(fast=fast, semantic=semantic)
 
     assert merged.confidence == "approximate"
-    assert [item.label for item in merged.items[:3]] == [
-        "Indexed suggestions",
-        "alpha",
-        "Python analysis",
-    ]
-    assert merged.items[3].label == "beta"
-    assert is_tier_header_item(merged.items[0])
-    assert is_tier_header_item(merged.items[2])
+    assert [item.label for item in merged.items] == ["alpha", "beta"]
+    assert not any(is_tier_header_item(item) for item in merged.items)
 
 
 def test_flatten_tiered_items_merges_documentation_from_later_tier() -> None:

@@ -491,11 +491,10 @@ def _tag_approximate_items(candidates: list[CompletionItem]) -> list[CompletionI
 
 
 def _include_member_for_prefix(label: str, prefix: str) -> bool:
-    """Hide private/dunder members unless the user is typing a ``_`` prefix."""
+    """Keep every member; the popup lists private names last and dunders after ``_``."""
 
-    if not label.startswith("_"):
-        return True
-    return prefix.startswith("_")
+    _ = (label, prefix)
+    return True
 
 
 def _base_match_score(label: str, prefix: str) -> int:

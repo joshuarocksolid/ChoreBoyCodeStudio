@@ -71,7 +71,7 @@ def test_trigger_completion_uses_async_requester_when_available(editor: CodeEdit
 
     editor.trigger_completion(manual=True)
 
-    assert calls == [("alpha", 5, True, 1, "manual", "")]
+    assert calls == [("alpha", 1, True, 1, "manual", "")]
 
 
 def test_show_completion_items_for_stale_generation_is_ignored(editor: CodeEditorWidget) -> None:
@@ -98,8 +98,7 @@ def test_show_completion_items_for_current_generation_updates_mapping(editor: Co
         items=[CompletionItem(label="alpha_local", insert_text="alpha_local", kind=CompletionKind.SYMBOL)],
     )
 
-    labels = [item.label for item in editor._completion_popup.model().items()]
-    assert "alpha_local" in labels
+    assert "alpha_local" in editor._completion_popup.visible_labels()
 
 
 def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget) -> None:
@@ -122,7 +121,7 @@ def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget)
 
     editor.show_completion_items_for_request(request_generation=1, prefix="alpha", items=[item])
 
-    assert calls == [("alpha_local", "alpha", 5, 1)]
+    assert calls == [("alpha_local", "alpha_local", len("alpha_local"), 1)]
 
 
 def test_completion_selection_skips_lazy_resolution_when_docs_present(editor: CodeEditorWidget) -> None:
@@ -171,7 +170,8 @@ def test_show_resolved_completion_item_updates_visible_model(editor: CodeEditorW
 
     editor.show_resolved_completion_item_for_request(request_generation=1, item=resolved)
 
-    assert editor._completion_popup.model().items()[0].documentation == "Resolved docs"
+    shown = editor._completion_popup.model().item_at(0)
+    assert shown is not None and shown.documentation == "Resolved docs"
 
 
 def test_typing_open_paren_shows_inline_signature_help(editor: CodeEditorWidget) -> None:
@@ -282,8 +282,7 @@ def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWid
 
     editor.apply_theme(_LIGHT_TOKENS)
     assert editor._is_dark is False
-    light_labels = [item.label for item in editor._completion_popup.model().items()]
-    assert "alpha_local" in light_labels
+    assert "alpha_local" in editor._completion_popup.visible_labels()
 
     editor.apply_theme(_DARK_TOKENS)
     assert editor._is_dark is True

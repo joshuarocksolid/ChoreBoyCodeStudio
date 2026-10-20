@@ -61,7 +61,7 @@ class PythonConsoleBindingPort(Protocol):
     def set_completion_docs_resolving(self, resolving: bool) -> None:
         ...
 
-    def set_auto_trigger_period(self, enabled: bool) -> None:
+    def set_completion_mode(self, mode: str) -> None:
         ...
 
     def completion_request_generation(self) -> int:
@@ -129,7 +129,7 @@ class PythonConsoleWorkflowHost(Protocol):
     def clear_console_host(self) -> ClearConsoleHost:
         ...
 
-    def completion_auto_trigger_period(self) -> bool:
+    def completion_mode(self) -> str:
         ...
 
 
@@ -162,8 +162,8 @@ class MainWindowPythonConsoleHost:
     def clear_console_host(self) -> MainWindowClearConsoleHost:
         return MainWindowClearConsoleHost(self._window)
 
-    def completion_auto_trigger_period(self) -> bool:
-        return self._window._shell_preferences_runtime.completion_auto_trigger_period()
+    def completion_mode(self) -> str:
+        return self._window._shell_preferences_runtime.completion_mode()
 
 
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]
@@ -225,7 +225,7 @@ class PythonConsoleWorkflow:
             if live is None:
                 return
             target = cast(PythonConsoleBindingPort, live)
-        target.set_auto_trigger_period(self._host.completion_auto_trigger_period())
+        target.set_completion_mode(self._host.completion_mode())
 
     def handle_start_python_console_action(self) -> bool:
         """Restart the REPL session and focus the Python Console tab."""

@@ -15,7 +15,7 @@ from app.intelligence.completion_models import (
     CompletionResolveResult,
 )
 from app.intelligence.completion_service import CompletionRequest
-from app.shell.editor_stale_result_policy import capture_buffer_revision, deliver_revision_gated_editor_result
+from app.shell.editor_stale_result_policy import capture_buffer_revision
 from app.shell.semantic_navigation_host import SemanticNavigationHost
 
 
@@ -32,25 +32,19 @@ class EditorCompletionWorkflow:
             buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
         )
 
-    def _deliver_gated_completion_result(
+    def _deliver_completion_list(
         self,
         *,
         buffer_id: str | None,
         editor_widget: CodeEditorWidget,
-        requested_revision: int | None,
-        request_generation: int,
         deliver: Callable[[], None],
     ) -> None:
-        deliver_revision_gated_editor_result(
-            buffer_id=buffer_id,
-            editor_widget=editor_widget,
-            requested_revision=requested_revision,
-            editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
-            buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
-            deliver=deliver,
-            requested_generation=request_generation,
-            current_generation=editor_widget.completion_request_generation(),
-        )
+        # The popup checks the request generation and that the cursor is still in
+        # the same expression, so a list that arrives after the user typed more
+        # letters is still shown, filtered by everything typed so far.
+        if buffer_id is None or self._host.editor_widget_for_buffer_id(buffer_id) is not editor_widget:
+            return
+        deliver()
 
     def record_editor_completion_acceptance(self, *, file_path: str, item: CompletionItem) -> None:
         """Route completion acceptance through the worker-serialized session lane."""
@@ -137,13 +131,7 @@ class EditorCompletionWorkflow:
                     items=items,
                 )
 
-            self._deliver_gated_completion_result(
-                buffer_id=buffer_id,
-                editor_widget=editor_widget,
-                requested_revision=requested_revision,
-                request_generation=request_generation,
-                deliver=deliver,
-            )
+            self._deliver_completion_list(buffer_id=buffer_id, editor_widget=editor_widget, deliver=deliver)
 
         def on_error(exc: Exception) -> None:
             self._host.log_warning("Async completion request failed for %s: %s", file_path, exc)
@@ -186,13 +174,7 @@ class EditorCompletionWorkflow:
                     item=result.item,
                 )
 
-            self._deliver_gated_completion_result(
-                buffer_id=buffer_id,
-                editor_widget=editor_widget,
-                requested_revision=requested_revision,
-                request_generation=request_generation,
-                deliver=deliver,
-            )
+            self._deliver_completion_list(buffer_id=buffer_id, editor_widget=editor_widget, deliver=deliver)
 
         def on_error(exc: Exception) -> None:
             self._host.log_warning("Completion item resolve failed for %s: %s", file_path, exc)
@@ -200,13 +182,7 @@ class EditorCompletionWorkflow:
             def deliver() -> None:
                 editor_widget.set_completion_docs_resolving(False)
 
-            self._deliver_gated_completion_result(
-                buffer_id=buffer_id,
-                editor_widget=editor_widget,
-                requested_revision=requested_revision,
-                request_generation=request_generation,
-                deliver=deliver,
-            )
+            self._deliver_completion_list(buffer_id=buffer_id, editor_widget=editor_widget, deliver=deliver)
 
         self._host.intelligence_controller().request_completion_resolve(
             request=request,

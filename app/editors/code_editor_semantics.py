@@ -2,28 +2,19 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Tuple
 
-from PySide2.QtCore import Qt, QTimer
+from PySide2.QtCore import QRect, Qt
 from PySide2.QtGui import QKeyEvent, QTextCursor
-from PySide2.QtWidgets import QToolTip
+from PySide2.QtWidgets import QMainWindow, QToolTip
 
 from app.editors.completion_popup import CompletionController
-from app.editors.completion_popup.completion_replacement import (
-    member_access_anchor,
-    resolve_insert_replacement_range,
-)
-from app.core.completion_tier import is_tier_header_item
-from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
-from app.intelligence.completion_context import (
-    CompletionContext,
-    build_completion_context,
-    is_dot_after_numeric_literal,
-)
+from app.editors.completion_popup.completion_replacement import resolve_insert_replacement_range
+from app.intelligence.completion_mode import completion_mode_from_flags
 from app.intelligence.completion_models import CompletionItem
 from app.shell.editor_completion_contracts import CompletionRequester
 
-_COMPLETION_TYPING_DEBOUNCE_MS = 50
+_STATUS_TIMEOUT_MS = 4000
 
 
 if TYPE_CHECKING:
@@ -37,20 +28,13 @@ if TYPE_CHECKING:
         _hover_requester: Callable[[str, int, int], None] | None
         _signature_help_provider: Callable[[str, int], str | None] | None
         _signature_help_requester: Callable[[str, int, int], None] | None
-        _completion_enabled: bool
-        _completion_auto_trigger: bool
-        _completion_auto_trigger_period: bool
         _completion_min_chars: int
         _completion_request_generation: int
-        _pending_completion_trigger_character: str
-        _active_completion_prefix: str
         _hover_request_generation: int
         _hover_request_global_pos: QPoint | None
         _hover_tooltip_enabled: bool
         _signature_help_request_generation: int
         _completion_popup: CompletionController
-        _completion_debounce_timer: QTimer
-        _debounced_completion_request: tuple[str, int, bool, str, str] | None
         _active_file_path: str | None
 
         def indent_selection(self) -> None: ...
@@ -110,6 +94,14 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         """Attach asynchronous signature-help requester used by inline calltips."""
         self._signature_help_requester = requester
 
+    def set_completion_mode(self, mode: str) -> None:
+        """Apply the code-completion mode: ``off``, ``manual`` or ``typing``."""
+
+        self._completion_popup.set_mode(mode)
+
+    def completion_mode(self) -> str:
+        return self._completion_popup.mode()
+
     def set_completion_preferences(
         self,
         *,
@@ -118,158 +110,66 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         min_chars: int,
         auto_trigger_period: bool = True,
     ) -> None:
-        """Apply completion behavior preferences."""
-        self._completion_enabled = enabled
-        self._completion_auto_trigger = auto_trigger
-        self._completion_auto_trigger_period = auto_trigger_period
+        """Apply the window's completion flags (``enabled`` and ``auto_trigger`` encode the mode)."""
+
+        _ = auto_trigger_period
         self._completion_min_chars = max(1, min_chars)
-        if not enabled:
-            self._hide_completion_popup()
+        self.set_completion_mode(completion_mode_from_flags(enabled=enabled, auto_trigger=auto_trigger))
 
-    def _build_editor_completion_context(
-        self,
-        *,
-        source_text: str,
-        cursor_position: int,
-        manual: bool,
-        force_empty_prefix: bool,
-        trigger_kind: str,
-        trigger_character: str,
-    ) -> CompletionContext:
-        return build_completion_context(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            current_file_path=self._active_file_path or "",
-            project_root=None,
-            trigger_is_manual=manual or force_empty_prefix,
-            min_prefix_chars=self._completion_min_chars,
-            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
-            trigger_kind=trigger_kind,
-            trigger_character=trigger_character,
-        )
+    def trigger_completion(self, *, manual: bool = True, **_ignored: object) -> None:
+        """Open the completion list at the cursor, as Ctrl+Space does."""
 
-    def trigger_completion(
-        self,
-        *,
-        manual: bool,
-        force_empty_prefix: bool = False,
-        trigger_character: str = "",
-    ) -> None:
-        """Request and display completion candidates at current cursor location."""
-        if not self._completion_enabled:
-            return
-        source_text = self.toPlainText()
-        cursor_position = self.textCursor().position()
-        effective_trigger_character = trigger_character or self._pending_completion_trigger_character
-        trigger_kind = "trigger_character" if effective_trigger_character else ("manual" if manual else "typing")
+        _ = manual
+        self._completion_popup.open_manual()
 
-        if self._completion_requester is None:
-            self._pending_completion_trigger_character = ""
-            self._completion_popup.hide()
-            return
+    # ------------------------------------------------------------------
+    # CompletionHost
+    # ------------------------------------------------------------------
 
-        context = self._build_editor_completion_context(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            manual=manual,
-            force_empty_prefix=force_empty_prefix,
-            trigger_kind=trigger_kind,
-            trigger_character=effective_trigger_character,
-        )
-        current_prefix = context.prefix
-        if (
-            not manual
-            and not force_empty_prefix
-            and not effective_trigger_character
-            and self._completion_popup.is_visible()
-        ):
-            if self._completion_popup.reuse_items_for_prefix(
-                current_prefix,
-                source_text=source_text,
-                cursor_position=cursor_position,
-            ):
-                self._active_completion_prefix = current_prefix
-                # Drop in-flight paints from the earlier trigger (usually bare ".")
-                # so a late empty-prefix envelope cannot wipe the filtered list.
-                self._completion_request_generation += 1
-                self._completion_popup.complete(self.cursorRect())
-                self._debounced_completion_request = (
-                    source_text,
-                    cursor_position,
-                    manual or force_empty_prefix,
-                    trigger_kind,
-                    effective_trigger_character,
-                )
-                self._completion_debounce_timer.start()
-                self._pending_completion_trigger_character = ""
-                return
-            self._dismiss_completion_popup_by_typing(source_text, cursor_position)
-            return
+    def completion_text_and_cursor(self) -> Tuple[str, int]:
+        return self.toPlainText(), self.textCursor().position()
 
-        self._completion_debounce_timer.stop()
-        self._debounced_completion_request = None
-        self._dispatch_completion_request(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            manual_trigger=manual or force_empty_prefix,
-            trigger_kind=trigger_kind,
-            trigger_character=effective_trigger_character,
-        )
-        self._pending_completion_trigger_character = ""
+    def completion_anchor_rect(self, position: int) -> QRect:
+        cursor = QTextCursor(self.document())
+        cursor.setPosition(max(0, min(position, self.document().characterCount() - 1)))
+        return self.cursorRect(cursor).translated(self.viewport().pos())
 
-    def _flush_debounced_completion_request(self) -> None:
-        if not self._completion_enabled:
-            self._debounced_completion_request = None
-            return
-        pending = self._debounced_completion_request
-        self._debounced_completion_request = None
-        if pending is None or self._completion_requester is None:
-            return
-        source_text, cursor_position, manual_trigger, trigger_kind, trigger_character = pending
-        self._dispatch_completion_request(
-            source_text=source_text,
-            cursor_position=cursor_position,
-            manual_trigger=manual_trigger,
-            trigger_kind=trigger_kind,
-            trigger_character=trigger_character,
-        )
-
-    def _dispatch_completion_request(
-        self,
-        *,
-        source_text: str,
-        cursor_position: int,
-        manual_trigger: bool,
-        trigger_kind: str,
-        trigger_character: str,
-    ) -> None:
-        if self._completion_requester is None:
-            return
-        if not self._completion_enabled:
-            return
+    def completion_dispatch(self, text: str, cursor: int, trigger_kind: str, trigger_character: str) -> int:
         self._completion_request_generation += 1
-        request_generation = self._completion_request_generation
-        self._completion_requester(
-            source_text,
-            cursor_position,
-            manual_trigger,
-            request_generation,
-            trigger_kind,
-            trigger_character,
-        )
+        generation = self._completion_request_generation
+        if self._completion_requester is not None:
+            self._completion_requester(text, cursor, True, generation, trigger_kind, trigger_character)
+        return generation
+
+    def completion_status(self, message: str) -> None:
+        window = self.window()
+        if isinstance(window, QMainWindow):
+            window.statusBar().showMessage(message, _STATUS_TIMEOUT_MS)
+            return
+        QToolTip.showText(self.mapToGlobal(self.cursorRect().bottomLeft()), message, self)
+
+    # ------------------------------------------------------------------
+    # Async results
+    # ------------------------------------------------------------------
 
     def _request_completion_item_resolution(self, item: object) -> None:
-        if not isinstance(item, CompletionItem):
-            return
-        if not item.resolvable_fields:
+        if not isinstance(item, CompletionItem) or not item.resolvable_fields:
             return
         if self._completion_resolve_requester is None:
             return
+        site = self._completion_popup.site()
+        if site is None:
+            return
+        # Ask about the full label at the expression's anchor, so engines that
+        # filter by the typed prefix still find camelCase picks such as statusTip.
+        text = self.toPlainText()
+        cursor = self.textCursor().position()
+        probe_text = text[: site.anchor] + item.label + text[cursor:]
         self._completion_popup.set_docs_resolving(True)
         self._completion_resolve_requester(
             item,
-            self.toPlainText(),
-            self.textCursor().position(),
+            probe_text,
+            site.anchor + len(item.label),
             self._completion_request_generation,
         )
 
@@ -304,16 +204,9 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
         prefix: str,
         items: list[CompletionItem],
     ) -> None:
-        """Apply asynchronous completion results if still current."""
-        if not self._completion_enabled:
-            return
-        if request_generation != self._completion_request_generation:
-            return
-        if not items:
-            self._completion_popup.hide()
-            return
-        self._active_completion_prefix = prefix
-        self._show_completion_items(items, prefix=prefix)
+        """Apply an async completion list if it still belongs to the open request."""
+        _ = prefix
+        self._completion_popup.deliver_items(request_generation, items)
 
     def show_calltip(self, text: str | None) -> None:
         """Show or hide inline calltip near the cursor."""
@@ -341,13 +234,13 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             return
         self.show_calltip(text)
 
-    def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 - Qt signature
-        if self._handle_completion_popup_navigation(e):
-            return
+    # ------------------------------------------------------------------
+    # Keys
+    # ------------------------------------------------------------------
 
-        if e.key() == Qt.Key_Space and e.modifiers() & Qt.ControlModifier:
-            self.trigger_completion(manual=True)
-            e.accept()
+    def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 - Qt signature
+        popup = self._completion_popup
+        if popup.handle_key_press(e):
             return
 
         if e.key() == Qt.Key_Tab and not e.modifiers():
@@ -359,141 +252,69 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
             e.accept()
             return
         if e.key() == Qt.Key_Backspace and not e.modifiers():
-            if self._handle_smart_backspace():
+            with popup.editing():
+                handled = self._handle_smart_backspace()
+            if handled:
                 e.accept()
-                if self._completion_enabled:
-                    self._refine_completion_after_buffer_edit()
+                popup.after_backspace()
                 return
         if e.key() in {Qt.Key_Return, Qt.Key_Enter} and not (e.modifiers() & (Qt.ControlModifier | Qt.AltModifier)):
-            self._completion_popup.clear_reopen_marker()
-            self._insert_newline_with_auto_indent()
+            with popup.editing():
+                self._insert_newline_with_auto_indent()
+            popup.after_text_input("\n")
             e.accept()
             return
 
-        super().keyPressEvent(e)
-        inserted_text = e.text()
-        if e.key() == Qt.Key_Backspace and not e.modifiers():
-            if self._completion_enabled:
-                self._refine_completion_after_buffer_edit()
+        with popup.editing():
+            super().keyPressEvent(e)
+        if e.key() == Qt.Key_Backspace:
+            popup.after_backspace()
             return
 
+        inserted_text = e.text()
         if inserted_text in {"(", ","}:
             self._show_signature_help()
         elif inserted_text == ")":
             QToolTip.hideText()
-
-        if (
-            inserted_text == "."
-            and self._completion_enabled
-            and self._completion_auto_trigger_period
-            and not is_dot_after_numeric_literal(self.toPlainText(), self.textCursor().position())
-        ):
-            self._pending_completion_trigger_character = "."
-            self.trigger_completion(manual=True, force_empty_prefix=True)
-            return
-
-        if self._completion_enabled and self._completion_popup.is_visible() and inserted_text:
-            if inserted_text.isalnum() or inserted_text == "_":
-                self.trigger_completion(manual=False)
-            elif inserted_text.isprintable():
-                self._dismiss_completion_popup_by_typing(
-                    self.toPlainText(),
-                    self.textCursor().position(),
-                )
-            return
-
-        if not self._completion_enabled or not self._completion_auto_trigger:
-            return
-
-        if inserted_text and (inserted_text.isalnum() or inserted_text == "_"):
-            self.trigger_completion(manual=False)
-            return
-        if self._completion_popup.is_visible():
-            self._hide_completion_popup()
-
-    def _refine_completion_after_buffer_edit(self) -> None:
-        if self._completion_popup.is_visible():
-            self.trigger_completion(manual=False)
-            return
-        if not self._completion_auto_trigger_period:
-            self._completion_popup.clear_reopen_marker()
-            return
-        source_text = self.toPlainText()
-        cursor_position = self.textCursor().position()
-        anchor = member_access_anchor(source_text, cursor_position)
-        if not self._completion_popup.consume_reopen_for_anchor(anchor):
-            return
-        self.trigger_completion(manual=False)
-
-    def _dismiss_completion_popup_by_typing(self, source_text: str, cursor_position: int) -> None:
-        self._completion_debounce_timer.stop()
-        self._debounced_completion_request = None
-        self._pending_completion_trigger_character = ""
-        anchor = member_access_anchor(source_text, cursor_position)
-        if anchor is None:
-            self._hide_completion_popup()
-            return
-        self._completion_popup.dismiss_by_typing(
-            anchor,
-            allow_reopen=self._completion_auto_trigger_period,
-        )
+        if inserted_text and inserted_text.isprintable():
+            popup.after_text_input(inserted_text)
 
     def _on_completion_cursor_moved(self) -> None:
-        if self._completion_popup.is_visible():
-            return
-        source_text = self.toPlainText()
-        cursor_position = self.textCursor().position()
-        self._completion_popup.expire_reopen_if_anchor_changed(
-            member_access_anchor(source_text, cursor_position)
-        )
+        self._completion_popup.on_cursor_moved()
 
     def _hide_completion_popup(self) -> None:
-        self._completion_debounce_timer.stop()
-        self._debounced_completion_request = None
-        self._pending_completion_trigger_character = ""
         self._completion_popup.hide()
 
     def _show_signature_help(self) -> None:
         if self._signature_help_requester is not None:
-            self._signature_help_request_generation += 1
-            self._signature_help_requester(
-                self.toPlainText(),
-                self.textCursor().position(),
-                self._signature_help_request_generation,
-            )
+            self._signature_help_requester_call()
             return
         if self._signature_help_provider is None:
             return
         self.show_calltip(self._signature_help_provider(self.toPlainText(), self.textCursor().position()))
 
-    def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
-        return self._completion_popup.handle_navigation_event(event)
-
-    def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
-        if not items:
-            self._completion_popup.hide()
+    def _signature_help_requester_call(self) -> None:
+        if self._signature_help_requester is None:
             return
-
-        self._completion_popup.set_items(items, prefix)
-        rect = self.cursorRect()
-        rect.setWidth(max(240, rect.width()))
-        self._completion_popup.complete(rect)
+        self._signature_help_request_generation += 1
+        self._signature_help_requester(
+            self.toPlainText(),
+            self.textCursor().position(),
+            self._signature_help_request_generation,
+        )
 
     def _insert_completion_from_item(self, item: object) -> None:
         if not isinstance(item, CompletionItem):
             return
-        if is_tier_header_item(item):
-            return
-
         cursor = self.textCursor()
         source_text = self.toPlainText()
-        cursor_position = cursor.position()
-        start, end = resolve_insert_replacement_range(source_text, cursor_position)
-        if start < end:
-            cursor.setPosition(start)
-            cursor.setPosition(end, QTextCursor.KeepAnchor)
-            cursor.removeSelectedText()
-        cursor.insertText(item.insert_text)
-        self.setTextCursor(cursor)
+        start, end = resolve_insert_replacement_range(source_text, cursor.position())
+        with self._completion_popup.editing():
+            if start < end:
+                cursor.setPosition(start)
+                cursor.setPosition(end, QTextCursor.KeepAnchor)
+                cursor.removeSelectedText()
+            cursor.insertText(item.label)
+            self.setTextCursor(cursor)
         if self._completion_accepted_callback is not None:
             self._completion_accepted_callback(item)
