@@ -10,12 +10,23 @@ from typing import Callable
 
 from PySide2.QtWidgets import QVBoxLayout, QWidget
 
-from app.bootstrap.logging_setup import get_subsystem_logger
+from app.bootstrap.logging_setup import get_active_log_path, get_subsystem_logger
 from app.bootstrap.paths import (
+    global_app_log_path,
     global_cache_dir,
+    global_history_dir,
     global_python_console_history_path,
+    resolve_global_state_root,
     try_ensure_directory,
 )
+from app.bootstrap.startup_problems import (
+    assemble_startup_problems,
+    load_dismissed_problem_ids,
+    remember_dismissed_problem_ids,
+    select_visible_problems,
+)
+from app.bootstrap.state_migration import last_migration_outcome
+from app.bootstrap.state_roots import resolve_settings_root
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
@@ -488,6 +499,7 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
         window,
         surface_error=lambda message: _surface_plugin_host_startup_failure(window, message),
     )
+    _present_startup_problems(ctx)
 
 
 def _record_persistence_degradation(
@@ -524,6 +536,35 @@ def _publish_startup_degradation(ctx: ShellCompositionContext) -> None:
         ctx.runtime_issues.set_latest_runtime_issue_report(window, merged)
         return
     setattr(window, "_latest_runtime_issue_report", merged)
+
+
+def _present_startup_problems(ctx: ShellCompositionContext) -> None:
+    window = ctx.w
+    local_root = resolve_global_state_root(window._state_root)
+    settings_choice = None if window._state_root else resolve_settings_root(None)
+    migration = last_migration_outcome()
+    if migration is not None and migration.dest != (settings_choice.path if settings_choice is not None else local_root):
+        migration = None
+    problems = assemble_startup_problems(
+        degraded_issues=ctx.degraded_issues,
+        history_folder=str(global_history_dir(window._state_root)),
+        symbol_folder=str(global_cache_dir(window._state_root)),
+        settings_choice=settings_choice,
+        migration=migration,
+    )
+    visible = select_visible_problems(problems, load_dismissed_problem_ids(local_root))
+    if not visible:
+        return
+    log_path = get_active_log_path(window._state_root) or global_app_log_path(window._state_root)
+    from app.shell.startup_dialogs import present_startup_problems
+
+    present_startup_problems(
+        window,  # type: ignore[arg-type]
+        visible,
+        log_path=str(log_path),
+        on_open_runtime_center=window._runtime_onboarding_workflow.open_runtime_center_dialog,
+        on_dismiss=lambda ids: remember_dismissed_problem_ids(local_root, ids),
+    )
 
 
 def _surface_plugin_host_startup_failure(window: object, message: str) -> None:

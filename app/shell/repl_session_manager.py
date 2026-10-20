@@ -28,6 +28,16 @@ from app.runner.repl_protocol import (
 
 _logger = logging.getLogger(__name__)
 
+
+def _present_apprun_permission(exc: BaseException) -> None:
+    from app.run.runtime_launch import permission_denied_for_apprun
+
+    if not permission_denied_for_apprun(exc):
+        return
+    from app.shell.startup_dialogs import present_freecad_requirement
+
+    present_freecad_requirement(None, str(exc))
+
 _MAX_RAPID_RESTARTS = 5
 _RAPID_RESTART_WINDOW_SECONDS = 10.0
 _AUTO_RESTART_DELAY_SECONDS = 0.5
@@ -73,8 +83,9 @@ class ReplSessionManager:
         self._auto_restart = True
         try:
             self._launch()
-        except Exception:
+        except Exception as exc:
             _logger.exception("Failed to start REPL session")
+            _present_apprun_permission(exc)
             return
         if self._on_session_started is not None:
             self._on_session_started()
@@ -94,8 +105,9 @@ class ReplSessionManager:
         self._recent_exit_times.clear()
         try:
             self._launch()
-        except Exception:
+        except Exception as exc:
             _logger.exception("Failed to restart REPL session")
+            _present_apprun_permission(exc)
             return
         if self._on_session_started is not None:
             self._on_session_started()
