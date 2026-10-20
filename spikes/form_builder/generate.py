@@ -65,7 +65,7 @@ class _Context:
     def __init__(self, doc, source_name: str):
         self.doc = doc
         self.source_name = source_name
-        self.class_name = form_class_name(doc)
+        self.class_name = _py_name(form_class_name(doc))
         self.widgets: set[str] = set()
         self.setup: list[str] = []
         self.retrans: list[str] = []
@@ -73,9 +73,13 @@ class _Context:
         self.buddies: list[tuple[str, str]] = []
         self.pending_tabs: list[tuple[str, str, str]] = []
         self._late_stack: list[list[str]] = []
+        self.customs = _custom_widgets(doc)
+        self.imports: set[str] = set()
+        self.needs_loader = False
+        self.loader_exprs: dict[str, str] = {}
 
     def walk(self, widget: Widget) -> None:
-        root = widget.object_name or "Form"
+        root = _py_name(widget.object_name or "Form")
         self._emit_widget(widget, parent_expr=None, root_name=root, is_root=True)
         stops = tabstops_of(self.doc)
         names = list(stops.names) if stops and stops.names else []
@@ -100,11 +104,13 @@ class _Context:
         self.setup.append(f"        QMetaObject.connectSlotsByName({root})")
 
     def _receiver_expr(self, name: str, root: str) -> str:
-        if name == root:
+        if name == root or name == self.doc.root.object_name:
             return root
         return f"self.{name}"
 
     def render(self) -> str:
+        for scope in _scopes("\n".join(self.setup + self.retrans)):
+            self.used_qtwidgets.add(scope)
         widget_names = sorted(self.used_qtwidgets)
         lines = [
             "# -*- coding: utf-8 -*-",
@@ -131,9 +137,14 @@ class _Context:
             lines.append("    " + " ".join(chunk) + ")")
         else:
             lines.append("    QWidget)")
+        if self.imports:
+            lines.append("")
+            lines.extend(sorted(self.imports))
+        if self.needs_loader:
+            lines.extend(_LOADER)
         lines.append("")
         lines.append(f"class Ui_{self.class_name}(object):")
-        root = self.doc.root.object_name or "Form"
+        root = _py_name(self.doc.root.object_name or "Form")
         lines.append(f"    def setupUi(self, {root}):")
         lines.extend(self.setup)
         lines.append("    # setupUi")
@@ -147,9 +158,42 @@ class _Context:
         lines.append("")
         return "\n".join(lines)
 
+    def _custom(self, class_name: str):
+        for custom in self.customs:
+            if custom.get("class") == class_name:
+                return custom
+        return None
+
+    def _ctor(self, class_name: str, cls: str, parent_expr) -> str:
+        """Stock classes construct directly. Custom classes need an import or a loader.
+
+        FreeCAD's C++ widgets (Gui::InputField and friends) have no Python module to
+        import; FreeCADGui.UiLoader can create them, with the Qt base class as fallback.
+        A promoted Python class imports from its header path, written module/path.h.
+        """
+        args = parent_expr or ""
+        custom = self._custom(class_name)
+        stock = "::" not in class_name and class_name.startswith("Q") and custom is None
+        if stock:
+            return f"{cls}({args})"
+        base = (custom or {}).get("extends", "QWidget").split("::")[-1] or "QWidget"
+        header = (custom or {}).get("header", "")
+        if "::" in class_name or not header:
+            self.needs_loader = True
+            self.used_qtwidgets.add(base if base.startswith("Q") else "QWidget")
+            parent = parent_expr or "None"
+            return f'_cbcs_custom(u"{class_name}", u"{base}", {parent})'
+        module = header.strip()
+        for suffix in (".h", ".hpp", ".py"):
+            if module.endswith(suffix):
+                module = module[: -len(suffix)]
+        module = module.replace("/", ".").replace("\\", ".").strip(".")
+        self.imports.add(f"from {module} import {cls}")
+        return f"{cls}({args})"
+
     def _emit_widget(self, widget: Widget, parent_expr: str | None, root_name: str, is_root: bool = False) -> None:
         cls = widget.class_name.split("::")[-1]
-        if cls.startswith("Q"):
+        if cls.startswith("Q") and "::" not in widget.class_name and self._custom(widget.class_name) is None:
             self.used_qtwidgets.add(cls)
         name = widget.object_name or widget.id
         expr = root_name if is_root else f"self.{name}"
@@ -163,7 +207,10 @@ class _Context:
             if rect:
                 self.setup.append(f"        {root_name}.resize({rect[2]}, {rect[3]})")
         else:
-            ctor = f"{cls}({parent_expr})" if parent_expr else f"{cls}()"
+            ctor = self._ctor(widget.class_name, cls, parent_expr)
+            if ctor.startswith("_cbcs_custom("):
+                custom = self._custom(widget.class_name) or {}
+                self.loader_exprs[f"self.{name}"] = (custom.get("extends") or "QWidget").split("::")[-1]
             self.setup.append(f"        self.{name} = {ctor}")
             self.setup.append(f"        self.{name}.setObjectName(u\"{name}\")")
         self._emit_properties(widget, expr, root_name, skip_geometry=is_root)
@@ -193,20 +240,25 @@ class _Context:
                 if isinstance(part, ActionRef):
                     self.setup.append(f"        {expr}.addAction(self.{part.name}.menuAction())")
         elif widget.class_name == "QMenu":
-            for part in widget.body:
-                if isinstance(part, ActionRef):
-                    target = part.name
-                    if any(isinstance(child, Widget) and child.object_name == target for child in child_widgets(widget)):
-                        self.setup.append(f"        {expr}.addAction(self.{target}.menuAction())")
-                    else:
-                        self.setup.append(f"        {expr}.addAction(self.{target})")
             for child in child_widgets(widget):
                 if child.class_name == "QMenu":
                     self._emit_widget(child, expr, root_name, False)
+            for part in widget.body:
+                if isinstance(part, ActionRef):
+                    target = part.name
+                    if target == "separator":
+                        self.setup.append(f"        {expr}.addSeparator()")
+                    elif any(isinstance(child, Widget) and child.object_name == target for child in child_widgets(widget)):
+                        self.setup.append(f"        {expr}.addAction(self.{target}.menuAction())")
+                    else:
+                        self.setup.append(f"        {expr}.addAction(self.{target})")
         elif widget.class_name == "QToolBar":
             for part in widget.body:
                 if isinstance(part, ActionRef):
-                    self.setup.append(f"        {expr}.addAction(self.{part.name})")
+                    if part.name == "separator":
+                        self.setup.append(f"        {expr}.addSeparator()")
+                    else:
+                        self.setup.append(f"        {expr}.addAction(self.{part.name})")
         else:
             if layout is not None:
                 self._emit_layout(layout, expr, root_name)
@@ -285,7 +337,11 @@ class _Context:
         name = layout.object_name or layout.id
         self.setup.append(f"        self.{name} = {cls}()" if nested else f"        self.{name} = {cls}({parent_expr})")
         self.setup.append(f"        self.{name}.setObjectName(u\"{name}\")")
-        self._emit_properties_on(layout, f"self.{name}", root_name)
+        margins = {prop.name: prop for prop in properties_of(layout) if prop.name in _MARGINS}
+        self._emit_properties_on(layout, f"self.{name}", root_name, skip=set(margins))
+        if margins:
+            values = _margin_values(margins)
+            self.setup.append(f"        self.{name}.setContentsMargins({values[0]}, {values[1]}, {values[2]}, {values[3]})")
         item_parent = parent_expr
         if cls == "QFormLayout":
             for item in layout_items(layout):
@@ -303,6 +359,19 @@ class _Context:
                     # Row and column elements are positional.
                     pass
         self._emit_grid_stretches(layout, name)
+        self._emit_layout_attrib(layout, name)
+
+    def _emit_layout_attrib(self, layout: Layout, name: str) -> None:
+        for key, setter in (
+            ("rowstretch", "setRowStretch"),
+            ("columnstretch", "setColumnStretch"),
+            ("rowminimumheight", "setRowMinimumHeight"),
+            ("columnminimumwidth", "setColumnMinimumWidth"),
+            ("stretch", "setStretch"),
+        ):
+            for index, value in enumerate(_csv(layout.attrib.get(key, ""))):
+                if value:
+                    self.setup.append(f"        self.{name}.{setter}({index}, {value})")
 
     def _emit_grid_stretches(self, layout: Layout, name: str) -> None:
         rows = [part for part in layout.body if isinstance(part, XmlNode) and part.tag == "row"]
@@ -349,7 +418,7 @@ class _Context:
         elif isinstance(content, Layout):
             self._emit_layout(content, parent_expr, root_name, nested=True)
             self.setup.append(
-                f"        self.{layout_name}.addLayout(self.{content.object_name}, {row}, {col}, {rowspan}, {colspan})"
+                f"        self.{layout_name}.addLayout(self.{content.object_name or content.id}, {row}, {col}, {rowspan}, {colspan})"
             )
         elif isinstance(content, Spacer):
             self._emit_spacer(content, layout_name, item, root_name, "grid")
@@ -361,7 +430,7 @@ class _Context:
             self.setup.append(f"        self.{layout_name}.addWidget(self.{content.object_name})")
         elif isinstance(content, Layout):
             self._emit_layout(content, parent_expr, root_name, nested=True)
-            self.setup.append(f"        self.{layout_name}.addLayout(self.{content.object_name})")
+            self.setup.append(f"        self.{layout_name}.addLayout(self.{content.object_name or content.id})")
         elif isinstance(content, Spacer):
             self._emit_spacer(content, layout_name, item, root_name, "box")
 
@@ -412,9 +481,9 @@ class _Context:
     def _emit_properties(self, widget: Widget, expr: str, root_name: str, skip_geometry: bool = False, only_late: bool = False) -> None:
         self._emit_properties_on(widget, expr, root_name, skip_geometry=skip_geometry)
 
-    def _emit_properties_on(self, node, expr: str, root_name: str, skip_geometry: bool = False) -> None:
+    def _emit_properties_on(self, node, expr: str, root_name: str, skip_geometry: bool = False, skip=frozenset()) -> None:
         for prop in properties_of(node):
-            if prop.name in {"buddy"}:
+            if prop.name in {"buddy"} or prop.name in skip:
                 continue
             if skip_geometry and prop.name == "geometry":
                 continue
@@ -431,6 +500,9 @@ class _Context:
                 )
                 continue
             line = _set_line(expr, prop)
+            if line and expr in self.loader_exprs and not _has_setter(self.loader_exprs[expr], _setter(prop.name)):
+                value = line[len(expr) + len(_setter(prop.name)) + 2 : -1]
+                line = f'{expr}.setProperty(u"{prop.name}", {value})'
             if line:
                 self.setup.append("        " + line)
 
@@ -500,11 +572,7 @@ def _enum_expr(text: str) -> str:
         if "::" not in piece:
             parts.append(piece)
             continue
-        scope, name = piece.split("::", 1)
-        if scope == "Qt":
-            parts.append(f"Qt.{name}")
-        else:
-            parts.append(f"{scope}.{name}")
+        parts.append(piece.replace("::", "."))
     return "|".join(parts) if parts else "0"
 
 
@@ -525,3 +593,91 @@ def _sizepolicy_lines(expr: str, prop: Property) -> list[str]:
 
 def _owner_guess(ctx, layout_name: str) -> str:
     return "Form"
+
+
+_MARGINS = {"leftMargin", "topMargin", "rightMargin", "bottomMargin", "margin"}
+
+_LOADER = [
+    "",
+    "from PySide6 import QtWidgets as _QtWidgets",
+    "",
+    "",
+    "def _cbcs_custom(class_name, base, parent=None):",
+    "    \"\"\"FreeCAD widgets such as Gui::InputField come from FreeCADGui's loader.\"\"\"",
+    "    try:",
+    "        import FreeCADGui",
+    "",
+    "        widget = FreeCADGui.UiLoader().createWidget(class_name, parent)",
+    "        if widget is not None:",
+    "            return widget",
+    "    except Exception:",
+    "        pass",
+    "    return getattr(_QtWidgets, base, _QtWidgets.QWidget)(parent)",
+    "",
+]
+
+
+def _custom_widgets(doc) -> list[dict]:
+    found = []
+    for part in list(doc.header) + list(doc.footer):
+        if not isinstance(part, XmlNode) or part.tag != "customwidgets":
+            continue
+        for custom in part.children:
+            if custom.tag == "customwidget":
+                found.append({child.tag: child.text for child in custom.children})
+    return found
+
+
+def _csv(text: str) -> list[int]:
+    values = []
+    for piece in (text or "").split(","):
+        piece = piece.strip()
+        if piece:
+            try:
+                values.append(int(piece))
+            except ValueError:
+                values.append(0)
+    return values
+
+
+def _margin_values(margins: dict) -> list[int]:
+    values = [-1, -1, -1, -1]
+    if "margin" in margins:
+        values = [int(float(margins["margin"].body.text or "0"))] * 4
+    for index, name in enumerate(("leftMargin", "topMargin", "rightMargin", "bottomMargin")):
+        if name in margins:
+            values[index] = int(float(margins[name].body.text or "0"))
+    return values
+
+
+def _py_name(name: str) -> str:
+    """A namespaced or odd class name (PartGui::TaskTube) as a Python identifier."""
+    short = name.split("::")[-1]
+    cleaned = "".join(char if char.isalnum() or char == "_" else "_" for char in short)
+    if not cleaned or cleaned[0].isdigit():
+        cleaned = "Form_" + cleaned
+    return cleaned
+
+
+def _scopes(text: str) -> set[str]:
+    """Qt widget classes used as enum scopes (QLayout.SizeConstraint...) need importing."""
+    import re
+
+    try:
+        from PySide6 import QtWidgets
+    except ImportError:  # the generator itself does not need Qt
+        return set()
+    found = set()
+    for match in re.finditer(r"\b(Q[A-Za-z]+)\.[A-Z]", text):
+        name = match.group(1)
+        if hasattr(QtWidgets, name):
+            found.add(name)
+    return found
+
+
+def _has_setter(base: str, setter: str) -> bool:
+    try:
+        from PySide6 import QtWidgets
+    except ImportError:
+        return True
+    return hasattr(getattr(QtWidgets, base, QtWidgets.QWidget), setter)
