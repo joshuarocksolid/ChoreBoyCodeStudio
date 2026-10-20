@@ -19,7 +19,7 @@ Hidden (dot-prefixed) path support on ChoreBoy is a per-parent, per-kind fact. `
 Preconditions:
 
 - Leased slot. `control-cbcs launch --source`. Doctor passed. HOME is the disposable `/home/default/cbcs-verify-<run-id>` unless a row says otherwise.
-- The launch injects `CBCS_STATE_ROOT=$HOME/choreboy_code_studio_state`. That env is for isolation; this recipe does not pick the product dest.
+- The launch injects `CBCS_STATE_ROOT=$HOME/choreboy_code_studio_state`. That env selects shared settings JSON only. Local SQLite and logs still use the product dest. This recipe does not retarget the local root.
 - Never write `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`. Probe the share only when proving that row and confirm the leftover glob below is empty before `stop`.
 
 - **Probe matrix.** For each parent in `$HOME/Desktop`, `$HOME`, `/home/default`, `/home/default/Desktop`, `/home/default/FreeCAD`, `/home/default/.cache/FreeCAD`, `/home/default/.local/share/FreeCAD`, `/home/default/share/Chore_Boy/CBCS`:
