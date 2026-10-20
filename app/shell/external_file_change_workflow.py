@@ -240,12 +240,24 @@ class ExternalFileChangeWorkflow:
         self._save_workflow = save_workflow
         self._local_history = local_history
         self._host = host
+        # Paths with a conflict prompt open. The poller runs while a modal
+        # prompt spins its event loop; it must not stack a second prompt.
+        self._prompting: set[str] = set()
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
         self._editor_sync.set_editor_manager(editor_manager)
 
     def check_and_handle(self, file_path: str, *, force: bool = False) -> ExternalFileChangeOutcome:
+        if file_path in self._prompting:
+            return ExternalFileChangeOutcome.SKIPPED
+        self._prompting.add(file_path)
+        try:
+            return self._check_and_handle(file_path, force=force)
+        finally:
+            self._prompting.discard(file_path)
+
+    def _check_and_handle(self, file_path: str, *, force: bool) -> ExternalFileChangeOutcome:
         """Prompt when needed and reload ``file_path`` from disk.
 
         ``force`` is set by Save and Run so a remembered conflict prompts again.
@@ -388,6 +400,15 @@ class ExternalFileChangeWorkflow:
         return None
 
     def resolve_before_save(self, file_path: str) -> str:
+        if file_path in self._prompting:
+            return "abort"
+        self._prompting.add(file_path)
+        try:
+            return self._resolve_before_save(file_path)
+        finally:
+            self._prompting.discard(file_path)
+
+    def _resolve_before_save(self, file_path: str) -> str:
         """Settle a disk conflict before Save writes ``file_path``.
 
         Returns ``"proceed"`` to write the buffer, ``"already_synced"`` when

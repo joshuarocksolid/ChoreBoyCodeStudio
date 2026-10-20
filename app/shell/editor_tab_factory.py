@@ -183,7 +183,14 @@ class EditorTabFactory:
         window._editor_tab_workflow.attach_editor_bindings(MainWindowEditorBindingsHost(window), view, tab)
         view.setTextCursor(source_editor.textCursor())
         scroll_value = source_editor.verticalScrollBar().value()
-        QTimer.singleShot(0, lambda: view.verticalScrollBar().setValue(scroll_value))
+        horizontal_value = source_editor.horizontalScrollBar().value()
+
+        def restore_scroll() -> None:
+            # setTextCursor scrolled the still-unsized view; match the source view instead.
+            view.verticalScrollBar().setValue(scroll_value)
+            view.horizontalScrollBar().setValue(horizontal_value)
+
+        QTimer.singleShot(0, restore_scroll)
         return view
 
     def build_tab_page(self, content: QWidget, buffer_id: str) -> EditorTabPage:

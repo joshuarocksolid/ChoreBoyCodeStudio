@@ -742,3 +742,18 @@ def test_stale_save_cancel_keeps_the_conflict_and_does_not_save(tmp_path: Path) 
     assert workflow.resolve_before_save(tab.file_path) == "abort"
     assert tab.disk_conflict is not None and tab.disk_conflict.kind == DISK_CONFLICT_CHANGED
     assert tab.current_content == "mine\n"
+
+
+def test_poll_while_the_stale_save_prompt_is_open_does_not_prompt_again(tmp_path: Path) -> None:
+    workflow, tab, host, _sync_host, _history = _stale_dirty_tab(tmp_path, [StaleSaveChoice.CANCEL])
+    nested: list[ExternalFileChangeOutcome] = []
+    present = host.present_stale_save
+
+    def present_and_poll(file_path: str, **kwargs):  # type: ignore[no-untyped-def]
+        nested.append(workflow.check_and_handle(file_path))
+        return present(file_path, **kwargs)
+
+    host.present_stale_save = present_and_poll  # type: ignore[method-assign]
+
+    assert workflow.resolve_before_save(tab.file_path) == "abort"
+    assert nested == [ExternalFileChangeOutcome.SKIPPED]
