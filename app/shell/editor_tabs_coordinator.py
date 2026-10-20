@@ -69,6 +69,9 @@ class EditorTabsCoordinator:
             return -1
         return _index_of_buffer(window._editor_tabs_widget, buffer_id)
 
+    def tab_index_in(self, tabs: QTabWidget, buffer_id: str) -> int:
+        return _index_of_buffer(tabs, buffer_id)
+
     def all_tab_widgets(self) -> list[QTabWidget]:
         """Every editor group's tab widget, first group first."""
         window = self._window
@@ -137,6 +140,9 @@ class EditorTabsCoordinator:
     def apply_tab_chrome_theme(self, tokens: Any) -> None:
         """Theme the tab markers, the info bars, and editors shown only as extra views."""
         primary_views = set(map(id, self._window._editor_widgets_by_path.values()))
+        groups = getattr(self._window, "_editor_groups", None)
+        if groups is not None:
+            groups.apply_theme_colors(accent=tokens.accent)
         for tabs in self.all_tab_widgets():
             tab_bar = tabs.tabBar()
             if isinstance(tab_bar, MiddleClickTabBar):

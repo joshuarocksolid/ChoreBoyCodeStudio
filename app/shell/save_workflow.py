@@ -496,9 +496,8 @@ class SaveWorkflow:
             return False
 
         if host.has_editor_tabs_widget():
-            tab_index = host.tab_index_for_path(saved_tab.file_path)
-            if tab_index >= 0:
-                host.refresh_tab_presentation(saved_tab.file_path)
+            # Clears the dirty marker in every editor group showing the buffer.
+            host.refresh_tab_presentation(saved_tab.file_path)
 
         self._local_history.discard_pending_autosave(saved_tab.file_path)
         self._local_history.record_checkpoint(

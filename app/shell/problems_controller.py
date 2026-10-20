@@ -101,8 +101,8 @@ class ProblemsController:
         window = self._window
         if window._editor_tabs_widget is None:
             return
-        tab_index = window._editor_tab_workflow.tab_index_for_path(file_path)
-        if tab_index < 0:
+        tab_state = window._editor_manager.get_tab(file_path)
+        if tab_state is None:
             return
         has_error = any(d.severity == DiagnosticSeverity.ERROR for d in diagnostics)
         has_warning = any(d.severity == DiagnosticSeverity.WARNING for d in diagnostics)
@@ -112,15 +112,20 @@ class ProblemsController:
             icon = tab_diagnostic_icon(DiagnosticSeverity.WARNING, "#D97706")
         else:
             icon = QIcon()
-        window._editor_tabs_widget.setTabIcon(tab_index, icon)
+        coordinator = window._editor_tabs_coordinator
+        for tabs in coordinator.all_tab_widgets():
+            tab_index = coordinator.tab_index_in(tabs, tab_state.buffer_id)
+            if tab_index >= 0:
+                tabs.setTabIcon(tab_index, icon)
 
     def clear_all_tab_diagnostic_indicators(self) -> None:
         window = self._window
         if window._editor_tabs_widget is None:
             return
         empty = QIcon()
-        for index in range(window._editor_tabs_widget.count()):
-            window._editor_tabs_widget.setTabIcon(index, empty)
+        for tabs in window._editor_tabs_coordinator.all_tab_widgets():
+            for index in range(tabs.count()):
+                tabs.setTabIcon(index, empty)
 
     def update_status_bar_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
         window = self._window

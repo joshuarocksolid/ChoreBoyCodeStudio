@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from app.shell.editor_tab_bar import TAB_STATE_MISSING, TAB_STATE_STALE, missing_marker_icon, warning_marker_icon
 from app.shell.theme_tokens import ShellThemeTokens
@@ -149,10 +149,26 @@ class EditorTabPage(QWidget):
         content.show()
 
 
+def page_editor(page: Optional[QWidget]) -> Any:
+    """The code editor a tab page shows (inside a markdown pane, if wrapped), or None."""
+    if not isinstance(page, EditorTabPage):
+        return None
+    content = page.content()
+    if isinstance(content, QPlainTextEdit):
+        return content
+    source_editor = getattr(content, "source_editor", None)
+    if callable(source_editor):
+        editor = source_editor()
+        if isinstance(editor, QPlainTextEdit):
+            return editor
+    return None
+
+
 __all__ = [
     "DiskConflictInfoBar",
     "EDITOR_TAB_PAGE_OBJECT_NAME",
     "EditorTabPage",
     "INFO_BAR_OBJECT_NAME",
     "info_bar_message",
+    "page_editor",
 ]

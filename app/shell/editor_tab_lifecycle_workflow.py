@@ -12,7 +12,7 @@ from app.editors.editor_manager import EditorManager
 from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
-from app.shell.editor_tab_page import EditorTabPage
+from app.shell.editor_tab_page import EditorTabPage, page_editor
 
 
 class EditorTabLifecycleWorkflow:
@@ -42,6 +42,10 @@ class EditorTabLifecycleWorkflow:
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
 
+    def _editor_groups(self) -> Any:
+        accessor = getattr(self._host, "editor_groups", None)
+        return accessor() if callable(accessor) else None
+
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
         release_editor_widget(
             widget,
@@ -54,10 +58,19 @@ class EditorTabLifecycleWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        tab_index = self._editor_tabs_coordinator.tab_index_for_buffer_id(buffer_id)
-        if tab_index < 0:
+        primary = self._host.workspace_controller().widget_for_buffer_id(buffer_id)
+        removed = False
+        for tabs in self._editor_tabs_coordinator.all_tab_widgets():
+            tab_index = self._editor_tabs_coordinator.tab_index_in(tabs, buffer_id)
+            if tab_index < 0:
+                continue
+            extra_view = page_editor(tabs.widget(tab_index))
+            remove_tab_and_page(tabs, tab_index)
+            if extra_view is not None and extra_view is not primary:
+                self.release_editor_widget(extra_view)
+            removed = True
+        if not removed:
             return
-        remove_tab_and_page(editor_tabs_widget, tab_index)
         widget = self._host.workspace_controller().pop_editor(buffer_id)
         if widget is not None:
             self.release_editor_widget(widget)
@@ -104,6 +117,13 @@ class EditorTabLifecycleWorkflow:
         markdown_pane = self._markdown_registry.pane_for_path(file_path)
         local_history_action = menu.addAction("Local History...")
         menu.addSeparator()
+        groups = self._editor_groups()
+        split_action = menu.addAction("Split Right") if groups is not None else None
+        close_group_action = (
+            menu.addAction("Close Group") if groups is not None and groups.group_count() > 1 else None
+        )
+        if split_action is not None:
+            menu.addSeparator()
         close_action = menu.addAction("Close")
         chosen = menu.exec_(tab_bar.mapToGlobal(position))
         if self._markdown_workflow.handle_context_menu_choice(
@@ -116,6 +136,12 @@ class EditorTabLifecycleWorkflow:
             return
         if chosen == local_history_action:
             self._host.show_local_history_for_path(file_path)
+        elif groups is not None and split_action is not None and chosen == split_action:
+            if editor_tabs_widget.currentIndex() != tab_index:
+                editor_tabs_widget.setCurrentIndex(tab_index)
+            groups.split_right()
+        elif groups is not None and close_group_action is not None and chosen == close_group_action:
+            groups.close_group()
         elif chosen == close_action:
             self.handle_tab_close_requested(tab_index)
 
@@ -125,6 +151,13 @@ class EditorTabLifecycleWorkflow:
             return
         file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
+            return
+
+        groups = self._editor_groups()
+        if groups is not None and groups.close_view_if_shared(tab_index):
+            # The buffer stays open in the other group: nothing to save or close.
+            self._host.refresh_save_action_states()
+            self._host.refresh_run_action_states()
             return
 
         tab_state = self._editor_manager.get_tab(file_path)
@@ -180,12 +213,20 @@ class EditorTabLifecycleWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is not None:
             workspace_controller = self._host.workspace_controller()
+            primaries = set(map(id, workspace_controller.editor_widgets_by_path.values()))
             for buffer_id in list(workspace_controller.editor_widgets_by_path):
                 widget = workspace_controller.pop_editor(buffer_id)
                 if widget is not None:
                     self.release_editor_widget(widget)
-            while editor_tabs_widget.count():
-                remove_tab_and_page(editor_tabs_widget, 0)
+            for tabs in self._editor_tabs_coordinator.all_tab_widgets():
+                while tabs.count():
+                    extra_view = page_editor(tabs.widget(0))
+                    remove_tab_and_page(tabs, 0)
+                    if extra_view is not None and id(extra_view) not in primaries:
+                        self.release_editor_widget(extra_view)
+            groups = self._editor_groups()
+            if groups is not None:
+                groups.reset()
         self._host.local_history_stop_autosave_timer()
         self._host.stop_auto_save_to_file_timer()
         self._host.stop_realtime_lint_timer()

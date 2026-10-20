@@ -5,10 +5,12 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Optional
 
+from PySide2.QtCore import QTimer
 from PySide2.QtWidgets import QMessageBox, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
+from app.editors.editor_tab import EditorTabState
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
 from app.shell.editor_tab_page import EditorTabPage
 
@@ -81,33 +83,23 @@ class EditorTabFactory:
             window._editor_tab_workflow.remove_tab_widget_for_buffer_id(opened_result.closed_preview_tab.buffer_id)
 
         if opened_result.was_already_open:
-            existing_index = window._editor_tab_workflow.tab_index_for_path(opened_result.tab.file_path)
-            if existing_index >= 0:
-                window._editor_tabs_widget.setCurrentIndex(existing_index)
+            # The tab may be in the other editor group; that group takes focus.
+            groups = getattr(window, "_editor_groups", None)
+            if groups is not None:
+                revealed = groups.reveal_buffer(opened_result.tab.buffer_id)
+            else:
+                existing_index = window._editor_tab_workflow.tab_index_for_path(opened_result.tab.file_path)
+                revealed = existing_index >= 0
+                if revealed:
+                    window._editor_tabs_widget.setCurrentIndex(existing_index)
+            if revealed:
                 window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
             window._refresh_save_action_states()
             window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
             return True
 
         editor_widget = CodeEditorWidget(window._editor_tabs_widget)
-        editor_widget.setObjectName("shell.editorTabs.textEditor")
-        editor_widget.set_editor_preferences(
-            tab_width=window._editor_tab_width,
-            font_point_size=window._editor_tab_workflow.effective_font_size(),
-            font_family=window._editor_font_family,
-            indent_style=window._editor_indent_style,
-            indent_size=window._editor_indent_size,
-            hover_tooltip_enabled=window._editor_hover_tooltip_enabled,
-            auto_reindent_flat_python_paste=window._editor_auto_reindent_flat_python_paste,
-        )
-        editor_widget.set_completion_preferences(
-            enabled=window._completion_enabled,
-            auto_trigger=window._completion_auto_trigger,
-            min_chars=window._completion_min_chars,
-            auto_trigger_period=window._shell_preferences_runtime.completion_auto_trigger_period(),
-        )
-        window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
-        editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+        self._configure_editor_widget(editor_widget)
         editor_widget.setPlainText(opened_result.tab.current_content)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
         tab_file_path = opened_result.tab.file_path
@@ -146,6 +138,53 @@ class EditorTabFactory:
             )
         return True
 
+    def _configure_editor_widget(self, editor_widget: CodeEditorWidget) -> None:
+        window = self._window
+        editor_widget.setObjectName("shell.editorTabs.textEditor")
+        editor_widget.set_editor_preferences(
+            tab_width=window._editor_tab_width,
+            font_point_size=window._editor_tab_workflow.effective_font_size(),
+            font_family=window._editor_font_family,
+            indent_style=window._editor_indent_style,
+            indent_size=window._editor_indent_size,
+            hover_tooltip_enabled=window._editor_hover_tooltip_enabled,
+            auto_reindent_flat_python_paste=window._editor_auto_reindent_flat_python_paste,
+        )
+        editor_widget.set_completion_preferences(
+            enabled=window._completion_enabled,
+            auto_trigger=window._completion_auto_trigger,
+            min_chars=window._completion_min_chars,
+            auto_trigger_period=window._shell_preferences_runtime.completion_auto_trigger_period(),
+        )
+        window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
+        editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+
+    def create_buffer_view(
+        self,
+        tab: EditorTabState,
+        source_editor: CodeEditorWidget,
+        *,
+        parent: QWidget,
+    ) -> CodeEditorWidget:
+        """A second editor for an open buffer: shares its document and buffer state."""
+        window = self._window
+        view = CodeEditorWidget(parent)
+        self._configure_editor_widget(view)
+        view.share_buffer_with(source_editor)
+        view.set_editor_preferences(
+            tab_width=source_editor._tab_width,
+            font_point_size=window._editor_tab_workflow.effective_font_size(),
+            font_family=window._editor_font_family,
+            indent_style=source_editor._indent_style,
+            indent_size=source_editor._indent_size,
+            hover_tooltip_enabled=window._editor_hover_tooltip_enabled,
+            auto_reindent_flat_python_paste=window._editor_auto_reindent_flat_python_paste,
+        )
+        window._editor_tab_workflow.attach_editor_bindings(MainWindowEditorBindingsHost(window), view, tab)
+        view.setTextCursor(source_editor.textCursor())
+        scroll_value = source_editor.verticalScrollBar().value()
+        QTimer.singleShot(0, lambda: view.verticalScrollBar().setValue(scroll_value))
+        return view
 
     def build_tab_page(self, content: QWidget, buffer_id: str) -> EditorTabPage:
         """Wrap tab content with the disk-conflict info bar and wire its buttons."""

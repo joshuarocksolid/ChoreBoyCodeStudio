@@ -39,8 +39,17 @@ class EditorTabBindingsWorkflow:
         path_for_buffer_id: Callable[[str], str | None],
         tab_workflow: Any,
         debug_control_workflow: Any,
+        primary_view_for_buffer_id: Callable[[str], object | None] | None = None,
     ) -> None:
         semantic_navigation = host.semantic_navigation_workflow()
+
+        def is_primary_view() -> bool:
+            # Views of one buffer share a document, so each emits textChanged
+            # for every edit. Only the buffer's primary view reports it.
+            if primary_view_for_buffer_id is None:
+                return True
+            primary = primary_view_for_buffer_id(buffer_id)
+            return primary is None or primary is editor_widget
 
         def current_path() -> str | None:
             return path_for_buffer_id(buffer_id)
@@ -117,13 +126,13 @@ class EditorTabBindingsWorkflow:
 
         def on_text_changed() -> None:
             file_path = current_path()
-            if file_path is None:
+            if file_path is None or not is_primary_view():
                 return
             tab_workflow.handle_editor_text_changed(file_path, editor_widget)
 
         def on_cursor_position_changed() -> None:
             file_path = current_path()
-            if file_path is None:
+            if file_path is None or not is_primary_view():
                 return
             tab_workflow.handle_editor_cursor_position_changed(file_path, editor_widget)
 

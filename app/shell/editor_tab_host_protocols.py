@@ -149,6 +149,9 @@ class EditorTabWorkflowHost(
     def editor_tabs_widget(self) -> QTabWidget | None:
         ...
 
+    def editor_groups(self) -> Any | None:
+        ...
+
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
         ...
 

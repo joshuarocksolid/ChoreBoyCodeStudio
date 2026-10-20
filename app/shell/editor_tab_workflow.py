@@ -89,6 +89,7 @@ class EditorTabWorkflow(
             path_for_buffer_id=self.path_for_buffer_id,
             tab_workflow=self,
             debug_control_workflow=self._debug_control_workflow,
+            primary_view_for_buffer_id=self._host.workspace_controller().widget_for_buffer_id,
         )
 
     def path_for_buffer_id(self, buffer_id: str) -> str | None:

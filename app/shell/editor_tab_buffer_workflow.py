@@ -42,13 +42,9 @@ class EditorTabBufferWorkflow:
             refreshed_state = self._editor_manager.get_tab(file_path)
             if refreshed_state is not None:
                 tab_state = refreshed_state
-        editor_tabs_widget = self._host.editor_tabs_widget()
-        if editor_tabs_widget is None:
+        if self._host.editor_tabs_widget() is None:
             return
-
-        tab_index = self._editor_tabs_coordinator.tab_index_for_path(tab_state.file_path)
-        if tab_index < 0:
-            return
+        # Every group showing the buffer gets the dirty marker.
         self._editor_tabs_coordinator.refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
             self._host.local_history_schedule_autosave(tab_state.file_path, tab_state.current_content)
