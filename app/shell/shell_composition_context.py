@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Optional, Protocol
 
 from PySide2.QtCore import QTimer
 
-from app.core.models import CapabilityProbeReport, RuntimeIssueReport
+from app.core.models import CapabilityProbeReport, RuntimeIssue, RuntimeIssueReport
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.local_history_store import LocalHistoryStore
 from app.support.diagnostics import ProjectHealthReport
@@ -188,6 +188,8 @@ class ShellCompositionContext:
     timers: ShellCompositionTimers | None = None
     runtime_issues: ShellRuntimeIssueState | None = None
     diagnostics_latches: ShellDiagnosticsLatchState | None = None
+    startup_warnings: list[str] = field(default_factory=list)
+    degraded_issues: list[RuntimeIssue] = field(default_factory=list)
 
     @property
     def w(self) -> MainWindowCompositionSurface:

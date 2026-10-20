@@ -27,6 +27,18 @@ _PLUGIN_RUNTIME_LOG_FILENAME = "plugin_host.log"
 _LOGGER = logging.getLogger(__name__)
 
 
+def format_plugin_host_start_error(exc: BaseException) -> str:
+    """Include the exception and its cause so a wrapped PermissionError stays visible."""
+    parts = [f"{type(exc).__name__}: {exc}"]
+    seen = {id(exc)}
+    current = exc.__cause__
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        parts.append(f"{type(current).__name__}: {current}")
+        current = current.__cause__
+    return " | ".join(parts)
+
+
 @dataclass(frozen=True)
 class PluginRuntimeJob:
     job_id: str
@@ -70,7 +82,12 @@ class PluginRuntimeManager:
         if self._host_supervisor.is_running():
             return
         self._append_runtime_log("starting plugin host")
-        self._host_supervisor.start()
+        self._last_error = None
+        try:
+            self._host_supervisor.start()
+        except (RunLifecycleError, OSError) as exc:
+            self._last_error = format_plugin_host_start_error(exc)
+            self._append_runtime_log(self._last_error)
 
     def stop(self) -> None:
         self._host_supervisor.stop()
@@ -87,6 +104,8 @@ class PluginRuntimeManager:
         if background_runtime_disabled():
             return
         self.start()
+        if not self._host_supervisor.is_running():
+            return
         self._append_runtime_log("reloading plugin host commands")
         self._host_supervisor.send_input(encode_message({"type": "reload"}))
 

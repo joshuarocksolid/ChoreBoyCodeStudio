@@ -35,6 +35,46 @@ def build_startup_issue_report(report: CapabilityProbeReport) -> RuntimeIssueRep
     return RuntimeIssueReport(workflow="startup", issues=_sort_issues(issues))
 
 
+def local_history_disabled_issue(reason: str) -> RuntimeIssue:
+    """Explain that editing can continue with local history turned off."""
+    return RuntimeIssue(
+        issue_id="runtime.local_history_disabled",
+        workflow="startup",
+        severity="degraded",
+        title="Local history is off",
+        summary=f"Local history is off: {reason}",
+        why_it_happened=(
+            "The local history database could not be opened. The editor can still open files."
+        ),
+        next_steps=[
+            "Keep editing. Checkpoints and drafts stay off until the state folder can take a file lock.",
+            "Review the application log for the SQLite or lock error.",
+        ],
+        help_topic=HELP_TOPIC_GETTING_STARTED,
+        evidence={"reason": reason},
+    )
+
+
+def symbol_index_disabled_issue(reason: str) -> RuntimeIssue:
+    """Explain that code intelligence continues without the symbol cache."""
+    return RuntimeIssue(
+        issue_id="runtime.symbol_index_disabled",
+        workflow="startup",
+        severity="degraded",
+        title="Symbol index is off",
+        summary=f"Symbol index is off: {reason}",
+        why_it_happened=(
+            "The symbol cache database could not be opened. Completion can still scan open projects."
+        ),
+        next_steps=[
+            "Keep editing. Project-wide symbol search stays off until the cache database can be opened.",
+            "Review the application log for the SQLite or lock error.",
+        ],
+        help_topic=HELP_TOPIC_GETTING_STARTED,
+        evidence={"reason": reason},
+    )
+
+
 def build_project_health_issue_report(report: ProjectHealthReport) -> RuntimeIssueReport:
     """Convert project health failures into structured runtime issues."""
     issues = [
@@ -258,9 +298,10 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
             workflow=workflow,
             severity="degraded",
             title="Global state folder is not writable",
-            summary="Code Studio could not write to its visible global state directory.",
+            summary=check.message,
             why_it_happened=(
-                "Settings, caches, and some diagnostics depend on a writable global state root under Home."
+                "Settings, caches, and local history need a folder that accepts a file lock and a "
+                "SQLite write. A path can allow creating a file and still deny fcntl."
             ),
             next_steps=[
                 "Check permissions for the visible `choreboy_code_studio_state` location.",

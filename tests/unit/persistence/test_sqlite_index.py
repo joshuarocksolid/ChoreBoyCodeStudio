@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
+from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex, open_symbol_index
 
 pytestmark = pytest.mark.unit
 
@@ -175,3 +175,19 @@ def test_sqlite_symbol_index_migrates_legacy_symbols_table_columns(tmp_path: Pat
     loaded = index.lookup(project_root, "task")
     assert len(loaded) == 1
     assert loaded[0].signature_text == "task()"
+
+
+def test_open_symbol_index_disables_cache_when_sqlite_refuses(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    def refuse(self: SQLiteSymbolIndex, db_path: str) -> None:
+        del self, db_path
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(SQLiteSymbolIndex, "__init__", refuse)
+    index = open_symbol_index(str(tmp_path / "symbols.sqlite3"))
+
+    assert index.disabled_reason == "database is locked"
+    assert index.lookup(str(tmp_path), "run") == []
+    assert index.count_symbols(str(tmp_path)) == 0

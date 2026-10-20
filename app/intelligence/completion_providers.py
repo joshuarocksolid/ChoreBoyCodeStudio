@@ -13,7 +13,7 @@ from app.intelligence.api_index import provide_api_index_member_items
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
 from app.intelligence.python_structure import collect_completion_symbol_names, extract_symbol_locations
-from app.persistence.sqlite_index import SQLiteSymbolIndex
+from app.persistence.sqlite_index import open_symbol_index
 from app.project.dependency_classifier import STDLIB_TOP_LEVELS
 from app.project.file_inventory import (
     ProjectInventorySnapshot,
@@ -151,7 +151,7 @@ def provide_project_symbol_items(
         return []
 
     project_root_text = str(Path(project_root).expanduser().resolve())
-    cache = SQLiteSymbolIndex(cache_db_path)
+    cache = open_symbol_index(cache_db_path)
     symbols = cache.search_by_prefix(project_root_text, prefix, limit=limit)
     if symbols:
         return [
@@ -214,7 +214,7 @@ def provide_project_module_items(
     if cache_db_path:
         cache_path = Path(cache_db_path).expanduser().resolve()
         if cache_path.exists():
-            indexed_files = SQLiteSymbolIndex(str(cache_path)).list_indexed_python_files(str(root))
+            indexed_files = open_symbol_index(str(cache_path)).list_indexed_python_files(str(root))
             if indexed_files and _indexed_files_match_snapshot(indexed_files, inventory_snapshot):
                 if inventory_snapshot is not None:
                     module_names = module_names_from_snapshot(inventory_snapshot)

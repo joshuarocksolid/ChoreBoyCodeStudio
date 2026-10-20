@@ -444,6 +444,17 @@ class LocalHistoryWorkflow:
             file_name=Path(summary.display_path or summary.file_path).name,
         )
 
+    def _report_history_off(self, title: str) -> bool:
+        reason = self._local_history_store.disabled_reason
+        if not reason:
+            return False
+        QMessageBox.information(
+            self._host.parent_widget(),
+            title,
+            f"Local history is off: {reason}",
+        )
+        return True
+
     def show_local_history_for_path(
         self,
         file_path: str,
@@ -452,6 +463,8 @@ class LocalHistoryWorkflow:
         project_root: Optional[str] = None,
         file_name: Optional[str] = None,
     ) -> None:
+        if self._report_history_off("Local History"):
+            return
         if project_id is None and project_root is None:
             project_id, project_root = self.local_history_context_for_path(file_path)
         checkpoints = self._local_history_store.list_checkpoints(
@@ -479,6 +492,8 @@ class LocalHistoryWorkflow:
         dialog.exec_()
 
     def open_global_history(self) -> None:
+        if self._report_history_off("Global History"):
+            return
         if self._background_tasks is None:
             summaries = self._local_history_store.list_global_history_files()
             self._open_global_history_picker(summaries)
@@ -623,6 +638,8 @@ class LocalHistoryWorkflow:
             self.show_local_history_for_entry(selected_entry)
 
     def open_recovery_center(self) -> None:
+        if self._report_history_off("Recovery Center"):
+            return
         history_summaries = self._local_history_store.list_global_history_files()
         draft_entries = self._autosave_store.list_drafts()
         entries = self._recovery_center_entries(history_summaries, draft_entries)

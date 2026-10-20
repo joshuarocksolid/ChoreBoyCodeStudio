@@ -5,6 +5,7 @@ import logging
 import importlib
 import os
 import sys
+import traceback
 from typing import Callable
 from typing import Any, Optional
 
@@ -151,6 +152,46 @@ def _log_migration_outcome(logger: logging.Logger, outcome: MigrationOutcome) ->
         )
 
 
+def present_startup_failure_dialog(summary: str, log_path: str, details: str) -> bool:
+    """Show the last-resort startup dialog. Return False when Qt itself cannot start."""
+    try:
+        _show_startup_failure_dialog(summary, log_path, details)
+    except Exception:
+        log_display = log_path or "unavailable"
+        print(
+            f"Editor startup failed: {summary}\nLog file: {log_display}\n{details}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _show_startup_failure_dialog(summary: str, log_path: str, details: str) -> None:
+    widgets = importlib.import_module("PySide2.QtWidgets")
+    application_class = widgets.QApplication
+    message_box_class = widgets.QMessageBox
+
+    if application_class.instance() is None:
+        application_class(sys.argv)
+    log_display = log_path or "unavailable"
+    box = message_box_class()
+    box.setIcon(message_box_class.Critical)
+    box.setWindowTitle("ChoreBoy Code Studio")
+    box.setText(summary)
+    box.setInformativeText(f"Log file: {log_display}")
+    box.setDetailedText(details)
+    copy_button = box.addButton("Copy details", message_box_class.ActionRole)
+    box.addButton(message_box_class.Close)
+
+    def _copy_details() -> None:
+        clipboard = application_class.clipboard()
+        if clipboard is not None:
+            clipboard.setText(f"{summary}\nLog file: {log_display}\n\n{details}")
+
+    copy_button.clicked.connect(_copy_details)
+    box.exec_()
+
+
 def main() -> int:
     """Copy leftover state first, then initialize logging, then run editor startup."""
     global _LAST_STARTUP_CAPABILITY_REPORT
@@ -175,6 +216,11 @@ def main() -> int:
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_minimal_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
+    except Exception:
+        logger.exception("Startup capability probe failed.")
+        _LAST_STARTUP_CAPABILITY_REPORT = None
+
+    try:
         tree_sitter_status = initialize_tree_sitter_runtime()
         if tree_sitter_status.is_available:
             if getattr(tree_sitter_status, "missing_default_language_keys", ()):
@@ -186,11 +232,20 @@ def main() -> int:
             failure_traceback = runtime_traceback()
             if failure_traceback:
                 logger.debug("Tree-sitter initialization traceback:\n%s", failure_traceback)
-
-        logger.info("Editor startup initialized.")
-        return _start_editor()
     except Exception:
+        logger.exception("Tree-sitter initialization failed.")
+
+    logger.info("Editor startup initialized.")
+    try:
+        return _start_editor()
+    except Exception as exc:
         logger.exception("Editor startup failed.")
+        log_path = "" if logging_result.log_path is None else str(logging_result.log_path)
+        present_startup_failure_dialog(
+            f"Editor startup failed: {exc}",
+            log_path,
+            traceback.format_exc(),
+        )
         return 1
 
 

@@ -1,6 +1,7 @@
 """Integration tests for startup capability probe wiring."""
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -218,3 +219,74 @@ def test_refresh_startup_capability_report_updates_global_and_notifies_callback(
     assert refreshed == report
     assert run_editor.get_last_startup_capability_report() == report
     assert seen == [report]
+
+
+def test_main_shows_startup_failure_dialog_when_window_construction_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = _RecordingLogger()
+    presented: list[tuple[str, str, str]] = []
+
+    def fail_start() -> int:
+        raise RuntimeError("window boom")
+
+    def presenter(summary: str, log_path: str, details: str) -> bool:
+        presented.append((summary, log_path, details))
+        return True
+
+    monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
+    monkeypatch.setattr(run_editor, "migrate_legacy_global_state", lambda: object())
+    monkeypatch.setattr(run_editor, "_log_migration_outcome", lambda logger, outcome: None)
+    monkeypatch.setattr(
+        run_editor,
+        "configure_app_logging",
+        lambda: LoggingResult(log_path=Path("/tmp/cbcs-editor.log"), tier=TIER_PRIMARY, warnings=[]),
+    )
+    monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
+    monkeypatch.setattr(
+        run_editor,
+        "run_minimal_startup_capability_probe",
+        lambda: CapabilityProbeReport(checks=[]),
+    )
+    monkeypatch.setattr(
+        run_editor,
+        "initialize_tree_sitter_runtime",
+        lambda: SimpleNamespace(is_available=True, message="ok"),
+    )
+    monkeypatch.setattr(run_editor, "_start_editor", fail_start)
+    monkeypatch.setattr(run_editor, "present_startup_failure_dialog", presenter)
+
+    assert run_editor.main() == 1
+    assert presented
+    summary, log_path, details = presented[0]
+    assert "window boom" in summary
+    assert log_path == "/tmp/cbcs-editor.log"
+    assert "window boom" in details
+    assert "Editor startup failed." in logger.exception_messages
+
+
+def test_main_continues_when_tree_sitter_initialization_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    logger = _RecordingLogger()
+    monkeypatch.setattr(run_editor, "_LAST_STARTUP_CAPABILITY_REPORT", None)
+    monkeypatch.setattr(run_editor, "migrate_legacy_global_state", lambda: object())
+    monkeypatch.setattr(run_editor, "_log_migration_outcome", lambda logger, outcome: None)
+    monkeypatch.setattr(run_editor, "configure_app_logging", lambda: _FAKE_LOGGING_RESULT)
+    monkeypatch.setattr(run_editor, "get_subsystem_logger", lambda _: logger)
+    monkeypatch.setattr(
+        run_editor,
+        "run_minimal_startup_capability_probe",
+        lambda: CapabilityProbeReport(checks=[]),
+    )
+
+    def fail_treesitter() -> SimpleNamespace:
+        raise RuntimeError("grammar missing")
+
+    monkeypatch.setattr(run_editor, "initialize_tree_sitter_runtime", fail_treesitter)
+    def fail_if_called(*_args: object) -> bool:
+        raise AssertionError("optional init must not open the last-resort dialog")
+
+    monkeypatch.setattr(run_editor, "_start_editor", lambda: 0)
+    monkeypatch.setattr(run_editor, "present_startup_failure_dialog", fail_if_called)
+
+    assert run_editor.main() == 0
+    assert "Tree-sitter initialization failed." in logger.exception_messages
