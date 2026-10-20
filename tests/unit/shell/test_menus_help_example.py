@@ -7,7 +7,6 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt import QtWidgets as qt_widgets  # noqa: E402
-from app.qt import QtGui as qt_gui  # noqa: E402
 from app.qt.QtWidgets import QMainWindow  # noqa: E402
 
 from app.shell.menus import MenuCallbacks, build_menu_stubs  # noqa: E402
@@ -18,8 +17,6 @@ pytestmark = pytest.mark.unit
 @pytest.fixture
 def _ensure_qapp(monkeypatch: pytest.MonkeyPatch):  # type: ignore[no-untyped-def]
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
     app = qt_widgets.QApplication.instance()
     if app is None:
         app = qt_widgets.QApplication([])

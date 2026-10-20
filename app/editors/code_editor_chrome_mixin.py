@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Any, cast
 from app.qt.QtCore import QPointF, QRect, QSize, Qt
 from app.qt.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
 from app.qt.QtWidgets import QTextEdit, QWidget
+from app.qt.qt_compat import event_pos
 
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -49,7 +50,7 @@ class _LineNumberArea(QWidget):
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
-        self._editor.toggle_breakpoint_at_y(event.pos().y())
+        self._editor.toggle_breakpoint_at_y(event_pos(event).y())
 
 
 class CodeEditorChromeMixin(_CodeEditorChromeBase):

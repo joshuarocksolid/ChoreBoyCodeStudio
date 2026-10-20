@@ -16,6 +16,7 @@ from app.qt.QtWidgets import (
     QToolButton,
     QWidget,
 )
+from app.qt.qt_compat import event_pos
 
 from app.shell.outline.outline_icons import chevron_icon, make_codicon_text_icon
 from app.shell.outline.outline_tree import (
@@ -216,7 +217,7 @@ class _OutlineHeaderBar(QWidget):
 
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]
         if event.button() == Qt.LeftButton:
-            target = self.childAt(event.pos())
+            target = self.childAt(event_pos(event))
             if target is None or target is self._chevron_btn or target is self._title_label or target is self._file_label:
                 self._toggle_collapsed()
                 event.accept()

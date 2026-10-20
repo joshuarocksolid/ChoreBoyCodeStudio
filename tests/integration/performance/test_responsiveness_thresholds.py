@@ -37,11 +37,7 @@ def _write_project_manifest(project_root: Path, name: str) -> None:
 
 def _ensure_qapplication(monkeypatch: pytest.MonkeyPatch) -> QApplication:
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from app.qt import QtGui as qt_gui
     from app.qt import QtWidgets as qt_widgets
-
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
 
     app = QApplication.instance()
     if app is None:

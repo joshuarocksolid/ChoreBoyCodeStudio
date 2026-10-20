@@ -9,13 +9,9 @@ from app.shell.main_window import MainWindow
 
 
 def ensure_shell_qapplication(monkeypatch: Any) -> Any:
-    """Return an offscreen QApplication with QActionGroup compatibility shim."""
+    """Return an offscreen QApplication."""
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from app.qt import QtGui as qt_gui
     from app.qt import QtWidgets as qt_widgets
-
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
 
     app = qt_widgets.QApplication.instance()
     if app is None:
