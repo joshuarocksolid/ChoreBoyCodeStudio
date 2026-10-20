@@ -13,6 +13,7 @@ import zipfile
 import pytest
 
 from app.packaging import product_builder as product_package
+from app.packaging.tree_sitter_cp39 import GrammarStageResult
 from app.packaging.installer_manifest import (
     create_distribution_manifest,
     parse_distribution_manifest,
@@ -133,6 +134,10 @@ def _make_product_repo(root: Path) -> Path:
 
 def _existing_tree_sitter_stager(staged_tree_sitter_dir: Path, _cache_dir: Path) -> Path:
     return staged_tree_sitter_dir / product_package.CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS["tree_sitter"]
+
+
+def _noop_grammar_stager(_vendor_dir: Path, _cache_dir: Path) -> GrammarStageResult:
+    return GrammarStageResult(overlaid=(), exclusions=())
 
 
 def test_distribution_install_instructions_require_home_default_staging() -> None:
@@ -310,6 +315,7 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
         version="0.2.0",
         artifacts_dir=artifacts_dir,
         tree_sitter_core_stager=_existing_tree_sitter_stager,
+        tree_sitter_grammar_stager=_noop_grammar_stager,
         strip_shared_objects=False,
         validate_python_tooling=False,
         print_status=False,
