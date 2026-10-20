@@ -21,6 +21,7 @@ from app.runner.repl_introspection import (
     REPL_RUNTIME_DEGRADATION_EXCEPTIONS,
     ReplIntrospectionRequest,
     ReplIntrospectionService,
+    console_member_items,
     is_whitelisted_target_path,
     resolve_whitelisted_target,
 )
@@ -322,33 +323,15 @@ class ReplCompletionService:
                     value = eval(expression, {"__builtins__": builtins}, self._namespace)
             except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
                 return []
-        names: list[str]
-        try:
-            names = sorted(name for name in dir(value) if not name.startswith("__"))
-        except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
-            return []
-        items: list[CompletionItem] = []
-        for name in names:
-            if prefix and not name.lower().startswith(prefix.lower()):
-                continue
-            try:
-                member_value = getattr(value, name)
-            except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
-                member_value = None
-            items.append(
-                _item_from_value(
-                    name=name,
-                    value=member_value,
-                    replacement_start=replacement_start,
-                    replacement_end=replacement_end,
-                    request=request,
-                    source="runtime_inspection",
-                    side_effect_risk="possible_descriptor_or_getattr",
-                )
-            )
-            if len(items) >= max(1, int(request.max_results)):
-                break
-        return items
+        return console_member_items(
+            expression=expression,
+            value=value,
+            prefix=prefix,
+            replacement_start=replacement_start,
+            replacement_end=replacement_end,
+            trigger_kind=request.trigger_kind,
+            trigger_character=request.trigger_character,
+        )
 
 
 def _item_from_value(

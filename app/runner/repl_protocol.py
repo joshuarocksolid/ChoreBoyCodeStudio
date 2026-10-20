@@ -75,7 +75,17 @@ def completion_item_from_dict(payload: dict[str, Any]) -> CompletionItem:
         trigger_kind=str(payload.get("trigger_kind") or ""),
         trigger_character=str(payload.get("trigger_character") or ""),
         side_effect_risk=str(payload.get("side_effect_risk") or ""),
+        item_id=str(payload.get("item_id") or ""),
+        context_fingerprint=str(payload.get("context_fingerprint") or ""),
+        resolve_provider=str(payload.get("resolve_provider") or ""),
+        resolvable_fields=_string_tuple(payload.get("resolvable_fields")),
     )
+
+
+def _string_tuple(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, (list, tuple)):
+        return ()
+    return tuple(str(entry) for entry in value if isinstance(entry, str))
 
 
 def envelope_to_dict(envelope: CompletionEnvelope) -> dict[str, Any]:
@@ -182,7 +192,9 @@ def build_resolve_member_request(
 def listing_to_wire(listing: RuntimeMemberListing) -> dict[str, Any]:
     return {
         "target_path": listing.target_path,
-        "members": [[member.name, member.kind.value] for member in (*listing.public, *listing.private)],
+        "members": [
+            [member.name, member.kind.value, member.short_type] for member in (*listing.public, *listing.private)
+        ],
     }
 
 
@@ -195,20 +207,29 @@ def listing_from_wire(payload: dict[str, Any]) -> RuntimeListingResult:
     for entry in raw_members:
         if not isinstance(entry, list) or not entry or not isinstance(entry[0], str):
             continue
-        members.append(RuntimeMember(name=entry[0], kind=_kind_from_wire(entry[1] if len(entry) > 1 else None)))
+        short_type = entry[2] if len(entry) > 2 and isinstance(entry[2], str) else ""
+        members.append(
+            RuntimeMember(
+                name=entry[0],
+                kind=_kind_from_wire(entry[1] if len(entry) > 1 else None),
+                short_type=short_type,
+            )
+        )
     return RuntimeMemberListing.from_members(target_path, members)
 
 
 def detail_to_wire(detail: RuntimeMemberDetail) -> dict[str, Any]:
-    return {"signature": detail.signature, "documentation": detail.documentation}
+    return {"signature": detail.signature, "documentation": detail.documentation, "owner": detail.owner}
 
 
 def detail_from_wire(payload: dict[str, Any]) -> RuntimeMemberDetail:
     signature = payload.get("signature")
     documentation = payload.get("documentation")
+    owner = payload.get("owner")
     return RuntimeMemberDetail(
         signature=signature if isinstance(signature, str) else "",
         documentation=documentation if isinstance(documentation, str) else "",
+        owner=owner if isinstance(owner, str) else "",
     )
 
 

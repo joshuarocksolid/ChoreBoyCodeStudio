@@ -142,5 +142,7 @@ def test_resolve_member_reads_live_pyside_signature_and_first_doc_paragraph() ->
     )
 
     assert isinstance(detail, RuntimeMemberDetail)
-    assert detail.signature.startswith("(")
-    assert detail.documentation == live_doc.split("\n\n", 1)[0].strip()
+    assert detail.signature.startswith("setText(")
+    assert detail.owner == "QAbstractButton method"
+    assert "setText(" not in detail.documentation
+    assert detail.documentation in live_doc

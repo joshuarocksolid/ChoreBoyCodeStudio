@@ -15,6 +15,7 @@ _ITEM_ID_PREFIX = RUNTIME_INTROSPECTION_PROVIDER + ":"
 class RuntimeMember:
     name: str
     kind: CompletionKind
+    short_type: str = ""
 
 
 @dataclass(frozen=True)
@@ -32,24 +33,31 @@ class RuntimeMemberListing:
         )
 
     def visible(self, prefix: str, *, limit: Optional[int] = None) -> list[CompletionItem]:
+        """Every member whose name starts with ``prefix`` (any case), public first.
+
+        Private and dunder names are included; the popup ranks private names
+        last and shows dunders only after ``_`` is typed. ``limit`` is accepted
+        for callers that still pass one, but the list is never cut.
+        """
+
+        _ = limit
         lowered = prefix.lower()
-        if prefix.startswith("_"):
-            matches = [member for member in self.private if member.name.lower().startswith(lowered)]
-        else:
-            matches = [member for member in self.public if member.name.lower().startswith(lowered)]
-            if limit is not None:
-                matches = matches[: max(0, limit)]
-        return [self._item(member) for member in matches]
+        return [
+            self._item(member)
+            for member in (*self.public, *self.private)
+            if member.name.lower().startswith(lowered)
+        ]
 
     def _item(self, member: RuntimeMember) -> CompletionItem:
         return CompletionItem(
             label=member.name,
             insert_text=member.name,
             kind=member.kind,
-            detail=f"{self.target_path} member",
+            detail="",
             engine=RUNTIME_INTROSPECTION_PROVIDER,
             source=RUNTIME_INTROSPECTION_PROVIDER,
             confidence="runtime_inspection",
+            semantic_kind=member.short_type or member.kind.value,
             item_id=RuntimeMemberRef(target_path=self.target_path, name=member.name).item_id,
             resolve_provider=RUNTIME_INTROSPECTION_PROVIDER,
             resolvable_fields=RUNTIME_RESOLVABLE_FIELDS,
@@ -79,6 +87,7 @@ class RuntimeMemberRef:
 class RuntimeMemberDetail:
     signature: str
     documentation: str
+    owner: str = ""
 
 
 @dataclass(frozen=True)

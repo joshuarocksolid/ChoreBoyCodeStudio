@@ -55,6 +55,11 @@ class SemanticSession:
         self._completion_resolver = CompletionResolver(semantic_facade=self._semantic_facade)
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
 
+    def bind_runtime_members(self, runtime_coordinator: RuntimeIntrospectionCoordinator | None) -> None:
+        """Let lazy docs resolve runtime members (editor and Python Console rows)."""
+
+        self._completion_resolver.bind_runtime_members(runtime_coordinator)
+
     def set_inventory_snapshot_provider(
         self,
         provider: Callable[[], ProjectInventorySnapshot | None],
