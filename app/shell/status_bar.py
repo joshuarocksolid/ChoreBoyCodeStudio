@@ -250,12 +250,27 @@ class ShellStatusBarController:
         self._editor_label = editor_label
         self._diagnostics_label = diagnostics_label
         self._indent_label = indent_label
+        self._runtime_warning_text: str | None = None
 
     def _refresh_widget_style(self, widget: "QLabel") -> None:
         style = widget.style()
         style.unpolish(widget)
         style.polish(widget)
         widget.update()
+
+    def set_runtime_warning(self, text: str) -> None:
+        """Replace the startup chip with a warning that survives a later ready report."""
+        prior = self._runtime_warning_text
+        if prior and text not in prior:
+            text = f"{prior}; {text}"
+        self._runtime_warning_text = text
+        self._apply_runtime_warning(text)
+
+    def _apply_runtime_warning(self, text: str) -> None:
+        self._startup_label.setText(f"Startup: {text}")
+        self._startup_label.setToolTip(text)
+        self._startup_label.setProperty("startupSeverity", "warning")
+        self._refresh_widget_style(self._startup_label)
 
     def set_startup_report(self, report: Optional[CapabilityProbeReport]) -> None:
         """Update startup status label from the latest probe output."""
@@ -267,6 +282,8 @@ class ShellStatusBarController:
         self._startup_label.setToolTip(tooltip)
         self._startup_label.setProperty("startupSeverity", startup_status.severity)  # type: ignore[arg-type]
         self._refresh_widget_style(self._startup_label)
+        if self._runtime_warning_text:
+            self._apply_runtime_warning(self._runtime_warning_text)
 
     def set_project_state_text(self, text: str) -> None:
         """Update lightweight project-status copy."""

@@ -16,7 +16,7 @@ from PySide2.QtWidgets import QDialog  # noqa: E402
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.persistence.autosave_store import DraftEntry  # noqa: E402
 from app.persistence.history_models import LocalHistoryCheckpoint  # noqa: E402
-from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
+from app.persistence.local_history_store import DisabledLocalHistoryStore, LocalHistoryStore  # noqa: E402
 from app.shell.local_history_workflow import LocalHistoryWorkflow  # noqa: E402
 from tests.support.local_history_editor_host_stub import LocalHistoryEditorHostStub  # noqa: E402
 
@@ -396,5 +396,25 @@ def test_checkpoint_skip_uses_current_retention_policy_for_status(tmp_path: Path
 
     assert messages
     assert "tracking limit" in messages[0]
+
+
+def test_show_local_history_reports_when_store_is_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    shown: list[str] = []
+
+    def information(*args: object) -> None:
+        shown.append(str(args[-1]))
+
+    monkeypatch.setattr("app.shell.local_history_workflow.QMessageBox.information", information)
+    workflow = LocalHistoryWorkflow(
+        host=LocalHistoryEditorHostStub(),
+        local_history_store=DisabledLocalHistoryStore(reason="database is locked"),
+        autosave_store=_FakeAutosaveStore(),  # type: ignore[arg-type]
+        editor_manager=EditorManager(),
+        logger=logging.getLogger("test.local_history_off"),
+    )
+
+    workflow.show_local_history_for_path("/tmp/main.py")
+
+    assert shown == ["Local history is off: database is locked"]
 
 
