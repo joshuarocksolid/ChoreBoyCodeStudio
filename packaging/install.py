@@ -10,6 +10,7 @@ from dataclasses import dataclass
 import hashlib
 import importlib.util
 import json
+import logging
 import os
 import shutil
 import stat
@@ -50,6 +51,8 @@ SLOT_ACTION_CONFIRM_REPLACE = "confirm_replace"
 SLOT_ACTION_REFUSE = "refuse"
 
 LEGACY_MACRO_APPS_BASE = "~/.local/share/FreeCAD/Macro/Apps"
+
+_LOG = logging.getLogger("cbcs.installer")
 
 
 @dataclass(frozen=True)
@@ -499,7 +502,12 @@ def discover_same_package_slots(
 
 
 def iter_launcher_destinations(home_root: Path) -> list[tuple[str, Path]]:
-    """Home copy, Desktop when that folder already exists, and the applications menu."""
+    """Home copy, Desktop when that folder already exists, and the applications menu.
+
+    The menu copy is best-effort. ChoreBoy denies ``~/.local/share/applications``
+    to confined AppRun, so :func:`publish_home_launchers` only logs that failure,
+    the same way the proven IntellaQuote installer does.
+    """
     destinations = [("home", Path(home_root))]
     desktop = Path(home_root) / "Desktop"
     if desktop.is_dir():
@@ -514,7 +522,11 @@ def publish_home_launchers(
     *,
     home_roots: list[Path],
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Write launcher copies. Failures become warnings and do not raise."""
+    """Write launcher copies. Failures do not raise.
+
+    A home or Desktop failure is a warning for the done page. A menu failure is
+    only logged: the menu copy is best-effort and ChoreBoy denies it.
+    """
     published: list[str] = []
     warnings: list[str] = []
     for home_root in home_roots:
@@ -526,9 +538,11 @@ def publish_home_launchers(
                 destination.write_text(launcher_text, encoding="utf-8")
                 destination.chmod(destination.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
             except OSError as exc:
-                warnings.append(
-                    f"Could not write the {kind} launcher at {destination}: {exc.__class__.__name__}: {exc}"
-                )
+                message = f"Could not write the {kind} launcher at {destination}: {exc.__class__.__name__}: {exc}"
+                if kind == "menu":
+                    _LOG.info("Skipped the optional menu launcher. %s", message)
+                else:
+                    warnings.append(message)
             else:
                 published.append(str(destination))
     return tuple(published), tuple(warnings)
