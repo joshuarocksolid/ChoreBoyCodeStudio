@@ -61,21 +61,7 @@ def test_load_or_create_project_package_config_persists_defaults(tmp_path: Path)
     assert (project_root / "cbcs" / "package.json").is_file()
 
 
-def test_parse_project_package_config_defaults_skip_missing_dependency_blockers() -> None:
-    config = parse_project_package_config(
-        {
-            "schema_version": 1,
-            "package_id": "my_project",
-            "display_name": "My Project",
-            "version": "1.0.0",
-        }
-    )
-
-    assert config.skip_missing_dependency_blockers is False
-    assert "skip_missing_dependency_blockers" not in config.to_dict()
-
-
-def test_parse_project_package_config_persists_skip_missing_dependency_blockers() -> None:
+def test_parse_project_package_config_ignores_retired_skip_missing_key() -> None:
     config = parse_project_package_config(
         {
             "schema_version": 1,
@@ -86,8 +72,8 @@ def test_parse_project_package_config_persists_skip_missing_dependency_blockers(
         }
     )
 
-    assert config.skip_missing_dependency_blockers is True
-    assert config.to_dict()["skip_missing_dependency_blockers"] is True
+    assert "skip_missing_dependency_blockers" not in config.to_dict()
+    assert config.package_id == "my_project"
 
 
 def test_parse_project_package_config_defaults_ask_install_location() -> None:
