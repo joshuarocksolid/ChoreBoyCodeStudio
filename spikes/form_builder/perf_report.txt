@@ -1,0 +1,10 @@
+widgets 302
+open median 36.26 ms  min 34.08  max 40.87  n=5  ['37.75', '36.26', '34.08', '35.89', '40.87']  budget 150
+insert median 0.80 ms  min 0.75  max 0.86  n=5  ['0.80', '0.79', '0.80', '0.86', '0.75']  budget 16
+property median 2.74 ms  min 2.63  max 2.88  n=5  ['2.88', '2.85', '2.63', '2.67', '2.74']  budget 16
+undo median 0.45 ms  min 0.42  max 0.49  n=5  ['0.45', '0.49', '0.47', '0.44', '0.42']  budget 16
+save median 2.96 ms  min 2.67  max 3.45  n=5  ['3.45', '2.77', '2.97', '2.67', '2.96']  budget 50
+rss extra 15.97 MB  budget 30
+open times load plus the workbench, after QApplication already exists.
+edit times are command apply plus the canvas patch. The geometry index refreshes on the next pointer event.
+rss extra is ru_maxrss after five opens minus ru_maxrss of the empty window. It is a high-water mark, so it can include caches from the repeats. On macOS the unit is bytes.

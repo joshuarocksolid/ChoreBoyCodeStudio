@@ -1,0 +1,9 @@
+ts	phase	decision	why	evidence	result
+2026-10-20T20:40:00Z	start	opened the form builder spike on feat/form-builder-spike	the brief is a multi-part prototype the lead reviews later	spikes/form_builder/decisions.tsv	open
+2026-10-20T20:40:00Z	frame	skipped a second design bakeoff and kept the brief's .ui model, command log, and live canvas	those decisions are already made, and another arena would only reopen them	docs/form_builder/research/R1_runtime_ui_loading.md	settled
+2026-10-20T20:40:00Z	frame	one writer owns the form tree	the document, commands, and canvas all mutate one tree, so parallel editors would race	spikes/form_builder/model.py	single owner
+2026-10-20T21:20:00Z	writer	omit a property only when it has no stdset and its body matches a small default table	Designer files keep dynamic properties with stdset="0", and the FreeCAD corpus round-trip failed when those were dropped	spikes/form_builder/defaults.py	kept
+2026-10-20T21:40:00Z	canvas	structural edits patch layout membership instead of rebuilding the form	a full rebuild of the 302-widget sample was about 50 ms, over the 16 ms edit budget	spikes/form_builder/realize.py	patch
+2026-10-20T21:40:00Z	canvas	the geometry index refreshes on the next pointer event, not inside the edit timer	walking every widget on each edit cost about 22 ms, and mouse moves only need the cached rects	spikes/form_builder/canvas.py	deferred
+2026-10-20T21:50:00Z	canvas	the overlay is a child of the view, mapped from host coordinates	an overlay inside the graphics proxy painted under the real widgets, so insertion lines and badges were hidden	spikes/form_builder/screenshots/insertion.png	on top
+2026-10-20T21:50:00Z	keys	wrap and unwrap use the physical Control key	the brief names Ctrl+G, and on macOS Command is already copy, paste, undo, and save	spikes/form_builder/window.py	Control+G

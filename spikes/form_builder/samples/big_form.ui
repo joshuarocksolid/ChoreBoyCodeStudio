@@ -1,0 +1,1561 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>BigForm</class>
+ <widget class="QWidget" name="BigForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>BigForm</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QTabWidget" name="pages">
+     <widget class="QWidget" name="page1">
+      <attribute name="title">
+       <string>Page 1</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pageLayout1">
+       <item>
+        <widget class="QGroupBox" name="group1">
+         <property name="title">
+          <string>Group 1</string>
+         </property>
+         <layout class="QFormLayout" name="form1">
+          <item row="0" column="0">
+           <widget class="QLabel" name="p1l1">
+            <property name="text">
+             <string>Field 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="p1f1">
+            <property name="placeholderText">
+             <string>Field 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="p1l2">
+            <property name="text">
+             <string>Field 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="p1f2">
+            <property name="placeholderText">
+             <string>Field 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="p1l3">
+            <property name="text">
+             <string>Field 3</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="p1f3">
+            <property name="placeholderText">
+             <string>Field 3</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="p1l4">
+            <property name="text">
+             <string>Field 4</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="p1f4">
+            <property name="placeholderText">
+             <string>Field 4</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="p1l5">
+            <property name="text">
+             <string>Field 5</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="p1f5">
+            <property name="placeholderText">
+             <string>Field 5</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="p1l6">
+            <property name="text">
+             <string>Field 6</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="p1f6">
+            <property name="placeholderText">
+             <string>Field 6</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLabel" name="p1l7">
+            <property name="text">
+             <string>Field 7</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="p1f7">
+            <property name="placeholderText">
+             <string>Field 7</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLabel" name="p1l8">
+            <property name="text">
+             <string>Field 8</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="p1f8">
+            <property name="placeholderText">
+             <string>Field 8</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLabel" name="p1l9">
+            <property name="text">
+             <string>Field 9</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="p1f9">
+            <property name="placeholderText">
+             <string>Field 9</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLabel" name="p1l10">
+            <property name="text">
+             <string>Field 10</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QLineEdit" name="p1f10">
+            <property name="placeholderText">
+             <string>Field 10</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLabel" name="p1l11">
+            <property name="text">
+             <string>Field 11</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="1">
+           <widget class="QLineEdit" name="p1f11">
+            <property name="placeholderText">
+             <string>Field 11</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="0">
+           <widget class="QLabel" name="p1l12">
+            <property name="text">
+             <string>Field 12</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="1">
+           <widget class="QLineEdit" name="p1f12">
+            <property name="placeholderText">
+             <string>Field 12</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="0">
+           <widget class="QLabel" name="p1l13">
+            <property name="text">
+             <string>Field 13</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="1">
+           <widget class="QLineEdit" name="p1f13">
+            <property name="placeholderText">
+             <string>Field 13</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="0">
+           <widget class="QLabel" name="p1l14">
+            <property name="text">
+             <string>Field 14</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="1">
+           <widget class="QLineEdit" name="p1f14">
+            <property name="placeholderText">
+             <string>Field 14</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="0">
+           <widget class="QLabel" name="p1l15">
+            <property name="text">
+             <string>Field 15</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="1">
+           <widget class="QLineEdit" name="p1f15">
+            <property name="placeholderText">
+             <string>Field 15</string>
+            </property>
+           </widget>
+          </item>
+          <item row="15" column="0">
+           <widget class="QLabel" name="p1l16">
+            <property name="text">
+             <string>Field 16</string>
+            </property>
+           </widget>
+          </item>
+          <item row="15" column="1">
+           <widget class="QLineEdit" name="p1f16">
+            <property name="placeholderText">
+             <string>Field 16</string>
+            </property>
+           </widget>
+          </item>
+          <item row="16" column="0">
+           <widget class="QLabel" name="p1l17">
+            <property name="text">
+             <string>Field 17</string>
+            </property>
+           </widget>
+          </item>
+          <item row="16" column="1">
+           <widget class="QLineEdit" name="p1f17">
+            <property name="placeholderText">
+             <string>Field 17</string>
+            </property>
+           </widget>
+          </item>
+          <item row="17" column="0">
+           <widget class="QLabel" name="p1l18">
+            <property name="text">
+             <string>Field 18</string>
+            </property>
+           </widget>
+          </item>
+          <item row="17" column="1">
+           <widget class="QLineEdit" name="p1f18">
+            <property name="placeholderText">
+             <string>Field 18</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="0">
+           <widget class="QLabel" name="p1l19">
+            <property name="text">
+             <string>Field 19</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="1">
+           <widget class="QLineEdit" name="p1f19">
+            <property name="placeholderText">
+             <string>Field 19</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="0">
+           <widget class="QLabel" name="p1l20">
+            <property name="text">
+             <string>Field 20</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="1">
+           <widget class="QLineEdit" name="p1f20">
+            <property name="placeholderText">
+             <string>Field 20</string>
+            </property>
+           </widget>
+          </item>
+          <item row="20" column="0">
+           <widget class="QLabel" name="p1l21">
+            <property name="text">
+             <string>Field 21</string>
+            </property>
+           </widget>
+          </item>
+          <item row="20" column="1">
+           <widget class="QLineEdit" name="p1f21">
+            <property name="placeholderText">
+             <string>Field 21</string>
+            </property>
+           </widget>
+          </item>
+          <item row="21" column="0">
+           <widget class="QLabel" name="p1l22">
+            <property name="text">
+             <string>Field 22</string>
+            </property>
+           </widget>
+          </item>
+          <item row="21" column="1">
+           <widget class="QLineEdit" name="p1f22">
+            <property name="placeholderText">
+             <string>Field 22</string>
+            </property>
+           </widget>
+          </item>
+          <item row="22" column="0">
+           <widget class="QLabel" name="p1l23">
+            <property name="text">
+             <string>Field 23</string>
+            </property>
+           </widget>
+          </item>
+          <item row="22" column="1">
+           <widget class="QLineEdit" name="p1f23">
+            <property name="placeholderText">
+             <string>Field 23</string>
+            </property>
+           </widget>
+          </item>
+          <item row="23" column="0">
+           <widget class="QLabel" name="p1l24">
+            <property name="text">
+             <string>Field 24</string>
+            </property>
+           </widget>
+          </item>
+          <item row="23" column="1">
+           <widget class="QLineEdit" name="p1f24">
+            <property name="placeholderText">
+             <string>Field 24</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page2">
+      <attribute name="title">
+       <string>Page 2</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pageLayout2">
+       <item>
+        <widget class="QGroupBox" name="group2">
+         <property name="title">
+          <string>Group 2</string>
+         </property>
+         <layout class="QGridLayout" name="grid2">
+          <item row="0" column="0">
+           <widget class="QLineEdit" name="p2c0_0"/>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="p2c0_1"/>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="p2c0_2"/>
+          </item>
+          <item row="0" column="3">
+           <widget class="QLineEdit" name="p2c0_3"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLineEdit" name="p2c1_0"/>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="p2c1_1"/>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLineEdit" name="p2c1_2"/>
+          </item>
+          <item row="1" column="3">
+           <widget class="QLineEdit" name="p2c1_3"/>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLineEdit" name="p2c2_0"/>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="p2c2_1"/>
+          </item>
+          <item row="2" column="2">
+           <widget class="QLineEdit" name="p2c2_2"/>
+          </item>
+          <item row="2" column="3">
+           <widget class="QLineEdit" name="p2c2_3"/>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLineEdit" name="p2c3_0"/>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="p2c3_1"/>
+          </item>
+          <item row="3" column="2">
+           <widget class="QLineEdit" name="p2c3_2"/>
+          </item>
+          <item row="3" column="3">
+           <widget class="QLineEdit" name="p2c3_3"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLineEdit" name="p2c4_0"/>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="p2c4_1"/>
+          </item>
+          <item row="4" column="2">
+           <widget class="QLineEdit" name="p2c4_2"/>
+          </item>
+          <item row="4" column="3">
+           <widget class="QLineEdit" name="p2c4_3"/>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLineEdit" name="p2c5_0"/>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="p2c5_1"/>
+          </item>
+          <item row="5" column="2">
+           <widget class="QLineEdit" name="p2c5_2"/>
+          </item>
+          <item row="5" column="3">
+           <widget class="QLineEdit" name="p2c5_3"/>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLineEdit" name="p2c6_0"/>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="p2c6_1"/>
+          </item>
+          <item row="6" column="2">
+           <widget class="QLineEdit" name="p2c6_2"/>
+          </item>
+          <item row="6" column="3">
+           <widget class="QLineEdit" name="p2c6_3"/>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLineEdit" name="p2c7_0"/>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="p2c7_1"/>
+          </item>
+          <item row="7" column="2">
+           <widget class="QLineEdit" name="p2c7_2"/>
+          </item>
+          <item row="7" column="3">
+           <widget class="QLineEdit" name="p2c7_3"/>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLineEdit" name="p2c8_0"/>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="p2c8_1"/>
+          </item>
+          <item row="8" column="2">
+           <widget class="QLineEdit" name="p2c8_2"/>
+          </item>
+          <item row="8" column="3">
+           <widget class="QLineEdit" name="p2c8_3"/>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLineEdit" name="p2c9_0"/>
+          </item>
+          <item row="9" column="1">
+           <widget class="QLineEdit" name="p2c9_1"/>
+          </item>
+          <item row="9" column="2">
+           <widget class="QLineEdit" name="p2c9_2"/>
+          </item>
+          <item row="9" column="3">
+           <widget class="QLineEdit" name="p2c9_3"/>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLineEdit" name="p2c10_0"/>
+          </item>
+          <item row="10" column="1">
+           <widget class="QLineEdit" name="p2c10_1"/>
+          </item>
+          <item row="10" column="2">
+           <widget class="QLineEdit" name="p2c10_2"/>
+          </item>
+          <item row="10" column="3">
+           <widget class="QLineEdit" name="p2c10_3"/>
+          </item>
+          <item row="11" column="0">
+           <widget class="QLineEdit" name="p2c11_0"/>
+          </item>
+          <item row="11" column="1">
+           <widget class="QLineEdit" name="p2c11_1"/>
+          </item>
+          <item row="11" column="2">
+           <widget class="QLineEdit" name="p2c11_2"/>
+          </item>
+          <item row="11" column="3">
+           <widget class="QLineEdit" name="p2c11_3"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page3">
+      <attribute name="title">
+       <string>Page 3</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pageLayout3">
+       <item>
+        <widget class="QGroupBox" name="group3">
+         <property name="title">
+          <string>Group 3</string>
+         </property>
+         <layout class="QFormLayout" name="form3">
+          <item row="0" column="0">
+           <widget class="QLabel" name="p3l1">
+            <property name="text">
+             <string>Field 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="p3f1">
+            <property name="placeholderText">
+             <string>Field 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="p3l2">
+            <property name="text">
+             <string>Field 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="p3f2">
+            <property name="placeholderText">
+             <string>Field 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="p3l3">
+            <property name="text">
+             <string>Field 3</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="p3f3">
+            <property name="placeholderText">
+             <string>Field 3</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="p3l4">
+            <property name="text">
+             <string>Field 4</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="p3f4">
+            <property name="placeholderText">
+             <string>Field 4</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="p3l5">
+            <property name="text">
+             <string>Field 5</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="p3f5">
+            <property name="placeholderText">
+             <string>Field 5</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="p3l6">
+            <property name="text">
+             <string>Field 6</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="p3f6">
+            <property name="placeholderText">
+             <string>Field 6</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLabel" name="p3l7">
+            <property name="text">
+             <string>Field 7</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="p3f7">
+            <property name="placeholderText">
+             <string>Field 7</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLabel" name="p3l8">
+            <property name="text">
+             <string>Field 8</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="p3f8">
+            <property name="placeholderText">
+             <string>Field 8</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLabel" name="p3l9">
+            <property name="text">
+             <string>Field 9</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="p3f9">
+            <property name="placeholderText">
+             <string>Field 9</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLabel" name="p3l10">
+            <property name="text">
+             <string>Field 10</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QLineEdit" name="p3f10">
+            <property name="placeholderText">
+             <string>Field 10</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLabel" name="p3l11">
+            <property name="text">
+             <string>Field 11</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="1">
+           <widget class="QLineEdit" name="p3f11">
+            <property name="placeholderText">
+             <string>Field 11</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="0">
+           <widget class="QLabel" name="p3l12">
+            <property name="text">
+             <string>Field 12</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="1">
+           <widget class="QLineEdit" name="p3f12">
+            <property name="placeholderText">
+             <string>Field 12</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="0">
+           <widget class="QLabel" name="p3l13">
+            <property name="text">
+             <string>Field 13</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="1">
+           <widget class="QLineEdit" name="p3f13">
+            <property name="placeholderText">
+             <string>Field 13</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="0">
+           <widget class="QLabel" name="p3l14">
+            <property name="text">
+             <string>Field 14</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="1">
+           <widget class="QLineEdit" name="p3f14">
+            <property name="placeholderText">
+             <string>Field 14</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="0">
+           <widget class="QLabel" name="p3l15">
+            <property name="text">
+             <string>Field 15</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="1">
+           <widget class="QLineEdit" name="p3f15">
+            <property name="placeholderText">
+             <string>Field 15</string>
+            </property>
+           </widget>
+          </item>
+          <item row="15" column="0">
+           <widget class="QLabel" name="p3l16">
+            <property name="text">
+             <string>Field 16</string>
+            </property>
+           </widget>
+          </item>
+          <item row="15" column="1">
+           <widget class="QLineEdit" name="p3f16">
+            <property name="placeholderText">
+             <string>Field 16</string>
+            </property>
+           </widget>
+          </item>
+          <item row="16" column="0">
+           <widget class="QLabel" name="p3l17">
+            <property name="text">
+             <string>Field 17</string>
+            </property>
+           </widget>
+          </item>
+          <item row="16" column="1">
+           <widget class="QLineEdit" name="p3f17">
+            <property name="placeholderText">
+             <string>Field 17</string>
+            </property>
+           </widget>
+          </item>
+          <item row="17" column="0">
+           <widget class="QLabel" name="p3l18">
+            <property name="text">
+             <string>Field 18</string>
+            </property>
+           </widget>
+          </item>
+          <item row="17" column="1">
+           <widget class="QLineEdit" name="p3f18">
+            <property name="placeholderText">
+             <string>Field 18</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="0">
+           <widget class="QLabel" name="p3l19">
+            <property name="text">
+             <string>Field 19</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="1">
+           <widget class="QLineEdit" name="p3f19">
+            <property name="placeholderText">
+             <string>Field 19</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="0">
+           <widget class="QLabel" name="p3l20">
+            <property name="text">
+             <string>Field 20</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="1">
+           <widget class="QLineEdit" name="p3f20">
+            <property name="placeholderText">
+             <string>Field 20</string>
+            </property>
+           </widget>
+          </item>
+          <item row="20" column="0">
+           <widget class="QLabel" name="p3l21">
+            <property name="text">
+             <string>Field 21</string>
+            </property>
+           </widget>
+          </item>
+          <item row="20" column="1">
+           <widget class="QLineEdit" name="p3f21">
+            <property name="placeholderText">
+             <string>Field 21</string>
+            </property>
+           </widget>
+          </item>
+          <item row="21" column="0">
+           <widget class="QLabel" name="p3l22">
+            <property name="text">
+             <string>Field 22</string>
+            </property>
+           </widget>
+          </item>
+          <item row="21" column="1">
+           <widget class="QLineEdit" name="p3f22">
+            <property name="placeholderText">
+             <string>Field 22</string>
+            </property>
+           </widget>
+          </item>
+          <item row="22" column="0">
+           <widget class="QLabel" name="p3l23">
+            <property name="text">
+             <string>Field 23</string>
+            </property>
+           </widget>
+          </item>
+          <item row="22" column="1">
+           <widget class="QLineEdit" name="p3f23">
+            <property name="placeholderText">
+             <string>Field 23</string>
+            </property>
+           </widget>
+          </item>
+          <item row="23" column="0">
+           <widget class="QLabel" name="p3l24">
+            <property name="text">
+             <string>Field 24</string>
+            </property>
+           </widget>
+          </item>
+          <item row="23" column="1">
+           <widget class="QLineEdit" name="p3f24">
+            <property name="placeholderText">
+             <string>Field 24</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page4">
+      <attribute name="title">
+       <string>Page 4</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pageLayout4">
+       <item>
+        <widget class="QGroupBox" name="group4">
+         <property name="title">
+          <string>Group 4</string>
+         </property>
+         <layout class="QGridLayout" name="grid4">
+          <item row="0" column="0">
+           <widget class="QLineEdit" name="p4c0_0"/>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="p4c0_1"/>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="p4c0_2"/>
+          </item>
+          <item row="0" column="3">
+           <widget class="QLineEdit" name="p4c0_3"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLineEdit" name="p4c1_0"/>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="p4c1_1"/>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLineEdit" name="p4c1_2"/>
+          </item>
+          <item row="1" column="3">
+           <widget class="QLineEdit" name="p4c1_3"/>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLineEdit" name="p4c2_0"/>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="p4c2_1"/>
+          </item>
+          <item row="2" column="2">
+           <widget class="QLineEdit" name="p4c2_2"/>
+          </item>
+          <item row="2" column="3">
+           <widget class="QLineEdit" name="p4c2_3"/>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLineEdit" name="p4c3_0"/>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="p4c3_1"/>
+          </item>
+          <item row="3" column="2">
+           <widget class="QLineEdit" name="p4c3_2"/>
+          </item>
+          <item row="3" column="3">
+           <widget class="QLineEdit" name="p4c3_3"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLineEdit" name="p4c4_0"/>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="p4c4_1"/>
+          </item>
+          <item row="4" column="2">
+           <widget class="QLineEdit" name="p4c4_2"/>
+          </item>
+          <item row="4" column="3">
+           <widget class="QLineEdit" name="p4c4_3"/>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLineEdit" name="p4c5_0"/>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="p4c5_1"/>
+          </item>
+          <item row="5" column="2">
+           <widget class="QLineEdit" name="p4c5_2"/>
+          </item>
+          <item row="5" column="3">
+           <widget class="QLineEdit" name="p4c5_3"/>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLineEdit" name="p4c6_0"/>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="p4c6_1"/>
+          </item>
+          <item row="6" column="2">
+           <widget class="QLineEdit" name="p4c6_2"/>
+          </item>
+          <item row="6" column="3">
+           <widget class="QLineEdit" name="p4c6_3"/>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLineEdit" name="p4c7_0"/>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="p4c7_1"/>
+          </item>
+          <item row="7" column="2">
+           <widget class="QLineEdit" name="p4c7_2"/>
+          </item>
+          <item row="7" column="3">
+           <widget class="QLineEdit" name="p4c7_3"/>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLineEdit" name="p4c8_0"/>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="p4c8_1"/>
+          </item>
+          <item row="8" column="2">
+           <widget class="QLineEdit" name="p4c8_2"/>
+          </item>
+          <item row="8" column="3">
+           <widget class="QLineEdit" name="p4c8_3"/>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLineEdit" name="p4c9_0"/>
+          </item>
+          <item row="9" column="1">
+           <widget class="QLineEdit" name="p4c9_1"/>
+          </item>
+          <item row="9" column="2">
+           <widget class="QLineEdit" name="p4c9_2"/>
+          </item>
+          <item row="9" column="3">
+           <widget class="QLineEdit" name="p4c9_3"/>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLineEdit" name="p4c10_0"/>
+          </item>
+          <item row="10" column="1">
+           <widget class="QLineEdit" name="p4c10_1"/>
+          </item>
+          <item row="10" column="2">
+           <widget class="QLineEdit" name="p4c10_2"/>
+          </item>
+          <item row="10" column="3">
+           <widget class="QLineEdit" name="p4c10_3"/>
+          </item>
+          <item row="11" column="0">
+           <widget class="QLineEdit" name="p4c11_0"/>
+          </item>
+          <item row="11" column="1">
+           <widget class="QLineEdit" name="p4c11_1"/>
+          </item>
+          <item row="11" column="2">
+           <widget class="QLineEdit" name="p4c11_2"/>
+          </item>
+          <item row="11" column="3">
+           <widget class="QLineEdit" name="p4c11_3"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page5">
+      <attribute name="title">
+       <string>Page 5</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pageLayout5">
+       <item>
+        <widget class="QGroupBox" name="group5">
+         <property name="title">
+          <string>Group 5</string>
+         </property>
+         <layout class="QFormLayout" name="form5">
+          <item row="0" column="0">
+           <widget class="QLabel" name="p5l1">
+            <property name="text">
+             <string>Field 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="p5f1">
+            <property name="placeholderText">
+             <string>Field 1</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLabel" name="p5l2">
+            <property name="text">
+             <string>Field 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="p5f2">
+            <property name="placeholderText">
+             <string>Field 2</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLabel" name="p5l3">
+            <property name="text">
+             <string>Field 3</string>
+            </property>
+           </widget>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="p5f3">
+            <property name="placeholderText">
+             <string>Field 3</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLabel" name="p5l4">
+            <property name="text">
+             <string>Field 4</string>
+            </property>
+           </widget>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="p5f4">
+            <property name="placeholderText">
+             <string>Field 4</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLabel" name="p5l5">
+            <property name="text">
+             <string>Field 5</string>
+            </property>
+           </widget>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="p5f5">
+            <property name="placeholderText">
+             <string>Field 5</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLabel" name="p5l6">
+            <property name="text">
+             <string>Field 6</string>
+            </property>
+           </widget>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="p5f6">
+            <property name="placeholderText">
+             <string>Field 6</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLabel" name="p5l7">
+            <property name="text">
+             <string>Field 7</string>
+            </property>
+           </widget>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="p5f7">
+            <property name="placeholderText">
+             <string>Field 7</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLabel" name="p5l8">
+            <property name="text">
+             <string>Field 8</string>
+            </property>
+           </widget>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="p5f8">
+            <property name="placeholderText">
+             <string>Field 8</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLabel" name="p5l9">
+            <property name="text">
+             <string>Field 9</string>
+            </property>
+           </widget>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="p5f9">
+            <property name="placeholderText">
+             <string>Field 9</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLabel" name="p5l10">
+            <property name="text">
+             <string>Field 10</string>
+            </property>
+           </widget>
+          </item>
+          <item row="9" column="1">
+           <widget class="QLineEdit" name="p5f10">
+            <property name="placeholderText">
+             <string>Field 10</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLabel" name="p5l11">
+            <property name="text">
+             <string>Field 11</string>
+            </property>
+           </widget>
+          </item>
+          <item row="10" column="1">
+           <widget class="QLineEdit" name="p5f11">
+            <property name="placeholderText">
+             <string>Field 11</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="0">
+           <widget class="QLabel" name="p5l12">
+            <property name="text">
+             <string>Field 12</string>
+            </property>
+           </widget>
+          </item>
+          <item row="11" column="1">
+           <widget class="QLineEdit" name="p5f12">
+            <property name="placeholderText">
+             <string>Field 12</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="0">
+           <widget class="QLabel" name="p5l13">
+            <property name="text">
+             <string>Field 13</string>
+            </property>
+           </widget>
+          </item>
+          <item row="12" column="1">
+           <widget class="QLineEdit" name="p5f13">
+            <property name="placeholderText">
+             <string>Field 13</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="0">
+           <widget class="QLabel" name="p5l14">
+            <property name="text">
+             <string>Field 14</string>
+            </property>
+           </widget>
+          </item>
+          <item row="13" column="1">
+           <widget class="QLineEdit" name="p5f14">
+            <property name="placeholderText">
+             <string>Field 14</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="0">
+           <widget class="QLabel" name="p5l15">
+            <property name="text">
+             <string>Field 15</string>
+            </property>
+           </widget>
+          </item>
+          <item row="14" column="1">
+           <widget class="QLineEdit" name="p5f15">
+            <property name="placeholderText">
+             <string>Field 15</string>
+            </property>
+           </widget>
+          </item>
+          <item row="15" column="0">
+           <widget class="QLabel" name="p5l16">
+            <property name="text">
+             <string>Field 16</string>
+            </property>
+           </widget>
+          </item>
+          <item row="15" column="1">
+           <widget class="QLineEdit" name="p5f16">
+            <property name="placeholderText">
+             <string>Field 16</string>
+            </property>
+           </widget>
+          </item>
+          <item row="16" column="0">
+           <widget class="QLabel" name="p5l17">
+            <property name="text">
+             <string>Field 17</string>
+            </property>
+           </widget>
+          </item>
+          <item row="16" column="1">
+           <widget class="QLineEdit" name="p5f17">
+            <property name="placeholderText">
+             <string>Field 17</string>
+            </property>
+           </widget>
+          </item>
+          <item row="17" column="0">
+           <widget class="QLabel" name="p5l18">
+            <property name="text">
+             <string>Field 18</string>
+            </property>
+           </widget>
+          </item>
+          <item row="17" column="1">
+           <widget class="QLineEdit" name="p5f18">
+            <property name="placeholderText">
+             <string>Field 18</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="0">
+           <widget class="QLabel" name="p5l19">
+            <property name="text">
+             <string>Field 19</string>
+            </property>
+           </widget>
+          </item>
+          <item row="18" column="1">
+           <widget class="QLineEdit" name="p5f19">
+            <property name="placeholderText">
+             <string>Field 19</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="0">
+           <widget class="QLabel" name="p5l20">
+            <property name="text">
+             <string>Field 20</string>
+            </property>
+           </widget>
+          </item>
+          <item row="19" column="1">
+           <widget class="QLineEdit" name="p5f20">
+            <property name="placeholderText">
+             <string>Field 20</string>
+            </property>
+           </widget>
+          </item>
+          <item row="20" column="0">
+           <widget class="QLabel" name="p5l21">
+            <property name="text">
+             <string>Field 21</string>
+            </property>
+           </widget>
+          </item>
+          <item row="20" column="1">
+           <widget class="QLineEdit" name="p5f21">
+            <property name="placeholderText">
+             <string>Field 21</string>
+            </property>
+           </widget>
+          </item>
+          <item row="21" column="0">
+           <widget class="QLabel" name="p5l22">
+            <property name="text">
+             <string>Field 22</string>
+            </property>
+           </widget>
+          </item>
+          <item row="21" column="1">
+           <widget class="QLineEdit" name="p5f22">
+            <property name="placeholderText">
+             <string>Field 22</string>
+            </property>
+           </widget>
+          </item>
+          <item row="22" column="0">
+           <widget class="QLabel" name="p5l23">
+            <property name="text">
+             <string>Field 23</string>
+            </property>
+           </widget>
+          </item>
+          <item row="22" column="1">
+           <widget class="QLineEdit" name="p5f23">
+            <property name="placeholderText">
+             <string>Field 23</string>
+            </property>
+           </widget>
+          </item>
+          <item row="23" column="0">
+           <widget class="QLabel" name="p5l24">
+            <property name="text">
+             <string>Field 24</string>
+            </property>
+           </widget>
+          </item>
+          <item row="23" column="1">
+           <widget class="QLineEdit" name="p5f24">
+            <property name="placeholderText">
+             <string>Field 24</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+     <widget class="QWidget" name="page6">
+      <attribute name="title">
+       <string>Page 6</string>
+      </attribute>
+      <layout class="QVBoxLayout" name="pageLayout6">
+       <item>
+        <widget class="QGroupBox" name="group6">
+         <property name="title">
+          <string>Group 6</string>
+         </property>
+         <layout class="QGridLayout" name="grid6">
+          <item row="0" column="0">
+           <widget class="QLineEdit" name="p6c0_0"/>
+          </item>
+          <item row="0" column="1">
+           <widget class="QLineEdit" name="p6c0_1"/>
+          </item>
+          <item row="0" column="2">
+           <widget class="QLineEdit" name="p6c0_2"/>
+          </item>
+          <item row="0" column="3">
+           <widget class="QLineEdit" name="p6c0_3"/>
+          </item>
+          <item row="1" column="0">
+           <widget class="QLineEdit" name="p6c1_0"/>
+          </item>
+          <item row="1" column="1">
+           <widget class="QLineEdit" name="p6c1_1"/>
+          </item>
+          <item row="1" column="2">
+           <widget class="QLineEdit" name="p6c1_2"/>
+          </item>
+          <item row="1" column="3">
+           <widget class="QLineEdit" name="p6c1_3"/>
+          </item>
+          <item row="2" column="0">
+           <widget class="QLineEdit" name="p6c2_0"/>
+          </item>
+          <item row="2" column="1">
+           <widget class="QLineEdit" name="p6c2_1"/>
+          </item>
+          <item row="2" column="2">
+           <widget class="QLineEdit" name="p6c2_2"/>
+          </item>
+          <item row="2" column="3">
+           <widget class="QLineEdit" name="p6c2_3"/>
+          </item>
+          <item row="3" column="0">
+           <widget class="QLineEdit" name="p6c3_0"/>
+          </item>
+          <item row="3" column="1">
+           <widget class="QLineEdit" name="p6c3_1"/>
+          </item>
+          <item row="3" column="2">
+           <widget class="QLineEdit" name="p6c3_2"/>
+          </item>
+          <item row="3" column="3">
+           <widget class="QLineEdit" name="p6c3_3"/>
+          </item>
+          <item row="4" column="0">
+           <widget class="QLineEdit" name="p6c4_0"/>
+          </item>
+          <item row="4" column="1">
+           <widget class="QLineEdit" name="p6c4_1"/>
+          </item>
+          <item row="4" column="2">
+           <widget class="QLineEdit" name="p6c4_2"/>
+          </item>
+          <item row="4" column="3">
+           <widget class="QLineEdit" name="p6c4_3"/>
+          </item>
+          <item row="5" column="0">
+           <widget class="QLineEdit" name="p6c5_0"/>
+          </item>
+          <item row="5" column="1">
+           <widget class="QLineEdit" name="p6c5_1"/>
+          </item>
+          <item row="5" column="2">
+           <widget class="QLineEdit" name="p6c5_2"/>
+          </item>
+          <item row="5" column="3">
+           <widget class="QLineEdit" name="p6c5_3"/>
+          </item>
+          <item row="6" column="0">
+           <widget class="QLineEdit" name="p6c6_0"/>
+          </item>
+          <item row="6" column="1">
+           <widget class="QLineEdit" name="p6c6_1"/>
+          </item>
+          <item row="6" column="2">
+           <widget class="QLineEdit" name="p6c6_2"/>
+          </item>
+          <item row="6" column="3">
+           <widget class="QLineEdit" name="p6c6_3"/>
+          </item>
+          <item row="7" column="0">
+           <widget class="QLineEdit" name="p6c7_0"/>
+          </item>
+          <item row="7" column="1">
+           <widget class="QLineEdit" name="p6c7_1"/>
+          </item>
+          <item row="7" column="2">
+           <widget class="QLineEdit" name="p6c7_2"/>
+          </item>
+          <item row="7" column="3">
+           <widget class="QLineEdit" name="p6c7_3"/>
+          </item>
+          <item row="8" column="0">
+           <widget class="QLineEdit" name="p6c8_0"/>
+          </item>
+          <item row="8" column="1">
+           <widget class="QLineEdit" name="p6c8_1"/>
+          </item>
+          <item row="8" column="2">
+           <widget class="QLineEdit" name="p6c8_2"/>
+          </item>
+          <item row="8" column="3">
+           <widget class="QLineEdit" name="p6c8_3"/>
+          </item>
+          <item row="9" column="0">
+           <widget class="QLineEdit" name="p6c9_0"/>
+          </item>
+          <item row="9" column="1">
+           <widget class="QLineEdit" name="p6c9_1"/>
+          </item>
+          <item row="9" column="2">
+           <widget class="QLineEdit" name="p6c9_2"/>
+          </item>
+          <item row="9" column="3">
+           <widget class="QLineEdit" name="p6c9_3"/>
+          </item>
+          <item row="10" column="0">
+           <widget class="QLineEdit" name="p6c10_0"/>
+          </item>
+          <item row="10" column="1">
+           <widget class="QLineEdit" name="p6c10_1"/>
+          </item>
+          <item row="10" column="2">
+           <widget class="QLineEdit" name="p6c10_2"/>
+          </item>
+          <item row="10" column="3">
+           <widget class="QLineEdit" name="p6c10_3"/>
+          </item>
+          <item row="11" column="0">
+           <widget class="QLineEdit" name="p6c11_0"/>
+          </item>
+          <item row="11" column="1">
+           <widget class="QLineEdit" name="p6c11_1"/>
+          </item>
+          <item row="11" column="2">
+           <widget class="QLineEdit" name="p6c11_2"/>
+          </item>
+          <item row="11" column="3">
+           <widget class="QLineEdit" name="p6c11_3"/>
+          </item>
+         </layout>
+        </widget>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
