@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtWidgets import QInputDialog, QMessageBox, QTabBar
+from PySide2.QtWidgets import QInputDialog, QMessageBox, QTabBar, QTabWidget
 
 from app.core import constants
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
@@ -60,6 +60,30 @@ class EditorTabsCoordinator:
             if isinstance(data, dict) and data.get("buffer_id") == buffer_id:
                 return index
         return -1
+
+    def all_tab_widgets(self) -> list[QTabWidget]:
+        """Every editor group's tab widget, first group first."""
+        window = self._window
+        groups = getattr(window, "_editor_groups", None)
+        if groups is not None:
+            return list(groups.tab_widgets())
+        return [] if window._editor_tabs_widget is None else [window._editor_tabs_widget]
+
+    def buffer_ids_in_tab_order(self) -> list[str]:
+        """Buffer ids as the tabs show them, group by group, without repeats."""
+        ordered: list[str] = []
+        for tabs in self.all_tab_widgets():
+            tab_bar = tabs.tabBar()
+            for index in range(tabs.count()):
+                data = tab_bar.tabData(index)
+                buffer_id = data.get("buffer_id") if isinstance(data, dict) else None
+                if isinstance(buffer_id, str) and buffer_id not in ordered:
+                    ordered.append(buffer_id)
+        return ordered
+
+    def sync_open_order_from_tabs(self) -> None:
+        """Make the editor manager's open order match the tabs after a move."""
+        self._window._editor_manager.reorder_buffers(self.buffer_ids_in_tab_order())
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         tab_state = self._window._editor_manager.get_tab(file_path)

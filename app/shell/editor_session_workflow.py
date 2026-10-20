@@ -136,10 +136,8 @@ class EditorSessionWorkflow:
                 ensure_spec=self._breakpoint_store.ensure_spec,
             )
 
-        ordered_files = _order_session_files_for_restore(
-            session_state.open_files,
-            active_file_path=session_state.active_file_path,
-        )
+        # Tabs come back in their saved order; the active tab is re-selected at the end.
+        ordered_files = tuple(session_state.open_files)
         if not ordered_files:
             self._finalize_editor_restore(session_state)
             self._apply_tree_restore(session_state)
@@ -234,18 +232,3 @@ def restore_editor_cursor_and_scroll(editor_widget: CodeEditorWidget, file_state
     scroll_position = max(0, file_state.scroll_position)
     QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
 
-
-def _order_session_files_for_restore(
-    open_files: tuple[SessionFileState, ...],
-    *,
-    active_file_path: str | None,
-) -> tuple[SessionFileState, ...]:
-    if not open_files:
-        return ()
-    if active_file_path is None:
-        return open_files
-    active_states = [file_state for file_state in open_files if file_state.file_path == active_file_path]
-    other_states = [file_state for file_state in open_files if file_state.file_path != active_file_path]
-    if not active_states:
-        return open_files
-    return tuple([*active_states, *other_states])

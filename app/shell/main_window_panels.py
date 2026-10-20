@@ -247,6 +247,8 @@ def build_center_panel(window: Any) -> QWidget:
     window._editor_tabs_widget.setObjectName("shell.editorTabs")
     window._editor_tabs_widget.currentChanged.connect(window._editor_tab_workflow.handle_editor_tab_changed)
     window._editor_tabs_widget.setTabsClosable(True)
+    window._editor_tabs_widget.setMovable(True)
+    tab_bar.tabMoved.connect(lambda _from, _to: window._editor_tabs_coordinator.sync_open_order_from_tabs())
     window._editor_tabs_widget.tabCloseRequested.connect(window._editor_tab_workflow.handle_tab_close_requested)
     window._editor_tabs_widget.setMinimumWidth(480)
     editor_layout.addWidget(window._editor_tabs_widget, 1)

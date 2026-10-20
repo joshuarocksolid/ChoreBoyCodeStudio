@@ -138,3 +138,45 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     assert restored_widget.textCursor().positionInBlock() + 1 == 2
     assert breakpoint_store.lines_for_file(project_one_path) == {2}
     shutdown_main_window_for_test(window, app)
+
+
+def test_dragged_tab_order_survives_session_restore(
+    tmp_path: Path,
+    shell_qapp,
+) -> None:
+    """Reordering tabs by drag is what a restart brings back, with the same tab active."""
+    app = shell_qapp
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Tab Order")
+    paths = []
+    for name in ("alpha.py", "beta.py", "gamma.py"):
+        file_path = project_root / name
+        file_path.write_text(f"# {name}\n", encoding="utf-8")
+        paths.append(str(file_path.resolve()))
+    alpha, beta, gamma = paths
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    prepare_main_window_for_test(window, app=app)
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
+    for file_path in paths:
+        assert window._editor_tab_factory.open_file_in_editor(file_path) is True
+    tabs = window._editor_tabs_widget
+    assert tabs is not None
+    tabs.setCurrentIndex(window._editor_tab_workflow.tab_index_for_path(beta))
+
+    tabs.tabBar().moveTab(0, 2)
+
+    assert window._editor_manager.open_paths() == [beta, gamma, alpha]
+    window._local_history_workflow.persist_session_state()
+    window._editor_tab_workflow.reset_editor_tabs()
+    window._local_history_workflow.restore_session_state(str(project_root.resolve()))
+    _wait_for_open_paths(app, window, [beta, gamma, alpha])
+
+    tabs = window._editor_tabs_widget
+    assert [tabs.tabToolTip(index).splitlines()[0] for index in range(tabs.count())] == [beta, gamma, alpha]
+    active_tab = window._editor_manager.active_tab()
+    assert active_tab is not None and active_tab.file_path == beta
+    assert tabs.currentIndex() == 0
+    shutdown_main_window_for_test(window, app)
