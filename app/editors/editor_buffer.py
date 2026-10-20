@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any, Iterator, Optional
 
+import shiboken2
 from PySide2.QtGui import QTextDocument
 from PySide2.QtWidgets import QPlainTextDocumentLayout, QWidget
 
@@ -44,10 +45,11 @@ class EditorBuffer:
 
     def views(self) -> Iterator[Any]:
         """Views showing this buffer, including the caller."""
-        return iter(list(self._views.values()))
+        live = [view for view in self._views.values() if shiboken2.isValid(view)]
+        return iter(live)
 
     def view_count(self) -> int:
-        return len(self._views)
+        return len(list(self.views()))
 
 
 __all__ = ["EditorBuffer"]

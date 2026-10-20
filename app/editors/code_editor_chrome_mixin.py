@@ -30,6 +30,7 @@ if TYPE_CHECKING:
         def _mark_overlay_cache_dirty(self) -> None: ...
         def _highlight_current_line(self) -> None: ...
         def _notify_highlighter_viewport_lines(self) -> None: ...
+        def buffer_views(self) -> list[Any]: ...
 else:
     class _CodeEditorChromeBase:
         pass
@@ -85,7 +86,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
 
     def set_breakpoints(self, breakpoints: set[int]) -> None:
         self._breakpoints = set(breakpoints)
-        self._line_number_area.update()
+        self._update_gutters_of_buffer_views()
 
     def breakpoints(self) -> set[int]:
         return set(self._breakpoints)
@@ -99,7 +100,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         else:
             self._breakpoints.add(line_number)
             is_enabled = True
-        self._line_number_area.update()
+        self._update_gutters_of_buffer_views()
         if self._breakpoint_toggled_callback is not None:
             self._breakpoint_toggled_callback(line_number, is_enabled)
         return is_enabled
@@ -108,9 +109,14 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         if self._debug_execution_line == line_number:
             return
         self._debug_execution_line = line_number
-        self._mark_overlay_cache_dirty()
-        self._line_number_area.update()
-        self._highlight_current_line()
+        for view in self.buffer_views():
+            view._mark_overlay_cache_dirty()
+            view._line_number_area.update()
+            view._highlight_current_line()
+
+    def _update_gutters_of_buffer_views(self) -> None:
+        for view in self.buffer_views():
+            view._line_number_area.update()
 
     def clear_debug_execution_line(self) -> None:
         self.set_debug_execution_line(None)
