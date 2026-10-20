@@ -108,10 +108,16 @@ def _call_message(node: ast.Call) -> str:
             return "call exec_qt(obj, ...) instead of .exec_()"
         if func.attr == "setMargin":
             return "setMargin is gone in Qt 6; use setContentsMargins"
+        if func.attr in ("setFontWeight", "setWeight") and node.args and _is_int_literal(node.args[0]):
+            return "numeric font weights differ between Qt 5 (0-99) and Qt 6 (1-1000); use QFont.Bold etc."
     if isinstance(func, ast.Name) and func.id == "int" and len(node.args) == 1:
         if _int_rejecting_enum(node.args[0]):
             return "int() on this Qt enum raises TypeError on PySide6; use enum_value()"
     return ""
+
+
+def _is_int_literal(node: ast.expr) -> bool:
+    return isinstance(node, ast.Constant) and type(node.value) is int
 
 
 def _int_rejecting_enum(arg: ast.expr) -> bool:

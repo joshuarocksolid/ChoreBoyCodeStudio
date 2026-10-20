@@ -28,6 +28,7 @@ from typing import Optional
 from app.qt.QtCore import Qt
 from app.qt.QtGui import (
     QColor,
+    QFont,
     QFontDatabase,
     QSyntaxHighlighter,
     QTextCharFormat,
@@ -108,7 +109,7 @@ class _DiffInlineHighlighter(QSyntaxHighlighter):
         self._hunk_format.setFontItalic(True)
 
         self._file_format.setForeground(QColor(tokens.text_muted))
-        self._file_format.setFontWeight(600)
+        self._file_format.setFontWeight(QFont.DemiBold)
 
         self.rehighlight()
 

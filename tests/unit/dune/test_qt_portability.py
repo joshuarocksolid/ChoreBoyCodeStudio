@@ -32,6 +32,10 @@ def _violations(tmp_path: Path, relative_path: str, source: str) -> list[str]:
         ("combo.activated[str].connect(f)\n", "activated[str] is gone in Qt 6; use the text* signal or [int]"),
         ("from app.qt.QtCore import QRegExp\n", "QRegExp is gone in Qt 6; use QRegularExpression"),
         ("QPalette.Background\n", "QPalette.Background is gone in Qt 6; use Window/WindowText"),
+        (
+            "fmt.setFontWeight(75)\n",
+            "numeric font weights differ between Qt 5 (0-99) and Qt 6 (1-1000); use QFont.Bold etc.",
+        ),
     ],
 )
 def test_qt_portability_flags_planted_hazard(tmp_path: Path, source: str, expected: str) -> None:
