@@ -22,7 +22,6 @@ Run on the FreeCAD 1.1 ChoreBoy image (Python 3.11, PySide6 / Qt 6, no PySide2) 
 
 ### Fixed
 
-- Opening a `.sql` file could crash the editor on today's image: the bundled SQL grammar is newer than the bundled tree-sitter core supports. That grammar is now skipped instead of loaded.
 - Bold syntax colors, such as Markdown strong text, render bold on Qt 6.
 
 ## [0.4.14] - 2026-09-24
