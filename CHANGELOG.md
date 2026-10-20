@@ -8,6 +8,23 @@ LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 20
 
 ## [Unreleased]
 
+Run on the FreeCAD 1.1 ChoreBoy image (Python 3.11, PySide6 / Qt 6, no PySide2) as well as today's image (Python 3.9, PySide2), from one build.
+
+### Added
+
+- Code Studio now runs on PySide6 as well as PySide2. It uses the Qt binding FreeCAD provides; set `CBCS_QT_API=pyside2` or `pyside6` to force one. The startup check reports which binding and Qt version are active and also checks `QtUiTools`.
+- On FreeCAD 1.1, syntax highlighting and the outline use the tree-sitter that ships in the image, because that image cannot load native libraries from the Code Studio folder. The status bar shows which tree-sitter is in use.
+
+### Changed
+
+- New Qt projects, the example projects and the installer import Qt through FreeCAD's `PySide` package (`from PySide.QtWidgets import ...`, with `QAction`, `QActionGroup` and `QShortcut` from `PySide.QtGui`), so the same code runs on both images. Code completion knows `PySide` and `PySide6` as well as `PySide2`.
+- The packaging check no longer recommends `/bin/sh` for subprocesses: FreeCAD 1.1 blocks shells. Launch `/opt/freecad/AppRun` with an argument list instead.
+
+### Fixed
+
+- Opening a `.sql` file could crash the editor on today's image: the bundled SQL grammar is newer than the bundled tree-sitter core supports. That grammar is now skipped instead of loaded.
+- Bold syntax colors, such as Markdown strong text, render bold on Qt 6.
+
 ## [0.4.14] - 2026-09-24
 
 Tame the completion popup that opens when you type a period, in both the editor and the Python Console (PR #75, follow-up PR #76).
