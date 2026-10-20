@@ -6,6 +6,8 @@ from typing import Any
 
 from PySide2.QtGui import QCloseEvent
 
+from app.shell import close_while_running_dialog
+from app.shell.close_while_running_dialog import CloseRunChoice, build_running_program_summary
 from app.shell.document_safety import DocumentScope
 from app.shell.python_console_history import save_python_console_history
 
@@ -15,6 +17,10 @@ class MainWindowLifecycle:
 
     @staticmethod
     def handle_close_event(window: Any, event: QCloseEvent) -> None:
+        run_choice = MainWindowLifecycle.ask_about_active_run(window)
+        if run_choice == CloseRunChoice.CANCEL:
+            event.ignore()
+            return
         decision = window._save_workflow.request_unsaved_changes_decision(
             "exiting",
             scope=DocumentScope.APPLICATION,
@@ -27,7 +33,10 @@ class MainWindowLifecycle:
         if hasattr(window, "_run_debug_presenter"):
             window._run_debug_presenter.clear_pending_restart()
         MainWindowLifecycle.begin_shutdown_teardown(window)
-        MainWindowLifecycle.stop_active_run_before_close(window)
+        MainWindowLifecycle.stop_active_run_before_close(
+            window,
+            keep_running=run_choice == CloseRunChoice.KEEP,
+        )
         if window._status_controller is not None:
             window._status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
         window._shell_layout_workflow.persist_to_settings()
@@ -42,6 +51,21 @@ class MainWindowLifecycle:
             except OSError as exc:
                 window._logger.warning("Unable to persist python console history: %s", exc)
         event.accept()
+
+    @staticmethod
+    def ask_about_active_run(window: Any) -> CloseRunChoice | None:
+        """Ask what to do with a program still running from CBCS; ``None`` when nothing runs."""
+        run_service = window._run_service
+        if not run_service.supervisor.is_running():
+            return None
+        run_log_panel = getattr(window, "_run_log_panel", None)
+        summary = build_running_program_summary(
+            run_service.current_session,
+            loaded_project=getattr(window, "_loaded_project", None),
+            process_id=run_service.supervisor.process_id,
+            freecad_window_seen=bool(run_log_panel is not None and run_log_panel.saw_freecad_window_start),
+        )
+        return close_while_running_dialog.prompt_close_while_running(window, summary)
 
     @staticmethod
     def begin_shutdown_teardown(window: Any) -> None:
@@ -75,12 +99,15 @@ class MainWindowLifecycle:
         window._run_event_workflow.drain_run_event_queue()
 
     @staticmethod
-    def stop_active_run_before_close(window: Any) -> None:
+    def stop_active_run_before_close(window: Any, *, keep_running: bool = False) -> None:
         if window._run_service.supervisor.is_running():
-            try:
-                window._run_service.stop_run()
-            except Exception as exc:
-                window._logger.warning("Failed to stop active run during window close: %s", exc)
+            if keep_running:
+                MainWindowLifecycle._detach_active_run(window)
+            else:
+                try:
+                    window._run_service.stop_run()
+                except Exception as exc:
+                    window._logger.warning("Failed to stop active run during window close: %s", exc)
 
         window._repl_manager.shutdown()
         window._plugin_runtime_manager.stop()
@@ -88,3 +115,18 @@ class MainWindowLifecycle:
         window._run_event_workflow.set_run_status("idle")
         if window._python_console_widget is not None:
             window._python_console_widget.set_session_active(False)
+
+    @staticmethod
+    def _detach_active_run(window: Any) -> None:
+        try:
+            result = window._run_service.detach_run()
+        except Exception as exc:
+            window._logger.warning("Failed to leave the active run running during window close: %s", exc)
+            return
+        if result is None:
+            return
+        window._logger.info(
+            "Left run process %s running after close; later output goes to %s",
+            result.process_id,
+            result.output_path or "(discarded)",
+        )

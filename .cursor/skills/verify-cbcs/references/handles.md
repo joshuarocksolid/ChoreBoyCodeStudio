@@ -129,6 +129,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.runConfigurationsDialog` | Run Configurations |
 | `#shell.quickSymbolDialog` | Go to Symbol |
 | `#shell.helpDialog` | Built-in help |
+| `shell.closeWhileRunningDialog` | Close while a run is active. Modal, from the real window close path (`cbapp stop` skips it). Footer buttons are the shared `shell.dialogChrome.button.*`; click `text:Keep It Running` (default), `text:Stop It` or `text:Cancel`. Rows: `shell.closeWhileRunningDialog.runCard` · `runName` · `runDetail` · `alsoOpened` (only when a FreeCAD child is known) · `help`. |
 
 ## Menus
 
