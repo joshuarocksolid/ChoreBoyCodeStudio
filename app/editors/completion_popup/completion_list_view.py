@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Any
+from typing import Any, Dict, Optional, Tuple
 
 from PySide2.QtCore import QModelIndex, Qt, Signal
 from PySide2.QtGui import QPaintEvent
@@ -36,6 +36,7 @@ class CompletionListView(QListView):
         self._delegate = CompletionItemDelegate(self)
         self.setItemDelegate(self._delegate)
         self.last_paint_at = 0.0
+        self._paint_probe: Optional[Tuple[Dict[str, Any], float]] = None
 
     def delegate(self) -> CompletionItemDelegate:
         return self._delegate
@@ -83,6 +84,16 @@ class CompletionListView(QListView):
     def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
         super().paintEvent(event)
         self.last_paint_at = time.perf_counter()
+        probe = self._paint_probe
+        if probe is not None:
+            self._paint_probe = None
+            entry, started_at = probe
+            entry["to_paint_ms"] = round((self.last_paint_at - started_at) * 1000.0, 3)
+
+    def measure_next_paint(self, entry: Dict[str, Any], started_at: float) -> None:
+        """Record in ``entry`` how long it took from ``started_at`` to the next paint."""
+
+        self._paint_probe = (entry, started_at)
 
     def height_for_rows(self, rows: int) -> int:
         return self._delegate.row_height() * max(1, min(VISIBLE_ROWS, rows)) + 2 * self.frameWidth()

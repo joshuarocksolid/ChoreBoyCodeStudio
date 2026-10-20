@@ -22,7 +22,7 @@ from contextlib import contextmanager
 import time
 from typing import Any, Dict, Iterator, List, Optional, Protocol, Tuple
 
-from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer, Signal
+from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
 from PySide2.QtGui import QFontMetrics, QKeyEvent
 from PySide2.QtWidgets import QApplication, QWidget
 
@@ -335,6 +335,7 @@ class CompletionController(QObject):
         site = self._live_site(check_strings=False)
         if site is None or site.key != pending.key or not site.prefix.lower().startswith(pending.root.lower()):
             return
+        delivered_ms = round((time.perf_counter() - pending.started_at) * 1000.0, 3)
         self._set_base(items, key=pending.key, root=pending.root)
         if not self._base_items:
             return
@@ -344,6 +345,7 @@ class CompletionController(QObject):
             site.prefix,
             event="open" if first_delivery else "update",
             started_at=pending.started_at if first_delivery else 0.0,
+            delivered_ms=delivered_ms,
         )
 
     def replace_item(self, item: CompletionItem) -> bool:
@@ -433,7 +435,15 @@ class CompletionController(QObject):
         self._narrow_matches = []
         self._list_width = self._width_for(base)
 
-    def _refilter(self, query: str, *, event: str, started_at: float = 0.0, manual: bool = False) -> bool:
+    def _refilter(
+        self,
+        query: str,
+        *,
+        event: str,
+        started_at: float = 0.0,
+        manual: bool = False,
+        delivered_ms: Optional[float] = None,
+    ) -> bool:
         started = time.perf_counter()
         candidates: Optional[List[int]] = None
         if (
@@ -495,6 +505,7 @@ class CompletionController(QObject):
             narrowed=candidates is not None,
             manual=manual,
             reopened=not was_visible,
+            delivered_ms=delivered_ms,
         )
         self._schedule_paint_metric(started_at or started)
         return True
@@ -520,7 +531,7 @@ class CompletionController(QObject):
         widget = self._widget
         host = self._host
         site = self._site
-        if widget is None or host is None or site is None:
+        if widget is None or host is None or site is None or not widget.isVisible():
             return
         list_view = self._popup.list_view()
         row_count = self._model.rowCount() if rows is None else rows
@@ -613,16 +624,8 @@ class CompletionController(QObject):
             del self.metrics[: len(self.metrics) - _METRICS_LIMIT]
 
     def _schedule_paint_metric(self, started_at: float) -> None:
-        if not self.metrics:
-            return
-        entry = self.metrics[-1]
-        list_view = self._popup.list_view()
-
-        def capture() -> None:
-            if list_view.last_paint_at >= started_at:
-                entry["to_paint_ms"] = round((list_view.last_paint_at - started_at) * 1000.0, 3)
-
-        QTimer.singleShot(0, capture)
+        if self.metrics:
+            self._popup.list_view().measure_next_paint(self.metrics[-1], started_at)
 
     # ------------------------------------------------------------------
     # Event filter: Qt.Popup grabs the keyboard; send typing back to the host.

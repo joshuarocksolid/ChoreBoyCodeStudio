@@ -9,7 +9,6 @@ from PySide2.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
-    QFrame,
     QGroupBox,
     QLabel,
     QPushButton,
@@ -365,8 +364,14 @@ def build_completion_mode_row(
     dialog._completion_mode_effective = QLabel(box)
     dialog._completion_mode_effective.setObjectName("shell.settingsDialog.completionModeEffective")
     dialog._completion_mode_effective.setWordWrap(True)
-    dialog._completion_mode_effective.setFrameShape(QFrame.StyledPanel)
-    dialog._completion_mode_effective.setMargin(6)
+    tokens = getattr(dialog, "_tokens", None)
+    if tokens is not None:
+        dialog._completion_mode_effective.setStyleSheet(
+            "border: 1px solid {border}; border-radius: 4px; padding: 6px; background: {bg};".format(
+                border=tokens.accent, bg=tokens.row_alt_bg or tokens.panel_bg
+            )
+        )
+    dialog._completion_mode_help.setStyleSheet("color: {};".format(tokens.text_muted) if tokens is not None else "")
     layout.addWidget(dialog._completion_mode_effective)
     form.addRow("Code completion", box)
 

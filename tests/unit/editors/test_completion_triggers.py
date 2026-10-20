@@ -46,6 +46,7 @@ def editor(requests: Requests) -> Iterator[CodeEditorWidget]:
     widget = CodeEditorWidget()
     widget.set_completion_requester(requests)
     widget.set_completion_mode("manual")
+    widget.show()
     yield widget
     widget._completion_popup.hide()
     widget.hide()

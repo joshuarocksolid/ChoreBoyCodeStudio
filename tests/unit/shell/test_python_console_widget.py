@@ -159,6 +159,7 @@ class TestPromptProtection:
 
 class TestCompletion:
     def _record(self, widget: PythonConsoleWidget) -> list[tuple[str, int, int, str, str]]:
+        widget.show()
         requests: list[tuple[str, int, int, str, str]] = []
         widget.set_completion_requester(
             lambda line, cursor, generation, trigger_kind, trigger_character: requests.append(

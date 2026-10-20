@@ -38,6 +38,7 @@ def clean_signature(name: str, text: str) -> str:
     text = re.sub(r"\(self(?:\s*,\s*)?", "(", text)
     text = re.sub(r"\barg__(\d+)\b", lambda found: "arg" + found.group(1), text)
     text = _QT_MODULE_PREFIX.sub("", text)
+    text = re.sub(r",\s*/\s*\)", ")", text).replace("(/)", "()")
     return text.replace("typing.", "")
 
 
@@ -70,12 +71,14 @@ def completion_docs(item: CompletionItem) -> CompletionDocs:
         if cleaned and "(" in cleaned and cleaned not in signatures:
             signatures.append(cleaned)
     doc_lines = (item.documentation or "").strip().splitlines()
-    while doc_lines and _SIGNATURE_LINE.match(doc_lines[0]):
+    while True:
+        while doc_lines and not doc_lines[0].strip():
+            doc_lines.pop(0)
+        if not doc_lines or not _SIGNATURE_LINE.match(doc_lines[0]):
+            break
         cleaned = clean_signature(item.label, doc_lines.pop(0))
         if cleaned not in signatures:
             signatures.append(cleaned)
-    while doc_lines and not doc_lines[0].strip():
-        doc_lines.pop(0)
     if len(signatures) > MAX_SIGNATURES:
         extra = len(signatures) - MAX_SIGNATURES
         signatures = signatures[:MAX_SIGNATURES] + ["(+{} more)".format(extra)]

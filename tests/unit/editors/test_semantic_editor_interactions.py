@@ -1,6 +1,7 @@
 """Unit tests for async completion and inline semantic editor interactions."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
@@ -52,12 +53,21 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def editor() -> CodeEditorWidget:
+def editor() -> Iterator[CodeEditorWidget]:
     widget = CodeEditorWidget()
     widget.setPlainText("alpha")
     cursor = widget.textCursor()
     cursor.movePosition(cursor.End)
     widget.setTextCursor(cursor)
+    yield widget
+    widget._completion_popup.hide()
+    widget.hide()
+    widget.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def _shown(widget: CodeEditorWidget) -> CodeEditorWidget:
+    widget.show()
     return widget
 
 
@@ -89,6 +99,7 @@ def test_show_completion_items_for_stale_generation_is_ignored(editor: CodeEdito
 
 
 def test_show_completion_items_for_current_generation_updates_mapping(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     editor.set_completion_requester(lambda *_args: None)
     editor.trigger_completion(manual=True)
 
@@ -102,6 +113,7 @@ def test_show_completion_items_for_current_generation_updates_mapping(editor: Co
 
 
 def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     calls: list[tuple[str, str, int, int]] = []
     item = CompletionItem(
         label="alpha_local",
@@ -125,6 +137,7 @@ def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget)
 
 
 def test_completion_selection_skips_lazy_resolution_when_docs_present(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     calls: list[str] = []
     item = CompletionItem(
         label="getcwd",
@@ -145,6 +158,7 @@ def test_completion_selection_skips_lazy_resolution_when_docs_present(editor: Co
 
 
 def test_show_resolved_completion_item_updates_visible_model(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     item = CompletionItem(
         label="alpha_local",
         insert_text="alpha_local",
@@ -272,6 +286,7 @@ def test_show_calltip_for_stale_signature_request_is_ignored(editor: CodeEditorW
 
 
 def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     editor.set_completion_requester(lambda *_args: None)
     editor.trigger_completion(manual=True)
     editor.show_completion_items_for_request(

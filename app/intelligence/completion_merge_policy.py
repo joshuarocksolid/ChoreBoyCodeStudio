@@ -110,11 +110,11 @@ def merge_completion_metadata(
     return_type = (primary.return_type or "").strip() or (incoming.return_type or "").strip()
     detail = (primary.detail or "").strip() or (incoming.detail or "").strip()
     resolvable_fields = primary.resolvable_fields
-    if not documentation and not signature and incoming.resolvable_fields:
-        resolvable_fields = incoming.resolvable_fields
     resolve_provider = primary.resolve_provider
     item_id = primary.item_id
-    if not documentation and not signature and incoming.resolve_provider:
+    if not documentation and not signature and incoming.resolvable_fields and not primary.resolve_provider:
+        resolvable_fields = incoming.resolvable_fields
+    if not documentation and not signature and incoming.resolve_provider and not primary.resolve_provider:
         resolve_provider = incoming.resolve_provider
         item_id = incoming.item_id or primary.item_id
     return CompletionItem(
