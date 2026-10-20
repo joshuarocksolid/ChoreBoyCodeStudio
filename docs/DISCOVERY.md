@@ -797,6 +797,10 @@ Slot ChoreBoy2, hostname `net2`. Confined `/opt/freecad/AppRun`. Source `docs/pr
 
 `/bin/sh` still cannot run a denied binary. `pdftoppm` through the shell exits 126. `/proc/self/attr/current` is still errno 13, so the profile name was not read. Java, `pg_dump`, `ssh`, `at`, and `systemd-run` were not re-run on this date.
 
+### Implications (2026-10-20)
+
+Packaging checks a program against this table, keyed by FreeCAD version and test date. The FreeCAD 1.0.0 row measured on 2026-10-20 allows `/opt/freecad/AppRun`, `/bin/sh`, and `/bin/ls`. It denies `/usr/bin/pdftoppm`, `/usr/bin/python3`, `/bin/bash`, `pcmanfm`, `xdg-open`, `okular`, and `/usr/bin/env`. A denied program stops export and the report cites that version and date. A program that is not in the table is a warning and export continues. `/bin/sh -c` does not make a denied program allowed. The check looks at the program inside the command string. Do not tell the user to rewrite a denied program through `/bin/sh`.
+
 ### FreeCAD 0.21 era (2026-03-06)
 
 **Date discovered:** 2026-03-06 (pg_backup_probe probe 9). This table was not produced on the FreeCAD 1.0 lab image. Where a binary is repeated above, the 2026-10-20 row is the one to use for that image.

@@ -120,9 +120,10 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
-| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). AT-104/105 checkboxes are `vis=False` on Step 1 and visible/unchecked on Step 2. |
-| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104). Not on page 0 / Step 1. |
+| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). The install-folder checkbox is `vis=False` on Step 1 and visible/unchecked on Step 2. |
 | `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked). Not on page 0 / Step 1. |
+| `#shell.runtimeCenterDialog.copyDetails` | Packaging report only. Copies the report text. Hidden on other Runtime Center reports. |
+| `#shell.runtimeCenterDialog.goToFile` | Packaging report only. Opens the issue file at the reported line. Hidden on other Runtime Center reports. |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |
