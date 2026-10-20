@@ -6,10 +6,10 @@ Run this file with F5 inside ChoreBoy Code Studio.
 
 import sys
 
-from PySide2.QtGui import QFont
-from PySide2.QtWidgets import QApplication
+from PySide.QtGui import QFont
+from PySide.QtWidgets import QApplication
 
-from app.theme import build_stylesheet, detect_dark_mode, get_tokensQ
+from app.theme import build_stylesheet, detect_dark_mode, get_tokens
 
 
 def main():
@@ -29,7 +29,7 @@ def main():
 
     window = MainWindow(tokens=tokens)
     window.show()
-    return app.exec_()
+    return (getattr(app, "exec", None) or app.exec_)()
 
 
 if __name__ == "__main__":

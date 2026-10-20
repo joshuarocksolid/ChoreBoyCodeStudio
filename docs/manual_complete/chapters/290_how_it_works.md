@@ -20,7 +20,9 @@ limits. Almost every design choice — and several limitations noted throughout 
 ## It runs inside FreeCAD's Python
 
 ChoreBoy ships with FreeCAD, and FreeCAD includes a complete Python runtime and the Qt
-user-interface toolkit (PySide2). ChoreBoy Code Studio runs inside that bundled runtime.
+user-interface toolkit. Import Qt from `PySide`, the package FreeCAD ships. On today's
+image that package re-exports PySide2. On FreeCAD 1.1 it re-exports PySide6. ChoreBoy
+Code Studio runs inside that bundled runtime.
 That is why:
 
 - no separate installation of Python is needed,

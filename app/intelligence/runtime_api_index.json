@@ -2,7 +2,7 @@
   "metadata": {
     "schema_version": 1,
     "source": "generated_trusted_runtime_index",
-    "runtime": "FreeCAD AppRun / PySide2",
+    "runtime": "FreeCAD AppRun / PySide (PySide2 or PySide6)",
     "notes": "Static acceleration asset for editor completion. Regenerate intentionally outside the typing path."
   },
   "modules": {
@@ -13,7 +13,52 @@
       {"name": "QtPrintSupport", "kind": "module", "detail": "PySide2.QtPrintSupport module"},
       {"name": "QtUiTools", "kind": "module", "detail": "PySide2.QtUiTools module"}
     ],
+    "PySide": [
+      {"name": "QtCore", "kind": "module", "detail": "PySide.QtCore module"},
+      {"name": "QtGui", "kind": "module", "detail": "PySide.QtGui module"},
+      {"name": "QtWidgets", "kind": "module", "detail": "PySide.QtWidgets module"},
+      {"name": "QtUiTools", "kind": "module", "detail": "PySide.QtUiTools module"}
+    ],
+    "PySide6": [
+      {"name": "QtCore", "kind": "module", "detail": "PySide6.QtCore module"},
+      {"name": "QtGui", "kind": "module", "detail": "PySide6.QtGui module"},
+      {"name": "QtWidgets", "kind": "module", "detail": "PySide6.QtWidgets module"},
+      {"name": "QtPrintSupport", "kind": "module", "detail": "PySide6.QtPrintSupport module"},
+      {"name": "QtUiTools", "kind": "module", "detail": "PySide6.QtUiTools module"}
+    ],
     "PySide2.QtCore": [
+      {"name": "QAbstractListModel", "kind": "class", "detail": "QtCore model base class"},
+      {"name": "QDate", "kind": "class", "detail": "Date value"},
+      {"name": "QDateTime", "kind": "class", "detail": "Date/time value"},
+      {"name": "QEvent", "kind": "class", "detail": "Qt event"},
+      {"name": "QModelIndex", "kind": "class", "detail": "Model index"},
+      {"name": "QObject", "kind": "class", "detail": "Base QObject"},
+      {"name": "QPoint", "kind": "class", "detail": "2D point"},
+      {"name": "QRect", "kind": "class", "detail": "Rectangle"},
+      {"name": "QSize", "kind": "class", "detail": "Size value"},
+      {"name": "QThread", "kind": "class", "detail": "Qt thread"},
+      {"name": "QTimer", "kind": "class", "detail": "Timer"},
+      {"name": "Qt", "kind": "class", "detail": "Qt enum namespace"},
+      {"name": "Signal", "kind": "class", "detail": "PySide signal descriptor"},
+      {"name": "Slot", "kind": "function", "detail": "PySide slot decorator"}
+    ],
+    "PySide.QtCore": [
+      {"name": "QAbstractListModel", "kind": "class", "detail": "QtCore model base class"},
+      {"name": "QDate", "kind": "class", "detail": "Date value"},
+      {"name": "QDateTime", "kind": "class", "detail": "Date/time value"},
+      {"name": "QEvent", "kind": "class", "detail": "Qt event"},
+      {"name": "QModelIndex", "kind": "class", "detail": "Model index"},
+      {"name": "QObject", "kind": "class", "detail": "Base QObject"},
+      {"name": "QPoint", "kind": "class", "detail": "2D point"},
+      {"name": "QRect", "kind": "class", "detail": "Rectangle"},
+      {"name": "QSize", "kind": "class", "detail": "Size value"},
+      {"name": "QThread", "kind": "class", "detail": "Qt thread"},
+      {"name": "QTimer", "kind": "class", "detail": "Timer"},
+      {"name": "Qt", "kind": "class", "detail": "Qt enum namespace"},
+      {"name": "Signal", "kind": "class", "detail": "PySide signal descriptor"},
+      {"name": "Slot", "kind": "function", "detail": "PySide slot decorator"}
+    ],
+    "PySide6.QtCore": [
       {"name": "QAbstractListModel", "kind": "class", "detail": "QtCore model base class"},
       {"name": "QDate", "kind": "class", "detail": "Date value"},
       {"name": "QDateTime", "kind": "class", "detail": "Date/time value"},
@@ -41,7 +86,87 @@
       {"name": "QTextCharFormat", "kind": "class", "detail": "Text character format"},
       {"name": "QTextCursor", "kind": "class", "detail": "Text cursor"}
     ],
+    "PySide.QtGui": [
+      {"name": "QBrush", "kind": "class", "detail": "Brush"},
+      {"name": "QColor", "kind": "class", "detail": "Color"},
+      {"name": "QFont", "kind": "class", "detail": "Font"},
+      {"name": "QIcon", "kind": "class", "detail": "Icon"},
+      {"name": "QKeyEvent", "kind": "class", "detail": "Key event"},
+      {"name": "QPainter", "kind": "class", "detail": "Painter"},
+      {"name": "QPalette", "kind": "class", "detail": "Palette"},
+      {"name": "QPixmap", "kind": "class", "detail": "Pixmap"},
+      {"name": "QTextCharFormat", "kind": "class", "detail": "Text character format"},
+      {"name": "QTextCursor", "kind": "class", "detail": "Text cursor"},
+      {"name": "QAction", "kind": "class", "detail": "Action"},
+      {"name": "QActionGroup", "kind": "class", "detail": "Action group"},
+      {"name": "QShortcut", "kind": "class", "detail": "Keyboard shortcut"}
+    ],
+    "PySide6.QtGui": [
+      {"name": "QBrush", "kind": "class", "detail": "Brush"},
+      {"name": "QColor", "kind": "class", "detail": "Color"},
+      {"name": "QFont", "kind": "class", "detail": "Font"},
+      {"name": "QIcon", "kind": "class", "detail": "Icon"},
+      {"name": "QKeyEvent", "kind": "class", "detail": "Key event"},
+      {"name": "QPainter", "kind": "class", "detail": "Painter"},
+      {"name": "QPalette", "kind": "class", "detail": "Palette"},
+      {"name": "QPixmap", "kind": "class", "detail": "Pixmap"},
+      {"name": "QTextCharFormat", "kind": "class", "detail": "Text character format"},
+      {"name": "QTextCursor", "kind": "class", "detail": "Text cursor"},
+      {"name": "QAction", "kind": "class", "detail": "Action"},
+      {"name": "QActionGroup", "kind": "class", "detail": "Action group"},
+      {"name": "QShortcut", "kind": "class", "detail": "Keyboard shortcut"}
+    ],
     "PySide2.QtWidgets": [
+      {"name": "QApplication", "kind": "class", "detail": "Qt application object"},
+      {"name": "QCheckBox", "kind": "class", "detail": "Checkbox widget"},
+      {"name": "QComboBox", "kind": "class", "detail": "Combo box"},
+      {"name": "QDialog", "kind": "class", "detail": "Dialog window"},
+      {"name": "QFileDialog", "kind": "class", "detail": "File dialog"},
+      {"name": "QFrame", "kind": "class", "detail": "Frame widget"},
+      {"name": "QHBoxLayout", "kind": "class", "detail": "Horizontal box layout"},
+      {"name": "QLabel", "kind": "class", "detail": "Text/display label"},
+      {"name": "QLineEdit", "kind": "class", "detail": "Single-line text input"},
+      {"name": "QListView", "kind": "class", "detail": "List view"},
+      {"name": "QListWidget", "kind": "class", "detail": "List widget"},
+      {"name": "QMainWindow", "kind": "class", "detail": "Main window shell"},
+      {"name": "QMenu", "kind": "class", "detail": "Menu"},
+      {"name": "QMessageBox", "kind": "class", "detail": "Message dialog"},
+      {"name": "QPlainTextEdit", "kind": "class", "detail": "Plain text editor"},
+      {"name": "QPushButton", "kind": "class", "detail": "Push button"},
+      {"name": "QSizePolicy", "kind": "class", "detail": "Widget size policy"},
+      {"name": "QSplitter", "kind": "class", "detail": "Splitter widget"},
+      {"name": "QTableWidget", "kind": "class", "detail": "Table widget"},
+      {"name": "QTextEdit", "kind": "class", "detail": "Rich/plain text editor widget"},
+      {"name": "QToolTip", "kind": "class", "detail": "Tooltip helper"},
+      {"name": "QVBoxLayout", "kind": "class", "detail": "Vertical box layout"},
+      {"name": "QWidget", "kind": "class", "detail": "Base QWidget"}
+    ],
+    "PySide.QtWidgets": [
+      {"name": "QApplication", "kind": "class", "detail": "Qt application object"},
+      {"name": "QCheckBox", "kind": "class", "detail": "Checkbox widget"},
+      {"name": "QComboBox", "kind": "class", "detail": "Combo box"},
+      {"name": "QDialog", "kind": "class", "detail": "Dialog window"},
+      {"name": "QFileDialog", "kind": "class", "detail": "File dialog"},
+      {"name": "QFrame", "kind": "class", "detail": "Frame widget"},
+      {"name": "QHBoxLayout", "kind": "class", "detail": "Horizontal box layout"},
+      {"name": "QLabel", "kind": "class", "detail": "Text/display label"},
+      {"name": "QLineEdit", "kind": "class", "detail": "Single-line text input"},
+      {"name": "QListView", "kind": "class", "detail": "List view"},
+      {"name": "QListWidget", "kind": "class", "detail": "List widget"},
+      {"name": "QMainWindow", "kind": "class", "detail": "Main window shell"},
+      {"name": "QMenu", "kind": "class", "detail": "Menu"},
+      {"name": "QMessageBox", "kind": "class", "detail": "Message dialog"},
+      {"name": "QPlainTextEdit", "kind": "class", "detail": "Plain text editor"},
+      {"name": "QPushButton", "kind": "class", "detail": "Push button"},
+      {"name": "QSizePolicy", "kind": "class", "detail": "Widget size policy"},
+      {"name": "QSplitter", "kind": "class", "detail": "Splitter widget"},
+      {"name": "QTableWidget", "kind": "class", "detail": "Table widget"},
+      {"name": "QTextEdit", "kind": "class", "detail": "Rich/plain text editor widget"},
+      {"name": "QToolTip", "kind": "class", "detail": "Tooltip helper"},
+      {"name": "QVBoxLayout", "kind": "class", "detail": "Vertical box layout"},
+      {"name": "QWidget", "kind": "class", "detail": "Base QWidget"}
+    ],
+    "PySide6.QtWidgets": [
       {"name": "QApplication", "kind": "class", "detail": "Qt application object"},
       {"name": "QCheckBox", "kind": "class", "detail": "Checkbox widget"},
       {"name": "QComboBox", "kind": "class", "detail": "Combo box"},
@@ -70,7 +195,17 @@
       {"name": "QPrintDialog", "kind": "class", "detail": "Print dialog"},
       {"name": "QPrinter", "kind": "class", "detail": "Printer device"}
     ],
+    "PySide6.QtPrintSupport": [
+      {"name": "QPrintDialog", "kind": "class", "detail": "Print dialog"},
+      {"name": "QPrinter", "kind": "class", "detail": "Printer device"}
+    ],
     "PySide2.QtUiTools": [
+      {"name": "QUiLoader", "kind": "class", "detail": "Qt Designer UI loader"}
+    ],
+    "PySide.QtUiTools": [
+      {"name": "QUiLoader", "kind": "class", "detail": "Qt Designer UI loader"}
+    ],
+    "PySide6.QtUiTools": [
       {"name": "QUiLoader", "kind": "class", "detail": "Qt Designer UI loader"}
     ],
     "FreeCAD": [

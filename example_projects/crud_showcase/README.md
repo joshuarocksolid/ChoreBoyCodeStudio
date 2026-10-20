@@ -29,7 +29,7 @@ Load it from **Help > Load Example Project...** and press **F5** to run.
 
 ### Qt Widget Showcase
 
-This project uses the following PySide2 widgets so you can see how they work:
+This project imports the following Qt widgets from `PySide`.
 
 - `QMainWindow` — top-level window with toolbar, status bar, and central widget.
 - `QToolBar` — icon + text buttons for New, Edit, Delete, Refresh, plus embedded widgets.
@@ -46,6 +46,9 @@ This project uses the following PySide2 widgets so you can see how they work:
 - `QMessageBox` — confirmation dialogs and validation warnings.
 - `QPushButton` — primary (accent), ghost (border), and danger button variants.
 - `QLabel` — static text labels with themed styling.
+
+Import `QAction`, `QActionGroup`, and `QShortcut` from `PySide.QtGui`.
+Start the event loop with `(getattr(app, "exec", None) or app.exec_)()`.
 
 ### FreeCAD Integration (Optional)
 

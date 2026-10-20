@@ -1,6 +1,6 @@
 """Task Tracker - Simple Qt app for Phase 15 workflow."""
 import sys
-from PySide2.QtWidgets import (
+from PySide.QtWidgets import (
     QApplication, QMainWindow, QWidget,
     QVBoxLayout, QListWidget, QPushButton
 )
@@ -38,7 +38,8 @@ def main():
 
     window = TaskTrackerWindow()
     window.show()
-    return app.exec_()
+    return (getattr(app, "exec", None) or app.exec_)()
+
 
 if __name__ == "__main__":
     sys.exit(main())
