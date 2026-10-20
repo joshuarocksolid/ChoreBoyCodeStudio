@@ -1641,7 +1641,8 @@ class UninstallConfirmPage(QWizardPage):
         items.setWidget(self._summary)
         items.viewport().setAutoFillBackground(False)
         self._summary.setAutoFillBackground(False)
-        layout.addWidget(items, 1)
+        self._summary.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        layout.addWidget(items)
         layout.addSpacing(8)
         self._delete_data = QCheckBox(self)
         layout.addWidget(self._delete_data)
@@ -1649,6 +1650,7 @@ class UninstallConfirmPage(QWizardPage):
         self._data_note.setWordWrap(True)
         self._data_note.setContentsMargins(24, 0, 0, 0)
         layout.addWidget(self._data_note)
+        layout.addStretch()
 
     def initializePage(self) -> None:
         wizard = self.wizard()

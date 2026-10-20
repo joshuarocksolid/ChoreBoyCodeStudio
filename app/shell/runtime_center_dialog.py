@@ -330,7 +330,7 @@ def _render_packaging_issue_html(issue: RuntimeIssue, tokens: ShellThemeTokens) 
     badge_color = _severity_color("blocking" if issue.severity == "blocking" else "degraded", tokens)
     steps = "".join(f"<li>{_prose(step)}</li>" for step in issue.next_steps)
     where = escape(_packaging_where(issue))
-    import_path = escape(str(issue.evidence.get("import_path", "")))
+    import_path = escape(str(issue.evidence.get("import_path", ""))).replace(" -&gt; ", " &rarr; ")
     parts = [
         f'<div style="font-family:sans-serif;color:{tokens.text_primary};font-size:13px;">',
         f'<span style="background:{tokens.badge_bg};color:{badge_color};font-weight:600;">'
