@@ -1484,7 +1484,7 @@ class DonePage(QWizardPage):
         install_dir = str(getattr(outcome, "install_dir", "") or "") or str(
             Path(str(self.field("install_dir"))).expanduser().resolve()
         )
-        warnings = tuple(getattr(worker, "shortcut_warnings", ()))
+        warnings: tuple[str, ...] = tuple(str(item) for item in (getattr(worker, "shortcut_warnings", None) or ()))
         published = tuple(getattr(outcome, "published_paths", ()) or ())
         name = self._manifest.display_name
         version = self._manifest.version
