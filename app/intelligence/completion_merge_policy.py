@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from app.core.completion_tier import TIER_HEADER_SIDE_EFFECT, is_tier_header_item
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_models import (
     CompletionEnvelope,
     CompletionItem,
@@ -24,7 +25,7 @@ def merge_completion_display(
     fast: CompletionEnvelope | None = None,
     semantic: CompletionEnvelope | None = None,
     runtime_items: list[CompletionItem] | None = None,
-    max_results: int = 100,
+    max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
 ) -> CompletionEnvelope:
     """Merge tiered completion results without mislabeling approximate items as exact."""
 
@@ -119,8 +120,10 @@ def merge_completion_metadata(
     if not documentation and not signature and incoming.resolvable_fields:
         resolvable_fields = incoming.resolvable_fields
     resolve_provider = primary.resolve_provider
+    item_id = primary.item_id
     if not documentation and not signature and incoming.resolve_provider:
         resolve_provider = incoming.resolve_provider
+        item_id = incoming.item_id or primary.item_id
     return CompletionItem(
         label=primary.label,
         insert_text=primary.insert_text,
@@ -139,7 +142,7 @@ def merge_completion_metadata(
         trigger_kind=primary.trigger_kind,
         trigger_character=primary.trigger_character,
         side_effect_risk=primary.side_effect_risk or incoming.side_effect_risk,
-        item_id=primary.item_id,
+        item_id=item_id,
         context_fingerprint=primary.context_fingerprint,
         resolve_provider=resolve_provider,
         resolvable_fields=resolvable_fields,

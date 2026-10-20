@@ -9,6 +9,7 @@ from app.intelligence.completion_merge_policy import (
     flatten_tiered_items,
     is_tier_header_item,
     merge_completion_display,
+    merge_completion_metadata,
 )
 from app.intelligence.completion_models import CompletionTier
 from app.intelligence.completion_models import (
@@ -97,6 +98,30 @@ def test_flatten_tiered_items_merges_documentation_from_later_tier() -> None:
     assert merged.source == "static_api_index"
     assert merged.documentation == "Return the current working directory."
     assert merged.signature == "getcwd()"
+
+
+def test_merge_takes_item_id_from_the_item_whose_resolve_provider_it_adopts() -> None:
+    fast_item = CompletionItem(
+        label="setText",
+        insert_text="setText",
+        kind=CompletionKind.METHOD,
+        source="static_api_index",
+        item_id="fast:setText",
+        resolve_provider="jedi",
+    )
+    runtime_item = CompletionItem(
+        label="setText",
+        insert_text="setText",
+        kind=CompletionKind.METHOD,
+        source="runtime_introspection",
+        item_id="runtime_introspection:PySide2.QtWidgets.QPushButton:setText",
+        resolve_provider="runtime_introspection",
+        resolvable_fields=("documentation", "signature"),
+    )
+
+    merged = merge_completion_metadata(fast_item, runtime_item)
+
+    assert (merged.resolve_provider, merged.item_id) == (runtime_item.resolve_provider, runtime_item.item_id)
 
 
 def test_envelope_confidence_never_exact_when_approximate_item_present() -> None:

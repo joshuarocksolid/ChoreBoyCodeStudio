@@ -5,29 +5,29 @@ from __future__ import annotations
 from dataclasses import dataclass
 import logging
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Optional, Protocol
 
-from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_providers import collect_import_module_bindings
-from app.intelligence.runtime_introspection_cache import RuntimeIntrospectionCache, clone_completion_items
+from app.intelligence.runtime_introspection_cache import RuntimeIntrospectionCache
+from app.intelligence.runtime_members import (
+    RuntimeDetailResult,
+    RuntimeListingResult,
+    RuntimeMemberDetail,
+    RuntimeMemberRef,
+    RuntimeUnavailable,
+)
 from app.intelligence.trusted_runtime_whitelist import is_whitelisted_target_path
 
 _logger = logging.getLogger(__name__)
 
 
 class RuntimeIntrospectionPort(Protocol):
-    """Minimal runner-side introspection surface."""
+    def list_members(self, *, target_path: str) -> RuntimeListingResult:
+        ...
 
-    def introspect(
-        self,
-        *,
-        target_path: str,
-        member_prefix: str,
-        include_private: bool = True,
-        max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
-    ) -> Any:
+    def resolve_member(self, ref: RuntimeMemberRef) -> RuntimeDetailResult:
         ...
 
 
@@ -211,37 +211,38 @@ class RuntimeIntrospectionCoordinator:
     def clear_cache(self) -> None:
         self._cache.clear()
 
-    def cached_items(self, query: RuntimeIntrospectionQuery, *, include_private: bool = True) -> list[CompletionItem] | None:
-        cached = self._cache.get(target_path=query.target_path, include_private=include_private)
-        if cached is None:
+    def cached_items(
+        self,
+        query: RuntimeIntrospectionQuery,
+        *,
+        max_results: Optional[int] = None,
+    ) -> Optional[list[CompletionItem]]:
+        listing = self._cache.get(query.target_path)
+        if listing is None:
             return None
-        return _filter_prefix(clone_completion_items(cached), query.member_prefix)
+        return listing.visible(query.member_prefix, limit=max_results)
 
     def fetch_and_cache_from_runner(
         self,
         query: RuntimeIntrospectionQuery,
         *,
-        include_private: bool = True,
-        max_results: int = UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
+        max_results: Optional[int] = None,
     ) -> list[CompletionItem]:
-        """Fetch members from the runner, store in cache, and return prefix-filtered items."""
-
         if self._runner_port is None:
             return []
+        listing = self._runner_port.list_members(target_path=query.target_path)
+        if isinstance(listing, RuntimeUnavailable):
+            return []
+        self._cache.put(listing)
+        return listing.visible(query.member_prefix, limit=max_results)
 
-        envelope = self._runner_port.introspect(
-            target_path=query.target_path,
-            member_prefix="",
-            include_private=include_private,
-            max_results=max_results,
-        )
-        items = list(getattr(envelope, "items", []) or [])
-        self._cache.put(
-            target_path=query.target_path,
-            include_private=include_private,
-            items=items,
-        )
-        return _filter_prefix(clone_completion_items(items), query.member_prefix)
+    def resolve_member(self, ref: RuntimeMemberRef) -> Optional[RuntimeMemberDetail]:
+        if self._runner_port is None:
+            return None
+        detail = self._runner_port.resolve_member(ref)
+        if isinstance(detail, RuntimeUnavailable):
+            return None
+        return detail
 
 
 def attach_replacement_metadata(
@@ -279,13 +280,3 @@ def attach_replacement_metadata(
             )
         )
     return attached
-
-
-def _filter_prefix(items: list[CompletionItem], prefix: str) -> list[CompletionItem]:
-    if not prefix:
-        return [item for item in items if not item.label.startswith("_")]
-    lowered = prefix.lower()
-    filtered = [item for item in items if item.label.lower().startswith(lowered)]
-    if prefix.startswith("_"):
-        return filtered
-    return [item for item in filtered if not item.label.startswith("_")]

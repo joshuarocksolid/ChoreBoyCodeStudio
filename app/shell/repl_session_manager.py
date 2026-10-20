@@ -11,18 +11,28 @@ import logging
 import socket
 import threading
 from datetime import datetime
-from typing import Callable
+from typing import Any, Callable, Union
 
 from app.bootstrap.paths import PathInput
 from app.intelligence.completion_models import CompletionEnvelope
+from app.intelligence.runtime_members import (
+    RuntimeDetailResult,
+    RuntimeListingResult,
+    RuntimeMemberRef,
+    RuntimeUnavailable,
+)
 from app.run.process_supervisor import ProcessEvent, ProcessSupervisor
 from app.run.run_manifest import ReplControlConfig
 from app.run.run_service import RunService
 from app.runner.repl_protocol import (
+    REPL_DEGRADATION_INVALID_RESPONSE,
     build_complete_request,
-    build_introspect_request,
+    build_list_members_request,
+    build_resolve_member_request,
+    detail_from_wire,
     dumps_message,
     envelope_from_dict,
+    listing_from_wire,
     loads_message,
 )
 
@@ -117,55 +127,54 @@ class ReplSessionManager:
     ) -> CompletionEnvelope:
         """Request live completions from the active REPL control channel."""
 
-        config = self._control_config
-        if config is None or not self._supervisor.is_running():
-            return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
-        payload = build_complete_request(
-            protocol=config.protocol,
-            session_token=config.session_token,
-            line_buffer=line_buffer,
-            cursor_offset=cursor_offset,
-            trigger_kind=trigger_kind,
-            trigger_character=trigger_character,
-            max_results=max_results,
+        result = self._round_trip(
+            lambda config: build_complete_request(
+                protocol=config.protocol,
+                session_token=config.session_token,
+                line_buffer=line_buffer,
+                cursor_offset=cursor_offset,
+                trigger_kind=trigger_kind,
+                trigger_character=trigger_character,
+                max_results=max_results,
+            )
         )
-        timeout_seconds = max(0.1, config.connect_timeout_ms / 1000.0)
-        try:
-            with socket.create_connection((config.host, config.port), timeout=timeout_seconds) as sock:
-                sock.settimeout(timeout_seconds)
-                sock.sendall(dumps_message(payload))
-                response = _read_json_line(sock)
-        except OSError as exc:
-            _logger.debug("REPL completion request failed: %s", exc)
-            return CompletionEnvelope(items=[], degradation_reason="repl_control_unavailable")
-        if not response.get("ok"):
-            return CompletionEnvelope(items=[], degradation_reason=str(response.get("error") or "repl_error"))
-        result = response.get("result")
-        if not isinstance(result, dict):
-            return CompletionEnvelope(items=[], degradation_reason="repl_invalid_response")
+        if isinstance(result, RuntimeUnavailable):
+            return CompletionEnvelope(items=[], degradation_reason=result.reason)
         return envelope_from_dict(result)
 
-    def introspect(
+    def list_members(self, *, target_path: str) -> RuntimeListingResult:
+        result = self._round_trip(
+            lambda config: build_list_members_request(
+                protocol=config.protocol,
+                session_token=config.session_token,
+                target_path=target_path,
+            )
+        )
+        if isinstance(result, RuntimeUnavailable):
+            return result
+        return listing_from_wire(result)
+
+    def resolve_member(self, ref: RuntimeMemberRef) -> RuntimeDetailResult:
+        result = self._round_trip(
+            lambda config: build_resolve_member_request(
+                protocol=config.protocol,
+                session_token=config.session_token,
+                target_path=ref.target_path,
+                member_name=ref.name,
+            )
+        )
+        if isinstance(result, RuntimeUnavailable):
+            return result
+        return detail_from_wire(result)
+
+    def _round_trip(
         self,
-        *,
-        target_path: str,
-        member_prefix: str = "",
-        include_private: bool = True,
-        max_results: int = 100,
-    ) -> CompletionEnvelope:
-        """Request trusted runtime member listing from the active REPL control channel."""
-
+        build_payload: Callable[[ReplControlConfig], dict[str, Any]],
+    ) -> Union[dict[str, Any], RuntimeUnavailable]:
         config = self._control_config
         if config is None or not self._supervisor.is_running():
-            return CompletionEnvelope(items=[], degradation_reason="repl_unavailable")
-        payload = build_introspect_request(
-            protocol=config.protocol,
-            session_token=config.session_token,
-            target_path=target_path,
-            member_prefix=member_prefix,
-            include_private=include_private,
-            max_results=max_results,
-        )
+            return RuntimeUnavailable(reason="repl_unavailable")
+        payload = build_payload(config)
         timeout_seconds = max(0.1, config.connect_timeout_ms / 1000.0)
         try:
             with socket.create_connection((config.host, config.port), timeout=timeout_seconds) as sock:
@@ -173,14 +182,14 @@ class ReplSessionManager:
                 sock.sendall(dumps_message(payload))
                 response = _read_json_line(sock)
         except OSError as exc:
-            _logger.debug("REPL introspection request failed: %s", exc)
-            return CompletionEnvelope(items=[], degradation_reason="repl_control_unavailable")
+            _logger.debug("REPL control %s request failed: %s", payload.get("method"), exc)
+            return RuntimeUnavailable(reason="repl_control_unavailable")
         if not response.get("ok"):
-            return CompletionEnvelope(items=[], degradation_reason=str(response.get("error") or "repl_error"))
+            return RuntimeUnavailable(reason=str(response.get("error") or "repl_error"))
         result = response.get("result")
         if not isinstance(result, dict):
-            return CompletionEnvelope(items=[], degradation_reason="repl_invalid_response")
-        return envelope_from_dict(result)
+            return RuntimeUnavailable(reason=REPL_DEGRADATION_INVALID_RESPONSE)
+        return result
 
     def shutdown(self) -> None:
         """Permanent shutdown (call during app close)."""
