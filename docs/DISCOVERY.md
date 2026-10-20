@@ -338,6 +338,8 @@ The `.lnk` text inside `~/.idesktop` was not readable from AppRun or from pcmanf
 
 On the slots measured here, `~/share` is a directory on the home filesystem. fcntl and both SQLite journal modes succeeded in it on ChoreBoy2. No measured slot listed a `net*` directory under `~/share`. First-level names were `IntellaQuote Backup` on every measured slot, plus `Chore_Boy` on ChoreBoy and ChoreBoy5 only. `/home/default/.nfs_log.txt` exists, mode `0644`, uid 0, and AppRun cannot read it, so this note does not say what that log contains.
 
+Jason Rissler described real shops as seeing this folder under a server name, for example `~/share/net1/...`. CBCS treats `~/share` as a network share for state placement even though these lab slots had it on the home filesystem. SQLite is not stored there. A shop pointer is accepted at `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` and at the same relative path under one `~/share/<child>/` directory.
+
 ### Runtime rule
 
 `app/bootstrap/hidden_path_policy.py` owns `probe_hidden_path_support(parent)`. For one parent it creates, writes, reads, and removes a hidden file canary, a hidden directory canary (with one file inside), and a visible directory canary (control). The result is a frozen `HiddenPathProbeResult` cached per parent identity for the life of the process. Parent identity uses `normalize_state_root_identity` (absolute, `expanduser`, `os.path.abspath`, no final symlink hop). A missing parent probes as all-False; the probe never creates ancestors.
@@ -351,9 +353,11 @@ Policy that follows from it:
 
 ### Product state dest
 
-Product dest is `/home/default/FreeCAD/CBCS/state`. `resolve_global_state_root` does not probe parents to pick it. Explicit argument, `CBCS_STATE_ROOT`, and the shop pointer still win. See `docs/ARCHITECTURE.md` §11.
+Local state is `/home/default/FreeCAD/CBCS/state`. The 2026-10-20 table is why. File locks and SQLite work there, under `~`, `~/FreeCAD`, `~/.cache/FreeCAD`, `/tmp`, and `~/share`. They fail under `~/.local/share/FreeCAD`. New hidden directories under home are still blocked. `resolve_global_state_root` does not probe parents to pick the local dest. An explicit argument is the only override. `CBCS_STATE_ROOT` and the shop pointer select the shared settings directory only. They never move SQLite or logs. See `docs/ARCHITECTURE.md` §11.
 
-Leftover `choreboy_code_studio_state` trees from earlier releases are copied once into dest on first launch of the update. Occupancy is dest `settings.json`. Sources stay.
+Shared settings are the three JSON files (`settings.json`, `recent_projects.json`, `python_console_history.json`). If that directory cannot be written, the session uses the JSON files in the local dest and startup reports "Shared settings are not available".
+
+Leftover `choreboy_code_studio_state` trees are not copied whole. The first leftover that has `settings.json` contributes those three JSON files, and only when the destination has none. History, cache, and SQLite stay in the source. A legacy `~/choreboy_code_studio_state` symlink into `~/share` is a shared settings root, not the local state root. The final symlink hop is still not resolved.
 
 The hidden-path probe still exists for Desktop icon publish. It is not the state picker.
 

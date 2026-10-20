@@ -390,3 +390,24 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.welcome.recentLabel`
 - `#shell.welcome.subtitle`
 - `#shell.welcome.title`
+
+## Startup dialogs
+
+- `#shell.startupProblemsDialog`
+- `#shell.startupProblems.card`
+- `#shell.startupProblems.cardTitle`
+- `#shell.startupProblems.continueButton`
+- `#shell.startupProblems.copyDetails`
+- `#shell.startupProblems.dismiss`
+- `#shell.startupProblems.logPath`
+- `#shell.startupProblems.openRuntimeCenter`
+- `#shell.startupProblems.section`
+- `#shell.startupFatalDialog`
+- `#shell.startupFatal.closeButton`
+- `#shell.startupFatal.copyDetails`
+- `#shell.startupFatal.details`
+- `#shell.startupFatal.showDetails`
+- `#shell.freecadRequirementDialog`
+- `#shell.freecadRequirement.copyDetails`
+- `#shell.freecadRequirement.message`
+- `#shell.freecadRequirement.okButton`
