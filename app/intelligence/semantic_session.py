@@ -266,10 +266,11 @@ class SemanticSession:
             paint_merged(fast=fast_envelope[0], semantic=semantic_envelope[0])
 
         def start_runtime_tier(runtime_query: RuntimeIntrospectionQuery | None) -> None:
-            if runtime_coordinator is None or runtime_query is None:
+            coordinator = runtime_coordinator
+            if coordinator is None or runtime_query is None:
                 return
             target_path = runtime_query.target_path
-            cached = runtime_coordinator.cached_items(runtime_query)
+            cached = coordinator.cached_items(runtime_query)
             if cached is not None:
                 add_runtime_items(target_path, cached)
                 return
@@ -277,7 +278,7 @@ class SemanticSession:
                 return
 
             def introspection_task(_cancellation: object) -> list[CompletionItem]:
-                return runtime_coordinator.fetch_and_cache_from_runner(
+                return coordinator.fetch_and_cache_from_runner(
                     runtime_query,
                     max_results=request.max_results,
                 )
