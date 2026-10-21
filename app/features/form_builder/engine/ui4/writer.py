@@ -201,6 +201,10 @@ class _Writer:
         if not element.children:
             self._empty(indent, element.tag, attrs)
             return
+        if all(isinstance(child, str) for child in element.children):
+            text = "".join(child for child in element.children if isinstance(child, str))
+            self.lines.append("%s<%s%s>%s</%s>" % (" " * indent, element.tag, attrs, _esc_text(text), element.tag))
+            return
         if _mixed(element):
             self._mixed(element, indent, attrs)
             return
@@ -731,6 +735,9 @@ def _inline_opaque(element: OpaqueElement) -> str:
     attrs = "".join(' %s="%s"' % (key, _esc_attr(value)) for key, value in element.attrs)
     if not element.children:
         return "<%s%s/>" % (element.tag, attrs)
+    if all(isinstance(child, str) for child in element.children):
+        text = "".join(child for child in element.children if isinstance(child, str))
+        return "<%s%s>%s</%s>" % (element.tag, attrs, _esc_text(text), element.tag)
     if element.tag == "":
         return "".join(_esc_text(child) for child in element.children if isinstance(child, str))
     parts = ["<%s%s>" % (element.tag, attrs)]

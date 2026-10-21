@@ -37,6 +37,29 @@ def _place(text: str, token: str) -> str:
     return ""
 
 
+def test_opaque_string_space_survives_a_save() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="odd"><string> </string><string>A</string></property>
+ </widget>
+</ui>
+"""
+    loaded = read_ui(text, allocator=IdAllocator())
+    saved = write_ui(loaded.document).text
+    assert "<string> </string>" in saved
+    assert read_ui(saved, allocator=IdAllocator()).document.structure_fingerprint() == loaded.document.structure_fingerprint()
+    root = os.path.join(os.path.dirname(__file__), "..", "corpus", "synthetic")
+    for path in (
+        os.path.join(root, "properties", "brush.ui"),
+        os.path.join(root, "properties", "palette.ui"),
+        os.path.join(root, "schema", "kitchen_sink.ui"),
+    ):
+        original = read_ui(open(path, encoding="utf-8").read(), allocator=IdAllocator()).document
+        again = read_ui(write_ui(original).text, allocator=IdAllocator()).document
+        assert again.structure_fingerprint() == original.structure_fingerprint()
+
+
 def test_unknown_content_on_typed_leaves_is_kept() -> None:
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">

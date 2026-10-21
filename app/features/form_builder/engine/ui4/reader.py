@@ -1367,6 +1367,8 @@ def _to_opaque(node: _XNode) -> OpaqueElement:
             children.append(_to_opaque(child))
         elif isinstance(child, (OpaqueComment, OpaquePI)):
             children.append(child)
+    if any(not isinstance(child, str) for child in children):
+        children = [child for child in children if not isinstance(child, str) or child.strip()]
     return OpaqueElement(node.tag, node.attrs, tuple(children))
 
 
