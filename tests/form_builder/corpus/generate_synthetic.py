@@ -1131,7 +1131,36 @@ def generate() -> None:
             "Widget has no class attribute. QUiLoader raises Unable to open/read ui device. uic still emits Python.",
             "Unable to open/read ui device",
         ),
+        (
+            "malformed/language_python.ui",
+            _document("PythonLang", "QDialog", "Python", "", ui_attrs='version="4.0" language="python"'),
+            "language=python is rejected by QUiLoader 6.8.3. The attribute is still legal in the schema. Use language=c++ on forms that must load.",
+            "created using python",
+        ),
     ]
+    refused = (
+        "QColorDialog",
+        "QErrorMessage",
+        "QFileDialog",
+        "QFocusFrame",
+        "QFontDialog",
+        "QInputDialog",
+        "QMdiSubWindow",
+        "QMessageBox",
+        "QProgressDialog",
+        "QRhiWidget",
+        "QSplashScreen",
+        "QTabBar",
+    )
+    for widget_class in refused:
+        malformed.append(
+            (
+                "malformed/refused_%s.ui" % widget_class,
+                _widget_xml(widget_class),
+                "QUiLoader 6.8.3 cannot construct %s. uic may still emit Python." % widget_class,
+                "unable to create a widget of the class '%s'" % widget_class,
+            )
+        )
     for rel, text, notes, expect in malformed:
         add(rel, text, notes, expect)
 

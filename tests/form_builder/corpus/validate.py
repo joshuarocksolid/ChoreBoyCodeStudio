@@ -163,11 +163,15 @@ def _load_in_subprocess(path: Path) -> Tuple[bool, str]:
     if proc.returncode != 0 or not result:
         detail = (proc.stderr or stdout or "no output").strip().replace("\n", " ")
         return False, "QUiLoader process exited %s. %s" % (proc.returncode, detail[:400])
+    stderr = (proc.stderr or "").strip().replace("\n", " ")
     if result.startswith("OK"):
         return True, ""
     if result.startswith("FAIL "):
-        return False, result[5:][:500]
-    return False, result[:500]
+        detail = result[5:]
+        if stderr:
+            detail = "%s %s" % (detail, stderr)
+        return False, detail[:500]
+    return False, (result or stderr)[:500]
 
 
 def _load_main(path: str) -> int:
@@ -217,10 +221,21 @@ def _oracle(uic: str, path: Path) -> dict:
         uic_error = (proc.stdout or "").strip()[:500]
     return {
         "quiloader_ok": quiloader_ok,
-        "quiloader_error": quiloader_error[:500],
+        "quiloader_error": _redact(quiloader_error, path)[:500],
         "uic_ok": uic_ok,
-        "uic_stderr": uic_error[:500],
+        "uic_stderr": _redact(uic_error, path)[:500],
     }
+
+
+def _redact(text: str, path: Path) -> str:
+    """Drop machine-local paths so a re-run on another host does not churn the manifest."""
+    if not text:
+        return text
+    text = text.replace(str(path.resolve()), path.relative_to(CORPUS).as_posix())
+    text = text.replace(str(path), path.relative_to(CORPUS).as_posix())
+    text = text.replace(str(CORPUS.resolve()), "corpus")
+    text = text.replace(str(CORPUS), "corpus")
+    return text
 
 
 def _coverage(rows: List[dict]) -> dict:

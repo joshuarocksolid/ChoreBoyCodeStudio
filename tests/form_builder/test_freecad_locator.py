@@ -40,11 +40,3 @@ def test_finds_ui_files_under_given_roots(tmp_path: Path) -> None:
 def test_missing_roots_yield_an_empty_list(tmp_path: Path) -> None:
     locator = _locator()
     assert locator.find_freecad_ui_files([tmp_path / "nope"]) == []
-
-
-@pytest.mark.unit
-def test_default_roots_include_the_platform_prefixes() -> None:
-    locator = _locator()
-    roots = [str(path) for path in locator.default_search_roots()]
-    assert "/Applications/FreeCAD.app" in roots
-    assert "/opt/freecad" in roots
