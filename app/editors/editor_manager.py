@@ -287,6 +287,7 @@ class EditorManager:
         if preview_path not in self._tabs_by_path:
             self._preview_file_path = None
             return None
+        self._tabs_by_path[preview_path].drop_content_source_subscription()
         self._tabs_by_path.pop(preview_path, None)
         self._open_order = [path for path in self._open_order if path != preview_path]
         if self._active_file_path == preview_path:

@@ -55,6 +55,7 @@ class EditorTabLifecycleWorkflow:
 
     def release_tab_content(self, file_path: str) -> None:
         """Release whatever owns ``file_path``, whether or not a source editor exists."""
+        self._host.local_history_forget_source(file_path)
         registry = self._host.tab_content_registry()
         surface = registry.unbind(file_path)
         widget = self._host.workspace_controller().pop_editor(file_path)

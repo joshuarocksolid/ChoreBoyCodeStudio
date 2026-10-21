@@ -219,6 +219,9 @@ class MainWindowEditorTabHost:
     def local_history_note_source_changed(self, file_path: str) -> None:
         self._window._local_history_workflow.note_source_changed(file_path)
 
+    def local_history_forget_source(self, file_path: str) -> None:
+        self._window._local_history_workflow.forget_source(file_path)
+
     def local_history_discard_pending_autosave(self, file_path: str) -> None:
         self._window._local_history_workflow.discard_pending_autosave(file_path)
 

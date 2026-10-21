@@ -557,11 +557,8 @@ class LocalHistoryWorkflow:
     def note_source_changed(self, file_path: str) -> None:
         self._draft_autosave.note_source_changed(file_path)
 
-    def watch_content_source(self, file_path: str, source: Any) -> Callable[[], None]:
-        return self._draft_autosave.watch_content_source(file_path, source)
-
-    def unwatch_content_source(self, file_path: str) -> None:
-        self._draft_autosave.unwatch_content_source(file_path)
+    def forget_source(self, file_path: str) -> None:
+        self._draft_autosave.forget_source(file_path)
 
     def rekey_content_source(self, old_path: str, new_path: str) -> None:
         self._draft_autosave.rekey_content_source(old_path, new_path)

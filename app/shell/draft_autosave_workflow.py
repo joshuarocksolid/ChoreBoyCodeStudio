@@ -9,7 +9,6 @@ from app.qt.QtCore import QTimer
 from app.qt.QtWidgets import QWidget
 
 from app.editors.editor_manager import EditorManager
-from app.editors.tab_content_source import TabContentSource
 from app.persistence.autosave_store import AutosaveStore
 from app.persistence.history_models import (
     DRAFT_RECOVERY_POLICY_PROMPT,
@@ -60,7 +59,6 @@ class DraftAutosaveWorkflow:
         self._pending_autosave_payloads: dict[str, str] = {}
         self._pending_source_paths: set[str] = set()
         self._source_revisions: dict[str, int] = {}
-        self._source_unsubs: dict[str, Callable[[], None]] = {}
         self._autosave_timer = autosave_timer or QTimer(parent)
         self._autosave_timer.setSingleShot(True)
         self._autosave_timer.setInterval(500)
@@ -78,39 +76,32 @@ class DraftAutosaveWorkflow:
         self._pending_source_paths.add(file_path)
         self._autosave_timer.start()
 
-    def watch_content_source(self, file_path: str, source: TabContentSource) -> Callable[[], None]:
-        """Schedule drafts from ``source`` without serializing until the timer fires."""
-        self.unwatch_content_source(file_path)
-        self._source_revisions[file_path] = source.revision()
-
-        def on_changed() -> None:
-            self._pending_source_paths.add(file_path)
-            self._autosave_timer.start()
-
-        unsubscribe = source.subscribe_changed(on_changed)
-        self._source_unsubs[file_path] = unsubscribe
-        return unsubscribe
-
-    def unwatch_content_source(self, file_path: str) -> None:
-        unsubscribe = self._source_unsubs.pop(file_path, None)
-        if unsubscribe is not None:
-            unsubscribe()
+    def forget_source(self, file_path: str) -> None:
+        """Drop draft tracking for a closed path. Does not unsubscribe."""
         self._source_revisions.pop(file_path, None)
         self._pending_source_paths.discard(file_path)
+        self._pending_autosave_payloads.pop(file_path, None)
 
     def rekey_content_source(self, old_path: str, new_path: str) -> None:
-        unsubscribe = self._source_unsubs.pop(old_path, None)
-        if unsubscribe is not None:
-            self._source_unsubs[new_path] = unsubscribe
         revision = self._source_revisions.pop(old_path, None)
         if revision is not None:
             self._source_revisions[new_path] = revision
         if old_path in self._pending_source_paths:
             self._pending_source_paths.discard(old_path)
             self._pending_source_paths.add(new_path)
+        payload = self._pending_autosave_payloads.pop(old_path, None)
+        if payload is not None:
+            self._pending_autosave_payloads[new_path] = payload
 
     def discard_pending_autosave(self, file_path: str) -> None:
         self._pending_autosave_payloads.pop(file_path, None)
+        self._pending_source_paths.discard(file_path)
+        tab_state = self._editor_manager.get_tab(file_path)
+        content_source = None if tab_state is None else tab_state.content_source
+        if content_source is None:
+            self._source_revisions.pop(file_path, None)
+            return
+        self._source_revisions[file_path] = content_source.revision()
 
     def discard_drafts_for_paths(self, file_paths: Sequence[str]) -> None:
         for file_path in file_paths:

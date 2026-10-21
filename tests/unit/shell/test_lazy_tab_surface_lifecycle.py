@@ -113,6 +113,9 @@ class _CloseHost:
     def refresh_run_action_states(self) -> None:
         return None
 
+    def local_history_forget_source(self, file_path: str) -> None:
+        del file_path
+
 
 def _lifecycle(
     manager: EditorManager,
