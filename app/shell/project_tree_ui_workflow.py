@@ -405,7 +405,7 @@ class ProjectTreeUiWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        editor_tabs_widget.setTabToolTip(tab_index, new_path)
+        del tab_index  # the presentation refresh updates the tab in every group
         self._host.refresh_tab_presentation(new_path)
 
     def maybe_rewrite_imports_for_move(self, source_path: str, destination_path: str) -> None:

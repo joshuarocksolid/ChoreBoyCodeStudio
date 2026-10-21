@@ -272,20 +272,7 @@ class MainWindowSaveDocumentHost:
         self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
 
     def resolve_external_change_before_save(self, file_path: str) -> str:
-        from app.shell.external_file_change_workflow import ExternalFileChangeOutcome
-
-        outcome = self._window._external_file_change_workflow.check_and_handle(file_path, force=True)
-        if outcome in (
-            ExternalFileChangeOutcome.CANCELLED,
-            ExternalFileChangeOutcome.DECLINED,
-        ):
-            return "abort"
-        if outcome in (
-            ExternalFileChangeOutcome.RELOADED,
-            ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES,
-        ):
-            return "already_synced"
-        return "proceed"
+        return str(self._window._external_file_change_workflow.resolve_before_save(file_path))
 
     def refresh_test_discovery(self) -> None:
         test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)
@@ -509,9 +496,8 @@ class SaveWorkflow:
             return False
 
         if host.has_editor_tabs_widget():
-            tab_index = host.tab_index_for_path(saved_tab.file_path)
-            if tab_index >= 0:
-                host.refresh_tab_presentation(saved_tab.file_path)
+            # Clears the dirty marker in every editor group showing the buffer.
+            host.refresh_tab_presentation(saved_tab.file_path)
 
         self._local_history.discard_pending_autosave(saved_tab.file_path)
         self._local_history.record_checkpoint(

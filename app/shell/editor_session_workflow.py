@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import Any, Callable, Mapping
 
 from PySide2.QtCore import QTimer
 
@@ -43,6 +43,8 @@ class EditorSessionWorkflow:
         restore_tree_state: Callable[[SessionTreeState], None] | None = None,
         reveal_tree_path: Callable[[str], None] | None = None,
         set_tree_reveal_suppressed: Callable[[bool], None] | None = None,
+        capture_editor_groups: Callable[[], Mapping[str, Any] | None] | None = None,
+        restore_editor_groups: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> None:
         self._loaded_project = loaded_project
         self._editor_manager = editor_manager
@@ -62,6 +64,8 @@ class EditorSessionWorkflow:
         self._restore_tree_state = restore_tree_state
         self._reveal_tree_path = reveal_tree_path
         self._set_tree_reveal_suppressed = set_tree_reveal_suppressed
+        self._capture_editor_groups = capture_editor_groups
+        self._restore_editor_groups = restore_editor_groups
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -111,6 +115,7 @@ class EditorSessionWorkflow:
             active_file_path=active_file_path,
             project_tree=project_tree,
             tree_restore_policy=tree_restore_policy,
+            editor_groups=None if self._capture_editor_groups is None else self._capture_editor_groups(),
         )
         try:
             save_session_file(target_project_root, session_state)
@@ -136,10 +141,8 @@ class EditorSessionWorkflow:
                 ensure_spec=self._breakpoint_store.ensure_spec,
             )
 
-        ordered_files = _order_session_files_for_restore(
-            session_state.open_files,
-            active_file_path=session_state.active_file_path,
-        )
+        # Tabs come back in their saved order; the active tab is re-selected at the end.
+        ordered_files = tuple(session_state.open_files)
         if not ordered_files:
             self._finalize_editor_restore(session_state)
             self._apply_tree_restore(session_state)
@@ -201,6 +204,8 @@ class EditorSessionWorkflow:
             tab_index = self._tab_index_for_path(session_state.active_file_path)
             if tab_index >= 0:
                 self._set_current_tab_index(tab_index)
+        if session_state.editor_groups is not None and self._restore_editor_groups is not None:
+            self._restore_editor_groups(session_state.editor_groups)
 
         if self._refresh_breakpoints_list is not None:
             self._refresh_breakpoints_list()
@@ -234,18 +239,3 @@ def restore_editor_cursor_and_scroll(editor_widget: CodeEditorWidget, file_state
     scroll_position = max(0, file_state.scroll_position)
     QTimer.singleShot(0, lambda widget=editor_widget, value=scroll_position: widget.verticalScrollBar().setValue(value))
 
-
-def _order_session_files_for_restore(
-    open_files: tuple[SessionFileState, ...],
-    *,
-    active_file_path: str | None,
-) -> tuple[SessionFileState, ...]:
-    if not open_files:
-        return ()
-    if active_file_path is None:
-        return open_files
-    active_states = [file_state for file_state in open_files if file_state.file_path == active_file_path]
-    other_states = [file_state for file_state in open_files if file_state.file_path != active_file_path]
-    if not active_states:
-        return open_files
-    return tuple([*active_states, *other_states])

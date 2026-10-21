@@ -143,6 +143,9 @@ class EditorTabLifecycleDelegates:
     def close_tab_discarding_edits(self, file_path: str) -> None:
         self._lifecycle_workflow.close_tab_discarding_edits(file_path)
 
+    def close_tab_for_path(self, file_path: str) -> None:
+        self._lifecycle_workflow.close_tab_for_path(file_path)
+
     def close_active_tab(self) -> None:
         self._lifecycle_workflow.close_active_tab()
 

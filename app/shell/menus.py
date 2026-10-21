@@ -100,6 +100,10 @@ class MenuCallbacks:
     on_set_theme_high_contrast_light: Callable[[], object] | None = None
     on_set_theme_high_contrast_dark: Callable[[], object] | None = None
     on_zoom_in: Callable[[], object] | None = None
+    on_split_editor_right: Callable[[], object] | None = None
+    on_close_editor_group: Callable[[], object] | None = None
+    on_focus_first_editor_group: Callable[[], object] | None = None
+    on_focus_second_editor_group: Callable[[], object] | None = None
     on_zoom_out: Callable[[], object] | None = None
     on_zoom_reset: Callable[[], object] | None = None
     on_markdown_show_source: Callable[[], object] | None = None

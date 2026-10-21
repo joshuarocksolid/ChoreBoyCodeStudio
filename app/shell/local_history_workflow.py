@@ -145,6 +145,12 @@ class MainWindowLocalHistoryEditorHost:
         if self._window._editor_tabs_widget is not None:
             self._window._editor_tabs_widget.setCurrentIndex(tab_index)
 
+    def capture_editor_groups(self) -> Any:
+        return self._window._editor_groups.capture_layout()
+
+    def restore_editor_groups(self, layout: Any) -> None:
+        self._window._editor_groups.restore_layout(layout)
+
     def show_status_message(self, message: str, timeout_ms: int) -> None:
         self._window.statusBar().showMessage(message, timeout_ms)
 
@@ -218,6 +224,8 @@ class LocalHistoryWorkflow:
             restore_tree_state=host.restore_tree_state,
             reveal_tree_path=host.reveal_tree_path,
             set_tree_reveal_suppressed=host.set_tree_reveal_suppressed,
+            capture_editor_groups=getattr(host, "capture_editor_groups", None),
+            restore_editor_groups=getattr(host, "restore_editor_groups", None),
         )
         self._draft_autosave = DraftAutosaveWorkflow(
             parent=host.parent_widget(),

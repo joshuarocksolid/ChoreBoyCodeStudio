@@ -87,6 +87,19 @@ class EditorManager:
         """Return tabs in tab-order sequence."""
         return [self._tabs_by_id[buffer_id] for buffer_id in self._open_order]
 
+    def reorder_buffers(self, buffer_ids: list[str]) -> None:
+        """Put open buffers in ``buffer_ids`` order; unknown ids are ignored.
+
+        Open buffers missing from ``buffer_ids`` keep their relative order after
+        the listed ones.
+        """
+        listed: list[str] = []
+        for buffer_id in buffer_ids:
+            if buffer_id in self._tabs_by_id and buffer_id not in listed:
+                listed.append(buffer_id)
+        rest = [buffer_id for buffer_id in self._open_order if buffer_id not in listed]
+        self._open_order = listed + rest
+
     def get_tab(self, file_path: str) -> EditorTabState | None:
         """Return tab by file path, if open."""
         buffer_id = self._ids_by_path.get(_normalize(file_path))

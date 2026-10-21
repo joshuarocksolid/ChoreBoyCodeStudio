@@ -33,6 +33,11 @@ class EditorWorkspaceController:
         self._editor_widgets_by_path[buffer_id] = editor_widget
         return self._advance(buffer_id)
 
+    def repoint_editor(self, buffer_id: str, editor_widget: CodeEditorWidget) -> None:
+        """Make another view of an open buffer its primary view (focus moved groups)."""
+        if buffer_id in self._editor_widgets_by_path:
+            self._editor_widgets_by_path[buffer_id] = editor_widget
+
     def widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
         buffer_id = self.buffer_id_for_path(file_path)
         return None if buffer_id is None else self._editor_widgets_by_path.get(buffer_id)

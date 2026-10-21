@@ -25,6 +25,9 @@ class MainWindowEditorTabHost:
     def editor_tabs_widget(self) -> QTabWidget | None:
         return self._window._editor_tabs_widget
 
+    def editor_groups(self) -> Any | None:
+        return getattr(self._window, "_editor_groups", None)
+
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
         return self._window._workspace_controller.widgets_by_open_path()
 

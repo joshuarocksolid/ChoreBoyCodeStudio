@@ -71,6 +71,10 @@ def build_main_window_menus(
             constants.UI_THEME_MODE_HIGH_CONTRAST_DARK
         ),
         on_zoom_in=window._editor_tab_workflow.handle_zoom_in,
+        on_split_editor_right=lambda: window._editor_groups.split_right(),
+        on_close_editor_group=lambda: window._editor_groups.close_group(),
+        on_focus_first_editor_group=lambda: window._editor_groups.focus_group(0),
+        on_focus_second_editor_group=lambda: window._editor_groups.focus_group(1),
         on_zoom_out=window._editor_tab_workflow.handle_zoom_out,
         on_zoom_reset=window._editor_tab_workflow.handle_zoom_reset,
         on_markdown_show_source=window._editor_tab_workflow.handle_markdown_show_source_action,

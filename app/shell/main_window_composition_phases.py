@@ -409,10 +409,8 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         open_editor_paths=window._workspace_controller.open_editor_paths,
         widget_for_path=window._workspace_controller.widget_for_path,
         pop_editor_for_path=window._workspace_controller.pop_editor_for_path,
-        tab_index_for_path=window._editor_tab_workflow.tab_index_for_path,
-        remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
-        if window._editor_tabs_widget is not None
-        else None,
+        tab_index_for_path=window._editor_groups.tab_index_for_path_in_any_group,
+        remove_tab_at_index=window._editor_groups.remove_tabs_for_last_path,
         release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
         close_editor_file=lambda file_path: window._editor_manager.close_file(file_path),
         breakpoint_store=window._debug_control_workflow.breakpoint_store,

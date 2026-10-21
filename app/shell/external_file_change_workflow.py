@@ -3,14 +3,22 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from PySide2.QtWidgets import QFileDialog, QMessageBox, QWidget
+from PySide2.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
+from app.shell.disk_conflict_dialogs import (
+    DiskCompareDialog,
+    MissingFileDialog,
+    MissingFileDialogChoice,
+    StaleSaveChoice,
+    StaleSaveDialog,
+)
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision, DocumentScope
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
 from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
@@ -44,25 +52,52 @@ class MissingFileAction:
 
 
 def present_missing_file_dialog(parent: QWidget, file_path: str) -> MissingFileAction:
-    """Isolated presentation for a buffer whose file disappeared."""
-    box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Warning)
-    box.setWindowTitle("File missing")
-    box.setText(f"{Path(file_path).name} is no longer on disk.")
-    box.setInformativeText("Keep editing, save the buffer somewhere else, or close the tab.")
-    box.addButton("Keep editing", QMessageBox.AcceptRole)
-    save_as_button = box.addButton("Save As…", QMessageBox.ActionRole)
-    close_button = box.addButton("Close tab", QMessageBox.RejectRole)
-    box.exec_()
-    clicked = box.clickedButton()
-    if clicked is save_as_button:
-        destination, _selected_filter = QFileDialog.getSaveFileName(parent, "Save As", file_path)
+    """Ask what to do with a buffer whose file disappeared (Save As... is the default)."""
+    dialog = MissingFileDialog(file_path, parent)
+    dialog.exec_()
+    choice = dialog.choice()
+    if choice is MissingFileDialogChoice.SAVE_AS:
+        destination = ask_save_as_path(parent, file_path)
         if not destination:
             return MissingFileAction(MissingFileChoice.KEEP)
         return MissingFileAction(MissingFileChoice.SAVE_AS, destination_path=destination)
-    if clicked is close_button:
+    if choice is MissingFileDialogChoice.CLOSE_TAB:
         return MissingFileAction(MissingFileChoice.CLOSE)
     return MissingFileAction(MissingFileChoice.KEEP)
+
+
+def present_stale_save_dialog(
+    parent: QWidget,
+    file_path: str,
+    *,
+    disk_mtime: float | None,
+    buffer_is_dirty: bool,
+) -> StaleSaveChoice:
+    """Ask before a save replaces a file that changed on disk (Save My Version is the default)."""
+    dialog = StaleSaveDialog(
+        file_path,
+        disk_changed_text=_describe_mtime(disk_mtime),
+        buffer_is_dirty=buffer_is_dirty,
+        parent=parent,
+    )
+    if dialog.exec_() != QDialog.Accepted:
+        return StaleSaveChoice.CANCEL
+    return dialog.choice()
+
+
+def ask_save_as_path(parent: QWidget, file_path: str) -> str | None:
+    destination, _selected_filter = QFileDialog.getSaveFileName(parent, "Save As", file_path)
+    return destination or None
+
+
+def _describe_mtime(mtime: float | None) -> str:
+    if mtime is None:
+        return ""
+    changed = datetime.fromtimestamp(mtime)
+    clock = changed.strftime("%I:%M %p").lstrip("0")
+    if changed.date() == datetime.now().date():
+        return f"changed today {clock}"
+    return f"changed {changed.strftime('%d %b %Y')} {clock}"
 
 
 class ExternalFileChangeHostPorts(Protocol):
@@ -93,6 +128,15 @@ class ExternalFileChangeHostPorts(Protocol):
         ...
 
     def refresh_conflict_presentation(self, file_path: str) -> None:
+        ...
+
+    def present_stale_save(self, file_path: str, *, disk_mtime: float | None, buffer_is_dirty: bool) -> StaleSaveChoice:
+        ...
+
+    def show_disk_compare(self, file_path: str, *, disk_text: str, buffer_text: str) -> None:
+        ...
+
+    def ask_save_as_path(self, file_path: str) -> str | None:
         ...
 
 
@@ -151,6 +195,21 @@ class MainWindowExternalFileChangeHost:
 
     def refresh_conflict_presentation(self, file_path: str) -> None:
         self._window._editor_tab_workflow.refresh_tab_presentation(file_path)
+        self._window._refresh_save_action_states()
+
+    def present_stale_save(self, file_path: str, *, disk_mtime: float | None, buffer_is_dirty: bool) -> StaleSaveChoice:
+        return present_stale_save_dialog(
+            self._window,
+            file_path,
+            disk_mtime=disk_mtime,
+            buffer_is_dirty=buffer_is_dirty,
+        )
+
+    def show_disk_compare(self, file_path: str, *, disk_text: str, buffer_text: str) -> None:
+        DiskCompareDialog(file_path, disk_text=disk_text, buffer_text=buffer_text, parent=self._window).exec_()
+
+    def ask_save_as_path(self, file_path: str) -> str | None:
+        return ask_save_as_path(self._window, file_path)
 
 
 @dataclass(frozen=True)
@@ -181,12 +240,24 @@ class ExternalFileChangeWorkflow:
         self._save_workflow = save_workflow
         self._local_history = local_history
         self._host = host
+        # Paths with a conflict prompt open. The poller runs while a modal
+        # prompt spins its event loop; it must not stack a second prompt.
+        self._prompting: set[str] = set()
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
         self._editor_sync.set_editor_manager(editor_manager)
 
     def check_and_handle(self, file_path: str, *, force: bool = False) -> ExternalFileChangeOutcome:
+        if file_path in self._prompting:
+            return ExternalFileChangeOutcome.SKIPPED
+        self._prompting.add(file_path)
+        try:
+            return self._check_and_handle(file_path, force=force)
+        finally:
+            self._prompting.discard(file_path)
+
+    def _check_and_handle(self, file_path: str, *, force: bool) -> ExternalFileChangeOutcome:
         """Prompt when needed and reload ``file_path`` from disk.
 
         ``force`` is set by Save and Run so a remembered conflict prompts again.
@@ -327,6 +398,120 @@ class ExternalFileChangeWorkflow:
 
         self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
         return None
+
+    def resolve_before_save(self, file_path: str) -> str:
+        if file_path in self._prompting:
+            return "abort"
+        self._prompting.add(file_path)
+        try:
+            return self._resolve_before_save(file_path)
+        finally:
+            self._prompting.discard(file_path)
+
+    def _resolve_before_save(self, file_path: str) -> str:
+        """Settle a disk conflict before Save writes ``file_path``.
+
+        Returns ``"proceed"`` to write the buffer, ``"already_synced"`` when
+        nothing is left to write, and ``"abort"`` to stop the save.
+        """
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return "proceed"
+        current_mtime = self._editor_manager.current_disk_mtime(file_path)
+        if current_mtime is None:
+            conflict = tab_state.disk_conflict
+            if conflict is not None and conflict.kind == DISK_CONFLICT_MISSING:
+                # The user already chose Keep Editing: saving puts the file back where it was.
+                return "proceed"
+            outcome = self._handle_missing_file(file_path, force=True)
+            if outcome is ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES:
+                return "already_synced"
+            return "abort"
+        disk_content = self._read_disk_text(file_path)
+        if disk_content is None:
+            return "abort"
+        if disk_content == tab_state.current_content:
+            tab_state.mark_saved(last_known_mtime=current_mtime)
+            self._host.refresh_save_action_states()
+            self._host.refresh_conflict_presentation(file_path)
+            return "already_synced"
+        while True:
+            choice = self._host.present_stale_save(
+                file_path,
+                disk_mtime=current_mtime,
+                buffer_is_dirty=tab_state.is_dirty,
+            )
+            if choice is StaleSaveChoice.COMPARE:
+                self.compare_with_disk(file_path)
+                continue
+            if choice is StaleSaveChoice.SAVE_MY_VERSION:
+                return "proceed"
+            if choice is StaleSaveChoice.RELOAD_FROM_DISK:
+                return "already_synced" if self.reload_from_disk(file_path) else "abort"
+            self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
+            return "abort"
+
+    def reload_from_disk(self, file_path: str) -> bool:
+        """Replace the buffer with the file on disk; the buffer goes to local history."""
+        tab_state = self._editor_manager.get_tab(file_path)
+        current_mtime = self._editor_manager.current_disk_mtime(file_path)
+        disk_content = None if current_mtime is None else self._read_disk_text(file_path)
+        if tab_state is None or disk_content is None:
+            return False
+        if tab_state.is_dirty:
+            self._local_history.record_checkpoint(
+                file_path,
+                tab_state.current_content,
+                source="external_reload_discarded_buffer",
+                label="Discarded buffer during disk reload",
+            )
+        if not self._editor_sync.apply_disk_content(
+            file_path,
+            disk_content,
+            source=EditorDiskSyncSource.EXTERNAL_RELOAD,
+            last_known_mtime=current_mtime,
+        ):
+            return False
+        self._local_history.record_checkpoint(
+            file_path,
+            disk_content,
+            source="external_reload",
+            label="Reloaded from disk after external change",
+        )
+        self._local_history.discard_drafts_for_paths([file_path])
+        self._host.refresh_conflict_presentation(file_path)
+        self._host.refresh_save_action_states()
+        self._host.update_editor_status_for_path(file_path)
+        if file_path.lower().endswith(".py"):
+            self._host.render_lint_diagnostics_for_file(file_path, trigger="tab_change")
+        return True
+
+    def compare_with_disk(self, file_path: str) -> None:
+        """Show the file on disk next to the buffer."""
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return
+        disk_content = self._read_disk_text(file_path) or ""
+        self._host.show_disk_compare(file_path, disk_text=disk_content, buffer_text=tab_state.current_content)
+
+    def save_buffer_as(self, file_path: str) -> bool:
+        """Save a buffer (usually one whose file went missing) under a new path."""
+        if self._editor_manager.get_tab(file_path) is None:
+            return False
+        destination = self._host.ask_save_as_path(file_path)
+        if not destination:
+            return False
+        if not self._host.save_missing_buffer_as(file_path, destination):
+            return False
+        self._clear_conflict(file_path, destination)
+        return True
+
+    @staticmethod
+    def _read_disk_text(file_path: str) -> str | None:
+        try:
+            return Path(file_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
 
     def _handle_missing_file(self, file_path: str, *, force: bool) -> ExternalFileChangeOutcome:
         tab_state = self._editor_manager.get_tab(file_path)

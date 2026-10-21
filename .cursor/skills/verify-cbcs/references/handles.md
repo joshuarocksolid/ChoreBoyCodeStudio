@@ -40,6 +40,30 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
 
+## Editor tabs and groups
+
+Tabs are movable. Split Right (tab context menu, View menu, `Ctrl+\`) shows the current file in a second group; `Ctrl+1` / `Ctrl+2` focus a group; drag a tab down out of its bar and over the other group (or the right part of a lone group) to move it. Actions: `shell.action.view.splitEditorRight`, `shell.action.view.closeEditorGroup`, `shell.action.view.focusFirstEditorGroup`, `shell.action.view.focusSecondEditorGroup`. A stale tab (changed on disk, user kept their version) shows an amber triangle; a missing tab shows a red x and a struck-through name. Tab data (`tabBar().tabData(i)`) carries `buffer_id`, `is_preview`, `is_stale`, `is_missing`.
+
+| Handle | What |
+|--------|------|
+| `#shell.editorGroupsHost` | Editor area: the groups splitter plus the drag ghost and drop overlay |
+| `#shell.editorGroups` | Splitter holding the editor groups (one or two) |
+| `#shell.editorGroup` | One group's frame (accent border when focused and split). `groupNumber` property is 1 or 2. |
+| `#shell.editorTabs.group2` | Second group's tab widget (the first is `#shell.editorTabs`). The focused group's tab widget is `window._editor_tabs_widget`. |
+| `#shell.editorGroups.dragGhost` | Label that follows a tab dragged out of its bar |
+| `#shell.editorGroups.dropOverlay` | Dashed overlay on the group a dragged tab will drop into |
+| `#shell.editorTabPage` | One tab's page: info bar above the editor |
+| `#shell.editorInfoBar` | Stale / missing info bar (hidden when the buffer matches disk) |
+| `#shell.editorInfoBar.icon` | Info bar icon |
+| `#shell.editorInfoBar.message` | Info bar text |
+| `#shell.editorInfoBar.reloadBtn` | Reload from Disk (stale) |
+| `#shell.editorInfoBar.compareBtn` | Compare... (stale) |
+| `#shell.editorInfoBar.saveAsBtn` | Save As... (missing) |
+| `#shell.editorInfoBar.closeTabBtn` | Close Tab (missing) |
+| `#shell.missingFileDialog` | File Missing: Close Tab / Keep Editing / Save As... (default). Modal. |
+| `#shell.staleSaveDialog` | Save on a stale tab: Cancel / Compare... / Reload from Disk / Save My Version (default). Modal. |
+| `#shell.diskCompareDialog` | Side-by-side On Disk / Your Version diff. Modal. |
+
 ## Welcome
 
 | Handle | What |
