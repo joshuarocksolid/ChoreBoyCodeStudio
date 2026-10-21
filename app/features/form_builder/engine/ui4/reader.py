@@ -1353,7 +1353,7 @@ def _opaque_built(node: _XNode, anchor: Tuple[str, int]) -> _Built:
 
 def _text_opaque(text: str, anchor: Tuple[str, int], line: int) -> _Built:
     built = _Built(kind="opaque", line=line)
-    built.set_field("element", OpaqueElement("", (), (text,)))
+    built.set_field("element", OpaqueElement("", (), (text.strip(),)))
     built.set_field("anchor", anchor)
     return built
 

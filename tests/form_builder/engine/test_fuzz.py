@@ -5,6 +5,7 @@ import random
 
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+from app.features.form_builder.engine.ui4.writer import write_ui
 
 _SEED_FORMS = (
     '<?xml version="1.0" encoding="UTF-8"?><ui version="4.0"><widget class="QWidget" name="Form">'
@@ -14,6 +15,26 @@ _SEED_FORMS = (
     '<connections><connection><sender>ok</sender><signal>clicked()</signal>'
     '<receiver>Dialog</receiver><slot>accept()</slot></connection></connections></ui>',
 )
+
+
+def test_fuzzed_double_save_is_byte_identical() -> None:
+    stray = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form"/>
+ stray
+</ui>
+"""
+    rng = random.Random(20261021)
+    cases = [stray]
+    for _case in range(400):
+        cases.append(_mutate(rng.choice(_SEED_FORMS + (stray,)), rng))
+    for text in cases:
+        try:
+            once = write_ui(read_ui(text, allocator=IdAllocator()).document).text
+        except UiReadError:
+            continue
+        twice = write_ui(read_ui(once, allocator=IdAllocator()).document).text
+        assert twice == once
 
 
 def test_fuzzed_input_only_raises_read_errors() -> None:
