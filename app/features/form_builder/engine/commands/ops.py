@@ -19,8 +19,12 @@ from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
 
 @dataclass(frozen=True)
 class InsertNodeOp:
-    """Insert ``spec`` (all ids set, none present in the document) at
-    ``index`` (0..len) of ``parent``'s ``slot``. Inverse: RemoveNodeOp(spec.id)."""
+    """Insert ``spec`` at ``index`` (0..len) of ``parent``'s ``slot``.
+
+    Precondition (checked by ``mutate``): every id in ``spec`` is set and not
+    present in the document. Freshness (every id came from ``ctx.alloc()`` in
+    this entry) is checked by ``ctx.do`` on forward application only, never by
+    ``mutate``, undo or redo. Inverse: RemoveNodeOp(spec.id)."""
 
     parent: NodeId
     slot: str
@@ -81,8 +85,10 @@ class SetFieldOp:
 
 @dataclass(frozen=True)
 class ReplaceRootOp:
-    """Replace the whole ``ui`` node with ``spec`` (kind ``ui``, id DOCUMENT_ID,
-    every other id fresh). Inverse: ReplaceRootOp with the old snapshot.
+    """Replace the whole ``ui`` node with ``spec`` (kind ``ui``, id DOCUMENT_ID;
+    every other id set and not present in the document, except 0). Freshness is
+    checked by ``ctx.do`` on forward application only, as for InsertNodeOp.
+    Inverse: ReplaceRootOp with the old snapshot.
     Used only by ReplaceDocument (View XML commit, draft/history restore,
     external reload)."""
 

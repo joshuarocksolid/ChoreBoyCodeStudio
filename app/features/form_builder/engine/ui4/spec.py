@@ -28,8 +28,8 @@ class PropertyEntry:
     ``stdset``: the raw ``stdset`` attribute text or None when absent. A dynamic
     property is ``stdset="0"``; Designer writes exactly that.
     ``extra_attrs``: unknown attributes in input order.
-    Identity on a node is ``(kind, name)``; the reader moves later duplicates of
-    the same identity into the node's opaque slot (FB007).
+    Identity on a node is ``(kind, name)``. The last copy is the typed entry
+    (Qt last-wins). Earlier copies become opaque at that same position (FB007).
     """
 
     kind: str  # "property" | "attribute"

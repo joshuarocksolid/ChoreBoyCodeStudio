@@ -21,16 +21,33 @@ def format_int(value: int) -> str:
     return str(value)
 
 
-def format_real(value: float) -> str:
-    """Designer's text for ``<double>``/``<float>`` and double-valued attributes
-    and children (gradient coordinates, rectf, sizef, pointf, stop positions):
-    fixed notation with 15 fractional digits, ``format(value, ".15f")``, with
-    ``-0`` written as ``0.000000000000000``. The M0.4b corpus confirms this
-    form; if it shows otherwise, only this function changes."""
+def format_double(value: float) -> str:
+    """Designer's text for ``<double>`` and double-valued attributes and children
+    (gradient coordinates, rectf, sizef, pointf, stop positions): fixed notation
+    with 15 fractional digits, ``format(value, ".15f")``. PROVISIONAL until
+    M0.4b pins it, together with how ``-0`` is written (provisionally
+    ``0.000000000000000``). If the corpus shows otherwise, only this changes."""
+    return _format_fixed(value, 15)
+
+
+def format_float(value: float) -> str:
+    """Designer's text for ``<float>``: 8 fractional digits. PROVISIONAL until
+    M0.4b pins it. ``-0`` is written ``0.00000000``."""
+    return _format_fixed(value, 8)
+
+
+def format_real(value: float, *, element: str = "double") -> str:
+    """``format_float`` for element ``float``, ``format_double`` otherwise."""
+    if element == "float":
+        return format_float(value)
+    return format_double(value)
+
+
+def _format_fixed(value: float, digits: int) -> str:
     if value == 0.0:
         # IEEE -0 compares equal to 0. Writer output must not carry the sign.
-        return "0.000000000000000"
-    return format(value, ".15f")
+        return "0." + ("0" * digits)
+    return format(value, ".%df" % digits)
 
 
 def parse_real(text: str) -> float:
@@ -49,13 +66,13 @@ def format_bool(value: bool) -> str:
     return "false"
 
 
-def real_round_trips(value: float) -> bool:
-    """True when ``parse_real(format_real(value)) == value``. A value read from a
+def real_round_trips(value: float, *, element: str = "double") -> bool:
+    """True when ``parse_real(format_real(value, element=element)) == value``. A value read from a
     file that does not round-trip is kept as OpaqueValue (FB005)."""
     if math.isnan(value) or math.isinf(value):
         return False
     try:
-        return parse_real(format_real(value)) == value
+        return parse_real(format_real(value, element=element)) == value
     except ValueError:
         return False
 

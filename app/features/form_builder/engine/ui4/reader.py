@@ -170,8 +170,9 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
     * Whitespace-only text between elements is ignored. Text inside value leaf
       elements (``string``, ``cstring``, ``enum``, ``set``...) is kept exactly.
     * Known elements become typed nodes; unknown child elements become
-      OpaqueNodes anchored after the preceding known group; unknown attributes
-      are kept in input order.
+      OpaqueNodes at ``(group, n)`` (after the n-th typed entry of the
+      write-order group they sit in or follow). Unknown attributes are kept
+      in input order.
     * A value element that does not parse losslessly becomes OpaqueValue.
     * Ids come from ``allocator`` in pre-order.
     O(input). Budget: 25 ms CPU for a 300-widget form (section 12).
@@ -306,6 +307,25 @@ def _coalesce(parts: List[object]) -> Tuple[object, ...]:
     return tuple(merged)
 
 
+class _Cursor:
+    """Write-order position: ``(group, n)`` after ``n`` typed entries of ``group``."""
+
+    def __init__(self) -> None:
+        self.anchor: Tuple[str, int] = ("", 0)
+
+    def here(self) -> Tuple[str, int]:
+        return self.anchor
+
+    def advance(self, group: str) -> None:
+        if self.anchor[0] == group:
+            self.anchor = (group, self.anchor[1] + 1)
+        else:
+            self.anchor = (group, 1)
+
+    def enter(self, group: str, count: int) -> None:
+        self.anchor = (group, count)
+
+
 def _lower_ui(node: _XNode) -> _Built:
     if node.tag != "ui":
         raise UiReadError("FB002", "This file is not a form.", node.line, 0)
@@ -317,14 +337,12 @@ def _lower_ui(node: _XNode) -> _Built:
     if not (isinstance(version, str) and version.split(".")[0] == "4"):
         shown = version if isinstance(version, str) else ""
         built.notes.append(_Note("FB003", 'This form says version "%s". The form builder expects 4.x.' % shown, node.line))
-    anchor = ""
-    wrappers = set()
-    z_unused = None
-    del z_unused
+    cursor = _Cursor()
+    wrappers: set = set()
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
-                built.add_slot("opaque", _text_opaque(child, anchor, node.line))
+                built.add_slot("opaque", _text_opaque(child, cursor.here(), node.line))
             continue
         if isinstance(child, (OpaqueComment, OpaquePI)):
             continue
@@ -332,11 +350,10 @@ def _lower_ui(node: _XNode) -> _Built:
             continue
         group = _ui_group(child.tag)
         if group is None:
-            built.add_slot("opaque", _opaque_built(child, anchor))
+            built.add_slot("opaque", _opaque_built(child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
             continue
-        _place_ui_child(built, child, wrappers)
-        anchor = group
+        _place_ui_child(built, child, wrappers, cursor, group)
     if "root" not in built.slots:
         raise UiReadError("FB002", "This form has no root widget.", node.line, 0)
     built.set_field("present_wrappers", frozenset(wrappers))
@@ -366,47 +383,62 @@ def _ui_group(tag: str) -> Optional[str]:
     }.get(tag)
 
 
-def _place_ui_child(built: _Built, child: _XNode, wrappers: set) -> None:
+def _place_ui_child(
+    built: _Built,
+    child: _XNode,
+    wrappers: set,
+    cursor: _Cursor,
+    group: str,
+) -> None:
     tag = child.tag
     if tag in ("author", "comment", "exportmacro", "pixmapfunction"):
         built.set_field(tag if tag != "pixmapfunction" else "pixmapfunction", _exact_text(child))
+        cursor.advance(group)
         return
     if tag == "class":
         built.set_field("class_name", _exact_text(child))
+        cursor.advance(group)
         return
     if tag == "widget":
         if "root" in built.slots:
-            built.add_slot("opaque", _opaque_built(child, "child:class"))
+            built.add_slot("opaque", _opaque_built(child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept an extra root widget.", child.line))
             return
         built.add_slot("root", _lower_widget(child))
+        cursor.advance("root")
         return
     if tag == "layoutdefault":
         built.set_field("layoutdefault", _layout_default(child))
+        cursor.advance(group)
         return
     if tag == "layoutfunction":
         built.set_field("layoutfunction", _layout_function(child))
+        cursor.advance(group)
         return
     if tag == "tabstops":
         names = tuple(_exact_text(item) for item in _elements(child) if item.tag == "tabstop")
         built.set_field("tabstops", names)
+        cursor.advance(group)
         return
     if tag == "images":
         built.set_field("images", _to_opaque(child))
+        cursor.advance(group)
         return
     if tag == "designerdata":
         built.set_field("designerdata", _to_opaque(child))
+        cursor.advance(group)
         return
     if tag == "slots":
         built.set_field("form_slots", _slots_decl(child))
+        cursor.advance(group)
         return
     if tag in ("customwidgets", "includes", "resources", "connections", "buttongroups"):
-        wrappers.add(tag)
-        _lower_wrapper(built, child, tag, wrappers)
+        count = _lower_wrapper(built, child, tag, wrappers)
+        cursor.enter(group, count)
         return
 
 
-def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> None:
+def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
     slot = {
         "customwidgets": "customwidgets",
         "includes": "includes",
@@ -416,16 +448,20 @@ def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> None
     }[tag]
     if node.attrs:
         wrappers.discard(tag)
-        built.add_slot("opaque", _opaque_built(node, slot))
+        built.add_slot("opaque", _opaque_built(node, (slot, 0)))
         built.notes.append(_Note("FB006", "Kept attributes on <%s>." % tag, node.line))
-        return
+        return 0
+    wrappers.add(tag)
+    typed = 0
     for child in _elements(node):
         lowered = _lower_known(child, tag)
         if lowered is None:
-            built.add_slot("opaque", _opaque_built(child, slot))
+            built.add_slot("opaque", _opaque_built(child, (slot, typed)))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
         else:
             built.add_slot(slot, lowered)
+            typed += 1
+    return typed
 
 
 def _lower_known(node: _XNode, parent_tag: str) -> Optional[_Built]:
@@ -452,40 +488,42 @@ def _lower_box(node: _XNode, kind: str) -> _Built:
     built.fields = fields
     built.extra_attrs = extra
     _ensure_required(built)
-    anchor = ""
+    cursor = _Cursor()
     properties: List[Tuple[PropertyEntry, _XNode, List[_Note]]] = []
     attributes: List[Tuple[PropertyEntry, _XNode, List[_Note]]] = []
+    prop_stream: List[Tuple[str, object]] = []
+    attr_stream: List[Tuple[str, object]] = []
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
-                built.add_slot("opaque", _text_opaque(child, anchor, node.line))
+                _hold_gap(built, cursor, prop_stream, attr_stream, ("gap-text", (child, node.line)))
             continue
         if not isinstance(child, _XNode):
             continue
         group = _box_group(kind, child.tag, built)
         if group == "layout" and "layout" in built.slots:
-            built.add_slot("opaque", _opaque_built(child, "layout"))
+            built.add_slot("opaque", _opaque_built(child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept an extra layout.", child.line))
-            anchor = "layout"
             continue
         if group == "properties":
             entry, notes = _parse_property(child, "property")
             properties.append((entry, child, notes))
-            anchor = "properties"
+            prop_stream.append(("entry", len(properties) - 1))
+            cursor.enter("properties", 0)
             continue
         if group == "attributes":
             entry, notes = _parse_property(child, "attribute")
             attributes.append((entry, child, notes))
-            anchor = "attributes"
+            attr_stream.append(("entry", len(attributes) - 1))
+            cursor.enter("attributes", 0)
             continue
         if group is None:
-            built.add_slot("opaque", _opaque_built(child, anchor))
-            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
+            _hold_gap(built, cursor, prop_stream, attr_stream, ("gap-node", child))
             continue
         _place_box_child(built, child, group)
-        anchor = group
-    _collapse_entries(built, properties, "property", "properties")
-    _collapse_entries(built, attributes, "attribute", "attributes")
+        cursor.advance(group)
+    _realize_entries(built, properties, prop_stream, "properties")
+    _realize_entries(built, attributes, attr_stream, "attributes")
     if kind == "header" and not built.field_map().get("axis"):
         built.set_field("axis", "row")
     _order_fields(built)
@@ -577,48 +615,48 @@ def _place_box_child(built: _Built, child: _XNode, group: str) -> None:
 
 def _lower_custom(node: _XNode) -> _Built:
     built = _Built(kind="customwidget", line=node.line)
-    anchor = ""
+    cursor = _Cursor()
     for child in _elements(node):
         tag = child.tag
         if tag == "class":
             built.set_field("class_name", _exact_text(child))
-            anchor = "child:class"
+            cursor.advance("child:class")
         elif tag == "extends":
             built.set_field("extends", _exact_text(child))
-            anchor = "child:extends"
+            cursor.advance("child:extends")
         elif tag == "header":
             location = dict(child.attrs).get("location")
             built.set_field("header", HeaderDecl(_exact_text(child), location))
-            anchor = "child:header"
+            cursor.advance("child:header")
         elif tag == "sizehint":
             width = _child_int(child, "width")
             height = _child_int(child, "height")
             if width is None or height is None:
-                built.add_slot("opaque", _opaque_built(child, anchor))
+                built.add_slot("opaque", _opaque_built(child, cursor.here()))
             else:
                 built.set_field("sizehint", SizeValue(width, height))
-                anchor = "child:sizehint"
+                cursor.advance("child:sizehint")
         elif tag == "addpagemethod":
             built.set_field("addpagemethod", _exact_text(child))
-            anchor = "child:addpagemethod"
+            cursor.advance("child:addpagemethod")
         elif tag == "container":
             number = _parse_int(_exact_text(child), _INT32)
             if number is None:
-                built.add_slot("opaque", _opaque_built(child, anchor))
+                built.add_slot("opaque", _opaque_built(child, cursor.here()))
             else:
                 built.set_field("container", number)
-                anchor = "child:container"
+                cursor.advance("child:container")
         elif tag == "pixmap":
             built.set_field("pixmap", _exact_text(child))
-            anchor = "child:pixmap"
+            cursor.advance("child:pixmap")
         elif tag == "slots":
             built.set_field("slots", _slots_decl(child))
-            anchor = "child:slots"
+            cursor.advance("child:slots")
         elif tag == "propertyspecifications":
             built.set_field("propertyspecifications", _to_opaque(child))
-            anchor = "child:propertyspecifications"
+            cursor.advance("child:propertyspecifications")
         else:
-            built.add_slot("opaque", _opaque_built(child, anchor))
+            built.add_slot("opaque", _opaque_built(child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % tag, child.line))
     if "class_name" not in built.field_map():
         built.set_field("class_name", "")
@@ -653,9 +691,11 @@ def _lower_resource(node: _XNode) -> _Built:
 
 def _lower_connection(node: _XNode) -> _Built:
     built = _Built(kind="connection", line=node.line)
+    cursor = _Cursor()
     for child in _elements(node):
         if child.tag in ("sender", "signal", "receiver", "slot"):
             built.set_field(child.tag, _exact_text(child))
+            cursor.advance("child:" + child.tag)
         elif child.tag == "hints":
             hints = []
             for hint in _elements(child):
@@ -666,8 +706,10 @@ def _lower_connection(node: _XNode) -> _Built:
                 y_value = _child_int(hint, "y")
                 hints.append(ConnectionHint(hint_type, 0 if x_value is None else x_value, 0 if y_value is None else y_value))
             built.set_field("hints", tuple(hints))
+            cursor.advance("child:hints")
         else:
-            built.add_slot("opaque", _opaque_built(child, "child:slot"))
+            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
     for name in ("sender", "signal", "receiver", "slot"):
         if name not in built.field_map():
             built.set_field(name, "")
@@ -706,52 +748,79 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
     return PropertyEntry(kind=kind, name=name, value=value, stdset=stdset, extra_attrs=tuple(extra)), notes
 
 
-def _collapse_entries(
+def _hold_gap(
+    built: _Built,
+    cursor: _Cursor,
+    prop_stream: List[Tuple[str, object]],
+    attr_stream: List[Tuple[str, object]],
+    item: Tuple[str, object],
+) -> None:
+    group = cursor.anchor[0]
+    if group == "properties":
+        prop_stream.append(item)
+        return
+    if group == "attributes":
+        attr_stream.append(item)
+        return
+    kind, payload = item
+    if kind == "gap-text" and isinstance(payload, tuple) and len(payload) == 2:
+        text, line = payload
+        if isinstance(text, str) and isinstance(line, int):
+            built.add_slot("opaque", _text_opaque(text, cursor.here(), line))
+        return
+    if isinstance(payload, _XNode):
+        built.add_slot("opaque", _opaque_built(payload, cursor.here()))
+        built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
+
+
+def _realize_entries(
     built: _Built,
     entries: List[Tuple[PropertyEntry, _XNode, List[_Note]]],
-    kind: str,
+    stream: List[Tuple[str, object]],
     group: str,
 ) -> None:
-    del kind
-    last: Dict[str, Tuple[PropertyEntry, List[_Note], _XNode]] = {}
-    order: List[str] = []
-    earlier: List[_XNode] = []
-    for entry, source, notes in entries:
-        if entry.name in last:
-            earlier.append(last[entry.name][2])
-            built.notes.append(
-                _Note(
-                    "FB007",
-                    'Property "%s" is set more than once. The last value is the one that is used.' % entry.name,
-                    source.line,
-                    entry.name,
+    """Last copy of each name is typed. Earlier copies and gaps keep input order.
+
+    ``n`` counts surviving typed entries before the opaque, so an earlier
+    duplicate stays earlier than the winner (CONTRACTS.md section 2.3).
+    """
+    last_index: Dict[str, int] = {}
+    for index, (entry, _source, _notes) in enumerate(entries):
+        last_index[entry.name] = index
+    typed: List[PropertyEntry] = []
+    typed_so_far = 0
+    for kind, payload in stream:
+        if kind == "entry":
+            if not isinstance(payload, int):
+                continue
+            entry, source, notes = entries[payload]
+            if last_index[entry.name] != payload:
+                built.add_slot("opaque", _opaque_built(source, (group, typed_so_far)))
+                built.notes.append(
+                    _Note(
+                        "FB007",
+                        'Property "%s" is set more than once. The last value is the one that is used.' % entry.name,
+                        source.line,
+                        entry.name,
+                    )
                 )
-            )
-            if entry.name in order:
-                order.remove(entry.name)
-        last[entry.name] = (entry, notes, source)
-        order.append(entry.name)
-    typed = []
-    for name in order:
-        entry, notes, _source = last[name]
-        typed.append(entry)
-        built.notes.extend(notes)
+                continue
+            typed.append(entry)
+            built.notes.extend(notes)
+            typed_so_far += 1
+            continue
+        if kind == "gap-text" and isinstance(payload, tuple) and len(payload) == 2:
+            text, line = payload
+            if isinstance(text, str) and isinstance(line, int):
+                built.add_slot("opaque", _text_opaque(text, (group, typed_so_far), line))
+            continue
+        if kind == "gap-node" and isinstance(payload, _XNode):
+            built.add_slot("opaque", _opaque_built(payload, (group, typed_so_far)))
+            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
     if group == "properties":
         built.properties = typed
     else:
         built.attributes = typed
-    before = _anchor_before(built.kind, group)
-    for source in earlier:
-        built.add_slot("opaque", _opaque_built(source, before))
-
-
-def _anchor_before(kind: str, group: str) -> str:
-    previous = ""
-    for item in SCHEMA[kind].write_order:
-        if item == group:
-            return previous
-        previous = item
-    return ""
 
 
 def _parse_value(node: _XNode) -> Optional[Value]:
@@ -773,7 +842,7 @@ def _parse_value(node: _XNode) -> Optional[Value]:
         cls = VALUE_CLASSES[tag]
         return cls(number)  # type: ignore[call-arg, no-any-return]
     if tag in ("double", "float"):
-        value = _lossless_real(_exact_text(node))
+        value = _lossless_real(_exact_text(node), tag)
         if value is None:
             return None
         if tag == "double":
@@ -1100,14 +1169,14 @@ def _strip_ids(spec: NodeSpec) -> NodeSpec:
     )
 
 
-def _opaque_built(node: _XNode, anchor: str) -> _Built:
+def _opaque_built(node: _XNode, anchor: Tuple[str, int]) -> _Built:
     built = _Built(kind="opaque", line=node.line)
     built.set_field("element", _to_opaque(node))
     built.set_field("anchor", anchor)
     return built
 
 
-def _text_opaque(text: str, anchor: str, line: int) -> _Built:
+def _text_opaque(text: str, anchor: Tuple[str, int], line: int) -> _Built:
     built = _Built(kind="opaque", line=line)
     built.set_field("element", OpaqueElement("", (), (text,)))
     built.set_field("anchor", anchor)
@@ -1184,12 +1253,12 @@ def _parse_int(text: str, limits: Tuple[int, int]) -> Optional[int]:
     return value
 
 
-def _lossless_real(text: str) -> Optional[float]:
+def _lossless_real(text: str, element: str = "double") -> Optional[float]:
     try:
         value = parse_real(text)
     except ValueError:
         return None
-    if not real_round_trips(value):
+    if not real_round_trips(value, element=element):
         return None
     if value == 0.0 and not _is_zero_literal(text.strip()):
         return None

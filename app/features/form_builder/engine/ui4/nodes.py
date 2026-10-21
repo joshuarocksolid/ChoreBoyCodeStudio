@@ -349,9 +349,19 @@ class OpaqueNode(Node):
         raise TypeError("opaque node is missing its element")
 
     @property
-    def anchor(self) -> str:
-        """The write-order group this element followed in the input ("" = first)."""
-        return _text_field(self, "anchor")
+    def anchor(self) -> Tuple[str, int]:
+        """``(group, n)``: written after the n-th typed entry of write-order group
+        ``group`` (an earlier duplicate property stays earlier). ``("", 0)`` = first."""
+        value = self.field("anchor")
+        if (
+            isinstance(value, tuple)
+            and len(value) == 2
+            and isinstance(value[0], str)
+            and isinstance(value[1], int)
+            and not isinstance(value[1], bool)
+        ):
+            return (value[0], value[1])
+        raise TypeError("opaque anchor must be (group, n)")
 
 
 _KIND_CLASS = {

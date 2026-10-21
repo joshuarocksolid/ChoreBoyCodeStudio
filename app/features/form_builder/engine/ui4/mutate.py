@@ -15,6 +15,7 @@ changing anything, so a failed primitive leaves the document untouched.
 
 from __future__ import annotations
 
+from dataclasses import fields, is_dataclass
 from typing import List, Optional, Tuple
 
 from app.features.form_builder.engine.commands.ops import (
@@ -30,6 +31,7 @@ from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.schema import SCHEMA, field_spec, slot_spec
 from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
+from app.features.form_builder.engine.ui4.writer import require_xml_text
 
 
 class OpError(ValueError):
@@ -121,6 +123,8 @@ def _move(doc: UiDocument, op: MoveNodeOp) -> Op:
 
 
 def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
+    if op.entry is not None:
+        _reject_illegal_text(op.entry)
     owner = _require(doc, op.owner)
     if op.kind not in ("property", "attribute"):
         raise OpError("kind must be property or attribute")
@@ -153,6 +157,7 @@ def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
 
 
 def _set_field(doc: UiDocument, op: SetFieldOp) -> Op:
+    _reject_illegal_text(op.value)
     node = _require(doc, op.node)
     try:
         spec = field_spec(node.kind, op.field)
@@ -194,11 +199,39 @@ def _require_slot(kind: str, slot: str, child_kind: str) -> None:
 
 
 def _require_fresh_ids(doc: UiDocument, spec: NodeSpec) -> None:
+    """Every id in ``spec`` is set and not present.
+
+    Freshness (each id came from ``ctx.alloc()`` in this entry) is checked by
+    ``ctx.do`` on forward application only, never by mutate, undo or redo.
+    """
     for node_id in spec.ids():
         if doc.contains(node_id):
             raise OpError("id %s is already in use" % (int(node_id),))
     if any(item is None for item in _raw_ids(spec)):
         raise OpError("inserted spec has an unset id")
+
+
+def _reject_illegal_text(value: object) -> None:
+    """``SetProperty`` / ``SetField`` reject text outside the XML 1.0 Char range.
+
+    ``CommandRejected`` arrives with the command log (M1.2). Until then the
+    ui4 boundary raises ``OpError``.
+    """
+    if value is None or isinstance(value, (int, float, bool)):
+        return
+    if isinstance(value, str):
+        try:
+            require_xml_text(value)
+        except ValueError as exc:
+            raise OpError(str(exc)) from exc
+        return
+    if isinstance(value, (list, tuple)):
+        for item in value:
+            _reject_illegal_text(item)
+        return
+    if is_dataclass(value) and not isinstance(value, type):
+        for item in fields(value):
+            _reject_illegal_text(getattr(value, item.name))
 
 
 def _raw_ids(spec: NodeSpec) -> Tuple[Optional[NodeId], ...]:

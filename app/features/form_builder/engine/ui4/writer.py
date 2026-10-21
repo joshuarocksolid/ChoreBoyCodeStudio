@@ -4,13 +4,19 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, IdAllocator, NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import Node, OpaqueNode
-from app.features.form_builder.engine.ui4.numfmt import format_bool, format_int, format_real
+from app.features.form_builder.engine.ui4.numfmt import (
+    format_bool,
+    format_double,
+    format_float,
+    format_int,
+)
 from app.features.form_builder.engine.ui4.opaque import OpaqueComment, OpaqueElement, OpaquePI
 from app.features.form_builder.engine.ui4.schema import (
     SCHEMA,
@@ -87,7 +93,11 @@ class WriteResult:
 
 
 def write_ui(doc: UiDocument) -> WriteResult:
-    """Serialize. A pure function of the document's content (ids excluded):
+    """Serialize per CONTRACTS.md 8.2. Escaping: ``& < > "`` in text and
+    attributes; tab/LF/CR as character references in attributes; CR in text as
+    ``&#13;``; non-ASCII as raw UTF-8. No trailing whitespace outside text
+    content. Empty-element forms and real precision follow the M0.4b-pinned
+    tables (provisional until then). A pure function of the document's content (ids excluded):
     no clock, locale, environment, hash seed or set iteration. O(form).
     Budget: 10 ms CPU for a 300-widget form."""
     writer = _Writer()
@@ -162,21 +172,16 @@ class _Writer:
         attrs = _attrs(node)
         self.line_map[node.id] = self._next_line()
         opaque_nodes = node.opaque()
-        if not _has_body(node) and not opaque_nodes:
+        buckets = _buckets(opaque_nodes)
+        if not _has_body(node) and not buckets:
             self._empty(indent, tag, attrs)
             return
         self._open(indent, tag, attrs)
-        anchors = _opaque_by_anchor_list(opaque_nodes)
-        if opaque_nodes:
-            self._flush_opaque(anchors, "", indent + 1)
+        self._flush(buckets, ("", 0), indent + 1)
         for group in spec.write_order:
-            self._group(node, group, indent + 1)
-            if opaque_nodes:
-                self._flush_opaque(anchors, group, indent + 1)
-        if opaque_nodes:
-            for _anchor, items in anchors.items():
-                for item in items:
-                    self.node(item, indent + 1)
+            self._group(node, group, indent + 1, buckets)
+        for key in list(buckets):
+            self._flush(buckets, key, indent + 1)
         self._close(indent, tag)
 
     def opaque(self, element: OpaqueElement, indent: int) -> None:
@@ -226,8 +231,11 @@ class _Writer:
         if isinstance(item, (NumberValue, UIntValue, LongLongValue, ULongLongValue, CursorValue)):
             self._text_element(item.ELEMENT, format_int(item.value), indent)
             return
-        if isinstance(item, (DoubleValue, FloatValue)):
-            self._text_element(item.ELEMENT, format_real(item.value), indent)
+        if isinstance(item, DoubleValue):
+            self._text_element("double", format_double(item.value), indent)
+            return
+        if isinstance(item, FloatValue):
+            self._text_element("float", format_float(item.value), indent)
             return
         if isinstance(item, CursorShapeValue):
             self._text_element("cursorshape", item.name, indent)
@@ -320,17 +328,42 @@ class _Writer:
             return
         raise TypeError("cannot write value %s" % (type(item).__name__,))
 
-    def _group(self, node: Node, group: str, indent: int) -> None:
+    def _group(
+        self,
+        node: Node,
+        group: str,
+        indent: int,
+        buckets: Dict[Tuple[str, int], List[OpaqueNode]],
+    ) -> None:
         if group == "properties":
-            for entry in node.properties():
-                self._property("property", entry, indent)
+            self._sequence(
+                group,
+                node.properties(),
+                lambda entry: self._property("property", entry, indent),
+                buckets,
+                indent,
+            )
             return
         if group == "attributes":
-            for entry in node.attributes():
-                self._property("attribute", entry, indent)
+            self._sequence(
+                group,
+                node.attributes(),
+                lambda entry: self._property("attribute", entry, indent),
+                buckets,
+                indent,
+            )
             return
         if group.startswith("child:"):
-            self._child_field(node, group[len("child:"):], indent)
+            tag = group[len("child:"):]
+            if tag == "zorder":
+                self._zorder(node, group, indent, buckets)
+                return
+            self._flush(buckets, (group, 0), indent)
+            wrote = self._child_field(node, tag, indent)
+            typed = 1 if wrote else 0
+            if wrote:
+                self._flush(buckets, (group, 1), indent)
+            self._drain_group(buckets, group, typed, indent)
             return
         slot = _slot(node.kind, group)
         if slot is None:
@@ -339,49 +372,86 @@ class _Writer:
         if slot.wrapper:
             present = _wrappers(node)
             if not children and group not in present:
+                self._drain_all(buckets, group, indent)
                 return
-            if not children:
+            if not children and not _group_pending(buckets, group):
                 self._empty(indent, slot.wrapper, "")
                 return
             self._open(indent, slot.wrapper, "")
-            for child in children:
+            self._flush(buckets, (group, 0), indent + 1)
+            for index, child in enumerate(children, start=1):
                 self.node(child, indent + 1)
+                self._flush(buckets, (group, index), indent + 1)
+            self._drain_group(buckets, group, len(children), indent + 1)
             self._close(indent, slot.wrapper)
             return
-        for child in children:
+        self._flush(buckets, (group, 0), indent)
+        for index, child in enumerate(children, start=1):
             self.node(child, indent)
+            self._flush(buckets, (group, index), indent)
+        self._drain_group(buckets, group, len(children), indent)
 
-    def _child_field(self, node: Node, tag: str, indent: int) -> None:
+    def _sequence(
+        self,
+        group: str,
+        entries: Sequence[PropertyEntry],
+        write: Callable[[PropertyEntry], None],
+        buckets: Dict[Tuple[str, int], List[OpaqueNode]],
+        indent: int,
+    ) -> None:
+        self._flush(buckets, (group, 0), indent)
+        for index, entry in enumerate(entries, start=1):
+            write(entry)
+            self._flush(buckets, (group, index), indent)
+        self._drain_group(buckets, group, len(entries), indent)
+
+    def _zorder(
+        self,
+        node: Node,
+        group: str,
+        indent: int,
+        buckets: Dict[Tuple[str, int], List[OpaqueNode]],
+    ) -> None:
+        value = node.field("zorder")
+        names = value if isinstance(value, tuple) else ()
+        self._flush(buckets, (group, 0), indent)
+        written = 0
+        for name in names:
+            if not isinstance(name, str):
+                continue
+            written += 1
+            self._text_element("zorder", name, indent)
+            self._flush(buckets, (group, written), indent)
+        self._drain_group(buckets, group, written, indent)
+
+    def _child_field(self, node: Node, tag: str, indent: int) -> bool:
         field_name = _child_field_name(node.kind, tag)
         if field_name is None:
-            return
+            return False
         value = node.field(field_name)
         if value is None:
-            return
+            return False
         if isinstance(value, str):
             self._text_element(tag, value, indent)
-            return
+            return True
         if isinstance(value, int) and not isinstance(value, bool):
             self._text_element(tag, format_int(value), indent)
-            return
+            return True
         if isinstance(value, tuple) and tag == "zorder":
-            for name in value:
-                if isinstance(name, str):
-                    self._text_element("zorder", name, indent)
-            return
+            return False
         if isinstance(value, tuple) and tag == "tabstops":
             self._open(indent, "tabstops", "")
             for name in value:
                 if isinstance(name, str):
                     self._text_element("tabstop", name, indent + 1)
             self._close(indent, "tabstops")
-            return
+            return True
         if isinstance(value, LayoutDefault):
             self._empty(indent, "layoutdefault", _optional_int_attrs((("spacing", value.spacing), ("margin", value.margin))))
-            return
+            return True
         if isinstance(value, LayoutFunction):
             self._empty(indent, "layoutfunction", _optional_str_attrs((("spacing", value.spacing), ("margin", value.margin))))
-            return
+            return True
         if isinstance(value, SlotsDecl):
             self._open(indent, "slots", "")
             for signature in value.signals:
@@ -389,11 +459,11 @@ class _Writer:
             for signature in value.slots:
                 self._text_element("slot", signature, indent + 1)
             self._close(indent, "slots")
-            return
+            return True
         if isinstance(value, HeaderDecl):
             location = "" if value.location is None else ' location="%s"' % _esc_attr(value.location)
             self._text_element("header", value.text, indent, location)
-            return
+            return True
         if isinstance(value, tuple) and tag == "hints":
             self._open(indent, "hints", "")
             for hint in value:
@@ -403,16 +473,17 @@ class _Writer:
                     self._text_element("y", format_int(hint.y), indent + 2)
                     self._close(indent + 1, "hint")
             self._close(indent, "hints")
-            return
+            return True
         if tag == "sizehint" and isinstance(value, SizeValue):
             self._open(indent, "sizehint", "")
             self._text_element("width", format_int(value.width), indent + 1)
             self._text_element("height", format_int(value.height), indent + 1)
             self._close(indent, "sizehint")
-            return
+            return True
         if isinstance(value, OpaqueElement):
             self.opaque(value, indent)
-            return
+            return True
+        return False
 
     def _property(self, tag: str, entry: PropertyEntry, indent: int) -> None:
         attrs = ' name="%s"' % _esc_attr(entry.name)
@@ -432,10 +503,13 @@ class _Writer:
     def _real_box(self, tag: str, pairs: Sequence[Tuple[str, float]], indent: int) -> None:
         self._open(indent, tag, "")
         for name, value in pairs:
-            self._text_element(name, format_real(value), indent + 1)
+            self._text_element(name, format_double(value), indent + 1)
         self._close(indent, tag)
 
     def _text_element(self, tag: str, text: str, indent: int, attrs: str = "") -> None:
+        if text == "" and _empty_form(tag) == "self":
+            self._empty(indent, tag, attrs)
+            return
         escaped = _esc_text(text)
         prefix = " " * indent
         if "\n" not in escaped:
@@ -469,9 +543,34 @@ class _Writer:
         chunks.append("</%s>" % element.tag)
         self.lines.extend("".join(chunks).split("\n"))
 
-    def _flush_opaque(self, anchors: Dict[str, List[OpaqueNode]], anchor: str, indent: int) -> None:
-        for item in anchors.pop(anchor, ()):
+    def _flush(
+        self,
+        buckets: Dict[Tuple[str, int], List[OpaqueNode]],
+        key: Tuple[str, int],
+        indent: int,
+    ) -> None:
+        for item in buckets.pop(key, ()):
             self.node(item, indent)
+
+    def _drain_group(
+        self,
+        buckets: Dict[Tuple[str, int], List[OpaqueNode]],
+        group: str,
+        typed: int,
+        indent: int,
+    ) -> None:
+        extra = [key for key in buckets if key[0] == group and key[1] > typed]
+        for key in extra:
+            self._flush(buckets, key, indent)
+
+    def _drain_all(
+        self,
+        buckets: Dict[Tuple[str, int], List[OpaqueNode]],
+        group: str,
+        indent: int,
+    ) -> None:
+        for key in [key for key in buckets if key[0] == group]:
+            self._flush(buckets, key, indent)
 
     def _open(self, indent: int, tag: str, attrs: str) -> None:
         self.lines.append("%s<%s%s>" % (" " * indent, tag, attrs))
@@ -566,15 +665,15 @@ def _pending_opaque(node: Node) -> bool:
     return bool(node.opaque())
 
 
-def _opaque_by_anchor(node: Node) -> Dict[str, List[OpaqueNode]]:
-    return _opaque_by_anchor_list(node.opaque())
-
-
-def _opaque_by_anchor_list(items: Sequence[OpaqueNode]) -> Dict[str, List[OpaqueNode]]:
-    grouped: Dict[str, List[OpaqueNode]] = {}
+def _buckets(items: Sequence[OpaqueNode]) -> Dict[Tuple[str, int], List[OpaqueNode]]:
+    grouped: Dict[Tuple[str, int], List[OpaqueNode]] = {}
     for item in items:
         grouped.setdefault(item.anchor, []).append(item)
     return grouped
+
+
+def _group_pending(buckets: Dict[Tuple[str, int], List[OpaqueNode]], group: str) -> bool:
+    return any(key[0] == group for key in buckets)
 
 
 def _string_attrs(item: StringValue | StringListValue) -> str:
@@ -636,18 +735,43 @@ def _inline_opaque(element: OpaqueElement) -> str:
     return "".join(parts)
 
 
+# XML 1.0 Char: #x9 | #xA | #xD | [#x20-#xD7FF] | [#xE000-#xFFFD] | [#x10000-#x10FFFF]
+_ILLEGAL_XML = re.compile("[^\t\n\r\u0020-\uD7FF\uE000-\uFFFD\U00010000-\U0010FFFF]")
+
+
+def require_xml_text(text: str) -> None:
+    """Raise ValueError when ``text`` contains a character XML 1.0 cannot store."""
+    if _ILLEGAL_XML.search(text):
+        raise ValueError("text contains a character XML 1.0 cannot store")
+
+
+def _empty_form(tag: str) -> str:
+    """Provisional until M0.4b. ``self`` is ``<x/>``, ``pair`` is ``<x></x>``.
+
+    Expat cannot tell the two apart. ``string`` is verified against Designer
+    (``<string/>`` and ``<string notr="true"/>``). Other empty text leaves stay
+    paired, which is what ``writeTextElement`` emits. Structural elements with
+    no content use ``_empty`` (self-close) and are recorded in the same table
+    once M0.4b names each one.
+    """
+    if tag == "string":
+        return "self"
+    return "pair"
+
+
 def _esc_text(text: str) -> str:
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    require_xml_text(text)
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("\r", "&#13;")
+    )
 
 
 def _esc_attr(text: str) -> str:
-    return (
-        _esc_text(text)
-        .replace('"', "&quot;")
-        .replace("\t", "&#9;")
-        .replace("\n", "&#10;")
-        .replace("\r", "&#13;")
-    )
+    return _esc_text(text).replace("\t", "&#9;").replace("\n", "&#10;")
 
 
 def _fragment_spec(fragment: Fragment, allocator: IdAllocator) -> NodeSpec:

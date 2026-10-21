@@ -7,7 +7,7 @@ import pytest
 
 from app.features.form_builder.engine.commands.ops import SetPropertyOp
 from app.features.form_builder.engine.ids import IdAllocator
-from app.features.form_builder.engine.ui4.mutate import apply
+from app.features.form_builder.engine.ui4.mutate import OpError, apply
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.spec import PropertyEntry
 from app.features.form_builder.engine.ui4.values import BoolValue, OpaqueValue, StringValue
@@ -168,6 +168,112 @@ def test_duplicate_property_keeps_the_last_value() -> None:
     saved = write_ui(result.document).text
     assert saved.index("First") < saved.index("Last")
     assert write_ui(_load(saved).document).text == saved
+
+
+def test_earlier_duplicate_stays_at_its_position() -> None:
+    # A1, B, A2 -> write A1, B, A2. B, A1, A2 -> write B, A1, A2.
+    first = _saved(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle"><string>A1</string></property>
+  <property name="toolTip"><string>B</string></property>
+  <property name="windowTitle"><string>A2</string></property>
+ </widget>
+</ui>
+"""
+    )
+    assert first.index(">A1<") < first.index(">B<") < first.index(">A2<")
+    second = _saved(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="toolTip"><string>B</string></property>
+  <property name="windowTitle"><string>A1</string></property>
+  <property name="windowTitle"><string>A2</string></property>
+ </widget>
+</ui>
+"""
+    )
+    assert second.index(">B<") < second.index(">A1<") < second.index(">A2<")
+    between = _saved(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle"><string>A1</string></property>
+  <extra/>
+  <property name="windowTitle"><string>A2</string></property>
+ </widget>
+</ui>
+"""
+    )
+    assert between.index(">A1<") < between.index("<extra") < between.index(">A2<")
+
+
+def test_empty_string_matches_designer_self_close() -> None:
+    saved = _saved(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle"><string></string></property>
+  <property name="toolTip"><string notr="true"></string></property>
+ </widget>
+</ui>
+"""
+    )
+    assert "<string/>" in saved
+    assert '<string notr="true"/>' in saved
+    assert "<string></string>" not in saved
+
+
+def test_text_escapes_quote_and_cr_and_keeps_utf8() -> None:
+    saved = _saved(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle"><string comment="a&#9;b&#10;c&#13;d">say &#13; "hi" café</string></property>
+ </widget>
+</ui>
+"""
+    )
+    assert "say &#13; &quot;hi&quot; café" in saved
+    assert "comment=\"a&#9;b&#10;c&#13;d\"" in saved
+    assert "&#233;" not in saved
+    assert write_ui(_load(saved).document).text == saved
+
+
+def test_float_uses_eight_decimals_and_double_uses_fifteen() -> None:
+    saved = _saved(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="a"><float>1.5</float></property>
+  <property name="b"><double>1.5</double></property>
+ </widget>
+</ui>
+"""
+    )
+    assert "<float>1.50000000</float>" in saved
+    assert "<double>1.500000000000000</double>" in saved
+
+
+def test_illegal_xml_char_is_rejected() -> None:
+    document = _load(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><widget class="QWidget" name="Form"/></ui>
+"""
+    ).document
+    with pytest.raises(OpError):
+        apply(
+            document,
+            SetPropertyOp(
+                owner=document.root.id,
+                kind="property",
+                name="windowTitle",
+                entry=PropertyEntry("property", "windowTitle", StringValue("a\x00b")),
+                index=0,
+            ),
+        )
 
 
 def test_unknown_value_and_element_are_kept() -> None:
