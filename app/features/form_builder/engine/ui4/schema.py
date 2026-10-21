@@ -16,6 +16,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, Literal, Optional, Tuple
 
+from app.features.form_builder.engine.ui4.opaque import OpaqueElement
+from app.features.form_builder.engine.ui4.values import SizeValue
+
 NodeKind = Literal[
     "ui",            # the document; id DOCUMENT_ID
     "widget",
@@ -425,3 +428,91 @@ def field_spec(kind: str, name: str) -> FieldSpec:
         if item.name == name:
             return item
     raise KeyError(name)
+
+
+_STR = (str,)
+_INT = (int,)
+_TEXT = (str, OpaqueElement)
+
+#: Declared Python types for invariant 6. ``None`` means the field is unset.
+FIELD_TYPES: Dict[Tuple[str, str], Tuple[type, ...]] = {}
+for _kind, _names in (
+    ("ui", ("version", "language", "displayname", "idbasedtr", "label", "connectslotsbyname", "stdsetdef", "stdSetDef")),
+    ("widget", ("class_name", "object_name", "native")),
+    ("layout", ("class_name", "object_name", "stretch", "rowstretch", "columnstretch", "rowminimumheight", "columnminimumwidth")),
+    ("layoutitem", ("alignment",)),
+    ("spacer", ("name",)),
+    ("action", ("name", "menu")),
+    ("actiongroup", ("name",)),
+    ("actionref", ("name",)),
+    ("header", ("axis",)),
+    ("buttongroup", ("name",)),
+    ("include", ("location", "impldecl", "text")),
+    ("resource", ("location",)),
+):
+    for _name in _names:
+        FIELD_TYPES[(_kind, _name)] = _STR
+for _kind, _names in (
+    ("layoutitem", ("row", "column", "rowspan", "colspan")),
+    ("item", ("row", "column")),
+):
+    for _name in _names:
+        FIELD_TYPES[(_kind, _name)] = _INT
+for _name in ("author", "comment", "exportmacro", "class_name", "pixmapfunction"):
+    FIELD_TYPES[("ui", _name)] = _TEXT
+for _name in ("class_name", "extends", "addpagemethod", "pixmap"):
+    FIELD_TYPES[("customwidget", _name)] = _TEXT
+for _name in ("sender", "signal", "receiver", "slot"):
+    FIELD_TYPES[("connection", _name)] = _TEXT
+FIELD_TYPES[("ui", "layoutdefault")] = (LayoutDefault, OpaqueElement)
+FIELD_TYPES[("ui", "layoutfunction")] = (LayoutFunction, OpaqueElement)
+FIELD_TYPES[("ui", "tabstops")] = (tuple, OpaqueElement)
+FIELD_TYPES[("ui", "form_slots")] = (SlotsDecl, OpaqueElement)
+FIELD_TYPES[("ui", "designerdata")] = (OpaqueElement,)
+FIELD_TYPES[("ui", "images")] = (OpaqueElement,)
+FIELD_TYPES[("ui", "present_wrappers")] = (frozenset,)
+FIELD_TYPES[("widget", "zorder")] = (tuple,)
+FIELD_TYPES[("connection", "hints")] = (tuple, OpaqueElement)
+FIELD_TYPES[("customwidget", "header")] = (HeaderDecl, OpaqueElement)
+FIELD_TYPES[("customwidget", "sizehint")] = (SizeValue, OpaqueElement)
+FIELD_TYPES[("customwidget", "container")] = (int, OpaqueElement)
+FIELD_TYPES[("customwidget", "slots")] = (SlotsDecl, OpaqueElement)
+FIELD_TYPES[("customwidget", "propertyspecifications")] = (OpaqueElement,)
+FIELD_TYPES[("opaque", "element")] = (OpaqueElement,)
+FIELD_TYPES[("opaque", "anchor")] = (tuple,)
+
+_MEMBERS: Dict[Tuple[str, str], Tuple[type, ...]] = {
+    ("ui", "tabstops"): (str,),
+    ("ui", "present_wrappers"): (str,),
+    ("widget", "zorder"): (str,),
+    ("connection", "hints"): (ConnectionHint,),
+}
+
+
+def field_accepts(kind: str, name: str, value: object) -> bool:
+    """True when ``value`` is a declared type for ``kind.name`` (invariant 6)."""
+    if (kind, name) == ("opaque", "anchor"):
+        return (
+            isinstance(value, tuple)
+            and len(value) == 2
+            and isinstance(value[0], str)
+            and isinstance(value[1], int)
+            and not isinstance(value[1], bool)
+        )
+    expected = FIELD_TYPES.get((kind, name))
+    if expected is None or not _matches(value, expected):
+        return False
+    members = _MEMBERS.get((kind, name))
+    if members is None or not isinstance(value, (tuple, frozenset, set)):
+        return True
+    return all(_matches(item, members) for item in value)
+
+
+def _matches(value: object, expected: Tuple[type, ...]) -> bool:
+    for candidate in expected:
+        if candidate is int:
+            if isinstance(value, int) and not isinstance(value, bool):
+                return True
+        elif isinstance(value, candidate):
+            return True
+    return False

@@ -8,6 +8,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
 from typing import Dict, FrozenSet, Iterator, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
@@ -19,7 +20,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     build_node,
 )
 from app.features.form_builder.engine.ui4.numfmt import format_real
-from app.features.form_builder.engine.ui4.schema import SCHEMA
+from app.features.form_builder.engine.ui4.schema import SCHEMA, field_accepts
 from app.features.form_builder.engine.ui4.spec import NodeSpec
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, StringValue
 
@@ -419,9 +420,11 @@ def _node_name(node: Node) -> Optional[str]:
 def _check_fields(node: Node) -> None:
     spec = SCHEMA[node.kind]
     known = {item.name for item in spec.fields}
-    for name, _value in node.fields:
+    for name, value in node.fields:
         if name not in known:
             raise InvariantError("id %s has unknown field %s" % (int(node.id), name))
+        if value is not None and not field_accepts(node.kind, name, value):
+            raise InvariantError("id %s field %s has type %s" % (int(node.id), name, type(value).__name__))
     for item in spec.fields:
         if item.required and node.field(item.name) is None:
             raise InvariantError("id %s is missing required field %s" % (int(node.id), item.name))
@@ -465,21 +468,95 @@ def _add_style(text: str, qualified: int, short: int) -> Tuple[int, int]:
 
 
 def _digest(node: Node, *, include_ids: bool) -> str:
-    payload = json.dumps(_canon(node, include_ids), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = _canon(node, include_ids)
+    limit = sys.getrecursionlimit()
+    # json.dumps walks the tree recursively. A legal form is nested up to MAX_DEPTH.
+    sys.setrecursionlimit(max(limit, 10000))
+    try:
+        payload = json.dumps(encoded, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    finally:
+        sys.setrecursionlimit(limit)
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def _canon(value: object, include_ids: bool) -> object:
+    """Canonical form of ``value``. Iterative so a form at the nesting limit still fingerprints."""
+    stack: List[dict] = [{"value": value, "phase": 0, "parts": []}]
+    result: object = None
+    while stack:
+        frame = stack[-1]
+        current = frame["value"]
+        if frame["phase"] == 0:
+            jobs = _canon_jobs(current)
+            if jobs is None:
+                result = _canon_leaf(current)
+                stack.pop()
+                if stack:
+                    stack[-1]["parts"].append(result)
+                continue
+            frame["jobs"] = jobs
+            frame["phase"] = 1
+            frame["index"] = 0
+        jobs = frame["jobs"]
+        if frame["index"] < len(jobs):
+            nxt = jobs[frame["index"]]
+            frame["index"] += 1
+            stack.append({"value": nxt, "phase": 0, "parts": []})
+            continue
+        result = _canon_assemble(current, frame["parts"], include_ids)
+        stack.pop()
+        if stack:
+            stack[-1]["parts"].append(result)
+    return result
+
+
+def _canon_jobs(value: object) -> Optional[List[object]]:
     if isinstance(value, Node):
+        jobs: List[object] = []
+        jobs.extend(item for _key, item in value.fields)
+        jobs.extend(value.properties())
+        jobs.extend(value.attributes())
+        for _name, kids in value.slots:
+            jobs.extend(kids)
+        return jobs
+    if isinstance(value, (set, frozenset, tuple)):
+        return list(value)
+    if value is None or isinstance(value, (str, int, bool, float)):
+        return None
+    if hasattr(value, "__dataclass_fields__"):
+        return [getattr(value, key) for key in getattr(value, "__dataclass_fields__")]
+    return None
+
+
+def _canon_leaf(value: object) -> object:
+    if isinstance(value, float):
+        return format_real(value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    raise TypeError("cannot fingerprint %s" % (type(value).__name__,))
+
+
+def _canon_assemble(value: object, parts: List[object], include_ids: bool) -> object:
+    if isinstance(value, Node):
+        index = 0
+        fields = []
+        for key, _item in value.fields:
+            fields.append([key, parts[index]])
+            index += 1
+        properties = parts[index:index + len(value.properties())]
+        index += len(value.properties())
+        attributes = parts[index:index + len(value.attributes())]
+        index += len(value.attributes())
+        slots = []
+        for name, kids in value.slots:
+            slots.append([name, parts[index:index + len(kids)]])
+            index += len(kids)
         body: Dict[str, object] = {
             "kind": value.kind,
-            "fields": [[key, _canon(item, include_ids)] for key, item in value.fields],
-            "properties": [_canon(entry, include_ids) for entry in value.properties()],
-            "attributes": [_canon(entry, include_ids) for entry in value.attributes()],
-            "slots": [
-                [name, [_canon(child, include_ids) for child in kids]]
-                for name, kids in value.slots
-            ],
+            "fields": fields,
+            "properties": properties,
+            "attributes": attributes,
+            "slots": slots,
             "extra": [[key, item] for key, item in value.extra_attrs()],
         }
         if include_ids:
@@ -489,19 +566,14 @@ def _canon(value: object, include_ids: bool) -> object:
             body["index"] = value.slot_index
         return body
     if isinstance(value, (set, frozenset)):
-        return sorted((_canon(item, include_ids) for item in value), key=lambda item: json.dumps(item, sort_keys=True))
+        return sorted(parts, key=lambda item: json.dumps(item, sort_keys=True))
     if isinstance(value, tuple):
-        return [_canon(item, include_ids) for item in value]
-    if isinstance(value, float):
-        return format_real(value)
-    if value is None or isinstance(value, (str, int, bool)):
-        return value
-    if hasattr(value, "__dataclass_fields__"):
-        encoded: Dict[str, object] = {"$": type(value).__name__}
-        for key in getattr(value, "__dataclass_fields__"):
-            encoded[key] = _canon(getattr(value, key), include_ids)
-        return encoded
-    raise TypeError("cannot fingerprint %s" % (type(value).__name__,))
+        return list(parts)
+    encoded: Dict[str, object] = {"$": type(value).__name__}
+    keys = list(getattr(value, "__dataclass_fields__"))
+    for key, part in zip(keys, parts):
+        encoded[key] = part
+    return encoded
 
 
 #: Enum spelling for a document with no enum values. Set from the M0.4b
