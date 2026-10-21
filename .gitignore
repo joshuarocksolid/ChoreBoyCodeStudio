@@ -53,3 +53,6 @@ app/ui/icons/installer_icon_*.png
 vendor/*
 !vendor/README.md
 
+# pyright, installed by the cloud install script
+node_modules/
+
