@@ -1,0 +1,344 @@
+"""Preview / Try-mode wire protocol, version 1 (CONTRACTS.md section 10).
+
+Pure data and codec; both the editor (``qtside.preview.pool``) and the child
+(``qtside.preview.child``) import this module. Qt-free.
+
+Framing: one message per line on the child's private frame stream (host->child
+on stdin, child->host on the child's original stdout fd). A frame line is::
+
+    FRAME_PREFIX + json + "\\n"
+
+where ``json`` is ``app.plugins.rpc_protocol.encode_message(payload)`` without
+its trailing newline (``json.dumps(sort_keys=True)``; this module passes
+``ensure_ascii=True`` semantics by escaping non-ASCII so frames are pure ASCII).
+Lines without the prefix are noise (AppRun banners, C-level prints) and become
+``NoiseLine`` records; they never break decoding. A prefixed line that is not
+valid JSON or not a known message is a ``ProtocolViolation`` (logged; three in
+one session restart the child).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Literal, Optional, Tuple, Union
+
+PROTOCOL_NAME = "cbcs_form_preview"
+PROTOCOL_VERSION = 1
+FRAME_PREFIX = "\x1eCBFP1 "
+#: Frames larger than this are refused by both ends (ProtocolViolation).
+MAX_FRAME_BYTES = 32 * 1024 * 1024
+
+
+# =============================================================================
+# Shared shapes
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Appearance:
+    """``palette``: ``"runtime"`` (Fusion standard palette; the default) or a
+    ``values.value_to_json`` palette. ``style``: Qt style key, default ``Fusion``.
+    ``scale``: zoom for screenshots only. ``font_scale``: S/M/L text-size preview
+    (pain 12) as a multiplier. ``device_profile``: M5.5a profile name or None."""
+
+    palette: object = "runtime"
+    style: str = "Fusion"
+    scale: float = 1.0
+    font_scale: float = 1.0
+    device_profile: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class SourceRef:
+    """Points back into the form for Try-log clicks and error mapping."""
+
+    object_name: Optional[str] = None
+    rule_path: Tuple[Union[str, int], ...] = ()
+
+
+# =============================================================================
+# Host -> child requests (each has request_id; the child answers with Response)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Hello:
+    """First frame. The child answers with a Response whose ``result`` is a
+    ``HelloResult`` mapping, or ``error="protocol_mismatch"`` and exits 3 when
+    ``version`` differs from its PROTOCOL_VERSION."""
+
+    type: Literal["hello"]
+    request_id: str
+    protocol: str
+    version: int
+    session_token: str
+    host_pid: int
+
+
+@dataclass(frozen=True)
+class LoadForm:
+    """Open or replace view ``view_id`` (one per form tab).
+
+    ``module_source``: the generated ``ui_<name>.py`` text (built in memory by the
+    editor's codegen from the current document; not read from disk);
+    the child executes it in a fresh module named ``module_name``.
+    ``ui_xml``: the serialized document (used for external forms, which have no
+    generated module, via QUiLoader with plugin paths cleared and a
+    ``createWidget`` override for promoted classes).
+    ``sys_path``: entries prepended for this view (project root first).
+    ``mode``: ``preview`` shows the form with real custom widgets and no window
+    class; ``try`` is set by TryStart instead.
+    ``keep_values``: keep field values by object name across a reload.
+    ``revision``: the document revision this load reflects.
+    """
+
+    type: Literal["load_form"]
+    request_id: str
+    view_id: str
+    form_path: str
+    module_name: str
+    module_source: Optional[str]
+    ui_xml: Optional[str]
+    project_root: Optional[str]
+    sys_path: Tuple[str, ...]
+    appearance: Appearance
+    keep_values: bool
+    revision: int
+
+
+@dataclass(frozen=True)
+class PropertyPatch:
+    """Set one property on a named object of the loaded view. ``value`` is
+    ``values.value_to_json`` or None (reset to the class default)."""
+
+    object_name: str
+    name: str
+    value: object
+
+
+@dataclass(frozen=True)
+class UpdateForm:
+    """Bring a view to ``revision``. Exactly one of ``patches`` (property-only
+    changes since ``base_revision``) or a full ``LoadForm`` payload (any
+    structural change, rename, or a patch the child cannot apply) is sent. The
+    child answers ``stale`` when its applied revision is not ``base_revision``;
+    the host then sends a full load. At most one UpdateForm/LoadForm per view is
+    in flight; newer edits coalesce into the next one."""
+
+    type: Literal["update_form"]
+    request_id: str
+    view_id: str
+    base_revision: int
+    revision: int
+    patches: Tuple[PropertyPatch, ...]
+
+
+@dataclass(frozen=True)
+class SetAppearance:
+    type: Literal["set_appearance"]
+    request_id: str
+    view_id: str
+    appearance: Appearance
+
+
+@dataclass(frozen=True)
+class TryStart:
+    """Run the real generated module with a stand-in window class
+    (LOGIC_DESIGN 2.10). ``window_values``: ``method name -> JSON value`` returned
+    by the stand-in for ``window.method()`` calls. ``data``: the Try data plan."""
+
+    type: Literal["try_start"]
+    request_id: str
+    view_id: str
+    module_name: str
+    module_source: str
+    window_class_name: str
+    base_class: str
+    window_values: Tuple[Tuple[str, object], ...]
+    data: "TryDataPlan"
+
+
+@dataclass(frozen=True)
+class TryDataPlan:
+    """Per named connection: SQLite uses ``scratch_path`` (a copy the host made);
+    PostgreSQL uses ``pg_mode`` ``rollback`` (writes inside a transaction that is
+    always rolled back, with ``statement_timeout_ms`` and ``lock_timeout_ms`` set
+    via SET LOCAL) or ``would_run`` (read-only; writes are logged, not run).
+    Passwords are never sent in this message; the child asks through the
+    ``NeedSecret`` event and the host answers with ``ProvideSecret``."""
+
+    connections: Tuple[Tuple[str, object], ...] = ()
+    pg_mode: Literal["rollback", "would_run"] = "rollback"
+    statement_timeout_ms: int = 5000
+    lock_timeout_ms: int = 2000
+
+
+@dataclass(frozen=True)
+class TryStop:
+    type: Literal["try_stop"]
+    request_id: str
+    view_id: str
+
+
+@dataclass(frozen=True)
+class ProvideSecret:
+    type: Literal["provide_secret"]
+    request_id: str
+    connection: str
+    secret: Optional[str]
+
+
+@dataclass(frozen=True)
+class Grab:
+    """Screenshot of the view (Save image, thumbnails): PNG base64 in the result."""
+
+    type: Literal["grab"]
+    request_id: str
+    view_id: str
+
+
+@dataclass(frozen=True)
+class CloseView:
+    type: Literal["close_view"]
+    request_id: str
+    view_id: str
+
+
+@dataclass(frozen=True)
+class Ping:
+    type: Literal["ping"]
+    request_id: str
+
+
+@dataclass(frozen=True)
+class Shutdown:
+    """Close every view and exit 0 within 2 s; the host then reaps."""
+
+    type: Literal["shutdown"]
+    request_id: str
+
+
+# =============================================================================
+# Child -> host
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Response:
+    """``app.plugins.rpc_protocol.build_response`` shape. ``error`` is one of
+    ERROR_CODES; ``detail`` carries a message and, for user-code failures, the
+    traceback text."""
+
+    type: Literal["response"]
+    request_id: str
+    ok: bool
+    result: object = None
+    error: Optional[str] = None
+    detail: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class Ready:
+    """Sent once after the child's QApplication exists, before Hello is answered."""
+
+    type: Literal["ready"]
+    child_pid: int
+    python: str
+    qt_version: str
+    pyside_version: str
+    freecadgui: bool
+
+
+@dataclass(frozen=True)
+class Log:
+    """``stream``: ``stdout`` (redirected user prints), ``stderr``, ``qt``
+    (Qt message handler), ``try`` (Try-log lines). ``source``: rule/step that
+    produced a Try-log line."""
+
+    type: Literal["log"]
+    view_id: Optional[str]
+    stream: Literal["stdout", "stderr", "qt", "try"]
+    level: Literal["debug", "info", "warning", "error"]
+    text: str
+    ts_ms: int
+    source: Optional[SourceRef] = None
+
+
+@dataclass(frozen=True)
+class ViewClosed:
+    type: Literal["view_closed"]
+    view_id: str
+    reason: Literal["user", "error", "host"]
+
+
+@dataclass(frozen=True)
+class ErrorReport:
+    """A failure inside a view that the child survived (custom widget import
+    failed -> FB602; exception in user/generated code during Try -> FB604).
+    ``frames``: (file, line, function) innermost last; frames in a generated
+    module carry ``source`` from its block comments."""
+
+    type: Literal["error"]
+    view_id: Optional[str]
+    code: str
+    message: str
+    traceback: str
+    frames: Tuple[Tuple[str, int, str], ...] = ()
+    source: Optional[SourceRef] = None
+
+
+@dataclass(frozen=True)
+class CrashReport:
+    """Best-effort last frame before the child dies (uncaught exception in the
+    child's own loop, fatal Qt message). The host also synthesizes FB601 from the
+    exit event and the stderr tail when no CrashReport arrived."""
+
+    type: Literal["crash"]
+    message: str
+    traceback: str
+
+
+@dataclass(frozen=True)
+class NeedSecret:
+    type: Literal["need_secret"]
+    view_id: str
+    connection: str
+
+
+HostMessage = Union[Hello, LoadForm, UpdateForm, SetAppearance, TryStart, TryStop,
+                    ProvideSecret, Grab, CloseView, Ping, Shutdown]
+ChildMessage = Union[Response, Ready, Log, ViewClosed, ErrorReport, CrashReport, NeedSecret]
+
+ERROR_CODES = (
+    "protocol_mismatch",
+    "unknown_view",
+    "stale",                 # UpdateForm base_revision mismatch
+    "load_failed",           # generated module raised during import/setupUi
+    "custom_widget_failed",  # promoted class import failed (stand-in used)
+    "user_code_error",       # Try: exception from user or generated code
+    "bad_request",
+    "busy",
+    "internal",
+)
+
+
+@dataclass(frozen=True)
+class NoiseLine:
+    stream: str
+    text: str
+
+
+@dataclass(frozen=True)
+class ProtocolViolation:
+    line: str
+    reason: str
+
+
+def encode_frame(message: Union[HostMessage, ChildMessage]) -> str:
+    """``FRAME_PREFIX + json + "\\n"``, pure ASCII, deterministic key order."""
+    ...
+
+
+def decode_line(line: str, *, stream: str = "stdout") -> Union[HostMessage, ChildMessage, NoiseLine, ProtocolViolation]:
+    """Never raises."""
+    ...
