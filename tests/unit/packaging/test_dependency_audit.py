@@ -195,6 +195,18 @@ def test_denied_program_is_blocked_from_any_system_bin_folder(tmp_path: Path) ->
     assert [issue.evidence["command_name"] for issue in denied] == ["/usr/bin/pcmanfm"]
 
 
+def test_bin_sh_warns_that_freecad_1_1_denies_it(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    report = _audit(project_root, 'import subprocess\nsubprocess.run(["/bin/sh", "-c", "ls"])\n')
+
+    upcoming = [issue for issue in report.issues if issue.issue_id.startswith("package.subprocess.upcoming_denied")]
+    assert [issue.evidence["command_name"] for issue in upcoming] == ["/bin/sh"]
+    assert upcoming[0].severity == "degraded"
+    assert upcoming[0].evidence["freecad_version"] == "1.1.1"
+    assert not any(issue.issue_id.startswith("package.subprocess.denied") for issue in report.issues)
+
+
 def test_unknown_program_is_a_warning(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()

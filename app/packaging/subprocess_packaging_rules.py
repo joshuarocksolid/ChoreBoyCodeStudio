@@ -61,6 +61,8 @@ _SHELL_BUILTINS = {
 TARGET_FREECAD_VERSION = "1.0.0"
 TARGET_TESTED_ON = "2026-10-20"
 TARGET_TESTED_ON_DISPLAY = "20 Oct 2026"
+# Images shops are moving to. A program they deny gets a warning, not a block.
+UPCOMING_FREECAD_VERSIONS = ("1.1.1",)
 
 
 @dataclass(frozen=True)
@@ -208,6 +210,18 @@ def subprocess_issues(
         for program in programs:
             measurement = lookup_measured_exec(program, freecad_version=freecad_version)
             if measurement is not None and measurement.verdict == "allowed":
+                upcoming = _denied_on_upcoming_version(program, freecad_version)
+                if upcoming is not None:
+                    issues.append(
+                        _upcoming_denied_issue(
+                            rel_file=rel_file,
+                            lineno=lineno,
+                            program=program,
+                            call_name=_call_display(node),
+                            measurement=upcoming,
+                            import_path=import_path,
+                        )
+                    )
                 continue
             if measurement is not None and measurement.verdict == "denied":
                 issues.append(
@@ -451,6 +465,57 @@ def _denied_issue(
             "tested_on": measurement.tested_on,
             "import_path": import_path,
             "report_row": f"Blocked program: {Path(program).name}",
+        },
+    )
+
+
+def _denied_on_upcoming_version(program: str, freecad_version: str) -> MeasuredExec | None:
+    """Return the row of a newer FreeCAD image that denies *program*, if any."""
+    for version in UPCOMING_FREECAD_VERSIONS:
+        if version == freecad_version:
+            continue
+        row = lookup_measured_exec(program, freecad_version=version)
+        if row is not None and row.verdict == "denied":
+            return row
+    return None
+
+
+def _upcoming_denied_issue(
+    *,
+    rel_file: str,
+    lineno: int,
+    program: str,
+    call_name: str,
+    measurement: MeasuredExec,
+    import_path: str,
+) -> RuntimeIssue:
+    name = Path(program).name or program
+    return RuntimeIssue(
+        issue_id=f"package.subprocess.upcoming_denied.{rel_file}.{lineno}.{_program_token(program)}",
+        workflow="package",
+        severity="degraded",
+        title=f"{name} works on FreeCAD {TARGET_FREECAD_VERSION} but not on FreeCAD {measurement.freecad_version}",
+        summary=(
+            f"{rel_file} starts `{program}` with `{call_name}`. "
+            f"That works on today's ChoreBoy, but FreeCAD {measurement.freecad_version} denies it. "
+            "The export continues."
+        ),
+        why_it_happened=(
+            f"Tested on {tested_on_phrase(measurement)}: starting {name} from an app was denied. "
+            f"The measured result was {measurement.detail}."
+        ),
+        next_steps=[
+            "Exec `/opt/freecad/AppRun` with an argv list. That works on both FreeCAD versions.",
+        ],
+        help_topic=HELP_TOPIC_PACKAGING,
+        evidence={
+            "source_file": rel_file,
+            "line_number": lineno,
+            "command_name": program,
+            "freecad_version": measurement.freecad_version,
+            "tested_on": measurement.tested_on,
+            "import_path": import_path,
+            "report_row": f"Denied on FreeCAD {measurement.freecad_version}: {name}",
         },
     )
 
