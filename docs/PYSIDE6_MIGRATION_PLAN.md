@@ -614,7 +614,7 @@ Verification on the final branch head:
 | Lab `/opt/freecad` | PySide2 5.15.15, Python 3.11.13 | 2479 passed, 26 failed, 0 new failures. The 26 are environmental, from `/home/default/FreeCAD` permissions |
 | Lab `~/opt/freecad` | PySide6 6.8.3, Python 3.9.23 | 2474 passed. 1 new failure: that prefix exposes `freecad`, not `FreeCAD`, which is environmental |
 | ChoreBoy slot (V6.5) | PySide2, Python 3.9.2, guest suite | 2482 passed, 4 failed, the same 4 as `main` (no git, jedi paths) |
-| ChoreBoyExp (FreeCAD 1.1.1) | PySide6 6.8.3, Python 3.11.14, guest suite | see the PR |
+| ChoreBoyExp (FreeCAD 1.1.1) | PySide6 6.8.3, Python 3.11.14, guest suite (unit and integration as separate processes) | unit: 2453 passed, 4 skipped, 4 failed (the same 4 as V6.5); integration: 44 passed |
 | Both VMs, live | product installer, then the installed launcher | install completes; editor shows "Runtime ready (9/9 checks)" (V6.5: tree-sitter vendored 0.23.2; 1.1: tree-sitter runtime 0.26.0); template project opens with highlighting and outline; Run shows the app window |
 | Pyright 1.1.414 | app and tests configs | 0 errors, 0 warnings |
 
