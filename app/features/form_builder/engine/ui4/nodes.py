@@ -22,6 +22,7 @@ _FIELD_NAMES = {
 _SLOT_NAMES = {
     kind: frozenset(item.name for item in spec.slots) for kind, spec in SCHEMA.items()
 }
+_EMPTY: Dict[str, object] = {}
 from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import Value
 
@@ -42,10 +43,22 @@ class Node:
     unknown_attrs: Tuple[Tuple[str, str], ...] = ()
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "_fields_by_name", dict(self.fields))
-        object.__setattr__(self, "_props_by_name", {entry.name: entry for entry in self.prop_entries})
-        object.__setattr__(self, "_attrs_by_name", {entry.name: entry for entry in self.attr_entries})
-        object.__setattr__(self, "_slots_by_name", dict(self.slots))
+        fields = self.fields
+        props = self.prop_entries
+        attrs = self.attr_entries
+        slots = self.slots
+        object.__setattr__(self, "_fields_by_name", dict(fields) if fields else _EMPTY)
+        object.__setattr__(
+            self,
+            "_props_by_name",
+            {entry.name: entry for entry in props} if props else _EMPTY,
+        )
+        object.__setattr__(
+            self,
+            "_attrs_by_name",
+            {entry.name: entry for entry in attrs} if attrs else _EMPTY,
+        )
+        object.__setattr__(self, "_slots_by_name", dict(slots) if slots else _EMPTY)
 
     @property
     def id(self) -> NodeId:
@@ -69,13 +82,13 @@ class Node:
         """Field value (None when unset). KeyError for a name the kind lacks."""
         if name not in _FIELD_NAMES[self.kind]:
             raise KeyError(name)
-        return self._field_map().get(name)
+        return self._fields_by_name.get(name)  # type: ignore[attr-defined]
 
     def children(self, slot: str) -> Tuple["Node", ...]:
         """Children in ``slot``. KeyError for a slot the kind lacks."""
         if slot not in _SLOT_NAMES[self.kind]:
             raise KeyError(slot)
-        found = self._slot_map().get(slot)
+        found = self._slots_by_name.get(slot)  # type: ignore[attr-defined]
         if found is None:
             return ()
         return found
@@ -90,11 +103,11 @@ class Node:
 
     def prop(self, name: str) -> Optional[PropertyEntry]:
         """The ``<property>`` named ``name`` or None. O(1) (per-node name map)."""
-        return self._prop_map().get(name)
+        return self._props_by_name.get(name)  # type: ignore[attr-defined]
 
     def attr(self, name: str) -> Optional[PropertyEntry]:
         """The ``<attribute>`` named ``name`` or None. O(1)."""
-        return self._attr_map().get(name)
+        return self._attrs_by_name.get(name)  # type: ignore[attr-defined]
 
     def value(self, name: str) -> Optional[Value]:
         """Shortcut for ``prop(name).value``."""

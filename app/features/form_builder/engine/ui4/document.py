@@ -34,6 +34,16 @@ _NAME_FIELDS = {
     "actiongroup": "name",
     "buttongroup": "name",
 }
+_SLOT_SPEC = {kind: {slot.name: slot for slot in spec.slots} for kind, spec in SCHEMA.items()}
+_SLOT_ORDER = {
+    kind: {slot.name: index for index, slot in enumerate(spec.slots)}
+    for kind, spec in SCHEMA.items()
+}
+_FIELD_NAMES = {kind: frozenset(item.name for item in spec.fields) for kind, spec in SCHEMA.items()}
+_REQUIRED_FIELDS = {
+    kind: tuple(item.name for item in spec.fields if item.required)
+    for kind, spec in SCHEMA.items()
+}
 
 
 class InvariantError(AssertionError):
@@ -166,8 +176,12 @@ class UiDocument:
             node = stack.pop()
             yield node
             ordered: List[Node] = []
-            for slot in SCHEMA[node.kind].slots:
-                ordered.extend(node.children(slot.name))
+            populated = object.__getattribute__(node, "_slots_by_name")
+            if populated:
+                for slot in SCHEMA[node.kind].slots:
+                    kids = populated.get(slot.name)
+                    if kids:
+                        ordered.extend(kids)
             stack.extend(reversed(ordered))
 
     def iter_widgets(self) -> Iterator[WidgetNode]:
@@ -354,10 +368,12 @@ class UiDocument:
             raise InvariantError("parent link of id %s does not match the slot that holds it" % (int(node.id),))
         if node.kind not in SCHEMA:
             raise InvariantError("unknown kind %s" % (node.kind,))
-        spec = SCHEMA[node.kind]
-        seen_slots = {name for name, _kids in node.slots}
-        for slot in spec.slots:
-            kids = node.children(slot.name)
+        slot_specs = _SLOT_SPEC[node.kind]
+        populated = object.__getattribute__(node, "_slots_by_name")
+        for slot in SCHEMA[node.kind].slots:
+            kids = populated.get(slot.name)
+            if not kids:
+                continue
             if slot.max_len and len(kids) > slot.max_len:
                 raise InvariantError("slot %s of id %s holds more than one child" % (slot.name, int(node.id)))
             for child_index, child in enumerate(kids):
@@ -366,11 +382,9 @@ class UiDocument:
                         "kind %s is not accepted by slot %s" % (child.kind, slot.name)
                     )
                 self._walk_invariants(child, node.id, slot.name, child_index, reachable)
-        for name, _kids in node.slots:
-            if name not in {slot.name for slot in spec.slots}:
+        for name in populated:
+            if name not in slot_specs:
                 raise InvariantError("id %s has unknown slot %s" % (int(node.id), name))
-        if seen_slots - {slot.name for slot in spec.slots}:
-            raise InvariantError("id %s has a slot the schema does not declare" % (int(node.id),))
 
 
 def _node_from_spec(
@@ -381,9 +395,20 @@ def _node_from_spec(
 ) -> Node:
     if spec.id is None:
         raise InvariantError("a document spec is missing an id")
+    order = _SLOT_ORDER[spec.kind]
+    slots = spec.slots
+    previous = -1
+    ordered = True
+    for slot_name, _kids in slots:
+        rank = order.get(slot_name, 1000)
+        if rank < previous:
+            ordered = False
+            break
+        previous = rank
+    if not ordered:
+        slots = tuple(sorted(slots, key=lambda item, order=order: order.get(item[0], 1000)))
     child_slots = []
-    order = {slot.name: index for index, slot in enumerate(SCHEMA[spec.kind].slots)}
-    for slot_name, kids in sorted(spec.slots, key=lambda item: order.get(item[0], 1000)):
+    for slot_name, kids in slots:
         child_slots.append(
             (
                 slot_name,
@@ -418,16 +443,16 @@ def _node_name(node: Node) -> Optional[str]:
 
 
 def _check_fields(node: Node) -> None:
-    spec = SCHEMA[node.kind]
-    known = {item.name for item in spec.fields}
+    known = _FIELD_NAMES[node.kind]
+    values = object.__getattribute__(node, "_fields_by_name")
     for name, value in node.fields:
         if name not in known:
             raise InvariantError("id %s has unknown field %s" % (int(node.id), name))
         if value is not None and not field_accepts(node.kind, name, value):
             raise InvariantError("id %s field %s has type %s" % (int(node.id), name, type(value).__name__))
-    for item in spec.fields:
-        if item.required and node.field(item.name) is None:
-            raise InvariantError("id %s is missing required field %s" % (int(node.id), item.name))
+    for name in _REQUIRED_FIELDS[node.kind]:
+        if values.get(name) is None:
+            raise InvariantError("id %s is missing required field %s" % (int(node.id), name))
 
 
 def _check_property_identity(node: Node) -> None:
