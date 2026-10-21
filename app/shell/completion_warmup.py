@@ -82,7 +82,7 @@ def _start_buffer_warmup(window: Any) -> None:
     editor = workflow.active_editor_widget()
     if editor is None:
         return
-    path = editor._active_file_path()
+    path = editor._active_file_path
     if not path or not str(path).endswith(".py"):
         return
     language = editor.active_language_key()
