@@ -177,7 +177,7 @@ def validate_package_config(
                 workflow="package",
                 severity="advisory",
                 title="Package launcher has no custom icon",
-                summary="The export will work without an icon, but installable packages look more polished with one.",
+                summary="The launcher will use the default Python icon.",
                 why_it_happened="No icon_path was declared in cbcs/package.json.",
                 next_steps=[
                     "Add a project-local `.png` or `.svg` icon path in cbcs/package.json if you want a branded launcher.",
