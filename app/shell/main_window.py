@@ -147,6 +147,14 @@ class MainWindow(QMainWindow):
                         exc,
                     )
             self._status_controller.set_project_state_text(status_text)
+        self._refresh_completion_mode_status()
+
+    def _refresh_completion_mode_status(self) -> None:
+        """Show the completion mode in effect and its settings scope in the status bar."""
+        if self._status_controller is None:
+            return
+        mode, scope, global_mode = self._shell_preferences_runtime.completion_mode_status()
+        self._status_controller.set_completion_mode(mode, scope=scope, global_mode=global_mode)
 
     def current_theme_tokens(self) -> ShellThemeTokens:
         """Public accessor used by child dialogs to inherit shell theming."""

@@ -105,6 +105,9 @@ class EditorTabsCoordinator:
             index = _index_of_buffer(tabs, tab_state.buffer_id)
             if index >= 0:
                 self.present_tab_at(index, tab_state, tabs=tabs)
+        if self._window._editor_manager.active_tab() is tab_state:
+            # The status bar repeats the active tab's disk state ("changed on disk").
+            self._window._editor_tab_workflow.update_editor_status_for_path(tab_state.file_path)
 
     def present_tab_at(
         self,

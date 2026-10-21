@@ -13,6 +13,13 @@ from typing import TYPE_CHECKING, Optional, Protocol, cast
 
 from app.bootstrap.capability_probe import TREESITTER_RUNTIME_CHECK_ID
 from app.core.models import CapabilityProbeReport
+from app.intelligence.completion_mode import (
+    COMPLETION_MODE_HELP,
+    COMPLETION_MODE_MANUAL,
+    COMPLETION_MODE_OFF,
+    COMPLETION_MODE_TYPING,
+    normalize_completion_mode,
+)
 from app.shell.python_tooling_status_copy import format_python_tooling_status_copy
 from app.support.runtime_explainer import build_startup_issue_report
 
@@ -39,6 +46,14 @@ class EditorStatusView:
     """UI-friendly editor telemetry state for the status bar."""
 
     text: str
+
+
+@dataclass(frozen=True)
+class CompletionModeStatusView:
+    """Status-bar chip for the code-completion mode and the settings scope it comes from."""
+
+    text: str
+    details: str
 
 
 @dataclass(frozen=True)
@@ -121,15 +136,76 @@ def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> Sta
     )
 
 
-def map_editor_status_view(file_name: str | None, line: int | None, column: int | None, is_dirty: bool) -> EditorStatusView:
-    """Format editor telemetry into deterministic status copy."""
+EDITOR_DISK_STATE_STALE = "stale"
+EDITOR_DISK_STATE_MISSING = "missing"
+
+
+def map_editor_status_view(
+    file_name: str | None,
+    line: int | None,
+    column: int | None,
+    is_dirty: bool,
+    *,
+    disk_state: str | None = None,
+) -> EditorStatusView:
+    """Format editor telemetry into deterministic status copy.
+
+    ``disk_state`` is ``"stale"`` (changed on disk, the user kept their
+    version) or ``"missing"`` (the file is gone). A missing file has no saved
+    copy, so "missing from disk" replaces modified/saved.
+    """
     if not file_name:
         return EditorStatusView(text="Editor: no file")
 
     safe_line = max(1, line or 1)
     safe_column = max(1, column or 1)
-    dirty_text = "modified" if is_dirty else "saved"
-    return EditorStatusView(text=f"Editor: {file_name} | Ln {safe_line}, Col {safe_column} | {dirty_text}")
+    if disk_state == EDITOR_DISK_STATE_MISSING:
+        state_text = "missing from disk"
+    else:
+        state_text = "modified" if is_dirty else "saved"
+        if disk_state == EDITOR_DISK_STATE_STALE:
+            state_text = f"{state_text} | changed on disk"
+    return EditorStatusView(text=f"Editor: {file_name} | Ln {safe_line}, Col {safe_column} | {state_text}")
+
+
+COMPLETION_SCOPE_GLOBAL = "global"
+COMPLETION_SCOPE_PROJECT = "project"
+_COMPLETION_CHIP_MODE_TEXT = {
+    COMPLETION_MODE_OFF: "Off",
+    COMPLETION_MODE_MANUAL: "Manual \u00b7 Ctrl+Space",
+    COMPLETION_MODE_TYPING: "While typing",
+}
+_COMPLETION_CHIP_MODE_NAME = {
+    COMPLETION_MODE_OFF: "Off",
+    COMPLETION_MODE_MANUAL: "Manual",
+    COMPLETION_MODE_TYPING: "While typing",
+}
+
+
+def map_completion_mode_status_view(
+    mode: str,
+    *,
+    scope: str,
+    global_mode: str | None = None,
+) -> CompletionModeStatusView:
+    """Format the completion mode chip, e.g. ``Completion: Manual · Ctrl+Space (Global setting)``.
+
+    ``scope`` says where the mode in effect is set: ``"project"`` when the open
+    project overrides the Global value, else ``"global"``.
+    """
+    resolved = normalize_completion_mode(mode) or COMPLETION_MODE_MANUAL
+    is_project = scope == COMPLETION_SCOPE_PROJECT
+    scope_text = "Project setting" if is_project else "Global setting"
+    text = f"Completion: {_COMPLETION_CHIP_MODE_TEXT[resolved]} ({scope_text})"
+    if is_project:
+        resolved_global = normalize_completion_mode(global_mode)
+        origin = "Set in this project's settings"
+        if resolved_global is not None:
+            origin = f"{origin}. It overrides the Global setting ({_COMPLETION_CHIP_MODE_NAME[resolved_global]})"
+    else:
+        origin = "Set in Global settings"
+    details = f"{COMPLETION_MODE_HELP[resolved]}\n\n{origin}.\nClick to change it in Settings."
+    return CompletionModeStatusView(text=text, details=details)
 
 
 def format_diagnostics_counts(errors: int, warnings: int) -> str:
@@ -241,6 +317,7 @@ class ShellStatusBarController:
         editor_label: "QLabel",
         diagnostics_label: "QLabel",
         indent_label: "QLabel",
+        completion_mode_label: "QLabel | None" = None,
     ) -> None:
         self._status_bar = status_bar
         self._startup_label = startup_label
@@ -250,6 +327,7 @@ class ShellStatusBarController:
         self._editor_label = editor_label
         self._diagnostics_label = diagnostics_label
         self._indent_label = indent_label
+        self._completion_mode_label = completion_mode_label
         self._runtime_warning_text: str | None = None
 
     def _refresh_widget_style(self, widget: "QLabel") -> None:
@@ -309,10 +387,38 @@ class ShellStatusBarController:
         self._python_tooling_label.setProperty("pythonToolingSeverity", view.severity)  # type: ignore[arg-type]
         self._refresh_widget_style(self._python_tooling_label)
 
-    def set_editor_status(self, file_name: str | None, line: int | None, column: int | None, is_dirty: bool) -> None:
+    def set_editor_status(
+        self,
+        file_name: str | None,
+        line: int | None,
+        column: int | None,
+        is_dirty: bool,
+        *,
+        disk_state: str | None = None,
+    ) -> None:
         """Update current editor telemetry in the status bar."""
-        view = map_editor_status_view(file_name=file_name, line=line, column=column, is_dirty=is_dirty)
+        view = map_editor_status_view(
+            file_name=file_name,
+            line=line,
+            column=column,
+            is_dirty=is_dirty,
+            disk_state=disk_state,
+        )
         self._editor_label.setText(view.text)
+
+    def set_completion_mode(self, mode: str, *, scope: str, global_mode: str | None = None) -> None:
+        """Update the completion mode chip (mode plus the settings scope it comes from)."""
+        if self._completion_mode_label is None:
+            return
+        view = map_completion_mode_status_view(mode, scope=scope, global_mode=global_mode)
+        self._completion_mode_label.setText(view.text)
+        self._completion_mode_label.setToolTip(view.details)
+
+    def completion_mode_text(self) -> str:
+        return "" if self._completion_mode_label is None else self._completion_mode_label.text()
+
+    def editor_status_text(self) -> str:
+        return self._editor_label.text()
 
     def set_diagnostics_counts(self, errors: int, warnings: int) -> None:
         """Update diagnostic counts in the status bar."""
@@ -358,6 +464,7 @@ def create_shell_status_bar(
     main_window: "QMainWindow",
     startup_report: Optional[CapabilityProbeReport] = None,
     on_startup_activated: object | None = None,
+    on_completion_mode_activated: object | None = None,
 ) -> ShellStatusBarController:
     """Create and attach a status bar shell to the given window."""
     from PySide2 import QtCore, QtGui
@@ -398,6 +505,12 @@ def create_shell_status_bar(
     indent_label.setObjectName("shell.indentStatusLabel")
     indent_label.setVisible(False)
 
+    completion_mode_label = _ClickableLabel(status_bar)
+    completion_mode_label.setObjectName("shell.completionModeStatusLabel")
+    if on_completion_mode_activated:
+        completion_mode_label.setCursor(QtCore.Qt.PointingHandCursor)
+        completion_mode_label.clicked.connect(on_completion_mode_activated)  # type: ignore[arg-type]
+
     run_label = QLabel("Run: idle", status_bar)
     run_label.setObjectName("shell.runStatusLabel")
 
@@ -406,6 +519,7 @@ def create_shell_status_bar(
     status_bar.addPermanentWidget(python_tooling_label, 0)
     status_bar.addPermanentWidget(run_label, 0)
     status_bar.addPermanentWidget(project_label, 0)
+    status_bar.addPermanentWidget(completion_mode_label, 0)
     status_bar.addPermanentWidget(indent_label, 0)
     status_bar.addPermanentWidget(editor_label, 0)
     main_window.setStatusBar(status_bar)
@@ -419,6 +533,7 @@ def create_shell_status_bar(
         editor_label,
         diagnostics_label,
         indent_label,
+        completion_mode_label,
     )
     controller.set_startup_report(startup_report)
     controller.set_python_tooling_status(runtime_available=False, config_state="no_project")
