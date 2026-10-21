@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropPointf</class>
+ <widget class="QWidget" name="PropPointf">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>pointf</string>
+  </property>
+  <property name="originF" stdset="0">
+   <pointf><x>1.25</x><y>2.5</y></pointf>
+  </property>
+ </widget>
+
+</ui>

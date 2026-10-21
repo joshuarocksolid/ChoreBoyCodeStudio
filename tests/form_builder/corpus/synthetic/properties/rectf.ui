@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropRectf</class>
+ <widget class="QWidget" name="PropRectf">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>rectf</string>
+  </property>
+  <property name="boundsF" stdset="0">
+   <rectf><x>0.5</x><y>0.5</y><width>2.5</width><height>3.5</height></rectf>
+  </property>
+ </widget>
+
+</ui>

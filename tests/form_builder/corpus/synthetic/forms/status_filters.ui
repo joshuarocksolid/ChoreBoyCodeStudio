@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>StatusFilters</class>
+ <widget class="QDialog" name="StatusFilters">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Status</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_openCheck">
+     <property name="text">
+      <string>Open</string>
+     </property>
+     <property name="buddy">
+      <cstring>openCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QCheckBox" name="openCheck"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_pendingCheck">
+     <property name="text">
+      <string>Pending</string>
+     </property>
+     <property name="buddy">
+      <cstring>pendingCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QCheckBox" name="pendingCheck"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_closedCheck">
+     <property name="text">
+      <string>Closed</string>
+     </property>
+     <property name="buddy">
+      <cstring>closedCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="closedCheck"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_ownerCombo">
+     <property name="text">
+      <string>Owner</string>
+     </property>
+     <property name="buddy">
+      <cstring>ownerCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QComboBox" name="ownerCombo"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>openCheck</tabstop>
+  <tabstop>pendingCheck</tabstop>
+  <tabstop>closedCheck</tabstop>
+  <tabstop>ownerCombo</tabstop>
+ </tabstops>
+</ui>

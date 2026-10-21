@@ -366,3 +366,24 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 - Opus final APPROVE on UX and on logic soundness.
 - User docs complete. Three real apps built, packaged and run on the VM.
 - PR to `main` open for Joshua, with every workspace and lease cleaned up.
+
+## Appendix A. ChoreBoy runtime facts (M0.7 probe, 2026-10-21)
+
+Probed on the ChoreBoyExp VM (FreeCAD 1.1.1) with `cb_probes/harness/probes/fb_m07_probe` (branch `probes/fb-m07`). These are fixed facts for design decisions.
+
+| Fact | Value | Consequence |
+| --- | --- | --- |
+| Runtime | Python 3.11.14, Qt/PySide6 6.8.3, Linux 6.1, glibc 2.31 | Matches the Mac's FreeCAD.app 1.1.3 |
+| Hardware (VM) | 2 vCPU (i7-10750H host), 4 GB RAM; screen 1680×1050, 96 logical dpi, dpr 1.0 | Real ChoreBoy specs vary; the VM is the reference low end |
+| Raw Qt cost | Building 300 widgets and showing them: 137–274 ms warm (Mac: about 92 ms real display, 14 ms offscreen). One widget edit with repaint: 18–23 ms. Pure Python: about 4–10× slower than the Mac | Absolute budgets apply on the Mac. On ChoreBoy the budget is **overhead-relative**: opening a form costs at most 1.5× the raw Qt build of the same widgets, and an edit costs at most 1.5× a raw widget update plus repaint (target ≤ 2 frames) |
+| `AppRun` | An ELF binary, not a shell script. `QProcess.start("/opt/freecad/AppRun", ["-c", code])` works without a shell. Bare start-and-exit: about 0.11 s | The preview child is spawned directly |
+| `-c` length | Fails ("File name too long") somewhere between 200 and 400 characters | The child launches through a short `runpy.run_path` stub (139 characters) |
+| Preview child cold start | Python + PySide6 + 150 widgets: 2.9–3.0 s offscreen, 3.9 s on the real display | One warm, pooled preview child is required. Spawn it at form open, in the background |
+| stdin/stdout JSON | Works both ways | The IPC can use the existing framed stdio protocol |
+| `uic` / `rcc` | Present under `/opt/freecad/usr/lib/qt6`, but exec is **denied** (execve EACCES) | The in-process generator is mandatory. `uic` is only a dev-machine oracle |
+| FreeCADGui | Imports in an `AppRun -c` child, but `UiLoader` is absent there. Available in-process in GUI FreeCAD | Generated code needs a guarded `FreeCADGui.UiLoader` with a Qt base-class fallback |
+| Postgres drivers | `pg8000`, `psycopg`, `scramp` and `asn1crypto` ship in `/opt/freecad`. No `psycopg2` or `cb_psycopg` | No vendoring needed. Driver probe order: psycopg, then pg8000 |
+| SQLite | 3.51.1 | |
+| `QFileSystemWatcher`, `QLocalServer` | Both work | External-change detection and local IPC are available |
+| Home folder | Dotfiles directly in `~` cannot be written; the job dir is writable | Machine-local secrets ("remember on this machine") go under CBCS's existing state directory, which the probe must confirm is writable before M8.1 |
+| Still to probe | The default app style, palette and font; window-manager-reserved Alt/function keys; the state-dir write check | Added to the next probe run (UX_SPEC §16.2) |

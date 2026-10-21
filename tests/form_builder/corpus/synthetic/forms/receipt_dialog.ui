@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>ReceiptDialog</class>
+ <widget class="QDialog" name="ReceiptDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Receipt</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_numberEdit">
+     <property name="text">
+      <string>Number</string>
+     </property>
+     <property name="buddy">
+      <cstring>numberEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="numberEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_amountEdit">
+     <property name="text">
+      <string>Amount</string>
+     </property>
+     <property name="buddy">
+      <cstring>amountEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDoubleSpinBox" name="amountEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_receivedEdit">
+     <property name="text">
+      <string>Received</string>
+     </property>
+     <property name="buddy">
+      <cstring>receivedEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDateEdit" name="receivedEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_cashCheck">
+     <property name="text">
+      <string>Cash</string>
+     </property>
+     <property name="buddy">
+      <cstring>cashCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="cashCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>numberEdit</tabstop>
+  <tabstop>amountEdit</tabstop>
+  <tabstop>receivedEdit</tabstop>
+  <tabstop>cashCheck</tabstop>
+ </tabstops>
+</ui>
