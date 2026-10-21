@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropPixmap</class>
+ <widget class="QWidget" name="PropPixmap">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>pixmap</string>
+  </property>
+  <property name="image" stdset="0">
+   <pixmap resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</pixmap>
+  </property>
+ </widget>
+
+</ui>

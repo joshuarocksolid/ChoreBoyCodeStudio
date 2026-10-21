@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui stdSetDef="0" stdsetdef="1" connectslotsbyname="false" idbasedtr="false" displayname="Odd order" language="c++" version="4.0">
+ <class>OddOrder</class>
+ <widget native="false" name="OddOrder" class="QLabel">
+  <property stdset="1" name="text">
+   <string id="odd.text" extracomment="order" comment="ctx" notr="true">Fish &amp; chips &lt;today&gt;</string>
+  </property>
+ </widget>
+</ui>

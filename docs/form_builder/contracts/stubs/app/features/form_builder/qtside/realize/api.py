@@ -39,7 +39,11 @@ class Realizer:
     """One per FormSession, created by the canvas.
 
     * ``build()`` creates the whole tree once (open, DocumentReplaced, fallback).
-    * Subscribed to the log at PRIORITY_REALIZE; ``on_changeset`` patches:
+    * Subscribed to the log at PRIORITY_REALIZE; ``on_changeset`` reconciles in
+      three phases: (1) detach every NodeMoved object into the pool; (2)
+      reconcile ``structure_dirty`` top-down; (3) destroy pooled ids in
+      ``removed``, then purge the id maps for every id of each
+      ``NodeRemoved.subtree``. Patches:
       - PropertyChanged -> re-read the entry from the document and apply it to the
         live object (reset = apply the class-table default; volatile defaults are
         restored from a cached fresh instance of that class, created once per
@@ -53,6 +57,10 @@ class Realizer:
         that node's subtree, reusing child widgets.
       - FieldChanged ``object_name``/``name`` -> ``setObjectName`` and re-resolve
         buddies that name the old or new name.
+      - FieldChanged ``zorder`` -> restack that parent's children.
+      - Attribute change on a page (title/label/icon/toolTip/whatsThis) -> patch
+        the parent container's tab/item text, icon or tip.
+      - ``cbcsSplitterSizes`` on a QSplitter -> ``setSizes`` after its panes exist.
       - Connections, tab stops, form slots, includes, custom-widget declarations:
         no widget change (the canvas never wires connections and never sets
         focus order); custom-widget ``extends`` changes rebuild users of the class.

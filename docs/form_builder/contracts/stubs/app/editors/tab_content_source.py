@@ -13,6 +13,8 @@ gains ``content_source: Optional[TabContentSource] = None``:
   provider surfaces never route editor ``textChanged`` into it.
 * ``mark_saved`` calls ``content_source.mark_saved(saved_text)`` with the exact
   text written.
+* Sourced tabs skip every save transform (trim trailing whitespace, final
+  newline, format on save). Save writes ``current_text()`` as UTF-8, no BOM.
 """
 
 from __future__ import annotations

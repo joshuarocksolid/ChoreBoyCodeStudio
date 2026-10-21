@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropSizepolicy</class>
+ <widget class="QWidget" name="PropSizepolicy">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>sizepolicy</string>
+  </property>
+  <property name="policy" stdset="0">
+   <sizepolicy hsizetype="Preferred" vsizetype="Minimum"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy>
+  </property>
+ </widget>
+
+</ui>

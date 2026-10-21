@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>SpinBoxHost</class>
+ <widget class="QSpinBox" name="SpinBoxHost">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>QSpinBox</string>
+  </property>
+  <property name="toolTip">
+   <string>QSpinBox host</string>
+  </property>
+ </widget>
+
+</ui>

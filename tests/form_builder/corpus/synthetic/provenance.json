@@ -1,0 +1,856 @@
+{
+  "files": [
+    {
+      "path": "synthetic/schema/kitchen_sink.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Covers the ui4 element and attribute names, containers, resources, and cbcs* dynamic properties."
+    },
+    {
+      "path": "synthetic/properties/bool.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <bool>."
+    },
+    {
+      "path": "synthetic/properties/color.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <color>."
+    },
+    {
+      "path": "synthetic/properties/cstring.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <cstring>."
+    },
+    {
+      "path": "synthetic/properties/cursor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <cursor>."
+    },
+    {
+      "path": "synthetic/properties/cursorshape.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <cursorshape>."
+    },
+    {
+      "path": "synthetic/properties/enum.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <enum>."
+    },
+    {
+      "path": "synthetic/properties/font.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <font>."
+    },
+    {
+      "path": "synthetic/schema/property_iconset.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <iconset>."
+    },
+    {
+      "path": "synthetic/schema/property_pixmap.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <pixmap>."
+    },
+    {
+      "path": "synthetic/properties/palette.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <palette>."
+    },
+    {
+      "path": "synthetic/properties/point.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <point>."
+    },
+    {
+      "path": "synthetic/properties/rect.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <rect>."
+    },
+    {
+      "path": "synthetic/properties/set.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <set>."
+    },
+    {
+      "path": "synthetic/properties/locale.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <locale>."
+    },
+    {
+      "path": "synthetic/properties/sizepolicy.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <sizepolicy>."
+    },
+    {
+      "path": "synthetic/properties/size.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <size>."
+    },
+    {
+      "path": "synthetic/properties/string.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <string>."
+    },
+    {
+      "path": "synthetic/properties/stringlist.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <stringlist>."
+    },
+    {
+      "path": "synthetic/properties/number.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <number>."
+    },
+    {
+      "path": "synthetic/properties/float.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <float>."
+    },
+    {
+      "path": "synthetic/properties/double.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <double>."
+    },
+    {
+      "path": "synthetic/properties/date.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <date>."
+    },
+    {
+      "path": "synthetic/properties/time.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <time>."
+    },
+    {
+      "path": "synthetic/properties/datetime.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <datetime>."
+    },
+    {
+      "path": "synthetic/properties/pointf.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <pointf>."
+    },
+    {
+      "path": "synthetic/properties/rectf.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <rectf>."
+    },
+    {
+      "path": "synthetic/properties/sizef.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <sizef>."
+    },
+    {
+      "path": "synthetic/properties/longlong.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <longlong>."
+    },
+    {
+      "path": "synthetic/properties/char.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <char>."
+    },
+    {
+      "path": "synthetic/properties/url.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <url>."
+    },
+    {
+      "path": "synthetic/properties/uint.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <uint>."
+    },
+    {
+      "path": "synthetic/properties/ulonglong.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <ulonglong>."
+    },
+    {
+      "path": "synthetic/properties/brush.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Property value element <brush>."
+    },
+    {
+      "path": "synthetic/widgets/QAbstractScrollArea.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QAbstractScrollArea."
+    },
+    {
+      "path": "synthetic/widgets/QAbstractSlider.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QAbstractSlider."
+    },
+    {
+      "path": "synthetic/widgets/QAbstractSpinBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QAbstractSpinBox."
+    },
+    {
+      "path": "synthetic/widgets/QCalendarWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QCalendarWidget."
+    },
+    {
+      "path": "synthetic/widgets/QCheckBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QCheckBox."
+    },
+    {
+      "path": "synthetic/widgets/QColumnView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QColumnView."
+    },
+    {
+      "path": "synthetic/widgets/QComboBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QComboBox."
+    },
+    {
+      "path": "synthetic/widgets/QCommandLinkButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QCommandLinkButton."
+    },
+    {
+      "path": "synthetic/widgets/QDateEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDateEdit."
+    },
+    {
+      "path": "synthetic/widgets/QDateTimeEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDateTimeEdit."
+    },
+    {
+      "path": "synthetic/widgets/QDial.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDial."
+    },
+    {
+      "path": "synthetic/widgets/QDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDialog."
+    },
+    {
+      "path": "synthetic/widgets/QDialogButtonBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDialogButtonBox."
+    },
+    {
+      "path": "synthetic/widgets/QDockWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDockWidget."
+    },
+    {
+      "path": "synthetic/widgets/QDoubleSpinBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QDoubleSpinBox."
+    },
+    {
+      "path": "synthetic/widgets/QFontComboBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QFontComboBox."
+    },
+    {
+      "path": "synthetic/widgets/QFrame.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QFrame."
+    },
+    {
+      "path": "synthetic/widgets/QGraphicsView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QGraphicsView."
+    },
+    {
+      "path": "synthetic/widgets/QGroupBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QGroupBox."
+    },
+    {
+      "path": "synthetic/widgets/QKeySequenceEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QKeySequenceEdit."
+    },
+    {
+      "path": "synthetic/widgets/QLCDNumber.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QLCDNumber."
+    },
+    {
+      "path": "synthetic/widgets/QLabel.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QLabel."
+    },
+    {
+      "path": "synthetic/widgets/QLineEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QLineEdit."
+    },
+    {
+      "path": "synthetic/widgets/QListView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QListView."
+    },
+    {
+      "path": "synthetic/widgets/QListWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QListWidget."
+    },
+    {
+      "path": "synthetic/widgets/QMainWindow.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QMainWindow."
+    },
+    {
+      "path": "synthetic/widgets/QMdiArea.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QMdiArea."
+    },
+    {
+      "path": "synthetic/widgets/QMenu.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QMenu."
+    },
+    {
+      "path": "synthetic/widgets/QMenuBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QMenuBar."
+    },
+    {
+      "path": "synthetic/widgets/QPlainTextEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QPlainTextEdit."
+    },
+    {
+      "path": "synthetic/widgets/QProgressBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QProgressBar."
+    },
+    {
+      "path": "synthetic/widgets/QPushButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QPushButton."
+    },
+    {
+      "path": "synthetic/widgets/QRadioButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QRadioButton."
+    },
+    {
+      "path": "synthetic/widgets/QScrollArea.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QScrollArea."
+    },
+    {
+      "path": "synthetic/widgets/QScrollBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QScrollBar."
+    },
+    {
+      "path": "synthetic/widgets/QSlider.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QSlider."
+    },
+    {
+      "path": "synthetic/widgets/QSpinBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QSpinBox."
+    },
+    {
+      "path": "synthetic/widgets/QSplitter.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QSplitter."
+    },
+    {
+      "path": "synthetic/widgets/QStackedWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QStackedWidget."
+    },
+    {
+      "path": "synthetic/widgets/QStatusBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QStatusBar."
+    },
+    {
+      "path": "synthetic/widgets/QTabWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTabWidget."
+    },
+    {
+      "path": "synthetic/widgets/QTableView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTableView."
+    },
+    {
+      "path": "synthetic/widgets/QTableWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTableWidget."
+    },
+    {
+      "path": "synthetic/widgets/QTextBrowser.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTextBrowser."
+    },
+    {
+      "path": "synthetic/widgets/QTextEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTextEdit."
+    },
+    {
+      "path": "synthetic/widgets/QTimeEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTimeEdit."
+    },
+    {
+      "path": "synthetic/widgets/QToolBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QToolBar."
+    },
+    {
+      "path": "synthetic/widgets/QToolBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QToolBox."
+    },
+    {
+      "path": "synthetic/widgets/QToolButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QToolButton."
+    },
+    {
+      "path": "synthetic/widgets/QTreeView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTreeView."
+    },
+    {
+      "path": "synthetic/widgets/QTreeWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QTreeWidget."
+    },
+    {
+      "path": "synthetic/widgets/QUndoView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QUndoView."
+    },
+    {
+      "path": "synthetic/widgets/QWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QWidget."
+    },
+    {
+      "path": "synthetic/widgets/QWizard.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QWizard."
+    },
+    {
+      "path": "synthetic/widgets/QWizardPage.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root widget class QWizardPage."
+    },
+    {
+      "path": "synthetic/forms/invoice_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/customer_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/payment_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/item_editor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/search_panel.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/preferences_general.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/preferences_appearance.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/printer_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/user_account.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/address_form.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/schedule_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/filter_bar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/note_editor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/contact_card.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/inventory_adjust.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/tax_settings.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/shipping_form.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/login_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/status_filters.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/date_range.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/number_formats.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/message_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/backup_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/export_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/reminder_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/discount_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/warehouse_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/shift_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/label_print.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/audit_filter.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/vendor_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/receipt_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/route_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/bin_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/season_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/crew_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/quote_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/forms/meter_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Form layout with buddies and tab stops."
+    },
+    {
+      "path": "synthetic/labs/slider_lab.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/text_lab.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/choice_lab.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/button_row.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/calendar_panel.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/tree_and_table.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/scroll_settings.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/labs/split_editor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/edges/absolute_zorder.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/edges/unicode_names.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/edges/unusual_attribute_order.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/edges/crlf_endings.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "CRLF line endings."
+    },
+    {
+      "path": "synthetic/edges/empty_form.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/edges/nested_15.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    },
+    {
+      "path": "synthetic/edges/thousand_widgets.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": ""
+    }
+  ]
+}

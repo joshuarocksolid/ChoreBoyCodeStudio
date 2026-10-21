@@ -55,7 +55,8 @@ class SelectionModel:
 
     def set(self, ids: Sequence[NodeId], *, current: Optional[NodeId] = None, source: SelectionSource) -> None:
         """Replace the selection. Unknown ids are dropped silently (stale UI).
-        ``current`` defaults to the last id. Emits only when the state changed."""
+        ``current`` defaults to the last id. Emits only when the state changed;
+        outside a ChangeSet dispatch it notifies immediately."""
         ...
 
     def toggle(self, node_id: NodeId, *, source: SelectionSource) -> None:
@@ -72,7 +73,12 @@ class SelectionModel:
         applied, filtered to present ids. Otherwise removed ids are pruned; if
         ``current`` was removed, current becomes the nearest surviving ancestor of
         the removed node that was in the set's ``structure_dirty``, else None.
-        Emits once with source COMMAND/UNDO/PRUNE."""
+
+        Timing: the STATE is updated here, at PRIORITY_SELECTION (5), so later
+        listeners read the new selection. Subscribers are notified once, with
+        source COMMAND/UNDO/PRUNE, after the last log listener for this
+        ChangeSet (PRIORITY_SELECTION_NOTIFY, 100), so realize (10), the hit
+        index (20) and views (30) have already run."""
         ...
 
     def subscribe(self, listener: Callable[[SelectionChange], None]) -> Callable[[], None]:

@@ -45,6 +45,9 @@ class Entry:
     selection_after: SelectionSnapshot
     merge_key: Optional[object] = None
     merge_token: Optional[str] = None
+    #: Opened by ``execute(..., continue_gesture=True)``: absorbs later commands
+    #: with the same ``merge_token`` whatever their merge key.
+    continue_gesture: bool = False
 
 
 class Subscription:
@@ -69,7 +72,7 @@ class CommandLog:
         ...
 
     # ----------------------------------------------------------- execution
-    def execute(self, command: Command) -> CommandOutcome:
+    def execute(self, command: Command, *, continue_gesture: bool = False) -> CommandOutcome:
         """Apply ``command`` as one entry (or inside the open transaction).
 
         Steps: refuse when called from a listener (ReentrantCommandError); run
@@ -83,11 +86,22 @@ class CommandLog:
         Merge rules: merge into the top entry iff (a) not inside a transaction,
         (b) both have the same non-None ``merge_key()`` and the same non-None
         ``merge_token``, (c) the top entry is not the save point, (d) the redo
-        stack is empty. A merged entry keeps the first entry's inverse ops and
-        selection_before and appends the new ops. If after merging the entry's
-        net effect is nil (every property/field back to its original value) the
-        entry is popped; the ChangeSet is still emitted (the document changed
-        back).
+        stack is empty. Merged entry: ``ops = top.ops + new.ops``,
+        ``inverse_ops = top.inverse_ops + new.inverse_ops``, ``commands`` appended,
+        ``allocated`` appended, ``selection_before`` from the top entry,
+        ``selection_after`` from the new command. Net nil: the entry has only
+        property/field ops and every touched (owner, kind, name) and (node, field)
+        equals the value its FIRST inverse op restores; such an entry is popped
+        and the ChangeSet is still emitted.
+
+        Gesture continuation: if the top entry has ``continue_gesture=True`` and
+        the new command has the same non-None ``merge_token``, it is absorbed the
+        same way regardless of ``merge_key()`` (conditions a, c, d still apply).
+        ``continue_gesture=True`` on this call marks the new (or merged) entry.
+
+        Every Qt-measured parameter is measured before a transaction opens; a
+        planner needing measurements of nodes created/moved earlier in the same
+        transaction raises CommandRejected.
         """
         ...
 

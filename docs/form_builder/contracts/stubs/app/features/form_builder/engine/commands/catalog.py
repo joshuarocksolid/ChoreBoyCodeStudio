@@ -56,9 +56,12 @@ class InsertFragment(_CommandBase):
     """Insert, paste, duplicate, Alt-drag clone, palette drop, template insert.
 
     ``fragment`` has ``id=None`` everywhere; the planner allocates ids pre-order.
-    Name collisions are renamed with the suffix rule; references INSIDE the
-    fragment (buddy, tab stops, zorder, addaction, connections, cbcs formulas via
-    RenameParticipants) follow the renames; references to names outside the
+    The whole rename map is computed before inserting, against
+    ``doc.names()`` plus names already chosen for this fragment. Name
+    collisions are renamed with the suffix rule; references INSIDE the
+    fragment (buddy, tab stops, zorder, addaction, connections: rewritten in the
+    specs; cbcs formulas: RenameParticipants with ``scope`` = inserted ids)
+    follow the renames, applied simultaneously; references to names outside the
     fragment are kept (LOGIC_DESIGN 2.13). Connections in the fragment are added
     only when both ends exist after the paste. Custom widget declarations and
     resource includes are merged by class name / location (an existing
@@ -93,7 +96,9 @@ class DeleteNodes(_CommandBase):
     connections with that sender or receiver, tab stops, zorder entries,
     addaction refs, ``buddy`` properties naming them, ``buttonGroup`` attributes
     of a deleted group. ``cbcs*`` logic references are NOT removed (they become
-    FB101 problems; LOGIC_DESIGN 2.13). DeleteParticipants may add ops.
+    FB101 problems; LOGIC_DESIGN 2.13). References to a name that another
+    surviving node also uses (FB010) are NOT removed. DeleteParticipants may
+    add ops.
     Selects the nearest surviving sibling, else the parent.
     """
 
@@ -115,6 +120,10 @@ class MoveNodes(_CommandBase):
     command_type: ClassVar[str] = "move_nodes"
     ids: Tuple[NodeId, ...]
     placement: Placement
+    merge_token: Optional[str] = None
+
+    # merge_key() = ("move", ids): repeated Alt+arrow presses within 1 s
+    # (one UX-NUDGE-001 gesture token) merge into one step.
 
 
 @dataclass(frozen=True)
@@ -243,7 +252,10 @@ class SetProperty(_CommandBase):
 
     ``stdset``: None keeps the existing entry's stdset (or none for new entries);
     "0" makes a dynamic property. Setting a value semantically equal to the
-    current one is a noop. ``merge_key()`` = ``("set_property", owner, kind, name)``
+    current one is a noop. Text containing characters outside the XML 1.0 Char
+    range is rejected (CommandRejected). ``cbcsSplitterSizes`` (comma-separated
+    ints on a QSplitter, ``stdset="0"``) is set through this command.
+    ``merge_key()`` = ``("set_property", owner, kind, name)``
     so rapid edits within one gesture (``merge_token``) merge.
     """
 
@@ -279,8 +291,10 @@ class Rename(_CommandBase):
     with ``cbcs``, is reserved for formulas (LOGIC_DESIGN 4.5) or is already used
     (CommandRejected with FB011/FB106/FB010). Updates every native reference in
     the same entry: buddy cstrings, tab stops, zorder, addaction, connection
-    sender/receiver, action ``menu`` fields, and ``<class>`` when the root is
-    renamed and ``<class>`` equalled the old name. RenameParticipants
+    sender/receiver, action ``menu`` fields, ``buttonGroup`` attribute values
+    (when a button group is renamed), and ``<class>`` when the root is renamed
+    and ``<class>`` equalled the old name. When the old name is shared with
+    another node (FB010), the node is renamed but NO references are rewritten. RenameParticipants
     (M6.0b: formula tokens, step targets, error-label references) add their ops.
     Updating ``self.ui.oldName`` in user code is NOT part of this command
     (integration offers it separately through CBCS rename-refactor).
@@ -551,7 +565,9 @@ class SetLogic(_CommandBase):
     text or canonical JSON) or None to remove. Writes ``stdset="0"`` and a
     ``<string notr="true">`` value. Also maintains the root's ``cbcsLogic`` version
     (added on first logic property, removed with the last). Refused (FB402) when
-    the document's logic version is newer than supported.
+    the document's logic version is newer than supported. Text outside the
+    XML 1.0 Char range is rejected. Layout keys (``CBCS_LAYOUT_KEYS``) are
+    refused here; they go through SetProperty.
     ``merge_key()`` = ``("logic", owner, key)``."""
 
     command_type: ClassVar[str] = "set_logic"

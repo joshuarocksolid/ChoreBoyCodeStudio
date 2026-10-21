@@ -14,7 +14,12 @@ SUPPORTED_LOGIC_VERSION = 1
 #: (LOGIC_DESIGN 6.1 table order). ``cbcsOn*`` keys sort after the fixed keys
 #: below by signal name; unknown ``cbcs*`` keys sort last by name and are
 #: preserved verbatim.
+#: ``cbcs*`` keys that are layout data, not logic: set by SetProperty, never
+#: add ``cbcsLogic``, not read-only under FB402, category "property".
+CBCS_LAYOUT_KEYS: Tuple[str, ...] = ("cbcsSplitterSizes",)
+
 LOGIC_PROPERTY_ORDER: Tuple[str, ...] = (
+    "cbcsSplitterSizes",
     "cbcsLogic",
     "cbcsEnabledWhen",
     "cbcsVisibleWhen",
@@ -36,7 +41,8 @@ LOGIC_PROPERTY_ORDER: Tuple[str, ...] = (
 
 
 def is_logic_key(name: str) -> bool:
-    """True for any dynamic property whose name starts with ``cbcs``."""
+    """True for any dynamic property whose name starts with ``cbcs`` and is not in
+    ``CBCS_LAYOUT_KEYS``."""
     ...
 
 

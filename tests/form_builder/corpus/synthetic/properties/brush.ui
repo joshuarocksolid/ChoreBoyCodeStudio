@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropBrush</class>
+ <widget class="QWidget" name="PropBrush">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>brush</string>
+  </property>
+  <property name="fill" stdset="0">
+   <brush brushstyle="SolidPattern"><color alpha="255"><red>1</red><green>2</green><blue>3</blue></color></brush>
+  </property>
+ </widget>
+
+</ui>
