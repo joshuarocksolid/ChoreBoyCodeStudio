@@ -121,6 +121,5 @@ class CompletionItemModel(QAbstractListModel):
 
 
 def same_completion_identity(left: CompletionItem, right: CompletionItem) -> bool:
-    if left.item_id and right.item_id:
-        return left.item_id == right.item_id
-    return left.label == right.label and left.kind == right.kind and left.source == right.source
+    # Rows are one per label; a later tier may have merged a different item id in.
+    return left.label == right.label

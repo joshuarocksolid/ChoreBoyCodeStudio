@@ -127,6 +127,7 @@ class CompletionController(QObject):
         self._base_names: List[str] = []
         self._base_key: Optional[Tuple[str, int, str]] = None
         self._base_root = ""
+        self._resolved: Dict[str, CompletionItem] = {}
         self._list_width = MIN_LIST_WIDTH
         self._narrow_query: Optional[str] = None
         self._narrow_matches: List[int] = []
@@ -352,6 +353,7 @@ class CompletionController(QObject):
         """Apply lazily resolved docs for one row."""
 
         replaced = self._model.replace_item(item)
+        self._resolved[item.label] = item
         for index, existing in enumerate(self._base_items):
             if existing.label == item.label:
                 self._base_items[index] = item
@@ -417,13 +419,16 @@ class CompletionController(QObject):
         self._record("request", trigger=trigger_kind, prefix=site.prefix, kind=site.kind)
 
     def _set_base(self, items: List[CompletionItem], *, key: Tuple[str, int, str], root: str) -> None:
+        if key != self._base_key:
+            self._resolved = {}
         seen: set = set()
         base: List[CompletionItem] = []
         for item in items:
             if is_tier_header_item(item) or not item.label or item.label in seen:
                 continue
             seen.add(item.label)
-            base.append(item)
+            # A later tier repaints the same names; keep docs already resolved.
+            base.append(self._resolved.get(item.label, item))
         if base and base_labels_equal(self._base_items, base) and self._base_key == key:
             self._base_items = base
             return

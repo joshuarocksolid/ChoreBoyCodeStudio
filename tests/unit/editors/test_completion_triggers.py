@@ -237,3 +237,22 @@ def test_picked_row_stays_selected_while_it_still_matches(editor: CodeEditorWidg
     assert first is not None and picked is not None and picked.label != first.label
     current = editor._completion_popup.current_item()
     assert current is not None and current.label == picked.label
+
+
+def test_resolved_docs_survive_a_later_tier_repaint(editor: CodeEditorWidget, requests: Requests) -> None:
+    _start(editor, "btn.setTe")
+    _ctrl_space(editor)
+    _deliver(editor, requests)
+    resolved = CompletionItem(
+        label="setText",
+        insert_text="setText",
+        kind=CompletionKind.METHOD,
+        signature="setText(text: str) -> None",
+        detail="QAbstractButton method",
+    )
+    editor.show_resolved_completion_item_for_request(request_generation=requests.calls[-1][2], item=resolved)
+
+    _deliver(editor, requests)
+
+    docs = editor._completion_popup.popup().docs_panel().visible_text()
+    assert "setText(text: str) -> None" in docs and "QAbstractButton method" in docs
