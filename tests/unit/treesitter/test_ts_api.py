@@ -24,9 +24,9 @@ def _identifier_texts(raw: Any, source: bytes) -> set[str]:
 
 
 def test_captures_limit_to_point_range() -> None:
-    import app.treesitter.loader as loader
-
-    loader._RUNTIME_INITIALIZED = False
+    # Use the process-wide runtime as-is. Re-initializing it re-imports
+    # tree_sitter, and the cached default registry would then hold Language
+    # objects from the previous module instance.
     status = initialize_tree_sitter_runtime()
     if not status.is_available:
         pytest.skip(status.message)
