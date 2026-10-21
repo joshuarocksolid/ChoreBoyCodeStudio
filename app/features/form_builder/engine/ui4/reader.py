@@ -1381,8 +1381,9 @@ def _property_content(node: _XNode) -> OpaqueElement:
     children: List[object] = []
     for child in node.children:
         if isinstance(child, str):
-            if child.strip():
-                children.append(child)
+            stripped = child.strip()
+            if stripped:
+                children.append(stripped)
         elif isinstance(child, _XNode):
             children.append(_to_opaque(child))
         elif isinstance(child, (OpaqueComment, OpaquePI)):
