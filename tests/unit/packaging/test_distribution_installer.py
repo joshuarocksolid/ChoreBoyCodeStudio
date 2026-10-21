@@ -1134,6 +1134,40 @@ def test_uninstall_removes_launchers_and_keeps_data_unless_asked(tmp_path: Path)
     assert not install_dir.exists()
 
 
+def test_a_shipped_file_the_app_changed_is_kept_as_data(tmp_path: Path) -> None:
+    installer = _load_module("distribution_installer_changed_data", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    (package_root / "payload" / "tasks.sqlite3").write_bytes(b"empty db")
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    home = tmp_path / "home"
+    home.mkdir()
+    assert installer.perform_install(
+        manifest=_project_manifest(), package_root=package_root, install_dir=install_dir, home_roots=[home]
+    ).ok
+    (install_dir / "tasks.sqlite3").write_bytes(b"the shop's tasks")
+    (install_dir / "__pycache__").mkdir()
+    (install_dir / "__pycache__" / "app.cpython-39.pyc").write_bytes(b"cache")
+
+    assert installer.perform_install(
+        manifest=_project_manifest(), package_root=package_root, install_dir=install_dir, home_roots=[home]
+    ).ok
+    assert (install_dir / "tasks.sqlite3").read_bytes() == b"the shop's tasks"
+    assert installer.perform_install(
+        manifest=_project_manifest(), package_root=package_root, install_dir=install_dir, home_roots=[home]
+    ).ok
+    assert (install_dir / "tasks.sqlite3").read_bytes() == b"the shop's tasks"
+
+    plan = installer.plan_uninstall(install_dir, marker_filename="cbcs_installed_package.json", home_roots=[home])
+    assert plan.data_files == ("tasks.sqlite3",)
+    installer.uninstall_installed_package(
+        install_dir, marker_filename="cbcs_installed_package.json", delete_data=False, home_roots=[home]
+    )
+    assert (install_dir / "tasks.sqlite3").read_bytes() == b"the shop's tasks"
+    assert not (install_dir / "app.py").exists()
+    assert not (install_dir / "__pycache__").exists()
+
+
 def test_replace_migrates_data_out_of_the_old_local_slot(tmp_path: Path) -> None:
     installer = _load_module("distribution_installer_migrate", "packaging/install.py")
     package_root = tmp_path / "package"

@@ -422,6 +422,7 @@ def write_installed_package_record(
     owned_relative_paths: tuple[str, ...] = (),
     published_launcher_paths: tuple[str, ...] = (),
     icon_path: str = "",
+    owned_sha256: Optional[dict[str, str]] = None,
 ) -> None:
     record = {
         "package_id": manifest.package_id,
@@ -432,6 +433,7 @@ def write_installed_package_record(
         "install_dir": str(install_dir.resolve()),
         "launcher_filename": manifest.launcher_filename,
         "owned_relative_paths": list(owned_relative_paths),
+        "owned_sha256": dict(owned_sha256 or {}),
         "published_launcher_paths": list(published_launcher_paths),
         "icon_path": icon_path,
     }
@@ -589,6 +591,31 @@ def _relative_files(root: Path) -> list[str]:
     return files
 
 
+def _is_bytecode_cache(rel: str) -> bool:
+    return "__pycache__" in Path(rel).parts or rel.endswith(".pyc")
+
+
+def changed_owned_files(install_dir: Path, marker: dict[str, Any]) -> set[str]:
+    """Return installed files the app has changed since install, such as a SQLite database.
+
+    Those hold the user's data, so Replace and Uninstall keep them like any other data.
+    """
+    recorded = marker.get("owned_sha256")
+    if not isinstance(recorded, dict):
+        return set()
+    changed: set[str] = set()
+    for rel, digest in recorded.items():
+        target = install_dir / str(rel)
+        if not target.is_file() or _is_bytecode_cache(str(rel)):
+            continue
+        try:
+            if _compute_sha256(target) != digest:
+                changed.add(str(rel))
+        except OSError:
+            changed.add(str(rel))
+    return changed
+
+
 def _copy_tree_files(source: Path, destination: Path) -> list[str]:
     copied: list[str] = []
     for path in sorted(source.rglob("*")):
@@ -660,12 +687,19 @@ def perform_install(
         if isinstance(item, str)
     }
     replaced_version = str(previous.get("version", "")) if previous.get("package_id") == manifest.package_id else ""
+    new_payload_names = set(_relative_files(payload_root))
+    changed_data = changed_owned_files(install_dir, previous)
+    if previous_owned:
+        # Data kept by an earlier Replace shares a name with a payload file. It stays the user's copy.
+        changed_data |= {
+            rel for rel in _relative_files(install_dir) if rel not in previous_owned and rel in new_payload_names
+        }
     new_payload = set(_relative_files(payload_root))
     skip_names = {manifest.install_marker_filename, manifest.launcher_filename}
     preserved = _preserved_relative_paths(
         install_dir,
-        previous_owned=previous_owned,
-        new_payload=new_payload,
+        previous_owned=previous_owned - changed_data,
+        new_payload=new_payload - changed_data,
         skip=skip_names,
     )
     legacy_slots = _legacy_slots(manifest, install_dir, legacy_bases or [])
@@ -691,7 +725,7 @@ def perform_install(
         if source is None:
             continue
         target = stage_dir / rel
-        if target.exists():
+        if target.exists() and rel not in changed_data:
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(str(source), str(target))
@@ -704,12 +738,17 @@ def perform_install(
     launcher_path = stage_dir / manifest.launcher_filename
     launcher_path.write_text(build_installed_desktop_entry(install_dir, manifest), encoding="utf-8")
     launcher_path.chmod(launcher_path.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-    owned = tuple(sorted(set(copied) | {manifest.launcher_filename, manifest.install_marker_filename}))
+    # A kept data file is not the payload's copy, so the installer no longer owns it.
+    owned = tuple(
+        sorted((set(copied) - changed_data) | {manifest.launcher_filename, manifest.install_marker_filename})
+    )
+    owned_sha256 = {rel: _compute_sha256(stage_dir / rel) for rel in copied if rel not in changed_data}
     write_installed_package_record(
         stage_dir,
         manifest,
         owned_relative_paths=owned,
         icon_path=icon_path,
+        owned_sha256=owned_sha256,
     )
 
     previous_existed = install_dir.exists()
@@ -761,6 +800,7 @@ def perform_install(
             owned_relative_paths=owned,
             published_launcher_paths=published,
             icon_path=icon_path,
+            owned_sha256=owned_sha256,
         )
     except OSError as exc:
         warnings = warnings + (
@@ -801,13 +841,19 @@ def uninstall_installed_package(
             shutil.rmtree(install_dir)
             removed.append(str(install_dir))
     else:
-        owned = [str(item) for item in marker.get("owned_relative_paths", []) if isinstance(item, str)]
-        for rel in owned:
+        changed = changed_owned_files(install_dir, marker)
+        owned = [
+            str(item)
+            for item in marker.get("owned_relative_paths", [])
+            if isinstance(item, str) and str(item) not in changed
+        ]
+        caches = [rel for rel in _relative_files(install_dir) if _is_bytecode_cache(rel)]
+        for rel in owned + caches:
             target = install_dir / rel
             if target.is_file():
                 target.unlink()
                 removed.append(str(target))
-        _remove_empty_owned_dirs(install_dir, owned)
+        _remove_empty_owned_dirs(install_dir, owned + caches)
         if install_dir.exists():
             kept = str(install_dir.resolve())
     return UninstallOutcome(removed_paths=tuple(removed), kept_data_dir=kept)
@@ -1291,7 +1337,10 @@ class UninstallPlan:
 
 def plan_uninstall(install_dir: Path, *, marker_filename: str, home_roots: list[Path]) -> UninstallPlan:
     marker = read_installed_marker(install_dir, marker_filename)
-    owned = {str(item) for item in marker.get("owned_relative_paths", []) if isinstance(item, str)}
+    changed = changed_owned_files(install_dir, marker)
+    owned = {
+        str(item) for item in marker.get("owned_relative_paths", []) if isinstance(item, str)
+    } - changed
     app_files = [rel for rel in owned if (install_dir / rel).is_file()]
     launcher_name = marker.get("launcher_filename")
     skip = {marker_filename}
@@ -1300,7 +1349,7 @@ def plan_uninstall(install_dir: Path, *, marker_filename: str, home_roots: list[
     data_files: list[str] = []
     data_bytes = 0
     for rel in _relative_files(install_dir):
-        if rel in owned or rel in skip:
+        if rel in owned or rel in skip or _is_bytecode_cache(rel):
             continue
         data_files.append(rel)
         try:
