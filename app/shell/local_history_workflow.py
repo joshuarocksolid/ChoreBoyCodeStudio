@@ -554,6 +554,9 @@ class LocalHistoryWorkflow:
     def schedule_autosave(self, file_path: str, content: str) -> None:
         self._draft_autosave.schedule_autosave(file_path, content)
 
+    def note_source_changed(self, file_path: str) -> None:
+        self._draft_autosave.note_source_changed(file_path)
+
     def watch_content_source(self, file_path: str, source: Any) -> Callable[[], None]:
         return self._draft_autosave.watch_content_source(file_path, source)
 

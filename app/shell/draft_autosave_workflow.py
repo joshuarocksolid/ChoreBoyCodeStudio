@@ -73,6 +73,11 @@ class DraftAutosaveWorkflow:
         self._pending_autosave_payloads[file_path] = content
         self._autosave_timer.start()
 
+    def note_source_changed(self, file_path: str) -> None:
+        """Record that a sourced tab changed. The flush reads the text later."""
+        self._pending_source_paths.add(file_path)
+        self._autosave_timer.start()
+
     def watch_content_source(self, file_path: str, source: TabContentSource) -> Callable[[], None]:
         """Schedule drafts from ``source`` without serializing until the timer fires."""
         self.unwatch_content_source(file_path)

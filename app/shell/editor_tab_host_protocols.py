@@ -223,6 +223,9 @@ class EditorTabWorkflowHost(
     def local_history_schedule_autosave(self, file_path: str, content: str) -> None:
         ...
 
+    def local_history_note_source_changed(self, file_path: str) -> None:
+        ...
+
     def local_history_discard_pending_autosave(self, file_path: str) -> None:
         ...
 

@@ -215,10 +215,11 @@ class EditorTabFactory:
 
     def _attach_content_source(self, tab_state: EditorTabState, source: TabContentSource) -> None:
         tab_state.content_source = source
-        workflow = getattr(self._window, "_local_history_workflow", None)
-        if workflow is None:
-            return
-        tab_state.content_source_unsubscribe = workflow.watch_content_source(tab_state.file_path, source)
+
+        def on_changed() -> None:
+            self._window._editor_tab_workflow.handle_content_source_changed(tab_state)
+
+        tab_state.content_source_unsubscribe = source.subscribe_changed(on_changed)
 
 
 def _text_tab_with_notice(editor_widget: CodeEditorWidget, reason: str, parent: QWidget) -> QWidget:

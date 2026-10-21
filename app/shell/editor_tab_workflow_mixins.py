@@ -75,6 +75,9 @@ class EditorTabBufferDelegates:
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_text_changed(file_path, editor_widget)
 
+    def handle_content_source_changed(self, tab_state: Any) -> None:
+        self._buffer_workflow.handle_content_source_changed(tab_state)
+
     def handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_cursor_position_changed(file_path, editor_widget)
 
