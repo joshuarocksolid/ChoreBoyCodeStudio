@@ -286,7 +286,7 @@ class MiddleClickTabBar(QTabBar):
             and self._press_index >= 0
             and arg__1.buttons() & Qt.LeftButton
         ):
-            if not self._group_drag_active and self._left_bar_vertically(event_pos(arg__1)):
+            if not self._group_drag_active and self._left_bar(event_pos(arg__1)):
                 self._group_drag_active = True
                 self._group_drag_started(self._press_index)
             if self._group_drag_active:
@@ -315,9 +315,17 @@ class MiddleClickTabBar(QTabBar):
             return
         super().mouseDoubleClickEvent(arg__1)
 
-    def _left_bar_vertically(self, pos: QPoint) -> bool:
+    def _left_bar(self, pos: QPoint) -> bool:
+        """Return whether a tab drag has left this bar, so it targets another group.
+
+        Up or down past the bar's height, or sideways past its ends, which is
+        where the other group's tab bar is when the groups sit side by side.
+        """
         distance = max(self.height(), QApplication.startDragDistance())
-        return abs(pos.y() - self._press_pos.y()) > distance
+        if abs(pos.y() - self._press_pos.y()) > distance:
+            return True
+        margin = QApplication.startDragDistance()
+        return pos.x() < -margin or pos.x() > self.width() + margin
 
 
 class _PaintingBar:

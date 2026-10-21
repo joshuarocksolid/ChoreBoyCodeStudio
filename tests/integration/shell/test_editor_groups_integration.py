@@ -167,6 +167,33 @@ def test_dragging_a_tab_down_into_the_other_group_moves_it(tmp_path: Path, shell
     shutdown_main_window_for_test(window, app)
 
 
+def test_dragging_a_tab_sideways_onto_the_other_tab_bar_moves_it(tmp_path: Path, shell_qapp) -> None:  # type: ignore[no-untyped-def]
+    app = shell_qapp
+    window, _root, (alpha, _beta) = _open_window(tmp_path, app, ("alpha.py", "beta.py"))
+    groups = window._editor_groups
+    groups.split_right()
+    groups.focus_group(0)
+    first, second = groups.tab_widgets()
+    bar = first.tabBar()
+    start = bar.tabRect(window._editor_tab_workflow.tab_index_for_path(alpha)).center()
+    other_bar = second.tabBar()
+    drop = bar.mapFromGlobal(other_bar.mapToGlobal(other_bar.rect().center()))
+    assert abs(drop.y() - start.y()) < bar.height()
+
+    def mouse(kind, pos: QPoint, buttons) -> None:  # type: ignore[no-untyped-def]
+        QApplication.sendEvent(bar, QMouseEvent(kind, pos, bar.mapToGlobal(pos), Qt.LeftButton, buttons, Qt.NoModifier))
+
+    mouse(QEvent.MouseButtonPress, start, Qt.LeftButton)
+    for step in range(1, 6):
+        mouse(QEvent.MouseMove, start + (drop - start) * step / 5, Qt.LeftButton)
+    mouse(QEvent.MouseButtonRelease, drop, Qt.NoButton)
+    app.processEvents()
+
+    assert [label.rstrip(" *") for label in _labels(first)] == ["beta.py"]
+    assert "alpha.py" in [label.rstrip(" *") for label in _labels(second)]
+    shutdown_main_window_for_test(window, app)
+
+
 def test_group_layout_survives_session_restore(tmp_path: Path, shell_qapp) -> None:  # type: ignore[no-untyped-def]
     app = shell_qapp
     window, root, (alpha, beta, gamma) = _open_window(tmp_path, app, ("alpha.py", "beta.py", "gamma.py"))
