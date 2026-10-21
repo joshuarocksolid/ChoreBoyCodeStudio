@@ -24,6 +24,7 @@ from PySide2.QtCore import QPoint, QRect, Qt, QTimer
 from PySide2.QtWidgets import QApplication, QFrame, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.editor_tab_page import EditorTabPage, page_editor
@@ -323,7 +324,25 @@ class EditorGroupsController:
             self._window._editor_tab_workflow.release_editor_widget(editor)
         page.hide()
         page.deleteLater()
+        self._register_remaining_markdown_pane(page.buffer_id)
         return None
+
+    def _register_remaining_markdown_pane(self, buffer_id: str) -> None:
+        """When the registered markdown view closes, the buffer's view in the other group takes over."""
+        window = self._window
+        tab = window._editor_manager.get_tab_by_id(buffer_id)
+        if tab is None:
+            return
+        registry = window._tab_content_registry.markdown_registry()
+        if registry.pane_for_path(tab.file_path) is not None:
+            return
+        for group in self._groups:
+            index = group.index_of_buffer(buffer_id)
+            view_page = group.tabs.widget(index) if index >= 0 else None
+            content = view_page.content() if isinstance(view_page, EditorTabPage) else None
+            if isinstance(content, MarkdownEditorPane):
+                registry.register(tab.file_path, content)
+                return
 
     # -- Project-tree deletes and renames ------------------------------------
 
@@ -395,7 +414,16 @@ class EditorGroupsController:
         if tab_state is None:
             return -1
         view = window._editor_tab_factory.create_buffer_view(tab_state, source_editor, parent=target.tabs)
-        page = window._editor_tab_factory.build_tab_page(view, buffer_id)
+        # A Markdown file gets the same source / preview pane in every group.
+        content = window._editor_tab_workflow.wrap_tab_content_if_markdown(
+            editor_widget=view,
+            file_path=tab_state.file_path,
+            parent=target.tabs,
+            theme_tokens=window._shell_theme_workflow.resolve_theme_tokens(),
+            open_linked_file=lambda linked_path: window._editor_tab_factory.open_file_in_editor(linked_path, preview=False),
+            register=False,
+        )
+        page = window._editor_tab_factory.build_tab_page(content, buffer_id)
         index = target.tabs.addTab(page, tab_state.display_name)
         window._editor_tabs_coordinator.present_tab_at(index, tab_state, tabs=target.tabs)
         return index

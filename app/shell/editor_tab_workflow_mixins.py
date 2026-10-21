@@ -69,7 +69,14 @@ class EditorTabMarkdownDelegates:
         self._markdown_workflow.refresh_markdown_action_states()
 
     def wrap_tab_content_if_markdown(
-        self, *, editor_widget: CodeEditorWidget, file_path: str, parent: Any, theme_tokens: Any, open_linked_file: Any
+        self,
+        *,
+        editor_widget: CodeEditorWidget,
+        file_path: str,
+        parent: Any,
+        theme_tokens: Any,
+        open_linked_file: Any,
+        register: bool = True,
     ) -> Any:
         return self._markdown_workflow.wrap_tab_content_if_markdown(
             editor_widget=editor_widget,
@@ -77,6 +84,7 @@ class EditorTabMarkdownDelegates:
             parent=parent,
             theme_tokens=theme_tokens,
             open_linked_file=open_linked_file,
+            register=register,
         )
 
 

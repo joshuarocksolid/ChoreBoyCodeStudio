@@ -124,6 +124,9 @@ class EditorTabPreferencesHost(Protocol):
 class EditorTabMarkdownHost(Protocol):
     """Markdown pane registry and view action menu accessors."""
 
+    def editor_tabs_widget(self) -> QTabWidget | None:
+        ...
+
     def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
         ...
 
