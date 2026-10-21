@@ -10,7 +10,7 @@ from typing import Any
 from app.intelligence.runtime_members import RuntimeMemberRef, RuntimeUnavailable
 from app.run.run_manifest import ReplControlConfig
 from app.runner.repl_completion import ReplCompletionRequest, ReplCompletionService
-from app.runner.repl_introspection import ReplIntrospectionService
+from app.runner.repl_introspection import ReplIntrospectionService, namespace_lookup_for, start_prewarm_thread
 from app.runner.repl_protocol import (
     REPL_METHOD_COMPLETE,
     REPL_METHOD_LIST_MEMBERS,
@@ -36,7 +36,9 @@ class ReplControlServer:
     def __init__(self, *, config: ReplControlConfig, namespace: dict[str, Any]) -> None:
         self._config = config
         self._namespace_lock = threading.RLock()
-        self._introspection_service = ReplIntrospectionService()
+        self._introspection_service = ReplIntrospectionService(
+            namespace_lookup=namespace_lookup_for(namespace, self._namespace_lock),
+        )
         self._completion_service = ReplCompletionService(
             namespace,
             namespace_lock=self._namespace_lock,
@@ -78,6 +80,7 @@ class ReplControlServer:
         self._server = socketserver.ThreadingTCPServer((self._config.host, self._config.port), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
+        start_prewarm_thread()
         _logger.info("REPL control server listening on %s:%s", self._config.host, self._config.port)
 
     def stop(self) -> None:

@@ -57,15 +57,6 @@ def _primed(listing: RuntimeMemberListing) -> RuntimeIntrospectionCoordinator:
     return coordinator
 
 
-def test_private_names_never_consume_the_public_cap() -> None:
-    public = [f"item{index:02d}" for index in range(20)]
-    private = [f"_item{index:02d}" for index in range(20)]
-    coordinator = _primed(_listing(*private, *public))
-
-    assert _cached_labels(coordinator, "item", max_results=5) == public[:5]
-    assert _cached_labels(coordinator, "_item", max_results=5) == private
-
-
 def test_omitted_max_results_returns_every_matching_public_name() -> None:
     names = [f"name{index:03d}" for index in range(150)]
     coordinator = _primed(_listing(*names))

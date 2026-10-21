@@ -55,14 +55,44 @@ def detect_module_member_completion_context(source_text: str, cursor_position: i
     )
 
 
+_TOP_LEVEL_IMPORT_LINE = re.compile(r"^(?:import|from)\s")
+
+
+def _top_level_import_statements(source_text: str) -> list[ast.stmt]:
+    """Parse only unindented import statements.
+
+    Parsing the whole buffer with recovery is quadratic when a syntax error
+    sits mid-file (130 ms per completion on ChoreBoy for 1300 lines).
+    """
+
+    statements: list[ast.stmt] = []
+    pending: list[str] = []
+    for line in source_text.splitlines():
+        if pending and _TOP_LEVEL_IMPORT_LINE.match(line):
+            pending = [line]
+        elif pending:
+            pending.append(line)
+        elif _TOP_LEVEL_IMPORT_LINE.match(line):
+            pending = [line]
+        else:
+            continue
+        text = "\n".join(pending)
+        if text.count("(") > text.count(")") or text.rstrip().endswith("\\"):
+            if len(pending) < 50:
+                continue
+        pending = []
+        try:
+            statements.extend(ast.parse(text).body)
+        except SyntaxError:
+            continue
+    return statements
+
+
 def collect_import_module_bindings(source_text: str) -> dict[str, str]:
     """Collect import aliases mapped to module-name candidates from source."""
-    syntax_tree = _parse_source_with_recovery(source_text)
-    if syntax_tree is None:
-        return {}
 
     bindings: dict[str, str] = {}
-    for node in getattr(syntax_tree, "body", []):
+    for node in _top_level_import_statements(source_text):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 alias_name = alias.asname or alias.name.split(".")[0]

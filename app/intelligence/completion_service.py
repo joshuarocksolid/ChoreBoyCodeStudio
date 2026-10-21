@@ -12,12 +12,7 @@ from app.intelligence.completion_broker import CompletionBroker
 from app.intelligence.completion_context import CompletionContext
 from app.intelligence.completion_merge_policy import merge_completion_display
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem
-from app.intelligence.runtime_introspection import (
-    RuntimeIntrospectionCoordinator,
-    RuntimeIntrospectionQuery,
-    attach_replacement_metadata,
-    resolve_runtime_introspection_query_with_inference,
-)
+from app.intelligence.runtime_introspection import attach_replacement_metadata
 from app.intelligence.semantic_facade import SemanticFacade
 from app.project.file_inventory import ProjectInventorySnapshot
 
@@ -97,26 +92,6 @@ class CompletionService:
     def build_completion_context(self, request: CompletionRequest) -> CompletionContext:
         """Return broker-owned completion context for one editor request."""
         return self._broker._context_from_request(request)
-
-    def runtime_completion_items(
-        self,
-        context: CompletionContext,
-        *,
-        coordinator: RuntimeIntrospectionCoordinator | None,
-    ) -> tuple[RuntimeIntrospectionQuery | None, list[CompletionItem]]:
-        """Resolve cached runtime introspection items for ``context``."""
-        runtime_query = resolve_runtime_introspection_query_with_inference(
-            context=context,
-            project_root=context.project_root,
-            current_file_path=context.file_path,
-            source_text=context.source_text,
-        )
-        runtime_items: list[CompletionItem] = []
-        if coordinator is not None and runtime_query is not None:
-            cached = coordinator.cached_items(runtime_query, max_results=context.max_results)
-            if cached:
-                runtime_items = attach_replacement_metadata(cached, context=context)
-        return runtime_query, runtime_items
 
     def attach_runtime_replacement_metadata(
         self,

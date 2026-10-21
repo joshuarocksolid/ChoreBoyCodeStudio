@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QPoint, Qt, QTimer
+from PySide2.QtCore import QPoint, Qt
 from PySide2.QtGui import QColor, QTextCursor
 from PySide2.QtWidgets import QPlainTextEdit, QWidget
 
@@ -79,25 +79,16 @@ class CodeEditorWidget(
         self._hover_tooltip_enabled = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT
         self._signature_help_provider: Callable[[str, int], str | None] | None = None
         self._signature_help_requester: Callable[[str, int, int], None] | None = None
-        self._completion_enabled = True
-        self._completion_auto_trigger = True
-        self._completion_auto_trigger_period = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
         self._completion_request_generation = 0
-        self._pending_completion_trigger_character = ""
-        self._active_completion_prefix = ""
         self._hover_request_generation = 0
         self._hover_request_global_pos: QPoint | None = None
         self._signature_help_request_generation = 0
         self._completion_popup = CompletionController(self)
         self._completion_popup.set_widget(self)
+        self._completion_popup.set_host(self)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
         self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
-        self._completion_debounce_timer = QTimer(self)
-        self._completion_debounce_timer.setSingleShot(True)
-        self._completion_debounce_timer.setInterval(50)
-        self._completion_debounce_timer.timeout.connect(self._flush_debounced_completion_request)
-        self._debounced_completion_request: tuple[str, int, bool, str, str] | None = None
 
         self._is_dark = False
         self._diag_error_color = QColor()

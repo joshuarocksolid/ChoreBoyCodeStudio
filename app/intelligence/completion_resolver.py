@@ -56,6 +56,7 @@ class CompletionResolver:
                 item,
                 signature=detail.signature,
                 documentation=detail.documentation,
+                detail=detail.owner or item.detail,
                 resolvable_fields=(),
             )
         else:

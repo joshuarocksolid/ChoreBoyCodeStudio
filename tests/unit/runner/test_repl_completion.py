@@ -69,8 +69,8 @@ def test_repl_completion_returns_dotted_runtime_members() -> None:
     assert method.kind in {CompletionKind.METHOD, CompletionKind.FUNCTION}
     assert method.replacement_start == len("obj.")
     assert method.replacement_end == len("obj.method_")
-    assert method.source == "runtime" or method.source == "runtime_inspection"
-    assert method.side_effect_risk
+    assert method.resolve_provider == "runtime_introspection"
+    assert method.side_effect_risk == ""
 
 
 def test_repl_completion_sets_degradation_reason_when_jedi_fallback_used(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -7,7 +7,6 @@ from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_models import (
     CompletionEnvelope,
     CompletionItem,
-    CompletionKind,
     CompletionTier,
     CompletionTierPhase,
 )
@@ -78,32 +77,26 @@ def flatten_tiered_items(
     *,
     max_results: int,
 ) -> list[CompletionItem]:
-    """Flatten tiers into popup rows with section headers and deduped labels."""
+    """Flatten tiers into one list, one row per label (the popup ranks it).
+
+    A label seen in an earlier tier keeps its row; later tiers only fill in
+    missing docs. No section headers: the popup orders rows by match quality.
+    """
 
     merged_by_label: dict[str, CompletionItem] = {}
     label_to_row_index: dict[str, int] = {}
     rows: list[CompletionItem] = []
     for tier in tiers:
-        tier_rows: list[CompletionItem] = []
         for item in tier.items:
             if item.label in merged_by_label:
                 merged = merge_completion_metadata(merged_by_label[item.label], item)
                 merged_by_label[item.label] = merged
-                row_index = label_to_row_index.get(item.label)
-                if row_index is not None:
-                    rows[row_index] = merged
+                rows[label_to_row_index[item.label]] = merged
                 continue
             merged_by_label[item.label] = item
-            tier_rows.append(item)
-        if not tier_rows:
-            continue
-        rows.append(_tier_header_item(tier.label))
-        for tier_item in tier_rows:
-            label_to_row_index[tier_item.label] = len(rows)
-            rows.append(tier_item)
-        if len(rows) >= max_results + len(tiers):
-            break
-    return rows[: max_results + len(tiers)]
+            label_to_row_index[item.label] = len(rows)
+            rows.append(item)
+    return rows[: max(0, max_results)]
 
 
 def merge_completion_metadata(
@@ -117,11 +110,16 @@ def merge_completion_metadata(
     return_type = (primary.return_type or "").strip() or (incoming.return_type or "").strip()
     detail = (primary.detail or "").strip() or (incoming.detail or "").strip()
     resolvable_fields = primary.resolvable_fields
-    if not documentation and not signature and incoming.resolvable_fields:
-        resolvable_fields = incoming.resolvable_fields
     resolve_provider = primary.resolve_provider
     item_id = primary.item_id
-    if not documentation and not signature and incoming.resolve_provider:
+    # Runtime introspection knows overloads and the defining class; prefer it.
+    adopt = not documentation and not signature and bool(incoming.resolve_provider) and (
+        not primary.resolve_provider
+        or (incoming.resolve_provider == "runtime_introspection" and primary.resolve_provider != incoming.resolve_provider)
+    )
+    if adopt and incoming.resolvable_fields:
+        resolvable_fields = incoming.resolvable_fields
+    if adopt:
         resolve_provider = incoming.resolve_provider
         item_id = incoming.item_id or primary.item_id
     return CompletionItem(
@@ -159,18 +157,6 @@ def envelope_confidence(tiers: tuple[CompletionTier, ...]) -> str:
     if any(tier.phase == CompletionTierPhase.SEMANTIC for tier in tiers):
         return "exact"
     return "approximate"
-
-
-def _tier_header_item(label: str) -> CompletionItem:
-    return CompletionItem(
-        label=label,
-        insert_text="",
-        kind=CompletionKind.TEXT,
-        detail="",
-        source="tier_header",
-        confidence="unsupported",
-        side_effect_risk=TIER_HEADER_SIDE_EFFECT,
-    )
 
 
 __all__ = [

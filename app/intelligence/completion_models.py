@@ -21,6 +21,8 @@ class CompletionKind(str, Enum):
     PROPERTY = "property"
     ATTRIBUTE = "attribute"
     CLASS = "class"
+    SIGNAL = "signal"
+    ENUM = "enum"
     SNIPPET = "snippet"
     TEXT = "text"
 

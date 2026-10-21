@@ -93,7 +93,7 @@ def test_handle_request_list_members_returns_names_and_kinds() -> None:
 
     result = response.get("result")
     assert isinstance(result, dict)
-    assert ["objectName", "method"] in result["members"]
+    assert ["objectName", "method", "method"] in result["members"]
 
 
 def test_handle_request_resolve_member_returns_signature_and_documentation() -> None:
@@ -107,8 +107,8 @@ def test_handle_request_resolve_member_returns_signature_and_documentation() -> 
 
     result = response.get("result")
     assert isinstance(result, dict)
-    assert str(result["signature"]).startswith("(")
-    assert "setObjectName" in str(result["documentation"])
+    assert str(result["signature"]).startswith("setObjectName(")
+    assert result["owner"] == "QObject method"
 
 
 def test_handle_request_list_members_reports_non_whitelisted_target_as_error() -> None:
