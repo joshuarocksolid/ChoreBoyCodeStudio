@@ -30,6 +30,14 @@ class MissingFileDialogChoice(str, Enum):
     SAVE_AS = "save_as"
 
 
+class DiskChangedChoice(str, Enum):
+    """What to do when the poller finds a dirty buffer's file changed on disk."""
+
+    KEEP_MY_VERSION = "keep_my_version"
+    COMPARE = "compare"
+    RELOAD_FROM_DISK = "reload_from_disk"
+
+
 class StaleSaveChoice(str, Enum):
     CANCEL = "cancel"
     COMPARE = "compare"
@@ -177,6 +185,76 @@ class StaleSaveDialog(QDialog):
         self.accept()
 
 
+class DiskChangedDialog(QDialog):
+    """The file changed on disk while the buffer has unsaved changes.
+
+    Same layout as the stale save prompt, worded for the moment the poller
+    notices the change: Compare... / Reload from Disk / Keep My Version. Keep My
+    Version is the default and also what Esc or closing the window means, so
+    nothing is lost by accident.
+    """
+
+    def __init__(
+        self,
+        file_path: str,
+        *,
+        disk_changed_text: str,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(parent)
+        self._choice = DiskChangedChoice.KEEP_MY_VERSION
+        tokens = resolve_dialog_tokens(parent, self)
+        self.setWindowTitle("File Changed on Disk")
+        chrome = build_dialog_chrome(
+            self,
+            title=f"{Path(file_path).name} changed on disk",
+            subtitle=(
+                "Another program changed this file while you had unsaved changes in CBCS. "
+                "Choose which version to keep."
+            ),
+            object_name="shell.diskChangedDialog",
+            icon=warning_marker_icon(tokens.diag_warning_color or "#D97706", 22),
+        )
+        self.setObjectName("shell.diskChangedDialog")
+        if disk_changed_text:
+            add_meta_chip(chrome.meta_row, f"On disk: {disk_changed_text}")
+        add_meta_chip(chrome.meta_row, "Your version: unsaved changes")
+        body_layout = chrome.body.layout()
+        assert isinstance(body_layout, QVBoxLayout)
+        body_layout.addWidget(_field_row(chrome.body, "File", file_path, tokens))
+        body_layout.addWidget(
+            _note(
+                chrome.body,
+                "<b>Keep My Version</b> keeps your text. The tab is marked changed on disk, "
+                "and CBCS asks again before Save replaces the file.<br>"
+                "<b>Reload from Disk</b> throws away your changes and shows the file on disk. "
+                "Your text is kept in Local History.<br>"
+                "<b>Compare...</b> shows both versions side by side before you choose.",
+                tokens,
+            )
+        )
+        compare_button = add_footer_button(chrome, "Compare...", role=FOOTER_ROLE_LINK)
+        add_footer_stretch(chrome)
+        reload_button = add_footer_button(chrome, "Reload from Disk", role=FOOTER_ROLE_DESTRUCTIVE_SECONDARY)
+        keep_button = add_footer_button(chrome, "Keep My Version", role=FOOTER_ROLE_PRIMARY, default=True)
+        compare_button.clicked.connect(lambda: self._finish(DiskChangedChoice.COMPARE))
+        reload_button.clicked.connect(lambda: self._finish(DiskChangedChoice.RELOAD_FROM_DISK))
+        keep_button.clicked.connect(lambda: self._finish(DiskChangedChoice.KEEP_MY_VERSION))
+        self.resize(600, self.sizeHint().height())
+
+    def choice(self) -> DiskChangedChoice:
+        return self._choice
+
+    def reject(self) -> None:
+        # Esc and the window's close button keep the user's version.
+        self._choice = DiskChangedChoice.KEEP_MY_VERSION
+        super().reject()
+
+    def _finish(self, choice: DiskChangedChoice) -> None:
+        self._choice = choice
+        self.accept()
+
+
 class DiskCompareDialog(QDialog):
     """Side-by-side diff of the file on disk and the open buffer."""
 
@@ -213,6 +291,8 @@ class DiskCompareDialog(QDialog):
 
 
 __all__ = [
+    "DiskChangedChoice",
+    "DiskChangedDialog",
     "DiskCompareDialog",
     "MissingFileDialog",
     "MissingFileDialogChoice",
