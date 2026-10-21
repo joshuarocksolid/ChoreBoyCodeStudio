@@ -52,6 +52,7 @@ def apply_project_surface(
     window._selected_linter = window._shell_preferences_runtime.load_selected_linter()
     window._plugin_activation_workflow.reload()
     window._refresh_python_tooling_status()
+    window._refresh_completion_mode_status()
     window._runtime_onboarding_workflow.show_editor_screen()
     window.set_project_placeholder(loaded_project.metadata.name)
     window.setWindowTitle(

@@ -147,7 +147,6 @@ class MainWindow(QMainWindow):
                         exc,
                     )
             self._status_controller.set_project_state_text(status_text)
-        self._refresh_completion_mode_status()
 
     def _refresh_completion_mode_status(self) -> None:
         """Show the completion mode in effect and its settings scope in the status bar."""
