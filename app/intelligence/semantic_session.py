@@ -20,6 +20,7 @@ from app.intelligence.completion_models import (
 )
 from app.intelligence.completion_resolver import CompletionResolver
 from app.intelligence.completion_service import CompletionRequest, CompletionService
+from app.intelligence.runtime_members import RUNTIME_INTROSPECTION_PROVIDER
 from app.intelligence.runtime_introspection import (
     RuntimeIntrospectionCoordinator,
     RuntimeIntrospectionQuery,
@@ -59,6 +60,8 @@ class SemanticSession:
         )
         self._completion_resolver = CompletionResolver(semantic_facade=self._semantic_facade)
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
+        # Runtime docs are one REPL round trip (about 1 ms); do not queue them behind Jedi.
+        self._runtime_docs_worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
 
     def bind_runtime_members(self, runtime_coordinator: RuntimeIntrospectionCoordinator | None) -> None:
         """Let lazy docs resolve runtime members (editor and Python Console rows)."""
@@ -110,12 +113,14 @@ class SemanticSession:
         )
 
     def shutdown(self) -> None:
-        """Stop the backing worker thread."""
+        """Stop the backing worker threads."""
         self._worker.shutdown()
+        self._runtime_docs_worker.shutdown()
 
     def cancel_all(self) -> None:
         """Invalidate all queued semantic work."""
         self._worker.cancel_all()
+        self._runtime_docs_worker.cancel_all()
 
     def request_record_completion_acceptance(
         self,
@@ -302,10 +307,11 @@ class SemanticSession:
             and completion_context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
         ):
             # Jedi inference takes 70-160 ms on ChoreBoy; keep it off the UI thread
-            # and on the serialized lane with the other Jedi work.
+            # and on the serialized lane with the other Jedi work. It runs before
+            # the heuristic fast tier: a cached runtime list then paints first.
             self._submit(
                 key=f"runtime_infer:{request.current_file_path}",
-                priority=1,
+                priority=-1,
                 task=lambda: resolve_runtime_introspection_query_with_inference(
                     context=completion_context,
                     project_root=completion_context.project_root,
@@ -350,13 +356,17 @@ class SemanticSession:
                 context_fingerprint=request.context_fingerprint,
             )
 
-        self._submit(
-            key=f"completion_resolve:{request.current_file_path}:{request.item.item_id or request.item.label}",
-            priority=5,
-            task=task,
-            on_success=on_success,
-            on_error=on_error,
-        )
+        key = f"completion_resolve:{request.current_file_path}:{request.item.item_id or request.item.label}"
+        if request.item.resolve_provider == RUNTIME_INTROSPECTION_PROVIDER:
+            self._runtime_docs_worker.submit(
+                key=key,
+                task=task,
+                on_success=cast(Callable[[object], None], on_success),
+                on_error=on_error,
+                priority=5,
+            )
+            return
+        self._submit(key=key, priority=5, task=task, on_success=on_success, on_error=on_error)
 
     def request_lookup_definition(
         self,
