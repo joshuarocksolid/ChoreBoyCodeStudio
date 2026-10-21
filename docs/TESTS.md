@@ -132,7 +132,7 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 ## 8) Notes for cloud environment
 
-- Tests run through `/opt/freecad/AppRun` using real PySide2, the binding on today's ChoreBoy. Run the PySide6 lane too (`CBCS_APPRUN=<PySide6 AppRun> CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast`) for anything that touches Qt; the FreeCAD 1.1 image is PySide6-only.
+- Tests run through `/opt/freecad/AppRun` using real PySide2, the binding on today's ChoreBoy. On Cursor Cloud that path is the FreeCAD 1.0.2 tree. Run the PySide6 lane too (`CBCS_APPRUN=${CBCS_FB_APPRUN_11:-/opt/freecad-1.1/AppRun} CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast`) for anything that touches Qt. The FreeCAD 1.1 tree is PySide6-only.
 - `QT_QPA_PLATFORM=offscreen` is set by default in `run_tests.py` so tests do not require a display server.
 
 ## 9) Current baseline result

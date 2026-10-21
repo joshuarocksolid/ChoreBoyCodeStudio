@@ -2,34 +2,77 @@
 
 ## Cursor Cloud specific instructions
 
-### Runtime architecture
+ChoreBoy Code Studio runs inside FreeCAD's bundled Python. There is no virtualenv. Tests and the editor go through an AppRun. Product behavior is in `docs/DISCOVERY.md`.
 
-ChoreBoy Code Studio runs entirely inside FreeCAD's bundled Python runtime. There is **no virtualenv** — all code (app, tests, runner) executes via `/opt/freecad/AppRun`. This mirrors the ChoreBoy production environment described in `docs/DISCOVERY.md`.
+### Runtimes
 
+`.cursor/Dockerfile` bakes the two AppImages, Miniconda, and the Python 3.9 conda prefix. `scripts/cloud_setup_screenshot_runtime.sh` is the `install` command. It creates anything the image does not already have, then installs `vendor_py39`, `vendor_py311`, and the pinned pyright package. Versions and checksums are in `scripts/cloud_runtime_pins.env`.
 
-| Component            | Path                                             |
-| -------------------- | ------------------------------------------------ |
-| FreeCAD AppRun       | `/opt/freecad/AppRun`                            |
-| Bundled Python       | 3.11.13 (conda-forge)                            |
-| Bundled PySide2      | 5.15.15                                          |
-| Python site-packages | `/opt/freecad/usr/lib/python3.11/site-packages/` |
-| Vendored packages    | `/workspace/vendor/`                             |
+| Runtime | Path | Measured contents |
+| --- | --- | --- |
+| PySide2 lane. Default for `run_tests.py`. | `/opt/freecad/AppRun` | FreeCAD 1.0.2, Python 3.11.13, PySide2 5.15.15. No PySide6. |
+| PySide6 lane and form builder. | `/opt/freecad-1.1/AppRun` | FreeCAD 1.1.4, Python 3.11.14, PySide6 6.8.3. `QtUiTools` and `QtDesigner` import. |
+| Python 3.9 prefix. | `~/opt/freecad/AppRun` | conda-forge `freecad=1.0.0`, Python 3.9.23, PySide2 5.15.15. PySide6 is also installed. The FreeCAD `PySide` shim imports PySide6. |
+| Qt6 `uic` and `rcc` | `/usr/local/bin/cbcs-fb-uic`, `/usr/local/bin/cbcs-fb-rcc` | Both report 6.8.3. They exec `usr/lib/qt6/uic` and `usr/lib/qt6/rcc` inside the 1.1 tree. |
+| Form-builder interpreter | `/usr/local/bin/cbcs-fb-python` | 1.1 `usr/bin/python` with `PYTHONHOME` set. It does not force `QT_QPA_PLATFORM`. |
 
+`run_tests.py` uses `/opt/freecad/AppRun` unless `CBCS_APPRUN` is set. That default is the PySide2 lane. `CBCS_QT_API` is not required there.
+
+`./run_dev.sh` prefers `~/opt/freecad/AppRun` when `CBCS_APPRUN` and `FREECAD_APPRUN` are both unset. On this image that is the conda prefix, so an unset launch follows the PySide6 shim. Login shells export `FREECAD_APPRUN=/opt/freecad/AppRun` from `/etc/profile.d/cbcs-cloud.sh`. Other shells should load the same values first.
+
+```bash
+set -a
+. /etc/cbcs-cloud.env
+set +a
+```
+
+| Variable | Value |
+| --- | --- |
+| `FREECAD_APPRUN` | `/opt/freecad/AppRun` |
+| `CBCS_FB_APPRUN_11` | `/opt/freecad-1.1/AppRun` |
+| `CBCS_FB_PY311` | `/usr/local/bin/cbcs-fb-python` |
+| `CBCS_FB_UIC` | `/usr/local/bin/cbcs-fb-uic` |
+| `CBCS_FB_RCC` | `/usr/local/bin/cbcs-fb-rcc` |
+| `CBCS_ARTIFACTS_DIR` | `/home/ubuntu/cbcs_artifacts` |
+
+`DISPLAY` defaults to `:1` in the profile script. `scripts/cloud_start_display.sh` starts Xvfb on `:1` only when neither `$DISPLAY` nor `:1` is already up. `run_tests.py` sets `QT_QPA_PLATFORM=offscreen` when that variable is empty. The FreeCAD 1.1 `AppRun` then exports `QT_QPA_PLATFORM=xcb`, so a shard launched through that AppRun uses the virtual display. `cbcs-fb-python` leaves the caller's platform alone.
+
+Both AppImages are Python 3.11 and use `vendor_py311`. The conda prefix uses `vendor_py39`. `dev_launch_editor.py` points `vendor/` at the tree that matches the selected AppRun.
+
+### Form builder
+
+The feature runs on PySide6 only. Use the 1.1 AppRun, not the conda prefix.
+
+```bash
+CBCS_APPRUN="$CBCS_FB_APPRUN_11" CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast
+"$CBCS_FB_UIC" -v
+"$CBCS_FB_RCC" -v
+```
+
+`spikes/form_builder/tests/test_oracle.py` on `feat/form-builder-spike` hardcodes `/Applications/FreeCAD.app/Contents/Resources/lib/qt6/uic` and `Path("/Applications/FreeCAD.app")`. It does not read `CBCS_FB_UIC`. A symlink from that macOS path onto `/opt/freecad-1.1/usr` would make the binary resolve. An environment variable would not, until that branch reads one. The corpus test treats a missing FreeCAD.app as an empty file list and passes. The `uic` comparison fails at `subprocess.check_call` until the binary exists at the hardcoded path.
+
+The 1.1 interpreter does not ship pytest. Point `PYTHONPATH` at `vendor_py311` for the spike smoke.
+
+```bash
+git fetch origin feat/form-builder-spike
+git worktree add /tmp/spike origin/feat/form-builder-spike
+cd /tmp/spike
+QT_QPA_PLATFORM=offscreen PYTHONPATH="$CBCS_ARTIFACTS_DIR/vendor_py311" \
+  "$CBCS_FB_PY311" -m pytest spikes/form_builder/tests -q -p no:cacheprovider
+```
 
 ### How the environments compare
 
+| Aspect | ChoreBoy production (V6.5) | ChoreBoy FreeCAD 1.1 | Cursor Cloud |
+| --- | --- | --- | --- |
+| AppRun | `/opt/freecad/AppRun` | `/opt/freecad/AppRun` on the appliance | `/opt/freecad/AppRun` (1.0.2, PySide2) and `/opt/freecad-1.1/AppRun` (1.1.4, PySide6) |
+| Python | 3.9.2 | 3.11.14 | 3.11.13 (1.0.2), 3.11.14 (1.1.4), 3.9.23 (conda prefix) |
+| Qt | PySide2 5.15.2 | PySide6 6.8.3 | PySide2 5.15.15 on 1.0.2. PySide6 6.8.3 on 1.1.4. |
+| Display | X11 desktop | X11 desktop | X11 on `:1` |
+| Subprocess restrictions | AppArmor allows `/bin/sh` | AppArmor allows exec of `/opt/freecad/AppRun` and denies `/bin/sh`, bash, `shell=True`, and git | None |
+| Native code | vendored cp39 `.so` via memfd | tree-sitter from the image, memfd removed | `vendor_py311` for the AppImages, `vendor_py39` for the conda prefix |
 
-| Aspect                  | ChoreBoy production (V6.5) | ChoreBoy FreeCAD 1.1 (test build)              | Cursor Cloud dev             |
-| ----------------------- | -------------------------- | ---------------------------------------------- | ---------------------------- |
-| AppRun path             | `/opt/freecad/AppRun`      | `/opt/freecad/AppRun`                          | `/opt/freecad/AppRun` (same) |
-| Python version          | 3.9.2                      | 3.11.14                                        | 3.11.13                      |
-| Qt binding              | PySide2 / Qt 5.15.2        | PySide6 / Qt 6.8.3 (no PySide2)                | PySide2 5.15.15              |
-| Display                 | X11 desktop                | X11 desktop                                    | X11 on `:1`                  |
-| Subprocess restrictions | AppArmor (only `/bin/sh`)  | AppArmor: exec `/opt/freecad/AppRun` directly; `/bin/sh`, bash, `shell=True`, git denied | None |
-| Native code             | vendored cp39 `.so` via memfd | none from the CBCS install (memfd removed, ctypes jailed to `/opt/freecad`); tree-sitter 0.26 ships in the image | cp311 |
-
-
-All application code must target **Python 3.9** syntax (see `.cursor/rules/python39_compatibility.mdc`), even though the Cloud dev runtime is 3.11.
+All application code must target **Python 3.9** syntax (see `.cursor/rules/python39_compatibility.mdc`). The 3.11 AppImages do not relax that rule.
 
 ### Importing Qt
 
@@ -75,10 +118,10 @@ python3 run_tests.py tests/unit/some/test_module.py
 python3 run_tests.py -k test_project_service
 ```
 
-PySide6 lane: point `CBCS_APPRUN` at a runtime that has PySide6, and force the binding when that runtime also has PySide2:
+PySide6 lane. `CBCS_APPRUN` selects the runtime. `CBCS_QT_API=pyside6` is required on a prefix that also has PySide2. The 1.1 tree is PySide6-only, and the variable still documents the lane.
 
 ```bash
-CBCS_APPRUN=/path/to/pyside6/AppRun CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast
+CBCS_APPRUN="${CBCS_FB_APPRUN_11:-/opt/freecad-1.1/AppRun}" CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast
 ```
 
 Every change that touches Qt code should pass on both bindings. Today's ChoreBoy is PySide2 and the FreeCAD 1.1 image is PySide6-only. The live ChoreBoy VMs are the final check: `.cursor/skills/verify-cbcs` (`control-cbcs shard fast`) runs the suite in-process on a guest. ChoreBoyExp is the FreeCAD 1.1 VM; see `docs/PYSIDE6_MIGRATION_PLAN.md` for how to drive it.
@@ -129,21 +172,14 @@ First-time local setup:
 See [`docs/LOCAL_DEV.md`](docs/LOCAL_DEV.md) for the full dual-vendor workflow
 (`vendor_py39/` vs `vendor_py311/` under `ChoreBoyCodeStudio_artifacts/`).
 
-Cloud agents without `~/opt/freecad` can still use the raw AppRun one-liner:
+PySide6 editor on the virtual display:
 
 ```bash
-cd /workspace && /opt/freecad/AppRun -c "
-import os, runpy, sys
-root = '/workspace'
-sys.path.insert(0, root) if root not in sys.path else None
-os.chdir(root)
-runpy.run_path('/workspace/run_editor.py', run_name='__main__')
-"
+set -a; . /etc/cbcs-cloud.env; set +a
+CBCS_APPRUN="$CBCS_FB_APPRUN_11" CBCS_QT_API=pyside6 DISPLAY="${DISPLAY:-:1}" ./run_dev.sh
 ```
 
-Requires `DISPLAY` (available as `:1` in Cloud). The status bar should show
-"Runtime ready" when capability checks pass; if tree-sitter failed to load it
-also shows `Syntax highlighting off`.
+`~/opt/freecad` exists on a finished install, so `./run_dev.sh` without `CBCS_APPRUN` launches the conda prefix. The status bar should show "Runtime ready" when capability checks pass. A missing tree-sitter load also shows `Syntax highlighting off`.
 
 ### Type checking (pyright)
 
@@ -157,7 +193,7 @@ Focused test typing:
 npx pyright -p pyrightconfig.tests.json
 ```
 
-`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages` (prefer `~/opt/freecad/lib/python3.9/site-packages` when present — see `scripts/resolve_pyright_extrapaths.sh`). PySide2 Shiboken stub noise is scoped via execution-environment `report*` overrides documented in `docs/LOCAL_DEV.md`. Pin: `package.json` → `pyright@1.1.410`. `pyrightconfig.tests.json` is a staged, low-noise test coverage config. Latest checkpoint: both commands -> `0 errors, 0 warnings, 0 informations`.
+`pyrightconfig.json` targets Python 3.9 source compatibility and resolves imports through the repo root, `vendor/`, and `/opt/freecad/usr/lib/python3.11/site-packages` (the FreeCAD 1.0.2 tree). `scripts/resolve_pyright_extrapaths.sh` prefers `~/opt/freecad/lib/python3.9/site-packages` when that PySide2 tree exists. PySide2 Shiboken stub noise is scoped via execution-environment `report*` overrides documented in `docs/LOCAL_DEV.md`. Pin: `package.json` → `pyright@1.1.414`. `pyrightconfig.tests.json` is a staged, low-noise test coverage config. Latest checkpoint: both commands -> `0 errors, 0 warnings, 0 informations`.
 
 ### Vendored dependencies
 
