@@ -504,6 +504,11 @@ class _Writer:
         if entry.stdset is not None:
             attrs += ' stdset="%s"' % _esc_attr(entry.stdset)
         attrs += "".join(' %s="%s"' % (key, _esc_attr(value)) for key, value in entry.extra_attrs)
+        value = entry.value
+        if isinstance(value, OpaqueValue) and value.element.tag == "" and not value.element.children:
+            # ``<property name="x"/>`` kept as written: no content, so no open element (8.2.4).
+            self._empty(indent, tag, attrs)
+            return
         self._open(indent, tag, attrs)
         self.value(entry.value, indent + 1)
         self._close(indent, tag)

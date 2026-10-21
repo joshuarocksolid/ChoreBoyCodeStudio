@@ -222,6 +222,7 @@ def test_odd_property_content_rereads_with_the_same_fingerprint() -> None:
 <ui version="4.0">
  <widget class="QWidget" name="Form">
   <property name="empty"/>
+  <property name="text"/>
   <property name="noted"><!--c--><string>A</string></property>
   <property name="two"><string>A</string><string>B</string></property>
  </widget>
@@ -230,6 +231,8 @@ def test_odd_property_content_rereads_with_the_same_fingerprint() -> None:
     loaded = _load(text)
     saved = write_ui(loaded.document).text
     assert "#value" not in saved
+    assert '<property name="empty"/>' in saved
+    assert '<property name="text"/>' in saved
     again = _load(saved)
     assert again.document.structure_fingerprint() == loaded.document.structure_fingerprint()
     assert write_ui(again.document).text == saved
