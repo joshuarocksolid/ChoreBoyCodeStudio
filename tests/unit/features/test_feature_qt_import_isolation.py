@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from app.run.runtime_launch import build_runpy_bootstrap_payload
+
 pytestmark = pytest.mark.unit
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -104,10 +106,16 @@ def _child_env(qt_api: str) -> dict[str, str]:
     return env
 
 
-@pytest.mark.parametrize("qt_api", ["pyside2", "pyside6"])
-def test_import_app_features_imports_no_qt_binding(qt_api: str) -> None:
-    completed = subprocess.run(
-        [sys.executable, "-c", _CHILD, qt_api],
+def _run_child(script: Path, *args: str, qt_api: str) -> subprocess.CompletedProcess[str]:
+    # AppRun's executable is FreeCAD. A script path opens as a document and
+    # hangs. A short ``-c`` payload runpy's the child instead.
+    payload = build_runpy_bootstrap_payload(
+        script_path=str(script),
+        path_entries=(str(_REPO_ROOT), str(_REPO_ROOT / "vendor")),
+        argv=[str(script), *args],
+    )
+    return subprocess.run(
+        [sys.executable, "-c", payload],
         cwd=_REPO_ROOT,
         env=_child_env(qt_api),
         capture_output=True,
@@ -115,20 +123,20 @@ def test_import_app_features_imports_no_qt_binding(qt_api: str) -> None:
         check=False,
     )
 
+
+@pytest.mark.parametrize("qt_api", ["pyside2", "pyside6"])
+def test_import_app_features_imports_no_qt_binding(qt_api: str, tmp_path: Path) -> None:
+    script = tmp_path / "import_isolation.py"
+    script.write_text(_CHILD, encoding="utf-8")
+    completed = _run_child(script, qt_api, qt_api=qt_api)
+
     assert completed.returncode == 0, completed.stdout + completed.stderr
 
 
 def test_pyside2_main_window_does_not_import_pyside6(tmp_path: Path) -> None:
     script = tmp_path / "main_window_isolation.py"
     script.write_text(_MAIN_WINDOW_CHILD, encoding="utf-8")
-    completed = subprocess.run(
-        [sys.executable, str(script)],
-        cwd=_REPO_ROOT,
-        env=_child_env("pyside2"),
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    completed = _run_child(script, qt_api="pyside2")
     if completed.returncode == 0 and "SKIP" in completed.stdout:
         pytest.skip("PySide2 is absent")
 
