@@ -102,6 +102,9 @@ class MainWindowEditorTabHost:
     def completion_auto_trigger(self) -> bool:
         return self._window._completion_auto_trigger
 
+    def completion_mode(self) -> str:
+        return self._window._shell_preferences_runtime.completion_mode()
+
     def completion_min_chars(self) -> int:
         return self._window._completion_min_chars
 

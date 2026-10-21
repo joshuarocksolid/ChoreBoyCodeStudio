@@ -832,3 +832,24 @@ def test_parse_main_window_settings_includes_local_history_policy() -> None:
     assert policy.retention_days == 21
     assert policy.max_tracked_file_bytes == 8192
     assert policy.excluded_glob_patterns == ("*.cache",)
+
+
+@pytest.mark.parametrize(
+    ("global_mode", "project_intelligence", "expected"),
+    [
+        ("manual", {"auto_trigger_completion": True}, "typing"),
+        ("typing", {"auto_trigger_completion": False}, "manual"),
+        ("manual", {"enable_completion": False, "auto_trigger_completion": True}, "off"),
+        ("typing", {"auto_trigger_period": False}, "typing"),
+        ("manual", {"completion_mode": "typing"}, "typing"),
+    ],
+)
+def test_project_legacy_completion_override_maps_onto_global_mode(
+    global_mode: str,
+    project_intelligence: dict,
+    expected: str,
+) -> None:
+    global_payload = {"intelligence": {"completion_mode": global_mode}}
+    project_payload = {"intelligence": project_intelligence}
+    snapshot = parse_effective_editor_settings_snapshot(global_payload, project_payload)
+    assert snapshot.completion_mode == expected

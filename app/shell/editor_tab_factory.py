@@ -151,10 +151,8 @@ class EditorTabFactory:
             auto_reindent_flat_python_paste=window._editor_auto_reindent_flat_python_paste,
         )
         editor_widget.set_completion_preferences(
-            enabled=window._completion_enabled,
-            auto_trigger=window._completion_auto_trigger,
+            mode=window._shell_preferences_runtime.completion_mode(),
             min_chars=window._completion_min_chars,
-            auto_trigger_period=window._shell_preferences_runtime.completion_auto_trigger_period(),
         )
         window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
         editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())

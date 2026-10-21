@@ -108,6 +108,9 @@ class EditorTabPreferencesHost(Protocol):
     def completion_auto_trigger(self) -> bool:
         ...
 
+    def completion_mode(self) -> str:
+        ...
+
     def completion_min_chars(self) -> int:
         ...
 

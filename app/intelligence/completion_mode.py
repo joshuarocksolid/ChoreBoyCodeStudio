@@ -61,6 +61,26 @@ def completion_mode_from_intelligence_settings(intelligence_settings: Mapping[st
     return COMPLETION_MODE_DEFAULT
 
 
+def project_legacy_completion_mode(project_intelligence: Mapping[str, Any]) -> Optional[str]:
+    """Map a project layer that still uses the pre-v0.4.13 keys.
+
+    A valid ``completion_mode`` on that layer is left to the normal merge.
+    ``auto_trigger_period`` by itself is not an override. Turning completion
+    off wins over an auto-trigger flag on the same layer.
+    """
+
+    if normalize_completion_mode(project_intelligence.get(COMPLETION_MODE_KEY)) is not None:
+        return None
+    if project_intelligence.get(LEGACY_ENABLE_COMPLETION_KEY) is False:
+        return COMPLETION_MODE_OFF
+    auto_trigger = project_intelligence.get(LEGACY_AUTO_TRIGGER_COMPLETION_KEY)
+    if isinstance(auto_trigger, bool):
+        if auto_trigger:
+            return COMPLETION_MODE_TYPING
+        return COMPLETION_MODE_MANUAL
+    return None
+
+
 def completion_mode_from_flags(*, enabled: bool, auto_trigger: bool) -> str:
     """Map the window's enabled / auto-trigger flags back onto a mode."""
 
@@ -112,6 +132,7 @@ __all__ = [
     "COMPLETION_OFF_HINT",
     "completion_mode_from_flags",
     "completion_mode_from_intelligence_settings",
+    "project_legacy_completion_mode",
     "completion_mode_label",
     "describe_effective_completion_mode",
     "normalize_completion_mode",

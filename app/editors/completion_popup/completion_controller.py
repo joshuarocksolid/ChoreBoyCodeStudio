@@ -30,6 +30,7 @@ from app.core.completion_tier import is_tier_header_item
 from app.editors.completion_popup.completion_item_delegate import CHIP_GAP, CHIP_LEFT, CHIP_SIZE
 from app.editors.completion_popup.completion_item_model import CompletionItemModel, row_short_type
 from app.editors.completion_popup.completion_popup_container import OUTER_MARGINS, CompletionPopupContainer
+from app.intelligence.completion_metrics import log_completion_phase
 from app.intelligence.completion_matcher import (
     ACCEPTANCE_RECENCY,
     filter_and_rank,
@@ -114,6 +115,8 @@ class CompletionController(QObject):
         self._widget: QWidget | None = None
         self._host: CompletionHost | None = None
         self._mode = COMPLETION_MODE_DEFAULT
+        self.metrics: List[Dict[str, Any]] = []
+        construct_started = time.perf_counter()
         self._model = CompletionItemModel(self)
         popup_parent = parent if isinstance(parent, QWidget) else None
         self._popup = CompletionPopupContainer(popup_parent)
@@ -123,6 +126,10 @@ class CompletionController(QObject):
         list_view.current_item_changed.connect(self._on_current_item_changed)
         self._popup.installEventFilter(self)
         self._popup.closed.connect(self._on_popup_closed)
+        self._record(
+            "construct",
+            construct_ms=round((time.perf_counter() - construct_started) * 1000.0, 3),
+        )
 
         self._site: Optional[CompletionSite] = None
         self._pending: Optional[_Pending] = None
@@ -137,10 +144,10 @@ class CompletionController(QObject):
         self._user_moved_selection = False
         self._reopen_key: Optional[Tuple[str, int, str]] = None
         self._closing_internally = False
+        self._surface_warmed = False
         self._editing_depth = 0
         self._selection_started_at = 0.0
         self._last_selection_label = ""
-        self.metrics: List[Dict[str, Any]] = []
 
     # ------------------------------------------------------------------
     # Wiring
@@ -564,6 +571,23 @@ class CompletionController(QObject):
         if not self._popup.isVisible():
             self._popup.show()
         self._popup.raise_()
+
+    def warm_surface(self) -> None:
+        """Create the popup's native window off screen so the first real show is cheap."""
+
+        if self._surface_warmed or self._popup.isVisible():
+            return
+        started_at = time.perf_counter()
+        popup = self._popup
+        popup.setAttribute(Qt.WA_DontShowOnScreen, True)
+        popup.resize(320, 240)
+        popup.show()
+        self._closing_internally = True
+        popup.hide()
+        self._closing_internally = False
+        popup.setAttribute(Qt.WA_DontShowOnScreen, False)
+        self._surface_warmed = True
+        log_completion_phase("popup_surface", (time.perf_counter() - started_at) * 1000.0)
 
     # ------------------------------------------------------------------
     # Closing

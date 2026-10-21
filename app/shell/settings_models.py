@@ -7,7 +7,12 @@ from typing import Any, Mapping
 
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
-from app.intelligence.completion_mode import completion_mode_from_intelligence_settings, normalize_completion_mode
+from app.intelligence.completion_mode import (
+    COMPLETION_MODE_KEY,
+    completion_mode_from_intelligence_settings,
+    normalize_completion_mode,
+    project_legacy_completion_mode,
+)
 from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.intelligence.lint_profile import parse_lint_rule_overrides
 from app.persistence.settings_store import compute_effective_settings_payload, filter_project_settings_payload
@@ -369,13 +374,41 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
     )
 
 
+def apply_project_legacy_completion_override(
+    effective_payload: Mapping[str, Any],
+    project_settings_payload: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Apply a project's pre-v0.4.13 completion keys over a global mode."""
+
+    merged = dict(effective_payload)
+    if not isinstance(project_settings_payload, Mapping):
+        return merged
+    project_intelligence = project_settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+    if not isinstance(project_intelligence, Mapping):
+        return merged
+    mode = project_legacy_completion_mode(project_intelligence)
+    if mode is None:
+        return merged
+    intelligence = merged.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+    if not isinstance(intelligence, dict):
+        intelligence = {}
+    else:
+        intelligence = dict(intelligence)
+    intelligence[COMPLETION_MODE_KEY] = mode
+    merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = intelligence
+    return merged
+
+
 def parse_effective_editor_settings_snapshot(
     global_settings_payload: Mapping[str, Any],
     project_settings_payload: Mapping[str, Any] | None = None,
 ) -> EditorSettingsSnapshot:
     """Parse layered effective settings into an editor snapshot."""
-    effective_payload = compute_effective_settings_payload(
-        global_settings_payload,
+    effective_payload = apply_project_legacy_completion_override(
+        compute_effective_settings_payload(
+            global_settings_payload,
+            project_settings_payload,
+        ),
         project_settings_payload,
     )
     return parse_editor_settings_snapshot(effective_payload)
@@ -386,8 +419,11 @@ def parse_effective_main_window_settings(
     project_settings_payload: Mapping[str, Any] | None = None,
 ) -> MainWindowSettingsSnapshot:
     """Parse layered effective settings into main-window runtime preferences."""
-    effective_payload = compute_effective_settings_payload(
-        global_settings_payload,
+    effective_payload = apply_project_legacy_completion_override(
+        compute_effective_settings_payload(
+            global_settings_payload,
+            project_settings_payload,
+        ),
         project_settings_payload,
     )
     return parse_main_window_settings(effective_payload)

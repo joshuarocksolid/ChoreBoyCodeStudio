@@ -150,6 +150,7 @@ class SemanticFacade:
         min_prefix_chars: int,
         max_results: int,
     ) -> list[CompletionItem]:
+        self._jedi_engine.last_completion_timings = {}
         prefix = extract_symbol_under_cursor(source_text, cursor_position)
         if not trigger_is_manual and len(prefix) < max(1, int(min_prefix_chars)):
             return []
@@ -160,6 +161,16 @@ class SemanticFacade:
             cursor_position=cursor_position,
             max_results=max_results,
         )
+
+    def warm_completion(self, *, project_root: str | None) -> None:
+        """Pay Jedi's first import and inference before the user asks."""
+
+        self._jedi_engine.warm_completion(project_root=project_root)
+
+    def last_completion_timings(self) -> dict[str, float]:
+        """Return Jedi phase durations from the most recent ``complete`` call."""
+
+        return dict(self._jedi_engine.last_completion_timings)
 
     def resolve_completion_item(
         self,

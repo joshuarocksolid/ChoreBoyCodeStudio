@@ -152,6 +152,9 @@ class CompletionBroker:
                     min_prefix_chars=context.min_prefix_chars,
                     max_results=context.max_results * 2,
                 )
+            report_timings = getattr(self._semantic_facade, "last_completion_timings", None)
+            if callable(report_timings):
+                breakdown.update(report_timings())
         except Exception as exc:
             _logger.warning("semantic completion failed: %s", exc)
             semantic_candidates = []
