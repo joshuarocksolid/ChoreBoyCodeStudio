@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 from PySide2.QtCore import Qt, Signal
-from PySide2.QtGui import QColor, QFont, QHideEvent
+from PySide2.QtGui import QFont, QHideEvent
 from PySide2.QtWidgets import (
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QSizePolicy,
@@ -18,9 +17,7 @@ from app.editors.completion_popup.completion_docs_panel import CompletionDocsPan
 from app.editors.completion_popup.completion_list_view import CompletionListView
 from app.shell.theme_tokens import ShellThemeTokens
 
-_SHADOW_BLUR = 18
-_SHADOW_OFFSET_Y = 4
-OUTER_MARGINS = (8, 4, 8, 12)
+OUTER_MARGINS = (0, 0, 0, 0)
 
 
 class CompletionPopupContainer(QFrame):
@@ -32,7 +29,8 @@ class CompletionPopupContainer(QFrame):
         super().__init__(parent)
         self.setObjectName("CompletionPopupContainer")
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        # No translucent margin or drop shadow: ChoreBoy's fluxbox desktop has no
+        # compositor, so a translucent shadow margin paints as a black frame.
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
         self.setFocusPolicy(Qt.NoFocus)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
@@ -71,12 +69,6 @@ class CompletionPopupContainer(QFrame):
         self._docs_panel = CompletionDocsPanel(self._chrome)
         chrome_layout.addWidget(self._docs_panel, 0)
 
-        shadow = QGraphicsDropShadowEffect(self._chrome)
-        shadow.setBlurRadius(_SHADOW_BLUR)
-        shadow.setOffset(0, _SHADOW_OFFSET_Y)
-        shadow.setColor(QColor(0, 0, 0, 80))
-        self._chrome.setGraphicsEffect(shadow)
-        self._shadow = shadow
         self._docs_visible = True
         self._list_view.current_item_changed.connect(self._docs_panel.set_item)
 
@@ -87,15 +79,11 @@ class CompletionPopupContainer(QFrame):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         bg = tokens.popup_bg or tokens.panel_bg
         border = tokens.popup_border or tokens.border
-        shadow_color = QColor(tokens.popup_shadow) if tokens.popup_shadow else QColor(0, 0, 0)
-        shadow_color.setAlpha(160 if tokens.is_dark else 64)
-        self._shadow.setColor(shadow_color)
         self.setStyleSheet(
             f"""
             QFrame#CompletionPopupChrome {{
                 background-color: {bg};
                 border: 1px solid {border};
-                border-radius: 4px;
             }}
             QFrame#CompletionPopupSeparator {{
                 background-color: {border};
