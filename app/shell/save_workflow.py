@@ -581,7 +581,9 @@ class SaveWorkflow:
     def apply_save_transforms(self, file_path: str, *, show_style_warnings: bool) -> None:
         host = self._host
         tab_state = self._editor_manager().get_tab(file_path)
-        if tab_state is None:
+        # A content source owns the bytes Save writes. Trim, a final newline,
+        # and the Python formatters would change them.
+        if tab_state is None or tab_state.content_source is not None:
             return
 
         original_text = tab_state.current_content
