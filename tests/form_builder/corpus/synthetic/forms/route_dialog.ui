@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>RouteDialog</class>
+ <widget class="QDialog" name="RouteDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Route</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_nameEdit">
+     <property name="text">
+      <string>Name</string>
+     </property>
+     <property name="buddy">
+      <cstring>nameEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="nameEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_stopsEdit">
+     <property name="text">
+      <string>Stops</string>
+     </property>
+     <property name="buddy">
+      <cstring>stopsEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QSpinBox" name="stopsEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_driverCombo">
+     <property name="text">
+      <string>Driver</string>
+     </property>
+     <property name="buddy">
+      <cstring>driverCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QComboBox" name="driverCombo"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_startsEdit">
+     <property name="text">
+      <string>Starts</string>
+     </property>
+     <property name="buddy">
+      <cstring>startsEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QTimeEdit" name="startsEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>nameEdit</tabstop>
+  <tabstop>stopsEdit</tabstop>
+  <tabstop>driverCombo</tabstop>
+  <tabstop>startsEdit</tabstop>
+ </tabstops>
+</ui>
