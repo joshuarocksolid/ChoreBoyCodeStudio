@@ -72,7 +72,7 @@ def test_rename_to_markdown_rekeys_the_surface(tmp_path: Path) -> None:
     new_path = str((tmp_path / "NOTES.md").resolve())
     registry = TabContentProviderRegistry()
     registry.register(_Provider())
-    registry.bind(old_path, surface)  # type: ignore[arg-type]
+    registry.bind(old_path, surface, "markdown")  # type: ignore[arg-type]
     host = _Host(registry)
     workflow = ProjectTreeUiWorkflow(host)  # type: ignore[arg-type]
 
@@ -90,7 +90,7 @@ def test_rename_to_text_reparents_the_source_editor_and_releases_the_surface(tmp
     old_path = str((tmp_path / "README.md").resolve())
     new_path = str((tmp_path / "README.txt").resolve())
     registry = TabContentProviderRegistry()
-    registry.bind(old_path, surface)  # type: ignore[arg-type]
+    registry.bind(old_path, surface, "markdown")  # type: ignore[arg-type]
     host = _Host(registry)
     workflow = ProjectTreeUiWorkflow(host)  # type: ignore[arg-type]
 
@@ -100,3 +100,33 @@ def test_rename_to_text_reparents_the_source_editor_and_releases_the_surface(tmp
     assert registry.surface_for_path(old_path) is None
     assert surface.released == 1
     assert surface.changed == []
+
+
+class _FormsProvider:
+    provider_id = "forms"
+    priority = 10
+
+    def matches(self, file_path: str, context: TabMatchContext) -> bool:
+        del context
+        return file_path.endswith(".ui")
+
+
+def test_rename_to_a_different_provider_releases_the_bound_surface(tmp_path: Path) -> None:
+    editor = _Widget()
+    surface = _Surface(editor)
+    old_path = str((tmp_path / "README.md").resolve())
+    new_path = str((tmp_path / "form.ui").resolve())
+    registry = TabContentProviderRegistry()
+    registry.register(_Provider())
+    registry.register(_FormsProvider())
+    registry.bind(old_path, surface, "markdown")  # type: ignore[arg-type]
+    host = _Host(registry)
+    workflow = ProjectTreeUiWorkflow(host)  # type: ignore[arg-type]
+
+    workflow.rekey_tab_content(old_path, new_path)
+
+    assert surface.changed == []
+    assert surface.released == 1
+    assert host.replaced == [(new_path, editor)]
+    assert registry.surface_for_path(old_path) is None
+    assert registry.provider_id_for(new_path) is None

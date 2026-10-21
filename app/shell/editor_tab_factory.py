@@ -147,7 +147,7 @@ class EditorTabFactory:
                 content_source = surface.content_source()
                 if content_source is not None:
                     self._attach_content_source(opened_result.tab, content_source)
-                registry.bind(tab_file_path, surface)
+                registry.bind(tab_file_path, surface, provider.provider_id)
                 tab_content = surface.widget()
 
         tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)

@@ -123,6 +123,14 @@ class ProviderDeclined(Exception):
         self.reason = reason
 
 
+@dataclass
+class _PathBinding:
+    """A path owns one surface and the provider that created it."""
+
+    surface: TabSurface
+    provider_id: str
+
+
 class TabContentProviderRegistry:
     """Bound on the main window by the platform. ``register`` is called from
     feature ``install`` functions only.
@@ -134,7 +142,7 @@ class TabContentProviderRegistry:
 
     def __init__(self) -> None:
         self._providers: Dict[str, TabContentProvider] = {}
-        self._surfaces: Dict[str, TabSurface] = {}
+        self._surfaces: Dict[str, _PathBinding] = {}
 
     def register(self, provider: TabContentProvider) -> None:
         """ValueError on a duplicate id or a priority tie."""
@@ -161,26 +169,38 @@ class TabContentProviderRegistry:
             return None
         return max(matches, key=lambda provider: provider.priority)
 
-    def bind(self, file_path: str, surface: TabSurface) -> None:
-        self._surfaces[file_path] = surface
+    def bind(self, file_path: str, surface: TabSurface, provider_id: str) -> None:
+        self._surfaces[file_path] = _PathBinding(surface=surface, provider_id=provider_id)
 
     def unbind(self, file_path: str) -> Optional[TabSurface]:
-        return self._surfaces.pop(file_path, None)
+        binding = self._surfaces.pop(file_path, None)
+        if binding is None:
+            return None
+        return binding.surface
 
     def rekey(self, old_path: str, new_path: str) -> None:
-        surface = self._surfaces.pop(old_path, None)
-        if surface is not None:
-            self._surfaces[new_path] = surface
+        binding = self._surfaces.pop(old_path, None)
+        if binding is not None:
+            self._surfaces[new_path] = binding
 
     def forget_all(self) -> None:
         self._surfaces.clear()
 
     def surface_for_path(self, file_path: str) -> Optional[TabSurface]:
-        return self._surfaces.get(file_path)
+        binding = self._surfaces.get(file_path)
+        if binding is None:
+            return None
+        return binding.surface
+
+    def provider_id_for(self, file_path: str) -> Optional[str]:
+        binding = self._surfaces.get(file_path)
+        if binding is None:
+            return None
+        return binding.provider_id
 
     def path_for_source_editor(self, editor: object) -> Optional[str]:
-        for file_path, surface in self._surfaces.items():
-            if surface.source_editor() is editor:
+        for file_path, binding in self._surfaces.items():
+            if binding.surface.source_editor() is editor:
                 return file_path
         return None
 
@@ -188,10 +208,15 @@ class TabContentProviderRegistry:
         file_path = self.path_for_source_editor(editor)
         if file_path is None:
             return None
-        return self._surfaces.get(file_path)
+        return self.surface_for_path(file_path)
 
     def surfaces(self) -> Tuple[Tuple[str, TabSurface], ...]:
-        return tuple(sorted(self._surfaces.items(), key=lambda item: item[0]))
+        return tuple(
+            sorted(
+                ((file_path, binding.surface) for file_path, binding in self._surfaces.items()),
+                key=lambda item: item[0],
+            )
+        )
 
     def apply_all_themes(self, tokens: "ShellThemeTokens") -> None:
         for _file_path, surface in self.surfaces():

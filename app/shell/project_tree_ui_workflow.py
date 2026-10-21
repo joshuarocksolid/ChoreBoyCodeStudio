@@ -391,7 +391,8 @@ class ProjectTreeUiWorkflow:
             normalized_path,
             TabMatchContext(project_root=project_root, forced_text=False),
         )
-        if provider is None:
+        new_provider_id = None if provider is None else provider.provider_id
+        if provider is None or new_provider_id != registry.provider_id_for(old_path):
             source_editor = surface.source_editor()
             if source_editor is not None:
                 self._host.editor_tabs_coordinator().replace_tab_content_widget(normalized_path, source_editor)

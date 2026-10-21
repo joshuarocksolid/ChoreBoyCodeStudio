@@ -120,7 +120,7 @@ def _lifecycle(
     file_path: str,
 ) -> tuple[EditorTabLifecycleWorkflow, _LazySurface]:
     surface = _LazySurface()
-    registry.bind(file_path, surface)  # type: ignore[arg-type]
+    registry.bind(file_path, surface, "markdown")  # type: ignore[arg-type]
     host = _CloseHost(registry, _Tabs(file_path), _Workspace())
     workflow = EditorTabLifecycleWorkflow(
         host=host,  # type: ignore[arg-type]
@@ -183,7 +183,7 @@ def test_move_rekeys_a_surface_with_no_source_editor(tmp_path: Path) -> None:
     surface = _LazySurface()
     registry = TabContentProviderRegistry()
     registry.register(_MarkdownProvider())  # type: ignore[arg-type]
-    registry.bind(old_path, surface)  # type: ignore[arg-type]
+    registry.bind(old_path, surface, "markdown")  # type: ignore[arg-type]
     host = SimpleNamespace(
         tab_content_registry=lambda: registry,
         loaded_project=lambda: None,
