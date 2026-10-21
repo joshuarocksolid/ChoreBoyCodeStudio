@@ -142,6 +142,18 @@ class EditorTabFactory:
             except ProviderDeclined as exc:
                 editor_widget = created_editor["widget"] or create_source_editor()
                 tab_content = _text_tab_with_notice(editor_widget, exc.reason, window._editor_tabs_widget)
+            except Exception:
+                window._logger.exception(
+                    "Tab provider %s failed for %s",
+                    provider.provider_id,
+                    tab_file_path,
+                )
+                editor_widget = created_editor["widget"] or create_source_editor()
+                tab_content = _text_tab_with_notice(
+                    editor_widget,
+                    "Couldn't open this view. Opened as text.",
+                    window._editor_tabs_widget,
+                )
             else:
                 editor_widget = surface.source_editor() or created_editor["widget"]
                 content_source = surface.content_source()
