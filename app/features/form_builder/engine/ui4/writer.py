@@ -590,8 +590,7 @@ class _Writer:
 
     def _empty(self, indent: int, tag: str, attrs: str) -> None:
         if _empty_form(tag) == "pair":
-            self._open(indent, tag, attrs)
-            self._close(indent, tag)
+            self.lines.append("%s<%s%s></%s>" % (" " * indent, tag, attrs, tag))
             return
         self.lines.append("%s<%s%s/>" % (" " * indent, tag, attrs))
 
