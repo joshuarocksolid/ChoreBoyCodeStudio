@@ -14,7 +14,11 @@ def _locator():
     if spec is None or spec.loader is None:
         raise RuntimeError("freecad_locator.py is missing")
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    loader = spec.loader
+    exec_module = getattr(loader, "exec_module", None)
+    if exec_module is None:
+        raise RuntimeError("freecad_locator.py is missing")
+    exec_module(module)
     return module
 
 

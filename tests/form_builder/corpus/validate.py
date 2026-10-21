@@ -36,7 +36,7 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(CORPUS))
     from schema_contract import ATTRIBUTES, ELEMENTS, REQUIRED_PARENTS
 else:
-    from tests.form_builder.corpus.schema_contract import (
+    from tests.form_builder.corpus.schema_contract import (  # pyright: ignore[reportMissingImports]
         ATTRIBUTES,
         ELEMENTS,
         REQUIRED_PARENTS,
