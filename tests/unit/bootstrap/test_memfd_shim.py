@@ -19,6 +19,19 @@ def _fresh_module():
     return importlib.import_module("app.bootstrap.memfd_shim")
 
 
+def _libc_loadable() -> bool:
+    try:
+        memfd_shim._resolve_libc()
+    except OSError:
+        return False
+    return True
+
+
+requires_libc = pytest.mark.skipif(
+    not _libc_loadable(), reason="ctypes cannot load libc here (FreeCAD 1.1 jails ctypes to /opt/freecad)"
+)
+
+
 @pytest.fixture
 def restore_memfd():
     had_native = hasattr(os, "memfd_create")
@@ -42,6 +55,7 @@ def test_install_is_noop_when_native_available(restore_memfd: None) -> None:
     assert os.memfd_create is native_impl
 
 
+@requires_libc
 def test_install_provides_working_memfd_when_missing(restore_memfd: None) -> None:
     if hasattr(os, "memfd_create"):
         delattr(os, "memfd_create")
@@ -62,6 +76,7 @@ def test_install_provides_working_memfd_when_missing(restore_memfd: None) -> Non
         os.close(fd)
 
 
+@requires_libc
 def test_install_is_idempotent_after_shim(restore_memfd: None) -> None:
     if hasattr(os, "memfd_create"):
         delattr(os, "memfd_create")
@@ -71,3 +86,18 @@ def test_install_is_idempotent_after_shim(restore_memfd: None) -> None:
     second = module.install()
     assert first is True
     assert second is False
+
+
+def test_install_reports_false_when_ctypes_refuses_libc(
+    restore_memfd: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if hasattr(os, "memfd_create"):
+        monkeypatch.delattr(os, "memfd_create")
+    module = _fresh_module()
+
+    def refuse() -> None:
+        raise PermissionError("ctypes: loading libraries is restricted to files under /opt/freecad")
+
+    monkeypatch.setattr(module, "_resolve_libc", refuse)
+    assert module.install() is False
+    assert not hasattr(os, "memfd_create")
