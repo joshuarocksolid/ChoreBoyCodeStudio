@@ -62,6 +62,7 @@ class SemanticSession:
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
         # Runtime docs are one REPL round trip (about 1 ms); do not queue them behind Jedi.
         self._runtime_docs_worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
+        self._runtime_targets: dict[tuple[str, str], str] = {}
 
     def bind_runtime_members(self, runtime_coordinator: RuntimeIntrospectionCoordinator | None) -> None:
         """Let lazy docs resolve runtime members (editor and Python Console rows)."""
@@ -246,12 +247,20 @@ class SemanticSession:
                 return
             on_paint(popup_prefix, merged.items, merged)
 
-        def add_runtime_items(items: list[CompletionItem]) -> None:
+        runtime_target: list[str] = [""]
+
+        def add_runtime_items(target_path: str, items: list[CompletionItem]) -> None:
             attached = self._completion_service.attach_runtime_replacement_metadata(
                 items,
                 context=completion_context,
             )
             if not attached:
+                return
+            if target_path != runtime_target[0]:
+                # A fresh inference replaced a remembered target: drop the old rows.
+                runtime_items.clear()
+                runtime_target[0] = target_path
+            elif runtime_items:
                 return
             runtime_items.extend(attached)
             paint_merged(fast=fast_envelope[0], semantic=semantic_envelope[0])
@@ -259,9 +268,10 @@ class SemanticSession:
         def start_runtime_tier(runtime_query: RuntimeIntrospectionQuery | None) -> None:
             if runtime_coordinator is None or runtime_query is None:
                 return
+            target_path = runtime_query.target_path
             cached = runtime_coordinator.cached_items(runtime_query)
             if cached is not None:
-                add_runtime_items(cached)
+                add_runtime_items(target_path, cached)
                 return
             if schedule_background_task is None:
                 return
@@ -277,9 +287,9 @@ class SemanticSession:
                     on_error(exc)
 
             schedule_background_task(
-                f"runtime_introspect:{runtime_query.target_path}",
+                f"runtime_introspect:{target_path}",
                 introspection_task,
-                add_runtime_items,
+                lambda items: add_runtime_items(target_path, items),
                 introspection_error,
             )
 
@@ -298,6 +308,20 @@ class SemanticSession:
             runtime_coordinator is not None
             and completion_context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
         ):
+            receiver_key = (request.current_file_path, completion_context.base_expression)
+            remembered = self._runtime_targets.get(receiver_key)
+            if remembered:
+                # Paint the member list of the last inferred class at once; the
+                # inference below corrects it if the receiver changed type.
+                start_runtime_tier(RuntimeIntrospectionQuery(target_path=remembered, member_prefix=""))
+
+            def on_inferred(runtime_query: RuntimeIntrospectionQuery | None) -> None:
+                if runtime_query is None:
+                    self._runtime_targets.pop(receiver_key, None)
+                    return
+                self._runtime_targets[receiver_key] = runtime_query.target_path
+                start_runtime_tier(runtime_query)
+
             # Jedi inference takes 70-160 ms on ChoreBoy; keep it off the UI thread
             # and on the serialized lane with the other Jedi work. It is queued before
             # the heuristic fast tier (230 ms for btn.), so a cached runtime list
@@ -311,7 +335,7 @@ class SemanticSession:
                     current_file_path=completion_context.file_path,
                     source_text=completion_context.source_text,
                 ),
-                on_success=start_runtime_tier,
+                on_success=on_inferred,
                 on_error=on_fast_error,
             )
 
