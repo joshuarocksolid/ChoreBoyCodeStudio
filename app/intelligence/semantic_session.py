@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import threading
 from typing import TypeVar, cast
 
 T = TypeVar("T")
@@ -38,6 +39,9 @@ from app.intelligence.semantic_models import (
 )
 from app.intelligence.semantic_worker import SemanticWorker
 from app.project.file_inventory import ProjectInventorySnapshot
+
+
+_PAINT_GRACE_SECONDS = 0.04
 
 
 class SemanticSession:
@@ -233,6 +237,7 @@ class SemanticSession:
         popup_prefix = completion_context.prefix
         self._completion_resolver.bind_runtime_members(runtime_coordinator)
         runtime_items: list[CompletionItem] = []
+        worker_calls: list[Callable[[], None]] = []
         fast_envelope: list[CompletionEnvelope | None] = [None]
         semantic_envelope: list[CompletionEnvelope | None] = [None]
 
@@ -327,7 +332,7 @@ class SemanticSession:
             # and on the serialized lane with the other Jedi work. It is queued before
             # the heuristic fast tier (230 ms for btn.), so a cached runtime list
             # paints first.
-            self._submit(
+            worker_calls.append(lambda: self._submit(
                 key=f"runtime_infer:{request.current_file_path}",
                 priority=-1,
                 task=lambda: resolve_runtime_introspection_query_with_inference(
@@ -338,15 +343,15 @@ class SemanticSession:
                 ),
                 on_success=on_inferred,
                 on_error=on_fast_error,
-            )
+            ))
 
-        self.request_completion_fast(
+        worker_calls.append(lambda: self.request_completion_fast(
             request=request,
             prefix=popup_prefix,
             request_generation=request_generation,
             on_success=on_fast_success,
             on_error=on_fast_error,
-        )
+        ))
 
         def on_semantic_success(result: CompletionRequestResult) -> None:
             semantic_envelope[0] = result.envelope
@@ -356,13 +361,27 @@ class SemanticSession:
             if on_error is not None:
                 on_error(exc)
 
-        self.request_completion(
+        worker_calls.append(lambda: self.request_completion(
             request=request,
             prefix=popup_prefix,
             request_generation=request_generation,
             on_success=on_semantic_success,
             on_error=on_semantic_error,
-        )
+        ))
+
+        def submit_worker_calls() -> None:
+            for call in worker_calls:
+                call()
+
+        if runtime_items:
+            # A cached list was just handed to the popup. Jedi on the worker thread
+            # holds the GIL for most of its 70-160 ms; give the UI thread a moment
+            # to paint first (first paint 30 ms instead of 110-250 ms on ChoreBoy).
+            timer = threading.Timer(_PAINT_GRACE_SECONDS, submit_worker_calls)
+            timer.daemon = True
+            timer.start()
+        else:
+            submit_worker_calls()
 
     def request_completion_resolve(
         self,
