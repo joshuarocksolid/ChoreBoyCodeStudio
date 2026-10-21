@@ -58,9 +58,16 @@ import importlib.util
 import os
 import sys
 import tempfile
+from pathlib import Path
+
+result_path = Path(sys.argv[1])
+
+def finish(text):
+    result_path.write_text(text, encoding="utf-8")
+    print(text, flush=True)
 
 if importlib.util.find_spec("PySide2") is None:
-    print("SKIP")
+    finish("SKIP")
     raise SystemExit(0)
 
 os.environ["CBCS_QT_API"] = "pyside2"
@@ -88,10 +95,12 @@ window.close()
 
 leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in roots)
 if leaked:
-    raise SystemExit("leaked " + ",".join(leaked))
+    finish("leaked " + ",".join(leaked))
+    raise SystemExit(1)
 if attempted:
-    raise SystemExit("attempted " + ",".join(attempted))
-print("OK")
+    finish("attempted " + ",".join(attempted))
+    raise SystemExit(1)
+finish("OK")
 """
 
 
@@ -135,10 +144,12 @@ def test_import_app_features_imports_no_qt_binding(qt_api: str, tmp_path: Path) 
 
 def test_pyside2_main_window_does_not_import_pyside6(tmp_path: Path) -> None:
     script = tmp_path / "main_window_isolation.py"
+    result_path = tmp_path / "result.txt"
     script.write_text(_MAIN_WINDOW_CHILD, encoding="utf-8")
-    completed = _run_child(script, qt_api="pyside2")
-    if completed.returncode == 0 and "SKIP" in completed.stdout:
+    completed = _run_child(script, str(result_path), qt_api="pyside2")
+    result = result_path.read_text(encoding="utf-8") if result_path.exists() else ""
+    if completed.returncode == 0 and result.strip() == "SKIP":
         pytest.skip("PySide2 is absent")
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
-    assert "OK" in completed.stdout
+    assert result.strip() == "OK"
