@@ -2,6 +2,7 @@
 """Designer files load, save, and load again to the same widget tree."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,17 +14,54 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 _CORPUS = Path(__file__).resolve().parents[1] / "corpus"
 _FREECAD = Path("/Applications/FreeCAD.app")
 
+# uic calls these malformed. The ui4 contract still accepts them: language is
+# stored, a missing class becomes "", and any widget class string is legal.
+# They must not raise. They also have no diagnostic code in section 7.
+_ACCEPTED_MALFORMED = frozenset(
+    {
+        "language_python.ui",
+        "missing_widget_class.ui",
+        "refused_QColorDialog.ui",
+        "refused_QErrorMessage.ui",
+        "refused_QFileDialog.ui",
+        "refused_QFocusFrame.ui",
+        "refused_QFontDialog.ui",
+        "refused_QInputDialog.ui",
+        "refused_QMdiSubWindow.ui",
+        "refused_QMessageBox.ui",
+        "refused_QProgressDialog.ui",
+        "refused_QRhiWidget.ui",
+        "refused_QSplashScreen.ui",
+        "refused_QTabBar.ui",
+    }
+)
 
-def _ui_files() -> list[Path]:
-    found: list[Path] = []
-    if _CORPUS.is_dir():
-        found.extend(_CORPUS.rglob("*.ui"))
+
+def _manifest_files(*folders: str) -> list[Path]:
+    manifest = _CORPUS / "MANIFEST.json"
+    if not manifest.is_file():
+        return []
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    wanted = set(folders)
+    found = []
+    for item in data["files"]:
+        if item.get("folder") not in wanted:
+            continue
+        path = _CORPUS / item["path"]
+        if path.is_file():
+            found.append(path)
+    return sorted(found)
+
+
+def _oracle_files() -> list[Path]:
+    found = _manifest_files("qt_examples", "synthetic")
     if _FREECAD.is_dir():
         found.extend(path for path in _FREECAD.rglob("*.ui") if path.is_file())
     return sorted(set(found))
 
 
-_FILES = _ui_files()
+_ORACLE_FILES = _oracle_files()
+_MALFORMED_FILES = _manifest_files("malformed")
 
 
 def _load_tree(text: str, qapp: object):
@@ -116,6 +154,8 @@ def _as_int(value: object) -> int:
 def _norm(value: object) -> object:
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
+    if isinstance(value, (list, tuple)):
+        return tuple(_norm(item) for item in value)
     name = type(value).__name__
     if name == "QByteArray":
         return bytes(value.data())
@@ -161,6 +201,13 @@ def _norm(value: object) -> object:
         return value.toString()
     if name == "QCursor":
         return _as_int(value.shape())
+    if name == "QTimeZone":
+        zone_id = value.id()
+        return (bytes(zone_id.data()) if hasattr(zone_id, "data") else bytes(zone_id), value.isValid())
+    if name == "QKeySequence":
+        return value.toString()
+    if name == "QKeyCombination":
+        return (_as_int(value.keyboardModifiers()), _as_int(value.key()))
     if name == "QBrush":
         return (_as_int(value.style()), _norm(value.color()))
     if name == "QPalette":
@@ -175,9 +222,20 @@ def _norm(value: object) -> object:
         return repr(value)
 
 
+def _oracle_id(path: Path) -> str:
+    try:
+        return path.relative_to(_CORPUS).as_posix()
+    except ValueError:
+        return "freecad/" + path.name
+
+
 @pytest.mark.oracle
-@pytest.mark.skipif(not _FILES, reason="no Designer .ui files on this machine")
-@pytest.mark.parametrize("path", _FILES, ids=[str(path) for path in _FILES])
+@pytest.mark.skipif(not _ORACLE_FILES, reason="no Designer .ui files on this machine")
+@pytest.mark.parametrize(
+    "path",
+    _ORACLE_FILES,
+    ids=[_oracle_id(path) for path in _ORACLE_FILES],
+)
 def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
     original = path.read_text(encoding="utf-8")
     try:
@@ -195,3 +253,24 @@ def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:
     assert _snapshot(before) == _snapshot(after), path.name
     before.deleteLater()
     after.deleteLater()
+
+
+@pytest.mark.oracle
+@pytest.mark.skipif(not _MALFORMED_FILES, reason="malformed corpus is not checked out")
+@pytest.mark.parametrize("path", _MALFORMED_FILES, ids=[path.name for path in _MALFORMED_FILES])
+def test_malformed_corpus_produces_a_diagnostic(path: Path) -> None:
+    """Malformed fixtures never raise an unexpected exception.
+
+    ``UiReadError`` is the diagnostic for FB001/FB002/FB004/FB008. A returned
+    document must carry at least one diagnostic, except the files section 7
+    still accepts (see ``_ACCEPTED_MALFORMED``).
+    """
+    text = path.read_text(encoding="utf-8")
+    try:
+        loaded = read_ui(text, allocator=IdAllocator())
+    except UiReadError as exc:
+        assert exc.code
+        return
+    if path.name in _ACCEPTED_MALFORMED:
+        return
+    assert loaded.diagnostics, path.name

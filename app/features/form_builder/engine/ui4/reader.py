@@ -83,14 +83,15 @@ _INT64 = (-9223372036854775808, 9223372036854775807)
 _UINT64 = (0, 18446744073709551615)
 _INT_RE = re.compile(r"[+-]?[0-9]+\Z")
 _DEFERRED_VALUES = frozenset({"palette", "brush", "iconset", "pixmap", "gradient"})
+# QSizePolicy::Policy values, not the old SizeType index. 5 is Preferred.
 _POLICY_BY_INT = {
     "0": "Fixed",
     "1": "Minimum",
-    "2": "Maximum",
-    "3": "Preferred",
-    "4": "MinimumExpanding",
-    "5": "Expanding",
-    "7": "Ignored",
+    "3": "MinimumExpanding",
+    "4": "Maximum",
+    "5": "Preferred",
+    "7": "Expanding",
+    "13": "Ignored",
 }
 _FONT_INT = frozenset({"pointsize", "weight"})
 _FONT_BOOL = frozenset({"italic", "bold", "underline", "strikeout", "antialiasing", "kerning"})
