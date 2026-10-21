@@ -18,20 +18,20 @@ import os
 import sys
 
 api = sys.argv[1]
-blocked = [name for name in sys.argv[2].split(",") if name]
 os.environ["CBCS_QT_API"] = api
+roots = ("PySide2", "PySide6", "shiboken2", "shiboken6")
 attempted = []
 
 class _Recorder:
     def find_spec(self, fullname, path, target=None):
         root = fullname.split(".", 1)[0]
-        if root in blocked:
+        if root in roots:
             attempted.append(fullname)
         return None
 
 recorder = _Recorder()
 sys.meta_path.insert(0, recorder)
-probe_name = blocked[0] + ".QtCore"
+probe_name = roots[0] + ".QtCore"
 if recorder.find_spec(probe_name, None) is not None:
     raise SystemExit("finder returned a spec for " + probe_name)
 if attempted != [probe_name]:
@@ -44,39 +44,93 @@ from app.features.spec import FEATURE_SPECS, feature_is_enabled
 for spec in FEATURE_SPECS:
     feature_is_enabled(spec)
 
-blocked_roots = set(blocked)
-leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in blocked_roots)
+leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in roots)
 if leaked:
     raise SystemExit("leaked " + ",".join(leaked))
 if attempted:
     raise SystemExit("attempted " + ",".join(attempted))
 """
 
+_MAIN_WINDOW_CHILD = r"""
+import importlib.util
+import os
+import sys
+import tempfile
 
-@pytest.mark.parametrize(
-    ("qt_api", "blocked"),
-    [
-        ("pyside2", ("PySide6", "shiboken6")),
-        ("pyside6", ("PySide2", "shiboken2")),
-    ],
-)
-def test_import_app_features_does_not_import_the_other_binding(
-    qt_api: str,
-    blocked: tuple[str, ...],
-) -> None:
+if importlib.util.find_spec("PySide2") is None:
+    print("SKIP")
+    raise SystemExit(0)
+
+os.environ["CBCS_QT_API"] = "pyside2"
+os.environ["QT_QPA_PLATFORM"] = "offscreen"
+os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
+roots = ("PySide6", "shiboken6")
+attempted = []
+
+class _Recorder:
+    def find_spec(self, fullname, path, target=None):
+        root = fullname.split(".", 1)[0]
+        if root in roots:
+            attempted.append(fullname)
+        return None
+
+sys.meta_path.insert(0, _Recorder())
+
+from app.qt.QtWidgets import QApplication
+from app.shell.main_window import MainWindow
+
+if QApplication.instance() is None:
+    QApplication([])
+window = MainWindow(state_root=tempfile.mkdtemp())
+window.close()
+
+leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in roots)
+if leaked:
+    raise SystemExit("leaked " + ",".join(leaked))
+if attempted:
+    raise SystemExit("attempted " + ",".join(attempted))
+print("OK")
+"""
+
+
+def _child_env(qt_api: str) -> dict[str, str]:
     env = os.environ.copy()
     env["CBCS_QT_API"] = qt_api
-    env["PYTHONPATH"] = os.pathsep.join(
-        [str(_REPO_ROOT), env["PYTHONPATH"]] if env.get("PYTHONPATH") else [str(_REPO_ROOT)]
-    )
+    entries = [str(_REPO_ROOT), str(_REPO_ROOT / "vendor")]
+    if env.get("PYTHONPATH"):
+        entries.append(env["PYTHONPATH"])
+    env["PYTHONPATH"] = os.pathsep.join(entries)
     env.pop("PYTEST_CURRENT_TEST", None)
+    return env
+
+
+@pytest.mark.parametrize("qt_api", ["pyside2", "pyside6"])
+def test_import_app_features_imports_no_qt_binding(qt_api: str) -> None:
     completed = subprocess.run(
-        [sys.executable, "-c", _CHILD, qt_api, ",".join(blocked)],
+        [sys.executable, "-c", _CHILD, qt_api],
         cwd=_REPO_ROOT,
-        env=env,
+        env=_child_env(qt_api),
         capture_output=True,
         text=True,
         check=False,
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+def test_pyside2_main_window_does_not_import_pyside6(tmp_path: Path) -> None:
+    script = tmp_path / "main_window_isolation.py"
+    script.write_text(_MAIN_WINDOW_CHILD, encoding="utf-8")
+    completed = subprocess.run(
+        [sys.executable, str(script)],
+        cwd=_REPO_ROOT,
+        env=_child_env("pyside2"),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode == 0 and "SKIP" in completed.stdout:
+        pytest.skip("PySide2 is absent")
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert "OK" in completed.stdout
