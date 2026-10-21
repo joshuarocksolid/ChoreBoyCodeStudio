@@ -146,6 +146,40 @@ def test_ids_follow_schema_preorder_and_stay_stable() -> None:
     assert layout_parent.id == root.id
 
 
+def test_unknown_sibling_after_a_wrapper_stays_outside() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form"/>
+ <resources>
+  <include location="other.qrc"/>
+  <zzin/>
+ </resources>
+ <zzout/>
+ <connections/>
+</ui>
+"""
+    loaded = _load(text)
+    saved = write_ui(loaded.document).text
+    compact = "".join(line.strip() for line in saved.splitlines())
+    assert "<resources><include" in compact
+    assert "<zzin/></resources><zzout/><connections" in compact
+    again = _load(saved)
+    assert again.document.structure_fingerprint() == loaded.document.structure_fingerprint()
+    empty = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form"/>
+ <resources/>
+ <zz/>
+ <connections/>
+</ui>
+"""
+    loaded = _load(empty)
+    saved = write_ui(loaded.document).text
+    compact = "".join(line.strip() for line in saved.splitlines())
+    assert "<resources/><zz/><connections" in compact
+    assert _load(saved).document.structure_fingerprint() == loaded.document.structure_fingerprint()
+
+
 def test_odd_property_content_rereads_with_the_same_fingerprint() -> None:
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">

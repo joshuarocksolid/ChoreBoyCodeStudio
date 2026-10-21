@@ -457,7 +457,7 @@ def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
     for child in _elements(node):
         lowered = _lower_known(child, tag)
         if lowered is None:
-            built.add_slot("opaque", _opaque_built(child, (slot, typed)))
+            built.add_slot("opaque", _opaque_built(child, ("%s:inner" % slot, typed)))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
         else:
             built.add_slot(slot, lowered)

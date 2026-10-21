@@ -381,16 +381,19 @@ class _Writer:
             if not children and group not in present:
                 self._drain_all(buckets, group, indent)
                 return
-            if not children and not _group_pending(buckets, group):
+            inner = "%s:inner" % group
+            if not children and not _group_pending(buckets, inner):
                 self._empty(indent, slot.wrapper, "")
+                self._drain_all(buckets, group, indent)
                 return
             self._open(indent, slot.wrapper, "")
-            self._flush(buckets, (group, 0), indent + 1)
+            self._flush(buckets, (inner, 0), indent + 1)
             for index, child in enumerate(children, start=1):
                 self.node(child, indent + 1)
-                self._flush(buckets, (group, index), indent + 1)
-            self._drain_group(buckets, group, len(children), indent + 1)
+                self._flush(buckets, (inner, index), indent + 1)
+            self._drain_group(buckets, inner, len(children), indent + 1)
             self._close(indent, slot.wrapper)
+            self._drain_all(buckets, group, indent)
             return
         self._flush(buckets, (group, 0), indent)
         for index, child in enumerate(children, start=1):
