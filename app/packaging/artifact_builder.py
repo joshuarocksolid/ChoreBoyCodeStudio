@@ -44,6 +44,9 @@ from app.packaging.models import (
 )
 from app.packaging.validator import build_package_validation_report, resolve_icon_relative_path
 
+DEFAULT_APP_ICON_FILENAME = "app_icon.png"
+DEFAULT_APP_ICON_SOURCE = resolve_app_root() / "app" / "ui" / "icons" / "Python_Icon.png"
+
 
 @dataclass(frozen=True)
 class WrittenInstallableArtifact:
@@ -255,6 +258,13 @@ def _write_project_artifact(
         project_root=str(project_root),
         package_config=package_config,
     )
+    # A launcher without Icon= shows as a blank page in the ChoreBoy file manager.
+    uses_default_icon = not icon_relative_path
+    manifest_icon_path = (
+        DEFAULT_APP_ICON_FILENAME
+        if uses_default_icon
+        else Path(PACKAGE_APP_FILES_DIRNAME, icon_relative_path).as_posix()
+    )
     manifest = create_distribution_manifest(
         package_kind=PACKAGE_KIND_PROJECT,
         profile=profile,
@@ -263,11 +273,7 @@ def _write_project_artifact(
         version=package_config.version,
         description=package_config.description,
         entry_relative_path=entry_relative_path,
-        icon_relative_path=(
-            Path(PACKAGE_APP_FILES_DIRNAME, icon_relative_path).as_posix()
-            if icon_relative_path
-            else ""
-        ),
+        icon_relative_path=manifest_icon_path,
         launcher_filename=build_launcher_filename(package_config.package_id),
         launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
         default_install_base=FREECAD_APPS_BASE,
@@ -286,18 +292,19 @@ def _write_project_artifact(
     launcher_path = artifact_root / installer_launcher_filename
     manifest_path = artifact_root / PACKAGE_ARTIFACT_MANIFEST_FILENAME
 
+    source_icon = DEFAULT_APP_ICON_SOURCE if uses_default_icon else project_root / icon_relative_path
     installer_icon_value = ""
-    if manifest.icon_relative_path and icon_relative_path:
-        source_icon = project_root / icon_relative_path
-        if source_icon.is_file():
-            installer_icon_value = str(
-                artifact_root.resolve() / manifest.payload_dirname / manifest.icon_relative_path
-            )
+    if source_icon.is_file():
+        installer_icon_value = str(
+            artifact_root.resolve() / manifest.payload_dirname / manifest.icon_relative_path
+        )
 
     def _copy_payload(payload_root: Path) -> None:
         app_files_root = payload_root / PACKAGE_APP_FILES_DIRNAME
         ensure_directory(app_files_root)
         _copy_project_tree(project_root, app_files_root)
+        if uses_default_icon:
+            shutil.copy2(DEFAULT_APP_ICON_SOURCE, payload_root / DEFAULT_APP_ICON_FILENAME)
 
     report_payload = {
         **PackageExportResult(
