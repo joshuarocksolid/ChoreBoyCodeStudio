@@ -256,6 +256,8 @@ def test_text_escapes_quote_and_cr_and_keeps_utf8() -> None:
     assert write_ui(_load(saved).document).text == saved
 
 
+@pytest.mark.parity("R3-302")
+@pytest.mark.parity("R3-303")
 def test_float_uses_eight_decimals_and_double_uses_fifteen() -> None:
     saved = _saved(
         """<?xml version="1.0" encoding="UTF-8"?>
