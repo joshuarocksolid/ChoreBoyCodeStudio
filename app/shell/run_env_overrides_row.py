@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget
+from app.qt.QtCore import Signal
+from app.qt.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QWidget
 
 from app.project.run_configs import env_overrides_to_text
 from app.shell.field_action_button import make_field_action_button

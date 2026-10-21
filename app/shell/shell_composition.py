@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.test_runtime_flags import background_runtime_disabled

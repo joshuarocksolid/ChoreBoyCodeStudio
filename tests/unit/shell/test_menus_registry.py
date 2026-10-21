@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtGui as qt_gui
-import PySide2.QtWidgets as qt_widgets
-from PySide2.QtWidgets import QMainWindow
+from app.qt import QtWidgets as qt_widgets
+from app.qt.QtWidgets import QMainWindow
 
 from app.shell.menus import MenuCallbacks, build_menu_stubs
 
@@ -17,8 +16,6 @@ pytestmark = pytest.mark.unit
 
 @pytest.fixture
 def _ensure_qapp(qapp):  # type: ignore[no-untyped-def]
-    if not hasattr(qt_widgets, "QActionGroup"):
-        qt_widgets.QActionGroup = qt_gui.QActionGroup  # type: ignore[attr-defined]
     return qapp
 
 

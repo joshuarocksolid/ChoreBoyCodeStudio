@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide2.QtGui import QColor, QPainter, QPalette
-from PySide2.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QWidget
+from app.qt.QtGui import QColor, QPainter, QPalette
+from app.qt.QtWidgets import QStyledItemDelegate, QStyleOptionViewItem, QTreeWidget, QWidget
 
 from app.shell.outline.outline_icons import chevron_icon
 

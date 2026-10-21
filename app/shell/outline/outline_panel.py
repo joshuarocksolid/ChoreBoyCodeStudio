@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
-from PySide2.QtCore import QEvent, QSize, Qt, Signal
-from PySide2.QtGui import QKeyEvent
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QEvent, QSize, Qt, Signal
+from app.qt.QtGui import QKeyEvent
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QHeaderView,
     QLabel,

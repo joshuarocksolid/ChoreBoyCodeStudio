@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QDialog
+from app.qt.QtWidgets import QDialog
 
 from app.packaging.models import PACKAGE_PROFILE_INSTALLABLE
 from app.shell.main_window import MainWindow

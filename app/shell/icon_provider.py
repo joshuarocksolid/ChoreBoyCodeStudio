@@ -6,7 +6,7 @@ can produce theme-colored icons without external asset files.
 
 from __future__ import annotations
 
-from PySide2.QtGui import QIcon
+from app.qt.QtGui import QIcon
 
 from app.shell.file_type_icons import build_file_type_icon_map, build_filename_icon_map
 from app.shell.icons.render import clear_icon_caches, render_glyph_icon

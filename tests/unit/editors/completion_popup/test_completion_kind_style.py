@@ -6,9 +6,9 @@ from dataclasses import replace
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QPalette  # noqa: E402
+from app.qt.QtGui import QPalette  # noqa: E402
 
 from app.editors.completion_popup.completion_kind_style import (  # noqa: E402
     kind_style_for,

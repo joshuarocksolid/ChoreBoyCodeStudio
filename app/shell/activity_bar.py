@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QSize, Qt, Signal
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QToolButton, QVBoxLayout, QWidget
+from app.qt.QtCore import QSize, Qt, Signal
+from app.qt.QtGui import QIcon
+from app.qt.QtWidgets import QToolButton, QVBoxLayout, QWidget
 
 
 class ActivityBar(QWidget):

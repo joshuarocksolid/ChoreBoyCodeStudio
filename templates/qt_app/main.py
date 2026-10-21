@@ -1,5 +1,5 @@
 import sys
-from PySide2.QtWidgets import QApplication
+from PySide.QtWidgets import QApplication
 
 from app.main_window import MainWindow
 
@@ -11,7 +11,7 @@ def main() -> int:
 
     window = MainWindow()
     window.show()
-    return app.exec_()
+    return (getattr(app, "exec", None) or app.exec_)()
 
 
 if __name__ == "__main__":

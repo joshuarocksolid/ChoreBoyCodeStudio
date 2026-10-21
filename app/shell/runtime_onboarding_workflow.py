@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Callable, Mapping, Protocol
 
-from PySide2.QtWidgets import QDialog, QStackedWidget, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QDialog, QStackedWidget, QVBoxLayout, QWidget
 
 from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
@@ -25,6 +25,7 @@ from app.support.runtime_explainer import (
     build_startup_issue_report,
     merge_runtime_issue_reports,
 )
+from app.qt.qt_compat import exec_qt
 
 
 class RuntimeOnboardingHost(Protocol):
@@ -312,7 +313,7 @@ class RuntimeOnboardingWorkflow:
             open_help_topic=self._host.open_runtime_help_topic,
             parent=self._host.dialog_parent(),
         )
-        dialog.exec_()
+        exec_qt(dialog)
 
     def handle_runtime_center_action(self) -> None:
         self.refresh_latest_runtime_issue_report()
@@ -404,7 +405,7 @@ class RuntimeOnboardingWorkflow:
         self.connect_welcome_widget_actions(onboarding_widget, close_after_action=dialog.accept)
         self.refresh_welcome_widget_state(onboarding_widget, force_show_onboarding=True)
         layout.addWidget(onboarding_widget)
-        dialog.exec_()
+        exec_qt(dialog)
 
     def _invoke_welcome_action(
         self,

@@ -6,7 +6,7 @@ import os
 from logging import Logger
 from typing import Callable
 
-from PySide2.QtCore import QSize
+from app.qt.QtCore import QSize
 
 from app.core.errors import AppValidationError
 from app.core.models import LoadedProject

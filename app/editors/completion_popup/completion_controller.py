@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
-from PySide2.QtGui import QKeyEvent
-from PySide2.QtWidgets import QApplication, QWidget
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
+from app.qt.QtGui import QKeyEvent
+from app.qt.QtWidgets import QApplication, QWidget
 
 from app.editors.completion_popup.completion_item_model import CompletionItemModel
 from app.editors.completion_popup.completion_popup_container import (

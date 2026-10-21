@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.shell.run_log_panel import RunInfo, RunLogPanel  # noqa: E402
 

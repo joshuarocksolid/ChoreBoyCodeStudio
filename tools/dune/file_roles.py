@@ -26,18 +26,20 @@ _UI_IMPORT_CONTRACTS = (
     "app.runner.repl_protocol",
 )
 
+_QT_BINDING_DENY = ("PySide2", "PySide6", "shiboken2", "shiboken6", "app.qt")
+
 FILE_ROLES = (
-    FileRole("app.core", ("app/core/**",), ("PySide2",)),
-    FileRole("app.bootstrap", ("app/bootstrap/**",), ("PySide2",)),
-    FileRole("app.run", ("app/run/**",), ("PySide2",)),
-    FileRole("app.intelligence", ("app/intelligence/**",), ("PySide2",)),
-    FileRole("app.persistence", ("app/persistence/**",), ("PySide2",)),
-    FileRole("app.plugins", ("app/plugins/**",), ("PySide2",)),
-    FileRole("app.packaging", ("app/packaging/**",), ("PySide2",)),
+    FileRole("app.core", ("app/core/**",), _QT_BINDING_DENY),
+    FileRole("app.bootstrap", ("app/bootstrap/**",), _QT_BINDING_DENY),
+    FileRole("app.run", ("app/run/**",), _QT_BINDING_DENY),
+    FileRole("app.intelligence", ("app/intelligence/**",), _QT_BINDING_DENY),
+    FileRole("app.persistence", ("app/persistence/**",), _QT_BINDING_DENY),
+    FileRole("app.plugins", ("app/plugins/**",), _QT_BINDING_DENY),
+    FileRole("app.packaging", ("app/packaging/**",), _QT_BINDING_DENY),
     FileRole(
         "app.project",
         ("app/project/**",),
-        ("PySide2",),
+        _QT_BINDING_DENY,
         allowed_files=frozenset({"app/project/project_tree_widget.py"}),
     ),
     FileRole(

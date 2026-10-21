@@ -17,9 +17,9 @@ import sys
 from pathlib import Path
 from typing import Any, Optional
 
-from PySide2.QtCore import Qt, QThread, Signal
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import (
+from PySide.QtCore import Qt, QThread, Signal
+from PySide.QtGui import QIcon
+from PySide.QtWidgets import (
     QApplication,
     QCheckBox,
     QFileDialog,
@@ -904,7 +904,7 @@ def main() -> int:
         return 1
     installer = Installer(manifest)
     installer.show()
-    return app.exec_()
+    return (getattr(app, "exec", None) or app.exec_)()
 
 
 if __name__ == "__main__":

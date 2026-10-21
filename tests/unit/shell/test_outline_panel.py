@@ -4,10 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QRect  # noqa: E402
-from PySide2.QtGui import QPainter, QPixmap  # noqa: E402
 
 from app.intelligence.outline_service import OutlineSymbol  # noqa: E402
 from app.shell.outline import (  # noqa: E402
@@ -356,18 +354,12 @@ def test_tree_widget_is_outline_tree_with_chevrons(_ensure_qapp) -> None:  # typ
 
     parent_item = tree.topLevelItem(0)
     parent_item.setExpanded(True)
-    parent_index = tree.indexFromItem(parent_item)
-    leaf_index = tree.indexFromItem(parent_item.child(0))
 
-    pixmap = QPixmap(64, 64)
-    pixmap.fill()
-    painter = QPainter(pixmap)
-    try:
-        # Should not raise for either branch (with-children or leaf).
-        tree.drawBranches(painter, QRect(0, 0, 32, 16), parent_index)
-        tree.drawBranches(painter, QRect(0, 16, 32, 16), leaf_index)
-    finally:
-        painter.end()
+    # Paint through Qt (drawRow -> drawBranches) for a branch and a leaf row.
+    # Calling drawBranches directly outside a paint event crashes Qt 6.
+    tree.resize(240, 120)
+    rendered = tree.grab()
+    assert not rendered.isNull()
 
     # Theme color hook updates the cached chevron color.
     tree.set_chevron_color("#123456")
@@ -435,7 +427,7 @@ def test_hide_requested_emitted_from_more_menu(_ensure_qapp) -> None:  # type: i
 
 
 def test_apply_theme_tokens_refreshes_icons_without_rebuilding_tree(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
-    from PySide2.QtGui import QPalette  # noqa: WPS433
+    from app.qt.QtGui import QPalette  # noqa: WPS433
 
     from app.shell.theme_tokens import tokens_from_palette  # noqa: WPS433
 

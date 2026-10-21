@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Protocol
 
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.shell.save_workflow import SaveWorkflowTreeDeletePort
 

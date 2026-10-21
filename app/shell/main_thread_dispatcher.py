@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
-from PySide2.QtCore import QObject, Qt, Signal
+from app.qt.QtCore import QObject, Qt, Signal
 
 
 class MainThreadDispatcher(QObject):

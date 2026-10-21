@@ -76,7 +76,12 @@ def install() -> bool:
     if _INSTALLED:
         return False
 
-    libc = _resolve_libc()
+    try:
+        libc = _resolve_libc()
+    except OSError:
+        # FreeCAD 1.1 jails ctypes to /opt/freecad (PermissionError) and has no
+        # memfd at all; there is nothing to install there.
+        return False
     impl = _build_libc_memfd(libc)
     if impl is None:
         try:

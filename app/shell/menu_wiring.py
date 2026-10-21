@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.core import constants
 from app.debug.debug_command_service import continue_command, step_into_command, step_out_command, step_over_command

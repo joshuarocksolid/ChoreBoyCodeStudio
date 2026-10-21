@@ -17,9 +17,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QIcon
+from app.qt.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,

@@ -7,7 +7,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.editors.editor_manager import EditorManager
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision, DocumentScope

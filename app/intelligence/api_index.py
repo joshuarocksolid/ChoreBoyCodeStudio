@@ -140,6 +140,23 @@ _CURATED_API_INDEX: dict[str, tuple[ApiMember, ...]] = {
     ),
 }
 
+# QAction, QActionGroup, and QShortcut live on QtGui for the PySide shim and for
+# PySide6. PySide.QtWidgets does not provide them. The shim also has no QtPrintSupport.
+_QT_GUI_ACTION_MEMBERS = (
+    ApiMember("QAction", CompletionKind.CLASS, "Action"),
+    ApiMember("QActionGroup", CompletionKind.CLASS, "Action group"),
+    ApiMember("QShortcut", CompletionKind.CLASS, "Keyboard shortcut"),
+)
+_CURATED_API_INDEX["PySide"] = tuple(
+    member for member in _CURATED_API_INDEX["PySide2"] if member.name != "QtPrintSupport"
+)
+_CURATED_API_INDEX["PySide6"] = _CURATED_API_INDEX["PySide2"]
+for _qt_module in ("QtCore", "QtWidgets"):
+    _CURATED_API_INDEX["PySide." + _qt_module] = _CURATED_API_INDEX["PySide2." + _qt_module]
+    _CURATED_API_INDEX["PySide6." + _qt_module] = _CURATED_API_INDEX["PySide2." + _qt_module]
+_CURATED_API_INDEX["PySide.QtGui"] = _CURATED_API_INDEX["PySide2.QtGui"] + _QT_GUI_ACTION_MEMBERS
+_CURATED_API_INDEX["PySide6.QtGui"] = _CURATED_API_INDEX["PySide2.QtGui"] + _QT_GUI_ACTION_MEMBERS
+
 
 def provide_api_index_member_items(
     *,

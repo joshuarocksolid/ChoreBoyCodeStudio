@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.intelligence.outline_service import OutlineSymbol  # noqa: E402
 from app.shell.quick_symbol_dialog import QuickSymbolDialog  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
-from PySide2.QtGui import QPalette  # noqa: E402
+from app.qt.QtGui import QPalette  # noqa: E402
 
 pytestmark = pytest.mark.unit
 

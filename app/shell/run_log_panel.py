@@ -6,9 +6,9 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from PySide2.QtCore import Signal
-from PySide2.QtGui import QColor, QFont, QPalette, QTextCharFormat, QTextCursor
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Signal
+from app.qt.QtGui import QColor, QFont, QPalette, QTextCharFormat, QTextCursor
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,

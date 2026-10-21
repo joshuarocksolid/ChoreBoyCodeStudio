@@ -4,9 +4,9 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import Qt, QTimer
-from PySide2.QtGui import QKeyEvent, QTextCursor
-from PySide2.QtWidgets import QToolTip
+from app.qt.QtCore import Qt, QTimer
+from app.qt.QtGui import QKeyEvent, QTextCursor
+from app.qt.QtWidgets import QToolTip
 
 from app.editors.completion_popup import CompletionController
 from app.editors.completion_popup.completion_replacement import (
@@ -27,8 +27,8 @@ _COMPLETION_TYPING_DEBOUNCE_MS = 50
 
 
 if TYPE_CHECKING:
-    from PySide2.QtCore import QPoint
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtCore import QPoint
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorSemanticsBase(QPlainTextEdit):
         _completion_requester: CompletionRequester | None

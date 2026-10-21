@@ -7,9 +7,9 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtWidgets as qt_widgets
+from app.qt import QtWidgets as qt_widgets
 
 from app.core import constants
 from app.project.project_service import create_blank_project

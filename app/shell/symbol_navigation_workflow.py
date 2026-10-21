@@ -6,12 +6,13 @@ import time
 from pathlib import Path
 from typing import Any, cast
 
-from PySide2.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
+from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox
 
 from app.shell.problems_panel import ResultItem
 from app.shell.quick_symbol_dialog import QuickSymbolDialog
 from app.shell.semantic_navigation_host import SemanticNavigationHost
 from app.shell.theme_tokens import ShellThemeTokens
+from app.qt.qt_compat import exec_qt
 
 
 class SymbolNavigationWorkflow:
@@ -117,7 +118,7 @@ class SymbolNavigationWorkflow:
 
             dialog.symbol_preview.connect(_on_preview)
             dialog.symbol_chosen.connect(_on_chosen)
-            result = dialog.exec_()
+            result = exec_qt(dialog)
             if result != QDialog.Accepted and editor_widget is not None:
                 editor_widget.go_to_line(original_line)
 

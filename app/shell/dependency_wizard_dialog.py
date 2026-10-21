@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QDialog,
     QFileDialog,
     QHBoxLayout,

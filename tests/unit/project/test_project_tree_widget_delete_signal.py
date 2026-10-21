@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt  # noqa: E402
-from PySide2.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
+from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtWidgets import QApplication, QTreeWidgetItem  # noqa: E402
 
 from app.project.project_tree_widget import ProjectTreeWidget  # noqa: E402
 from app.shell.project_tree_shortcuts import configure_project_tree_widget_shortcuts  # noqa: E402
@@ -27,7 +27,7 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 @pytest.fixture()
 def QTest():  # noqa: N802
     """ChoreBoy AppRun does not ship PySide2.QtTest. Skip key-event tests there."""
-    return pytest.importorskip("PySide2.QtTest", exc_type=ImportError).QTest
+    return pytest.importorskip("app.qt.QtTest", exc_type=ImportError).QTest
 
 
 @pytest.fixture()

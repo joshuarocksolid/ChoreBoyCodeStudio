@@ -6,7 +6,7 @@ import threading
 from types import SimpleNamespace
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.intelligence.diagnostics_service import CodeDiagnostic  # noqa: E402
 from app.core.models import LoadedProject, ProjectMetadata  # noqa: E402

@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PySide2.QtCore import QUrl
-from PySide2.QtGui import QDesktopServices
-from PySide2.QtWidgets import QTextBrowser, QWidget
+from app.qt.QtCore import QUrl
+from app.qt.QtGui import QDesktopServices
+from app.qt.QtWidgets import QTextBrowser, QWidget
 
 from app.editors.markdown_rendering import (
     LINK_KIND_ANCHOR,

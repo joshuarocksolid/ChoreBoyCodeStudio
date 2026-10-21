@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtWidgets import (
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QColorDialog,
@@ -26,9 +26,9 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from PySide2.QtGui import QColor, QFont, QIcon
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QKeySequence
+from app.qt.QtGui import QColor, QFont, QIcon
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QKeySequence
 
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
 from app.shell.settings_dialog_general import (

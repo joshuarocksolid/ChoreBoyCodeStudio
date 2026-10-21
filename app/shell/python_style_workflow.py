@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Protocol
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.editors.formatting_service import format_text_basic
 from app.intelligence.code_actions import apply_quick_fixes, plan_safe_fixes_for_file

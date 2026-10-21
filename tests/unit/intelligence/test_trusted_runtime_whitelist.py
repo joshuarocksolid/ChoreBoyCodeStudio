@@ -13,6 +13,8 @@ pytestmark = pytest.mark.unit
 
 def test_is_whitelisted_target_path_accepts_trusted_modules() -> None:
     assert is_whitelisted_target_path("PySide2.QtCore")
+    assert is_whitelisted_target_path("PySide.QtGui")
+    assert is_whitelisted_target_path("PySide6.QtWidgets")
     assert is_whitelisted_target_path("FreeCAD")
     assert is_whitelisted_target_path("FreeCADGui")
     assert not is_whitelisted_target_path("os.path")

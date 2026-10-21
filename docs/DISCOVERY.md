@@ -47,6 +47,21 @@ Key implications:
 
 ---
 
+## 1B. FreeCAD 1.1 ChoreBoy image (test build, measured 2026-10-19/20)
+
+CTS's next image (`Install_FreeCAD_V1.1_090426.v6u`, FreeCAD 1.1.1) was applied to the **ChoreBoyExp** lab VM and probed inside the confined FreeCAD (`cb_probes` repo: `harness/probes/v11_capability`, `harness/probes/cbcs_v11_probe`, `docs/cb_v11_impact.html`).
+
+- **Python 3.11.14, PySide6 6.8.3 / Qt 6.8.3. PySide2 is absent.** `/opt/freecad/usr/Ext/PySide` (FreeCAD's `PySide` shim) binds PySide6 and is on `sys.path` in `AppRun -c` children. `PySide.QtWidgets.QAction` does not exist there; `PySide.QtGui.QAction` does. `QtUiTools`, `QtTest`, `QtPrintSupport`, `QtSvg(Widgets)`, `QtDesigner` import from PySide6. No `QtPdf`, no WebEngine.
+- **No native code from writable paths.** `os.memfd_create` is removed, ctypes refuses any library outside `/opt/freecad`, and importing a `.so` copied under `/home/default` or `/tmp` fails with `failed to map segment from shared object`. The memfd technique in §4E does not work on this image.
+- **Bundled packages.** The image ships tree-sitter 0.26.0 and the grammars CBCS uses, psycopg 3.3.4 (binary), pg8000, SQLAlchemy, typst and debugpy. It does not ship black, isort, jedi, rope, pyflakes or pytest; the pure-Python copies CBCS vendors work from `/home`.
+- **Subprocess.** `/opt/freecad/AppRun -c …` children and `QProcess` work. `/bin/sh`, `/bin/bash`, `subprocess(..., shell=True)` and `/usr/bin/git` raise `PermissionError`, which reverses the `/bin/sh`-only rule in §4.
+- Dot-directories at the home root stay denied (for example `~/.cache/jedi`).
+- **`AppRun -c` argument length.** FreeCAD 1.1 runs `std::filesystem::status()` on every argument and aborts with `filesystem error: status: File name too long` when an argument has a `/`-free run longer than 255 bytes. FreeCAD 1.0 does not. Keep inline `-c` payloads short, or split them with a `/`. CBCS uses `app/packaging/launcher_bootstrap.apprun_safe_python()`.
+
+CBCS supports both images from one codebase; see `docs/PYSIDE6_MIGRATION_PLAN.md`.
+
+---
+
 ## 2. Why This Matters
 
 ### LibreOffice / LibrePy limitations (current pain)

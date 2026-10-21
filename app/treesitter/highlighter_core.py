@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants
@@ -17,6 +17,7 @@ from app.treesitter.injection_highlights import TreeSitterInjectionMixin
 from app.treesitter.jsonc_lexical import TreeSitterJsoncLexicalMixin
 from app.treesitter.language_registry import TreeSitterResolvedLanguage, default_tree_sitter_language_registry
 from app.treesitter.local_semantics import _LocalDefinition, _LocalReference, TreeSitterLocalSemanticsMixin
+from app.treesitter.ts_api import compile_query, make_parser
 from app.treesitter.markdown_lexical import TreeSitterMarkdownLexicalMixin
 
 _LOGGER = get_subsystem_logger("treesitter")
@@ -81,16 +82,10 @@ class TreeSitterHighlighter(
         injection_depth: int = 0,
     ) -> None:
         super().__init__(document, is_dark=is_dark, syntax_palette=syntax_palette)
-        import tree_sitter
-
         self._language_key = resolved_language.language_key
         self._language_display_name = resolved_language.display_name
         self._language = resolved_language.language
-        self._parser: Any = tree_sitter.Parser()
-        if hasattr(self._parser, "set_language"):
-            self._parser.set_language(self._language)
-        else:
-            self._parser.language = self._language
+        self._parser: Any = make_parser(self._language)
         self._query_diagnostics: list[TreeSitterQueryDiagnostic] = []
         self._query = self._compile_query(
             query_source=resolved_language.highlights_query_source,
@@ -104,7 +99,6 @@ class TreeSitterHighlighter(
             query_source=resolved_language.injections_query_source,
             query_kind="injections",
         )
-        self._query_supports_range_kwargs: bool | None = None
         self._registry = default_tree_sitter_language_registry()
         self._injection_depth = max(0, injection_depth)
         self._tree: Any | None = None
@@ -168,7 +162,7 @@ class TreeSitterHighlighter(
         if not query_source.strip():
             return None
         try:
-            return cast(Any, self._language).query(query_source)
+            return compile_query(self._language, query_source)
         except Exception:  # pragma: no cover - exercised through diagnostics-facing tests
             import traceback
 

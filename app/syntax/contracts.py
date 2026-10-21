@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping
 
-from PySide2.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
+from app.qt.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat
 
 from app.syntax.palette import SyntaxPalette, build_syntax_palette
 
@@ -68,7 +68,7 @@ class ThemedSyntaxHighlighter(QSyntaxHighlighter):
             text_format = QTextCharFormat()
             text_format.setForeground(QColor(color_value))
             if style.bold:
-                text_format.setFontWeight(75)
+                text_format.setFontWeight(QFont.Bold)
             if style.italic:
                 text_format.setFontItalic(True)
             self._formats[token_name] = text_format

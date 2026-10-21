@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QCloseEvent
+from app.qt.QtGui import QCloseEvent
 from app.bootstrap.paths import global_python_console_history_path
 from app.run.process_supervisor import ProcessEvent
 from app.persistence.history_models import DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY

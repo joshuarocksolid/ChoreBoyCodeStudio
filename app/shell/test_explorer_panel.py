@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, Optional
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, Signal
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -29,6 +29,7 @@ from app.shell.test_explorer_icons import (
     kind_icon,
     outcome_icon,
 )
+from app.qt.qt_compat import exec_qt
 
 if TYPE_CHECKING:
     from app.shell.theme_tokens import ShellThemeTokens
@@ -533,7 +534,7 @@ class TestExplorerPanel(QWidget):
         menu = QMenu(self)
         run_action = menu.addAction(f"Run {kind.title()}")
         debug_action = menu.addAction(f"Debug {kind.title()}")
-        chosen = menu.exec_(self._tree.viewport().mapToGlobal(position))
+        chosen = exec_qt(menu, self._tree.viewport().mapToGlobal(position))
         if chosen == run_action:
             self.run_test_requested.emit(node_id)
         elif chosen == debug_action:

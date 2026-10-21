@@ -6,6 +6,7 @@ from typing import Any, Protocol, cast
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.treesitter.capture_pipeline import _CaptureSpan, _PointRange
 from app.treesitter.python_tokens import PYTHON_SPECIAL_VARIABLES, SCREAMING_SNAKE_PATTERN
+from app.treesitter.ts_api import matches as query_matches
 
 _LOGGER = get_subsystem_logger("treesitter")
 
@@ -81,7 +82,7 @@ class TreeSitterLocalSemanticsMixin:
         lines = host._source_text.split("\n")
         source_bytes = host._source_text.encode("utf-8")
         try:
-            matches = host._locals_query.matches(host._tree.root_node)
+            matches = query_matches(host._locals_query, host._tree.root_node)
         except Exception:  # pragma: no cover - defensive path
             _LOGGER.warning("Failed to evaluate locals query for %s.", host._language_key, exc_info=True)
             return

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt
+from app.qt.QtCore import Qt
 
 from app.editors.search_panel import SearchMatch
 from app.shell.search_sidebar_widget import (

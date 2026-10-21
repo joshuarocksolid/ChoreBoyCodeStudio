@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtGui import QColor, QHideEvent
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, Signal
+from app.qt.QtGui import QColor, QHideEvent
+from app.qt.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,

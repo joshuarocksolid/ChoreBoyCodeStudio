@@ -5,8 +5,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional
 
-from PySide2.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt, QTimer, Signal
-from PySide2.QtGui import (
+from app.qt.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt, QTimer, Signal
+from app.qt.QtGui import (
     QColor,
     QFont,
     QFontMetrics,
@@ -15,7 +15,7 @@ from PySide2.QtGui import (
     QPainter,
     QPen,
 )
-from PySide2.QtWidgets import (
+from app.qt.QtWidgets import (
     QDialog,
     QGraphicsDropShadowEffect,
     QHBoxLayout,

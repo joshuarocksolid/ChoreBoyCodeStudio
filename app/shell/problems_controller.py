@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtGui import QIcon
+from app.qt.QtGui import QIcon
 
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.shell.problems_panel import tab_diagnostic_icon

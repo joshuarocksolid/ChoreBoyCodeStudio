@@ -9,10 +9,10 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QThread  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtCore import QThread  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.shell.main_thread_dispatcher import MainThreadDispatcher  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402

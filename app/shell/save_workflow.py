@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence, cast
 
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.core import constants
 from app.editors.editor_manager import EditorManager

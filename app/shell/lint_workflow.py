@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Protocol
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, find_unresolved_imports
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings

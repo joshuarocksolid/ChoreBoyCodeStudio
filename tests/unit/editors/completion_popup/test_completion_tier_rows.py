@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.completion_popup.completion_controller import CompletionController  # noqa: E402
 from app.editors.completion_popup.completion_item_model import (  # noqa: E402

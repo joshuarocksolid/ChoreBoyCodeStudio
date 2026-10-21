@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import queue
 
-from PySide2.QtWidgets import QVBoxLayout, QWidget
+from app.qt.QtWidgets import QVBoxLayout, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.bootstrap.paths import global_cache_dir, global_python_console_history_path

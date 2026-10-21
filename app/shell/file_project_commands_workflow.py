@@ -8,7 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Protocol
 
-from PySide2.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox, QWidget
+from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from app.core import constants
 from app.core.errors import AppValidationError
@@ -45,6 +45,7 @@ from app.shell.settings_models import (
 from app.shell.source_root_workflow import SourceRootWorkflow
 from app.shell.theme_tokens import ShellThemeTokens
 from app.templates.template_service import TemplateMetadata, TemplateService
+from app.qt.qt_compat import exec_qt
 
 
 class FileProjectCommandsHost(Protocol):
@@ -482,7 +483,7 @@ class FileProjectCommandsWorkflow:
             python_tooling_config_text=python_tooling_copy.config_text,
             python_tooling_config_details=python_tooling_copy.config_details,
         )
-        if dialog.exec_() != QDialog.Accepted:
+        if exec_qt(dialog) != QDialog.Accepted:
             return
 
         selected_scope = dialog.selected_scope

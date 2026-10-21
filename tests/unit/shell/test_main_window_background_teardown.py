@@ -7,9 +7,9 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from app.qt.QtWidgets import QApplication
 
 from app.shell.main_window import MainWindow
 from app.shell.main_window_lifecycle import MainWindowLifecycle

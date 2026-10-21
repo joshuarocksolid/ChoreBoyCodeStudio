@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal, Protocol, cast
 
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.core import constants
 from app.core.models import LoadedProject

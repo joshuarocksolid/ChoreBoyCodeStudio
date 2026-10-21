@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
-from PySide2.QtCore import QSize
-from PySide2.QtGui import QColor, QIcon
+from app.qt.QtCore import QSize
+from app.qt.QtGui import QColor, QIcon
 
 from app.shell import icon_provider
 from app.shell.icons import test_icon

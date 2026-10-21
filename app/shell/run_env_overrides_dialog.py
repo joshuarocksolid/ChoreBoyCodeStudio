@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Mapping, Sequence
 
-from PySide2.QtGui import QGuiApplication
-from PySide2.QtWidgets import (
+from app.qt.QtGui import QGuiApplication
+from app.qt.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QHeaderView,
@@ -26,6 +26,7 @@ from app.shell.dialog_chrome import (
 )
 from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.qt.qt_compat import exec_qt
 
 _DIALOG_OBJECT_NAME = "shell.runEnvOverridesDialog"
 _TABLE_MIN_ROW_HEIGHT = 28
@@ -124,7 +125,7 @@ class RunEnvOverridesDialog(QDialog):
         tokens: ShellThemeTokens | None = None,
     ) -> dict[str, str] | None:
         dialog = cls(initial, parent=parent, tokens=tokens)
-        if dialog.exec_() != QDialog.Accepted:
+        if exec_qt(dialog) != QDialog.Accepted:
             return None
         return dialog._result
 

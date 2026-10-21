@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
-from PySide2.QtCore import QTimer
+from app.qt.QtCore import QTimer
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget

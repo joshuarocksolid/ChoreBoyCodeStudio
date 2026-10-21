@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QTextCursor  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtGui import QTextCursor  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.core import constants  # noqa: E402
 from app.editors.code_editor_bracket_overlay_mixin import BRACKET_MATCH_SCAN_LIMIT_CHARS  # noqa: E402

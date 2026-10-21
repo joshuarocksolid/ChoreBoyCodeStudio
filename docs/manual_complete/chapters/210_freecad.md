@@ -84,7 +84,8 @@ tool's strength: author in Code Studio, execute GUI/document macros in FreeCAD.
 
 FreeCAD's API is partly backed by C++ bindings, which generic static analysis cannot fully
 see. ChoreBoy Code Studio ships a trusted API index so that importing and completing
-FreeCAD (and PySide2) symbols works while you write. See "Code intelligence".
+FreeCAD and `PySide` symbols works while you write. The index also covers PySide2, for
+older projects, and PySide6. See "Code intelligence".
 
 ## Where to go next
 

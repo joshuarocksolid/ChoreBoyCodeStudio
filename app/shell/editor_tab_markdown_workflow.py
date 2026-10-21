@@ -5,8 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QPoint
-from PySide2.QtWidgets import QMenu, QTabWidget, QWidget
+from app.qt.QtCore import QPoint
+from app.qt.QtWidgets import QMenu, QTabWidget, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.core.completion_tier import TIER_HEADER_SIDE_EFFECT  # noqa: E402
 from app.editors.completion_popup.completion_docs_panel import CompletionDocsPanel  # noqa: E402

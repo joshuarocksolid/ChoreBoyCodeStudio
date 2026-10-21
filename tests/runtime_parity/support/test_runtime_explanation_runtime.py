@@ -10,7 +10,7 @@ from app.bootstrap.capability_probe import (
     APP_RUN_PRESENCE_CHECK_ID,
     FREECAD_IMPORT_CHECK_ID,
     GLOBAL_LOGS_WRITABLE_CHECK_ID,
-    PYSIDE2_IMPORT_CHECK_ID,
+    QT_BINDING_CHECK_ID,
     STATE_ROOT_WRITABLE_CHECK_ID,
     TEMP_ROOT_WRITABLE_CHECK_ID,
     run_startup_capability_probe,
@@ -43,7 +43,7 @@ def test_startup_capability_probe_matches_apprun_runtime_expectations(tmp_path: 
     checks_by_id = {check.check_id: check for check in report.checks}
 
     assert checks_by_id[APP_RUN_PRESENCE_CHECK_ID].is_available is True
-    assert checks_by_id[PYSIDE2_IMPORT_CHECK_ID].is_available is True
+    assert checks_by_id[QT_BINDING_CHECK_ID].is_available is True
     assert checks_by_id[FREECAD_IMPORT_CHECK_ID].is_available is True
     assert checks_by_id[STATE_ROOT_WRITABLE_CHECK_ID].is_available is True
     assert checks_by_id[GLOBAL_LOGS_WRITABLE_CHECK_ID].is_available is True

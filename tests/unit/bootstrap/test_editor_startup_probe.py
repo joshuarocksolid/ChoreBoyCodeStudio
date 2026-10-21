@@ -36,7 +36,7 @@ def test_main_runs_minimal_startup_probe_and_stores_report(monkeypatch: pytest.M
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
-            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("qt_binding_import", True, "ok"),
         ]
     )
     probe_calls = {"count": 0}
@@ -98,7 +98,7 @@ def test_main_sets_startup_report_before_shell_launch(monkeypatch: pytest.Monkey
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
-            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("qt_binding_import", True, "ok"),
         ]
     )
 

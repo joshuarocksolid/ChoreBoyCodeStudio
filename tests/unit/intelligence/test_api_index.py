@@ -39,6 +39,47 @@ def test_pyside_api_index_handles_submodule_alias() -> None:
     assert items[0].kind == CompletionKind.CLASS
 
 
+@pytest.mark.parametrize("binding", ["PySide", "PySide6"])
+def test_qaction_family_is_offered_on_qtgui_only(binding: str) -> None:
+    gui_action = [
+        item.label
+        for item in provide_api_index_member_items(
+            module_name=binding + ".QtGui",
+            member_prefix="QAction",
+            limit=20,
+        )
+    ]
+    gui_shortcut = [
+        item.label
+        for item in provide_api_index_member_items(
+            module_name=binding + ".QtGui",
+            member_prefix="QShortcut",
+            limit=20,
+        )
+    ]
+    widget_action = [
+        item.label
+        for item in provide_api_index_member_items(
+            module_name=binding + ".QtWidgets",
+            member_prefix="QAction",
+            limit=20,
+        )
+    ]
+    widget_shortcut = [
+        item.label
+        for item in provide_api_index_member_items(
+            module_name=binding + ".QtWidgets",
+            member_prefix="QShortcut",
+            limit=20,
+        )
+    ]
+
+    assert gui_action == ["QAction", "QActionGroup"]
+    assert gui_shortcut == ["QShortcut"]
+    assert widget_action == []
+    assert widget_shortcut == []
+
+
 def test_generated_runtime_api_index_is_shipped_and_used_by_default() -> None:
     assert DEFAULT_RUNTIME_API_INDEX_PATH.exists()
 

@@ -37,7 +37,9 @@ def _start_editor() -> int:
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
     window.showMaximized()
-    exit_code = application.exec_()
+    from app.qt.qt_compat import exec_qt
+
+    exit_code = exec_qt(application)
 
     del window
     _clear_qt_module_caches()
@@ -63,7 +65,7 @@ def _clear_qt_module_caches() -> None:
 
 def _load_qt_runtime() -> tuple[Any, Any]:
     """Load runtime-only Qt dependencies lazily."""
-    application_class = importlib.import_module("PySide2.QtWidgets").QApplication
+    application_class = importlib.import_module("app.qt.QtWidgets").QApplication
     main_window_class = importlib.import_module("app.shell.main_window").MainWindow
     return application_class, main_window_class
 

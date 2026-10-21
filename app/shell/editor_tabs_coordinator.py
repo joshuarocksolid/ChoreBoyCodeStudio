@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide2.QtWidgets import QInputDialog, QMessageBox, QTabBar
+from app.qt.QtWidgets import QInputDialog, QMessageBox, QTabBar
 
 from app.core import constants
 from app.editors.text_editing import FlatPythonIndentRepairResult
