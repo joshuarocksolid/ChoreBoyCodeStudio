@@ -1,0 +1,39 @@
+{
+  "files": [
+    {
+      "path": "malformed/not_xml.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Not XML. uic reports Start tag expected. QUiLoader raises Unable to open/read ui device.",
+      "expect": "Start tag expected"
+    },
+    {
+      "path": "malformed/truncated.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Truncated document. uic reports Premature end of document.",
+      "expect": "Premature end of document"
+    },
+    {
+      "path": "malformed/wrong_root.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Root element is form, not ui. uic reports Unexpected element form.",
+      "expect": "Unexpected element form"
+    },
+    {
+      "path": "malformed/empty_ui.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "ui element with no widget. uic reports the file is not valid. QUiLoader raises Unable to open/read ui device.",
+      "expect": "not valid"
+    },
+    {
+      "path": "malformed/missing_widget_class.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "notes": "Widget has no class attribute. QUiLoader raises Unable to open/read ui device. uic still emits Python.",
+      "expect": "Unable to open/read ui device"
+    }
+  ]
+}
