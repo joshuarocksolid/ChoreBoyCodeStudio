@@ -4,50 +4,35 @@ All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
 Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`, `v0.4.13`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.14.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31, v0.4.13 on 2026-10-21.
 
-## [Unreleased]
+## [0.4.13] - 2026-10-21
 
-Run on the FreeCAD 1.1 ChoreBoy image (Python 3.11, PySide6 / Qt 6, no PySide2) as well as today's image (Python 3.9, PySide2), from one build.
-
-### Added
-
-- Code Studio now runs on PySide6 as well as PySide2. It uses the Qt binding FreeCAD provides; set `CBCS_QT_API=pyside2` or `pyside6` to force one. The startup check reports which binding and Qt version are active and also checks `QtUiTools`.
-- On FreeCAD 1.1, syntax highlighting and the outline use the tree-sitter that ships in the image, because that image cannot load native libraries from the Code Studio folder. The status bar shows which tree-sitter is in use.
-
-### Changed
-
-- New Qt projects, the example projects and the installer import Qt through FreeCAD's `PySide` package (`from PySide.QtWidgets import ...`, with `QAction`, `QActionGroup` and `QShortcut` from `PySide.QtGui`), so the same code runs on both images. Code completion knows `PySide` and `PySide6` as well as `PySide2`.
-- The packaging check no longer recommends `/bin/sh` for subprocesses: FreeCAD 1.1 blocks shells. Launch `/opt/freecad/AppRun` with an argument list instead.
+Fixes what the LibrePy group reported since v0.4.12, and runs on FreeCAD 1.1 as well as FreeCAD 1.0 from one build. Builds tagged 0.4.13 (21 Sep) and 0.4.14 (24 Sep) were never sent to the list. Their tags are deleted and their changes are in this release, reworked where noted below.
 
 ### Fixed
 
-- Bold syntax colors, such as Markdown strong text, render bold on Qt 6.
-- Desktop launchers and the installer start on FreeCAD 1.1. FreeCAD 1.1 aborts with "File name too long" when an `AppRun -c` command has more than 255 characters without a `/`, which the installer, the installed Code Studio launcher, packaged-app launchers and Test Explorer commands all did. Launchers that older versions created keep that problem on FreeCAD 1.1: reinstall Code Studio, and re-package and reinstall apps, to regenerate them.
-
-## [0.4.14] - 2026-09-24
-
-Tame the completion popup that opens when you type a period, in both the editor and the Python Console (PR #75, follow-up PR #76).
-
-### Fixed
-
-- Typing a period inside a number (`0.5`, `1.`, `3.14`) no longer opens the completion popup, in the editor or the Python Console.
-- After a period opens the popup, typing more letters now filters the list and auto-selects the best match, and the popup closes when nothing matches or the word ends. This works with the shipped default where auto-trigger on letters is Off, and it works in the Python Console the same way as the editor (e.g. `os.` then `pa` then Tab inserts `os.pardir`).
-- Accepting a completion no longer leaves leftover characters from a stale replacement range.
-- Backspace after dismissing a period popup can reopen the list briefly in that same member-access spot; bare Backspace inside a dotted name does not reopen the popup when you were not already in one.
+- Code Studio no longer closes silently at launch with "database is locked" (Kevin Hoover, Joel Lamar Nolt). Startup now checks that the state folder accepts a file lock and a SQLite write, not only a plain file write. If local history or the symbol index can't open, the editor still opens with that feature off and a dialog that names the folder and the error. If the window can't be built at all, a "CBCS could not start" dialog shows the error and the log path.
+- On FreeCAD 0.21 the editor opens with plugins off and one dialog that says plugins need FreeCAD 1.0 (Arlyn Martin). Run shows the same explanation instead of a traceback.
+- Moving, renaming or cutting and pasting an open file in the Explorer no longer loses later edits (Reuben Shirk). The tab follows the file and Save writes to the new path.
+- Choosing No when a file changed on disk keeps the tab marked as changed on disk, and Save asks again before it overwrites the other version (Ervin Newswanger). A file deleted or renamed outside Code Studio gets a missing marker with Keep Editing, Close and Save As.
+- Package Project no longer rejects apps that start `/opt/freecad/AppRun` (Clair Nolt). The check now uses programs measured on FreeCAD 1.0 on 20 Oct 2026. AppRun and `/bin/sh` are allowed. `pdftoppm`, `python3`, `bash`, `xdg-open`, `okular`, `env` and `pcmanfm` are blocked, because ChoreBoy denies them. An untested program is a warning. `/bin/sh` also gets a warning, because FreeCAD 1.1 denies it.
+- A missing import stops the export only when the entry file reaches it and it is not inside `try`/`except ImportError`. Other missing imports are warnings. The "skip missing dependency" checkbox is gone.
+- Programs your app starts no longer die when Code Studio closes (Clair Nolt). Closing with a run active asks whether to stop the program or keep it running. The Run Log dims FreeCAD's `LD_LIBRARY_PATH` echo and the `connect failed` line, with a tooltip that says they are harmless.
+- Every packaged-app install failure shows the full error text with Copy Details. A shortcut problem no longer reports a failed install after the files are in place (Joel Lamar Nolt).
+- Zips built on a Mac get the Linux tree-sitter grammars, so syntax highlighting works on ChoreBoy.
+- Bold syntax colors render bold on Qt 6.
 
 ### Changed
 
-- Settings > Intelligence has a new **Auto-trigger on period (.)** checkbox (default On). Unchecking it stops the popup from opening on `.` in editors and the Python Console. Ctrl+Space still opens completion on demand.
-- Long member lists now show up to 500 entries instead of cutting off at 100.
-
-## [0.4.13] - 2026-09-21
-
-Follow-up to the v0.4.12 probed state-root default. Nest product install and global state under FreeCAD/CBCS, and copy leftover settings once.
-
-### Changed
-
-- Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. Global state dest is `/home/default/FreeCAD/CBCS/state`. The old XDG/cache/leftover-home/install-parent pointer fallbacks are gone from the picker. On first launch of the update, settings from leftover `choreboy_code_studio_state` folders are copied once into the new dest when dest has no `settings.json`. Shared shop state remains opt-in via `CBCS_STATE_ROOT` or `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` (PR #74).
+- Completion has one setting in Settings > General > Intelligence: Off, Manual or While typing. Manual is the default and never opens a popup by itself, including after `.`. Ctrl+Space opens it. The list has every member, with no 100 or 500 cap. It matches by prefix, by capitals (`sT` finds `setText`) and loosely, puts names you picked before first, and closes when nothing matches. It never opens inside numbers like `1.5`, strings or comments. The docs pane shows the signature and the first paragraph of the docstring. The editor and the Python Console share the setting. It replaces Enable completion, Auto-trigger and Auto-trigger on period (Reuben Shirk, Clair Nolt).
+- Editor tabs can be dragged to reorder, and the order survives a restart. Ctrl+\ splits the editor into two groups, and tabs can be dragged between them. A file open in both groups is one buffer (Reuben Shirk, Clair Nolt).
+- Packaged apps install to `/home/default/FreeCAD/Apps/<package id>`, a folder the ChoreBoy file manager can open, so their icons show (Ervin Newswanger). An app without its own icon gets the Python icon. The launcher goes in `/home/default`, and in `~/Desktop` when that folder exists. Installing an app that is already there offers Replace, which keeps the app's data, or Uninstall. Replace moves apps out of the old `~/.local/share/FreeCAD/Macro/Apps` folder.
+- Code Studio keeps its state in `/home/default/FreeCAD/CBCS/state`. Sharing settings between machines is opt-in through `CBCS_STATE_ROOT` or the pointer file `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`, or the same path under `~/share/<server>/` on a client. Only `settings.json`, `recent_projects.json` and `python_console_history.json` go to the shared folder. History, logs and caches stay on each machine. If the shared folder can't be reached, Code Studio uses this computer's settings and says so (Clair Nolt, Jason Rissler, Kevin Hoover). On first launch, settings from an old state folder are copied once. History is not copied.
+- Code Studio runs on the FreeCAD 1.1 image (Python 3.11, PySide6, no PySide2) as well as today's image (Python 3.9, PySide2). It uses the Qt binding FreeCAD provides. `CBCS_QT_API=pyside2` or `pyside6` forces one. The startup check reports the binding and the Qt version and checks `QtUiTools`, so it now counts nine checks.
+- On FreeCAD 1.1, highlighting and the outline use the tree-sitter that ships in the image, because that image can't load native libraries from the Code Studio folder.
+- New Qt projects, the example projects and the installer import Qt through FreeCAD's `PySide` package (`from PySide.QtWidgets import ...`, with `QAction`, `QActionGroup` and `QShortcut` from `PySide.QtGui`), so the same code runs on both images. Completion knows `PySide` and `PySide6` as well as `PySide2`.
+- Launchers and the installer start on FreeCAD 1.1, which aborts with "File name too long" when an `AppRun -c` command has more than 255 characters without a `/`. Launchers made by older versions still have that problem on FreeCAD 1.1. Reinstall Code Studio, and re-package and reinstall apps, to replace them.
 
 ## [0.4.12] - 2026-09-03
 
