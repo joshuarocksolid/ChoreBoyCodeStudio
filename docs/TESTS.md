@@ -110,6 +110,40 @@ type-checking the whole historical test suite at once. Ruff, Vulture, Radon,
 and Lizard remain report-only recommendations until their dependencies are
 approved and installed outside the AppRun pytest lane.
 
+### 5.6 Form builder gates
+
+`testing/run_form_builder_checks.py` runs the form-builder gates and prints one table. The process exits with status 1 when a selected gate fails. A skipped gate does not fail the run.
+
+```bash
+python3 testing/run_form_builder_checks.py
+python3 testing/run_form_builder_checks.py --json /tmp/form-builder-checks.json
+```
+
+`--quick` skips `unit-py39-pyside6` and `pyright`. `--full` also runs `fast-shard-regression`. `--only` runs the named gates and ignores `--quick` and `--full`.
+
+| Gate | What runs |
+| --- | --- |
+| `unit-py311` | pytest `tests/form_builder`, excluding `oracle` and `perf`, on `/Applications/FreeCAD.app/Contents/Resources/bin/python` |
+| `unit-py39-pyside6` | the same tests through `~/opt/freecad/AppRun` with `CBCS_QT_API=pyside6` |
+| `syntax-py39` | compile every `.py` file under `app/features/form_builder/` with that AppRun |
+| `pyright` | `npx pyright app/features/form_builder`, then `npx pyright -p pyrightconfig.tests.json tests/form_builder` |
+| `dune` | `python3 -m tools.dune.check` |
+| `fast-shard-regression` | `python3 testing/run_test_shard.py fast` |
+| `oracle` | pytest `-m oracle` on the Python 3.11 interpreter above |
+| `perf` | pytest `-m perf` on that interpreter |
+
+Both pytest lanes set `QT_QPA_PLATFORM=offscreen` and `CBCS_DISABLE_BACKGROUND_RUNTIME=1`. Pytest comes from the matching `vendor_py311` or `vendor_py39` tree, the same injection `run_tests.py` uses. `--import-mode=importlib` comes from `pyproject.toml`. When `vendor_py311` is absent, the Python 3.11 lane loads pytest from another tree that has it and appends that tree after the interpreter's site-packages. The pass row names that tree.
+
+`syntax-py39` and `pyright` report `skipped: no package` until `app/features/form_builder/` contains Python files. A missing interpreter reports `skipped: runtime not found at ...`. Override the interpreters with `CBCS_FORM_BUILDER_PY311` and `CBCS_FORM_BUILDER_PY39`. When the AppRun is missing and the package exists, `syntax-py39` uses `ast.parse(..., feature_version=(3, 9))` on the interpreter that launched the runner.
+
+`pyrightconfig.tests.json` is an allowlist. Add `tests/form_builder` to its `include` list when the suite grows past the smoke test. The runner still passes that path on the pyright command line.
+
+`oracle` and `perf` are registered in `tests/form_builder/conftest.py`. The perf row records `os.getloadavg()` at the start and end of the gate (1, 5, and 15 minute averages). Those averages include every process on the machine. `fast-shard-regression` stays in the table and does not run unless you pass `--full` or `--only fast-shard-regression`.
+
+Dune is the check in `tools/dune/check.py`: ownership, file roles, concurrency, handles, composition, Qt portability, the feature map, and policy.
+
+Tests in `tests/form_builder/` are skipped when the active binding is not PySide6. `run_test_shard.py all` collects this directory. The fast shard does not.
+
 ## 6) Architecture hygiene validation gate
 
 Before future editor-intelligence feature work, run the full automated gate and then execute `AT-72`:
