@@ -2,6 +2,7 @@
 
 Owner: Joshua Aguilar. Orchestrator: Claude (main session). Started 2026-10-21.
 Integration branch: `feat/form-builder` (from `main` at `54c3a14`). Merging to `main` is Joshua's call.
+Revision 1 (2026-10-21): folds in the Opus soundness review (5 critical and 11 important findings).
 
 This plan delivers the complete, polished CBCS visual form builder: a Qt Designer–parity editor inside ChoreBoy Code Studio that saves standard `.ui` files, generates `ui_<name>.py`, supports four levels of logic stored inside the `.ui`, and has a best-in-class, very fast UX. It runs only on PySide6 / FreeCAD 1.1.
 
@@ -20,10 +21,14 @@ These were decided with Joshua between 2026-10-20 and 2026-10-21. They are not r
 | AI | The product has no AI features |
 | UX direction | Start screen → Workbench (Outline + live canvas + inspector with Properties / Behavior / Data). Plain-word sizing. The 25 ranked pains in `research/P_user_pain_points.md` are requirements |
 | Connections | Managed by CBCS: named connections in project settings, a generated `cbcs_connections.py`, passwords never in the project |
-| Try mode | SQLite runs on a scratch copy. PostgreSQL writes, then rolls back |
+| Try mode | SQLite runs on a scratch copy. PostgreSQL writes, then rolls back (Joshua's choice, which overrides the read-only default in `LOGIC_DESIGN.md` §0/§2.10). Rollback does not undo sequence advances, `NOTIFY` or other side effects that escape the transaction, so Try mode shows a banner, sets a statement timeout and lock timeout, warns about those effects, and keeps "Would run" (read-only) as a per-connection option |
 | Locale | US English by default, with a per-project setting |
 | Users | A real mix of programmers and non-programmers, so the point-and-click formula builder ships with logic level 3 |
-| Speed | Open a 300-widget form ≤ 150 ms; each edit ≤ 16 ms; save ≤ 50 ms; ≤ 30 MB extra. Re-checked on the ChoreBoy VM |
+| Speed | Open a 300-widget form ≤ 150 ms; each edit ≤ 16 ms; save ≤ 50 ms; ≤ 30 MB extra per open form (and ≤ 60 MB with 3 forms open). The primary metric is process CPU time, plus wall time on an idle machine (load < 2), with warmup, n = 15 and p95 reported. Re-checked on the ChoreBoy VM and on a CPU-capped profile matching ChoreBoy hardware |
+| Generated code | `ui_<name>.py` imports from `PySide6` directly (the same shape as `uic`), never the FreeCAD `PySide` shim. FreeCAD `Gui::` widgets use a guarded `FreeCADGui` import with a Qt base-class fallback. Generated code is Python 3.9-parseable |
+| Generation scope | Generation runs only for forms that belong to a CBCS project (under `forms/`, or adopted with "Adopt this form"). A `.ui` file outside a project (e.g. FreeCAD workbench files, or forms an app loads with `QUiLoader`) is edited without writing `ui_*.py` beside it |
+| Translations | Every translation attribute is preserved and editable, and `retranslateUi` is generated. `.ts`/lupdate/lrelease tooling is out of scope (not in FreeCAD bundles). That's a won't-do recorded in the ledger |
+| Cloud | Cursor Cloud is the primary place Grok lanes run. The repo carries a cloud environment with FreeCAD 1.0 (PySide2) and FreeCAD 1.1 (PySide6, Python 3.11, Qt 6 uic/rcc) |
 
 ## 2. Operating model
 
@@ -35,7 +40,17 @@ These were decided with Joshua between 2026-10-20 and 2026-10-21. They are not r
   - *Design specs:* writes the interaction and visual spec before UI-heavy work packages.
   - *UX sign-off gate:* every UI-facing PR is reviewed from screenshots, interaction-test traces and a launched build, and returns APPROVE, or CHANGES with a concrete list.
   - *Logic soundness gate:* every PR that carries logic (document model, commands, writer, generator, expression language, rules, data layer) gets a correctness review. That covers invariants, edge cases, determinism, SQL safety and failure modes.
-  - *Rescue:* if Grok fails the same gate twice, Opus may implement the narrow hard part.
+  - *Rescue:* if Grok fails the same gate twice, Opus may implement the narrow hard part. A rescue PR is gated by a fresh Opus instance, not its author.
+
+### Bounded fix loop
+
+- A CHANGES verdict is a closed, numbered list. A re-review checks only those items, plus a regression check on the new diff. A new finding must cite a spec clause or a failing test.
+- Round 3 goes to Opus rescue. Round 4 descopes the item to a follow-up WP, recorded in the ledger.
+
+### Work package sizing
+
+- One subsystem per WP, and about 1,500 net lines or fewer. Anything larger is split before the brief is written.
+- Each WP owns a disjoint set of directories. Shared registries (command catalog, widget catalog, property-editor registry, tab-content providers) are changed only by their seam WP, or through registration files that each WP adds without editing shared ones.
 
 ### Work package lifecycle
 
@@ -60,12 +75,19 @@ brief (Claude) → [spec (Opus) if UI-heavy] → implement (Grok, sub-branch fb/
 3. The speed budget script stays within budget, with the machine load recorded.
 4. `npx pyright` is clean for the feature package, the CBCS fast shard has no regressions, and the dune checks pass (feature map, handles, file roles, install count).
 5. Code style: Python 3.9 syntax in all feature code (repo rule; the feature itself loads only on PySide6) and PySide6 APIs only. Generated user code is also 3.9-compatible.
-6. Opus gate where it applies (UX and/or logic).
+6. Opus gate where it applies (UX and/or logic), using the checklists in section 2a.
 7. Milestone gates add: a run on the ChoreBoy VM (FreeCAD 1.1) and on the Linux lab host, a full screenshot tour, and an update to the parity ledger.
+8. Python 3.9 is checked mechanically: `ast.parse(feature_version=(3, 9))` runs over the feature package and over all generated output, and pyright uses `pythonVersion 3.9` for the feature.
+9. Determinism holds across machines: the double-save test runs on macOS and Linux, under the `C` and `de_DE` locales. Float and decimal formatting are pinned.
+10. Interaction tests inject drag state through the controller seam, because `QDrag.exec` blocks offscreen. Each milestone also runs a real-drag smoke test on xcb on the lab host.
+11. Accessibility is checked on every UI PR: accessible names, visible focus, and a keyboard-only path.
+12. The user manual page for a feature is written in the same milestone as the feature. M9.6 only consolidates.
 
 ### Parity ledger
 
-`docs/form_builder/PARITY.md` tracks all 330 R3 items. Each row has an id, a status (todo / doing / done / won't-do), the work package, and the test(s) that prove it. "Done" requires a named test. "Won't-do" requires a written reason that Opus has approved. The target is zero won't-do outside items that are meaningless for Python, such as C++-only export macros. Even those are preserved on round-trip.
+- `docs/form_builder/parity.json` is the source of truth for all 330 R3 items, the 25 pains and the logic features. `docs/form_builder/PARITY.md` is generated from it.
+- Status and proving test are filled in automatically from `@pytest.mark.parity("R3-145")` and `@pytest.mark.pain("P-3")` markers by `tools/form_builder_parity.py`. Hand-written text is limited to won't-do reasons. So PRs never conflict on the ledger.
+- "Done" requires a marked, passing test. "Won't-do" requires a reason that Opus has approved. The target is zero won't-do outside items that are meaningless for Python, such as C++-only export macros, and even those are preserved on round-trip.
 
 ### Autonomy and reporting
 
@@ -78,6 +100,55 @@ brief (Claude) → [spec (Opus) if UI-heavy] → implement (Grok, sub-branch fb/
 - Every database or container created for tests gets a lease (`local-dev-data` skill). Test temp folders are deleted.
 - Grok views are closed after review. Lab lanes are cleaned with `lab-clean`.
 - `main` is merged into `feat/form-builder` at each milestone start, so the drift stays small.
+
+## 2a. Opus gate checklists
+
+### O-UX gate
+
+**The PR must include:**
+- Before and after screenshots in light, dark and high contrast, at 100% and 200% DPI.
+- An interaction-test trace (event log plus final XML diff) for every new gesture.
+- A keyboard-only script that completes the WP's tasks.
+- A launched-build screenshot sequence from the lab Linux host.
+- The `UX_SPEC.md` clause ids implemented.
+- The parity and pain ids covered.
+- Speed numbers for the edit path.
+
+**The reviewer checks:**
+1. Each spec clause matches; deviations are justified.
+2. Nothing overlaps content: chips and badges never cover widgets, and focus is always visible.
+3. No sticky modes; Esc always exits.
+4. Every action can be undone in one step and is reflected in the outline and selection.
+5. Error and empty states use plain-word copy.
+6. Shortcuts don't collide with the shell table.
+7. The canvas uses the runtime palette.
+8. Accessible names are set and tab order is sane.
+9. A non-programmer persona walkthrough finishes the task without docs.
+
+Verdict: APPROVE, or CHANGES as a closed, numbered list.
+
+### O-logic gate
+
+**The PR must include:**
+- The invariants for the touched modules.
+- Property-based or fuzz output (seed, number of cases).
+- Oracle results: `QUiLoader` tree equality, `uic` tree equality with the text diff, corpus percentage, and Designer-resave zero diff.
+- Double-save byte identity on macOS and Linux.
+- For logic and data: the conformance-suite delta, evaluator ≡ generated-code results, SQL listings with parameter binding, and SQLite plus PG 9.3 run logs.
+- A failure-mode table (malformed input, newer format version, missing method, missing driver, lost connection).
+
+**The reviewer checks:**
+1. Invariants are enforced and tested, not just stated.
+2. Every mutation goes through the command log; replay equals live, and undo-all equals the original.
+3. Unknown nodes and unknown `cbcs*` keys are preserved.
+4. No SQL value interpolation; identifiers are quoted; PostgreSQL 9.3 syntax only.
+5. No user or custom-widget code runs in the editor process.
+6. Generated code never swallows user exceptions and is 3.9-parseable.
+7. Errors produce FB-coded diagnostics, and a logic error never blocks saving.
+8. Sources of non-determinism are removed (dict order, floats, locale, time).
+9. The code conforms to `CONTRACTS.md`.
+
+Verdict: APPROVE, or CHANGES as a closed list.
 
 ## 3. Architecture (production)
 
@@ -104,8 +175,11 @@ app/features/form_builder/
                            shell theme tokens, handles
 ```
 
-- The editor surface plugs into `EditorTabFactory`, the same way Markdown does. It writes the `.ui` text into `EditorTabState.current_content`, so dirty state, save and local history keep working. A "View XML" toggle keeps acceptance test AT-32 passing.
-- The preview and Try-mode process is a child `/opt/freecad/AppRun` started with `QProcess`. It's allowed on FreeCAD 1.1.1 ChoreBoy, where `/bin/sh` is denied. User and custom-widget code only ever runs there.
+- **Shell seam (M2.0):** the editor surface plugs in through a generic tab-content provider registry in `platform.shell`. Markdown is moved onto that registry, which replaces today's hard-wired Markdown route. Feature specs get an `enabled()` predicate, and feature `install.py` modules must not import a Qt binding at module level. A dune rule enforces that, so loading `app.features` under PySide2 never imports PySide6.
+- **Dirty state and text:** dirty state comes from the command log, and XML is serialized lazily (on save, local-history snapshot, the draft timer, or View XML), never on every edit. Edits made in View XML commit as one `ReplaceDocument` command when you switch back, and parse errors are shown without losing either version. Draft and local-history restore re-realize the form. Each tab has its own command log. Acceptance test AT-32 keeps passing.
+- **Contracts (M1.0):** the engine and the Qt side talk only through `docs/form_builder/CONTRACTS.md` and typed stubs. That document defines node identity (stable ids), the document API, the change-event schema, the realize patch protocol, hit-test index invalidation, the selection model, diagnostic records (FB codes), the versioned preview IPC schema, and codegen entry points. The per-class defaults table is a committed JSON produced by a Qt-side dump script; a test checks it against the running Qt 6.8.x, and the engine itself stays Qt-free.
+- **Preview process:** a child FreeCAD 1.1 `AppRun` started with `QProcess` (no shell; confirmed by the M0.7 probe). It reuses CBCS's existing child-supervision and framing code (`app/plugins/host_supervisor.py`, `rpc_protocol.py`, `app/runner/*`), with versioned messages, one warm pooled child shared by all open forms, tolerance for stdout noise, conftest reaping and crash-loop backoff. User and custom-widget code only ever runs there.
+- **Generated files in the shell:** `ui_*.py`, `*_rc.py` and the logic expansion are excluded from Problems linting and auto-format, and open with a "generated, do not edit" banner.
 - The spike branch `feat/form-builder-spike` is reference material. Its engine (model, xmlio, commands, generate, realize) is ported and hardened, not copied blindly. Its UI is redesigned from the Opus `DESIGN.md` plus the review findings.
 
 ## 4. Milestones and work packages
@@ -120,38 +194,47 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 | M0.2 | Opus review of this plan for soundness, gaps and ordering | O-logic | Findings folded in |
 | M0.3 | Test lanes: a `testing/run_form_builder_checks.py` that runs the feature tests on PySide6 (FreeCAD.app 1.1.3 python, and `~/opt/freecad` with `CBCS_QT_API=pyside6` for Python 3.9 syntax), plus oracles, speed and pyright | G | One command runs every gate and prints a summary |
 | M0.4 | Corpus build-out: FreeCAD Mod `.ui` (67), Qt examples `.ui` from qtbase/qttools (BSD), PySide6 examples, the spike samples, hand-made edge forms (every container and property type, connections, resources, custom widgets) | G | ≥ 200 `.ui` files with a manifest and licence notes |
-| M0.5 | `PARITY.md` ledger seeded from R3, with all items "todo" and mapped to work packages | G + Claude | Ledger exists and has been reviewed |
+| M0.5 | Parity ledger (`parity.json` → generated `PARITY.md`) seeded from R3, the pains and the logic features, all mapped to work packages; markers-based status tool | G + Claude | Ledger exists and has been reviewed |
 | M0.6 | Roadmap artifact (milestone tracker) | Claude | Published |
+| M0.4b | Designer resave corpus: script Qt Designer (`Designer.app` from FreeCAD.app `lib/qt6/bin`) to open each corpus file, make a no-op edit and save. This gives us Designer's canonical serializer output, and shows how Designer handles `cbcs*` dynamic properties | G | Resaved set committed (licence permitting) with a manifest. Becomes the zero-diff oracle: a CBCS no-op save of a Designer-saved file has zero diff, or only diffs on an allowlist kept in the ledger |
+| M0.7 | ChoreBoy FreeCAD 1.1.1 capability probe (`run-choreboy-probe`): spawning `AppRun` through `QProcess` with no shell, and its cold-start time; QtUiTools; uic/rcc present; `import FreeCADGui` in a child; pg8000/psycopg importable; Qt minor version; CPU, RAM, screen DPI | G + Claude | Results recorded in the plan as fixed facts. If no Postgres driver is importable, M8.1 vendors pure-Python pg8000 (+ scramp, asn1crypto) |
+| M0.8 | Cloud environment: FreeCAD 1.1 + FreeCAD 1.0 runtimes, vendor bundles, Xvfb, env vars, and AGENTS.md cloud docs, all proven inside a Cursor Cloud VM | G (cloud) | PR merged. A fresh cloud VM runs every lane |
+| M0.9 | UX spec v1 (moved forward from M3.0): written from the spike `DESIGN.md`, the spike screenshots, Joshua's "rough edges" feedback, the pains and delighters, and an Opus heuristic run of the spike build. Covers the shell integration (M2) and the canvas (M3) first; later sections are added before M4–M5 | O-spec | `docs/form_builder/UX_SPEC.md` approved. No O-UX gate runs without an approved spec section |
 
 ### M1. Engine (production)
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M1.1 | ui4 model, reader and writer covering every element and attribute in the ui4 schema (R3 items 223–321). Unknown-node preservation, deterministic writer, defaults table per class from QMetaObject | G, O-logic | Corpus round-trip 100% (`QUiLoader` tree equal plus byte-stable second save). Fuzzed and malformed `.ui` never crashes; it gives a clear error instead |
-| M1.2 | Command log: the full command catalog (insert, delete, move, reparent, wrap, unwrap, morph, break layout, set property, z-order, container pages, actions, connections, tab order, buddies, promotion, resources), grouping, merge of rapid property edits, undo/redo, replay determinism | G, O-logic | Property-based tests (random command sequences: replay equals live, undo-all equals original) |
-| M1.3 | Generator: `uic`-shaped Python for everything M1.1 reads, including resources (an rcc-equivalent `*_rc.py`), promoted classes, i18n/`retranslateUi`, connections, buddies, tab order, button groups, actions, and main-window parts | G, O-logic | Every corpus file: our module and `uic`'s build identical trees. Text diff reported. Fixes the 6 known failures from the spike |
-| M1.4 | Project layer: generated-file hashes (detect hand edits to `ui_*.py`), window-class creation, naming rules, file layout under `forms/` | G | Tests cover create-once, hand-edit detection and rename |
-| M1.5 | Speed harness wired into gates (big forms of 300, 600 and 1000 widgets) | G | Budgets asserted on process time and wall time, with load recorded |
+| M1.0 | Architecture contracts (`CONTRACTS.md` + typed stub modules): stable node ids, document API, change events, realize patch protocol, hit-test index invalidation, selection model, diagnostics (FB codes), versioned preview IPC schema, codegen entry points, the defaults-table JSON + Qt dump script | O-spec, O-logic | Approved. Every M1–M3 WP implements against it |
+| M1.1a | ui4 model, reader and writer: core schema (widgets, layouts, items, spacers, properties), unknown-node preservation, deterministic writer | G, O-logic | Corpus round-trip for core files. Double-save byte-identical |
+| M1.1b | ui4 property values: every value type (font, palette, brush/gradient, icon sets, size policy, string list, translatable strings with comments, date/time, URL, locale…) | G, O-logic | Every value type round-trips |
+| M1.1c | ui4 main window, actions, resources, custom widgets, connections, slots/signals, button groups, tab stops, form-level settings (R3 items 223–330 complete) | G, O-logic | Corpus round-trip 100%, plus the Designer-resave zero-diff oracle. Fuzzed and malformed `.ui` never crashes and gives a clear error |
+| M1.2 | Command log: the full command catalog (insert, delete, move, reparent, wrap, unwrap, morph, break layout, set property, z-order, container pages, actions, connections, tab order, buddies, promotion, resources), grouping, merge of rapid property edits, undo/redo, replay determinism. Z-order is rebuilt from the real child list (pain 24) | G, O-logic | Property-based tests (random command sequences: replay equals live, undo-all equals original) |
+| M1.3 | Generator: `uic`-shaped Python for everything M1.1 reads, including resources (an rcc-equivalent `*_rc.py`), promoted classes, i18n/`retranslateUi`, connections, buddies, tab order, button groups, actions, main-window parts, and the uic-flag equivalents (R3 322–330). Guarded `FreeCADGui` import | G, O-logic | Every corpus file: our module and `uic`'s build identical trees, with the text diff reported. The 6 known spike failures fixed. Generated modules run under FreeCAD 1.1 `AppRun` on the VM. Generation speed stays in budget on big forms (pain 23) |
+| M1.4 | Project layer: forms belong to a project (`forms/`, or "Adopt this form"), generated-file hashes (detect hand edits to `ui_*.py`), window-class creation, naming rules, rename and move of a form (window class and references updated), completion of widget names (pain 15) | G | Tests cover create-once, hand-edit detection, adopt, rename/move, and Jedi completing `self.ui.okButton`, with the old name gone after a rename |
+| M1.5 | Speed harness: big forms of 300, 600 and 1000 widgets; CPU and idle-wall metrics, warmup, n = 15, p95; per-form and 3-form memory; runs on the Mac, on the VM and on a CPU-capped profile matching the M0.7 hardware | G | Budgets asserted, with load recorded |
 
 ### M2. CBCS integration shell
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M2.1 | Feature package and registration (PySide6 only), dune owner, handles, file roles | G | Dune checks green. Under PySide2, `.ui` opens as text with a hint |
-| M2.2 | Editor tab: `.ui` opens the visual editor, with a View XML toggle. Dirty, save, local history, close prompts, and external file-change reload | G, O-UX | AT-32 still passes. New acceptance tests added |
-| M2.3 | Problems integration, settings keys, shell theme tokens (light, dark, high contrast), keyboard shortcuts that don't collide with F5/F6/Ctrl+R | G, O-UX | Shortcut table test. Theme switch keeps the canvas in the runtime palette |
-| M2.4 | Run and packaging: F5 on a form runs its project entry. The packager includes `ui_*.py`, `*_rc.py` and generated connections, and flags stale generated files. New-project template "Qt app with a form" | G | Packaging fixture test. The template project runs on the VM |
-| M2.5 | Preview process (pain 11): AppRun child over `QProcess` with JSON IPC. Custom widgets load there. A crash turns into a Problems row | G, O-logic | Kill/raise fixtures leave the editor alive. **VM** |
+| M2.0 | Shell seam: a generic tab-content provider registry in `platform.shell`, Markdown moved onto it, `FeatureSpec.enabled()`, a dune rule forbidding module-level Qt imports in feature `install.py`, and a test that importing `app.features` under PySide2 never imports PySide6. Also proposed to `main` as its own small PR (Joshua merges), so the branch doesn't carry a shell fork | G, O-logic | Markdown is unchanged for users. Fast shard green on both bindings. Dune green |
+| M2.1 | Feature package and registration (PySide6 only, through `enabled()`), dune owner, handles, file roles | G | Dune checks green. Under PySide2, `.ui` opens as text with a hint |
+| M2.2 | Editor tab: `.ui` opens the visual editor with a View XML toggle (one `ReplaceDocument` command on switching back). Dirty state from the command log; lazy XML; per-tab command log; save, local history and draft restore that re-realize the form; close prompts; autosave and crash recovery; external file change with a three-way choice when the form is dirty. Covers R3 13–16 (new/open/save/close) | G, O-UX + O-logic | AT-32 still passes. New acceptance tests added |
+| M2.3 | Problems integration (FB codes), settings keys, shell theme tokens (light, dark, high contrast), keyboard shortcuts that don't collide with F5/F6/Ctrl+R, generated files excluded from linting/format and opened with a banner | G, O-UX | Shortcut table test. Theme switch keeps the canvas in the runtime palette |
+| M2.4 | Run and packaging: F5 on a form runs its project entry. The packager includes `ui_*.py`, `*_rc.py` and generated connections, and flags stale generated files. New-project template "Qt app with a form". Migration guide plus an "Adopt this form" flow for apps that load `.ui` with `QUiLoader`/`loadUi` (example_projects, SmokeQtApp). Importing code-built UI is a won't-do | G | Packaging fixture test. The template project runs on the VM |
+| M2.5 | Preview process (pain 11), built on CBCS's existing supervisor and framing code: versioned messages, one warm pooled child shared by all open forms, crash-loop backoff. Custom widgets load there. A crash becomes a Problems row | G, O-logic | Kill/raise fixtures leave the editor alive. Cold and warm start timed. **VM** |
 
 ### M3. Canvas and layout editing excellence
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M3.0 | UX spec v2 from the spike `DESIGN.md`, Joshua's "rough edges", pains, delighters, and a heuristic review of the spike build (Opus launches and drives it) | O-spec | `docs/form_builder/UX_SPEC.md` approved |
-| M3.1 | Canvas core: view, zoom, overlay painter, hit-test index, selection model (single, multi, rubber band, parent, siblings), hover, chips that never cover content (fixes the name-chip overlap) | G, O-UX | Interaction tests. Speed holds |
+| M3.0 | UX spec: canvas sections confirmed (written in M0.9) | O-spec | Canvas sections of `UX_SPEC.md` approved |
+| M3.1 | Canvas core: view, zoom, overlay painter, hit-test index, selection model (single, multi, rubber band, parent, siblings), hover, chips that never cover content (fixes the name-chip overlap), move/resize and grid snap, Tab selects next object, in-place text edit, broken-layout marker (R3 17–22, 30–31, 34) | G, O-UX | Interaction tests. Speed holds |
+| M3.1b | Inspector framework: the Properties/Behavior/Data tab shell, the property-editor registry, changed markers, reset and multi-select plumbing, and the object inspector (R3 28–29) | G, O-UX | Registry API used by M3.6 and M4.3 without edits to shared files |
 | M3.2 | Drop and move engine for every layout kind: box, grid (cells, spans, insert row/column), form (label/field), splitter, stacked/tab pages, and bare containers. Auto-layout on first drop, next drop fills the next cell | G, O-UX | Per-kind interaction tests. Pains 1, 4 and 21 |
 | M3.3 | Layout operations: wrap, unwrap, morph layout, morph widget, break layout (confirmed, keeps sizes), adjust size, simplify grid, spacers, gaps, margins, stretch, splitter handles on the canvas (pain 19), size constraints | G, O-UX | R3 35–56 ledger rows done. Pains 5, 14 and 19 |
-| M3.4 | Clipboard and duplication: copy, cut, paste into a layout at an index (pain 3), cross-form paste, Alt-drag clone, duplicate, scratch pad | G, O-UX | R3 23–27 done |
+| M3.4 | Clipboard and duplication: copy, cut, paste into a layout at an index (pain 3), cross-form paste, Alt-drag clone, duplicate, scratch pad | G, O-UX | R3 23–27, 32–33 done |
 | M3.5 | Outline: keyboard editing (Tab nest, Shift+Tab, Alt+arrows, `/` insert, F2 rename keeping focus), drag reparent, page reorder, references shown before delete | G, O-UX | Pains 20 and 25. A keyboard-only test script passes |
 | M3.6 | Sizing panel: Hug/Fill/Fixed, share, min/max, "why is it this size?", font-size and DPI preview (pain 12), two-widths view | G, O-UX | Pain 2 tests. The "why" text is verified against the real widget |
 | M3.7 | Opus heuristic and keyboard-only review of M3 as a whole | O-UX | APPROVE |
@@ -162,7 +245,9 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 | --- | --- | --- | --- |
 | M4.1 | Widget catalog: all 54 widget-box entries and the classes outside the default box (incl. `QWizard`), with drawn icons, search and categories | G, O-UX | R3 57–123 done |
 | M4.2 | Containers: tab, stacked and toolbox pages; scroll area; MDI; dock widgets; wizard pages; group box; frame. Page operations from canvas, outline and inspector | G, O-UX | R3 124–133 done |
-| M4.3 | Property editors for every type: bool, numbers, enum, flags, string (translatable with comment and disambiguation), string list, char, font, color, brush/gradient, palette, cursor, pixmap, icon set, size/point/rect, size policy, key sequence, date/time, URL and locale. Changed markers, reset, multi-select, search, and the dynamic properties UI | G, O-UX + O-logic | R3 145–171 done. Pain 18 |
+| M4.3a | Property editors, scalar types: bool, numbers, enum, flags, string (translatable with comment and disambiguation), string list, char, size/point/rect, size policy, key sequence, date/time, URL, locale; property search; dynamic properties UI | G, O-UX + O-logic | Matching R3 rows done. Pain 18 |
+| M4.3b | Property editors: font, color, brush/gradient, palette, cursor | G, O-UX | Matching R3 rows done |
+| M4.3c | Property editors: pixmap and icon sets (resource-aware) | G, O-UX | Matching R3 rows done; R3 145–171 complete |
 | M4.4 | Item editors: list, tree, table and combo items; columns and rows | G, O-UX | R3 172–173 done |
 
 ### M5. Main windows, resources, styling, custom widgets, templates
@@ -173,14 +258,17 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 | M5.2 | Resources: `.qrc` browser and editor, icon pickers that accept only resources (pain 9), `*_rc.py` generation | G, O-UX | R3 174–175 done |
 | M5.3 | Style: theme roles, plus a style sheet editor with syntax check, a resource picker and selector-match highlighting (pain 8) | G, O-UX | R3 176 done |
 | M5.4 | Custom widgets: promotion dialog using Python module paths, sized stand-ins, real class in preview, a custom widget registry, and a security note | G, O-UX + O-logic | R3 194–198 done. Pain 7 |
-| M5.5 | Preview in styles and device profiles, save image, View Code, form settings (layout default, functions, includes, export macro, translation options), templates (built-in plus save-as-template), Start screen v2 including form-from-table upgrades | G, O-UX | R3 177–193 done |
-| M5.6 | Editing modes and shortcuts parity: buddy and tab order (the list dialog too), the full keyboard index, grid settings | G, O-UX | R3 1, 8–12, 199–222 done |
+| M5.5a | Preview in styles and device profiles, save image and print, View Code | G, O-UX | R3 177–181 done |
+| M5.5b | Form settings: layout default, layout/pixmap functions, includes, export macro, translation options, legacy defaults | G, O-UX | R3 185–193 done |
+| M5.5c | Templates (built-in and save-as-template) and Start screen v2 | G, O-UX | R3 182–184 done |
+| M5.6 | Editing modes and shortcuts parity: buddy and tab order (the list dialog too), the full keyboard index, grid settings; one editing mode for ordinary work (pain 13) | G, O-UX | R3 1, 8–12, 199–222 done |
 
 ### M6. Logic levels 1–2
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
 | M6.0 | Logic UX spec refresh: the Behavior tab, Events list and canvas overlay, from `LOGIC_DESIGN.md` §2–3 | O-spec | Approved |
+| M6.0b | Logic storage layer in the engine: the dynamic-property codec, schema v1 and versioning, canonical JSON, unknown keys preserved, FB402 forward compatibility, rename propagation into formula tokens, logic commands through the same command log (`LOGIC_DESIGN.md` §2.13, §6.2–6.4) | G, O-logic | Round-trip and rename tests; undo covers logic edits |
 | M6.1 | Events list. Native `<connections>` for plain connections, and step lists for multi-step or conditional events. Friendly signal/slot picker (curated plus full list). Canvas arrows | G, O-UX + O-logic | R3 2–7 done. Pain 16 |
 | M6.2 | Call your code: handler naming, double-click stub insertion (once, and undo removes an empty stub), jump to code, signature and `@Slot` checks by parsing `<name>_window.py`, and `connectSlotsByName` checks (pain 22). Problems integration | G, O-logic | Tests cover every check. Pain 6 |
 
@@ -189,29 +277,35 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
 | M7.1 | Expression language: an ast-allowlist parser, the type system (Text, Whole, Number, Money/Decimal, Date…), blank semantics, the function library, Excel-habit quick fixes, and error messages | G, O-logic | Spec conformance suite (hundreds of cases) and fuzzing. Generated Python matches the evaluator |
-| M7.2 | Rules: enabled, visible and read-only when; value and default; re-checked at startup and after each record load | G, O-logic | Scenarios 1–2 from `LOGIC_DESIGN.md` pass end to end |
-| M7.3 | Checks and formats: required, ranges, length, patterns, presets, cross-field, inline error labels, and run-time timing | G, O-logic + O-UX | Scenario 3 passes |
+| M7.2 | Rules: enabled, visible and read-only when; value and default; re-checked at startup and after each record load. Repair references and two-places merge for forms edited in Qt Designer (§6.5) | G, O-logic | Scenarios 1–2 from `LOGIC_DESIGN.md` pass end to end |
+| M7.3 | Checks and formats: required, ranges, length, patterns, presets, cross-field, inline error labels, and run-time timing; shipped-app error behavior and "Open rule" links on traceback frames (§2.11) | G, O-logic + O-UX | Scenario 3 passes |
 | M7.4 | Action vocabulary: message, confirm, open form, close/accept/reject, clear, set value, focus, enable/disable, switch page, run your method | G, O-logic | Scenario 4 passes |
 | M7.5 | Point-and-click condition and value builder (ships with typed formulas) | G, O-UX | Opus heuristic review approves it for non-programmers |
 | M7.6 | Try mode: run the real generated code in the preview process with a stand-in window class | G, O-UX + O-logic | **VM** |
+| M7.7 | Persona walkthroughs (instead of human tests): Opus plays a non-programmer shop owner and a Qt developer through the logic scenarios, recording step counts and confusion points | O-UX | Findings fixed or ledgered |
+| M7.8 | Logic panel and search: the form-wide Logic outline, Ctrl+Shift+F, a "Forms logic" group in project Find, and "Read as text" (§2.8) | G, O-UX | Search finds every rule and handler |
 
 ### M8. Logic level 4 (data)
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
 | M8.0 | Data UX spec refresh: the Data panel, connections manager screen, navigation toolbar and list screens | O-spec | Approved |
-| M8.1 | Connections manager: project settings screen, Test button, generated `cbcs_connections.py`, password policies (ask, remember on this machine, none), `on_connect` hook, and driver probing (`cb_psycopg`, `psycopg`, `pg8000`) | G, O-logic + O-UX | Tests against SQLite and a leased Postgres 9.3 container. **VM** |
+| M8.1 | Connections manager: project settings screen, Test button, generated `cbcs_connections.py`, password policies (ask, remember on this machine, none), `on_connect` hook, and driver probing (`cb_psycopg`, `psycopg`, `pg8000`; vendors pure-Python pg8000 + scramp + asn1crypto if the M0.7 probe finds no driver) | G, O-logic + O-UX | Tests against SQLite and a leased Postgres 9.3 container. **VM** |
 | M8.2 | Form data source and field bindings: the key-list loading model, one record at a time, dirty tracking, close guard, conflict detection, PostgreSQL 9.3-safe SQL | G, O-logic | Scenarios 5–6 pass on SQLite and PostgreSQL 9.3 |
-| M8.3 | Lookups (foreign key → combo), master-detail line items, list and search screens, and form-from-table producing bound forms (SQLite and Postgres) | G, O-UX + O-logic | Invoice end-to-end demo on the VM |
-| M8.4 | Try mode for data: SQLite on a scratch copy; Postgres write then roll back, with a banner, statement timeout and lock warning | G, O-logic | Tests prove the rollback and that the user's database is unchanged |
+| M8.3a | Lookups (foreign key → combo) | G, O-UX + O-logic | Scenario 5 on SQLite and PG 9.3 |
+| M8.3b | Master-detail line items | G, O-UX + O-logic | Scenario 6 on SQLite and PG 9.3 |
+| M8.3c | List and search screens | G, O-UX + O-logic | Tests on both databases |
+| M8.3d | Form-from-table producing bound forms (SQLite and Postgres) | G, O-UX + O-logic | Invoice end-to-end demo on the VM |
+| M8.4 | Try mode for data: SQLite on a scratch copy; Postgres write then roll back, with a banner, statement and lock timeouts, side-effect warning (sequences, NOTIFY), and a per-connection read-only "Would run" option | G, O-logic | Tests prove the rollback and that the user's data is unchanged |
 | M8.5 | Eject to code: turns the data layer into plain user-owned methods, and documents the `self.ui.cbcs_*` API | G, O-logic | The ejected form behaves identically, proven by a test |
+| M8.6 | Schema helper process and the `cbcs/schema/*.json` cache (§5.1, §2.6) | G, O-logic | Schema refresh works offline and is cached |
 
 ### M9. Hardening and polish
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
 | M9.1 | Parity audit: every ledger row done (or approved won't-do) with a test. Gap-closing sprints as needed | G + Claude | Ledger 100% |
-| M9.2 | Robustness: fuzzed `.ui`, huge forms (1000+ widgets), long sessions (memory), crash recovery and autosave, external edits in Qt Designer coming back ("Repair references") | G, O-logic | All pass |
+| M9.2 | Robustness: fuzzed `.ui`, huge forms (1000+ widgets), long sessions (memory), multi-form projects (cross-form open-form actions, rename/move of forms) | G, O-logic | All pass |
 | M9.3 | Accessibility and keyboard-only operation of every feature, high contrast, high DPI on Qt 6, screen-reader names | G, O-UX | Keyboard-only script covers every feature |
 | M9.4 | Speed on the ChoreBoy VM and the lab Linux host. Optimise where needed | G | Budgets met on the VM. **VM** |
 | M9.5 | Visual polish pass: a full screenshot tour in light, dark and high-contrast; micro-interactions; empty states; copy | O-spec + G, O-UX | Opus final UX APPROVE |
@@ -227,17 +321,17 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 
 ## 5. Parallelism
 
-- M0.3, M0.4 and M0.5 run in parallel.
-- M1.1 must land first. Then M1.2 and M1.3 run in parallel, followed by M1.4 and M1.5.
-- M2 starts once the M1.1/M1.2 APIs are stable. M2.1–M2.4 and M2.5 are separate lanes.
-- M3.0 (Opus spec) runs during M1–M2. M3.1 lands first; M3.2–M3.6 then split by file area into 2–3 lanes.
-- M4.1, M4.2, M4.3 and M4.4 run in parallel, since they touch separate files (catalog, containers, editors).
-- M5.1–M5.6 run as 2–3 parallel lanes.
-- M6.0 runs during M5. M7.1 (pure language) can start during M5 because it has no UI.
+- M0.3–M0.9 run in parallel: the local Mac lane, lab lanes and cloud lanes. M0.9 (Opus UX spec) and M1.0 (Opus contracts) are written while Grok builds the M0 tooling.
+- M1.0 must be approved before any other M1 code merges. Then M1.1a lands first. M1.1b, M1.1c and M1.2 follow in parallel, then M1.3, M1.4 and M1.5.
+- M2.0 (shell seam) can start right after M1.0, because it doesn't depend on the engine. M2.1–M2.4 follow, and M2.5 is a separate lane once the IPC contract is approved.
+- M3.1 and M3.1b land first. M3.2–M3.6 then split by directory into 2–3 lanes.
+- M4.1, M4.2, M4.3a–c and M4.4 run in parallel, each registering through the M3.1b registry.
+- M5.x runs as 2–3 parallel lanes.
+- M6.0, M6.0b and M7.1 (the pure language, no UI) can start during M5.
 - M8.1 can start during M7.
 - M9 is mostly parallel.
 
-The limits are about 3 concurrent Grok lanes plus 1 Opus gate at a time, the free Cursor accounts, and lab load.
+**Capacity:** Cursor Cloud is the default home for Grok lanes once M0.8 lands, so lanes are limited by Cursor accounts rather than machines. The Mac allows one local lane (workspace policy), used for Mac-only checks. The lab host is for VM work and Linux checks. One Opus gate runs at a time, and there's no hard cap on cloud lanes beyond file-disjointness and the review bandwidth.
 
 ## 6. Verification matrix
 
