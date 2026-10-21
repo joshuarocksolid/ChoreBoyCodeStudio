@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Reader and writer behavior for the ui4 core."""
 from __future__ import annotations
 

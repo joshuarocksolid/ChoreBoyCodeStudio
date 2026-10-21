@@ -146,7 +146,7 @@ def test_writer_that_drops_connections_fails_the_oracle(qapp: object) -> None:
     def drop(self: object, node: object, group: str, indent: int, buckets: object) -> None:
         if getattr(node, "kind", "") == "ui" and group == "connections":
             return None
-        return original(self, node, group, indent, buckets)
+        return original(self, node, group, indent, buckets)  # type: ignore[arg-type]
 
     writer_module._Writer._group = drop
     try:
