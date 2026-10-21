@@ -12,12 +12,23 @@ def format_int(value: int) -> str:
     ...
 
 
-def format_real(value: float) -> str:
-    """Designer's text for ``<double>``/``<float>`` and double-valued attributes
-    and children (gradient coordinates, rectf, sizef, pointf, stop positions):
-    fixed notation with 15 fractional digits, ``format(value, ".15f")``, with
-    ``-0`` written as ``0.000000000000000``. The M0.4b corpus confirms this
-    form; if it shows otherwise, only this function changes."""
+def format_double(value: float) -> str:
+    """Designer's text for ``<double>`` and double-valued attributes and children
+    (gradient coordinates, rectf, sizef, pointf, stop positions): fixed notation
+    with 15 fractional digits, ``format(value, ".15f")``. PROVISIONAL until
+    M0.4b pins it, together with how ``-0`` is written (provisionally
+    ``0.000000000000000``). If the corpus shows otherwise, only this changes."""
+    ...
+
+
+def format_float(value: float) -> str:
+    """Designer's text for ``<float>``: likely 8 fractional digits. PROVISIONAL
+    until M0.4b pins it."""
+    ...
+
+
+def format_real(value: float, *, element: str = "double") -> str:
+    """``format_float`` for element ``float``, ``format_double`` otherwise."""
     ...
 
 
@@ -32,8 +43,8 @@ def format_bool(value: bool) -> str:
     ...
 
 
-def real_round_trips(value: float) -> bool:
-    """True when ``parse_real(format_real(value)) == value``. A value read from a
+def real_round_trips(value: float, *, element: str = "double") -> bool:
+    """True when ``parse_real(format_real(value, element=element)) == value``. A value read from a
     file that does not round-trip is kept as OpaqueValue (FB005)."""
     ...
 

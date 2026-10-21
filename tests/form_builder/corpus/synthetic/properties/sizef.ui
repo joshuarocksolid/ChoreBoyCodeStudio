@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropSizef</class>
+ <widget class="QWidget" name="PropSizef">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>sizef</string>
+  </property>
+  <property name="extentF" stdset="0">
+   <sizef><width>1.5</width><height>2.5</height></sizef>
+  </property>
+ </widget>
+
+</ui>

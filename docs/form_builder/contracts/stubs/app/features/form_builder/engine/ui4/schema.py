@@ -98,8 +98,9 @@ class KindSpec:
     has_attributes: bool = False
     #: Full write order of the element's content: group names, where a group is
     #: "properties", "attributes", a slot name, or a "child:<tag>" field. Opaque
-    #: children are written right after the group they followed in the input
-    #: (``OpaqueNode.anchor``); an anchor of "" means before the first group.
+    #: children are written at ``OpaqueNode.anchor = (group, n)``: after the n-th
+    #: typed entry of ``group`` (at the group's end if it now has fewer); group
+    #: "" means before the first group.
     write_order: Tuple[str, ...] = ()
     #: XML attribute write order for known attributes. Unknown attributes are
     #: written after these, in input order.
@@ -217,8 +218,9 @@ SCHEMA: Dict[str, KindSpec] = {
     #     the opaque slot.
     # "include": fields location, impldecl, text.
     # "resource": field location.
-    # "opaque": fields element (OpaqueElement), anchor (str: the write_order group
-    #     the element followed in the input, "" for first).
+    # "opaque": fields element (OpaqueElement), anchor (Tuple[str, int]: the
+    #     write_order group it sits in or follows, and the number of typed
+    #     entries of that group before it; ("", 0) for first).
 }
 
 

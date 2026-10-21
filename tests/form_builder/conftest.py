@@ -24,6 +24,18 @@ def pytest_configure(config: pytest.Config) -> None:
         "markers",
         "perf: form-builder speed budget; the gate records os.getloadavg beside the result",
     )
+    config.addinivalue_line(
+        "markers",
+        'parity(*ids): proves R3 parity items, e.g. parity("R3-145"); read by tools/form_builder_parity.py',
+    )
+    config.addinivalue_line(
+        "markers",
+        'pain(*ids): proves ranked pains, e.g. pain("P-3"); read by tools/form_builder_parity.py',
+    )
+    config.addinivalue_line(
+        "markers",
+        'logic(*ids): proves logic scenarios and features, e.g. logic("L-line-total-live")',
+    )
 
 
 def _pyside6_skip_reason() -> str | None:

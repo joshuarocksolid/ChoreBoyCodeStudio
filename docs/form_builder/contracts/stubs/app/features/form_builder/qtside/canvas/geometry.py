@@ -20,6 +20,7 @@ class LiveGeometrySource:
         ...
 
     def settle(self) -> None:
+        """Activates the root layout. Never called from paintEvent (CONTRACTS 5.5)."""
         ...
 
     def entries(self) -> Sequence[GeoEntry]:

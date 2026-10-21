@@ -28,6 +28,11 @@ HANDSHAKE_TIMEOUT_SECONDS = 30.0
 REQUEST_TIMEOUT_SECONDS = 20.0
 #: Shutdown grace before SIGTERM to the process group, then SIGKILL after 2 s more.
 SHUTDOWN_GRACE_SECONDS = 2.0
+#: Ping period while views are open; two consecutive misses = hung.
+PING_INTERVAL_SECONDS = 5.0
+MISSED_PINGS_FOR_HANG = 2
+#: Default of the pre-warm setting: spawn the child when the first form opens.
+PREWARM_DEFAULT = True
 
 
 PoolState = str  # "stopped" | "starting" | "ready" | "backoff" | "circuit_open"
@@ -46,8 +51,10 @@ class PreviewPool:
     """Process-wide: ONE warm child shared by every open form; each form tab is a
     view (``view_id`` = a uuid4 hex made when the tab first previews).
 
-    * Lazy: the child starts on the first preview/Try request (optionally
-      pre-warmed by a setting after the first form opens and the editor is idle).
+    * Pre-warm is on by default: the child is spawned when the first form opens.
+      With the setting off, it starts on the first preview/Try request.
+    * Hang: a request timeout or MISSED_PINGS_FOR_HANG missed pings -> kill the
+      process group and handle it exactly like a crash (FB601, backoff).
     * Handshake: wait for Ready and the Hello response; a mismatch is FB603 and
       the pool goes to circuit_open (retrying cannot fix a version mismatch).
     * Requests are matched by ``request_id`` (uuid4 hex). Per view at most one

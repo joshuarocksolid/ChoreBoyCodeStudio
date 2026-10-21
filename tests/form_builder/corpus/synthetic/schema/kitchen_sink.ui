@@ -1,0 +1,549 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0" language="c++" displayname="Kitchen sink" idbasedtr="true" connectslotsbyname="true" stdsetdef="0" stdSetDef="1">
+ <author>ChoreBoy Code Studio corpus</author>
+ <comment>Synthetic form that exercises the ui4 element set.</comment>
+ <exportmacro>CBCS_EXPORT</exportmacro>
+ <class>KitchenSink</class>
+ <widget class="QMainWindow" name="KitchenSink">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>900</width>
+    <height>640</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string notr="false" comment="window title" extracomment="shown in the title bar" id="window.title">Kitchen sink</string>
+  </property>
+  <property name="locale">
+   <locale language="English" country="UnitedStates"/>
+  </property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QGridLayout" name="gridLayout" stretch="1,0" rowstretch="1,0,0" columnstretch="2,1" rowminimumheight="24,0,0" columnminimumwidth="80,40">
+    <property name="spacing">
+     <number>6</number>
+    </property>
+    <attribute name="cbcsLayoutNote" stdset="0">
+     <string>grid</string>
+    </attribute>
+    <item row="0" column="0" rowspan="1" colspan="2" alignment="Qt::AlignRight|Qt::AlignVCenter">
+     <layout class="QVBoxLayout" name="nestedBox" stretch="1,0">
+      <item>
+       <widget class="QLabel" name="nameLabel">
+        <class>QLabel</class>
+        <property name="text">
+         <string>&amp;Name</string>
+        </property>
+        <property name="buddy">
+         <cstring>nameEdit</cstring>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <spacer name="verticalSpacer">
+        <property name="orientation">
+         <enum>Qt::Vertical</enum>
+        </property>
+        <property name="sizeType">
+         <enum>QSizePolicy::Expanding</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>20</width>
+          <height>40</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </item>
+    <item row="1" column="0">
+     <widget class="QLineEdit" name="nameEdit">
+      <property name="text">
+       <string>Ada</string>
+      </property>
+      <property name="cursor">
+       <cursor>4</cursor>
+      </property>
+     </widget>
+    </item>
+    <item row="1" column="1">
+     <widget class="QLabel" name="cursorLabel">
+      <property name="text">
+       <string>cursor</string>
+      </property>
+      <property name="cursor">
+       <cursorshape>Qt::PointingHandCursor</cursorshape>
+      </property>
+      <property name="pos">
+       <point>
+        <x>3</x>
+        <y>4</y>
+       </point>
+      </property>
+     </widget>
+    </item>
+    <item row="2" column="0">
+     <widget class="QWidget" name="sampleHost">
+      <property name="minimumSize">
+       <size>
+        <width>10</width>
+        <height>10</height>
+       </size>
+      </property>
+      <property name="palette">
+       <palette>
+        <active>
+         <color>
+          <red>1</red>
+          <green>2</green>
+          <blue>3</blue>
+         </color>
+         <colorrole role="Window">
+          <brush brushstyle="SolidPattern">
+           <color alpha="255">
+            <red>240</red>
+            <green>240</green>
+            <blue>240</blue>
+           </color>
+          </brush>
+         </colorrole>
+         <colorrole role="WindowText">
+          <brush brushstyle="LinearGradientPattern">
+           <gradient type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode" startx="0" starty="0" endx="100" endy="20" angle="15" centralx="50" centraly="10" focalx="40" focaly="10" radius="12">
+            <gradientStop position="0">
+             <color alpha="255">
+              <red>255</red>
+              <green>0</green>
+              <blue>0</blue>
+             </color>
+            </gradientStop>
+            <gradientStop position="1">
+             <color alpha="128">
+              <red>0</red>
+              <green>0</green>
+              <blue>255</blue>
+             </color>
+            </gradientStop>
+           </gradient>
+          </brush>
+         </colorrole>
+        </active>
+        <inactive>
+         <colorrole role="Button">
+          <brush brushstyle="RadialGradientPattern">
+           <gradient type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode" startx="0" starty="0" endx="1" endy="1" angle="0" centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8">
+            <gradientStop position="0.2">
+             <color alpha="255">
+              <red>0</red>
+              <green>255</green>
+              <blue>0</blue>
+             </color>
+            </gradientStop>
+           </gradient>
+          </brush>
+         </colorrole>
+        </inactive>
+        <disabled>
+         <colorrole role="Base">
+          <brush brushstyle="ConicalGradientPattern">
+           <gradient type="ConicalGradient" spread="ReflectSpread" coordinatemode="StretchToDeviceMode" startx="0" starty="0" endx="1" endy="1" angle="45" centralx="0.5" centraly="0.5" focalx="0.5" focaly="0.5" radius="1">
+            <gradientStop position="0.5">
+             <color alpha="200">
+              <red>10</red>
+              <green>10</green>
+              <blue>10</blue>
+             </color>
+            </gradientStop>
+           </gradient>
+          </brush>
+         </colorrole>
+         <colorrole role="AlternateBase">
+          <brush brushstyle="TexturePattern">
+           <texture name="windowTexture">
+            <pixmap resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</pixmap>
+           </texture>
+          </brush>
+         </colorrole>
+        </disabled>
+       </palette>
+      </property>
+      <property name="font">
+       <font>
+        <family>DejaVu Sans</family>
+        <pointsize>12</pointsize>
+        <weight>75</weight>
+        <italic>true</italic>
+        <bold>true</bold>
+        <underline>false</underline>
+        <strikeout>false</strikeout>
+        <antialiasing>true</antialiasing>
+        <stylestrategy>PreferDefault</stylestrategy>
+        <kerning>true</kerning>
+        <hintingpreference>PreferDefaultHinting</hintingpreference>
+        <fontweight>Bold</fontweight>
+       </font>
+      </property>
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+        <hsizetype>7</hsizetype>
+        <vsizetype>5</vsizetype>
+        <horstretch>1</horstretch>
+        <verstretch>0</verstretch>
+       </sizepolicy>
+      </property>
+      <property name="cbcsPointF" stdset="0">
+       <pointf>
+        <x>1.5</x>
+        <y>2.5</y>
+       </pointf>
+      </property>
+      <property name="cbcsRectF" stdset="0">
+       <rectf>
+        <x>0.5</x>
+        <y>1.5</y>
+        <width>3.5</width>
+        <height>4.5</height>
+       </rectf>
+      </property>
+      <property name="cbcsSizeF" stdset="0">
+       <sizef>
+        <width>8.25</width>
+        <height>9.25</height>
+       </sizef>
+      </property>
+      <property name="cbcsFloat" stdset="0">
+       <float>1.25</float>
+      </property>
+      <property name="cbcsDouble" stdset="0">
+       <double>2.5</double>
+      </property>
+      <property name="cbcsLongLong" stdset="0">
+       <longlong>9223372036854775807</longlong>
+      </property>
+      <property name="cbcsUInt" stdset="0">
+       <uint>4294967295</uint>
+      </property>
+      <property name="cbcsULongLong" stdset="0">
+       <ulonglong>18446744073709551615</ulonglong>
+      </property>
+      <property name="cbcsChar" stdset="0">
+       <char>
+        <unicode>65</unicode>
+       </char>
+      </property>
+      <property name="cbcsUrl" stdset="0">
+       <url>
+        <string>https://example.com/forms</string>
+       </url>
+      </property>
+      <property name="cbcsTags" stdset="0">
+       <stringlist notr="true" comment="tags" extracomment="list comment" id="tags.id">
+        <string>alpha</string>
+        <string>beta</string>
+       </stringlist>
+      </property>
+      <property name="cbcsLogicLevel" stdset="0">
+       <number>3</number>
+      </property>
+      <property name="cbcsRule" stdset="0">
+       <string>when saved then refresh</string>
+      </property>
+      <property name="styleSheet" stdset="1">
+       <string>QWidget { color: #222; }</string>
+      </property>
+      <widget class="QWidget" name="nativeHost" native="true">
+       <property name="minimumSize">
+        <size>
+         <width>8</width>
+         <height>8</height>
+        </size>
+       </property>
+      </widget>
+      <widget class="QPushButton" name="backButton">
+       <property name="text"><string>Back</string></property>
+      </widget>
+      <widget class="QPushButton" name="frontButton">
+       <property name="text"><string>Front</string></property>
+      </widget>
+      <zorder>nativeHost</zorder>
+      <zorder>backButton</zorder>
+      <zorder>frontButton</zorder>
+      <script/>
+      <widgetdata/>
+     </widget>
+    </item>
+    <item row="2" column="1">
+     <widget class="QDateTimeEdit" name="whenEdit">
+      <property name="date">
+       <date>
+        <year>2026</year>
+        <month>10</month>
+        <day>21</day>
+       </date>
+      </property>
+      <property name="time">
+       <time>
+        <hour>15</hour>
+        <minute>4</minute>
+        <second>5</second>
+       </time>
+      </property>
+      <property name="dateTime">
+       <datetime>
+        <hour>15</hour>
+        <minute>4</minute>
+        <second>5</second>
+        <year>2026</year>
+        <month>10</month>
+        <day>21</day>
+       </datetime>
+      </property>
+     </widget>
+    </item>
+   </layout>
+   <widget class="QListWidget" name="listWidget">
+    <item>
+     <property name="text">
+      <string>Alpha</string>
+     </property>
+    </item>
+   </widget>
+   <widget class="QTreeWidget" name="treeWidget">
+    <column>
+     <property name="text">
+      <string>Name</string>
+     </property>
+    </column>
+    <item>
+     <property name="text">
+      <string>Parent</string>
+     </property>
+     <item>
+      <property name="text">
+       <string>Child</string>
+      </property>
+     </item>
+    </item>
+   </widget>
+   <widget class="QTableWidget" name="tableWidget">
+    <property name="rowCount"><number>1</number></property>
+    <property name="columnCount"><number>1</number></property>
+    <row>
+     <property name="text"><string>Row</string></property>
+    </row>
+    <column>
+     <property name="text"><string>Column</string></property>
+    </column>
+    <item row="0" column="0">
+     <property name="text"><string>cell</string></property>
+    </item>
+   </widget>
+   <widget class="QTabWidget" name="tabWidget">
+    <property name="currentIndex"><number>0</number></property>
+    <widget class="QWidget" name="tabOne">
+     <attribute name="title"><string>One</string></attribute>
+    </widget>
+    <widget class="QWidget" name="tabTwo">
+     <attribute name="title"><string>Two</string></attribute>
+    </widget>
+   </widget>
+   <widget class="QStackedWidget" name="stack">
+    <widget class="QWidget" name="pageA"/>
+    <widget class="QWidget" name="pageB"/>
+   </widget>
+   <widget class="QToolBox" name="toolBox">
+    <widget class="QWidget" name="boxPage">
+     <attribute name="label"><string>Tools</string></attribute>
+    </widget>
+   </widget>
+   <widget class="QScrollArea" name="scrollArea">
+    <widget class="QWidget" name="scrollContents"/>
+   </widget>
+   <widget class="QMdiArea" name="mdiArea">
+    <widget class="QWidget" name="mdiChild"/>
+   </widget>
+   <widget class="QWizard" name="wizard">
+    <widget class="QWizardPage" name="wizardPage">
+     <attribute name="title"><string>Intro</string></attribute>
+    </widget>
+   </widget>
+   <widget class="QSplitter" name="splitter">
+    <property name="orientation"><enum>Qt::Horizontal</enum></property>
+    <widget class="QListWidget" name="splitList"/>
+    <widget class="QPlainTextEdit" name="splitText"/>
+   </widget>
+   <widget class="QGroupBox" name="groupBox">
+    <property name="title"><string>Choices</string></property>
+    <layout class="QVBoxLayout" name="choiceLayout">
+     <item>
+      <widget class="QRadioButton" name="radioYes">
+       <property name="text"><string>Yes</string></property>
+       <attribute name="buttonGroup"><string>choiceGroup</string></attribute>
+      </widget>
+     </item>
+     <item>
+      <widget class="QRadioButton" name="radioNo">
+       <property name="text"><string>No</string></property>
+       <attribute name="buttonGroup"><string>choiceGroup</string></attribute>
+      </widget>
+     </item>
+    </layout>
+   </widget>
+   <widget class="QDialogButtonBox" name="buttonBox">
+    <property name="standardButtons">
+     <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+    </property>
+   </widget>
+   <widget class="QKeySequenceEdit" name="shortcutEdit">
+    <property name="keySequence">
+     <string notr="true">Ctrl+Shift+S</string>
+    </property>
+   </widget>
+  </widget>
+  <widget class="QMenuBar" name="menuBar">
+   <widget class="QMenu" name="menuFile">
+    <property name="title"><string>&amp;File</string></property>
+    <addaction name="actionNew"/>
+    <addaction name="separator"/>
+    <addaction name="actionQuit"/>
+   </widget>
+   <addaction name="menuFile"/>
+  </widget>
+  <widget class="QToolBar" name="toolBar">
+   <property name="windowTitle"><string>Main</string></property>
+   <addaction name="actionNew"/>
+  </widget>
+  <widget class="QStatusBar" name="statusBar"/>
+  <widget class="QDockWidget" name="dockWidget">
+   <property name="windowTitle"><string>Dock</string></property>
+   <attribute name="dockWidgetArea">
+    <number>1</number>
+   </attribute>
+   <widget class="QWidget" name="dockContents"/>
+  </widget>
+  <action name="actionNew">
+   <property name="text"><string>New</string></property>
+   <property name="shortcut"><string>Ctrl+N</string></property>
+   <property name="icon">
+    <iconset theme="document-new" resource="icons.qrc">
+     <normaloff resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</normaloff>:/cbcs/icons/dot.png
+     <normalon resource="icons.qrc" alias="mark">:/cbcs/icons/mark.png</normalon>:/cbcs/icons/mark.png
+     <disabledoff resource="icons.qrc">:/cbcs/icons/dot.png</disabledoff>:/cbcs/icons/dot.png
+     <disabledon resource="icons.qrc">:/cbcs/icons/mark.png</disabledon>:/cbcs/icons/mark.png
+     <activeoff resource="icons.qrc">:/cbcs/icons/dot.png</activeoff>:/cbcs/icons/dot.png
+     <activeon resource="icons.qrc">:/cbcs/icons/mark.png</activeon>:/cbcs/icons/mark.png
+     <selectedoff resource="icons.qrc">:/cbcs/icons/dot.png</selectedoff>:/cbcs/icons/dot.png
+     <selectedon resource="icons.qrc">:/cbcs/icons/mark.png</selectedon>:/cbcs/icons/mark.png
+    </iconset>
+   </property>
+   <attribute name="cbcsActionRole" stdset="0">
+    <string>file</string>
+   </attribute>
+  </action>
+  <action name="actionQuit" menu="menuFile">
+   <property name="text"><string>Quit</string></property>
+  </action>
+  <actiongroup name="outerGroup">
+   <property name="exclusive"><bool>false</bool></property>
+   <attribute name="cbcsGroupNote" stdset="0">
+    <string>outer</string>
+   </attribute>
+   <actiongroup name="innerGroup">
+    <property name="exclusive"><bool>true</bool></property>
+    <action name="actionLeft">
+     <property name="text"><string>Left</string></property>
+     <property name="checkable"><bool>true</bool></property>
+    </action>
+   </actiongroup>
+  </actiongroup>
+  <addaction name="actionNew"/>
+ </widget>
+ <layoutdefault spacing="6" margin="11"/>
+ <layoutfunction spacing="cbcsSpacing" margin="cbcsMargin"/>
+ <pixmapfunction>cbcsPixmap</pixmapfunction>
+ <customwidgets>
+  <customwidget>
+   <class>InvoiceHeader</class>
+   <extends>QWidget</extends>
+   <header location="global">shop.widgets.invoice_header</header>
+   <sizehint>
+    <width>120</width>
+    <height>48</height>
+   </sizehint>
+   <addpagemethod>addPage</addpagemethod>
+   <container>1</container>
+   <sizepolicy/>
+   <pixmap>:/cbcs/icons/dot.png</pixmap>
+   <script/>
+   <properties/>
+   <slots>
+    <signal>changed()</signal>
+    <slot>reset()</slot>
+   </slots>
+   <propertyspecifications>
+    <tooltip name="title">Title shown on the page</tooltip>
+    <stringpropertyspecification name="title" type="singleline" notr="true"/>
+   </propertyspecifications>
+  </customwidget>
+ </customwidgets>
+ <tabstops>
+  <tabstop>nameEdit</tabstop>
+  <tabstop>whenEdit</tabstop>
+  <tabstop>shortcutEdit</tabstop>
+ </tabstops>
+ <images/>
+ <includes>
+  <include location="local" impldecl="in implementation">shop.widgets.invoice_header</include>
+  <include location="global" impldecl="in declaration">PySide6.QtCore</include>
+ </includes>
+ <resources name="cbcsResources">
+  <include location="icons.qrc"/>
+  <include location="extra.qrc"/>
+ </resources>
+ <connections>
+  <connection>
+   <sender>buttonBox</sender>
+   <signal>accepted()</signal>
+   <receiver>KitchenSink</receiver>
+   <slot>close()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>10</x>
+     <y>20</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>30</x>
+     <y>40</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>KitchenSink</sender>
+   <signal>customSignal(int)</signal>
+   <receiver>nameEdit</receiver>
+   <slot>setFocus()</slot>
+  </connection>
+ </connections>
+ <designerdata>
+  <property name="gridDeltaX"><number>10</number></property>
+  <property name="gridDeltaY"><number>10</number></property>
+  <property name="gridSnapX"><bool>true</bool></property>
+  <property name="gridSnapY"><bool>true</bool></property>
+  <property name="gridVisible"><bool>true</bool></property>
+ </designerdata>
+ <slots>
+  <signal>customSignal(int)</signal>
+  <slot>on_nameEdit_textChanged(QString)</slot>
+ </slots>
+ <buttongroups>
+  <buttongroup name="choiceGroup">
+   <property name="exclusive"><bool>true</bool></property>
+   <attribute name="cbcsGroupId" stdset="0">
+    <string>choices</string>
+   </attribute>
+  </buttongroup>
+ </buttongroups>
+</ui>

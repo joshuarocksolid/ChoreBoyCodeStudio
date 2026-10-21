@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import FrozenSet, Literal, Optional, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.ui4.spec import PropertyEntry
+from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
 
 Origin = Literal["do", "undo", "redo"]
 
@@ -24,7 +24,7 @@ Category = Literal[
     "page",        # a page of a tab/stacked/toolbox/wizard/splitter container
     "action",      # action, action group, addaction, menu/toolbar membership
     "connection",  # <connections>
-    "logic",       # any cbcs* dynamic property (LOGIC_DESIGN 6.1)
+    "logic",       # any cbcs* dynamic property (LOGIC_DESIGN 6.1) except CBCS_LAYOUT_KEYS
     "form",        # ui-level fields: class, tab stops, includes, resources, custom widgets...
     "name",        # object_name / name field (rename)
     "document",    # ReplaceRootOp
@@ -41,6 +41,9 @@ class NodeInserted:
     #: Every id in the inserted subtree (node first, pre-order).
     subtree: Tuple[NodeId, ...]
     category: Category
+    #: The inserted subtree: from the op (do/redo) or its inverse (undo),
+    #: shared by reference. Lets a listener rebuild from ChangeSets alone.
+    spec: NodeSpec
 
 
 @dataclass(frozen=True)
@@ -88,9 +91,11 @@ class FieldChanged:
 
 @dataclass(frozen=True)
 class DocumentReplaced:
-    """Every previous id except DOCUMENT_ID is gone; every listener rebuilds."""
+    """Every previous id except DOCUMENT_ID is gone; every listener rebuilds.
+    ``spec`` is the new whole-document spec (shared by reference)."""
 
     removed: FrozenSet[NodeId]
+    spec: NodeSpec
     category: Category = "document"
 
 
@@ -140,3 +145,4 @@ PRIORITY_REALIZE = 10         # qtside realizer patches widgets
 PRIORITY_HIT_INDEX = 20       # hit index invalidation
 PRIORITY_VIEWS = 30           # outline, inspector, overlay repaint requests
 PRIORITY_SHELL = 40           # dirty indicator, Problems bridge, preview update scheduling
+PRIORITY_SELECTION_NOTIFY = 100  # SelectionModel notifies subscribers (after every log listener)

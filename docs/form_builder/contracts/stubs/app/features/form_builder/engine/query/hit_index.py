@@ -78,8 +78,9 @@ class HitIndex:
     Contract:
     * ``invalidate(reason)`` is O(1): it bumps an epoch. It never reads geometry.
     * The index refreshes only inside ``ensure_fresh()``, which callers invoke at
-      the start of a pointer event, a paint, or a keyboard navigation that needs
-      rects. Refresh = ``source.settle()`` then ``source.entries()``. Never inside
+      the start of a pointer event, a keyboard navigation that needs rects, or
+      the view's UpdateRequest / pre-paint hook. ``settle()`` never runs inside
+      ``paintEvent``; paint only reads an index made fresh before it. Refresh = ``source.settle()`` then ``source.entries()``. Never inside
       a ChangeSet listener and never on a timer.
     * During a drag (between press and release) the canvas does not invalidate;
       edits cannot happen mid-drag, and zoom/scroll during drag invalidate as usual.

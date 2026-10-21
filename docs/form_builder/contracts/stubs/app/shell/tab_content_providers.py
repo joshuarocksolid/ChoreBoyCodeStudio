@@ -132,8 +132,12 @@ class ProviderDeclined(Exception):
 
 
 class TabContentProviderRegistry:
-    """Bound on the main window by the platform (a committed window field).
-    ``register`` is called from feature ``install`` functions only."""
+    """The committed window field ``_tab_content_registry`` becomes this registry.
+    It is bound in ``install_editors``, before the FEATURE_SPECS loop, so feature
+    installs can register into it. ``_markdown_panes_by_path`` moves under
+    markdown's ownership globs. ``register`` is called from feature ``install``
+    functions only. Feature install runs before ``install_run_debug``, so
+    features look up Run/packaging services lazily, never during install."""
 
     def register(self, provider: TabContentProvider) -> None:
         """ValueError on a duplicate id or a priority tie."""

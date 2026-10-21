@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: MIT -->
+<ui version="4.0">
+ <class>PropDatetime</class>
+ <widget class="QWidget" name="PropDatetime">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>datetime</string>
+  </property>
+  <property name="stamp" stdset="0">
+   <datetime><hour>8</hour><minute>30</minute><second>1</second><year>2026</year><month>1</month><day>2</day></datetime>
+  </property>
+ </widget>
+
+</ui>
