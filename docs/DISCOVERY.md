@@ -56,6 +56,7 @@ CTS's next image (`Install_FreeCAD_V1.1_090426.v6u`, FreeCAD 1.1.1) was applied 
 - **Bundled packages.** The image ships tree-sitter 0.26.0 and the grammars CBCS uses, psycopg 3.3.4 (binary), pg8000, SQLAlchemy, typst and debugpy. It does not ship black, isort, jedi, rope, pyflakes or pytest; the pure-Python copies CBCS vendors work from `/home`.
 - **Subprocess.** `/opt/freecad/AppRun -c …` children and `QProcess` work. `/bin/sh`, `/bin/bash`, `subprocess(..., shell=True)` and `/usr/bin/git` raise `PermissionError`, which reverses the `/bin/sh`-only rule in §4.
 - Dot-directories at the home root stay denied (for example `~/.cache/jedi`).
+- **`AppRun -c` argument length.** FreeCAD 1.1 runs `std::filesystem::status()` on every argument and aborts with `filesystem error: status: File name too long` when an argument has a `/`-free run longer than 255 bytes. FreeCAD 1.0 does not. Keep inline `-c` payloads short, or split them with a `/`. CBCS uses `app/packaging/launcher_bootstrap.apprun_safe_python()`.
 
 CBCS supports both images from one codebase; see `docs/PYSIDE6_MIGRATION_PLAN.md`.
 
