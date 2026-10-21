@@ -96,7 +96,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.projectStatusLabel` | Project name + `(project overrides)` |
 | `#shell.indentStatusLabel` | Spaces / Tabs |
 | `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
-| `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge). Widget class is `_ClickableLabel`. |
+| `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
 
 ## Find, search, markdown
