@@ -5,11 +5,11 @@ import random
 
 import pytest
 
-from app.features.form_builder.engine.commands.ops import SetPropertyOp
-from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.commands.ops import InsertNodeOp, SetPropertyOp
+from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.ui4.mutate import OpError, apply
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
-from app.features.form_builder.engine.ui4.spec import PropertyEntry
+from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import BoolValue, OpaqueValue, StringValue
 from app.features.form_builder.engine.ui4.writer import write_ui
 
@@ -367,6 +367,21 @@ def test_float_uses_eight_decimals_and_double_uses_fifteen() -> None:
     )
     assert "<float>1.50000000</float>" in saved
     assert "<double>1.500000000000000</double>" in saved
+
+
+def test_insert_rejects_an_illegal_xml_char() -> None:
+    document = _load(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><widget class="QWidget" name="Form"/></ui>
+"""
+    ).document
+    spec = NodeSpec(
+        kind="widget",
+        id=NodeId(50),
+        fields=(("class_name", "QPushButton"), ("object_name", "a\x00b")),
+    )
+    with pytest.raises(OpError):
+        apply(document, InsertNodeOp(document.root.id, "children", 0, spec))
 
 
 def test_illegal_xml_char_is_rejected() -> None:

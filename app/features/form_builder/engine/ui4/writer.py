@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, IdAllocator, NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -693,7 +693,7 @@ def _group_pending(buckets: Dict[Tuple[str, int], List[OpaqueNode]], group: str)
     return any(key[0] == group for key in buckets)
 
 
-def _string_attrs(item: StringValue | StringListValue) -> str:
+def _string_attrs(item: Union[StringValue, StringListValue]) -> str:
     parts: List[str] = []
     if item.notr is not None:
         parts.append(' notr="%s"' % format_bool(item.notr))
