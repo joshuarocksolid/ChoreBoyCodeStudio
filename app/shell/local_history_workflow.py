@@ -429,7 +429,13 @@ class LocalHistoryWorkflow:
         except (OSError, UnicodeDecodeError):
             return ""
 
-    def restore_local_history_content_to_buffer(self, file_path: str, content: str) -> None:
+    def restore_local_history_content_to_buffer(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        reason: str = "history",
+    ) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None:
             target_path = Path(file_path).expanduser().resolve()
@@ -441,7 +447,7 @@ class LocalHistoryWorkflow:
         if tab_state is None:
             QMessageBox.warning(self._host.parent_widget(), "Local History", f"Could not open {Path(file_path).name} for restore.")
             return
-        self._apply_content_to_open_tab(file_path, content)
+        self._apply_content_to_open_tab(file_path, content, reason=reason)
 
     def show_local_history_for_entry(self, summary: LocalHistoryFileSummary) -> None:
         self.show_local_history_for_path(
@@ -759,12 +765,17 @@ class LocalHistoryWorkflow:
         response = exec_qt(dialog)
         if response == QDialog.Accepted:
             if restore_closed_file or editor_widget is None:
-                self.restore_local_history_content_to_buffer(draft_entry.file_path, draft_entry.content)
+                self.restore_local_history_content_to_buffer(
+                    draft_entry.file_path,
+                    draft_entry.content,
+                    reason="draft",
+                )
             else:
                 self._apply_content_to_open_tab(
                     draft_entry.file_path,
                     draft_entry.content,
                     editor_widget=editor_widget,
+                    reason="draft",
                 )
         elif dialog.discard_draft:
             self._autosave_store.delete_draft(
