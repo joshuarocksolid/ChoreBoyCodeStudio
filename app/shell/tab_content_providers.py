@@ -170,6 +170,8 @@ class TabContentProviderRegistry:
         return max(matches, key=lambda provider: provider.priority)
 
     def bind(self, file_path: str, surface: TabSurface, provider_id: str) -> None:
+        if file_path in self._surfaces:
+            raise ValueError(f"tab content path already bound: {file_path}")
         self._surfaces[file_path] = _PathBinding(surface=surface, provider_id=provider_id)
 
     def unbind(self, file_path: str) -> Optional[TabSurface]:
@@ -179,9 +181,12 @@ class TabContentProviderRegistry:
         return binding.surface
 
     def rekey(self, old_path: str, new_path: str) -> None:
-        binding = self._surfaces.pop(old_path, None)
-        if binding is not None:
-            self._surfaces[new_path] = binding
+        if old_path not in self._surfaces:
+            return
+        if new_path != old_path and new_path in self._surfaces:
+            raise ValueError(f"tab content path already bound: {new_path}")
+        binding = self._surfaces.pop(old_path)
+        self._surfaces[new_path] = binding
 
     def forget_all(self) -> None:
         self._surfaces.clear()

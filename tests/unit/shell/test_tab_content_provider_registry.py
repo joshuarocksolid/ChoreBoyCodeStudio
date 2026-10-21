@@ -51,6 +51,32 @@ def test_higher_priority_provider_wins() -> None:
     assert chosen is high
 
 
+def test_bind_rejects_a_path_that_is_already_bound() -> None:
+    registry = TabContentProviderRegistry()
+    first = object()
+    registry.bind("/tmp/notes.md", first, "markdown")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="already bound"):
+        registry.bind("/tmp/notes.md", object(), "markdown")  # type: ignore[arg-type]
+
+    assert registry.surface_for_path("/tmp/notes.md") is first
+    assert registry.provider_id_for("/tmp/notes.md") == "markdown"
+
+
+def test_rekey_rejects_a_target_that_is_already_bound() -> None:
+    registry = TabContentProviderRegistry()
+    moving = object()
+    kept = object()
+    registry.bind("/tmp/old.md", moving, "markdown")  # type: ignore[arg-type]
+    registry.bind("/tmp/new.md", kept, "markdown")  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="already bound"):
+        registry.rekey("/tmp/old.md", "/tmp/new.md")
+
+    assert registry.surface_for_path("/tmp/old.md") is moving
+    assert registry.surface_for_path("/tmp/new.md") is kept
+
+
 def test_forced_text_skips_matching_providers() -> None:
     registry = TabContentProviderRegistry()
     registry.register(_Provider("markdown", 0, {"/tmp/notes.md"}))
