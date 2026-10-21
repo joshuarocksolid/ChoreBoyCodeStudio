@@ -20,24 +20,36 @@ import sys
 api = sys.argv[1]
 blocked = [name for name in sys.argv[2].split(",") if name]
 os.environ["CBCS_QT_API"] = api
+attempted = []
 
-class _Blocker:
+class _Recorder:
     def find_spec(self, fullname, path, target=None):
         root = fullname.split(".", 1)[0]
         if root in blocked:
-            raise ImportError("blocked import " + fullname)
+            attempted.append(fullname)
         return None
 
-sys.meta_path.insert(0, _Blocker())
+recorder = _Recorder()
+sys.meta_path.insert(0, recorder)
+probe_name = blocked[0] + ".QtCore"
+if recorder.find_spec(probe_name, None) is not None:
+    raise SystemExit("finder returned a spec for " + probe_name)
+if attempted != [probe_name]:
+    raise SystemExit("finder did not record " + probe_name)
+attempted.clear()
+
 import app.features
 from app.features.spec import FEATURE_SPECS, feature_is_enabled
 
 for spec in FEATURE_SPECS:
     feature_is_enabled(spec)
 
-leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in blocked)
+blocked_roots = set(blocked)
+leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in blocked_roots)
 if leaked:
     raise SystemExit("leaked " + ",".join(leaked))
+if attempted:
+    raise SystemExit("attempted " + ",".join(attempted))
 """
 
 
