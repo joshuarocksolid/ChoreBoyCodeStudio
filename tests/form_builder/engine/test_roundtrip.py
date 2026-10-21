@@ -146,6 +146,42 @@ def test_ids_follow_schema_preorder_and_stay_stable() -> None:
     assert layout_parent.id == root.id
 
 
+def test_spaced_bool_stays_opaque_and_matches_qt(qapp: object) -> None:
+    del qapp
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="enabled">
+   <bool> true</bool>
+  </property>
+  <property name="font">
+   <font>
+    <bold> true</bold>
+   </font>
+  </property>
+ </widget>
+</ui>
+"""
+    from app.qt.QtCore import QBuffer, QIODevice
+    from app.qt.QtUiTools import QUiLoader
+
+    def load(xml: str) -> object:
+        buffer = QBuffer()
+        buffer.setData(xml.encode("utf-8"))
+        buffer.open(QIODevice.ReadOnly)
+        widget = QUiLoader().load(buffer)
+        assert widget is not None
+        return widget
+
+    original = load(text)
+    saved = write_ui(_load(text).document).text
+    assert "<bool> true</bool>" in saved
+    assert "<bold> true</bold>" in saved
+    rewritten = load(saved)
+    assert original.isEnabled() == rewritten.isEnabled()
+    assert original.font().bold() == rewritten.font().bold()
+
+
 def test_unknown_sibling_after_a_wrapper_stays_outside() -> None:
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">

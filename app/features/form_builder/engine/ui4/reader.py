@@ -829,7 +829,7 @@ def _parse_value(node: _XNode) -> Optional[Value]:
     if tag in _DEFERRED_VALUES or tag not in VALUE_CLASSES:
         return None
     if tag == "bool":
-        text = _exact_text(node).strip()
+        text = _exact_text(node)
         if text == "true":
             return BoolValue(True)
         if text == "false":
@@ -992,7 +992,7 @@ def _parse_font(node: _XNode) -> Optional[FontValue]:
                 return None
             values[child.tag] = number
         elif child.tag in _FONT_BOOL:
-            text = _exact_text(child).strip()
+            text = _exact_text(child)
             if text not in ("true", "false"):
                 return None
             values[child.tag] = text == "true"
