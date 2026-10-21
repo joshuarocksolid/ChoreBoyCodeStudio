@@ -291,14 +291,6 @@ class SemanticSession:
             if on_error is not None:
                 on_error(exc)
 
-        self.request_completion_fast(
-            request=request,
-            prefix=popup_prefix,
-            request_generation=request_generation,
-            on_success=on_fast_success,
-            on_error=on_fast_error,
-        )
-
         direct_query = resolve_runtime_introspection_query(completion_context)
         if direct_query is not None:
             start_runtime_tier(direct_query)
@@ -307,8 +299,9 @@ class SemanticSession:
             and completion_context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
         ):
             # Jedi inference takes 70-160 ms on ChoreBoy; keep it off the UI thread
-            # and on the serialized lane with the other Jedi work. It runs before
-            # the heuristic fast tier: a cached runtime list then paints first.
+            # and on the serialized lane with the other Jedi work. It is queued before
+            # the heuristic fast tier (230 ms for btn.), so a cached runtime list
+            # paints first.
             self._submit(
                 key=f"runtime_infer:{request.current_file_path}",
                 priority=-1,
@@ -321,6 +314,14 @@ class SemanticSession:
                 on_success=start_runtime_tier,
                 on_error=on_fast_error,
             )
+
+        self.request_completion_fast(
+            request=request,
+            prefix=popup_prefix,
+            request_generation=request_generation,
+            on_success=on_fast_success,
+            on_error=on_fast_error,
+        )
 
         def on_semantic_success(result: CompletionRequestResult) -> None:
             semantic_envelope[0] = result.envelope
