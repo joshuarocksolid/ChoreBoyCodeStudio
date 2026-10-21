@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from app.bootstrap.paths import PathInput
 from app.intelligence.completion_models import CompletionItem
@@ -160,6 +160,28 @@ class SemanticFacade:
             source_text=source_text,
             cursor_position=cursor_position,
             max_results=max_results,
+        )
+
+    def jedi_inference_scope(self) -> tuple[dict[Any, Any], Optional[PathInput]]:
+        """Cache handed to runtime-target inference so it reuses the warmed project."""
+
+        return self._jedi_engine.inference_scope()
+
+    def warm_open_buffer(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+    ) -> str:
+        """Infer the open buffer's imports and the receiver at the cursor."""
+
+        return self._jedi_engine.warm_open_buffer(
+            project_root=project_root,
+            current_file_path=current_file_path,
+            source_text=source_text,
+            cursor_position=cursor_position,
         )
 
     def warm_completion(self, *, project_root: str | None) -> None:

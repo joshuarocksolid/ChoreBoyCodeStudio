@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 import logging
 import time
-from pathlib import Path
-from typing import Optional, Protocol
+from typing import Any, Optional, Protocol
+
+from app.bootstrap.paths import PathInput
 
 from app.intelligence.completion_metrics import log_completion_phase
 
@@ -24,6 +26,7 @@ from app.intelligence.runtime_members import (
 from app.intelligence.trusted_runtime_whitelist import is_whitelisted_target_path
 
 _logger = logging.getLogger(__name__)
+_IMPORT_WARM_LIMIT = 4
 
 
 class RuntimeIntrospectionPort(Protocol):
@@ -60,6 +63,8 @@ def resolve_runtime_introspection_query_with_inference(
     project_root: str | None,
     current_file_path: str,
     source_text: str,
+    project_cache: dict[Any, Any] | None = None,
+    state_root: Optional[PathInput] = None,
 ) -> RuntimeIntrospectionQuery | None:
     """Resolve introspection target from import paths or Jedi-inferred types."""
 
@@ -76,6 +81,8 @@ def resolve_runtime_introspection_query_with_inference(
         source_text=source_text,
         base_expression=context.base_expression,
         cursor_position=context.cursor_position,
+        project_cache=project_cache,
+        state_root=state_root,
     )
     if not inferred:
         return None
@@ -89,79 +96,155 @@ def infer_trusted_runtime_target_path(
     source_text: str,
     base_expression: str,
     cursor_position: int,
+    project_cache: dict[Any, Any] | None = None,
+    state_root: Optional[PathInput] = None,
 ) -> str:
     """Use Jedi inference to map a receiver expression to a whitelisted runtime path."""
 
     expression = str(base_expression or "").strip()
     if not expression:
         return ""
+    position = _receiver_line_column(source_text, cursor_position)
+    if position is None:
+        return ""
+    script = _script_for_inference(
+        project_root=project_root,
+        current_file_path=current_file_path,
+        source_text=source_text,
+        project_cache=project_cache,
+        state_root=state_root,
+    )
+    if script is None:
+        return ""
+    return _infer_whitelisted_at(script, position[0], position[1])
+
+
+def warm_open_buffer_target(
+    *,
+    project_root: str | None,
+    current_file_path: str,
+    source_text: str,
+    cursor_position: int,
+    project_cache: dict[Any, Any],
+    state_root: Optional[PathInput],
+) -> str:
+    """Parse one open buffer and infer its imports, then the cursor receiver.
+
+    The cursor target is what the first Ctrl+Space paints. Import inference
+    loads modules such as PySide into the shared Jedi project so that infer
+    is not paid again on the keypress.
+    """
+
+    script = _script_for_inference(
+        project_root=project_root,
+        current_file_path=current_file_path,
+        source_text=source_text,
+        project_cache=project_cache,
+        state_root=state_root,
+    )
+    if script is None:
+        return ""
+    for line_number, column in _import_infer_sites(source_text):
+        try:
+            script.infer(line_number, column)
+        except Exception:
+            _logger.debug("Buffer warmup skipped an import infer", exc_info=True)
+    position = _receiver_line_column(source_text, cursor_position)
+    if position is None:
+        return ""
+    return _infer_whitelisted_at(script, position[0], position[1])
+
+
+def _script_for_inference(
+    *,
+    project_root: str | None,
+    current_file_path: str,
+    source_text: str,
+    project_cache: dict[Any, Any] | None,
+    state_root: Optional[PathInput],
+) -> Any:
+    if project_cache is not None:
+        from app.intelligence.jedi_script_factory import create_script
+
+        try:
+            return create_script(
+                state_root=state_root,
+                project_cache=project_cache,
+                project_root=project_root,
+                current_file_path=current_file_path,
+                source_text=source_text,
+            )
+        except RuntimeError:
+            return None
 
     started_at = time.perf_counter()
     try:
         import jedi
     except ImportError:
-        return ""
-
+        return None
     try:
         from app.intelligence.jedi_runtime import initialize_jedi_runtime
 
-        initialize_jedi_runtime(None)
+        initialize_jedi_runtime(state_root)
     except Exception:
         pass
     log_completion_phase("jedi_runtime", (time.perf_counter() - started_at) * 1000.0, site="infer_target")
+    try:
+        project = None
+        if project_root:
+            from app.intelligence.jedi_project_cache import get_project
 
+            project = get_project({}, project_root)
+        else:
+            log_completion_phase("jedi_project_create", 0.0, site="infer_target")
+        return jedi.Script(code=source_text, path=current_file_path, project=project)
+    except Exception as exc:
+        _logger.debug("Jedi script failed for runtime introspection: %s", exc)
+        return None
+
+
+def _receiver_line_column(source_text: str, cursor_position: int) -> tuple[int, int] | None:
     column = max(0, min(cursor_position, len(source_text))) - 1
     while column >= 0 and source_text[column] != ".":
         column -= 1
     if column < 0:
-        return ""
+        return None
     column -= 1
     while column >= 0 and source_text[column].isspace():
         column -= 1
     if column < 0:
-        return ""
-
+        return None
     line_number = source_text.count("\n", 0, column + 1) + 1
     line_start = source_text.rfind("\n", 0, column + 1) + 1
-    line_column = column - line_start
+    return line_number, column - line_start
 
+
+def _import_infer_sites(source_text: str) -> list[tuple[int, int]]:
     try:
-        project_started = time.perf_counter()
-        if project_root:
-            from app.bootstrap.paths import project_manifest_path
-            from app.project.import_layout import resolve_project_import_layout
-            from app.project.project_manifest import load_project_manifest
+        tree = ast.parse(source_text)
+    except SyntaxError:
+        return []
+    sites: list[tuple[int, int]] = []
+    for node in tree.body:
+        aliases: list[ast.alias] = []
+        if isinstance(node, ast.Import):
+            aliases = list(node.names)
+        elif isinstance(node, ast.ImportFrom):
+            aliases = list(node.names)
+        for alias in aliases:
+            if len(sites) >= _IMPORT_WARM_LIMIT:
+                return sites
+            end_column = alias.end_col_offset
+            if alias.lineno is None or end_column is None:
+                continue
+            sites.append((alias.lineno, max(0, end_column - 1)))
+    return sites
 
-            root = Path(project_root).expanduser().resolve()
-            metadata = None
-            manifest_path = project_manifest_path(root)
-            if manifest_path.is_file():
-                try:
-                    metadata = load_project_manifest(manifest_path)
-                except Exception:
-                    metadata = None
-            layout = resolve_project_import_layout(root, metadata)
-            project = jedi.Project(
-                str(root),
-                added_sys_path=layout.jedi_added_sys_path,
-                load_unsafe_extensions=False,
-                smart_sys_path=True,
-            )
-            log_completion_phase(
-                "jedi_project_create",
-                (time.perf_counter() - project_started) * 1000.0,
-                site="infer_target",
-            )
-            script = jedi.Script(code=source_text, path=current_file_path, project=project)
-        else:
-            script = jedi.Script(code=source_text, path=current_file_path)
-            log_completion_phase(
-                "jedi_project_create",
-                (time.perf_counter() - project_started) * 1000.0,
-                site="infer_target",
-            )
+
+def _infer_whitelisted_at(script: Any, line_number: int, column: int) -> str:
+    try:
         infer_started = time.perf_counter()
-        inferred = script.infer(line_number, line_column)
+        inferred = script.infer(line_number, column)
         log_completion_phase(
             "jedi_infer_target",
             (time.perf_counter() - infer_started) * 1000.0,
@@ -170,7 +253,6 @@ def infer_trusted_runtime_target_path(
     except Exception as exc:
         _logger.debug("Jedi infer failed for runtime introspection: %s", exc)
         return ""
-
     for definition in inferred:
         full_name = str(getattr(definition, "full_name", "") or "").strip()
         if full_name and is_whitelisted_target_path(full_name):
@@ -178,7 +260,7 @@ def infer_trusted_runtime_target_path(
         module_name = str(getattr(definition, "module_name", "") or "").strip()
         name = str(getattr(definition, "name", "") or "").strip()
         if module_name and name:
-            candidate = f"{module_name}.{name}" if module_name else name
+            candidate = f"{module_name}.{name}"
             if is_whitelisted_target_path(candidate):
                 return candidate
         if module_name and is_whitelisted_target_path(module_name):

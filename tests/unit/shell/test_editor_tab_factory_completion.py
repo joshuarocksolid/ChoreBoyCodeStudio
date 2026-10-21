@@ -11,10 +11,16 @@ from app.shell.editor_tab_factory import EditorTabFactory
 pytestmark = pytest.mark.unit
 
 
+class _Signal:
+    def connect(self, _callback: object) -> None:
+        return None
+
+
 class _RecordingEditor:
     def __init__(self) -> None:
         self.mode = ""
         self.min_chars = 0
+        self.cursorPositionChanged = _Signal()
 
     def setObjectName(self, _name: str) -> None:
         return None

@@ -46,6 +46,33 @@ class JediEngine:
         """Return whether the Jedi runtime is importable."""
         return initialize_jedi_runtime(self._state_root).is_available
 
+    def inference_scope(self) -> tuple[dict[tuple[str, tuple[str, ...]], Any], Optional[PathInput]]:
+        """Project cache and state root shared with runtime-target inference."""
+
+        return self._project_cache, self._state_root
+
+    def warm_open_buffer(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+    ) -> str:
+        """Parse this buffer on the shared Jedi project and return a runtime target."""
+
+        from app.intelligence.runtime_introspection import warm_open_buffer_target
+
+        with self._lock:
+            return warm_open_buffer_target(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                project_cache=self._project_cache,
+                state_root=self._state_root,
+            )
+
     def warm_completion(self, *, project_root: str | None) -> None:
         """Import Jedi and complete one tiny buffer. Later calls only cache the project."""
 
