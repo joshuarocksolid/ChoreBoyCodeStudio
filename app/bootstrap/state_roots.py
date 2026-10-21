@@ -114,10 +114,14 @@ def _resolve_shared_or_local() -> SettingsRootChoice:
 
 
 def settings_dir_writable(path: Path) -> tuple[bool, str]:
-    """Return whether JSON can be written. This does not lock or open SQLite."""
+    """Return whether JSON can be written. This does not lock or open SQLite.
+
+    Only the last folder is created. A missing parent usually means the share
+    is not mounted, and creating it would split settings onto this computer.
+    """
     probe = path / f"cbcs_settings_write_probe_{uuid.uuid4().hex}.tmp"
     try:
-        path.mkdir(parents=True, exist_ok=True)
+        path.mkdir(exist_ok=True)
         probe.write_text("ok", encoding="utf-8")
         return True, ""
     except OSError as exc:

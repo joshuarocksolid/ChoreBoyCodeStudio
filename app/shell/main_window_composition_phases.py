@@ -528,6 +528,8 @@ def _continue_optional_startup_step(label: str, action: Callable[[], None]) -> N
 
 def _publish_startup_degradation(ctx: ShellCompositionContext) -> None:
     window = ctx.w
+    if not window._state_root and resolve_settings_root(None).fell_back_to_local:
+        ctx.startup_warnings.append("Shared settings are not available; using this computer's settings")
     if ctx.startup_warnings:
         status_controller = getattr(window, "_status_controller", None)
         set_warning = getattr(status_controller, "set_runtime_warning", None)

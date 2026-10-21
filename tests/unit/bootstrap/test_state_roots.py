@@ -91,6 +91,19 @@ def test_unreachable_shared_root_falls_back_and_records_problem(
     assert str(blocked / "settings") in problems[0].folder
 
 
+def test_pointer_under_an_unmounted_share_falls_back_without_creating_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _isolate(monkeypatch, tmp_path)
+    unmounted = tmp_path / "net1"
+    _write_pointer(paths.DEFAULT_PRODUCT_STATE_LAYOUT.shop_pointer_path, unmounted / "cbcs_settings")
+
+    choice = state_roots.resolve_settings_root()
+
+    assert choice.fell_back_to_local
+    assert not unmounted.exists()
+
+
 def test_legacy_home_symlink_into_share_is_the_settings_root(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
