@@ -250,6 +250,7 @@ class OpaqueNode(Node):
         ...
 
     @property
-    def anchor(self) -> str:
-        """The write-order group this element followed in the input ("" = first)."""
+    def anchor(self) -> Tuple[str, int]:
+        """``(group, n)``: written after the n-th typed entry of write-order group
+        ``group`` (an earlier duplicate property stays earlier). ``("", 0)`` = first."""
         ...

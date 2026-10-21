@@ -5,13 +5,18 @@ like ``run_plugin_host.py``). This is the only place user code, promoted
 custom widget classes, generated modules and ``*_rc.py`` modules run.
 
 Startup order:
-1. ``frames = os.fdopen(os.dup(1), "w", buffering=1)``; ``os.dup2(2, 1)`` so any
+1. ``requests = os.fdopen(os.dup(0), "r")``; ``os.dup2(<devnull fd>, 0)`` so user
+   code reading stdin gets EOF instead of eating frames.
+   ``frames = os.fdopen(os.dup(1), "w", buffering=1)``; ``os.dup2(2, 1)`` so any
    C-level stdout write lands on stderr and the frame stream stays clean.
 2. ``sys.stdout`` is replaced by a writer that turns user prints into ``Log``
    frames (stream ``stdout``). A Qt message handler emits ``Log`` (stream ``qt``).
 3. Force PySide6 (``CBCS_QT_API=pyside6`` in the env), create QApplication,
-   send ``Ready``, then serve stdin frames on a reader thread that posts each
-   decoded message to the GUI thread.
+   send ``Ready``, then serve ``requests`` frames on a reader thread that posts
+   each decoded message to the GUI thread (Ping is answered there too).
+   Before each LoadForm: purge ``sys.modules`` entries under the previous
+   project root; register ``resource_modules``; pre-import ``promoted`` classes
+   (stub subclass of ``extends`` + FB602 on failure).
 4. Exit 0 on Shutdown, on stdin EOF (host died), or after IDLE_EXIT_SECONDS
    with no views. Exit 3 after a protocol mismatch.
 Must not import ``app.shell``, ``app.editors``, ``integration`` or any CBCS

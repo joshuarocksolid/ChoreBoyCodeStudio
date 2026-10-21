@@ -48,7 +48,7 @@ class GeneratedHeader:
     """Parsed header of a generated file (see ``render_header``)."""
 
     codegen_version: int
-    source_sha256: str
+    source_sha256: Optional[str]
     body_sha256: str
 
 
@@ -77,13 +77,27 @@ def generate_form_module(
     doc: UiDocument,
     *,
     scope: FormScope,
-    source_bytes: bytes,
+    source_bytes: Optional[bytes],
     options: CodegenOptions = CodegenOptions(),
 ) -> CodegenResult:
     """Generate ``ui_<name>.py`` for a project or adopted form.
 
     ``source_bytes``: the exact bytes just written to the ``.ui`` (hashed into
-    the header). Refuses (FB506 Info, text None) for external scope.
+    the header), or None for preview (no ``cbcs-source-sha256`` line is
+    written). Refuses (FB506 Info, text None) for external scope.
+
+    Names on disk that are not valid identifiers, are keywords, or clash with
+    ``setupUi``, ``retranslateUi`` or ``_cbcs_*``/``cbcs_*`` give FB502 Error
+    naming the node; ``text`` is None and the old file stays.
+
+    String literals: ``u"`` + escaped text + ``"``. Backslash, double quote,
+    LF, CR and tab use their two-character escapes; other code points below
+    U+0020 and U+007F use ``\\xNN``; surrogates use ``\\uNNNN``; every other
+    character is raw UTF-8. Never ``repr()`` (its output depends on the Python
+    version's Unicode tables).
+
+    QSplitters with ``cbcsSplitterSizes`` get ``setSizes([...])`` at the end of
+    ``setupUi`` (before ``retranslateUi``) through a fixed core helper.
 
     Body shape: ``uic -g python`` 6.8.3 for everything uic emits (same statement
     order, same names, ``retranslateUi``, ``connectSlotsByName``), then, only when
@@ -96,7 +110,7 @@ def generate_form_module(
 
 
 def render_header(*, ui_file_name: str, window_file_name: str, has_logic: bool,
-                  source_sha256: str, body_sha256: str) -> str:
+                  source_sha256: Optional[str], body_sha256: str) -> str:
     """The exact header, ending with a newline::
 
         # -*- coding: utf-8 -*-
@@ -107,7 +121,7 @@ def render_header(*, ui_file_name: str, window_file_name: str, has_logic: bool,
         ## The behaviour below (rules, checks, data) runs only through this file.      [has_logic]
         ## Loading {ui_file_name} with QUiLoader gives the layout without the behaviour. [has_logic]
         ## cbcs-codegen: {CODEGEN_VERSION}
-        ## cbcs-source-sha256: {source_sha256}
+        ## cbcs-source-sha256: {source_sha256}       [omitted when source_sha256 is None]
         ## cbcs-body-sha256: {body_sha256}
         ################################################################################
 
@@ -125,7 +139,7 @@ def read_header(text: str) -> Optional[GeneratedHeader]:
 def is_hand_edited(text: str) -> bool:
     """True when the header is missing/malformed or sha256(body) differs from
     ``cbcs-body-sha256``. Save then copies the file to
-    ``<project>/cbcs/form_builder/hand_edits/<name>.<body8>.py`` (pruned
+    ``<project>/cbcs/form_builder/hand_edits/<name>.<body8>.py.txt`` (pruned
     from packages) before
     overwriting, and reports FB501 with an "Open the saved copy" fix."""
     ...

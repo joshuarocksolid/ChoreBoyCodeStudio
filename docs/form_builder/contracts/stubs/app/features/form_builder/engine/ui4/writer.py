@@ -26,7 +26,11 @@ class WriteResult:
 
 
 def write_ui(doc: UiDocument) -> WriteResult:
-    """Serialize. A pure function of the document's content (ids excluded):
+    """Serialize per CONTRACTS.md 8.2. Escaping: ``& < > "`` in text and
+    attributes; tab/LF/CR as character references in attributes; CR in text as
+    ``&#13;``; non-ASCII as raw UTF-8. No trailing whitespace outside text
+    content. Empty-element forms and real precision follow the M0.4b-pinned
+    tables (provisional until then). A pure function of the document's content (ids excluded):
     no clock, locale, environment, hash seed or set iteration. O(form).
     Budget: 10 ms CPU for a 300-widget form."""
     ...
