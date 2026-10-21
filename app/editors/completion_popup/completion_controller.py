@@ -77,6 +77,24 @@ CLOSE_MODE = "mode_changed"
 CLOSE_CLICK_AWAY = "click_away"
 
 
+def completion_selection_label_to_keep(
+    *,
+    event: str,
+    visible: bool,
+    user_moved: bool,
+    current_label: str,
+) -> str:
+    """Label to reselect after a refresh, or empty to take the new first row.
+
+    A later source merging into an open list must not move the highlight.
+    Typing still jumps to the best match unless the user already moved.
+    """
+
+    if visible and current_label and (user_moved or event == "update"):
+        return current_label
+    return ""
+
+
 class CompletionHost(Protocol):
     """What the controller needs from the widget that owns the text."""
 
@@ -495,10 +513,13 @@ class CompletionController(QObject):
             self._reopen_key = key
             self._record(event, prefix=query, rows=len(ranked), closed=CLOSE_TYPED_FULL_NAME)
             return False
-        keep = ""
         current = self.current_item()
-        if self.is_visible() and self._user_moved_selection and current is not None:
-            keep = current.label
+        keep = completion_selection_label_to_keep(
+            event=event,
+            visible=self.is_visible(),
+            user_moved=self._user_moved_selection,
+            current_label="" if current is None else current.label,
+        )
         items = [self._base_items[row.index] for row in ranked]
         self._model.set_rows(items, [row.positions for row in ranked])
         row = 0

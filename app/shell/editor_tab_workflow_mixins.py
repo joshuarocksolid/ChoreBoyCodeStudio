@@ -91,6 +91,7 @@ class EditorTabMarkdownDelegates:
 class EditorTabBufferDelegates:
     _buffer_workflow: Any
     _editor_tabs_coordinator: Any
+    _host: Any
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_text_changed(file_path, editor_widget)
@@ -112,6 +113,9 @@ class EditorTabBufferDelegates:
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
         self._buffer_workflow.handle_editor_tab_changed(tab_index)
+        from app.shell.completion_warmup import schedule_open_buffer_warmup
+
+        schedule_open_buffer_warmup(self._host.parent_widget())
 
 
 class EditorTabLifecycleDelegates:

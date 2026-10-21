@@ -108,6 +108,13 @@ class SemanticWorker:
             for key in list(self._generations):
                 self._generations[key] += 1
 
+    def invalidate(self, key: str) -> None:
+        """Drop a queued task. A task that has already started still finishes."""
+
+        with self._lock:
+            if key in self._generations:
+                self._generations[key] += 1
+
     def shutdown(self) -> None:
         """Stop the worker thread."""
         with self._lock:

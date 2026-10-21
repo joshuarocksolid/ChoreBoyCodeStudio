@@ -11,7 +11,11 @@ U = TypeVar("U")
 
 from app.bootstrap.paths import PathInput
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
-from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
+from app.intelligence.completion_context import (
+    CompletionContext,
+    CompletionSyntacticContext,
+    build_completion_context,
+)
 from app.intelligence.completion_metrics import log_completion_phase
 from app.intelligence.completion_models import (
     CompletionFastResult,
@@ -153,6 +157,62 @@ class SemanticSession:
             dispatch_on_main_thread=False,
         )
 
+    def request_buffer_warmup(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+        prefetch_target: Callable[[str], None] | None = None,
+    ) -> None:
+        """Infer the open buffer while the worker is otherwise idle.
+
+        Stores a dotted receiver's runtime target and may prefetch its member
+        list so the next Ctrl+Space paints without building a Jedi script.
+        """
+
+        def task() -> None:
+            started_at = time.perf_counter()
+            try:
+                target = self._semantic_facade.warm_open_buffer(
+                    project_root=project_root,
+                    current_file_path=current_file_path,
+                    source_text=source_text,
+                    cursor_position=cursor_position,
+                )
+                context = build_completion_context(
+                    source_text=source_text,
+                    cursor_position=cursor_position,
+                    current_file_path=current_file_path,
+                    project_root=project_root,
+                    trigger_is_manual=True,
+                    min_prefix_chars=1,
+                )
+                if (
+                    target
+                    and context.syntactic_context == CompletionSyntacticContext.DOTTED_MEMBER
+                    and context.base_expression
+                ):
+                    self._runtime_targets[(current_file_path, context.base_expression)] = target
+                    if prefetch_target is not None:
+                        try:
+                            prefetch_target(target)
+                        except Exception:
+                            log_completion_phase("buffer_warmup_prefetch", 0.0, ok=False)
+            finally:
+                log_completion_phase(
+                    "buffer_warmup",
+                    (time.perf_counter() - started_at) * 1000.0,
+                )
+
+        self._submit(
+            key=f"buffer_warmup:{current_file_path}",
+            priority=70,
+            task=task,
+            dispatch_on_main_thread=False,
+        )
+
     def shutdown(self) -> None:
         """Stop the backing worker threads."""
         self._worker.shutdown()
@@ -271,6 +331,7 @@ class SemanticSession:
         """Orchestrate fast, semantic, and runtime completion tiers for one editor request."""
 
         popup_prefix = completion_context.prefix
+        self._worker.invalidate(f"buffer_warmup:{request.current_file_path}")
         self._completion_resolver.bind_runtime_members(runtime_coordinator)
         runtime_items: list[CompletionItem] = []
         worker_calls: list[Callable[[], None]] = []
@@ -306,6 +367,27 @@ class SemanticSession:
             runtime_items.extend(attached)
             paint_merged(fast=fast_envelope[0], semantic=semantic_envelope[0])
 
+        members_in_flight = [False]
+        released = [False]
+
+        def release_after_paint() -> None:
+            if released[0]:
+                return
+            released[0] = True
+
+            def submit() -> None:
+                for call in worker_calls:
+                    call()
+
+            if runtime_items:
+                # The list is already on the UI thread. Jedi holds the GIL, so
+                # wait until that paint has a turn before the next script.
+                timer = threading.Timer(_PAINT_GRACE_SECONDS, submit)
+                timer.daemon = True
+                timer.start()
+            else:
+                submit()
+
         def start_runtime_tier(runtime_query: RuntimeIntrospectionQuery | None) -> None:
             coordinator = runtime_coordinator
             if coordinator is None or runtime_query is None:
@@ -324,25 +406,62 @@ class SemanticSession:
                     max_results=request.max_results,
                 )
 
+            def on_members(items: list[CompletionItem]) -> None:
+                add_runtime_items(target_path, items)
+                release_after_paint()
+
             def introspection_error(exc: Exception) -> None:
                 if on_error is not None:
                     on_error(exc)
+                release_after_paint()
 
+            members_in_flight[0] = True
             schedule_background_task(
                 f"runtime_introspect:{target_path}",
                 introspection_task,
-                lambda items: add_runtime_items(target_path, items),
+                on_members,
                 introspection_error,
             )
 
         def on_fast_success(result: CompletionFastResult) -> None:
             fast_envelope[0] = result.envelope
-            paint_merged(fast=result.envelope, semantic=None)
+            paint_merged(fast=result.envelope, semantic=semantic_envelope[0])
 
         def on_fast_error(exc: Exception) -> None:
             if on_error is not None:
                 on_error(exc)
 
+        def submit_runtime_infer(
+            on_inferred: Callable[[RuntimeIntrospectionQuery | None], None],
+            *,
+            reuse_if_warmed: bool = False,
+        ) -> None:
+            project_cache, state_root = self._semantic_facade.jedi_inference_scope()
+
+            def task() -> RuntimeIntrospectionQuery | None:
+                if reuse_if_warmed:
+                    # Warmup can store the target while this infer waits.
+                    warmed = self._runtime_targets.get(receiver_key)
+                    if warmed:
+                        return RuntimeIntrospectionQuery(target_path=warmed, member_prefix="")
+                return resolve_runtime_introspection_query_with_inference(
+                    context=completion_context,
+                    project_root=completion_context.project_root,
+                    current_file_path=completion_context.file_path,
+                    source_text=completion_context.source_text,
+                    project_cache=project_cache,
+                    state_root=state_root,
+                )
+
+            self._submit(
+                key=f"runtime_infer:{request.current_file_path}",
+                priority=-1,
+                task=task,
+                on_success=on_inferred,
+                on_error=on_fast_error,
+            )
+
+        cold_infer: list[Callable[[], None]] = []
         direct_query = resolve_runtime_introspection_query(completion_context)
         if direct_query is not None:
             start_runtime_tier(direct_query)
@@ -352,34 +471,39 @@ class SemanticSession:
         ):
             receiver_key = (request.current_file_path, completion_context.base_expression)
             remembered = self._runtime_targets.get(receiver_key)
-            if remembered:
-                # Paint the member list of the last inferred class at once; the
-                # inference below corrects it if the receiver changed type.
-                start_runtime_tier(RuntimeIntrospectionQuery(target_path=remembered, member_prefix=""))
 
             def on_inferred(runtime_query: RuntimeIntrospectionQuery | None) -> None:
                 if runtime_query is None:
                     self._runtime_targets.pop(receiver_key, None)
+                    if not members_in_flight[0]:
+                        release_after_paint()
                     return
                 self._runtime_targets[receiver_key] = runtime_query.target_path
                 start_runtime_tier(runtime_query)
+                if not members_in_flight[0]:
+                    release_after_paint()
 
-            # Jedi inference takes 70-160 ms on ChoreBoy; keep it off the UI thread
-            # and on the serialized lane with the other Jedi work. It is queued before
-            # the heuristic fast tier (230 ms for btn.), so a cached runtime list
-            # paints first.
-            worker_calls.append(lambda: self._submit(
-                key=f"runtime_infer:{request.current_file_path}",
-                priority=-1,
-                task=lambda: resolve_runtime_introspection_query_with_inference(
-                    context=completion_context,
-                    project_root=completion_context.project_root,
-                    current_file_path=completion_context.file_path,
-                    source_text=completion_context.source_text,
-                ),
-                on_success=on_inferred,
-                on_error=on_fast_error,
-            ))
+            if remembered:
+                # The member list can paint before Jedi runs again. A later
+                # infer still corrects the type if the receiver changed.
+                start_runtime_tier(
+                    RuntimeIntrospectionQuery(target_path=remembered, member_prefix="")
+                )
+                worker_calls.append(lambda: submit_runtime_infer(on_inferred))
+            else:
+                def start_cold_infer() -> None:
+                    remembered_now = self._runtime_targets.get(receiver_key)
+                    if remembered_now:
+                        on_inferred(
+                            RuntimeIntrospectionQuery(
+                                target_path=remembered_now,
+                                member_prefix="",
+                            )
+                        )
+                        return
+                    submit_runtime_infer(on_inferred, reuse_if_warmed=True)
+
+                cold_infer.append(start_cold_infer)
 
         worker_calls.append(lambda: self.request_completion_fast(
             request=request,
@@ -405,19 +529,12 @@ class SemanticSession:
             on_error=on_semantic_error,
         ))
 
-        def submit_worker_calls() -> None:
-            for call in worker_calls:
-                call()
-
-        if runtime_items:
-            # A cached list was just handed to the popup. Jedi on the worker thread
-            # holds the GIL for most of its 70-160 ms; give the UI thread a moment
-            # to paint first (first paint 30 ms instead of 110-250 ms on ChoreBoy).
-            timer = threading.Timer(_PAINT_GRACE_SECONDS, submit_worker_calls)
-            timer.daemon = True
-            timer.start()
-        else:
-            submit_worker_calls()
+        if cold_infer:
+            # The target is unknown, so inference is the list. Fast and semantic
+            # are submitted only after that list is in hand, from on_inferred.
+            cold_infer[0]()
+        elif not members_in_flight[0]:
+            release_after_paint()
 
     def request_completion_resolve(
         self,

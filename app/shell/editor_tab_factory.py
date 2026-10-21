@@ -15,6 +15,12 @@ from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
 from app.shell.editor_tab_page import EditorTabPage
 
 
+def _schedule_buffer_warmup(window: Any) -> None:
+    from app.shell.completion_warmup import schedule_open_buffer_warmup
+
+    schedule_open_buffer_warmup(window)
+
+
 class MainWindowEditorBindingsHost:
     """Binding ports for :class:`EditorTabFactory` backed by a MainWindow instance."""
 
@@ -156,6 +162,7 @@ class EditorTabFactory:
         )
         window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
         editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+        editor_widget.cursorPositionChanged.connect(lambda: _schedule_buffer_warmup(window))
 
     def create_buffer_view(
         self,
