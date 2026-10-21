@@ -196,9 +196,20 @@ def _write_json(path: Path, results: Sequence[GateResult]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+# Cloud images export the short names. Local runs use the longer ones.
+_RUNTIME_ALIASES = {
+    "CBCS_FORM_BUILDER_PY311": ("CBCS_FB_PY311",),
+    "CBCS_FORM_BUILDER_PY39": ("CBCS_FB_PY39",),
+}
+
+
 def _runtime(env_name: str, default: str) -> Path:
-    raw = os.environ.get(env_name, "").strip() or default
-    return Path(raw).expanduser()
+    names = (env_name,) + _RUNTIME_ALIASES.get(env_name, ())
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            return Path(raw).expanduser()
+    return Path(default).expanduser()
 
 
 def _is_runtime(path: Path) -> bool:
@@ -274,6 +285,8 @@ def _child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
     env["CBCS_SYNC_PROJECT_OPEN"] = "1"
     env["CBCS_QT_API"] = "pyside6"
+    if not env.get("CBCS_UIC") and env.get("CBCS_FB_UIC"):
+        env["CBCS_UIC"] = env["CBCS_FB_UIC"]
     # Captured children block-buffer stdout. os._exit would drop pytest's summary.
     env["PYTHONUNBUFFERED"] = "1"
     if extra:
