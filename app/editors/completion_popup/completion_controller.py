@@ -92,6 +92,9 @@ class CompletionHost(Protocol):
         """Show a short status-bar hint."""
 
 
+_GENERATION_UNKNOWN = -1
+
+
 class _Pending:
     def __init__(self, generation: int, key: Tuple[str, int, str], root: str, started_at: float) -> None:
         self.generation = generation
@@ -331,7 +334,7 @@ class CompletionController(QObject):
         """Apply an async list result if it still belongs to the open request."""
 
         pending = self._pending
-        if pending is None or generation != pending.generation:
+        if pending is None or pending.generation not in (generation, _GENERATION_UNKNOWN):
             return
         site = self._live_site(check_strings=False)
         if site is None or site.key != pending.key or not site.prefix.lower().startswith(pending.root.lower()):
@@ -414,9 +417,14 @@ class CompletionController(QObject):
             return
         self._forget_expression()
         root = "" if site.kind == SITE_MEMBER else site.prefix[:1]
-        generation = host.completion_dispatch(text, site.anchor + len(root), trigger_kind, trigger_character)
-        self._pending = _Pending(generation, site.key, root, started_at)
+        # Pending before dispatch: a cached list can be delivered synchronously
+        # from inside the dispatch call, before its generation is known.
+        pending = _Pending(_GENERATION_UNKNOWN, site.key, root, started_at)
+        self._pending = pending
         self._record("request", trigger=trigger_kind, prefix=site.prefix, kind=site.kind)
+        generation = host.completion_dispatch(text, site.anchor + len(root), trigger_kind, trigger_character)
+        if self._pending is pending:
+            pending.generation = generation
 
     def _set_base(self, items: List[CompletionItem], *, key: Tuple[str, int, str], root: str) -> None:
         if key != self._base_key:

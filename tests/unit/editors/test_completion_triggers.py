@@ -256,3 +256,21 @@ def test_resolved_docs_survive_a_later_tier_repaint(editor: CodeEditorWidget, re
 
     docs = editor._completion_popup.popup().docs_panel().visible_text()
     assert "setText(text: str) -> None" in docs and "QAbstractButton method" in docs
+
+
+def test_a_list_delivered_during_the_request_call_is_shown(requests: Requests) -> None:
+    widget = CodeEditorWidget()
+    widget.show()
+    items = [CompletionItem(label=name, insert_text=name, kind=CompletionKind.METHOD) for name in MEMBERS]
+
+    def _sync_requester(text: str, cursor: int, manual: bool, generation: int, kind: str, char: str) -> None:
+        widget.show_completion_items_for_request(request_generation=generation, prefix="", items=items)
+
+    widget.set_completion_requester(_sync_requester)
+    _start(widget, "btn.")
+    _ctrl_space(widget)
+
+    assert len(_rows(widget)) == len(MEMBERS)
+    widget._completion_popup.hide()
+    widget.hide()
+    widget.deleteLater()
