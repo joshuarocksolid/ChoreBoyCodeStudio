@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from PySide2.QtCore import QPoint, QRect, Qt, QTimer
+from PySide2.QtGui import QColor
 from PySide2.QtWidgets import QApplication, QFrame, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -147,8 +148,10 @@ class EditorGroupsController:
                 f"background: {self._accent_color}; color: white; padding: 3px 8px; border-radius: 3px;"
             )
         if self._drop_overlay is not None:
+            # The fill is the theme accent, faint, so it tints light and dark editors alike.
+            fill = QColor(self._accent_color)
             self._drop_overlay.setStyleSheet(
-                f"QFrame#shell\\.editorGroups\\.dropOverlay {{ background: rgba(51, 102, 255, 40);"
+                f"QFrame#shell\\.editorGroups\\.dropOverlay {{ background: rgba({fill.red()}, {fill.green()}, {fill.blue()}, 40);"
                 f" border: 2px dashed {self._accent_color}; }}"
             )
         self._refresh_accents(force=True)
