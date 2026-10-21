@@ -48,7 +48,7 @@ def _candidate_paths(tracked_files: Iterable[str]) -> set[str]:
     candidates: set[str] = set()
     for raw_path in tracked_files:
         path = raw_path.replace("\\", "/")
-        if path == "app/features/spec.py":
+        if path in {"app/features/spec.py", "app/features/__init__.py"}:
             candidates.add(path)
             continue
         parts = path.split("/")
@@ -73,6 +73,8 @@ def _module_level_imports(relative_path: str, tree: ast.Module) -> list[tuple[in
     found: list[tuple[int, str]] = []
     for statement in tree.body:
         if isinstance(statement, ast.If) and _is_type_checking(statement.test):
+            for clause in statement.orelse:
+                found.extend(_imports_under(relative_path, clause))
             continue
         found.extend(_imports_under(relative_path, statement))
     return found
@@ -90,6 +92,10 @@ def _imports_under(relative_path: str, node: ast.AST) -> list[tuple[int, str]]:
         if module:
             found.append((node.lineno, module))
         return found
+    if isinstance(node, ast.Call):
+        imported = _dynamic_import_module(node)
+        if imported is not None:
+            found.append((node.lineno, imported))
     for child in ast.iter_child_nodes(node):
         found.extend(_imports_under(relative_path, child))
     return found
@@ -106,6 +112,26 @@ def _absolute_module(relative_path: str, node: ast.ImportFrom) -> str:
     if node.module:
         base.extend(node.module.split("."))
     return ".".join(base)
+
+
+def _dynamic_import_module(node: ast.Call) -> Optional[str]:
+    func = node.func
+    if isinstance(func, ast.Name) and func.id == "__import__":
+        return _called_module(node)
+    if (
+        isinstance(func, ast.Attribute)
+        and func.attr in {"import_module", "__import__"}
+        and isinstance(func.value, ast.Name)
+        and func.value.id == "importlib"
+    ):
+        return _called_module(node)
+    return None
+
+
+def _called_module(node: ast.Call) -> str:
+    if node.args and isinstance(node.args[0], ast.Constant) and isinstance(node.args[0].value, str):
+        return str(node.args[0].value)
+    return "<dynamic>"
 
 
 def _is_type_checking(test: ast.AST) -> bool:
