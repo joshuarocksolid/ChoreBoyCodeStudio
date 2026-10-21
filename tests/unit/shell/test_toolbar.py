@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.shell.menus import MenuStubRegistry  # noqa: E402
 from app.shell.toolbar import RunToolbarWidget, build_run_toolbar_widget  # noqa: E402
@@ -20,7 +20,7 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 def _make_registry_with_actions() -> tuple[MenuStubRegistry, dict[str, object]]:
-    from PySide2.QtWidgets import QAction
+    from app.qt.QtWidgets import QAction
 
     action_map: dict[str, object] = {}
     for aid in (
@@ -59,7 +59,7 @@ def test_widget_creates_with_correct_object_name() -> None:
 def test_disabled_actions_produce_hidden_buttons() -> None:
     registry, actions = _make_registry_with_actions()
     widget = RunToolbarWidget(registry)
-    from PySide2.QtWidgets import QToolButton
+    from app.qt.QtWidgets import QToolButton
 
     buttons = widget.findChildren(QToolButton)
     assert len(buttons) == 12
@@ -67,7 +67,7 @@ def test_disabled_actions_produce_hidden_buttons() -> None:
 
 
 def test_enabling_action_shows_and_enables_button() -> None:
-    from PySide2.QtWidgets import QAction, QToolButton
+    from app.qt.QtWidgets import QAction, QToolButton
 
     registry, actions = _make_registry_with_actions()
     widget = RunToolbarWidget(registry)
@@ -82,7 +82,7 @@ def test_enabling_action_shows_and_enables_button() -> None:
 
 
 def test_separator_hidden_when_all_group2_buttons_hidden() -> None:
-    from PySide2.QtWidgets import QFrame
+    from app.qt.QtWidgets import QFrame
 
     registry, _actions = _make_registry_with_actions()
     widget = RunToolbarWidget(registry)
@@ -93,7 +93,7 @@ def test_separator_hidden_when_all_group2_buttons_hidden() -> None:
 
 
 def test_python_console_action_is_not_rendered_in_top_toolbar() -> None:
-    from PySide2.QtWidgets import QAction, QToolButton
+    from app.qt.QtWidgets import QAction, QToolButton
 
     registry, actions = _make_registry_with_actions()
     widget = RunToolbarWidget(registry)

@@ -28,9 +28,10 @@ Each completion shows useful metadata — its kind, where it came from, and a co
 indicator. Approximate results are labeled as such, so you are never misled into thinking
 a guess is a certainty.
 
-> [!NOTE] FreeCAD and PySide2 are partly backed by C++ and are hard to analyze
-> statically. ChoreBoy Code Studio ships a trusted API index for these so that import and
-> attribute completion work for them.
+> [!NOTE] FreeCAD and Qt are partly backed by C++ and are hard to analyze
+> statically. ChoreBoy Code Studio ships a trusted API index for `PySide`, PySide2, and
+> PySide6 so that import and attribute completion work for them. PySide2 stays in the
+> index because older projects still import it.
 
 ## Hover and signature help
 

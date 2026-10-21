@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtGui", exc_type=ImportError)
+pytest.importorskip("app.qt.QtGui", exc_type=ImportError)
 
-from PySide2.QtGui import QPalette, QTextDocument  # noqa: E402
+from app.qt.QtGui import QPalette, QTextDocument  # noqa: E402
 
 from app.editors.syntax_registry import default_syntax_highlighter_registry, syntax_palette_from_tokens  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402

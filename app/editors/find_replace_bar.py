@@ -6,9 +6,9 @@ from typing import Any
 
 from app.editors.search_service import FindOptions
 
-from PySide2.QtCore import Qt, Signal, QTimer
-from PySide2.QtGui import QKeyEvent
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, Signal, QTimer
+from app.qt.QtGui import QKeyEvent
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,

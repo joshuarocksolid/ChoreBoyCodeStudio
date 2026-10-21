@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
@@ -55,6 +55,7 @@ def test_runtime_onboarding_is_not_auto_opened_but_reachable_from_help_after_aut
         return 0
 
     monkeypatch.setattr("app.shell.runtime_onboarding_workflow.QDialog.exec_", _record_onboarding_exec)
+    monkeypatch.setattr("app.shell.runtime_onboarding_workflow.QDialog.exec", _record_onboarding_exec, raising=False)  # exec_qt calls exec on Qt 6
 
     window = MainWindow(state_root=str(tmp_path.resolve()))
     prepare_main_window_for_test(window, app=app)

@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtGui import QTextCursor
-from PySide2.QtWidgets import QTextEdit
+from app.qt.QtGui import QTextCursor
+from app.qt.QtWidgets import QTextEdit
 
 from app.editors.search_service import FindOptions, compile_search_pattern
 
@@ -12,7 +12,7 @@ MAX_EDITOR_REGEX_QUERY_CHARS = 512
 MAX_EDITOR_SEARCH_TEXT_CHARS = 1_000_000
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorSearchBase(QPlainTextEdit):
         _search_selections: list[Any]

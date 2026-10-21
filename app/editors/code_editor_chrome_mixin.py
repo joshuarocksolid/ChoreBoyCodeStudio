@@ -4,15 +4,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtCore import QPointF, QRect, QSize, Qt
-from PySide2.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
-from PySide2.QtWidgets import QTextEdit, QWidget
+from app.qt.QtCore import QPointF, QRect, QSize, Qt
+from app.qt.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
+from app.qt.QtWidgets import QTextEdit, QWidget
+from app.qt.qt_compat import event_pos
 
 from app.shell.theme_tokens import ShellThemeTokens
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorChromeBase(QPlainTextEdit):
         _line_number_area: "_LineNumberArea"
@@ -50,7 +51,7 @@ class _LineNumberArea(QWidget):
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
-        self._editor.toggle_breakpoint_at_y(event.pos().y())
+        self._editor.toggle_breakpoint_at_y(event_pos(event).y())
 
 
 class CodeEditorChromeMixin(_CodeEditorChromeBase):

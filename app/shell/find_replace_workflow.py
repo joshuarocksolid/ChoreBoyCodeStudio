@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.editors.find_replace_bar import FindOptions, FindReplaceBar
 from app.editors.code_editor_widget import CodeEditorWidget

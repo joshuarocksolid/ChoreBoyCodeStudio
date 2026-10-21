@@ -6,11 +6,11 @@ from unittest.mock import patch
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QEvent, Qt  # noqa: E402
-from PySide2.QtGui import QHelpEvent, QKeyEvent  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtCore import QEvent, Qt  # noqa: E402
+from app.qt.QtGui import QHelpEvent, QKeyEvent, QTextCursor  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.intelligence.completion_models import CompletionItem, CompletionKind  # noqa: E402
@@ -57,7 +57,7 @@ def editor() -> Iterator[CodeEditorWidget]:
     widget = CodeEditorWidget()
     widget.setPlainText("alpha")
     cursor = widget.textCursor()
-    cursor.movePosition(cursor.End)
+    cursor.movePosition(QTextCursor.End)
     widget.setTextCursor(cursor)
     yield widget
     widget._completion_popup.hide()
@@ -336,7 +336,7 @@ def test_apply_theme_defers_hidden_editor_rehighlight_until_show(editor: CodeEdi
 def test_accept_dotted_member_uses_completion_context_replacement_range(editor: CodeEditorWidget) -> None:
     editor.setPlainText("obj.mem")
     cursor = editor.textCursor()
-    cursor.movePosition(cursor.End)
+    cursor.movePosition(QTextCursor.End)
     editor.setTextCursor(cursor)
 
     editor._insert_completion_from_item(
@@ -349,7 +349,7 @@ def test_accept_dotted_member_uses_completion_context_replacement_range(editor: 
 def test_accept_import_from_uses_completion_context_replacement_range(editor: CodeEditorWidget) -> None:
     editor.setPlainText("from collections import de")
     cursor = editor.textCursor()
-    cursor.movePosition(cursor.End)
+    cursor.movePosition(QTextCursor.End)
     editor.setTextCursor(cursor)
 
     editor._insert_completion_from_item(

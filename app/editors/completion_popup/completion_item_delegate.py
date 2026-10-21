@@ -6,9 +6,9 @@ Matched characters are drawn bold in the accent color.
 
 from __future__ import annotations
 
-from PySide2.QtCore import QModelIndex, QRect, QRectF, QSize, Qt
-from PySide2.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
-from PySide2.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
+from app.qt.QtCore import QModelIndex, QRect, QRectF, QSize, Qt
+from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
+from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from app.editors.completion_popup.completion_item_model import (
     ItemRole,

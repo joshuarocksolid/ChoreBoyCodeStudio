@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
-from PySide2.QtGui import QTextCursor  # noqa: E402
+from app.qt.QtGui import QTextCursor  # noqa: E402
 
 from app.shell.run_log_panel import RunInfo, RunLogPanel, startup_noise_tooltip  # noqa: E402
 

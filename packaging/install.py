@@ -20,9 +20,9 @@ import traceback
 from pathlib import Path
 from typing import Any, Optional
 
-from PySide2.QtCore import Qt, QThread, QTimer, Signal
-from PySide2.QtGui import QFont, QFontDatabase, QIcon
-from PySide2.QtWidgets import (
+from PySide.QtCore import Qt, QThread, QTimer, Signal
+from PySide.QtGui import QFont, QFontDatabase, QIcon
+from PySide.QtWidgets import (
     QApplication,
     QButtonGroup,
     QCheckBox,
@@ -1865,7 +1865,7 @@ def main() -> int:
         return 1
     installer = Installer(manifest)
     installer.show()
-    return app.exec_()
+    return (getattr(app, "exec", None) or app.exec_)()
 
 
 if __name__ == "__main__":

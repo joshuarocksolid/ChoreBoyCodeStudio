@@ -17,7 +17,7 @@ SUMMARY_LIMIT = 400
 
 _NOISE_DETAIL_PARTS = frozenset({"", "approximate", "semantic", "live runtime", "runtime", "static"})
 _SIGNATURE_LINE = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_.]*)\s*\((.*)\)\s*(->\s*.+)?$")
-_QT_MODULE_PREFIX = re.compile(r"\b(?:PySide2|shiboken2)\.(?:Qt[A-Za-z]+\.)?")
+_QT_MODULE_PREFIX = re.compile(r"\b(?:PySide2|PySide6|shiboken2|shiboken6)\.(?:Qt[A-Za-z]+\.)?")
 
 
 @dataclass(frozen=True)

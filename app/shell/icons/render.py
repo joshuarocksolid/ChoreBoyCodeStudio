@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide2.QtCore import QByteArray, QSize
-from PySide2.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide2.QtSvg import QSvgRenderer
+from app.qt.QtCore import QByteArray, QSize
+from app.qt.QtGui import QColor, QIcon, QPainter, QPixmap
+from app.qt.QtSvg import QSvgRenderer
 
 from app.shell.icons.svg_registry import SvgGlyphSpec
 from app.shell.theme_tokens import ShellThemeTokens

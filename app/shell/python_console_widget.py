@@ -12,8 +12,8 @@ import code
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from PySide2.QtCore import QRect, Qt, Signal
-from PySide2.QtGui import (
+from app.qt.QtCore import QRect, Qt, Signal
+from app.qt.QtGui import (
     QColor,
     QDragEnterEvent,
     QDropEvent,
@@ -24,7 +24,7 @@ from PySide2.QtGui import (
     QTextCharFormat,
     QTextCursor,
 )
-from PySide2.QtWidgets import QInputDialog, QMainWindow, QMenu, QTextEdit, QToolTip
+from app.qt.QtWidgets import QInputDialog, QMainWindow, QMenu, QTextEdit, QToolTip
 
 from app.editors.completion_popup import CompletionController
 from app.editors.completion_popup.completion_replacement import resolve_insert_replacement_range
@@ -32,6 +32,7 @@ from app.intelligence.completion_mode import COMPLETION_MODE_DEFAULT, COMPLETION
 from app.intelligence.completion_models import CompletionItem
 from app.shell.run_log_panel import _classify_line
 from app.shell.theme_tokens import ShellThemeTokens
+from app.qt.qt_compat import exec_qt
 
 _STDERR_TAG = "[stderr] "
 
@@ -454,7 +455,7 @@ class PythonConsoleWidget(QTextEdit):
         restart_action = menu.addAction("Restart Python Console")
         assert restart_action is not None
         restart_action.triggered.connect(self.restart_requested.emit)
-        menu.exec_(event.globalPos())
+        exec_qt(menu, event.globalPos())
 
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:  # noqa: N802 - Qt signature
         mime_data = e.mimeData()

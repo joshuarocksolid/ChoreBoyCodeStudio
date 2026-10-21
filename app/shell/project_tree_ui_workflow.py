@@ -6,9 +6,9 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol
 
-from PySide2.QtCore import QTimer, QUrl
-from PySide2.QtGui import QDesktopServices
-from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QStackedWidget, QTabWidget, QTreeWidgetItem
+from app.qt.QtCore import QTimer, QUrl
+from app.qt.QtGui import QDesktopServices
+from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QStackedWidget, QTabWidget, QTreeWidgetItem
 
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import LoadedProject

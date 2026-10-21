@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication, QWidget  # noqa: E402
+from app.qt.QtWidgets import QApplication, QWidget  # noqa: E402
 
 import app.shell.help_controller as help_controller_module  # noqa: E402
 from app.shell.help_controller import ShellHelpController  # noqa: E402

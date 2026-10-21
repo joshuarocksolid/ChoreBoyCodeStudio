@@ -20,9 +20,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from PySide2.QtCore import QPoint, QRect, Qt, QTimer
-from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QApplication, QFrame, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
+from app.qt.QtCore import QPoint, QRect, Qt, QTimer
+from app.qt.QtGui import QColor
+from app.qt.QtWidgets import QApplication, QFrame, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane

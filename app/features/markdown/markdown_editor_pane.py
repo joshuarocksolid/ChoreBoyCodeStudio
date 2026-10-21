@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import Signal, QTimer, Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Signal, QTimer, Qt
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSplitter,

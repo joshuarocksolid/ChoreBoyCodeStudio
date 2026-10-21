@@ -22,9 +22,9 @@ from contextlib import contextmanager
 import time
 from typing import Any, Dict, Iterator, List, Optional, Protocol, Tuple
 
-from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
-from PySide2.QtGui import QFontMetrics, QKeyEvent
-from PySide2.QtWidgets import QApplication, QWidget
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
+from app.qt.QtGui import QFontMetrics, QKeyEvent
+from app.qt.QtWidgets import QApplication, QWidget
 
 from app.core.completion_tier import is_tier_header_item
 from app.editors.completion_popup.completion_item_delegate import CHIP_GAP, CHIP_LEFT, CHIP_SIZE

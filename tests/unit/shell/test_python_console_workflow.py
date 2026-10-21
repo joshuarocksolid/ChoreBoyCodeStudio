@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT  # noqa: E402
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind  # noqa: E402

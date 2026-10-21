@@ -24,7 +24,7 @@ from app.shell.python_tooling_status_copy import format_python_tooling_status_co
 from app.support.runtime_explainer import build_startup_issue_report
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QLabel, QMainWindow, QStatusBar
+    from app.qt.QtWidgets import QLabel, QMainWindow, QStatusBar
 
 
 class _EmittableSignal(Protocol):
@@ -87,8 +87,14 @@ class IndentStatusView:
     details: str
 
 
+def _treesitter_source_suffix(source: object, version: object) -> str:
+    if isinstance(source, str) and source and isinstance(version, str) and version:
+        return f" | tree-sitter {source} {version}"
+    return ""
+
+
 def _syntax_highlighting_status_suffix(report: Optional[CapabilityProbeReport]) -> str:
-    """Return a status-bar suffix when editor syntax highlighting is unavailable."""
+    """Return a status-bar suffix for the tree-sitter runtime."""
     if report is not None:
         treesitter_check = next(
             (check for check in report.checks if check.check_id == TREESITTER_RUNTIME_CHECK_ID),
@@ -97,16 +103,20 @@ def _syntax_highlighting_status_suffix(report: Optional[CapabilityProbeReport]) 
         if treesitter_check is not None:
             if not treesitter_check.is_available:
                 return " | Syntax highlighting off"
-            return ""
+            return _treesitter_source_suffix(
+                treesitter_check.details.get("source"),
+                treesitter_check.details.get("version"),
+            )
 
     try:
         from app.treesitter.loader import runtime_status
 
-        if not runtime_status().is_available:
+        status = runtime_status()
+        if not status.is_available:
             return " | Syntax highlighting off"
+        return _treesitter_source_suffix(status.source, status.version)
     except Exception:
         return " | Syntax highlighting off"
-    return ""
 
 
 def map_startup_report_to_status(report: Optional[CapabilityProbeReport]) -> StartupStatusView:
@@ -467,8 +477,8 @@ def create_shell_status_bar(
     on_completion_mode_activated: object | None = None,
 ) -> ShellStatusBarController:
     """Create and attach a status bar shell to the given window."""
-    from PySide2 import QtCore, QtGui
-    from PySide2.QtWidgets import QLabel, QStatusBar
+    from app.qt import QtCore, QtGui
+    from app.qt.QtWidgets import QLabel, QStatusBar
 
     class _ClickableLabel(QLabel):
         clicked = QtCore.Signal()

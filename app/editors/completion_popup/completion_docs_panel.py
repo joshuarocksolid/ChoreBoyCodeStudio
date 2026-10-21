@@ -6,9 +6,9 @@ defining class. Nothing else: no badges, no provenance labels.
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QFont, QFontDatabase
-from PySide2.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QFont, QFontDatabase
+from app.qt.QtWidgets import QFrame, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
 from app.intelligence.completion_docs import completion_docs
 from app.intelligence.completion_models import CompletionItem

@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional, Protocol, Sequence
 
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QWidget
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QWidget
 
 from app.editors.editor_manager import EditorManager
 from app.persistence.autosave_store import AutosaveStore

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import QShortcut
+from app.qt.QtGui import QKeySequence
+from app.qt.QtWidgets import QShortcut
 
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings

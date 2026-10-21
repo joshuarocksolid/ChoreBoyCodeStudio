@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from PySide2.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
+from app.qt.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
@@ -24,6 +24,7 @@ from app.shell.disk_conflict_dialogs import (
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
 from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
 from app.shell.shell_composition_context import MainWindowCompositionSurface
+from app.qt.qt_compat import exec_qt
 
 
 class ExternalFileChangeOutcome(str, Enum):
@@ -55,7 +56,7 @@ class MissingFileAction:
 def present_missing_file_dialog(parent: QWidget, file_path: str) -> MissingFileAction:
     """Ask what to do with a buffer whose file disappeared (Save As... is the default)."""
     dialog = MissingFileDialog(file_path, parent)
-    dialog.exec_()
+    exec_qt(dialog)
     choice = dialog.choice()
     if choice is MissingFileDialogChoice.SAVE_AS:
         destination = ask_save_as_path(parent, file_path)
@@ -81,7 +82,7 @@ def present_stale_save_dialog(
         buffer_is_dirty=buffer_is_dirty,
         parent=parent,
     )
-    if dialog.exec_() != QDialog.Accepted:
+    if exec_qt(dialog) != QDialog.Accepted:
         return StaleSaveChoice.CANCEL
     return dialog.choice()
 
@@ -89,7 +90,7 @@ def present_stale_save_dialog(
 def present_disk_changed_dialog(parent: QWidget, file_path: str, *, disk_mtime: float | None) -> DiskChangedChoice:
     """Ask what to do when a dirty buffer's file changed on disk (Keep My Version is the default)."""
     dialog = DiskChangedDialog(file_path, disk_changed_text=_describe_mtime(disk_mtime), parent=parent)
-    dialog.exec_()
+    exec_qt(dialog)
     return dialog.choice()
 
 
@@ -220,7 +221,7 @@ class MainWindowExternalFileChangeHost:
         return present_disk_changed_dialog(self._window, file_path, disk_mtime=disk_mtime)
 
     def show_disk_compare(self, file_path: str, *, disk_text: str, buffer_text: str) -> None:
-        DiskCompareDialog(file_path, disk_text=disk_text, buffer_text=buffer_text, parent=self._window).exec_()
+        exec_qt(DiskCompareDialog(file_path, disk_text=disk_text, buffer_text=buffer_text, parent=self._window))
 
     def ask_save_as_path(self, file_path: str) -> str | None:
         return ask_save_as_path(self._window, file_path)

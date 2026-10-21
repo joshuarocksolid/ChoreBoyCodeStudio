@@ -11,9 +11,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PySide2.QtCore import QByteArray, QRect, QSize, Qt
-from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
-from PySide2.QtSvg import QSvgRenderer
+from app.qt.QtCore import QByteArray, QRect, QSize, Qt
+from app.qt.QtGui import QColor, QFont, QIcon, QPainter, QPixmap
+from app.qt.QtSvg import QSvgRenderer
 
 from app.shell.icons.render import icon_from_svg, render_painted_icon
 

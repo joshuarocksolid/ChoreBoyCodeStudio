@@ -6,8 +6,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from PySide2.QtGui import QFontDatabase
-from PySide2.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from app.qt.QtGui import QFontDatabase
+from app.qt.QtWidgets import QDialog, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from app.shell.dialog_chrome import (
     FOOTER_ROLE_DESTRUCTIVE_SECONDARY,

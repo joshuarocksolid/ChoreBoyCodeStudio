@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
@@ -25,7 +25,7 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 def _startup_text(window: MainWindow) -> str:
-    from PySide2.QtWidgets import QLabel
+    from app.qt.QtWidgets import QLabel
 
     startup = window.findChild(QLabel, "shell.startupStatusLabel")
     assert startup is not None

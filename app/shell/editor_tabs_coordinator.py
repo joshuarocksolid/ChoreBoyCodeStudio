@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtWidgets import QInputDialog, QMessageBox, QTabWidget, QWidget
+from app.qt.QtWidgets import QInputDialog, QMessageBox, QTabWidget, QWidget
 
 from app.core import constants
 from app.editors.code_editor_widget import CodeEditorWidget

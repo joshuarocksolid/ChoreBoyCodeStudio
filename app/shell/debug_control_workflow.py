@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable, cast
 
-from PySide2.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
+from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from app.core import constants
 from app.debug.debug_models import DebugExecutionState

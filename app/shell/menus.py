@@ -165,8 +165,8 @@ def build_menu_stubs(
     shortcut_overrides: Mapping[str, str] | None = None,
 ) -> MenuStubRegistry:
     """Create top-level shell menus and stable action IDs."""
-    qt_widgets = importlib.import_module("PySide2.QtWidgets")
-    qt_core = importlib.import_module("PySide2.QtCore")
+    qt_widgets = importlib.import_module("app.qt.QtWidgets")
+    qt_core = importlib.import_module("app.qt.QtCore")
     actions: dict[str, Any] = {}
     menus: dict[str, Any] = {}
 

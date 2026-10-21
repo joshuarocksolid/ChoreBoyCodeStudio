@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Protocol
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QMenu, QStatusBar, QToolButton, QWidget
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import QMenu, QStatusBar, QToolButton, QWidget
 
 from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import LoadedProject

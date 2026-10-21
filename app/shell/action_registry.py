@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtWidgets import QAction
+from app.qt.QtWidgets import QAction
 
 from app.shell.command_broker import CommandBroker
 from app.shell.menus import MenuStubRegistry

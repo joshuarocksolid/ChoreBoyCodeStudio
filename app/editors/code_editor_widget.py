@@ -6,9 +6,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QPoint, Qt, QTimer
-from PySide2.QtGui import QColor, QTextCursor
-from PySide2.QtWidgets import QPlainTextEdit, QWidget
+from app.qt.QtCore import QPoint, Qt, QTimer
+from app.qt.QtGui import QColor, QTextCursor
+from app.qt.QtWidgets import QPlainTextEdit, QWidget
 
 from app.bootstrap.logging_setup import get_subsystem_logger
 from app.core import constants

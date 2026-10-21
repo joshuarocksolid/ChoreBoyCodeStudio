@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QApplication
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import QApplication
 
 from app.shell.welcome_widget import WelcomeWidget
 

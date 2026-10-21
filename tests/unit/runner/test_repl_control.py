@@ -14,6 +14,7 @@ from app.runner.repl_protocol import (
     REPL_METHOD_RESOLVE_MEMBER,
     build_ping_request,
 )
+from app.qt.qt_compat import QT_API
 
 pytestmark = pytest.mark.unit
 
@@ -87,9 +88,9 @@ def _handle_with_real_introspection(**overrides: object) -> dict[str, object]:
 
 
 def test_handle_request_list_members_returns_names_and_kinds() -> None:
-    pytest.importorskip("PySide2.QtCore")
+    pytest.importorskip("app.qt.QtCore")
 
-    response = _handle_with_real_introspection(method=REPL_METHOD_LIST_MEMBERS, target_path="PySide2.QtCore.QObject")
+    response = _handle_with_real_introspection(method=REPL_METHOD_LIST_MEMBERS, target_path=QT_API + ".QtCore.QObject")
 
     result = response.get("result")
     assert isinstance(result, dict)
@@ -97,11 +98,11 @@ def test_handle_request_list_members_returns_names_and_kinds() -> None:
 
 
 def test_handle_request_resolve_member_returns_signature_and_documentation() -> None:
-    pytest.importorskip("PySide2.QtCore")
+    pytest.importorskip("app.qt.QtCore")
 
     response = _handle_with_real_introspection(
         method=REPL_METHOD_RESOLVE_MEMBER,
-        target_path="PySide2.QtCore.QObject",
+        target_path=QT_API + ".QtCore.QObject",
         member_name="setObjectName",
     )
 

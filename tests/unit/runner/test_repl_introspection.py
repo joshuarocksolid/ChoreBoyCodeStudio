@@ -20,6 +20,7 @@ from app.runner.repl_introspection import (
     ReplIntrospectionService,
     is_whitelisted_target_path,
 )
+from app.qt.qt_compat import QT_API
 
 pytestmark = pytest.mark.unit
 
@@ -134,11 +135,11 @@ def test_list_members_classifies_class_members_statically(monkeypatch: pytest.Mo
 
 
 def test_resolve_member_reads_live_pyside_signature_and_first_doc_paragraph() -> None:
-    qt_widgets = pytest.importorskip("PySide2.QtWidgets")
+    qt_widgets = pytest.importorskip("app.qt.QtWidgets")
     live_doc = inspect.getdoc(qt_widgets.QPushButton.setText) or ""
 
     detail = ReplIntrospectionService().resolve_member(
-        RuntimeMemberRef(target_path="PySide2.QtWidgets.QPushButton", name="setText")
+        RuntimeMemberRef(target_path=QT_API + ".QtWidgets.QPushButton", name="setText")
     )
 
     assert isinstance(detail, RuntimeMemberDetail)

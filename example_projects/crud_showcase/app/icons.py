@@ -6,8 +6,8 @@ parameter lets callers tint icons to match the active theme.
 
 from __future__ import annotations
 
-from PySide2.QtCore import QPointF, QRectF, Qt
-from PySide2.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
+from PySide.QtCore import QPointF, QRectF, Qt
+from PySide.QtGui import QColor, QFont, QIcon, QPainter, QPen, QPixmap
 
 
 _SIZE = 16
@@ -95,7 +95,7 @@ def icon_refresh(color: str = "#495057") -> QIcon:
     p.setPen(pen)
     p.setBrush(Qt.NoBrush)
     p.drawArc(QRectF(2, 2, 12, 12), 30 * 16, 300 * 16)
-    from PySide2.QtGui import QPolygonF
+    from PySide.QtGui import QPolygonF
     p.setBrush(c)
     p.setPen(Qt.NoPen)
     p.drawPolygon(QPolygonF([

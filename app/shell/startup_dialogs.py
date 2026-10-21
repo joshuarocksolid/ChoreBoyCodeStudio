@@ -15,9 +15,9 @@ from __future__ import annotations
 from html import escape
 from typing import Callable, Optional, Sequence
 
-from PySide2.QtCore import QPoint, Qt, QTimer
-from PySide2.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPen, QPixmap
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QPoint, Qt, QTimer
+from app.qt.QtGui import QColor, QFont, QFontDatabase, QIcon, QPainter, QPen, QPixmap
+from app.qt.QtWidgets import (
     QApplication,
     QCheckBox,
     QDialog,
@@ -56,6 +56,7 @@ from app.shell.style_sheet_sections_controls import shell_section_checkbox_indic
 from app.shell.style_sheet_sections_dialogs import shell_section_dialog_chrome
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.shell.unsaved_changes_dialog import _warning_icon
+from app.qt.qt_compat import exec_qt
 
 PROBLEMS_SUBTITLE = "You can keep working. The parts listed below are turned off until the problem is fixed."
 RUNTIME_CENTER_TOOLTIP = "Tools > Runtime Center shows every startup check and what to do next."
@@ -241,7 +242,7 @@ def present_fatal_startup_dialog(summary: str, log_path: str, details: str) -> N
     app = QApplication.instance()
     if app is None:
         QApplication([])
-    build_fatal_startup_dialog(summary, log_path, details).exec_()
+    exec_qt(build_fatal_startup_dialog(summary, log_path, details))
 
 
 def build_freecad_requirement_dialog(parent: Optional[QWidget], detail: str) -> QDialog:
@@ -312,7 +313,7 @@ def build_freecad_requirement_dialog(parent: Optional[QWidget], detail: str) -> 
 
 def present_freecad_requirement(parent: Optional[QWidget], detail: str) -> None:
     """Explain that plugins, run, debug, and the Python console need FreeCAD 1.0."""
-    build_freecad_requirement_dialog(parent, detail).exec_()
+    exec_qt(build_freecad_requirement_dialog(parent, detail))
 
 
 def _freecad_body(version: str) -> str:

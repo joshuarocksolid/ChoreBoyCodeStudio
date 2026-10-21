@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Optional, Sequence
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QFileDialog,
@@ -45,6 +45,7 @@ from app.shell.run_arguments_helpers import join_argv_for_display
 from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.shell.toolbar_icons import icon_run
+from app.qt.qt_compat import exec_qt
 
 
 @dataclass(frozen=True)
@@ -111,7 +112,7 @@ class RunConfigurationsDialog(QDialog):
         tokens: ShellThemeTokens | None = None,
     ) -> RunConfigurationsResult | None:
         dialog = cls(initial, parent=parent, tokens=tokens)
-        if dialog.exec_() != QDialog.Accepted:
+        if exec_qt(dialog) != QDialog.Accepted:
             return None
         return dialog.configurations_result()
 

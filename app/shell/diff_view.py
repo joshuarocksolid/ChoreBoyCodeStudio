@@ -25,14 +25,15 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import (
+from app.qt.QtCore import Qt
+from app.qt.QtGui import (
     QColor,
+    QFont,
     QFontDatabase,
     QSyntaxHighlighter,
     QTextCharFormat,
 )
-from PySide2.QtWidgets import (
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
@@ -108,7 +109,7 @@ class _DiffInlineHighlighter(QSyntaxHighlighter):
         self._hunk_format.setFontItalic(True)
 
         self._file_format.setForeground(QColor(tokens.text_muted))
-        self._file_format.setFontWeight(600)
+        self._file_format.setFontWeight(QFont.DemiBold)
 
         self.rehighlight()
 

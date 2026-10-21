@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QSize, Qt
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QSplitter, QToolButton, QVBoxLayout, QWidget
+from app.qt.QtCore import QSize, Qt
+from app.qt.QtGui import QIcon
+from app.qt.QtWidgets import QSplitter, QToolButton, QVBoxLayout, QWidget
 
 from app.core import constants
 from app.shell.layout_persistence import DEFAULT_TOP_SPLITTER_SIZES, DEFAULT_VERTICAL_SPLITTER_SIZES

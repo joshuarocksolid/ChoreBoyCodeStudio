@@ -9,11 +9,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QTimer
+from app.qt.QtCore import QTimer
+from app.qt.qt_compat import QT_API
 
 from app.intelligence.runtime_members import RuntimeUnavailable
 
-_REPL_WARM_TARGET = "PySide2.QtCore.QObject"
+_REPL_WARM_TARGET = QT_API + ".QtCore.QObject"
 _window_shown = False
 
 

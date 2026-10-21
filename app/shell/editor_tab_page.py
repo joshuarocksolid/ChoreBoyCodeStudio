@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Optional
 
-from PySide2.QtCore import Signal
-from PySide2.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
+from app.qt.QtCore import Signal
+from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
 from app.shell.editor_tab_bar import TAB_STATE_MISSING, TAB_STATE_STALE, missing_marker_icon, warning_marker_icon
 from app.shell.theme_tokens import ShellThemeTokens

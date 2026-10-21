@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QFontMetrics
-from PySide2.QtWidgets import QHBoxLayout, QHeaderView, QTableWidget, QTableWidgetItem, QWidget
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QFontMetrics
+from app.qt.QtWidgets import QHBoxLayout, QHeaderView, QTableWidget, QTableWidgetItem, QWidget
 
 if TYPE_CHECKING:
     from app.shell.settings_dialog import SettingsDialog

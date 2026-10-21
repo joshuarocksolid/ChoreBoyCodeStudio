@@ -15,9 +15,9 @@ import os
 from pathlib import Path
 from typing import Any, Optional, Sequence
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QColor, QIcon, QPainter, QPixmap
-from PySide2.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QColor, QIcon, QPainter, QPixmap
+from app.qt.QtWidgets import QDialog, QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from app.core import constants
 from app.shell.dialog_chrome import (
@@ -30,6 +30,7 @@ from app.shell.dialog_chrome import (
 )
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.shell.unsaved_changes_dialog import _warning_icon
+from app.qt.qt_compat import exec_qt
 
 WINDOW_TITLE = "Close ChoreBoy Code Studio"
 TITLE = "A program you started from CBCS is still running"
@@ -368,5 +369,5 @@ class CloseWhileRunningDialog(QDialog):
 def prompt_close_while_running(parent: Optional[QWidget], summary: RunningProgramSummary) -> CloseRunChoice:
     """Show the prompt and return the user's choice (Cancel on Esc / window close)."""
     dialog = CloseWhileRunningDialog(parent, summary)
-    dialog.exec_()
+    exec_qt(dialog)
     return dialog.choice

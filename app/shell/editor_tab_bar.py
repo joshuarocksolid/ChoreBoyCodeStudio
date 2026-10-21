@@ -12,9 +12,10 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide2.QtCore import QPoint, QRect, QSize, Qt
-from PySide2.QtGui import QColor, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPalette, QPen, QPixmap, QPolygon
-from PySide2.QtWidgets import QApplication, QProxyStyle, QTabBar, QWidget
+from app.qt.QtCore import QPoint, QRect, QSize, Qt
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QIcon, QMouseEvent, QPainter, QPalette, QPen, QPixmap, QPolygon
+from app.qt.QtWidgets import QApplication, QProxyStyle, QTabBar, QWidget
+from app.qt.qt_compat import event_pos
 
 TAB_STATE_STALE = "stale"
 TAB_STATE_MISSING = "missing"
@@ -268,13 +269,13 @@ class MiddleClickTabBar(QTabBar):
 
     def mousePressEvent(self, arg__1: QMouseEvent) -> None:  # noqa: N802 - Qt signature
         if arg__1.button() == Qt.MiddleButton:
-            tab_index = self.tabAt(arg__1.pos())
+            tab_index = self.tabAt(event_pos(arg__1))
             if tab_index >= 0:
                 self.tabCloseRequested.emit(tab_index)
             return
         if arg__1.button() == Qt.LeftButton:
-            self._press_index = self.tabAt(arg__1.pos())
-            self._press_pos = QPoint(arg__1.pos())
+            self._press_index = self.tabAt(event_pos(arg__1))
+            self._press_pos = QPoint(event_pos(arg__1))
             self._group_drag_active = False
         with _PaintingBar(self):
             super().mousePressEvent(arg__1)
@@ -285,12 +286,12 @@ class MiddleClickTabBar(QTabBar):
             and self._press_index >= 0
             and arg__1.buttons() & Qt.LeftButton
         ):
-            if not self._group_drag_active and self._left_bar_vertically(arg__1.pos()):
+            if not self._group_drag_active and self._left_bar_vertically(event_pos(arg__1)):
                 self._group_drag_active = True
                 self._group_drag_started(self._press_index)
             if self._group_drag_active:
                 if self._group_drag_moved is not None:
-                    self._group_drag_moved(self.mapToGlobal(arg__1.pos()))
+                    self._group_drag_moved(self.mapToGlobal(event_pos(arg__1)))
                 return
         with _PaintingBar(self):
             super().mouseMoveEvent(arg__1)
@@ -301,13 +302,13 @@ class MiddleClickTabBar(QTabBar):
             self._press_index = -1
             super().mouseReleaseEvent(arg__1)
             if self._group_drag_finished is not None:
-                self._group_drag_finished(self.mapToGlobal(arg__1.pos()))
+                self._group_drag_finished(self.mapToGlobal(event_pos(arg__1)))
             return
         self._press_index = -1
         super().mouseReleaseEvent(arg__1)
 
     def mouseDoubleClickEvent(self, arg__1: QMouseEvent) -> None:  # noqa: N802 - Qt signature
-        tab_index = self.tabAt(arg__1.pos())
+        tab_index = self.tabAt(event_pos(arg__1))
         if tab_index >= 0 and self._tab_double_click_callback is not None:
             self._tab_double_click_callback(tab_index)
             arg__1.accept()

@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QAbstractItemView, QTreeWidgetItem
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QAbstractItemView, QTreeWidgetItem
 
 from app.core.models import LoadedProject
 from app.project.project_tree import build_project_tree

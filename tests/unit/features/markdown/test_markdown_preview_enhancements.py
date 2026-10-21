@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.features.markdown.markdown_preview_enhancements import enhance_preview_document  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
@@ -23,7 +23,7 @@ def _tokens(force_mode: str = "light"):
 
 
 def test_enhance_preview_document_marks_external_links(qapp) -> None:  # type: ignore[no-untyped-def]
-    from PySide2.QtWidgets import QTextBrowser
+    from app.qt.QtWidgets import QTextBrowser
 
     browser = QTextBrowser()
     browser.setMarkdown("[Example](https://example.com)")
@@ -34,8 +34,8 @@ def test_enhance_preview_document_marks_external_links(qapp) -> None:  # type: i
 
 
 def test_enhance_preview_document_styles_table_header_row(qapp) -> None:  # type: ignore[no-untyped-def]
-    from PySide2.QtGui import QFont, QTextTable
-    from PySide2.QtWidgets import QTextBrowser
+    from app.qt.QtGui import QFont, QTextTable
+    from app.qt.QtWidgets import QTextBrowser
 
     browser = QTextBrowser()
     browser.setMarkdown("| Name | Value |\n| --- | --- |\n| a | 1 |")

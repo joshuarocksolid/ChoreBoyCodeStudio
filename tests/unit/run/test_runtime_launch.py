@@ -37,7 +37,8 @@ def test_build_runpy_bootstrap_payload_includes_path_and_argv() -> None:
     assert "runpy.run_path('/workspace/run_runner.py'" in payload
 
 
-def test_sanitize_apprun_child_env_drops_virtualenv_activation() -> None:
+def test_sanitize_apprun_child_env_drops_virtualenv_activation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runtime_launch_module, "loaded_binding_env_value", lambda: None)
     env = {
         "PATH": "/usr/bin",
         "VIRTUAL_ENV": "/tmp/stale-venv",
@@ -52,6 +53,16 @@ def test_sanitize_apprun_child_env_drops_virtualenv_activation() -> None:
         "CBCS_APPRUN": "/opt/freecad/AppRun",
     }
     assert env["VIRTUAL_ENV"] == "/tmp/stale-venv"
+
+
+def test_sanitize_apprun_child_env_pins_children_to_the_loaded_qt_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(runtime_launch_module, "loaded_binding_env_value", lambda: "pyside6")
+
+    assert sanitize_apprun_child_env({"PATH": "/usr/bin"})["CBCS_QT_API"] == "pyside6"
+    explicit = sanitize_apprun_child_env({"PATH": "/usr/bin", "CBCS_QT_API": "pyside2"})
+    assert explicit["CBCS_QT_API"] == "pyside2"
 
 
 def test_resolve_runtime_executable_prefers_explicit_override(tmp_path: Path) -> None:

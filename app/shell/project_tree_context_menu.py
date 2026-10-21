@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from PySide2.QtCore import QSize
-from PySide2.QtGui import QIcon
-from PySide2.QtWidgets import QAction, QApplication, QMenu
+from app.qt.QtCore import QSize
+from app.qt.QtGui import QIcon
+from app.qt.QtWidgets import QAction, QApplication, QMenu
 
 from app.shell.icon_provider import (
     copy_icon,
@@ -35,6 +35,7 @@ from app.shell.project_tree_shortcuts import (
 )
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_icons import icon_run, icon_run_file
+from app.qt.qt_compat import exec_qt
 
 
 _TREE_MENU_ICON_SIZE = 16
@@ -224,7 +225,7 @@ def show_single_item_tree_context_menu(
             set_entry_point_action.setEnabled(False)
 
     paste_action.setEnabled(len(window._tree_clipboard_paths) > 0)
-    chosen = menu.exec_(window._project_tree_widget.viewport().mapToGlobal(position))
+    chosen = exec_qt(menu, window._project_tree_widget.viewport().mapToGlobal(position))
     workflow = window._project_tree_ui_workflow
     if chosen is None:
         return
@@ -317,7 +318,7 @@ def show_bulk_tree_context_menu(
     )
 
     paste_action.setEnabled(len(window._tree_clipboard_paths) > 0)
-    chosen = menu.exec_(window._project_tree_widget.viewport().mapToGlobal(position))
+    chosen = exec_qt(menu, window._project_tree_widget.viewport().mapToGlobal(position))
     if chosen is None:
         return
 

@@ -266,7 +266,7 @@ def prewarm_signature_machinery() -> None:
     except (TypeError, ValueError):
         pass
     try:
-        from PySide2 import QtCore  # noqa: WPS433 - optional, runner side only
+        from app.qt import QtCore  # noqa: WPS433 - optional, runner side only
 
         _signatures("setObjectName", QtCore.QObject.setObjectName)
     except REPL_RUNTIME_DEGRADATION_EXCEPTIONS:
@@ -325,7 +325,7 @@ def _short_type(raw: Any, kind: CompletionKind) -> str:
 
 def _is_qt_signal(raw: Any) -> bool:
     raw_type = type(raw)
-    return raw_type.__name__ == "Signal" and str(getattr(raw_type, "__module__", "")).startswith("PySide2")
+    return raw_type.__name__ == "Signal" and str(getattr(raw_type, "__module__", "")).startswith(("PySide2", "PySide6"))
 
 
 def _is_enum_value(raw: Any) -> bool:
@@ -333,7 +333,7 @@ def _is_enum_value(raw: Any) -> bool:
         return True
     raw_type = type(raw)
     module = str(getattr(raw_type, "__module__", ""))
-    return module.startswith(("PySide2", "shiboken2")) and hasattr(raw_type, "values") and hasattr(raw, "name")
+    return module.startswith(("PySide2", "PySide6", "shiboken2", "shiboken6")) and hasattr(raw_type, "values") and hasattr(raw, "name")
 
 
 def _safe_doc(value: Any) -> str:

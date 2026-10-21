@@ -2,15 +2,15 @@
 
 Provides light and dark palettes derived from system preference, plus a
 complete QSS stylesheet generator.  Modeled after the editor's own
-``app.shell.theme_tokens`` but scoped to the widgets used in this example. test
+``app.shell.theme_tokens`` but scoped to the widgets used in this example.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide2.QtGui import QPalette
-from PySide2.QtWidgets import QApplication
+from PySide.QtGui import QPalette
+from PySide.QtWidgets import QApplication
 
 
 @dataclass(frozen=True)

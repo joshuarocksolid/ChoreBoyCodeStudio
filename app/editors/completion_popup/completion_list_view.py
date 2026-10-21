@@ -5,9 +5,9 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Optional, Tuple
 
-from PySide2.QtCore import QModelIndex, Qt, Signal
-from PySide2.QtGui import QPaintEvent
-from PySide2.QtWidgets import QAbstractItemView, QFrame, QListView
+from app.qt.QtCore import QModelIndex, Qt, Signal
+from app.qt.QtGui import QPaintEvent
+from app.qt.QtWidgets import QAbstractItemView, QFrame, QListView
 
 from app.editors.completion_popup.completion_item_delegate import CompletionItemDelegate
 from app.editors.completion_popup.completion_item_model import ItemRole

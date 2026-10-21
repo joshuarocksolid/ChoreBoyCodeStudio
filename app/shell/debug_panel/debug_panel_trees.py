@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Callable, Optional
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtGui import QFont, QFontDatabase
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, Signal
+from app.qt.QtGui import QFont, QFontDatabase
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QHBoxLayout,
     QHeaderView,

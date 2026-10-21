@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 from typing import Any
 
-from PySide2.QtCore import Qt, QRect, QSize, QTimer, Signal
-from PySide2.QtGui import (
+from app.qt.QtCore import Qt, QRect, QSize, QTimer, Signal
+from app.qt.QtGui import (
     QColor,
     QFont,
     QFontMetrics,
@@ -15,7 +15,7 @@ from PySide2.QtGui import (
     QPainter,
     QPen,
 )
-from PySide2.QtWidgets import (
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,

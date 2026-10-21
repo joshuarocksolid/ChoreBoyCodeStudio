@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtGui import QFont
+from app.qt.QtGui import QFont
 
 from app.shell.settings_dialog_general import apply_completion_mode_to_controls
 from app.shell.settings_models import (

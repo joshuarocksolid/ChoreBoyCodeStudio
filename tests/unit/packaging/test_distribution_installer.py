@@ -39,7 +39,35 @@ LINUX_X86_64_ELF_STUB = (
 MACHO_ARM64_STUB = b"\xcf\xfa\xed\xfe" + bytes(16)
 
 
+def _alias_pyside_when_shim_missing() -> None:
+    """The installer imports FreeCAD's PySide shim.
+
+    AppRun on this Mac execs bin/python, which does not put Ext/PySide on
+    sys.path. ChoreBoy's freecad binary does. Alias the shim to the binding
+    this process already selected so the installer module can load.
+    """
+    if "PySide" in sys.modules or importlib.util.find_spec("PySide") is not None:
+        return
+    forced = __import__("os").environ.get("CBCS_QT_API", "")
+    if forced == "pyside6":
+        root = "PySide6"
+    elif forced == "pyside2":
+        root = "PySide2"
+    elif importlib.util.find_spec("PySide6") is not None:
+        root = "PySide6"
+    else:
+        root = "PySide2"
+    pyside = ModuleType("PySide")
+    pyside.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["PySide"] = pyside
+    for name in ("QtCore", "QtGui", "QtWidgets"):
+        module = importlib.import_module(f"{root}.{name}")
+        sys.modules[f"PySide.{name}"] = module
+        setattr(pyside, name, module)
+
+
 def _load_module(module_name: str, relative_path: str) -> ModuleType:
+    _alias_pyside_when_shim_missing()
     repo_root = Path(__file__).resolve().parents[3]
     module_path = repo_root / relative_path
     spec = importlib.util.spec_from_file_location(module_name, module_path)

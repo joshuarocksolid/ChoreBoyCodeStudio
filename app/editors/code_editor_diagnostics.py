@@ -3,15 +3,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtCore import QEvent, QPoint
-from PySide2.QtGui import QColor, QTextCharFormat, QTextCursor
-from PySide2.QtWidgets import QTextEdit, QToolTip
+from app.qt.QtCore import QEvent, QPoint
+from app.qt.QtGui import QColor, QTextCharFormat, QTextCursor
+from app.qt.QtWidgets import QTextEdit, QToolTip
 
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorDiagnosticsBase(QPlainTextEdit):
         _diagnostic_selections: list[Any]

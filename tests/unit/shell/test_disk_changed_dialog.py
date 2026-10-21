@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt  # noqa: E402
-from PySide2.QtTest import QTest  # noqa: E402
+from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtTest import QTest  # noqa: E402
 
 from app.shell.disk_conflict_dialogs import DiskChangedChoice, DiskChangedDialog  # noqa: E402
 

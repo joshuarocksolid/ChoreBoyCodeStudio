@@ -8,7 +8,7 @@ import queue
 from pathlib import Path
 from typing import Callable
 
-from PySide2.QtWidgets import QVBoxLayout, QWidget
+from app.qt.QtWidgets import QVBoxLayout, QWidget
 
 from app.bootstrap.logging_setup import get_active_log_path, get_subsystem_logger
 from app.bootstrap.paths import (

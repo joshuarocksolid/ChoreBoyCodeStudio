@@ -5,9 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QUrl, Qt, Signal
-from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
+from app.qt.QtCore import QUrl, Qt, Signal
+from app.qt.QtGui import QKeySequence
+from app.qt.QtWidgets import QAbstractItemView, QTreeWidget, QTreeWidgetItem
+from app.qt.qt_compat import enum_value, event_pos
 
 
 class ProjectTreeWidget(QTreeWidget):
@@ -59,7 +60,7 @@ class ProjectTreeWidget(QTreeWidget):
             return False
         key = event.key()  # type: ignore[attr-defined]
         modifiers = event.modifiers()  # type: ignore[attr-defined]
-        pressed = QKeySequence(key | int(modifiers))
+        pressed = QKeySequence(key | enum_value(modifiers))
         configured = QKeySequence(shortcut_text)
         return configured.matches(pressed) == QKeySequence.ExactMatch
 
@@ -88,7 +89,7 @@ class ProjectTreeWidget(QTreeWidget):
             event.ignore()
             return
 
-        target_item = self.itemAt(event.pos())
+        target_item = self.itemAt(event_pos(event))
         target_path = None if target_item is None else str(target_item.data(0, 256) or "")
         if not target_path:
             event.ignore()

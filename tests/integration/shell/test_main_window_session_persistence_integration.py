@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QTextCursor
+from app.qt.QtGui import QTextCursor
 
 from app.project.project_service import create_blank_project
 from app.shell.main_window import MainWindow

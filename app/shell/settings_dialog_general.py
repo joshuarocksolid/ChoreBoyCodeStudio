@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide2.QtGui import QFont
-from PySide2.QtWidgets import (
+from app.qt.QtGui import QFont
+from app.qt.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,

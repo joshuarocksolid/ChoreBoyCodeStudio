@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane  # noqa: E402

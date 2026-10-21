@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QFont, QKeySequence
-from PySide2.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QLabel, QPushButton
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QFont, QFontMetrics, QKeySequence
+from app.qt.QtWidgets import QApplication, QDialogButtonBox, QHeaderView, QLabel, QPushButton
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot, SETTINGS_SCOPE_PROJECT
@@ -248,9 +248,19 @@ def test_settings_dialog_tab_bar_prevents_label_clipping() -> None:
     assert tab_bar.elideMode() == Qt.ElideNone
     assert tab_bar.expanding() is False
 
-    font = tab_bar.font()
-    assert font.pixelSize() == 12
-    assert font.weight() >= QFont.DemiBold
+    # The settings style sheet paints tabs at 12px / 600. Qt 6 lets that style
+    # sheet override the tab bar's own font, so check geometry, not font().
+    label_font = QFont()
+    label_font.setPixelSize(12)
+    label_font.setWeight(QFont.DemiBold)
+    metrics = QFontMetrics(label_font)
+    dialog.show()
+    try:
+        for index in range(tab_bar.count()):
+            text_width = metrics.horizontalAdvance(tab_bar.tabText(index))
+            assert tab_bar.tabRect(index).width() >= text_width
+    finally:
+        dialog.hide()
 
 
 def test_settings_dialog_syntax_color_table_width_constraints() -> None:

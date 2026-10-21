@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.packaging.dependency_audit import run_dependency_audit
+from app.packaging.subprocess_packaging_rules import lookup_measured_exec
 
 pytestmark = pytest.mark.unit
 
@@ -84,7 +85,10 @@ def test_dependency_audit_flags_shell_true_subprocess(tmp_path: Path) -> None:
 
     report = run_dependency_audit(project_root=str(project_root), known_runtime_modules=frozenset())
 
-    assert any(issue.issue_id.startswith("package.subprocess.shell_true") for issue in report.issues)
+    shell_issue = next(issue for issue in report.issues if issue.issue_id.startswith("package.subprocess.shell_true"))
+    advice = " ".join(shell_issue.next_steps)
+    assert "/opt/freecad/AppRun" in advice
+    assert "Do not call `/bin/sh`" in advice
 
 
 def test_dependency_audit_uses_known_runtime_modules_when_provided(tmp_path: Path) -> None:
@@ -148,6 +152,18 @@ def test_apprun_call_is_allowed(tmp_path: Path) -> None:
     assert not any(issue.issue_id.startswith("package.subprocess") for issue in report.issues)
 
 
+def test_freecad_1_1_denies_shell_and_allows_apprun() -> None:
+    shell = lookup_measured_exec("/bin/sh", freecad_version="1.1.1")
+    apprun = lookup_measured_exec("/opt/freecad/AppRun", freecad_version="1.1.1")
+    bash = lookup_measured_exec("/usr/bin/bash", freecad_version="1.1.1")
+    git = lookup_measured_exec("/usr/bin/git", freecad_version="1.1.1")
+
+    assert shell is not None and shell.verdict == "denied"
+    assert apprun is not None and apprun.verdict == "allowed"
+    assert bash is not None and bash.verdict == "denied"
+    assert git is not None and git.verdict == "denied"
+
+
 def test_denied_programs_cite_freecad_1_measurement(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
@@ -166,6 +182,8 @@ def test_denied_programs_cite_freecad_1_measurement(tmp_path: Path) -> None:
     assert all(issue.evidence["freecad_version"] == "1.0.0" for issue in denied)
     assert all(issue.evidence["tested_on"] == "2026-10-20" for issue in denied)
     assert all("FreeCAD 1.0.0" in issue.why_it_happened for issue in denied)
+    assert all("/opt/freecad/AppRun" in " ".join(issue.next_steps) for issue in denied)
+    assert all("Do not call `/bin/sh`" in " ".join(issue.next_steps) for issue in denied)
 
 
 def test_denied_program_is_blocked_from_any_system_bin_folder(tmp_path: Path) -> None:

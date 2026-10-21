@@ -5,8 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Optional
 
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult

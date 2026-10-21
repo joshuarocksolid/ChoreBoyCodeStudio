@@ -10,9 +10,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from PySide2.QtCore import QPoint, Qt, Signal
-from PySide2.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QPoint, Qt, Signal
+from app.qt.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -29,9 +29,10 @@ from PySide2.QtWidgets import (
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity
 from app.run.problem_parser import ProblemEntry
 from app.shell.theme_tokens import ShellThemeTokens
+from app.qt.qt_compat import exec_qt
 
 if TYPE_CHECKING:
-    from PySide2.QtCore import QPoint
+    from app.qt.QtCore import QPoint
 
 ROLE_FILE_PATH = 320
 ROLE_LINE_NUMBER = 321
@@ -550,6 +551,6 @@ class ProblemsPanel(QWidget):
             return
         menu = QMenu(self)
         action = menu.addAction("Apply Safe Fixes for File")
-        chosen = menu.exec_(self._tree.viewport().mapToGlobal(position))
+        chosen = exec_qt(menu, self._tree.viewport().mapToGlobal(position))
         if chosen == action:
             self.context_menu_requested.emit(str(file_path), str(diag_code))

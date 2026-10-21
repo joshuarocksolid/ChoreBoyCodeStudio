@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from PySide2.QtCore import QEvent, Qt, Signal
-from PySide2.QtGui import QKeyEvent
-from PySide2.QtWidgets import QHBoxLayout, QLineEdit, QWidget
+from app.qt.QtCore import QEvent, Qt, Signal
+from app.qt.QtGui import QKeyEvent
+from app.qt.QtWidgets import QHBoxLayout, QLineEdit, QWidget
 
 
 class _OutlineFilterRow(QWidget):

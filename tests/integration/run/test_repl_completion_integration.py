@@ -18,6 +18,7 @@ from app.runner.repl_protocol import (
     listing_from_wire,
     loads_message,
 )
+from app.qt.qt_compat import QT_API
 
 pytestmark = pytest.mark.integration
 
@@ -84,7 +85,7 @@ def test_repl_control_complete_and_list_members_round_trip() -> None:
         list_members_payload = build_list_members_request(
             protocol=REPL_CONTROL_PROTOCOL,
             session_token="integration-token",
-            target_path="PySide2.QtCore",
+            target_path=QT_API + ".QtCore",
         )
         with socket.create_connection(("127.0.0.1", port), timeout=1.0) as sock:
             sock.sendall(dumps_message(list_members_payload))

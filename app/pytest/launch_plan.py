@@ -9,6 +9,7 @@ from shutil import which
 
 from app.bootstrap.paths import project_manifest_path
 from app.bootstrap.vendor_paths import resolve_vendor_root
+from app.packaging.launcher_bootstrap import apprun_safe_python
 from app.project.import_layout import resolve_project_import_layout
 from app.project.project_manifest import load_project_manifest
 from app.run.runtime_launch import (
@@ -93,7 +94,7 @@ def build_apprun_pytest_payload(pytest_args: list[str]) -> str:
     """
 
     vendor_root = str(resolve_vendor_root())
-    return (
+    return apprun_safe_python(
         "import sys; "
         f"sys.path.insert(0, {vendor_root!r}); "
         "import importlib.util; "
@@ -107,7 +108,7 @@ def build_apprun_pytest_payload(pytest_args: list[str]) -> str:
 
 def build_apprun_pytest_probe_payload() -> str:
     vendor_root = str(resolve_vendor_root())
-    return (
+    return apprun_safe_python(
         "import sys; "
         f"sys.path.insert(0, {vendor_root!r}); "
         "import importlib.util; "

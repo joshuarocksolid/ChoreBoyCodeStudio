@@ -6,7 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from PySide2.QtGui import QTextDocument
+from app.qt.QtGui import QTextDocument
 
 from app.editors.ini_highlighter import IniSyntaxHighlighter
 from app.syntax.palette import SyntaxPalette, syntax_palette_from_tokens

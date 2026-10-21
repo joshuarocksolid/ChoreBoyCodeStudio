@@ -11,9 +11,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Iterable, Optional, Sequence
 
-from PySide2.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt, Signal
-from PySide2.QtGui import QColor, QFont, QFontMetrics, QIcon, QKeyEvent, QPainter, QPen
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QAbstractListModel, QModelIndex, QRect, QSize, Qt, Signal
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QIcon, QKeyEvent, QPainter, QPen
+from app.qt.QtWidgets import (
     QDialog,
     QGraphicsDropShadowEffect,
     QHBoxLayout,

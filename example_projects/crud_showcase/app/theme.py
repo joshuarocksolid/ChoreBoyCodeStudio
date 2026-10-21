@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide2.QtGui import QPalette
-from PySide2.QtWidgets import QApplication
+from PySide.QtGui import QPalette
+from PySide.QtWidgets import QApplication
 
 
 @dataclass(frozen=True)

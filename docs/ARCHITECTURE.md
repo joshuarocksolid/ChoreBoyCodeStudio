@@ -64,13 +64,13 @@ The architecture must explicitly respect these runtime realities:
 
 1. Users cannot install normal editors, IDEs, or Python packages system-wide.
 2. The guaranteed runtime is FreeCAD’s embedded Python launched through `/opt/freecad/AppRun`.
-3. PySide2 is available inside that runtime.
+3. A Qt for Python binding is available inside that runtime: PySide2 on today's ChoreBoy (V6.5), PySide6 on the FreeCAD 1.1 image. CBCS imports Qt only through `app.qt` (binding chosen by `app/bootstrap/qt_binding_choice.py`, `CBCS_QT_API` overrides it); user projects import FreeCAD's `PySide` shim.
 4. `import FreeCAD` works for headless backend operations.
 5. Some FreeCAD operations that depend on GUI modules fail in console mode.
 6. SQLite works and is suitable for local persistence.
 7. `subprocess` works and is a core primitive.
 8. Detached process launch is proven and necessary for robust app lifetime behavior.
-9. Optional pure-Python vendored packages are acceptable by default. Compiled dependencies require an explicit runtime-parity spike and a supported in-process load path (for example the proven memfd strategy), and must not be introduced casually.
+9. Optional pure-Python vendored packages are acceptable by default. Compiled dependencies require an explicit runtime-parity spike and a supported in-process load path (for example the proven memfd strategy), and must not be introduced casually. On the FreeCAD 1.1 image there is no such path: memfd is removed, ctypes only loads files under `/opt/freecad`, and a `.so` mapped from `/home` or `/tmp` fails. There, native code has to come from the image (tree-sitter 0.26 does; `app/treesitter/loader.py` prefers it).
 
 These are not implementation details. They are first-class architectural constraints.
 

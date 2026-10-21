@@ -6,7 +6,7 @@ import logging
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
-from PySide2.QtWidgets import QDialog, QStackedWidget, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QDialog, QStackedWidget, QVBoxLayout, QWidget
 
 from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
@@ -29,6 +29,7 @@ from app.support.runtime_explainer import (
     merge_runtime_issue_reports,
     symbol_index_disabled_issue,
 )
+from app.qt.qt_compat import exec_qt
 
 
 class RuntimeOnboardingHost(Protocol):
@@ -340,7 +341,7 @@ class RuntimeOnboardingWorkflow:
             package_location=package_location,
             parent=self._host.dialog_parent(),
         )
-        dialog.exec_()
+        exec_qt(dialog)
 
     def _open_packaging_location(self, relative_path: str, line_number: int) -> None:
         opener = getattr(self._host, "open_file_at_line", None)
@@ -441,7 +442,7 @@ class RuntimeOnboardingWorkflow:
         self.connect_welcome_widget_actions(onboarding_widget, close_after_action=dialog.accept)
         self.refresh_welcome_widget_state(onboarding_widget, force_show_onboarding=True)
         layout.addWidget(onboarding_widget)
-        dialog.exec_()
+        exec_qt(dialog)
 
     def _invoke_welcome_action(
         self,

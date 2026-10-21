@@ -16,20 +16,33 @@ ChoreBoy Code Studio runs entirely inside FreeCAD's bundled Python runtime. Ther
 | Vendored packages    | `/workspace/vendor/`                             |
 
 
-### How the two environments compare
+### How the environments compare
 
 
-| Aspect                  | ChoreBoy production       | Cursor Cloud dev             |
-| ----------------------- | ------------------------- | ---------------------------- |
-| AppRun path             | `/opt/freecad/AppRun`     | `/opt/freecad/AppRun` (same) |
-| Python version          | 3.9.2                     | 3.11.13                      |
-| PySide2                 | bundled in AppRun         | bundled in AppRun            |
-| Display                 | X11 desktop               | X11 on `:1`                  |
-| Subprocess restrictions | AppArmor (only `/bin/sh`) | None                         |
-| Vendored `.so` wheels   | cp39                      | cp311                        |
+| Aspect                  | ChoreBoy production (V6.5) | ChoreBoy FreeCAD 1.1 (test build)              | Cursor Cloud dev             |
+| ----------------------- | -------------------------- | ---------------------------------------------- | ---------------------------- |
+| AppRun path             | `/opt/freecad/AppRun`      | `/opt/freecad/AppRun`                          | `/opt/freecad/AppRun` (same) |
+| Python version          | 3.9.2                      | 3.11.14                                        | 3.11.13                      |
+| Qt binding              | PySide2 / Qt 5.15.2        | PySide6 / Qt 6.8.3 (no PySide2)                | PySide2 5.15.15              |
+| Display                 | X11 desktop                | X11 desktop                                    | X11 on `:1`                  |
+| Subprocess restrictions | AppArmor (only `/bin/sh`)  | AppArmor: exec `/opt/freecad/AppRun` directly; `/bin/sh`, bash, `shell=True`, git denied | None |
+| Native code             | vendored cp39 `.so` via memfd | none from the CBCS install (memfd removed, ctypes jailed to `/opt/freecad`); tree-sitter 0.26 ships in the image | cp311 |
 
 
 All application code must target **Python 3.9** syntax (see `.cursor/rules/python39_compatibility.mdc`), even though the Cloud dev runtime is 3.11.
+
+### Importing Qt
+
+CBCS runs on PySide2 and PySide6 from one codebase. In app, test and testing code, import Qt only through `app.qt`, never from a binding:
+
+```python
+from app.qt.QtWidgets import QAction, QDialog   # QAction family works on both
+from app.qt.qt_compat import exec_qt, enum_value, event_pos
+exec_qt(dialog)          # not dialog.exec_()
+enum_value(modifiers)    # not int(modifiers); int() raises on PySide6 flag enums
+```
+
+`app/bootstrap/qt_binding_choice.py` picks the binding. `CBCS_QT_API=pyside2|pyside6` forces it; otherwise CBCS follows FreeCAD's `PySide` shim when present, else prefers PySide6. The `qt-portability` dune check (`python3 -m tools.dune.check`) enforces this, and `python3 tools/qt_codemod.py` rewrites stray binding imports. User-facing code (templates, example projects, the installer) instead imports FreeCAD's `PySide` shim, `from PySide.QtWidgets import …`, with `QAction`/`QActionGroup`/`QShortcut` from `PySide.QtGui`. See `docs/PYSIDE6_MIGRATION_PLAN.md`.
 
 ### Running tests
 
@@ -61,6 +74,14 @@ When you only need a specific path or expression (still through AppRun):
 python3 run_tests.py tests/unit/some/test_module.py
 python3 run_tests.py -k test_project_service
 ```
+
+PySide6 lane: point `CBCS_APPRUN` at a runtime that has PySide6, and force the binding when that runtime also has PySide2:
+
+```bash
+CBCS_APPRUN=/path/to/pyside6/AppRun CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast
+```
+
+Every change that touches Qt code should pass on both bindings. Today's ChoreBoy is PySide2 and the FreeCAD 1.1 image is PySide6-only. The live ChoreBoy VMs are the final check: `.cursor/skills/verify-cbcs` (`control-cbcs shard fast`) runs the suite in-process on a guest. ChoreBoyExp is the FreeCAD 1.1 VM; see `docs/PYSIDE6_MIGRATION_PLAN.md` for how to drive it.
 
 `QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them by hand. The `slow` marker (subprocess polling, debug session waits) is excluded from the `fast` shard so the agent loop stays under budget. The demoted `performance` marker is auto-excluded by `run_tests.py` unless you pass `-m performance` or a path under `tests/integration/performance/`. See `docs/TESTS.md` §5 for the canonical command catalog and §9 for the latest checkpoint numbers.
 

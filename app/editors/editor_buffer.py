@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from typing import Any, Iterator, Optional
 
-import shiboken2
-from PySide2.QtGui import QTextDocument
-from PySide2.QtWidgets import QPlainTextDocumentLayout, QWidget
+from app.qt.QtGui import QTextDocument
+from app.qt.QtWidgets import QPlainTextDocumentLayout, QWidget
+from app.qt.qt_compat import wrapper_is_valid
 
 
 class EditorBuffer:
@@ -45,7 +45,7 @@ class EditorBuffer:
 
     def views(self) -> Iterator[Any]:
         """Views showing this buffer, including the caller."""
-        live = [view for view in self._views.values() if shiboken2.isValid(view)]
+        live = [view for view in self._views.values() if wrapper_is_valid(view)]
         return iter(live)
 
     def view_count(self) -> int:

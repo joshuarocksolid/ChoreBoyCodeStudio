@@ -9,7 +9,7 @@ from typing import Any, Optional
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.persistence.autosave_store import AutosaveStore, DraftEntry  # noqa: E402

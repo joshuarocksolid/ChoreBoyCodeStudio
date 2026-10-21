@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QPoint
+from app.qt.QtCore import QPoint
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget

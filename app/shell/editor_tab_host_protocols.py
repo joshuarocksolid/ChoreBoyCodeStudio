@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from PySide2.QtWidgets import QTabWidget
+from app.qt.QtWidgets import QTabWidget
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget

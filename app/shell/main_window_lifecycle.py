@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtGui import QCloseEvent
+from app.qt.QtGui import QCloseEvent
 
 from app.shell import close_while_running_dialog
 from app.shell.close_while_running_dialog import CloseRunChoice, build_running_program_summary

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Sequence, Tuple
 
-from PySide2.QtCore import QAbstractListModel, QModelIndex, Qt
+from app.qt.QtCore import QAbstractListModel, QModelIndex, Qt
 
 from app.editors.completion_popup.completion_kind_style import KindGlyphStyle, kind_style_for
 from app.intelligence.completion_models import CompletionItem, CompletionKind

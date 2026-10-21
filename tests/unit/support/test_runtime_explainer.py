@@ -25,7 +25,7 @@ def test_build_startup_issue_report_maps_failed_checks_by_severity() -> None:
                 message="Vendored Python tools missing",
             ),
             CapabilityCheckResult(
-                check_id="pyside2_import",
+                check_id="qt_binding_import",
                 is_available=True,
                 message="PySide2 import succeeded.",
             ),
@@ -119,3 +119,27 @@ def test_explain_runtime_message_detects_headless_gui_signature() -> None:
     assert issue.issue_id == "runtime.freecad_gui_module_in_headless_run"
     assert issue.workflow == "run"
     assert issue.help_topic == "headless_notes"
+
+
+def test_failed_qt_binding_ids_report_runtime_unavailable() -> None:
+    for check_id in ("pyside2_import", "qt_binding_import"):
+        report = CapabilityProbeReport(
+            checks=[
+                CapabilityCheckResult(
+                    check_id=check_id,
+                    is_available=False,
+                    message="missing",
+                    details={"binding": "PySide6"},
+                )
+            ]
+        )
+        issue = build_startup_issue_report(report).issues[0]
+        assert issue.issue_id == "runtime.pyside2_unavailable"
+        assert issue.severity == "blocking"
+        assert issue.title == "Qt runtime is unavailable"
+        assert "PySide6 or PySide2" in issue.summary
+        assert "CBCS_QT_API" in issue.summary
+        assert "PySide6" in issue.summary
+        assert "PySide6 or PySide2" in issue.why_it_happened
+        assert "CBCS_QT_API" in issue.why_it_happened
+        assert any("CBCS_QT_API" in step for step in issue.next_steps)

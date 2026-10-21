@@ -137,6 +137,19 @@ MEASURED_EXEC: dict[str, dict[str, MeasuredExec]] = {
             "PermissionError errno 13",
         ),
     },
+    # FreeCAD 1.1.1, ChoreBoyExp, measured 2026-10-20. See docs/DISCOVERY.md section 1B.
+    "1.1.1": {
+        program: _row("1.1.1", "2026-10-20", "20 Oct 2026", program, verdict, detail)
+        for program, verdict, detail in (
+            ("/opt/freecad/AppRun", "allowed", "return code 0"),
+            ("/bin/sh", "denied", "PermissionError"),
+            ("sh", "denied", "PermissionError"),
+            ("/bin/bash", "denied", "PermissionError"),
+            ("bash", "denied", "PermissionError"),
+            ("/usr/bin/git", "denied", "PermissionError"),
+            ("git", "denied", "PermissionError"),
+        )
+    },
 }
 
 
@@ -427,7 +440,7 @@ def _denied_issue(
         ),
         next_steps=[
             "Remove this call, or do the same work in Python inside your app.",
-            "Programs started through `/opt/freecad/AppRun` are allowed.",
+            "Exec `/opt/freecad/AppRun` with an argv list. Do not call `/bin/sh`.",
         ],
         help_topic=HELP_TOPIC_PACKAGING,
         evidence={
@@ -492,12 +505,12 @@ def _shell_true_issue(rel_file: str, lineno: int, import_path: str) -> RuntimeIs
         title="Package uses shell=True subprocess execution",
         summary="A subprocess call opts into shell parsing, which is not part of the supported ChoreBoy packaging contract.",
         why_it_happened=(
-            "A shell string hides the program name, and running a denied program through "
-            "`/bin/sh -c` still fails. The shell does not leave the AppArmor profile."
+            "A shell string hides the program name. FreeCAD 1.1 denies `/bin/sh`. "
+            "On FreeCAD 1.0 a denied program still fails when the shell starts it."
         ),
         next_steps=[
             "Replace shell=True with an explicit argv list.",
-            "Name the program in that list so packaging can check it against the measured ChoreBoy results.",
+            "Exec that argv through `/opt/freecad/AppRun`. Do not call `/bin/sh`.",
         ],
         help_topic=HELP_TOPIC_PACKAGING,
         evidence={

@@ -5,9 +5,9 @@ from html import escape
 import re
 from typing import Callable
 
-from PySide2.QtCore import QPoint, Qt, QTimer
-from PySide2.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QPoint, Qt, QTimer
+from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from app.qt.QtWidgets import (
     QApplication,
     QDialog,
     QHBoxLayout,

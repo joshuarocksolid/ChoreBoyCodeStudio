@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtWidgets import QPushButton, QWidget
+from app.qt.QtWidgets import QPushButton, QWidget
 
 _FIELD_ACTION_OBJECT_NAME = "shell.fieldAction.button"
 

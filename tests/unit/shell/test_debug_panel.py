@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.debug_control_workflow import DebugControlWorkflow  # noqa: E402
 from app.shell.debug_panel import DebugPanelWidget  # noqa: E402

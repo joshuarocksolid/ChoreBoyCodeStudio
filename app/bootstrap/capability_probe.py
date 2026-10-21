@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import os
 import subprocess
 import sys
@@ -17,6 +18,7 @@ from app.bootstrap.paths import (
     resolve_global_state_root,
     resolve_temp_root,
 )
+from app.bootstrap.qt_binding_choice import forced_by_env, select_binding
 from app.bootstrap.state_lock_probe import probe_state_dir
 from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
@@ -24,7 +26,9 @@ from app.python_tools.vendor_runtime import import_python_tooling_modules, initi
 
 
 APP_RUN_PRESENCE_CHECK_ID = "apprun_presence"
-PYSIDE2_IMPORT_CHECK_ID = "pyside2_import"
+QT_BINDING_CHECK_ID = "qt_binding_import"
+PYSIDE2_IMPORT_CHECK_ID = "pyside2_import"  # deprecated id; old bundles still use this string
+QT_UITOOLS_CHECK_ID = "qt_uitools_import"
 FREECAD_IMPORT_CHECK_ID = "freecad_import"
 STATE_ROOT_WRITABLE_CHECK_ID = "state_root_writable"
 GLOBAL_LOGS_WRITABLE_CHECK_ID = "global_logs_writable"
@@ -42,7 +46,8 @@ def run_startup_capability_probe(
     """Run startup capability checks and return structured results."""
     check_runners: list[tuple[str, Callable[[], CapabilityCheckResult]]] = [
         (APP_RUN_PRESENCE_CHECK_ID, lambda: check_apprun_presence(app_run_path=app_run_path)),
-        (PYSIDE2_IMPORT_CHECK_ID, check_pyside2_availability),
+        (QT_BINDING_CHECK_ID, check_qt_binding_availability),
+        (QT_UITOOLS_CHECK_ID, check_qt_uitools_availability),
         (FREECAD_IMPORT_CHECK_ID, check_freecad_availability),
         (STATE_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_state_path(state_root=state_root)),
         (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
@@ -76,7 +81,7 @@ def run_minimal_startup_capability_probe(
     """Run a lightweight prepaint subset of startup capability checks."""
     check_runners: list[tuple[str, Callable[[], CapabilityCheckResult]]] = [
         (APP_RUN_PRESENCE_CHECK_ID, lambda: check_apprun_presence(app_run_path=app_run_path)),
-        (PYSIDE2_IMPORT_CHECK_ID, check_pyside2_availability),
+        (QT_BINDING_CHECK_ID, check_qt_binding_availability),
         (STATE_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_state_path(state_root=state_root)),
         (GLOBAL_LOGS_WRITABLE_CHECK_ID, lambda: check_writable_logs_path(state_root=state_root)),
         (TEMP_ROOT_WRITABLE_CHECK_ID, lambda: check_writable_temp_path(temp_root=temp_root)),
@@ -119,9 +124,84 @@ def check_apprun_presence(app_run_path: Optional[PathInput] = None) -> Capabilit
     )
 
 
+def check_qt_binding_availability() -> CapabilityCheckResult:
+    """Import the selected Qt binding without loading the other one."""
+    try:
+        binding = select_binding()
+    except ImportError as exc:
+        return CapabilityCheckResult(
+            check_id=QT_BINDING_CHECK_ID,
+            is_available=False,
+            message=str(exc),
+        )
+
+    try:
+        qt_core = importlib.import_module(binding + ".QtCore")
+        importlib.import_module(binding + ".QtGui")
+        importlib.import_module(binding + ".QtWidgets")
+        package = importlib.import_module(binding)
+        binding_version = package.__version__
+        qt_version = qt_core.qVersion()
+    except Exception as exc:
+        return CapabilityCheckResult(
+            check_id=QT_BINDING_CHECK_ID,
+            is_available=False,
+            message=f"Failed to import {binding}: {exc}",
+        )
+
+    other_binding = "PySide2" if binding == "PySide6" else "PySide6"
+    return CapabilityCheckResult(
+        check_id=QT_BINDING_CHECK_ID,
+        is_available=True,
+        message=f"{binding} import succeeded.",
+        details={
+            "binding": binding,
+            "binding_version": binding_version,
+            "qt_version": qt_version,
+            "forced_by_env": forced_by_env(),
+            "other_binding_present": importlib.util.find_spec(other_binding) is not None,
+        },
+    )
+
+
 def check_pyside2_availability() -> CapabilityCheckResult:
-    """Check that PySide2 is importable in the active runtime."""
-    return _check_module_import("PySide2", PYSIDE2_IMPORT_CHECK_ID)
+    """Deprecated wrapper. The live check id is qt_binding_import."""
+    return check_qt_binding_availability()
+
+
+def check_qt_uitools_availability() -> CapabilityCheckResult:
+    """Import QtUiTools for the selected binding and require QUiLoader."""
+    try:
+        binding = select_binding()
+    except ImportError as exc:
+        return CapabilityCheckResult(
+            check_id=QT_UITOOLS_CHECK_ID,
+            is_available=False,
+            message=str(exc),
+        )
+
+    module_name = binding + ".QtUiTools"
+    try:
+        module = importlib.import_module(module_name)
+    except Exception as exc:
+        return CapabilityCheckResult(
+            check_id=QT_UITOOLS_CHECK_ID,
+            is_available=False,
+            message=f"Failed to import {module_name}: {exc}",
+        )
+
+    if not hasattr(module, "QUiLoader"):
+        return CapabilityCheckResult(
+            check_id=QT_UITOOLS_CHECK_ID,
+            is_available=False,
+            message=f"{module_name} has no QUiLoader.",
+        )
+
+    return CapabilityCheckResult(
+        check_id=QT_UITOOLS_CHECK_ID,
+        is_available=True,
+        message=f"{module_name} import succeeded.",
+    )
 
 
 def check_freecad_availability() -> CapabilityCheckResult:
@@ -208,17 +288,27 @@ def check_treesitter_runtime() -> CapabilityCheckResult:
     status = initialize_tree_sitter_runtime()
     if status.is_available:
         grammar_count = len(status.available_language_keys)
+        source_label = status.source or "unknown"
+        version_label = status.version or "unknown"
         return CapabilityCheckResult(
             check_id=TREESITTER_RUNTIME_CHECK_ID,
             is_available=True,
-            message=f"Tree-sitter runtime ready ({grammar_count} grammars).",
+            message=(
+                f"Tree-sitter runtime ready ({source_label} {version_label}, {grammar_count} grammars)."
+            ),
             details={
                 "grammars": list(status.available_language_keys),
                 "status": status.message,
+                "source": status.source,
+                "version": status.version,
             },
         )
 
-    details: dict[str, object] = {"status": status.message}
+    details: dict[str, object] = {
+        "status": status.message,
+        "source": status.source,
+        "version": status.version,
+    }
     failure_traceback = runtime_traceback()
     if failure_traceback:
         details["traceback"] = failure_traceback

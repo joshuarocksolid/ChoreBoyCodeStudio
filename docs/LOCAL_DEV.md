@@ -25,8 +25,8 @@ Documents/
 |--------|---------------------|---------------------------|
 | Python | 3.9.2 (AppRun only) | 3.11.13 (Cloud `/opt/freecad`) or 3.9.2 (`~/opt/freecad/AppRun`) |
 | AppRun | `/opt/freecad/AppRun` | Same default; local setup prefers `~/opt/freecad/AppRun` |
-| Qt / PySide2 | 5.15.2 (probed on device) | 5.15.15 (Cloud conda bundle) |
-| Subprocess policy | AppArmor: only `/bin/sh` whitelisted | Unrestricted on typical dev machines |
+| Qt binding | PySide2 5.15.2 (V6.5); PySide6 6.8.3 on the FreeCAD 1.1 image | PySide2 5.15.15 (Cloud conda bundle); `~/opt/freecad` has PySide2 and PySide6 |
+| Subprocess policy | AppArmor: only `/bin/sh` whitelisted (V6.5); 1.1 denies `/bin/sh` and allows exec of `/opt/freecad/AppRun` | Unrestricted on typical dev machines |
 | Source compatibility | Python 3.9 syntax required | Same — see `pyrightconfig.json` |
 
 See also [`docs/CHOREBOY_RUNTIME_PITFALLS.md`](CHOREBOY_RUNTIME_PITFALLS.md) for cross-project pitfall patterns.
@@ -127,6 +127,8 @@ CBCS_APPRUN=/opt/freecad/AppRun ./run_dev.sh --probe
 | `FREECAD_APPRUN` | Cross-project AppRun override |
 | `CBCS_ARTIFACTS_DIR` | Non-default artifacts location |
 | `CBCS_VENDOR_PROFILE` | Force `py39` or `py311` vendor tree |
+| `CBCS_QT_API` | Force `pyside2` or `pyside6` (also `./run_dev.sh --qt pyside2`). Without it CBCS follows FreeCAD's `PySide` shim, else prefers PySide6, so a prefix with both bindings runs PySide6 unless you pin PySide2 for V6.5 parity |
+| `CBCS_TREE_SITTER_SOURCE` | Force `runtime` (image tree-sitter, as on FreeCAD 1.1) or `vendored` |
 
 When using the Python 3.9 vendor tree, `black==24.10.0` requires `click<8.2`
 (Python 3.9 cannot import Click 8.2+). `./scripts/setup_vendor_py39.sh` pins

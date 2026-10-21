@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtGui", exc_type=ImportError)
+pytest.importorskip("app.qt.QtGui", exc_type=ImportError)
 
-from PySide2.QtGui import QPalette  # noqa: E402
+from app.qt.QtGui import QPalette  # noqa: E402
 
 from app.syntax.palette import (  # noqa: E402
     DEFAULT_LIGHT_PALETTE,
