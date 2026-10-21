@@ -154,8 +154,6 @@ class EditorTabFactory:
         window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
         window._editor_tabs_widget.setCurrentIndex(tab_index)
         window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
-        if surface is not None:
-            surface.focus_primary()
         if restore_draft:
             window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
         if editor_widget is not None:
