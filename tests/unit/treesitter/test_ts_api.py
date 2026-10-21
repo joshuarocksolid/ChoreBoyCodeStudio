@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from app.treesitter.capture_pipeline import TreeSitterCapturePipelineMixin
-from app.treesitter.language_registry import default_tree_sitter_language_registry
+from app.treesitter.language_registry import TreeSitterLanguageRegistry
 from app.treesitter.loader import initialize_tree_sitter_runtime
 from app.treesitter.ts_api import captures, compile_query, make_parser
 
@@ -24,14 +24,14 @@ def _identifier_texts(raw: Any, source: bytes) -> set[str]:
 
 
 def test_captures_limit_to_point_range() -> None:
-    # Use the process-wide runtime as-is. Re-initializing it re-imports
-    # tree_sitter, and the cached default registry would then hold Language
-    # objects from the previous module instance.
+    # A fresh registry: other tests re-initialize the loader, which re-imports
+    # tree_sitter, and a cached registry would hold Language objects from the
+    # previous module instance ("must be tree_sitter.Language, not ...").
     status = initialize_tree_sitter_runtime()
     if not status.is_available:
         pytest.skip(status.message)
 
-    resolved = default_tree_sitter_language_registry().resolve_for_key("python")
+    resolved = TreeSitterLanguageRegistry().resolve_for_key("python")
     assert resolved is not None
     source = b"alpha = 1\nbeta = 2\n"
     parser = make_parser(resolved.language)
