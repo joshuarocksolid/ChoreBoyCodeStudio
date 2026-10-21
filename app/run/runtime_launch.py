@@ -9,6 +9,7 @@ from typing import Mapping
 
 from app.bootstrap.qt_binding_choice import ENV_VAR as QT_API_ENV_VAR, loaded_binding_env_value
 from app.core import constants
+from app.packaging.launcher_bootstrap import apprun_safe_python
 
 _APPRUN_ENV_KEYS_TO_DROP = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 _FREECAD_EXECUTABLE_NAMES = {"AppRun", "freecad", "FreeCAD"}
@@ -62,4 +63,4 @@ def build_runpy_bootstrap_payload(
     if argv is not None:
         statements.append(f"sys.argv={[str(a) for a in argv]!r};")
     statements.append(f"runpy.run_path({resolved_script!r}, run_name='__main__')")
-    return "".join(statements)
+    return apprun_safe_python("".join(statements))

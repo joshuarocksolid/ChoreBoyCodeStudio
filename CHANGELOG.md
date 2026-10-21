@@ -23,6 +23,7 @@ Run on the FreeCAD 1.1 ChoreBoy image (Python 3.11, PySide6 / Qt 6, no PySide2) 
 ### Fixed
 
 - Bold syntax colors, such as Markdown strong text, render bold on Qt 6.
+- Desktop launchers and the installer start on FreeCAD 1.1. FreeCAD 1.1 aborts with "File name too long" when an `AppRun -c` command has more than 255 characters without a `/`, which the installer, the installed Code Studio launcher, packaged-app launchers and Test Explorer commands all did. Launchers that older versions created keep that problem on FreeCAD 1.1: reinstall Code Studio, and re-package and reinstall apps, to regenerate them.
 
 ## [0.4.14] - 2026-09-24
 
