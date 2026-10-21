@@ -146,6 +146,24 @@ def test_ids_follow_schema_preorder_and_stay_stable() -> None:
     assert layout_parent.id == root.id
 
 
+def test_odd_property_content_rereads_with_the_same_fingerprint() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="empty"/>
+  <property name="noted"><!--c--><string>A</string></property>
+  <property name="two"><string>A</string><string>B</string></property>
+ </widget>
+</ui>
+"""
+    loaded = _load(text)
+    saved = write_ui(loaded.document).text
+    assert "#value" not in saved
+    again = _load(saved)
+    assert again.document.structure_fingerprint() == loaded.document.structure_fingerprint()
+    assert write_ui(again.document).text == saved
+
+
 def test_duplicate_property_keeps_the_last_value() -> None:
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">

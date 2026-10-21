@@ -737,7 +737,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
     notes: List[_Note] = []
     elements = _elements(node)
     if len(elements) != 1 or _has_significant_text(node) or _has_comment(node):
-        value: Value = OpaqueValue(_to_opaque(_synthetic_value(node)))
+        value = OpaqueValue(_property_content(node))
         notes.append(_Note("FB005", "Kept this property value as written.", node.line, name or None))
     else:
         parsed = _parse_value(elements[0])
@@ -1196,11 +1196,22 @@ def _to_opaque(node: _XNode) -> OpaqueElement:
     return OpaqueElement(node.tag, node.attrs, tuple(children))
 
 
-def _synthetic_value(node: _XNode) -> _XNode:
-    elements = [child for child in node.children if not isinstance(child, str) or child.strip()]
-    if len(elements) == 1 and isinstance(elements[0], _XNode):
-        return elements[0]
-    return _XNode("#value", (), node.children, node.line)
+def _property_content(node: _XNode) -> OpaqueElement:
+    """The property's own children, with no invented wrapper element.
+
+    Indentation between those children is not content. A tag of ``""`` tells
+    the writer to emit the children in place.
+    """
+    children: List[object] = []
+    for child in node.children:
+        if isinstance(child, str):
+            if child.strip():
+                children.append(child)
+        elif isinstance(child, _XNode):
+            children.append(_to_opaque(child))
+        elif isinstance(child, (OpaqueComment, OpaquePI)):
+            children.append(child)
+    return OpaqueElement("", (), tuple(children))
 
 
 def _elements(node: _XNode) -> List[_XNode]:

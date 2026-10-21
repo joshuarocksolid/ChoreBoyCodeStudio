@@ -188,7 +188,14 @@ class _Writer:
         if element.tag == "":
             for child in element.children:
                 if isinstance(child, str):
-                    self._raw_text_line(indent, child)
+                    if child.strip():
+                        self._raw_text_line(indent, child)
+                elif isinstance(child, OpaqueComment):
+                    self.lines.append((" " * indent) + "<!--%s-->" % child.text)
+                elif isinstance(child, OpaquePI):
+                    self.lines.append((" " * indent) + "<?%s %s?>" % (child.target, child.data))
+                elif isinstance(child, OpaqueElement):
+                    self.opaque(child, indent)
             return
         attrs = "".join(' %s="%s"' % (key, _esc_attr(value)) for key, value in element.attrs)
         if not element.children:
