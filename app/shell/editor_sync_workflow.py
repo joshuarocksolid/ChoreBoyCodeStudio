@@ -97,7 +97,10 @@ class EditorSyncWorkflow:
         if editor_widget is not None:
             self._host.apply_detected_indentation(file_path, editor_widget, text)
         if tab_state.content_source is not None:
-            tab_state.mark_saved(last_known_mtime=last_known_mtime if last_known_mtime is not None else self._editor_manager.current_disk_mtime(file_path))
+            resolved_mtime = last_known_mtime
+            if resolved_mtime is None:
+                resolved_mtime = self._editor_manager.current_disk_mtime(file_path)
+            tab_state.mark_saved(last_known_mtime=resolved_mtime, saved_text=text)
             tab_index = self._host.tab_index_for_path(file_path)
             if self._host.has_editor_tabs_widget() and tab_index >= 0:
                 self._host.refresh_tab_presentation(file_path)
@@ -106,7 +109,7 @@ class EditorSyncWorkflow:
         resolved_mtime = last_known_mtime
         if resolved_mtime is None:
             resolved_mtime = self._editor_manager.current_disk_mtime(file_path)
-        updated_tab.mark_saved(last_known_mtime=resolved_mtime)
+        updated_tab.mark_saved(last_known_mtime=resolved_mtime, saved_text=text)
         tab_index = self._host.tab_index_for_path(file_path)
         if self._host.has_editor_tabs_widget() and tab_index >= 0:
             self._host.refresh_tab_presentation(file_path)

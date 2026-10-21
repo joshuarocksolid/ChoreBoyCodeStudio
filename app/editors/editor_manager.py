@@ -177,8 +177,9 @@ class EditorManager:
         """Save current content for an open tab back to disk."""
         tab = self._require_tab(file_path)
         path = Path(tab.file_path)
-        atomic_write_text(path, tab.current_content)
-        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path))
+        text = tab.current_content
+        atomic_write_text(path, text)
+        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)
         return tab
 
     def current_disk_mtime(self, file_path: str) -> float | None:

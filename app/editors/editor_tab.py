@@ -89,15 +89,20 @@ class EditorTabState:
         """Replace current editor content."""
         self.current_content = content
 
-    def mark_saved(self, *, last_known_mtime: float | None = None) -> None:
-        """Mark current content as the persisted baseline."""
+    def mark_saved(
+        self,
+        *,
+        last_known_mtime: float | None = None,
+        saved_text: Optional[str] = None,
+    ) -> None:
+        """Mark the persisted baseline. ``saved_text`` is the bytes just written."""
         if self.content_source is not None:
-            saved_text = self.content_source.current_text()
-            self.content_source.mark_saved(saved_text)
-            self.original_content = saved_text
-            self._current_content = saved_text
+            text = self.content_source.current_text() if saved_text is None else saved_text
+            self.content_source.mark_saved(text)
+            self.original_content = text
+            self._current_content = text
         else:
-            self.original_content = self._current_content
+            self.original_content = self._current_content if saved_text is None else saved_text
         self.last_known_mtime = last_known_mtime
 
     def set_last_known_mtime(self, mtime: float | None) -> None:
