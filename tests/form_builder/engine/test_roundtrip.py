@@ -210,6 +210,20 @@ def test_earlier_duplicate_stays_at_its_position() -> None:
     assert between.index(">A1<") < between.index("<extra") < between.index(">A2<")
 
 
+def test_empty_element_table_records_the_expat_choice() -> None:
+    """Expat cannot tell ``<author/>`` from ``<author></author>``. The table is the choice."""
+    from app.features.form_builder.engine.ui4.writer import EMPTY_ELEMENT_FORM
+
+    assert EMPTY_ELEMENT_FORM["string"] == "self"
+    assert EMPTY_ELEMENT_FORM["author"] == "pair"
+    assert EMPTY_ELEMENT_FORM["comment"] == "pair"
+    assert EMPTY_ELEMENT_FORM["class"] == "pair"
+    assert EMPTY_ELEMENT_FORM["exportmacro"] == "pair"
+    assert EMPTY_ELEMENT_FORM["resources"] == "self"
+    assert EMPTY_ELEMENT_FORM["connections"] == "self"
+    assert set(EMPTY_ELEMENT_FORM.values()) <= {"self", "pair"}
+
+
 def test_empty_string_matches_designer_self_close() -> None:
     saved = _saved(
         """<?xml version="1.0" encoding="UTF-8"?>

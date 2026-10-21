@@ -579,6 +579,10 @@ class _Writer:
         self.lines.append("%s</%s>" % (" " * indent, tag))
 
     def _empty(self, indent: int, tag: str, attrs: str) -> None:
+        if _empty_form(tag) == "pair":
+            self._open(indent, tag, attrs)
+            self._close(indent, tag)
+            return
         self.lines.append("%s<%s%s/>" % (" " * indent, tag, attrs))
 
     def _next_line(self) -> int:
@@ -745,18 +749,119 @@ def require_xml_text(text: str) -> None:
         raise ValueError("text contains a character XML 1.0 cannot store")
 
 
-def _empty_form(tag: str) -> str:
-    """Provisional until M0.4b. ``self`` is ``<x/>``, ``pair`` is ``<x></x>``.
+# Provisional until M0.4b's Designer-resave corpus. Expat cannot tell
+# ``<author/>`` from ``<author></author>``; each row is the writer's choice.
+# ``self`` is ``<x/>`` (and ``<x attrs/>``). ``pair`` is ``<x></x>``.
+# ``string`` is verified. Other text leaves follow writeTextElement (pair).
+# Structural elements with no content are self, including empty resources
+# and connections. M0.4b flips a row in this table and nowhere else.
+EMPTY_ELEMENT_FORM = {
+    "string": "self",
+    "cstring": "pair",
+    "enum": "pair",
+    "set": "pair",
+    "bool": "pair",
+    "number": "pair",
+    "uint": "pair",
+    "longlong": "pair",
+    "ulonglong": "pair",
+    "double": "pair",
+    "float": "pair",
+    "cursor": "pair",
+    "cursorshape": "pair",
+    "author": "pair",
+    "comment": "pair",
+    "exportmacro": "pair",
+    "class": "pair",
+    "pixmapfunction": "pair",
+    # ``<include location="..."/>`` has no text; a text include uses the pair
+    # only when text is non-empty (the writer takes that path directly).
+    "include": "self",
+    "header": "pair",
+    "zorder": "pair",
+    "tabstop": "pair",
+    "signal": "pair",
+    "slot": "pair",
+    "horstretch": "pair",
+    "verstretch": "pair",
+    "unicode": "pair",
+    "red": "pair",
+    "green": "pair",
+    "blue": "pair",
+    "x": "pair",
+    "y": "pair",
+    "width": "pair",
+    "height": "pair",
+    "year": "pair",
+    "month": "pair",
+    "day": "pair",
+    "hour": "pair",
+    "minute": "pair",
+    "second": "pair",
+    "family": "pair",
+    "pointsize": "pair",
+    "weight": "pair",
+    "italic": "pair",
+    "bold": "pair",
+    "underline": "pair",
+    "strikeout": "pair",
+    "antialiasing": "pair",
+    "stylestrategy": "pair",
+    "kerning": "pair",
+    "hintingpreference": "pair",
+    "fontweight": "pair",
+    "ui": "self",
+    "widget": "self",
+    "layout": "self",
+    "spacer": "self",
+    "item": "self",
+    "property": "self",
+    "attribute": "self",
+    "action": "self",
+    "actiongroup": "self",
+    "addaction": "self",
+    "row": "self",
+    "column": "self",
+    "buttongroup": "self",
+    "connection": "self",
+    "customwidget": "self",
+    "resources": "self",
+    "connections": "self",
+    "customwidgets": "self",
+    "includes": "self",
+    "buttongroups": "self",
+    "layoutdefault": "self",
+    "layoutfunction": "self",
+    "locale": "self",
+    "font": "self",
+    "char": "self",
+    "color": "self",
+    "rect": "self",
+    "rectf": "self",
+    "size": "self",
+    "sizef": "self",
+    "point": "self",
+    "pointf": "self",
+    "date": "self",
+    "time": "self",
+    "datetime": "self",
+    "url": "self",
+    "stringlist": "self",
+    "sizepolicy": "self",
+    "sizehint": "self",
+    "hints": "self",
+    "hint": "self",
+    "tabstops": "self",
+    "slots": "self",
+}
 
-    Expat cannot tell the two apart. ``string`` is verified against Designer
-    (``<string/>`` and ``<string notr="true"/>``). Other empty text leaves stay
-    paired, which is what ``writeTextElement`` emits. Structural elements with
-    no content use ``_empty`` (self-close) and are recorded in the same table
-    once M0.4b names each one.
+
+def _empty_form(tag: str) -> str:
+    """The provisional empty-element form for ``tag`` (``self`` or ``pair``).
+
+    Unlisted tags self-close, matching an element with no content.
     """
-    if tag == "string":
-        return "self"
-    return "pair"
+    return EMPTY_ELEMENT_FORM.get(tag, "self")
 
 
 def _esc_text(text: str) -> str:
