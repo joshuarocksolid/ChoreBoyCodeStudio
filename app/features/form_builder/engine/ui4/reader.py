@@ -37,8 +37,10 @@ from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, Proper
 from app.features.form_builder.engine.ui4.values import (
     VALUE_CLASSES,
     BoolValue,
+    BrushValue,
     CStringValue,
     CharValue,
+    ColorRole,
     ColorValue,
     CursorShapeValue,
     CursorValue,
@@ -48,13 +50,19 @@ from app.features.form_builder.engine.ui4.values import (
     EnumValue,
     FloatValue,
     FontValue,
+    GradientStop,
+    GradientValue,
+    ICON_STATES,
+    IconSetValue,
     LocaleValue,
     LongLongValue,
     NumberValue,
     OpaqueValue,
+    PaletteValue,
     PointFValue,
     PointValue,
     RectFValue,
+    ResourcePixmap,
     RectValue,
     SetValue,
     SizeFValue,
@@ -82,7 +90,48 @@ _UINT32 = (0, 4294967295)
 _INT64 = (-9223372036854775808, 9223372036854775807)
 _UINT64 = (0, 18446744073709551615)
 _INT_RE = re.compile(r"[+-]?[0-9]+\Z")
-_DEFERRED_VALUES = frozenset({"palette", "brush", "iconset", "pixmap", "gradient"})
+# QUiLoader applies each bare <color> to QPalette.ColorRole in value order,
+# including NoRole. Checked against PySide 6.8. NColorRoles is not paintable.
+_LEGACY_COLOR_ROLES = (
+    "WindowText",
+    "Button",
+    "Light",
+    "Midlight",
+    "Dark",
+    "Mid",
+    "Text",
+    "BrightText",
+    "ButtonText",
+    "Base",
+    "Window",
+    "Shadow",
+    "Highlight",
+    "HighlightedText",
+    "Link",
+    "LinkVisited",
+    "AlternateBase",
+    "NoRole",
+    "ToolTipBase",
+    "ToolTipText",
+    "PlaceholderText",
+    "Accent",
+)
+_PALETTE_GROUPS = ("active", "inactive", "disabled")
+_GRADIENT_TEXT_ATTRS = frozenset({"type", "spread", "coordinatemode"})
+_GRADIENT_REAL_ATTRS = frozenset(
+    {
+        "startx",
+        "starty",
+        "endx",
+        "endy",
+        "centralx",
+        "centraly",
+        "focalx",
+        "focaly",
+        "radius",
+        "angle",
+    }
+)
 # QSizePolicy::Policy values, not the old SizeType index. 5 is Preferred.
 _POLICY_BY_INT = {
     "0": "Fixed",
@@ -826,7 +875,7 @@ def _realize_entries(
 
 def _parse_value(node: _XNode) -> Optional[Value]:
     tag = node.tag
-    if tag in _DEFERRED_VALUES or tag not in VALUE_CLASSES:
+    if tag not in VALUE_CLASSES:
         return None
     if tag == "bool":
         text = _exact_text(node).strip()
@@ -910,6 +959,14 @@ def _parse_value(node: _XNode) -> Optional[Value]:
         if parsed is None:
             return None
         return UrlValue(parsed)
+    if tag == "pixmap":
+        return _parse_pixmap_element(node)
+    if tag == "iconset":
+        return _parse_iconset(node)
+    if tag == "brush":
+        return _parse_brush(node)
+    if tag == "palette":
+        return _parse_palette(node)
     return None
 
 
@@ -948,20 +1005,38 @@ def _parse_stringlist(node: _XNode) -> Optional[StringListValue]:
     return StringListValue(tuple(items), holder.notr, holder.comment, holder.extracomment, holder.id)
 
 
+def _policy_token(text: str) -> Optional[str]:
+    mapped = _POLICY_BY_INT.get(text)
+    if mapped is not None:
+        return mapped
+    if text.isdigit() or not text:
+        return None
+    return text
+
+
 def _parse_sizepolicy(node: _XNode) -> Optional[SizePolicyValue]:
     if _has_noise(node):
         return None
-    attrs = dict(node.attrs)
+    attrs = _known_attrs(node, frozenset({"hsizetype", "vsizetype"}))
+    if attrs is None:
+        return None
     horizontal = attrs.get("hsizetype")
     vertical = attrs.get("vsizetype")
     horstretch = 0
     verstretch = 0
     for child in _elements(node):
         text = _exact_text(child).strip()
-        if child.tag == "hsizetype" and horizontal is None:
-            horizontal = _POLICY_BY_INT.get(text, text if not text.isdigit() else None)
-        elif child.tag == "vsizetype" and vertical is None:
-            vertical = _POLICY_BY_INT.get(text, text if not text.isdigit() else None)
+        if child.tag in ("hsizetype", "vsizetype"):
+            if child.attrs or not _is_plain(child):
+                return None
+            name = _policy_token(text)
+            current = horizontal if child.tag == "hsizetype" else vertical
+            if name is None or (current is not None and current != name):
+                return None
+            if child.tag == "hsizetype":
+                horizontal = name
+            else:
+                vertical = name
         elif child.tag == "horstretch":
             number = _parse_int(text, _INT32)
             if number is None:
@@ -1011,18 +1086,271 @@ def _parse_font(node: _XNode) -> Optional[FontValue]:
 def _parse_color(node: _XNode) -> Optional[ColorValue]:
     if _has_noise(node):
         return None
-    red = _child_int(node, "red")
-    green = _child_int(node, "green")
-    blue = _child_int(node, "blue")
-    if red is None or green is None or blue is None:
+    attrs = _known_attrs(node, frozenset({"alpha"}))
+    if attrs is None:
+        return None
+    found: Dict[str, int] = {}
+    for child in _elements(node):
+        if child.tag in found or child.tag not in ("red", "green", "blue"):
+            return None
+        if child.attrs or not _is_plain(child):
+            return None
+        number = _parse_int(_exact_text(child), _INT32)
+        if number is None:
+            return None
+        found[child.tag] = number
+    if set(found) != {"red", "green", "blue"}:
         return None
     alpha = None
-    raw_alpha = dict(node.attrs).get("alpha")
-    if raw_alpha is not None:
-        alpha = _parse_int(raw_alpha, _INT32)
+    if "alpha" in attrs:
+        alpha = _parse_int(attrs["alpha"], _INT32)
         if alpha is None:
             return None
-    return ColorValue(red, green, blue, alpha)
+    return ColorValue(found["red"], found["green"], found["blue"], alpha)
+
+
+def _known_attrs(node: _XNode, allowed: frozenset) -> Optional[Dict[str, str]]:
+    found: Dict[str, str] = {}
+    for key, value in node.attrs:
+        if key in found or key not in allowed:
+            return None
+        found[key] = value
+    return found
+
+
+def _parse_pixmap_element(node: _XNode) -> Optional[ResourcePixmap]:
+    if not _is_plain(node) or _has_comment(node):
+        return None
+    attrs = _known_attrs(node, frozenset({"resource", "alias"}))
+    if attrs is None:
+        return None
+    return ResourcePixmap(path=_exact_text(node), resource=attrs.get("resource"), alias=attrs.get("alias"))
+
+
+def _parse_iconset(node: _XNode) -> Optional[IconSetValue]:
+    attrs = _known_attrs(node, frozenset({"theme", "resource"}))
+    if attrs is None or _has_comment(node):
+        return None
+    states: Dict[str, ResourcePixmap] = {}
+    legacy_parts: List[str] = []
+    saw_state = False
+    children = list(node.children)
+    index = 0
+    while index < len(children):
+        child = children[index]
+        if isinstance(child, str):
+            if saw_state and child.strip():
+                return None
+            if not saw_state:
+                legacy_parts.append(child)
+            index += 1
+            continue
+        if not isinstance(child, _XNode) or child.tag not in ICON_STATES or child.tag in states:
+            return None
+        pixmap = _parse_pixmap_element(child)
+        if pixmap is None:
+            return None
+        index += 1
+        if index < len(children) and isinstance(children[index], str):
+            trailer = children[index]
+            if trailer.strip() == pixmap.path and pixmap.path == pixmap.path.strip():
+                index += 1
+            elif trailer.strip():
+                return None
+        states[child.tag] = pixmap
+        saw_state = True
+    if saw_state and any(part.strip() for part in legacy_parts):
+        return None
+    text = None
+    if not saw_state:
+        exact = "".join(legacy_parts)
+        if exact.strip():
+            text = exact
+    return IconSetValue(
+        theme=attrs.get("theme"),
+        resource=attrs.get("resource"),
+        text=text,
+        normaloff=states.get("normaloff"),
+        normalon=states.get("normalon"),
+        disabledoff=states.get("disabledoff"),
+        disabledon=states.get("disabledon"),
+        activeoff=states.get("activeoff"),
+        activeon=states.get("activeon"),
+        selectedoff=states.get("selectedoff"),
+        selectedon=states.get("selectedon"),
+    )
+
+
+def _parse_brush(node: _XNode) -> Optional[BrushValue]:
+    if _has_noise(node):
+        return None
+    attrs = _known_attrs(node, frozenset({"brushstyle"}))
+    if attrs is None:
+        return None
+    color: Optional[ColorValue] = None
+    texture: Optional[ResourcePixmap] = None
+    texture_name: Optional[str] = None
+    gradient: Optional[GradientValue] = None
+    for child in _elements(node):
+        if color is not None or texture is not None or gradient is not None:
+            return None
+        if child.tag == "color":
+            color = _parse_color(child)
+            if color is None:
+                return None
+        elif child.tag == "texture":
+            parsed = _parse_texture(child)
+            if parsed is None:
+                return None
+            texture, texture_name = parsed
+        elif child.tag == "gradient":
+            gradient = _parse_gradient(child)
+            if gradient is None:
+                return None
+        else:
+            return None
+    return BrushValue(
+        brushstyle=attrs.get("brushstyle"),
+        color=color,
+        texture=texture,
+        gradient=gradient,
+        texture_name=texture_name,
+    )
+
+
+def _parse_texture(node: _XNode) -> Optional[Tuple[ResourcePixmap, Optional[str]]]:
+    if _has_noise(node):
+        return None
+    attrs = _known_attrs(node, frozenset({"name"}))
+    if attrs is None:
+        return None
+    elements = _elements(node)
+    if len(elements) != 1 or elements[0].tag != "pixmap":
+        return None
+    pixmap = _parse_pixmap_element(elements[0])
+    if pixmap is None:
+        return None
+    return pixmap, attrs.get("name")
+
+
+def _parse_gradient(node: _XNode) -> Optional[GradientValue]:
+    if _has_noise(node):
+        return None
+    attrs = _known_attrs(node, _GRADIENT_TEXT_ATTRS | _GRADIENT_REAL_ATTRS)
+    if attrs is None:
+        return None
+    text_attrs: Dict[str, str] = {}
+    real_attrs: Dict[str, float] = {}
+    for key, value in attrs.items():
+        if key in _GRADIENT_TEXT_ATTRS:
+            text_attrs[key] = value
+            continue
+        number = _lossless_real(value)
+        if number is None:
+            return None
+        real_attrs[key] = number
+    stops: List[GradientStop] = []
+    for child in _elements(node):
+        if child.tag != "gradientStop":
+            return None
+        stop = _parse_gradient_stop(child)
+        if stop is None:
+            return None
+        stops.append(stop)
+    return GradientValue(
+        type=text_attrs.get("type"),
+        spread=text_attrs.get("spread"),
+        coordinatemode=text_attrs.get("coordinatemode"),
+        startx=real_attrs.get("startx"),
+        starty=real_attrs.get("starty"),
+        endx=real_attrs.get("endx"),
+        endy=real_attrs.get("endy"),
+        centralx=real_attrs.get("centralx"),
+        centraly=real_attrs.get("centraly"),
+        focalx=real_attrs.get("focalx"),
+        focaly=real_attrs.get("focaly"),
+        radius=real_attrs.get("radius"),
+        angle=real_attrs.get("angle"),
+        stops=tuple(stops),
+    )
+
+
+def _parse_gradient_stop(node: _XNode) -> Optional[GradientStop]:
+    if _has_noise(node):
+        return None
+    attrs = _known_attrs(node, frozenset({"position"}))
+    if attrs is None or "position" not in attrs:
+        return None
+    position = _lossless_real(attrs["position"])
+    if position is None:
+        return None
+    elements = _elements(node)
+    if len(elements) != 1 or elements[0].tag != "color":
+        return None
+    color = _parse_color(elements[0])
+    if color is None:
+        return None
+    return GradientStop(position, color)
+
+
+def _parse_palette(node: _XNode) -> Optional[PaletteValue]:
+    if _has_noise(node) or node.attrs:
+        return None
+    found: Dict[str, Tuple[ColorRole, ...]] = {}
+    for child in _elements(node):
+        if child.tag not in _PALETTE_GROUPS or child.tag in found:
+            return None
+        roles = _parse_color_group(child)
+        if roles is None:
+            return None
+        found[child.tag] = roles
+    if set(found) != set(_PALETTE_GROUPS):
+        return None
+    return PaletteValue(active=found["active"], inactive=found["inactive"], disabled=found["disabled"])
+
+
+def _parse_color_group(node: _XNode) -> Optional[Tuple[ColorRole, ...]]:
+    if _has_noise(node) or node.attrs:
+        return None
+    roles: List[ColorRole] = []
+    legacy_index = 0
+    for child in _elements(node):
+        if child.tag == "colorrole":
+            role = _parse_colorrole(child)
+            if role is None:
+                return None
+            roles.append(role)
+            continue
+        if child.tag != "color":
+            return None
+        if legacy_index >= len(_LEGACY_COLOR_ROLES):
+            return None
+        color = _parse_color(child)
+        if color is None:
+            return None
+        roles.append(
+            ColorRole(
+                _LEGACY_COLOR_ROLES[legacy_index],
+                BrushValue(brushstyle="SolidPattern", color=color),
+            )
+        )
+        legacy_index += 1
+    return tuple(roles)
+
+
+def _parse_colorrole(node: _XNode) -> Optional[ColorRole]:
+    if _has_noise(node):
+        return None
+    attrs = _known_attrs(node, frozenset({"role"}))
+    if attrs is None or not attrs.get("role"):
+        return None
+    elements = _elements(node)
+    if len(elements) != 1 or elements[0].tag != "brush":
+        return None
+    brush = _parse_brush(elements[0])
+    if brush is None:
+        return None
+    return ColorRole(attrs["role"], brush)
 
 
 def _int_record(node: _XNode, cls: type, names: Tuple[str, ...]) -> Optional[Value]:

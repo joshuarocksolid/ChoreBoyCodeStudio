@@ -365,13 +365,18 @@ class ResourcePixmap:
 
 @dataclass(frozen=True)
 class BrushValue:
-    """``<brush brushstyle="..">`` with exactly one of color, texture, gradient."""
+    """``<brush brushstyle="..">`` with at most one of color, texture, gradient.
+
+    ``texture_name`` is the optional ``name`` attribute on the ``<texture>``
+    wrapper. It is absent when the attribute was not in the file.
+    """
 
     ELEMENT: ClassVar[str] = "brush"
     brushstyle: Optional[str] = None
     color: Optional[ColorValue] = None
     texture: Optional[ResourcePixmap] = None
     gradient: Optional[GradientValue] = None
+    texture_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -431,6 +436,19 @@ class IconSetValue:
     activeon: Optional[ResourcePixmap] = None
     selectedoff: Optional[ResourcePixmap] = None
     selectedon: Optional[ResourcePixmap] = None
+
+
+#: Child tags of ``<iconset>``, in the order the writer emits them.
+ICON_STATES: Tuple[str, ...] = (
+    "normaloff",
+    "normalon",
+    "disabledoff",
+    "disabledon",
+    "activeoff",
+    "activeon",
+    "selectedoff",
+    "selectedon",
+)
 
 
 @dataclass(frozen=True)

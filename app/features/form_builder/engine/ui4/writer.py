@@ -29,6 +29,7 @@ from app.features.form_builder.engine.ui4.schema import (
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import (
     BoolValue,
+    BrushValue,
     CStringValue,
     CharValue,
     ColorValue,
@@ -40,14 +41,19 @@ from app.features.form_builder.engine.ui4.values import (
     EnumValue,
     FloatValue,
     FontValue,
+    GradientValue,
+    ICON_STATES,
+    IconSetValue,
     LocaleValue,
     LongLongValue,
     NumberValue,
     OpaqueValue,
+    PaletteValue,
     PointFValue,
     PointValue,
     RectFValue,
     RectValue,
+    ResourcePixmap,
     SetValue,
     SizeFValue,
     SizePolicyValue,
@@ -326,7 +332,115 @@ class _Writer:
             self.value(item.string, indent + 1)
             self._close(indent, "url")
             return
+        if isinstance(item, ResourcePixmap):
+            self._pixmap(item, indent)
+            return
+        if isinstance(item, IconSetValue):
+            self._iconset(item, indent)
+            return
+        if isinstance(item, BrushValue):
+            self._brush(item, indent)
+            return
+        if isinstance(item, PaletteValue):
+            self._palette(item, indent)
+            return
         raise TypeError("cannot write value %s" % (type(item).__name__,))
+
+    def _pixmap(self, item: ResourcePixmap, indent: int) -> None:
+        self._pixmap_tag("pixmap", item, indent, duplicate_path=False)
+
+    def _pixmap_tag(self, tag: str, item: ResourcePixmap, indent: int, duplicate_path: bool) -> None:
+        attrs = _pixmap_attrs(item)
+        if item.path == "" and not duplicate_path:
+            self._empty(indent, tag, attrs)
+            return
+        if not duplicate_path:
+            self._text_element(tag, item.path, indent, attrs)
+            return
+        prefix = " " * indent
+        path = _esc_text(item.path)
+        self.lines.append("%s<%s%s>%s</%s>%s" % (prefix, tag, attrs, path, tag, path))
+
+    def _iconset(self, item: IconSetValue, indent: int) -> None:
+        attrs = _optional_attr("theme", item.theme) + _optional_attr("resource", item.resource)
+        states = [(name, getattr(item, name)) for name in ICON_STATES]
+        present = [(name, pixmap) for name, pixmap in states if isinstance(pixmap, ResourcePixmap)]
+        if not present:
+            if item.text is None:
+                self._empty(indent, "iconset", attrs)
+                return
+            self._text_element("iconset", item.text, indent, attrs)
+            return
+        # Legacy text is only the no-state form. Each state already carries its path.
+        self._open(indent, "iconset", attrs)
+        for name, pixmap in present:
+            self._pixmap_tag(name, pixmap, indent + 1, duplicate_path=True)
+        self._close(indent, "iconset")
+
+    def _brush(self, item: BrushValue, indent: int) -> None:
+        attrs = _optional_attr("brushstyle", item.brushstyle)
+        if item.color is None and item.texture is None and item.gradient is None:
+            self._empty(indent, "brush", attrs)
+            return
+        self._open(indent, "brush", attrs)
+        if item.color is not None:
+            self.value(item.color, indent + 1)
+        if item.texture is not None:
+            self._open(indent + 1, "texture", _optional_attr("name", item.texture_name))
+            self._pixmap(item.texture, indent + 2)
+            self._close(indent + 1, "texture")
+        if item.gradient is not None:
+            self._gradient(item.gradient, indent + 1)
+        self._close(indent, "brush")
+
+    def _gradient(self, item: GradientValue, indent: int) -> None:
+        attrs = ""
+        for name in (
+            "type",
+            "spread",
+            "coordinatemode",
+            "startx",
+            "starty",
+            "endx",
+            "endy",
+            "centralx",
+            "centraly",
+            "focalx",
+            "focaly",
+            "radius",
+            "angle",
+        ):
+            value = getattr(item, name)
+            if value is None:
+                continue
+            if isinstance(value, float):
+                attrs += _optional_attr(name, format_double(value))
+            else:
+                attrs += _optional_attr(name, str(value))
+        if not item.stops:
+            self._empty(indent, "gradient", attrs)
+            return
+        self._open(indent, "gradient", attrs)
+        for stop in item.stops:
+            self._open(indent + 1, "gradientStop", _optional_attr("position", format_double(stop.position)))
+            self.value(stop.color, indent + 2)
+            self._close(indent + 1, "gradientStop")
+        self._close(indent, "gradient")
+
+    def _palette(self, item: PaletteValue, indent: int) -> None:
+        self._open(indent, "palette", "")
+        for name in ("active", "inactive", "disabled"):
+            roles = getattr(item, name)
+            if not roles:
+                self._empty(indent + 1, name, "")
+                continue
+            self._open(indent + 1, name, "")
+            for role in roles:
+                self._open(indent + 2, "colorrole", _optional_attr("role", role.role))
+                self._brush(role.brush, indent + 3)
+                self._close(indent + 2, "colorrole")
+            self._close(indent + 1, name)
+        self._close(indent, "palette")
 
     def _group(
         self,
@@ -877,6 +991,16 @@ def _esc_text(text: str) -> str:
 
 def _esc_attr(text: str) -> str:
     return _esc_text(text).replace("\t", "&#9;").replace("\n", "&#10;")
+
+
+def _optional_attr(name: str, value: Optional[str]) -> str:
+    if value is None:
+        return ""
+    return ' %s="%s"' % (name, _esc_attr(value))
+
+
+def _pixmap_attrs(item: ResourcePixmap) -> str:
+    return _optional_attr("resource", item.resource) + _optional_attr("alias", item.alias)
 
 
 def _fragment_spec(fragment: Fragment, allocator: IdAllocator) -> NodeSpec:

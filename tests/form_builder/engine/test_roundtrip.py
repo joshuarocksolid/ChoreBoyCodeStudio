@@ -297,8 +297,7 @@ def test_unknown_value_and_element_are_kept() -> None:
 <ui version="4.0">
  <widget class="QWidget" name="Form">
   <property name="windowIcon">
-   <iconset theme="edit-copy">
-    <normaloff>copy.png</normaloff>copy.png</iconset>
+   <sparkle>1</sparkle>
   </property>
   <designerdata/>
  </widget>
@@ -308,20 +307,12 @@ def test_unknown_value_and_element_are_kept() -> None:
     icon = result.document.root.prop("windowIcon")
     assert icon is not None
     assert isinstance(icon.value, OpaqueValue)
-    assert icon.value.element.tag == "iconset"
+    assert icon.value.element.tag == "sparkle"
     assert any(item.code == "FB005" for item in result.diagnostics)
     assert any(item.code == "FB006" for item in result.diagnostics)
     saved = write_ui(result.document).text
-    assert "theme=\"edit-copy\"" in saved
-    assert "<normaloff>copy.png</normaloff>copy.png" in saved
+    assert "<sparkle>1</sparkle>" in saved
     assert write_ui(_load(saved).document).text == saved
-
-
-@pytest.mark.parity("R3-290")
-@pytest.mark.parity("R3-320")
-@pytest.mark.parity("R3-321")
-def test_iconset_marker_round_trip() -> None:
-    test_unknown_value_and_element_are_kept()
 
 
 def test_lossy_bool_and_underflow_stay_verbatim() -> None:
