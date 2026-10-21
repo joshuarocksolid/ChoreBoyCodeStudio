@@ -5,6 +5,7 @@ import logging
 import importlib
 import os
 import sys
+import time
 import traceback
 from typing import Callable
 from typing import Any, Optional
@@ -25,6 +26,7 @@ from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceb
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
 _STARTUP_REPORT_REFRESH_CALLBACK: Optional[Callable[[CapabilityProbeReport], None]] = None
+_PROCESS_STARTED_AT = time.perf_counter()
 
 
 def _start_editor() -> int:
@@ -37,6 +39,14 @@ def _start_editor() -> int:
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
     window.showMaximized()
+    get_subsystem_logger("editor").info(
+        "Window shown telemetry: elapsed_ms=%.2f",
+        (time.perf_counter() - _PROCESS_STARTED_AT) * 1000.0,
+    )
+    from app.shell.completion_warmup import note_window_shown, schedule_completion_warmup
+
+    note_window_shown()
+    schedule_completion_warmup(window)
     exit_code = application.exec_()
 
     del window

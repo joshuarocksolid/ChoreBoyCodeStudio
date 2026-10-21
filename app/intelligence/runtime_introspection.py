@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import time
 from pathlib import Path
 from typing import Optional, Protocol
+
+from app.intelligence.completion_metrics import log_completion_phase
 
 from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
 from app.intelligence.completion_models import CompletionItem
@@ -93,6 +96,7 @@ def infer_trusted_runtime_target_path(
     if not expression:
         return ""
 
+    started_at = time.perf_counter()
     try:
         import jedi
     except ImportError:
@@ -104,6 +108,7 @@ def infer_trusted_runtime_target_path(
         initialize_jedi_runtime(None)
     except Exception:
         pass
+    log_completion_phase("jedi_runtime", (time.perf_counter() - started_at) * 1000.0, site="infer_target")
 
     column = max(0, min(cursor_position, len(source_text))) - 1
     while column >= 0 and source_text[column] != ".":
@@ -121,6 +126,7 @@ def infer_trusted_runtime_target_path(
     line_column = column - line_start
 
     try:
+        project_started = time.perf_counter()
         if project_root:
             from app.bootstrap.paths import project_manifest_path
             from app.project.import_layout import resolve_project_import_layout
@@ -141,10 +147,26 @@ def infer_trusted_runtime_target_path(
                 load_unsafe_extensions=False,
                 smart_sys_path=True,
             )
+            log_completion_phase(
+                "jedi_project_create",
+                (time.perf_counter() - project_started) * 1000.0,
+                site="infer_target",
+            )
             script = jedi.Script(code=source_text, path=current_file_path, project=project)
         else:
             script = jedi.Script(code=source_text, path=current_file_path)
+            log_completion_phase(
+                "jedi_project_create",
+                (time.perf_counter() - project_started) * 1000.0,
+                site="infer_target",
+            )
+        infer_started = time.perf_counter()
         inferred = script.infer(line_number, line_column)
+        log_completion_phase(
+            "jedi_infer_target",
+            (time.perf_counter() - infer_started) * 1000.0,
+            count=len(inferred),
+        )
     except Exception as exc:
         _logger.debug("Jedi infer failed for runtime introspection: %s", exc)
         return ""

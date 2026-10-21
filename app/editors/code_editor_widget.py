@@ -6,7 +6,7 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from PySide2.QtCore import QPoint, Qt
+from PySide2.QtCore import QPoint, Qt, QTimer
 from PySide2.QtGui import QColor, QTextCursor
 from PySide2.QtWidgets import QPlainTextEdit, QWidget
 
@@ -26,6 +26,7 @@ from app.editors.syntax_engine import syntax_palette_from_tokens
 from app.editors.syntax_registry import default_syntax_highlighter_registry
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.diagnostics_service import DiagnosticSeverity
+from app.shell.completion_warmup import window_is_shown
 from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
@@ -89,6 +90,8 @@ class CodeEditorWidget(
         self._completion_popup.set_host(self)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
         self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
+        if window_is_shown():
+            QTimer.singleShot(0, self._completion_popup.warm_surface)
 
         self._is_dark = False
         self._diag_error_color = QColor()

@@ -10,10 +10,12 @@ from __future__ import annotations
 import logging
 import socket
 import threading
+import time
 from datetime import datetime
 from typing import Any, Callable, Union
 
 from app.bootstrap.paths import PathInput
+from app.intelligence.completion_metrics import log_completion_phase
 from app.intelligence.completion_models import CompletionEnvelope
 from app.intelligence.runtime_members import (
     RuntimeDetailResult,
@@ -155,6 +157,7 @@ class ReplSessionManager:
         return envelope_from_dict(result)
 
     def list_members(self, *, target_path: str) -> RuntimeListingResult:
+        started_at = time.perf_counter()
         result = self._round_trip(
             lambda config: build_list_members_request(
                 protocol=config.protocol,
@@ -162,9 +165,22 @@ class ReplSessionManager:
                 target_path=target_path,
             )
         )
+        elapsed_ms = (time.perf_counter() - started_at) * 1000.0
         if isinstance(result, RuntimeUnavailable):
+            log_completion_phase("list_members", elapsed_ms, target=target_path, ok=False, reason=result.reason)
             return result
-        return listing_from_wire(result)
+        listing = listing_from_wire(result)
+        if isinstance(listing, RuntimeUnavailable):
+            log_completion_phase("list_members", elapsed_ms, target=target_path, ok=False, reason=listing.reason)
+            return listing
+        log_completion_phase(
+            "list_members",
+            elapsed_ms,
+            target=target_path,
+            ok=True,
+            count=len(listing.public) + len(listing.private),
+        )
+        return listing
 
     def resolve_member(self, ref: RuntimeMemberRef) -> RuntimeDetailResult:
         result = self._round_trip(
@@ -211,8 +227,10 @@ class ReplSessionManager:
             self._supervisor.stop()
 
     def _launch(self) -> None:
+        started_at = time.perf_counter()
         launch = self._run_service.start_repl_sidecar(supervisor=self._supervisor)
         self._control_config = launch.repl_control
+        log_completion_phase("repl_start", (time.perf_counter() - started_at) * 1000.0)
 
     def _handle_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output" and event.text:

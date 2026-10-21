@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 import threading
+import time
 from typing import TypeVar, cast
 
 T = TypeVar("T")
@@ -11,6 +12,7 @@ U = TypeVar("U")
 from app.bootstrap.paths import PathInput
 from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import CompletionContext, CompletionSyntacticContext
+from app.intelligence.completion_metrics import log_completion_phase
 from app.intelligence.completion_models import (
     CompletionFastResult,
     CompletionEnvelope,
@@ -64,6 +66,7 @@ class SemanticSession:
         )
         self._completion_resolver = CompletionResolver(semantic_facade=self._semantic_facade)
         self._worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
+        self._repl_listing_warmed = False
         # Runtime docs are one REPL round trip (about 1 ms); do not queue them behind Jedi.
         self._runtime_docs_worker = SemanticWorker(dispatch_to_main_thread=dispatch_to_main_thread)
         self._runtime_targets: dict[tuple[str, str], str] = {}
@@ -87,6 +90,7 @@ class SemanticSession:
         task: Callable[[], T],
         on_success: Callable[[T], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
+        dispatch_on_main_thread: bool = True,
     ) -> None:
         self._worker.submit(
             key=key,
@@ -94,6 +98,7 @@ class SemanticSession:
             on_success=cast(Callable[[object], None], on_success) if on_success is not None else None,
             on_error=on_error,
             priority=priority,
+            dispatch_on_main_thread=dispatch_on_main_thread,
         )
 
     def _submit_generation_result(
@@ -115,6 +120,37 @@ class SemanticSession:
             task=task,
             on_success=on_success,
             on_error=on_error,
+        )
+
+    def request_completion_warmup(
+        self,
+        *,
+        project_root: str | None,
+        repl_warm: Callable[[], bool] | None = None,
+        refresh_repl: bool = False,
+    ) -> None:
+        """Queue Jedi warmup on the semantic worker. ``repl_warm`` runs there too."""
+
+        if refresh_repl:
+            self._repl_listing_warmed = False
+
+        def task() -> None:
+            started_at = time.perf_counter()
+            try:
+                self._semantic_facade.warm_completion(project_root=project_root)
+            finally:
+                log_completion_phase(
+                    "completion_warmup",
+                    (time.perf_counter() - started_at) * 1000.0,
+                )
+                if repl_warm is not None and not self._repl_listing_warmed:
+                    self._repl_listing_warmed = bool(repl_warm())
+
+        self._submit(
+            key="completion_warmup",
+            priority=80,
+            task=task,
+            dispatch_on_main_thread=False,
         )
 
     def shutdown(self) -> None:
