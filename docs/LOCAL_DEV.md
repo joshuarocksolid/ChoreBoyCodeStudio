@@ -23,11 +23,13 @@ Documents/
 
 | Aspect | ChoreBoy production | Cursor Cloud / local dev |
 |--------|---------------------|---------------------------|
-| Python | 3.9.2 (AppRun only) | 3.11.13 (Cloud `/opt/freecad`) or 3.9.2 (`~/opt/freecad/AppRun`) |
-| AppRun | `/opt/freecad/AppRun` | Same default; local setup prefers `~/opt/freecad/AppRun` |
-| Qt binding | PySide2 5.15.2 (V6.5); PySide6 6.8.3 on the FreeCAD 1.1 image | PySide2 5.15.15 (Cloud conda bundle); `~/opt/freecad` has PySide2 and PySide6 |
+| Python | 3.9.2 (AppRun only) | Cloud `/opt/freecad` is FreeCAD 1.0.2, Python 3.11.13. Cloud `/opt/freecad-1.1` is FreeCAD 1.1.4, Python 3.11.14. `~/opt/freecad` is the Python 3.9 conda prefix (3.9.23 on the cloud image). |
+| AppRun | `/opt/freecad/AppRun` | Cloud PySide2 lane is `/opt/freecad/AppRun`. Cloud PySide6 lane is `/opt/freecad-1.1/AppRun`. `./run_dev.sh` still prefers `~/opt/freecad/AppRun` when `FREECAD_APPRUN` and `CBCS_APPRUN` are unset. |
+| Qt binding | PySide2 5.15.2 (V6.5); PySide6 6.8.3 on the FreeCAD 1.1 image | Cloud 1.0.2 is PySide2 5.15.15 only. Cloud 1.1.4 is PySide6 6.8.3, with `usr/lib/qt6/uic` and `rcc` 6.8.3. The conda prefix has PySide2 and PySide6, and its shim imports PySide6. |
 | Subprocess policy | AppArmor: only `/bin/sh` whitelisted (V6.5); 1.1 denies `/bin/sh` and allows exec of `/opt/freecad/AppRun` | Unrestricted on typical dev machines |
 | Source compatibility | Python 3.9 syntax required | Same — see `pyrightconfig.json` |
+
+On the cloud image, run and plugin-host children still use `/opt/freecad/AppRun` when that file exists. `./run_dev.sh --apprun /opt/freecad-1.1/AppRun` changes the editor process. It does not move those children onto FreeCAD 1.1.
 
 See also [`docs/CHOREBOY_RUNTIME_PITFALLS.md`](CHOREBOY_RUNTIME_PITFALLS.md) for cross-project pitfall patterns.
 
@@ -84,7 +86,7 @@ starting AppRun so FreeCAD does not try to load stale `activate_this.py` files.
 ## Pyright (static analysis)
 
 ```bash
-npm install   # once, pins pyright@1.1.410 from package.json
+npm install   # once, pins pyright@1.1.414 from package.json
 npx pyright
 npx pyright -p pyrightconfig.tests.json
 ```
@@ -113,11 +115,19 @@ Regenerate the shipped stdlib completion index after Python/runtime changes:
 ~/opt/freecad/AppRun -c "import os, runpy, sys; root='.'; os.chdir(root); sys.path.insert(0, root); runpy.run_path('scripts/generate_stdlib_api_index.py', run_name='__main__')"
 ```
 
-Force Cloud runtime:
+Force the Cloud PySide2 runtime (FreeCAD 1.0.2):
 
 ```bash
 CBCS_APPRUN=/opt/freecad/AppRun ./run_dev.sh --probe
 ```
+
+Force the Cloud PySide6 runtime (FreeCAD 1.1.4):
+
+```bash
+CBCS_APPRUN=/opt/freecad-1.1/AppRun CBCS_QT_API=pyside6 ./run_dev.sh --probe
+```
+
+Qt6 `uic` and `rcc` on that image are `/usr/local/bin/cbcs-fb-uic` and `/usr/local/bin/cbcs-fb-rcc`. The matching interpreter is `/usr/local/bin/cbcs-fb-python`. See `AGENTS.md` for the env file those paths are exported from.
 
 ## Overrides
 

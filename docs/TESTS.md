@@ -166,12 +166,12 @@ Manual acceptance is executed against `docs/ACCEPTANCE_TESTS.md`:
 
 ## 8) Notes for cloud environment
 
-- Tests run through `/opt/freecad/AppRun` using real PySide2, the binding on today's ChoreBoy. Run the PySide6 lane too (`CBCS_APPRUN=<PySide6 AppRun> CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast`) for anything that touches Qt; the FreeCAD 1.1 image is PySide6-only.
-- `QT_QPA_PLATFORM=offscreen` is set by default in `run_tests.py` so tests do not require a display server.
+- Tests run through `/opt/freecad/AppRun` using real PySide2, the binding on today's ChoreBoy. On Cursor Cloud that path is the FreeCAD 1.0.2 tree. Run the PySide6 lane too (`CBCS_APPRUN=${CBCS_FB_APPRUN_11:-/opt/freecad-1.1/AppRun} CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast`) for anything that touches Qt. The FreeCAD 1.1 tree is PySide6-only.
+- `QT_QPA_PLATFORM=offscreen` is set by default in `run_tests.py` so tests do not require a display server. The FreeCAD 1.1 `AppRun` then exports `QT_QPA_PLATFORM=xcb`, so the PySide6 shard needs `DISPLAY` (Xvfb `:1` on the cloud image).
 
 ## 9) Current baseline result
 
-Latest validation checkpoint (2026-06-01, `main` branch). Pass counts are maintained in [`AGENTS.md`](../AGENTS.md); this section records wall times and shard outcomes.
+Latest validation checkpoint. Pass counts are maintained in [`AGENTS.md`](../AGENTS.md). The 2026-10-21 Cursor Cloud run is the current measurement. The 2026-06-01 notes below it are the previous `main` baseline.
 
 - `python3 testing/run_test_shard.py fast` -> **~170s wall time**, **2064 selected / 24 deselected**, **0 failures** (2026-06-17 reaper/split-shard checkpoint on a clean machine). Fast shard runs unit then integration as two sequential AppRun sessions under the shared 180s watchdog. Subprocess hygiene: cached `/proc` reaper in [`testing/runtime_child_reaper.py`](../testing/runtime_child_reaper.py), targeted per-test reaping in [`tests/conftest.py`](../tests/conftest.py), preflight via [`testing/preflight_test_env.py`](../testing/preflight_test_env.py).
 - `python3 testing/run_test_shard.py integration` -> **~55s wall time**, **64 passed, 3 skipped, 0 failures** (slow debug tests skip when no debug channel or no `stopped` pause on this AppRun build; see `docs/DISCOVERY.md` §4D).

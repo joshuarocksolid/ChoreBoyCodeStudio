@@ -1,4 +1,10 @@
 {
-  "$schema": "https://www.cursor.com/schemas/environment.schema.json",
-  "install": "bash scripts/cloud_setup_screenshot_runtime.sh"
+  "name": "CBCS Cloud",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "install": "bash scripts/cloud_setup_screenshot_runtime.sh",
+  "start": "bash scripts/cloud_start_display.sh"
 }
