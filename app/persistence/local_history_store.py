@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -53,6 +54,11 @@ class LocalHistoryStore:
     @property
     def retention_policy(self) -> LocalHistoryRetentionPolicy:
         return self._retention_policy
+
+    @property
+    def disabled_reason(self) -> Optional[str]:
+        """Return why history writes are off, or None when the store is live."""
+        return None
 
     def blob_path(self, blob_sha256: str) -> Path:
         """Return the blob path for a content digest."""
@@ -298,3 +304,189 @@ class LocalHistoryStore:
 
 def _now_iso() -> str:
     return datetime.now().isoformat(timespec="seconds")
+
+
+def open_local_history_store(
+    state_root: Optional[PathInput] = None,
+    retention_policy: Optional[LocalHistoryRetentionPolicy] = None,
+) -> LocalHistoryStore:
+    """Open the history database, or a disabled store when SQLite or the filesystem refuses."""
+    try:
+        return LocalHistoryStore(state_root=state_root, retention_policy=retention_policy)
+    except (sqlite3.Error, OSError) as exc:
+        return DisabledLocalHistoryStore(
+            reason=str(exc),
+            state_root=state_root,
+            retention_policy=retention_policy,
+        )
+
+
+class DisabledLocalHistoryStore(LocalHistoryStore):
+    """History store that keeps the public methods and writes nothing."""
+
+    def __init__(
+        self,
+        *,
+        reason: str,
+        state_root: Optional[PathInput] = None,
+        retention_policy: Optional[LocalHistoryRetentionPolicy] = None,
+    ) -> None:
+        self._disabled_reason = reason
+        self._history_root = Path(state_root).expanduser() if state_root is not None else Path(".")
+        self._retention_policy = retention_policy or default_local_history_retention_policy()
+
+    @property
+    def db_path(self) -> str:
+        return ""
+
+    @property
+    def history_root(self) -> Path:
+        return self._history_root
+
+    @property
+    def blobs_root(self) -> Path:
+        return self._history_root / "blobs"
+
+    @property
+    def retention_policy(self) -> LocalHistoryRetentionPolicy:
+        return self._retention_policy
+
+    @property
+    def disabled_reason(self) -> Optional[str]:
+        return self._disabled_reason
+
+    def blob_path(self, blob_sha256: str) -> Path:
+        return self.blobs_root / blob_sha256
+
+    def save_draft(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+        saved_at: Optional[str] = None,
+        recovery_policy: str = DRAFT_RECOVERY_POLICY_PROMPT,
+        source: str = DRAFT_SOURCE_LIVE_DIRTY_BACKUP,
+        base_blob_sha256: Optional[str] = None,
+        last_known_mtime: Optional[float] = None,
+        session_id: Optional[str] = None,
+    ) -> LocalHistoryDraft:
+        del project_root, base_blob_sha256
+        return LocalHistoryDraft(
+            file_key="disabled",
+            project_id=project_id or "",
+            file_path=file_path,
+            relative_path=file_path,
+            blob_sha256="",
+            content=content,
+            saved_at=saved_at or _now_iso(),
+            recovery_policy=recovery_policy,
+            source=source,
+            last_known_mtime=last_known_mtime,
+            session_id=session_id,
+        )
+
+    def load_draft(
+        self,
+        file_path: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+    ) -> Optional[LocalHistoryDraft]:
+        del file_path, project_id, project_root
+        return None
+
+    def delete_draft(
+        self,
+        file_path: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+    ) -> None:
+        del file_path, project_id, project_root
+
+    def list_drafts(self) -> list[LocalHistoryDraft]:
+        return []
+
+    def create_checkpoint(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+        source: str,
+        label: str = "",
+        transaction_id: Optional[str] = None,
+        created_at: Optional[str] = None,
+    ) -> Optional[LocalHistoryCheckpoint]:
+        del file_path, content, project_id, project_root, source, label, transaction_id, created_at
+        return None
+
+    def set_retention_policy(self, policy: LocalHistoryRetentionPolicy, *, apply_now: bool = False) -> None:
+        del apply_now
+        self._retention_policy = policy
+
+    def checkpoint_skip_reason(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        project_root: Optional[str] = None,
+    ) -> str:
+        del file_path, content, project_root
+        return ""
+
+    def prune_all_checkpoints(self) -> None:
+        return None
+
+    def list_checkpoints(
+        self,
+        file_path: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+        include_deleted: bool = False,
+    ) -> list[LocalHistoryCheckpoint]:
+        del file_path, project_id, project_root, include_deleted
+        return []
+
+    def load_checkpoint_content(self, revision_id: int) -> Optional[str]:
+        del revision_id
+        return None
+
+    def get_file_record(
+        self,
+        file_path: str,
+        *,
+        project_id: Optional[str] = None,
+        project_root: Optional[str] = None,
+        include_deleted: bool = False,
+    ) -> Optional[HistoryFileRecord]:
+        del file_path, project_id, project_root, include_deleted
+        return None
+
+    def list_global_history_files(self, *, project_id: Optional[str] = None) -> list[LocalHistoryFileSummary]:
+        del project_id
+        return []
+
+    def remap_file_lineage(
+        self,
+        *,
+        project_id: str,
+        path_mapping: dict[str, str],
+        project_root: Optional[str] = None,
+        changed_at: Optional[str] = None,
+    ) -> None:
+        del project_id, path_mapping, project_root, changed_at
+
+    def record_deleted_path(
+        self,
+        *,
+        project_id: str,
+        deleted_path: str,
+        project_root: Optional[str] = None,
+        deleted_at: Optional[str] = None,
+    ) -> None:
+        del project_id, deleted_path, project_root, deleted_at

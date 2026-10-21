@@ -67,7 +67,12 @@ class EditorTabPollWorkflow:
         self._external_file_change_workflow.check_and_handle(file_path)
 
     def poll_external_file_changes(self) -> None:
-        stale_paths = self._editor_manager.stale_open_paths()
+        stale_paths = list(self._editor_manager.stale_open_paths())
+        missing_fn = getattr(self._editor_manager, "missing_open_paths", None)
+        if missing_fn is not None:
+            for missing_path in missing_fn():
+                if missing_path not in stale_paths:
+                    stale_paths.append(missing_path)
         if stale_paths:
             active_tab = self._editor_manager.active_tab()
             ordered_paths = list(stale_paths)

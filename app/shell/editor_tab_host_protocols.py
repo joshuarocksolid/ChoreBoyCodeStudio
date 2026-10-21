@@ -108,6 +108,9 @@ class EditorTabPreferencesHost(Protocol):
     def completion_auto_trigger(self) -> bool:
         ...
 
+    def completion_mode(self) -> str:
+        ...
+
     def completion_min_chars(self) -> int:
         ...
 
@@ -123,6 +126,9 @@ class EditorTabPreferencesHost(Protocol):
 
 class EditorTabMarkdownHost(Protocol):
     """Markdown pane registry and view action menu accessors."""
+
+    def editor_tabs_widget(self) -> QTabWidget | None:
+        ...
 
     def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
         ...
@@ -147,6 +153,9 @@ class EditorTabWorkflowHost(
         ...
 
     def editor_tabs_widget(self) -> QTabWidget | None:
+        ...
+
+    def editor_groups(self) -> Any | None:
         ...
 
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:

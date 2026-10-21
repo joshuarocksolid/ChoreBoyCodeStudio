@@ -175,3 +175,33 @@ def test_process_supervisor_exit_cleans_up_stream_handles(tmp_path) -> None:
 
     del supervisor
     gc.collect()
+
+
+def test_detach_hands_output_to_file_and_group_keeps_printing(tmp_path) -> None:
+    """After detach, nothing signals the group and its pipes stay open: output
+    printed later by the runner and by its child lands in the after-close file."""
+    from tests.support.run_group_heartbeat import heartbeat_command, is_beating, kill_group, wait_for_beats
+
+    beats = tmp_path / "beats"
+    beats.mkdir()
+    after_close = tmp_path / "run.after_close.log"
+    events: list[ProcessEvent] = []
+    supervisor = ProcessSupervisor(on_event=events.append)
+    runner_pid = supervisor.start(heartbeat_command(beats), cwd=str(tmp_path))
+    try:
+        assert wait_for_beats(beats)
+
+        result = supervisor.detach(output_path=str(after_close))
+
+        assert result is not None and result.process_id == runner_pid
+        assert supervisor.is_running() is False
+        is_beating(beats / "parent", window_seconds=0.5)  # editor readers drop the pipes
+        assert is_beating(beats / "parent")
+        assert is_beating(beats / "child")
+        text = after_close.read_text(encoding="utf-8")
+        assert "parent-tick" in text
+        assert "child-tick" in text
+        assert "[stderr] parent-err" in text
+        assert not any(event.event_type == "exit" for event in events)
+    finally:
+        kill_group(runner_pid)

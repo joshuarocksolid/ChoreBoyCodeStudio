@@ -58,12 +58,26 @@ def test_leftover_home_state_dir_does_not_win_resolve(
     assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
 
 
-def test_cbcs_state_root_env_wins(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_cbcs_state_root_env_selects_settings_and_leaves_sqlite_local(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
     fake_home = _isolate_state_resolution(monkeypatch, tmp_path)
     (fake_home / constants.GLOBAL_STATE_DIRNAME).mkdir()
     env_root = tmp_path / "from_env"
+    env_root.mkdir()
     monkeypatch.setenv("CBCS_STATE_ROOT", str(env_root))
-    assert paths.resolve_global_state_root() == env_root
+    local = Path("/home/default/FreeCAD/CBCS/state")
+    assert paths.resolve_global_state_root() == local
+    assert paths.global_settings_path() == env_root / constants.GLOBAL_SETTINGS_FILENAME
+    assert paths.global_logs_dir() == local / constants.GLOBAL_LOGS_DIRNAME
+    assert paths.global_state_db_path() == local / constants.GLOBAL_STATE_DB_FILENAME
+    assert paths.global_history_index_path() == local / constants.GLOBAL_HISTORY_DIRNAME / constants.GLOBAL_HISTORY_INDEX_FILENAME
+    sqlite_names = [
+        path.name
+        for path in env_root.rglob("*")
+        if path.name.endswith(".sqlite3") or path.name.endswith("-wal") or path.name.endswith("-shm")
+    ]
+    assert sqlite_names == []
 
 
 def test_install_parent_pointer_is_not_consulted(
@@ -145,7 +159,10 @@ def test_shop_pointer_uses_first_absolute_path_ignoring_comments(
             legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
         ),
     )
-    assert paths.resolve_global_state_root() == pointed
+    local = Path("/home/default/FreeCAD/CBCS/state")
+    assert paths.resolve_global_state_root() == local
+    assert paths.global_settings_path().parent == Path(os.path.abspath(str(pointed)))
+    assert paths.global_state_db_path().parent == local
 
 
 def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:

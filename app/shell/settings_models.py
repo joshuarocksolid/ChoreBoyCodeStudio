@@ -7,6 +7,12 @@ from typing import Any, Mapping
 
 from app.core import constants
 from app.intelligence.cache_controls import IntelligenceRuntimeSettings, parse_intelligence_runtime_settings
+from app.intelligence.completion_mode import (
+    COMPLETION_MODE_KEY,
+    completion_mode_from_intelligence_settings,
+    normalize_completion_mode,
+    project_legacy_completion_mode,
+)
 from app.persistence.history_retention import LocalHistoryRetentionPolicy
 from app.intelligence.lint_profile import parse_lint_rule_overrides
 from app.persistence.settings_store import compute_effective_settings_payload, filter_project_settings_payload
@@ -43,10 +49,8 @@ class EditorSettingsSnapshot:
     exit_behavior: str = constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT
     hover_tooltip_enabled: bool = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT
     auto_reindent_flat_python_paste: bool = constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_DEFAULT
-    completion_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT
-    completion_auto_trigger: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT
+    completion_mode: str = constants.UI_INTELLIGENCE_COMPLETION_MODE_DEFAULT
     completion_min_chars: int = constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT
-    completion_auto_trigger_period: bool = constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_DEFAULT
     diagnostics_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_DEFAULT
     diagnostics_realtime: bool = constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_DEFAULT
     quick_fixes_enabled: bool = constants.UI_INTELLIGENCE_ENABLE_QUICK_FIXES_DEFAULT
@@ -88,7 +92,7 @@ class MainWindowSettingsSnapshot:
     """Facade snapshot for MainWindow runtime preference loading."""
 
     editor_preferences: tuple[int, int, str, str, int, bool, bool, bool, bool, bool, bool, bool, str, bool, bool]
-    completion_preferences: tuple[bool, bool, int, bool]
+    completion_preferences: tuple[bool, bool, int, str]
     diagnostics_preferences: tuple[bool, bool, bool, bool]
     output_preferences: tuple[bool, bool]
     intelligence_runtime_settings: IntelligenceRuntimeSettings
@@ -248,22 +252,11 @@ def parse_editor_settings_snapshot(settings_payload: Mapping[str, Any]) -> Edito
         exit_behavior=exit_behavior,
         hover_tooltip_enabled=hover_tooltip_enabled,
         auto_reindent_flat_python_paste=auto_reindent_flat_python_paste,
-        completion_enabled=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY),
-            default=constants.UI_INTELLIGENCE_ENABLE_COMPLETION_DEFAULT,
-        ),
-        completion_auto_trigger=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY),
-            default=constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_DEFAULT,
-        ),
+        completion_mode=completion_mode_from_intelligence_settings(intelligence_settings),
         completion_min_chars=_coerce_int(
             intelligence_settings.get(constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY),
             default=constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_DEFAULT,
             minimum=1,
-        ),
-        completion_auto_trigger_period=_coerce_bool(
-            intelligence_settings.get(constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_KEY),
-            default=constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_DEFAULT,
         ),
         diagnostics_enabled=diagnostics_enabled,
         diagnostics_realtime=_coerce_bool(
@@ -348,10 +341,10 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
             snapshot.auto_reindent_flat_python_paste,
         ),
         completion_preferences=(
-            snapshot.completion_enabled,
-            snapshot.completion_auto_trigger,
+            snapshot.completion_mode != constants.UI_INTELLIGENCE_COMPLETION_MODE_OFF,
+            snapshot.completion_mode == constants.UI_INTELLIGENCE_COMPLETION_MODE_TYPING,
             snapshot.completion_min_chars,
-            snapshot.completion_auto_trigger_period,
+            snapshot.completion_mode,
         ),
         diagnostics_preferences=(
             snapshot.diagnostics_enabled,
@@ -381,13 +374,41 @@ def parse_main_window_settings(settings_payload: Mapping[str, Any]) -> MainWindo
     )
 
 
+def apply_project_legacy_completion_override(
+    effective_payload: Mapping[str, Any],
+    project_settings_payload: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Apply a project's pre-v0.4.13 completion keys over a global mode."""
+
+    merged = dict(effective_payload)
+    if not isinstance(project_settings_payload, Mapping):
+        return merged
+    project_intelligence = project_settings_payload.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+    if not isinstance(project_intelligence, Mapping):
+        return merged
+    mode = project_legacy_completion_mode(project_intelligence)
+    if mode is None:
+        return merged
+    intelligence = merged.get(constants.UI_INTELLIGENCE_SETTINGS_KEY, {})
+    if not isinstance(intelligence, dict):
+        intelligence = {}
+    else:
+        intelligence = dict(intelligence)
+    intelligence[COMPLETION_MODE_KEY] = mode
+    merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = intelligence
+    return merged
+
+
 def parse_effective_editor_settings_snapshot(
     global_settings_payload: Mapping[str, Any],
     project_settings_payload: Mapping[str, Any] | None = None,
 ) -> EditorSettingsSnapshot:
     """Parse layered effective settings into an editor snapshot."""
-    effective_payload = compute_effective_settings_payload(
-        global_settings_payload,
+    effective_payload = apply_project_legacy_completion_override(
+        compute_effective_settings_payload(
+            global_settings_payload,
+            project_settings_payload,
+        ),
         project_settings_payload,
     )
     return parse_editor_settings_snapshot(effective_payload)
@@ -398,8 +419,11 @@ def parse_effective_main_window_settings(
     project_settings_payload: Mapping[str, Any] | None = None,
 ) -> MainWindowSettingsSnapshot:
     """Parse layered effective settings into main-window runtime preferences."""
-    effective_payload = compute_effective_settings_payload(
-        global_settings_payload,
+    effective_payload = apply_project_legacy_completion_override(
+        compute_effective_settings_payload(
+            global_settings_payload,
+            project_settings_payload,
+        ),
         project_settings_payload,
     )
     return parse_main_window_settings(effective_payload)
@@ -461,9 +485,9 @@ def merge_editor_settings_snapshot(
         constants.UI_EDITOR_AUTO_REINDENT_FLAT_PYTHON_PASTE_KEY: bool(snapshot.auto_reindent_flat_python_paste),
     }
     merged[constants.UI_INTELLIGENCE_SETTINGS_KEY] = {
-        constants.UI_INTELLIGENCE_ENABLE_COMPLETION_KEY: bool(snapshot.completion_enabled),
-        constants.UI_INTELLIGENCE_AUTO_TRIGGER_COMPLETION_KEY: bool(snapshot.completion_auto_trigger),
-        constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_KEY: bool(snapshot.completion_auto_trigger_period),
+        constants.UI_INTELLIGENCE_COMPLETION_MODE_KEY: (
+            normalize_completion_mode(snapshot.completion_mode) or constants.UI_INTELLIGENCE_COMPLETION_MODE_DEFAULT
+        ),
         constants.UI_INTELLIGENCE_COMPLETION_MIN_CHARS_KEY: max(1, int(snapshot.completion_min_chars)),
         constants.UI_INTELLIGENCE_ENABLE_DIAGNOSTICS_KEY: bool(snapshot.diagnostics_enabled),
         constants.UI_INTELLIGENCE_DIAGNOSTICS_REALTIME_KEY: bool(snapshot.diagnostics_realtime),

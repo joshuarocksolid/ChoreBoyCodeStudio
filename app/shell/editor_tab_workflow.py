@@ -6,6 +6,7 @@ from typing import Any
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import EditorTabState
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
 from app.shell.editor_tab_workflow_factory import create_editor_tab_subworkflows
@@ -78,11 +79,22 @@ class EditorTabWorkflow(
         self._lifecycle_workflow.set_editor_manager(editor_manager)
 
     def attach_editor_bindings(
-        self, host: EditorTabBindingsHost, editor_widget: CodeEditorWidget, file_path: str
+        self, host: EditorTabBindingsHost, editor_widget: CodeEditorWidget, tab: EditorTabState
     ) -> None:
         self._bindings_workflow.attach(
-            host, editor_widget, file_path, tab_workflow=self, debug_control_workflow=self._debug_control_workflow
+            host,
+            editor_widget,
+            buffer_id=tab.buffer_id,
+            initial_path=tab.file_path,
+            path_for_buffer_id=self.path_for_buffer_id,
+            tab_workflow=self,
+            debug_control_workflow=self._debug_control_workflow,
+            primary_view_for_buffer_id=self._host.workspace_controller().widget_for_buffer_id,
         )
+
+    def path_for_buffer_id(self, buffer_id: str) -> str | None:
+        tab = self._editor_manager.get_tab_by_id(buffer_id)
+        return None if tab is None else tab.file_path
 
 
 def build_editor_tab_workflow(window: Any) -> EditorTabWorkflow:

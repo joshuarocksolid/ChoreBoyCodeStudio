@@ -41,6 +41,11 @@ class SQLiteSymbolIndex:
     def db_path(self) -> str:
         return self._db_path
 
+    @property
+    def disabled_reason(self) -> str | None:
+        """Return why the cache is off, or None when SQLite is usable."""
+        return None
+
     def replace_symbols_for_project(self, project_root: str, symbols: list[IndexedSymbol]) -> None:
         project = str(Path(project_root).expanduser().resolve())
         with sqlite3.connect(self._db_path) as connection:
@@ -433,3 +438,68 @@ class SQLiteSymbolIndex:
         if column_name in existing_columns:
             return
         connection.execute(f"ALTER TABLE symbols ADD COLUMN {column_name} {definition}")
+
+
+def open_symbol_index(db_path: str) -> SQLiteSymbolIndex:
+    """Open the symbol cache, or a disabled index when SQLite or the filesystem refuses."""
+    try:
+        return SQLiteSymbolIndex(db_path)
+    except (sqlite3.Error, OSError) as exc:
+        return DisabledSymbolIndex(db_path, reason=str(exc))
+
+
+class DisabledSymbolIndex(SQLiteSymbolIndex):
+    """Symbol cache that keeps the public methods and stores nothing."""
+
+    def __init__(self, db_path: str, *, reason: str) -> None:
+        self._db_path = str(db_path)
+        self._disabled_reason = reason
+
+    @property
+    def disabled_reason(self) -> str | None:
+        return self._disabled_reason
+
+    def replace_symbols_for_project(self, project_root: str, symbols: list[IndexedSymbol]) -> None:
+        del project_root, symbols
+
+    def lookup(self, project_root: str, symbol_name: str) -> list[IndexedSymbol]:
+        del project_root, symbol_name
+        return []
+
+    def search_by_prefix(self, project_root: str, prefix: str, *, limit: int = 100) -> list[IndexedSymbol]:
+        del project_root, prefix, limit
+        return []
+
+    def count_symbols(self, project_root: str) -> int:
+        del project_root
+        return 0
+
+    def lookup_file_fingerprints(self, project_root: str) -> dict[str, tuple[int, int]]:
+        del project_root
+        return {}
+
+    def upsert_file_fingerprints(self, project_root: str, fingerprints: dict[str, tuple[int, int]]) -> None:
+        del project_root, fingerprints
+
+    def remove_file_fingerprints(self, project_root: str, file_paths: list[str]) -> None:
+        del project_root, file_paths
+
+    def remove_symbols_for_files(self, project_root: str, file_paths: list[str]) -> None:
+        del project_root, file_paths
+
+    def list_indexed_python_files(self, project_root: str) -> list[str]:
+        del project_root
+        return []
+
+    def upsert_symbols_for_files(self, project_root: str, symbols_by_file: dict[str, list[IndexedSymbol]]) -> None:
+        del project_root, symbols_by_file
+
+    def apply_index_delta(
+        self,
+        project_root: str,
+        *,
+        deleted_files: list[str],
+        symbols_by_file: dict[str, list[IndexedSymbol]],
+        fingerprints: dict[str, tuple[int, int]],
+    ) -> None:
+        del project_root, deleted_files, symbols_by_file, fingerprints

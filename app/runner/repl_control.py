@@ -7,18 +7,22 @@ import socketserver
 import threading
 from typing import Any
 
+from app.intelligence.runtime_members import RuntimeMemberRef, RuntimeUnavailable
 from app.run.run_manifest import ReplControlConfig
 from app.runner.repl_completion import ReplCompletionRequest, ReplCompletionService
-from app.runner.repl_introspection import ReplIntrospectionRequest, ReplIntrospectionService
+from app.runner.repl_introspection import ReplIntrospectionService, namespace_lookup_for, start_prewarm_thread
 from app.runner.repl_protocol import (
     REPL_METHOD_COMPLETE,
-    REPL_METHOD_INTROSPECT,
+    REPL_METHOD_LIST_MEMBERS,
     REPL_METHOD_PING,
+    REPL_METHOD_RESOLVE_MEMBER,
     ReplControlProtocolError,
     build_repl_error_response,
     build_repl_success_response,
+    detail_to_wire,
     dumps_message,
     envelope_to_dict,
+    listing_to_wire,
     loads_message,
     validate_repl_request,
 )
@@ -32,7 +36,9 @@ class ReplControlServer:
     def __init__(self, *, config: ReplControlConfig, namespace: dict[str, Any]) -> None:
         self._config = config
         self._namespace_lock = threading.RLock()
-        self._introspection_service = ReplIntrospectionService()
+        self._introspection_service = ReplIntrospectionService(
+            namespace_lookup=namespace_lookup_for(namespace, self._namespace_lock),
+        )
         self._completion_service = ReplCompletionService(
             namespace,
             namespace_lock=self._namespace_lock,
@@ -74,6 +80,7 @@ class ReplControlServer:
         self._server = socketserver.ThreadingTCPServer((self._config.host, self._config.port), _Handler)
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
+        start_prewarm_thread()
         _logger.info("REPL control server listening on %s:%s", self._config.host, self._config.port)
 
     def stop(self) -> None:
@@ -113,21 +120,27 @@ def _handle_request(
                 cursor_offset=int(payload.get("cursor_offset") or 0),
                 trigger_kind=str(payload.get("trigger_kind") or "invoked"),
                 trigger_character=str(payload.get("trigger_character") or ""),
-                max_results=int(payload.get("max_results") or 100),
+                max_results=int(payload["max_results"]),
             )
         )
         return build_repl_success_response(envelope_to_dict(envelope))
 
-    if method == REPL_METHOD_INTROSPECT:
-        envelope = introspection_service.introspect(
-            ReplIntrospectionRequest(
+    if method == REPL_METHOD_LIST_MEMBERS:
+        listing = introspection_service.list_members(str(payload.get("target_path") or ""))
+        if isinstance(listing, RuntimeUnavailable):
+            return build_repl_error_response(listing.reason)
+        return build_repl_success_response(listing_to_wire(listing))
+
+    if method == REPL_METHOD_RESOLVE_MEMBER:
+        detail = introspection_service.resolve_member(
+            RuntimeMemberRef(
                 target_path=str(payload.get("target_path") or ""),
-                member_prefix=str(payload.get("member_prefix") or ""),
-                include_private=bool(payload.get("include_private", True)),
-                max_results=int(payload.get("max_results") or 100),
+                name=str(payload.get("member_name") or ""),
             )
         )
-        return build_repl_success_response(envelope_to_dict(envelope))
+        if isinstance(detail, RuntimeUnavailable):
+            return build_repl_error_response(detail.reason)
+        return build_repl_success_response(detail_to_wire(detail))
 
     if method == REPL_METHOD_PING:
         return build_repl_success_response({"status": "ready"})

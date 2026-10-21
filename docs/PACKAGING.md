@@ -47,8 +47,9 @@ This is intentionally separate from:
 - `description`
 - packaging entry-file override
 - optional icon path
-- optional `skip_missing_dependency_blockers` (missing imports become warnings; native extensions and unsafe subprocess calls still block)
-- optional `ask_install_location` (when true, the installer asks for a folder; omitted or false uses the FreeCAD Apps slot)
+- optional `ask_install_location` (when true, the installer asks for a folder; omitted or false uses `/home/default/FreeCAD/Apps/<package_id>`)
+
+An old `cbcs/package.json` may still contain `skip_missing_dependency_blockers`. The loader ignores that key. Missing imports are classified by reachability instead.
 
 ### Exported artifact metadata
 
@@ -135,22 +136,26 @@ The installer must:
 
 - load `package_manifest.json`
 - verify checksums before copying files
-- perform a staged copy before switching the final install directory
-- write the installed launcher into the final install root
-- optionally publish a Desktop shortcut
-- when that shortcut's `Icon=` would point under `~/.local`, copy the icon next to the Desktop file as a hidden sibling `.{stem}{suffix}` and rewrite `Icon=` so the ChoreBoy file manager can fetch it; when the hidden file write is denied, copy a visible `{stem}.icon{suffix}` sidecar instead and rewrite `Icon=` to it. A denied hidden name never fails the install; only failure of both copies is reported
-- publish an application-menu launcher on a best-effort basis when selected
-- detect older installs of the same `package_id`
-- classify occupancy of the destination folder itself before copying
-- allow side-by-side installs and optional cleanup of older versions
+- stage the new payload, keep files that are not in the previous payload-owned list, then switch the install directory
+- record that payload-owned list in `cbcs_installed_package.json`
+- write the installed launcher into the install folder
+- write a `/home/default` launcher copy
+- write a Desktop copy only when `~/Desktop` already exists
+- write a `~/.local/share/applications` menu copy
+- point `Icon=` at the icon inside the install folder
+- treat a launcher or icon failure after the files are installed as a warning on the done page
+- show the full error text, with Copy Details, when the install itself fails, and say what was left unchanged
+- when the same `package_id` is already installed, offer Replace (Reinstall when the version matches) or Uninstall
+- on Replace, migrate an existing install out of `~/.local/share/FreeCAD/Macro/Apps/<slug>`, move the app's data, and remove the old slot and old launchers
+- on Uninstall, remove the payload-owned files, every launcher copy, the menu entry, and the icon, and keep the app's data unless the user checks the delete-data box
 
 The installed launcher is expected to hardcode the final install directory.
 
 ### Project install destination
 
-Project packages install to `$HOME/.local/share/FreeCAD/Macro/Apps/<sanitized display_name>`.
-The folder name is the display-name slug and does not include a version suffix.
-Export writes `default_install_base` as `~/.local/share/FreeCAD/Macro/Apps` so the installer calls `expanduser()` at install time and follows that machine's `HOME`.
+Project packages install to `/home/default/FreeCAD/Apps/<sanitized package_id>`.
+The folder name follows `package_id`, so a display-name change keeps the same slot.
+The display name is used in `Name=` and in installer titles.
 
 `ask_install_location` defaults to false. The installer still shows DirectoryPage, but the path is read-only and Browse is hidden.
 Set `ask_install_location` to true in `cbcs/package.json` when the app must live somewhere else. That restores Browse and a choosable path.
@@ -197,13 +202,24 @@ Release builders may override the zip password with `archive_password` on
 `build_product_artifact(...)` or by setting `CBCS_PACKAGE_ZIP_PASSWORD`.
 
 During staging, the product builder copies allowlisted packages from
-`CBCS_ARTIFACTS_DIR/vendor_py39/` (populate with `./scripts/setup_vendor_py39.sh`),
-auto-fetches the cp39 manylinux `tree-sitter` wheel, and overlays
-`_binding.cpython-39-x86_64-linux-gnu.so` onto
-`payload/vendor/tree_sitter/`. The wheel is cached under
-`CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so subsequent builds are
-offline-friendly. Product packaging does not read from repo `vendor/` or
-`vendor_py311/`; only the cp39 artifacts tree is the packaging source.
+`CBCS_ARTIFACTS_DIR/vendor_py39/` (populate with `./scripts/setup_vendor_py39.sh`).
+It then downloads every pin in `TREE_SITTER_WHEEL_PINS`
+(`app/packaging/tree_sitter_cp39.py`) as a `manylinux_2_17_x86_64` wheel for
+Python 3.9 and overlays the Linux binding onto the staged payload. The core
+file is `_binding.cpython-39-x86_64-linux-gnu.so`. Each grammar file is
+`_binding.abi3.so`. Wheels are cached under
+`CBCS_ARTIFACTS_DIR/vendor_cp39_cache/` so a later build can run offline.
+`require_linux_x86_64_elf` still rejects a binding that is not little-endian
+ELF64 x86-64.
+
+Staging reads each grammar binding's language ABI. A grammar outside the
+range supported by the pinned `tree-sitter` core fails the build.
+`tree_sitter_sql` is the explicit exception. Staging removes that package
+and records the reason, because its published ABI is newer than the pinned
+core. The editor still ignores an incompatible grammar at runtime.
+
+Product packaging does not read from repo `vendor/` or `vendor_py311/`.
+Only the cp39 artifacts tree is the packaging source.
 
 The product archive budget applies to Code Studio distribution only.
 It does **not** define the size budget for user-project packages.
@@ -230,8 +246,9 @@ Validation covers:
 - hidden/excluded paths
 - package metadata completeness
 - dependency audit against project files, `vendor/`, and AppRun
-- direct subprocess assumptions that are likely unsafe on ChoreBoy
-- `shell=True` subprocess calls, which are blocked by the dependency audit
+- subprocess programs checked against the FreeCAD 1.0.0 table measured on 2026-10-20 (`docs/DISCOVERY.md` §4G). `/opt/freecad/AppRun`, `/bin/sh`, and `/bin/ls` are allowed. Denied programs stop export and the report cites that version and date. A program that is not in the table is a warning. `/bin/sh -c` is checked by the program inside the string. Do not advise rewriting a denied program through `/bin/sh`
+- `shell=True` subprocess calls, which stop export
+- a missing import, which stops export only when the entry file loads it at module level outside `try` / `except ImportError` and `TYPE_CHECKING`. Other missing imports warn and name the import path. A vendored native extension still stops export
 
 Packaging excludes transient/support content such as:
 

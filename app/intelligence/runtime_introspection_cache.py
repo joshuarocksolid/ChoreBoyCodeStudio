@@ -1,21 +1,11 @@
-"""Session-scoped LRU cache for trusted runtime introspection results."""
-
 from __future__ import annotations
 
 from collections import OrderedDict
-from dataclasses import dataclass, replace
+from typing import Optional
 
-from app.intelligence.completion_models import CompletionItem
+from app.intelligence.runtime_members import RuntimeMemberListing
 
 _DEFAULT_MAX_ENTRIES = 128
-
-
-@dataclass(frozen=True)
-class RuntimeIntrospectionCacheKey:
-    """Cache key for a trusted runtime member listing."""
-
-    target_path: str
-    include_private: bool
 
 
 class RuntimeIntrospectionCache:
@@ -23,35 +13,20 @@ class RuntimeIntrospectionCache:
 
     def __init__(self, *, max_entries: int = _DEFAULT_MAX_ENTRIES) -> None:
         self._max_entries = max(1, int(max_entries))
-        self._entries: OrderedDict[RuntimeIntrospectionCacheKey, tuple[CompletionItem, ...]] = OrderedDict()
+        self._entries: OrderedDict[str, RuntimeMemberListing] = OrderedDict()
 
-    def get(self, *, target_path: str, include_private: bool = True) -> list[CompletionItem] | None:
-        key = RuntimeIntrospectionCacheKey(target_path=target_path, include_private=include_private)
-        cached = self._entries.get(key)
-        if cached is None:
+    def get(self, target_path: str) -> Optional[RuntimeMemberListing]:
+        listing = self._entries.get(target_path)
+        if listing is None:
             return None
-        self._entries.move_to_end(key)
-        return list(cached)
+        self._entries.move_to_end(target_path)
+        return listing
 
-    def put(
-        self,
-        *,
-        target_path: str,
-        include_private: bool,
-        items: list[CompletionItem],
-    ) -> None:
-        key = RuntimeIntrospectionCacheKey(target_path=target_path, include_private=include_private)
-        stored = tuple(items)
-        self._entries[key] = stored
-        self._entries.move_to_end(key)
+    def put(self, listing: RuntimeMemberListing) -> None:
+        self._entries[listing.target_path] = listing
+        self._entries.move_to_end(listing.target_path)
         while len(self._entries) > self._max_entries:
             self._entries.popitem(last=False)
 
     def clear(self) -> None:
         self._entries.clear()
-
-
-def clone_completion_items(items: list[CompletionItem]) -> list[CompletionItem]:
-    """Return shallow copies so callers can attach per-request metadata safely."""
-
-    return [replace(item) for item in items]

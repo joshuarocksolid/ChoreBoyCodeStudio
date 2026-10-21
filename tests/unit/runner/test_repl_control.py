@@ -7,8 +7,14 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.runner.repl_control import _handle_request
-from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, build_ping_request
-from app.qt.qt_compat import QT_API  # noqa: E402
+from app.runner.repl_introspection import ReplIntrospectionService
+from app.runner.repl_protocol import (
+    REPL_CONTROL_PROTOCOL,
+    REPL_METHOD_LIST_MEMBERS,
+    REPL_METHOD_RESOLVE_MEMBER,
+    build_ping_request,
+)
+from app.qt.qt_compat import QT_API
 
 pytestmark = pytest.mark.unit
 
@@ -68,31 +74,45 @@ def test_handle_request_rejects_unsupported_method() -> None:
 
     assert response == {"ok": False, "error": "Unsupported REPL control method: unknown"}
     completion_service.complete.assert_not_called()
-    introspection_service.introspect.assert_not_called()
+    introspection_service.list_members.assert_not_called()
 
 
-def test_handle_request_introspect_returns_envelope() -> None:
-    from app.runner.repl_introspection import ReplIntrospectionService
-
-    completion_service = MagicMock()
-    introspection_service = ReplIntrospectionService()
-
-    response = _handle_request(
-        _request(
-            method="introspect",
-            target_path=QT_API + ".QtCore",
-            member_prefix="",
-            include_private=False,
-            max_results=10,
-        ),
+def _handle_with_real_introspection(**overrides: object) -> dict[str, object]:
+    return _handle_request(
+        _request(**overrides),
         protocol=REPL_CONTROL_PROTOCOL,
         session_token="expected-token",
-        completion_service=completion_service,
-        introspection_service=introspection_service,
+        completion_service=MagicMock(),
+        introspection_service=ReplIntrospectionService(),
     )
 
-    assert response.get("ok") is True
+
+def test_handle_request_list_members_returns_names_and_kinds() -> None:
+    pytest.importorskip("app.qt.QtCore")
+
+    response = _handle_with_real_introspection(method=REPL_METHOD_LIST_MEMBERS, target_path=QT_API + ".QtCore.QObject")
+
     result = response.get("result")
     assert isinstance(result, dict)
-    assert result.get("items")
-    completion_service.complete.assert_not_called()
+    assert ["objectName", "method", "method"] in result["members"]
+
+
+def test_handle_request_resolve_member_returns_signature_and_documentation() -> None:
+    pytest.importorskip("app.qt.QtCore")
+
+    response = _handle_with_real_introspection(
+        method=REPL_METHOD_RESOLVE_MEMBER,
+        target_path=QT_API + ".QtCore.QObject",
+        member_name="setObjectName",
+    )
+
+    result = response.get("result")
+    assert isinstance(result, dict)
+    assert str(result["signature"]).startswith("setObjectName(")
+    assert result["owner"] == "QObject method"
+
+
+def test_handle_request_list_members_reports_non_whitelisted_target_as_error() -> None:
+    response = _handle_with_real_introspection(method=REPL_METHOD_LIST_MEMBERS, target_path="os.path")
+
+    assert response.get("ok") is False

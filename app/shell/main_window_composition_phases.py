@@ -5,21 +5,45 @@
 from __future__ import annotations
 
 import queue
+from pathlib import Path
+from typing import Callable
 
 from app.qt.QtWidgets import QVBoxLayout, QWidget
 
-from app.bootstrap.logging_setup import get_subsystem_logger
-from app.bootstrap.paths import global_cache_dir, global_python_console_history_path
+from app.bootstrap.logging_setup import get_active_log_path, get_subsystem_logger
+from app.bootstrap.paths import (
+    global_app_log_path,
+    global_cache_dir,
+    global_history_dir,
+    global_python_console_history_path,
+    resolve_global_state_root,
+    try_ensure_directory,
+)
+from app.bootstrap.startup_problems import (
+    assemble_startup_problems,
+    load_dismissed_problem_ids,
+    remember_dismissed_problem_ids,
+    select_visible_problems,
+)
+from app.bootstrap.state_migration import last_migration_outcome
+from app.bootstrap.state_roots import resolve_settings_root
 from app.bootstrap.runtime_module_probe import load_cached_runtime_modules
 from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
+from app.core.models import RuntimeIssue, RuntimeIssueReport
+from app.support.runtime_explainer import (
+    local_history_disabled_issue,
+    merge_runtime_issue_reports,
+    symbol_index_disabled_issue,
+)
 from app.debug.debug_models import DebugExceptionPolicy
 from app.debug.debug_session import DebugSession
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.examples.example_project_service import ExampleProjectService
 from app.persistence.autosave_store import AutosaveStore
-from app.persistence.local_history_store import LocalHistoryStore
+from app.persistence.local_history_store import open_local_history_store
+from app.persistence.sqlite_index import open_symbol_index
 from app.persistence.settings_service import SettingsService
 from app.plugins.api_broker import PluginApiBroker
 from app.plugins.builtin_workflows import register_builtin_workflow_providers
@@ -52,7 +76,9 @@ from app.shell.main_thread_dispatcher import MainThreadDispatcher
 from app.shell.main_window_layout import build_layout_shell, configure_window_frame
 from app.shell.menu_wiring import build_main_window_menus, connect_test_explorer_navigation
 from app.shell.output_tail_buffer import OutputTailBuffer
+from app.shell.plugin_activation_workflow import reload_plugins_during_finalize
 from app.shell.plugin_dialog_workflow import build_plugin_dialog_workflow
+from app.shell.plugin_host_unavailable_dialog import present_plugin_host_unavailable
 from app.shell.project_controller import ProjectController
 from app.shell.project_inventory_orchestrator import ProjectInventoryOrchestrator
 from app.shell.project_load_host import MainWindowProjectLoadHost
@@ -223,10 +249,29 @@ def install_persistence(ctx: ShellCompositionContext) -> None:
             "_import_update_policy": preferences.load_import_update_policy(),
         },
     )
-    ctx.local_history_store = LocalHistoryStore(
+    ctx.local_history_store = open_local_history_store(
         state_root=window._state_root,
         retention_policy=window._local_history_retention_policy,
     )
+    history_reason = ctx.local_history_store.disabled_reason
+    if history_reason:
+        _record_persistence_degradation(
+            ctx,
+            f"Local history is off: {history_reason}",
+            local_history_disabled_issue(history_reason),
+        )
+    _, cache_dir_error = try_ensure_directory(Path(window._symbol_cache_db_path).parent)
+    symbol_reason = (
+        str(cache_dir_error)
+        if cache_dir_error is not None
+        else open_symbol_index(window._symbol_cache_db_path).disabled_reason
+    )
+    if symbol_reason:
+        _record_persistence_degradation(
+            ctx,
+            f"Symbol index is off: {symbol_reason}",
+            symbol_index_disabled_issue(symbol_reason),
+        )
     ctx.autosave_store = AutosaveStore(
         state_root=window._state_root,
         history_store=ctx.local_history_store,
@@ -237,7 +282,7 @@ def install_persistence(ctx: ShellCompositionContext) -> None:
 def install_editors(ctx: ShellCompositionContext) -> None:
     """Wire editor workspace, tab factory, and core editor workflows."""
     window = ctx.w
-    workspace_controller = EditorWorkspaceController()
+    workspace_controller = EditorWorkspaceController(lambda: window._editor_manager)
     editor_manager = EditorManager()
     bind_private_attrs(
         window,
@@ -361,11 +406,11 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
     window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
     window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=window._project_tree_controller,
-        editor_widgets_by_path=window._editor_widgets_by_path,
-        tab_index_for_path=window._editor_tab_workflow.tab_index_for_path,
-        remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
-        if window._editor_tabs_widget is not None
-        else None,
+        open_editor_paths=window._workspace_controller.open_editor_paths,
+        widget_for_path=window._workspace_controller.widget_for_path,
+        pop_editor_for_path=window._workspace_controller.pop_editor_for_path,
+        tab_index_for_path=window._editor_groups.tab_index_for_path_in_any_group,
+        remove_tab_at_index=window._editor_groups.remove_tabs_for_last_path,
         release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
         close_editor_file=lambda file_path: window._editor_manager.close_file(file_path),
         breakpoint_store=window._debug_control_workflow.breakpoint_store,
@@ -381,6 +426,7 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
         refresh_project=window._project_tree_ui_workflow.refresh_project_tree,
         record_deleted_path=window._local_history_workflow.record_deleted_path,
         remap_file_lineage=window._local_history_workflow.remap_file_lineage,
+        migrate_buffer_state=window._project_tree_ui_workflow.migrate_moved_buffer_state,
     )
     window._project_tree_action_workflow = build_project_tree_action_workflow(ctx)
     window._shell_layout_workflow = build_shell_layout_workflow(window)
@@ -415,9 +461,17 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
         window,
         startup_report=ctx.startup_report,
         on_startup_activated=window._runtime_onboarding_workflow.handle_runtime_center_action,
+        on_completion_mode_activated=lambda: window._file_project_commands_workflow.handle_open_completion_setting(),
+    )
+    _continue_optional_startup_step(
+        "completion mode status",
+        window._refresh_completion_mode_status,
     )
     window._run_launch_workflow.install_active_run_config_indicator()
-    window._refresh_python_tooling_status()
+    _continue_optional_startup_step(
+        "python tooling status",
+        window._refresh_python_tooling_status,
+    )
     toolbar = build_run_toolbar_widget(menu_registry)
     window._toolbar = toolbar
     if toolbar is not None:
@@ -431,13 +485,103 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()
     window._shell_preferences_runtime.sync_theme_menu_check_state()
     window._sync_auto_save_menu_state()
-    window._shell_layout_workflow.restore_from_settings()
-    window._file_project_commands_workflow.refresh_open_recent_menu()
+    _continue_optional_startup_step(
+        "restore window layout",
+        window._shell_layout_workflow.restore_from_settings,
+    )
+    _continue_optional_startup_step(
+        "open recent menu",
+        window._file_project_commands_workflow.refresh_open_recent_menu,
+    )
     window._refresh_save_action_states()
     window._run_event_workflow.refresh_run_action_states()
     window._editor_tab_workflow.refresh_markdown_action_states()
-    window._test_runner_workflow.refresh_discovery()
-    window._plugin_activation_workflow.reload()
+    _continue_optional_startup_step(
+        "test discovery",
+        window._test_runner_workflow.refresh_discovery,
+    )
+    _publish_startup_degradation(ctx)
+    reload_plugins_during_finalize(
+        window,
+        surface_error=lambda message: _surface_plugin_host_startup_failure(window, message),
+    )
+    _present_startup_problems(ctx)
+
+
+def _record_persistence_degradation(
+    ctx: ShellCompositionContext,
+    message: str,
+    issue: RuntimeIssue,
+) -> None:
+    get_subsystem_logger("editor").warning("%s", message)
+    ctx.startup_warnings.append(message)
+    ctx.degraded_issues.append(issue)
+
+
+def _continue_optional_startup_step(label: str, action: Callable[[], None]) -> None:
+    """Log an optional startup step and keep building the window."""
+    try:
+        action()
+    except Exception:
+        get_subsystem_logger("editor").exception("Optional startup step failed: %s", label)
+
+
+def _publish_startup_degradation(ctx: ShellCompositionContext) -> None:
+    window = ctx.w
+    if not window._state_root and resolve_settings_root(None).fell_back_to_local:
+        ctx.startup_warnings.append("Shared settings are not available; using this computer's settings")
+    if ctx.startup_warnings:
+        status_controller = getattr(window, "_status_controller", None)
+        set_warning = getattr(status_controller, "set_runtime_warning", None)
+        if set_warning is not None:
+            set_warning("; ".join(ctx.startup_warnings))
+    if not ctx.degraded_issues:
+        return
+    extra = RuntimeIssueReport(workflow="startup", issues=list(ctx.degraded_issues))
+    current = getattr(window, "_latest_runtime_issue_report", None)
+    merged = extra if current is None else merge_runtime_issue_reports(current, extra, workflow="runtime_center")
+    if ctx.runtime_issues is not None:
+        ctx.runtime_issues.set_latest_runtime_issue_report(window, merged)
+        return
+    setattr(window, "_latest_runtime_issue_report", merged)
+
+
+def _present_startup_problems(ctx: ShellCompositionContext) -> None:
+    window = ctx.w
+    local_root = resolve_global_state_root(window._state_root)
+    settings_choice = None if window._state_root else resolve_settings_root(None)
+    migration = last_migration_outcome()
+    if migration is not None and migration.dest != (settings_choice.path if settings_choice is not None else local_root):
+        migration = None
+    problems = assemble_startup_problems(
+        degraded_issues=ctx.degraded_issues,
+        history_folder=str(global_history_dir(window._state_root)),
+        symbol_folder=str(global_cache_dir(window._state_root)),
+        settings_choice=settings_choice,
+        migration=migration,
+    )
+    visible = select_visible_problems(problems, load_dismissed_problem_ids(local_root))
+    if not visible:
+        return
+    log_path = get_active_log_path(window._state_root) or global_app_log_path(window._state_root)
+    from app.shell.startup_dialogs import present_startup_problems
+
+    present_startup_problems(
+        window,  # type: ignore[arg-type]
+        visible,
+        log_path=str(log_path),
+        on_open_runtime_center=window._runtime_onboarding_workflow.open_runtime_center_dialog,
+        on_dismiss=lambda ids: remember_dismissed_problem_ids(local_root, ids),
+    )
+
+
+def _surface_plugin_host_startup_failure(window: object, message: str) -> None:
+    get_subsystem_logger("editor").error(message)
+    status_controller = getattr(window, "_status_controller", None)
+    set_warning = getattr(status_controller, "set_runtime_warning", None)
+    if set_warning is not None:
+        set_warning(message)
+    present_plugin_host_unavailable(window, message)
 
 
 __all__ = [

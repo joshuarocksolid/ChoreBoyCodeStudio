@@ -9,6 +9,7 @@ from app.intelligence.completion_merge_policy import (
     flatten_tiered_items,
     is_tier_header_item,
     merge_completion_display,
+    merge_completion_metadata,
 )
 from app.intelligence.completion_models import CompletionTier
 from app.intelligence.completion_models import (
@@ -31,7 +32,7 @@ def _item(label: str, *, source: str = "semantic", confidence: str = "exact") ->
     )
 
 
-def test_merge_completion_display_adds_tier_headers_and_dedupes_labels() -> None:
+def test_merge_completion_display_dedupes_labels_without_headers() -> None:
     fast = CompletionEnvelope(
         items=[_item("alpha", source="static_api_index", confidence="approximate")],
         source_phase="fast",
@@ -46,14 +47,8 @@ def test_merge_completion_display_adds_tier_headers_and_dedupes_labels() -> None
     merged = merge_completion_display(fast=fast, semantic=semantic)
 
     assert merged.confidence == "approximate"
-    assert [item.label for item in merged.items[:3]] == [
-        "Indexed suggestions",
-        "alpha",
-        "Python analysis",
-    ]
-    assert merged.items[3].label == "beta"
-    assert is_tier_header_item(merged.items[0])
-    assert is_tier_header_item(merged.items[2])
+    assert [item.label for item in merged.items] == ["alpha", "beta"]
+    assert not any(is_tier_header_item(item) for item in merged.items)
 
 
 def test_flatten_tiered_items_merges_documentation_from_later_tier() -> None:
@@ -97,6 +92,30 @@ def test_flatten_tiered_items_merges_documentation_from_later_tier() -> None:
     assert merged.source == "static_api_index"
     assert merged.documentation == "Return the current working directory."
     assert merged.signature == "getcwd()"
+
+
+def test_merge_takes_item_id_from_the_item_whose_resolve_provider_it_adopts() -> None:
+    fast_item = CompletionItem(
+        label="setText",
+        insert_text="setText",
+        kind=CompletionKind.METHOD,
+        source="static_api_index",
+        item_id="fast:setText",
+        resolve_provider="jedi",
+    )
+    runtime_item = CompletionItem(
+        label="setText",
+        insert_text="setText",
+        kind=CompletionKind.METHOD,
+        source="runtime_introspection",
+        item_id="runtime_introspection:PySide2.QtWidgets.QPushButton:setText",
+        resolve_provider="runtime_introspection",
+        resolvable_fields=("documentation", "signature"),
+    )
+
+    merged = merge_completion_metadata(fast_item, runtime_item)
+
+    assert (merged.resolve_provider, merged.item_id) == (runtime_item.resolve_provider, runtime_item.item_id)
 
 
 def test_envelope_confidence_never_exact_when_approximate_item_present() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Optional
 
+from app.features.editor_groups.install import install_editor_groups
 from app.features.markdown.install import install_markdown
 
 if TYPE_CHECKING:
@@ -27,6 +28,11 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="shop-lan-state",
         ownership_globs=("app/features/shop-lan-state/**",),
+    ),
+    FeatureSpec(
+        key="editor-groups",
+        ownership_globs=("app/features/editor_groups/**",),
+        install=install_editor_groups,
     ),
     FeatureSpec(
         key="hidden-path-policy",

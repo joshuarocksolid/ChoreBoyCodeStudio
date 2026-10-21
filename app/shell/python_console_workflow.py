@@ -61,7 +61,7 @@ class PythonConsoleBindingPort(Protocol):
     def set_completion_docs_resolving(self, resolving: bool) -> None:
         ...
 
-    def set_auto_trigger_period(self, enabled: bool) -> None:
+    def set_completion_mode(self, mode: str) -> None:
         ...
 
     def completion_request_generation(self) -> int:
@@ -129,7 +129,7 @@ class PythonConsoleWorkflowHost(Protocol):
     def clear_console_host(self) -> ClearConsoleHost:
         ...
 
-    def completion_auto_trigger_period(self) -> bool:
+    def completion_mode(self) -> str:
         ...
 
 
@@ -162,8 +162,8 @@ class MainWindowPythonConsoleHost:
     def clear_console_host(self) -> MainWindowClearConsoleHost:
         return MainWindowClearConsoleHost(self._window)
 
-    def completion_auto_trigger_period(self) -> bool:
-        return self._window._shell_preferences_runtime.completion_auto_trigger_period()
+    def completion_mode(self) -> str:
+        return self._window._shell_preferences_runtime.completion_mode()
 
 
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]
@@ -171,7 +171,8 @@ BackgroundWorkStarter = Callable[[Callable[[], None]], None]
 
 def _completion_degradation_message(reason: str) -> str:
     if reason == "repl_runtime_inspection":
-        return "Python Console completion is using live runtime inspection."
+        # Live inspection is the normal console path now; saying so on every list is noise.
+        return ""
     if reason == "repl_jedi_unavailable":
         return "Python Console semantic completion is unavailable (Jedi not loaded)."
     if reason in {"repl_no_completions", "repl_jedi_fallback"}:
@@ -211,6 +212,9 @@ class PythonConsoleWorkflow:
         widget.interrupt_requested.connect(self.handle_interrupt)
         widget.restart_requested.connect(self.handle_start_python_console_action)
         widget.set_completion_requester(self.request_completion_async)
+        if self._intelligence_controller is not None:
+            # The intelligence runtime can be bound before the console panel exists.
+            widget.set_completion_resolve_requester(self.request_completion_item_resolve_async)
         self.apply_completion_preferences(widget)
 
     def apply_completion_preferences(
@@ -225,7 +229,7 @@ class PythonConsoleWorkflow:
             if live is None:
                 return
             target = cast(PythonConsoleBindingPort, live)
-        target.set_auto_trigger_period(self._host.completion_auto_trigger_period())
+        target.set_completion_mode(self._host.completion_mode())
 
     def handle_start_python_console_action(self) -> bool:
         """Restart the REPL session and focus the Python Console tab."""
@@ -304,8 +308,8 @@ class PythonConsoleWorkflow:
                     prefix=completion_prefix,
                     items=envelope.items,
                 )
-                if envelope.degradation_reason:
-                    message = _completion_degradation_message(envelope.degradation_reason)
+                message = _completion_degradation_message(envelope.degradation_reason)
+                if envelope.degradation_reason and message:
                     self._host.show_status_message(message, 4000)
 
             self._host.dispatch_to_main_thread(apply)

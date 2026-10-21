@@ -271,6 +271,10 @@ class RunDebugPresenter:
                     "Run already in progress",
                     result.error_message or "A run is already in progress. Stop it before starting a new one.",
                 )
+            elif result.apprun_permission_denied:
+                from app.shell.startup_dialogs import present_freecad_requirement
+
+                present_freecad_requirement(parent, result.error_message or "")
             elif result.error_message:
                 QMessageBox.warning(parent, "Run failed to start", result.error_message)
             run_events.set_run_status("idle")

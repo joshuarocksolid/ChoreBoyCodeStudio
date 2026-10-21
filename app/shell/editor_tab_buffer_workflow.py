@@ -6,7 +6,20 @@ from typing import Any
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
+from app.shell.status_bar import EDITOR_DISK_STATE_MISSING, EDITOR_DISK_STATE_STALE
+
+
+def editor_disk_state(tab_state: object) -> str | None:
+    """``"stale"`` / ``"missing"`` for the status bar, from the buffer's disk conflict."""
+    conflict = getattr(tab_state, "disk_conflict", None)
+    kind = getattr(conflict, "kind", None)
+    if kind == DISK_CONFLICT_MISSING:
+        return EDITOR_DISK_STATE_MISSING
+    if kind == DISK_CONFLICT_CHANGED:
+        return EDITOR_DISK_STATE_STALE
+    return None
 
 
 class EditorTabBufferWorkflow:
@@ -42,13 +55,9 @@ class EditorTabBufferWorkflow:
             refreshed_state = self._editor_manager.get_tab(file_path)
             if refreshed_state is not None:
                 tab_state = refreshed_state
-        editor_tabs_widget = self._host.editor_tabs_widget()
-        if editor_tabs_widget is None:
+        if self._host.editor_tabs_widget() is None:
             return
-
-        tab_index = self._editor_tabs_coordinator.tab_index_for_path(tab_state.file_path)
-        if tab_index < 0:
-            return
+        # Every group showing the buffer gets the dirty marker.
         self._editor_tabs_coordinator.refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
             self._host.local_history_schedule_autosave(tab_state.file_path, tab_state.current_content)
@@ -68,12 +77,16 @@ class EditorTabBufferWorkflow:
         status_controller = self._host.status_controller()
         if tab_state is None or status_controller is None:
             return
+        if self._editor_manager.active_tab() is not tab_state:
+            # A background tab's cursor moved (session restore, an edit in another view).
+            return
         line_number = editor_widget.textCursor().blockNumber() + 1
         status_controller.set_editor_status(
             file_name=tab_state.display_name,
             line=line_number,
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
+            disk_state=editor_disk_state(tab_state),
         )
         self._outline_workflow.highlight_symbol_at_line(line_number)
 
@@ -91,6 +104,7 @@ class EditorTabBufferWorkflow:
             line=editor_widget.textCursor().blockNumber() + 1,
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
+            disk_state=editor_disk_state(tab_state),
         )
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
@@ -98,7 +112,7 @@ class EditorTabBufferWorkflow:
         if tab_index < 0 or editor_tabs_widget is None:
             return
 
-        tab_path = editor_tabs_widget.tabToolTip(tab_index)
+        tab_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not tab_path:
             return
         self._editor_manager.set_active_file(tab_path)

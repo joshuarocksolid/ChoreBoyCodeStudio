@@ -7,7 +7,7 @@ import threading
 from typing import Callable, Sequence
 
 from app.intelligence.python_structure import SymbolLocation, extract_symbol_locations
-from app.persistence.sqlite_index import IndexedSymbol, SQLiteSymbolIndex
+from app.persistence.sqlite_index import IndexedSymbol, open_symbol_index
 from app.project.file_inventory import ProjectInventorySnapshot, iter_python_files
 
 
@@ -63,7 +63,9 @@ def update_symbol_index_cache(
     else:
         python_files = _list_python_source_files(project_root_text, exclude_patterns)
     current_fingerprints = {str(path): _file_fingerprint(path) for path in python_files}
-    cache = SQLiteSymbolIndex(cache_path)
+    cache = open_symbol_index(cache_path)
+    if cache.disabled_reason:
+        return 0
     cached_fingerprints = cache.lookup_file_fingerprints(project_root_text)
     if not _can_commit():
         return 0
