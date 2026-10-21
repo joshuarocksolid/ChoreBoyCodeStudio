@@ -50,10 +50,8 @@ class EditorTabPreferencesWorkflow:
             )
             self.apply_detected_indentation_for_widget(file_path, editor_widget, editor_widget.toPlainText())
             editor_widget.set_completion_preferences(
-                enabled=self._host.completion_enabled(),
-                auto_trigger=self._host.completion_auto_trigger(),
+                mode=self._host.completion_mode(),
                 min_chars=self._host.completion_min_chars(),
-                auto_trigger_period=self._host.completion_auto_trigger_period(),
             )
 
     def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:

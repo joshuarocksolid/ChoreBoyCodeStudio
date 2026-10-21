@@ -10,7 +10,7 @@ from PySide2.QtWidgets import QMainWindow, QToolTip
 
 from app.editors.completion_popup import CompletionController
 from app.editors.completion_popup.completion_replacement import resolve_insert_replacement_range
-from app.intelligence.completion_mode import completion_mode_from_flags
+from app.intelligence.completion_mode import COMPLETION_MODE_DEFAULT, normalize_completion_mode
 from app.intelligence.completion_models import CompletionItem
 from app.shell.editor_completion_contracts import CompletionRequester
 
@@ -103,19 +103,11 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
     def completion_mode(self) -> str:
         return self._completion_popup.mode()
 
-    def set_completion_preferences(
-        self,
-        *,
-        enabled: bool,
-        auto_trigger: bool,
-        min_chars: int,
-        auto_trigger_period: bool = True,
-    ) -> None:
-        """Apply the window's completion flags (``enabled`` and ``auto_trigger`` encode the mode)."""
+    def set_completion_preferences(self, *, mode: str, min_chars: int) -> None:
+        """Apply the completion mode and the minimum typed length."""
 
-        _ = auto_trigger_period
         self._completion_min_chars = max(1, min_chars)
-        self.set_completion_mode(completion_mode_from_flags(enabled=enabled, auto_trigger=auto_trigger))
+        self.set_completion_mode(normalize_completion_mode(mode) or COMPLETION_MODE_DEFAULT)
 
     def trigger_completion(self, *, manual: bool = True, **_ignored: object) -> None:
         """Open the completion list at the cursor, as Ctrl+Space does."""
