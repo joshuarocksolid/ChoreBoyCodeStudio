@@ -17,6 +17,8 @@ owners:
     - app/features/spec.py
   markdown:
     - app/features/markdown/**
+  form-builder:
+    - app/features/form_builder/**
   platform.intelligence:
     - app/intelligence/**
   platform.packaging:

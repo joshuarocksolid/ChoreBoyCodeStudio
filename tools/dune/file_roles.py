@@ -60,6 +60,27 @@ FILE_ROLES = (
         ("app/plugins/host_runtime.py", "app/plugins/host_runtime/**"),
         ("app.features",),
     ),
+    FileRole(
+        "form_builder.engine",
+        ("app/features/form_builder/engine/**",),
+        ("app", "PySide2", "PySide6", "shiboken2", "shiboken6"),
+        allowed_imports=(
+            "app.features.form_builder.engine",
+            "app.plugins.rpc_protocol",
+        ),
+    ),
+    FileRole(
+        "form_builder.mutate_guard",
+        ("app/features/form_builder/**",),
+        ("app.features.form_builder.engine.ui4.mutate",),
+        allowed_files=frozenset(
+            {
+                "app/features/form_builder/engine/commands/log.py",
+                "app/features/form_builder/engine/commands/context.py",
+                "app/features/form_builder/engine/ui4/reader.py",
+            }
+        ),
+    ),
 )
 
 

@@ -1,0 +1,509 @@
+"""The document: node index and read-only queries (CONTRACTS.md section 2).
+
+Complexities are part of the contract (section 12).
+"""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from typing import Dict, FrozenSet, Iterator, List, Literal, Optional, Tuple
+
+from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
+from app.features.form_builder.engine.ui4.nodes import (
+    CustomWidgetNode,
+    LayoutNode,
+    Node,
+    WidgetNode,
+    build_node,
+)
+from app.features.form_builder.engine.ui4.numfmt import format_real
+from app.features.form_builder.engine.ui4.schema import SCHEMA
+from app.features.form_builder.engine.ui4.spec import NodeSpec
+from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, StringValue
+
+EnumStyle = Literal["short", "qualified"]
+
+_NAME_FIELDS = {
+    "widget": "object_name",
+    "layout": "object_name",
+    "spacer": "name",
+    "action": "name",
+    "actiongroup": "name",
+    "buttongroup": "name",
+}
+
+
+class InvariantError(AssertionError):
+    """A model-integrity invariant failed. Always a bug; never a user error."""
+
+
+class UiDocument:
+    """One form. Created by the reader (``engine.ui4.reader.read_ui``) or by
+    ``UiDocument.from_spec``; mutated only by ``engine.ui4.mutate`` primitives,
+    which the command log calls.
+
+    ``revision`` increases by one for every primitive op applied (do, undo and
+    redo all increase it). It is the cache key for lazy serialization, the hit
+    index and diagnostics. It is not the undo position.
+    """
+
+    def __init__(self, ui: Node, revision: int = 0) -> None:
+        if ui.kind != "ui" or ui.id != DOCUMENT_ID:
+            raise InvariantError("the document root must be the ui node")
+        self._revision = revision
+        self._peak = revision
+        self._nodes: Dict[NodeId, Node] = {}
+        self._by_name: Dict[str, List[NodeId]] = {}
+        self._name_set: set[str] = set()
+        self._names_view: Optional[FrozenSet[str]] = None
+        self._custom: Dict[str, NodeId] = {}
+        self._enum_cache: Optional[Tuple[int, EnumStyle]] = None
+        self._index_tree(ui)
+
+    @classmethod
+    def from_spec(cls, spec: NodeSpec) -> "UiDocument":
+        """Build a document from a ``ui`` spec whose ids are all set and unique."""
+        if spec.kind != "ui" or spec.id != DOCUMENT_ID:
+            raise InvariantError("from_spec requires a ui spec with DOCUMENT_ID")
+        doc = cls(_node_from_spec(spec, None, None, 0))
+        doc._check_validate()
+        return doc
+
+    @property
+    def revision(self) -> int:
+        return self._revision
+
+    @property
+    def ui(self) -> Node:
+        """The ``ui`` node (id DOCUMENT_ID)."""
+        return self._nodes[DOCUMENT_ID]
+
+    @property
+    def root(self) -> WidgetNode:
+        """The form's root widget. A document always has one (reader enforces)."""
+        kids = self.ui.children("root")
+        if len(kids) != 1 or not isinstance(kids[0], WidgetNode):
+            raise InvariantError("the document has no root widget")
+        return kids[0]
+
+    def node(self, node_id: NodeId) -> Node:
+        """O(1). KeyError when absent."""
+        return self._nodes[node_id]
+
+    def get(self, node_id: NodeId) -> Optional[Node]:
+        """O(1). None when absent."""
+        return self._nodes.get(node_id)
+
+    def contains(self, node_id: NodeId) -> bool:
+        """O(1)."""
+        return node_id in self._nodes
+
+    def parent(self, node_id: NodeId) -> Optional[Node]:
+        """O(1)."""
+        parent_id = self._nodes[node_id].parent_id
+        if parent_id is None:
+            return None
+        return self._nodes[parent_id]
+
+    def ancestors(self, node_id: NodeId) -> Tuple[NodeId, ...]:
+        """Parent first, ``ui`` last. O(depth)."""
+        found: List[NodeId] = []
+        current = self._nodes[node_id].parent_id
+        while current is not None:
+            found.append(current)
+            current = self._nodes[current].parent_id
+        return tuple(found)
+
+    def is_ancestor(self, ancestor: NodeId, node_id: NodeId) -> bool:
+        """True when ``ancestor`` is a strict ancestor. O(depth)."""
+        return ancestor in self.ancestors(node_id)
+
+    def depth(self, node_id: NodeId) -> int:
+        """``ui`` is 0, root widget 1. O(depth)."""
+        return len(self.ancestors(node_id))
+
+    def by_name(self, name: str) -> Tuple[NodeId, ...]:
+        """Widgets, layouts, spacers, actions, action groups and button groups whose
+        name is ``name``, in document order. More than one means a duplicate
+        (FB010). O(k)."""
+        return tuple(self._by_name.get(name, ()))
+
+    def names(self) -> FrozenSet[str]:
+        """Every name in the shared object-name namespace. O(1) (maintained)."""
+        if self._names_view is None:
+            self._names_view = frozenset(self._name_set)
+        return self._names_view
+
+    def unique_name(self, base: str) -> str:
+        """``base`` if free, else ``base_2``, ``base_3``... (Designer's rule). The
+        first free suffix wins. Deterministic. O(k) in the number of collisions."""
+        if base not in self._name_set:
+            return base
+        suffix = 2
+        while True:
+            candidate = "%s_%s" % (base, suffix)
+            if candidate not in self._name_set:
+                return candidate
+            suffix += 1
+
+    def form_class_name(self) -> str:
+        """``<class>`` text, else the root widget's object name, else ``Form``."""
+        class_name = self.ui.field("class_name")
+        if isinstance(class_name, str) and class_name:
+            return class_name
+        root_name = self.root.object_name
+        if root_name:
+            return root_name
+        return "Form"
+
+    def iter_preorder(self, start: NodeId = DOCUMENT_ID) -> Iterator[Node]:
+        """Pre-order, schema slot order, explicit stack (no recursion). O(subtree)."""
+        stack = [self._nodes[start]]
+        while stack:
+            node = stack.pop()
+            yield node
+            ordered: List[Node] = []
+            for slot in SCHEMA[node.kind].slots:
+                ordered.extend(node.children(slot.name))
+            stack.extend(reversed(ordered))
+
+    def iter_widgets(self) -> Iterator[WidgetNode]:
+        """Every widget, document order. O(form)."""
+        for node in self.iter_preorder():
+            if isinstance(node, WidgetNode):
+                yield node
+
+    def layout_of(self, widget_id: NodeId) -> Optional[LayoutNode]:
+        """O(1)."""
+        node = self._nodes[widget_id]
+        if isinstance(node, WidgetNode):
+            return node.layout
+        return None
+
+    def owning_widget(self, node_id: NodeId) -> Optional[WidgetNode]:
+        """Nearest widget ancestor-or-self that owns ``node_id`` visually: for a
+        widget, itself; for a layout/item/spacer, the widget whose layout tree
+        contains it. O(depth)."""
+        node = self._nodes[node_id]
+        if isinstance(node, WidgetNode):
+            return node
+        for ancestor_id in self.ancestors(node_id):
+            ancestor = self._nodes[ancestor_id]
+            if isinstance(ancestor, WidgetNode):
+                return ancestor
+        return None
+
+    def containing_layout_item(self, node_id: NodeId) -> Optional[NodeId]:
+        """The layout item whose ``content`` is ``node_id``, or None. O(1)."""
+        node = self._nodes[node_id]
+        if node.parent_slot != "content":
+            return None
+        parent_id = node.parent_id
+        if parent_id is None:
+            return None
+        if self._nodes[parent_id].kind != "layoutitem":
+            return None
+        return parent_id
+
+    def tabstops(self) -> Optional[Tuple[str, ...]]:
+        """``<tabstops>`` names, or None when the element is absent."""
+        value = self.ui.field("tabstops")
+        if value is None:
+            return None
+        if isinstance(value, tuple):
+            return tuple(item for item in value if isinstance(item, str))
+        return None
+
+    def connections(self) -> Tuple[Node, ...]:
+        """ConnectionNodes in document order."""
+        return self.ui.children("connections")
+
+    def custom_widget(self, class_name: str) -> Optional[Node]:
+        """The ``<customwidget>`` declaring ``class_name``. O(1)."""
+        node_id = self._custom.get(class_name)
+        if node_id is None:
+            return None
+        return self._nodes.get(node_id)
+
+    def enum_style(self) -> EnumStyle:
+        """Spelling used for new enum/set values: "qualified" when most enum texts in
+        the document name the enum type (``Qt::Orientation::Horizontal``), else
+        "short". Ties and documents without enums use ``DEFAULT_ENUM_STYLE``.
+        Recomputed lazily per revision."""
+        cached = self._enum_cache
+        if cached is not None and cached[0] == self._revision:
+            return cached[1]
+        qualified = 0
+        short = 0
+        for node in self.iter_preorder():
+            for entry in node.properties() + node.attributes():
+                qualified, short = _count_style(entry.value, qualified, short)
+        if qualified > short:
+            style: EnumStyle = "qualified"
+        elif short > qualified:
+            style = "short"
+        else:
+            style = DEFAULT_ENUM_STYLE
+        self._enum_cache = (self._revision, style)
+        return style
+
+    def logic_version(self) -> Optional[int]:
+        """``cbcsLogic`` on the root, or None."""
+        entry = self.root.prop("cbcsLogic")
+        if entry is None or not isinstance(entry.value, StringValue):
+            return None
+        try:
+            payload = json.loads(entry.value.text)
+        except json.JSONDecodeError:
+            return None
+        if isinstance(payload, dict):
+            version = payload.get("version")
+            if isinstance(version, int) and not isinstance(version, bool):
+                return version
+        return None
+
+    def fingerprint(self) -> str:
+        """sha256 hex of a canonical encoding of the whole tree INCLUDING ids.
+        Used by replay and undo tests. O(form)."""
+        return _digest(self.ui, include_ids=True)
+
+    def structure_fingerprint(self) -> str:
+        """Same, with ids excluded. Equal for two documents read from the same text."""
+        return _digest(self.ui, include_ids=False)
+
+    def validate(self) -> None:
+        """Check every integrity invariant (CONTRACTS.md section 2.7); raise
+        InvariantError naming the first violation. O(form). Called after every
+        log entry when ``CBCS_FB_VALIDATE=1`` (always on in tests)."""
+        if self._revision < self._peak:
+            raise InvariantError("revision went backwards")
+        reachable: Dict[NodeId, Node] = {}
+        self._walk_invariants(self.ui, None, None, 0, reachable)
+        if set(reachable) != set(self._nodes):
+            raise InvariantError("the id index does not match the reachable tree")
+        roots = self.ui.children("root")
+        if len(roots) != 1 or roots[0].kind != "widget":
+            raise InvariantError("a document needs exactly one root widget")
+        expected_names: Dict[str, List[NodeId]] = {}
+        expected_custom: Dict[str, NodeId] = {}
+        for node in self.iter_preorder():
+            _check_fields(node)
+            _check_property_identity(node)
+            name = _node_name(node)
+            if name is not None:
+                expected_names.setdefault(name, []).append(node.id)
+            if isinstance(node, CustomWidgetNode) and node.class_name:
+                expected_custom.setdefault(node.class_name, node.id)
+        if expected_names != self._by_name:
+            raise InvariantError("the name index does not match the tree")
+        if expected_custom != self._custom:
+            raise InvariantError("the custom-widget index does not match the tree")
+
+    def to_spec(self) -> NodeSpec:
+        """Frozen snapshot of the whole document (the ``ui`` spec)."""
+        return self.ui.to_spec()
+
+    def _index_tree(self, node: Node) -> None:
+        if node.id in self._nodes:
+            raise InvariantError("duplicate id %s" % (int(node.id),))
+        self._nodes[node.id] = node
+        if isinstance(node, CustomWidgetNode) and node.class_name:
+            self._custom.setdefault(node.class_name, node.id)
+        name = _node_name(node)
+        if name is not None:
+            self._by_name.setdefault(name, []).append(node.id)
+            self._name_set.add(name)
+        for _slot_name, kids in node.slots:
+            for child in kids:
+                self._index_tree(child)
+
+    def _replace_tree(self, ui: Node) -> None:
+        """Swap the whole tree. ``mutate`` is the only caller."""
+        self._nodes = {}
+        self._by_name = {}
+        self._name_set = set()
+        self._names_view = None
+        self._custom = {}
+        self._enum_cache = None
+        self._index_tree(ui)
+        self._revision += 1
+        if self._revision < self._peak:
+            raise InvariantError("revision went backwards")
+        self._peak = self._revision
+        self._check_validate()
+
+    def _check_validate(self) -> None:
+        if os.environ.get("CBCS_FB_VALIDATE") == "1":
+            self.validate()
+
+    def _walk_invariants(
+        self,
+        node: Node,
+        parent_id: Optional[NodeId],
+        parent_slot: Optional[str],
+        index: int,
+        reachable: Dict[NodeId, Node],
+    ) -> None:
+        if node.id in reachable:
+            raise InvariantError("id %s is reachable twice" % (int(node.id),))
+        reachable[node.id] = node
+        if node.parent_id != parent_id or node.parent_slot != parent_slot or node.slot_index != index:
+            raise InvariantError("parent link of id %s does not match the slot that holds it" % (int(node.id),))
+        if node.kind not in SCHEMA:
+            raise InvariantError("unknown kind %s" % (node.kind,))
+        spec = SCHEMA[node.kind]
+        seen_slots = {name for name, _kids in node.slots}
+        for slot in spec.slots:
+            kids = node.children(slot.name)
+            if slot.max_len and len(kids) > slot.max_len:
+                raise InvariantError("slot %s of id %s holds more than one child" % (slot.name, int(node.id)))
+            for child_index, child in enumerate(kids):
+                if child.kind not in slot.accepts:
+                    raise InvariantError(
+                        "kind %s is not accepted by slot %s" % (child.kind, slot.name)
+                    )
+                self._walk_invariants(child, node.id, slot.name, child_index, reachable)
+        for name, _kids in node.slots:
+            if name not in {slot.name for slot in spec.slots}:
+                raise InvariantError("id %s has unknown slot %s" % (int(node.id), name))
+        if seen_slots - {slot.name for slot in spec.slots}:
+            raise InvariantError("id %s has a slot the schema does not declare" % (int(node.id),))
+
+
+def _node_from_spec(
+    spec: NodeSpec,
+    parent_id: Optional[NodeId],
+    parent_slot: Optional[str],
+    index: int,
+) -> Node:
+    if spec.id is None:
+        raise InvariantError("a document spec is missing an id")
+    child_slots = []
+    order = {slot.name: index for index, slot in enumerate(SCHEMA[spec.kind].slots)}
+    for slot_name, kids in sorted(spec.slots, key=lambda item: order.get(item[0], 1000)):
+        child_slots.append(
+            (
+                slot_name,
+                tuple(
+                    _node_from_spec(child, spec.id, slot_name, child_index)
+                    for child_index, child in enumerate(kids)
+                ),
+            )
+        )
+    return build_node(
+        kind=spec.kind,
+        node_id=spec.id,
+        parent_id=parent_id,
+        parent_slot=parent_slot,
+        slot_index=index,
+        fields=spec.fields,
+        properties=spec.properties,
+        attributes=spec.attributes,
+        slots=tuple(child_slots),
+        extra_attrs=spec.extra_attrs,
+    )
+
+
+def _node_name(node: Node) -> Optional[str]:
+    field_name = _NAME_FIELDS.get(node.kind)
+    if field_name is None:
+        return None
+    value = node.field(field_name)
+    if isinstance(value, str):
+        return value
+    return None
+
+
+def _check_fields(node: Node) -> None:
+    spec = SCHEMA[node.kind]
+    known = {item.name for item in spec.fields}
+    for name, _value in node.fields:
+        if name not in known:
+            raise InvariantError("id %s has unknown field %s" % (int(node.id), name))
+    for item in spec.fields:
+        if item.required and node.field(item.name) is None:
+            raise InvariantError("id %s is missing required field %s" % (int(node.id), item.name))
+
+
+def _check_property_identity(node: Node) -> None:
+    seen = set()
+    for entry in node.properties():
+        identity = (entry.kind, entry.name)
+        if identity in seen:
+            raise InvariantError("id %s repeats property %s" % (int(node.id), entry.name))
+        seen.add(identity)
+        if entry.kind != "property":
+            raise InvariantError("a property entry has kind %s" % (entry.kind,))
+    seen = set()
+    for entry in node.attributes():
+        identity = (entry.kind, entry.name)
+        if identity in seen:
+            raise InvariantError("id %s repeats attribute %s" % (int(node.id), entry.name))
+        seen.add(identity)
+        if entry.kind != "attribute":
+            raise InvariantError("an attribute entry has kind %s" % (entry.kind,))
+
+
+def _count_style(value: object, qualified: int, short: int) -> Tuple[int, int]:
+    if isinstance(value, EnumValue):
+        return _add_style(value.text, qualified, short)
+    if isinstance(value, SetValue):
+        for piece in value.text.split("|"):
+            name = piece.strip()
+            if not name or name == "0":
+                continue
+            qualified, short = _add_style(name, qualified, short)
+    return qualified, short
+
+
+def _add_style(text: str, qualified: int, short: int) -> Tuple[int, int]:
+    if text.count("::") >= 2:
+        return qualified + 1, short
+    return qualified, short + 1
+
+
+def _digest(node: Node, *, include_ids: bool) -> str:
+    payload = json.dumps(_canon(node, include_ids), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _canon(value: object, include_ids: bool) -> object:
+    if isinstance(value, Node):
+        body: Dict[str, object] = {
+            "kind": value.kind,
+            "fields": [[key, _canon(item, include_ids)] for key, item in value.fields],
+            "properties": [_canon(entry, include_ids) for entry in value.properties()],
+            "attributes": [_canon(entry, include_ids) for entry in value.attributes()],
+            "slots": [
+                [name, [_canon(child, include_ids) for child in kids]]
+                for name, kids in value.slots
+            ],
+            "extra": [[key, item] for key, item in value.extra_attrs()],
+        }
+        if include_ids:
+            body["id"] = int(value.id)
+            body["parent"] = None if value.parent_id is None else int(value.parent_id)
+            body["parent_slot"] = value.parent_slot
+            body["index"] = value.slot_index
+        return body
+    if isinstance(value, (set, frozenset)):
+        return sorted((_canon(item, include_ids) for item in value), key=lambda item: json.dumps(item, sort_keys=True))
+    if isinstance(value, tuple):
+        return [_canon(item, include_ids) for item in value]
+    if isinstance(value, float):
+        return format_real(value)
+    if value is None or isinstance(value, (str, int, bool)):
+        return value
+    if hasattr(value, "__dataclass_fields__"):
+        encoded: Dict[str, object] = {"$": type(value).__name__}
+        for key in getattr(value, "__dataclass_fields__"):
+            encoded[key] = _canon(getattr(value, key), include_ids)
+        return encoded
+    raise TypeError("cannot fingerprint %s" % (type(value).__name__,))
+
+
+#: Enum spelling for a document with no enum values. Set from the M0.4b
+#: Designer-resave corpus (what Designer 6.8 writes for a fresh form).
+DEFAULT_ENUM_STYLE: EnumStyle = "qualified"

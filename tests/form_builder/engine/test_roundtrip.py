@@ -1,0 +1,303 @@
+"""Reader and writer behavior for the ui4 core."""
+from __future__ import annotations
+
+import random
+
+import pytest
+
+from app.features.form_builder.engine.commands.ops import SetPropertyOp
+from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.ui4.mutate import apply
+from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+from app.features.form_builder.engine.ui4.spec import PropertyEntry
+from app.features.form_builder.engine.ui4.values import BoolValue, OpaqueValue, StringValue
+from app.features.form_builder.engine.ui4.writer import write_ui
+
+CANONICAL = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle">
+   <string notr="true">Hello &amp; bye</string>
+  </property>
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>400</width>
+    <height>300</height>
+   </rect>
+  </property>
+  <property name="buddy">
+   <cstring>nameEdit</cstring>
+  </property>
+  <property name="orientation">
+   <enum>Qt::Horizontal</enum>
+  </property>
+  <property name="standardButtons">
+   <set>QDialogButtonBox::Cancel|QDialogButtonBox::Ok</set>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>10</width>
+    <height>20</height>
+   </size>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="font">
+   <font>
+    <family>Sans</family>
+    <pointsize>12</pointsize>
+    <bold>true</bold>
+   </font>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QPushButton" name="okButton">
+     <property name="text">
+      <string>OK</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def _load(text: str):
+    return read_ui(text, allocator=IdAllocator())
+
+
+def _saved(text: str) -> str:
+    return write_ui(_load(text).document).text
+
+
+@pytest.mark.parity("R3-223")
+@pytest.mark.parity("R3-227")
+@pytest.mark.parity("R3-228")
+@pytest.mark.parity("R3-236")
+@pytest.mark.parity("R3-237")
+@pytest.mark.parity("R3-258")
+@pytest.mark.parity("R3-265")
+@pytest.mark.parity("R3-266")
+@pytest.mark.parity("R3-271")
+@pytest.mark.parity("R3-272")
+@pytest.mark.parity("R3-274")
+@pytest.mark.parity("R3-283")
+@pytest.mark.parity("R3-285")
+@pytest.mark.parity("R3-288")
+@pytest.mark.parity("R3-289")
+@pytest.mark.parity("R3-294")
+@pytest.mark.parity("R3-295")
+@pytest.mark.parity("R3-297")
+@pytest.mark.parity("R3-298")
+@pytest.mark.parity("R3-299")
+def test_canonical_form_is_byte_stable() -> None:
+    first = _saved(CANONICAL)
+    assert first == CANONICAL
+    assert _saved(first) == first
+
+
+def test_second_save_matches_first_when_numbers_normalize() -> None:
+    text = CANONICAL.replace("<double>1.5</double>", "<double>1.5</double>")
+    source = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="value">
+   <double>1.5</double>
+  </property>
+ </widget>
+</ui>
+"""
+    first = _saved(source)
+    assert "<double>1.500000000000000</double>" in first
+    assert write_ui(_load(first).document).text == first
+
+
+def test_ids_follow_schema_preorder_and_stay_stable() -> None:
+    first = _load(CANONICAL)
+    second = _load(CANONICAL)
+    assert first.document.structure_fingerprint() == second.document.structure_fingerprint()
+    assert [node.id for node in first.document.iter_preorder()] == [
+        node.id for node in second.document.iter_preorder()
+    ]
+    root = first.document.root
+    assert root.object_name == "Form"
+    parent = first.document.parent(root.id)
+    assert parent is not None
+    assert parent.id == first.document.ui.id
+    button_ids = first.document.by_name("okButton")
+    assert button_ids
+    assert first.document.node(button_ids[0]).field("object_name") == "okButton"
+    layout_id = first.document.by_name("verticalLayout")[0]
+    layout_parent = first.document.parent(layout_id)
+    assert layout_parent is not None
+    assert layout_parent.id == root.id
+
+
+def test_duplicate_property_keeps_the_last_value() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle">
+   <string>First</string>
+  </property>
+  <property name="windowTitle">
+   <string>Last</string>
+  </property>
+ </widget>
+</ui>
+"""
+    result = _load(text)
+    entry = result.document.root.prop("windowTitle")
+    assert entry is not None
+    assert isinstance(entry.value, StringValue)
+    assert entry.value.text == "Last"
+    assert any(item.code == "FB007" for item in result.diagnostics)
+    saved = write_ui(result.document).text
+    assert saved.index("First") < saved.index("Last")
+    assert write_ui(_load(saved).document).text == saved
+
+
+def test_unknown_value_and_element_are_kept() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="windowIcon">
+   <iconset theme="edit-copy">
+    <normaloff>copy.png</normaloff>copy.png</iconset>
+  </property>
+  <designerdata/>
+ </widget>
+</ui>
+"""
+    result = _load(text)
+    icon = result.document.root.prop("windowIcon")
+    assert icon is not None
+    assert isinstance(icon.value, OpaqueValue)
+    assert icon.value.element.tag == "iconset"
+    assert any(item.code == "FB005" for item in result.diagnostics)
+    assert any(item.code == "FB006" for item in result.diagnostics)
+    saved = write_ui(result.document).text
+    assert "theme=\"edit-copy\"" in saved
+    assert "<normaloff>copy.png</normaloff>copy.png" in saved
+    assert write_ui(_load(saved).document).text == saved
+
+
+@pytest.mark.parity("R3-290")
+@pytest.mark.parity("R3-320")
+@pytest.mark.parity("R3-321")
+def test_iconset_marker_round_trip() -> None:
+    test_unknown_value_and_element_are_kept()
+
+
+def test_lossy_bool_and_underflow_stay_verbatim() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="enabled">
+   <bool>1</bool>
+  </property>
+  <property name="tiny">
+   <double>1e-400</double>
+  </property>
+ </widget>
+</ui>
+"""
+    result = _load(text)
+    enabled = result.document.root.prop("enabled")
+    tiny = result.document.root.prop("tiny")
+    assert enabled is not None and tiny is not None
+    assert isinstance(enabled.value, OpaqueValue)
+    assert isinstance(tiny.value, OpaqueValue)
+    saved = write_ui(result.document).text
+    assert "<bool>1</bool>" in saved
+    assert "<double>1e-400</double>" in saved
+    assert write_ui(_load(saved).document).text == saved
+
+
+def test_crlf_and_bom_are_accepted() -> None:
+    body = "<ui version=\"4.0\"><widget class=\"QWidget\" name=\"Form\"/></ui>"
+    result = _load("\ufeff" + body.replace(">", ">\r\n"))
+    assert result.document.root.object_name == "Form"
+
+
+def test_malformed_xml_reports_a_column() -> None:
+    with pytest.raises(UiReadError) as caught:
+        _load("<ui")
+    assert caught.value.code == "FB001"
+    assert caught.value.column >= 1
+
+
+def test_doctype_is_refused() -> None:
+    with pytest.raises(UiReadError) as caught:
+        _load("<!DOCTYPE ui>\n<ui version=\"4.0\"><widget class=\"QWidget\" name=\"Form\"/></ui>")
+    assert caught.value.code == "FB004"
+
+
+def test_missing_root_widget_is_refused() -> None:
+    with pytest.raises(UiReadError) as caught:
+        _load("<ui version=\"4.0\"></ui>")
+    assert caught.value.code == "FB002"
+
+
+def test_newer_version_warns_and_still_loads() -> None:
+    result = _load("<ui version=\"5.0\"><widget class=\"QWidget\" name=\"Form\"/></ui>")
+    assert result.document.root.class_name == "QWidget"
+    assert any(item.code == "FB003" for item in result.diagnostics)
+
+
+def test_set_property_inverse_restores_the_fingerprint() -> None:
+    document = _load(CANONICAL).document
+    before = document.fingerprint()
+    inverse = apply(
+        document,
+        SetPropertyOp(
+            owner=document.root.id,
+            kind="property",
+            name="enabled",
+            entry=PropertyEntry("property", "enabled", BoolValue(False)),
+            index=None,
+        ),
+    )
+    enabled = document.root.prop("enabled")
+    assert enabled is not None
+    assert enabled.value == BoolValue(False)
+    apply(document, inverse)
+    assert document.fingerprint() == before
+
+
+def test_seeded_random_documents_round_trip() -> None:
+    rng = random.Random(20261021)
+    for _case in range(40):
+        text = _random_form(rng)
+        first = _saved(text)
+        second = write_ui(_load(first).document).text
+        assert second == first
+
+
+def _random_form(rng: random.Random) -> str:
+    widgets = []
+    count = rng.randint(1, 6)
+    for index in range(count):
+        title = "t%s_%s" % (index, rng.choice(["a", "b&c", "d<e", ""]))
+        escaped = title.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        widgets.append(
+            '<widget class="QLabel" name="lab%s"><property name="text"><string>%s</string></property></widget>'
+            % (index, escaped)
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?><ui version="4.0"><class>Form</class>'
+        '<widget class="QWidget" name="Form">%s</widget></ui>' % "".join(widgets)
+    )
