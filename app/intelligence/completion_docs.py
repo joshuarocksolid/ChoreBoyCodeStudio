@@ -56,9 +56,12 @@ def first_paragraph(text: str) -> str:
     return joined
 
 
+_JEDI_TYPE_WORDS = {"statement": "attribute", "instance": "attribute", "param": "parameter"}
+
+
 def owner_line(item: CompletionItem) -> str:
     parts = [part.strip() for part in (item.detail or "").split("•")]
-    kept = [part for part in parts if part.lower() not in _NOISE_DETAIL_PARTS]
+    kept = [_JEDI_TYPE_WORDS.get(part, part) for part in parts if part.lower() not in _NOISE_DETAIL_PARTS]
     return " · ".join(kept)
 
 
