@@ -101,6 +101,9 @@ class EditorTabLifecycleDelegates:
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
         self._lifecycle_workflow.release_editor_widget(widget)
 
+    def release_tab_content(self, file_path: str) -> None:
+        self._lifecycle_workflow.release_tab_content(file_path)
+
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
 

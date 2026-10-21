@@ -53,6 +53,19 @@ class EditorTabLifecycleWorkflow:
             return
         widget.deleteLater()
 
+    def release_tab_content(self, file_path: str) -> None:
+        """Release whatever owns ``file_path``, whether or not a source editor exists."""
+        registry = self._host.tab_content_registry()
+        surface = registry.unbind(file_path)
+        widget = self._host.workspace_controller().pop_editor(file_path)
+        if widget is not None and self._host.debug_execution_editor() is widget:
+            self._host.clear_debug_execution_indicator()
+        if surface is not None:
+            surface.release()
+            return
+        if widget is not None:
+            widget.deleteLater()
+
     def remove_tab_widget_for_path(self, file_path: str) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
@@ -61,9 +74,7 @@ class EditorTabLifecycleWorkflow:
         if tab_index < 0:
             return
         editor_tabs_widget.removeTab(tab_index)
-        widget = self._host.workspace_controller().pop_editor(file_path)
-        if widget is not None:
-            self.release_editor_widget(widget)
+        self.release_tab_content(file_path)
         self._host.indent_source_by_path().pop(file_path, None)
         self._host.refresh_save_action_states()
         self._host.refresh_run_action_states()
@@ -150,9 +161,7 @@ class EditorTabLifecycleWorkflow:
                 return
 
         editor_tabs_widget.removeTab(tab_index)
-        widget = self._host.workspace_controller().pop_editor(file_path)
-        if widget is not None:
-            self.release_editor_widget(widget)
+        self.release_tab_content(file_path)
         self._editor_manager.close_file(file_path)
         self._debug_control_workflow.breakpoint_store.clear_file(file_path)
         self._host.stored_lint_diagnostics().pop(file_path, None)
@@ -171,12 +180,10 @@ class EditorTabLifecycleWorkflow:
             self.handle_tab_close_requested(tab_index)
 
     def reset_editor_tabs(self) -> None:
+        for path in list(self._editor_manager.open_paths()):
+            self.release_tab_content(path)
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is not None:
-            for path in list(self._host.workspace_controller().open_editor_paths()):
-                widget = self._host.workspace_controller().pop_editor(path)
-                if widget is not None:
-                    self.release_editor_widget(widget)
             editor_tabs_widget.clear()
         self._host.local_history_stop_autosave_timer()
         self._host.stop_auto_save_to_file_timer()

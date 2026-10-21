@@ -364,11 +364,13 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
     window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=window._project_tree_controller,
         editor_widgets_by_path=window._editor_widgets_by_path,
+        open_tab_paths=window._editor_manager.open_paths,
         tab_index_for_path=window._editor_tab_workflow.tab_index_for_path,
         remove_tab_at_index=lambda tab_index: window._editor_tabs_widget.removeTab(tab_index)
         if window._editor_tabs_widget is not None
         else None,
-        release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
+        release_tab_content=window._editor_tab_workflow.release_tab_content,
+        rekey_tab_content=window._project_tree_ui_workflow.rekey_tab_content,
         close_editor_file=lambda file_path: window._editor_manager.close_file(file_path),
         breakpoint_store=window._debug_control_workflow.breakpoint_store,
         refresh_breakpoints_list=window._debug_control_workflow.refresh_breakpoints_list,

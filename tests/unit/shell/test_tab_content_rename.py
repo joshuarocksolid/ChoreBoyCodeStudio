@@ -76,7 +76,7 @@ def test_rename_to_markdown_rekeys_the_surface(tmp_path: Path) -> None:
     host = _Host(registry)
     workflow = ProjectTreeUiWorkflow(host)  # type: ignore[arg-type]
 
-    workflow.update_widget_language_for_path(editor, new_path)  # type: ignore[arg-type]
+    workflow.rekey_tab_content(old_path, new_path)
 
     assert surface.changed == [new_path]
     assert registry.surface_for_path(new_path) is surface
@@ -94,7 +94,7 @@ def test_rename_to_text_reparents_the_source_editor_and_releases_the_surface(tmp
     host = _Host(registry)
     workflow = ProjectTreeUiWorkflow(host)  # type: ignore[arg-type]
 
-    workflow.update_widget_language_for_path(editor, new_path)  # type: ignore[arg-type]
+    workflow.rekey_tab_content(old_path, new_path)
 
     assert host.replaced == [(new_path, editor)]
     assert registry.surface_for_path(old_path) is None

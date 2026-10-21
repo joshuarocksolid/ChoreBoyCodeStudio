@@ -366,19 +366,6 @@ class ProjectTreeUiWorkflow:
         reveal_target = target if target.is_dir() else target.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
-    def release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        if self._host.debug_execution_editor() is widget:
-            self._host.clear_debug_execution_indicator()
-        registry = self._host.tab_content_registry()
-        surface = registry.surface_for_source_editor(widget)
-        if surface is not None:
-            file_path = registry.path_for_source_editor(widget)
-            if file_path is not None:
-                registry.unbind(file_path)
-            surface.release()
-            return
-        widget.deleteLater()
-
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._host.project_tree_action_coordinator().close_deleted_editor_paths(deleted_path)
 
@@ -387,13 +374,16 @@ class ProjectTreeUiWorkflow:
 
     def update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
+
+    def rekey_tab_content(self, old_path: str, new_path: str) -> None:
+        """Move a bound surface with a renamed path, or release it when no provider owns the new path."""
         normalized_path = str(Path(new_path).expanduser().resolve())
         registry = self._host.tab_content_registry()
-        old_path = registry.path_for_source_editor(widget)
-        if old_path is None:
-            return
         surface = registry.surface_for_path(old_path)
+        history = getattr(self._host, "local_history_workflow", None)
         if surface is None:
+            if history is not None:
+                history().rekey_content_source(old_path, normalized_path)
             return
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
@@ -401,7 +391,6 @@ class ProjectTreeUiWorkflow:
             normalized_path,
             TabMatchContext(project_root=project_root, forced_text=False),
         )
-        history = getattr(self._host, "local_history_workflow", None)
         if provider is None:
             source_editor = surface.source_editor()
             if source_editor is not None:
