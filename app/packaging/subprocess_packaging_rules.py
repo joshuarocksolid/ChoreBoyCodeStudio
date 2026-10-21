@@ -102,6 +102,7 @@ MEASURED_EXEC: dict[str, dict[str, MeasuredExec]] = {
         for program, verdict, detail in (
             ("/opt/freecad/AppRun", "allowed", "return code 0"),
             ("/bin/sh", "allowed", "return code 0"),
+            ("sh", "allowed", "return code 0"),
             ("/bin/ls", "allowed", "return code 0"),
             ("/usr/bin/pdftoppm", "denied", "PermissionError errno 13"),
             ("pdftoppm", "denied", "PermissionError errno 13"),
@@ -356,13 +357,12 @@ def _raw_command_text(node: ast.Call) -> str | None:
 def _programs_from_argv(argv: list[str]) -> list[str]:
     if not argv:
         return []
+    # The shell itself is checked too: FreeCAD 1.1 denies /bin/sh.
     if argv[0] in {"/bin/sh", "sh"} and "-c" in argv:
         index = argv.index("-c")
         if index + 1 >= len(argv):
-            return []
-        return _programs_in_shell_command(argv[index + 1])
-    if argv[0] in {"/bin/sh", "sh"}:
-        return []
+            return [argv[0]]
+        return [argv[0], *_programs_in_shell_command(argv[index + 1])]
     return [argv[0]]
 
 
