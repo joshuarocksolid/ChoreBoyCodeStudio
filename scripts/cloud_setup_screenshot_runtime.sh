@@ -17,6 +17,11 @@ export CBCS_DOWNLOAD_CACHE="${CBCS_DOWNLOAD_CACHE:-${HOME}/.cache/cbcs}"
 SECONDS=0
 cloud_load_pins
 cloud_log "repo root: ${ROOT}"
+if [[ ! -d /home/default ]]; then
+  cloud_as_root mkdir -p /home/default
+  cloud_as_root chown "$(cloud_owner)" /home/default
+  cloud_log "created /home/default for the product state root"
+fi
 cloud_install_apt_packages
 cloud_install_appimages
 cloud_install_conda_freecad
