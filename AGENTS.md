@@ -6,7 +6,7 @@ ChoreBoy Code Studio runs inside FreeCAD's bundled Python. There is no virtualen
 
 ### Runtimes
 
-`.cursor/Dockerfile` bakes the two AppImages, Miniconda, and the Python 3.9 conda prefix. `scripts/cloud_setup_screenshot_runtime.sh` is the `install` command. It creates anything the image does not already have, then installs `vendor_py39`, `vendor_py311`, and the pinned pyright package. Versions and checksums are in `scripts/cloud_runtime_pins.env`.
+`.cursor/Dockerfile` bakes the two AppImages, Miniconda, and the Python 3.9 conda prefix. `scripts/cloud_setup_screenshot_runtime.sh` is the `install` command. It creates anything the image does not already have, then installs `vendor_py39`, `vendor_py311`, and the pinned pyright package. Versions and checksums are in `scripts/cloud_runtime_pins.env`. A warm install on a machine that already has those trees finished in 1s (measured 2026-10-21). A cold image build that downloads and extracts the AppImages took about 16 minutes.
 
 | Runtime | Path | Measured contents |
 | --- | --- | --- |
@@ -38,6 +38,10 @@ set +a
 `DISPLAY` defaults to `:1` in the profile script. `scripts/cloud_start_display.sh` starts Xvfb on `:1` only when neither `$DISPLAY` nor `:1` is already up. `run_tests.py` sets `QT_QPA_PLATFORM=offscreen` when that variable is empty. The FreeCAD 1.1 `AppRun` then exports `QT_QPA_PLATFORM=xcb`, so a shard launched through that AppRun uses the virtual display. `cbcs-fb-python` leaves the caller's platform alone.
 
 Both AppImages are Python 3.11 and use `vendor_py311`. The conda prefix uses `vendor_py39`. `dev_launch_editor.py` points `vendor/` at the tree that matches the selected AppRun.
+
+The install script creates `/home/default` when it is missing and gives it to the cloud user. Product state and the Jedi cache live under `/home/default/FreeCAD/CBCS/state`. A missing directory becomes `PermissionError` in the intelligence tests.
+
+Run and plugin-host children do not follow the editor `--apprun`. `resolve_runtime_executable` uses `/opt/freecad/AppRun` when that file exists. A PySide6 editor on this image still starts those children on the 1.0.2 runtime. The status bar can still read `Runtime ready`.
 
 ### Form builder
 
@@ -128,9 +132,15 @@ Every change that touches Qt code should pass on both bindings. Today's ChoreBoy
 
 `QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them by hand. The `slow` marker (subprocess polling, debug session waits) is excluded from the `fast` shard so the agent loop stays under budget. The demoted `performance` marker is auto-excluded by `run_tests.py` unless you pass `-m performance` or a path under `tests/integration/performance/`. See `docs/TESTS.md` §5 for the canonical command catalog and §9 for the latest checkpoint numbers.
 
-Latest checkpoint (2026-06-17, `main` branch):
+Latest checkpoint (2026-10-21, Cursor Cloud, this branch). Counts come from pytest junit files because `run_tests.py` calls `os._exit` and the failure summary is not flushed when stdout is a file.
 
-- `python3 testing/run_test_shard.py fast` -> **~170s wall time**, **2064 selected / 24 deselected**, **0 failures** on a clean machine after the reaper/split-shard fix. The fast shard now runs unit and integration as two sequential AppRun sessions (shared 180s watchdog) to avoid Qt session bloat. Run `python3 testing/preflight_test_env.py` first; no orphaned `run_plugin_host`/`run_runner` children after exit.
+- `python3 testing/run_test_shard.py fast` on `/opt/freecad/AppRun` exited 1. Pytest reported `1 failed, 2457 passed, 3 skipped, 1 warning in 21.25s`. The failure is `tests/unit/runner/test_repl_completion.py::test_repl_completion_import_os_dot_uses_static_index_before_jedi`. The static `os` index sorts `getcwd` at position 103 and the REPL request cap is 100. The shard stops before integration. A separate integration run, with `slow` and performance excluded, passed 44 in the same session window (unit plus integration 80s when that one test was deselected, 21:19:28Z to 21:20:48Z).
+- `CBCS_APPRUN=/opt/freecad-1.1/AppRun CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast` exited 1 with the same test and `1 failed, 2457 passed, 3 skipped, 1 warning in 22.02s`. A separate integration run on that runtime passed 44. The unit-plus-integration pass, including a one-test confirmation, took about 79s (21:22:26Z to 21:23:45Z).
+- `npx pyright` and `npx pyright -p pyrightconfig.tests.json` each reported `0 errors, 0 warnings, 0 informations` (21:22:26Z to 21:22:39Z).
+
+Previous `main` checkpoint (2026-06-17):
+
+- `python3 testing/run_test_shard.py fast` -> **~170s wall time**, **2064 selected / 24 deselected**, **0 failures** on a clean machine after the reaper/split-shard fix. The fast shard runs unit and integration as two sequential AppRun sessions (shared 180s watchdog) to avoid Qt session bloat. Run `python3 testing/preflight_test_env.py` first; no orphaned `run_plugin_host`/`run_runner` children after exit.
 - `python3 testing/run_test_shard.py integration` -> ~55s, **64 passed, 3 skipped, 0 failures**. Slow debug integration tests skip when AppRun emits no debug channel or no `stopped` pause event (see `docs/DISCOVERY.md` §4D; guards in `tests/support/debug_transport_guards.py`).
 - `python3 testing/run_test_shard.py performance` -> ~74s, **11 passed, 0 failures** (four modules under `tests/integration/performance/`).
 - `python3 testing/run_test_shard.py runtime_parity` -> ~4s, **17 passed**.

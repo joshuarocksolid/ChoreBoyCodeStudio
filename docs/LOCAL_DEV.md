@@ -29,6 +29,8 @@ Documents/
 | Subprocess policy | AppArmor: only `/bin/sh` whitelisted (V6.5); 1.1 denies `/bin/sh` and allows exec of `/opt/freecad/AppRun` | Unrestricted on typical dev machines |
 | Source compatibility | Python 3.9 syntax required | Same — see `pyrightconfig.json` |
 
+On the cloud image, run and plugin-host children still use `/opt/freecad/AppRun` when that file exists. `./run_dev.sh --apprun /opt/freecad-1.1/AppRun` changes the editor process. It does not move those children onto FreeCAD 1.1.
+
 See also [`docs/CHOREBOY_RUNTIME_PITFALLS.md`](CHOREBOY_RUNTIME_PITFALLS.md) for cross-project pitfall patterns.
 
 ## First-time setup
@@ -84,7 +86,7 @@ starting AppRun so FreeCAD does not try to load stale `activate_this.py` files.
 ## Pyright (static analysis)
 
 ```bash
-npm install   # once, pins pyright@1.1.410 from package.json
+npm install   # once, pins pyright@1.1.414 from package.json
 npx pyright
 npx pyright -p pyrightconfig.tests.json
 ```
