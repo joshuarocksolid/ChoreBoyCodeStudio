@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import random
+import sys
+import threading
+from pathlib import Path
+from typing import List
 
 import pytest
 
@@ -538,3 +542,78 @@ def _random_form(rng: random.Random) -> str:
         '<?xml version="1.0" encoding="UTF-8"?><ui version="4.0"><class>Form</class>'
         '<widget class="QWidget" name="Form">%s</widget></ui>' % "".join(widgets)
     )
+
+
+_QT_CORPUS = Path(__file__).resolve().parents[1] / "corpus" / "qt_examples"
+
+
+def _corpus_texts(count: int) -> List[str]:
+    paths = sorted(_QT_CORPUS.rglob("*.ui"))[:count]
+    if not paths:
+        pytest.skip("qt_examples corpus is not checked out")
+    return [path.read_text(encoding="utf-8") for path in paths]
+
+
+def test_concurrent_reads_match_sequential() -> None:
+    # Overlapping reads used to share module-level reuse pools and corrupt each other.
+    texts = _corpus_texts(20)
+    expected = [_load(text).document.structure_fingerprint() for text in texts]
+    wrong: List[str] = []
+    unexpected: List[BaseException] = []
+    lock = threading.Lock()
+
+    def work() -> None:
+        for _round in range(5):
+            for index, text in enumerate(texts):
+                try:
+                    got = _load(text).document.structure_fingerprint()
+                except BaseException as exc:  # recorded, then asserted below
+                    with lock:
+                        unexpected.append(exc)
+                    continue
+                if got != expected[index]:
+                    with lock:
+                        wrong.append("round %s file %s" % (_round, index))
+
+    previous = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=work) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(previous)
+    assert not unexpected, "%s reads raised, first: %r" % (len(unexpected), unexpected[0])
+    assert not wrong, "%s reads differ from the sequential read, first: %s" % (len(wrong), wrong[0])
+
+
+class _NestingAllocator(IdAllocator):
+    """Starts a second read on the same thread while the first is mid-read."""
+
+    def __init__(self, nested_text: str, every: int) -> None:
+        super().__init__()
+        self.nested_text = nested_text
+        self.every = every
+        self.nested: List[str] = []
+
+    def alloc(self) -> NodeId:
+        node_id = super().alloc()
+        if int(node_id) % self.every == 0:
+            nested = read_ui(self.nested_text, allocator=IdAllocator())
+            self.nested.append(nested.document.structure_fingerprint())
+        return node_id
+
+
+def test_reentrant_read_from_the_allocator_matches_plain_reads() -> None:
+    texts = _corpus_texts(20)
+    outer_text = max(texts, key=len)
+    nested_text = texts[0] if texts[0] is not outer_text else texts[1]
+    expected_outer = _load(outer_text).document.structure_fingerprint()
+    expected_nested = _load(nested_text).document.structure_fingerprint()
+    allocator = _NestingAllocator(nested_text, every=3)
+    outer = read_ui(outer_text, allocator=allocator)
+    assert allocator.nested, "the outer read allocated too few ids to nest"
+    assert outer.document.structure_fingerprint() == expected_outer
+    assert set(allocator.nested) == {expected_nested}

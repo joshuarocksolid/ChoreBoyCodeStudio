@@ -9,6 +9,7 @@ ElementTree tree), refuses DOCTYPE and entity declarations, and builds a
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 from xml.parsers import expat
@@ -110,12 +111,6 @@ _NO_PROPS: Tuple[PropertyEntry, ...] = ()
 _NO_SLOTS: Tuple[Tuple[str, Tuple[Node, ...]], ...] = ()
 _NO_NOTES: List["_Note"] = []
 _POOL_CAP = 20000
-_XNODE_POOL: List["_XNode"] = []
-_XNODE_LIVE: List["_XNode"] = []
-_LIST_POOL: List[list] = []
-_FRAME_POOL: List[list] = []
-_BUILT_POOL: List["_Built"] = []
-_BUILT_LIVE: List["_Built"] = []
 _WIDGET_CHILD_GROUP = {
     "row": "rows",
     "column": "columns",
@@ -178,7 +173,6 @@ def _field_key(rank: Dict[str, int]):
 
 _ATTR_FIELD, _FIELD_RANK, _REQUIRED_FIELD = _compile_lookups()
 _FIELD_KEY = {kind: _field_key(rank) for kind, rank in _FIELD_RANK.items()}
-_SEEN: List[str] = []
 
 
 class _Miss:
@@ -266,104 +260,120 @@ class _Built:
         self.fields.append((name, value))
 
 
-def _take_list() -> list:
-    pool = _LIST_POOL
-    if pool:
-        return pool.pop()
-    return []
+class _ReadArena:
+    """Reuse pools for one read at a time.
+
+    Each ``read_ui`` call owns one arena from start to finish, so overlapping
+    reads (other threads, or a nested read from an allocator or listener on the
+    same thread) never share pooled objects. Each pool keeps at most
+    ``_POOL_CAP`` objects.
+    """
+
+    __slots__ = ("xnode_pool", "xnode_live", "list_pool", "frame_pool", "built_pool", "built_live", "seen")
+
+    def __init__(self) -> None:
+        self.xnode_pool: List[_XNode] = []
+        self.xnode_live: List[_XNode] = []
+        self.list_pool: List[list] = []
+        self.frame_pool: List[list] = []
+        self.built_pool: List[_Built] = []
+        self.built_live: List[_Built] = []
+        self.seen: List[str] = []
+
+    def take_list(self) -> list:
+        pool = self.list_pool
+        if pool:
+            return pool.pop()
+        return []
+
+    def take_built(self, kind: str, line: int) -> _Built:
+        pool = self.built_pool
+        if pool:
+            built = pool.pop()
+            built.kind = kind
+            built.line = line
+            built.fields.clear()
+            built.properties.clear()
+            built.attributes.clear()
+            built.slots.clear()
+            built.extra_attrs.clear()
+            built.notes.clear()
+        else:
+            built = _Built(kind, line)
+        self.built_live.append(built)
+        return built
+
+    def release_xnodes(self) -> None:
+        """Return this read's elements to the pool without walking the tree."""
+        live = self.xnode_live
+        if not live:
+            return
+        lists = self.list_pool
+        cap = _POOL_CAP
+        for node in live:
+            children = node.children
+            node.children = _NO_CHILDREN
+            node.attrs = _NO_ATTRS
+            node.tag = ""
+            if isinstance(children, list):
+                children.clear()
+                if len(lists) < cap:
+                    lists.append(children)
+        pool = self.xnode_pool
+        room = cap - len(pool)
+        if room >= len(live):
+            pool.extend(live)
+        elif room > 0:
+            pool.extend(live[:room])
+        del live[:]
+
+    def release_built(self) -> None:
+        live = self.built_live
+        if not live:
+            return
+        for built in live:
+            built.fields.clear()
+            built.properties.clear()
+            built.attributes.clear()
+            built.slots.clear()
+            built.extra_attrs.clear()
+            built.notes.clear()
+        pool = self.built_pool
+        room = _POOL_CAP - len(pool)
+        if room >= len(live):
+            pool.extend(live)
+        elif room > 0:
+            pool.extend(live[:room])
+        del live[:]
+
+    def reset(self) -> None:
+        self.release_xnodes()
+        self.release_built()
+        self.seen.clear()
 
 
-def _recycle_list(parts: list) -> None:
-    if len(_LIST_POOL) >= _POOL_CAP:
+_ARENA_LOCK = threading.Lock()
+_ARENA_FREE: List[_ReadArena] = []
+#: Idle arenas kept for reuse. More concurrent reads than this get fresh arenas.
+_ARENA_FREE_CAP = 4
+
+
+def _acquire_arena() -> _ReadArena:
+    with _ARENA_LOCK:
+        if _ARENA_FREE:
+            return _ARENA_FREE.pop()
+    return _ReadArena()
+
+
+def _release_arena(arena: _ReadArena) -> None:
+    try:
+        arena.reset()
+    except BaseException:
+        # A half-reset arena is dropped, never reused.
         return
-    parts.clear()
-    _LIST_POOL.append(parts)
-
-
-def _take_xnode(tag: str, attrs: Tuple[Tuple[str, str], ...], children: Sequence[object], line: int) -> "_XNode":
-    pool = _XNODE_POOL
-    if pool:
-        node = pool.pop()
-        node.tag = tag
-        node.attrs = attrs
-        node.children = children
-        node.line = line
-        return node
-    return _XNode(tag, attrs, children, line)
-
-
-def _take_frame(name: str, pairs: Tuple[Tuple[str, str], ...], line: int) -> list:
-    pool = _FRAME_POOL
-    if pool:
-        frame = pool.pop()
-        frame[0] = name
-        frame[1] = pairs
-        frame[2] = line
-        return frame
-    return [name, pairs, line, _take_list()]
-
-
-def _take_built(kind: str, line: int) -> "_Built":
-    pool = _BUILT_POOL
-    if pool:
-        built = pool.pop()
-        built.kind = kind
-        built.line = line
-        built.fields.clear()
-        built.properties.clear()
-        built.attributes.clear()
-        built.slots.clear()
-        built.extra_attrs.clear()
-        built.notes.clear()
-    else:
-        built = _Built(kind, line)
-    _BUILT_LIVE.append(built)
-    return built
-
-
-def _release_xnodes_live() -> None:
-    """Return this read's elements to the pool without walking the tree."""
-    live = _XNODE_LIVE
-    if not live:
-        return
-    lists = _LIST_POOL
-    cap = _POOL_CAP
-    for node in live:
-        children = node.children
-        node.children = _NO_CHILDREN
-        node.attrs = _NO_ATTRS
-        node.tag = ""
-        if isinstance(children, list):
-            children.clear()
-            if len(lists) < cap:
-                lists.append(children)
-    pool = _XNODE_POOL
-    room = cap - len(pool)
-    if room >= len(live):
-        pool.extend(live)
-    elif room > 0:
-        pool.extend(live[:room])
-    del live[:]
-
-
-def _release_built_live() -> None:
-    live = _BUILT_LIVE
-    if not live:
-        return
-    for built in live:
-        built.fields.clear()
-        built.properties.clear()
-        built.attributes.clear()
-        built.slots.clear()
-        built.extra_attrs.clear()
-        built.notes.clear()
-    pool = _BUILT_POOL
-    room = _POOL_CAP - len(pool)
-    if room >= len(live):
-        pool.extend(live)
-    elif room > 0:
-        pool.extend(live[:room])
-    del live[:]
+    with _ARENA_LOCK:
+        if len(_ARENA_FREE) < _ARENA_FREE_CAP:
+            _ARENA_FREE.append(arena)
 
 
 def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = None) -> ReadResult:
@@ -378,6 +388,8 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
       in input order.
     * A value element that does not parse losslessly becomes OpaqueValue.
     * Ids come from ``allocator`` in pre-order.
+    * Only ``UiReadError`` escapes for bad input (section 8.1). Safe to call
+      from several threads at once, and re-entrantly.
     O(input). Budget: 25 ms CPU for a 300-widget form (section 12).
     """
     del source_path
@@ -389,28 +401,28 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
         raise UiReadError("FB001", "This form is not valid XML.", 0, 0) from exc
     if len(encoded) > MAX_INPUT_BYTES:
         raise UiReadError("FB008", "This form is too large to open in the form builder.", 0, 0)
+    arena = _acquire_arena()
     try:
-        try:
-            root = _parse_tree(text)
-        except BaseException:
-            _release_xnodes_live()
-            raise
-        try:
-            built = _lower_ui(root)
-        finally:
-            _release_xnodes_live()
+        root = _parse_tree(arena, text)
+        built = _lower_ui(arena, root)
+        arena.release_xnodes()
         line_map: Dict[NodeId, int] = {}
         diagnostics: List[FormDiagnostic] = []
-        try:
-            ui = _to_node(built, allocator, line_map, diagnostics, None, None, 0)
-        finally:
-            _release_built_live()
+        ui = _to_node(built, allocator, line_map, diagnostics, None, None, 0)
+        arena.release_built()
         document = UiDocument(ui)
         document._check_validate()
     except UiReadError:
         raise
     except (KeyboardInterrupt, SystemExit):
         raise
+    except RecursionError as exc:
+        raise UiReadError(
+            "FB008",
+            "This form is nested too deeply to open in the form builder.",
+            0,
+            0,
+        ) from exc
     except Exception as exc:
         raise UiReadError(
             "FB001",
@@ -418,6 +430,8 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
             0,
             0,
         ) from exc
+    finally:
+        _release_arena(arena)
     return ReadResult(document=document, diagnostics=tuple(diagnostics), line_map=line_map)
 
 
@@ -441,12 +455,32 @@ def read_fragment(text: str, *, source_path: Optional[str] = None) -> Fragment:
     )
 
 
-def _parse_tree(text: str) -> _XNode:
+def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
     parser = expat.ParserCreate()
     parser.ordered_attributes = True
     parser.buffer_text = True
     stack: List[List[object]] = []
     root: List[Optional[_XNode]] = [None]
+    # The handlers run per element, so they bind this read's pools locally.
+    list_pool = arena.list_pool
+    frame_pool = arena.frame_pool
+    xnode_pool = arena.xnode_pool
+    xnode_live = arena.xnode_live
+    cap = _POOL_CAP
+
+    def take_list() -> list:
+        if list_pool:
+            return list_pool.pop()
+        return []
+
+    def take_frame(name: str, pairs: Tuple[Tuple[str, str], ...], line: int) -> list:
+        if frame_pool:
+            frame = frame_pool.pop()
+            frame[0] = name
+            frame[1] = pairs
+            frame[2] = line
+            return frame
+        return [name, pairs, line, take_list()]
 
     def _position() -> Tuple[int, int]:
         return parser.CurrentLineNumber, parser.CurrentColumnNumber + 1
@@ -467,20 +501,28 @@ def _parse_tree(text: str) -> _XNode:
             for index in range(0, count, 2):
                 built_pairs.append((attrs[index], attrs[index + 1]))
             pairs = tuple(built_pairs)
-        stack.append(_take_frame(name, pairs, parser.CurrentLineNumber))
+        stack.append(take_frame(name, pairs, parser.CurrentLineNumber))
 
     def end(name: str) -> None:
         del name
         frame = stack.pop()
         tag, attrs, line, parts = frame
         children = _coalesce(parts)
-        if children is not parts:
-            _recycle_list(parts)
-        frame[3] = _take_list()
-        if len(_FRAME_POOL) < 128:
-            _FRAME_POOL.append(frame)
-        node = _take_xnode(tag, attrs, children, line)
-        _XNODE_LIVE.append(node)
+        if children is not parts and len(list_pool) < cap:
+            parts.clear()
+            list_pool.append(parts)
+        frame[3] = take_list()
+        if len(frame_pool) < 128:
+            frame_pool.append(frame)
+        if xnode_pool:
+            node = xnode_pool.pop()
+            node.tag = tag
+            node.attrs = attrs
+            node.children = children
+            node.line = line
+        else:
+            node = _XNode(tag, attrs, children, line)
+        xnode_live.append(node)
         if stack:
             stack[-1][3].append(node)
         else:
@@ -574,10 +616,10 @@ class _Cursor:
         self.anchor = (group, count)
 
 
-def _lower_ui(node: _XNode) -> _Built:
+def _lower_ui(arena: "_ReadArena", node: _XNode) -> _Built:
     if node.tag != "ui":
         raise UiReadError("FB002", "This file is not a form.", node.line, 0)
-    built = _take_built("ui", node.line)
+    built = arena.take_built("ui", node.line)
     _apply_attrs(built, node.attrs)
     version = built.field_map().get("version")
     if not (isinstance(version, str) and version.split(".")[0] == "4"):
@@ -588,7 +630,7 @@ def _lower_ui(node: _XNode) -> _Built:
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
-                built.add_slot("opaque", _text_opaque(child, cursor.here(), node.line))
+                built.add_slot("opaque", _text_opaque(arena, child, cursor.here(), node.line))
             continue
         if isinstance(child, (OpaqueComment, OpaquePI)):
             continue
@@ -596,10 +638,10 @@ def _lower_ui(node: _XNode) -> _Built:
             continue
         group = _ui_group(child.tag)
         if group is None:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
             continue
-        _place_ui_child(built, child, wrappers, cursor, group)
+        _place_ui_child(arena, built, child, wrappers, cursor, group)
     if "root" not in built.slots:
         raise UiReadError("FB002", "This form has no root widget.", node.line, 0)
     built.set_field("present_wrappers", frozenset(wrappers))
@@ -612,6 +654,7 @@ def _ui_group(tag: str) -> Optional[str]:
 
 
 def _place_ui_child(
+    arena: "_ReadArena",
     built: _Built,
     child: _XNode,
     wrappers: set,
@@ -629,10 +672,10 @@ def _place_ui_child(
         return
     if tag == "widget":
         if "root" in built.slots:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept an extra root widget.", child.line))
             return
-        built.add_slot("root", _lower_widget(child))
+        built.add_slot("root", _lower_widget(arena, child))
         cursor.advance("root")
         return
     if tag == "layoutdefault":
@@ -660,24 +703,24 @@ def _place_ui_child(
         cursor.advance(group)
         return
     if tag in ("customwidgets", "includes", "resources", "connections", "buttongroups"):
-        count = _lower_wrapper(built, child, tag, wrappers)
+        count = _lower_wrapper(arena, built, child, tag, wrappers)
         cursor.enter(group, count)
         return
 
 
-def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
+def _lower_wrapper(arena: "_ReadArena", built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
     slot = _WRAPPER_SLOT[tag]
     if node.attrs:
         wrappers.discard(tag)
-        built.add_slot("opaque", _opaque_built(node, (slot, 0)))
+        built.add_slot("opaque", _opaque_built(arena, node, (slot, 0)))
         built.notes.append(_Note("FB006", "Kept attributes on <%s>." % tag, node.line))
         return 0
     wrappers.add(tag)
     typed = 0
     for child in _elements(node):
-        lowered = _lower_known(child, tag)
+        lowered = _lower_known(arena, child, tag)
         if lowered is None:
-            built.add_slot("opaque", _opaque_built(child, ("%s:inner" % slot, typed)))
+            built.add_slot("opaque", _opaque_built(arena, child, ("%s:inner" % slot, typed)))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
         else:
             built.add_slot(slot, lowered)
@@ -685,38 +728,38 @@ def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
     return typed
 
 
-def _lower_known(node: _XNode, parent_tag: str) -> Optional[_Built]:
+def _lower_known(arena: "_ReadArena", node: _XNode, parent_tag: str) -> Optional[_Built]:
     if parent_tag == "customwidgets" and node.tag == "customwidget":
-        return _lower_custom(node)
+        return _lower_custom(arena, node)
     if parent_tag == "includes" and node.tag == "include":
-        return _lower_include(node)
+        return _lower_include(arena, node)
     if parent_tag == "resources" and node.tag == "include":
-        return _lower_resource(node)
+        return _lower_resource(arena, node)
     if parent_tag == "connections" and node.tag == "connection":
-        return _lower_connection(node)
+        return _lower_connection(arena, node)
     if parent_tag == "buttongroups" and node.tag == "buttongroup":
-        return _lower_named_box(node, "buttongroup")
+        return _lower_named_box(arena, node, "buttongroup")
     return None
 
 
-def _lower_widget(node: _XNode) -> _Built:
-    return _lower_box(node, "widget")
+def _lower_widget(arena: "_ReadArena", node: _XNode) -> _Built:
+    return _lower_box(arena, node, "widget")
 
 
-def _lower_box(node: _XNode, kind: str) -> _Built:
+def _lower_box(arena: "_ReadArena", node: _XNode, kind: str) -> _Built:
     if kind == "widget":
-        fast = _lower_property_widget(node)
+        fast = _lower_property_widget(arena, node)
         if fast is not None:
             return fast
     elif kind == "layout":
-        fast = _lower_item_layout(node)
+        fast = _lower_item_layout(arena, node)
         if fast is not None:
             return fast
     elif kind == "layoutitem":
-        fast = _lower_single_content_item(node)
+        fast = _lower_single_content_item(arena, node)
         if fast is not None:
             return fast
-    built = _take_built(kind, node.line)
+    built = arena.take_built(kind, node.line)
     _apply_attrs(built, node.attrs)
     _ensure_required(built)
     cursor = _Cursor()
@@ -727,13 +770,13 @@ def _lower_box(node: _XNode, kind: str) -> _Built:
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
-                _hold_gap(built, cursor, prop_stream, attr_stream, ("gap-text", (child, node.line)))
+                _hold_gap(arena, built, cursor, prop_stream, attr_stream, ("gap-text", (child, node.line)))
             continue
         if not isinstance(child, _XNode):
             continue
         group = _box_group(kind, child.tag, built)
         if group == "layout" and "layout" in built.slots:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept an extra layout.", child.line))
             continue
         if group == "properties":
@@ -749,19 +792,19 @@ def _lower_box(node: _XNode, kind: str) -> _Built:
             cursor.enter("attributes", 0)
             continue
         if group is None:
-            _hold_gap(built, cursor, prop_stream, attr_stream, ("gap-node", child))
+            _hold_gap(arena, built, cursor, prop_stream, attr_stream, ("gap-node", child))
             continue
-        _place_box_child(built, child, group)
+        _place_box_child(arena, built, child, group)
         cursor.advance(group)
-    _realize_entries(built, properties, prop_stream, "properties")
-    _realize_entries(built, attributes, attr_stream, "attributes")
+    _realize_entries(arena, built, properties, prop_stream, "properties")
+    _realize_entries(arena, built, attributes, attr_stream, "attributes")
     if kind == "header" and not built.field_map().get("axis"):
         built.set_field("axis", "row")
     _order_fields(built)
     return built
 
 
-def _lower_property_widget(node: _XNode) -> Optional[_Built]:
+def _lower_property_widget(arena: "_ReadArena", node: _XNode) -> Optional[_Built]:
     """Widget whose element children are only ``<property>``. Other shapes
     (a layout, a child widget, stray text) use the general lowerer."""
     props: List[_XNode] = []
@@ -775,10 +818,10 @@ def _lower_property_widget(node: _XNode) -> Optional[_Built]:
         if child.tag != "property":
             return None
         props.append(child)
-    built = _take_built("widget", node.line)
+    built = arena.take_built("widget", node.line)
     _apply_attrs(built, node.attrs)
     _ensure_required(built)
-    seen = _SEEN
+    seen = arena.seen
     seen.clear()
     properties = built.properties
     for child in props:
@@ -793,7 +836,7 @@ def _lower_property_widget(node: _XNode) -> Optional[_Built]:
     return built
 
 
-def _lower_item_layout(node: _XNode) -> Optional[_Built]:
+def _lower_item_layout(arena: "_ReadArena", node: _XNode) -> Optional[_Built]:
     """Layout whose element children are only ``<item>``."""
     items: List[_XNode] = []
     for child in node.children:
@@ -806,16 +849,16 @@ def _lower_item_layout(node: _XNode) -> Optional[_Built]:
         if child.tag != "item":
             return None
         items.append(child)
-    built = _take_built("layout", node.line)
+    built = arena.take_built("layout", node.line)
     _apply_attrs(built, node.attrs)
     _ensure_required(built)
     if items:
-        built.slots["layout_items"] = [_lower_box(child, "layoutitem") for child in items]
+        built.slots["layout_items"] = [_lower_box(arena, child, "layoutitem") for child in items]
     _order_fields(built)
     return built
 
 
-def _lower_single_content_item(node: _XNode) -> Optional[_Built]:
+def _lower_single_content_item(arena: "_ReadArena", node: _XNode) -> Optional[_Built]:
     """Layout ``<item>`` with one widget, layout, or spacer and no stray text."""
     content: Optional[_XNode] = None
     for child in node.children:
@@ -832,14 +875,14 @@ def _lower_single_content_item(node: _XNode) -> Optional[_Built]:
         return None
     tag = content.tag
     if tag == "widget":
-        lowered = _lower_box(content, "widget")
+        lowered = _lower_box(arena, content, "widget")
     elif tag == "layout":
-        lowered = _lower_box(content, "layout")
+        lowered = _lower_box(arena, content, "layout")
     elif tag == "spacer":
-        lowered = _lower_box(content, "spacer")
+        lowered = _lower_box(arena, content, "spacer")
     else:
         return None
-    built = _take_built("layoutitem", node.line)
+    built = arena.take_built("layoutitem", node.line)
     _apply_attrs(built, node.attrs)
     _ensure_required(built)
     built.add_slot("content", lowered)
@@ -870,63 +913,63 @@ def _box_group(kind: str, tag: str, built: _Built) -> Optional[str]:
     return None
 
 
-def _place_box_child(built: _Built, child: _XNode, group: str) -> None:
+def _place_box_child(arena: "_ReadArena", built: _Built, child: _XNode, group: str) -> None:
     if group == "child:zorder":
         text = _text_leaf(child)
         current = built.field_map().get("zorder")
         names = list(current) if isinstance(current, tuple) else []
         if text is None:
-            built.add_slot("opaque", _opaque_built(child, ("child:zorder", len(names))))
+            built.add_slot("opaque", _opaque_built(arena, child, ("child:zorder", len(names))))
             built.notes.append(_Note("FB006", "Kept <zorder> as written.", child.line))
             return
         names.append(text)
         built.set_field("zorder", tuple(names))
         return
     if group == "rows":
-        header = _lower_box(child, "header")
+        header = _lower_box(arena, child, "header")
         header.set_field("axis", "row")
         built.add_slot("rows", header)
         return
     if group == "columns":
-        header = _lower_box(child, "header")
+        header = _lower_box(arena, child, "header")
         header.set_field("axis", "column")
         built.add_slot("columns", header)
         return
     if group == "items":
-        built.add_slot("items", _lower_box(child, "item"))
+        built.add_slot("items", _lower_box(arena, child, "item"))
         return
     if group == "subitems":
-        built.add_slot("subitems", _lower_box(child, "item"))
+        built.add_slot("subitems", _lower_box(arena, child, "item"))
         return
     if group == "layout":
-        built.add_slot("layout", _lower_box(child, "layout"))
+        built.add_slot("layout", _lower_box(arena, child, "layout"))
         return
     if group == "layout_items":
-        built.add_slot("layout_items", _lower_box(child, "layoutitem"))
+        built.add_slot("layout_items", _lower_box(arena, child, "layoutitem"))
         return
     if group == "content":
         if child.tag == "widget":
-            built.add_slot("content", _lower_box(child, "widget"))
+            built.add_slot("content", _lower_box(arena, child, "widget"))
         elif child.tag == "layout":
-            built.add_slot("content", _lower_box(child, "layout"))
+            built.add_slot("content", _lower_box(arena, child, "layout"))
         elif child.tag == "spacer":
-            built.add_slot("content", _lower_box(child, "spacer"))
+            built.add_slot("content", _lower_box(arena, child, "spacer"))
         return
     if group == "children":
-        built.add_slot("children", _lower_box(child, "widget"))
+        built.add_slot("children", _lower_box(arena, child, "widget"))
         return
     if group == "actions":
-        built.add_slot("actions", _lower_box(child, "action"))
+        built.add_slot("actions", _lower_box(arena, child, "action"))
         return
     if group == "action_groups":
-        built.add_slot("action_groups", _lower_box(child, "actiongroup"))
+        built.add_slot("action_groups", _lower_box(arena, child, "actiongroup"))
         return
     if group == "add_actions":
-        built.add_slot("add_actions", _lower_box(child, "actionref"))
+        built.add_slot("add_actions", _lower_box(arena, child, "actionref"))
 
 
-def _lower_custom(node: _XNode) -> _Built:
-    built = _take_built("customwidget", node.line)
+def _lower_custom(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("customwidget", node.line)
     _apply_attrs(built, node.attrs)
     if built.extra_attrs:
         built.notes.append(_Note("FB006", "Kept attributes on <customwidget>.", node.line))
@@ -963,7 +1006,7 @@ def _lower_custom(node: _XNode) -> _Built:
             built.set_field("propertyspecifications", _to_opaque(child))
             cursor.advance("child:propertyspecifications")
         else:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % tag, child.line))
     if "class_name" not in built.field_map():
         built.set_field("class_name", "")
@@ -973,8 +1016,8 @@ def _lower_custom(node: _XNode) -> _Built:
     return built
 
 
-def _lower_include(node: _XNode) -> _Built:
-    built = _take_built("include", node.line)
+def _lower_include(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("include", node.line)
     _apply_attrs(built, node.attrs)
     text = _exact_text(node)
     if text:
@@ -983,8 +1026,8 @@ def _lower_include(node: _XNode) -> _Built:
     return built
 
 
-def _lower_resource(node: _XNode) -> _Built:
-    built = _take_built("resource", node.line)
+def _lower_resource(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("resource", node.line)
     _apply_attrs(built, node.attrs)
     if "location" not in built.field_map():
         built.set_field("location", "")
@@ -992,8 +1035,8 @@ def _lower_resource(node: _XNode) -> _Built:
     return built
 
 
-def _lower_connection(node: _XNode) -> _Built:
-    built = _take_built("connection", node.line)
+def _lower_connection(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("connection", node.line)
     _apply_attrs(built, node.attrs)
     if built.extra_attrs:
         built.notes.append(_Note("FB006", "Kept attributes on <connection>.", node.line))
@@ -1006,7 +1049,7 @@ def _lower_connection(node: _XNode) -> _Built:
             _set_parsed_field(built, "hints", child, _connection_hints(child))
             cursor.advance("child:hints")
         else:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
     for name in ("sender", "signal", "receiver", "slot"):
         if name not in built.field_map():
@@ -1015,8 +1058,8 @@ def _lower_connection(node: _XNode) -> _Built:
     return built
 
 
-def _lower_named_box(node: _XNode, kind: str) -> _Built:
-    return _lower_box(node, kind)
+def _lower_named_box(arena: "_ReadArena", node: _XNode, kind: str) -> _Built:
+    return _lower_box(arena, node, kind)
 
 
 def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]]:
@@ -1076,6 +1119,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
 
 
 def _hold_gap(
+    arena: "_ReadArena",
     built: _Built,
     cursor: _Cursor,
     prop_stream: List[Tuple[str, object]],
@@ -1093,14 +1137,15 @@ def _hold_gap(
     if kind == "gap-text" and isinstance(payload, tuple) and len(payload) == 2:
         text, line = payload
         if isinstance(text, str) and isinstance(line, int):
-            built.add_slot("opaque", _text_opaque(text, cursor.here(), line))
+            built.add_slot("opaque", _text_opaque(arena, text, cursor.here(), line))
         return
     if isinstance(payload, _XNode):
-        built.add_slot("opaque", _opaque_built(payload, cursor.here()))
+        built.add_slot("opaque", _opaque_built(arena, payload, cursor.here()))
         built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
 
 
 def _realize_entries(
+    arena: "_ReadArena",
     built: _Built,
     entries: List[Tuple[PropertyEntry, _XNode, List[_Note]]],
     stream: List[Tuple[str, object]],
@@ -1122,7 +1167,7 @@ def _realize_entries(
                 continue
             entry, source, notes = entries[payload]
             if last_index[entry.name] != payload:
-                built.add_slot("opaque", _opaque_built(source, (group, typed_so_far)))
+                built.add_slot("opaque", _opaque_built(arena, source, (group, typed_so_far)))
                 built.notes.append(
                     _Note(
                         "FB007",
@@ -1139,10 +1184,10 @@ def _realize_entries(
         if kind == "gap-text" and isinstance(payload, tuple) and len(payload) == 2:
             text, line = payload
             if isinstance(text, str) and isinstance(line, int):
-                built.add_slot("opaque", _text_opaque(text, (group, typed_so_far), line))
+                built.add_slot("opaque", _text_opaque(arena, text, (group, typed_so_far), line))
             continue
         if kind == "gap-node" and isinstance(payload, _XNode):
-            built.add_slot("opaque", _opaque_built(payload, (group, typed_so_far)))
+            built.add_slot("opaque", _opaque_built(arena, payload, (group, typed_so_far)))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
     if group == "properties":
         built.properties = typed
@@ -1815,15 +1860,15 @@ def _strip_ids(spec: NodeSpec) -> NodeSpec:
     )
 
 
-def _opaque_built(node: _XNode, anchor: Tuple[str, int]) -> _Built:
-    built = _take_built("opaque", node.line)
+def _opaque_built(arena: "_ReadArena", node: _XNode, anchor: Tuple[str, int]) -> _Built:
+    built = arena.take_built("opaque", node.line)
     built.set_field("element", _to_opaque(node))
     built.set_field("anchor", anchor)
     return built
 
 
-def _text_opaque(text: str, anchor: Tuple[str, int], line: int) -> _Built:
-    built = _take_built("opaque", line)
+def _text_opaque(arena: "_ReadArena", text: str, anchor: Tuple[str, int], line: int) -> _Built:
+    built = arena.take_built("opaque", line)
     built.set_field("element", OpaqueElement("", (), (text.strip(),)))
     built.set_field("anchor", anchor)
     return built
