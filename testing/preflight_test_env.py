@@ -9,6 +9,11 @@ import sys
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+import dev_launch_editor
+
 APPRUN = os.environ.get("CBCS_APPRUN", "/opt/freecad/AppRun")
 
 
@@ -63,7 +68,19 @@ def pytest_timeout_available() -> bool:
     if not app_run_path.is_file():
         print(f"ERROR: FreeCAD AppRun not found at {APPRUN}", file=sys.stderr)
         return False
-    payload = "import pytest_timeout; print('ok')"
+    dev_launch_editor.ensure_vendor_symlink(
+        REPO_ROOT,
+        dev_launch_editor.resolve_artifacts_dir(REPO_ROOT),
+        app_run_path=app_run_path,
+    )
+    vendor_root = REPO_ROOT / "vendor"
+    # AppRun does not see the repo vendor tree unless the probe adds it.
+    # run_tests.py does the same insert before pytest.main.
+    payload = (
+        "import sys;"
+        f"sys.path.insert(0, {str(vendor_root.resolve())!r});"
+        "import pytest_timeout; print('ok')"
+    )
     completed = subprocess.run(
         [str(app_run_path), "-c", payload],
         cwd=str(REPO_ROOT),

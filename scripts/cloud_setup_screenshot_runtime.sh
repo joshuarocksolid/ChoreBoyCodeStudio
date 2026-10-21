@@ -38,6 +38,13 @@ ensure_vendor() {
 ensure_vendor py39 tree_sitter jedi setup_vendor_py39.sh
 ensure_vendor py311 tree_sitter jedi setup_vendor_py311.sh
 
+# run_tests.py looks beside the repo when CBCS_ARTIFACTS_DIR is unset.
+conventional="$(dirname "$ROOT")/ChoreBoyCodeStudio_artifacts"
+if [[ "$conventional" != "$CBCS_ARTIFACTS_DIR" && ! -e "$conventional" ]]; then
+  cloud_as_root ln -sfn "$CBCS_ARTIFACTS_DIR" "$conventional"
+  cloud_log "linked ${conventional} -> ${CBCS_ARTIFACTS_DIR}"
+fi
+
 if [[ -x "${ROOT}/node_modules/.bin/pyright" ]]; then
   cloud_log "pyright already installed"
 elif command -v npm >/dev/null 2>&1; then
