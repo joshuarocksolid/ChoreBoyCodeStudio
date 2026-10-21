@@ -114,9 +114,53 @@ def infer_trusted_runtime_target_path(
         project_cache=project_cache,
         state_root=state_root,
     )
-    if script is None:
+    inferred = "" if script is None else _infer_whitelisted_at(script, position[0], position[1])
+    return inferred or target_from_simple_assignment(source_text, expression, cursor_position)
+
+
+def target_from_simple_assignment(source_text: str, receiver: str, cursor_position: int) -> str:
+    """Resolve ``name = Module.Class(...)`` through the file's imports, for when Jedi cannot.
+
+    Jedi has no stubs for PySide6 (FreeCAD 1.1), so it infers nothing for
+    ``btn = QtWidgets.QPushButton()`` there. The runtime REPL can still list the
+    class's members once the dotted path is known.
+    """
+    if not receiver.isidentifier():
         return ""
-    return _infer_whitelisted_at(script, position[0], position[1])
+    imports: dict[str, str] = {}
+    target = ""
+    for line in source_text[:cursor_position].splitlines():
+        try:
+            tree = ast.parse(line.strip())
+        except SyntaxError:
+            continue
+        for node in tree.body:
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    imports[alias.asname or alias.name.split(".")[0]] = alias.name if alias.asname else alias.name.split(".")[0]
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                for alias in node.names:
+                    imports[alias.asname or alias.name] = f"{node.module}.{alias.name}"
+            elif (
+                isinstance(node, ast.Assign)
+                and len(node.targets) == 1
+                and isinstance(node.targets[0], ast.Name)
+                and node.targets[0].id == receiver
+            ):
+                callee = _dotted_name(node.value.func) if isinstance(node.value, ast.Call) else ""
+                head, _, rest = callee.partition(".")
+                resolved = imports.get(head, "")
+                target = f"{resolved}.{rest}".rstrip(".") if resolved else ""
+    return target if target and is_whitelisted_target_path(target) else ""
+
+
+def _dotted_name(node: ast.AST) -> str:
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        base = _dotted_name(node.value)
+        return f"{base}.{node.attr}" if base else ""
+    return ""
 
 
 def warm_open_buffer_target(
