@@ -11,7 +11,7 @@ from app.core.models import RuntimeIssue
 from app.packaging.manifest_consistency_audit import check_manifest_consistency
 from app.packaging.models import DependencyAuditRecord, DependencyAuditReport
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
-from app.packaging.subprocess_packaging_rules import subprocess_issues
+from app.packaging.subprocess_packaging_rules import running_freecad_table_key, subprocess_issues
 from app.packaging.vendor_native_validation import (
     collect_imported_top_levels_from_tree,
     orphan_vendor_native_issues,
@@ -72,8 +72,11 @@ def run_dependency_audit(
     allow_runtime_import_probe: bool = False,
     layout: ProjectImportLayout | None = None,
     entry_file: str = "",
+    freecad_version: str | None = None,
 ) -> DependencyAuditReport:
     """Audit first-party project imports against project, vendor, and runtime availability."""
+    if freecad_version is None:
+        freecad_version = running_freecad_table_key()
     root = Path(project_root).expanduser().resolve()
     resolved_layout = layout or resolve_project_import_layout(root)
     import_paths = _reachable_import_paths(root, entry_file.strip(), resolved_layout)
@@ -145,6 +148,7 @@ def run_dependency_audit(
             file_path=file_path,
             project_root=root,
             import_path=import_path,
+            freecad_version=freecad_version,
         ):
             if not reachable and issue.is_blocking:
                 issue = replace(

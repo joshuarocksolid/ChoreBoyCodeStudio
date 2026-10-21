@@ -40,7 +40,19 @@ def plugin_host_unavailable_message(detail: str, freecad_version: str) -> str:
 
 
 def present_plugin_host_unavailable(parent: object, detail: str) -> None:
-    """Show the FreeCAD 1.0 explanation for a plugin-host start failure."""
+    """Show the FreeCAD 1.0 explanation for a plugin-host start failure on FreeCAD 0.x.
+
+    On FreeCAD 1.0 or newer the explanation would be wrong, so the status bar
+    warning and the log carry the failure instead.
+    """
+    if freecad_is_at_least_1(freecad_version_label()):
+        return
     from app.shell.startup_dialogs import present_freecad_requirement
 
     present_freecad_requirement(parent, detail)  # type: ignore[arg-type]
+
+
+def freecad_is_at_least_1(version_label: str) -> bool:
+    """Return True for a known FreeCAD version of 1.0 or newer."""
+    major = version_label.split(".", 1)[0]
+    return major.isdigit() and int(major) >= 1

@@ -159,11 +159,23 @@ def test_host_exit_unblocks_pending_request_with_error(monkeypatch: pytest.Monke
     assert "exited before response" in error_text[0]
 
 
-def test_stderr_output_is_recorded_as_last_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stderr_from_a_running_host_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
     manager = PluginRuntimeManager()
 
-    manager._handle_event(ProcessEvent(event_type="output", stream="stderr", text="boom"))
+    manager._handle_event(
+        ProcessEvent(event_type="output", stream="stderr", text="DEBUG: freecad_bin = /opt/freecad/usr/bin/freecad\n")
+    )
+
+    assert manager.last_error is None
+
+
+def test_failed_host_exit_reports_the_last_stderr_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    manager._handle_event(ProcessEvent(event_type="output", stream="stderr", text="boom\n"))
+    manager._handle_event(ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False))
 
     assert manager.last_error == "boom"
 

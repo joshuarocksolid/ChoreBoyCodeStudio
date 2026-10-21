@@ -173,6 +173,26 @@ def lookup_measured_exec(program: str, *, freecad_version: str = TARGET_FREECAD_
     return None
 
 
+def running_freecad_table_key() -> str:
+    """Return the MEASURED_EXEC key for the FreeCAD this process runs in.
+
+    Packaging runs on the machine the app is usually installed on, so a FreeCAD
+    1.1 machine is checked against the 1.1 measurements. Anything else, including
+    no importable FreeCAD module, uses the target version.
+    """
+    import importlib
+
+    try:
+        version = importlib.import_module("FreeCAD").Version()
+    except Exception:
+        return TARGET_FREECAD_VERSION
+    major_minor = ".".join(str(part) for part in list(version)[:2])
+    for key in MEASURED_EXEC:
+        if key.startswith(major_minor + "."):
+            return key
+    return TARGET_FREECAD_VERSION
+
+
 def tested_on_phrase(measurement: MeasuredExec | None = None) -> str:
     row = measurement or lookup_measured_exec("/bin/sh")
     if row is None:

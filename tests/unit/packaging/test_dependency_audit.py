@@ -207,6 +207,22 @@ def test_bin_sh_warns_that_freecad_1_1_denies_it(tmp_path: Path) -> None:
     assert not any(issue.issue_id.startswith("package.subprocess.denied") for issue in report.issues)
 
 
+def test_bin_sh_is_blocked_when_packaging_on_freecad_1_1(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "main.py").write_text('import subprocess\nsubprocess.run(["/bin/sh", "-c", "ls"])\n', encoding="utf-8")
+
+    report = run_dependency_audit(
+        project_root=str(project_root),
+        known_runtime_modules=frozenset(),
+        entry_file="main.py",
+        freecad_version="1.1.1",
+    )
+
+    denied = [issue for issue in report.issues if issue.issue_id.startswith("package.subprocess.denied")]
+    assert [issue.evidence["command_name"] for issue in denied] == ["/bin/sh"]
+
+
 def test_unknown_program_is_a_warning(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
