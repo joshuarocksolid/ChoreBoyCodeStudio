@@ -63,6 +63,7 @@ Tabs are movable. Split Right (tab context menu, View menu, `Ctrl+\`) shows the 
 | `#shell.missingFileDialog` | File Missing: Close Tab / Keep Editing / Save As... (default). Modal. |
 | `#shell.staleSaveDialog` | Save on a stale tab: Cancel / Compare... / Reload from Disk / Save My Version (default). Modal. |
 | `#shell.diskCompareDialog` | Side-by-side On Disk / Your Version diff. Modal. |
+| `#shell.diskChangedDialog` | The poller found a dirty buffer's file changed on disk: Compare... / Reload from Disk / Keep My Version (default; Esc also keeps). Modal. |
 
 ## Welcome
 
@@ -94,7 +95,8 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.runStatusLabel` | `Run: idle` / `Run: running` / `Run: success (code=0)` / `Run: failed (code=N)` / `Run: terminated` |
 | `#shell.projectStatusLabel` | Project name + `(project overrides)` |
 | `#shell.indentStatusLabel` | Spaces / Tabs |
-| `#shell.editorStatusLabel` | file, line, col, modified/saved |
+| `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
+| `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
 
 ## Find, search, markdown

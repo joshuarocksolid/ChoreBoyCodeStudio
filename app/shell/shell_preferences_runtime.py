@@ -253,6 +253,19 @@ class ShellPreferencesRuntime:
             return constants.UI_INTELLIGENCE_COMPLETION_MODE_DEFAULT
         return str(preferences[3])
 
+    def completion_mode_status(self) -> tuple[str, str, str]:
+        """Return ``(mode in effect, scope, Global mode)`` for the status-bar chip.
+
+        The scope is ``"project"`` only when the open project sets a mode that
+        differs from the Global one, matching the Settings dialog's "Use Global".
+        """
+
+        bundle = self._load_bundle()
+        effective_mode = bundle.effective_editor.completion_mode
+        global_mode = bundle.global_editor.completion_mode
+        project_overrides = self._host.current_project_root() is not None and effective_mode != global_mode
+        return effective_mode, ("project" if project_overrides else "global"), global_mode
+
     def completion_auto_trigger_period(self) -> bool:
         """Return whether typing ``.`` opens completion (only in While typing mode)."""
 

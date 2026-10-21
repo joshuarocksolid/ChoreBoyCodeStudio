@@ -13,13 +13,14 @@ from PySide2.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
 from app.shell.disk_conflict_dialogs import (
+    DiskChangedChoice,
+    DiskChangedDialog,
     DiskCompareDialog,
     MissingFileDialog,
     MissingFileDialogChoice,
     StaleSaveChoice,
     StaleSaveDialog,
 )
-from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision, DocumentScope
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
 from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
 from app.shell.shell_composition_context import MainWindowCompositionSurface
@@ -85,6 +86,13 @@ def present_stale_save_dialog(
     return dialog.choice()
 
 
+def present_disk_changed_dialog(parent: QWidget, file_path: str, *, disk_mtime: float | None) -> DiskChangedChoice:
+    """Ask what to do when a dirty buffer's file changed on disk (Keep My Version is the default)."""
+    dialog = DiskChangedDialog(file_path, disk_changed_text=_describe_mtime(disk_mtime), parent=parent)
+    dialog.exec_()
+    return dialog.choice()
+
+
 def ask_save_as_path(parent: QWidget, file_path: str) -> str | None:
     destination, _selected_filter = QFileDialog.getSaveFileName(parent, "Save As", file_path)
     return destination or None
@@ -131,6 +139,9 @@ class ExternalFileChangeHostPorts(Protocol):
         ...
 
     def present_stale_save(self, file_path: str, *, disk_mtime: float | None, buffer_is_dirty: bool) -> StaleSaveChoice:
+        ...
+
+    def present_disk_changed(self, file_path: str, *, disk_mtime: float | None) -> DiskChangedChoice:
         ...
 
     def show_disk_compare(self, file_path: str, *, disk_text: str, buffer_text: str) -> None:
@@ -205,6 +216,9 @@ class MainWindowExternalFileChangeHost:
             buffer_is_dirty=buffer_is_dirty,
         )
 
+    def present_disk_changed(self, file_path: str, *, disk_mtime: float | None) -> DiskChangedChoice:
+        return present_disk_changed_dialog(self._window, file_path, disk_mtime=disk_mtime)
+
     def show_disk_compare(self, file_path: str, *, disk_text: str, buffer_text: str) -> None:
         DiskCompareDialog(file_path, disk_text=disk_text, buffer_text=buffer_text, parent=self._window).exec_()
 
@@ -212,19 +226,8 @@ class MainWindowExternalFileChangeHost:
         return ask_save_as_path(self._window, file_path)
 
 
-@dataclass(frozen=True)
-class _DirtyReloadPlan:
-    """Resolved reload intent for a dirty tab blocking external reload."""
-
-    apply_reload: bool
-    disk_content: str
-    current_mtime: float
-
-
 class ExternalFileChangeWorkflow:
     """Owns stale-file detection prompts and disk reload application."""
-
-    _RELOAD_ACTION_DESCRIPTION = "reloading this file from disk after an external change"
 
     def __init__(
         self,
@@ -291,19 +294,22 @@ class ExternalFileChangeWorkflow:
         reload_disk_content = disk_content
         reload_mtime = current_mtime
         if tab_state.is_dirty:
-            dirty_plan = self._resolve_dirty_reload(
+            if not self._dirty_buffer_takes_disk_version(file_path, current_mtime=current_mtime):
+                self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
+                return ExternalFileChangeOutcome.DECLINED
+            self._local_history.record_checkpoint(
                 file_path,
-                tab_state=tab_state,
-                current_mtime=current_mtime,
-                disk_content=disk_content,
+                tab_state.current_content,
+                source="external_reload_discarded_buffer",
+                label="Discarded buffer during disk reload",
             )
-            if dirty_plan is None:
-                return ExternalFileChangeOutcome.CANCELLED
-            if not dirty_plan.apply_reload:
-                return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
             should_reload = True
-            reload_disk_content = dirty_plan.disk_content
-            reload_mtime = dirty_plan.current_mtime
+            # Compare... may have let the file change again; reload what is on disk now.
+            refreshed_mtime = self._editor_manager.current_disk_mtime(file_path)
+            refreshed_content = None if refreshed_mtime is None else self._read_disk_text(file_path)
+            if refreshed_mtime is not None and refreshed_content is not None:
+                reload_disk_content = refreshed_content
+                reload_mtime = refreshed_mtime
         else:
             if not self._host.confirm_clean_tab_reload():
                 self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
@@ -334,70 +340,14 @@ class ExternalFileChangeWorkflow:
             self._host.render_lint_diagnostics_for_file(file_path, trigger="tab_change")
         return ExternalFileChangeOutcome.RELOADED
 
-    def _resolve_dirty_reload(
-        self,
-        file_path: str,
-        *,
-        tab_state: object,
-        current_mtime: float,
-        disk_content: str,
-    ) -> _DirtyReloadPlan | None:
-        decision = self._save_workflow.request_unsaved_changes_decision(
-            self._RELOAD_ACTION_DESCRIPTION,
-            scope=DocumentScope.EXTERNAL_RELOAD,
-            allow_keep_for_next_launch=False,
-            dirty_buffers=(tab_state,),
-        )
-        if decision.intent is DocumentCloseIntent.CANCEL:
-            self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
-            return None
-
-        if decision.intent is DocumentCloseIntent.SAVE:
-            if not self._save_workflow.apply_unsaved_changes_decision(decision):
-                return None
-            try:
-                saved_disk_content = Path(file_path).read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
-                return None
-            saved_mtime = Path(file_path).stat().st_mtime
-            refreshed_tab = self._editor_manager.get_tab(file_path)
-            if refreshed_tab is not None and saved_disk_content == refreshed_tab.current_content:
-                refreshed_tab.mark_saved(last_known_mtime=saved_mtime)
-                self._host.refresh_save_action_states()
-                return _DirtyReloadPlan(
-                    apply_reload=False,
-                    disk_content=saved_disk_content,
-                    current_mtime=saved_mtime,
-                )
-            return _DirtyReloadPlan(
-                apply_reload=True,
-                disk_content=saved_disk_content,
-                current_mtime=saved_mtime,
-            )
-
-        if decision.intent is DocumentCloseIntent.DISCARD:
-            buffer_content = str(getattr(tab_state, "current_content", ""))
-            self._local_history.record_checkpoint(
-                file_path,
-                buffer_content,
-                source="external_reload_discarded_buffer",
-                label="Discarded buffer during disk reload",
-            )
-            return _DirtyReloadPlan(
-                apply_reload=True,
-                disk_content=disk_content,
-                current_mtime=current_mtime,
-            )
-
-        if decision.intent is DocumentCloseIntent.PROCEED:
-            return _DirtyReloadPlan(
-                apply_reload=True,
-                disk_content=disk_content,
-                current_mtime=current_mtime,
-            )
-
-        self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
-        return None
+    def _dirty_buffer_takes_disk_version(self, file_path: str, *, current_mtime: float) -> bool:
+        """Ask about a dirty buffer whose file changed; True means Reload from Disk."""
+        while True:
+            choice = self._host.present_disk_changed(file_path, disk_mtime=current_mtime)
+            if choice is DiskChangedChoice.COMPARE:
+                self.compare_with_disk(file_path)
+                continue
+            return choice is DiskChangedChoice.RELOAD_FROM_DISK
 
     def resolve_before_save(self, file_path: str) -> str:
         if file_path in self._prompting:

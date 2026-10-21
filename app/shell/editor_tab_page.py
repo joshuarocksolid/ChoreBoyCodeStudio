@@ -43,6 +43,8 @@ class DiskConflictInfoBar(QFrame):
         layout.addWidget(self._icon_label)
         self._message_label = QLabel(self)
         self._message_label.setObjectName("shell.editorInfoBar.message")
+        # A narrow split group wraps the message instead of cutting it off.
+        self._message_label.setWordWrap(True)
         layout.addWidget(self._message_label, 1)
         self._reload_button = self._add_button(layout, "Reload from Disk")
         self._reload_button.setObjectName("shell.editorInfoBar.reloadBtn")

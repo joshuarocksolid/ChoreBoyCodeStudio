@@ -14,6 +14,7 @@ from app.editors.markdown_rendering import is_markdown_path, qt_markdown_support
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
 from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.editor_tab_host_protocols import EditorTabMarkdownHost
+from app.shell.editor_tab_page import EditorTabPage
 from app.shell.theme_tokens import ShellThemeTokens
 
 
@@ -37,10 +38,23 @@ class EditorTabMarkdownWorkflow:
         self._editor_manager = editor_manager
 
     def active_markdown_pane(self) -> MarkdownEditorPane | None:
+        # The focused group's tab: with split groups each view has its own pane.
+        tabs = self._host.editor_tabs_widget()
+        if tabs is not None:
+            pane = markdown_pane_of_page(tabs.currentWidget())
+            if pane is not None:
+                return pane
         active_tab = self._editor_manager.active_tab()
         if active_tab is None:
             return None
         return self._markdown_registry.pane_for_path(active_tab.file_path)
+
+    def markdown_pane_for_tab(self, tabs: QTabWidget, tab_index: int, file_path: str) -> MarkdownEditorPane | None:
+        """The markdown pane a tab shows (its own view's pane), else the buffer's registered one."""
+        pane = markdown_pane_of_page(tabs.widget(tab_index))
+        if pane is not None:
+            return pane
+        return self._markdown_registry.pane_for_path(file_path)
 
     def set_active_markdown_mode(self, mode: str) -> None:
         markdown_pane = self.active_markdown_pane()
@@ -94,7 +108,13 @@ class EditorTabMarkdownWorkflow:
         parent: QTabWidget,
         theme_tokens: ShellThemeTokens,
         open_linked_file: Callable[[str], bool],
+        register: bool = True,
     ) -> QWidget:
+        """Wrap a markdown file's editor in a source / preview pane.
+
+        ``register`` is False for a second view of an open buffer (split
+        groups): the registry keeps one pane per path, the buffer's first view.
+        """
         if not is_markdown_path(file_path) or not qt_markdown_supported():
             return editor_widget
         markdown_pane = MarkdownEditorPane(
@@ -106,15 +126,15 @@ class EditorTabMarkdownWorkflow:
         )
         markdown_pane.apply_theme(theme_tokens)
         markdown_pane.mode_changed.connect(lambda _mode: self._refresh_markdown_action_states())
-        self._markdown_registry.register(file_path, markdown_pane)
+        if register:
+            self._markdown_registry.register(file_path, markdown_pane)
         return markdown_pane
 
     def append_context_menu_actions(
         self,
         menu: QMenu,
-        file_path: str,
+        markdown_pane: MarkdownEditorPane | None,
     ) -> tuple[Any | None, Any | None, Any | None]:
-        markdown_pane = self._markdown_registry.pane_for_path(file_path)
         if markdown_pane is None:
             return None, None, None
         markdown_source_action = menu.addAction("Markdown: Show Source")
@@ -134,19 +154,29 @@ class EditorTabMarkdownWorkflow:
     ) -> bool:
         if markdown_pane is None:
             return False
-        if chosen == markdown_source_action:
-            self.set_active_markdown_mode(MarkdownPreviewMode.SOURCE)
-            return True
-        if chosen == markdown_preview_action:
-            self.set_active_markdown_mode(MarkdownPreviewMode.PREVIEW)
-            return True
-        if chosen == markdown_split_action:
-            self.set_active_markdown_mode(MarkdownPreviewMode.SPLIT)
-            return True
+        modes = (
+            (markdown_source_action, MarkdownPreviewMode.SOURCE),
+            (markdown_preview_action, MarkdownPreviewMode.PREVIEW),
+            (markdown_split_action, MarkdownPreviewMode.SPLIT),
+        )
+        for action, mode in modes:
+            if action is not None and chosen == action:
+                # The clicked tab's own pane, which may not be the active tab's.
+                markdown_pane.set_mode(mode)
+                self._refresh_markdown_action_states()
+                return True
         return False
 
     def clear_registry(self) -> None:
         self._markdown_registry.clear()
 
 
-__all__ = ["EditorTabMarkdownWorkflow"]
+def markdown_pane_of_page(page: QWidget | None) -> MarkdownEditorPane | None:
+    """The markdown pane an editor tab page shows, or None."""
+    if not isinstance(page, EditorTabPage):
+        return None
+    content = page.content()
+    return content if isinstance(content, MarkdownEditorPane) else None
+
+
+__all__ = ["EditorTabMarkdownWorkflow", "markdown_pane_of_page"]

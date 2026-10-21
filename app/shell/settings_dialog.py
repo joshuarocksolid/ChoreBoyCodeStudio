@@ -21,6 +21,7 @@ from PySide2.QtWidgets import (
     QListWidget,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -29,7 +30,7 @@ from PySide2.QtWidgets import (
 )
 
 from PySide2.QtGui import QColor, QFont, QIcon
-from PySide2.QtCore import Qt
+from PySide2.QtCore import Qt, QTimer
 from PySide2.QtGui import QKeySequence
 
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
@@ -239,6 +240,18 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
 
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
+
+    def reveal_completion_mode_control(self) -> None:
+        """Show the General tab scrolled to the code completion control, with focus on it."""
+        combo = self._completion_mode_input
+        if self._tabs_widget is not None:
+            self._tabs_widget.setCurrentIndex(0)
+        parent = combo.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            QTimer.singleShot(0, lambda area=parent: area.ensureWidgetVisible(combo, 0, 80))
+        QTimer.singleShot(0, lambda: combo.setFocus(Qt.OtherFocusReason))
 
     def snapshot(self) -> EditorSettingsSnapshot:
         """Return settings snapshot from current dialog values."""

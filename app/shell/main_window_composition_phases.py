@@ -461,6 +461,11 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
         window,
         startup_report=ctx.startup_report,
         on_startup_activated=window._runtime_onboarding_workflow.handle_runtime_center_action,
+        on_completion_mode_activated=lambda: window._file_project_commands_workflow.handle_open_completion_setting(),
+    )
+    _continue_optional_startup_step(
+        "completion mode status",
+        window._refresh_completion_mode_status,
     )
     window._run_launch_workflow.install_active_run_config_indicator()
     _continue_optional_startup_step(

@@ -12,6 +12,7 @@ from PySide2.QtCore import QEvent, QPoint, Qt  # noqa: E402
 from PySide2.QtGui import QMouseEvent, QTextCursor  # noqa: E402
 from PySide2.QtWidgets import QApplication, QFrame, QSplitter  # noqa: E402
 
+from app.features.markdown.markdown_editor_pane import MarkdownEditorPane  # noqa: E402
 from app.project.project_service import create_blank_project  # noqa: E402
 from app.shell.document_safety import DocumentCloseIntent, DocumentSafetyDecision  # noqa: E402
 from app.shell.editor_tab_page import page_editor  # noqa: E402
@@ -186,4 +187,39 @@ def test_group_layout_survives_session_restore(tmp_path: Path, shell_qapp) -> No
     assert _labels(second) == ["beta.py", "gamma.py"]
     assert second.currentIndex() == 1 and groups.focused_index() == 1
     assert window._editor_manager.open_paths() == [alpha, beta, gamma]
+    shutdown_main_window_for_test(window, app)
+
+
+def test_markdown_split_into_the_second_group_gets_its_own_preview(tmp_path: Path, shell_qapp) -> None:  # type: ignore[no-untyped-def]
+    app = shell_qapp
+    window, _root, (notes,) = _open_window(tmp_path, app, ("notes.md",))
+    groups = window._editor_groups
+    first_pane = groups.tab_widgets()[0].currentWidget().content()
+    assert isinstance(first_pane, MarkdownEditorPane)
+
+    assert groups.split_right() is True
+    second_pane = groups.tab_widgets()[1].currentWidget().content()
+
+    assert isinstance(second_pane, MarkdownEditorPane) and second_pane is not first_pane
+    assert second_pane.source_editor().document() is first_pane.source_editor().document()
+    assert window._editor_tab_workflow.active_markdown_pane() is second_pane
+    _type_at_end(first_pane.source_editor(), "\n## Shared heading\n")
+    assert wait_for(lambda: "Shared heading" in second_pane.preview_widget().toPlainText(), app, timeout_seconds=2.0)
+
+    shutdown_main_window_for_test(window, app)
+
+
+def test_closing_the_first_markdown_view_hands_the_registry_to_the_second(tmp_path: Path, shell_qapp) -> None:  # type: ignore[no-untyped-def]
+    app = shell_qapp
+    window, _root, (notes,) = _open_window(tmp_path, app, ("notes.md",))
+    groups = window._editor_groups
+    groups.split_right()
+    second_pane = groups.tab_widgets()[1].currentWidget().content()
+
+    groups.focus_group(0)
+    assert groups.close_view_if_shared(groups.tab_widgets()[0].currentIndex()) is True
+    app.processEvents()
+
+    assert window._markdown_panes_by_path.get(notes) is second_pane
+    assert window._editor_tab_workflow.active_markdown_pane() is second_pane
     shutdown_main_window_for_test(window, app)

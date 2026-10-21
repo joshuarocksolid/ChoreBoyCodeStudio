@@ -111,10 +111,10 @@ class EditorTabLifecycleWorkflow:
             return
 
         menu = QMenu(self._host.parent_widget())
+        markdown_pane = self._markdown_workflow.markdown_pane_for_tab(editor_tabs_widget, tab_index, file_path)
         markdown_source_action, markdown_preview_action, markdown_split_action = (
-            self._markdown_workflow.append_context_menu_actions(menu, file_path)
+            self._markdown_workflow.append_context_menu_actions(menu, markdown_pane)
         )
-        markdown_pane = self._markdown_registry.pane_for_path(file_path)
         local_history_action = menu.addAction("Local History...")
         menu.addSeparator()
         groups = self._editor_groups()

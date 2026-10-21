@@ -304,6 +304,7 @@ class MainWindowSettingsApplyHost:
 
     def apply_preferences_bundle(self, bundle: ShellPreferencesBundle) -> None:
         self._window._shell_preferences_runtime.apply_preferences_bundle(bundle)
+        self._window._refresh_completion_mode_status()
 
     def sync_auto_save_menu_state(self) -> None:
         self._window._sync_auto_save_menu_state()

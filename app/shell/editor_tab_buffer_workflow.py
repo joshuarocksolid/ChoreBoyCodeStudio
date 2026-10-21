@@ -6,7 +6,20 @@ from typing import Any
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
+from app.shell.status_bar import EDITOR_DISK_STATE_MISSING, EDITOR_DISK_STATE_STALE
+
+
+def editor_disk_state(tab_state: object) -> str | None:
+    """``"stale"`` / ``"missing"`` for the status bar, from the buffer's disk conflict."""
+    conflict = getattr(tab_state, "disk_conflict", None)
+    kind = getattr(conflict, "kind", None)
+    if kind == DISK_CONFLICT_MISSING:
+        return EDITOR_DISK_STATE_MISSING
+    if kind == DISK_CONFLICT_CHANGED:
+        return EDITOR_DISK_STATE_STALE
+    return None
 
 
 class EditorTabBufferWorkflow:
@@ -73,6 +86,7 @@ class EditorTabBufferWorkflow:
             line=line_number,
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
+            disk_state=editor_disk_state(tab_state),
         )
         self._outline_workflow.highlight_symbol_at_line(line_number)
 
@@ -90,6 +104,7 @@ class EditorTabBufferWorkflow:
             line=editor_widget.textCursor().blockNumber() + 1,
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
+            disk_state=editor_disk_state(tab_state),
         )
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
