@@ -2,20 +2,49 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Callable, Optional
+
+from app.editors.tab_content_source import TabContentSource
 
 
-@dataclass
+@dataclass(init=False)
 class EditorTabState:
-    """In-memory state for a single opened file tab."""
+    """In-memory state for a single opened file tab.
+
+    ``current_content`` reads ``content_source.current_text()`` when a source is
+    attached, otherwise the stored string. ``is_dirty`` delegates the same way.
+    """
 
     file_path: str
     display_name: str
     original_content: str
-    current_content: str
-    last_known_mtime: float | None = None
-    is_preview: bool = False
+    last_known_mtime: float | None
+    is_preview: bool
+    content_source: Optional[TabContentSource]
+    content_source_unsubscribe: Optional[Callable[[], None]] = field(compare=False)
+    _current_content: str = field(repr=False)
+
+    def __init__(
+        self,
+        file_path: str,
+        display_name: str,
+        original_content: str,
+        current_content: str,
+        last_known_mtime: float | None = None,
+        is_preview: bool = False,
+        content_source: Optional[TabContentSource] = None,
+        content_source_unsubscribe: Optional[Callable[[], None]] = None,
+    ) -> None:
+        self.file_path = file_path
+        self.display_name = display_name
+        self.original_content = original_content
+        self._current_content = current_content
+        self.last_known_mtime = last_known_mtime
+        self.is_preview = is_preview
+        self.content_source = content_source
+        self.content_source_unsubscribe = content_source_unsubscribe
 
     @classmethod
     def from_file(
@@ -37,9 +66,24 @@ class EditorTabState:
         )
 
     @property
+    def current_content(self) -> str:
+        """Text Save would write. Serializes only when a content source is attached."""
+        if self.content_source is not None:
+            return self.content_source.current_text()
+        return self._current_content
+
+    @current_content.setter
+    def current_content(self, content: str) -> None:
+        if self.content_source is not None:
+            raise ValueError("update_content is not valid when a content source is attached")
+        self._current_content = content
+
+    @property
     def is_dirty(self) -> bool:
         """Return True when tab content differs from saved content."""
-        return self.current_content != self.original_content
+        if self.content_source is not None:
+            return self.content_source.is_dirty()
+        return self._current_content != self.original_content
 
     def update_content(self, content: str) -> None:
         """Replace current editor content."""
@@ -47,7 +91,13 @@ class EditorTabState:
 
     def mark_saved(self, *, last_known_mtime: float | None = None) -> None:
         """Mark current content as the persisted baseline."""
-        self.original_content = self.current_content
+        if self.content_source is not None:
+            saved_text = self.content_source.current_text()
+            self.content_source.mark_saved(saved_text)
+            self.original_content = saved_text
+            self._current_content = saved_text
+        else:
+            self.original_content = self._current_content
         self.last_known_mtime = last_known_mtime
 
     def set_last_known_mtime(self, mtime: float | None) -> None:
@@ -57,3 +107,10 @@ class EditorTabState:
     def promote(self) -> None:
         """Mark a preview tab as permanent."""
         self.is_preview = False
+
+    def drop_content_source_subscription(self) -> None:
+        """Detach the source change listener. Safe to call more than once."""
+        unsubscribe = self.content_source_unsubscribe
+        self.content_source_unsubscribe = None
+        if unsubscribe is not None:
+            unsubscribe()

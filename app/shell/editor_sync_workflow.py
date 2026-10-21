@@ -83,11 +83,22 @@ class EditorSyncWorkflow:
         if tab_state is None or editor_widget is None:
             return False
 
-        editor_widget.blockSignals(True)
-        editor_widget.setPlainText(text)
-        editor_widget.blockSignals(False)
+        surface_for_path = getattr(self._host, "surface_for_path", None)
+        surface = None if surface_for_path is None else surface_for_path(file_path)
+        if surface is not None:
+            surface.restore_text(text, "external_reload")
+        else:
+            editor_widget.blockSignals(True)
+            editor_widget.setPlainText(text)
+            editor_widget.blockSignals(False)
         self._host.advance_buffer_revision(file_path)
         self._host.apply_detected_indentation(file_path, editor_widget, text)
+        if tab_state.content_source is not None:
+            tab_state.mark_saved(last_known_mtime=last_known_mtime if last_known_mtime is not None else self._editor_manager.current_disk_mtime(file_path))
+            tab_index = self._host.tab_index_for_path(file_path)
+            if self._host.has_editor_tabs_widget() and tab_index >= 0:
+                self._host.refresh_tab_presentation(file_path)
+            return True
         updated_tab = self._editor_manager.update_tab_content(file_path, text)
         resolved_mtime = last_known_mtime
         if resolved_mtime is None:

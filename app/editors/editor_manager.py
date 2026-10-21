@@ -246,8 +246,10 @@ class EditorManager:
     def close_file(self, file_path: str) -> None:
         """Close an open file tab if it exists."""
         normalized_path = str(Path(file_path).expanduser().resolve())
-        if normalized_path not in self._tabs_by_path:
+        tab = self._tabs_by_path.get(normalized_path)
+        if tab is None:
             return
+        tab.drop_content_source_subscription()
         self._tabs_by_path.pop(normalized_path, None)
         self._open_order = [path for path in self._open_order if path != normalized_path]
         if self._preview_file_path == normalized_path:

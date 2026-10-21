@@ -9,7 +9,6 @@ from app.qt.QtCore import QPoint
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 
@@ -47,7 +46,7 @@ class EditorTabOutlineDelegates:
 class EditorTabMarkdownDelegates:
     _markdown_workflow: Any
 
-    def active_markdown_pane(self) -> MarkdownEditorPane | None:
+    def active_markdown_pane(self) -> Any | None:
         return self._markdown_workflow.active_markdown_pane()
 
     def set_active_markdown_mode(self, mode: str) -> None:
@@ -67,17 +66,6 @@ class EditorTabMarkdownDelegates:
 
     def refresh_markdown_action_states(self) -> None:
         self._markdown_workflow.refresh_markdown_action_states()
-
-    def wrap_tab_content_if_markdown(
-        self, *, editor_widget: CodeEditorWidget, file_path: str, parent: Any, theme_tokens: Any, open_linked_file: Any
-    ) -> Any:
-        return self._markdown_workflow.wrap_tab_content_if_markdown(
-            editor_widget=editor_widget,
-            file_path=file_path,
-            parent=parent,
-            theme_tokens=theme_tokens,
-            open_linked_file=open_linked_file,
-        )
 
 
 class EditorTabBufferDelegates:

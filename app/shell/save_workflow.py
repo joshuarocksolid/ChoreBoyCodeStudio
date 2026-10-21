@@ -28,6 +28,7 @@ from app.shell.document_safety import (
     dirty_buffer_snapshots,
 )
 from app.shell.shell_composition_context import MainWindowCompositionSurface
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
@@ -201,6 +202,9 @@ class MainWindowSaveDocumentHost:
     def editor_manager(self) -> EditorManager:
         return self._window._editor_manager
 
+    def tab_content_registry(self) -> Any:
+        return getattr(self._window, "_tab_content_registry", None)
+
     def editor_exit_behavior(self) -> str:
         return self._window._editor_exit_behavior
 
@@ -308,7 +312,19 @@ class SaveWorkflow:
     def _editor_manager(self) -> EditorManager:
         return self._host.editor_manager()
 
+    def _confirm_close_blockers(self, file_paths: Sequence[str]) -> bool:
+        registry_getter = getattr(self._host, "tab_content_registry", None)
+        if not callable(registry_getter):
+            return True
+        registry = registry_getter()
+        if registry is None:
+            return True
+        return confirm_tab_close_blockers(self._host.dialog_parent(), registry, file_paths)
+
     def confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
+        open_paths = [tab.file_path for tab in self._editor_manager().all_tabs()]
+        if not self._confirm_close_blockers(open_paths):
+            return False
         decision = self.request_unsaved_changes_decision(
             action_description,
             scope=DocumentScope.PROJECT,
@@ -324,13 +340,17 @@ class SaveWorkflow:
     ) -> bool:
         normalized_paths = [str(Path(path).expanduser().resolve()) for path in target_paths]
         affected_tabs: list[object] = []
+        affected_paths: list[str] = []
         for tab in self._editor_manager().all_tabs():
             tab_path = str(Path(tab.file_path).expanduser().resolve())
             for target_path in normalized_paths:
                 if tab_path == target_path or tab_path.startswith(f"{target_path}/"):
+                    affected_paths.append(tab.file_path)
                     if tab.is_dirty:
                         affected_tabs.append(tab)
                     break
+        if not self._confirm_close_blockers(affected_paths):
+            return False
         if not affected_tabs:
             return True
         decision = self.request_unsaved_changes_decision(

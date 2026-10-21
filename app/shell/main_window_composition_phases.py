@@ -35,6 +35,7 @@ from app.shell.console_model import ConsoleModel
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow, MainWindowDebugInspectorHost
 from app.shell.editor_tab_factory import EditorTabFactory
+from app.shell.tab_content_providers import TabContentProviderRegistry
 from app.shell.editor_tab_workflow import build_editor_tab_workflow
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.events import ShellEventBus
@@ -245,6 +246,7 @@ def install_editors(ctx: ShellCompositionContext) -> None:
             "_workspace_controller": workspace_controller,
             "_editor_manager": editor_manager,
             "_editor_widgets_by_path": workspace_controller.editor_widgets_by_path,
+            "_tab_content_registry": TabContentProviderRegistry(),
             "_editor_tab_factory": EditorTabFactory(window),
             "_indent_source_by_path": {},
             "_debug_exception_policy": DebugExceptionPolicy(),

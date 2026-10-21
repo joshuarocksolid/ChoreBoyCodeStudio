@@ -5,11 +5,20 @@ from __future__ import annotations
 import time
 from typing import Any, Optional
 
-from app.qt.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
+from app.editors.editor_tab import EditorTabState
+from app.editors.tab_content_source import TabContentSource
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
+from app.shell.tab_content_providers import (
+    ProviderDeclined,
+    TabContentProviderRegistry,
+    TabMatchContext,
+    TabSurface,
+    TabSurfaceRequest,
+)
 
 
 class MainWindowEditorBindingsHost:
@@ -88,7 +97,93 @@ class EditorTabFactory:
             window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
             return True
 
-        editor_widget = CodeEditorWidget(window._editor_tabs_widget)
+        tab_file_path = opened_result.tab.file_path
+        theme_tokens = window._shell_theme_workflow.resolve_theme_tokens()
+        loaded_project = getattr(window, "_loaded_project", None)
+        project_root = None if loaded_project is None else loaded_project.project_root
+        created_editor: dict[str, Optional[CodeEditorWidget]] = {"widget": None}
+
+        def create_source_editor() -> CodeEditorWidget:
+            if created_editor["widget"] is not None:
+                raise RuntimeError("create_source_editor may be called at most once per surface")
+            editor_widget = self._build_bound_source_editor(
+                opened_result,
+                parent=window._editor_tabs_widget,
+                theme_tokens=theme_tokens,
+            )
+            created_editor["widget"] = editor_widget
+            return editor_widget
+
+        registry: TabContentProviderRegistry = window._tab_content_registry
+        provider = registry.provider_for(
+            tab_file_path,
+            TabMatchContext(project_root=project_root, forced_text=False),
+        )
+        surface: Optional[TabSurface] = None
+        editor_widget: Optional[CodeEditorWidget]
+        if provider is None:
+            editor_widget = create_source_editor()
+            tab_content: QWidget = editor_widget
+        else:
+            def open_linked_file(linked_path: str) -> None:
+                self.open_file_in_editor(linked_path, preview=False)
+
+            request = TabSurfaceRequest(
+                file_path=tab_file_path,
+                initial_text=opened_result.tab.current_content,
+                parent=window._editor_tabs_widget,
+                theme=theme_tokens,
+                create_source_editor=create_source_editor,
+                open_linked_file=open_linked_file,
+                project_root=project_root,
+            )
+            try:
+                surface = provider.create_surface(request)
+            except ProviderDeclined as exc:
+                editor_widget = created_editor["widget"] or create_source_editor()
+                tab_content = _text_tab_with_notice(editor_widget, exc.reason, window._editor_tabs_widget)
+            else:
+                editor_widget = surface.source_editor() or created_editor["widget"]
+                content_source = surface.content_source()
+                if content_source is not None:
+                    self._attach_content_source(opened_result.tab, content_source)
+                registry.bind(tab_file_path, surface)
+                tab_content = surface.widget()
+
+        tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
+        window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
+        window._editor_tabs_widget.setCurrentIndex(tab_index)
+        window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
+        if surface is not None:
+            surface.focus_primary()
+        if restore_draft:
+            window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
+        if editor_widget is not None:
+            window._editor_tab_workflow.apply_detected_indentation_for_widget(
+                opened_result.tab.file_path,
+                editor_widget,
+                editor_widget.toPlainText(),
+            )
+        window._editor_tab_workflow.handle_editor_tab_changed(tab_index)
+        window._refresh_save_action_states()
+        window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
+        if started_at is not None:
+            window._logger.info(
+                "File open telemetry: file=%s elapsed_ms=%.2f",
+                opened_result.tab.file_path,
+                (time.perf_counter() - started_at) * 1000.0,
+            )
+        return True
+
+    def _build_bound_source_editor(
+        self,
+        opened_result: OpenedTabResult,
+        *,
+        parent: QWidget,
+        theme_tokens: Any,
+    ) -> CodeEditorWidget:
+        window = self._window
+        editor_widget = CodeEditorWidget(parent)
         editor_widget.setObjectName("shell.editorTabs.textEditor")
         editor_widget.set_editor_preferences(
             tab_width=window._editor_tab_width,
@@ -106,44 +201,36 @@ class EditorTabFactory:
             auto_trigger_period=window._shell_preferences_runtime.completion_auto_trigger_period(),
         )
         window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_editor(editor_widget)
-        editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+        editor_widget.apply_theme(theme_tokens)
         editor_widget.setPlainText(opened_result.tab.current_content)
         editor_widget.set_language_for_path(opened_result.tab.file_path)
-        tab_file_path = opened_result.tab.file_path
-
         bindings_host: EditorTabBindingsHost = MainWindowEditorBindingsHost(window)
-        window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, tab_file_path)
-        window._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
-
-        tab_content: QWidget = window._editor_tab_workflow.wrap_tab_content_if_markdown(
-            editor_widget=editor_widget,
-            file_path=tab_file_path,
-            parent=window._editor_tabs_widget,
-            theme_tokens=window._shell_theme_workflow.resolve_theme_tokens(),
-            open_linked_file=lambda linked_path: self.open_file_in_editor(linked_path, preview=False),
-        )
-
-        tab_index = window._editor_tabs_widget.addTab(tab_content, opened_result.tab.display_name)
-        window._editor_tabs_widget.setTabToolTip(tab_index, opened_result.tab.file_path)
-        window._editor_tabs_widget.setCurrentIndex(tab_index)
-        window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
-        if restore_draft:
-            window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
-        window._editor_tab_workflow.apply_detected_indentation_for_widget(
-            opened_result.tab.file_path,
+        window._editor_tab_workflow.attach_editor_bindings(
+            bindings_host,
             editor_widget,
-            editor_widget.toPlainText(),
+            opened_result.tab.file_path,
         )
-        window._editor_tab_workflow.handle_editor_tab_changed(tab_index)
-        window._refresh_save_action_states()
-        window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
-        if started_at is not None:
-            window._logger.info(
-                "File open telemetry: file=%s elapsed_ms=%.2f",
-                opened_result.tab.file_path,
-                (time.perf_counter() - started_at) * 1000.0,
-            )
-        return True
+        window._workspace_controller.register_editor(opened_result.tab.file_path, editor_widget)
+        return editor_widget
+
+    def _attach_content_source(self, tab_state: EditorTabState, source: TabContentSource) -> None:
+        tab_state.content_source = source
+        workflow = getattr(self._window, "_local_history_workflow", None)
+        if workflow is None:
+            return
+        tab_state.content_source_unsubscribe = workflow.watch_content_source(tab_state.file_path, source)
+
+
+def _text_tab_with_notice(editor_widget: CodeEditorWidget, reason: str, parent: QWidget) -> QWidget:
+    container = QWidget(parent)
+    layout = QVBoxLayout(container)
+    layout.setContentsMargins(8, 8, 8, 0)
+    layout.setSpacing(4)
+    notice = QLabel(reason, container)
+    notice.setWordWrap(True)
+    layout.addWidget(notice)
+    layout.addWidget(editor_widget, 1)
+    return container
 
 
 __all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost"]

@@ -211,7 +211,8 @@ def test_release_editor_widget_clears_active_debug_editor_pointer() -> None:
 
         def tab_content_registry(self) -> object:
             return SimpleNamespace(
-                markdown_registry=lambda: SimpleNamespace(release_widget=lambda _widget: False)
+                surface_for_source_editor=lambda _widget: None,
+                path_for_source_editor=lambda _widget: None,
             )
 
     host = _ReleaseEditorHost()

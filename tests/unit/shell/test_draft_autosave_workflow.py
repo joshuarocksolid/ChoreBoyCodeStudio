@@ -194,3 +194,67 @@ def test_local_history_workflow_delegates_autosave_to_draft_module(tmp_path: Pat
     assert timer.started == 1
     workflow.flush_pending_autosaves()
     assert autosave_store.saved[0][1] == "delegated draft"
+
+
+class _RevisionSource:
+    def __init__(self) -> None:
+        self._text = "serialized"
+        self._revision = 1
+        self.reads = 0
+        self._listener: Any = None
+
+    def current_text(self) -> str:
+        self.reads += 1
+        return self._text
+
+    def is_dirty(self) -> bool:
+        return True
+
+    def mark_saved(self, saved_text: str) -> None:
+        del saved_text
+
+    def revision(self) -> int:
+        return self._revision
+
+    def subscribe_changed(self, listener: Any) -> Any:
+        self._listener = listener
+        return lambda: None
+
+    def notify(self, *, revision: int, text: str) -> None:
+        self._revision = revision
+        self._text = text
+        self._listener()
+
+
+def test_sourced_draft_reads_text_only_when_revision_changes(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("print('disk')\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path.resolve())).tab
+    source = _RevisionSource()
+    tab.content_source = source
+    autosave_store = _FakeAutosaveStore()
+    timer = _FakeTimer()
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,  # type: ignore[arg-type]
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_workflow"),
+        autosave_timer=timer,  # type: ignore[arg-type]
+    )
+
+    workflow.watch_content_source(tab.file_path, source)
+    source.notify(revision=2, text="next")
+    assert source.reads == 0
+    assert timer.started == 1
+
+    workflow.flush_pending_autosaves()
+    assert source.reads == 1
+    assert autosave_store.saved[0][1] == "next"
+
+    source.notify(revision=2, text="unread")
+    workflow.flush_pending_autosaves()
+    assert source.reads == 1

@@ -9,7 +9,6 @@ from app.qt.QtWidgets import QTabWidget
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 
@@ -124,7 +123,7 @@ class EditorTabPreferencesHost(Protocol):
 class EditorTabMarkdownHost(Protocol):
     """Markdown pane registry and view action menu accessors."""
 
-    def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
+    def markdown_panes_by_path(self) -> dict[str, Any]:
         ...
 
     def tab_content_registry(self) -> Any:

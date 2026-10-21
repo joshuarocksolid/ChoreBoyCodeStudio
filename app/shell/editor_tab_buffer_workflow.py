@@ -36,7 +36,11 @@ class EditorTabBufferWorkflow:
         if self._editor_manager.get_tab(file_path) is None:
             return
         self._editor_tabs_coordinator.advance_buffer_revision(file_path)
-        tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
+        existing = self._editor_manager.get_tab(file_path)
+        if existing is not None and getattr(existing, "content_source", None) is not None:
+            tab_state = existing
+        else:
+            tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
         if tab_state.is_preview and tab_state.is_dirty:
             self._editor_tabs_coordinator.promote_preview_tab(file_path)
             refreshed_state = self._editor_manager.get_tab(file_path)
@@ -51,7 +55,8 @@ class EditorTabBufferWorkflow:
             return
         self._editor_tabs_coordinator.refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
-            self._host.local_history_schedule_autosave(tab_state.file_path, tab_state.current_content)
+            if getattr(tab_state, "content_source", None) is None:
+                self._host.local_history_schedule_autosave(tab_state.file_path, tab_state.current_content)
             if self._host.editor_auto_save():
                 self._host.start_auto_save_to_file_timer()
         else:

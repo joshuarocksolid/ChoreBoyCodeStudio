@@ -13,10 +13,8 @@ from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QStackedWidge
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_rendering import is_markdown_path
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
-from app.features.markdown.markdown_tab_registry import release_editor_widget
 from app.project.file_operation_models import ImportUpdatePolicy
+from app.shell.tab_content_providers import TabMatchContext
 from app.project.project_manifest import set_project_default_entry
 from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY
@@ -369,13 +367,17 @@ class ProjectTreeUiWorkflow:
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        registry = self._host.tab_content_registry().markdown_registry()
-        release_editor_widget(
-            widget,
-            registry=registry,
-            is_debug_execution_editor=lambda candidate: self._host.debug_execution_editor() is candidate,
-            clear_debug_execution_indicator=self._host.clear_debug_execution_indicator,
-        )
+        if self._host.debug_execution_editor() is widget:
+            self._host.clear_debug_execution_indicator()
+        registry = self._host.tab_content_registry()
+        surface = registry.surface_for_source_editor(widget)
+        if surface is not None:
+            file_path = registry.path_for_source_editor(widget)
+            if file_path is not None:
+                registry.unbind(file_path)
+            surface.release()
+            return
+        widget.deleteLater()
 
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._host.project_tree_action_coordinator().close_deleted_editor_paths(deleted_path)
@@ -386,16 +388,31 @@ class ProjectTreeUiWorkflow:
     def update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
         normalized_path = str(Path(new_path).expanduser().resolve())
-
-        def on_unwrap(_markdown_pane: MarkdownEditorPane, source_editor: CodeEditorWidget) -> None:
-            self._host.editor_tabs_coordinator().replace_tab_content_widget(normalized_path, source_editor)
-
-        self._host.tab_content_registry().markdown_registry().rekey_for_widget(
-            widget,
+        registry = self._host.tab_content_registry()
+        old_path = registry.path_for_source_editor(widget)
+        if old_path is None:
+            return
+        surface = registry.surface_for_path(old_path)
+        if surface is None:
+            return
+        loaded_project = self._host.loaded_project()
+        project_root = None if loaded_project is None else loaded_project.project_root
+        provider = registry.provider_for(
             normalized_path,
-            is_markdown_path=is_markdown_path,
-            on_unwrap=on_unwrap,
+            TabMatchContext(project_root=project_root, forced_text=False),
         )
+        history = getattr(self._host, "local_history_workflow", None)
+        if provider is None:
+            source_editor = surface.source_editor()
+            if source_editor is not None:
+                self._host.editor_tabs_coordinator().replace_tab_content_widget(normalized_path, source_editor)
+            registry.unbind(old_path)
+            surface.release()
+        else:
+            surface.file_path_changed(normalized_path)
+            registry.rekey(old_path, normalized_path)
+        if history is not None:
+            history().rekey_content_source(old_path, normalized_path)
 
     def update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
@@ -612,7 +629,7 @@ class MainWindowProjectTreeUiHost:
         return self._window._editor_widgets_by_path
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
-        return self._window._tab_content_registry.markdown_panes_by_path
+        return self._window._markdown_panes_by_path
 
     def tab_content_registry(self) -> Any:
         return self._window._tab_content_registry

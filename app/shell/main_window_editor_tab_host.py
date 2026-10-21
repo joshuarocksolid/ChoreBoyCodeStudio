@@ -9,7 +9,6 @@ from app.qt.QtWidgets import QTabWidget
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 
@@ -28,8 +27,8 @@ class MainWindowEditorTabHost:
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
         return self._window._editor_widgets_by_path
 
-    def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
-        return self._window._tab_content_registry.markdown_panes_by_path
+    def markdown_panes_by_path(self) -> dict[str, Any]:
+        return self._window._markdown_panes_by_path
 
     def tab_content_registry(self) -> Any:
         return self._window._tab_content_registry
