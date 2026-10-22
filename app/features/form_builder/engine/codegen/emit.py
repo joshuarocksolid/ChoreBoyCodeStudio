@@ -864,27 +864,11 @@ class _Emitter:
                 self.add("%s.%s(%s, %s, %s)" % (layout_ref, method, row, role, target))
             return
         if is_grid(cls) or (not is_box(cls) and (item.row is not None or item.column is not None)):
-            if kind == "widget":
-                if align:
-                    self.add(
-                        "%s.addWidget(%s, %s, %s, %s, %s, %s)"
-                        % (layout_ref, target, row, column, rowspan, colspan, align)
-                    )
-                else:
-                    self.add(
-                        "%s.addWidget(%s, %s, %s, %s, %s)"
-                        % (layout_ref, target, row, column, rowspan, colspan)
-                    )
-            elif kind == "layout":
-                self.add(
-                    "%s.addLayout(%s, %s, %s, %s, %s)"
-                    % (layout_ref, target, row, column, rowspan, colspan)
-                )
-            else:
-                self.add(
-                    "%s.addItem(%s, %s, %s, %s, %s)"
-                    % (layout_ref, target, row, column, rowspan, colspan)
-                )
+            method = {"widget": "addWidget", "layout": "addLayout"}.get(kind, "addItem")
+            args = [layout_ref, target, row, column, rowspan, colspan]
+            if align:
+                args.append(align)
+            self.add("%s.%s(%s)" % (args[0], method, ", ".join(str(arg) for arg in args[1:])))
             return
         if kind == "widget":
             if align:

@@ -339,6 +339,28 @@ def test_connections_are_uics_plain_connect_and_fire(tmp_path: Path) -> None:
     assert not host.isVisible()
 
 
+def test_grid_item_alignment_reaches_nested_layouts_and_spacers(tmp_path: Path) -> None:
+    from PySide6.QtCore import Qt
+    from PySide6.QtWidgets import QGridLayout
+
+    body = (
+        '<layout class="QGridLayout" name="grid">'
+        '<item row="0" column="0" colspan="2" alignment="Qt::AlignRight|Qt::AlignVCenter">'
+        '<layout class="QHBoxLayout" name="nestedBox"/></item>'
+        '<item row="1" column="0" alignment="Qt::AlignTop">'
+        '<spacer name="gap"><property name="orientation"><enum>Qt::Vertical</enum></property></spacer>'
+        "</item></layout>"
+    )
+    path, scope, document = _form(tmp_path, body=body)
+    result = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+    assert result.text is not None
+    host = _run_setup(result.text, {})
+    grid = host.findChild(QGridLayout, "grid")
+    assert grid is not None
+    assert grid.itemAtPosition(0, 0).alignment() == Qt.AlignRight | Qt.AlignVCenter
+    assert grid.itemAtPosition(1, 0).alignment() == Qt.AlignTop
+
+
 def test_unknown_signal_on_a_qt_class_warns_and_is_left_out(tmp_path: Path) -> None:
     body = '<widget class="QPushButton" name="okButton"/>'
     tail = "<connections>\n %s\n %s\n</connections>" % (
