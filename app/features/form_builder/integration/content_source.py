@@ -13,10 +13,15 @@ from typing import Callable, List, Literal, Optional
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot, Subscription
+from app.features.form_builder.engine.diagnostics import DiagnosticsStore
 from app.features.form_builder.engine.events import PRIORITY_SELECTION_NOTIFY
 from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.project.adoption import scope_for
+from app.features.form_builder.engine.project.forms import FormScope, classify_form
+from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import SerializationCache
+from app.features.form_builder.integration.save_pipeline import SaveNotice, finish_save
 
 Mode = Literal["visual", "xml"]
 
@@ -39,6 +44,13 @@ def open_document_log(text: str) -> CommandLog:
     return log
 
 
+def form_scope(path: str, project_root: Optional[str]) -> FormScope:
+    """Project and adopted forms generate. Anything else is external."""
+    if project_root:
+        return scope_for(path, project_root, OsFileSystem())
+    return classify_form(path, project_root=None)
+
+
 def plain_read_error(exc: BaseException) -> str:
     """Plain words for a reader or command refusal, with a line when one exists."""
     error = exc.error if isinstance(exc, CommandRejected) and exc.error is not None else exc
@@ -58,8 +70,18 @@ class FormContentSource:
     push an undo step.
     """
 
-    def __init__(self, log: CommandLog, source_text: str) -> None:
+    def __init__(
+        self,
+        log: CommandLog,
+        source_text: str,
+        *,
+        scope: Optional[FormScope] = None,
+        diagnostics: Optional[DiagnosticsStore] = None,
+    ) -> None:
         self._log = log
+        self._scope = scope
+        self._diagnostics = diagnostics
+        self._notice = SaveNotice("idle", "", False)
         self._cache = SerializationCache()
         self._mode: Mode = "visual"
         self._source_text = source_text
@@ -96,7 +118,7 @@ class FormContentSource:
             return True
         if self._log.is_dirty():
             return True
-        return self._mode == "visual" and not self._saved_applied
+        return not self._saved_applied
 
     def mark_saved(self, saved_text: str) -> None:
         self._saved_text = saved_text
@@ -112,7 +134,17 @@ class FormContentSource:
             self._log.mark_saved()
             self._saved_applied = True
             self._remember_saved_text(saved_text)
+        self._notice = finish_save(self._scope, self._log.document, saved_text)
+        if self._diagnostics is not None:
+            self._diagnostics.publish("codegen", self._notice.diagnostics)
         self._notify()
+
+    @property
+    def save_notice(self) -> SaveNotice:
+        return self._notice
+
+    def set_scope(self, scope: Optional[FormScope]) -> None:
+        self._scope = scope
 
     def revision(self) -> int:
         return self._stamp
@@ -194,6 +226,7 @@ class FormContentSource:
 
 
 __all__ = [
+    "form_scope",
     "FormContentSource",
     "open_document_log",
     "plain_read_error",
