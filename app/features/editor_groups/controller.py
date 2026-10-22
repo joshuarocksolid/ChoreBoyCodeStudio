@@ -25,9 +25,7 @@ from app.qt.QtGui import QColor
 from app.qt.QtWidgets import QApplication, QFrame, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_rendering import is_markdown_path, qt_markdown_supported
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
-from app.features.markdown.provider import MarkdownTabSurface
+from app.features.markdown.provider import adopt_secondary_pane, build_secondary_pane
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.editor_tab_bar import MiddleClickTabBar
@@ -346,14 +344,7 @@ class EditorGroupsController:
             index = group.index_of_buffer(buffer_id)
             view_page = group.tabs.widget(index) if index >= 0 else None
             content = view_page.content() if isinstance(view_page, EditorTabPage) else None
-            if isinstance(content, MarkdownEditorPane):
-                panes = window._markdown_panes_by_path
-                panes[tab.file_path] = content
-                registry.bind(
-                    tab.file_path,
-                    MarkdownTabSurface(content, panes, tab.file_path),
-                    "markdown",
-                )
+            if adopt_secondary_pane(window, tab.file_path, content):
                 return
 
     # -- Project-tree deletes and renames ------------------------------------
@@ -426,22 +417,15 @@ class EditorGroupsController:
         if tab_state is None:
             return -1
         view = window._editor_tab_factory.create_buffer_view(tab_state, source_editor, parent=target.tabs)
-        content: QWidget = view
-        if is_markdown_path(tab_state.file_path) and qt_markdown_supported():
-            content = MarkdownEditorPane(
-                view,
-                tab_state.file_path,
-                target.tabs,
-                local_link_callback=lambda linked_path: window._editor_tab_factory.open_file_in_editor(
-                    linked_path,
-                    preview=False,
-                ),
-                initial_mode=MarkdownPreviewMode.SPLIT,
-            )
-            content.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
-            content.mode_changed.connect(
-                lambda _mode: window._editor_tab_workflow.refresh_markdown_action_states()
-            )
+        pane = build_secondary_pane(
+            view,
+            tab_state.file_path,
+            target.tabs,
+            window._shell_theme_workflow.resolve_theme_tokens(),
+            lambda linked_path: window._editor_tab_factory.open_file_in_editor(linked_path, preview=False),
+            lambda: window._editor_tab_workflow.refresh_markdown_action_states(),
+        )
+        content: QWidget = view if pane is None else pane
         page = window._editor_tab_factory.build_tab_page(content, buffer_id)
         index = target.tabs.addTab(page, tab_state.display_name)
         window._editor_tabs_coordinator.present_tab_at(index, tab_state, tabs=target.tabs)
