@@ -830,3 +830,29 @@ Nothing was rejected.
 
 - **Codegen options (uic-flag equivalents):** stored in project settings (`cbcs/project.json`), with a per-project default and per-form overrides, as proposed. They only affect M5.5b.
 - **Stub location:** the typed stubs live in `docs/form_builder/contracts/stubs/` as the reference. Each work package copies the stubs it owns into `app/...` and implements them; it does not import from `docs/`.
+
+## Appendix E. Writer pins from the Designer resave corpus (M0.4b, fixed 2026-10-21)
+
+Source: `tests/form_builder/corpus/designer_resaved/FINDINGS.md` (Qt Designer 6.8.3 from the FreeCAD 1.1.4 AppImage re-saved 209 forms). These replace every "provisional" rule in §8.2.
+
+**Policy.** The writer's target is Designer's bytes for every construct Designer keeps. Where Designer drops data, our writer stays lossless, and the difference goes on an allowlist. The oracle `test_designer_resave_diff.py` turns from xfail into a hard gate once only allowlisted differences remain (WP M1.1d).
+
+| Rule | Fixed value |
+| --- | --- |
+| Empty elements | Self-closing `<x/>` when present and empty, `<string/>` and `<string notr="true"/>` included. Empty `<author>`, `<comment>` and `<exportmacro>` are omitted. |
+| `<double>` | 15 fraction digits everywhere, including inside pointf, rectf, sizef and gradient stops. `-0` is written `0.000000000000000`. |
+| `<float>` | Designer drops floats on save. We keep them, written with 8 fraction digits; `-0` is written `0.00000000`. Allowlisted. |
+| Enums | Written qualified: `Qt::Orientation::Horizontal`, `QFrame::Shape::Box`. Single-token attribute enums such as `TopToolBarArea` stay as they are. Values read unqualified are written qualified, as Designer does. |
+| Unknown dynamic enums and sets | Designer drops them. We keep them verbatim. Allowlisted. |
+| `<resources/>` and `<connections/>` | Always written, self-closed when empty. The `name` attribute on `<resources>` is dropped, as Designer does. |
+| Dynamic `cbcs*` properties | Written after the widget's standard properties, with `stdset="0"` and attribute order `name`, `stdset`. `notr` is kept when present and never added. |
+| Attribute order | `<property name stdset>`; `<string notr comment extracomment id>`; the same for `<stringlist>`. |
+| Tag spellings | `longLong`, `UInt`, `uLongLong`, `gradientstop`, `cursorShape` (named shape). Reading stays case-insensitive. |
+| `<sizepolicy>` | Attribute form: `hsizetype="Preferred" vsizetype="Preferred"`, with `horstretch` and `verstretch` children. |
+| `stdset` | `stdset="1"` is omitted; `stdset="0"` is written. Layout `margin` is stored with `stdset="0"`. |
+| Redundant `objectName` | Omitted when it only repeats the widget or layout `name`. |
+| `<iconset>` | One line: `<iconset [theme=…]><normaloff>a</normaloff>[<normalon>b</normalon>…]a</iconset>`. The normal path is written once as text after the last state. Designer drops `resource` and `alias`; we keep them (allowlisted). |
+| Comments, `<script>`, `<widgetdata>`, `<propertyspecifications>`, `<images>`, `<addpagemethod>` | Designer drops them. We keep them (allowlisted, §2.2 MUST). |
+| Line endings | Preserved per file: LF stays LF, and a CRLF source is written CRLF on every line. |
+| Indentation and declaration | One space per level, no trailing whitespace, final newline. `<?xml version="1.0" encoding="UTF-8"?>` is always written first. |
+| Text escaping | `"` in text becomes `&quot;` (already §8.2.5). |
