@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from app.features.form_builder.engine.project.forms import FormScope
-from app.features.form_builder.engine.codegen.names import python_class_stem
+from app.features.form_builder.engine.codegen.names import check_cpp_name, python_class_stem
 from app.features.form_builder.engine.codegen.qtmap import base_qt_class, class_module
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode
@@ -31,7 +31,12 @@ def render_window_class(doc: UiDocument, *, scope: FormScope) -> str:
     Base class: the root's class, or a promoted root's ``extends``. Class name:
     ``<class>`` + ``Window``. Import is absolute from the project root.
     """
-    class_name = python_class_stem(doc.form_class_name())
+    raw_class = doc.form_class_name()
+    if not check_cpp_name(raw_class):
+        raise ValueError(
+            'The class name "%s" can\'t be used in the generated Python.' % raw_class
+        )
+    class_name = python_class_stem(raw_class)
     root = doc.root
     custom = _custom_by_class(doc).get(root.class_name)
     extends = ""

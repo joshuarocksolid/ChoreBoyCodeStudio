@@ -25,7 +25,7 @@ from app.features.form_builder.engine.codegen.header import (
     read_header,
     render_header,
 )
-from app.features.form_builder.engine.codegen.names import module_stem_ok
+from app.features.form_builder.engine.codegen.names import ui_basename_ok
 from app.features.form_builder.engine.diagnostic_codes import fb5xx as _fb5xx
 from app.features.form_builder.engine.diagnostics import (
     CODES,
@@ -91,14 +91,15 @@ def generate_form_module(
             uses_freecadgui=False,
             header=None,
         )
-    stem = os.path.splitext(os.path.basename(scope.ui_path))[0]
-    if not module_stem_ok(stem):
+    basename = os.path.basename(scope.ui_path)
+    stem = basename[:-3] if basename.endswith(".ui") else os.path.splitext(basename)[0]
+    if not ui_basename_ok(basename):
         return CodegenResult(
             text=None,
             diagnostics=(
                 _form_diagnostic(
                     "FB507",
-                    'The file name "%s" can\'t be a Python module.' % stem,
+                    'The file name "%s" can\'t be a Python module.' % basename,
                 ),
             ),
             attribute_names=(),
@@ -118,11 +119,25 @@ def generate_form_module(
         )
     source_hash = None if source_bytes is None else hashlib.sha256(source_bytes).hexdigest()
     body_hash = hashlib.sha256(pieces.body.encode("utf-8")).hexdigest()
-    ui_name = os.path.basename(scope.ui_path) or "form.ui"
+    ui_name = basename
     if scope.window_path:
         window_name = os.path.basename(scope.window_path)
     else:
         window_name = stem + "_window.py"
+    if "\n" in window_name or "\r" in window_name:
+        return CodegenResult(
+            text=None,
+            diagnostics=(
+                _form_diagnostic(
+                    "FB507",
+                    'The file name "%s" can\'t be a Python module.' % window_name,
+                ),
+            ),
+            attribute_names=(),
+            resource_modules=(),
+            uses_freecadgui=False,
+            header=None,
+        )
     header_text = render_header(
         ui_file_name=ui_name,
         window_file_name=window_name,

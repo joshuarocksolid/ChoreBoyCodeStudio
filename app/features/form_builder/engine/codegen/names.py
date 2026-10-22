@@ -3,10 +3,45 @@
 from __future__ import annotations
 
 import keyword
+import re
 from typing import Optional
+
+# C++ identifier, optionally scoped. ASCII only: a Unicode lookalike is not a
+# Python name we can emit, and it is not a token we can paste into source.
+_CPP_NAME = re.compile(r"[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*\Z", re.ASCII)
+_UI_BASENAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\.ui\Z")
 
 # ``self`` cannot be the setupUi parameter: ``def setupUi(self, self)`` is a syntax error.
 _RESERVED = frozenset({"setupUi", "retranslateUi", "self"})
+
+
+def check_cpp_name(text: str) -> bool:
+    """True when ``text`` is a C++ name safe to paste into generated Python.
+
+    ``Gui::Dialog::RemoteDebugger`` matches. A call, a quote, or a space does not.
+    """
+    return bool(text) and _CPP_NAME.fullmatch(text) is not None
+
+
+def check_enum_set(text: str) -> bool:
+    """True for ``0``, an empty set, or ``|``-separated C++ names."""
+    raw = text.strip()
+    if raw == "" or raw == "0":
+        return True
+    for piece in raw.split("|"):
+        token = piece.strip()
+        if not token or token == "0":
+            continue
+        if not check_cpp_name(token):
+            return False
+    return True
+
+
+def ui_basename_ok(basename: str) -> bool:
+    """True when the ``.ui`` file name is ``<identifier>.ui`` and the stem can be a module."""
+    if _UI_BASENAME.fullmatch(basename) is None:
+        return False
+    return module_stem_ok(basename[:-3])
 
 
 def unusable_reason(name: str) -> Optional[str]:

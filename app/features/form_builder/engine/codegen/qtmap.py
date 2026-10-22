@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
 
+from app.features.form_builder.engine.codegen.names import check_cpp_name
+
 _QT_CORE = frozenset(
     {
         "Qt",
@@ -360,7 +362,12 @@ def base_qt_class(class_name: str, extends: str) -> str:
 
 
 def class_module(class_name: str) -> Optional[str]:
-    """PySide6 module that defines ``class_name``, or None for a non-Qt name."""
+    """PySide6 module that defines ``class_name``, or None for a non-Qt name.
+
+    The name has to be one identifier. ``QWidget); ...`` is not a Qt class.
+    """
+    if not class_name.isidentifier():
+        return None
     if class_name in _EXTRA_MODULES:
         return _EXTRA_MODULES[class_name]
     if class_name in _QT_CORE:
@@ -373,9 +380,15 @@ def class_module(class_name: str) -> Optional[str]:
 
 
 def enum_expr(text: str) -> str:
-    """One enumerator token as a PySide6 attribute path."""
+    """One enumerator token as a PySide6 attribute path.
+
+    A token that is not a C++ name becomes ``0``. Callers refuse the form;
+    this function never pastes the raw text into Python.
+    """
     token = text.strip()
     if not token or token == "0":
+        return "0"
+    if not check_cpp_name(token):
         return "0"
     parts = token.split("::")
     if len(parts) >= 3:
@@ -415,7 +428,14 @@ def set_expr(text: str) -> str:
 
 def policy_expr(text: str) -> str:
     """A size-policy name (``Preferred`` or ``QSizePolicy::Policy::Preferred``)."""
-    return enum_expr(text) if "::" in text else _POLICY.get(text, "QSizePolicy.Policy.%s" % text)
+    if "::" in text:
+        return enum_expr(text)
+    mapped = _POLICY.get(text)
+    if mapped:
+        return mapped
+    if check_cpp_name(text):
+        return "QSizePolicy.Policy.%s" % text
+    return "QSizePolicy.Policy.Preferred"
 
 
 def layout_basename(class_name: str) -> str:

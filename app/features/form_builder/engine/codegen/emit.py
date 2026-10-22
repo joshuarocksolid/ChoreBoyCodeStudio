@@ -22,6 +22,8 @@ from app.features.form_builder.engine.codegen.logic_hooks import (
     load_expanders,
 )
 from app.features.form_builder.engine.codegen.names import (
+    check_cpp_name,
+    check_enum_set,
     header_module,
     python_attr,
     python_class_stem,
@@ -51,9 +53,12 @@ from app.features.form_builder.engine.ui4.nodes import (
     ActionGroupNode,
     ActionNode,
     ButtonGroupNode,
+    ConnectionNode,
     CustomWidgetNode,
+    LayoutItemNode,
     LayoutNode,
     Node,
+    ResourceNode,
     SpacerNode,
     WidgetNode,
 )
@@ -249,17 +254,29 @@ class _Emitter:
         severity = info.severity if info is not None else Severity.ERROR
         if severity is Severity.ERROR:
             self.refused = True
-        self.diagnostics.append(
-            FormDiagnostic(
-                code=code,
-                severity=severity,
-                message=message,
-                location=DiagnosticLocation(
-                    node_id=None if node is None else node.id,
-                    object_name=object_name,
-                ),
-                source="codegen",
-            )
+        self.diagnostics.append(self._diagnostic(code, severity, message, node, object_name))
+
+    def warn(self, code: str, message: str, *, node: Optional[Node] = None, object_name: Optional[str] = None) -> None:
+        """A warning does not refuse the module. Unknown references use this."""
+        self.diagnostics.append(self._diagnostic(code, Severity.WARNING, message, node, object_name))
+
+    def _diagnostic(
+        self,
+        code: str,
+        severity: Severity,
+        message: str,
+        node: Optional[Node],
+        object_name: Optional[str],
+    ) -> FormDiagnostic:
+        return FormDiagnostic(
+            code=code,
+            severity=severity,
+            message=message,
+            location=DiagnosticLocation(
+                node_id=None if node is None else node.id,
+                object_name=object_name,
+            ),
+            source="codegen",
         )
 
     def _flag(self, field_name: str, override: Optional[bool]) -> bool:
@@ -327,6 +344,101 @@ class _Emitter:
                 node=node,
                 object_name=name,
             )
+        self._reject_emit_names()
+
+    def _reject_name(self, text: str, node: Optional[Node] = None) -> None:
+        if text and check_cpp_name(text):
+            return
+        if not text:
+            return
+        self.diag(
+            "FB502",
+            'The name "%s" can\'t be used in the generated Python. Rename it, then save the form again.'
+            % text,
+            node=node,
+            object_name=text,
+        )
+
+    def _reject_enum(self, text: str, node: Optional[Node] = None) -> None:
+        if check_enum_set(text):
+            return
+        self.diag(
+            "FB502",
+            'The name "%s" can\'t be used in the generated Python. Rename it, then save the form again.'
+            % text,
+            node=node,
+            object_name=text,
+        )
+
+    def _reject_emit_names(self) -> None:
+        """Every token pasted into Python as a name has to be a C++ identifier."""
+        raw_class = self.doc.form_class_name()
+        if raw_class:
+            self._reject_name(raw_class, self.doc.ui)
+        for node in self.doc.iter_preorder():
+            if isinstance(node, (WidgetNode, LayoutNode, CustomWidgetNode)):
+                self._reject_name(node.class_name, node)
+            if isinstance(node, CustomWidgetNode) and node.extends:
+                self._reject_name(node.extends, node)
+            if isinstance(node, LayoutItemNode) and node.alignment:
+                self._reject_enum(node.alignment, node)
+            if isinstance(node, ConnectionNode):
+                signal = node.signal.split("(", 1)[0].strip()
+                slot = node.slot.split("(", 1)[0].strip()
+                self._reject_name(signal, node)
+                self._reject_name(slot, node)
+            if isinstance(node, ResourceNode) and node.location:
+                module = _resource_module(node.location, self.scope, self.options)
+                if not module or any(not part.isidentifier() for part in module.split(".")):
+                    self.diag(
+                        "FB502",
+                        'The resource "%s" can\'t be imported from the generated Python.' % node.location,
+                        node=node,
+                        object_name=node.location,
+                    )
+            for entry in node.properties() + node.attributes():
+                self._reject_name(entry.name, node)
+                self._reject_value(entry.value, node)
+
+    def _reject_value(self, value: Value, node: Optional[Node]) -> None:
+        if isinstance(value, (EnumValue, SetValue)):
+            self._reject_enum(value.text, node)
+            return
+        if isinstance(value, CursorShapeValue):
+            self._reject_name(value.name, node)
+            return
+        if isinstance(value, SizePolicyValue):
+            self._reject_name(value.hsizetype, node)
+            self._reject_name(value.vsizetype, node)
+            return
+        if isinstance(value, LocaleValue):
+            self._reject_name(value.language, node)
+            if value.country:
+                self._reject_name(value.country, node)
+            return
+        if isinstance(value, FontValue):
+            for part in (value.stylestrategy, value.hintingpreference, value.fontweight):
+                if part:
+                    self._reject_name(part, node)
+            return
+        if isinstance(value, BrushValue):
+            if value.brushstyle:
+                self._reject_name(value.brushstyle, node)
+            if value.gradient is not None:
+                self._reject_gradient(value.gradient, node)
+            return
+        if isinstance(value, PaletteValue):
+            for group in (value.active, value.inactive, value.disabled):
+                for role in group:
+                    if role.role:
+                        self._reject_name(role.role, node)
+                    self._reject_value(role.brush, node)
+            return
+
+    def _reject_gradient(self, value: GradientValue, node: Optional[Node]) -> None:
+        for part in (value.type, value.spread, value.coordinatemode):
+            if part:
+                self._reject_name(part, node)
 
     def _assign_names(self) -> None:
         # uic reserves the form parameter, then names each object in document
@@ -406,8 +518,20 @@ class _Emitter:
         return "self.%s" % self.names[widget.id]
 
     def ref_name(self, name: str) -> str:
-        mapped = self._xml_to_py.get(name, name)
-        if mapped == self.form_param or name == self.form_param:
+        """Python expression for an XML object name.
+
+        Only names assigned in this form are emitted. An unknown target is a
+        warning and an empty string, never the raw XML text.
+        """
+        mapped = self._xml_to_py.get(name)
+        if mapped is None:
+            self.warn(
+                "FB502",
+                'The name "%s" isn\'t on this form, so it was left out of the generated Python.' % name,
+                object_name=name,
+            )
+            return ""
+        if mapped == self.form_param:
             return self.form_param
         return "self.%s" % mapped
 
@@ -497,7 +621,11 @@ class _Emitter:
                 py_string(object_name),
                 fallback,
             )
-        if class_name in self.promoted_modules:
+        if not check_cpp_name(class_name):
+            self._reject_name(class_name)
+            used = "QWidget"
+            self.note_class(used)
+        elif class_name in self.promoted_modules:
             used = class_name
         elif "::" in class_name:
             used = class_name.replace("::", "_")
@@ -651,7 +779,11 @@ class _Emitter:
         ref = "self.%s" % name
         self.remember(name)
         cls = layout.class_name
-        if cls in self.promoted_modules:
+        if not check_cpp_name(cls):
+            self._reject_name(cls, layout)
+            used = "QVBoxLayout"
+            self.note_class(used)
+        elif cls in self.promoted_modules:
             used = cls
         else:
             used = cls.split("::")[-1]
@@ -804,15 +936,23 @@ class _Emitter:
                 continue
             if name == "separator":
                 self.add("%s.addSeparator()" % ref)
-            elif self.kinds.get(name) == "menu":
-                self.add("%s.addAction(self.%s.menuAction())" % (ref, name))
+                continue
+            target = self.ref_name(name)
+            if not target:
+                continue
+            mapped = self._xml_to_py.get(name, "")
+            if self.kinds.get(mapped) == "menu":
+                self.add("%s.addAction(%s.menuAction())" % (ref, target))
             else:
-                self.add("%s.addAction(self.%s)" % (ref, name))
+                self.add("%s.addAction(%s)" % (ref, target))
 
     def _emit_zorder(self, widget: WidgetNode) -> None:
         for name in widget.zorder:
-            if name:
-                self.add("%s.raise_()" % self.ref_name(name))
+            if not name:
+                continue
+            target = self.ref_name(name)
+            if target:
+                self.add("%s.raise_()" % target)
 
     def _emit_headers_and_items(self, widget: WidgetNode, ref: str) -> None:
         base = self.base(widget.class_name)
@@ -1079,6 +1219,9 @@ class _Emitter:
             self.note_class("QKeySequence")
         if prop.is_dynamic or prop.name == "cbcsSplitterSizes":
             return "%s.setProperty(%s, %s)" % (ref, py_string(prop.name), expr)
+        if not check_cpp_name(prop.name):
+            self._reject_name(prop.name, node)
+            return ""
         method = "set" + prop.name[:1].upper() + prop.name[1:]
         return "%s.%s(%s)" % (ref, method, expr)
 
@@ -1136,9 +1279,10 @@ class _Emitter:
                 value.second,
             )
         if isinstance(value, LocaleValue):
-            if value.country:
-                return [], "QLocale(QLocale.Language.%s, QLocale.Country.%s)" % (value.language, value.country)
-            return [], "QLocale(QLocale.Language.%s)" % value.language
+            language = value.language if check_cpp_name(value.language) else "C"
+            if value.country and check_cpp_name(value.country):
+                return [], "QLocale(QLocale.Language.%s, QLocale.Country.%s)" % (language, value.country)
+            return [], "QLocale(QLocale.Language.%s)" % language
         if isinstance(value, UrlValue):
             return [], "QUrl(%s)" % self.string_expr(value.string)
         if isinstance(value, CursorShapeValue):
@@ -1238,7 +1382,7 @@ class _Emitter:
                 lines.extend(self._brush(role.brush))
                 lines.append(
                     "palette.setBrush(QPalette.ColorGroup.%s, QPalette.ColorRole.%s, brush)"
-                    % (group, role.role.split("::")[-1])
+                    % (group, role.role.split("::")[-1] if check_cpp_name(role.role) else "Window")
                 )
         return lines
 
@@ -1290,7 +1434,9 @@ class _Emitter:
 
     def _emit_buddies(self) -> None:
         for ref, target in self.buddies:
-            self.add("%s.setBuddy(%s)" % (ref, self.ref_name(target)))
+            expr = self.ref_name(target)
+            if expr:
+                self.add("%s.setBuddy(%s)" % (ref, expr))
 
     def _emit_tab_order(self) -> None:
         stops = self.doc.ui.field("tabstops")
@@ -1301,9 +1447,12 @@ class _Emitter:
         for name in stops:
             if not isinstance(name, str) or not name:
                 continue
+            target = self.ref_name(name)
+            if not target:
+                continue
             if previous is not None:
-                self.add("QWidget.setTabOrder(%s, %s)" % (self.ref_name(previous), self.ref_name(name)))
-            previous = name
+                self.add("QWidget.setTabOrder(%s, %s)" % (previous, target))
+            previous = target
 
     def _emit_button_groups(self) -> None:
         for node in self.doc.ui.children("buttongroups"):
@@ -1323,7 +1472,9 @@ class _Emitter:
 
     def _emit_menu_binds(self) -> None:
         for action_name, menu_name in self.menu_binds:
-            self.add("self.%s.setMenu(self.%s)" % (action_name, menu_name))
+            target = self.ref_name(menu_name)
+            if target:
+                self.add("self.%s.setMenu(%s)" % (action_name, target))
 
     def _emit_connections(self) -> None:
         for node in self.doc.ui.children("connections"):
@@ -1337,10 +1488,14 @@ class _Emitter:
             slot_name = slot.split("(", 1)[0].strip()
             if not signal_name or not slot_name:
                 continue
-            self.add(
-                "%s.%s.connect(%s.%s)"
-                % (self.ref_name(sender), signal_name, self.ref_name(receiver), slot_name)
-            )
+            if not check_cpp_name(signal_name) or not check_cpp_name(slot_name):
+                self._reject_name(signal_name if not check_cpp_name(signal_name) else slot_name, node)
+                continue
+            sender_ref = self.ref_name(sender)
+            receiver_ref = self.ref_name(receiver)
+            if not sender_ref or not receiver_ref:
+                continue
+            self.add("%s.%s.connect(%s.%s)" % (sender_ref, signal_name, receiver_ref, slot_name))
 
     def _expand(self) -> List[Contribution]:
         ctx = CodegenContext(
@@ -1665,7 +1820,10 @@ def _num(value: Optional[float]) -> str:
 def _scoped(owner: str, enum: str, text: str) -> str:
     if "::" in text:
         return enum_expr(text)
-    return "%s.%s.%s" % (owner, enum, text.split("::")[-1])
+    leaf = text.split("::")[-1]
+    if not check_cpp_name(leaf):
+        return "0"
+    return "%s.%s.%s" % (owner, enum, leaf)
 
 
 def _text_values(node: Node) -> List[Value]:
