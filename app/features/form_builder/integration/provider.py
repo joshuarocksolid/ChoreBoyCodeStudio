@@ -28,10 +28,11 @@ class FormTabProvider:
         try:
             log = open_document_log(request.initial_text)
         except UiReadError as exc:
+            detail = plain_read_error(exc).rstrip(".")
             raise ProviderDeclined(
-                f"This form can't be opened in the form builder: {plain_read_error(exc)}."
+                f"This form can't be opened in the form builder: {detail}."
             ) from exc
-        return FormSurface(request, log, FormContentSource(log))
+        return FormSurface(request, log, FormContentSource(log, request.initial_text))
 
 
 __all__ = ["FormTabProvider"]

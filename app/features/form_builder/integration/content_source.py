@@ -1,8 +1,9 @@
 """Dirty state and lazy XML for one form tab (CONTRACTS.md sections 8.4 and 11.2).
 
 Qt-free. One ``CommandLog`` owns the document. This object is the shell's
-``TabContentSource``: visual mode serves memoized ``write_ui`` text, XML mode
-serves the text the user typed.
+``TabContentSource``. Visual mode serves the opened file text until the
+document revision changes, then memoized ``write_ui`` text. XML mode serves
+the text the user typed.
 """
 
 from __future__ import annotations
@@ -49,13 +50,23 @@ def plain_read_error(exc: BaseException) -> str:
 
 
 class FormContentSource:
-    """Visual mode by default. XML mode starts when View XML is shown."""
+    """Visual mode by default. XML mode starts when View XML is shown.
 
-    def __init__(self, log: CommandLog) -> None:
+    ``_saved_text`` is the last text written to disk. ``_applied_text`` is the
+    last text the document actually parsed. A rejected XML save updates only
+    the first, so Design still has to parse and an unchanged save does not
+    push an undo step.
+    """
+
+    def __init__(self, log: CommandLog, source_text: str) -> None:
         self._log = log
         self._cache = SerializationCache()
         self._mode: Mode = "visual"
-        self._baseline = ""
+        self._source_text = source_text
+        self._source_rev = log.document.revision
+        self._saved_text = source_text
+        self._applied_text = source_text
+        self._saved_applied = True
         self._typed = ""
         self._stamp = log.document.revision
         self._listeners: List[Callable[[], None]] = []
@@ -76,25 +87,31 @@ class FormContentSource:
     def current_text(self) -> str:
         if self._mode == "xml":
             return self._typed
+        if self._log.document.revision == self._source_rev:
+            return self._source_text
         return self._cache.text(self._log.document)
 
     def is_dirty(self) -> bool:
+        if self._mode == "xml" and self._typed != self._saved_text:
+            return True
         if self._log.is_dirty():
             return True
-        return self._mode == "xml" and self._typed != self._baseline
+        return self._mode == "visual" and not self._saved_applied
 
     def mark_saved(self, saved_text: str) -> None:
+        self._saved_text = saved_text
         if self._mode == "xml":
-            self._baseline = saved_text
             self._typed = saved_text
-            try:
-                self._log.execute(ReplaceDocument(saved_text, reason="xml_edit"))
-            except CommandRejected:
-                pass
+            if saved_text != self._applied_text:
+                self._apply_saved_xml(saved_text)
             else:
                 self._log.mark_saved()
+                self._saved_applied = True
+                self._remember_saved_text(saved_text)
         else:
             self._log.mark_saved()
+            self._saved_applied = True
+            self._remember_saved_text(saved_text)
         self._notify()
 
     def revision(self) -> int:
@@ -113,7 +130,7 @@ class FormContentSource:
 
     def enter_xml_mode(self, shown_text: str) -> None:
         self._mode = "xml"
-        self._baseline = shown_text
+        self._applied_text = shown_text
         self._typed = shown_text
 
     def xml_text_changed(self, text: str) -> None:
@@ -127,7 +144,7 @@ class FormContentSource:
         """None when Design is showing again. Otherwise the parse error, and XML stays."""
         if self._mode != "xml":
             return None
-        if self._typed == self._baseline:
+        if self._typed == self._applied_text:
             self._mode = "visual"
             self._notify()
             return None
@@ -135,6 +152,7 @@ class FormContentSource:
             self._log.execute(ReplaceDocument(self._typed, reason="xml_edit"))
         except CommandRejected as exc:
             return plain_read_error(exc)
+        self._applied_text = self._typed
         self._mode = "visual"
         self._notify()
         return None
@@ -145,8 +163,22 @@ class FormContentSource:
             return
         self._mode = "visual"
         self._typed = ""
-        self._baseline = ""
         self._notify()
+
+    def _apply_saved_xml(self, saved_text: str) -> None:
+        try:
+            self._log.execute(ReplaceDocument(saved_text, reason="xml_edit"))
+        except CommandRejected:
+            self._saved_applied = False
+            return
+        self._applied_text = saved_text
+        self._log.mark_saved()
+        self._saved_applied = True
+        self._remember_saved_text(saved_text)
+
+    def _remember_saved_text(self, saved_text: str) -> None:
+        self._source_text = saved_text
+        self._source_rev = self._log.document.revision
 
     def close(self) -> None:
         self._subscription.close()

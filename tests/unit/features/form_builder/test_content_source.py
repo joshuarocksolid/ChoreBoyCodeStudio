@@ -28,8 +28,8 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _source() -> FormContentSource:
-    return FormContentSource(open_document_log(_FORM))
+def _source(text: str = _FORM) -> FormContentSource:
+    return FormContentSource(open_document_log(text), text)
 
 
 def test_open_is_clean_and_does_not_serialize() -> None:
@@ -38,9 +38,9 @@ def test_open_is_clean_and_does_not_serialize() -> None:
     assert source.is_dirty() is False
     assert source.serialize_count == 0
     text = source.current_text()
-    assert source.serialize_count == 1
+    assert source.serialize_count == 0
     assert source.current_text() == text
-    assert source.serialize_count == 1
+    assert source.serialize_count == 0
     assert "okButton" in text
 
 
@@ -99,3 +99,39 @@ def test_mark_saved_clears_dirty_after_an_xml_edit() -> None:
 
     assert source.is_dirty() is False
     assert saved.encode("utf-8") == source.current_text().encode("utf-8")
+
+
+def test_saving_unchanged_xml_adds_no_undo_step() -> None:
+    source = _source()
+    shown = source.current_text()
+    source.enter_xml_mode(shown)
+
+    source.mark_saved(shown)
+
+    assert source.log.can_undo() is False
+    assert source.is_dirty() is False
+    assert source.mode == "xml"
+
+
+def test_saved_invalid_xml_still_blocks_design() -> None:
+    source = _source()
+    shown = source.current_text()
+    source.enter_xml_mode(shown)
+    source.xml_text_changed("<ui>")
+
+    source.mark_saved("<ui>")
+    error = source.leave_xml_mode()
+
+    assert error is not None
+    assert "line" in error
+    assert source.mode == "xml"
+    assert source.current_text() == "<ui>"
+    assert source.log.can_undo() is False
+    assert source.log.document.root.object_name == "Form"
+
+    source.cancel_xml_mode()
+
+    assert source.mode == "visual"
+    assert source.is_dirty() is True
+    assert source.current_text() == _FORM
+    assert source.log.document.root.object_name == "Form"

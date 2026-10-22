@@ -88,9 +88,24 @@ class EditorTabMarkdownWorkflow:
     def handle_markdown_toggle_preview_action(self) -> None:
         markdown_pane = self.active_markdown_pane()
         if markdown_pane is None:
+            toggle = self._source_view_toggle()
+            if toggle is not None:
+                toggle()
             return
         markdown_pane.toggle_preview()
         self._refresh_markdown_action_states()
+
+    def _source_view_toggle(self) -> Any | None:
+        active_tab = self._editor_manager.active_tab()
+        if active_tab is None:
+            return None
+        surface = self._host.tab_content_registry().surface_for_path(active_tab.file_path)
+        if surface is None:
+            return None
+        toggle = getattr(surface, "toggle_source_view", None)
+        if not callable(toggle):
+            return None
+        return toggle
 
     def refresh_markdown_action_states(self) -> None:
         menu_registry = self._host.menu_registry()
@@ -111,7 +126,7 @@ class EditorTabMarkdownWorkflow:
                     action.setChecked(current_mode == mode)
         toggle_action = menu_registry.action("shell.action.view.markdownTogglePreview")
         if toggle_action is not None:
-            toggle_action.setEnabled(enabled)
+            toggle_action.setEnabled(enabled or self._source_view_toggle() is not None)
 
     def append_context_menu_actions(
         self,

@@ -25,19 +25,39 @@ from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import CommandLog, Subscription
-from app.features.form_builder.integration.content_source import FormContentSource, plain_read_error
+from app.features.form_builder.integration.content_source import FormContentSource
 from app.features.form_builder.integration.structure import structure_rows
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
 XML_APPLY_HINT = "Edits here apply to the design when you switch back."
+XML_DISCARD_LABEL = "Discard XML edits"
+VIEW_XML_TOOLTIP = "View XML (Ctrl+Shift+V)"
 
 _RESTORE_REASON = {
     "draft": "draft",
     "history": "history",
     "external_reload": "reload",
 }
+
+
+def plain_banner_error(error: str) -> str:
+    """``Line 134: this form is not valid XML.`` from a reader sentence."""
+    message = error.strip()
+    line = ""
+    marker = " (line "
+    if message.endswith(")") and marker in message:
+        message, _, tail = message.rpartition(marker)
+        line = tail[:-1].strip()
+    message = message.strip().rstrip(".")
+    if message:
+        message = message[0].lower() + message[1:]
+    if line:
+        return f"Line {line}: {message}."
+    if not message:
+        return error
+    return message[0].upper() + message[1:] + "."
 
 
 class FormSurface(QWidget):
@@ -66,9 +86,11 @@ class FormSurface(QWidget):
         header.setSpacing(8)
         self._name = QLabel(self)
         self._name.setObjectName("formBuilder.name")
+        self._name.setAccessibleName("Form name")
         header.addWidget(self._name, 1)
         self._toggle = QPushButton("View XML", self)
         self._toggle.setObjectName("formBuilder.viewXml")
+        self._toggle.setToolTip(VIEW_XML_TOOLTIP)
         self._toggle.setCheckable(True)
         self._toggle.toggled.connect(self._on_toggled)
         header.addWidget(self._toggle, 0)
@@ -76,19 +98,28 @@ class FormSurface(QWidget):
 
         self._banner = QLabel(self)
         self._banner.setObjectName("formBuilder.xmlBanner")
+        self._banner.setAccessibleName("XML notice")
         self._banner.setWordWrap(True)
+        self._discard = QPushButton(XML_DISCARD_LABEL, self)
+        self._discard.setObjectName("formBuilder.discardXml")
+        self._discard.clicked.connect(self._discard_xml)
+        self._discard.hide()
         self._banner.hide()
         layout.addWidget(self._banner)
+        layout.addWidget(self._discard)
 
         self._stack = QStackedWidget(self)
         self._tree = QTreeWidget(self._stack)
         self._tree.setObjectName("formBuilder.structure")
+        self._tree.setAccessibleName("Form structure")
         self._tree.setHeaderHidden(True)
         self._tree.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._tree.setSelectionMode(QAbstractItemView.SingleSelection)
         self._stack.addWidget(self._tree)
         layout.addWidget(self._stack, 1)
 
+        self._tokens = request.theme
+        self._banner_is_error = False
         self._changes: Subscription = log.subscribe(self._on_log, priority=1)
         self._rebuild_tree()
         self._refresh_name()
@@ -110,9 +141,6 @@ class FormSurface(QWidget):
             f" background: {tokens.panel_bg}; color: {tokens.text_primary}; }}"
             "QLabel#formBuilder\\.name {"
             f" color: {tokens.text_primary}; background: transparent; }}"
-            "QLabel#formBuilder\\.xmlBanner {"
-            f" color: {tokens.text_primary}; background: {tokens.editor_bg};"
-            f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
             "QTreeWidget#formBuilder\\.structure {"
             f" background: {tokens.editor_bg}; color: {tokens.text_primary};"
             f" border: 1px solid {tokens.border}; }}"
@@ -126,6 +154,8 @@ class FormSurface(QWidget):
             "QPushButton#formBuilder\\.viewXml:focus {"
             f" border: {width}px solid {tokens.accent}; }}"
         )
+        self._tokens = tokens
+        self._paint_banner()
         editor = self._editor
         if editor is not None:
             editor.apply_theme(tokens)
@@ -153,7 +183,7 @@ class FormSurface(QWidget):
             self._toggle.blockSignals(True)
             self._toggle.setChecked(False)
             self._toggle.blockSignals(False)
-            self._banner.hide()
+            self._hide_banner()
             self._stack.setCurrentWidget(self._tree)
         self._rebuild_tree()
         self._refresh_name()
@@ -164,6 +194,10 @@ class FormSurface(QWidget):
     def file_path_changed(self, new_path: str) -> None:
         self._path = new_path
         self._refresh_name()
+
+    def toggle_source_view(self) -> None:
+        """Switch Design and View XML. The shell's Ctrl+Shift+V action calls this."""
+        self._toggle.setChecked(not self._toggle.isChecked())
 
     def focus_primary(self) -> None:
         editor = self._editor
@@ -200,8 +234,7 @@ class FormSurface(QWidget):
             shown = editor.toPlainText()
             editor.blockSignals(False)
             self._source.enter_xml_mode(shown)
-            self._banner.setText(XML_APPLY_HINT)
-            self._banner.show()
+            self._show_banner(XML_APPLY_HINT, error=False)
         self._stack.setCurrentWidget(editor)
         editor.setFocus()
 
@@ -214,14 +247,60 @@ class FormSurface(QWidget):
             self._toggle.blockSignals(True)
             self._toggle.setChecked(True)
             self._toggle.blockSignals(False)
-            self._banner.setText(error)
-            self._banner.show()
+            self._show_banner(plain_banner_error(error), error=True)
             return
-        self._banner.hide()
+        self._hide_banner()
         self._stack.setCurrentWidget(self._tree)
         self._rebuild_tree()
         self._refresh_name()
         self._tree.setFocus()
+
+    def _discard_xml(self) -> None:
+        self._source.cancel_xml_mode()
+        self._toggle.blockSignals(True)
+        self._toggle.setChecked(False)
+        self._toggle.blockSignals(False)
+        self._hide_banner()
+        self._stack.setCurrentWidget(self._tree)
+        self._rebuild_tree()
+        self._refresh_name()
+        self._tree.setFocus()
+
+    def _show_banner(self, text: str, *, error: bool) -> None:
+        self._banner.setText(text)
+        self._banner_is_error = error
+        self._paint_banner()
+        self._banner.show()
+        self._discard.setVisible(error)
+
+    def _hide_banner(self) -> None:
+        self._banner_is_error = False
+        self._banner.hide()
+        self._discard.hide()
+
+    def _paint_banner(self) -> None:
+        tokens = self._tokens
+        if tokens is None:
+            return
+        width = tokens.focus_border_width
+        if self._banner_is_error:
+            color = tokens.diag_error_color or tokens.accent
+            border = color
+        else:
+            color = tokens.text_primary
+            border = tokens.border
+        self._banner.setStyleSheet(
+            "QLabel#formBuilder\\.xmlBanner {"
+            f" color: {color}; background: {tokens.editor_bg};"
+            f" border: 1px solid {border}; padding: 4px 8px; }}"
+        )
+        self._discard.setStyleSheet(
+            "QPushButton#formBuilder\\.discardXml {"
+            f" color: {tokens.text_primary}; background: {tokens.input_bg};"
+            f" border: 1px solid {border}; padding: 2px 8px; }}"
+            "QPushButton#formBuilder\\.discardXml:focus {"
+            f" border: {width}px solid {tokens.accent}; }}"
+        )
 
     def _ensure_editor(self) -> CodeEditorWidget:
         editor = self._editor
@@ -269,4 +348,4 @@ class FormSurface(QWidget):
         self._name.setText(stem or "Form")
 
 
-__all__ = ["XML_APPLY_HINT", "FormSurface"]
+__all__ = ["XML_APPLY_HINT", "XML_DISCARD_LABEL", "VIEW_XML_TOOLTIP", "FormSurface"]
