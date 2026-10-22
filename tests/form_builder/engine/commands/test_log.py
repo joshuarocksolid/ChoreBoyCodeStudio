@@ -17,7 +17,7 @@ from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
-from app.features.form_builder.engine.ui4.values import StringValue
+from app.features.form_builder.engine.ui4.values import SetValue, StringValue
 from app.features.form_builder.engine.ui4.spec import Fragment
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log, prop_text, saved
 
@@ -63,6 +63,67 @@ def test_net_nil_merge_pops_the_step_and_stays_clean() -> None:
     assert not log.is_dirty()
     assert prop_text(doc, "okButton") == "OK"
     assert len(seen) == 2
+
+
+ORDERED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="QPushButton" name="okButton">
+   <property name="text"><string>OK</string></property>
+   <property name="geometry">
+    <rect><x>0</x><y>0</y><width>10</width><height>10</height></rect>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+SPELLED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="QPushButton" name="okButton">
+   <property name="alignment"><set>Qt::AlignLeft</set></property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def test_reset_then_set_keeps_the_step_when_property_order_changes() -> None:
+    log = open_log(ORDERED)
+    doc = log.document
+    original = saved(doc)
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "text", None, merge_token="g"))
+    log.execute(SetProperty(owner, "text", StringValue("OK"), merge_token="g"))
+    assert log.can_undo()
+    assert log.is_dirty()
+    assert log.undo()
+    assert saved(doc) == original
+    assert not log.is_dirty()
+
+
+def test_reset_then_set_keeps_a_spelling_change() -> None:
+    log = open_log(SPELLED)
+    doc = log.document
+    original = saved(doc)
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "alignment", None, merge_token="g"))
+    log.execute(
+        SetProperty(owner, "alignment", SetValue("Qt::AlignmentFlag::AlignLeft"), merge_token="g")
+    )
+    assert log.can_undo()
+    assert log.is_dirty()
+    assert "Qt::AlignmentFlag::AlignLeft" in saved(doc)
+    assert log.undo()
+    assert saved(doc) == original
 
 
 def test_continue_gesture_absorbs_a_different_merge_key() -> None:

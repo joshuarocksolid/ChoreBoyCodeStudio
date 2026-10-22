@@ -42,7 +42,6 @@ from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.ui4 import mutate
 from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
-from app.features.form_builder.engine.ui4.values import semantic_equal
 
 logger = logging.getLogger(__name__)
 
@@ -523,7 +522,7 @@ def _present(doc: UiDocument, snapshot: SelectionSnapshot) -> SelectionSnapshot:
 
 
 def _is_net_nil(entry: Entry, doc: UiDocument) -> bool:
-    """True when the step only edited properties or fields and each is back where it started."""
+    """True when every property and field is back at its first inverse, exactly."""
     for op in entry.ops:
         if isinstance(op, (InsertNodeOp, RemoveNodeOp, MoveNodeOp, ReplaceRootOp)):
             return False
@@ -542,21 +541,24 @@ def _is_net_nil(entry: Entry, doc: UiDocument) -> bool:
         node = doc.get(owner)
         if node is None:
             return False
-        current = node.prop(name) if kind == "property" else node.attr(name)
-        if not _same_property(current, inverse.entry):
+        entries = node.properties() if kind == "property" else node.attributes()
+        found = None
+        found_index = None
+        for index, item in enumerate(entries):
+            if item.name == name:
+                found = item
+                found_index = index
+                break
+        if inverse.entry is None:
+            if found is not None:
+                return False
+            continue
+        if found != inverse.entry:
+            return False
+        if inverse.index is not None and found_index != inverse.index:
             return False
     for (node_id, field_name), inverse in first_field.items():
         node = doc.get(node_id)
         if node is None or node.field(field_name) != inverse.value:
             return False
     return True
-
-
-def _same_property(current: Any, restored: Any) -> bool:
-    if current is None or restored is None:
-        return current is restored
-    return (
-        current.stdset == restored.stdset
-        and current.extra_attrs == restored.extra_attrs
-        and semantic_equal(current.value, restored.value)
-    )
