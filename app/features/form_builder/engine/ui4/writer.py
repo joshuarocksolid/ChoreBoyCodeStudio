@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, IdAllocator, NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -194,11 +194,22 @@ class _Writer:
         if element.tag == "":
             for child in element.children:
                 if isinstance(child, str):
-                    self._raw_text_line(indent, child)
+                    if child.strip():
+                        self._raw_text_line(indent, child)
+                elif isinstance(child, OpaqueComment):
+                    self.lines.append((" " * indent) + "<!--%s-->" % child.text)
+                elif isinstance(child, OpaquePI):
+                    self.lines.append((" " * indent) + "<?%s %s?>" % (child.target, child.data))
+                elif isinstance(child, OpaqueElement):
+                    self.opaque(child, indent)
             return
         attrs = "".join(' %s="%s"' % (key, _esc_attr(value)) for key, value in element.attrs)
         if not element.children:
             self._empty(indent, element.tag, attrs)
+            return
+        if all(isinstance(child, str) for child in element.children):
+            text = "".join(child for child in element.children if isinstance(child, str))
+            self.lines.append("%s<%s%s>%s</%s>" % (" " * indent, element.tag, attrs, _esc_text(text), element.tag))
             return
         if _mixed(element):
             self._mixed(element, indent, attrs)
@@ -350,7 +361,7 @@ class _Writer:
         self._pixmap_tag("pixmap", item, indent, duplicate_path=False)
 
     def _pixmap_tag(self, tag: str, item: ResourcePixmap, indent: int, duplicate_path: bool) -> None:
-        attrs = _pixmap_attrs(item)
+        attrs = _optional_str_attrs((("resource", item.resource), ("alias", item.alias)))
         if item.path == "" and not duplicate_path:
             self._empty(indent, tag, attrs)
             return
@@ -362,23 +373,26 @@ class _Writer:
         self.lines.append("%s<%s%s>%s</%s>%s" % (prefix, tag, attrs, path, tag, path))
 
     def _iconset(self, item: IconSetValue, indent: int) -> None:
-        attrs = _optional_attr("theme", item.theme) + _optional_attr("resource", item.resource)
-        states = [(name, getattr(item, name)) for name in ICON_STATES]
-        present = [(name, pixmap) for name, pixmap in states if isinstance(pixmap, ResourcePixmap)]
+        attrs = _optional_str_attrs((("theme", item.theme), ("resource", item.resource)))
+        present: List[Tuple[str, ResourcePixmap]] = []
+        for name in ICON_STATES:
+            pixmap = getattr(item, name)
+            if isinstance(pixmap, ResourcePixmap):
+                present.append((name, pixmap))
         if not present:
             if item.text is None:
                 self._empty(indent, "iconset", attrs)
                 return
             self._text_element("iconset", item.text, indent, attrs)
             return
-        # Legacy text is only the no-state form. Each state already carries its path.
+        # Each state already carries its path. The repeated path is the Designer trailer.
         self._open(indent, "iconset", attrs)
         for name, pixmap in present:
             self._pixmap_tag(name, pixmap, indent + 1, duplicate_path=True)
         self._close(indent, "iconset")
 
     def _brush(self, item: BrushValue, indent: int) -> None:
-        attrs = _optional_attr("brushstyle", item.brushstyle)
+        attrs = _optional_str_attrs((("brushstyle", item.brushstyle),))
         if item.color is None and item.texture is None and item.gradient is None:
             self._empty(indent, "brush", attrs)
             return
@@ -386,7 +400,7 @@ class _Writer:
         if item.color is not None:
             self.value(item.color, indent + 1)
         if item.texture is not None:
-            self._open(indent + 1, "texture", _optional_attr("name", item.texture_name))
+            self._open(indent + 1, "texture", _optional_str_attrs((("name", item.texture_name),)))
             self._pixmap(item.texture, indent + 2)
             self._close(indent + 1, "texture")
         if item.gradient is not None:
@@ -394,7 +408,7 @@ class _Writer:
         self._close(indent, "brush")
 
     def _gradient(self, item: GradientValue, indent: int) -> None:
-        attrs = ""
+        pairs: List[Tuple[str, str]] = []
         for name in (
             "type",
             "spread",
@@ -411,18 +425,21 @@ class _Writer:
             "angle",
         ):
             value = getattr(item, name)
-            if value is None:
-                continue
             if isinstance(value, float):
-                attrs += _optional_attr(name, format_double(value))
-            else:
-                attrs += _optional_attr(name, str(value))
+                pairs.append((name, format_double(value)))
+            elif isinstance(value, str):
+                pairs.append((name, value))
+        attrs = _optional_str_attrs(pairs)
         if not item.stops:
             self._empty(indent, "gradient", attrs)
             return
         self._open(indent, "gradient", attrs)
         for stop in item.stops:
-            self._open(indent + 1, "gradientStop", _optional_attr("position", format_double(stop.position)))
+            self._open(
+                indent + 1,
+                "gradientStop",
+                _optional_str_attrs((("position", format_double(stop.position)),)),
+            )
             self.value(stop.color, indent + 2)
             self._close(indent + 1, "gradientStop")
         self._close(indent, "gradient")
@@ -436,7 +453,7 @@ class _Writer:
                 continue
             self._open(indent + 1, name, "")
             for role in roles:
-                self._open(indent + 2, "colorrole", _optional_attr("role", role.role))
+                self._open(indent + 2, "colorrole", _optional_str_attrs((("role", role.role),)))
                 self._brush(role.brush, indent + 3)
                 self._close(indent + 2, "colorrole")
             self._close(indent + 1, name)
@@ -488,16 +505,19 @@ class _Writer:
             if not children and group not in present:
                 self._drain_all(buckets, group, indent)
                 return
-            if not children and not _group_pending(buckets, group):
+            inner = "%s:inner" % group
+            if not children and not _group_pending(buckets, inner):
                 self._empty(indent, slot.wrapper, "")
+                self._drain_all(buckets, group, indent)
                 return
             self._open(indent, slot.wrapper, "")
-            self._flush(buckets, (group, 0), indent + 1)
+            self._flush(buckets, (inner, 0), indent + 1)
             for index, child in enumerate(children, start=1):
                 self.node(child, indent + 1)
-                self._flush(buckets, (group, index), indent + 1)
-            self._drain_group(buckets, group, len(children), indent + 1)
+                self._flush(buckets, (inner, index), indent + 1)
+            self._drain_group(buckets, inner, len(children), indent + 1)
             self._close(indent, slot.wrapper)
+            self._drain_all(buckets, group, indent)
             return
         self._flush(buckets, (group, 0), indent)
         for index, child in enumerate(children, start=1):
@@ -604,6 +624,11 @@ class _Writer:
         if entry.stdset is not None:
             attrs += ' stdset="%s"' % _esc_attr(entry.stdset)
         attrs += "".join(' %s="%s"' % (key, _esc_attr(value)) for key, value in entry.extra_attrs)
+        value = entry.value
+        if isinstance(value, OpaqueValue) and value.element.tag == "" and not value.element.children:
+            # ``<property name="x"/>`` kept as written: no content, so no open element (8.2.4).
+            self._empty(indent, tag, attrs)
+            return
         self._open(indent, tag, attrs)
         self.value(entry.value, indent + 1)
         self._close(indent, tag)
@@ -694,8 +719,7 @@ class _Writer:
 
     def _empty(self, indent: int, tag: str, attrs: str) -> None:
         if _empty_form(tag) == "pair":
-            self._open(indent, tag, attrs)
-            self._close(indent, tag)
+            self.lines.append("%s<%s%s></%s>" % (" " * indent, tag, attrs, tag))
             return
         self.lines.append("%s<%s%s/>" % (" " * indent, tag, attrs))
 
@@ -794,7 +818,7 @@ def _group_pending(buckets: Dict[Tuple[str, int], List[OpaqueNode]], group: str)
     return any(key[0] == group for key in buckets)
 
 
-def _string_attrs(item: StringValue | StringListValue) -> str:
+def _string_attrs(item: Union[StringValue, StringListValue]) -> str:
     parts: List[str] = []
     if item.notr is not None:
         parts.append(' notr="%s"' % format_bool(item.notr))
@@ -836,6 +860,9 @@ def _inline_opaque(element: OpaqueElement) -> str:
     attrs = "".join(' %s="%s"' % (key, _esc_attr(value)) for key, value in element.attrs)
     if not element.children:
         return "<%s%s/>" % (element.tag, attrs)
+    if all(isinstance(child, str) for child in element.children):
+        text = "".join(child for child in element.children if isinstance(child, str))
+        return "<%s%s>%s</%s>" % (element.tag, attrs, _esc_text(text), element.tag)
     if element.tag == "":
         return "".join(_esc_text(child) for child in element.children if isinstance(child, str))
     parts = ["<%s%s>" % (element.tag, attrs)]
@@ -991,16 +1018,6 @@ def _esc_text(text: str) -> str:
 
 def _esc_attr(text: str) -> str:
     return _esc_text(text).replace("\t", "&#9;").replace("\n", "&#10;")
-
-
-def _optional_attr(name: str, value: Optional[str]) -> str:
-    if value is None:
-        return ""
-    return ' %s="%s"' % (name, _esc_attr(value))
-
-
-def _pixmap_attrs(item: ResourcePixmap) -> str:
-    return _optional_attr("resource", item.resource) + _optional_attr("alias", item.alias)
 
 
 def _fragment_spec(fragment: Fragment, allocator: IdAllocator) -> NodeSpec:

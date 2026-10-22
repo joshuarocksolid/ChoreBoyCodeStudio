@@ -1,4 +1,4 @@
-"""Read plus write of a 1000-widget form stays under 50 ms."""
+"""Section 12 budgets for a realistic 300-widget form, measured as CPU time."""
 from __future__ import annotations
 
 import os
@@ -11,45 +11,58 @@ from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
 
 
-def _thousand() -> str:
-    children = []
-    for index in range(1000):
-        children.append(
-            '<widget class="QPushButton" name="button%s">'
-            '<property name="text"><string>Button %s</string></property>'
-            "</widget>" % (index, index)
+def _realistic() -> str:
+    items = []
+    for index in range(300):
+        items.append(
+            '<item row="%d" column="0">'
+            '<widget class="QLineEdit" name="e%d">'
+            '<property name="sizePolicy">'
+            '<sizepolicy hsizetype="Expanding" vsizetype="Fixed">'
+            "<horstretch>0</horstretch><verstretch>0</verstretch>"
+            "</sizepolicy></property>"
+            '<property name="minimumSize"><size><width>10</width><height>20</height></size></property>'
+            '<property name="font"><font><family>Sans</family><pointsize>10</pointsize>'
+            "<bold>true</bold></font></property>"
+            '<property name="toolTip"><string>tip %d</string></property>'
+            '<property name="text"><string>t</string></property>'
+            '<property name="maxLength"><number>32</number></property>'
+            "</widget></item>" % (index, index, index)
         )
     return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<ui version="4.0">\n'
-        ' <class>Form</class>\n'
-        ' <widget class="QWidget" name="Form">\n'
-        "%s\n"
-        " </widget>\n"
-        "</ui>\n" % "\n".join(children)
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ui version="4.0"><class>Form</class>'
+        '<widget class="QWidget" name="Form">'
+        '<layout class="QGridLayout" name="grid">%s</layout>'
+        "</widget><resources/><connections/></ui>" % "".join(items)
     )
+
+
+def _p95(samples: list) -> float:
+    ordered = sorted(samples[2:])
+    return ordered[max(0, int(len(ordered) * 0.95) - 1)]
 
 
 @pytest.mark.perf
-def test_thousand_widget_round_trip_is_under_50ms() -> None:
-    text = _thousand()
-    cpu_samples = []
-    wall_samples = []
+def test_realistic_form_meets_the_section_12_budgets() -> None:
+    text = _realistic()
+    document = read_ui(text, allocator=IdAllocator()).document
+    read_samples = []
+    write_samples = []
     for _turn in range(17):
-        wall_started = time.perf_counter()
-        cpu_started = time.process_time()
-        document = read_ui(text, allocator=IdAllocator()).document
+        started = time.process_time()
+        read_ui(text, allocator=IdAllocator())
+        read_samples.append(time.process_time() - started)
+        started = time.process_time()
         written = write_ui(document).text
-        cpu_samples.append(time.process_time() - cpu_started)
-        wall_samples.append(time.perf_counter() - wall_started)
-        assert "button999" in written
-    cpu = sorted(cpu_samples[2:])
-    wall = sorted(wall_samples[2:])
-    cpu_p95 = cpu[max(0, int(len(cpu) * 0.95) - 1)]
-    wall_p95 = wall[max(0, int(len(wall) * 0.95) - 1)]
+        write_samples.append(time.process_time() - started)
+        assert "e299" in written
+    read_p95 = _p95(read_samples)
+    write_p95 = _p95(write_samples)
     load = os.getloadavg()
     print(
-        "thousand-widget cpu_p95 %.4fs wall_p95 %.4fs loadavg %s"
-        % (cpu_p95, wall_p95, load)
+        "realistic-300 read_cpu_p95 %.4fs write_cpu_p95 %.4fs loadavg %s"
+        % (read_p95, write_p95, load)
     )
-    assert cpu_p95 < 0.050, "cpu_p95 %.4fs wall_p95 %.4fs loadavg %s" % (cpu_p95, wall_p95, load)
+    assert read_p95 < 0.025, "read %.4fs write %.4fs loadavg %s" % (read_p95, write_p95, load)
+    assert write_p95 < 0.010, "read %.4fs write %.4fs loadavg %s" % (read_p95, write_p95, load)

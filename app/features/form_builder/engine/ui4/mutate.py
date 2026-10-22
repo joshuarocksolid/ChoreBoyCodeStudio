@@ -46,9 +46,10 @@ def load_spec(spec: NodeSpec) -> UiDocument:
 
 
 def apply(doc: UiDocument, op: Op) -> Op:
-    """Apply ``op`` and return its inverse. O(changed): O(1) for property and
-    field ops, O(subtree) for insert/remove (index maintenance), O(siblings) for
-    list splicing, O(form) only for ReplaceRootOp."""
+    """Apply ``op`` and return its inverse.
+
+    Today every op rebuilds the whole document. M1.2 makes this O(changed).
+    """
     if isinstance(op, InsertNodeOp):
         inverse = _insert(doc, op)
     elif isinstance(op, RemoveNodeOp):
@@ -76,6 +77,7 @@ def _insert(doc: UiDocument, op: InsertNodeOp) -> Op:
     if slot.max_len and len(kids) >= slot.max_len:
         raise OpError("slot %s already holds its only child" % (op.slot,))
     _require_fresh_ids(doc, op.spec)
+    _reject_illegal_text(op.spec)
     if op.spec.id is None:
         raise OpError("inserted spec has no id")
     updated = _edit(doc.to_spec(), op.parent, lambda spec: _splice(spec, op.slot, op.index, op.spec))

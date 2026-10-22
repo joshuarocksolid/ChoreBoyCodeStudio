@@ -78,6 +78,85 @@ def _load_tree(text: str, qapp: object):
     return widget, error
 
 
+def _connection_list(document: object) -> tuple:
+    rows = []
+    for node in document.connections():
+        rows.append(
+            (
+                node.field("sender"),
+                node.field("signal"),
+                node.field("receiver"),
+                node.field("slot"),
+                node.field("hints"),
+            )
+        )
+    return tuple(rows)
+
+
+def _same_form(original: str, saved: str, qapp: object) -> bool:
+    loaded = read_ui(original, allocator=IdAllocator()).document
+    rewritten = read_ui(saved, allocator=IdAllocator()).document
+    if loaded.structure_fingerprint() != rewritten.structure_fingerprint():
+        return False
+    if _connection_list(loaded) != _connection_list(rewritten):
+        return False
+    before, _before_error = _load_tree(original, qapp)
+    after, _after_error = _load_tree(saved, qapp)
+    try:
+        if before is None or after is None:
+            return (before is None) == (after is None)
+        return _snapshot(before) == _snapshot(after)
+    finally:
+        if before is not None and hasattr(before, "deleteLater"):
+            before.deleteLater()
+        if after is not None and hasattr(after, "deleteLater"):
+            after.deleteLater()
+
+
+def test_writer_that_drops_connections_fails_the_oracle(qapp: object) -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="lay">
+   <property name="spacing"><number>7</number></property>
+   <item>
+    <spacer name="gap">
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <property name="sizeType"><enum>QSizePolicy::Expanding</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <connections>
+  <connection>
+   <sender>Form</sender>
+   <signal>customContextMenuRequested(QPoint)</signal>
+   <receiver>Form</receiver>
+   <slot>update()</slot>
+  </connection>
+ </connections>
+</ui>
+"""
+    from app.features.form_builder.engine.ui4 import writer as writer_module
+
+    loaded = read_ui(text, allocator=IdAllocator())
+    original = writer_module._Writer._group
+
+    def drop(self: object, node: object, group: str, indent: int, buckets: object) -> None:
+        if getattr(node, "kind", "") == "ui" and group == "connections":
+            return None
+        return original(self, node, group, indent, buckets)  # type: ignore[arg-type]
+
+    writer_module._Writer._group = drop
+    try:
+        saved = write_ui(loaded.document).text
+    finally:
+        writer_module._Writer._group = original
+    assert saved != write_ui(loaded.document).text
+    assert not _same_form(text, saved, qapp)
+
+
 def _snapshot(widget: object) -> object:
     from app.qt.QtWidgets import QGridLayout, QWidget
 
@@ -99,28 +178,56 @@ def _snapshot(widget: object) -> object:
         }
 
     def _layout(layout: object) -> dict:
+        from app.qt.QtWidgets import QBoxLayout
+
         items = []
         count = layout.count()
         grid = isinstance(layout, QGridLayout)
+        margins = layout.contentsMargins()
         for index in range(count):
             item = layout.itemAt(index)
-            row = column = 0
+            row = column = row_span = col_span = 0
             if grid:
-                row, column, _row_span, _col_span = layout.getItemPosition(index)
+                row, column, row_span, col_span = layout.getItemPosition(index)
             else:
                 column = index
             child = item.widget()
             nested = item.layout()
+            spacer = item.spacerItem()
+            spacer_info = None
+            if spacer is not None:
+                hint = spacer.sizeHint()
+                policy = spacer.sizePolicy()
+                spacer_info = {
+                    "size": (hint.width(), hint.height()),
+                    "policy": (_as_int(policy.horizontalPolicy()), _as_int(policy.verticalPolicy())),
+                }
             items.append(
                 {
                     "row": row,
                     "column": column,
-                    "spacer": item.spacerItem() is not None,
+                    "row_span": row_span,
+                    "col_span": col_span,
+                    "spacer": spacer_info,
                     "widget": walk(child) if isinstance(child, QWidget) else None,
                     "layout": _layout(nested) if nested is not None else None,
                 }
             )
-        return {"class": layout.metaObject().className(), "items": items}
+        stretch = None
+        if isinstance(layout, QBoxLayout):
+            stretch = tuple(layout.stretch(index) for index in range(count))
+        elif grid:
+            stretch = (
+                tuple(layout.rowStretch(index) for index in range(layout.rowCount())),
+                tuple(layout.columnStretch(index) for index in range(layout.columnCount())),
+            )
+        return {
+            "class": layout.metaObject().className(),
+            "margins": (margins.left(), margins.top(), margins.right(), margins.bottom()),
+            "spacing": layout.spacing(),
+            "stretch": stretch,
+            "items": items,
+        }
 
     return walk(widget)
 
@@ -243,8 +350,11 @@ def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:
     except UiReadError as exc:
         pytest.fail("%s refused by the reader: %s %s" % (path, exc.code, exc))
     saved = write_ui(loaded.document).text
-    again = write_ui(read_ui(saved, allocator=IdAllocator()).document).text
+    rewritten = read_ui(saved, allocator=IdAllocator())
+    again = write_ui(rewritten.document).text
     assert again == saved
+    assert rewritten.document.structure_fingerprint() == loaded.document.structure_fingerprint()
+    assert _connection_list(rewritten.document) == _connection_list(loaded.document)
     before, before_error = _load_tree(original, qapp)
     after, after_error = _load_tree(saved, qapp)
     if before is None or after is None:
