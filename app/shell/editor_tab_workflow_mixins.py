@@ -108,14 +108,14 @@ class EditorTabLifecycleDelegates:
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
         self._lifecycle_workflow.release_editor_widget(widget)
 
-    def release_tab_content(self, file_path: str) -> None:
-        self._lifecycle_workflow.release_tab_content(file_path)
+    def release_tab_content(self, file_path: str, buffer_id: str | None = None) -> None:
+        self._lifecycle_workflow.release_tab_content(file_path, buffer_id=buffer_id)
 
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
 
-    def remove_tab_widget_for_buffer_id(self, buffer_id: str) -> None:
-        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id)
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str, file_path: str | None = None) -> None:
+        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id, file_path=file_path)
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._editor_tabs_coordinator.refresh_tab_presentation(file_path)

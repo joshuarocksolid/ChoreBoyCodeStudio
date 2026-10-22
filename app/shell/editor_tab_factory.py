@@ -93,8 +93,12 @@ class EditorTabFactory:
         if window._editor_tabs_widget is None:
             return False
 
-        if opened_result.closed_preview_tab is not None:
-            window._editor_tab_workflow.remove_tab_widget_for_buffer_id(opened_result.closed_preview_tab.buffer_id)
+        closed_preview = opened_result.closed_preview_tab
+        if closed_preview is not None:
+            window._editor_tab_workflow.remove_tab_widget_for_buffer_id(
+                closed_preview.buffer_id,
+                file_path=closed_preview.file_path,
+            )
 
         if opened_result.was_already_open:
             groups = getattr(window, "_editor_groups", None)

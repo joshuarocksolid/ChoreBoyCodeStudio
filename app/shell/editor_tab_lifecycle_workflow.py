@@ -58,15 +58,21 @@ class EditorTabLifecycleWorkflow:
             return
         widget.deleteLater()
 
-    def release_tab_content(self, file_path: str) -> None:
-        """Release whatever owns ``file_path``, whether or not a source editor exists."""
+    def release_tab_content(self, file_path: str, buffer_id: str | None = None) -> None:
+        """Release whatever owns ``file_path``, whether or not a source editor exists.
+
+        ``buffer_id`` is the buffer to pop when the editor manager has already
+        dropped the tab, which is what a preview replacement does.
+        """
         self._host.local_history_forget_source(file_path)
         registry = self._host.tab_content_registry()
         surface = registry.unbind(file_path)
-        tab = self._editor_manager.get_tab(file_path)
+        if buffer_id is None:
+            tab = self._editor_manager.get_tab(file_path)
+            buffer_id = None if tab is None else tab.buffer_id
         widget = None
-        if tab is not None:
-            widget = self._host.workspace_controller().pop_editor(tab.buffer_id)
+        if buffer_id is not None:
+            widget = self._host.workspace_controller().pop_editor(buffer_id)
         if widget is not None and self._host.debug_execution_editor() is widget:
             self._host.clear_debug_execution_indicator()
         if surface is not None:
@@ -75,7 +81,7 @@ class EditorTabLifecycleWorkflow:
         if widget is not None:
             widget.deleteLater()
 
-    def remove_tab_widget_for_buffer_id(self, buffer_id: str) -> None:
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str, file_path: str | None = None) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
@@ -93,8 +99,9 @@ class EditorTabLifecycleWorkflow:
         if not removed:
             return
         tab = self._editor_manager.get_tab_by_id(buffer_id)
-        if tab is not None:
-            self.release_tab_content(tab.file_path)
+        release_path = tab.file_path if tab is not None else file_path
+        if release_path is not None:
+            self.release_tab_content(release_path, buffer_id=buffer_id)
         else:
             widget = self._host.workspace_controller().pop_editor(buffer_id)
             if widget is not None:
