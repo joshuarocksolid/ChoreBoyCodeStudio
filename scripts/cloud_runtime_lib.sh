@@ -289,16 +289,37 @@ EOF
   printf '%s\n' "$wrapper"
 }
 
+cloud_resolve_py39() {
+  # ~/opt/freecad/AppRun on this image execs freecadcmd, which rejects --json.
+  # The conda prefix's python is 3.9 and imports PySide6, so the py39 lane
+  # can run pytest and the signal-table probe.
+  local prefix python
+  prefix="${FREECAD_DEV_PREFIX:-$(cloud_home)/opt/freecad}"
+  python="${prefix}/bin/python"
+  if [[ -x "$python" ]] && "$python" -c 'import PySide6' >/dev/null 2>&1; then
+    printf '%s\n' "$python"
+    return 0
+  fi
+  return 1
+}
+
 cloud_write_env_files() {
   local py311="$1" uic="$2" rcc="$3"
-  local home artifacts tmp
+  local home artifacts tmp py39
   home="$(cloud_home)"
   artifacts="${CBCS_ARTIFACTS_DIR:-${home}/cbcs_artifacts}"
+  py39=""
+  if py39="$(cloud_resolve_py39)"; then
+    cloud_log "Python 3.9 with PySide6: ${py39}"
+  else
+    cloud_log "no Python 3.9 with PySide6; CBCS_FB_PY39 left empty and the py39 lane skips"
+  fi
   tmp="$(mktemp)"
   cat >"$tmp" <<EOF
 FREECAD_APPRUN=${FREECAD_10_DEST}/AppRun
 CBCS_FB_APPRUN_11=${FREECAD_11_DEST}/AppRun
 CBCS_FB_PY311=${py311}
+CBCS_FB_PY39=${py39}
 CBCS_FB_UIC=${uic}
 CBCS_FB_RCC=${rcc}
 CBCS_ARTIFACTS_DIR=${artifacts}

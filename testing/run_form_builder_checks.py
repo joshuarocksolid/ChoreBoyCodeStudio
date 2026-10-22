@@ -563,7 +563,43 @@ def _note_vendor_fallback(result: GateResult, profile: str) -> GateResult:
     )
 
 
+def _py39_skip_reason(runtime: Path) -> str | None:
+    """Why the 3.9 lane cannot run, or None when the interpreter can import PySide6.
+
+    The cloud conda AppRun execs ``freecadcmd``. That program rejects ``--json``,
+    so the signal-table probe fails even when ``-c`` happens to start. An empty
+    ``CBCS_FB_PY39`` falls through to that AppRun. Skip the lane instead of
+    reporting a false pytest failure.
+    """
+    if not _is_runtime(runtime):
+        return "skipped: no Python 3.9 runtime at %s" % runtime
+    if runtime.name == "freecadcmd" or _text_mentions_freecadcmd(runtime):
+        return (
+            "skipped: %s execs freecadcmd, which rejects --json. "
+            "Set CBCS_FB_PY39 to a Python 3.9 interpreter that imports PySide6."
+            % runtime
+        )
+    probe = _run_command([str(runtime), "-c", "import PySide6"], timeout=60)
+    if probe.code != 0:
+        tail = (probe.stderr or probe.stdout or "import failed").strip().splitlines()
+        detail = tail[-1] if tail else "import failed"
+        return "skipped: %s has no PySide6 (%s)" % (runtime, detail[:200])
+    return None
+
+
+def _text_mentions_freecadcmd(runtime: Path) -> bool:
+    try:
+        text = runtime.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        return False
+    return "freecadcmd" in text
+
+
 def gate_unit_py39() -> GateResult:
+    runtime = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
+    reason = _py39_skip_reason(runtime)
+    if reason is not None:
+        return _skip("unit-py39-pyside6", reason)
     return _judge_pytest("unit-py39-pyside6", _py39_pytest(UNIT_MARKER), require_pass=True)
 
 
@@ -572,8 +608,9 @@ def gate_syntax_py39() -> GateResult:
     if not _package_ready():
         return _skip(name, "skipped: no package")
     apprun = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
-    if not _is_runtime(apprun):
-        return _skip(name, "skipped: no Python 3.9 runtime at %s" % apprun)
+    reason = _py39_skip_reason(apprun)
+    if reason is not None:
+        return _skip(name, reason)
     program = _syntax_program(FEATURE_DIR, TESTS_DIR / "corpus")
     script = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False)
     script.write(program)
