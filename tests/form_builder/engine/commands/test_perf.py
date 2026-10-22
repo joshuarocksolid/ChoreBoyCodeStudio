@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import os
 import time
+from typing import Tuple
 
 import pytest
 
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, MoveNodes, SetProperty, Wrap
 from app.features.form_builder.engine.commands.placement import InBoxLayout
+from app.features.form_builder.engine.commands.log import CommandLog
+from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4 import mutate
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.ui4.values import StringValue
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log
@@ -148,6 +152,70 @@ def test_structural_edits_rebuild_custom_widgets_only_when_present(
     log.execute(MoveNodes((button,), InBoxLayout(layout.id, len(layout.items))))
     log.execute(DeleteNodes((nid(doc, "extra"),)))
     assert calls["n"] == 0
+
+
+@pytest.mark.perf
+@pytest.mark.timeout(120)
+def test_reordering_a_thousand_siblings_is_one_move() -> None:
+    log = open_log(_flat(1000))
+    doc = log.document
+    layout = doc.root.layout
+    assert layout is not None
+    one, five, fifteen = os.getloadavg()
+    previous = os.environ.get("CBCS_FB_VALIDATE")
+    os.environ["CBCS_FB_VALIDATE"] = "0"
+    try:
+        first = nid(doc, "b0")
+        last = nid(doc, "b999")
+        to_end = _timed_move(log, first, layout.id, 1000)
+        to_start = _timed_move(log, last, layout.id, 0)
+        started = time.process_time()
+        outcome = log.execute(
+            InsertFragment(
+                InBoxLayout(layout.id, 500),
+                Fragment(nodes=(button_spec("mid"),)),
+                auto_layout=False,
+            )
+        )
+        inserted = time.process_time() - started
+    finally:
+        if previous is None:
+            os.environ.pop("CBCS_FB_VALIDATE", None)
+        else:
+            os.environ["CBCS_FB_VALIDATE"] = previous
+    assert outcome.noop is False
+    assert len(log.entries()[-1].ops) == 1
+    detail = "loadavg %.2f/%.2f/%.2f end %.3f ms start %.3f ms insert %.3f ms" % (
+        one,
+        five,
+        fifteen,
+        to_end[0] * 1000.0,
+        to_start[0] * 1000.0,
+        inserted * 1000.0,
+    )
+    print(detail)
+    assert to_end[1] == 1, detail
+    assert to_start[1] == 1, detail
+    assert to_end[0] < 0.003, detail
+    assert to_start[0] < 0.003, detail
+    assert inserted < 0.003, detail
+    names = []
+    current = doc.root.layout
+    assert current is not None
+    for item in current.items:
+        content = item.content
+        assert isinstance(content, WidgetNode)
+        names.append(content.object_name)
+    assert names[0] == "b999"
+    assert names[-1] == "b0"
+    assert names[500] == "mid"
+
+
+def _timed_move(log: CommandLog, node: NodeId, layout_id: NodeId, index: int) -> Tuple[float, int]:
+    started = time.process_time()
+    log.execute(MoveNodes((node,), InBoxLayout(layout_id, index)))
+    elapsed = time.process_time() - started
+    return elapsed, len(log.entries()[-1].ops)
 
 
 @pytest.mark.perf
