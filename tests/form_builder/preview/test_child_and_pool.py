@@ -726,9 +726,13 @@ def test_stdin_eof_exits_a_child_stuck_in_user_code():
         try:
             code = proc.wait(timeout=7.5)
         except subprocess.TimeoutExpired:
-            err = ""
-            if proc.stderr is not None:
-                err = proc.stderr.read()
+            # Kill first: reading stderr from a live child blocks until timeout.
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except OSError:
+                proc.kill()
+            proc.wait(timeout=5)
+            err = proc.stderr.read() if proc.stderr is not None else ""
             raise AssertionError("child still running 7.5s after stdin EOF: %s" % err)
         assert code == 0
     finally:
