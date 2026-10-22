@@ -1,8 +1,8 @@
 # pyright: reportAttributeAccessIssue=false
 """Typed ui4 catalog for form, action, resource, custom-widget, and connection elements.
 
-Designer 6.8.3 drops some of these on save. We keep them. The one intentional
-byte difference against a Designer resave is recorded in ``_ORDER_ONLY``.
+Designer 6.8.3 drops some of these on save. We keep them. A Designer resave of
+every catalog tag must match our writer byte for byte.
 """
 from __future__ import annotations
 
@@ -34,12 +34,6 @@ _RCC_CANDIDATES = (
     Path("/opt/freecad-1.1/usr/lib/qt6/rcc"),
     Path("/usr/local/bin/cbcs-fb-rcc"),
 )
-
-# schema.write_order emits properties before nested actions. Designer left the
-# action first on innerGroup in this one resave. Line content is the same.
-_ORDER_ONLY = {
-    "actiongroup": "synthetic/schema/kitchen_sink.ui",
-}
 
 _DESIGNER_TAGS = (
     "author",
@@ -90,6 +84,14 @@ def _stable(text: str) -> str:
     return first
 
 
+def _until(text: str, start_mark: str, end_mark: str) -> str:
+    start = text.find(start_mark)
+    assert start >= 0
+    end = text.find(end_mark, start)
+    assert end > start
+    return text[start:end]
+
+
 def _extract(text: str, tag: str) -> List[str]:
     """Raw slices of ``tag``, including nested elements of the same name."""
     out: List[str] = []
@@ -134,10 +136,6 @@ def _extract(text: str, tag: str) -> List[str]:
     return out
 
 
-def _lines(chunk: str) -> List[str]:
-    return sorted(line.strip() for line in chunk.splitlines() if line.strip())
-
-
 _SCAN: Dict[str, List[Tuple[str, List[str], List[str]]]] = {}
 _SCAN_READY = False
 
@@ -159,32 +157,13 @@ def _designer_mismatches() -> Dict[str, List[Tuple[str, List[str], List[str]]]]:
     return _SCAN
 
 
-def _same_lines(left: Sequence[str], right: Sequence[str]) -> bool:
-    if len(left) != len(right):
-        return False
-    return all(_lines(item) == _lines(other) for item, other in zip(left, right))
-
-
 def _assert_designer(tags: Sequence[str]) -> None:
     found = _designer_mismatches()
     unexpected = []
     for tag in tags:
         rows = found.get(tag, [])
-        allowed = _ORDER_ONLY.get(tag)
-        if not rows:
-            continue
-        if allowed is None:
+        if rows:
             unexpected.append((tag, [rel for rel, _left, _right in rows]))
-            continue
-        rels = [rel for rel, _left, _right in rows]
-        if rels != [allowed]:
-            unexpected.append((tag, rels))
-            continue
-        _rel, left, right = rows[0]
-        # Each element keeps its own lines. A line that moved into a sibling
-        # element fails. Order inside an element may differ.
-        if not _same_lines(left, right):
-            unexpected.append((tag, ["content differs, not only order"]))
     assert unexpected == []
 
 
@@ -392,7 +371,12 @@ def test_actions_and_connections_keep_their_fields(qapp: object) -> None:
     ]
     toolbar = next(node for node in root.children("children") if node.field("object_name") == "toolBar")
     assert [node.field("name") for node in toolbar.children("add_actions")] == ["actionNew"]
-    saved = _stable(_SINK.read_text(encoding="utf-8"))
+    source = _SINK.read_text(encoding="utf-8")
+    source_inner = _until(source, '<actiongroup name="innerGroup">', "</actiongroup>")
+    assert source_inner.find('<property name="exclusive">') < source_inner.find('<action name="actionLeft">')
+    saved = _stable(source)
+    saved_inner = _until(saved, '<actiongroup name="innerGroup">', "</actiongroup>")
+    assert saved_inner.find('<action name="actionLeft">') < saved_inner.find('<property name="exclusive">')
     assert 'menu="menuFile"' in saved
     connection = document.connections()[0]
     assert connection.field("sender") == "buttonBox"
