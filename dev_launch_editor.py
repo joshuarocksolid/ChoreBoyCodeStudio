@@ -59,7 +59,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Run the tree-sitter runtime probe through AppRun and exit.",
     )
+    parser.add_argument(
+        "--qt",
+        choices=("pyside2", "pyside6"),
+        help=(
+            "Force the Qt binding (sets CBCS_QT_API). By default CBCS follows FreeCAD's "
+            "PySide shim, else prefers PySide6. Use pyside2 for ChoreBoy V6.5 parity on a "
+            "dev prefix that has both bindings."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def build_launch_env(qt_binding: str | None = None) -> dict[str, str]:
+    """Child environment for the editor, with an optional forced Qt binding."""
+    env = sanitize_apprun_child_env()
+    if qt_binding:
+        env["CBCS_QT_API"] = qt_binding
+    return env
 
 
 def resolve_repo_root() -> Path:
@@ -368,14 +385,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 command,
                 cwd=str(repo_root),
                 check=False,
-                env=sanitize_apprun_child_env(),
+                env=build_launch_env(args.qt),
             )
             return int(completed.returncode)
 
         process = subprocess.Popen(
             command,
             cwd=str(repo_root),
-            env=sanitize_apprun_child_env(),
+            env=build_launch_env(args.qt),
             start_new_session=True,
         )
     except OSError as exc:

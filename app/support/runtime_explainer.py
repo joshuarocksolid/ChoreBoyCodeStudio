@@ -9,6 +9,7 @@ from app.bootstrap.capability_probe import (
     GLOBAL_LOGS_WRITABLE_CHECK_ID,
     PYSIDE2_IMPORT_CHECK_ID,
     PYTHON_TOOLING_RUNTIME_CHECK_ID,
+    QT_BINDING_CHECK_ID,
     STATE_ROOT_WRITABLE_CHECK_ID,
     TEMP_ROOT_WRITABLE_CHECK_ID,
     TREESITTER_RUNTIME_CHECK_ID,
@@ -33,6 +34,46 @@ def build_startup_issue_report(report: CapabilityProbeReport) -> RuntimeIssueRep
         if issue is not None
     ]
     return RuntimeIssueReport(workflow="startup", issues=_sort_issues(issues))
+
+
+def local_history_disabled_issue(reason: str) -> RuntimeIssue:
+    """Explain that editing can continue with local history turned off."""
+    return RuntimeIssue(
+        issue_id="runtime.local_history_disabled",
+        workflow="startup",
+        severity="degraded",
+        title="Local history is off",
+        summary=f"Local history is off: {reason}",
+        why_it_happened=(
+            "The local history database could not be opened. The editor can still open files."
+        ),
+        next_steps=[
+            "Keep editing. Checkpoints and drafts stay off until the state folder can take a file lock.",
+            "Review the application log for the SQLite or lock error.",
+        ],
+        help_topic=HELP_TOPIC_GETTING_STARTED,
+        evidence={"reason": reason},
+    )
+
+
+def symbol_index_disabled_issue(reason: str) -> RuntimeIssue:
+    """Explain that code intelligence continues without the symbol cache."""
+    return RuntimeIssue(
+        issue_id="runtime.symbol_index_disabled",
+        workflow="startup",
+        severity="degraded",
+        title="Symbol index is off",
+        summary=f"Symbol index is off: {reason}",
+        why_it_happened=(
+            "The symbol cache database could not be opened. Completion can still scan open projects."
+        ),
+        next_steps=[
+            "Keep editing. Project-wide symbol search stays off until the cache database can be opened.",
+            "Review the application log for the SQLite or lock error.",
+        ],
+        help_topic=HELP_TOPIC_GETTING_STARTED,
+        evidence={"reason": reason},
+    )
 
 
 def build_project_health_issue_report(report: ProjectHealthReport) -> RuntimeIssueReport:
@@ -216,20 +257,29 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence=evidence,
         )
-    if check.check_id == PYSIDE2_IMPORT_CHECK_ID:
+    if check.check_id in (QT_BINDING_CHECK_ID, PYSIDE2_IMPORT_CHECK_ID):
+        binding = check.details.get("binding")
+        active_binding = " Active binding: %s." % binding if binding else ""
         return RuntimeIssue(
             issue_id="runtime.pyside2_unavailable",
             workflow=workflow,
             severity="blocking",
             title="Qt runtime is unavailable",
-            summary="PySide2 could not be imported in the active runtime, so the editor cannot rely on its normal UI stack.",
+            summary=(
+                "Qt for Python (PySide6 or PySide2) could not be imported in the active runtime, "
+                "so the editor cannot open its UI."
+                + active_binding
+                + " CBCS_QT_API overrides the choice."
+            ),
             why_it_happened=(
-                "Code Studio is built around the PySide2 runtime bundled with FreeCAD AppRun."
+                "Code Studio needs Qt for Python (PySide6 or PySide2) from the FreeCAD runtime."
+                + active_binding
+                + " CBCS_QT_API names the binding when the default choice is wrong."
             ),
             next_steps=[
+                "Set CBCS_QT_API to pyside6 or pyside2 to override the Qt binding.",
                 "Confirm that the expected FreeCAD runtime is installed correctly.",
                 "If this is a packaged deployment, reinstall or repair it before relying on GUI workflows.",
-                "Capture logs/support bundle details if the runtime should already include PySide2.",
             ],
             help_topic=HELP_TOPIC_GETTING_STARTED,
             evidence=evidence,
@@ -258,9 +308,10 @@ def _issue_from_capability_check(check: CapabilityCheckResult, *, workflow: str)
             workflow=workflow,
             severity="degraded",
             title="Global state folder is not writable",
-            summary="Code Studio could not write to its visible global state directory.",
+            summary=check.message,
             why_it_happened=(
-                "Settings, caches, and some diagnostics depend on a writable global state root under Home."
+                "Settings, caches, and local history need a folder that accepts a file lock and a "
+                "SQLite write. A path can allow creating a file and still deny fcntl."
             ),
             next_steps=[
                 "Check permissions for the visible `choreboy_code_studio_state` location.",

@@ -5,6 +5,7 @@ import pytest
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 from app.shell.status_bar import (
     format_diagnostics_counts,
+    map_completion_mode_status_view,
     map_editor_status_view,
     map_indent_status_view,
     map_python_tooling_status_view,
@@ -38,7 +39,7 @@ def test_map_startup_report_to_status_handles_all_checks_passing() -> None:
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
-            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("qt_binding_import", True, "ok"),
             CapabilityCheckResult("treesitter_runtime", True, "ok"),
         ]
     )
@@ -54,7 +55,7 @@ def test_map_startup_report_to_status_handles_partial_minimal_report() -> None:
     report = CapabilityProbeReport(
         checks=[
             CapabilityCheckResult("apprun_presence", True, "ok"),
-            CapabilityCheckResult("pyside2_import", True, "ok"),
+            CapabilityCheckResult("qt_binding_import", True, "ok"),
             CapabilityCheckResult("state_root_writable", True, "ok"),
             CapabilityCheckResult("global_logs_writable", True, "ok"),
             CapabilityCheckResult("temp_root_writable", True, "ok"),
@@ -64,6 +65,24 @@ def test_map_startup_report_to_status_handles_partial_minimal_report() -> None:
     status = map_startup_report_to_status(report)
     assert status.severity == "ok"
     assert status.text == "Startup: Runtime ready (5/5 checks)"
+
+
+def test_map_startup_report_to_status_names_treesitter_source() -> None:
+    report = CapabilityProbeReport(
+        checks=[
+            CapabilityCheckResult("apprun_presence", True, "ok"),
+            CapabilityCheckResult(
+                "treesitter_runtime",
+                True,
+                "ok",
+                details={"source": "runtime", "version": "0.26.0"},
+            ),
+        ]
+    )
+
+    status = map_startup_report_to_status(report)
+
+    assert status.text == "Startup: Runtime ready (2/2 checks) | tree-sitter runtime 0.26.0"
 
 
 def test_map_startup_report_to_status_appends_syntax_highlighting_warning() -> None:
@@ -108,6 +127,43 @@ def test_map_editor_status_view_handles_missing_file() -> None:
     """No active file should map to explicit placeholder copy."""
     view = map_editor_status_view(None, None, None, is_dirty=False)
     assert view.text == "Editor: no file"
+
+
+@pytest.mark.parametrize(
+    ("is_dirty", "disk_state", "expected"),
+    [
+        (True, "stale", "Editor: report.py | Ln 3, Col 1 | modified | changed on disk"),
+        (False, "stale", "Editor: report.py | Ln 3, Col 1 | saved | changed on disk"),
+        (True, "missing", "Editor: report.py | Ln 3, Col 1 | missing from disk"),
+        (False, None, "Editor: report.py | Ln 3, Col 1 | saved"),
+    ],
+)
+def test_map_editor_status_view_shows_the_disk_state(is_dirty: bool, disk_state, expected: str) -> None:  # type: ignore[no-untyped-def]
+    view = map_editor_status_view("report.py", 3, 1, is_dirty=is_dirty, disk_state=disk_state)
+    assert view.text == expected
+
+
+@pytest.mark.parametrize(
+    ("mode", "scope", "global_mode", "expected_text", "expected_origin"),
+    [
+        ("manual", "global", "manual", "Completion: Manual \u00b7 Ctrl+Space (Global setting)", "Set in Global settings."),
+        ("off", "global", "off", "Completion: Off (Global setting)", "Set in Global settings."),
+        (
+            "typing",
+            "project",
+            "manual",
+            "Completion: While typing (Project setting)",
+            "It overrides the Global setting (Manual).",
+        ),
+        ("bogus", "global", None, "Completion: Manual \u00b7 Ctrl+Space (Global setting)", "Set in Global settings."),
+    ],
+)
+def test_map_completion_mode_status_view_names_the_mode_and_its_scope(  # type: ignore[no-untyped-def]
+    mode, scope, global_mode, expected_text, expected_origin
+) -> None:
+    view = map_completion_mode_status_view(mode, scope=scope, global_mode=global_mode)
+    assert view.text == expected_text
+    assert expected_origin in view.details
 
 
 @pytest.mark.parametrize(

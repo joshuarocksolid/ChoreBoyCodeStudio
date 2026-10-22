@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core.models import LoadedProject, ProjectMetadata
 from app.project.project_manifest import build_synthetic_project_metadata, load_project_manifest

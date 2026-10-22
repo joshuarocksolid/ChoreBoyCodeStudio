@@ -104,6 +104,30 @@ If you see an error like `Cannot load Gui module in console application`, your c
 
 Open `Tools > FreeCAD Headless Notes` for safe guidance.
 
+## Programs That Open FreeCAD or Other Windows
+
+A program you run from Code Studio can start other programs, for example a FreeCAD window.
+Those windows belong to the run. `Run > Stop` (`Shift+F2`) ends the program and every window it opened.
+
+If you close Code Studio while the program is still running, Code Studio asks what to do:
+
+- `Keep It Running` (the default) closes Code Studio and leaves the program and its windows open.
+  Its later output no longer appears in the Run Log. It is saved next to the run log, in a file ending in `.after_close.log`.
+- `Stop It` ends the program and every window it opened, then closes Code Studio.
+- `Cancel` keeps Code Studio open.
+
+If a window your program opens should stay open even after the run stops, start it in its own session:
+
+- `subprocess.Popen(["/opt/freecad/AppRun", "/path/to/part.FCStd"], start_new_session=True)`
+
+When a FreeCAD window starts, the Run Log may show these two lines:
+
+- `/opt/freecad/usr/lib/x86_64-linux-gnu:/opt/freecad/usr/lib`
+- `[stderr] connect failed: No such file or directory`
+
+They are normal FreeCAD startup messages, not errors.
+The Run Log shows them dimmed. Hover over one to see what it means.
+
 ## Keep Your Work Safe
 
 - Your projects are normal folders on disk.

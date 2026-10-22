@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from typing import Any, Callable, Protocol, cast
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.intelligence.completion_context import resolve_completion_prefix
 from app.intelligence.completion_models import (
     CompletionEnvelope,
@@ -58,6 +59,9 @@ class PythonConsoleBindingPort(Protocol):
         ...
 
     def set_completion_docs_resolving(self, resolving: bool) -> None:
+        ...
+
+    def set_completion_mode(self, mode: str) -> None:
         ...
 
     def completion_request_generation(self) -> int:
@@ -125,6 +129,9 @@ class PythonConsoleWorkflowHost(Protocol):
     def clear_console_host(self) -> ClearConsoleHost:
         ...
 
+    def completion_mode(self) -> str:
+        ...
+
 
 class MainWindowPythonConsoleHost:
     """Host ports for ``PythonConsoleWorkflow`` backed by a MainWindow instance."""
@@ -155,13 +162,17 @@ class MainWindowPythonConsoleHost:
     def clear_console_host(self) -> MainWindowClearConsoleHost:
         return MainWindowClearConsoleHost(self._window)
 
+    def completion_mode(self) -> str:
+        return self._window._shell_preferences_runtime.completion_mode()
+
 
 BackgroundWorkStarter = Callable[[Callable[[], None]], None]
 
 
 def _completion_degradation_message(reason: str) -> str:
     if reason == "repl_runtime_inspection":
-        return "Python Console completion is using live runtime inspection."
+        # Live inspection is the normal console path now; saying so on every list is noise.
+        return ""
     if reason == "repl_jedi_unavailable":
         return "Python Console semantic completion is unavailable (Jedi not loaded)."
     if reason in {"repl_no_completions", "repl_jedi_fallback"}:
@@ -201,6 +212,24 @@ class PythonConsoleWorkflow:
         widget.interrupt_requested.connect(self.handle_interrupt)
         widget.restart_requested.connect(self.handle_start_python_console_action)
         widget.set_completion_requester(self.request_completion_async)
+        if self._intelligence_controller is not None:
+            # The intelligence runtime can be bound before the console panel exists.
+            widget.set_completion_resolve_requester(self.request_completion_item_resolve_async)
+        self.apply_completion_preferences(widget)
+
+    def apply_completion_preferences(
+        self,
+        widget: PythonConsoleBindingPort | None = None,
+    ) -> None:
+        """Push shared intelligence completion prefs onto the console widget."""
+
+        target = widget
+        if target is None:
+            live = self._host.python_console_widget()
+            if live is None:
+                return
+            target = cast(PythonConsoleBindingPort, live)
+        target.set_completion_mode(self._host.completion_mode())
 
     def handle_start_python_console_action(self) -> bool:
         """Restart the REPL session and focus the Python Console tab."""
@@ -256,7 +285,7 @@ class PythonConsoleWorkflow:
                 cursor_offset=cursor_offset,
                 trigger_kind=trigger_kind,
                 trigger_character=trigger_character,
-                max_results=100,
+                max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             )
             completion_prefix = resolve_completion_prefix(
                 source_text=line_buffer,
@@ -265,7 +294,7 @@ class PythonConsoleWorkflow:
                 project_root=None,
                 trigger_is_manual=trigger_kind == "manual",
                 min_prefix_chars=1,
-                max_results=100,
+                max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
                 trigger_kind=trigger_kind,
                 trigger_character=trigger_character,
             )
@@ -279,8 +308,8 @@ class PythonConsoleWorkflow:
                     prefix=completion_prefix,
                     items=envelope.items,
                 )
-                if envelope.degradation_reason:
-                    message = _completion_degradation_message(envelope.degradation_reason)
+                message = _completion_degradation_message(envelope.degradation_reason)
+                if envelope.degradation_reason and message:
                     self._host.show_status_message(message, 4000)
 
             self._host.dispatch_to_main_thread(apply)

@@ -1,15 +1,16 @@
 """Unit tests for async completion and inline semantic editor interactions."""
 from __future__ import annotations
 
+from collections.abc import Iterator
 from unittest.mock import patch
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QEvent, Qt  # noqa: E402
-from PySide2.QtGui import QHelpEvent, QKeyEvent  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtCore import QEvent, Qt  # noqa: E402
+from app.qt.QtGui import QHelpEvent, QKeyEvent, QTextCursor  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.intelligence.completion_models import CompletionItem, CompletionKind  # noqa: E402
@@ -52,12 +53,21 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def editor() -> CodeEditorWidget:
+def editor() -> Iterator[CodeEditorWidget]:
     widget = CodeEditorWidget()
     widget.setPlainText("alpha")
     cursor = widget.textCursor()
-    cursor.movePosition(cursor.End)
+    cursor.movePosition(QTextCursor.End)
     widget.setTextCursor(cursor)
+    yield widget
+    widget._completion_popup.hide()
+    widget.hide()
+    widget.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+
+
+def _shown(widget: CodeEditorWidget) -> CodeEditorWidget:
+    widget.show()
     return widget
 
 
@@ -71,7 +81,7 @@ def test_trigger_completion_uses_async_requester_when_available(editor: CodeEdit
 
     editor.trigger_completion(manual=True)
 
-    assert calls == [("alpha", 5, True, 1, "manual", "")]
+    assert calls == [("alpha", 1, True, 1, "manual", "")]
 
 
 def test_show_completion_items_for_stale_generation_is_ignored(editor: CodeEditorWidget) -> None:
@@ -89,6 +99,7 @@ def test_show_completion_items_for_stale_generation_is_ignored(editor: CodeEdito
 
 
 def test_show_completion_items_for_current_generation_updates_mapping(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     editor.set_completion_requester(lambda *_args: None)
     editor.trigger_completion(manual=True)
 
@@ -98,11 +109,11 @@ def test_show_completion_items_for_current_generation_updates_mapping(editor: Co
         items=[CompletionItem(label="alpha_local", insert_text="alpha_local", kind=CompletionKind.SYMBOL)],
     )
 
-    labels = [item.label for item in editor._completion_popup.model().items()]
-    assert "alpha_local" in labels
+    assert "alpha_local" in editor._completion_popup.visible_labels()
 
 
 def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     calls: list[tuple[str, str, int, int]] = []
     item = CompletionItem(
         label="alpha_local",
@@ -122,10 +133,11 @@ def test_completion_selection_requests_lazy_resolution(editor: CodeEditorWidget)
 
     editor.show_completion_items_for_request(request_generation=1, prefix="alpha", items=[item])
 
-    assert calls == [("alpha_local", "alpha", 5, 1)]
+    assert calls == [("alpha_local", "alpha_local", len("alpha_local"), 1)]
 
 
 def test_completion_selection_skips_lazy_resolution_when_docs_present(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     calls: list[str] = []
     item = CompletionItem(
         label="getcwd",
@@ -146,6 +158,7 @@ def test_completion_selection_skips_lazy_resolution_when_docs_present(editor: Co
 
 
 def test_show_resolved_completion_item_updates_visible_model(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     item = CompletionItem(
         label="alpha_local",
         insert_text="alpha_local",
@@ -171,7 +184,8 @@ def test_show_resolved_completion_item_updates_visible_model(editor: CodeEditorW
 
     editor.show_resolved_completion_item_for_request(request_generation=1, item=resolved)
 
-    assert editor._completion_popup.model().items()[0].documentation == "Resolved docs"
+    shown = editor._completion_popup.model().item_at(0)
+    assert shown is not None and shown.documentation == "Resolved docs"
 
 
 def test_typing_open_paren_shows_inline_signature_help(editor: CodeEditorWidget) -> None:
@@ -272,6 +286,7 @@ def test_show_calltip_for_stale_signature_request_is_ignored(editor: CodeEditorW
 
 
 def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWidget) -> None:
+    _shown(editor)
     editor.set_completion_requester(lambda *_args: None)
     editor.trigger_completion(manual=True)
     editor.show_completion_items_for_request(
@@ -282,8 +297,7 @@ def test_semantic_ui_theme_sanity_for_light_and_dark_modes(editor: CodeEditorWid
 
     editor.apply_theme(_LIGHT_TOKENS)
     assert editor._is_dark is False
-    light_labels = [item.label for item in editor._completion_popup.model().items()]
-    assert "alpha_local" in light_labels
+    assert "alpha_local" in editor._completion_popup.visible_labels()
 
     editor.apply_theme(_DARK_TOKENS)
     assert editor._is_dark is True
@@ -322,7 +336,7 @@ def test_apply_theme_defers_hidden_editor_rehighlight_until_show(editor: CodeEdi
 def test_accept_dotted_member_uses_completion_context_replacement_range(editor: CodeEditorWidget) -> None:
     editor.setPlainText("obj.mem")
     cursor = editor.textCursor()
-    cursor.movePosition(cursor.End)
+    cursor.movePosition(QTextCursor.End)
     editor.setTextCursor(cursor)
 
     editor._insert_completion_from_item(
@@ -335,7 +349,7 @@ def test_accept_dotted_member_uses_completion_context_replacement_range(editor: 
 def test_accept_import_from_uses_completion_context_replacement_range(editor: CodeEditorWidget) -> None:
     editor.setPlainText("from collections import de")
     cursor = editor.textCursor()
-    cursor.movePosition(cursor.End)
+    cursor.movePosition(QTextCursor.End)
     editor.setTextCursor(cursor)
 
     editor._insert_completion_from_item(

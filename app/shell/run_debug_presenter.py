@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal, Protocol, cast
 
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.core import constants
 from app.core.models import LoadedProject
@@ -271,6 +271,10 @@ class RunDebugPresenter:
                     "Run already in progress",
                     result.error_message or "A run is already in progress. Stop it before starting a new one.",
                 )
+            elif result.apprun_permission_denied:
+                from app.shell.startup_dialogs import present_freecad_requirement
+
+                present_freecad_requirement(parent, result.error_message or "")
             elif result.error_message:
                 QMessageBox.warning(parent, "Run failed to start", result.error_message)
             run_events.set_run_status("idle")

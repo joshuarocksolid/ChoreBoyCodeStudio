@@ -152,6 +152,9 @@ class CompletionBroker:
                     min_prefix_chars=context.min_prefix_chars,
                     max_results=context.max_results * 2,
                 )
+            report_timings = getattr(self._semantic_facade, "last_completion_timings", None)
+            if callable(report_timings):
+                breakdown.update(report_timings())
         except Exception as exc:
             _logger.warning("semantic completion failed: %s", exc)
             semantic_candidates = []
@@ -491,11 +494,10 @@ def _tag_approximate_items(candidates: list[CompletionItem]) -> list[CompletionI
 
 
 def _include_member_for_prefix(label: str, prefix: str) -> bool:
-    """Hide private/dunder members unless the user is typing a ``_`` prefix."""
+    """Keep every member; the popup lists private names last and dunders after ``_``."""
 
-    if not label.startswith("_"):
-        return True
-    return prefix.startswith("_")
+    _ = (label, prefix)
+    return True
 
 
 def _base_match_score(label: str, prefix: str) -> int:

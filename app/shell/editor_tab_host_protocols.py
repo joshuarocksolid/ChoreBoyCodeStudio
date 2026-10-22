@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
-from PySide2.QtWidgets import QTabWidget
+from app.qt.QtWidgets import QTabWidget
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
@@ -108,7 +108,13 @@ class EditorTabPreferencesHost(Protocol):
     def completion_auto_trigger(self) -> bool:
         ...
 
+    def completion_mode(self) -> str:
+        ...
+
     def completion_min_chars(self) -> int:
+        ...
+
+    def completion_auto_trigger_period(self) -> bool:
         ...
 
     def intelligence_runtime_settings(self) -> Any:
@@ -120,6 +126,9 @@ class EditorTabPreferencesHost(Protocol):
 
 class EditorTabMarkdownHost(Protocol):
     """Markdown pane registry and view action menu accessors."""
+
+    def editor_tabs_widget(self) -> QTabWidget | None:
+        ...
 
     def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
         ...
@@ -144,6 +153,9 @@ class EditorTabWorkflowHost(
         ...
 
     def editor_tabs_widget(self) -> QTabWidget | None:
+        ...
+
+    def editor_groups(self) -> Any | None:
         ...
 
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:

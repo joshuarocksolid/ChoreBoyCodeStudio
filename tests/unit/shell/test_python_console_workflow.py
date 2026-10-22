@@ -7,8 +7,9 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT  # noqa: E402
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind  # noqa: E402
 from app.shell.python_console_workflow import PythonConsoleWorkflow  # noqa: E402
 
@@ -19,6 +20,7 @@ pytestmark = pytest.mark.unit
 class FakeConsoleWidget:
     shown_generations: list[int] = field(default_factory=list)
     shown_items: list[list[CompletionItem]] = field(default_factory=list)
+    completion_mode: str | None = None
 
     def show_completion_items_for_request(
         self,
@@ -30,6 +32,9 @@ class FakeConsoleWidget:
         self.shown_generations.append(request_generation)
         self.shown_items.append(list(items))
 
+    def set_completion_mode(self, mode: str) -> None:
+        self.completion_mode = mode
+
 
 @dataclass
 class FakePythonConsoleHost:
@@ -40,6 +45,7 @@ class FakePythonConsoleHost:
     repl_warnings: list[tuple[str, Exception]] = field(default_factory=list)
     clear_console_calls: int = 0
     last_clear_host: FakeClearConsoleHost | None = None
+    mode: str = "manual"
 
     def python_console_widget(self) -> FakeConsoleWidget | None:
         return self.console_widget
@@ -61,6 +67,9 @@ class FakePythonConsoleHost:
         self.clear_console_calls += 1
         self.last_clear_host = FakeClearConsoleHost()
         return self.last_clear_host
+
+    def completion_mode(self) -> str:
+        return self.mode
 
 
 @dataclass
@@ -177,7 +186,7 @@ def test_request_completion_async_applies_items_on_main_thread() -> None:
             "cursor_offset": 3,
             "trigger_kind": "manual",
             "trigger_character": "",
-            "max_results": 100,
+            "max_results": UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
         }
     ]
     assert host.console_widget is not None
@@ -383,3 +392,41 @@ def test_handle_clear_display_action_clears_python_console_display_only() -> Non
     assert host.last_clear_host is not None
     assert host.last_clear_host.display_cleared is True
     assert host.last_clear_host.cleared is False
+
+
+def test_apply_completion_preferences_pushes_mode_to_console() -> None:
+    host = FakePythonConsoleHost(mode="typing")
+    workflow = PythonConsoleWorkflow(repl_manager=FakeReplSession(), host=host)
+
+    workflow.apply_completion_preferences()
+
+    assert host.console_widget is not None
+    assert host.console_widget.completion_mode == "typing"
+
+
+def test_console_bound_after_the_intelligence_runtime_still_resolves_docs() -> None:
+    class _Signal:
+        def connect(self, _slot: object) -> None:
+            return None
+
+    class _BindableConsole(FakeConsoleWidget):
+        input_submitted = _Signal()
+        interrupt_requested = _Signal()
+        restart_requested = _Signal()
+        resolve_requester: object = None
+
+        def set_completion_requester(self, _requester: object) -> None:
+            return None
+
+        def set_completion_resolve_requester(self, requester: object) -> None:
+            self.resolve_requester = requester
+
+    host = FakePythonConsoleHost(console_widget=None)
+    workflow = PythonConsoleWorkflow(repl_manager=FakeReplSession(), host=host)
+    workflow.bind_intelligence_controller(object())
+    console = _BindableConsole()
+    host.console_widget = console
+
+    workflow.bind_widget(console)  # type: ignore[arg-type]
+
+    assert console.resolve_requester is not None

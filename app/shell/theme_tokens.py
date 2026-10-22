@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
-from PySide2.QtGui import QColor, QPalette
+from app.qt.QtGui import QColor, QPalette
 
 from app.core import constants
 from app.syntax.palette import (

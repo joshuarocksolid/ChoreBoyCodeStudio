@@ -7,10 +7,32 @@ from pathlib import Path
 import sys
 from typing import Mapping
 
+from app.bootstrap.qt_binding_choice import ENV_VAR as QT_API_ENV_VAR, loaded_binding_env_value
 from app.core import constants
+from app.packaging.launcher_bootstrap import apprun_safe_python
 
 _APPRUN_ENV_KEYS_TO_DROP = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 _FREECAD_EXECUTABLE_NAMES = {"AppRun", "freecad", "FreeCAD"}
+
+
+def permission_denied_for_apprun(exc: BaseException) -> bool:
+    """True when launching AppRun failed with PermissionError.
+
+    Process start wraps the OS error. Walk the cause chain and the message
+    so a wrapped ``PermissionError`` still matches.
+    """
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        filename = str(getattr(current, "filename", "") or "")
+        text = f"{filename}\n{current}"
+        if isinstance(current, PermissionError) and ("AppRun" in text or "freecad" in text.lower()):
+            return True
+        if "AppRun" in text and "Permission" in text:
+            return True
+        current = current.__cause__
+    return False
 
 
 def is_freecad_runtime_executable(runtime_executable: str) -> bool:
@@ -32,6 +54,11 @@ def sanitize_apprun_child_env(env: Mapping[str, str] | None = None) -> dict[str,
     resolved = dict(os.environ if env is None else env)
     for key in _APPRUN_ENV_KEYS_TO_DROP:
         resolved.pop(key, None)
+    if not resolved.get(QT_API_ENV_VAR, "").strip():
+        # Keep runner, plugin-host and pytest children on the editor's binding.
+        binding = loaded_binding_env_value()
+        if binding is not None:
+            resolved[QT_API_ENV_VAR] = binding
     return resolved
 
 
@@ -56,4 +83,4 @@ def build_runpy_bootstrap_payload(
     if argv is not None:
         statements.append(f"sys.argv={[str(a) for a in argv]!r};")
     statements.append(f"runpy.run_path({resolved_script!r}, run_name='__main__')")
-    return "".join(statements)
+    return apprun_safe_python("".join(statements))

@@ -64,13 +64,13 @@ The architecture must explicitly respect these runtime realities:
 
 1. Users cannot install normal editors, IDEs, or Python packages system-wide.
 2. The guaranteed runtime is FreeCAD’s embedded Python launched through `/opt/freecad/AppRun`.
-3. PySide2 is available inside that runtime.
+3. A Qt for Python binding is available inside that runtime: PySide2 on today's ChoreBoy (V6.5), PySide6 on the FreeCAD 1.1 image. CBCS imports Qt only through `app.qt` (binding chosen by `app/bootstrap/qt_binding_choice.py`, `CBCS_QT_API` overrides it); user projects import FreeCAD's `PySide` shim.
 4. `import FreeCAD` works for headless backend operations.
 5. Some FreeCAD operations that depend on GUI modules fail in console mode.
 6. SQLite works and is suitable for local persistence.
 7. `subprocess` works and is a core primitive.
 8. Detached process launch is proven and necessary for robust app lifetime behavior.
-9. Optional pure-Python vendored packages are acceptable by default. Compiled dependencies require an explicit runtime-parity spike and a supported in-process load path (for example the proven memfd strategy), and must not be introduced casually.
+9. Optional pure-Python vendored packages are acceptable by default. Compiled dependencies require an explicit runtime-parity spike and a supported in-process load path (for example the proven memfd strategy), and must not be introduced casually. On the FreeCAD 1.1 image there is no such path: memfd is removed, ctypes only loads files under `/opt/freecad`, and a `.so` mapped from `/home` or `/tmp` fails. There, native code has to come from the image (tree-sitter 0.26 does; `app/treesitter/loader.py` prefers it).
 
 These are not implementation details. They are first-class architectural constraints.
 
@@ -584,7 +584,7 @@ This file follows the same JSON shape as global settings, but only project-overr
 Effective settings resolution is:
 
 1. hardcoded defaults
-2. global settings (`~/choreboy_code_studio_state/settings.json`)
+2. global settings (`<state_root>/settings.json`)
 3. project overrides (`<project>/cbcs/settings.json`)
 
 Global-only settings (for example theme mode, keybindings, syntax color overrides, layout state, and last project path) remain in global state and are ignored when present in project settings files.
@@ -593,20 +593,37 @@ Global-only settings (for example theme mode, keybindings, syntax color override
 
 ## 11. Global App State
 
-Global app state should live under a single dedicated home path, for example:
+Local state and shared settings are different directories.
+
+Local state stays at `/home/default/FreeCAD/CBCS/state`. It is never inside a versioned install (`choreboy_code_studio_vX`). It holds logs, cache, history, plugins, crash reports, trash, and SQLite. `resolve_global_state_root` returns this path, or an explicit `state_root` argument. `CBCS_STATE_ROOT` and the shop pointer do not move it. The directory must accept a file lock and a SQLite write (`probe_state_dir`). The 2026-10-20 FreeCAD 1.0 measurements show that under `~/FreeCAD/CBCS`.
+
+Shared settings are opt-in and hold only JSON:
+
+- `settings.json`
+- `recent_projects.json`
+- `python_console_history.json`
+
+`resolve_settings_root` picks that directory:
+
+1. Explicit `state_root` argument if provided.
+2. Env `CBCS_STATE_ROOT` if set (non-empty, absolute after expanduser).
+3. The first shop pointer file that contains an absolute path (blank and `#` lines ignored). Candidates, in order: `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`, then `~/share/Chore_Boy/CBCS/cbcs_state_root` when that is a different path, then `~/share/<child>/Chore_Boy/CBCS/cbcs_state_root` for each single visible child of `~/share`, sorted by name. A client that sees the shop share as `~/share/net1/...` is covered by the child rule. The lab did not have a `net*` child. Real shops share `~/share` across machines.
+4. A legacy `~/choreboy_code_studio_state` symlink whose target is inside `~/share`. The settings root is the symlink path.
+5. The local state root, when nothing above is set.
+
+If the requested shared directory cannot be created or written, settings for this session use the local root and startup records "Shared settings are not available". The check writes a temporary file. It does not take a file lock and it does not create SQLite. SQLite and logs never go on the shared root. Treat `~/share` as a network share even though the lab's `~/share` was on the home filesystem.
+
+State-root identity is normalized to an absolute path without following the final symlink hop, so a home→share symlink stays meaningful.
+
+`run_editor.main` copies leftover settings before logging. Occupancy is `dest/settings.json`. The destination is the active settings root. The first leftover that has `settings.json` and is not dest wins: `$HOME/choreboy_code_studio_state`, then `$HOME/.local/share/FreeCAD/choreboy_code_studio_state`, then `$HOME/.cache/FreeCAD/choreboy_code_studio_state`, then `$HOME/FreeCAD/choreboy_code_studio_state`. Only the three JSON files are copied. History, cache, logs, and `*.sqlite3` / `*-wal` / `*-shm` stay in the source. Sources are not modified. There is no staging tree and no promote step. When more than one leftover folder exists, the outcome says settings came from the folder that was used.
+
+Local contents:
 
 ```text
-~/choreboy_code_studio_state/
-```
-
-Recommended contents:
-
-```text
-~/choreboy_code_studio_state/
-  settings.json
-  recent_projects.json
+/home/default/FreeCAD/CBCS/state/
   logs/
   cache/
+    symbols.sqlite3
   history/
     index.sqlite3
     blobs/
@@ -616,7 +633,13 @@ Recommended contents:
     logs/
   state.sqlite3
   crash_reports/
+  trash/
+  startup_dismissals.json
 ```
+
+When shared settings are off, the three JSON files live in that same local directory. When they are on, they live only in the shared directory.
+
+Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. The installer still asks for a folder. Shop recipe: pick `/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. That does not automatically share settings. Point `CBCS_STATE_ROOT` or a `cbcs_state_root` pointer at a shared directory to opt in. That pointer moves settings JSON only.
 
 ## 11.1 What belongs here
 
@@ -1065,7 +1088,7 @@ The editor must write a persistent app log for the shell itself.
 Editor log:
 
 ```text
-~/choreboy_code_studio_state/logs/app.log
+/home/default/FreeCAD/CBCS/state/logs/app.log
 ```
 
 Project run logs:
@@ -1171,7 +1194,7 @@ points across saves and high-risk multi-file edits
 The shipped local-history design should follow these rules:
 
 - store history in a visible global app-state location under
-`~/choreboy_code_studio_state/history/`
+`/home/default/FreeCAD/CBCS/state/history/` (or the resolved state root)
 - use a metadata index plus content-addressed full-text blobs rather than
 fragile patch chains as the canonical source of truth
 - treat diffs as a derived presentation layer, generated lazily for review UI

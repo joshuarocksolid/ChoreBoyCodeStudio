@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QDialog
+from app.qt.QtWidgets import QDialog
 
 from app.core import constants
 from app.project.project_service import create_blank_project
@@ -56,7 +56,9 @@ def test_local_history_dialogs_open_under_light_and_dark_themes(
         return QDialog.Rejected
 
     monkeypatch.setattr("app.shell.local_history_dialog.LocalHistoryDialog.exec_", fake_local_history_exec)
+    monkeypatch.setattr("app.shell.local_history_dialog.LocalHistoryDialog.exec", fake_local_history_exec, raising=False)  # exec_qt calls exec on Qt 6
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_history_restore_exec)
+    monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec", fake_history_restore_exec, raising=False)  # exec_qt calls exec on Qt 6
 
     for mode in (constants.UI_THEME_MODE_LIGHT, constants.UI_THEME_MODE_DARK):
         window._shell_preferences_runtime.handle_set_theme(mode, skip_theme_styles=True)

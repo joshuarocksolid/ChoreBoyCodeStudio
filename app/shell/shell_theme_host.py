@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
+from app.qt.QtWidgets import QApplication
 from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.shell_theme_surface_appliers import build_main_window_shell_theme_callbacks
 from app.shell.shell_theme_workflow import ExplorerThemeHost
@@ -87,7 +88,9 @@ class MainWindowShellThemeHost:
 
     @property
     def palette_accessor(self) -> Any:
-        return self._window
+        # The application palette, not the window's: the dark style sheet repaints
+        # the window, so its palette would keep System mode dark.
+        return QApplication.palette
 
     @property
     def theme_mode(self) -> str:

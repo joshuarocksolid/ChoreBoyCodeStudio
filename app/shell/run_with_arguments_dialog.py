@@ -6,9 +6,9 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Mapping, Optional, Sequence
 
-from PySide2.QtCore import Qt, QTimer
-from PySide2.QtGui import QKeySequence
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, QTimer
+from app.qt.QtGui import QKeySequence
+from app.qt.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
@@ -53,6 +53,7 @@ from app.shell.run_form_section import build_run_form_section
 from app.shell.style_sheet import build_run_dialog_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
 from app.shell.toolbar_icons import icon_run
+from app.qt.qt_compat import exec_qt
 
 _DIALOG_OBJECT_NAME = "shell.runWithArgumentsDialog"
 _SUBTITLE = "Run once with custom arguments."
@@ -349,7 +350,7 @@ class RunWithArgumentsDialog(QDialog):
             parent=parent,
             tokens=tokens,
         )
-        if dialog.exec_() != QDialog.Accepted:
+        if exec_qt(dialog) != QDialog.Accepted:
             return RunWithArgumentsResult(outcome=dialog._outcome)
         return RunWithArgumentsResult(
             outcome=RunWithArgumentsOutcomeKind.RUN,

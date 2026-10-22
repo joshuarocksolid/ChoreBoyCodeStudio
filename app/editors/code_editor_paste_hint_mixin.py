@@ -5,10 +5,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from PySide2.QtCore import QPoint, Qt
-from PySide2.QtGui import QContextMenuEvent, QTextCursor
-from PySide2.QtCore import QMimeData
-from PySide2.QtWidgets import QApplication, QMenu
+from app.qt.QtCore import QPoint, Qt
+from app.qt.QtGui import QContextMenuEvent, QTextCursor
+from app.qt.QtCore import QMimeData
+from app.qt.QtWidgets import QApplication, QMenu
 
 from app.core import constants
 from app.editors.paste_hint_overlay import PasteHintOverlay
@@ -20,10 +20,11 @@ from app.editors.text_editing import (
     repair_flat_python_indentation,
 )
 from app.shell.theme_tokens import ShellThemeTokens
+from app.qt.qt_compat import exec_qt
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit, QWidget
+    from app.qt.QtWidgets import QPlainTextEdit, QWidget
 
     class _CodeEditorPasteHintBase(QPlainTextEdit):
         _auto_reindent_flat_python_paste: bool
@@ -85,7 +86,7 @@ class CodeEditorPasteHintMixin(_CodeEditorPasteHintBase):
         menu = self.createStandardContextMenu(event.pos())
         try:
             self._augment_context_menu_with_flat_python_actions(menu)
-            menu.exec_(event.globalPos())
+            exec_qt(menu, event.globalPos())
         finally:
             menu.deleteLater()
 

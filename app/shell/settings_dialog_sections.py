@@ -3,9 +3,9 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QIcon, QKeySequence
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QIcon, QKeySequence
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QComboBox,

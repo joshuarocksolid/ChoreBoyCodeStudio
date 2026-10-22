@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from PySide2.QtWidgets import (
+from dataclasses import replace
+
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QColorDialog,
@@ -19,6 +21,7 @@ from PySide2.QtWidgets import (
     QListWidget,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -26,12 +29,13 @@ from PySide2.QtWidgets import (
     QWidget,
 )
 
-from PySide2.QtGui import QColor, QFont, QIcon
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QKeySequence
+from app.qt.QtGui import QColor, QFont, QIcon
+from app.qt.QtCore import Qt, QTimer
+from app.qt.QtGui import QKeySequence
 
 from app.project.file_excludes import DEFAULT_EXCLUDE_PATTERNS
 from app.shell.settings_dialog_general import (
+    project_completion_mode,
     apply_general_tab_state_to_controls,
     build_general_tab,
     general_tab_state_from_controls,
@@ -237,6 +241,18 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
 
+    def reveal_completion_mode_control(self) -> None:
+        """Show the General tab scrolled to the code completion control, with focus on it."""
+        combo = self._completion_mode_input
+        if self._tabs_widget is not None:
+            self._tabs_widget.setCurrentIndex(0)
+        parent = combo.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            QTimer.singleShot(0, lambda area=parent: area.ensureWidgetVisible(combo, 0, 80))
+        QTimer.singleShot(0, lambda: combo.setFocus(Qt.OtherFocusReason))
+
     def snapshot(self) -> EditorSettingsSnapshot:
         """Return settings snapshot from current dialog values."""
         self._capture_active_scope_snapshot()
@@ -255,7 +271,10 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         if not self._project_scope_available:
             return None
         self._capture_active_scope_snapshot()
-        return self._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
+        project = self._scope_snapshots.get(SETTINGS_SCOPE_PROJECT)
+        if project is None:
+            return None
+        return replace(project, completion_mode=project_completion_mode(self, project.completion_mode))
 
     def _finalize_keybindings_columns(self) -> None:
         finalize_keybindings_columns(self)

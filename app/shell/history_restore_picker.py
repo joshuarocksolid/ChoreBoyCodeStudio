@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -18,6 +18,7 @@ from PySide2.QtWidgets import (
 )
 
 from app.persistence.history_models import LocalHistoryFileSummary
+from app.qt.qt_compat import exec_qt
 
 HISTORY_RESTORE_ACTION_NONE = ""
 HISTORY_RESTORE_ACTION_OPEN_TIMELINE = "open_timeline"
@@ -105,7 +106,7 @@ class HistoryRestorePickerDialog(QDialog):
         """Reset focus and run the picker modally."""
         self._requested_action = HISTORY_RESTORE_ACTION_NONE
         self._search_input.setFocus()
-        return self.exec_()
+        return exec_qt(self)
 
     def selected_entry(self) -> Optional[LocalHistoryFileSummary]:
         """Return the currently selected entry, if any."""

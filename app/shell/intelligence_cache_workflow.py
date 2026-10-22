@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Protocol
 
-from PySide2.QtWidgets import QMessageBox
+from app.qt.QtWidgets import QMessageBox
 
 from app.intelligence.cache_controls import rebuild_symbol_cache
 from app.intelligence.symbol_index import update_symbol_index_cache

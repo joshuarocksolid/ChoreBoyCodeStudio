@@ -1,0 +1,15 @@
+# Repo Guardian dependency-update baseline.
+#
+# npm: root package.json pins pyright. There is no lockfile; Dependabot
+# updates the version in package.json.
+#
+# pip is intentionally omitted. pyproject.toml has pytest config only (no
+# PEP 621 dependencies). requirements-dev.txt is an empty placeholder.
+# Runtime Python packages are vendored, not declared in a manifest Dependabot
+# can update. PySide2 comes from the FreeCAD AppRun, not this repo.
+version: 2
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"

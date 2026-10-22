@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Any, Callable
 
-from PySide2.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import LoadedProject

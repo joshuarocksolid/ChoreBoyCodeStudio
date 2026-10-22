@@ -39,7 +39,7 @@ Each file: H1, one paragraph, then exactly four H2s in this order.
 ## Features
 
 - [Launch and runtime](./launch-runtime.md) — AT-01, AT-02, smoke M1
-- [Welcome and onboarding](./welcome-onboarding.md) — AT-73, AT-74, AT-76, AT-77, AT-80, M2
+- [Welcome and onboarding](./welcome-onboarding.md) — AT-73, AT-74 (section-14), AT-80, M2
 - [Project open and create](./project-open-create.md) — AT-03, AT-04, AT-17, AT-19–21, AT-24, AT-33
 - [Explorer and files](./explorer-files.md) — AT-05, AT-27, AT-28, AT-83
 - [Editor, save, tabs](./editor-save-tabs.md) — AT-06–09, AT-44, drag-drop open
@@ -55,6 +55,8 @@ Each file: H1, one paragraph, then exactly four H2s in this order.
 - [Recovery and history](./recovery-history.md) — AT-18, AT-65–71
 - [Dependencies](./dependencies.md) — AT-90–95
 - [Packaging and installer](./packaging-installer.md) — AT-78, AT-81, AT-82, AT-84, AT-95, AT-104, AT-105
+- [Shop-LAN state](./shop-lan-state.md) — product dest `/home/default/FreeCAD/CBCS/state`; leftover copy; opt-in share pointer
+- [Hidden path policy](./hidden-path-policy.md) — per-parent hidden file/dir probe matrix; Desktop icon sidecar fallback
 - [Diagnostics and support](./diagnostics-support.md) — AT-22, AT-23, AT-79
 - [Layout and status](./layout-status.md) — AT-25, zoom, status chips
 - [Flat-Python paste](./edit-flat-python-paste.md) — AT-EDIT-FLAT-PYTHON-PASTE

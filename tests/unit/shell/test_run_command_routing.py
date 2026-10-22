@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
@@ -287,15 +287,18 @@ def test_start_active_file_session_cleans_transient_file_when_start_fails() -> N
 
 
 def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_transient_path() -> None:
+    dirty = str(Path("/tmp/project/dirty.py").resolve())
+    other = str(Path("/tmp/project/other.py").resolve())
+    transient = str(Path("/tmp/transient.py").resolve())
     breakpoints = [
-        build_breakpoint("/tmp/project/dirty.py", 2),
-        build_breakpoint("/tmp/project/dirty.py", 9),
-        build_breakpoint("/tmp/project/other.py", 1),
+        build_breakpoint(dirty, 2),
+        build_breakpoint(dirty, 9),
+        build_breakpoint(other, 1),
     ]
     workflow, host = _build_run_launch_workflow(
         editor_manager=lambda: SimpleNamespace(
             active_tab=lambda: SimpleNamespace(
-                file_path="/tmp/project/dirty.py",
+                file_path=dirty,
                 is_dirty=True,
                 current_content="print('dirty')\n",
             )
@@ -303,7 +306,7 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
         debug_control_workflow=SimpleNamespace(
             build_debug_breakpoints_for_launch=lambda **_kwargs: [
                 build_breakpoint(
-                    "/tmp/transient.py" if bp.file_path == "/tmp/project/dirty.py" else bp.file_path,
+                    transient if bp.file_path == dirty else bp.file_path,
                     bp.line_number,
                 )
                 for bp in breakpoints
@@ -328,9 +331,9 @@ def test_start_active_file_session_debug_remaps_active_file_breakpoints_to_trans
         (breakpoint.file_path, breakpoint.line_number)
         for breakpoint in cast(list[Any], calls[0]["breakpoints"])
     ] == [
-        ("/tmp/transient.py", 2),
-        ("/tmp/transient.py", 9),
-        ("/tmp/project/other.py", 1),
+        (transient, 2),
+        (transient, 9),
+        (other, 1),
     ]
     assert deleted == []
     assert host.active_transient_entry_file_path() == "/tmp/transient.py"

@@ -47,7 +47,6 @@ class ProjectPackageConfig:
     description: str = ""
     entry_file: str = ""
     icon_path: str = ""
-    skip_missing_dependency_blockers: bool = False
     ask_install_location: bool = False
 
     def effective_entry_file(self, *, project_default_entry: str) -> str:
@@ -69,8 +68,6 @@ class ProjectPackageConfig:
             payload["entry_file"] = self.entry_file
         if self.icon_path:
             payload["icon_path"] = self.icon_path
-        if self.skip_missing_dependency_blockers:
-            payload["skip_missing_dependency_blockers"] = True
         if self.ask_install_location:
             payload["ask_install_location"] = True
         return payload
@@ -172,6 +169,9 @@ class InstalledPackageRecord:
     install_dir: str
     launcher_filename: str
     installed_at: str
+    owned_relative_paths: tuple[str, ...] = ()
+    published_launcher_paths: tuple[str, ...] = ()
+    icon_path: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -183,6 +183,9 @@ class InstalledPackageRecord:
             "install_dir": self.install_dir,
             "launcher_filename": self.launcher_filename,
             "installed_at": self.installed_at,
+            "owned_relative_paths": list(self.owned_relative_paths),
+            "published_launcher_paths": list(self.published_launcher_paths),
+            "icon_path": self.icon_path,
         }
 
 

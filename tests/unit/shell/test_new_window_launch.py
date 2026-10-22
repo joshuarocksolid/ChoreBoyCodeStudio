@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.file_project_commands_workflow import FileProjectCommandsWorkflow
 

@@ -12,8 +12,8 @@ import code
 from pathlib import Path
 from typing import Any, Callable, cast
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtGui import (
+from app.qt.QtCore import QRect, Qt, Signal
+from app.qt.QtGui import (
     QColor,
     QDragEnterEvent,
     QDropEvent,
@@ -24,12 +24,15 @@ from PySide2.QtGui import (
     QTextCharFormat,
     QTextCursor,
 )
-from PySide2.QtWidgets import QInputDialog, QMenu, QTextEdit
+from app.qt.QtWidgets import QInputDialog, QMainWindow, QMenu, QTextEdit, QToolTip
 
 from app.editors.completion_popup import CompletionController
+from app.editors.completion_popup.completion_replacement import resolve_insert_replacement_range
+from app.intelligence.completion_mode import COMPLETION_MODE_DEFAULT, COMPLETION_MODE_OFF
 from app.intelligence.completion_models import CompletionItem
 from app.shell.run_log_panel import _classify_line
 from app.shell.theme_tokens import ShellThemeTokens
+from app.qt.qt_compat import exec_qt
 
 _STDERR_TAG = "[stderr] "
 
@@ -69,15 +72,16 @@ class PythonConsoleWidget(QTextEdit):
         self._history_index: int = 0
         self._session_active: bool = False
         self._pending_block_lines: list[str] = []
-        self._auto_trigger_period: bool = True
         self._completion_request_generation: int = 0
-        self._active_completion_prefix = ""
         self._completion_popup = CompletionController(self)
         self._completion_popup.set_widget(self)
+        self._completion_popup.set_host(self)
+        self._completion_popup.set_mode(COMPLETION_MODE_DEFAULT)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
         self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
         self._completion_requester = None
         self._completion_resolve_requester = None
+        self.cursorPositionChanged.connect(self._completion_popup.on_cursor_moved)
 
         # Token-derived colors (set proper values via apply_theme).
         self._col_text: str = "#E9ECEF"
@@ -145,6 +149,39 @@ class PythonConsoleWidget(QTextEdit):
 
         self._completion_popup.set_docs_resolving(resolving)
 
+    def set_completion_mode(self, mode: str) -> None:
+        """Apply the shared code-completion mode (``off``, ``manual`` or ``typing``)."""
+
+        self._completion_popup.set_mode(mode)
+
+    def completion_mode(self) -> str:
+        return self._completion_popup.mode()
+
+    # CompletionHost -----------------------------------------------------
+
+    def completion_text_and_cursor(self) -> tuple[str, int]:
+        return self._current_input_and_cursor_offset()
+
+    def completion_anchor_rect(self, position: int) -> QRect:
+        cursor = QTextCursor(self.document())
+        document_position = self._prompt_anchor + max(0, position) if self._prompt_anchor >= 0 else 0
+        cursor.setPosition(max(0, min(document_position, self.document().characterCount() - 1)))
+        return self.cursorRect(cursor).translated(self.viewport().pos())
+
+    def completion_dispatch(self, text: str, cursor: int, trigger_kind: str, trigger_character: str) -> int:
+        self._completion_request_generation += 1
+        generation = self._completion_request_generation
+        if self._completion_requester is not None and self._prompt_anchor >= 0:
+            self._completion_requester(text, cursor, generation, trigger_kind, trigger_character)
+        return generation
+
+    def completion_status(self, message: str) -> None:
+        window = self.window()
+        if isinstance(window, QMainWindow):
+            window.statusBar().showMessage(message, 4000)
+            return
+        QToolTip.showText(self.mapToGlobal(self.cursorRect().bottomLeft()), message, self)
+
     def completion_request_generation(self) -> int:
         return self._completion_request_generation
 
@@ -168,14 +205,10 @@ class PythonConsoleWidget(QTextEdit):
         prefix: str,
         items: list[CompletionItem],
     ) -> None:
-        """Apply live-completion results if the prompt request is still current."""
+        """Apply a live-completion list if it still belongs to the open request."""
 
-        if request_generation != self._completion_request_generation:
-            return
-        if not items:
-            self._completion_popup.hide()
-            return
-        self._show_completion_items(items, prefix=prefix)
+        _ = prefix
+        self._completion_popup.deliver_items(request_generation, items)
 
     # ------------------------------------------------------------------
     # Session lifecycle
@@ -270,7 +303,7 @@ class PythonConsoleWidget(QTextEdit):
         self._keyPressEvent_inner(event)
 
     def _keyPressEvent_inner(self, event: QKeyEvent) -> None:
-        if self._handle_completion_popup_navigation(event):
+        if self._completion_popup.handle_key_press(event):
             return
         key = event.key()
         mods = _enum_int(event.modifiers())
@@ -296,13 +329,8 @@ class PythonConsoleWidget(QTextEdit):
             self._show_history_search_picker()
             return
 
-        if key == Qt.Key_Space and mods == _ctrl:
-            self._trigger_completion(trigger_kind="manual", trigger_character="")
-            event.accept()
-            return
-
-        if key == Qt.Key_Tab and not mods:
-            self._trigger_completion(trigger_kind="manual", trigger_character="")
+        if key == Qt.Key_Tab and not mods and self._completion_popup.mode() != COMPLETION_MODE_OFF:
+            self._completion_popup.open_manual()
             event.accept()
             return
 
@@ -316,6 +344,7 @@ class PythonConsoleWidget(QTextEdit):
             return
 
         if key in (Qt.Key_Return, Qt.Key_Enter):
+            self._completion_popup.hide()
             self._submit()
             return
 
@@ -353,7 +382,9 @@ class PythonConsoleWidget(QTextEdit):
                 return
             if not cursor.hasSelection() and cursor.position() <= self._prompt_anchor:
                 return
-            super().keyPressEvent(event)
+            with self._completion_popup.editing():
+                super().keyPressEvent(event)
+            self._completion_popup.after_backspace()
             return
 
         # Delete: block deletion of the prompt character.
@@ -368,81 +399,47 @@ class PythonConsoleWidget(QTextEdit):
             cursor.movePosition(QTextCursor.End)
             self.setTextCursor(cursor)
 
-        super().keyPressEvent(event)
-        if event.text() and self._completion_popup.is_visible() and self._active_completion_prefix:
-            self._trigger_completion(trigger_kind="typing", trigger_character="")
-        elif event.text() == "." and self._auto_trigger_period:
-            self._trigger_completion(trigger_kind="trigger_character", trigger_character=".")
-
-    def _trigger_completion(self, *, trigger_kind: str, trigger_character: str) -> None:
-        if self._completion_requester is None or self._prompt_anchor < 0:
-            return
-        cursor = self.textCursor()
-        if cursor.position() < self._prompt_anchor:
-            return
-        if self._completion_popup.is_visible() and self._active_completion_prefix:
-            self._completion_popup.reuse_items_for_prefix(self._active_completion_prefix)
-        self._completion_request_generation += 1
-        line_buffer, cursor_offset = self._current_input_and_cursor_offset()
-        self._completion_requester(
-            line_buffer,
-            cursor_offset,
-            self._completion_request_generation,
-            trigger_kind,
-            trigger_character,
-        )
-
-    def _handle_completion_popup_navigation(self, event: QKeyEvent) -> bool:
-        return self._completion_popup.handle_navigation_event(event)
+        with self._completion_popup.editing():
+            super().keyPressEvent(event)
+        inserted_text = event.text()
+        if inserted_text and inserted_text.isprintable():
+            self._completion_popup.after_text_input(inserted_text)
 
     def _request_completion_item_resolution(self, item: object) -> None:
-        if not isinstance(item, CompletionItem):
-            return
-        if not item.resolvable_fields:
+        if not isinstance(item, CompletionItem) or not item.resolvable_fields:
             return
         if self._completion_resolve_requester is None:
             return
+        site = self._completion_popup.site()
+        if site is None:
+            return
         line_buffer, cursor_offset = self._current_input_and_cursor_offset()
+        probe = line_buffer[: site.anchor] + item.label + line_buffer[cursor_offset:]
         self._completion_popup.set_docs_resolving(True)
         self._completion_resolve_requester(
             item,
-            line_buffer,
-            cursor_offset,
+            probe,
+            site.anchor + len(item.label),
             self._completion_request_generation,
         )
-
-    def _show_completion_items(self, items: list[CompletionItem], *, prefix: str) -> None:
-        if not items:
-            self._completion_popup.hide()
-            self._active_completion_prefix = ""
-            return
-        self._active_completion_prefix = prefix
-        self._completion_popup.set_items(items, prefix)
-        rect = self.cursorRect()
-        rect.setWidth(max(260, rect.width()))
-        self._completion_popup.complete(rect)
 
     def _insert_completion_from_item(self, item: object) -> None:
         if not isinstance(item, CompletionItem) or self._prompt_anchor < 0:
             return
         cursor = self.textCursor()
         line_buffer, cursor_offset = self._current_input_and_cursor_offset()
-        replacement_start = item.replacement_start
-        replacement_end = item.replacement_end
-        if replacement_start is None or replacement_end is None:
-            replacement_end = cursor_offset
-            replacement_start = cursor_offset
-            while replacement_start > 0 and (
-                line_buffer[replacement_start - 1].isalnum() or line_buffer[replacement_start - 1] == "_"
-            ):
-                replacement_start -= 1
+        replacement_start, replacement_end = resolve_insert_replacement_range(
+            line_buffer,
+            cursor_offset,
+        )
         start = self._prompt_anchor + max(0, min(replacement_start, len(line_buffer)))
         end = self._prompt_anchor + max(0, min(replacement_end, len(line_buffer)))
-        cursor.setPosition(start)
-        cursor.setPosition(end, QTextCursor.KeepAnchor)
-        cursor.removeSelectedText()
-        cursor.insertText(item.insert_text, self._default_fmt())
-        self.setTextCursor(cursor)
+        with self._completion_popup.editing():
+            cursor.setPosition(start)
+            cursor.setPosition(end, QTextCursor.KeepAnchor)
+            cursor.removeSelectedText()
+            cursor.insertText(item.label, self._default_fmt())
+            self.setTextCursor(cursor)
         self.setCurrentCharFormat(self._default_fmt())
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
@@ -458,7 +455,7 @@ class PythonConsoleWidget(QTextEdit):
         restart_action = menu.addAction("Restart Python Console")
         assert restart_action is not None
         restart_action.triggered.connect(self.restart_requested.emit)
-        menu.exec_(event.globalPos())
+        exec_qt(menu, event.globalPos())
 
     def dragEnterEvent(self, e: QDragEnterEvent) -> None:  # noqa: N802 - Qt signature
         mime_data = e.mimeData()

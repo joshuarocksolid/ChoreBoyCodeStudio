@@ -14,7 +14,7 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 
 ### Primary goals
 
-1. **Create/edit/run Python projects** that execute inside the FreeCAD AppRun runtime (pure python, PySide2 UI available).
+1. **Create/edit/run Python projects** that execute inside the FreeCAD AppRun runtime (pure python, Qt UI available: PySide2 on today's image, PySide6 on FreeCAD 1.1).
 2. **Project-first workflow**: folders, multiple files, templates, “Run”, console output, tracebacks, logs.
 3. **Robust debugging experience** without external tools:
   - persistent log file
@@ -43,7 +43,7 @@ You’ve discovered a new capability: launch standalone Qt (PySide2) apps using 
 ## 4) Constraints & Realities (Design must respect these)
 
 1. **Locked down system**: users cannot install editors/IDEs.
-2. **Runtime**: Python is the FreeCAD embedded runtime (confirmed path + version in discovery), and PySide2 exists there.
+2. **Runtime**: Python is the FreeCAD embedded runtime (confirmed path + version in discovery), and a Qt for Python binding exists there (PySide2 on today's image, PySide6 on FreeCAD 1.1).
 3. **Launching model**: most reliable is spawning AppRun detached (`start_new_session=True`).
 4. **GUI vs headless**: some FreeCAD exports fail in console mode (“Cannot load Gui module…”). Code Studio must treat that as a known limitation and guide users to headless-safe paths.
 5. **Persistence**: SQLite works and is ideal for local settings/indexing; Postgres drivers aren’t present but vendoring `pg8000` is proven and fast.
@@ -262,7 +262,7 @@ myapp/
 
 ## Where settings live
 
-- Global settings: `~/choreboy_code_studio_state/settings.json` (or under Home)
+- Global settings: `settings.json` in the shared settings root when one is configured, otherwise in `/home/default/FreeCAD/CBCS/state` (see `docs/ARCHITECTURE.md` §11). Local logs, history, and SQLite stay in that product directory. Shared settings are opt-in via `CBCS_STATE_ROOT` or a `cbcs_state_root` pointer under `~/share`. Leftover settings JSON is copied once. SQLite is not.
 - Per-project settings overrides: `<project>/cbcs/settings.json`
 - Per-project metadata: `<project>/cbcs/project.json`
 
@@ -347,7 +347,7 @@ Also: never lose user work—autosave drafts and warn loudly on exit if unsaved 
 2. **Performance on large projects**
   Mitigation: keep indexing optional; add SQLite-backed index if needed (already proven).
 3. **Dependency drift across ChoreBoy versions**
-  Mitigation: capability probe at startup (confirm PySide2, QtUiTools availability) and show a clear compatibility report.
+  Mitigation: capability probe at startup (confirm the Qt binding, PySide2 or PySide6, and QtUiTools availability) and show a clear compatibility report.
 
 ---
 

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
-from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QColorDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidgetItem, QWidget
+from app.qt.QtCore import Qt
+from app.qt.QtGui import QColor
+from app.qt.QtWidgets import QColorDialog, QHBoxLayout, QLabel, QLineEdit, QPushButton, QTableWidgetItem, QWidget
 
 from app.editors.syntax_engine import (
     DEFAULT_DARK_PALETTE,

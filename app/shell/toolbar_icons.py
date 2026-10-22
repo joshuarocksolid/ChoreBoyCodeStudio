@@ -6,8 +6,8 @@ import os
 from typing import Any, cast
 import tempfile
 
-from PySide2.QtCore import QPointF, QRectF, Qt
-from PySide2.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
+from app.qt.QtCore import QPointF, QRectF, Qt
+from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap, QPolygonF
 
 
 _SIZE = 16

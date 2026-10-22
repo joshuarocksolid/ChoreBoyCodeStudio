@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Callable
 
-from PySide2.QtGui import QTextCursor
-from PySide2.QtWidgets import QApplication
+from app.qt.QtGui import QTextCursor
+from app.qt.QtWidgets import QApplication
 
 from app.editors.text_editing import (
     FlatPythonIndentRepairResult,
@@ -19,7 +19,7 @@ from app.editors.text_editing import (
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorEditingBase(QPlainTextEdit):
         _comment_prefix: str

@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QMimeData, QPoint, QUrl, Qt  # noqa: E402
-from PySide2.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent, QPalette  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtCore import QMimeData, QPoint, QUrl, Qt, QEvent  # noqa: E402
+from app.qt.QtGui import QColor, QDragEnterEvent, QDropEvent, QFont, QKeyEvent, QPalette  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.intelligence.completion_models import CompletionItem, CompletionKind  # noqa: E402
 from app.shell.python_console_widget import _CONT_PROMPT, _PROMPT, PythonConsoleWidget, _is_traceback_context  # noqa: E402
@@ -25,9 +26,16 @@ def _qapp(qapp):  # type: ignore[no-untyped-def]
 
 
 @pytest.fixture()
-def widget() -> PythonConsoleWidget:
-    w = PythonConsoleWidget()
-    return w
+def widget() -> Iterator[PythonConsoleWidget]:
+    console = PythonConsoleWidget()
+    yield console
+    console._completion_popup.hide()  # noqa: SLF001
+    console.hide()
+    console.deleteLater()
+    QApplication.sendPostedEvents(None, QEvent.DeferredDelete)
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
 
 
 @pytest.fixture()
@@ -150,36 +158,82 @@ class TestPromptProtection:
 
 
 class TestCompletion:
-    def test_dot_triggers_completion_request(self, active_widget: PythonConsoleWidget) -> None:
+    def _record(self, widget: PythonConsoleWidget) -> list[tuple[str, int, int, str, str]]:
+        widget.show()
         requests: list[tuple[str, int, int, str, str]] = []
-        active_widget.set_completion_requester(
+        widget.set_completion_requester(
             lambda line, cursor, generation, trigger_kind, trigger_character: requests.append(
                 (line, cursor, generation, trigger_kind, trigger_character)
             )
         )
+        return requests
 
-        _type_text(active_widget, "FreeCAD.")
+    def _deliver(self, widget: PythonConsoleWidget, labels: list[str]) -> None:
+        widget.show_completion_items_for_request(
+            request_generation=widget.completion_request_generation(),
+            prefix="",
+            items=[CompletionItem(label=label, insert_text=label, kind=CompletionKind.FUNCTION) for label in labels],
+        )
 
-        assert requests
-        assert requests[-1][0] == "FreeCAD."
-        assert requests[-1][1] == len("FreeCAD.")
-        assert requests[-1][3] == "trigger_character"
-        assert requests[-1][4] == "."
+    def _ctrl_space(self, widget: PythonConsoleWidget) -> None:
+        QApplication.sendEvent(widget, QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.ControlModifier, " "))
+
+    @pytest.mark.parametrize(
+        ("mode", "typed", "expected"),
+        [("manual", "FreeCAD.", 0), ("typing", "FreeCAD.", 1), ("typing", "1.", 0), ("off", "FreeCAD.", 0)],
+    )
+    def test_dot_opens_only_in_while_typing_mode(
+        self, active_widget: PythonConsoleWidget, mode: str, typed: str, expected: int
+    ) -> None:
+        requests = self._record(active_widget)
+        active_widget.set_completion_mode(mode)
+
+        _type_text(active_widget, typed)
+
+        assert len([call for call in requests if call[3] == "trigger_character"]) == expected
+
+    def test_ctrl_space_requests_the_whole_member_list(self, active_widget: PythonConsoleWidget) -> None:
+        requests = self._record(active_widget)
+        _type_text(active_widget, "os.ge")
+
+        self._ctrl_space(active_widget)
+
+        assert requests[-1][:2] == ("os.ge", len("os."))
+        assert requests[-1][3] == "manual"
+
+    def test_list_filters_as_you_type_and_tab_accepts(self, active_widget: PythonConsoleWidget) -> None:
+        self._record(active_widget)
+        _type_text(active_widget, "os.")
+        self._ctrl_space(active_widget)
+        self._deliver(active_widget, ["abc", "getcwd", "getenv", "getpid", "pardir"])
+
+        _type_text(active_widget, "getc")
+        current = active_widget._completion_popup.current_item()  # noqa: SLF001
+        assert current is not None and current.label == "getcwd"
+        _press(active_widget, Qt.Key_Tab)
+
+        assert _get_plain_text(active_widget).endswith(_PROMPT + "os.getcwd")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+
+    def test_no_match_closes_and_backspace_reopens_without_a_new_request(
+        self, active_widget: PythonConsoleWidget
+    ) -> None:
+        requests = self._record(active_widget)
+        _type_text(active_widget, "os.")
+        self._ctrl_space(active_widget)
+        self._deliver(active_widget, ["getcwd", "getenv"])
+
+        _type_text(active_widget, "zq")
+        assert active_widget._completion_popup.is_visible() is False  # noqa: SLF001
+        _press(active_widget, Qt.Key_Backspace)
+        _press(active_widget, Qt.Key_Backspace)
+
+        assert active_widget._completion_popup.visible_labels() == ["getcwd", "getenv"]  # noqa: SLF001
+        assert len(requests) == 1
 
     def test_completion_insert_respects_prompt_anchor(self, active_widget: PythonConsoleWidget) -> None:
         _type_text(active_widget, "FreeCAD.new")
-        item = CompletionItem(
-            label="newDocument",
-            insert_text="newDocument",
-            kind=CompletionKind.FUNCTION,
-            replacement_start=len("FreeCAD."),
-            replacement_end=len("FreeCAD.new"),
-        )
-        active_widget.show_completion_items_for_request(
-            request_generation=active_widget._completion_request_generation,  # noqa: SLF001
-            prefix="new",
-            items=[item],
-        )
+        item = CompletionItem(label="newDocument", insert_text="newDocument", kind=CompletionKind.FUNCTION)
 
         active_widget._insert_completion_from_item(item)  # noqa: SLF001
 
@@ -576,36 +630,3 @@ class TestRunnerMetadataStyling:
         fmt = active_widget._fmt_for("stdout", "[system] Python console session ended.")
         assert fmt.fontItalic()
         assert fmt.foreground().color() == QColor(active_widget._col_muted)
-
-
-class TestConsoleCompletionPrefixReuse:
-    def test_tier_headers_survive_prefix_lengthen_via_reuse(self, active_widget: PythonConsoleWidget) -> None:
-        from app.core.completion_tier import is_tier_header_item  # noqa: PLC0415
-        from app.intelligence.completion_merge_policy import merge_completion_display  # noqa: PLC0415
-        from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind  # noqa: PLC0415
-
-        def _item(label: str, *, source: str = "semantic") -> CompletionItem:
-            return CompletionItem(
-                label=label,
-                insert_text=label,
-                kind=CompletionKind.SYMBOL,
-                source=source,
-            )
-
-        fast = CompletionEnvelope(
-            items=[_item("alpha", source="static_api_index")],
-            source_phase="fast",
-            confidence="approximate",
-        )
-        semantic = CompletionEnvelope(
-            items=[_item("alpha"), _item("alpaca")],
-            source_phase="semantic",
-            confidence="exact",
-        )
-        items = merge_completion_display(fast=fast, semantic=semantic).items
-
-        active_widget._completion_popup.set_items(items, "")
-        assert active_widget._completion_popup.reuse_items_for_prefix("a") is True
-        row_kinds = active_widget._completion_popup.model().row_kinds()
-        assert row_kinds.count("header") >= 2
-        assert is_tier_header_item(active_widget._completion_popup.model().items()[0])

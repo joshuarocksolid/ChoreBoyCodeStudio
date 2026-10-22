@@ -1,50 +1,129 @@
-"""Orchestrator that replaces ``QCompleter`` for the editor and console.
+"""Completion popup behavior shared by the code editor and the Python Console.
 
-Provides a near drop-in API for callers used to ``QCompleter``:
+The host widget owns the text. The controller owns everything else: when the
+list opens, the member list cached for the current expression, matching and
+ranking as the user types, when the list closes, and when Backspace reopens it.
 
-* :meth:`set_widget`
-* :meth:`set_items` (replaces ``setStringList`` / ``setCompletionPrefix``)
-* :meth:`complete` (positions the popup at the supplied rect)
-* :meth:`popup` (returns the underlying :class:`CompletionPopupContainer`)
-* :meth:`current_item` / :pyattr:`activated`
-* :meth:`apply_theme`
+Rules (owner approved for v0.4.13):
 
-Keyboard navigation continues to be driven by the host widget's
-``keyPressEvent``; the controller exposes :meth:`forward_navigation_event` and
-:meth:`accept_current` helpers so each surface can keep its existing
-``_handle_completion_popup_navigation`` shape.
+* Off: nothing opens; Ctrl+Space shows a status hint.
+* Manual: only Ctrl+Space opens the list, never ``.`` by itself.
+* While typing: ``.`` after a name, or the second letter of a name, opens it.
+* Never inside strings or comments, or after a digit-dot, in any mode.
+* The list closes when nothing matches and when the whole name is typed;
+  Backspace in the same expression reopens it from the cached list.
+  Esc closes it for good: a following Backspace does not reopen it.
+* Tab and Enter accept and replace only the typed prefix.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from contextlib import contextmanager
+import time
+from typing import Any, Dict, Iterator, List, Optional, Protocol, Tuple
 
-from PySide2.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
-from PySide2.QtGui import QKeyEvent
-from PySide2.QtWidgets import QApplication, QWidget
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, Signal
+from app.qt.QtGui import QFontMetrics, QKeyEvent
+from app.qt.QtWidgets import QApplication, QWidget
 
-from app.editors.completion_popup.completion_item_model import CompletionItemModel
-from app.editors.completion_popup.completion_popup_container import (
-    CompletionPopupContainer,
-)
 from app.core.completion_tier import is_tier_header_item
+from app.editors.completion_popup.completion_item_delegate import CHIP_GAP, CHIP_LEFT, CHIP_SIZE
+from app.editors.completion_popup.completion_item_model import CompletionItemModel, row_short_type
+from app.editors.completion_popup.completion_popup_container import OUTER_MARGINS, CompletionPopupContainer
+from app.intelligence.completion_metrics import log_completion_phase
+from app.intelligence.completion_matcher import (
+    ACCEPTANCE_RECENCY,
+    filter_and_rank,
+    typed_full_name,
+)
+from app.intelligence.completion_mode import (
+    COMPLETION_MODE_DEFAULT,
+    COMPLETION_MODE_OFF,
+    COMPLETION_OFF_HINT,
+    normalize_completion_mode,
+)
 from app.intelligence.completion_models import CompletionItem
+from app.intelligence.completion_site import (
+    BLOCKED_COMMENT,
+    BLOCKED_NUMBER,
+    BLOCKED_NUMERIC_DOT,
+    BLOCKED_STRING,
+    SITE_MEMBER,
+    CompletionSite,
+    completion_site,
+    should_open_while_typing,
+)
 from app.shell.theme_tokens import ShellThemeTokens
 
+MIN_LIST_WIDTH = 240
+MAX_LIST_WIDTH = 560
+NARROW_MIN_QUERY = 3
+FOOTER_HINT = "Tab insert · Esc close"
+_METRICS_LIMIT = 200
 
-_NAVIGATION_KEYS = {
-    Qt.Key_Up,
-    Qt.Key_Down,
-    Qt.Key_PageUp,
-    Qt.Key_PageDown,
-    Qt.Key_Home,
-    Qt.Key_End,
+_BLOCKED_HINTS = {
+    BLOCKED_STRING: "No completions inside a string.",
+    BLOCKED_COMMENT: "No completions inside a comment.",
+    BLOCKED_NUMERIC_DOT: "No completions after a number.",
+    BLOCKED_NUMBER: "No completions after a number.",
 }
-_ACCEPT_KEYS = {Qt.Key_Return, Qt.Key_Enter, Qt.Key_Tab}
+
+CLOSE_ESCAPE = "escape"
+CLOSE_ACCEPTED = "accepted"
+CLOSE_NO_MATCH = "no_match"
+CLOSE_TYPED_FULL_NAME = "typed_full_name"
+CLOSE_LEFT_EXPRESSION = "left_expression"
+CLOSE_MODE = "mode_changed"
+CLOSE_CLICK_AWAY = "click_away"
+
+
+def completion_selection_label_to_keep(
+    *,
+    event: str,
+    visible: bool,
+    user_moved: bool,
+    current_label: str,
+) -> str:
+    """Label to reselect after a refresh, or empty to take the new first row.
+
+    A later source merging into an open list must not move the highlight.
+    Typing still jumps to the best match unless the user already moved.
+    """
+
+    if visible and current_label and (user_moved or event == "update"):
+        return current_label
+    return ""
+
+
+class CompletionHost(Protocol):
+    """What the controller needs from the widget that owns the text."""
+
+    def completion_text_and_cursor(self) -> Tuple[str, int]:
+        """Return the completable text and the cursor offset in it."""
+
+    def completion_anchor_rect(self, position: int) -> QRect:
+        """Return the cursor rect for ``position`` in host widget coordinates."""
+
+    def completion_dispatch(self, text: str, cursor: int, trigger_kind: str, trigger_character: str) -> int:
+        """Start an async list request at ``cursor`` and return its generation."""
+
+    def completion_status(self, message: str) -> None:
+        """Show a short status-bar hint."""
+
+
+_GENERATION_UNKNOWN = -1
+
+
+class _Pending:
+    def __init__(self, generation: int, key: Tuple[str, int, str], root: str, started_at: float) -> None:
+        self.generation = generation
+        self.key = key
+        self.root = root
+        self.started_at = started_at
 
 
 class CompletionController(QObject):
-    """High-level orchestrator owning the popup, model, and view."""
+    """Owns the popup, its rows and the open / filter / close rules."""
 
     activated: Any = Signal(object)
     selection_changed: Any = Signal(object)
@@ -52,34 +131,54 @@ class CompletionController(QObject):
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._widget: QWidget | None = None
+        self._host: CompletionHost | None = None
+        self._mode = COMPLETION_MODE_DEFAULT
+        self.metrics: List[Dict[str, Any]] = []
+        construct_started = time.perf_counter()
         self._model = CompletionItemModel(self)
         popup_parent = parent if isinstance(parent, QWidget) else None
         self._popup = CompletionPopupContainer(popup_parent)
-        self._popup.list_view().setModel(self._model)
-        self._popup.list_view().doubleClicked.connect(self._on_double_clicked)
-        self._popup.list_view().clicked.connect(self._on_clicked)
-        self._popup.list_view().current_item_changed.connect(self._on_current_item_changed)
-        # Intercept keyboard events that Qt routes to the popup (because of
-        # ``Qt.Popup``) and forward typed characters back to the host widget so
-        # the user can keep typing to refine the visible completion list.
+        list_view = self._popup.list_view()
+        list_view.setModel(self._model)
+        list_view.doubleClicked.connect(lambda _index: self.accept_current())
+        list_view.current_item_changed.connect(self._on_current_item_changed)
         self._popup.installEventFilter(self)
-        self._tokens: ShellThemeTokens | None = None
-        self._last_selection_identity = ""
+        self._popup.closed.connect(self._on_popup_closed)
+        self._record(
+            "construct",
+            construct_ms=round((time.perf_counter() - construct_started) * 1000.0, 3),
+        )
+
+        self._site: Optional[CompletionSite] = None
+        self._pending: Optional[_Pending] = None
+        self._base_items: List[CompletionItem] = []
+        self._base_names: List[str] = []
+        self._base_key: Optional[Tuple[str, int, str]] = None
+        self._base_root = ""
+        self._resolved: Dict[str, CompletionItem] = {}
+        self._list_width = MIN_LIST_WIDTH
+        self._narrow_query: Optional[str] = None
+        self._narrow_matches: List[int] = []
+        self._user_moved_selection = False
+        self._reopen_key: Optional[Tuple[str, int, str]] = None
+        self._closing_internally = False
+        self._surface_warmed = False
+        self._editing_depth = 0
+        self._selection_started_at = 0.0
+        self._last_selection_label = ""
 
     # ------------------------------------------------------------------
     # Wiring
     # ------------------------------------------------------------------
 
     def set_widget(self, widget: QWidget | None) -> None:
-        """Attach the host widget used as positioning anchor and focus proxy.
+        """Attach the widget used for placement and as the popup focus proxy."""
 
-        The popup uses ``widget`` as its focus proxy so Qt does not visibly
-        steal focus when the popup is shown. Typed characters that reach the
-        popup (because of ``Qt.Popup`` keyboard grab) are forwarded back to
-        ``widget`` from :meth:`eventFilter`.
-        """
         self._widget = widget
         self._popup.setFocusProxy(widget)
+
+    def set_host(self, host: CompletionHost | None) -> None:
+        self._host = host
 
     def widget(self) -> QWidget | None:
         return self._widget
@@ -91,243 +190,547 @@ class CompletionController(QObject):
         return self._popup
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        """Apply theme tokens to all owned widgets and the model."""
-        self._tokens = tokens
         self._model.set_theme_tokens(tokens)
         self._popup.apply_theme(tokens)
 
+    def set_mode(self, mode: str) -> None:
+        normalized = normalize_completion_mode(mode) or COMPLETION_MODE_DEFAULT
+        if normalized == self._mode:
+            return
+        self._mode = normalized
+        self._close(CLOSE_MODE)
+        self._forget_expression()
+
+    def mode(self) -> str:
+        return self._mode
+
     # ------------------------------------------------------------------
-    # Lifecycle
+    # State queries
     # ------------------------------------------------------------------
-
-    def set_items(self, items: list[CompletionItem], prefix: str) -> None:
-        """Populate the model with new candidates."""
-        self._model.set_items(items, prefix)
-        self._last_selection_identity = ""
-        self._popup.list_view().select_first_row()
-
-    def replace_item(self, item: CompletionItem) -> bool:
-        """Replace a displayed item with lazily resolved metadata."""
-
-        replaced = self._model.replace_item(item)
-        if replaced and self.current_item() == item:
-            self._popup.docs_panel().set_resolving(False)
-            self._popup.docs_panel().set_item(item)
-        return replaced
-
-    def set_docs_resolving(self, resolving: bool) -> None:
-        """Toggle the documentation panel loading state."""
-
-        self._popup.docs_panel().set_resolving(resolving)
-
-    def reuse_items_for_prefix(self, prefix: str) -> bool:
-        """Filter visible results for a longer prefix while async work runs."""
-
-        previous_prefix = self._model.prefix()
-        if previous_prefix and not prefix.startswith(previous_prefix):
-            return False
-        filtered = _filter_items_preserving_tier_headers(self._model.items(), prefix)
-        if not filtered or not any(not is_tier_header_item(item) for item in filtered):
-            return False
-        self.set_items(filtered, prefix)
-        return True
-
-    def clear(self) -> None:
-        """Drop all rows and hide the popup."""
-        self._model.clear()
-        self._popup.hide()
-
-    def complete(self, anchor_rect: QRect) -> None:
-        """Show the popup near ``anchor_rect`` (host-widget coordinates)."""
-        if self._model.rowCount() == 0:
-            self._popup.hide()
-            return
-        widget = self._widget
-        if widget is None:
-            self._popup.show()
-            return
-        if not widget.isVisible():
-            return
-
-        list_view = self._popup.list_view()
-        list_view.select_first_row()
-
-        list_width = list_view.width_hint()
-        list_height = list_view.height_hint()
-        list_view.setFixedWidth(list_width)
-
-        chrome_height = list_height
-        if self._popup.docs_visible():
-            docs = self._popup.docs_panel()
-            chrome_height = max(list_height, docs.minimumSizeHint().height())
-            docs.setFixedHeight(chrome_height)
-        list_view.setFixedHeight(chrome_height)
-
-        self._popup.adjustSize()
-        size = self._popup.sizeHint()
-        popup_width = max(size.width(), list_width + 32)
-        popup_height = max(size.height(), chrome_height + 16)
-        self._popup.resize(popup_width, popup_height)
-
-        global_anchor = widget.mapToGlobal(QPoint(anchor_rect.x(), anchor_rect.bottom() + 4))
-        screen_geom = self._screen_geometry_for(widget, global_anchor)
-        x = global_anchor.x()
-        y = global_anchor.y()
-        if x + popup_width > screen_geom.right():
-            x = max(screen_geom.left(), screen_geom.right() - popup_width)
-        if y + popup_height > screen_geom.bottom():
-            y_above = widget.mapToGlobal(QPoint(anchor_rect.x(), anchor_rect.y())).y() - popup_height - 4
-            y = max(screen_geom.top(), y_above)
-
-        self._popup.move(x, y)
-        if not self._popup.isVisible():
-            self._popup.show()
-        else:
-            self._popup.raise_()
-
-    def hide(self) -> None:
-        self._popup.hide()
 
     def is_visible(self) -> bool:
         return self._popup.isVisible()
 
+    def is_pending(self) -> bool:
+        return self._pending is not None
+
     def current_item(self) -> CompletionItem | None:
         return self._popup.list_view().current_item()
 
+    def visible_labels(self, limit: int = 12) -> List[str]:
+        return self._model.labels()[:limit]
+
+    def total_count(self) -> int:
+        return len(self._base_items)
+
+    def site(self) -> Optional[CompletionSite]:
+        return self._site
+
     # ------------------------------------------------------------------
-    # Keyboard helpers
+    # Host entry points
     # ------------------------------------------------------------------
 
-    def handle_navigation_event(self, event: QKeyEvent) -> bool:
-        """Forward navigation/accept/dismiss events to the popup.
+    @contextmanager
+    def editing(self) -> Iterator[None]:
+        """Wrap the host's own key handling so cursor moves are not mistaken for clicks."""
 
-        Returns ``True`` when the event has been handled by the controller and
-        should not be processed further by the host widget.
-        """
-        return self._dispatch_popup_key(event)
+        self._editing_depth += 1
+        try:
+            yield
+        finally:
+            self._editing_depth -= 1
 
-    def _dispatch_popup_key(self, key_event: QKeyEvent) -> bool:
-        """Handle popup-owned keys for both host and ``eventFilter`` entry points."""
+    def handle_key_press(self, event: QKeyEvent) -> bool:
+        """Handle popup keys and Ctrl+Space before the host sees ``event``."""
 
-        if not self._popup.isVisible():
+        key = event.key()
+        modifiers = event.modifiers()
+        if key == Qt.Key_Space and modifiers & Qt.ControlModifier:
+            if self.is_visible():
+                self._popup.set_docs_visible(not self._popup.docs_visible())
+                self._place()
+            else:
+                self.open_manual()
+            event.accept()
+            return True
+        if not self.is_visible():
             return False
-        key = key_event.key()
         if key == Qt.Key_Escape:
-            self._popup.hide()
-            key_event.accept()
+            self._close(CLOSE_ESCAPE)
+            self._forget_expression()
+            event.accept()
             return True
-        if key in _ACCEPT_KEYS:
+        if key in (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter) and not modifiers & Qt.ShiftModifier:
             self.accept_current()
-            key_event.accept()
+            event.accept()
             return True
-        if key in _NAVIGATION_KEYS:
-            self._popup.list_view().handle_navigation_key(key_event)
+        if key in (Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown):
+            self._popup.list_view().move_selection(key)
+            self._user_moved_selection = True
+            event.accept()
             return True
         return False
 
-    def accept_current(self) -> None:
-        """Emit :pyattr:`activated` for the highlighted item, then hide."""
-        item = self.current_item()
-        if item is not None and is_tier_header_item(item):
-            self._popup.list_view().move_to_next_selectable()
-            next_item = self.current_item()
-            if next_item is None or is_tier_header_item(next_item):
-                self._popup.hide()
+    def open_manual(self) -> None:
+        """Ctrl+Space: open the list here, or explain why it cannot open."""
+
+        if self._mode == COMPLETION_MODE_OFF:
+            self._status(COMPLETION_OFF_HINT)
             return
-        self._popup.hide()
-        if item is not None:
-            self.activated.emit(item)
+        self._open(trigger_kind="manual", trigger_character="", manual=True)
+
+    def after_text_input(self, inserted_text: str) -> None:
+        """Call after the host inserted ``inserted_text`` at the cursor."""
+
+        if not inserted_text:
+            return
+        is_word = inserted_text.isalnum() or inserted_text == "_"
+        if self.is_visible() or self._pending is not None:
+            if is_word:
+                site = self._live_site(check_strings=False)
+                if site is not None and site.key == self._active_key():
+                    self._site = site
+                    if self.is_visible():
+                        self._refilter(site.prefix, event="filter")
+                    return
+            self._close(CLOSE_LEFT_EXPRESSION)
+            self._forget_expression()
+        elif not is_word:
+            self._forget_expression()
+        elif self._reopen_key is not None:
+            site = self._live_site(check_strings=False)
+            if site is None or site.key != self._reopen_key:
+                self._forget_expression()
+        if self.is_visible() or self._mode == COMPLETION_MODE_OFF:
+            return
+        site = self._live_site(check_strings=True)
+        if site is not None and should_open_while_typing(self._mode, site, inserted_text):
+            trigger_kind = "trigger_character" if inserted_text == "." else "typing"
+            self._open(trigger_kind=trigger_kind, trigger_character=inserted_text if inserted_text == "." else "")
+
+    def after_backspace(self) -> None:
+        """Call after the host deleted text before the cursor."""
+
+        site = self._live_site(check_strings=False)
+        if self.is_visible():
+            if site is not None and site.key == self._active_key() and self._root_allows(site.prefix):
+                self._site = site
+                self._refilter(site.prefix, event="backspace_filter")
+                return
+            self._close(CLOSE_LEFT_EXPRESSION)
+            self._forget_expression()
+            return
+        if (
+            site is not None
+            and self._reopen_key is not None
+            and site.key == self._reopen_key
+            and self._base_items
+            and self._root_allows(site.prefix)
+        ):
+            self._site = site
+            self._refilter(site.prefix, event="backspace_reopen", started_at=time.perf_counter())
+            return
+        if self._pending is not None:
+            if site is not None and site.key == self._pending.key and self._root_allows(site.prefix):
+                return
+            self._forget_expression()
+            return
+        if site is None or site.key != self._reopen_key:
+            self._forget_expression()
+
+    def on_cursor_moved(self) -> None:
+        """Close the list when the cursor leaves the expression (arrow keys, clicks)."""
+
+        if self._editing_depth > 0:
+            return
+        if not self.is_visible() and self._pending is None and self._reopen_key is None:
+            return
+        site = self._live_site(check_strings=False)
+        key = self._active_key() if (self.is_visible() or self._pending is not None) else self._reopen_key
+        if site is None or site.key != key or not self._root_allows(site.prefix):
+            self._close(CLOSE_LEFT_EXPRESSION)
+            self._forget_expression()
+            return
+        if self.is_visible() and self._site is not None and site.prefix != self._site.prefix:
+            self._site = site
+            self._refilter(site.prefix, event="cursor_filter")
+
+    def deliver_items(self, generation: int, items: List[CompletionItem]) -> None:
+        """Apply an async list result if it still belongs to the open request."""
+
+        pending = self._pending
+        if pending is None or pending.generation not in (generation, _GENERATION_UNKNOWN):
+            return
+        site = self._live_site(check_strings=False)
+        if site is None or site.key != pending.key or not site.prefix.lower().startswith(pending.root.lower()):
+            return
+        delivered_ms = round((time.perf_counter() - pending.started_at) * 1000.0, 3)
+        self._set_base(items, key=pending.key, root=pending.root)
+        if not self._base_items:
+            return
+        first_delivery = not self.is_visible() and self._site is None
+        self._site = site
+        self._refilter(
+            site.prefix,
+            event="open" if first_delivery else "update",
+            started_at=pending.started_at if first_delivery else 0.0,
+            delivered_ms=delivered_ms,
+        )
+
+    def replace_item(self, item: CompletionItem) -> bool:
+        """Apply lazily resolved docs for one row."""
+
+        replaced = self._model.replace_item(item)
+        self._resolved[item.label] = item
+        for index, existing in enumerate(self._base_items):
+            if existing.label == item.label:
+                self._base_items[index] = item
+                break
+        current = self.current_item()
+        if replaced and current is not None and current.label == item.label:
+            docs = self._popup.docs_panel()
+            docs.set_item(item)
+            if self._selection_started_at:
+                self._record(
+                    "docs",
+                    label=item.label,
+                    docs_ms=round((time.perf_counter() - self._selection_started_at) * 1000.0, 3),
+                )
+                self._selection_started_at = 0.0
+        return replaced
+
+    def set_docs_resolving(self, resolving: bool) -> None:
+        self._popup.docs_panel().set_resolving(resolving)
+
+    def accept_current(self) -> None:
+        item = self.current_item()
+        self._close(CLOSE_ACCEPTED)
+        self._forget_expression()
+        if item is None:
+            return
+        ACCEPTANCE_RECENCY.note_accepted(item.label)
+        self.activated.emit(item)
+
+    def hide(self) -> None:
+        """Close the list and forget the expression (host-driven resets)."""
+
+        self._close(CLOSE_ESCAPE)
+        self._forget_expression()
+
+    def clear(self) -> None:
+        self.hide()
+        self._model.clear()
 
     # ------------------------------------------------------------------
-    # Event filter (popup keyboard grab forwarding)
+    # Opening and filtering
     # ------------------------------------------------------------------
 
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        """Forward keyboard input that Qt grabbed for the popup.
+    def _open(self, *, trigger_kind: str, trigger_character: str, manual: bool = False) -> None:
+        host = self._host
+        if host is None:
+            return
+        started_at = time.perf_counter()
+        text, cursor = host.completion_text_and_cursor()
+        site = completion_site(text, cursor, check_strings=True)
+        if not site.is_open_able:
+            if manual and site.blocked in _BLOCKED_HINTS:
+                self._status(_BLOCKED_HINTS[site.blocked])
+            return
+        if self._base_items and self._base_key == site.key and self._root_allows(site.prefix):
+            self._site = site
+            self._refilter(site.prefix, event="open_cached", started_at=started_at, manual=manual)
+            return
+        self._forget_expression()
+        root = "" if site.kind == SITE_MEMBER else site.prefix[:1]
+        # Pending before dispatch: a cached list can be delivered synchronously
+        # from inside the dispatch call, before its generation is known.
+        pending = _Pending(_GENERATION_UNKNOWN, site.key, root, started_at)
+        self._pending = pending
+        self._record("request", trigger=trigger_kind, prefix=site.prefix, kind=site.kind)
+        generation = host.completion_dispatch(text, site.anchor + len(root), trigger_kind, trigger_character)
+        if self._pending is pending:
+            pending.generation = generation
 
-        ``Qt.Popup`` causes Qt to route all keyboard events to the popup
-        widget. We let the popup handle navigation/accept/dismiss keys, and
-        forward every other key (typed characters, backspace, etc.) to the
-        host widget so the user can continue editing while the popup stays
-        open and refines its list.
-        """
-        popup = getattr(self, "_popup", None)
-        if popup is None or watched is not popup or event.type() != QEvent.KeyPress:
-            return super().eventFilter(watched, event)
-        key_event = event  # QKeyEvent at this point
-        if self._dispatch_popup_key(key_event):
-            return True
-        widget = self._widget
-        if widget is None:
-            return super().eventFilter(watched, event)
-        # Forward everything else (printable characters, backspace, modifiers)
-        # to the host widget. The widget's ``keyPressEvent`` will update the
-        # buffer and re-trigger completion, which in turn calls
-        # :meth:`set_items` / :meth:`complete` to refresh the popup.
-        QApplication.sendEvent(widget, key_event)
+    def _set_base(self, items: List[CompletionItem], *, key: Tuple[str, int, str], root: str) -> None:
+        if key != self._base_key:
+            self._resolved = {}
+        seen: set = set()
+        base: List[CompletionItem] = []
+        for item in items:
+            if is_tier_header_item(item) or not item.label or item.label in seen:
+                continue
+            seen.add(item.label)
+            # A later tier repaints the same names; keep docs already resolved.
+            base.append(self._resolved.get(item.label, item))
+        if base and base_labels_equal(self._base_items, base) and self._base_key == key:
+            self._base_items = base
+            return
+        self._base_items = base
+        self._base_names = [item.label for item in base]
+        self._base_key = key
+        self._base_root = root
+        self._narrow_query = None
+        self._narrow_matches = []
+        self._list_width = self._width_for(base)
+
+    def _refilter(
+        self,
+        query: str,
+        *,
+        event: str,
+        started_at: float = 0.0,
+        manual: bool = False,
+        delivered_ms: Optional[float] = None,
+    ) -> bool:
+        started = time.perf_counter()
+        candidates: Optional[List[int]] = None
+        if (
+            self.is_visible()
+            and self._narrow_query is not None
+            and len(self._narrow_query) >= NARROW_MIN_QUERY
+            and query.startswith(self._narrow_query)
+        ):
+            candidates = self._narrow_matches
+        matched: List[int] = []
+        ranked = filter_and_rank(
+            self._base_names,
+            query,
+            recent=ACCEPTANCE_RECENCY.snapshot(),
+            candidates=candidates,
+            matched_out=matched,
+        )
+        self._narrow_query = query
+        self._narrow_matches = matched
+        filter_ms = (time.perf_counter() - started) * 1000.0
+        key = self._base_key
+        if not ranked:
+            self._close(CLOSE_NO_MATCH)
+            self._reopen_key = key
+            self._record(event, prefix=query, rows=0, filter_ms=round(filter_ms, 3), closed=CLOSE_NO_MATCH)
+            return False
+        if not event.startswith("open") and typed_full_name(self._base_names, query):
+            self._close(CLOSE_TYPED_FULL_NAME)
+            self._reopen_key = key
+            self._record(event, prefix=query, rows=len(ranked), closed=CLOSE_TYPED_FULL_NAME)
+            return False
+        current = self.current_item()
+        keep = completion_selection_label_to_keep(
+            event=event,
+            visible=self.is_visible(),
+            user_moved=self._user_moved_selection,
+            current_label="" if current is None else current.label,
+        )
+        items = [self._base_items[row.index] for row in ranked]
+        self._model.set_rows(items, [row.positions for row in ranked])
+        row = 0
+        if keep:
+            row = self._model.row_of_label(keep)
+            if row < 0:
+                row = 0
+                self._user_moved_selection = False
+        else:
+            self._user_moved_selection = False
+        self._popup.set_footer_text(
+            "{} of {} · {}".format(len(ranked), len(self._base_items), FOOTER_HINT)
+        )
+        self._popup.list_view().select_row(row)
+        was_visible = self.is_visible()
+        self._place(rows=len(ranked))
+        self._reopen_key = None
+        self._record(
+            event,
+            prefix=query,
+            rows=len(ranked),
+            total=len(self._base_items),
+            filter_ms=round(filter_ms, 3),
+            narrowed=candidates is not None,
+            manual=manual,
+            reopened=not was_visible,
+            delivered_ms=delivered_ms,
+        )
+        self._schedule_paint_metric(started_at or started)
         return True
 
     # ------------------------------------------------------------------
-    # Internal slots
+    # Placement
     # ------------------------------------------------------------------
 
-    def _on_double_clicked(self, _index: object) -> None:
-        self.accept_current()
+    def _width_for(self, items: List[CompletionItem]) -> int:
+        list_view = self._popup.list_view()
+        bold = list_view.font()
+        bold.setBold(True)
+        name_metrics = QFontMetrics(bold)
+        small = list_view.font()
+        small.setPointSizeF(max(7.5, small.pointSizeF() - 1.0))
+        type_metrics = QFontMetrics(small)
+        widest_name = max((name_metrics.horizontalAdvance(item.label) for item in items), default=120)
+        widest_type = max((type_metrics.horizontalAdvance(row_short_type(item)) for item in items), default=0)
+        width = list_view.delegate().width_for(widest_name, widest_type) + list_view.verticalScrollBar().sizeHint().width()
+        return max(MIN_LIST_WIDTH, min(MAX_LIST_WIDTH, width))
 
-    def _on_clicked(self, _index: object) -> None:
-        # Single-click only updates the docs panel (already wired via
-        # currentRowChanged); accepting requires a double-click or Enter.
-        return
+    def _place(self, rows: Optional[int] = None) -> None:
+        widget = self._widget
+        host = self._host
+        site = self._site
+        if widget is None or host is None or site is None or not widget.isVisible():
+            return
+        list_view = self._popup.list_view()
+        row_count = self._model.rowCount() if rows is None else rows
+        list_view.setFixedWidth(self._list_width)
+        list_view.setFixedHeight(list_view.height_for_rows(row_count))
+        self._popup.adjustSize()
+        size = self._popup.sizeHint()
+        anchor_rect = host.completion_anchor_rect(site.anchor)
+        text_left = OUTER_MARGINS[0] + 1 + CHIP_LEFT + CHIP_SIZE + CHIP_GAP
+        global_anchor = widget.mapToGlobal(QPoint(anchor_rect.x() - text_left, anchor_rect.bottom() + 2))
+        screen = _screen_geometry(widget, global_anchor)
+        x = max(screen.left(), min(global_anchor.x(), screen.right() - size.width()))
+        y = global_anchor.y()
+        if y + size.height() > screen.bottom():
+            y = max(screen.top(), widget.mapToGlobal(QPoint(0, anchor_rect.top())).y() - size.height() - 2)
+        self._popup.setGeometry(x, y, size.width(), size.height())
+        if not self._popup.isVisible():
+            self._popup.show()
+        self._popup.raise_()
+
+    def warm_surface(self) -> None:
+        """Create the popup's native window off screen so the first real show is cheap."""
+
+        if self._surface_warmed or self._popup.isVisible():
+            return
+        started_at = time.perf_counter()
+        popup = self._popup
+        popup.setAttribute(Qt.WA_DontShowOnScreen, True)
+        popup.resize(320, 240)
+        popup.show()
+        self._closing_internally = True
+        popup.hide()
+        self._closing_internally = False
+        popup.setAttribute(Qt.WA_DontShowOnScreen, False)
+        self._surface_warmed = True
+        log_completion_phase("popup_surface", (time.perf_counter() - started_at) * 1000.0)
+
+    # ------------------------------------------------------------------
+    # Closing
+    # ------------------------------------------------------------------
+
+    def _close(self, reason: str) -> None:
+        self._pending_cancel_if(reason)
+        if not self._popup.isVisible():
+            return
+        self._closing_internally = True
+        try:
+            self._popup.hide()
+        finally:
+            self._closing_internally = False
+        self._record("close", reason=reason)
+
+    def _pending_cancel_if(self, reason: str) -> None:
+        if reason in (CLOSE_NO_MATCH, CLOSE_TYPED_FULL_NAME):
+            return
+        self._pending = None
+
+    def _forget_expression(self) -> None:
+        self._reopen_key = None
+        self._pending = None
+        self._site = None
+        self._user_moved_selection = False
+
+    def _on_popup_closed(self) -> None:
+        if self._closing_internally:
+            return
+        self._forget_expression()
+        self._record("close", reason=CLOSE_CLICK_AWAY)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _active_key(self) -> Optional[Tuple[str, int, str]]:
+        if self._pending is not None:
+            return self._pending.key
+        return self._base_key
+
+    def _root_allows(self, prefix: str) -> bool:
+        root = self._pending.root if self._pending is not None else self._base_root
+        return prefix.lower().startswith(root.lower())
+
+    def _live_site(self, *, check_strings: bool) -> Optional[CompletionSite]:
+        if self._host is None:
+            return None
+        text, cursor = self._host.completion_text_and_cursor()
+        return completion_site(text, cursor, check_strings=check_strings)
+
+    def _status(self, message: str) -> None:
+        if self._host is not None:
+            self._host.completion_status(message)
 
     def _on_current_item_changed(self, item: object) -> None:
-        identity = _selection_identity(item)
-        if identity and identity == self._last_selection_identity:
+        if not isinstance(item, CompletionItem):
             return
-        self._last_selection_identity = identity
+        if item.label == self._last_selection_label and self.is_visible():
+            return
+        self._last_selection_label = item.label
+        self._selection_started_at = time.perf_counter()
         self.selection_changed.emit(item)
 
-    @staticmethod
-    def _screen_geometry_for(widget: QWidget, point: QPoint) -> QRect:
-        screen = widget.screen() if hasattr(widget, "screen") else None
-        if screen is None:
-            app = QApplication.instance()
-            if app is None:
-                return QRect(0, 0, 1920, 1080)
-            screen = app.primaryScreen()
-        if screen is None:
-            return QRect(0, 0, 1920, 1080)
-        # Prefer screen at the anchor point when available.
-        for candidate in QApplication.screens():
-            if candidate.geometry().contains(point):
-                return candidate.availableGeometry()
-        return screen.availableGeometry()
+    def _record(self, event: str, **data: Any) -> None:
+        entry: Dict[str, Any] = {"event": event, "mode": self._mode}
+        entry.update(data)
+        self.metrics.append(entry)
+        if len(self.metrics) > _METRICS_LIMIT:
+            del self.metrics[: len(self.metrics) - _METRICS_LIMIT]
+
+    def _schedule_paint_metric(self, started_at: float) -> None:
+        if self.metrics:
+            self._popup.list_view().measure_next_paint(self.metrics[-1], started_at)
+
+    # ------------------------------------------------------------------
+    # Event filter: Qt.Popup grabs the keyboard; send typing back to the host.
+    # ------------------------------------------------------------------
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        popup = getattr(self, "_popup", None)
+        if popup is None or watched is not popup:
+            return super().eventFilter(watched, event)
+        if event.type() == QEvent.ShortcutOverride:
+            # Window shortcuts (Tab is Edit > Indent) must not steal popup keys.
+            if isinstance(event, QKeyEvent) and _is_popup_key(event):
+                event.accept()
+                return True
+            return super().eventFilter(watched, event)
+        if event.type() != QEvent.KeyPress:
+            return super().eventFilter(watched, event)
+        widget = self._widget
+        if widget is None:
+            return super().eventFilter(watched, event)
+        QApplication.sendEvent(widget, event)
+        return True
 
 
-def _filter_items_preserving_tier_headers(
-    items: list[CompletionItem],
-    prefix: str,
-) -> list[CompletionItem]:
-    """Keep tier section headers when their section still has matching items."""
-
-    filtered: list[CompletionItem] = []
-    pending_header: CompletionItem | None = None
-    for item in items:
-        if is_tier_header_item(item):
-            pending_header = item
-            continue
-        matches = not prefix or item.label.lower().startswith(prefix.lower())
-        if not matches:
-            continue
-        if pending_header is not None:
-            filtered.append(pending_header)
-            pending_header = None
-        filtered.append(item)
-    return filtered
+_POPUP_KEYS = (Qt.Key_Tab, Qt.Key_Return, Qt.Key_Enter, Qt.Key_Escape, Qt.Key_Up, Qt.Key_Down, Qt.Key_PageUp, Qt.Key_PageDown)
 
 
-def _selection_identity(item: object) -> str:
-    if not isinstance(item, CompletionItem):
-        return ""
-    if item.item_id:
-        return item.item_id
-    return f"{item.label}|{item.insert_text}|{item.kind.value}|{item.source}"
+def _is_popup_key(event: QKeyEvent) -> bool:
+    if event.key() == Qt.Key_Space and event.modifiers() & Qt.ControlModifier:
+        return True
+    return event.key() in _POPUP_KEYS and not event.modifiers() & (Qt.ShiftModifier | Qt.ControlModifier | Qt.AltModifier)
+
+
+def base_labels_equal(left: List[CompletionItem], right: List[CompletionItem]) -> bool:
+    if len(left) != len(right):
+        return False
+    return all(a.label == b.label for a, b in zip(left, right))
+
+
+def _screen_geometry(widget: QWidget, point: QPoint) -> QRect:
+    for screen in QApplication.screens():
+        if screen.geometry().contains(point):
+            return screen.availableGeometry()
+    screen = widget.screen() if hasattr(widget, "screen") else None
+    if screen is None:
+        app = QApplication.instance()
+        screen = app.primaryScreen() if app is not None else None
+    if screen is None:
+        return QRect(0, 0, 1920, 1080)
+    return screen.availableGeometry()

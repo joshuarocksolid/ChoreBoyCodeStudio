@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from typing import Callable, Optional, Protocol, Sequence
 
-from PySide2.QtCore import QTimer
-from PySide2.QtWidgets import QWidget
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QWidget
 
 from app.editors.editor_manager import EditorManager
 from app.persistence.autosave_store import AutosaveStore
@@ -40,7 +40,11 @@ class _AutosaveTimer(Protocol):
 
 
 class DraftAutosaveWorkflow:
-    """Owns debounced draft autosave timer and pending flush."""
+    """Owns debounced draft autosave timer and pending flush.
+
+    Pending payloads are keyed by buffer id and written to the buffer's path
+    at flush time; persisted drafts stay path-keyed in ``AutosaveStore``.
+    """
 
     def __init__(
         self,
@@ -66,11 +70,39 @@ class DraftAutosaveWorkflow:
         self._editor_manager = editor_manager
 
     def schedule_autosave(self, file_path: str, content: str) -> None:
-        self._pending_autosave_payloads[file_path] = content
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return
+        self._pending_autosave_payloads[tab_state.buffer_id] = content
         self._autosave_timer.start()
 
     def discard_pending_autosave(self, file_path: str) -> None:
-        self._pending_autosave_payloads.pop(file_path, None)
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is not None:
+            self._pending_autosave_payloads.pop(tab_state.buffer_id, None)
+
+    def migrate_draft_for_move(self, old_path: str, new_path: str) -> None:
+        old_project_id, old_project_root = self._context_for_path(old_path)
+        draft = self._autosave_store.load_draft(old_path, project_id=old_project_id, project_root=old_project_root)
+        if draft is None:
+            return
+        new_project_id, new_project_root = self._context_for_path(new_path)
+        try:
+            self._autosave_store.save_draft(
+                new_path,
+                draft.content,
+                project_id=new_project_id,
+                project_root=new_project_root,
+                recovery_policy=draft.recovery_policy,
+                source=draft.source,
+                base_blob_sha256=draft.base_blob_sha256,
+                last_known_mtime=draft.last_known_mtime,
+                session_id=draft.session_id,
+            )
+        except OSError as exc:
+            self._logger.warning("Autosave draft move failed for %s -> %s: %s", old_path, new_path, exc)
+            return
+        self._autosave_store.delete_draft(old_path, project_id=old_project_id, project_root=old_project_root)
 
     def discard_drafts_for_paths(self, file_paths: Sequence[str]) -> None:
         for file_path in file_paths:
@@ -113,18 +145,24 @@ class DraftAutosaveWorkflow:
     ) -> None:
         if not self._pending_autosave_payloads:
             return
-        selected_paths = None if file_paths is None else set(file_paths)
+        selected_ids = None
+        if file_paths is not None:
+            selected_tabs = (self._editor_manager.get_tab(file_path) for file_path in file_paths)
+            selected_ids = {tab.buffer_id for tab in selected_tabs if tab is not None}
         pending_items = [
-            (file_path, content)
-            for file_path, content in self._pending_autosave_payloads.items()
-            if selected_paths is None or file_path in selected_paths
+            (buffer_id, content)
+            for buffer_id, content in self._pending_autosave_payloads.items()
+            if selected_ids is None or buffer_id in selected_ids
         ]
-        for file_path, _content in pending_items:
-            self._pending_autosave_payloads.pop(file_path, None)
-        for file_path, content in pending_items:
+        for buffer_id, _content in pending_items:
+            self._pending_autosave_payloads.pop(buffer_id, None)
+        for buffer_id, content in pending_items:
+            tab_state = self._editor_manager.get_tab_by_id(buffer_id)
+            if tab_state is None:
+                continue
+            file_path = tab_state.file_path
             try:
                 project_id, project_root = self._context_for_path(file_path)
-                tab_state = self._editor_manager.get_tab(file_path)
                 self._autosave_store.save_draft(
                     file_path,
                     content,
@@ -132,7 +170,7 @@ class DraftAutosaveWorkflow:
                     project_root=project_root,
                     recovery_policy=recovery_policy,
                     source=source,
-                    last_known_mtime=None if tab_state is None else tab_state.last_known_mtime,
+                    last_known_mtime=tab_state.last_known_mtime,
                 )
             except OSError as exc:
                 self._logger.warning("Autosave draft write failed for %s: %s", file_path, exc)

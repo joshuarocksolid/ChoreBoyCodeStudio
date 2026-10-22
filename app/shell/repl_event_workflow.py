@@ -119,6 +119,9 @@ class ReplEventWorkflow:
             console = self._host.python_console_widget
             if console is not None:
                 console.set_session_active(True)
+            schedule = getattr(self._host, "schedule_completion_warmup", None)
+            if callable(schedule):
+                schedule()
             return
         if isinstance(event, ReplEndedEvent):
             console = self._host.python_console_widget
@@ -171,3 +174,8 @@ class MainWindowReplEventHost:
 
     def log_exception(self, message: str) -> None:
         self._window._logger.exception(message)
+
+    def schedule_completion_warmup(self) -> None:
+        from app.shell.completion_warmup import schedule_completion_warmup
+
+        schedule_completion_warmup(self._window, refresh_repl=True)

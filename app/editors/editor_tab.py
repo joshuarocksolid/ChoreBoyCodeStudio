@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, field
 from pathlib import Path
+
+
+DISK_CONFLICT_CHANGED = "changed"
+DISK_CONFLICT_MISSING = "missing"
+
+
+@dataclass(frozen=True)
+class DiskConflict:
+    """Unresolved divergence between a buffer and its file on disk."""
+
+    kind: str
+    conflict_mtime: float | None
 
 
 @dataclass
@@ -16,6 +29,8 @@ class EditorTabState:
     current_content: str
     last_known_mtime: float | None = None
     is_preview: bool = False
+    buffer_id: str = field(default_factory=lambda: uuid.uuid4().hex)
+    disk_conflict: DiskConflict | None = None
 
     @classmethod
     def from_file(
@@ -49,10 +64,17 @@ class EditorTabState:
         """Mark current content as the persisted baseline."""
         self.original_content = self.current_content
         self.last_known_mtime = last_known_mtime
+        self.disk_conflict = None
 
     def set_last_known_mtime(self, mtime: float | None) -> None:
         """Record most recently observed on-disk mtime."""
         self.last_known_mtime = mtime
+
+    def set_disk_conflict(self, kind: str, conflict_mtime: float | None) -> None:
+        self.disk_conflict = DiskConflict(kind=kind, conflict_mtime=conflict_mtime)
+
+    def clear_disk_conflict(self) -> None:
+        self.disk_conflict = None
 
     def promote(self) -> None:
         """Mark a preview tab as permanent."""

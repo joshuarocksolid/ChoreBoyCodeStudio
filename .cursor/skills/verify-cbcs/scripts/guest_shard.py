@@ -1,7 +1,8 @@
 """In-process pytest under guest AppRun.
 
 cbapp already launched this file inside confined /opt/freecad/AppRun.
-Do not subprocess AppRun again — guest AppArmor allows only /bin/sh.
+Do not subprocess AppRun again. The V6.5 guest AppArmor allows only /bin/sh;
+the FreeCAD 1.1 guest allows AppRun but not /bin/sh. In-process works on both.
 """
 
 from __future__ import annotations

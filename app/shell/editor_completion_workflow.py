@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 
+from app.core.constants import UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.intelligence.completion_context import build_completion_context
 from app.intelligence.completion_models import (
@@ -14,7 +15,7 @@ from app.intelligence.completion_models import (
     CompletionResolveResult,
 )
 from app.intelligence.completion_service import CompletionRequest
-from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.shell.editor_stale_result_policy import capture_buffer_revision
 from app.shell.semantic_navigation_host import SemanticNavigationHost
 
 
@@ -24,25 +25,26 @@ class EditorCompletionWorkflow:
     def __init__(self, host: SemanticNavigationHost) -> None:
         self._host = host
 
-    def _deliver_gated_completion_result(
+    def _capture_buffer_revision(self, file_path: str) -> tuple[str | None, int | None]:
+        return capture_buffer_revision(
+            file_path,
+            buffer_id_for_path=self._host.editor_buffer_id_for_path,
+            buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
+        )
+
+    def _deliver_completion_list(
         self,
         *,
-        file_path: str,
+        buffer_id: str | None,
         editor_widget: CodeEditorWidget,
-        requested_revision: int | None,
-        request_generation: int,
         deliver: Callable[[], None],
     ) -> None:
-        deliver_revision_gated_editor_result(
-            file_path=file_path,
-            editor_widget=editor_widget,
-            requested_revision=requested_revision,
-            editor_widget_for_path=self._host.editor_widget_for_path,
-            buffer_revision=self._host.editor_buffer_revision,
-            deliver=deliver,
-            requested_generation=request_generation,
-            current_generation=editor_widget.completion_request_generation(),
-        )
+        # The popup checks the request generation and that the cursor is still in
+        # the same expression, so a list that arrives after the user typed more
+        # letters is still shown, filtered by everything typed so far.
+        if buffer_id is None or self._host.editor_widget_for_buffer_id(buffer_id) is not editor_widget:
+            return
+        deliver()
 
     def record_editor_completion_acceptance(self, *, file_path: str, item: CompletionItem) -> None:
         """Route completion acceptance through the worker-serialized session lane."""
@@ -62,7 +64,7 @@ class EditorCompletionWorkflow:
         trigger_character: str,
     ) -> None:
         started_at = time.perf_counter()
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
         completion_context = build_completion_context(
@@ -72,7 +74,7 @@ class EditorCompletionWorkflow:
             project_root=project_root,
             trigger_is_manual=manual_trigger,
             min_prefix_chars=self._host.completion_min_chars(),
-            max_results=100,
+            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             trigger_kind=trigger_kind,
             trigger_character=trigger_character,
             buffer_revision=requested_revision,
@@ -87,7 +89,7 @@ class EditorCompletionWorkflow:
             project_root=project_root,
             trigger_is_manual=manual_trigger,
             min_prefix_chars=self._host.completion_min_chars(),
-            max_results=100,
+            max_results=UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT,
             trigger_kind=trigger_kind,
             trigger_character=trigger_character,
             buffer_revision=requested_revision,
@@ -129,13 +131,7 @@ class EditorCompletionWorkflow:
                     items=items,
                 )
 
-            self._deliver_gated_completion_result(
-                file_path=file_path,
-                editor_widget=editor_widget,
-                requested_revision=requested_revision,
-                request_generation=request_generation,
-                deliver=deliver,
-            )
+            self._deliver_completion_list(buffer_id=buffer_id, editor_widget=editor_widget, deliver=deliver)
 
         def on_error(exc: Exception) -> None:
             self._host.log_warning("Async completion request failed for %s: %s", file_path, exc)
@@ -158,7 +154,7 @@ class EditorCompletionWorkflow:
         cursor_position: int,
         request_generation: int,
     ) -> None:
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
         loaded_project = self._host.loaded_project()
         request = CompletionResolveRequest(
             item=item,
@@ -178,13 +174,7 @@ class EditorCompletionWorkflow:
                     item=result.item,
                 )
 
-            self._deliver_gated_completion_result(
-                file_path=file_path,
-                editor_widget=editor_widget,
-                requested_revision=requested_revision,
-                request_generation=request_generation,
-                deliver=deliver,
-            )
+            self._deliver_completion_list(buffer_id=buffer_id, editor_widget=editor_widget, deliver=deliver)
 
         def on_error(exc: Exception) -> None:
             self._host.log_warning("Completion item resolve failed for %s: %s", file_path, exc)
@@ -192,13 +182,7 @@ class EditorCompletionWorkflow:
             def deliver() -> None:
                 editor_widget.set_completion_docs_resolving(False)
 
-            self._deliver_gated_completion_result(
-                file_path=file_path,
-                editor_widget=editor_widget,
-                requested_revision=requested_revision,
-                request_generation=request_generation,
-                deliver=deliver,
-            )
+            self._deliver_completion_list(buffer_id=buffer_id, editor_widget=editor_widget, deliver=deliver)
 
         self._host.intelligence_controller().request_completion_resolve(
             request=request,

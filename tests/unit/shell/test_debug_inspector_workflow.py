@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.debug.debug_models import DebugExecutionState, DebugFrame, DebugSessionState  # noqa: E402
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow  # noqa: E402

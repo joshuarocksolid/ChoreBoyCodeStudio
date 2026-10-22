@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from PySide2.QtWidgets import QStatusBar, QWidget
+from app.qt.QtWidgets import QStatusBar, QWidget
 
 from app.core.models import LoadedProject
 from app.shell.run_config_controller import RunConfigController

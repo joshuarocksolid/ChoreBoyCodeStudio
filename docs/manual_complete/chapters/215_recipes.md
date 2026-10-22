@@ -137,6 +137,16 @@ Plugin Manager → select it → Disable In Project.
 **Package for another machine**
 Package Project (toolbar) → choose an output folder outside the project.
 
+**Install Code Studio onto the shop share**
+In the product installer, keep **Ask for install folder** on and choose
+`/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. The launcher stays on this
+machine. Shared settings are a separate opt-in (`CBCS_STATE_ROOT` or a `cbcs_state_root`
+pointer). Two writers on one NFS state directory can overwrite each other.
+
+**Find the global settings folder**
+`/home/default/FreeCAD/CBCS/state`. An older `choreboy_code_studio_state` folder is
+copied there on first launch of this update.
+
 ## Recovery & support
 
 **Recover unsaved work after a crash**

@@ -21,8 +21,7 @@ _EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
     "detect_indentation_from_file",
     "hover_tooltip_enabled",
     "auto_reindent_flat_python_paste",
-    "completion_enabled",
-    "completion_auto_trigger",
+    "completion_mode",
     "completion_min_chars",
 )
 
@@ -305,6 +304,7 @@ class MainWindowSettingsApplyHost:
 
     def apply_preferences_bundle(self, bundle: ShellPreferencesBundle) -> None:
         self._window._shell_preferences_runtime.apply_preferences_bundle(bundle)
+        self._window._refresh_completion_mode_status()
 
     def sync_auto_save_menu_state(self) -> None:
         self._window._sync_auto_save_menu_state()
@@ -329,6 +329,7 @@ class MainWindowSettingsApplyHost:
 
     def apply_editor_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_editor_preferences_to_open_editors()
+        self._window._python_console_workflow.apply_completion_preferences()
 
     def apply_runtime_intelligence_preferences_to_open_editors(self) -> None:
         self._window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()

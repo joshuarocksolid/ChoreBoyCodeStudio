@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
-from PySide2.QtCore import QSize
-from PySide2.QtGui import QColor, QIcon
+from app.qt.QtCore import QSize
+from app.qt.QtGui import QColor, QIcon
 
 from app.shell import icon_provider
 from app.shell.icons import test_icon
@@ -145,6 +145,10 @@ _ACTION_ICON_BUILDERS: dict[str, MenuIconBuilder] = {
     "shell.action.view.markdownShowSource": lambda c: icon_provider.markdown_source_icon(c.primary),
     "shell.action.view.markdownShowPreview": lambda c: icon_provider.markdown_preview_icon(c.primary),
     "shell.action.view.markdownShowSplit": lambda c: icon_provider.markdown_split_icon(c.primary),
+    "shell.action.view.splitEditorRight": lambda c: icon_provider.markdown_split_icon(c.primary),
+    "shell.action.view.closeEditorGroup": lambda c: icon_provider.reset_layout_icon(c.primary),
+    "shell.action.view.focusFirstEditorGroup": lambda c: icon_provider.reveal_icon(c.primary),
+    "shell.action.view.focusSecondEditorGroup": lambda c: icon_provider.reveal_icon(c.primary),
     "shell.action.view.zoomIn": lambda c: icon_provider.zoom_in_icon(c.primary),
     "shell.action.view.zoomOut": lambda c: icon_provider.zoom_out_icon(c.primary),
     "shell.action.view.zoomReset": lambda c: icon_provider.zoom_reset_icon(c.primary),

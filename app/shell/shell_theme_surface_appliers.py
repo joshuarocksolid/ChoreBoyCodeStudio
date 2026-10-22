@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from PySide2.QtGui import QColor
-from PySide2.QtWidgets import QApplication
+from app.qt.QtGui import QColor
+from app.qt.QtWidgets import QApplication
 
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.menu_icons import apply_menu_icons
@@ -19,7 +19,7 @@ class ShellThemeSurfaceRefs:
     """Explicit widget references for shell theme surface application."""
 
     editor_manager: Any
-    editor_widgets_by_path: dict[str, Any]
+    editor_widgets_by_buffer_id: dict[str, Any]
     tab_content_registry: Any
     python_console_widget: Any | None
     run_log_panel: Any | None
@@ -30,12 +30,13 @@ class ShellThemeSurfaceRefs:
     outline_panel: Any | None
     problems_panel: Any | None
     shell_style_setter: Callable[[str], None]
+    apply_editor_tab_chrome_theme: Callable[[ShellThemeTokens], None] | None = None
 
     @classmethod
     def from_main_window(cls, window: Any) -> ShellThemeSurfaceRefs:
         return cls(
             editor_manager=window._editor_manager,
-            editor_widgets_by_path=window._editor_widgets_by_path,
+            editor_widgets_by_buffer_id=window._editor_widgets_by_path,
             tab_content_registry=window._tab_content_registry,
             python_console_widget=window._python_console_widget,
             run_log_panel=window._run_log_panel,
@@ -46,7 +47,13 @@ class ShellThemeSurfaceRefs:
             outline_panel=window._outline_panel,
             problems_panel=window._problems_panel,
             shell_style_setter=window.setStyleSheet,
+            apply_editor_tab_chrome_theme=_tab_chrome_theme_applier(window),
         )
+
+
+def _tab_chrome_theme_applier(window: Any) -> Callable[[ShellThemeTokens], None] | None:
+    coordinator = getattr(window, "_editor_tabs_coordinator", None)
+    return None if coordinator is None else coordinator.apply_tab_chrome_theme
 
 
 def set_app_tooltip_style_sheet(style_sheet: str) -> None:
@@ -57,15 +64,17 @@ def set_app_tooltip_style_sheet(style_sheet: str) -> None:
 
 def apply_editor_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:
     active_tab = refs.editor_manager.active_tab()
-    active_path = None if active_tab is None else active_tab.file_path
+    active_buffer_id = None if active_tab is None else active_tab.buffer_id
     deferred_widgets: list[Any] = []
-    for file_path, editor_widget in refs.editor_widgets_by_path.items():
-        defer_rehighlight = file_path != active_path
+    for buffer_id, editor_widget in refs.editor_widgets_by_buffer_id.items():
+        defer_rehighlight = buffer_id != active_buffer_id
         editor_widget.apply_theme(tokens, defer_syntax_rehighlight=defer_rehighlight)
         if defer_rehighlight:
             deferred_widgets.append(editor_widget)
     for editor_widget in deferred_widgets:
         editor_widget.flush_pending_syntax_theme_refresh()
+    if refs.apply_editor_tab_chrome_theme is not None:
+        refs.apply_editor_tab_chrome_theme(tokens)
 
 
 def apply_markdown_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:

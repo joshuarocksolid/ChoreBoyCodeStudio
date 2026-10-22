@@ -10,6 +10,7 @@ from app.core import constants
 from app.debug.debug_models import DebugBreakpoint, DebugExceptionPolicy, DebugExecutionState, DebugSourceMap
 from app.core.models import LoadedProject
 from app.run.run_service import RunService, RunSession
+from app.run.runtime_launch import permission_denied_for_apprun
 from app.shell.actions import map_run_action_state
 from app.shell.menus import MenuStubRegistry
 from app.shell.run_session_store import RunSessionStore
@@ -32,6 +33,7 @@ class RunSessionStartResult:
     failure_reason: RunSessionStartFailureReason | None = None
     error_message: str | None = None
     session: RunSession | None = None
+    apprun_permission_denied: bool = False
 
 
 class RunSessionController:
@@ -109,6 +111,20 @@ class RunSessionController:
                 source_maps=source_maps,
             )
         except Exception as exc:
+            if permission_denied_for_apprun(exc):
+                from app.shell.plugin_host_unavailable_dialog import (
+                    freecad_version_label,
+                    plugin_host_unavailable_message,
+                )
+
+                message = plugin_host_unavailable_message(str(exc), freecad_version_label())
+                append_console_line(message + "\n", "stderr")
+                return RunSessionStartResult(
+                    started=False,
+                    failure_reason=RunSessionStartFailureReason.START_EXCEPTION,
+                    error_message=message,
+                    apprun_permission_denied=True,
+                )
             append_console_line(f"Run failed to start: {exc}\n", "stderr")
             return RunSessionStartResult(
                 started=False,

@@ -17,6 +17,7 @@ if __package__:
         parse_ownership_manifest,
     )
     from .policy import find_policy_violations
+    from .qt_portability import QtPortabilityError, find_qt_portability_violations
 else:
     from composition import CompositionError, find_composition_violations
     from concurrency import ConcurrencyError, find_concurrency_violations
@@ -29,6 +30,7 @@ else:
         parse_ownership_manifest,
     )
     from policy import find_policy_violations
+    from qt_portability import QtPortabilityError, find_qt_portability_violations
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -55,6 +57,7 @@ def run(
         violations.extend(find_concurrency_violations(repo_root, app_files))
         violations.extend(find_handle_violations(repo_root, app_files))
         violations.extend(find_composition_violations(repo_root, app_files))
+        violations.extend(find_qt_portability_violations(repo_root, app_files))
         violations.extend(
             find_feature_map_violations(repo_root, frozenset(owners))
         )
@@ -66,6 +69,7 @@ def run(
         HandlesError,
         OSError,
         OwnershipManifestError,
+        QtPortabilityError,
         RuntimeError,
     ) as exc:
         current_error = exc

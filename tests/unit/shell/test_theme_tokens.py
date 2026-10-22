@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip("PySide2.QtGui", exc_type=ImportError)
+pytest.importorskip("app.qt.QtGui", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
 from app.shell.contrast import contrast_ratio  # noqa: E402

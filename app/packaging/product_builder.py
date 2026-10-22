@@ -34,7 +34,10 @@ from app.packaging.prune_rules import (
 )
 from app.packaging.tree_sitter_cp39 import (
     CP39_TREE_SITTER_SOABI,
+    TREE_SITTER_WHEEL_PINS,
+    GrammarStageResult,
     stage_cp39_tree_sitter_core_binding,
+    stage_linux_grammar_bindings,
     tree_sitter_core_binding_name,
 )
 from app.treesitter.language_specs import LANGUAGE_SPECS
@@ -82,7 +85,6 @@ CHOREBOY_PYTHON_TOOLING_ISORT_APIS = (
     "Config",
     "api",
 )
-CHOREBOY_STAGING_ROOT = "/home/default"
 INSTALLER_ARCHIVE_BUDGET_BYTES = 15 * 1024 * 1024
 ZIP_COMPRESSION_LEVEL = 9
 CHOREBOY_PRODUCT_TREE_SITTER_SOABI = CP39_TREE_SITTER_SOABI
@@ -90,12 +92,7 @@ CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES = ("tree_sitter",) + tuple(
     spec.package_name for spec in LANGUAGE_SPECS if spec.included_by_default
 )
 CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS = {
-    "tree_sitter": f"_binding.{CHOREBOY_PRODUCT_TREE_SITTER_SOABI}.so",
-    **{
-        spec.package_name: "_binding.abi3.so"
-        for spec in LANGUAGE_SPECS
-        if spec.included_by_default
-    },
+    pin.package_name: pin.binding_filename for pin in TREE_SITTER_WHEEL_PINS
 }
 CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES = tuple(
     spec.package_name for spec in LANGUAGE_SPECS if not spec.included_by_default
@@ -121,6 +118,7 @@ class ProductArtifactResult:
 
 
 TreeSitterCoreStager = Callable[[Path, Path], Path]
+TreeSitterGrammarStager = Callable[[Path, Path], GrammarStageResult]
 
 PRODUCT_VENDOR_DIRNAME = "vendor_py39"
 
@@ -140,7 +138,7 @@ def resolve_product_vendor_dir(artifacts_dir: Path) -> Path:
 def build_product_manifest(
     *,
     version: str,
-    staging_parent: str = CHOREBOY_STAGING_ROOT,
+    staging_parent: str = "/home/default",
 ) -> DistributionManifest:
     return create_distribution_manifest(
         package_kind=PACKAGE_KIND_PRODUCT,
@@ -152,7 +150,7 @@ def build_product_manifest(
         entry_relative_path="run_editor.py",
         icon_relative_path="app/ui/icons/Python_Icon.png",
         launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
-        default_install_base=CHOREBOY_STAGING_ROOT,
+        default_install_base=constants.PRODUCT_INSTALL_BASE,
         default_install_dirname=f"choreboy_code_studio_v{version}",
         staging_parent=staging_parent,
         app_run_path=constants.APP_RUN_PATH,
@@ -224,9 +222,10 @@ def build_product_artifact(
     include_dirs: Sequence[str] = INCLUDE_DIRS,
     include_files: Sequence[str] = INCLUDE_FILES,
     vendor_allowlist: Sequence[str] = VENDOR_ALLOWLIST,
-    staging_parent: str = CHOREBOY_STAGING_ROOT,
+    staging_parent: str = "/home/default",
     archive_password: str | None = None,
     tree_sitter_core_stager: TreeSitterCoreStager = stage_cp39_tree_sitter_core_binding,
+    tree_sitter_grammar_stager: TreeSitterGrammarStager = stage_linux_grammar_bindings,
     strip_shared_objects: bool = True,
     validate_python_tooling: bool = True,
     print_status: bool = True,
@@ -284,13 +283,34 @@ def build_product_artifact(
         )
 
         cp39_cache_dir = output_root / "vendor_cp39_cache"
+        staged_vendor = payload_dir / "vendor"
         staged_cp39_binding = tree_sitter_core_stager(
-            payload_dir / "vendor" / "tree_sitter",
+            staged_vendor / "tree_sitter",
             cp39_cache_dir,
         )
+        grammar_stage = tree_sitter_grammar_stager(staged_vendor, cp39_cache_dir)
         if print_status:
             print(f"Staged cp39 tree-sitter core binding: {staged_cp39_binding.name}")
-        tree_sitter_bundle = validate_choreboy_tree_sitter_bundle(payload_dir / "vendor")
+            print(
+                "Staged Linux tree-sitter grammar bindings: "
+                f"{len(grammar_stage.overlaid)}"
+            )
+        for exclusion in grammar_stage.exclusions:
+            warnings.append(exclusion.reason)
+            if print_status:
+                print(exclusion.reason)
+        tree_sitter_bundle = validate_choreboy_tree_sitter_bundle(
+            staged_vendor,
+            skip_packages=tuple(item.package_name for item in grammar_stage.exclusions),
+        )
+        tree_sitter_bundle["excluded_packages"] = [
+            {
+                "package": item.package_name,
+                "language_abi": item.language_abi,
+                "reason": item.reason,
+            }
+            for item in grammar_stage.exclusions
+        ]
         if print_status:
             validated_bindings = cast(Sequence[object], tree_sitter_bundle["validated_bindings"])
             print(
@@ -471,10 +491,20 @@ def require_linux_x86_64_elf(path: Path) -> None:
         )
 
 
-def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:
+def validate_choreboy_tree_sitter_bundle(
+    vendor_dir: Path,
+    *,
+    skip_packages: Iterable[str] = (),
+) -> dict[str, object]:
     """Validate that staged tree-sitter extensions match the shipped ChoreBoy ABI."""
+    skipped = set(skip_packages)
+    required_packages = tuple(
+        package_name
+        for package_name in CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES
+        if package_name not in skipped
+    )
     validated_bindings: list[dict[str, str]] = []
-    for package_name in CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES:
+    for package_name in required_packages:
         expected_binding_name = CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS[package_name]
         package_dir = vendor_dir / package_name
         if not package_dir.is_dir():
@@ -501,8 +531,11 @@ def validate_choreboy_tree_sitter_bundle(vendor_dir: Path) -> dict[str, object]:
     return {
         "product_target_runtime": "choreboy-freecad-python39",
         "target_soabi": CHOREBOY_PRODUCT_TREE_SITTER_SOABI,
-        "required_packages": list(CHOREBOY_PRODUCT_TREE_SITTER_PACKAGES),
-        "required_bindings": dict(CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS),
+        "required_packages": list(required_packages),
+        "required_bindings": {
+            package_name: CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS[package_name]
+            for package_name in required_packages
+        },
         "optional_packages_not_shipped": list(CHOREBOY_OPTIONAL_TREE_SITTER_PACKAGES),
         "validated_bindings": validated_bindings,
     }

@@ -1,0 +1,28 @@
+Host inspection of shut-off domains on debian, 2026-10-20. No domain was started.
+virsh --connect qemu:///system. qemu-img and guestfish were not usable. sudo requires a password. The qcow2 files are mode 0600 root.
+
+ChoreBoyExp
+state shut off
+disk /var/lib/libvirt/images/usb500-choreboy-exp.qcow2
+disk bytes 6056116224
+disk mtime 2026-10-20 15:38 host local
+xml backing file none in the domain disk element
+osinfo http://libosinfo.org/linux/2022
+virtiofs source /home/joshua/shared-usb-exp target sharedusb
+FreeCAD version unknown. The image was not booted and the disk was not readable.
+
+ChoreBoyFactory
+state shut off
+disk /var/lib/libvirt/images/usb500-factory.qcow2
+disk bytes 1161101312
+disk mtime 2026-10-12 17:36 host local
+xml backing file none in the domain disk element
+osinfo http://libosinfo.org/linux/2022
+virtiofs source /home/joshua/shared-usb-factory target sharedusb
+FreeCAD version unknown. The image was not booted and the disk was not readable.
+
+Everyday ChoreBoy, for comparison
+disk overlay /var/lib/libvirt/images/usb500-choreboy.qcow2
+backing file /var/lib/libvirt/images/usb500.qcow2
+osinfo http://libosinfo.org/linux/2022
+The osinfo id matches Exp and Factory, so it does not identify the FreeCAD version.

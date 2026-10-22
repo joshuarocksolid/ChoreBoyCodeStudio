@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
-from PySide2.QtWidgets import QDialog, QMessageBox, QWidget
+from app.qt.QtWidgets import QDialog, QMessageBox, QWidget
 
 from app.bootstrap.paths import project_logs_dir
 from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssue, RuntimeIssueReport
@@ -24,6 +24,7 @@ from app.shell.package_wizard_dialog import PackageProjectWizard
 from app.shell.project_health_checks import run_project_health_check
 from app.shell.support_bundle_collectors import collect_local_history_diagnostics, collect_plugin_diagnostics
 from app.shell.theme_tokens import ShellThemeTokens
+from app.qt.qt_compat import exec_qt
 
 
 class RuntimeSupportWorkflow:
@@ -197,7 +198,7 @@ class RuntimeSupportWorkflow:
             parent=self._parent,
             tokens=self._resolve_theme_tokens(),
         )
-        if wizard.exec_() != QDialog.Accepted:
+        if exec_qt(wizard) != QDialog.Accepted:
             return
         output_dir = wizard.output_dir
         selected_profile = wizard.selected_profile
@@ -240,6 +241,7 @@ class RuntimeSupportWorkflow:
                     self._open_runtime_center_dialog(
                         title="Packaging Report",
                         report=result.validation.issue_report,
+                        package_location=str(result.artifact_root or ""),
                     )
             else:
                 latest_package_issue_report = result.validation.issue_report

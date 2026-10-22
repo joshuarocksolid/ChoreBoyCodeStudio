@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from PySide2.QtCore import QSize, Qt
-from PySide2.QtGui import QColor, QIcon
-from PySide2.QtWidgets import (
+from app.qt.QtCore import QSize, Qt
+from app.qt.QtGui import QColor, QIcon
+from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,
@@ -23,7 +23,6 @@ from app.editors.find_replace_bar import FindReplaceBar
 from app.project.project_tree_widget import ProjectTreeWidget
 from app.shell.activity_bar import ActivityBar
 from app.shell.debug_panel import DebugPanelWidget
-from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.icon_provider import new_file_icon, new_folder_icon, refresh_icon
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.layout_persistence import DEFAULT_EXPLORER_SPLITTER_SIZES
@@ -238,18 +237,10 @@ def build_center_panel(window: Any) -> QWidget:
     window._find_replace_bar.close_requested.connect(workflow.handle_close)
     editor_layout.addWidget(window._find_replace_bar, 0)
 
-    window._editor_tabs_widget = QTabWidget(editor_page)
-    tab_bar = MiddleClickTabBar(window._editor_tabs_widget)
-    tab_bar.set_tab_double_click_callback(window._editor_tab_workflow.handle_editor_tab_header_double_click)
-    tab_bar.setContextMenuPolicy(Qt.CustomContextMenu)
-    tab_bar.customContextMenuRequested.connect(window._editor_tab_workflow.show_editor_tab_context_menu)
-    window._editor_tabs_widget.setTabBar(tab_bar)
-    window._editor_tabs_widget.setObjectName("shell.editorTabs")
-    window._editor_tabs_widget.currentChanged.connect(window._editor_tab_workflow.handle_editor_tab_changed)
-    window._editor_tabs_widget.setTabsClosable(True)
-    window._editor_tabs_widget.tabCloseRequested.connect(window._editor_tab_workflow.handle_tab_close_requested)
-    window._editor_tabs_widget.setMinimumWidth(480)
-    editor_layout.addWidget(window._editor_tabs_widget, 1)
+    # Editor groups own the tab widgets; the focused group's is window._editor_tabs_widget.
+    editor_groups = window._editor_groups.build(editor_page)
+    editor_groups.setMinimumWidth(480)
+    editor_layout.addWidget(editor_groups, 1)
 
     window._center_stack.addWidget(editor_page)
     window._center_stack.setCurrentIndex(0)

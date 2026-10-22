@@ -1,6 +1,6 @@
 """Main window for the CRUD Showcase example project.
 
-Demonstrates a range of PySide2 / Qt widgets that ChoreBoy users can reuse:
+Demonstrates Qt widgets, imported from PySide, that ChoreBoy users can reuse:
   - QTableWidget with status-badge delegate and alternating rows
   - QStyledItemDelegate for custom cell painting
   - QLineEdit, QComboBox, QTextEdit for form input
@@ -20,9 +20,9 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide2.QtCore import QRect, QSize, Qt
-from PySide2.QtGui import QColor, QFont, QPainter, QPen
-from PySide2.QtWidgets import (
+from PySide.QtCore import QRect, QSize, Qt
+from PySide.QtGui import QColor, QFont, QPainter, QPen
+from PySide.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDialog,
@@ -714,7 +714,7 @@ class MainWindow(QMainWindow):
 
     def _on_new_task(self) -> None:
         dlg = TaskDialog(self._tokens, self, title="New Task")
-        if dlg.exec_() != QDialog.Accepted:
+        if (getattr(dlg, "exec", None) or dlg.exec_)() != QDialog.Accepted:
             return
         if not dlg.task_title():
             return
@@ -730,7 +730,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Edit", "Select a task first.")
             return
         dlg = TaskDialog(self._tokens, self, title="Edit Task", task=task)
-        if dlg.exec_() != QDialog.Accepted:
+        if (getattr(dlg, "exec", None) or dlg.exec_)() != QDialog.Accepted:
             return
         if not dlg.task_title():
             return

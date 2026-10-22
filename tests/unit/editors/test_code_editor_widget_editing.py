@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtCore import QEvent, QMimeData, Qt  # noqa: E402
-from PySide2.QtGui import QKeyEvent, QTextCursor  # noqa: E402
-from PySide2.QtWidgets import QApplication  # noqa: E402
+from app.qt.QtCore import QEvent, QMimeData, Qt  # noqa: E402
+from app.qt.QtGui import QKeyEvent, QTextCursor  # noqa: E402
+from app.qt.QtWidgets import QApplication  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 
@@ -300,7 +300,7 @@ def test_paste_hint_always_invokes_callback_and_applies_repair(editor: CodeEdito
 
 
 def test_context_menu_adds_flat_python_actions_when_clipboard_looks_flat(editor: CodeEditorWidget) -> None:
-    from PySide2.QtWidgets import QMenu
+    from app.qt.QtWidgets import QMenu
 
     QApplication.clipboard().setText("def first():\nreturn 1")
     try:
@@ -314,7 +314,7 @@ def test_context_menu_adds_flat_python_actions_when_clipboard_looks_flat(editor:
 
 
 def test_context_menu_adds_reindent_selection_action_when_selection_looks_flat(editor: CodeEditorWidget) -> None:
-    from PySide2.QtWidgets import QMenu
+    from app.qt.QtWidgets import QMenu
 
     editor.setPlainText("def first():\nreturn 1\n")
     cursor = editor.textCursor()
@@ -337,7 +337,7 @@ def test_context_menu_adds_reindent_selection_action_when_selection_looks_flat(e
 def test_context_menu_omits_flat_python_actions_when_neither_clipboard_nor_selection_match(
     editor: CodeEditorWidget,
 ) -> None:
-    from PySide2.QtWidgets import QMenu
+    from app.qt.QtWidgets import QMenu
 
     editor.setPlainText("alpha = 1\n")
     QApplication.clipboard().setText("the quick brown fox")

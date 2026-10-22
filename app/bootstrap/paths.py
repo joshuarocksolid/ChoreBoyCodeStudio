@@ -1,6 +1,10 @@
 """Deterministic path helpers for application bootstrap."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from pathlib import Path
+import os
 import tempfile
 from typing import Optional, Tuple, Union
 
@@ -9,31 +13,88 @@ from app.core import constants
 PathInput = Union[str, Path]
 
 
+@dataclass(frozen=True)
+class ProductStateLayout:
+    """ChoreBoy product nest. Install is versioned; state is not."""
+
+    install_base: Path
+    state_root: Path
+    shop_pointer_path: Path
+    occupancy_filename: str
+    migrating_suffix: str
+    legacy_leaf: str
+
+    def occupancy_path(self, dest: Path) -> Path:
+        return dest / self.occupancy_filename
+
+    def staging_path(self, dest: Path) -> Path:
+        return dest.with_name(dest.name + self.migrating_suffix)
+
+    def legacy_source_roots(self, home: Path) -> tuple[Path, ...]:
+        leaf = self.legacy_leaf
+        return (
+            home / leaf,
+            home / ".local" / "share" / "FreeCAD" / leaf,
+            home / ".cache" / "FreeCAD" / leaf,
+            home / "FreeCAD" / leaf,
+        )
+
+
+DEFAULT_PRODUCT_STATE_LAYOUT = ProductStateLayout(
+    install_base=Path(constants.PRODUCT_INSTALL_BASE),
+    state_root=Path(constants.PRODUCT_STATE_ROOT),
+    shop_pointer_path=Path(constants.SHOP_STATE_ROOT_POINTER_PATH),
+    occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
+    migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
+    legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
+)
+
+
+def normalize_state_root_identity(path: PathInput) -> Path:
+    """Return an absolute path without following the final symlink hop."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("state_root must be an absolute path")
+    return Path(os.path.abspath(str(candidate)))
+
+
 def resolve_app_root() -> Path:
     """Return the repository root based on this module location."""
     return Path(__file__).resolve().parents[2]
 
 
 def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global app state root path."""
+    """Return the local state root. Explicit argument or the product dest.
+
+    Logs, caches, history, plugins, crash reports, trash, and SQLite live
+    here. ``CBCS_STATE_ROOT`` and the shop pointer do not move this path.
+    No filesystem copy. No hidden-path probe.
+    """
     if state_root is not None:
-        return _normalize_absolute_path(state_root, "state_root")
-    return Path.home().expanduser().resolve() / constants.GLOBAL_STATE_DIRNAME
+        return normalize_state_root_identity(state_root)
+    return normalize_state_root_identity(DEFAULT_PRODUCT_STATE_LAYOUT.state_root)
+
+
+def resolve_settings_state_root(state_root: Optional[PathInput] = None) -> Path:
+    """Return the directory that holds the three settings JSON files."""
+    from app.bootstrap.state_roots import resolve_settings_root
+
+    return resolve_settings_root(state_root).path
 
 
 def global_settings_path(state_root: Optional[PathInput] = None) -> Path:
     """Return the global settings file path."""
-    return _global_state_child(constants.GLOBAL_SETTINGS_FILENAME, state_root)
+    return _settings_child(constants.GLOBAL_SETTINGS_FILENAME, state_root)
 
 
 def global_recent_projects_path(state_root: Optional[PathInput] = None) -> Path:
     """Return the global recent-projects file path."""
-    return _global_state_child(constants.GLOBAL_RECENT_PROJECTS_FILENAME, state_root)
+    return _settings_child(constants.GLOBAL_RECENT_PROJECTS_FILENAME, state_root)
 
 
 def global_python_console_history_path(state_root: Optional[PathInput] = None) -> Path:
     """Return persisted Python console history file path."""
-    return _global_state_child(constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME, state_root)
+    return _settings_child(constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME, state_root)
 
 
 def global_logs_dir(state_root: Optional[PathInput] = None) -> Path:
@@ -203,6 +264,38 @@ def _normalize_project_root(project_root: PathInput) -> Path:
 
 def _global_state_child(name: str, state_root: Optional[PathInput]) -> Path:
     return resolve_global_state_root(state_root) / name
+
+
+def _settings_child(name: str, state_root: Optional[PathInput]) -> Path:
+    return resolve_settings_state_root(state_root) / name
+
+
+def _state_root_from_env() -> Optional[Path]:
+    raw = os.environ.get(constants.CBCS_STATE_ROOT_ENV_NAME, "")
+    if not raw.strip():
+        return None
+    candidate = Path(raw).expanduser()
+    if not candidate.is_absolute():
+        return None
+    return normalize_state_root_identity(candidate)
+
+
+def _state_root_from_pointer_file(pointer_path: Path) -> Optional[Path]:
+    try:
+        if not pointer_path.is_file():
+            return None
+        text = pointer_path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        candidate = Path(stripped).expanduser()
+        if not candidate.is_absolute():
+            continue
+        return normalize_state_root_identity(candidate)
+    return None
 
 
 def _normalize_absolute_path(path: PathInput, field_name: str) -> Path:

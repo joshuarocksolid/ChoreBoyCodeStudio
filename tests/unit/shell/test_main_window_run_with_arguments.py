@@ -8,7 +8,7 @@ from typing import Any, cast
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
 from app.core.models import LoadedProject, ProjectMetadata
@@ -272,7 +272,7 @@ def test_handle_run_with_arguments_action_cancelled_dialog_does_not_run(
 
 
 def test_manage_configurations_click_sets_outcome_only() -> None:
-    from PySide2.QtWidgets import QApplication
+    from app.qt.QtWidgets import QApplication
 
     from app.shell.run_with_arguments_dialog import RunWithArgumentsDialog, RunWithArgumentsInitial
 

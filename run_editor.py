@@ -5,6 +5,8 @@ import logging
 import importlib
 import os
 import sys
+import time
+import traceback
 from typing import Callable
 from typing import Any, Optional
 
@@ -13,11 +15,18 @@ from app.bootstrap.capability_probe import (
     run_startup_capability_probe,
 )
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
+from app.bootstrap.state_migration import (
+    MigrationOutcome,
+    SettingsImportFailed,
+    SettingsImported,
+    migrate_legacy_global_state,
+)
 from app.core.models import CapabilityProbeReport
 from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceback
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
 _STARTUP_REPORT_REFRESH_CALLBACK: Optional[Callable[[CapabilityProbeReport], None]] = None
+_PROCESS_STARTED_AT = time.perf_counter()
 
 
 def _start_editor() -> int:
@@ -30,7 +39,17 @@ def _start_editor() -> int:
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
     window.showMaximized()
-    exit_code = application.exec_()
+    get_subsystem_logger("editor").info(
+        "Window shown telemetry: elapsed_ms=%.2f",
+        (time.perf_counter() - _PROCESS_STARTED_AT) * 1000.0,
+    )
+    from app.shell.completion_warmup import note_window_shown, schedule_completion_warmup
+
+    note_window_shown()
+    schedule_completion_warmup(window)
+    from app.qt.qt_compat import exec_qt
+
+    exit_code = exec_qt(application)
 
     del window
     _clear_qt_module_caches()
@@ -56,7 +75,7 @@ def _clear_qt_module_caches() -> None:
 
 def _load_qt_runtime() -> tuple[Any, Any]:
     """Load runtime-only Qt dependencies lazily."""
-    application_class = importlib.import_module("PySide2.QtWidgets").QApplication
+    application_class = importlib.import_module("app.qt.QtWidgets").QApplication
     main_window_class = importlib.import_module("app.shell.main_window").MainWindow
     return application_class, main_window_class
 
@@ -127,12 +146,43 @@ def _enable_fault_handler(logger: logging.Logger) -> None:
         logger.warning("Failed to enable faulthandler.", exc_info=True)
 
 
+def _log_migration_outcome(logger: logging.Logger, outcome: MigrationOutcome) -> None:
+    if isinstance(outcome, SettingsImported):
+        logger.info("%s", outcome.message)
+        return
+    if isinstance(outcome, SettingsImportFailed):
+        logger.warning(
+            "Settings import failed; continuing startup. dest=%s source=%s error=%s",
+            outcome.dest,
+            outcome.source,
+            outcome.error,
+        )
+
+
+def present_startup_failure_dialog(summary: str, log_path: str, details: str) -> bool:
+    """Show the last-resort startup dialog. Return False when Qt itself cannot start."""
+    try:
+        from app.shell.startup_dialogs import present_fatal_startup_dialog
+
+        present_fatal_startup_dialog(summary, log_path, details)
+    except Exception:
+        log_display = log_path or "unavailable"
+        print(
+            f"Editor startup failed: {summary}\nLog file: {log_display}\n{details}",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
 def main() -> int:
-    """Initialize logging first, then run editor startup safely."""
+    """Copy leftover state first, then initialize logging, then run editor startup."""
     global _LAST_STARTUP_CAPABILITY_REPORT
+    outcome = migrate_legacy_global_state()
     logging_result = configure_app_logging()
 
     logger = get_subsystem_logger("editor")
+    _log_migration_outcome(logger, outcome)
     _enable_fault_handler(logger)
     _install_unhandled_exception_hook(logger)
 
@@ -149,6 +199,11 @@ def main() -> int:
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_minimal_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
+    except Exception:
+        logger.exception("Startup capability probe failed.")
+        _LAST_STARTUP_CAPABILITY_REPORT = None
+
+    try:
         tree_sitter_status = initialize_tree_sitter_runtime()
         if tree_sitter_status.is_available:
             if getattr(tree_sitter_status, "missing_default_language_keys", ()):
@@ -160,11 +215,20 @@ def main() -> int:
             failure_traceback = runtime_traceback()
             if failure_traceback:
                 logger.debug("Tree-sitter initialization traceback:\n%s", failure_traceback)
-
-        logger.info("Editor startup initialized.")
-        return _start_editor()
     except Exception:
+        logger.exception("Tree-sitter initialization failed.")
+
+    logger.info("Editor startup initialized.")
+    try:
+        return _start_editor()
+    except Exception as exc:
         logger.exception("Editor startup failed.")
+        log_path = "" if logging_result.log_path is None else str(logging_result.log_path)
+        present_startup_failure_dialog(
+            str(exc),
+            log_path,
+            traceback.format_exc(),
+        )
         return 1
 
 

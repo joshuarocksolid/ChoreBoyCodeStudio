@@ -7,7 +7,7 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.semantic_navigation_workflow import SemanticNavigationWorkflow
 
@@ -76,23 +76,20 @@ class _FakeHost:
     def editor_widget_for_path(self, file_path: str) -> object | None:
         return self._editor_widget
 
-    def editor_widgets_by_path(self) -> dict[str, object]:
-        return {"/tmp/project/main.py": self._editor_widget}
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return "buf-main"
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> object | None:
+        return self._editor_widget
 
     def intelligence_controller(self) -> _FakeIntelligenceController:
         return self._intelligence_controller
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
         return 1
 
     def open_file_at_line(self, file_path: str, line_number: int) -> None:
         self.opened_at_line.append((file_path, line_number))
-
-    def outline_symbols_for_path(self, file_path: str) -> list[object] | None:
-        return None
-
-    def set_outline_symbols_for_path(self, file_path: str, symbols: list[object]) -> None:
-        return None
 
     def background_tasks(self) -> object:
         return None

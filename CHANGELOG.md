@@ -2,11 +2,61 @@
 
 All notable user-facing changes to ChoreBoy Code Studio are documented here.
 
-Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`.
+Release tags: `v0.1`, `v0.2`, `v0.4.5`, `v0.4.9`, `v0.4.10`, `v0.4.11`, `v0.4.12`, `v0.4.13`.
 
-LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31. Next list mail-out is v0.4.10.
+LibrePy list mail-outs: v0.4.5 on 2026-06-27, v0.4.7 on 2026-06-30, v0.4.8 on 2026-08-24, v0.4.9 on 2026-08-31, v0.4.13 on 2026-10-21.
 
-## [Unreleased]
+## [0.4.13] - 2026-10-21
+
+Fixes what the LibrePy group reported since v0.4.12, and runs on FreeCAD 1.1 as well as FreeCAD 1.0 from one build. Builds tagged 0.4.13 (21 Sep) and 0.4.14 (24 Sep) were never sent to the list. Their tags are deleted and their changes are in this release, reworked where noted below.
+
+### Fixed
+
+- Code Studio no longer closes silently at launch with "database is locked" (Kevin Hoover, Joel Lamar Nolt). Startup now checks that the state folder accepts a file lock and a SQLite write, not only a plain file write. If local history or the symbol index can't open, the editor still opens with that feature off and a dialog that names the folder and the error. If the window can't be built at all, a "CBCS could not start" dialog shows the error and the log path.
+- On FreeCAD 0.21 the editor opens with plugins off and one dialog that says plugins need FreeCAD 1.0 (Arlyn Martin). Run shows the same explanation instead of a traceback.
+- Moving, renaming or cutting and pasting an open file in the Explorer no longer loses later edits (Reuben Shirk). The tab follows the file and Save writes to the new path.
+- Choosing No when a file changed on disk keeps the tab marked as changed on disk, and Save asks again before it overwrites the other version (Ervin Newswanger). A file deleted or renamed outside Code Studio gets a missing marker with Keep Editing, Close and Save As.
+- Package Project no longer rejects apps that start `/opt/freecad/AppRun` (Clair Nolt). The check now uses programs measured on FreeCAD 1.0 on 20 Oct 2026. AppRun and `/bin/sh` are allowed. `pdftoppm`, `python3`, `bash`, `xdg-open`, `okular`, `env` and `pcmanfm` are blocked, because ChoreBoy denies them. An untested program is a warning. FreeCAD 1.1 denies `/bin/sh`, so it is a warning when you package on FreeCAD 1.0 and blocked when you package on FreeCAD 1.1.
+- A missing import stops the export only when the entry file reaches it and it is not inside `try`/`except ImportError`. Other missing imports are warnings. The "skip missing dependency" checkbox is gone.
+- Programs your app starts no longer die when Code Studio closes (Clair Nolt). Closing with a run active asks whether to stop the program or keep it running. The Run Log dims FreeCAD's `LD_LIBRARY_PATH` echo and the `connect failed` line, with a tooltip that says they are harmless.
+- Every packaged-app install failure shows the full error text with Copy Details. A shortcut problem no longer reports a failed install after the files are in place (Joel Lamar Nolt).
+- Zips built on a Mac get the Linux tree-sitter grammars, so syntax highlighting works on ChoreBoy.
+- Bold syntax colors render bold on Qt 6.
+
+### Changed
+
+- Completion has one setting in Settings > General > Intelligence: Off, Manual or While typing. Manual is the default and never opens a popup by itself, including after `.`. Ctrl+Space opens it. The list has every member, with no 100 or 500 cap. It matches by prefix, by capitals (`sT` finds `setText`) and loosely, puts names you picked before first, and closes when nothing matches. It never opens inside numbers like `1.5`, strings or comments. The docs pane shows the signature and the first paragraph of the docstring. The editor and the Python Console share the setting. It replaces Enable completion, Auto-trigger and Auto-trigger on period (Reuben Shirk, Clair Nolt).
+- Editor tabs can be dragged to reorder, and the order survives a restart. Ctrl+\ splits the editor into two groups, and tabs can be dragged between them. A file open in both groups is one buffer (Reuben Shirk, Clair Nolt).
+- Packaged apps install to `/home/default/FreeCAD/Apps/<package id>`, a folder the ChoreBoy file manager can open, so their icons show (Ervin Newswanger). An app without its own icon gets the Python icon. The launcher goes in `/home/default`, and in `~/Desktop` when that folder exists. Installing an app that is already there offers Replace, which keeps the app's data, or Uninstall. A file the app changed after install, such as its own database, counts as data, so Replace and Uninstall keep it. Replace moves apps out of the old `~/.local/share/FreeCAD/Macro/Apps` folder.
+- Code Studio keeps its state in `/home/default/FreeCAD/CBCS/state`. Sharing settings between machines is opt-in through `CBCS_STATE_ROOT` or the pointer file `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`, or the same path under `~/share/<server>/` on a client. Only `settings.json`, `recent_projects.json` and `python_console_history.json` go to the shared folder. History, logs and caches stay on each machine. If the shared folder can't be reached, Code Studio uses this computer's settings and says so (Clair Nolt, Jason Rissler, Kevin Hoover). On first launch, settings from an old state folder are copied once. History is not copied.
+- Code Studio runs on the FreeCAD 1.1 image (Python 3.11, PySide6, no PySide2) as well as today's image (Python 3.9, PySide2). It uses the Qt binding FreeCAD provides. `CBCS_QT_API=pyside2` or `pyside6` forces one. The startup check reports the binding and the Qt version and checks `QtUiTools`, so it now counts nine checks.
+- On FreeCAD 1.1, highlighting and the outline use the tree-sitter that ships in the image, because that image can't load native libraries from the Code Studio folder.
+- New Qt projects, the example projects and the installer import Qt through FreeCAD's `PySide` package (`from PySide.QtWidgets import ...`, with `QAction`, `QActionGroup` and `QShortcut` from `PySide.QtGui`), so the same code runs on both images. Completion knows `PySide` and `PySide6` as well as `PySide2`.
+- Launchers and the installer start on FreeCAD 1.1, which aborts with "File name too long" when an `AppRun -c` command has more than 255 characters without a `/`. Launchers made by older versions still have that problem on FreeCAD 1.1. Reinstall Code Studio, and re-package and reinstall apps, to replace them.
+
+## [0.4.12] - 2026-09-03
+
+Follow-up to the v0.4.11 shop-LAN state default. A probed state-root default per parent directory, and a visible icon fallback for packaged-app shortcuts.
+
+### Changed
+
+- Code Studio probes each candidate parent directory before it chooses where to keep its state, instead of always using a hard-coded hidden path. Where a hidden file or hidden directory is denied, or the parent is unknown, it falls back to a safe visible name. Machines that already have a root from the env var, a pointer, or a legacy state directory keep the root they have (PR #69).
+
+### Fixed
+
+- Desktop shortcuts for packaged apps no longer fail the install when the hidden icon name is denied. The shortcut copies a visible sidecar icon instead and points `Icon=` at whichever copy succeeded (PR #69).
+
+## [0.4.11] - 2026-09-01
+
+Follow-up to the v0.4.10 ELF hotfix. Desktop icons for packaged apps, and a shop-LAN default for Code Studio state.
+
+### Fixed
+
+- Desktop shortcuts for packaged apps that install under `~/.local` now copy the icon next to the shortcut as a hidden sibling and rewrite `Icon=` on the published copy so the ChoreBoy file manager can show it (Ervin Newswanger, PR #66 / ops thread 27258, `email:48687`). Apps stay in `$HOME/.local/share/FreeCAD/Macro/Apps/`; they are not moved to Desktop.
+
+### Changed
+
+- New machines default Code Studio state to `/home/default/FreeCAD/choreboy_code_studio_state` instead of `$HOME/choreboy_code_studio_state`. Boxes that already have the home directory keep it. Shared shop state is opt-in via env or pointer, never implied by installing onto the share (PR #67). Clair's home→share symlink stays the logical identity.
 
 ## [0.4.10] - 2026-08-31
 

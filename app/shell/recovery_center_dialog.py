@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import (
     QDialog,
     QHBoxLayout,
     QLabel,
@@ -17,6 +17,7 @@ from PySide2.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from app.qt.qt_compat import exec_qt
 
 RECOVERY_ENTRY_KIND_DRAFT = "draft"
 RECOVERY_ENTRY_KIND_HISTORY = "history"
@@ -115,7 +116,7 @@ class RecoveryCenterDialog(QDialog):
     def open_dialog(self) -> int:
         self._requested_action = RECOVERY_ACTION_NONE
         self._search_input.setFocus()
-        return self.exec_()
+        return exec_qt(self)
 
     def selected_entry(self) -> Optional[RecoveryCenterEntry]:
         item = self._results.currentItem()

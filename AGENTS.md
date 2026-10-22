@@ -16,20 +16,33 @@ ChoreBoy Code Studio runs entirely inside FreeCAD's bundled Python runtime. Ther
 | Vendored packages    | `/workspace/vendor/`                             |
 
 
-### How the two environments compare
+### How the environments compare
 
 
-| Aspect                  | ChoreBoy production       | Cursor Cloud dev             |
-| ----------------------- | ------------------------- | ---------------------------- |
-| AppRun path             | `/opt/freecad/AppRun`     | `/opt/freecad/AppRun` (same) |
-| Python version          | 3.9.2                     | 3.11.13                      |
-| PySide2                 | bundled in AppRun         | bundled in AppRun            |
-| Display                 | X11 desktop               | X11 on `:1`                  |
-| Subprocess restrictions | AppArmor (only `/bin/sh`) | None                         |
-| Vendored `.so` wheels   | cp39                      | cp311                        |
+| Aspect                  | ChoreBoy production (V6.5) | ChoreBoy FreeCAD 1.1 (test build)              | Cursor Cloud dev             |
+| ----------------------- | -------------------------- | ---------------------------------------------- | ---------------------------- |
+| AppRun path             | `/opt/freecad/AppRun`      | `/opt/freecad/AppRun`                          | `/opt/freecad/AppRun` (same) |
+| Python version          | 3.9.2                      | 3.11.14                                        | 3.11.13                      |
+| Qt binding              | PySide2 / Qt 5.15.2        | PySide6 / Qt 6.8.3 (no PySide2)                | PySide2 5.15.15              |
+| Display                 | X11 desktop                | X11 desktop                                    | X11 on `:1`                  |
+| Subprocess restrictions | AppArmor (only `/bin/sh`)  | AppArmor: exec `/opt/freecad/AppRun` directly; `/bin/sh`, bash, `shell=True`, git denied | None |
+| Native code             | vendored cp39 `.so` via memfd | none from the CBCS install (memfd removed, ctypes jailed to `/opt/freecad`); tree-sitter 0.26 ships in the image | cp311 |
 
 
 All application code must target **Python 3.9** syntax (see `.cursor/rules/python39_compatibility.mdc`), even though the Cloud dev runtime is 3.11.
+
+### Importing Qt
+
+CBCS runs on PySide2 and PySide6 from one codebase. In app, test and testing code, import Qt only through `app.qt`, never from a binding:
+
+```python
+from app.qt.QtWidgets import QAction, QDialog   # QAction family works on both
+from app.qt.qt_compat import exec_qt, enum_value, event_pos
+exec_qt(dialog)          # not dialog.exec_()
+enum_value(modifiers)    # not int(modifiers); int() raises on PySide6 flag enums
+```
+
+`app/bootstrap/qt_binding_choice.py` picks the binding. `CBCS_QT_API=pyside2|pyside6` forces it; otherwise CBCS follows FreeCAD's `PySide` shim when present, else prefers PySide6. The `qt-portability` dune check (`python3 -m tools.dune.check`) enforces this, and `python3 tools/qt_codemod.py` rewrites stray binding imports. User-facing code (templates, example projects, the installer) instead imports FreeCAD's `PySide` shim, `from PySide.QtWidgets import …`, with `QAction`/`QActionGroup`/`QShortcut` from `PySide.QtGui`. See `docs/PYSIDE6_MIGRATION_PLAN.md`.
 
 ### Running tests
 
@@ -61,6 +74,14 @@ When you only need a specific path or expression (still through AppRun):
 python3 run_tests.py tests/unit/some/test_module.py
 python3 run_tests.py -k test_project_service
 ```
+
+PySide6 lane: point `CBCS_APPRUN` at a runtime that has PySide6, and force the binding when that runtime also has PySide2:
+
+```bash
+CBCS_APPRUN=/path/to/pyside6/AppRun CBCS_QT_API=pyside6 python3 testing/run_test_shard.py fast
+```
+
+Every change that touches Qt code should pass on both bindings. Today's ChoreBoy is PySide2 and the FreeCAD 1.1 image is PySide6-only. The live ChoreBoy VMs are the final check: `.cursor/skills/verify-cbcs` (`control-cbcs shard fast`) runs the suite in-process on a guest. ChoreBoyExp is the FreeCAD 1.1 VM; see `docs/PYSIDE6_MIGRATION_PLAN.md` for how to drive it.
 
 `QT_QPA_PLATFORM=offscreen` and `--import-mode=importlib` are applied automatically by `run_tests.py`; do not pass them by hand. The `slow` marker (subprocess polling, debug session waits) is excluded from the `fast` shard so the agent loop stays under budget. The demoted `performance` marker is auto-excluded by `run_tests.py` unless you pass `-m performance` or a path under `tests/integration/performance/`. See `docs/TESTS.md` §5 for the canonical command catalog and §9 for the latest checkpoint numbers.
 
@@ -153,16 +174,18 @@ The shipped product has one supported native bundle contract:
 Any product artifact must use that `cp39` contract. Do not package or ship a
 `cp311` vendor tree.
 
-`package.py` enforces the contract at staging time and self-heals the
-`tree_sitter` core binding: it downloads the cp39 manylinux wheel via
-`pip download --python-version=3.9 --platform=manylinux_2_17_x86_64`, caches it
-under `<artifacts>/vendor_cp39_cache/`, and overlays
-`_binding.cpython-39-x86_64-linux-gnu.so` onto the staged payload. This means
-the local `vendor/tree_sitter/` may legitimately hold a cp311 binding for
-Cloud-dev use without breaking `python package.py`. Grammar wheels
-(`tree_sitter_*`) are `abi3` across Python versions, not across OS or CPU.
-`validate_choreboy_tree_sitter_bundle` requires each `_binding*.so` to be a
-little-endian ELF64 x86-64 binary. A Darwin `abi3` file will fail the build.
+`package.py` enforces the contract at staging time. It downloads every pin in
+`TREE_SITTER_WHEEL_PINS` (`app/packaging/tree_sitter_cp39.py`) with
+`pip download --python-version=3.9 --platform=manylinux_2_17_x86_64
+--implementation=cp`. The core pin also passes `--abi=cp39`. Wheels are
+cached under `<artifacts>/vendor_cp39_cache/` and overlaid onto the staged
+payload. A Mac `vendor_py39` tree can hold Darwin grammar binaries. Staging
+replaces them before `validate_choreboy_tree_sitter_bundle` checks that each
+shipped `_binding*.so` is a little-endian ELF64 x86-64 file. An `abi3` grammar wheel keeps the same Python tag across 3.9 and newer.
+The binary inside it is still built for one OS and CPU.
+`tree_sitter_sql` is removed at staging when its language ABI is outside the
+range the pinned core accepts. Any other grammar outside that range fails
+the build.
 
 For local Cursor Cloud development only, populate the Python 3.11 bundle:
 
@@ -181,21 +204,9 @@ Legacy `ChoreBoyCodeStudio_artifacts/vendor/` trees can be migrated once with
 symlinks `repo/vendor` to `vendor_py39` or `vendor_py311` based on the active
 AppRun SOABI (override with `CBCS_VENDOR_PROFILE=py39|py311`).
 
-Manual Cloud-dev install (equivalent to `setup_vendor_py311.sh`):
-
-```bash
-mkdir -p vendor
-pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
- tree-sitter-python==0.23.6 tree-sitter-json==0.24.8 \
- tree-sitter-html==0.23.2 tree-sitter-xml==0.7.0 \
- tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
- tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
- tree-sitter-toml==0.7.0 tree-sitter-javascript==0.23.1 \
- jedi parso "black==24.10.0" isort tomli rope \
- pytest==8.3.4 pluggy iniconfig exceptiongroup \
- --target=vendor/ --python-version=3.11 --only-binary=:all: \
- --platform=manylinux_2_17_x86_64
-```
+Manual Cloud-dev install is `./scripts/setup_vendor_py311.sh`. That script
+installs `TREE_SITTER_WHEEL_PINS` plus the Python tooling packages. Do not
+copy tree-sitter versions into a second pip command.
 
 **Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable. The `pytest` (+ `pluggy`, `iniconfig`, `exceptiongroup`, `pytest-timeout`) packages are bundled so the in-app Test Explorer and the global 30 s per-test timeout in `pyproject.toml` work on real ChoreBoy without extra installs.
 

@@ -6,9 +6,9 @@ import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtCore import QPoint
-from PySide2.QtGui import QColor, QTextFormat
-from PySide2.QtWidgets import QTextEdit
+from app.qt.QtCore import QPoint
+from app.qt.QtGui import QColor, QTextFormat
+from app.qt.QtWidgets import QTextEdit
 
 from app.core import constants
 from app.editors.editor_overlay_policy import (
@@ -24,7 +24,7 @@ VIEWPORT_CHAR_MARGIN = 8000
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorExtraSelectionsOverlayBase(QPlainTextEdit):
         _line_highlight: QColor
@@ -41,7 +41,8 @@ if TYPE_CHECKING:
         _highlighting_reduced_threshold_chars: int
         _highlighting_lexical_only_threshold_chars: int
         _operation_latency_sink: Callable[[str, float, str | None], None] | None
-        _active_file_path: str | None
+        @property
+        def _active_file_path(self) -> str | None: ...
 
         def _build_bracket_match_selections(self) -> list[QTextEdit.ExtraSelection]: ...
         def _debug_execution_extra_selection(self) -> QTextEdit.ExtraSelection | None: ...

@@ -100,6 +100,10 @@ class MenuCallbacks:
     on_set_theme_high_contrast_light: Callable[[], object] | None = None
     on_set_theme_high_contrast_dark: Callable[[], object] | None = None
     on_zoom_in: Callable[[], object] | None = None
+    on_split_editor_right: Callable[[], object] | None = None
+    on_close_editor_group: Callable[[], object] | None = None
+    on_focus_first_editor_group: Callable[[], object] | None = None
+    on_focus_second_editor_group: Callable[[], object] | None = None
     on_zoom_out: Callable[[], object] | None = None
     on_zoom_reset: Callable[[], object] | None = None
     on_markdown_show_source: Callable[[], object] | None = None
@@ -161,8 +165,8 @@ def build_menu_stubs(
     shortcut_overrides: Mapping[str, str] | None = None,
 ) -> MenuStubRegistry:
     """Create top-level shell menus and stable action IDs."""
-    qt_widgets = importlib.import_module("PySide2.QtWidgets")
-    qt_core = importlib.import_module("PySide2.QtCore")
+    qt_widgets = importlib.import_module("app.qt.QtWidgets")
+    qt_core = importlib.import_module("app.qt.QtCore")
     actions: dict[str, Any] = {}
     menus: dict[str, Any] = {}
 

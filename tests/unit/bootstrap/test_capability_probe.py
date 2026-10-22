@@ -8,6 +8,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.bootstrap import capability_probe
+from app.bootstrap.state_lock_probe import StateLockProbeResult, probe_state_dir
+from app.core import constants
 from app.core.models import CapabilityCheckResult, CapabilityProbeReport
 
 pytestmark = pytest.mark.unit
@@ -36,18 +38,171 @@ def test_check_apprun_presence_reports_missing_path(tmp_path: Path) -> None:
     assert str(missing_path) in result.message
 
 
-def test_check_pyside2_availability_reports_import_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    """PySide2 check should succeed when import works."""
+def _install_binding(
+    monkeypatch: pytest.MonkeyPatch,
+    binding: str,
+    *,
+    other_present: bool,
+    binding_version: str,
+    qt_version: str,
+) -> tuple[list[str], list[str]]:
+    imports: list[str] = []
+    specs: list[str] = []
+    other = "PySide2" if binding == "PySide6" else "PySide6"
 
-    def fake_import(module_name: str) -> object:
-        assert module_name == "PySide2"
-        return object()
+    def import_module(name: str, package: object = None) -> object:
+        _ = package
+        imports.append(name)
+        if name.startswith(other):
+            raise AssertionError(name)
+        if name == binding + ".QtCore":
+            return SimpleNamespace(qVersion=lambda: qt_version)
+        if name == binding:
+            return SimpleNamespace(__version__=binding_version)
+        if name in (binding + ".QtGui", binding + ".QtWidgets"):
+            return SimpleNamespace()
+        raise AssertionError(name)
 
-    monkeypatch.setattr(capability_probe.importlib, "import_module", fake_import)
+    def find_spec(name: str, package: object = None) -> object:
+        _ = package
+        specs.append(name)
+        if name == other and other_present:
+            return SimpleNamespace(origin=other)
+        return None
+
+    monkeypatch.setattr(capability_probe, "select_binding", lambda: binding)
+    monkeypatch.setattr(capability_probe, "forced_by_env", lambda: False)
+    monkeypatch.setattr(capability_probe.importlib, "import_module", import_module)
+    monkeypatch.setattr(capability_probe.importlib.util, "find_spec", find_spec)
+    return imports, specs
+
+
+def test_check_qt_binding_availability_selects_pyside6(monkeypatch: pytest.MonkeyPatch) -> None:
+    imports, _specs = _install_binding(
+        monkeypatch,
+        "PySide6",
+        other_present=False,
+        binding_version="6.8.3",
+        qt_version="6.8.3",
+    )
+
+    result = capability_probe.check_qt_binding_availability()
+
+    assert result.is_available is True
+    assert result.check_id == "qt_binding_import"
+    assert result.details["binding"] == "PySide6"
+    assert set(result.details) == {
+        "binding",
+        "binding_version",
+        "qt_version",
+        "forced_by_env",
+        "other_binding_present",
+    }
+    assert result.details["binding_version"] == "6.8.3"
+    assert result.details["qt_version"] == "6.8.3"
+    assert result.details["other_binding_present"] is False
+    assert imports == [
+        "PySide6.QtCore",
+        "PySide6.QtGui",
+        "PySide6.QtWidgets",
+        "PySide6",
+    ]
+
+
+def test_check_qt_binding_availability_selects_pyside2(monkeypatch: pytest.MonkeyPatch) -> None:
+    imports, _specs = _install_binding(
+        monkeypatch,
+        "PySide2",
+        other_present=False,
+        binding_version="5.15.15",
+        qt_version="5.15.15",
+    )
+
+    result = capability_probe.check_qt_binding_availability()
+
+    assert result.is_available is True
+    assert result.check_id == "qt_binding_import"
+    assert result.details["binding"] == "PySide2"
+    assert imports == [
+        "PySide2.QtCore",
+        "PySide2.QtGui",
+        "PySide2.QtWidgets",
+        "PySide2",
+    ]
+
+
+def test_check_qt_binding_availability_reports_select_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    def select_binding() -> str:
+        raise ImportError("No Qt for Python binding is importable (CBCS_QT_API='pyside2').")
+
+    def import_module(name: str, package: object = None) -> object:
+        _ = package
+        raise AssertionError(name)
+
+    monkeypatch.setattr(capability_probe, "select_binding", select_binding)
+    monkeypatch.setattr(capability_probe.importlib, "import_module", import_module)
+
+    result = capability_probe.check_qt_binding_availability()
+
+    assert result.is_available is False
+    assert result.check_id == "qt_binding_import"
+    assert "CBCS_QT_API" in result.message
+
+
+def test_check_qt_binding_availability_skips_the_other_binding(monkeypatch: pytest.MonkeyPatch) -> None:
+    imports, specs = _install_binding(
+        monkeypatch,
+        "PySide6",
+        other_present=True,
+        binding_version="6.8.3",
+        qt_version="6.8.3",
+    )
+
+    result = capability_probe.check_qt_binding_availability()
+
+    assert result.details["other_binding_present"] is True
+    assert specs == ["PySide2"]
+    assert all(not name.startswith("PySide2") for name in imports)
+
+
+def test_check_pyside2_availability_returns_binding_check(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = CapabilityCheckResult("qt_binding_import", True, "ok")
+    monkeypatch.setattr(capability_probe, "check_qt_binding_availability", lambda: expected)
 
     result = capability_probe.check_pyside2_availability()
-    assert result.check_id == "pyside2_import"
+
+    assert result is expected
+    assert result.check_id == "qt_binding_import"
+
+
+def test_check_qt_uitools_availability_requires_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(capability_probe, "select_binding", lambda: "PySide6")
+
+    def import_module(name: str, package: object = None) -> object:
+        _ = package
+        assert name == "PySide6.QtUiTools"
+        return SimpleNamespace(QUiLoader=object())
+
+    monkeypatch.setattr(capability_probe.importlib, "import_module", import_module)
+
+    result = capability_probe.check_qt_uitools_availability()
+
     assert result.is_available is True
+    assert result.check_id == capability_probe.QT_UITOOLS_CHECK_ID
+
+
+def test_check_qt_uitools_availability_reports_missing_loader(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(capability_probe, "select_binding", lambda: "PySide2")
+    monkeypatch.setattr(
+        capability_probe.importlib,
+        "import_module",
+        lambda name, package=None: SimpleNamespace(),
+    )
+
+    result = capability_probe.check_qt_uitools_availability()
+
+    assert result.is_available is False
+    assert result.check_id == capability_probe.QT_UITOOLS_CHECK_ID
 
 
 def test_check_freecad_availability_reports_import_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -141,11 +296,15 @@ def test_check_freecad_availability_uses_apprun_fallback_after_probe_launch_erro
 
 def test_check_writable_state_path_uses_resolved_state_root(tmp_path: Path) -> None:
     """State-root writability should succeed for writable locations."""
-    result = capability_probe.check_writable_state_path(state_root=tmp_path / "state")
+    state_root = tmp_path / "state"
+    result = capability_probe.check_writable_state_path(state_root=state_root)
 
     assert result.check_id == "state_root_writable"
     assert result.is_available is True
-    assert result.details["path"] == str((tmp_path / "state").resolve())
+    assert result.details["path"] == str(state_root.resolve())
+    leftovers = [path.name for path in state_root.iterdir()]
+    assert leftovers == []
+    assert not constants.CAPABILITY_PROBE_CANARY_PREFIX.startswith(".")
 
 
 def test_check_writable_logs_path_returns_failure_on_permission_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -273,8 +432,13 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
     )
     monkeypatch.setattr(
         capability_probe,
-        "check_pyside2_availability",
-        lambda: CapabilityCheckResult("pyside2_import", True, "ok"),
+        "check_qt_binding_availability",
+        lambda: CapabilityCheckResult("qt_binding_import", True, "ok"),
+    )
+    monkeypatch.setattr(
+        capability_probe,
+        "check_qt_uitools_availability",
+        lambda: CapabilityCheckResult("qt_uitools_import", True, "ok"),
     )
     monkeypatch.setattr(
         capability_probe,
@@ -306,6 +470,7 @@ def test_run_startup_capability_probe_returns_structured_failures_instead_of_rai
     assert isinstance(report, CapabilityProbeReport)
     assert report.all_available is False
     assert "state_root_writable" in report.failed_check_ids
+    assert capability_probe.QT_UITOOLS_CHECK_ID in [check.check_id for check in report.checks]
 
     payload = report.to_dict()
     failing_item = next(item for item in payload["checks"] if item["check_id"] == "state_root_writable")
@@ -325,8 +490,8 @@ def test_run_minimal_startup_capability_probe_excludes_heavy_checks(
     )
     monkeypatch.setattr(
         capability_probe,
-        "check_pyside2_availability",
-        lambda: CapabilityCheckResult("pyside2_import", True, "ok"),
+        "check_qt_binding_availability",
+        lambda: CapabilityCheckResult("qt_binding_import", True, "ok"),
     )
     monkeypatch.setattr(
         capability_probe,
@@ -361,8 +526,55 @@ def test_run_minimal_startup_capability_probe_excludes_heavy_checks(
     check_ids = [check.check_id for check in report.checks]
     assert check_ids == [
         capability_probe.APP_RUN_PRESENCE_CHECK_ID,
-        capability_probe.PYSIDE2_IMPORT_CHECK_ID,
+        capability_probe.QT_BINDING_CHECK_ID,
         capability_probe.STATE_ROOT_WRITABLE_CHECK_ID,
         capability_probe.GLOBAL_LOGS_WRITABLE_CHECK_ID,
         capability_probe.TEMP_ROOT_WRITABLE_CHECK_ID,
     ]
+
+
+def test_probe_state_dir_succeeds_in_temp_folder(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    result = probe_state_dir(state_dir)
+
+    assert result.ok is True
+    assert result.operation == "sqlite"
+    assert result.errno is None
+    assert list(state_dir.iterdir()) == []
+
+
+def test_probe_state_dir_reports_lock_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    def deny_lock(*_args: object, **_kwargs: object) -> None:
+        raise PermissionError(13, "Permission denied")
+
+    monkeypatch.setattr("app.bootstrap.state_lock_probe.fcntl.lockf", deny_lock)
+    result = probe_state_dir(tmp_path / "state")
+
+    assert result.ok is False
+    assert result.operation == "lock"
+    assert result.errno == 13
+    assert "Permission denied" in result.message
+
+
+def test_check_writable_state_path_reports_lock_probe_failure(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setattr(
+        capability_probe,
+        "probe_state_dir",
+        lambda _path: StateLockProbeResult(
+            ok=False,
+            operation="lock",
+            errno=13,
+            message="Permission denied",
+        ),
+    )
+
+    result = capability_probe.check_writable_state_path(state_root=tmp_path)
+
+    assert result.check_id == "state_root_writable"
+    assert result.is_available is False
+    assert result.details["operation"] == "lock"
+    assert result.details["errno"] == 13
+    assert "lock" in result.message

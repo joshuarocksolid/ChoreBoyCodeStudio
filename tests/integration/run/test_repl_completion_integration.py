@@ -7,9 +7,18 @@ from typing import Any
 
 import pytest
 
+from app.intelligence.runtime_members import RuntimeMemberListing
 from app.run.run_manifest import ReplControlConfig
 from app.runner.repl_control import ReplControlServer
-from app.runner.repl_protocol import REPL_CONTROL_PROTOCOL, dumps_message, envelope_from_dict, loads_message
+from app.runner.repl_protocol import (
+    REPL_CONTROL_PROTOCOL,
+    build_list_members_request,
+    dumps_message,
+    envelope_from_dict,
+    listing_from_wire,
+    loads_message,
+)
+from app.qt.qt_compat import QT_API
 
 pytestmark = pytest.mark.integration
 
@@ -40,7 +49,7 @@ def _free_port() -> int:
     return port
 
 
-def test_repl_control_complete_and_introspect_round_trip() -> None:
+def test_repl_control_complete_and_list_members_round_trip() -> None:
     namespace: dict[str, object] = {"sample_value": 123}
     port = _free_port()
     config = ReplControlConfig(
@@ -73,23 +82,19 @@ def test_repl_control_complete_and_introspect_round_trip() -> None:
         complete_envelope = envelope_from_dict(complete_result)
         assert any(item.label == "sample_value" for item in complete_envelope.items)
 
-        introspect_payload = {
-            "protocol": REPL_CONTROL_PROTOCOL,
-            "session_token": "integration-token",
-            "method": "introspect",
-            "target_path": "PySide2.QtCore",
-            "member_prefix": "",
-            "include_private": False,
-            "max_results": 20,
-        }
+        list_members_payload = build_list_members_request(
+            protocol=REPL_CONTROL_PROTOCOL,
+            session_token="integration-token",
+            target_path=QT_API + ".QtCore",
+        )
         with socket.create_connection(("127.0.0.1", port), timeout=1.0) as sock:
-            sock.sendall(dumps_message(introspect_payload))
-            introspect_response = _read_json_line(sock)
-        assert introspect_response.get("ok") is True
-        introspect_result = introspect_response.get("result")
-        assert isinstance(introspect_result, dict)
-        introspect_envelope = envelope_from_dict(introspect_result)
-        assert introspect_envelope.items
+            sock.sendall(dumps_message(list_members_payload))
+            list_members_response = _read_json_line(sock)
+        list_members_result = list_members_response.get("result")
+        assert isinstance(list_members_result, dict)
+        listing = listing_from_wire(list_members_result)
+        assert isinstance(listing, RuntimeMemberListing)
+        assert "QObject" in {member.name for member in listing.public}
     finally:
         server.stop()
 

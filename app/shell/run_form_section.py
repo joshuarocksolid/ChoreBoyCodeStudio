@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtWidgets import QLabel, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 
 def build_run_form_section(parent: QWidget, title: str) -> tuple[QWidget, QVBoxLayout]:

@@ -85,6 +85,16 @@ def _selects_performance_path(args: list[str]) -> bool:
     return any("tests/integration/performance" in arg for arg in args)
 
 
+def _pythonpath_entries() -> list[str]:
+    raw = os.environ.get("PYTHONPATH", "")
+    entries: list[str] = []
+    for part in raw.split(os.pathsep):
+        text = part.strip()
+        if text:
+            entries.append(str(Path(text).expanduser()))
+    return entries
+
+
 def main() -> int:
     app_run_path = Path(APPRUN)
     if not app_run_path.is_file():
@@ -104,11 +114,17 @@ def main() -> int:
     repo_root_str = str(repo_root)
     vendor_root = str((repo_root / "vendor").resolve())
     pytest_args = repr(_pytest_argv())
+    # FreeCAD clears PYTHONPATH before the -c payload runs. Reapply the
+    # parent's entries ahead of vendor so a runtime tree-sitter site wins.
+    runtime_site_inserts = "".join(
+        f"sys.path.insert(0, {entry!r});" for entry in reversed(_pythonpath_entries())
+    )
 
     payload = (
         "import sys, os;"
         f"sys.path.insert(0, {repo_root_str!r});"
         f"sys.path.insert(0, {vendor_root!r});"
+        f"{runtime_site_inserts}"
         f"os._exit(__import__('pytest').main({pytest_args}))"
     )
 

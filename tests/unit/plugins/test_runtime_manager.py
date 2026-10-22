@@ -159,11 +159,23 @@ def test_host_exit_unblocks_pending_request_with_error(monkeypatch: pytest.Monke
     assert "exited before response" in error_text[0]
 
 
-def test_stderr_output_is_recorded_as_last_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_stderr_from_a_running_host_is_not_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
     manager = PluginRuntimeManager()
 
-    manager._handle_event(ProcessEvent(event_type="output", stream="stderr", text="boom"))
+    manager._handle_event(
+        ProcessEvent(event_type="output", stream="stderr", text="DEBUG: freecad_bin = /opt/freecad/usr/bin/freecad\n")
+    )
+
+    assert manager.last_error is None
+
+
+def test_failed_host_exit_reports_the_last_stderr_line(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _ResponsiveHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    manager._handle_event(ProcessEvent(event_type="output", stream="stderr", text="boom\n"))
+    manager._handle_event(ProcessEvent(event_type="exit", return_code=1, terminated_by_user=False))
 
     assert manager.last_error == "boom"
 
@@ -258,6 +270,50 @@ def test_cancel_workflow_job_round_trip(monkeypatch: pytest.MonkeyPatch) -> None
     result = manager.cancel_workflow_job("job-1")
 
     assert result == {"job_id": "job-1", "cancel_requested": True}
+
+
+class _EaccesHostSupervisor:
+    def __init__(self, *, on_event: object, **_kwargs: object) -> None:
+        self._on_event = on_event
+        self.started = False
+
+    def is_running(self) -> bool:
+        return False
+
+    def start(self) -> int:
+        exc = PermissionError(13, "Permission denied", "/opt/freecad/AppRun")
+        raise RunLifecycleError(f"Failed to launch runner process: {exc}") from exc
+
+    def stop(self) -> None:
+        return None
+
+    def send_input(self, text: str) -> None:
+        raise AssertionError("send_input must not run after a failed host start")
+
+
+def test_start_records_eacces_without_raising(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CBCS_DISABLE_BACKGROUND_RUNTIME", raising=False)
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _EaccesHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    manager.start()
+
+    assert manager.is_running() is False
+    assert manager.last_error is not None
+    assert "/opt/freecad/AppRun" in manager.last_error
+    assert "13" in manager.last_error
+    assert "PermissionError" in manager.last_error
+
+
+def test_reload_plugins_does_not_raise_after_eacces_start(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("CBCS_DISABLE_BACKGROUND_RUNTIME", raising=False)
+    monkeypatch.setattr("app.plugins.runtime_manager.PluginHostSupervisor", _EaccesHostSupervisor)
+    manager = PluginRuntimeManager()
+
+    manager.reload_plugins()
+
+    assert manager.is_running() is False
+    assert manager.last_error is not None
 
 
 def test_start_and_reload_plugins_skip_when_background_runtime_disabled(

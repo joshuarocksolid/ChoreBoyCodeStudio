@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.shell.repl_event_workflow import ReplEndedEvent, ReplEventWorkflow, ReplOutputEvent  # noqa: E402
 

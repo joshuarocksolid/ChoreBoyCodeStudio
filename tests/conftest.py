@@ -68,8 +68,8 @@ def _reap_runtime_children_after_test(request: pytest.FixtureRequest) -> None:
 @pytest.fixture(scope="session")
 def qapp():  # type: ignore[no-untyped-def]
     """Session-scoped ``QApplication`` shared by all Qt-touching tests."""
-    pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
-    from PySide2.QtWidgets import QApplication
+    pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
+    from app.qt.QtWidgets import QApplication
 
     app = QApplication.instance()
     if app is None:
@@ -85,7 +85,7 @@ def pytest_sessionfinish(session, exitstatus):  # type: ignore[no-untyped-def]
 def pytest_unconfigure(config):  # type: ignore[no-untyped-def]
     """Run GC to finalize Python-side Qt wrapper references before shutdown."""
     try:
-        from PySide2.QtWidgets import QApplication
+        from app.qt.QtWidgets import QApplication
     except ImportError:
         return
 

@@ -5,7 +5,7 @@ description: Drive the live ChoreBoy Code Studio Qt desktop editor on the ChoreB
 
 # Verify ChoreBoy Code Studio
 
-ChoreBoy Code Studio is a PySide2 desktop IDE that runs inside confined FreeCAD AppRun. There is no browser, no CDP port, and no DOM. The user touches the Qt window. This skill is the recipe for launching an isolated instance on the ChoreBoy VM, driving it with `#shell.*` handles, and keeping proof artifacts after teardown.
+ChoreBoy Code Studio is a Qt desktop IDE (PySide2 on today's image, PySide6 on FreeCAD 1.1) that runs inside confined FreeCAD AppRun. There is no browser, no CDP port, and no DOM. The user touches the Qt window. This skill is the recipe for launching an isolated instance on the ChoreBoy VM, driving it with `#shell.*` handles, and keeping proof artifacts after teardown.
 
 You are on the Mac cockpit. Execution is on a leased lab desktop. Read [references/isolation.md](references/isolation.md) before launch and [references/handles.md](references/handles.md) before picking a selector. Read [features/README.md](features/README.md) and the matching feature file before driving a surface.
 
@@ -50,12 +50,7 @@ Build the zip with `python3 package.py`, then:
 $CONTROL launch --install --zip /path/to/choreboy_code_studio_installer_v<ver>.zip
 ```
 
-The installer wizard has no `shell.*` names. Click visible Next / Install:
-
-- `#__qt__passive_wizardbutton1` (Next)
-- `#qt_wizard_commit` (Install / finish)
-
-Do not `invoke` wizard `next`. Password for the product zip is `rsd`.
+`launch --install` runs `cbapp install-test`, which auto-walks the product installer wizard (`01_welcome` … `05_done`) and exits when that lane finishes. Explicit `#__qt__passive_wizardbutton1` (Next) / `#qt_wizard_commit` (Install) clicks are not reachable in that helper path. Drive those handles only when you launch the installer by hand outside `install-test`. The installer wizard has no `shell.*` names. Do not `invoke` wizard `next`. Password for the product zip is `rsd`.
 
 ### Teardown
 
@@ -112,7 +107,9 @@ $CONTROL ctl "$SID" exec -- "find('#shell.runStatusLabel').text()"
 
 Actions that open a modal dialog must use `arm`, not `trigger`. `trigger` runs `QAction.trigger()` inside the bridge call; `QDialog.exec_()` then blocks that call until the dialog closes, so later commands time out. `arm` fires the action on the next event-loop tick.
 
-The same block happens if you click `#shell.startupStatusLabel` (Runtime Center) or `trigger` format / organize imports. Those OK boxes also use `exec_()`. If the bridge is already blocked, `cbapp desktop-shot` plus `cb-virsh send-key ChoreBoy KEY_ENTER` or `KEY_ESC` recovers it. `KEY_RETURN` is invalid. `oskey` queues behind the blocked bridge.
+Use `arm` for anything that `exec_()`s, including: Settings, Recovery Center, Package Project, Open Project, New Project from Template, Load Example Project, Runtime Center / onboarding, format, organize imports, Apply Safe Fixes, and renameSymbol. Lint Current File is fine with `trigger`. Plugin Manager and Dependency Inspector use `show()` — `trigger` is correct for those.
+
+The same block happens if you click `#shell.startupStatusLabel` (Runtime Center) or `trigger` format / organize imports / Safe Fixes / renameSymbol. Those OK / input boxes also use `exec_()`. If the bridge is already blocked, `cbapp desktop-shot` plus `cb-virsh send-key ChoreBoy KEY_ENTER` or `KEY_ESC` recovers it. `KEY_RETURN` is invalid. `oskey` queues behind the blocked bridge.
 
 Close a dialog you opened with `arm` by `reject()` via `ctl exec`, not by clicking Close while the opener is still in `exec_()`.
 

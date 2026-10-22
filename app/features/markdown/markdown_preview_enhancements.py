@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide2.QtGui import (
+from app.qt.QtGui import (
     QColor,
     QFont,
     QTextCharFormat,
@@ -57,7 +57,7 @@ def _apply_external_link_markers(document: QTextDocument, tokens: ShellThemeToke
 
 def _apply_monospace_to_code_blocks(document: QTextDocument) -> None:
     mono_format = QTextCharFormat()
-    mono_format.setFontFamily("monospace")
+    mono_format.setFontFamilies(["monospace"])
     mono_format.setFontFixedPitch(True)
 
     for block in _iter_blocks(document):

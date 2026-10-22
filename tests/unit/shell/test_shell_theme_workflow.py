@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
 from app.shell.shell_theme_workflow import (  # noqa: E402

@@ -7,6 +7,7 @@ import pytest
 from app.intelligence.completion_context import (
     CompletionSyntacticContext,
     build_completion_context,
+    is_dot_after_numeric_literal,
 )
 
 pytestmark = pytest.mark.unit
@@ -65,3 +66,23 @@ def test_completion_context_marks_comment_as_no_completion_zone() -> None:
 
     assert context.syntactic_context == CompletionSyntacticContext.STRING_OR_COMMENT
     assert context.should_offer_automatic_results is False
+
+
+@pytest.mark.parametrize(
+    ("source", "cursor_position", "expected"),
+    [
+        ("foo1.", len("foo1."), False),
+        ("1.", len("1."), True),
+        ("0.5", 2, True),
+        ("3.14", 2, True),
+        (").", len(")."), False),
+        ("obj.", len("obj."), False),
+        ("_1.", len("_1."), False),
+        ("1_000.", len("1_000."), True),
+        ("value = 0.", len("value = 0."), True),
+        (".", 1, False),
+        ("1", 1, False),
+    ],
+)
+def test_is_dot_after_numeric_literal(source: str, cursor_position: int, expected: bool) -> None:
+    assert is_dot_after_numeric_literal(source, cursor_position) is expected

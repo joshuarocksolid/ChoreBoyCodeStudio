@@ -8,9 +8,9 @@ from types import SimpleNamespace
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtGui import QTextCursor  # noqa: E402
+from app.qt.QtGui import QTextCursor  # noqa: E402
 
 from app.editors.code_editor_widget import CodeEditorWidget  # noqa: E402
 from app.editors.editor_manager import EditorManager  # noqa: E402
@@ -96,6 +96,55 @@ def test_project_session_persist_and_restore_round_trips_editor_state(
     restored_cursor = restored_widgets[file_path_str].textCursor()
     assert restored_cursor.blockNumber() + 1 == 2
     assert restored_cursor.positionInBlock() + 1 == 2
+
+
+def test_session_persist_after_move_restores_the_new_path(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    source = project_root / "old.py"
+    source.write_text("value = 1\n", encoding="utf-8")
+    destination = project_root / "new.py"
+    source_path = str(source.resolve())
+    destination_path = str(destination.resolve())
+
+    manager = EditorManager()
+    manager.open_file(source_path)
+    source.rename(destination)
+    manager.remap_paths_for_move(source_path, destination_path)
+    widget = CodeEditorWidget()
+    widget.setPlainText("value = 1\n")
+    selected_tabs: list[int] = []
+    restored_paths: list[str] = []
+    open_file_handlers = {"handler": lambda _path: True}
+    workflow = EditorSessionWorkflow(
+        loaded_project=lambda: _loaded_project(project_root),
+        editor_manager=manager,
+        editor_widget_for_path=lambda path: widget if path == destination_path else None,
+        open_file_in_editor=lambda path: open_file_handlers["handler"](path),
+        tab_index_for_path=lambda path: 0 if path == destination_path else -1,
+        set_current_tab_index=selected_tabs.append,
+        logger=logging.getLogger("test.editor_session_workflow"),
+        breakpoint_store=BreakpointStore(),
+    )
+
+    workflow.persist_session_state(project_root=str(project_root.resolve()))
+    saved = load_session_file(str(project_root.resolve()))
+    assert saved is not None
+    assert [file_state.file_path for file_state in saved.open_files] == [destination_path]
+
+    restored_manager = EditorManager()
+
+    def open_restored(path: str) -> bool:
+        restored_paths.append(path)
+        restored_manager.open_file(path)
+        return True
+
+    workflow.set_editor_manager(restored_manager)
+    open_file_handlers["handler"] = open_restored
+    workflow.restore_session_state(str(project_root.resolve()))
+
+    assert restored_paths == [destination_path]
+    assert restored_manager.open_paths() == [destination_path]
 
 
 def test_local_history_workflow_delegates_session_to_editor_session_module(

@@ -8,7 +8,9 @@ TRUSTED_RUNTIME_ROOTS = frozenset(
     {
         "FreeCAD",
         "FreeCADGui",
+        "PySide",
         "PySide2",
+        "PySide6",
         "QtCore",
         "QtGui",
         "QtWidgets",

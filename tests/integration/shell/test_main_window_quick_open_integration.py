@@ -7,9 +7,9 @@ import time
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-import PySide2.QtWidgets as qt_widgets
+from app.qt import QtWidgets as qt_widgets
 
 from app.core import constants
 from app.project.project_service import create_blank_project
@@ -124,7 +124,7 @@ def test_quick_open_search_preview_and_edit_lifecycle(
     assert first_tab.file_path == str(first_file.resolve())
     assert first_tab.is_preview is True
 
-    editor = window._editor_widgets_by_path[str(first_file.resolve())]
+    editor = window._workspace_controller.widget_for_path(str(first_file.resolve()))
     editor.insertPlainText("# edited")
     app.processEvents()
     promoted_tab = window._editor_manager.get_tab(str(first_file.resolve()))

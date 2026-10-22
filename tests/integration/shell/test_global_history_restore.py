@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QDialog
+from app.qt.QtWidgets import QDialog
 
 from app.project.project_service import create_blank_project
 from app.shell.history_restore_picker import HISTORY_RESTORE_ACTION_RESTORE_LATEST
@@ -79,6 +79,7 @@ def test_global_history_restore_reopens_deleted_file_into_dirty_buffer(
         return QDialog.Accepted
 
     monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec_", fake_exec)
+    monkeypatch.setattr("app.shell.history_restore_picker.HistoryRestorePickerDialog.exec", fake_exec, raising=False)  # exec_qt calls exec on Qt 6
 
     window._local_history_workflow.open_global_history()
     assert wait_for(

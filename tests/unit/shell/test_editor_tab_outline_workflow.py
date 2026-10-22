@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.editors.editor_manager import EditorManager
 from app.intelligence.outline_service import OutlineSymbol
 from app.shell.editor_tab_outline_workflow import EditorTabOutlineWorkflow
 
@@ -77,28 +79,33 @@ def _sample_symbols() -> tuple[OutlineSymbol, ...]:
     )
 
 
-def test_outline_refresh_skips_panel_update_when_revision_is_stale(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    host = _FakeHost()
+def _workflow_for_open_file(
+    host: _FakeHost, tmp_path: Path
+) -> tuple[EditorTabOutlineWorkflow, EditorManager, str]:
+    file_path = tmp_path / "main.py"
+    file_path.write_text("def alpha():\n    pass\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path)).tab
     editor_widget = SimpleNamespace(
         toPlainText=lambda: "def alpha():\n    pass\n",
         textCursor=lambda: SimpleNamespace(blockNumber=lambda: 0),
     )
-    editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(
-            file_path="/tmp/project/main.py",
-            current_content="def alpha():\n    pass\n",
-        )
-    )
-
     workflow = EditorTabOutlineWorkflow(
         host=host,
-        editor_manager=editor_manager,
-        editor_widgets_by_path=lambda: {"/tmp/project/main.py": editor_widget},
+        editor_manager=manager,
+        editor_widget_for_buffer_id=lambda buffer_id: editor_widget if buffer_id == tab.buffer_id else None,
         editor_tab_factory=SimpleNamespace(open_file_in_editor=lambda *_a, **_kw: True),
-        buffer_revision=lambda _path: host._buffer_revision,
+        buffer_revision_for_buffer_id=lambda _buffer_id: host._buffer_revision,
     )
+    return workflow, manager, tab.file_path
+
+
+def test_outline_refresh_skips_panel_update_when_revision_is_stale(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    host = _FakeHost()
+    workflow, _manager, _file_path = _workflow_for_open_file(host, tmp_path)
     monkeypatch.setattr(
         "app.shell.editor_tab_outline_workflow.build_outline_from_source",
         lambda _source: _sample_symbols(),
@@ -115,27 +122,11 @@ def test_outline_refresh_skips_panel_update_when_revision_is_stale(
 
 def test_outline_refresh_updates_panel_when_revision_matches(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     host = _FakeHost()
-    editor_widget = SimpleNamespace(
-        toPlainText=lambda: "def alpha():\n    pass\n",
-        textCursor=lambda: SimpleNamespace(blockNumber=lambda: 0),
-    )
-    editor_manager = SimpleNamespace(
-        active_tab=lambda: SimpleNamespace(
-            file_path="/tmp/project/main.py",
-            current_content="def alpha():\n    pass\n",
-        )
-    )
+    workflow, _manager, file_path = _workflow_for_open_file(host, tmp_path)
     symbols = _sample_symbols()
-
-    workflow = EditorTabOutlineWorkflow(
-        host=host,
-        editor_manager=editor_manager,
-        editor_widgets_by_path=lambda: {"/tmp/project/main.py": editor_widget},
-        editor_tab_factory=SimpleNamespace(open_file_in_editor=lambda *_a, **_kw: True),
-        buffer_revision=lambda _path: host._buffer_revision,
-    )
     monkeypatch.setattr(
         "app.shell.editor_tab_outline_workflow.build_outline_from_source",
         lambda _source: symbols,
@@ -145,5 +136,26 @@ def test_outline_refresh_updates_panel_when_revision_matches(
     background_call = host.background_tasks().calls[0]
     background_call["on_success"](symbols)
 
-    assert host.outline_panel().outline_calls == [(symbols, "/tmp/project/main.py")]
-    assert host.outline_symbols_by_path()["/tmp/project/main.py"] == symbols
+    assert host.outline_panel().outline_calls == [(symbols, file_path)]
+    assert workflow.flat_symbols_for_path(file_path, fallback_source="") == symbols
+
+
+def test_outline_cache_follows_buffer_across_move(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    host = _FakeHost()
+    workflow, manager, file_path = _workflow_for_open_file(host, tmp_path)
+    symbols = _sample_symbols()
+    monkeypatch.setattr(
+        "app.shell.editor_tab_outline_workflow.build_outline_from_source",
+        lambda _source: symbols,
+    )
+    workflow.refresh_for_active_tab()
+    host.background_tasks().calls[0]["on_success"](symbols)
+
+    renamed_path = str(tmp_path / "renamed.py")
+    manager.remap_paths_for_move(file_path, renamed_path)
+
+    assert workflow.flat_symbols_for_path(renamed_path, fallback_source="") == symbols
+    assert workflow.flat_symbols_for_path(file_path, fallback_source="") == ()

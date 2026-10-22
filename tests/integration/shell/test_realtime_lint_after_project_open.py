@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.project.project_service import create_blank_project  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
@@ -79,11 +79,11 @@ def test_realtime_lint_clears_overlays_after_project_open_replaces_editor_manage
 
     window._lint_workflow.render_diagnostics_for_file = _spy_render  # type: ignore[method-assign]
 
-    editor = window._editor_widgets_by_path[path]
+    editor = window._workspace_controller.widget_for_path(path)
     window._lint_workflow.render_diagnostics_for_file(path, trigger="manual")
     assert wait_for(
         lambda: len(editor._diagnostic_selections) > 0
-        and len(window._stored_lint_diagnostics.get(path, [])) > 0,
+        and len(window._stored_lint_diagnostics.get(window._problems_controller.diagnostics_key(path), [])) > 0,
         app,
         timeout_seconds=8.0,
     )
@@ -92,7 +92,7 @@ def test_realtime_lint_clears_overlays_after_project_open_replaces_editor_manage
     assert wait_for(
         lambda: path in realtime_triggers
         and len(editor._diagnostic_selections) == 0
-        and len(window._stored_lint_diagnostics.get(path, [])) == 0,
+        and len(window._stored_lint_diagnostics.get(window._problems_controller.diagnostics_key(path), [])) == 0,
         app,
         timeout_seconds=8.0,
     )

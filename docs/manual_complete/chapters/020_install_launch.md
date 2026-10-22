@@ -35,7 +35,7 @@ When the application starts, it runs a quick **capability check** to confirm the
 is healthy. The result appears at the far left of the **status bar** along the bottom of
 the window.
 
-- **Runtime ready (8/8 checks)** means everything is working.
+- **Runtime ready (9/9 checks)** means everything is working.
 - **Runtime issues (N/8 checks)** means one or more checks did not pass. The application
   still opens, but some features may be limited.
 
@@ -68,8 +68,10 @@ understand the state of the application.
 
 The first time you open ChoreBoy Code Studio:
 
-1. It creates its global state folder (`~/choreboy_code_studio_state/`) for settings,
-   recent projects, logs, and Local History.
+1. It creates its global state folder for settings, recent projects, logs, and Local
+   History. New machines use `/home/default/FreeCAD/CBCS/state/`. If an older
+   `choreboy_code_studio_state` folder already exists, that folder is copied into the
+   new location on first launch of this update.
 2. It runs the capability check and shows the result in the status bar.
 3. It shows the welcome screen, because you have no recent project yet.
 
@@ -84,10 +86,34 @@ capability is unavailable, and most features still work. The right first step is
 **Tools > Runtime Center**, which translates the check results into plain language and
 suggested actions. The chapter "Diagnostics & support tools" covers this in depth.
 
+## Shop LAN install (opt-in shared settings)
+
+The product installer still defaults to `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX` on this
+machine. The launcher stays per-machine.
+
+To put the **application** on the shop share, use the installer's folder picker
+(**Ask for install folder**) and choose:
+
+`/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`
+
+Installing onto the share does **not** automatically share settings. Shared settings are
+opt-in. To share one state directory, set `CBCS_STATE_ROOT` to an absolute path, or write
+a visible `cbcs_state_root` pointer file (one absolute path; blank and `#` lines are
+ignored) at `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`.
+
+Two machines writing the same NFS state directory can overwrite each other's
+`settings.json` and related files. Do not point two live editors at one shared root
+unless you accept that.
+
+Projects themselves can live on `/home/default/share/...`; that is independent of
+application state.
+
 ## Where your settings and logs live
 
-ChoreBoy Code Studio stores its own settings and logs in a single, visible folder under
-your home directory named `choreboy_code_studio_state`. This includes:
+ChoreBoy Code Studio stores its own settings and logs in
+`/home/default/FreeCAD/CBCS/state`. If an older `choreboy_code_studio_state` folder
+already exists, that folder is copied into the new location on first launch of this
+update. This includes:
 
 - your editor preferences and theme,
 - your list of recent projects,

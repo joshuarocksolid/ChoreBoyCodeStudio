@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from typing import Any, Protocol, cast
 
-from PySide2.QtWidgets import QMessageBox, QStatusBar, QTabWidget, QWidget
+from app.qt.QtWidgets import QMessageBox, QStatusBar, QTabWidget, QWidget
 
 from app.core.models import LoadedProject, RuntimeIssue
 from app.debug.debug_models import DebugExceptionPolicy

@@ -60,7 +60,7 @@ A compact dashboard, left to right:
 
 | Segment | Meaning |
 | --- | --- |
-| Runtime readiness | e.g. "Runtime ready (8/8 checks)"; click to open the Runtime Center. |
+| Runtime readiness | e.g. "Runtime ready (9/9 checks)"; click to open the Runtime Center. |
 | Python tooling status | Whether tools loaded; active config source (e.g. `pyproject`). |
 | Run state | idle / running / finished / failed / terminated. |
 | Project | Project name; `(project overrides)` when project settings exist. |
@@ -84,7 +84,7 @@ A compact dashboard, left to right:
 
 | If you see… | It means… |
 | --- | --- |
-| `Runtime ready (8/8 checks)` | Everything is healthy. |
+| `Runtime ready (9/9 checks)` | Everything is healthy. |
 | `Runtime issues (N/8 checks)` | Open the Runtime Center to see what failed. |
 | `Run: running` (green) | A program is executing; the Stop button is available. |
 | `Run: failed (code=1)` | The last run exited with an error; check Problems. |

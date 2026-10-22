@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from PySide2.QtCore import QEvent, QRect, QSize, Qt
-from PySide2.QtGui import QColor, QPainter
-from PySide2.QtWidgets import QPlainTextEdit, QWidget
+from app.qt.QtCore import QEvent, QRect, QSize, Qt
+from app.qt.QtGui import QColor, QPainter
+from app.qt.QtWidgets import QPlainTextEdit, QWidget
 
 from app.shell.theme_tokens import ShellThemeTokens
 

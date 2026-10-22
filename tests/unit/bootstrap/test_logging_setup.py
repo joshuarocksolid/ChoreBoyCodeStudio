@@ -173,6 +173,22 @@ def test_get_active_log_path_returns_fallback_when_primary_unwritable(tmp_path: 
     assert active_log_path == result.log_path
 
 
+def test_get_active_log_path_matches_symlink_state_root_identity(tmp_path: Path) -> None:
+    target = tmp_path / "real_state"
+    target.mkdir()
+    link = tmp_path / "link_state"
+    link.symlink_to(target)
+
+    result = logging_setup.configure_app_logging(state_root=link)
+    assert result.tier == logging_setup.TIER_PRIMARY
+    assert result.log_path is not None
+
+    active = logging_setup.get_active_log_path(state_root=link)
+    assert active is not None
+    assert active.exists()
+    assert Path(active).resolve() == result.log_path.resolve()
+
+
 def test_get_active_log_path_ignores_active_log_from_different_state_root(tmp_path: Path) -> None:
     first_state_root = tmp_path / "state_one"
     second_state_root = tmp_path / "state_two"

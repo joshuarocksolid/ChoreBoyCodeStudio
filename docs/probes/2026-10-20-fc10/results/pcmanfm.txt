@@ -1,0 +1,69 @@
+pcmanfm observations from the ChoreBoy2 desktop session on 2026-10-20.
+FreeCAD 1.0.0, hostname net2. The file manager was opened by double-clicking the idesk Home icon.
+Screenshots live under /Users/local/Projects/ChoreBoyCodeStudio_wt/v0413-evidence/phase0-probe/.
+This file is the transcription of those screenshots.
+
+path /home/default
+result opened
+detail status bar "86 items (13 hidden)", location bar /home/default
+shot 02-fm-home.png
+
+path /home/default/FreeCAD
+result opened
+detail one folder, CBCS
+shot 03-fm-freecad.png
+
+path /home/default/FreeCAD/CBCS
+result opened
+detail one folder whose label starts choreboy_code_studio
+shot 04-fm-cbcs.png
+
+path /home/default/.local/share/FreeCAD
+result denied
+detail dialog "Error opening directory '/home/default/.local/share/FreeCAD': Permission denied"
+shot 05-fm-xdg-freecad.png
+
+path /home/default/.local/share/FreeCAD/Macro/Apps
+result denied
+detail dialog "Error opening directory '/home/default/.local/share/FreeCAD/Macro/Apps': Permission denied"
+shot 06-fm-macro-apps.png
+
+path /home/default/.cache/FreeCAD
+result opened
+detail folders Cache and intellaquote
+shot 07-fm-cache.png
+
+path /tmp
+result opened
+detail location bar /tmp
+shot 08-fm-tmp.png
+
+path /home/default/share
+result opened
+detail one folder, IntellaQuote Backup. The Places sidebar also has a Share entry.
+shot 09-fm-share.png
+
+path /home/default/share/Chore_Boy
+result missing on this slot
+detail dialog "The specified directory '/home/default/share/Chore_Boy' is not valid"
+shot 10-fm-chore-boy.png
+
+path /home/default/Desktop
+result missing on this slot
+detail dialog "The specified directory '/home/default/Desktop' is not valid"
+shot 11-fm-desktop.png
+
+path /home/default/.idesktop
+result denied
+detail dialog "Error opening directory '/home/default/.idesktop': Permission denied"
+shot 12-fm-idesktop.png
+
+path /home/default/.ideskrc
+result not a directory
+detail dialog "The specified directory '/home/default/.ideskrc' is not valid"
+shot 13-fm-ideskrc.png
+
+path /home/default/IntellaQuote.desktop
+result not a directory
+detail dialog "The specified directory '/home/default/IntellaQuote.desktop' is not valid". The location bar stopped at /home/default/IntellaQuote.
+shot 14-fm-intellaquote-desktop.png

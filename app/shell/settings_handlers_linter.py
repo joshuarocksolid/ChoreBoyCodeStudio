@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PySide2.QtCore import Qt
-from PySide2.QtWidgets import QCheckBox, QComboBox, QPushButton, QTableWidgetItem
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import QCheckBox, QComboBox, QPushButton, QTableWidgetItem
 
 from app.intelligence.lint_profile import (
     LINT_RULE_DEFINITIONS,

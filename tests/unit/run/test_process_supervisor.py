@@ -51,6 +51,7 @@ def test_start_sanitizes_virtualenv_for_apprun_command(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(process_supervisor_module.subprocess, "Popen", fake_popen)
     monkeypatch.setattr(ProcessSupervisor, "_start_waiter_thread", lambda self, process: None)
+    monkeypatch.setattr("app.run.runtime_launch.loaded_binding_env_value", lambda: None)
 
     supervisor = ProcessSupervisor()
     supervisor.start(

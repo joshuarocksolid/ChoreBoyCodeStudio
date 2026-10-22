@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from PySide2.QtCore import Qt, Signal
-from PySide2.QtWidgets import (
+from app.qt.QtCore import Qt, Signal
+from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,

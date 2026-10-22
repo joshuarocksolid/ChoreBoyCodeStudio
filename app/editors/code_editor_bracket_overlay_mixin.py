@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtGui import QColor, QTextCursor
-from PySide2.QtWidgets import QTextEdit
+from app.qt.QtGui import QColor, QTextCursor
+from app.qt.QtWidgets import QTextEdit
 
 
 from app.shell.theme_tokens import ShellThemeTokens
@@ -14,8 +14,8 @@ BRACKET_MATCH_SCAN_LIMIT_CHARS = 2_000
 
 
 if TYPE_CHECKING:
-    from PySide2.QtGui import QTextDocument
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtGui import QTextDocument
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorBracketOverlayBase(QPlainTextEdit):
         _bracket_match_color: QColor

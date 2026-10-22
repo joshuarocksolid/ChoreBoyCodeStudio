@@ -5,8 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from PySide2.QtCore import QPoint, QSize, Qt
-from PySide2.QtGui import (
+from app.qt.QtCore import QPoint, QSize, Qt
+from app.qt.QtGui import (
     QColor,
     QFontMetrics,
     QIcon,
@@ -14,7 +14,7 @@ from PySide2.QtGui import (
     QPixmap,
     QPolygon,
 )
-from PySide2.QtWidgets import (
+from app.qt.QtWidgets import (
     QAbstractItemView,
     QDialog,
     QHBoxLayout,
@@ -43,6 +43,7 @@ from app.shell.document_safety import (
 )
 from app.shell.icon_provider import file_icon, file_type_icon_map, filename_icon_map
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.qt.qt_compat import exec_qt
 
 
 _LIST_OBJECT_NAME = "shell.unsavedChangesDialog.fileList"
@@ -375,7 +376,7 @@ def prompt_for_unsaved_changes(
         dirty_buffers=dirty_buffers,
         allow_keep_for_next_launch=allow_keep_for_next_launch,
     )
-    dialog.exec_()
+    exec_qt(dialog)
 
     return DocumentSafetyDecision(
         intent=dialog.chosen_intent,

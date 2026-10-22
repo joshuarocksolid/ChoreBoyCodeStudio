@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide2.QtWidgets import QFileDialog, QWidget
+from app.qt.QtWidgets import QFileDialog, QWidget
 
 
 def _normalized_start_directory(start_directory: str) -> str:

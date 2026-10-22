@@ -4,15 +4,16 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, cast
 
-from PySide2.QtCore import QPointF, QRect, QSize, Qt
-from PySide2.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
-from PySide2.QtWidgets import QTextEdit, QWidget
+from app.qt.QtCore import QPointF, QRect, QSize, Qt
+from app.qt.QtGui import QColor, QPainter, QPolygonF, QTextCursor, QTextFormat
+from app.qt.QtWidgets import QTextEdit, QWidget
+from app.qt.qt_compat import event_pos
 
 from app.shell.theme_tokens import ShellThemeTokens
 
 
 if TYPE_CHECKING:
-    from PySide2.QtWidgets import QPlainTextEdit
+    from app.qt.QtWidgets import QPlainTextEdit
 
     class _CodeEditorChromeBase(QPlainTextEdit):
         _line_number_area: "_LineNumberArea"
@@ -30,6 +31,7 @@ if TYPE_CHECKING:
         def _mark_overlay_cache_dirty(self) -> None: ...
         def _highlight_current_line(self) -> None: ...
         def _notify_highlighter_viewport_lines(self) -> None: ...
+        def buffer_views(self) -> list[Any]: ...
 else:
     class _CodeEditorChromeBase:
         pass
@@ -49,7 +51,7 @@ class _LineNumberArea(QWidget):
     def mousePressEvent(self, event) -> None:  # type: ignore[no-untyped-def]  # noqa: N802
         if event.button() != Qt.LeftButton:
             return super().mousePressEvent(event)
-        self._editor.toggle_breakpoint_at_y(event.pos().y())
+        self._editor.toggle_breakpoint_at_y(event_pos(event).y())
 
 
 class CodeEditorChromeMixin(_CodeEditorChromeBase):
@@ -59,9 +61,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
 
     def _init_chrome_state(self) -> None:
         self._line_number_area = _LineNumberArea(self)
-        self._breakpoints: set[int] = set()
         self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
-        self._debug_execution_line: int | None = None
         self._debug_execution_color = QColor("#D97706")
         self._debug_execution_line_bg = QColor("#D0E2FF")
         self._gutter_bg = QColor("#F1F3F5")
@@ -85,7 +85,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
 
     def set_breakpoints(self, breakpoints: set[int]) -> None:
         self._breakpoints = set(breakpoints)
-        self._line_number_area.update()
+        self._update_gutters_of_buffer_views()
 
     def breakpoints(self) -> set[int]:
         return set(self._breakpoints)
@@ -99,7 +99,7 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         else:
             self._breakpoints.add(line_number)
             is_enabled = True
-        self._line_number_area.update()
+        self._update_gutters_of_buffer_views()
         if self._breakpoint_toggled_callback is not None:
             self._breakpoint_toggled_callback(line_number, is_enabled)
         return is_enabled
@@ -108,9 +108,14 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
         if self._debug_execution_line == line_number:
             return
         self._debug_execution_line = line_number
-        self._mark_overlay_cache_dirty()
-        self._line_number_area.update()
-        self._highlight_current_line()
+        for view in self.buffer_views():
+            view._mark_overlay_cache_dirty()
+            view._line_number_area.update()
+            view._highlight_current_line()
+
+    def _update_gutters_of_buffer_views(self) -> None:
+        for view in self.buffer_views():
+            view._line_number_area.update()
 
     def clear_debug_execution_line(self) -> None:
         self.set_debug_execution_line(None)

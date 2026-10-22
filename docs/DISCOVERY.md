@@ -47,6 +47,21 @@ Key implications:
 
 ---
 
+## 1B. FreeCAD 1.1 ChoreBoy image (test build, measured 2026-10-19/20)
+
+CTS's next image (`Install_FreeCAD_V1.1_090426.v6u`, FreeCAD 1.1.1) was applied to the **ChoreBoyExp** lab VM and probed inside the confined FreeCAD (`cb_probes` repo: `harness/probes/v11_capability`, `harness/probes/cbcs_v11_probe`, `docs/cb_v11_impact.html`).
+
+- **Python 3.11.14, PySide6 6.8.3 / Qt 6.8.3. PySide2 is absent.** `/opt/freecad/usr/Ext/PySide` (FreeCAD's `PySide` shim) binds PySide6 and is on `sys.path` in `AppRun -c` children. `PySide.QtWidgets.QAction` does not exist there; `PySide.QtGui.QAction` does. `QtUiTools`, `QtTest`, `QtPrintSupport`, `QtSvg(Widgets)`, `QtDesigner` import from PySide6. No `QtPdf`, no WebEngine.
+- **No native code from writable paths.** `os.memfd_create` is removed, ctypes refuses any library outside `/opt/freecad`, and importing a `.so` copied under `/home/default` or `/tmp` fails with `failed to map segment from shared object`. The memfd technique in §4E does not work on this image.
+- **Bundled packages.** The image ships tree-sitter 0.26.0 and the grammars CBCS uses, psycopg 3.3.4 (binary), pg8000, SQLAlchemy, typst and debugpy. It does not ship black, isort, jedi, rope, pyflakes or pytest; the pure-Python copies CBCS vendors work from `/home`.
+- **Subprocess.** `/opt/freecad/AppRun -c …` children and `QProcess` work. `/bin/sh`, `/bin/bash`, `subprocess(..., shell=True)` and `/usr/bin/git` raise `PermissionError`, which reverses the `/bin/sh`-only rule in §4.
+- Dot-directories at the home root stay denied (for example `~/.cache/jedi`).
+- **`AppRun -c` argument length.** FreeCAD 1.1 runs `std::filesystem::status()` on every argument and aborts with `filesystem error: status: File name too long` when an argument has a `/`-free run longer than 255 bytes. FreeCAD 1.0 does not. Keep inline `-c` payloads short, or split them with a `/`. CBCS uses `app/packaging/launcher_bootstrap.apprun_safe_python()`.
+
+CBCS supports both images from one codebase; see `docs/PYSIDE6_MIGRATION_PLAN.md`.
+
+---
+
 ## 2. Why This Matters
 
 ### LibreOffice / LibrePy limitations (current pain)
@@ -136,6 +151,8 @@ Exec=/opt/freecad/AppRun -c "import os,runpy,sys;root='/home/default/myapp';sys.
 
 After placing the file, ensure it is marked executable (from a terminal or file manager).
 
+On the FreeCAD 1.0 lab image measured 2026-10-20, a `.desktop` file under a newly created `~/Desktop` left the idesk wallpaper on the stock icons. Slot ChoreBoy2 had no `~/Desktop` before that write. The file and the directory were removed. See the 2026-10-20 desktop note in section 4A.
+
 ### Notes
 
 - If the system requires “trusting” desktop shortcuts, you may need to right-click the icon and choose “Allow Launching” the first time.
@@ -199,13 +216,25 @@ These probes were run and verified on ChoreBoy:
   - `/home/default/myapp/logs/probe.sqlite3`
 - Insert/select worked
 
-### ✅ Subprocess (severely restricted)
+### ✅ Subprocess
 
-- `/bin/sh` is the **only** binary that can be executed via subprocess.
-- Shell builtins (`echo`) work because they run inside `/bin/sh` itself.
-- All other binaries are blocked by AppArmor — including `/bin/bash`, `/usr/bin/python3`, `/usr/bin/env`, `/usr/bin/id`, Java, `pg_dump`, `at`, `systemd-run`.
-- Several common utilities do not exist in the AppImage filesystem at all: `uname`, `cat`, `ssh`, `soffice`.
-- See pg_backup_probe probe 9 for the full execution whitelist (14 binaries tested, only `/bin/sh` allowed).
+FreeCAD 1.0.0, measured 2026-10-20 on slot ChoreBoy2. `/opt/freecad/AppRun -c` and `/bin/ls` return 0 from confined AppRun, and `/bin/sh` still returns 0. `/bin/bash`, `/usr/bin/python3`, `/usr/bin/env`, `/usr/bin/pdftoppm`, `pcmanfm`, `xdg-open`, and `okular` raise `PermissionError` errno 13. `soffice` and `libreoffice` are absent. A shell command that reaches `pdftoppm` exits 126. The table and the result file are in section 4G.
+
+The 2026-03-06 measurement, from the FreeCAD 0.21 era, said `/bin/sh` was the only binary `subprocess` could execute. That row is kept in section 4G and labeled with its date. It is the wrong whitelist for the FreeCAD 1.0 lab image.
+
+### FreeCAD and Python versions (2026-10-20)
+
+Each row is `FreeCAD.Version()` and `sys.version` from confined AppRun. The result file is `docs/probes/2026-10-20-fc10/results/versions/<slot>.txt`.
+
+| Slot | Hostname | FreeCAD | Python | `~/share` names | `~/Desktop` |
+| --- | --- | --- | --- | --- | --- |
+| ChoreBoy | net1 | 1.0.0 `39109 (Git)` | 3.9.2 | `Chore_Boy`, `IntellaQuote Backup` | absent |
+| ChoreBoy2 | net2 | 1.0.0 `39109 (Git)` | 3.9.2 | `IntellaQuote Backup` | absent |
+| ChoreBoy3 | net1 | 1.0.0 `39109 (Git)` | 3.9.2 | `IntellaQuote Backup` | absent |
+| ChoreBoy4 | net4 | 1.0.0 `39109 (Git)` | 3.9.2 | `IntellaQuote Backup` | absent |
+| ChoreBoy5 | net1 | 1.0.0 `39109 (Git)` | 3.9.2 | `Chore_Boy`, `IntellaQuote Backup` | empty directory |
+
+ChoreBoy6 was leased to another holder and was not probed in this run. ChoreBoyExp and ChoreBoyFactory stayed shut off. See `docs/probes/2026-10-20-fc10/results/host-images.txt`.
 
 ### ✅ Qt UI Designer Loading
 
@@ -257,39 +286,99 @@ database backend. For direct PostgreSQL access, use raw pg8000.
 
 ---
 
-## 4A. Hidden Folders Are Unreliable on ChoreBoy
+## 4A. Hidden Paths on ChoreBoy Are a Per-Parent Fact
 
-**Date discovered:** 2026-03-02
+**Date discovered:** 2026-03-02. **Rewritten:** 2026-09-03.
 
 ### Finding
 
-Hidden (dot-prefixed) directories such as `.cbcs/` or `.choreboy_code_studio/` are **not reliably usable** on the ChoreBoy locked-down environment. Observed problems include:
+Hidden (dot-prefixed) path support on ChoreBoy is not one global yes or no. It varies by parent directory and by kind. A hidden *file* and a hidden *directory* under the same parent can behave differently. The 2026-03-02 finding ("hidden folders are unreliable everywhere") over-generalized one failure: creating a new hidden state directory under home.
 
-- The ChoreBoy file manager does not show hidden folders by default, making project metadata invisible to users.
-- Permission and ACL behavior for dot-prefixed directories may differ from normal directories under ChoreBoy's security policies.
-- Directory creation can silently fail or be denied for hidden paths that would succeed for visible equivalents.
+Two axes are separate and must not be conflated:
 
-### Evidence
+- **ACL / create / write.** Whether the filesystem lets the app create and write the entry. This is what the live probe measures.
+- **File-manager visibility.** pcmanfm hides dot-prefixed entries by default. A path can be fully writable and still invisible to the user. Per-project metadata (`cbcs/`) must stay visible for that reason alone, regardless of ACL.
 
-Commit `f6c6b96` (2026-03-02) had to introduce a three-tier fallback chain for logging (primary path, temp path, stderr) because the hidden `.choreboy_code_studio/` global state directory was not always writable or accessible.
+### Evidence table (2026-09-03)
 
-### Recommendation
+| Parent | Hidden file | Hidden directory | Visible directory | Source |
+| --- | --- | --- | --- | --- |
+| `/home/default` (home) | UNKNOWN | **BLOCKED** | UNKNOWN | commit `f6c6b96` (2026-03-02): new `.choreboy_code_studio/` under home was not reliably writable; Joshua: `.state` on home failed; Kevin: CTS-in-home failed |
+| `/home/default/Desktop` | **ALLOWED** | UNKNOWN | UNKNOWN | CBCS Verifier live pass, PR 66, AT-105 on ChoreBoy2, artifacts `20260902T023323Z`: `Desktop/.invoice_app.png` was written and fetched by pcmanfm as the launcher icon |
+| `/home/default/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | product nest parent; never probed live |
+| `/home/default/.cache/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | leftover catalog only; never probed live |
+| `/home/default/.local/share/FreeCAD` | UNKNOWN | UNKNOWN | UNKNOWN | leftover catalog and FreeCAD XDG tree; project apps install under `Macro/Apps` |
+| `/home/default/share/Chore_Boy/CBCS` | UNKNOWN | UNKNOWN | UNKNOWN | human share; probe only with cleanup |
 
-All project metadata directories, app state directories, log directories, and cache directories should use **visible (non-dot-prefixed) names**:
+BLOCKED and ALLOWED rows are recorded observations. UNKNOWN rows stay UNKNOWN until a live probe of that parent says otherwise. This table is documentation. It is not a second runtime truth. The runtime decision is always the live probe.
 
-- Use `cbcs/` instead of `.cbcs/` for per-project metadata.
-- Use `choreboy_code_studio_state/` instead of `.choreboy_code_studio/` for global app state.
+The 2026-09-03 table stays as the record from that date. The FreeCAD 1.0 measurements from 2026-10-20 are in the next tables.
 
-This keeps project internals inspectable by users and avoids ChoreBoy filesystem policy issues.
+### FreeCAD 1.0.0 path matrix (2026-10-20)
+
+Slot ChoreBoy2, hostname `net2`, Debian 11, kernel `6.1.12`, FreeCAD `1.0.0` revision `39109 (Git)`, Python `3.9.2`, SQLite `3.34.1`. Confined AppRun created names containing `cbcs_phase0_20261020` and then deleted them. Cleanup left no names with that prefix. Source `docs/probes/2026-10-20-fc10/results/platform.json` key `paths`. The pcmanfm column is the desktop session on the same slot, transcribed in `docs/probes/2026-10-20-fc10/results/pcmanfm.txt`.
+
+| Parent | Exists | Visible mkdir | Hidden mkdir | Write file | fcntl `LOCK_EX\|LOCK_NB` | SQLite WAL | SQLite DELETE | pcmanfm |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `/home/default` | yes | yes | errno 13 | yes | yes | yes | yes | opened |
+| `/home/default/FreeCAD` | yes | yes | yes | yes | yes | yes | yes | opened |
+| `/home/default/FreeCAD/CBCS` | yes | yes | yes | yes | yes | yes | yes | opened |
+| `/home/default/.local/share/FreeCAD` | yes | yes | yes | yes | errno 13 | `database is locked` | `database is locked` | permission denied |
+| `/home/default/.local/share/FreeCAD/Macro/Apps` | yes | yes | yes | yes | errno 13 | `database is locked` | `database is locked` | permission denied |
+| `/home/default/.cache/FreeCAD` | yes | yes | yes | yes | yes | yes | yes | opened |
+| `/tmp` | yes | yes | yes | yes | yes | yes | yes | opened |
+| `/home/default/share` | yes | yes | yes | yes | yes | yes | yes | opened |
+| `/home/default/share/Chore_Boy` | no on this slot |  |  |  |  |  |  | "not valid" |
+| `/home/default/Desktop` | no on this slot |  |  |  |  |  |  | "not valid" |
+
+`~/share/Chore_Boy` does exist on slots ChoreBoy and ChoreBoy5, both hostname `net1`. It is mode `0755`, uid 1000, and `st_dev` `65030`, the same device as `/home/default`. Visible mkdir, hidden mkdir, `fcntl` `LOCK_EX|LOCK_NB`, SQLite WAL, and SQLite DELETE all succeeded there. The only pre-existing child was an empty `CBCS` directory. Probe names were removed. Source `docs/probes/2026-10-20-fc10/results/share_extra/ChoreBoy.json` and `docs/probes/2026-10-20-fc10/results/share_extra/ChoreBoy5.json`. pcmanfm was not pointed at `Chore_Boy` on those two slots.
+
+Hidden mkdir under `/home/default` is still errno 13 on FreeCAD 1.0. That matches the 2026-09-03 BLOCKED row for a hidden directory under home. Visible mkdir under home succeeded.
+
+### Desktop icons on the FreeCAD 1.0 lab image (2026-10-20)
+
+The ChoreBoy2 wallpaper is idesk on fluxbox. The wallpaper text is "Classic Choreboy". The icons are Home, Draw, Spreadsheet, Writer, Mount, Unmount, and Backup. Screenshot `00-desktop.png` in the phase0-probe evidence directory. Double-clicking Home opened pcmanfm on `/home/default`.
+
+`/usr/bin/idesk` exists, mode `0755`, uid 0. `/usr/share/idesk` exists and `ls` of its contents found no files. `~/.ideskrc` is a file, mode `0755`, uid 1000, 870 bytes, mtime Oct 19 18:52. `~/.idesktop` is a directory, mode `0755`, uid 1000. AppRun `open` of `~/.ideskrc` returns errno 13. `/bin/ls` cannot open `~/.idesktop`. pcmanfm shows "Permission denied" for `~/.idesktop`. Writing `cbcs_phase0_20261020.lnk` under `~/.idesktop` from AppRun returns errno 13. Sources `platform.json` key `desktop`, `read_more.json`, and the eval recorded in the phase0-probe report.
+
+`/home/default/IntellaQuote.desktop` is a readable `[Desktop Entry]` whose `Exec` starts `/opt/freecad/AppRun`. It is not one of the wallpaper icons. Screenshot `00-desktop.png` and `14-fm-intellaquote-desktop.png`.
+
+`~/Desktop` is absent on ChoreBoy, ChoreBoy2, ChoreBoy3, and ChoreBoy4. ChoreBoy5 has an empty `~/Desktop` (mode `0755`, uid 1000, zero names). Sources `results/versions/*.txt` and `share_extra/ChoreBoy5.json`. A new `~/Desktop/cbcs_phase0_20261020.desktop` on ChoreBoy2 did not add an icon. The file and directory were removed. Screenshot `18-after-desktop-file.png` and `19-desktop-cleaned.png`. This run did not restart idesk.
+
+The `.lnk` text inside `~/.idesktop` was not readable from AppRun or from pcmanfm, so this note does not record the icon file schema.
+
+### Shared folder (2026-10-20)
+
+`/proc/mounts`, `/proc/self/mountinfo`, and `/etc/fstab` return errno 13 from AppRun. `st_dev` of `/home/default/share` is `65030`, the same as `/home/default` and `/home`. `/tmp` is `64768`. `/mnt/cbprobe` is `36`. `~/share` is not a symlink. Source `platform.json` keys `dev_ids`, `proc_mounts`, and `fstab`.
+
+On the slots measured here, `~/share` is a directory on the home filesystem. fcntl and both SQLite journal modes succeeded in it on ChoreBoy2. No measured slot listed a `net*` directory under `~/share`. First-level names were `IntellaQuote Backup` on every measured slot, plus `Chore_Boy` on ChoreBoy and ChoreBoy5 only. `/home/default/.nfs_log.txt` exists, mode `0644`, uid 0, and AppRun cannot read it, so this note does not say what that log contains.
+
+Jason Rissler described real shops as seeing this folder under a server name, for example `~/share/net1/...`. CBCS treats `~/share` as a network share for state placement even though these lab slots had it on the home filesystem. SQLite is not stored there. A shop pointer is accepted at `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` and at the same relative path under one `~/share/<child>/` directory.
+
+### Runtime rule
+
+`app/bootstrap/hidden_path_policy.py` owns `probe_hidden_path_support(parent)`. For one parent it creates, writes, reads, and removes a hidden file canary, a hidden directory canary (with one file inside), and a visible directory canary (control). The result is a frozen `HiddenPathProbeResult` cached per parent identity for the life of the process. Parent identity uses `normalize_state_root_identity` (absolute, `expanduser`, `os.path.abspath`, no final symlink hop). A missing parent probes as all-False; the probe never creates ancestors.
+
+Policy that follows from it:
+
+- A hidden path is allowed only when its parent is on the ALLOWED row for that kind (file vs directory) or a live probe of that parent said that kind works.
+- Unprobed hidden paths are banned.
+- A visible fallback is mandatory whenever the probe fails or the parent is UNKNOWN.
+- Leaf names stay visible: `cbcs/` for per-project metadata, `CBCS/state` for product global state, `choreboy_code_studio_state/` for leftover and verify isolation.
+
+### Product state dest
+
+Local state is `/home/default/FreeCAD/CBCS/state`. The 2026-10-20 table is why. File locks and SQLite work there, under `~`, `~/FreeCAD`, `~/.cache/FreeCAD`, `/tmp`, and `~/share`. They fail under `~/.local/share/FreeCAD`. New hidden directories under home are still blocked. `resolve_global_state_root` does not probe parents to pick the local dest. An explicit argument is the only override. `CBCS_STATE_ROOT` and the shop pointer select the shared settings directory only. They never move SQLite or logs. See `docs/ARCHITECTURE.md` §11.
+
+Shared settings are the three JSON files (`settings.json`, `recent_projects.json`, `python_console_history.json`). If that directory cannot be written, the session uses the JSON files in the local dest and startup reports "Shared settings are not available".
+
+Leftover `choreboy_code_studio_state` trees are not copied whole. The first leftover that has `settings.json` contributes those three JSON files, and only when the destination has none. History, cache, and SQLite stay in the source. A legacy `~/choreboy_code_studio_state` symlink into `~/share` is a shared settings root, not the local state root. The final symlink hop is still not resolved.
+
+The hidden-path probe still exists for Desktop icon publish. It is not the state picker.
 
 ### Migration status
 
-The migration is complete in current code:
-
-- `PROJECT_META_DIRNAME = "cbcs"`
-- `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"`
-
-in `app/core/constants.py`, so new project metadata and app state paths are visible (non-dot-prefixed).
+`PROJECT_META_DIRNAME = "cbcs"`, `PRODUCT_STATE_ROOT = "/home/default/FreeCAD/CBCS/state"`, and `GLOBAL_STATE_DIRNAME = "choreboy_code_studio_state"` in `app/core/constants.py` stay visible. The desktop icon publish in `packaging/install.py` writes a hidden Desktop sibling first (ALLOWED row) and falls back to a visible `{stem}.icon{suffix}` sidecar when the hidden file write is denied.
 
 ---
 
@@ -700,15 +789,46 @@ pg8000 is faster for trivial queries (zero FFI overhead), but psycopg binary is 
 
 ---
 
-## 4G. AppArmor Execution Whitelist: Only `/bin/sh` Allowed (2026-03-06)
+## 4G. AppArmor execution whitelist
 
-**Date discovered:** 2026-03-06 (pg_backup_probe probe 9)
+### FreeCAD 1.0.0 (2026-10-20)
+
+Slot ChoreBoy2, hostname `net2`. Confined `/opt/freecad/AppRun`. Source `docs/probes/2026-10-20-fc10/results/platform.json` key `exec`. `command -v` ran inside `/bin/sh` and is the same JSON object.
+
+| Invocation | Result |
+| --- | --- |
+| `/opt/freecad/AppRun -c print('APPRUN_CHILD_OK')` | return code 0, stdout contains `APPRUN_CHILD_OK` |
+| `/bin/sh -c echo SH_OK` | return code 0 |
+| `/bin/sh -c 'pdftoppm -v'` | return code 126, stderr `pdftoppm: Permission denied` |
+| `/bin/ls /bin/sh` | return code 0 |
+| `/usr/bin/pdftoppm -v` | `PermissionError` errno 13 |
+| `/usr/bin/python3 --version` | `PermissionError` errno 13 |
+| `/bin/bash -c echo BASH_OK` | `PermissionError` errno 13 |
+| `pcmanfm --version` | `PermissionError` errno 13. `command -v pcmanfm` prints `/usr/local/bin/pcmanfm` |
+| `/usr/bin/pcmanfm --version` | `FileNotFoundError` errno 2 |
+| `xdg-open --help` and `/usr/bin/xdg-open --help` | `PermissionError` errno 13. `command -v xdg-open` prints `/usr/bin/xdg-open` |
+| `okular --version` and `/usr/bin/okular --version` | `PermissionError` errno 13. `command -v okular` prints `/usr/bin/okular` |
+| `soffice --version` and `/usr/bin/soffice --version` | `FileNotFoundError` errno 2. `command -v soffice` prints nothing |
+| `libreoffice --version` and `/usr/bin/libreoffice --version` | `FileNotFoundError` errno 2. `command -v libreoffice` prints nothing |
+| `/usr/bin/env true` | `PermissionError` errno 13 |
+
+`command -v` also printed `/opt/freecad/usr/bin/python3`, `/bin/bash`, `/opt/freecad/usr/bin/env`, `/bin/ls`, and `/opt/freecad/usr/bin/which`. Those bundled `python3` and `env` paths were not executed as their own rows. The AppRun child above is the FreeCAD Python that ran.
+
+`/bin/sh` still cannot run a denied binary. `pdftoppm` through the shell exits 126. `/proc/self/attr/current` is still errno 13, so the profile name was not read. Java, `pg_dump`, `ssh`, `at`, and `systemd-run` were not re-run on this date.
+
+### Implications (2026-10-20)
+
+Packaging checks a program against this table, keyed by FreeCAD version and test date. The FreeCAD 1.0.0 row measured on 2026-10-20 allows `/opt/freecad/AppRun`, `/bin/sh`, and `/bin/ls`. It denies `/usr/bin/pdftoppm`, `/usr/bin/python3`, `/bin/bash`, `pcmanfm`, `xdg-open`, `okular`, and `/usr/bin/env`. A denied program stops export and the report cites that version and date. A program that is not in the table is a warning and export continues. `/bin/sh -c` does not make a denied program allowed. The check looks at the program inside the command string. Do not tell the user to rewrite a denied program through `/bin/sh`.
+
+### FreeCAD 0.21 era (2026-03-06)
+
+**Date discovered:** 2026-03-06 (pg_backup_probe probe 9). This table was not produced on the FreeCAD 1.0 lab image. Where a binary is repeated above, the 2026-10-20 row is the one to use for that image.
 
 ### Finding
 
-The FreeCAD AppImage's AppArmor profile enforces a near-total execution whitelist. Out of 14 binaries tested, **only `/bin/sh` (dash, 125 KB) can be executed** via `subprocess.run()`. All other binaries receive `PermissionError` (errno 13) or do not exist in the AppImage's filesystem view.
+The FreeCAD AppImage's AppArmor profile, as measured on 2026-03-06, enforced a near-total execution whitelist. Out of 14 binaries tested, **only `/bin/sh` (dash, 125 KB) could be executed** via `subprocess.run()`. All other binaries received `PermissionError` (errno 13) or did not exist in the AppImage's filesystem view.
 
-### Complete whitelist map
+### Complete whitelist map (2026-03-06)
 
 
 | Binary                        | Exists | Executable | Notes                                        |
@@ -752,9 +872,11 @@ The shell does NOT transition to an unconfined AppArmor profile. It inherits the
 
 `os.access("/opt/PostgreSQL/9.3/bin/pg_dump", os.R_OK)` returns `True` (POSIX permissions check passes), but `open(path, "rb")` raises `PermissionError`. AppArmor blocks the actual `open()` syscall despite Unix file permissions allowing it. This makes `memfd_create` + `fexecve` bypass impossible — the binary cannot be loaded into memory.
 
-### Implications
+### Implications (2026-03-06)
 
-- Any code running inside FreeCAD AppRun can only spawn processes via `/bin/sh` — and those processes inherit the same restrictions.
+These bullets are the conclusion from the 2026-03-06 table. On the FreeCAD 1.0.0 lab image, `/opt/freecad/AppRun` and `/bin/ls` also execute. The shell still inherits the denial, as the 2026-10-20 `pdftoppm` row shows.
+
+- On 2026-03-06 the measured whitelist was `/bin/sh` only, and a child of that shell stayed in the same profile.
 - Shell builtins (`echo`, `printf`, `test`, `[`, `read`, etc.) work because they execute within `/bin/sh` itself — no `execve()` is needed.
 - There is no "escape hatch" binary that could proxy-execute blocked commands.
 - External tools (LibreOffice, Java, Python3, pg_dump, ssh, at, systemd-run) must be accessed via in-process techniques (ctypes/JNI) or through IPC with independently running processes.
@@ -1354,7 +1476,7 @@ myapp/
     main_window.py
 ```
 
-> **Note:** All metadata directories use visible (non-dot-prefixed) names. Hidden folders are unreliable on ChoreBoy (see section 4A).
+> **Note:** All metadata directories use visible (non-dot-prefixed) names. Hidden path support is a per-parent fact on ChoreBoy and per-project metadata must stay visible in the file manager (see section 4A).
 
 Key ideas:
 

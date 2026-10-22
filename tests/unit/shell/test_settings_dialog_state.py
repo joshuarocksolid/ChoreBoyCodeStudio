@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import pytest
 
-pytest.importorskip("PySide2.QtWidgets", exc_type=ImportError)
+pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from PySide2.QtWidgets import QApplication
+from app.qt.QtWidgets import QApplication
 
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_dialog_state import GeneralTabState
@@ -37,8 +37,7 @@ def test_general_tab_state_roundtrips_snapshot_fields() -> None:
         exit_behavior="keep_unsaved",
         hover_tooltip_enabled=False,
         auto_reindent_flat_python_paste=True,
-        completion_enabled=False,
-        completion_auto_trigger=True,
+        completion_mode="typing",
         completion_min_chars=4,
         diagnostics_realtime=False,
         quick_fixes_enabled=True,
