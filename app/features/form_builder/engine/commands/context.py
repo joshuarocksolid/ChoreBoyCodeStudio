@@ -91,11 +91,14 @@ class ApplyContext:
                 if node_id in self._removed:
                     raise CommandRejected("An id removed in this edit cannot be inserted again.")
 
-    def forget_tail(self, start: int) -> None:
-        """Drop ops rolled back after ``start`` and rebuild the removed-id set."""
+    def forget_tail(self, start: int, alloc_start: int) -> None:
+        """Drop ops and ids rolled back after ``start`` / ``alloc_start``."""
         del self.ops[start:]
         del self.inverses[start:]
         del self.changes[start:]
+        for node_id in self.allocated[alloc_start:]:
+            self._fresh.discard(node_id)
+        del self.allocated[alloc_start:]
         self._removed.clear()
         for change in self.changes:
             if isinstance(change, NodeRemoved):

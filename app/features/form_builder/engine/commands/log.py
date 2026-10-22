@@ -260,13 +260,14 @@ class CommandLog:
 
     def _apply(self, command: Command, ctx: ApplyContext) -> Any:
         start = len(ctx.inverses)
+        alloc_start = len(ctx.allocated)
         try:
             return command.apply(self._doc, ctx)
         except CommandRejected:
-            self._rollback_from(ctx, start)
+            self._rollback_from(ctx, start, alloc_start)
             raise
         except Exception as exc:
-            self._rollback_from(ctx, start)
+            self._rollback_from(ctx, start, alloc_start)
             logger.exception("form builder command failed")
             raise CommandRejected(
                 "The edit could not be completed.",
@@ -274,7 +275,7 @@ class CommandLog:
                 error=exc,
             ) from exc
         except BaseException:
-            self._rollback_from(ctx, start)
+            self._rollback_from(ctx, start, alloc_start)
             raise
 
     def _store(
@@ -387,12 +388,12 @@ class CommandLog:
             self._rollback(txn.ctx)
 
     def _rollback(self, ctx: ApplyContext) -> None:
-        self._rollback_from(ctx, 0)
+        self._rollback_from(ctx, 0, 0)
 
-    def _rollback_from(self, ctx: ApplyContext, start: int) -> None:
+    def _rollback_from(self, ctx: ApplyContext, start: int, alloc_start: int) -> None:
         for op in reversed(ctx.inverses[start:]):
             mutate.apply(self._doc, op)
-        ctx.forget_tail(start)
+        ctx.forget_tail(start, alloc_start)
 
     def _new_context(self) -> ApplyContext:
         return ApplyContext(

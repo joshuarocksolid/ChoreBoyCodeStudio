@@ -11,12 +11,15 @@ from app.features.form_builder.engine.commands.base import (
     PlanContext,
     ReentrantCommandError,
 )
-from app.features.form_builder.engine.commands.catalog import DeleteNodes, SetProperty
+from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, SetProperty
+from app.features.form_builder.engine.commands.log import replay
+from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import StringValue
-from tests.form_builder.engine.commands._support import BOX, nid, open_log, prop_text, saved
+from app.features.form_builder.engine.ui4.spec import Fragment
+from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log, prop_text, saved
 
 
 @pytest.mark.parity("R3-33")
@@ -134,6 +137,47 @@ def test_failed_command_inside_a_transaction_rolls_its_own_ops_back_too() -> Non
             log.execute(Partial())
     assert saved(doc) == original
     assert prop_text(doc, "okButton") == "OK"
+
+
+def test_caught_rejection_inside_a_transaction_replays() -> None:
+    """A command that allocates and then refuses must not leave those ids in the entry."""
+    log = open_log(BOX)
+    doc = log.document
+    layout = doc.root.layout
+    assert layout is not None
+
+    class AllocateThenRefuse:
+        command_type: ClassVar[str] = "allocate_then_refuse"
+        label = "Refuse"
+        merge_token = None
+
+        def merge_key(self) -> None:
+            return None
+
+        def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
+            del doc
+            ctx.alloc()
+            raise CommandRejected("stop")
+
+    with log.transaction("Group"):
+        log.execute(
+            InsertFragment(
+                InBoxLayout(layout.id, 0),
+                Fragment(nodes=(button_spec("one"),)),
+                auto_layout=False,
+            )
+        )
+        with pytest.raises(CommandRejected):
+            log.execute(AllocateThenRefuse())
+        log.execute(
+            InsertFragment(
+                InBoxLayout(layout.id, 1),
+                Fragment(nodes=(button_spec("two"),)),
+                auto_layout=False,
+            )
+        )
+    replayed = replay(BOX, log.entries())
+    assert replayed.fingerprint() == doc.fingerprint()
 
 
 def test_set_then_reset_in_one_transaction_is_not_property_dirty() -> None:
