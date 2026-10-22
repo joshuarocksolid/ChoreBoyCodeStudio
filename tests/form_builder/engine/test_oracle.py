@@ -512,7 +512,9 @@ def _gradient_blocks(text: str) -> list[str]:
 def _qformbuilder_save(widget: object) -> str:
     from app.qt.QtCore import QBuffer, QIODevice
     from PySide6.QtDesigner import QFormBuilder
+    from PySide6.QtWidgets import QWidget
 
+    assert isinstance(widget, QWidget)
     buffer = QBuffer()
     buffer.open(QIODevice.WriteOnly)
     QFormBuilder().save(buffer, widget)
