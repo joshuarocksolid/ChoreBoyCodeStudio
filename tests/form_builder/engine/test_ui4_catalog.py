@@ -650,6 +650,7 @@ def test_qt_loader_keeps_behavior_after_round_trip(qapp: object, tmp_path: Path)
     uic = _uic_path()
     if uic is None:
         pytest.skip("uic is absent, so the menu attribute is unproven")
+    assert uic is not None
     original = _uic_python(uic, text, tmp_path, "m11c-before.ui")
     rewritten = _uic_python(uic, saved, tmp_path, "m11c-after.ui")
     assert original == rewritten
