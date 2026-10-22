@@ -69,6 +69,12 @@ from app.features.form_builder.engine.ui4.values import (
 
 XML_DECLARATION = '<?xml version="1.0" encoding="UTF-8"?>'
 INDENT = " "
+# Qt Designer 6.8 writes these casings. The model keeps the lowercase kind.
+_DESIGNER_INT_TAGS = {
+    UIntValue: "UInt",
+    LongLongValue: "longLong",
+    ULongLongValue: "uLongLong",
+}
 
 _SLOTS = {
     kind: {item.name: item for item in spec.slots}
@@ -90,9 +96,10 @@ _FONT_ORDER = (
 
 @dataclass(frozen=True)
 class WriteResult:
-    """``text``: the file content (``\\n`` newlines, trailing newline after
-    ``</ui>``). ``line_map``: node id -> 1-based line of its start tag in ``text``
-    (feeds Problems line numbers)."""
+    """``text`` is the file. Lines use ``\\n`` unless the document was read
+    from a CRLF source, in which case every line ends in ``\\r\\n``. A trailing
+    newline follows ``</ui>``. ``line_map`` maps a node id to the 1-based line
+    of its start tag (Problems line numbers)."""
 
     text: str
     line_map: Dict[NodeId, int]
@@ -103,10 +110,11 @@ def write_ui(doc: UiDocument) -> WriteResult:
     attributes; tab/LF/CR as character references in attributes; CR in text as
     ``&#13;``; non-ASCII as raw UTF-8. No trailing whitespace outside text
     content. Empty-element forms and real precision follow the M0.4b-pinned
-    tables (provisional until then). A pure function of the document's content (ids excluded):
-    no clock, locale, environment, hash seed or set iteration. O(form).
+    tables (provisional until then). A pure function of the document's content and
+    its newline (ids excluded): no clock, locale, environment, hash seed or set
+    iteration. O(form).
     Budget: 10 ms CPU for a 300-widget form."""
-    writer = _Writer()
+    writer = _Writer(doc.newline)
     writer.node(doc.ui, 0)
     return WriteResult(writer.finish(), writer.line_map)
 
@@ -155,12 +163,16 @@ class SerializationCache:
 
 
 class _Writer:
-    def __init__(self) -> None:
+    def __init__(self, newline: str = "\n") -> None:
+        self.newline = newline
         self.lines: List[str] = [XML_DECLARATION]
         self.line_map: Dict[NodeId, int] = {}
 
     def finish(self) -> str:
-        return "\n".join(self.lines) + "\n"
+        text = "\n".join(self.lines) + "\n"
+        if self.newline == "\r\n":
+            return text.replace("\n", "\r\n")
+        return text
 
     def node(self, node: Node, indent: int) -> None:
         if _plain_widget(node):
@@ -399,8 +411,11 @@ class _Writer:
         if isinstance(item, BoolValue):
             self._text_element("bool", format_bool(item.value), indent)
             return
-        if isinstance(item, (NumberValue, UIntValue, LongLongValue, ULongLongValue, CursorValue)):
+        if isinstance(item, CursorValue):
             self._text_element(item.ELEMENT, format_int(item.value), indent)
+            return
+        if type(item) in _DESIGNER_INT_TAGS:
+            self._text_element(_DESIGNER_INT_TAGS[type(item)], format_int(item.value), indent)
             return
         if isinstance(item, DoubleValue):
             self._text_element("double", format_double(item.value), indent)
@@ -923,6 +938,9 @@ def _attrs(node: Node) -> str:
             text = format_int(value)
         else:
             text = str(value)
+        # A missing name is stored as "". Designer does not write name="".
+        if attr_name == "name" and text == "":
+            continue
         parts.append(' %s="%s"' % (attr_name, _esc_attr(text)))
     parts.extend(' %s="%s"' % (key, _esc_attr(value)) for key, value in node.extra_attrs())
     return "".join(parts)
