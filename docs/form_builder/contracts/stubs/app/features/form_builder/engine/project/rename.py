@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
+from app.features.form_builder.engine.diagnostics import FormDiagnostic
+
 
 @dataclass(frozen=True)
 class FileMove:
@@ -26,6 +28,14 @@ class RegeneratedFile:
 
 
 @dataclass(frozen=True)
+class BackupFile:
+    """Byte copy of a hand-edited ``ui_<old>.py``, written before that file is removed."""
+
+    path: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class RenamePlan:
     """Preview. ``reason`` is set when the rename is refused. ``adopted`` is None when the list is unchanged."""
 
@@ -36,6 +46,9 @@ class RenamePlan:
     regenerated: Tuple[RegeneratedFile, ...]
     removed: Tuple[str, ...]
     adopted: Optional[Tuple[str, ...]]
+    backups: Tuple[BackupFile, ...] = ()
+    diagnostics: Tuple[FormDiagnostic, ...] = ()
+    notices: Tuple[str, ...] = ()
 
     def preview(self) -> Tuple[str, ...]:
         ...

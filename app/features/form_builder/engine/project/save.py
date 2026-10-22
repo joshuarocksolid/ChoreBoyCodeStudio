@@ -109,10 +109,36 @@ def write_generated(
         planned.append((init_path, b"\n"))
     if window_text is not None and scope.window_path:
         planned.append((scope.window_path, window_text.encode("utf-8")))
+    outside = [path for path, _data in planned if not inside_project(path, scope.project_root)]
+    if outside:
+        return WriteResult(
+            diagnostics=tuple(result.diagnostics)
+            + (
+                _diagnostic(
+                    "FB506",
+                    "This form would be written outside the project, so nothing was written.",
+                ),
+            ),
+            files=(),
+            text_written=False,
+        )
     journal = Journal(fs)
+    failed_name = "the generated file"
     try:
         for path, data in planned:
+            failed_name = os.path.basename(path)
             journal.put(path, data)
+    except OSError:
+        try:
+            journal.rollback()
+        except OSError:
+            pass
+        return WriteResult(
+            diagnostics=tuple(diagnostics)
+            + (_diagnostic("FB509", "could not write %s." % failed_name),),
+            files=(),
+            text_written=False,
+        )
     except Exception:
         journal.rollback()
         raise

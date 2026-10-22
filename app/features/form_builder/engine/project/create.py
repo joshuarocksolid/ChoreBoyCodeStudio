@@ -10,7 +10,7 @@ from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.forms import FormScope
-from app.features.form_builder.engine.project.fs import OsFileSystem, inside_project
+from app.features.form_builder.engine.project.fs import Journal, OsFileSystem, inside_project
 from app.features.form_builder.engine.project.names import explain_form_name
 from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import read_ui
@@ -55,11 +55,30 @@ def create_form(
     clean = stem.strip()
     ui_path = os.path.join(folder, clean + ".ui")
     text = _template_xml(widget, _class_name(clean))
-    fs.makedirs(folder)
-    fs.write_text(ui_path, text)
-    scope = scope_for(ui_path, root, fs)
-    document = read_ui(text, allocator=IdAllocator()).document
-    written = write_generated(scope, document, text.encode("utf-8"), fs)
+    journal = Journal(fs)
+    try:
+        fs.makedirs(folder)
+        journal.put(ui_path, text.encode("utf-8"))
+        scope = scope_for(ui_path, root, fs)
+        document = read_ui(text, allocator=IdAllocator()).document
+        written = write_generated(scope, document, text.encode("utf-8"), fs)
+    except Exception as exc:
+        journal.rollback()
+        return CreateResult(
+            files=(),
+            diagnostics=(),
+            scope=None,
+            refused="The form could not be created: %s" % exc,
+        )
+    if not written.text_written:
+        journal.rollback()
+        detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
+        return CreateResult(
+            files=(),
+            diagnostics=written.diagnostics,
+            scope=None,
+            refused="The form could not be created: %s" % detail,
+        )
     files = [ui_path]
     for path in written.files:
         if path not in files:

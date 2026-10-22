@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
+from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import (
     adopted_forms,
@@ -31,6 +32,7 @@ from app.features.form_builder.engine.project.fs import (
 )
 from app.features.form_builder.engine.project.imports import package_of, python_files, rewrite_imports
 from app.features.form_builder.engine.project.names import explain_form_name
+from app.features.form_builder.engine.project.save import _hand_edit_backup
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 
@@ -58,6 +60,14 @@ class RegeneratedFile:
 
 
 @dataclass(frozen=True)
+class BackupFile:
+    """A byte copy of a hand-edited generated module, kept before that file is removed."""
+
+    path: str
+    data: bytes
+
+
+@dataclass(frozen=True)
 class RenamePlan:
     """A preview of one rename. ``reason`` is set when nothing should change.
 
@@ -71,15 +81,20 @@ class RenamePlan:
     regenerated: Tuple[RegeneratedFile, ...]
     removed: Tuple[str, ...]
     adopted: Optional[Tuple[str, ...]]
+    backups: Tuple[BackupFile, ...] = ()
+    diagnostics: Tuple[FormDiagnostic, ...] = ()
+    notices: Tuple[str, ...] = ()
 
     def preview(self) -> Tuple[str, ...]:
-        """One line per move, regeneration, edit and removal."""
+        """One line per move, regeneration, backup, edit, removal and skipped file."""
         if self.reason:
             return (self.reason,)
         lines = ["move %s -> %s" % (item.source, item.destination) for item in self.moves]
         lines.extend("regenerate %s" % item.path for item in self.regenerated)
+        lines.extend("backup %s" % item.path for item in self.backups)
         lines.extend("edit %s" % item.path for item in self.edits)
         lines.extend("remove %s" % path for path in self.removed)
+        lines.extend(self.notices)
         return tuple(lines)
 
 
@@ -127,12 +142,24 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
     if window_exists and old_scope.window_path and new_scope.window_path:
         moves.append(FileMove(source=old_scope.window_path, destination=new_scope.window_path))
     removed = []
+    diagnostics = []  # type: List[FormDiagnostic]
+    backups = []
     if old_scope.generated_path and not same_path(old_scope.generated_path, new_scope.generated_path):
         if fs.is_file(old_scope.generated_path):
+            planned_backup = _hand_edit_backup(root, old_scope.generated_path, fs, diagnostics)
+            if planned_backup is not None:
+                backups.append(BackupFile(path=planned_backup[0], data=planned_backup[1]))
             removed.append(old_scope.generated_path)
     mapping = _mapping(old_scope, new_scope, window_exists)
     skip = {os.path.abspath(path) for path in (old_scope.generated_path, new_scope.generated_path) if path}
-    edits = _edits(root, fs, mapping, skip, old_scope.window_path if window_exists else None, new_scope.window_path)
+    edits, notices = _edits(
+        root,
+        fs,
+        mapping,
+        skip,
+        old_scope.window_path if window_exists else None,
+        new_scope.window_path,
+    )
     return RenamePlan(
         project_root=root,
         reason=None,
@@ -141,6 +168,9 @@ def plan_rename(project_root: str, old_ui: str, new_ui: str, fs: OsFileSystem) -
         regenerated=(RegeneratedFile(path=new_scope.generated_path, text=generated.text),),
         removed=tuple(removed),
         adopted=adopted,
+        backups=tuple(backups),
+        diagnostics=tuple(diagnostics),
+        notices=tuple(notices),
     )
 
 
@@ -155,6 +185,8 @@ def apply(plan: RenamePlan, fs: OsFileSystem) -> None:
         paths.append(move.destination)
     for item in plan.regenerated:
         paths.append(item.path)
+    for item in plan.backups:
+        paths.append(item.path)
     for edit in plan.edits:
         paths.append(edit.path)
     for path in plan.removed:
@@ -163,6 +195,8 @@ def apply(plan: RenamePlan, fs: OsFileSystem) -> None:
     try:
         for move in plan.moves:
             fs.replace(move.source, move.destination)
+        for item in plan.backups:
+            fs.write_bytes(item.path, item.data)
         for item in plan.regenerated:
             fs.write_text(item.path, item.text if item.text.endswith("\n") else item.text + "\n")
         for path in plan.removed:
@@ -225,10 +259,11 @@ def _edits(
     skip: set,
     old_window: Optional[str],
     new_window: Optional[str],
-) -> List[TextEdit]:
+) -> Tuple[List[TextEdit], List[str]]:
     if not mapping:
-        return []
+        return [], []
     edits = []
+    notices = []
     old_window_abs = os.path.abspath(old_window) if old_window else None
     for path in python_files(root, fs):
         if os.path.abspath(path) in skip:
@@ -236,15 +271,19 @@ def _edits(
         try:
             text = fs.read_text(path)
         except (OSError, UnicodeError):
+            notices.append("not updated: could not be read: %s" % path)
             continue
         rewritten = rewrite_imports(text, mapping, package_of(root, path))
-        if rewritten == text:
+        if not rewritten.parsed:
+            notices.append("not updated: could not be parsed: %s" % path)
+            continue
+        if not rewritten.changed:
             continue
         dest = path
         if old_window_abs is not None and os.path.abspath(path) == old_window_abs and new_window:
             dest = new_window
-        edits.append(TextEdit(path=dest, old=text, new=rewritten))
-    return edits
+        edits.append(TextEdit(path=dest, old=text, new=rewritten.text))
+    return edits, notices
 
 
 def _require_inside(plan: RenamePlan) -> None:
@@ -252,6 +291,8 @@ def _require_inside(plan: RenamePlan) -> None:
     for move in plan.moves:
         paths.extend((move.source, move.destination))
     for item in plan.regenerated:
+        paths.append(item.path)
+    for item in plan.backups:
         paths.append(item.path)
     for edit in plan.edits:
         paths.append(edit.path)
