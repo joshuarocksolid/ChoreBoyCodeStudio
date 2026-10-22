@@ -14,6 +14,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from tests.form_builder.engine.codegen.uic_status import same_failure
 from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QPointF, QRectF, QSize, QSizeF, Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
 from PySide6.QtWidgets import QApplication, QButtonGroup, QSizePolicy, QWidget
@@ -1381,7 +1382,7 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
         if (
             ours_exc is not None
             and theirs_exc is not None
-            and type(ours_exc).__name__ == type(theirs_exc).__name__
+            and same_failure(ours_exc, theirs_exc)
         ):
             return "env", "%s | uic %s" % (_exc_text(ours_exc), _exc_text(theirs_exc))
         return "env-mismatch", "%s | uic %s" % (
@@ -1402,7 +1403,7 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
             right = _track(factory())
             _ui_class(theirs)().setupUi(right)
         except Exception as other:
-            if type(other).__name__ == type(exc).__name__:
+            if same_failure(other, exc):
                 return "same-error", _exc_text(exc)
             return "setup-mismatch", "uic %s | ours %s" % (_exc_text(other), _exc_text(exc))
         return "ours-setup", _exc_text(exc)
