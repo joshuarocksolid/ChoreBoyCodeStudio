@@ -14,6 +14,8 @@ import xml.parsers.expat
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Tuple
 
+from PySide6.QtCore import QLocale
+
 from app.features.form_builder.engine.codegen.header import render_resource_header
 from app.features.form_builder.engine.codegen.literals import py_bytes
 from app.features.form_builder.engine.diagnostics import (
@@ -120,10 +122,16 @@ def _without_plain_doctype(text: str) -> str:
 
 
 def qt_hash(text: str) -> int:
-    """Qt's resource-name hash. Children are ordered by this, then by name."""
+    """Qt's resource-name hash. Children are ordered by this, then by name.
+
+    Qt walks UTF-16 code units. A non-BMP character is two units, not one
+    Python code point.
+    """
     value = 0
-    for char in text:
-        value = (value << 4) + ord(char)
+    encoded = text.encode("utf-16-be")
+    for index in range(0, len(encoded), 2):
+        unit = int.from_bytes(encoded[index : index + 2], "big")
+        value = (value << 4) + unit
         high = value & 0xF0000000
         if high:
             value ^= high >> 23
@@ -131,21 +139,37 @@ def qt_hash(text: str) -> int:
     return value
 
 
+def _locale_field(lang: Optional[str]) -> int:
+    """Language in the low 16 bits, territory in the high 16.
+
+    ``lang="fr"`` is French with territory 0. ``lang="fr_CA"`` carries both.
+    A missing lang is the C locale, language 1.
+    """
+    if not lang:
+        return _LOCALE_C
+    locale = QLocale(lang)
+    language = int(locale.language().value)
+    territory = int(locale.territory().value) if "_" in lang else 0
+    return (territory << 16) | language
+
+
 @dataclass
 class _TreeNode:
     name: str
     data: Optional[bytes] = None
-    children: Dict[str, "_TreeNode"] = field(default_factory=dict)
+    locale: int = 0
+    children: Dict[Tuple[str, Optional[int]], "_TreeNode"] = field(default_factory=dict)
 
     def directory(self, name: str) -> "_TreeNode":
-        found = self.children.get(name)
-        if found is None or found.data is not None:
+        key = (name, None)
+        found = self.children.get(key)
+        if found is None:
             found = _TreeNode(name=name)
-            self.children[name] = found
+            self.children[key] = found
         return found
 
-    def file(self, name: str, payload: bytes) -> None:
-        self.children[name] = _TreeNode(name=name, data=payload)
+    def file(self, name: str, payload: bytes, locale: int) -> None:
+        self.children[(name, locale)] = _TreeNode(name=name, data=payload, locale=locale)
 
 
 @dataclass(frozen=True)
@@ -205,14 +229,25 @@ def compile_resource_tree(
         node = root
         for part in parts[:-1]:
             node = node.directory(part)
-        node.file(parts[-1], payload)
+        node.file(parts[-1], payload, _locale_field(entry.lang))
     _sort_tree(root)
     return _serialize(root), tuple(diagnostics)
 
 
+def _child_sort(child: _TreeNode) -> Tuple[int, str, int, int]:
+    """rcc orders ties by language, then territory, both descending."""
+    language = child.locale & 0xFFFF
+    territory = child.locale >> 16
+    return (qt_hash(child.name), child.name, -language, -territory)
+
+
 def _sort_tree(node: _TreeNode) -> None:
-    ordered = sorted(node.children.values(), key=lambda child: (qt_hash(child.name), child.name))
-    node.children = {child.name: child for child in ordered}
+    ordered = sorted(node.children.values(), key=_child_sort)
+    rebuilt: Dict[Tuple[str, Optional[int]], _TreeNode] = {}
+    for child in ordered:
+        key = (child.name, None if child.data is None else child.locale)
+        rebuilt[key] = child
+    node.children = rebuilt
     for child in ordered:
         if child.data is None:
             _sort_tree(child)
@@ -236,7 +271,8 @@ def _name_blob(order: List["_TreeNode"], root: "_TreeNode") -> Tuple[bytes, Dict
             continue
         offsets[name] = len(blob)
         encoded = name.encode("utf-16-be")
-        blob += struct.pack(">HI", len(name), qt_hash(name))
+        units = len(encoded) // 2
+        blob += struct.pack(">HI", units, qt_hash(name))
         blob += encoded
     return bytes(blob), offsets
 
@@ -278,7 +314,7 @@ def _serialize(root: _TreeNode) -> ResourceTree:
                 ">IHIIQ",
                 name_offset,
                 0,
-                _LOCALE_C,
+                node.locale or _LOCALE_C,
                 data_at[id(node)],
                 0,
             )

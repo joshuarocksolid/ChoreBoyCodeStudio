@@ -137,3 +137,71 @@ def test_alias_tree_matches_rcc(qapp, tmp_path: Path) -> None:
     assert status == "ok", (status, detail)
     assert ":/cbcs/dot.bin" in detail
     assert ":/cbcs/icons/dot.bin" in detail
+
+
+def _read_resource(module_text: str, resource: str, locale_name: str):
+    from PySide6.QtCore import QFile, QIODevice, QLocale
+
+    QLocale.setDefault(QLocale(locale_name))
+    namespace = {"__name__": "cbcs_rc_locale"}
+    exec(compile(module_text, "<rc>", "exec"), namespace)
+    try:
+        handle = QFile(resource)
+        if not handle.open(QIODevice.OpenModeFlag.ReadOnly):
+            return None
+        try:
+            return bytes(handle.readAll().data())
+        finally:
+            handle.close()
+    finally:
+        cleanup = namespace.get("qCleanupResources")
+        if cleanup is not None:
+            cleanup()
+
+
+@pytest.mark.oracle
+@pytest.mark.timeout(60)
+def test_locale_and_nonbmp_names_match_rcc(qapp, tmp_path: Path) -> None:
+    """A later ``lang`` must not hide the default, and a non-BMP name must be readable."""
+    del qapp
+    rcc = os.environ.get("CBCS_FB_RCC", "")
+    if not rcc or not Path(rcc).is_file():
+        pytest.skip("CBCS_FB_RCC is not set")
+    (tmp_path / "en.txt").write_bytes(b"HELLO")
+    (tmp_path / "fr.txt").write_bytes(b"BONJOUR")
+    face = "a\U0001f600.txt"
+    (tmp_path / face).write_bytes(b"FACE")
+    qrc = tmp_path / "demo.qrc"
+    qrc.write_text(
+        "<RCC>"
+        '<qresource prefix="/p"><file alias="a.txt">en.txt</file></qresource>'
+        '<qresource prefix="/p" lang="fr"><file alias="a.txt">fr.txt</file></qresource>'
+        '<qresource prefix="/e"><file>%s</file></qresource>'
+        "</RCC>" % face,
+        encoding="utf-8",
+    )
+    document = read_qrc(qrc.read_text(encoding="utf-8"))
+
+    def read_file(rel: str) -> bytes:
+        return (tmp_path / rel).read_bytes()
+
+    tree, diagnostics = compile_resource_tree(document, read_file=read_file)
+    assert not diagnostics
+    ours = render_rc_module(tree, qrc_file_name=qrc.name)
+    with tempfile.TemporaryDirectory(prefix="fb-rcc-") as folder:
+        out = Path(folder) / "rcc_out.py"
+        proc = subprocess.run(
+            [rcc, "-g", "python", "-o", str(out), str(qrc)],
+            capture_output=True,
+            text=True,
+        )
+        assert proc.returncode == 0, proc.stderr
+        theirs = out.read_text(encoding="utf-8")
+    emoji = ":/e/" + face
+    for locale_name, resource, expected in (
+        ("en_US", ":/p/a.txt", b"HELLO"),
+        ("fr_FR", ":/p/a.txt", b"BONJOUR"),
+        ("C", emoji, b"FACE"),
+    ):
+        assert _read_resource(ours, resource, locale_name) == expected
+        assert _read_resource(theirs, resource, locale_name) == expected
