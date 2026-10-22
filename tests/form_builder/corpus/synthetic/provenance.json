@@ -7,6 +7,18 @@
       "notes": "Covers the ui4 element and attribute names, containers, resources, and cbcs* dynamic properties."
     },
     {
+      "path": "synthetic/qt/palette_gradient_cursor.ui",
+      "source": "PySide6 6.8.3 QFormBuilder.save, captured 2026-10-22",
+      "licence": "MIT",
+      "notes": "Active Window is a two-stop linear gradient. cursorShape is IBeamCursor."
+    },
+    {
+      "path": "synthetic/qt/iconset_two_state.ui",
+      "source": "Designer iconset form, captured 2026-10-22",
+      "licence": "MIT",
+      "notes": "Compat path is written once after the last state and equals normaloff. normaloff.png and normalon.png differ. QFormBuilder.save on PySide6 6.8.3 does not emit iconset."
+    },
+    {
       "path": "synthetic/properties/bool.ui",
       "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
       "licence": "MIT",
@@ -851,6 +863,30 @@
       "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
       "licence": "MIT",
       "notes": ""
+    },
+    {
+      "path": "synthetic/cbcs/enabled_bind.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "cbcsEnabledWhen and cbcsBind dynamic properties with notr, placed before geometry on the line edit."
+    },
+    {
+      "path": "synthetic/cbcs/logic_json.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "cbcsLogic JSON string on the form root, placed before geometry."
+    },
+    {
+      "path": "synthetic/cbcs/splitter_sizes.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "cbcsSplitterSizes on a QSplitter."
+    },
+    {
+      "path": "synthetic/properties/negative_zero.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "float and double -0, plus 0.1 and a float that needs extra digits."
     }
   ]
 }

@@ -59,6 +59,13 @@ def event_global_pos(event: Any) -> Any:
     return pos().toPoint() if pos is not None else event.globalPos()
 
 
+def wrapper_is_valid(obj: Any) -> bool:
+    """Return whether a Qt wrapper still points at a live C++ object."""
+    module_name = "shiboken6" if IS_QT6 else "shiboken2"
+    shiboken = importlib.import_module(module_name)
+    return bool(shiboken.isValid(obj))
+
+
 __all__ = [
     "ENV_VAR",
     "IS_QT6",
@@ -72,4 +79,5 @@ __all__ = [
     "exec_qt",
     "import_qt_module",
     "select_binding",
+    "wrapper_is_valid",
 ]

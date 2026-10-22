@@ -1,14 +1,15 @@
-"""Frameless container that hosts the completion list and docs panel."""
+"""Frameless popup hosting the completion list, its footer and the docs pane."""
 
 from __future__ import annotations
 
 from app.qt.QtCore import Qt, Signal
-from app.qt.QtGui import QColor, QHideEvent
+from app.qt.QtGui import QFont, QHideEvent
 from app.qt.QtWidgets import (
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
+    QLabel,
     QSizePolicy,
+    QVBoxLayout,
     QWidget,
 )
 
@@ -16,44 +17,47 @@ from app.editors.completion_popup.completion_docs_panel import CompletionDocsPan
 from app.editors.completion_popup.completion_list_view import CompletionListView
 from app.shell.theme_tokens import ShellThemeTokens
 
-
-_SHADOW_BLUR = 18
-_SHADOW_OFFSET_Y = 4
+OUTER_MARGINS = (0, 0, 0, 0)
 
 
 class CompletionPopupContainer(QFrame):
-    """Top-level frameless popup hosting the list view and docs panel."""
+    """Top-level ``Qt.Popup`` window; the host widget keeps keyboard focus."""
 
     closed = Signal()
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("CompletionPopupContainer")
-        # ``Qt.Popup`` ensures focus-out hides the popup automatically.
-        self.setWindowFlags(
-            Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint
-        )
-        self.setAttribute(Qt.WA_TranslucentBackground, True)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint | Qt.NoDropShadowWindowHint)
+        # No translucent margin or drop shadow: ChoreBoy's fluxbox desktop has no
+        # compositor, so a translucent shadow margin paints as a black frame.
         self.setAttribute(Qt.WA_ShowWithoutActivating, True)
-        # Never accept keyboard focus ourselves; the host widget keeps it via
-        # focus-proxy + event-filter forwarding from CompletionController.
         self.setFocusPolicy(Qt.NoFocus)
-        self.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        # The visible chrome (background + border + radius) lives on an inner
-        # frame so the outer translucent widget can hold the drop shadow.
         self._chrome = QFrame(self)
         self._chrome.setObjectName("CompletionPopupChrome")
         outer_layout = QHBoxLayout(self)
-        outer_layout.setContentsMargins(8, 4, 8, 12)
+        outer_layout.setContentsMargins(*OUTER_MARGINS)
         outer_layout.addWidget(self._chrome)
 
         chrome_layout = QHBoxLayout(self._chrome)
-        chrome_layout.setContentsMargins(0, 0, 0, 0)
+        chrome_layout.setContentsMargins(1, 1, 1, 1)
         chrome_layout.setSpacing(0)
 
+        left = QVBoxLayout()
+        left.setContentsMargins(0, 2, 0, 0)
+        left.setSpacing(0)
         self._list_view = CompletionListView(self._chrome)
-        chrome_layout.addWidget(self._list_view, 0)
+        left.addWidget(self._list_view, 0)
+        self._footer = QLabel(self._chrome)
+        self._footer.setObjectName("CompletionPopupFooter")
+        footer_font = QFont(self._footer.font())
+        footer_font.setPointSizeF(max(7.5, footer_font.pointSizeF() - 1.0))
+        self._footer.setFont(footer_font)
+        left.addWidget(self._footer, 0)
+        left.addStretch(1)
+        chrome_layout.addLayout(left, 0)
 
         self._separator = QFrame(self._chrome)
         self._separator.setObjectName("CompletionPopupSeparator")
@@ -63,69 +67,39 @@ class CompletionPopupContainer(QFrame):
         chrome_layout.addWidget(self._separator)
 
         self._docs_panel = CompletionDocsPanel(self._chrome)
-        chrome_layout.addWidget(self._docs_panel, 1)
+        chrome_layout.addWidget(self._docs_panel, 0)
 
         self._docs_visible = True
-        self._tokens: ShellThemeTokens | None = None
-
-        shadow = QGraphicsDropShadowEffect(self._chrome)
-        shadow.setBlurRadius(_SHADOW_BLUR)
-        shadow.setOffset(0, _SHADOW_OFFSET_Y)
-        shadow.setColor(QColor(0, 0, 0, 80))
-        self._chrome.setGraphicsEffect(shadow)
-        self._shadow = shadow
-
         self._list_view.current_item_changed.connect(self._docs_panel.set_item)
 
     def hideEvent(self, event: QHideEvent) -> None:  # type: ignore[override]
-        """Emit :pyattr:`closed` so the controller drops retained refine state."""
-
         super().hideEvent(event)
         self.closed.emit()
 
-    # ------------------------------------------------------------------
-    # Theme
-    # ------------------------------------------------------------------
-
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        """Restyle container chrome and propagate to children."""
-        self._tokens = tokens
         bg = tokens.popup_bg or tokens.panel_bg
         border = tokens.popup_border or tokens.border
-        shadow_hex = tokens.popup_shadow or ""
-        shadow_color = (
-            QColor(shadow_hex)
-            if shadow_hex
-            else QColor(0, 0, 0, 160 if tokens.is_dark else 64)
-        )
-        if not shadow_hex:
-            self._shadow.setColor(shadow_color)
-        else:
-            shadow_color.setAlpha(160 if tokens.is_dark else 64)
-            self._shadow.setColor(shadow_color)
-
         self.setStyleSheet(
             f"""
             QFrame#CompletionPopupChrome {{
                 background-color: {bg};
                 border: 1px solid {border};
-                border-radius: 6px;
             }}
             QFrame#CompletionPopupSeparator {{
                 background-color: {border};
                 border: none;
+            }}
+            QLabel#CompletionPopupFooter {{
+                color: {tokens.text_muted};
+                background: transparent;
+                padding: 2px 8px 4px 8px;
             }}
             """
         )
         self._list_view.apply_theme(tokens)
         self._docs_panel.apply_theme(tokens)
 
-    # ------------------------------------------------------------------
-    # Docs panel toggle
-    # ------------------------------------------------------------------
-
     def set_docs_visible(self, visible: bool) -> None:
-        """Show or hide the docs panel; useful for narrow viewports."""
         self._docs_visible = visible
         self._docs_panel.setVisible(visible)
         self._separator.setVisible(visible)
@@ -133,9 +107,11 @@ class CompletionPopupContainer(QFrame):
     def docs_visible(self) -> bool:
         return self._docs_visible
 
-    # ------------------------------------------------------------------
-    # Children accessors
-    # ------------------------------------------------------------------
+    def set_footer_text(self, text: str) -> None:
+        self._footer.setText(text)
+
+    def footer_text(self) -> str:
+        return self._footer.text()
 
     def list_view(self) -> CompletionListView:
         return self._list_view

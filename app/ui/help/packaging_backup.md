@@ -40,7 +40,7 @@ The wizard runs:
 
 The generated `package_report.json` records those results.
 
-Missing imports block export by default. Check **Allow export with missing imports** in the wizard when a dead import path should not stop a working app. That setting is stored in `cbcs/package.json` as `skip_missing_dependency_blockers`. Native extensions and unsafe subprocess calls still block.
+A missing import stops export only when the app's entry file loads it at module level and the import is not guarded by `try` / `except ImportError` or `TYPE_CHECKING`. Every other missing import is a warning and export continues. The report names the import path. A vendored native extension still stops export.
 
 ## Where to put the result on ChoreBoy
 

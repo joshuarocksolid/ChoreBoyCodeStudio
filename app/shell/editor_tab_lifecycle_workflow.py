@@ -9,9 +9,10 @@ from app.qt.QtWidgets import QMenu
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
-from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry, release_editor_widget
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
+from app.shell.editor_tab_page import EditorTabPage, page_editor
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.qt.qt_compat import exec_qt
 
 
@@ -26,7 +27,6 @@ class EditorTabLifecycleWorkflow:
         editor_tabs_coordinator: Any,
         save_workflow: Any,
         debug_control_workflow: Any,
-        markdown_registry: MarkdownTabRegistry,
         markdown_workflow: Any,
         tab_workflow: Any,
     ) -> None:
@@ -35,33 +35,78 @@ class EditorTabLifecycleWorkflow:
         self._editor_tabs_coordinator = editor_tabs_coordinator
         self._save_workflow = save_workflow
         self._debug_control_workflow = debug_control_workflow
-        self._markdown_registry = markdown_registry
         self._markdown_workflow = markdown_workflow
         self._tab_workflow = tab_workflow
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
 
-    def release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        release_editor_widget(
-            widget,
-            registry=self._markdown_registry,
-            is_debug_execution_editor=lambda candidate: self._host.debug_execution_editor() is candidate,
-            clear_debug_execution_indicator=self._host.clear_debug_execution_indicator,
-        )
+    def _editor_groups(self) -> Any:
+        accessor = getattr(self._host, "editor_groups", None)
+        return accessor() if callable(accessor) else None
 
-    def remove_tab_widget_for_path(self, file_path: str) -> None:
+    def release_editor_widget(self, widget: CodeEditorWidget) -> None:
+        if self._host.debug_execution_editor() is widget:
+            self._host.clear_debug_execution_indicator()
+        registry = self._host.tab_content_registry()
+        surface = registry.surface_for_source_editor(widget)
+        if surface is not None:
+            file_path = registry.path_for_source_editor(widget)
+            if file_path is not None:
+                registry.unbind(file_path)
+            surface.release()
+            return
+        widget.deleteLater()
+
+    def release_tab_content(self, file_path: str, buffer_id: str | None = None) -> None:
+        """Release whatever owns ``file_path``, whether or not a source editor exists.
+
+        ``buffer_id`` is the buffer to pop when the editor manager has already
+        dropped the tab, which is what a preview replacement does.
+        """
+        self._host.local_history_forget_source(file_path)
+        registry = self._host.tab_content_registry()
+        surface = registry.unbind(file_path)
+        if buffer_id is None:
+            tab = self._editor_manager.get_tab(file_path)
+            buffer_id = None if tab is None else tab.buffer_id
+        widget = None
+        if buffer_id is not None:
+            widget = self._host.workspace_controller().pop_editor(buffer_id)
+        if widget is not None and self._host.debug_execution_editor() is widget:
+            self._host.clear_debug_execution_indicator()
+        if surface is not None:
+            surface.release()
+            return
+        if widget is not None:
+            widget.deleteLater()
+
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str, file_path: str | None = None) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
-        if tab_index < 0:
+        primary = self._host.workspace_controller().widget_for_buffer_id(buffer_id)
+        removed = False
+        for tabs in self._editor_tabs_coordinator.all_tab_widgets():
+            tab_index = self._editor_tabs_coordinator.tab_index_in(tabs, buffer_id)
+            if tab_index < 0:
+                continue
+            extra_view = page_editor(tabs.widget(tab_index))
+            remove_tab_and_page(tabs, tab_index)
+            if extra_view is not None and extra_view is not primary:
+                self.release_editor_widget(extra_view)
+            removed = True
+        if not removed:
             return
-        editor_tabs_widget.removeTab(tab_index)
-        widget = self._host.workspace_controller().pop_editor(file_path)
-        if widget is not None:
-            self.release_editor_widget(widget)
-        self._host.indent_source_by_path().pop(file_path, None)
+        tab = self._editor_manager.get_tab_by_id(buffer_id)
+        release_path = tab.file_path if tab is not None else file_path
+        if release_path is not None:
+            self.release_tab_content(release_path, buffer_id=buffer_id)
+        else:
+            widget = self._host.workspace_controller().pop_editor(buffer_id)
+            if widget is not None:
+                self.release_editor_widget(widget)
+        self._host.indent_source_by_path().pop(buffer_id, None)
         self._host.refresh_save_action_states()
         self._host.refresh_run_action_states()
         status_controller = self._host.status_controller()
@@ -72,7 +117,7 @@ class EditorTabLifecycleWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        file_path = editor_tabs_widget.tabToolTip(tab_index)
+        file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return
         self._editor_tabs_coordinator.promote_preview_tab(file_path)
@@ -93,17 +138,24 @@ class EditorTabLifecycleWorkflow:
         tab_index = tab_bar.tabAt(position)
         if tab_index < 0:
             return
-        file_path = editor_tabs_widget.tabToolTip(tab_index)
+        file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return
 
         menu = QMenu(self._host.parent_widget())
+        markdown_pane = self._markdown_workflow.markdown_pane_for_tab(editor_tabs_widget, tab_index, file_path)
         markdown_source_action, markdown_preview_action, markdown_split_action = (
-            self._markdown_workflow.append_context_menu_actions(menu, file_path)
+            self._markdown_workflow.append_context_menu_actions(menu, markdown_pane)
         )
-        markdown_pane = self._markdown_registry.pane_for_path(file_path)
         local_history_action = menu.addAction("Local History...")
         menu.addSeparator()
+        groups = self._editor_groups()
+        split_action = menu.addAction("Split Right") if groups is not None else None
+        close_group_action = (
+            menu.addAction("Close Group") if groups is not None and groups.group_count() > 1 else None
+        )
+        if split_action is not None:
+            menu.addSeparator()
         close_action = menu.addAction("Close")
         chosen = exec_qt(menu, tab_bar.mapToGlobal(position))
         if self._markdown_workflow.handle_context_menu_choice(
@@ -116,19 +168,43 @@ class EditorTabLifecycleWorkflow:
             return
         if chosen == local_history_action:
             self._host.show_local_history_for_path(file_path)
+        elif groups is not None and split_action is not None and chosen == split_action:
+            if editor_tabs_widget.currentIndex() != tab_index:
+                editor_tabs_widget.setCurrentIndex(tab_index)
+            groups.split_right()
+        elif groups is not None and close_group_action is not None and chosen == close_group_action:
+            groups.close_group()
         elif chosen == close_action:
             self.handle_tab_close_requested(tab_index)
 
-    def handle_tab_close_requested(self, tab_index: int) -> None:
+    def handle_tab_close_requested(
+        self,
+        tab_index: int,
+        *,
+        discard_dirty: bool = False,
+        skip_close_blockers: bool = False,
+    ) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        file_path = editor_tabs_widget.tabToolTip(tab_index)
+        file_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
         if not file_path:
             return
 
+        groups = self._editor_groups()
+        if groups is not None and groups.close_view_if_shared(tab_index):
+            self._host.refresh_save_action_states()
+            self._host.refresh_run_action_states()
+            return
+
         tab_state = self._editor_manager.get_tab(file_path)
-        if tab_state is not None and tab_state.is_dirty:
+        if not skip_close_blockers and not confirm_tab_close_blockers(
+            self._host.parent_widget(),
+            self._host.tab_content_registry(),
+            (file_path,),
+        ):
+            return
+        if tab_state is not None and tab_state.is_dirty and not discard_dirty:
             decision = self._save_workflow.request_unsaved_changes_decision(
                 "closing this tab",
                 scope=DocumentScope.TAB,
@@ -140,18 +216,35 @@ class EditorTabLifecycleWorkflow:
             if not self._save_workflow.apply_unsaved_changes_decision(decision):
                 return
 
-        editor_tabs_widget.removeTab(tab_index)
-        widget = self._host.workspace_controller().pop_editor(file_path)
-        if widget is not None:
-            self.release_editor_widget(widget)
+        remove_tab_and_page(editor_tabs_widget, tab_index)
+        self.release_tab_content(file_path)
+        if tab_state is not None:
+            self._host.stored_lint_diagnostics().pop(tab_state.buffer_id, None)
+            self._host.indent_source_by_path().pop(tab_state.buffer_id, None)
         self._editor_manager.close_file(file_path)
         self._debug_control_workflow.breakpoint_store.clear_file(file_path)
-        self._host.stored_lint_diagnostics().pop(file_path, None)
         self._host.render_merged_problems_panel()
         self._debug_control_workflow.refresh_breakpoints_list()
         self._host.refresh_save_action_states()
         self._host.refresh_run_action_states()
         self._markdown_workflow.refresh_markdown_action_states()
+
+    def close_tab_discarding_edits(self, file_path: str, *, skip_close_blockers: bool = False) -> None:
+        tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
+        if tab_index >= 0:
+            self.handle_tab_close_requested(
+                tab_index,
+                discard_dirty=True,
+                skip_close_blockers=skip_close_blockers,
+            )
+            return
+        self._editor_manager.close_file(file_path)
+
+    def close_tab_for_path(self, file_path: str) -> None:
+        """Close the buffer's tab in the focused group, asking about unsaved changes."""
+        tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
+        if tab_index >= 0:
+            self.handle_tab_close_requested(tab_index)
 
     def close_active_tab(self) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
@@ -162,13 +255,17 @@ class EditorTabLifecycleWorkflow:
             self.handle_tab_close_requested(tab_index)
 
     def reset_editor_tabs(self) -> None:
-        editor_tabs_widget = self._host.editor_tabs_widget()
-        if editor_tabs_widget is not None:
-            for path in list(self._host.workspace_controller().open_editor_paths()):
-                widget = self._host.workspace_controller().pop_editor(path)
-                if widget is not None:
-                    self.release_editor_widget(widget)
-            editor_tabs_widget.clear()
+        for path in list(self._editor_manager.open_paths()):
+            self.release_tab_content(path)
+        for tabs in self._editor_tabs_coordinator.all_tab_widgets():
+            while tabs.count():
+                extra_view = page_editor(tabs.widget(0))
+                remove_tab_and_page(tabs, 0)
+                if extra_view is not None:
+                    self.release_editor_widget(extra_view)
+        groups = self._editor_groups()
+        if groups is not None:
+            groups.reset()
         self._host.local_history_stop_autosave_timer()
         self._host.stop_auto_save_to_file_timer()
         self._host.stop_realtime_lint_timer()
@@ -180,6 +277,8 @@ class EditorTabLifecycleWorkflow:
         self._host.local_history_clear_pending_autosaves()
         self._host.clear_pending_realtime_lint_file_path()
         self._host.clear_debug_execution_indicator()
+        for tab_state in list(self._editor_manager.all_tabs()):
+            tab_state.drop_content_source_subscription()
         self._host.workspace_controller().clear()
         replacement_manager = EditorManager()
         self._host.replace_editor_manager(replacement_manager)
@@ -195,4 +294,13 @@ class EditorTabLifecycleWorkflow:
             status_controller.set_indent_status(style=None, size=None, source=None)
 
 
-__all__ = ["EditorTabLifecycleWorkflow"]
+def remove_tab_and_page(tabs: Any, tab_index: int) -> None:
+    """Remove a tab and delete its page. The editor inside is released separately."""
+    page = tabs.widget(tab_index)
+    tabs.removeTab(tab_index)
+    if isinstance(page, EditorTabPage):
+        page.hide()
+        page.deleteLater()
+
+
+__all__ = ["EditorTabLifecycleWorkflow", "remove_tab_and_page"]

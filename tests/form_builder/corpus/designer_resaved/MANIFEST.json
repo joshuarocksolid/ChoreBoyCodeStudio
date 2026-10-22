@@ -1,0 +1,1264 @@
+{
+  "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)",
+  "designer": "/opt/freecad-1.1/usr/lib/qt6/bin/designer",
+  "freecad_stamp": "1.1.4 f6dc6ba676e5ac96a565ebc8d657232f94c6158e85b4352141bd1a46f6b43434",
+  "method": "Qt Designer 6.8.3 from the FreeCAD 1.1.4 AppImage opened each form. A designer plugin called setDirty(true) and triggered the Save action objectName __qt_save_form_action. That is QDesignerActions::saveForm, which writes the form through QSaveFile.",
+  "file_count": 209,
+  "failed": [],
+  "files": [
+    {
+      "path": "qt_examples/pyside6/examples/bluetooth/btscanner/device.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/bluetooth/btscanner/device.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/bluetooth/btscanner/service.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/bluetooth/btscanner/service.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/charts/chartthemes/themewidget.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/charts/chartthemes/themewidget.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/corelib/ipc/sharedmemory/dialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/corelib/ipc/sharedmemory/dialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/demos/documentviewer/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/demos/documentviewer/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/multimedia/camera/camera.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/camera.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/multimedia/camera/camera_mobile.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/camera_mobile.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/multimedia/camera/imagesettings.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/imagesettings.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/multimedia/camera/videosettings.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/videosettings.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/multimedia/camera/videosettings_mobile.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/multimedia/camera/videosettings_mobile.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/pdfwidgets/pdfviewer/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/pdfwidgets/pdfviewer/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/can/canbusdeviceinfobox.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/canbusdeviceinfobox.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/can/canbusdeviceinfodialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/canbusdeviceinfodialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/can/connectdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/connectdialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/can/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/can/sendframebox.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/can/sendframebox.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/modbus/modbusclient/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/modbus/modbusclient/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialbus/modbus/modbusclient/settingsdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialbus/modbus/modbusclient/settingsdialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialport/terminal/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialport/terminal/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/serialport/terminal/settingsdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/serialport/terminal/settingsdialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/speech/hello_speak/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/speech/hello_speak/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/sql/books/bookwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/sql/books/bookwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webchannel/standalone/dialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webchannel/standalone/dialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webenginewidgets/markdowneditor/mainwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/markdowneditor/mainwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/certificateerrordialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/certificateerrordialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/downloadmanagerwidget.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/downloadmanagerwidget.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/downloadwidget.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/downloadwidget.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/passworddialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/passworddialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/webenginewidgets/simplebrowser/webauthdialog.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/webenginewidgets/simplebrowser/webauthdialog.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/examples/widgets/animation/easing/form.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/examples/widgets/animation/easing/form.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/pyside6/sources/pyside6/doc/tutorials/portingguide/chapter3/bookwindow.ui",
+      "source": "https://code.qt.io/cgit/pyside/pyside-setup.git/tree/sources/pyside6/doc/tutorials/portingguide/chapter3/bookwindow.ui?h=v6.8.3",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/corelib/bindableproperties/shared/subscriptionwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/corelib/bindableproperties/shared/subscriptionwindow.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/corelib/ipc/sharedmemory/dialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/corelib/ipc/sharedmemory/dialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/dbus/chat/chatmainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/dbus/chat/chatmainwindow.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/http/authenticationdialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/http/authenticationdialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/network-chat/chatdialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/network-chat/chatdialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/securesocketclient/certificateinfo.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/securesocketclient/certificateinfo.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/securesocketclient/sslclient.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/securesocketclient/sslclient.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/securesocketclient/sslerrors.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/securesocketclient/sslerrors.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/secureudpclient/addressdialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpclient/addressdialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/secureudpclient/mainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpclient/mainwindow.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/secureudpserver/mainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpserver/mainwindow.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/secureudpserver/nicselector.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/secureudpserver/nicselector.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/network/torrent/addtorrentform.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/network/torrent/addtorrentform.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/qmake/precompile/mydialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/qmake/precompile/mydialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/qtconcurrent/imagescaling/downloaddialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/qtconcurrent/imagescaling/downloaddialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/qtconcurrent/primecounter/primecounter.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/qtconcurrent/primecounter/primecounter.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/sql/sqlbrowser/browserwidget.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/sql/sqlbrowser/browserwidget.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/sql/sqlbrowser/qsqlconnectiondialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/sql/sqlbrowser/qsqlconnectiondialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/widgets/animation/easing/form.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/widgets/animation/easing/form.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/widgets/itemviews/editabletreemodel/mainwindow.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/widgets/itemviews/editabletreemodel/mainwindow.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/examples/widgets/tutorials/notepad/notepad.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/examples/widgets/tutorials/notepad/notepad.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/graphicsview/embeddeddialogs/embeddeddialog.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/graphicsview/embeddeddialogs/embeddeddialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/painting/fontsampler/mainwindowbase.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/painting/fontsampler/mainwindowbase.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/touch/dials/dials.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/touch/dials/dials.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/widgets/stylesheet/stylesheeteditor.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/widgets/stylesheet/stylesheeteditor.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qtbase/tests/manual/examples/widgets/widgets/validators/validators.ui",
+      "source": "https://github.com/qt/qtbase/blob/v6.8.3/tests/manual/examples/widgets/widgets/validators/validators.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qttools/examples/assistant/remotecontrol/remotecontrol.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/assistant/remotecontrol/remotecontrol.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qttools/examples/designer/calculatorbuilder/calculatorform.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/designer/calculatorbuilder/calculatorform.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qttools/examples/designer/calculatorform/calculatorform.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/designer/calculatorform/calculatorform.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qttools/examples/designer/calculatorform_mi/calculatorform.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/designer/calculatorform_mi/calculatorform.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qttools/examples/help/contextsensitivehelp/wateringconfigdialog.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/help/contextsensitivehelp/wateringconfigdialog.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "qt_examples/qttools/examples/uitools/textfinder/forms/textfinder.ui",
+      "source": "https://github.com/qt/qttools/blob/v6.8.3/examples/uitools/textfinder/forms/textfinder.ui",
+      "licence": "BSD-3-Clause (LicenseRef-Qt-Commercial OR BSD-3-Clause)",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/cbcs/enabled_bind.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/cbcs/logic_json.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/cbcs/splitter_sizes.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/absolute_zorder.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/crlf_endings.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/empty_form.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/nested_15.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/thousand_widgets.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/unicode_names.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/edges/unusual_attribute_order.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/address_form.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/audit_filter.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/backup_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/bin_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/contact_card.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/crew_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/customer_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/date_range.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/discount_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/export_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/filter_bar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/inventory_adjust.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/invoice_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/item_editor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/label_print.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/login_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/message_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/meter_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/note_editor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/number_formats.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/payment_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/preferences_appearance.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/preferences_general.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/printer_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/quote_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/receipt_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/reminder_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/route_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/schedule_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/search_panel.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/season_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/shift_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/shipping_form.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/status_filters.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/tax_settings.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/user_account.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/vendor_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/forms/warehouse_dialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/button_row.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/calendar_panel.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/choice_lab.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/scroll_settings.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/slider_lab.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/split_editor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/text_lab.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/labs/tree_and_table.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/bool.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/brush.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/char.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/color.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/cstring.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/cursor.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/cursorshape.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/date.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/datetime.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/double.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/enum.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/float.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/font.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/locale.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/longlong.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/negative_zero.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/number.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/palette.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/point.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/pointf.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/rect.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/rectf.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/set.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/size.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/sizef.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/sizepolicy.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/string.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/stringlist.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/time.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/uint.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/ulonglong.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/properties/url.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/schema/kitchen_sink.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/schema/property_iconset.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/schema/property_pixmap.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QAbstractScrollArea.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QAbstractSlider.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QAbstractSpinBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QCalendarWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QCheckBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QColumnView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QComboBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QCommandLinkButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDateEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDateTimeEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDial.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDialog.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDialogButtonBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDockWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QDoubleSpinBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QFontComboBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QFrame.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QGraphicsView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QGroupBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QKeySequenceEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QLCDNumber.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QLabel.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QLineEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QListView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QListWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QMainWindow.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QMdiArea.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QMenu.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QMenuBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QPlainTextEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QProgressBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QPushButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QRadioButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QScrollArea.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QScrollBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QSlider.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QSpinBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QSplitter.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QStackedWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QStatusBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTabWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTableView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTableWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTextBrowser.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTextEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTimeEdit.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QToolBar.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QToolBox.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QToolButton.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTreeView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QTreeWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QUndoView.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QWidget.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QWizard.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    },
+    {
+      "path": "synthetic/widgets/QWizardPage.ui",
+      "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+      "licence": "MIT",
+      "resaved_by": "Qt Designer 6.8.3 (FreeCAD 1.1.4 AppImage)"
+    }
+  ]
+}

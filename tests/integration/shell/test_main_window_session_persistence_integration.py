@@ -59,8 +59,8 @@ def test_main_window_restores_saved_project_session(
     assert window._editor_tab_factory.open_file_in_editor(file_one_path) is True
     assert window._editor_tab_factory.open_file_in_editor(file_two_path) is True
 
-    first_widget = window._editor_widgets_by_path[file_one_path]
-    second_widget = window._editor_widgets_by_path[file_two_path]
+    first_widget = window._workspace_controller.widget_for_path(file_one_path)
+    second_widget = window._workspace_controller.widget_for_path(file_two_path)
     _set_cursor_position(first_widget, line=4, column=3)
     _set_cursor_position(second_widget, line=2, column=2)
 
@@ -87,8 +87,8 @@ def test_main_window_restores_saved_project_session(
     assert breakpoint_store.lines_for_file(file_one_path) == {2, 5}
     assert breakpoint_store.lines_for_file(file_two_path) == {3}
 
-    restored_first_widget = window._editor_widgets_by_path[file_one_path]
-    restored_second_widget = window._editor_widgets_by_path[file_two_path]
+    restored_first_widget = window._workspace_controller.widget_for_path(file_one_path)
+    restored_second_widget = window._workspace_controller.widget_for_path(file_two_path)
     assert restored_first_widget.textCursor().blockNumber() + 1 == 4
     assert restored_first_widget.textCursor().positionInBlock() + 1 == 3
     assert restored_second_widget.textCursor().blockNumber() + 1 == 2
@@ -122,7 +122,7 @@ def test_opening_second_project_persists_and_restores_first_project_session(
     assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     project_one_path = str(project_one_file.resolve())
     assert window._editor_tab_factory.open_file_in_editor(project_one_path) is True
-    widget_one = window._editor_widgets_by_path[project_one_path]
+    widget_one = window._workspace_controller.widget_for_path(project_one_path)
     _set_cursor_position(widget_one, line=3, column=2)
     breakpoint_store = window._debug_control_workflow.breakpoint_store
     breakpoint_store.set_line_enabled(project_one_path, 2, enabled=True)
@@ -133,8 +133,50 @@ def test_opening_second_project_persists_and_restores_first_project_session(
 
     assert window._file_project_commands_workflow.open_project_by_path(str(project_one.resolve())) is True
     _wait_for_open_paths(app, window, [project_one_path])
-    restored_widget = window._editor_widgets_by_path[project_one_path]
+    restored_widget = window._workspace_controller.widget_for_path(project_one_path)
     assert restored_widget.textCursor().blockNumber() + 1 == 3
     assert restored_widget.textCursor().positionInBlock() + 1 == 2
     assert breakpoint_store.lines_for_file(project_one_path) == {2}
+    shutdown_main_window_for_test(window, app)
+
+
+def test_dragged_tab_order_survives_session_restore(
+    tmp_path: Path,
+    shell_qapp,
+) -> None:
+    """Reordering tabs by drag is what a restart brings back, with the same tab active."""
+    app = shell_qapp
+    state_root = tmp_path / "state"
+    state_root.mkdir(parents=True, exist_ok=True)
+    project_root = tmp_path / "project"
+    create_blank_project(str(project_root.resolve()), project_name="Tab Order")
+    paths = []
+    for name in ("alpha.py", "beta.py", "gamma.py"):
+        file_path = project_root / name
+        file_path.write_text(f"# {name}\n", encoding="utf-8")
+        paths.append(str(file_path.resolve()))
+    alpha, beta, gamma = paths
+
+    window = MainWindow(state_root=str(state_root.resolve()))
+    prepare_main_window_for_test(window, app=app)
+    assert window._file_project_commands_workflow.open_project_by_path(str(project_root.resolve())) is True
+    for file_path in paths:
+        assert window._editor_tab_factory.open_file_in_editor(file_path) is True
+    tabs = window._editor_tabs_widget
+    assert tabs is not None
+    tabs.setCurrentIndex(window._editor_tab_workflow.tab_index_for_path(beta))
+
+    tabs.tabBar().moveTab(0, 2)
+
+    assert window._editor_manager.open_paths() == [beta, gamma, alpha]
+    window._local_history_workflow.persist_session_state()
+    window._editor_tab_workflow.reset_editor_tabs()
+    window._local_history_workflow.restore_session_state(str(project_root.resolve()))
+    _wait_for_open_paths(app, window, [beta, gamma, alpha])
+
+    tabs = window._editor_tabs_widget
+    assert [tabs.tabToolTip(index).splitlines()[0] for index in range(tabs.count())] == [beta, gamma, alpha]
+    active_tab = window._editor_manager.active_tab()
+    assert active_tab is not None and active_tab.file_path == beta
+    assert tabs.currentIndex() == 0
     shutdown_main_window_for_test(window, app)

@@ -245,13 +245,31 @@ class ShellPreferencesRuntime:
     def load_completion_preferences(self) -> tuple[Any, ...]:
         return self.load_main_window_settings().completion_preferences
 
-    def completion_auto_trigger_period(self) -> bool:
-        """Return whether typing ``.`` should open completion."""
+    def completion_mode(self) -> str:
+        """Return the effective code-completion mode (``off``, ``manual`` or ``typing``)."""
 
         preferences = self.load_completion_preferences()
         if len(preferences) < 4:
-            return constants.UI_INTELLIGENCE_AUTO_TRIGGER_PERIOD_DEFAULT
-        return bool(preferences[3])
+            return constants.UI_INTELLIGENCE_COMPLETION_MODE_DEFAULT
+        return str(preferences[3])
+
+    def completion_mode_status(self) -> tuple[str, str, str]:
+        """Return ``(mode in effect, scope, Global mode)`` for the status-bar chip.
+
+        The scope is ``"project"`` only when the open project sets a mode that
+        differs from the Global one, matching the Settings dialog's "Use Global".
+        """
+
+        bundle = self._load_bundle()
+        effective_mode = bundle.effective_editor.completion_mode
+        global_mode = bundle.global_editor.completion_mode
+        project_overrides = self._host.current_project_root() is not None and effective_mode != global_mode
+        return effective_mode, ("project" if project_overrides else "global"), global_mode
+
+    def completion_auto_trigger_period(self) -> bool:
+        """Return whether typing ``.`` opens completion (only in While typing mode)."""
+
+        return self.completion_mode() == constants.UI_INTELLIGENCE_COMPLETION_MODE_TYPING
 
     def load_diagnostics_preferences(self) -> tuple[Any, ...]:
         return self.load_main_window_settings().diagnostics_preferences
@@ -401,8 +419,8 @@ class MainWindowShellPreferencesRuntimeHost:
         ) = editor_preferences
 
     def apply_completion_preferences_tuple(self, completion_preferences: tuple[Any, ...]) -> None:
-        # auto_trigger_period stays on the settings tuple. Editors read it via
-        # ShellPreferencesRuntime.completion_auto_trigger_period.
+        # The flags encode the completion mode (off / manual / typing); the mode
+        # string itself is read through ShellPreferencesRuntime.completion_mode.
         enabled, auto_trigger, min_chars = completion_preferences[:3]
         self._window._completion_enabled = enabled
         self._window._completion_auto_trigger = auto_trigger

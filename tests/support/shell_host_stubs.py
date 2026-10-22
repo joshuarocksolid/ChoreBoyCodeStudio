@@ -67,6 +67,7 @@ class LintHostStub:
         self._diagnostics_enabled = True
         self._diagnostics_realtime = True
         self._loaded_project = None
+        # Widgets keyed by path; the stub uses each path as its buffer id.
         self._editor_widgets_by_path: dict[str, Any] = {}
         self._known_runtime_modules = None
         self._selected_linter = constants.LINTER_PROVIDER_DEFAULT
@@ -102,8 +103,20 @@ class LintHostStub:
     def editor_widgets_by_path(self) -> dict[str, Any]:
         return self._editor_widgets_by_path
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
-        return self._editor_tab_workflow.buffer_revision(file_path)
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return file_path if file_path in self._editor_widgets_by_path else None
+
+    def editor_path_for_buffer_id(self, buffer_id: str) -> str | None:
+        return buffer_id if buffer_id in self._editor_widgets_by_path else None
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> Any | None:
+        return self._editor_widgets_by_path.get(buffer_id)
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
+        return self._editor_tab_workflow.buffer_revision(buffer_id)
+
+    def lint_diagnostics_key(self, file_path: str) -> str:
+        return file_path
 
     def known_runtime_modules(self) -> frozenset[str] | None:
         return self._known_runtime_modules

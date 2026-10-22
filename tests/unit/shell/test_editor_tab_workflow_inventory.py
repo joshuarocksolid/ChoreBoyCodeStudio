@@ -11,10 +11,9 @@ import pytest
 
 from app.core.models import LoadedProject, ProjectMetadata
 from app.editors.editor_manager import EditorManager
-from app.shell.editor_tab_content_registry import EditorTabContentRegistry
 from app.shell.editor_tab_poll_workflow import EditorTabPollWorkflow
 from app.shell.editor_tab_workflow import EditorTabWorkflow
-from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
+from app.shell.tab_content_providers import TabContentProviderRegistry
 
 pytestmark = pytest.mark.unit
 
@@ -30,9 +29,7 @@ def _loaded_project(tmp_path: Path) -> LoadedProject:
 
 
 def _workflow(host: MagicMock) -> EditorTabWorkflow:
-    markdown_panes: dict[str, object] = {}
-    tab_content_registry = EditorTabContentRegistry(markdown_panes)  # type: ignore[arg-type]
-    host.tab_content_registry.return_value = tab_content_registry
+    host.tab_content_registry.return_value = TabContentProviderRegistry()
     editor_manager = cast(EditorManager, SimpleNamespace(stale_open_paths=lambda: []))
     return EditorTabWorkflow(
         host=host,
@@ -194,17 +191,6 @@ def test_scan_project_tree_signature_without_orchestrator_returns_empty(tmp_path
     assert signature == ()
 
 
-def test_markdown_registry_identity_is_stable() -> None:
-    markdown_panes: dict[str, object] = {}
-    registry = EditorTabContentRegistry(markdown_panes)  # type: ignore[arg-type]
-
-    first = registry.markdown_registry()
-    second = registry.markdown_registry()
-
-    assert isinstance(first, MarkdownTabRegistry)
-    assert first is second
-
-
 def test_poll_prompts_every_stale_path_active_first() -> None:
     handled: list[str] = []
     host = MagicMock()
@@ -226,3 +212,27 @@ def test_poll_prompts_every_stale_path_active_first() -> None:
     poll.poll_external_file_changes()
 
     assert handled == ["/a.py", "/b.py"]
+
+
+def test_poll_prompts_for_missing_open_paths() -> None:
+    handled: list[str] = []
+    host = MagicMock()
+    host.loaded_project.return_value = None
+    editor_manager = SimpleNamespace(
+        stale_open_paths=lambda: [],
+        missing_open_paths=lambda: ["/gone.py"],
+        active_tab=lambda: None,
+    )
+    poll = EditorTabPollWorkflow(
+        host=host,
+        editor_manager=cast(EditorManager, editor_manager),
+        editor_sync_workflow=SimpleNamespace(),
+        external_file_change_workflow=SimpleNamespace(
+            check_and_handle=lambda path: handled.append(path)
+        ),
+        refresh_save_action_states=lambda: None,
+    )
+
+    poll.poll_external_file_changes()
+
+    assert handled == ["/gone.py"]

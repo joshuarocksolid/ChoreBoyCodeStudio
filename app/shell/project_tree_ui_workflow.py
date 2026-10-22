@@ -13,10 +13,8 @@ from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QStackedWidge
 from app.core.errors import ProjectManifestValidationError
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_rendering import is_markdown_path
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
-from app.features.markdown.markdown_tab_registry import release_editor_widget
 from app.project.file_operation_models import ImportUpdatePolicy
+from app.shell.tab_content_providers import TabMatchContext
 from app.project.project_manifest import set_project_default_entry
 from app.shell.project_rescan_workflow import RefreshTier
 from app.shell.tree_item_roles import TREE_ROLE_IS_DIRECTORY
@@ -94,7 +92,7 @@ class ProjectTreeUiWorkflowHost(Protocol):
     def editor_tabs_widget(self) -> QTabWidget | None:
         ...
 
-    def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
+    def problems_controller(self) -> Any:
         ...
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
@@ -368,40 +366,53 @@ class ProjectTreeUiWorkflow:
         reveal_target = target if target.is_dir() else target.parent
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(reveal_target)))
 
-    def release_editor_widget(self, widget: CodeEditorWidget) -> None:
-        registry = self._host.tab_content_registry().markdown_registry()
-        release_editor_widget(
-            widget,
-            registry=registry,
-            is_debug_execution_editor=lambda candidate: self._host.debug_execution_editor() is candidate,
-            clear_debug_execution_indicator=self._host.clear_debug_execution_indicator,
-        )
-
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._host.project_tree_action_coordinator().close_deleted_editor_paths(deleted_path)
 
     def apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
         self._host.project_tree_action_coordinator().apply_path_move_updates(source_path, destination_path)
 
+    def migrate_moved_buffer_state(self, old_path: str, new_path: str) -> None:
+        self._host.problems_controller().retarget_buffer_diagnostics(new_path)
+        self._host.local_history_workflow().migrate_draft_for_move(old_path, new_path)
+
     def update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
+
+    def rekey_tab_content(self, old_path: str, new_path: str) -> None:
+        """Move a bound surface with a renamed path, or release it when no provider owns the new path."""
         normalized_path = str(Path(new_path).expanduser().resolve())
-
-        def on_unwrap(_markdown_pane: MarkdownEditorPane, source_editor: CodeEditorWidget) -> None:
-            self._host.editor_tabs_coordinator().replace_tab_content_widget(normalized_path, source_editor)
-
-        self._host.tab_content_registry().markdown_registry().rekey_for_widget(
-            widget,
+        registry = self._host.tab_content_registry()
+        surface = registry.surface_for_path(old_path)
+        history = getattr(self._host, "local_history_workflow", None)
+        if surface is None:
+            if history is not None:
+                history().rekey_content_source(old_path, normalized_path)
+            return
+        loaded_project = self._host.loaded_project()
+        project_root = None if loaded_project is None else loaded_project.project_root
+        provider = registry.provider_for(
             normalized_path,
-            is_markdown_path=is_markdown_path,
-            on_unwrap=on_unwrap,
+            TabMatchContext(project_root=project_root, forced_text=False),
         )
+        new_provider_id = None if provider is None else provider.provider_id
+        if provider is None or new_provider_id != registry.provider_id_for(old_path):
+            source_editor = surface.source_editor()
+            if source_editor is not None:
+                self._host.editor_tabs_coordinator().replace_tab_content_widget(normalized_path, source_editor)
+            registry.unbind(old_path)
+            surface.release()
+        else:
+            surface.file_path_changed(normalized_path)
+            registry.rekey(old_path, normalized_path)
+        if history is not None:
+            history().rekey_content_source(old_path, normalized_path)
 
     def update_tab_path_and_name(self, tab_index: int, new_path: str) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        editor_tabs_widget.setTabToolTip(tab_index, new_path)
+        del tab_index  # the presentation refresh updates the tab in every group
         self._host.refresh_tab_presentation(new_path)
 
     def maybe_rewrite_imports_for_move(self, source_path: str, destination_path: str) -> None:
@@ -608,11 +619,11 @@ class MainWindowProjectTreeUiHost:
     def editor_tabs_widget(self) -> QTabWidget | None:
         return self._window._editor_tabs_widget
 
-    def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
-        return self._window._editor_widgets_by_path
+    def problems_controller(self) -> Any:
+        return self._window._problems_controller
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
-        return self._window._tab_content_registry.markdown_panes_by_path
+        return self._window._markdown_panes_by_path
 
     def tab_content_registry(self) -> Any:
         return self._window._tab_content_registry

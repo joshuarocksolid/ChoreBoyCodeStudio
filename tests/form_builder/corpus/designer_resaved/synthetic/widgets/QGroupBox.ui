@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>GroupBoxHost</class>
+ <widget class="QGroupBox" name="GroupBoxHost">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>QGroupBox</string>
+  </property>
+  <property name="toolTip">
+   <string>QGroupBox host</string>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

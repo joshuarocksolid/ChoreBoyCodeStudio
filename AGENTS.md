@@ -220,16 +220,18 @@ The shipped product has one supported native bundle contract:
 Any product artifact must use that `cp39` contract. Do not package or ship a
 `cp311` vendor tree.
 
-`package.py` enforces the contract at staging time and self-heals the
-`tree_sitter` core binding: it downloads the cp39 manylinux wheel via
-`pip download --python-version=3.9 --platform=manylinux_2_17_x86_64`, caches it
-under `<artifacts>/vendor_cp39_cache/`, and overlays
-`_binding.cpython-39-x86_64-linux-gnu.so` onto the staged payload. This means
-the local `vendor/tree_sitter/` may legitimately hold a cp311 binding for
-Cloud-dev use without breaking `python package.py`. Grammar wheels
-(`tree_sitter_*`) are `abi3` across Python versions, not across OS or CPU.
-`validate_choreboy_tree_sitter_bundle` requires each `_binding*.so` to be a
-little-endian ELF64 x86-64 binary. A Darwin `abi3` file will fail the build.
+`package.py` enforces the contract at staging time. It downloads every pin in
+`TREE_SITTER_WHEEL_PINS` (`app/packaging/tree_sitter_cp39.py`) with
+`pip download --python-version=3.9 --platform=manylinux_2_17_x86_64
+--implementation=cp`. The core pin also passes `--abi=cp39`. Wheels are
+cached under `<artifacts>/vendor_cp39_cache/` and overlaid onto the staged
+payload. A Mac `vendor_py39` tree can hold Darwin grammar binaries. Staging
+replaces them before `validate_choreboy_tree_sitter_bundle` checks that each
+shipped `_binding*.so` is a little-endian ELF64 x86-64 file. An `abi3` grammar wheel keeps the same Python tag across 3.9 and newer.
+The binary inside it is still built for one OS and CPU.
+`tree_sitter_sql` is removed at staging when its language ABI is outside the
+range the pinned core accepts. Any other grammar outside that range fails
+the build.
 
 For local Cursor Cloud development only, populate the Python 3.11 bundle:
 
@@ -248,21 +250,9 @@ Legacy `ChoreBoyCodeStudio_artifacts/vendor/` trees can be migrated once with
 symlinks `repo/vendor` to `vendor_py39` or `vendor_py311` based on the active
 AppRun SOABI (override with `CBCS_VENDOR_PROFILE=py39|py311`).
 
-Manual Cloud-dev install (equivalent to `setup_vendor_py311.sh`):
-
-```bash
-mkdir -p vendor
-pip3 install pyflakes==3.4.0 tree-sitter==0.23.2 \
- tree-sitter-python==0.23.6 tree-sitter-json==0.24.8 \
- tree-sitter-html==0.23.2 tree-sitter-xml==0.7.0 \
- tree-sitter-css==0.23.2 tree-sitter-bash==0.23.3 \
- tree-sitter-markdown==0.3.2 tree-sitter-yaml==0.7.0 \
- tree-sitter-toml==0.7.0 tree-sitter-javascript==0.23.1 \
- jedi parso "black==24.10.0" isort tomli rope \
- pytest==8.3.4 pluggy iniconfig exceptiongroup \
- --target=vendor/ --python-version=3.11 --only-binary=:all: \
- --platform=manylinux_2_17_x86_64
-```
+Manual Cloud-dev install is `./scripts/setup_vendor_py311.sh`. That script
+installs `TREE_SITTER_WHEEL_PINS` plus the Python tooling packages. Do not
+copy tree-sitter versions into a second pip command.
 
 **Important:** Black must be pinned to `24.10.0`. Black 25+ removed `black.Mode` and `black.NothingChanged` which the codebase depends on. The `jedi`, `parso`, `black`, `isort`, `tomli`, and `rope` packages are required by the intelligence and python_tools subsystems. Without them, related tests fail and editor features (formatting, code intelligence, refactoring) are unavailable. The `pytest` (+ `pluggy`, `iniconfig`, `exceptiongroup`, `pytest-timeout`) packages are bundled so the in-app Test Explorer and the global 30 s per-test timeout in `pyproject.toml` work on real ChoreBoy without extra installs.
 

@@ -37,6 +37,8 @@ from app.shell.settings_apply_workflow import SettingsApplyWorkflow, capture_set
 from app.shell.shell_preferences import build_shell_preferences_bundle
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import (
+    SETTINGS_SCOPE_GLOBAL,
+    SETTINGS_SCOPE_PROJECT,
     merge_editor_settings_snapshot_for_scope,
     merge_last_project_path,
     parse_editor_settings_snapshot,
@@ -452,6 +454,13 @@ class FileProjectCommandsWorkflow:
         return None
 
     def handle_open_settings_action(self) -> None:
+        self._open_settings_dialog()
+
+    def handle_open_completion_setting(self) -> None:
+        """Status-bar completion chip: open Settings at the code completion control."""
+        self._open_settings_dialog(focus_completion_mode=True)
+
+    def _open_settings_dialog(self, *, focus_completion_mode: bool = False) -> None:
         settings_service = self._host.settings_service()
         global_settings_payload = settings_service.load_global()
         global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
@@ -482,7 +491,16 @@ class FileProjectCommandsWorkflow:
             python_tooling_runtime_details=python_tooling_copy.runtime_details,
             python_tooling_config_text=python_tooling_copy.config_text,
             python_tooling_config_details=python_tooling_copy.config_details,
+            initial_scope=(
+                SETTINGS_SCOPE_PROJECT
+                if focus_completion_mode
+                and project_root is not None
+                and effective_snapshot.completion_mode != global_snapshot.completion_mode
+                else SETTINGS_SCOPE_GLOBAL
+            ),
         )
+        if focus_completion_mode:
+            dialog.reveal_completion_mode_control()
         if exec_qt(dialog) != QDialog.Accepted:
             return
 

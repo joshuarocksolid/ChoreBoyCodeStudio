@@ -2,8 +2,21 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Optional, Protocol
+
 from app.intelligence.completion_models import CompletionItem, CompletionResolveRequest
+from app.intelligence.runtime_members import (
+    RUNTIME_INTROSPECTION_PROVIDER,
+    RuntimeMemberDetail,
+    RuntimeMemberRef,
+)
 from app.intelligence.semantic_facade import SemanticFacade
+
+
+class RuntimeMemberResolver(Protocol):
+    def resolve_member(self, ref: RuntimeMemberRef) -> Optional[RuntimeMemberDetail]:
+        ...
 
 
 class CompletionResolver:
@@ -11,7 +24,11 @@ class CompletionResolver:
 
     def __init__(self, *, semantic_facade: SemanticFacade) -> None:
         self._semantic_facade = semantic_facade
+        self._runtime_members: Optional[RuntimeMemberResolver] = None
         self._resolved_cache: dict[str, CompletionItem] = {}
+
+    def bind_runtime_members(self, runtime_members: Optional[RuntimeMemberResolver]) -> None:
+        self._runtime_members = runtime_members
 
     def resolve(self, request: CompletionResolveRequest) -> CompletionItem:
         """Return ``request.item`` enriched with requested lazy metadata."""
@@ -31,10 +48,27 @@ class CompletionResolver:
                 cursor_position=request.cursor_position,
                 item=item,
             )
+        elif item.resolve_provider == RUNTIME_INTROSPECTION_PROVIDER:
+            detail = self._resolve_runtime_member(item)
+            if detail is None:
+                return item
+            resolved = replace(
+                item,
+                signature=detail.signature,
+                documentation=detail.documentation,
+                detail=detail.owner or item.detail,
+                resolvable_fields=(),
+            )
         else:
             resolved = item
         self._resolved_cache[cache_key] = resolved
         return resolved
+
+    def _resolve_runtime_member(self, item: CompletionItem) -> Optional[RuntimeMemberDetail]:
+        ref = RuntimeMemberRef.from_item(item)
+        if ref is None or self._runtime_members is None:
+            return None
+        return self._runtime_members.resolve_member(ref)
 
 
 def _cache_key(request: CompletionResolveRequest) -> str:

@@ -8,7 +8,7 @@ ElementTree tree), refuses DOCTYPE and entity declarations, and builds a
 
 from __future__ import annotations
 
-import contextvars
+import gc
 import re
 import threading
 from dataclasses import dataclass
@@ -39,8 +39,10 @@ from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, Proper
 from app.features.form_builder.engine.ui4.values import (
     VALUE_CLASSES,
     BoolValue,
+    BrushValue,
     CStringValue,
     CharValue,
+    ColorRole,
     ColorValue,
     CursorShapeValue,
     CursorValue,
@@ -50,14 +52,20 @@ from app.features.form_builder.engine.ui4.values import (
     EnumValue,
     FloatValue,
     FontValue,
+    GradientStop,
+    GradientValue,
+    ICON_STATES,
+    IconSetValue,
     LocaleValue,
     LongLongValue,
     NumberValue,
     OpaqueValue,
+    PaletteValue,
     PointFValue,
     PointValue,
     RectFValue,
     RectValue,
+    ResourcePixmap,
     SetValue,
     SizeFValue,
     SizePolicyValue,
@@ -83,7 +91,55 @@ _INT32 = (-2147483648, 2147483647)
 _UINT32 = (0, 4294967295)
 _INT64 = (-9223372036854775808, 9223372036854775807)
 _UINT64 = (0, 18446744073709551615)
-_DEFERRED_VALUES = frozenset({"palette", "brush", "iconset", "pixmap", "gradient"})
+# QUiLoader applies each bare <color> to QPalette.ColorRole in value order,
+# including NoRole. Checked against PySide 6.8. NColorRoles is not paintable.
+_LEGACY_COLOR_ROLES = (
+    "WindowText",
+    "Button",
+    "Light",
+    "Midlight",
+    "Dark",
+    "Mid",
+    "Text",
+    "BrightText",
+    "ButtonText",
+    "Base",
+    "Window",
+    "Shadow",
+    "Highlight",
+    "HighlightedText",
+    "Link",
+    "LinkVisited",
+    "AlternateBase",
+    "NoRole",
+    "ToolTipBase",
+    "ToolTipText",
+    "PlaceholderText",
+    "Accent",
+)
+_PALETTE_GROUPS = ("active", "inactive", "disabled")
+# Qt 6.8 writes cursorShape and gradientstop. The schema spellings still occur
+# in older files. Qt reads both casings.
+_CURSOR_SHAPE_TAGS = frozenset({"cursorshape", "cursorShape"})
+# Qt 6.8 writes longLong, UInt and uLongLong. Older files and the schema use
+# the lowercase names. Qt reads both casings.
+_INT_TAG_ALIASES = {"longLong": "longlong", "UInt": "uint", "uLongLong": "ulonglong"}
+_GRADIENT_STOP_TAGS = frozenset({"gradientStop", "gradientstop"})
+_GRADIENT_TEXT_ATTRS = frozenset({"type", "spread", "coordinatemode"})
+_GRADIENT_REAL_ATTRS = frozenset(
+    {
+        "startx",
+        "starty",
+        "endx",
+        "endy",
+        "centralx",
+        "centraly",
+        "focalx",
+        "focaly",
+        "radius",
+        "angle",
+    }
+)
 # QSizePolicy::Policy values, not the old SizeType index. 5 is Preferred.
 _POLICY_BY_INT = {
     "0": "Fixed",
@@ -112,6 +168,10 @@ _NO_PROPS: Tuple[PropertyEntry, ...] = ()
 _NO_SLOTS: Tuple[Tuple[str, Tuple[Node, ...]], ...] = ()
 _NO_NOTES: List["_Note"] = []
 _POOL_CAP = 20000
+# One read shares identical frozen values and property entries. The cache is
+# thread-local so overlapping reads do not see each other's objects, and it
+# is cleared when the outermost read returns so it does not pin them.
+_INTERN = threading.local()
 _WIDGET_CHILD_GROUP = {
     "row": "rows",
     "column": "columns",
@@ -355,8 +415,80 @@ class _ReadArena:
 
 _ARENA_LOCK = threading.Lock()
 _ARENA_FREE: List[_ReadArena] = []
+# A realistic form allocates thousands of tracked tuples. Left alone, that
+# promotes a full gen2 scan into the timed read and blows the 25 ms budget.
+# Collections are paused for the outermost read and one generation is drained
+# after the tree is built, so the scan stays in gen0 or gen1.
+_GC_LOCK = threading.Lock()
+_GC_DEPTH = 0
+_GC_WAS_ON = True
 #: Idle arenas kept for reuse. More concurrent reads than this get fresh arenas.
 _ARENA_FREE_CAP = 4
+
+
+def _pause_collections() -> None:
+    global _GC_DEPTH, _GC_WAS_ON
+    with _GC_LOCK:
+        if _GC_DEPTH == 0:
+            _GC_WAS_ON = gc.isenabled()
+            if _GC_WAS_ON:
+                gc.disable()
+        _GC_DEPTH += 1
+
+
+def _resume_collections() -> None:
+    global _GC_DEPTH
+    with _GC_LOCK:
+        _GC_DEPTH -= 1
+        if _GC_DEPTH > 0 or not _GC_WAS_ON:
+            return
+        gc.enable()
+        counts = gc.get_count()
+        thresholds = gc.get_threshold()
+        if counts[2] >= thresholds[2]:
+            generation = 2
+        elif counts[1] >= thresholds[1]:
+            generation = 1
+        elif counts[0] >= thresholds[0]:
+            generation = 0
+        else:
+            generation = -1
+    if generation >= 0:
+        gc.collect(generation)
+
+
+def _intern_push() -> None:
+    state = getattr(_INTERN, "state", None)
+    if state is None:
+        state = [0, {}]
+        _INTERN.state = state
+    state[0] += 1
+
+
+def _intern_pop() -> None:
+    state = _INTERN.state
+    state[0] -= 1
+    if state[0] == 0:
+        state[1].clear()
+
+
+_ShareT = TypeVar("_ShareT")
+
+
+def _share(value: _ShareT) -> _ShareT:
+    """Return the first equal frozen value built during this read."""
+    state = getattr(_INTERN, "state", None)
+    if state is None or not state[0]:
+        return value
+    cache = state[1]
+    try:
+        found = cache.get(value)
+    except TypeError:
+        return value
+    if found is not None:
+        return found
+    cache[value] = value
+    return value
 
 
 def _acquire_arena() -> _ReadArena:
@@ -404,11 +536,8 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
     if len(encoded) > MAX_INPUT_BYTES:
         raise UiReadError("FB008", "This form is too large to open in the form builder.", 0, 0)
     arena = _acquire_arena()
-    # Equal values and property entries inside one read share an object.
-    # A 300-widget form otherwise allocates thousands of identical tracked
-    # objects, and the next full collection scans the whole process heap
-    # inside the section 12 read budget.
-    share_token = _SHARE.set({})
+    _intern_push()
+    _pause_collections()
     try:
         root = _parse_tree(arena, text)
         built = _lower_ui(arena, root)
@@ -438,8 +567,9 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
             0,
         ) from exc
     finally:
-        _SHARE.reset(share_token)
+        _intern_pop()
         _release_arena(arena)
+        _resume_collections()
     return ReadResult(document=document, diagnostics=tuple(diagnostics), line_map=line_map)
 
 
@@ -474,19 +604,6 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
     frame_pool = arena.frame_pool
     xnode_pool = arena.xnode_pool
     xnode_live = arena.xnode_live
-    # One string object per distinct token in this read. A 300-widget form
-    # repeats class names, property names, and enum text hundreds of times.
-    # Sharing them keeps collection of the discarded document under the
-    # section 12 read budget. The table dies with this parse. The document
-    # holds the surviving references.
-    shared: Dict[str, str] = {}
-
-    def _share(text: str) -> str:
-        found = shared.get(text)
-        if found is not None:
-            return found
-        shared[text] = text
-        return text
     cap = _POOL_CAP
 
     def take_list() -> list:
@@ -514,18 +631,15 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
         if count == 0:
             pairs: Tuple[Tuple[str, str], ...] = _NO_ATTRS
         elif count == 2:
-            pairs = ((_share(attrs[0]), _share(attrs[1])),)
+            pairs = ((attrs[0], attrs[1]),)
         elif count == 4:
-            pairs = (
-                (_share(attrs[0]), _share(attrs[1])),
-                (_share(attrs[2]), _share(attrs[3])),
-            )
+            pairs = ((attrs[0], attrs[1]), (attrs[2], attrs[3]))
         else:
             built_pairs = []
             for index in range(0, count, 2):
-                built_pairs.append((_share(attrs[index]), _share(attrs[index + 1])))
+                built_pairs.append((attrs[index], attrs[index + 1]))
             pairs = tuple(built_pairs)
-        stack.append(take_frame(_share(name), pairs, parser.CurrentLineNumber))
+        stack.append(take_frame(name, pairs, parser.CurrentLineNumber))
 
     def end(name: str) -> None:
         del name
@@ -554,7 +668,7 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
 
     def data(value: str) -> None:
         if stack:
-            stack[-1][3].append(_share(value))
+            stack[-1][3].append(value)
 
     def comment(value: str) -> None:
         if stack:
@@ -1093,9 +1207,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
         if len(attrs) == 1 and attrs[0][0] == "name":
             parsed = _parse_value(children[0])
             if parsed is not None:
-                return _share(
-                    PropertyEntry(kind=kind, name=attrs[0][1], value=parsed)
-                ), _NO_NOTES
+                return _share(PropertyEntry(kind=kind, name=attrs[0][1], value=_share(parsed))), _NO_NOTES
         name = ""
         stdset = None
         extra: List[Tuple[str, str]] = []
@@ -1109,15 +1221,13 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
         parsed = _parse_value(children[0])
         if parsed is not None:
             return (
-                _share(
-                    PropertyEntry(
-                        kind=kind,
-                        name=name,
-                        value=parsed,
-                        stdset=stdset,
-                        extra_attrs=tuple(extra) if extra else _NO_ATTRS,
-                    )
-                ),
+                _share(PropertyEntry(
+                    kind=kind,
+                    name=name,
+                    value=_share(parsed),
+                    stdset=stdset,
+                    extra_attrs=tuple(extra) if extra else _NO_ATTRS,
+                )),
                 _NO_NOTES,
             )
     attrs = list(node.attrs)
@@ -1143,18 +1253,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
             notes.append(_Note("FB005", "Kept this <%s> value as written." % elements[0].tag, elements[0].line, name or None))
         else:
             value = parsed
-    return (
-        _share(
-            PropertyEntry(
-                kind=kind,
-                name=name,
-                value=value,
-                stdset=stdset,
-                extra_attrs=tuple(extra),
-            )
-        ),
-        notes,
-    )
+    return _share(PropertyEntry(kind=kind, name=name, value=_share(value), stdset=stdset, extra_attrs=tuple(extra))), notes
 
 
 def _hold_gap(
@@ -1234,37 +1333,8 @@ def _realize_entries(
         built.attributes = typed
 
 
-_S = TypeVar("_S")
-_SHARE: "contextvars.ContextVar[Dict[object, object]]" = contextvars.ContextVar(
-    "cbcs_form_builder_share"
-)
-
-
-def _share(value: _S) -> _S:
-    """Reuse an equal object already built during this read."""
-    try:
-        table = _SHARE.get()
-    except LookupError:
-        return value
-    try:
-        found = table.get(value)
-    except TypeError:
-        return value
-    if found is None:
-        table[value] = value
-        return value
-    return found  # type: ignore[return-value]
-
-
 def _parse_value(node: _XNode) -> Optional[Value]:
-    parsed = _parse_value_inner(node)
-    if parsed is None:
-        return None
-    return _share(parsed)
-
-
-def _parse_value_inner(node: _XNode) -> Optional[Value]:
-    tag = node.tag
+    tag = _INT_TAG_ALIASES.get(node.tag, node.tag)
     if tag == "string":
         return _parse_string(node)
     if tag == "font":
@@ -1275,7 +1345,15 @@ def _parse_value_inner(node: _XNode) -> Optional[Value]:
         return _parse_sizepolicy(node)
     if tag == "number":
         return _parse_counted(node, NumberValue, _INT32)
-    if tag in _DEFERRED_VALUES or tag not in VALUE_CLASSES:
+    if tag == "pixmap":
+        return _parse_pixmap_element(node)
+    if tag == "iconset":
+        return _parse_iconset(node)
+    if tag == "brush":
+        return _parse_brush(node)
+    if tag == "palette":
+        return _parse_palette(node)
+    if tag not in VALUE_CLASSES and tag not in _CURSOR_SHAPE_TAGS:
         return None
     if tag == "bool":
         text = _text_leaf(node)
@@ -1298,7 +1376,7 @@ def _parse_value_inner(node: _XNode) -> Optional[Value]:
         if node.attrs or not _is_plain(node):
             return None
         return CStringValue(_exact_text(node))
-    if tag in ("enum", "set", "cursorshape"):
+    if tag in ("enum", "set") or tag in _CURSOR_SHAPE_TAGS:
         if node.attrs or not _is_plain(node):
             return None
         text = _exact_text(node)
@@ -1397,6 +1475,15 @@ def _parse_stringlist(node: _XNode) -> Optional[StringListValue]:
     return StringListValue(tuple(items), holder.notr, holder.comment, holder.extracomment, holder.id)
 
 
+def _policy_token(text: str) -> Optional[str]:
+    mapped = _POLICY_BY_INT.get(text)
+    if mapped is not None:
+        return mapped
+    if text.isdigit() or not text:
+        return None
+    return text
+
+
 def _parse_sizepolicy(node: _XNode) -> Optional[SizePolicyValue]:
     attrs = node.attrs
     children = node.children
@@ -1435,10 +1522,15 @@ def _parse_sizepolicy(node: _XNode) -> Optional[SizePolicyValue]:
         if leaf is None:
             return None
         text = leaf.strip()
-        if child.tag == "hsizetype" and horizontal is None:
-            horizontal = _POLICY_BY_INT.get(text, text if not text.isdigit() else None)
-        elif child.tag == "vsizetype" and vertical is None:
-            vertical = _POLICY_BY_INT.get(text, text if not text.isdigit() else None)
+        if child.tag in ("hsizetype", "vsizetype"):
+            name = _policy_token(text)
+            current = horizontal if child.tag == "hsizetype" else vertical
+            if name is None or (current is not None and current != name):
+                return None
+            if child.tag == "hsizetype":
+                horizontal = name
+            else:
+                vertical = name
         elif child.tag == "horstretch":
             number = _parse_int(text, _INT32)
             if number is None:
@@ -1528,6 +1620,272 @@ def _parse_color(node: _XNode) -> Optional[ColorValue]:
         if alpha is None:
             return None
     return ColorValue(found["red"], found["green"], found["blue"], alpha)
+
+
+def _parse_pixmap_element(node: _XNode) -> Optional[ResourcePixmap]:
+    if not _is_plain(node) or _has_comment(node):
+        return None
+    attrs = _attr_map(node, frozenset({"resource", "alias"}))
+    if attrs is None:
+        return None
+    return ResourcePixmap(path=_exact_text(node), resource=attrs.get("resource"), alias=attrs.get("alias"))
+
+
+def _later_icon_state(children: Sequence[object], start: int) -> bool:
+    """True when another icon state element follows, ignoring whitespace."""
+    index = start
+    while index < len(children):
+        child = children[index]
+        if isinstance(child, str):
+            if child.strip():
+                return False
+            index += 1
+            continue
+        return isinstance(child, _XNode) and child.tag in ICON_STATES
+    return False
+
+
+def _parse_iconset(node: _XNode) -> Optional[IconSetValue]:
+    attrs = _attr_map(node, frozenset({"theme", "resource"}))
+    if attrs is None or _has_comment(node):
+        return None
+    states: Dict[str, ResourcePixmap] = {}
+    leading: List[str] = []
+    trailing: List[str] = []
+    saw_state = False
+    children = list(node.children)
+    index = 0
+    while index < len(children):
+        child = children[index]
+        if isinstance(child, str):
+            if not saw_state:
+                leading.append(child)
+                index += 1
+                continue
+            # A trailer that matches the state just read is the old per-state
+            # form. Text after the last state is Designer's single compat path.
+            if _later_icon_state(children, index + 1):
+                last = next(reversed(states.values()))
+                if child.strip() and child.strip() != last.path:
+                    return None
+                index += 1
+                continue
+            trailing.append(child)
+            index += 1
+            continue
+        if trailing and any(part.strip() for part in trailing):
+            return None
+        if not isinstance(child, _XNode) or child.tag not in ICON_STATES or child.tag in states:
+            return None
+        pixmap = _parse_pixmap_element(child)
+        if pixmap is None:
+            return None
+        states[child.tag] = pixmap
+        saw_state = True
+        trailing.clear()
+        index += 1
+    if saw_state and any(part.strip() for part in leading):
+        return None
+    text = None
+    if saw_state:
+        compat = "".join(trailing).strip()
+        if compat:
+            text = compat
+    else:
+        exact = "".join(leading)
+        if exact.strip():
+            text = exact
+    return IconSetValue(
+        theme=attrs.get("theme"),
+        resource=attrs.get("resource"),
+        text=text,
+        normaloff=states.get("normaloff"),
+        normalon=states.get("normalon"),
+        disabledoff=states.get("disabledoff"),
+        disabledon=states.get("disabledon"),
+        activeoff=states.get("activeoff"),
+        activeon=states.get("activeon"),
+        selectedoff=states.get("selectedoff"),
+        selectedon=states.get("selectedon"),
+    )
+
+
+def _parse_brush(node: _XNode) -> Optional[BrushValue]:
+    if _has_noise(node):
+        return None
+    attrs = _attr_map(node, frozenset({"brushstyle"}))
+    if attrs is None:
+        return None
+    color: Optional[ColorValue] = None
+    texture: Optional[ResourcePixmap] = None
+    texture_name: Optional[str] = None
+    gradient: Optional[GradientValue] = None
+    for child in _elements(node):
+        if color is not None or texture is not None or gradient is not None:
+            return None
+        if child.tag == "color":
+            color = _parse_color(child)
+            if color is None:
+                return None
+        elif child.tag == "texture":
+            parsed = _parse_texture(child)
+            if parsed is None:
+                return None
+            texture, texture_name = parsed
+        elif child.tag == "gradient":
+            gradient = _parse_gradient(child)
+            if gradient is None:
+                return None
+        else:
+            return None
+    return BrushValue(
+        brushstyle=attrs.get("brushstyle"),
+        color=color,
+        texture=texture,
+        gradient=gradient,
+        texture_name=texture_name,
+    )
+
+
+def _parse_texture(node: _XNode) -> Optional[Tuple[ResourcePixmap, Optional[str]]]:
+    if _has_noise(node):
+        return None
+    attrs = _attr_map(node, frozenset({"name"}))
+    if attrs is None:
+        return None
+    elements = _elements(node)
+    if len(elements) != 1 or elements[0].tag != "pixmap":
+        return None
+    pixmap = _parse_pixmap_element(elements[0])
+    if pixmap is None:
+        return None
+    return pixmap, attrs.get("name")
+
+
+def _parse_gradient(node: _XNode) -> Optional[GradientValue]:
+    if _has_noise(node):
+        return None
+    attrs = _attr_map(node, _GRADIENT_TEXT_ATTRS | _GRADIENT_REAL_ATTRS)
+    if attrs is None:
+        return None
+    text_attrs: Dict[str, str] = {}
+    real_attrs: Dict[str, float] = {}
+    for key, value in attrs.items():
+        if key in _GRADIENT_TEXT_ATTRS:
+            text_attrs[key] = value
+            continue
+        number = _lossless_real(value)
+        if number is None:
+            return None
+        real_attrs[key] = number
+    stops: List[GradientStop] = []
+    for child in _elements(node):
+        if child.tag not in _GRADIENT_STOP_TAGS:
+            return None
+        stop = _parse_gradient_stop(child)
+        if stop is None:
+            return None
+        stops.append(stop)
+    return GradientValue(
+        type=text_attrs.get("type"),
+        spread=text_attrs.get("spread"),
+        coordinatemode=text_attrs.get("coordinatemode"),
+        startx=real_attrs.get("startx"),
+        starty=real_attrs.get("starty"),
+        endx=real_attrs.get("endx"),
+        endy=real_attrs.get("endy"),
+        centralx=real_attrs.get("centralx"),
+        centraly=real_attrs.get("centraly"),
+        focalx=real_attrs.get("focalx"),
+        focaly=real_attrs.get("focaly"),
+        radius=real_attrs.get("radius"),
+        angle=real_attrs.get("angle"),
+        stops=tuple(stops),
+    )
+
+
+def _parse_gradient_stop(node: _XNode) -> Optional[GradientStop]:
+    if _has_noise(node):
+        return None
+    attrs = _attr_map(node, frozenset({"position"}))
+    if attrs is None or "position" not in attrs:
+        return None
+    position = _lossless_real(attrs["position"])
+    if position is None:
+        return None
+    elements = _elements(node)
+    if len(elements) != 1 or elements[0].tag != "color":
+        return None
+    color = _parse_color(elements[0])
+    if color is None:
+        return None
+    return GradientStop(position, color)
+
+
+def _parse_palette(node: _XNode) -> Optional[PaletteValue]:
+    if _has_noise(node) or node.attrs:
+        return None
+    found: Dict[str, Tuple[ColorRole, ...]] = {}
+    for child in _elements(node):
+        if child.tag not in _PALETTE_GROUPS or child.tag in found:
+            return None
+        roles = _parse_color_group(child)
+        if roles is None:
+            return None
+        found[child.tag] = roles
+    if set(found) != set(_PALETTE_GROUPS):
+        return None
+    return PaletteValue(active=found["active"], inactive=found["inactive"], disabled=found["disabled"])
+
+
+def _parse_color_group(node: _XNode) -> Optional[Tuple[ColorRole, ...]]:
+    if _has_noise(node) or node.attrs:
+        return None
+    # Qt applies every legacy <color> before any <colorrole>, and ignores
+    # alpha on those legacy colors, with or without the attribute. A colorrole
+    # brush with no alpha attribute loads as alpha 0, so every legacy color is
+    # stored as 255: the opaque color Qt showed.
+    legacy: List[ColorRole] = []
+    explicit: List[ColorRole] = []
+    legacy_index = 0
+    for child in _elements(node):
+        if child.tag == "colorrole":
+            role = _parse_colorrole(child)
+            if role is None:
+                return None
+            explicit.append(role)
+            continue
+        if child.tag != "color":
+            return None
+        if legacy_index >= len(_LEGACY_COLOR_ROLES):
+            return None
+        color = _parse_color(child)
+        if color is None:
+            return None
+        color = ColorValue(color.red, color.green, color.blue, 255)
+        legacy.append(
+            ColorRole(
+                _LEGACY_COLOR_ROLES[legacy_index],
+                BrushValue(brushstyle="SolidPattern", color=color),
+            )
+        )
+        legacy_index += 1
+    return tuple(legacy + explicit)
+
+
+def _parse_colorrole(node: _XNode) -> Optional[ColorRole]:
+    if _has_noise(node):
+        return None
+    attrs = _attr_map(node, frozenset({"role"}))
+    if attrs is None or not attrs.get("role"):
+        return None
+    elements = _elements(node)
+    if len(elements) != 1 or elements[0].tag != "brush":
+        return None
+    brush = _parse_brush(elements[0])
+    if brush is None:
+        return None
+    return ColorRole(attrs["role"], brush)
 
 
 def _parse_font_fast(node: _XNode) -> object:

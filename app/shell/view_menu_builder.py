@@ -78,6 +78,46 @@ def build_view_menu(ctx: MenuBuildContext) -> object:
     view_menu.addSeparator()
 
     for action_id, label, shortcut, callback in [
+        (
+            "shell.action.view.splitEditorRight",
+            "Split Editor Right",
+            "Ctrl+\\",
+            callbacks.on_split_editor_right,
+        ),
+        (
+            "shell.action.view.closeEditorGroup",
+            "Close Editor Group",
+            "",
+            callbacks.on_close_editor_group,
+        ),
+        (
+            "shell.action.view.focusFirstEditorGroup",
+            "Focus First Editor Group",
+            "Ctrl+1",
+            callbacks.on_focus_first_editor_group,
+        ),
+        (
+            "shell.action.view.focusSecondEditorGroup",
+            "Focus Second Editor Group",
+            "Ctrl+2",
+            callbacks.on_focus_second_editor_group,
+        ),
+    ]:
+        register_menu_action(
+            qt_widgets=ctx.qt_widgets,
+            menu=view_menu,
+            action_lookup=ctx.actions,
+            action_id=action_id,
+            label=label,
+            shortcut=shortcut,
+            enabled=True,
+            callback=callback,
+            shortcut_overrides=ctx.shortcut_overrides,
+        )
+
+    view_menu.addSeparator()
+
+    for action_id, label, shortcut, callback in [
         ("shell.action.view.zoomIn", "Zoom In", "Ctrl+=", callbacks.on_zoom_in),
         ("shell.action.view.zoomOut", "Zoom Out", "Ctrl+-", callbacks.on_zoom_out),
         ("shell.action.view.zoomReset", "Reset Zoom", "Ctrl+0", callbacks.on_zoom_reset),

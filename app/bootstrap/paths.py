@@ -64,34 +64,37 @@ def resolve_app_root() -> Path:
 
 
 def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
-    """Return the global app state root. No filesystem copy. No hidden-path probe."""
+    """Return the local state root. Explicit argument or the product dest.
+
+    Logs, caches, history, plugins, crash reports, trash, and SQLite live
+    here. ``CBCS_STATE_ROOT`` and the shop pointer do not move this path.
+    No filesystem copy. No hidden-path probe.
+    """
     if state_root is not None:
         return normalize_state_root_identity(state_root)
-
-    env_root = _state_root_from_env()
-    if env_root is not None:
-        return env_root
-
-    shop_root = _state_root_from_pointer_file(DEFAULT_PRODUCT_STATE_LAYOUT.shop_pointer_path)
-    if shop_root is not None:
-        return shop_root
-
     return normalize_state_root_identity(DEFAULT_PRODUCT_STATE_LAYOUT.state_root)
+
+
+def resolve_settings_state_root(state_root: Optional[PathInput] = None) -> Path:
+    """Return the directory that holds the three settings JSON files."""
+    from app.bootstrap.state_roots import resolve_settings_root
+
+    return resolve_settings_root(state_root).path
 
 
 def global_settings_path(state_root: Optional[PathInput] = None) -> Path:
     """Return the global settings file path."""
-    return _global_state_child(constants.GLOBAL_SETTINGS_FILENAME, state_root)
+    return _settings_child(constants.GLOBAL_SETTINGS_FILENAME, state_root)
 
 
 def global_recent_projects_path(state_root: Optional[PathInput] = None) -> Path:
     """Return the global recent-projects file path."""
-    return _global_state_child(constants.GLOBAL_RECENT_PROJECTS_FILENAME, state_root)
+    return _settings_child(constants.GLOBAL_RECENT_PROJECTS_FILENAME, state_root)
 
 
 def global_python_console_history_path(state_root: Optional[PathInput] = None) -> Path:
     """Return persisted Python console history file path."""
-    return _global_state_child(constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME, state_root)
+    return _settings_child(constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME, state_root)
 
 
 def global_logs_dir(state_root: Optional[PathInput] = None) -> Path:
@@ -261,6 +264,10 @@ def _normalize_project_root(project_root: PathInput) -> Path:
 
 def _global_state_child(name: str, state_root: Optional[PathInput]) -> Path:
     return resolve_global_state_root(state_root) / name
+
+
+def _settings_child(name: str, state_root: Optional[PathInput]) -> Path:
+    return resolve_settings_state_root(state_root) / name
 
 
 def _state_root_from_env() -> Optional[Path]:

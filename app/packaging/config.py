@@ -127,11 +127,6 @@ def parse_project_package_config(
         icon_path = ""
     if not isinstance(icon_path, str):
         raise ValueError(_with_path("icon_path must be a string.", config_path))
-    skip_missing = payload.get("skip_missing_dependency_blockers", False)
-    if not isinstance(skip_missing, bool):
-        raise ValueError(
-            _with_path("skip_missing_dependency_blockers must be a boolean.", config_path)
-        )
     ask_install_location = payload.get("ask_install_location", False)
     if not isinstance(ask_install_location, bool):
         raise ValueError(_with_path("ask_install_location must be a boolean.", config_path))
@@ -144,7 +139,6 @@ def parse_project_package_config(
         description=description.strip(),
         entry_file=entry_file.strip(),
         icon_path=icon_path.strip(),
-        skip_missing_dependency_blockers=skip_missing,
         ask_install_location=ask_install_location,
     )
 

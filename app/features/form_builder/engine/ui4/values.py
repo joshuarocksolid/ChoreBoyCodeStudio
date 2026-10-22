@@ -187,9 +187,14 @@ class CursorValue:
 
 @dataclass(frozen=True)
 class CursorShapeValue:
-    """``<cursorshape>``: shape name such as ``ArrowCursor``."""
+    """``<cursorShape>``: shape name such as ``ArrowCursor``.
 
-    ELEMENT: ClassVar[str] = "cursorshape"
+    Qt 6.8 writes ``cursorShape``. The ui4 schema and older files use
+    ``cursorshape``. The reader accepts both. JSON kind ``cursorshape`` is
+    the same value.
+    """
+
+    ELEMENT: ClassVar[str] = "cursorShape"
     name: str
 
 
@@ -365,13 +370,18 @@ class ResourcePixmap:
 
 @dataclass(frozen=True)
 class BrushValue:
-    """``<brush brushstyle="..">`` with exactly one of color, texture, gradient."""
+    """``<brush brushstyle="..">`` with at most one of color, texture, gradient.
+
+    ``texture_name`` is the optional ``name`` attribute on the ``<texture>``
+    wrapper. It is absent when the attribute was not in the file.
+    """
 
     ELEMENT: ClassVar[str] = "brush"
     brushstyle: Optional[str] = None
     color: Optional[ColorValue] = None
     texture: Optional[ResourcePixmap] = None
     gradient: Optional[GradientValue] = None
+    texture_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -431,6 +441,19 @@ class IconSetValue:
     activeon: Optional[ResourcePixmap] = None
     selectedoff: Optional[ResourcePixmap] = None
     selectedon: Optional[ResourcePixmap] = None
+
+
+#: Child tags of ``<iconset>``, in the order the writer emits them.
+ICON_STATES: Tuple[str, ...] = (
+    "normaloff",
+    "normalon",
+    "disabledoff",
+    "disabledon",
+    "activeoff",
+    "activeon",
+    "selectedoff",
+    "selectedon",
+)
 
 
 @dataclass(frozen=True)
@@ -531,6 +554,8 @@ def value_from_json(data: object) -> Value:
     if kind == "opaque":
         element = data.get("element")
         return OpaqueValue(element=_element_from_json(element))
+    if kind == "cursorshape":
+        kind = CursorShapeValue.ELEMENT
     cls = VALUE_CLASSES.get(kind)
     if cls is None:
         raise ValueError("unknown value kind %r" % (kind,))

@@ -86,7 +86,7 @@ The application switches to the most relevant panel automatically — for exampl
 
 The status bar along the bottom is a compact dashboard. Reading left to right, it shows:
 
-- **Runtime readiness** — for example, "Runtime ready (8/8 checks)". Click it to open
+- **Runtime readiness** — for example, "Runtime ready (9/9 checks)". Click it to open
   the Runtime Center.
 - **Python tooling status** — whether code tools loaded, and the active configuration
   source (for example, `pyproject`).

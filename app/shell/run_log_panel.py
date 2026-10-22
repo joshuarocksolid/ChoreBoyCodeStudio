@@ -6,14 +6,15 @@ import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
-from app.qt.QtCore import Signal
-from app.qt.QtGui import QColor, QFont, QPalette, QTextCharFormat, QTextCursor
+from app.qt.QtCore import QEvent, QObject, Signal
+from app.qt.QtGui import QColor, QFont, QHelpEvent, QPalette, QTextCharFormat, QTextCursor
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QSizePolicy,
     QTextEdit,
     QToolButton,
+    QToolTip,
     QVBoxLayout,
     QWidget,
 )
@@ -37,11 +38,40 @@ _TB_FILE_RE = re.compile(r"^\s+File \".+\", line \d+")
 _TB_EXCEPTION_RE = re.compile(r"^\w[\w.]*(?:Error|Exception|Warning|Exit)(?::\s|$)")
 
 
+# Known FreeCAD startup noise. Shown dimmed with an explanation, never hidden.
+# AppRun echoes the LD_LIBRARY_PATH it sets: HERE/usr/lib/x86_64-linux-gnu:HERE/usr/lib.
+_APPRUN_LIBRARY_PATH_RE = re.compile(r"^(?:\[stderr\] )?(/\S*)/usr/lib/x86_64-linux-gnu:\1/usr/lib(?::\S*)?$")
+# libspnav (3D mouse support) prints this when a GUI FreeCAD starts with no spacenavd.
+_SPNAV_CONNECT_FAILED_RE = re.compile(r"^(?:\[stderr\] )?connect failed: No such file or directory$")
+
+APPRUN_LIBRARY_PATH_TOOLTIP = (
+    "FreeCAD startup message, not an error. FreeCAD's AppRun prints the library "
+    "path (LD_LIBRARY_PATH) it sets every time a FreeCAD process starts."
+)
+SPNAV_CONNECT_FAILED_TOOLTIP = (
+    "FreeCAD startup message, not an error. When a FreeCAD window opens it looks "
+    "for a 3D mouse (spacenav). ChoreBoy has no 3D mouse service, so it prints "
+    "this. It is harmless."
+)
+
+
+def startup_noise_tooltip(line: str) -> str | None:
+    """Return the explanation for a known, harmless FreeCAD startup line, else ``None``."""
+    stripped = line.rstrip()
+    if _APPRUN_LIBRARY_PATH_RE.match(stripped):
+        return APPRUN_LIBRARY_PATH_TOOLTIP
+    if _SPNAV_CONNECT_FAILED_RE.match(stripped):
+        return SPNAV_CONNECT_FAILED_TOOLTIP
+    return None
+
+
 def _classify_line(line: str, in_traceback: bool) -> tuple[str, bool]:
     """Return (category, still_in_traceback) for a single log line.
 
-    Categories: 'meta', 'error', 'normal'.
+    Categories: 'meta', 'noise', 'error', 'normal'.
     """
+    if startup_noise_tooltip(line) is not None:
+        return "noise", in_traceback
     if line.startswith("[runner]") or line.startswith("[system]"):
         return "meta", False
     if _TB_START_RE.match(line):
@@ -68,6 +98,7 @@ class RunLogPanel(QWidget):
 
         self._log_path: str | None = None
         self._in_traceback = False
+        self._saw_freecad_window_start = False
         self._col_text = "#E9ECEF"
         self._col_muted = "#ADB5BD"
         self._col_error = "#FF6B6B"
@@ -122,9 +153,22 @@ class RunLogPanel(QWidget):
         mono = QFont("Monospace", 10)
         mono.setStyleHint(QFont.Monospace)
         self._text.setFont(mono)
+        self._text.viewport().installEventFilter(self)
         root.addWidget(self._text, 1)
 
     # -- public API --------------------------------------------------------
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt API
+        if watched is self._text.viewport() and event.type() == QEvent.ToolTip:
+            assert isinstance(event, QHelpEvent)
+            tip = self._text.cursorForPosition(event.pos()).charFormat().toolTip()
+            if tip:
+                QToolTip.showText(event.globalPos(), tip, self._text)
+            else:
+                QToolTip.hideText()
+                event.ignore()
+            return True
+        return super().eventFilter(watched, event)
 
     def apply_theme(self, tokens: "ShellThemeTokens") -> None:
         self._col_text = tokens.text_primary
@@ -139,9 +183,19 @@ class RunLogPanel(QWidget):
 
         self._reformat_current_content()
 
+    @property
+    def saw_freecad_window_start(self) -> bool:
+        """True once the current run printed libspnav's line, i.e. it opened a FreeCAD window.
+
+        ChoreBoy's AppArmor profile denies ``/proc``, so this output is the only
+        sign CBCS gets that a run started a GUI FreeCAD.
+        """
+        return self._saw_freecad_window_start
+
     def begin_run(self, run_info: RunInfo | None = None) -> None:
         """Clear display and set toolbar to 'running' for a new session."""
         self._in_traceback = False
+        self._saw_freecad_window_start = False
         self._log_path = None
         self._open_btn.setVisible(False)
         self._text.clear()
@@ -160,7 +214,9 @@ class RunLogPanel(QWidget):
         for raw_line in text.rstrip().splitlines():
             display = f"{prefix}{raw_line}" if prefix else raw_line
             category, self._in_traceback = _classify_line(display, self._in_traceback)
-            fmt = self._format_for_category(category)
+            fmt = self._format_for_category(category, display)
+            if category == "noise" and _SPNAV_CONNECT_FAILED_RE.match(display):
+                self._saw_freecad_window_start = True
 
             cursor = self._text.textCursor()
             cursor.movePosition(QTextCursor.End)
@@ -210,9 +266,13 @@ class RunLogPanel(QWidget):
 
     # -- internals ---------------------------------------------------------
 
-    def _format_for_category(self, category: str) -> QTextCharFormat:
+    def _format_for_category(self, category: str, line: str = "") -> QTextCharFormat:
         fmt = QTextCharFormat()
-        if category == "meta":
+        if category == "noise":
+            fmt.setForeground(QColor(self._col_muted))
+            fmt.setFontItalic(True)
+            fmt.setToolTip(startup_noise_tooltip(line) or "")
+        elif category == "meta":
             fmt.setForeground(QColor(self._col_muted))
         elif category == "error":
             fmt.setForeground(QColor(self._col_error))
@@ -256,20 +316,17 @@ class RunLogPanel(QWidget):
         cursor = self._text.textCursor()
         cursor.beginEditBlock()
 
-        fmt_normal = QTextCharFormat()
-        fmt_normal.setForeground(QColor(self._col_text))
-
-        fmt_meta = QTextCharFormat()
-        fmt_meta.setForeground(QColor(self._col_muted))
-
-        fmt_error = QTextCharFormat()
-        fmt_error.setForeground(QColor(self._col_error))
+        fmt_normal = self._format_for_category("normal")
+        fmt_meta = self._format_for_category("meta")
+        fmt_error = self._format_for_category("error")
 
         in_traceback = False
         lines = text.splitlines()
         for i, line in enumerate(lines):
             category, in_traceback = _classify_line(line, in_traceback)
-            if category == "meta":
+            if category == "noise":
+                fmt = self._format_for_category("noise", line)
+            elif category == "meta":
                 fmt = fmt_meta
             elif category == "error":
                 fmt = fmt_error

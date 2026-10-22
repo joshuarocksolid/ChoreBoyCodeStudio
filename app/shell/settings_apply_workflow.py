@@ -21,10 +21,8 @@ _EDITOR_PREFERENCE_FIELDS: tuple[str, ...] = (
     "detect_indentation_from_file",
     "hover_tooltip_enabled",
     "auto_reindent_flat_python_paste",
-    "completion_enabled",
-    "completion_auto_trigger",
+    "completion_mode",
     "completion_min_chars",
-    "completion_auto_trigger_period",
 )
 
 _INTELLIGENCE_HIGHLIGHTING_FIELDS: tuple[str, ...] = (
@@ -306,6 +304,7 @@ class MainWindowSettingsApplyHost:
 
     def apply_preferences_bundle(self, bundle: ShellPreferencesBundle) -> None:
         self._window._shell_preferences_runtime.apply_preferences_bundle(bundle)
+        self._window._refresh_completion_mode_status()
 
     def sync_auto_save_menu_state(self) -> None:
         self._window._sync_auto_save_menu_state()

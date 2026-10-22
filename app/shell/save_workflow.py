@@ -9,6 +9,7 @@ from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.core import constants
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import DiskConflict
 from app.intelligence.cache_controls import should_refresh_index_after_save
 from app.editors.formatting_service import format_text_basic
 from app.plugins.workflow_adapters import format_python_with_workflow, organize_imports_with_workflow
@@ -28,6 +29,7 @@ from app.shell.document_safety import (
     dirty_buffer_snapshots,
 )
 from app.shell.shell_composition_context import MainWindowCompositionSurface
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.unsaved_changes_dialog import prompt_for_unsaved_changes
 
 
@@ -201,6 +203,9 @@ class MainWindowSaveDocumentHost:
     def editor_manager(self) -> EditorManager:
         return self._window._editor_manager
 
+    def tab_content_registry(self) -> Any:
+        return getattr(self._window, "_tab_content_registry", None)
+
     def editor_exit_behavior(self) -> str:
         return self._window._editor_exit_behavior
 
@@ -271,17 +276,7 @@ class MainWindowSaveDocumentHost:
         self._window._lint_workflow.render_diagnostics_for_file(file_path, trigger=trigger)
 
     def resolve_external_change_before_save(self, file_path: str) -> str:
-        from app.shell.external_file_change_workflow import ExternalFileChangeOutcome
-
-        outcome = self._window._external_file_change_workflow.check_and_handle(file_path)
-        if outcome is ExternalFileChangeOutcome.CANCELLED:
-            return "abort"
-        if outcome in (
-            ExternalFileChangeOutcome.RELOADED,
-            ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES,
-        ):
-            return "already_synced"
-        return "proceed"
+        return str(self._window._external_file_change_workflow.resolve_before_save(file_path))
 
     def refresh_test_discovery(self) -> None:
         test_runner_workflow = getattr(self._window, "_test_runner_workflow", None)
@@ -308,7 +303,19 @@ class SaveWorkflow:
     def _editor_manager(self) -> EditorManager:
         return self._host.editor_manager()
 
+    def _confirm_close_blockers(self, file_paths: Sequence[str]) -> bool:
+        registry_getter = getattr(self._host, "tab_content_registry", None)
+        if not callable(registry_getter):
+            return True
+        registry = registry_getter()
+        if registry is None:
+            return True
+        return confirm_tab_close_blockers(self._host.dialog_parent(), registry, file_paths)
+
     def confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
+        open_paths = [tab.file_path for tab in self._editor_manager().all_tabs()]
+        if not self._confirm_close_blockers(open_paths):
+            return False
         decision = self.request_unsaved_changes_decision(
             action_description,
             scope=DocumentScope.PROJECT,
@@ -324,13 +331,17 @@ class SaveWorkflow:
     ) -> bool:
         normalized_paths = [str(Path(path).expanduser().resolve()) for path in target_paths]
         affected_tabs: list[object] = []
+        affected_paths: list[str] = []
         for tab in self._editor_manager().all_tabs():
             tab_path = str(Path(tab.file_path).expanduser().resolve())
             for target_path in normalized_paths:
                 if tab_path == target_path or tab_path.startswith(f"{target_path}/"):
+                    affected_paths.append(tab.file_path)
                     if tab.is_dirty:
                         affected_tabs.append(tab)
                     break
+        if not self._confirm_close_blockers(affected_paths):
+            return False
         if not affected_tabs:
             return True
         decision = self.request_unsaved_changes_decision(
@@ -427,7 +438,7 @@ class SaveWorkflow:
         for tab in self._editor_manager().all_tabs():
             if not tab.is_dirty:
                 continue
-            if self._tab_is_stale_on_disk(tab.file_path):
+            if self._tab_has_disk_conflict(tab.file_path) or self._tab_is_stale_on_disk(tab.file_path):
                 continue
             try:
                 self.save_tab(
@@ -442,6 +453,13 @@ class SaveWorkflow:
                     tab.file_path,
                     exc_info=True,
                 )
+
+    def _tab_has_disk_conflict(self, file_path: str) -> bool:
+        getter = getattr(self._editor_manager(), "get_tab", None)
+        if not callable(getter):
+            return False
+        tab = getter(file_path)
+        return isinstance(getattr(tab, "disk_conflict", None), DiskConflict)
 
     def _tab_is_stale_on_disk(self, file_path: str) -> bool:
         manager = self._editor_manager()
@@ -458,7 +476,8 @@ class SaveWorkflow:
         return normalized in stale_paths
 
     def _decide_stale_save(self, file_path: str, *, prompt: bool) -> str:
-        if not self._tab_is_stale_on_disk(file_path):
+        needs_resolution = self._tab_has_disk_conflict(file_path) or self._tab_is_stale_on_disk(file_path)
+        if not needs_resolution:
             return "proceed"
         if not prompt:
             return "abort"
@@ -497,9 +516,8 @@ class SaveWorkflow:
             return False
 
         if host.has_editor_tabs_widget():
-            tab_index = host.tab_index_for_path(saved_tab.file_path)
-            if tab_index >= 0:
-                host.refresh_tab_presentation(saved_tab.file_path)
+            # Clears the dirty marker in every editor group showing the buffer.
+            host.refresh_tab_presentation(saved_tab.file_path)
 
         self._local_history.discard_pending_autosave(saved_tab.file_path)
         self._local_history.record_checkpoint(
@@ -561,7 +579,9 @@ class SaveWorkflow:
     def apply_save_transforms(self, file_path: str, *, show_style_warnings: bool) -> None:
         host = self._host
         tab_state = self._editor_manager().get_tab(file_path)
-        if tab_state is None:
+        # A content source owns the bytes Save writes. Trim, a final newline,
+        # and the Python formatters would change them.
+        if tab_state is None or tab_state.content_source is not None:
             return
 
         original_text = tab_state.current_content

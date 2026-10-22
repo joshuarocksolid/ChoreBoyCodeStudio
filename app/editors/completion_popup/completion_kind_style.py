@@ -27,15 +27,17 @@ class KindGlyphStyle:
 # the table is theme-agnostic.
 _KIND_TABLE: dict[CompletionKind, tuple[str, str, str]] = {
     # kind: (glyph, theme_token_field, human_label)
-    CompletionKind.KEYWORD: ("K", "syntax_keyword", "keyword"),
-    CompletionKind.BUILTIN: ("B", "syntax_builtin", "builtin"),
-    CompletionKind.SYMBOL: ("S", "syntax_semantic_variable", "symbol"),
-    CompletionKind.MODULE: ("m", "syntax_keyword_import", "module"),
-    CompletionKind.FUNCTION: ("ƒ", "syntax_function", "function"),
-    CompletionKind.METHOD: ("M", "syntax_semantic_method", "method"),
-    CompletionKind.PROPERTY: ("P", "syntax_semantic_property", "property"),
+    CompletionKind.KEYWORD: ("k", "syntax_keyword", "keyword"),
+    CompletionKind.BUILTIN: ("b", "syntax_builtin", "builtin"),
+    CompletionKind.SYMBOL: ("v", "syntax_semantic_variable", "symbol"),
+    CompletionKind.MODULE: ("M", "syntax_keyword_import", "module"),
+    CompletionKind.FUNCTION: ("f", "syntax_function", "function"),
+    CompletionKind.METHOD: ("m", "syntax_semantic_method", "method"),
+    CompletionKind.PROPERTY: ("p", "syntax_semantic_property", "property"),
     CompletionKind.ATTRIBUTE: ("a", "syntax_semantic_variable", "attribute"),
     CompletionKind.CLASS: ("C", "syntax_class", "class"),
+    CompletionKind.SIGNAL: ("s", "syntax_decorator", "signal"),
+    CompletionKind.ENUM: ("e", "syntax_number", "enum"),
     CompletionKind.SNIPPET: ("\u03bb", "accent", "snippet"),  # lambda
     CompletionKind.TEXT: ("T", "text_muted", "text"),
 }

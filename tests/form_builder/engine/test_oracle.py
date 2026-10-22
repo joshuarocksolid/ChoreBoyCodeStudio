@@ -2,7 +2,9 @@
 """Designer files load, save, and load again to the same widget tree."""
 from __future__ import annotations
 
+import hashlib
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -165,19 +167,23 @@ def _snapshot(widget: object) -> object:
 
     def walk(current: QWidget) -> dict:
         layout = current.layout()
+        # A laid-out child is also in children(). Walking both is 2^depth
+        # snapshots, and the 15-deep corpus form then exceeds the 30s timeout.
+        placed: set = set()
+        layout_snapshot = _layout(layout, placed) if layout is not None else None
         return {
             "class": current.metaObject().className(),
             "name": current.objectName(),
             "properties": _properties(current),
-            "layout": None if layout is None else _layout(layout),
+            "layout": layout_snapshot,
             "children": [
                 walk(child)
                 for child in current.children()
-                if isinstance(child, QWidget) and child.parent() is current
+                if isinstance(child, QWidget) and child.parent() is current and child not in placed
             ],
         }
 
-    def _layout(layout: object) -> dict:
+    def _layout(layout: object, placed: set) -> dict:
         from app.qt.QtWidgets import QBoxLayout
 
         items = []
@@ -192,6 +198,8 @@ def _snapshot(widget: object) -> object:
             else:
                 column = index
             child = item.widget()
+            if isinstance(child, QWidget):
+                placed.add(child)
             nested = item.layout()
             spacer = item.spacerItem()
             spacer_info = None
@@ -210,7 +218,7 @@ def _snapshot(widget: object) -> object:
                     "col_span": col_span,
                     "spacer": spacer_info,
                     "widget": walk(child) if isinstance(child, QWidget) else None,
-                    "layout": _layout(nested) if nested is not None else None,
+                    "layout": _layout(nested, placed) if nested is not None else None,
                 }
             )
         stretch = None
@@ -238,7 +246,7 @@ def _properties(widget: object) -> dict:
     for index in range(meta.propertyCount()):
         prop = meta.property(index)
         name = prop.name()
-        if name in ("objectName", "windowIcon"):
+        if name == "objectName":
             continue
         found[name] = _norm(widget.property(name))
     for name in widget.dynamicPropertyNames():
@@ -256,6 +264,80 @@ def _as_int(value: object) -> int:
     from app.qt.qt_compat import enum_value
 
     return enum_value(value)
+
+
+_GRADIENT_BRUSH_STYLES: object = None
+
+
+def _gradient_brush_styles() -> frozenset:
+    global _GRADIENT_BRUSH_STYLES
+    if isinstance(_GRADIENT_BRUSH_STYLES, frozenset):
+        return _GRADIENT_BRUSH_STYLES
+    from app.qt.QtCore import Qt
+
+    styles = frozenset(
+        _as_int(style)
+        for style in (
+            Qt.BrushStyle.LinearGradientPattern,
+            Qt.BrushStyle.RadialGradientPattern,
+            Qt.BrushStyle.ConicalGradientPattern,
+        )
+    )
+    _GRADIENT_BRUSH_STYLES = styles
+    return styles
+
+
+def _norm_gradient(gradient: object) -> object:
+    if gradient is None:
+        return None
+    kind = type(gradient).__name__
+    if kind == "QLinearGradient":
+        start = gradient.start()
+        end = gradient.finalStop()
+        coords = (start.x(), start.y(), end.x(), end.y())
+    elif kind == "QRadialGradient":
+        center = gradient.center()
+        focal = gradient.focalPoint()
+        coords = (center.x(), center.y(), focal.x(), focal.y(), gradient.radius())
+    elif kind == "QConicalGradient":
+        center = gradient.center()
+        coords = (center.x(), center.y(), gradient.angle())
+    else:
+        coords = ()
+    stops = tuple((position, _norm(color)) for position, color in gradient.stops())
+    return (
+        _as_int(gradient.type()),
+        _as_int(gradient.spread()),
+        _as_int(gradient.coordinateMode()),
+        coords,
+        stops,
+    )
+
+
+def _icon_signature(icon: object) -> object:
+    """Pixels per mode and state. cacheKey is unique per pixmap instance.
+
+    A null icon has no pixmap to hash. Rendering one for every default
+    windowIcon blows the oracle timeout on the 15-deep nested form.
+    """
+    from app.qt.QtGui import QIcon, QImage
+
+    if icon.isNull():
+        return (True, icon.name(), icon.themeName(), ())
+    modes = (QIcon.Mode.Normal, QIcon.Mode.Disabled, QIcon.Mode.Active, QIcon.Mode.Selected)
+    states = (QIcon.State.Off, QIcon.State.On)
+    cells = []
+    for mode in modes:
+        for state in states:
+            sizes = tuple(sorted((size.width(), size.height()) for size in icon.availableSizes(mode, state)))
+            pixmap = icon.pixmap(16, 16, mode, state)
+            if pixmap.isNull():
+                cells.append((sizes, None))
+                continue
+            image = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+            bits = bytes(image.constBits())
+            cells.append((sizes, image.width(), image.height(), hashlib.sha256(bits).hexdigest()))
+    return (False, icon.name(), icon.themeName(), tuple(cells))
 
 
 def _norm(value: object) -> object:
@@ -278,7 +360,9 @@ def _norm(value: object) -> object:
     if name in ("QRect", "QRectF"):
         return (value.x(), value.y(), value.width(), value.height())
     if name == "QColor":
-        return None if not value.isValid() else value.name()
+        from app.qt.QtGui import QColor
+
+        return None if not value.isValid() else value.name(QColor.NameFormat.HexArgb)
     if name == "QFont":
         return (
             value.family(),
@@ -297,7 +381,7 @@ def _norm(value: object) -> object:
             value.verticalStretch(),
         )
     if name == "QIcon":
-        return (value.isNull(), value.name(), value.themeName())
+        return _icon_signature(value)
     if name == "QPixmap":
         return (value.isNull(), value.width(), value.height())
     if name in ("QDate", "QTime", "QDateTime"):
@@ -316,13 +400,17 @@ def _norm(value: object) -> object:
     if name == "QKeyCombination":
         return (_as_int(value.keyboardModifiers()), _as_int(value.key()))
     if name == "QBrush":
-        return (_as_int(value.style()), _norm(value.color()))
+        style = _as_int(value.style())
+        # Solid and other non-gradient styles have no gradient. Asking for one
+        # on every palette role of every widget blows the nested-form timeout.
+        gradient = _norm_gradient(value.gradient()) if style in _gradient_brush_styles() else None
+        return (style, _norm(value.color()), gradient)
     if name == "QPalette":
         from app.qt.QtGui import QPalette
 
         groups = (QPalette.ColorGroup.Active, QPalette.ColorGroup.Disabled, QPalette.ColorGroup.Inactive)
         roles = [role for role in QPalette.ColorRole if role.name not in ("NColorRoles", "NoRole")]
-        return tuple(_norm(value.color(group, role)) for group in groups for role in roles)
+        return tuple(_norm(value.brush(group, role)) for group in groups for role in roles)
     try:
         return _as_int(value)
     except (TypeError, ValueError):
@@ -349,6 +437,7 @@ def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:
         loaded = read_ui(original, allocator=IdAllocator())
     except UiReadError as exc:
         pytest.fail("%s refused by the reader: %s %s" % (path, exc.code, exc))
+        raise  # fail() does not return; without this, pyright treats loaded as unbound
     saved = write_ui(loaded.document).text
     rewritten = read_ui(saved, allocator=IdAllocator())
     again = write_ui(rewritten.document).text
@@ -363,6 +452,113 @@ def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:
     assert _snapshot(before) == _snapshot(after), path.name
     before.deleteLater()
     after.deleteLater()
+
+
+def _palette_ui(active_body: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ui version="4.0"><widget class="QWidget" name="Form">\n'
+        ' <property name="palette"><palette>\n'
+        "  <active>\n%s\n  </active>\n"
+        "  <inactive/>\n  <disabled/>\n"
+        " </palette></property>\n"
+        "</widget></ui>\n" % active_body
+    )
+
+
+def _window_text_hex(text: str, qapp: object) -> str:
+    from app.qt.QtGui import QColor, QPalette
+
+    widget, error = _load_tree(text, qapp)
+    assert widget is not None, error
+    try:
+        color = widget.palette().color(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText)
+        return color.name(QColor.NameFormat.HexArgb)
+    finally:
+        widget.deleteLater()
+
+
+def _resave(text: str) -> str:
+    return write_ui(read_ui(text, allocator=IdAllocator()).document).text
+
+
+@pytest.mark.oracle
+def test_legacy_color_alpha_loads_opaque_red_before_and_after(qapp: object) -> None:
+    text = _palette_ui('   <color alpha="10"><red>255</red><green>0</green><blue>0</blue></color>')
+    before = _window_text_hex(text, qapp)
+    after = _window_text_hex(_resave(text), qapp)
+    assert before == "#ffff0000"
+    assert after == "#ffff0000"
+
+
+@pytest.mark.oracle
+def test_legacy_color_without_alpha_loads_opaque_red_before_and_after(qapp: object) -> None:
+    text = _palette_ui("   <color><red>255</red><green>0</green><blue>0</blue></color>")
+    before = _window_text_hex(text, qapp)
+    after = _window_text_hex(_resave(text), qapp)
+    assert before == "#ffff0000"
+    assert after == before
+
+
+@pytest.mark.oracle
+def test_colorrole_then_legacy_loads_the_same_after_save(qapp: object) -> None:
+    text = _palette_ui(
+        '   <colorrole role="WindowText"><brush brushstyle="SolidPattern">'
+        '<color alpha="255"><red>0</red><green>255</green><blue>0</blue></color>'
+        "</brush></colorrole>\n"
+        "   <color><red>255</red><green>0</green><blue>0</blue></color>"
+    )
+    before = _window_text_hex(text, qapp)
+    after = _window_text_hex(_resave(text), qapp)
+    assert before == "#ff00ff00"
+    assert after == before
+
+
+def _gradient_blocks(text: str) -> list[str]:
+    return re.findall(r"<gradient\b.*?</gradient>", text, re.S)
+
+
+def _qformbuilder_save(widget: object) -> str:
+    from app.qt.QtCore import QBuffer, QIODevice
+    from PySide6.QtDesigner import QFormBuilder
+    from PySide6.QtWidgets import QWidget
+
+    assert isinstance(widget, QWidget)
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    QFormBuilder().save(buffer, widget)
+    return bytes(buffer.data()).decode("utf-8")
+
+
+@pytest.mark.oracle
+def test_gradient_attribute_order_matches_qformbuilder(qapp: object) -> None:
+    """QFormBuilder writes coordinates, then type, spread, and coordinatemode."""
+    del qapp
+    from app.qt.QtGui import QBrush, QColor, QConicalGradient, QLinearGradient, QPalette, QRadialGradient
+    from app.qt.QtWidgets import QWidget
+
+    linear = QLinearGradient(0.0, 0.0, 1.0, 1.0)
+    linear.setColorAt(0.0, QColor(255, 0, 0, 255))
+    linear.setColorAt(1.0, QColor(0, 0, 255, 128))
+    radial = QRadialGradient(0.5, 0.5, 0.5, 0.25, 0.75)
+    radial.setColorAt(0.0, QColor(255, 0, 0))
+    radial.setColorAt(1.0, QColor(0, 0, 255))
+    conical = QConicalGradient(0.5, 0.5, 45.0)
+    conical.setColorAt(0.0, QColor(255, 0, 0))
+    conical.setColorAt(1.0, QColor(0, 0, 255))
+
+    for gradient in (linear, radial, conical):
+        widget = QWidget()
+        palette = widget.palette()
+        palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Window, QBrush(gradient))
+        widget.setPalette(palette)
+        qt_text = _qformbuilder_save(widget)
+        saved = write_ui(read_ui(qt_text, allocator=IdAllocator()).document).text
+        qt_blocks = _gradient_blocks(qt_text)
+        saved_blocks = _gradient_blocks(saved)
+        assert qt_blocks, qt_text
+        assert saved_blocks == qt_blocks
+        widget.deleteLater()
 
 
 @pytest.mark.oracle

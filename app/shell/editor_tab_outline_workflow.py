@@ -9,28 +9,31 @@ from typing import Any
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.intelligence.outline_service import OutlineSymbol, build_outline_from_source, flatten_symbols
-from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.shell.editor_stale_result_policy import capture_buffer_revision, deliver_revision_gated_editor_result
 from app.shell.editor_tab_host_protocols import EditorTabOutlineHost
 
 
 class EditorTabOutlineWorkflow:
-    """Owns outline panel refresh, symbol cache, and line navigation."""
+    """Owns outline panel refresh, symbol cache, and line navigation.
+
+    The symbol cache and its revisions are keyed by buffer id.
+    """
 
     def __init__(
         self,
         *,
         host: EditorTabOutlineHost,
         editor_manager: EditorManager,
-        editor_widgets_by_path: Callable[[], dict[str, CodeEditorWidget]],
+        editor_widget_for_buffer_id: Callable[[str], CodeEditorWidget | None],
         editor_tab_factory: Any,
-        buffer_revision: Callable[[str], int | None],
+        buffer_revision_for_buffer_id: Callable[[str], int | None],
     ) -> None:
         self._host = host
         self._editor_manager = editor_manager
-        self._editor_widgets_by_path = editor_widgets_by_path
+        self._editor_widget_for_buffer_id = editor_widget_for_buffer_id
         self._editor_tab_factory = editor_tab_factory
-        self._buffer_revision = buffer_revision
-        self._outline_revision_by_path: dict[str, int] = {}
+        self._buffer_revision_for_buffer_id = buffer_revision_for_buffer_id
+        self._outline_revision_by_buffer_id: dict[str, int] = {}
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -58,10 +61,10 @@ class EditorTabOutlineWorkflow:
             outline_panel.set_unsupported_language(
                 Path(file_path).suffix.lstrip(".") or "this"
             )
-            self._host.outline_symbols_by_path().pop(file_path, None)
-            self._outline_revision_by_path.pop(file_path, None)
+            self._host.outline_symbols_by_path().pop(active_tab.buffer_id, None)
+            self._outline_revision_by_buffer_id.pop(active_tab.buffer_id, None)
             return
-        editor_widget = self._editor_widget_for_path(file_path)
+        editor_widget = self._editor_widget_for_buffer_id(active_tab.buffer_id)
         source = editor_widget.toPlainText() if editor_widget is not None else active_tab.current_content
         self._schedule_outline_parse(
             file_path=file_path,
@@ -110,32 +113,57 @@ class EditorTabOutlineWorkflow:
     def open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
         if not self._editor_tab_factory.open_file_in_editor(file_path, preview=preview):
             return
+        if line_number is None:
+            return
+        surface = self._surface_for_path(file_path)
+        if surface is not None:
+            surface.reveal(line_number, None)
+            return
         editor_widget = self._editor_widget_for_path(file_path)
-        if editor_widget is None or line_number is None:
+        if editor_widget is None:
             return
         editor_widget.go_to_line(line_number)
+
+    def _surface_for_path(self, file_path: str) -> Any:
+        registry_getter = getattr(self._host, "tab_content_registry", None)
+        if not callable(registry_getter):
+            return None
+        registry = registry_getter()
+        if registry is None:
+            return None
+        surface_for_path = getattr(registry, "surface_for_path", None)
+        if not callable(surface_for_path):
+            return None
+        surface = surface_for_path(file_path)
+        if surface is not None:
+            return surface
+        resolved = str(Path(file_path).expanduser().resolve())
+        if resolved == file_path:
+            return None
+        return surface_for_path(resolved)
 
     def highlight_symbol_at_line(self, line_number: int) -> None:
         outline_panel = self._host.outline_panel()
         if outline_panel is not None and self._host.outline_follow_cursor():
             outline_panel.highlight_symbol_at_line(line_number)
 
+    def _buffer_id_for_path(self, file_path: str) -> str | None:
+        tab = self._editor_manager.get_tab(file_path)
+        return None if tab is None else tab.buffer_id
+
     def _editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
-        widgets = self._editor_widgets_by_path()
-        widget = widgets.get(file_path)
-        if widget is not None:
-            return widget
-        resolved = str(Path(file_path).expanduser().resolve())
-        if resolved != file_path:
-            return widgets.get(resolved)
-        return None
+        buffer_id = self._buffer_id_for_path(file_path)
+        return None if buffer_id is None else self._editor_widget_for_buffer_id(buffer_id)
 
     def _cached_symbols_for_revision(self, file_path: str) -> tuple[OutlineSymbol, ...] | None:
-        symbols = self._host.outline_symbols_by_path().get(file_path)
+        buffer_id = self._buffer_id_for_path(file_path)
+        if buffer_id is None:
+            return None
+        symbols = self._host.outline_symbols_by_path().get(buffer_id)
         if symbols is None:
             return None
-        cached_revision = self._outline_revision_by_path.get(file_path)
-        current_revision = self._buffer_revision(file_path)
+        cached_revision = self._outline_revision_by_buffer_id.get(buffer_id)
+        current_revision = self._buffer_revision_for_buffer_id(buffer_id)
         if cached_revision is None or cached_revision != current_revision:
             return None
         return symbols
@@ -150,7 +178,13 @@ class EditorTabOutlineWorkflow:
         on_flat_success: Callable[[tuple[OutlineSymbol, ...]], None] | None = None,
         on_error: Callable[[Exception], None] | None = None,
     ) -> None:
-        requested_revision = None if editor_widget is None else self._buffer_revision(file_path)
+        buffer_id, requested_revision = capture_buffer_revision(
+            file_path,
+            buffer_id_for_path=self._buffer_id_for_path,
+            buffer_revision_for_buffer_id=self._buffer_revision_for_buffer_id,
+        )
+        if editor_widget is None:
+            requested_revision = None
         key = f"outline::{file_path}"
 
         def task(_cancel_event: object) -> tuple[OutlineSymbol, ...]:
@@ -158,13 +192,17 @@ class EditorTabOutlineWorkflow:
 
         def on_success(symbols: tuple[OutlineSymbol, ...]) -> None:
             def deliver() -> None:
-                self._host.outline_symbols_by_path()[file_path] = symbols
-                if requested_revision is not None:
-                    self._outline_revision_by_path[file_path] = requested_revision
+                current_path = file_path
+                if buffer_id is not None and requested_revision is not None:
+                    self._host.outline_symbols_by_path()[buffer_id] = symbols
+                    self._outline_revision_by_buffer_id[buffer_id] = requested_revision
+                    current_tab = self._editor_manager.get_tab_by_id(buffer_id)
+                    if current_tab is not None:
+                        current_path = current_tab.file_path
                 if deliver_to_panel:
                     outline_panel = self._host.outline_panel()
                     if outline_panel is not None:
-                        outline_panel.set_outline(symbols, file_path)
+                        outline_panel.set_outline(symbols, current_path)
                         if editor_widget is not None and self._host.outline_follow_cursor():
                             line_number = editor_widget.textCursor().blockNumber() + 1
                             outline_panel.highlight_symbol_at_line(line_number)
@@ -176,11 +214,11 @@ class EditorTabOutlineWorkflow:
                 return
 
             deliver_revision_gated_editor_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
-                editor_widget_for_path=self._editor_widget_for_path,
-                buffer_revision=self._buffer_revision,
+                editor_widget_for_buffer_id=self._editor_widget_for_buffer_id,
+                buffer_revision_for_buffer_id=self._buffer_revision_for_buffer_id,
                 deliver=deliver,
             )
 

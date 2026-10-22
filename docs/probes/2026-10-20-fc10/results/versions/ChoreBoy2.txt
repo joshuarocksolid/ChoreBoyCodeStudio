@@ -1,0 +1,14 @@
+hostname net2
+python 3.9.2 (default, Feb 28 2021, 17:03:44)  [GCC 10.2.1 20210110]
+executable /opt/freecad/usr/bin/FreeCAD
+kernel 6.1.12
+os_release PRETTY_NAME="Debian GNU/Linux 11 (bullseye)" | NAME="Debian GNU/Linux" | VERSION_ID="11" | VERSION="11 (bullseye)" | VERSION_CODENAME=bullseye | ID=debian | HOME_URL="https://www.debian.org/" | SUPPORT_URL="https://www.debian.org/support" | BUG_REPORT_URL="https://bugs.debian.org/" | 
+freecad ['1', '0', '0', '39109 (Git)', 'https://github.com/FreeCAD/FreeCAD', '2024/11/18 16:48:00', '(HEAD detached at 1.0.0)', '2fcc5317fe3aee96ca73475986a577719fc78e20']
+apparmor ERR PermissionError errno=13 [Errno 13] Permission denied: '/proc/self/attr/current'
+uid 1000
+stat /home/default dev=65030 dir=True link=False
+stat /home/default/share dev=65030 dir=True link=False
+stat /tmp dev=64768 dir=True link=False
+stat /mnt/cbprobe dev=36 dir=True link=False
+share_names ['IntellaQuote Backup']
+desktop_exists False

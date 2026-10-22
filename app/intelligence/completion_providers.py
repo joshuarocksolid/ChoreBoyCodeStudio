@@ -13,7 +13,7 @@ from app.intelligence.api_index import provide_api_index_member_items
 from app.intelligence.completion_models import CompletionItem, CompletionKind
 from app.intelligence.import_resolver import resolve_module_binding
 from app.intelligence.python_structure import collect_completion_symbol_names, extract_symbol_locations
-from app.persistence.sqlite_index import SQLiteSymbolIndex
+from app.persistence.sqlite_index import open_symbol_index
 from app.project.dependency_classifier import STDLIB_TOP_LEVELS
 from app.project.file_inventory import (
     ProjectInventorySnapshot,
@@ -55,14 +55,44 @@ def detect_module_member_completion_context(source_text: str, cursor_position: i
     )
 
 
+_TOP_LEVEL_IMPORT_LINE = re.compile(r"^(?:import|from)\s")
+
+
+def _top_level_import_statements(source_text: str) -> list[ast.stmt]:
+    """Parse only unindented import statements.
+
+    Parsing the whole buffer with recovery is quadratic when a syntax error
+    sits mid-file (130 ms per completion on ChoreBoy for 1300 lines).
+    """
+
+    statements: list[ast.stmt] = []
+    pending: list[str] = []
+    for line in source_text.splitlines():
+        if pending and _TOP_LEVEL_IMPORT_LINE.match(line):
+            pending = [line]
+        elif pending:
+            pending.append(line)
+        elif _TOP_LEVEL_IMPORT_LINE.match(line):
+            pending = [line]
+        else:
+            continue
+        text = "\n".join(pending)
+        if text.count("(") > text.count(")") or text.rstrip().endswith("\\"):
+            if len(pending) < 50:
+                continue
+        pending = []
+        try:
+            statements.extend(ast.parse(text).body)
+        except SyntaxError:
+            continue
+    return statements
+
+
 def collect_import_module_bindings(source_text: str) -> dict[str, str]:
     """Collect import aliases mapped to module-name candidates from source."""
-    syntax_tree = _parse_source_with_recovery(source_text)
-    if syntax_tree is None:
-        return {}
 
     bindings: dict[str, str] = {}
-    for node in getattr(syntax_tree, "body", []):
+    for node in _top_level_import_statements(source_text):
         if isinstance(node, ast.Import):
             for alias in node.names:
                 alias_name = alias.asname or alias.name.split(".")[0]
@@ -151,7 +181,7 @@ def provide_project_symbol_items(
         return []
 
     project_root_text = str(Path(project_root).expanduser().resolve())
-    cache = SQLiteSymbolIndex(cache_db_path)
+    cache = open_symbol_index(cache_db_path)
     symbols = cache.search_by_prefix(project_root_text, prefix, limit=limit)
     if symbols:
         return [
@@ -214,7 +244,7 @@ def provide_project_module_items(
     if cache_db_path:
         cache_path = Path(cache_db_path).expanduser().resolve()
         if cache_path.exists():
-            indexed_files = SQLiteSymbolIndex(str(cache_path)).list_indexed_python_files(str(root))
+            indexed_files = open_symbol_index(str(cache_path)).list_indexed_python_files(str(root))
             if indexed_files and _indexed_files_match_snapshot(indexed_files, inventory_snapshot):
                 if inventory_snapshot is not None:
                     module_names = module_names_from_snapshot(inventory_snapshot)
