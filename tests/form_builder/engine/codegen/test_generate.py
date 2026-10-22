@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -67,6 +68,39 @@ def test_refuses_a_name_that_cannot_be_a_python_identifier(tmp_path: Path) -> No
     result = _generate(tmp_path, root_name="setupUi")
     assert result.text is None
     assert result.diagnostics
+    assert {item.code for item in result.diagnostics} == {"FB502"}
+
+
+def test_compatibility_character_does_not_alias_another_attribute(tmp_path: Path) -> None:
+    body = '<widget class="QLabel" name="fix"/><widget class="QLabel" name="ﬁx"/>'
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert "ﬁ" not in result.text
+    folded = {unicodedata.normalize("NFKC", name) for name in result.attribute_names}
+    assert len(result.attribute_names) == len(folded) == 2
+
+
+@pytest.mark.parametrize(
+    "root_name",
+    (
+        "icon",
+        "icon1",
+        "sizePolicy",
+        "font",
+        "palette",
+        "brush",
+        "brush2",
+        "gradient",
+        "__sortingEnabled",
+        "___qtreewidgetitem",
+        "QSizePolicy",
+        "Qt",
+        "QCoreApplication",
+    ),
+)
+def test_form_parameter_cannot_shadow_setupui(tmp_path: Path, root_name: str) -> None:
+    result = _generate(tmp_path, root_name=root_name)
+    assert result.text is None
     assert {item.code for item in result.diagnostics} == {"FB502"}
 
 

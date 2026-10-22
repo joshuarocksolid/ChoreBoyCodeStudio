@@ -320,7 +320,7 @@ class _Emitter:
                 node=self.doc.ui,
                 object_name=self.context,
             )
-        if unusable_reason(self.form_param) or not self.form_param:
+        if unusable_reason(self.form_param) or not self.form_param or _parameter_clash(self.form_param):
             self.diag(
                 "FB502",
                 'The name "%s" can\'t be used in the generated Python. Rename it, then save the form again.'
@@ -1593,6 +1593,19 @@ class _Emitter:
                     continue
                 lines.append("        %s" % statement)
         return "\n".join(lines)
+
+
+def _parameter_clash(name: str) -> bool:
+    """True when the form parameter would hide an import or an emitter local."""
+    if name in {"sizePolicy", "font", "palette", "gradient", "__sortingEnabled"}:
+        return True
+    if name == "icon" or (name.startswith("icon") and name[4:].isdigit()):
+        return True
+    if name == "brush" or (name.startswith("brush") and name[5:].isdigit()):
+        return True
+    if name.startswith("___q") and "item" in name:
+        return True
+    return class_module(name) is not None
 
 
 def _explicit_name(node: Node) -> str:

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import keyword
 import re
+import unicodedata
 from typing import Optional
 
 # C++ identifier, optionally scoped. ASCII only: a Unicode lookalike is not a
@@ -62,16 +63,19 @@ def python_class_stem(text: str) -> str:
     """uic's ``Ui_`` stem. A C++ scope ``::`` becomes one underscore.
 
     ``Gui::Dialog::RemoteDebugger`` becomes ``Gui_Dialog_RemoteDebugger``.
+    The stem is NFKC, so a compatibility character cannot spell a second class.
     """
-    return text.replace("::", "_")
+    return unicodedata.normalize("NFKC", text).replace("::", "_")
 
 
 def python_attr(text: str) -> str:
     """uic's Python attribute. Each colon becomes an underscore.
 
     ``Gui::Dialog::RemoteDebugger`` becomes ``Gui__Dialog__RemoteDebugger``.
+    NFKC runs first, so ``ﬁx`` and ``fix`` share one spelling before the
+    uniqueness suffix is chosen.
     """
-    return text.replace(":", "_")
+    return unicodedata.normalize("NFKC", text).replace(":", "_")
 
 
 def module_stem_ok(stem: str) -> bool:
