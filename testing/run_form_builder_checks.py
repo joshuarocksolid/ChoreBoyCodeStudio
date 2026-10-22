@@ -584,9 +584,18 @@ def gate_pyright() -> GateResult:
     name = "pyright"
     if not _package_ready():
         return _skip(name, "skipped: no package")
+    python = str(_runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT))
     commands = (
-        ["npx", "pyright", "app/features/form_builder"],
-        ["npx", "pyright", "-p", "pyrightconfig.tests.json", "tests/form_builder"],
+        ["npx", "pyright", "--pythonpath", python, "app/features/form_builder"],
+        [
+            "npx",
+            "pyright",
+            "--pythonpath",
+            python,
+            "-p",
+            "pyrightconfig.tests.json",
+            "tests/form_builder",
+        ],
     )
     started = time.monotonic()
     details: list[str] = []
