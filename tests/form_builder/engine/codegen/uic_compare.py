@@ -1,20 +1,22 @@
 """Compare one .ui file: our setupUi widget tree against uic -g python."""
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+import struct
 import subprocess
 import sys
 import tempfile
 import types
 from pathlib import Path
-from typing import Tuple
+from typing import Callable, List, Optional, Tuple
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QByteArray, QLocale, QSize, Qt
+from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QSize, Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
-from PySide6.QtWidgets import QApplication, QButtonGroup, QLayout, QWidget
+from PySide6.QtWidgets import QApplication, QButtonGroup, QLayout, QSizePolicy, QWidget
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.codegen.resources import (
@@ -118,9 +120,357 @@ def _as_int(value):
     return int(value)
 
 
+_PALETTE_GROUPS = (
+    QPalette.ColorGroup.Active,
+    QPalette.ColorGroup.Inactive,
+    QPalette.ColorGroup.Disabled,
+)
+_PALETTE_ROLES = tuple(
+    role
+    for name in (
+        "WindowText",
+        "Button",
+        "Light",
+        "Midlight",
+        "Dark",
+        "Mid",
+        "Text",
+        "BrightText",
+        "ButtonText",
+        "Base",
+        "Window",
+        "Shadow",
+        "Highlight",
+        "HighlightedText",
+        "Link",
+        "LinkVisited",
+        "AlternateBase",
+        "ToolTipBase",
+        "ToolTipText",
+        "PlaceholderText",
+        "Accent",
+    )
+    if (role := getattr(QPalette.ColorRole, name, None)) is not None
+)
+_ICON_MODES = (QIcon.Mode.Normal, QIcon.Mode.Disabled, QIcon.Mode.Active, QIcon.Mode.Selected)
+_ICON_STATES = (QIcon.State.Off, QIcon.State.On)
+_ACTION_CLASSES = ("QMenu", "QToolBar", "QMenuBar")
+_BOX_LAYOUTS = ("QBoxLayout", "QHBoxLayout", "QVBoxLayout")
+_CONNECT = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)\.connect\(")
+_SKIP_SIGNAL = frozenset({"destroyed", "deleteLater"})
+
+
+def _image_digest(image) -> str:
+    if image is None or image.isNull():
+        return ""
+    size = image.sizeInBytes()
+    if size <= 0:
+        return ""
+    return hashlib.sha256(bytes(image.constBits())[:size]).hexdigest()
+
+
+def _icon_norm(icon: QIcon):
+    if icon.isNull():
+        return ("icon", True, icon.name())
+    rows = []
+    for mode in _ICON_MODES:
+        for state in _ICON_STATES:
+            pix = icon.pixmap(32, 32, mode, state)
+            rows.append((pix.isNull(), pix.width(), pix.height(), _image_digest(pix.toImage())))
+    return ("icon", False, icon.name(), tuple(rows))
+
+
+def _policy_norm(value: QSizePolicy):
+    return (
+        "policy",
+        _as_int(value.horizontalPolicy()),
+        _as_int(value.verticalPolicy()),
+        int(value.horizontalStretch()),
+        int(value.verticalStretch()),
+        bool(value.hasHeightForWidth()),
+    )
+
+
+def _palette_norm(value: QPalette):
+    colors = []
+    for group in _PALETTE_GROUPS:
+        for role in _PALETTE_ROLES:
+            colors.append(value.color(group, role).name(QColor.NameFormat.HexArgb))
+    return ("palette", int(value.resolveMask()), tuple(colors))
+
+
+def _focus_chain(widget: QWidget) -> List[str]:
+    """Object names inside this window, in nextInFocusChain order."""
+    names = []
+    node = widget
+    seen = set()
+    for _ in range(400):
+        node = node.nextInFocusChain()
+        if node is None or node is widget or id(node) in seen:
+            break
+        seen.add(id(node))
+        if not isinstance(node, QWidget):
+            continue
+        owner = node
+        inside = False
+        while owner is not None:
+            if owner is widget:
+                inside = True
+                break
+            owner = owner.parentWidget()
+        if not inside:
+            continue
+        name = node.objectName()
+        if not name or name.startswith("qt_"):
+            continue
+        # Containers sit in the chain even when they are not tab stops.
+        # Their position follows creation order, which is not the tab order.
+        try:
+            if _as_int(node.focusPolicy()) == 0:
+                continue
+        except Exception:
+            pass
+        names.append(name)
+    return names
+
+
+def _read_string(text: str, index: int):
+    if text.startswith("u", index) or text.startswith("U", index) or text.startswith("r", index):
+        index += 1
+    if index >= len(text) or text[index] not in ("'", '"'):
+        return None, index
+    quote = text[index]
+    index += 1
+    chars = []
+    while index < len(text):
+        char = text[index]
+        if char == "\\":
+            index += 1
+            if index >= len(text):
+                break
+            escaped = text[index]
+            mapping = {"n": "\n", "r": "\r", "t": "\t", '"': '"', "'": "'", "\\": "\\"}
+            if escaped in mapping:
+                chars.append(mapping[escaped])
+                index += 1
+                continue
+            if escaped == "x" and index + 2 < len(text):
+                chars.append(chr(int(text[index + 1 : index + 3], 16)))
+                index += 3
+                continue
+            if escaped == "u" and index + 4 < len(text):
+                chars.append(chr(int(text[index + 1 : index + 5], 16)))
+                index += 5
+                continue
+            chars.append(escaped)
+            index += 1
+            continue
+        if char == quote:
+            return "".join(chars), index + 1
+        chars.append(char)
+        index += 1
+    return None, index
+
+
+def _decode_arg(text: str):
+    stripped = text.strip()
+    if stripped == "None":
+        return None
+    index = 0
+    parts = []
+    saw_string = False
+    while index < len(stripped):
+        while index < len(stripped) and stripped[index] in " \t\r\n":
+            index += 1
+        if index >= len(stripped):
+            break
+        if stripped[index] in ("u", "U", "r", "'", '"'):
+            literal, index = _read_string(stripped, index)
+            if literal is None:
+                return stripped
+            parts.append(literal)
+            saw_string = True
+            continue
+        return stripped
+    if not saw_string:
+        return stripped
+    return "".join(parts)
+
+
+def _read_call_args(source: str, start: int):
+    args = []
+    buf = []
+    depth = 0
+    quote = ""
+    escape = False
+    index = start
+    while index < len(source):
+        char = source[index]
+        if quote:
+            buf.append(char)
+            if escape:
+                escape = False
+            elif char == "\\":
+                escape = True
+            elif char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+            buf.append(char)
+            index += 1
+            continue
+        if char in "([{":
+            depth += 1
+            buf.append(char)
+            index += 1
+            continue
+        if char in ")]}":
+            if depth == 0 and char == ")":
+                args.append("".join(buf).strip())
+                return args, index + 1
+            depth = max(0, depth - 1)
+            buf.append(char)
+            index += 1
+            continue
+        if char == "," and depth == 0:
+            args.append("".join(buf).strip())
+            buf = []
+            index += 1
+            continue
+        buf.append(char)
+        index += 1
+    return None, index
+
+
+def _translate_calls(source: str):
+    """(context, source, disambiguation) for every translate() call, sorted."""
+    found = []
+    needle = ".translate("
+    pos = 0
+    while True:
+        start = source.find(needle, pos)
+        if start < 0:
+            break
+        args, pos = _read_call_args(source, start + len(needle))
+        if not args:
+            continue
+        decoded = [_decode_arg(arg) for arg in args[:3]]
+        while len(decoded) < 3:
+            decoded.append(None)
+        found.append(tuple(decoded))
+    found.sort()
+    return found
+
+
+def _emit_args(method: QMetaMethod):
+    args = []
+    for index in range(method.parameterCount()):
+        try:
+            kind = bytes(method.parameterTypeName(index)).decode()
+        except Exception:
+            return None
+        if kind in ("int", "qlonglong", "qint32", "uint", "short"):
+            args.append(0)
+        elif kind == "bool":
+            args.append(False)
+        elif kind in ("double", "float"):
+            args.append(0.0)
+        elif kind == "QString":
+            args.append("")
+        elif kind == "QByteArray":
+            args.append(b"")
+        else:
+            return None
+    return args
+
+
+def _signal_state(root: QWidget):
+    rows = []
+    nodes = [root]
+    nodes.extend(root.findChildren(QObject))
+    for node in nodes:
+        text = ""
+        reader = getattr(node, "text", None)
+        if callable(reader):
+            try:
+                text = reader()
+            except Exception:
+                text = ""
+        visible = bool(node.isVisible()) if isinstance(node, QWidget) else False
+        enabled = bool(node.isEnabled()) if isinstance(node, QWidget) else True
+        rows.append((node.objectName(), node.metaObject().className(), visible, enabled, text))
+    focus = ""
+    focus_widget = root.focusWidget()
+    if focus_widget is not None:
+        focus = focus_widget.objectName()
+    return (tuple(rows), focus)
+
+
+def _fire(root: QWidget, sources: str):
+    """Emit connected signals and record the ones that changed widget state."""
+    names = set(_CONNECT.findall(sources))
+    if not names:
+        return []
+    records = []
+    nodes = [root]
+    nodes.extend(root.findChildren(QObject))
+    for node in nodes:
+        meta = node.metaObject()
+        seen = set()
+        methods = []
+        for index in range(meta.methodCount()):
+            method = meta.method(index)
+            if method.methodType() == QMetaMethod.MethodType.Signal:
+                methods.append(method)
+        methods.sort(key=lambda method: method.parameterCount())
+        for method in methods:
+            try:
+                name = bytes(method.name()).decode()
+            except Exception:
+                continue
+            if name not in names or name in _SKIP_SIGNAL or name in seen:
+                continue
+            signal = getattr(node, name, None)
+            if not callable(getattr(signal, "emit", None)):
+                continue
+            args = _emit_args(method)
+            if args is None:
+                continue
+            before = _signal_state(root)
+            try:
+                signal.emit(*args)
+            except Exception:
+                continue
+            seen.add(name)
+            after = _signal_state(root)
+            if before == after:
+                continue
+            changes = []
+            before_rows, before_focus = before
+            after_rows, after_focus = after
+            for left, right in zip(before_rows, after_rows):
+                if left != right:
+                    changes.append((left[0], left[2:], right[2:]))
+            if before_focus != after_focus:
+                changes.append(("focus", before_focus, after_focus))
+            if len(before_rows) != len(after_rows):
+                changes.append(("len", len(before_rows), len(after_rows)))
+            records.append((node.objectName(), name, tuple(changes[:6])))
+    return records
+
+
 def _norm(value):
-    if isinstance(value, (str, int, float, bool)) or value is None:
+    if isinstance(value, bool) or isinstance(value, int) or isinstance(value, str) or value is None:
         return value
+    if isinstance(value, float):
+        # Dynamic float properties come back as doubles. uic's literal is the
+        # float32 rounding of the same XML number.
+        rounded = struct.unpack("f", struct.pack("f", value))[0]
+        if rounded == 0.0:
+            rounded = 0.0
+        return rounded
     if isinstance(value, QSize):
         return ("size", value.width(), value.height())
     type_name = type(value).__name__
@@ -140,28 +490,14 @@ def _norm(value):
         rect = value.boundingRect()
         return ("region", value.isNull(), value.rectCount(), rect.x(), rect.y(), rect.width(), rect.height())
     if isinstance(value, QPalette):
-        mask = int(value.resolveMask())
-        colors = []
-        if mask:
-            for role in (
-                QPalette.ColorRole.Window,
-                QPalette.ColorRole.WindowText,
-                QPalette.ColorRole.Base,
-                QPalette.ColorRole.Text,
-                QPalette.ColorRole.Button,
-                QPalette.ColorRole.ButtonText,
-                QPalette.ColorRole.Highlight,
-                QPalette.ColorRole.HighlightedText,
-            ):
-                color = value.color(role)
-                colors.append(color.name(QColor.NameFormat.HexArgb))
-        return ("palette", mask, tuple(colors))
+        return _palette_norm(value)
     if isinstance(value, QBrush):
         color = value.color()
         return ("brush", _as_int(value.style()), color.name(QColor.NameFormat.HexArgb))
     if isinstance(value, QIcon):
-        sizes = tuple(sorted((size.width(), size.height()) for size in value.availableSizes()))
-        return ("icon", value.isNull(), value.name(), sizes)
+        return _icon_norm(value)
+    if isinstance(value, QSizePolicy):
+        return _policy_norm(value)
     if isinstance(value, QPixmap):
         return ("pixmap", value.isNull(), value.width(), value.height(), value.cacheKey() if False else 0)
     if isinstance(value, QByteArray):
@@ -190,6 +526,17 @@ def _props(obj):
             found[name] = _norm(value)
         except Exception:
             continue
+    for raw_name in obj.dynamicPropertyNames():
+        try:
+            name = bytes(raw_name).decode()
+        except Exception:
+            continue
+        if not name or name in found or name in SKIP_PROPS:
+            continue
+        try:
+            found[name] = _norm(obj.property(name))
+        except Exception:
+            continue
     return found
 
 
@@ -208,10 +555,12 @@ def _layout(layout: QLayout):
         "spacing": layout.spacing(),
         "items": [],
     }
-    if hasattr(layout, "rowCount") and hasattr(layout, "columnCount") and layout.metaObject().className() in ("QGridLayout", "QFormLayout"):
-        if layout.metaObject().className() == "QGridLayout":
-            info["rowStretch"] = [layout.rowStretch(i) for i in range(layout.rowCount())]
-            info["colStretch"] = [layout.columnStretch(i) for i in range(layout.columnCount())]
+    class_name = layout.metaObject().className()
+    if class_name == "QGridLayout":
+        info["rowStretch"] = [layout.rowStretch(i) for i in range(layout.rowCount())]
+        info["colStretch"] = [layout.columnStretch(i) for i in range(layout.columnCount())]
+        info["rowMin"] = [layout.rowMinimumHeight(i) for i in range(layout.rowCount())]
+        info["colMin"] = [layout.columnMinimumWidth(i) for i in range(layout.columnCount())]
     for index in range(layout.count()):
         item = layout.itemAt(index)
         entry: dict = {"index": index}
@@ -239,11 +588,19 @@ def _layout(layout: QLayout):
             entry["kind"] = "other"
         geo = item.geometry()
         entry["geo"] = (geo.x(), geo.y(), geo.width(), geo.height())
-        # grid position via layout method if available
-        grid = layout.metaObject().className()
+        try:
+            entry["alignment"] = _as_int(item.alignment())
+        except Exception:
+            entry["alignment"] = 0
+        grid = class_name
         if grid == "QGridLayout":
             row, col, rs, cs = layout.getItemPosition(index)
             entry["cell"] = (row, col, rs, cs)
+        elif grid == "QFormLayout":
+            row, role = layout.getItemPosition(index)
+            entry["form"] = (row, _as_int(role))
+        elif grid in _BOX_LAYOUTS:
+            entry["stretch"] = layout.stretch(index)
         info["items"].append(entry)
     return info
 
@@ -259,6 +616,18 @@ def _widget(widget: QWidget, depth=0):
     layout = widget.layout()
     if layout is not None:
         info["layout"] = _layout(layout)
+    buddy_fn = getattr(widget, "buddy", None)
+    if callable(buddy_fn):
+        try:
+            buddy = buddy_fn()
+        except Exception:
+            buddy = None
+        info["buddy"] = buddy.objectName() if buddy is not None else ""
+    class_name = info["class"]
+    if class_name in _ACTION_CLASSES:
+        info["actions"] = [action.objectName() for action in widget.actions()]
+    if depth == 0:
+        info["focus"] = _focus_chain(widget)
     children = []
     for child in widget.children():
         if isinstance(child, QWidget):
@@ -278,6 +647,35 @@ def _widget(widget: QWidget, depth=0):
     children.sort(key=lambda item: (item.get("class", ""), item.get("objectName", "")))
     info["children"] = children
     return info
+
+
+_IGNORED_PROPS = frozenset(
+    {
+        "geo",
+        "geometry",
+        "pos",
+        "size",
+        "minimumSizeHint",
+        "sizeHint",
+        "frameRect",
+        "frameSize",
+        "rect",
+        "childrenRect",
+        "height",
+        "width",
+        "x",
+        "y",
+    }
+)
+
+
+def _ignored_diff(item: str) -> bool:
+    path = item.split(" ", 1)[0]
+    for part in path.split("."):
+        name = part.split("[", 1)[0]
+        if name in _IGNORED_PROPS:
+            return True
+    return False
 
 
 def _diff(left, right, path="$"):
@@ -345,7 +743,7 @@ def _drop_resources() -> None:
         del sys.modules[key]
 
 
-def compare(path: Path) -> Tuple[object, ...]:
+def compare(path: Path, rewrite: Optional[Callable[[str], str]] = None) -> Tuple[object, ...]:
     _drop_resources()
     data = path.read_bytes()
     try:
@@ -367,6 +765,7 @@ def compare(path: Path) -> Tuple[object, ...]:
     generated = generate_form_module(read.document, scope=scope, source_bytes=data)
     if generated.text is None:
         return "refused", [(d.code, d.message) for d in generated.diagnostics]
+    source = rewrite(generated.text) if rewrite is not None else generated.text
     uic = os.environ["CBCS_FB_UIC"]
     proc = subprocess.run([uic, "-g", "python", str(path)], capture_output=True, text=True)
     if proc.returncode != 0:
@@ -374,7 +773,7 @@ def compare(path: Path) -> Tuple[object, ...]:
     with tempfile.TemporaryDirectory(prefix="fbgen-rc-") as folder:
         _load_resources(read.document, path, Path(folder))
         try:
-            ours = _load(generated.text, "ours_" + path.stem)
+            ours = _load(source, "ours_" + path.stem)
         except Exception as exc:
             ours_error = "%s: %s" % (type(exc).__name__, exc)
             try:
@@ -407,20 +806,13 @@ def compare(path: Path) -> Tuple[object, ...]:
             _ui_class(theirs)().setupUi(right)
         except Exception as exc:
             return "uic-setup", "%s: %s" % (type(exc).__name__, exc)
+        uic_text = _strip_uic(proc.stdout)
         diffs = _diff(_widget(left), _widget(right))
-        interesting = [
-            item
-            for item in diffs
-            if ".props.geometry" not in item
-            and ".props.pos" not in item
-            and ".props.size" not in item
-            and ".geo" not in item
-            and ".props.minimumSizeHint" not in item
-            and ".props.sizeHint" not in item
-            and not any(token in item for token in _PIXEL_GEOMETRY)
-        ]
+        diffs.extend(_diff(_translate_calls(source), _translate_calls(uic_text), "$.translate"))
+        diffs.extend(_diff(_fire(left, source + "\n" + uic_text), _fire(right, source + "\n" + uic_text), "$.fired"))
+        interesting = [item for item in diffs if not _ignored_diff(item)]
         if b"cbcsSplitterSizes" in data:
-            _assert_splitter_sizes(left, generated.text or "")
+            _assert_splitter_sizes(left, source or "")
         return ("ok" if not interesting else "diff", interesting[:12], len(interesting), len(diffs))
 
 

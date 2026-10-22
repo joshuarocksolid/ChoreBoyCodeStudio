@@ -554,6 +554,9 @@ class _Emitter:
         return "QWidget"
 
     def tr(self, text: str, comment: Optional[str], ident: Optional[str]) -> str:
+        # uic writes an empty translation as "" and never calls translate(ctx, "", None).
+        if text == "":
+            return py_string("")
         source = py_string(ident or "") if self.id_based else py_string(text)
         disambiguation = "None" if not comment else py_string(comment)
         return "%s(%s, %s, %s)" % (
@@ -1286,7 +1289,8 @@ class _Emitter:
                 return [], "QLocale(QLocale.Language.%s, QLocale.Country.%s)" % (language, value.country)
             return [], "QLocale(QLocale.Language.%s)" % language
         if isinstance(value, UrlValue):
-            return [], "QUrl(%s)" % self.string_expr(value.string)
+            # uic writes the URL as a literal. It does not pass it through translate.
+            return [], "QUrl(%s)" % py_string(value.string.text)
         if isinstance(value, CursorShapeValue):
             return [], "QCursor(%s)" % enum_expr(value.name if "::" in value.name else "Qt::CursorShape::" + value.name)
         if isinstance(value, CursorValue):

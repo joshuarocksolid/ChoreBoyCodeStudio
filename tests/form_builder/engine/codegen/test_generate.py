@@ -80,6 +80,29 @@ def test_compatibility_character_does_not_alias_another_attribute(tmp_path: Path
     assert len(result.attribute_names) == len(folded) == 2
 
 
+def test_empty_translatable_string_matches_uic_literal(tmp_path: Path) -> None:
+    """uic emits setText("") for an empty <string/>, not translate(ctx, "", None)."""
+    body = (
+        '<widget class="QLabel" name="plain">'
+        '<property name="text"><string/></property></widget>'
+        '<widget class="QLabel" name="noted">'
+        '<property name="text"><string comment="hint"/></property></widget>'
+    )
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert 'self.plain.setText(u"")' in result.text
+    assert 'self.noted.setText(u"")' in result.text
+    assert 'u"", None)' not in result.text
+
+
+def test_url_property_is_a_literal(tmp_path: Path) -> None:
+    body = '<property name="link" stdset="0"><url><string>https://example.com/a</string></url></property>'
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert 'QUrl(u"https://example.com/a")' in result.text
+    assert "QUrl(QCoreApplication.translate" not in result.text
+
+
 @pytest.mark.parametrize(
     "root_name",
     (
