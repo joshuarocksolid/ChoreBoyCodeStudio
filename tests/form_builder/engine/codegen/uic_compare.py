@@ -108,12 +108,6 @@ def _pythonize_uic(text: str) -> str:
         line = re.sub(r"Q_INT64_C\((\d+)\)", r"\1", line)
         line = re.sub(r"QChar\((\d+)\)", lambda match: repr(chr(int(match.group(1)))), line)
         line = line.replace(".setPos(", ".move(")
-        margin = re.search(r"\.setMargin\((.+)\)\s*$", line)
-        if margin is not None:
-            arg = margin.group(1)
-            line = line[: margin.start()] + ".setContentsMargins(%s, %s, %s, %s)" % (
-                (arg,) * 4
-            )
         match = re.search(r"Q_UINT64_C\((\d+)\)", line)
         if match is not None:
             if int(match.group(1)) > 2**63 - 1:

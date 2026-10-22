@@ -203,12 +203,12 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
         lines.append("text %s lines %d" % (path, delta))
     report = "\n".join(lines) + "\n"
     print(report)
-    assert by_folder["qt_examples"]["ok"] >= 54
-    assert by_folder["synthetic"]["ok"] >= 147
-    assert by_folder["freecad"]["ok"] >= 147
     try:
         _ARTIFACTS.mkdir(parents=True, exist_ok=True)
         (_ARTIFACTS / "uic-oracle.txt").write_text(report, encoding="utf-8")
     except OSError:
         pass
+    assert by_folder["qt_examples"]["ok"] >= 54
+    assert by_folder["synthetic"]["ok"] >= 147
+    assert by_folder["freecad"]["ok"] >= 147
     assert not problems, report
