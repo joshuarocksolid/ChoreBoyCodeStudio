@@ -160,7 +160,7 @@ class EditorTabFactory:
                 surface = provider.create_surface(request)
             except ProviderDeclined as exc:
                 editor_widget = created_editor["widget"] or create_source_editor()
-                tab_content = _text_tab_with_notice(editor_widget, exc.reason, window._editor_tabs_widget)
+                tab_content = _DeclinedTextTab(editor_widget, exc.reason, window._editor_tabs_widget)
             except Exception:
                 window._logger.exception(
                     "Tab provider %s failed for %s",
@@ -168,7 +168,7 @@ class EditorTabFactory:
                     tab_file_path,
                 )
                 editor_widget = created_editor["widget"] or create_source_editor()
-                tab_content = _text_tab_with_notice(
+                tab_content = _DeclinedTextTab(
                     editor_widget,
                     "Couldn't open this view. Opened as text.",
                     window._editor_tabs_widget,
@@ -306,16 +306,26 @@ class EditorTabFactory:
         return page
 
 
-def _text_tab_with_notice(editor_widget: CodeEditorWidget, reason: str, parent: QWidget) -> QWidget:
-    container = QWidget(parent)
-    layout = QVBoxLayout(container)
-    layout.setContentsMargins(8, 8, 8, 0)
-    layout.setSpacing(4)
-    notice = QLabel(reason, container)
-    notice.setWordWrap(True)
-    layout.addWidget(notice)
-    layout.addWidget(editor_widget, 1)
-    return container
+class _DeclinedTextTab(QWidget):
+    """Text fallback after a provider declines, so a split can share the editor.
+
+    No ``apply_theme``, ``set_mode``, or ``toggle_preview``. Tab chrome treats
+    a widget with those as a second-group markdown pane.
+    """
+
+    def __init__(self, editor: CodeEditorWidget, reason: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._editor = editor
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 0)
+        layout.setSpacing(4)
+        notice = QLabel(reason, self)
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        layout.addWidget(editor, 1)
+
+    def source_editor(self) -> CodeEditorWidget:
+        return self._editor
 
 
 __all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost"]
