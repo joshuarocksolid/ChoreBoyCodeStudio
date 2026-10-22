@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DiscountDialog</class>
+ <widget class="QDialog" name="DiscountDialog">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Discount</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_nameEdit">
+     <property name="text">
+      <string>Name</string>
+     </property>
+     <property name="buddy">
+      <cstring>nameEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="nameEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_percentEdit">
+     <property name="text">
+      <string>Percent</string>
+     </property>
+     <property name="buddy">
+      <cstring>percentEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDoubleSpinBox" name="percentEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_startsEdit">
+     <property name="text">
+      <string>Starts</string>
+     </property>
+     <property name="buddy">
+      <cstring>startsEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDateEdit" name="startsEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_endsEdit">
+     <property name="text">
+      <string>Ends</string>
+     </property>
+     <property name="buddy">
+      <cstring>endsEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QDateEdit" name="endsEdit"/>
+   </item>
+   <item row="4" column="0">
+    <widget class="QLabel" name="label_stackCheck">
+     <property name="text">
+      <string>Stack</string>
+     </property>
+     <property name="buddy">
+      <cstring>stackCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="4" column="1">
+    <widget class="QCheckBox" name="stackCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>nameEdit</tabstop>
+  <tabstop>percentEdit</tabstop>
+  <tabstop>startsEdit</tabstop>
+  <tabstop>endsEdit</tabstop>
+  <tabstop>stackCheck</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

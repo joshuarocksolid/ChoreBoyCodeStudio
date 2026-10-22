@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>AuditFilter</class>
+ <widget class="QDialog" name="AuditFilter">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Audit</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_actorEdit">
+     <property name="text">
+      <string>Actor</string>
+     </property>
+     <property name="buddy">
+      <cstring>actorEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="actorEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_actionCombo">
+     <property name="text">
+      <string>Action</string>
+     </property>
+     <property name="buddy">
+      <cstring>actionCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QComboBox" name="actionCombo"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_sinceEdit">
+     <property name="text">
+      <string>Since</string>
+     </property>
+     <property name="buddy">
+      <cstring>sinceEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QDateTimeEdit" name="sinceEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_failuresCheck">
+     <property name="text">
+      <string>Failures only</string>
+     </property>
+     <property name="buddy">
+      <cstring>failuresCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QCheckBox" name="failuresCheck"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>actorEdit</tabstop>
+  <tabstop>actionCombo</tabstop>
+  <tabstop>sinceEdit</tabstop>
+  <tabstop>failuresCheck</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

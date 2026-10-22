@@ -141,7 +141,12 @@ def _load_provenance() -> Dict[str, dict]:
 
 
 def _ui_paths() -> List[Path]:
-    paths = [path for path in CORPUS.rglob("*.ui") if path.is_file() and "freecad" not in path.parts]
+    # designer_resaved/ is Designer's rewrite of the corpus, not more inputs.
+    paths = [
+        path
+        for path in CORPUS.rglob("*.ui")
+        if path.is_file() and "freecad" not in path.parts and "designer_resaved" not in path.parts
+    ]
     paths.sort()
     return paths
 

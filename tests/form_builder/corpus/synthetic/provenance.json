@@ -851,6 +851,30 @@
       "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
       "licence": "MIT",
       "notes": ""
+    },
+    {
+      "path": "synthetic/cbcs/enabled_bind.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "cbcsEnabledWhen and cbcsBind dynamic properties with notr, placed before geometry on the line edit."
+    },
+    {
+      "path": "synthetic/cbcs/logic_json.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "cbcsLogic JSON string on the form root, placed before geometry."
+    },
+    {
+      "path": "synthetic/cbcs/splitter_sizes.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "cbcsSplitterSizes on a QSplitter."
+    },
+    {
+      "path": "synthetic/properties/negative_zero.ui",
+      "source": "hand-authored for the M0.4b Designer resave",
+      "licence": "MIT",
+      "notes": "float and double -0, plus 0.1 and a float that needs extra digits."
     }
   ]
 }
