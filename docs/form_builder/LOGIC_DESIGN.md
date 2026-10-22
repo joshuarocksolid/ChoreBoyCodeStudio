@@ -28,8 +28,9 @@ Inputs read: `research/L_logic_research_grok.md` (Grok's tool research and draft
 Words used throughout:
 
 - **Form**: one `.ui` file and the window built from it.
-- **Window class**: the user's class in `forms/name_window.py`. It calls `self.ui.setupUi(self)`. The builder creates this file once and then only ever adds an empty method stub.
-- **Generated module**: `forms/ui_name.py`, rewritten on every save. Nobody edits it.
+- **Window class**: the user's class in `forms/name_window.py` (or beside an adopted form). It calls `self.ui.setupUi(self)`. The builder creates this file once and then only ever adds an empty method stub. A rename or move keeps the file and updates its import of the generated module.
+- **Generated module**: `forms/ui_name.py`, rewritten on every save. Nobody edits it. A hand edit is copied to `cbcs/form_builder/hand_edits/` before the next save replaces the file.
+- **Adopted form**: a `.ui` file that is not under `forms/`, recorded by "Adopt this form" as a project-relative path in `cbcs/project.json`. It generates the same way. A form outside the project, and not adopted, is edited without writing Python beside it.
 - **Rule**: a standing statement about a widget, such as "Enabled when Discount is checked" or "Value = Qty × Price". Rules are re-checked whenever their inputs change.
 - **Event**: something that happens once, such as a click. An event runs an ordered list of **steps**.
 - **Check**: a validation rule on a field, such as "Required" or "Must be an email address".
@@ -1649,6 +1650,16 @@ Hooks are methods on *your window*, named in the Data panel (5.9) or as *Call* s
 | The user wants their own handler order | native and generated connections are both made inside `setupUi`. Anything the user connects afterwards runs after them |
 | The user wants to stop generated behaviour | untick *Enabled* on the event, change the steps, or *Eject* |
 | Editing the user's file | only an empty stub, only on request, removable by undo while still empty |
+
+### 7.10 Where the files live
+
+A form belongs to the project when its `.ui` is under `<project>/forms/`, or when "Adopt this form" has stored its project-relative path. Anything else is edited and no `ui_*.py` is written beside it.
+
+Saving a project form rewrites `ui_<stem>.py` in the same folder. If that file was edited by hand, the previous bytes are copied to `<project>/cbcs/form_builder/hand_edits/<name>.<body hash>.py.txt` first, and the form reports that a copy was saved. The copy is not imported. The window file `<stem>_window.py` is created on the first save and is not overwritten after that. `forms/__init__.py` is created when it is missing.
+
+The form's stem has to be a Python name. It cannot be a keyword, start with `ui_` or `cbcs_`, or match a module already in the folder. Rename and move use the same rule. The move is a preview of file moves and import edits. `ui_<stem>.py` is generated again for the new path rather than edited in place. Import sites of the old module, including the window class, are updated. A failure puts the previous files back. A path outside the project is refused. Moving out of `forms/` adopts the new path. Moving back into `forms/` drops that adoption.
+
+The generated module's attributes are the widget names. In the window class, `self.ui.` completes those names. After a widget is renamed and the form is saved, the old name is no longer offered.
 
 ---
 
