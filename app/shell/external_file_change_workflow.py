@@ -323,7 +323,7 @@ class ExternalFileChangeWorkflow:
                 disk_content=disk_content,
             )
             if dirty_plan is None:
-                return ExternalFileChangeOutcome.CANCELLED
+                return ExternalFileChangeOutcome.DECLINED
             if not dirty_plan.apply_reload:
                 return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
             should_reload = True
@@ -392,7 +392,7 @@ class ExternalFileChangeWorkflow:
             dirty_buffers=(tab_state,),
         )
         if decision.intent is DocumentCloseIntent.CANCEL:
-            self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
+            self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
             return None
 
         if decision.intent is DocumentCloseIntent.SAVE:
@@ -439,7 +439,7 @@ class ExternalFileChangeWorkflow:
                 current_mtime=current_mtime,
             )
 
-        self._editor_manager.acknowledge_disk_mtime(file_path, current_mtime)
+        self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
         return None
 
     def _dirty_buffer_takes_disk_version(self, file_path: str, *, current_mtime: float) -> bool:

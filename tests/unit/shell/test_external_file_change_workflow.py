@@ -574,6 +574,36 @@ def test_lazy_sourced_clean_tab_prompts_and_reloads_through_surface(tmp_path: Pa
     assert local_history.checkpoints[-1][2] == "external_reload"
 
 
+def test_sourced_dirty_cancel_marks_the_conflict_and_the_next_save_prompts(tmp_path: Path) -> None:
+    file_path = tmp_path / "form.ui"
+    manager = EditorManager()
+    sync_host = _SurfaceSyncHost()
+    external_host = _SourcedStaleHost()
+    tab, source, _surface = _open_lazy_sourced_tab(
+        manager, file_path, content="<ui old/>\n", sync_host=sync_host, external_host=external_host
+    )
+    source.text = "<ui draft/>\n"
+    file_path.write_text("<ui new/>\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.CANCEL, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.DECLINED
+    assert tab.disk_conflict is not None and tab.disk_conflict.kind == DISK_CONFLICT_CHANGED
+    assert external_host.stale_prompts == []
+    assert workflow.resolve_before_save(tab.file_path) == "abort"
+    assert external_host.stale_prompts == [tab.file_path]
+    assert source.text == "<ui draft/>\n"
+
+
 def test_lazy_sourced_dirty_tab_gets_three_way_prompt_then_reloads(tmp_path: Path) -> None:
     file_path = tmp_path / "form.ui"
     manager = EditorManager()
@@ -818,6 +848,16 @@ def test_save_as_clears_missing_conflict(tmp_path: Path) -> None:
     assert workflow.check_and_handle(tab.file_path, force=True) is ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
     assert tab.disk_conflict is None
     assert external_host.saved_as == [(tab.file_path, destination)]
+
+
+@dataclass
+class _SourcedStaleHost(_SurfaceExternalHost):
+    stale_prompts: list[str] = field(default_factory=list)
+
+    def present_stale_save(self, file_path: str, *, disk_mtime: float | None, buffer_is_dirty: bool) -> StaleSaveChoice:
+        del disk_mtime, buffer_is_dirty
+        self.stale_prompts.append(file_path)
+        return StaleSaveChoice.CANCEL
 
 
 @dataclass
