@@ -357,8 +357,8 @@ def test_grid_item_alignment_reaches_nested_layouts_and_spacers(tmp_path: Path) 
     host = _run_setup(result.text, {})
     grid = host.findChild(QGridLayout, "grid")
     assert grid is not None
-    assert grid.itemAtPosition(0, 0).alignment() == Qt.AlignRight | Qt.AlignVCenter
-    assert grid.itemAtPosition(1, 0).alignment() == Qt.AlignTop
+    assert grid.itemAtPosition(0, 0).alignment() == Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter
+    assert grid.itemAtPosition(1, 0).alignment() == Qt.AlignmentFlag.AlignTop
 
 
 def test_unknown_signal_on_a_qt_class_warns_and_is_left_out(tmp_path: Path) -> None:
