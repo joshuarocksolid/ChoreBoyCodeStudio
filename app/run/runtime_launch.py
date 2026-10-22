@@ -15,6 +15,26 @@ _APPRUN_ENV_KEYS_TO_DROP = ("VIRTUAL_ENV", "VIRTUAL_ENV_PROMPT")
 _FREECAD_EXECUTABLE_NAMES = {"AppRun", "freecad", "FreeCAD"}
 
 
+def permission_denied_for_apprun(exc: BaseException) -> bool:
+    """True when launching AppRun failed with PermissionError.
+
+    Process start wraps the OS error. Walk the cause chain and the message
+    so a wrapped ``PermissionError`` still matches.
+    """
+    current: BaseException | None = exc
+    seen: set[int] = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        filename = str(getattr(current, "filename", "") or "")
+        text = f"{filename}\n{current}"
+        if isinstance(current, PermissionError) and ("AppRun" in text or "freecad" in text.lower()):
+            return True
+        if "AppRun" in text and "Permission" in text:
+            return True
+        current = current.__cause__
+    return False
+
+
 def is_freecad_runtime_executable(runtime_executable: str) -> bool:
     runtime_path = Path(runtime_executable)
     return runtime_path.name in _FREECAD_EXECUTABLE_NAMES or runtime_path.suffix == ".AppImage"

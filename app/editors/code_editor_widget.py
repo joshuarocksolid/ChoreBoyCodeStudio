@@ -21,10 +21,12 @@ from app.editors.code_editor_paste_hint_mixin import CodeEditorPasteHintMixin
 from app.editors.code_editor_search import CodeEditorSearchMixin
 from app.editors.code_editor_semantics import CodeEditorSemanticsMixin
 from app.editors.completion_popup import CompletionController
+from app.editors.editor_buffer import EditorBuffer
 from app.editors.syntax_engine import syntax_palette_from_tokens
 from app.editors.syntax_registry import default_syntax_highlighter_registry
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.diagnostics_service import DiagnosticSeverity
+from app.shell.completion_warmup import window_is_shown
 from app.shell.theme_tokens import ShellThemeTokens
 
 DEFAULT_TAB_WIDTH = 4
@@ -49,9 +51,10 @@ class CodeEditorWidget(
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self._buffer = EditorBuffer()
+        self.setDocument(self._buffer.document)
+        self._buffer.attach(self)
         self._logger = get_subsystem_logger("editors")
-        self._active_file_path: str | None = None
-        self._language_override_key: str | None = None
         self._highlighting_adaptive_mode = constants.HIGHLIGHTING_MODE_NORMAL
         self._highlighting_reduced_threshold_chars = constants.UI_INTELLIGENCE_HIGHLIGHTING_REDUCED_THRESHOLD_CHARS_DEFAULT
         self._highlighting_lexical_only_threshold_chars = (
@@ -62,7 +65,6 @@ class CodeEditorWidget(
         self._init_bracket_overlay_state()
         self._init_paste_hint_state()
         self._init_extra_selections_overlay_state()
-        self._highlighter: object | None = None
         self._syntax_theme_refresh_pending = False
         self._syntax_registry = default_syntax_highlighter_registry()
         self._syntax_palette: dict[str, str] = {}
@@ -78,25 +80,18 @@ class CodeEditorWidget(
         self._hover_tooltip_enabled = constants.UI_EDITOR_HOVER_TOOLTIP_ENABLED_DEFAULT
         self._signature_help_provider: Callable[[str, int], str | None] | None = None
         self._signature_help_requester: Callable[[str, int, int], None] | None = None
-        self._completion_enabled = True
-        self._completion_auto_trigger = True
-        self._completion_auto_trigger_period = True
         self._completion_min_chars = DEFAULT_COMPLETION_MIN_CHARS
         self._completion_request_generation = 0
-        self._pending_completion_trigger_character = ""
-        self._active_completion_prefix = ""
         self._hover_request_generation = 0
         self._hover_request_global_pos: QPoint | None = None
         self._signature_help_request_generation = 0
         self._completion_popup = CompletionController(self)
         self._completion_popup.set_widget(self)
+        self._completion_popup.set_host(self)
         self._completion_popup.activated.connect(self._insert_completion_from_item)
         self._completion_popup.selection_changed.connect(self._request_completion_item_resolution)
-        self._completion_debounce_timer = QTimer(self)
-        self._completion_debounce_timer.setSingleShot(True)
-        self._completion_debounce_timer.setInterval(50)
-        self._completion_debounce_timer.timeout.connect(self._flush_debounced_completion_request)
-        self._debounced_completion_request: tuple[str, int, bool, str, str] | None = None
+        if window_is_shown():
+            QTimer.singleShot(0, self._completion_popup.warm_surface)
 
         self._is_dark = False
         self._diag_error_color = QColor()
@@ -120,6 +115,73 @@ class CodeEditorWidget(
             indent_style="spaces",
             indent_size=DEFAULT_TAB_WIDTH,
         )
+
+    # -- Buffer-owned state ------------------------------------------------
+    # The highlighter, language, breakpoints, debug line and diagnostics belong
+    # to the buffer, so a second view of the same file shares them.
+
+    @property
+    def _highlighter(self) -> object | None:
+        return self._buffer.highlighter
+
+    @_highlighter.setter
+    def _highlighter(self, value: object | None) -> None:
+        self._buffer.highlighter = value
+
+    @property
+    def _language_override_key(self) -> str | None:
+        return self._buffer.language_override_key
+
+    @_language_override_key.setter
+    def _language_override_key(self, value: str | None) -> None:
+        self._buffer.language_override_key = value
+
+    @property
+    def _active_file_path(self) -> str | None:
+        return self._buffer.file_path
+
+    @_active_file_path.setter
+    def _active_file_path(self, value: str | None) -> None:
+        self._buffer.file_path = value
+
+    @property
+    def _breakpoints(self) -> set[int]:
+        return self._buffer.breakpoints
+
+    @_breakpoints.setter
+    def _breakpoints(self, value: set[int]) -> None:
+        self._buffer.breakpoints = value
+
+    @property
+    def _debug_execution_line(self) -> int | None:
+        return self._buffer.debug_execution_line
+
+    @_debug_execution_line.setter
+    def _debug_execution_line(self, value: int | None) -> None:
+        self._buffer.debug_execution_line = value
+
+    def editor_buffer(self) -> EditorBuffer:
+        return self._buffer
+
+    def buffer_views(self) -> list["CodeEditorWidget"]:
+        """Every view of this buffer, this one included."""
+        return list(self._buffer.views())
+
+    def share_buffer_with(self, other: "CodeEditorWidget") -> None:
+        """Show ``other``'s buffer: same document, highlighter and buffer state."""
+        if other._buffer is self._buffer:
+            return
+        self._buffer.detach(self)
+        self._buffer = other._buffer
+        self.setDocument(self._buffer.document)
+        self._buffer.attach(self)
+        self._render_diagnostics(self._buffer.diagnostics)
+        # No blockCountChanged fires for a document that already has its text.
+        self._update_line_number_area_width(0)
+        self._mark_overlay_cache_dirty()
+        self._line_number_area.update()
+        self._highlight_current_line()
+        self._notify_highlighter_viewport_lines()
 
     def apply_theme(self, tokens: ShellThemeTokens, *, defer_syntax_rehighlight: bool = False) -> None:
         started_at = time.perf_counter()

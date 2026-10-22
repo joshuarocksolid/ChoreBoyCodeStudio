@@ -19,6 +19,8 @@ owners:
     - app/features/markdown/**
   form-builder:
     - app/features/form_builder/**
+  editor-groups:
+    - app/features/editor_groups/**
   platform.intelligence:
     - app/intelligence/**
   platform.packaging:

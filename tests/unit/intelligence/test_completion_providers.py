@@ -37,3 +37,25 @@ def test_provide_project_symbol_items_returns_approximate_when_sqlite_cache_empt
     assert all(item.source == "approximate" for item in items)
     assert all(item.confidence == "approximate" for item in items)
     assert any(item.insert_text == "alpha_helper" for item in items)
+
+
+def test_import_bindings_survive_mid_file_syntax_errors_and_wrapped_imports() -> None:
+    from app.intelligence.completion_providers import collect_import_module_bindings
+
+    source = (
+        "import os\n"
+        "from PySide2 import QtWidgets as Qw\n"
+        "from a.b import (\n    c,\n    d as e,\n)\n"
+        "btn.\n"
+        "import broken(\n"
+        "import sys\n"
+        "def f():\n    import hidden\n"
+    )
+
+    assert collect_import_module_bindings(source) == {
+        "os": "os",
+        "Qw": "PySide2.QtWidgets",
+        "c": "a.b.c",
+        "e": "a.b.d",
+        "sys": "sys",
+    }

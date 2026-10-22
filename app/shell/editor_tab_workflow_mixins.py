@@ -71,6 +71,7 @@ class EditorTabMarkdownDelegates:
 class EditorTabBufferDelegates:
     _buffer_workflow: Any
     _editor_tabs_coordinator: Any
+    _host: Any
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_text_changed(file_path, editor_widget)
@@ -95,6 +96,9 @@ class EditorTabBufferDelegates:
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
         self._buffer_workflow.handle_editor_tab_changed(tab_index)
+        from app.shell.completion_warmup import schedule_open_buffer_warmup
+
+        schedule_open_buffer_warmup(self._host.parent_widget())
 
 
 class EditorTabLifecycleDelegates:
@@ -104,14 +108,14 @@ class EditorTabLifecycleDelegates:
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
         self._lifecycle_workflow.release_editor_widget(widget)
 
-    def release_tab_content(self, file_path: str) -> None:
-        self._lifecycle_workflow.release_tab_content(file_path)
+    def release_tab_content(self, file_path: str, buffer_id: str | None = None) -> None:
+        self._lifecycle_workflow.release_tab_content(file_path, buffer_id=buffer_id)
 
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
 
-    def remove_tab_widget_for_path(self, file_path: str) -> None:
-        self._lifecycle_workflow.remove_tab_widget_for_path(file_path)
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str, file_path: str | None = None) -> None:
+        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id, file_path=file_path)
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._editor_tabs_coordinator.refresh_tab_presentation(file_path)
@@ -131,8 +135,27 @@ class EditorTabLifecycleDelegates:
     def show_editor_tab_context_menu(self, position: QPoint) -> None:
         self._lifecycle_workflow.show_editor_tab_context_menu(position)
 
-    def handle_tab_close_requested(self, tab_index: int) -> None:
-        self._lifecycle_workflow.handle_tab_close_requested(tab_index)
+    def handle_tab_close_requested(
+        self,
+        tab_index: int,
+        *,
+        discard_dirty: bool = False,
+        skip_close_blockers: bool = False,
+    ) -> None:
+        self._lifecycle_workflow.handle_tab_close_requested(
+            tab_index,
+            discard_dirty=discard_dirty,
+            skip_close_blockers=skip_close_blockers,
+        )
+
+    def close_tab_discarding_edits(self, file_path: str, *, skip_close_blockers: bool = False) -> None:
+        self._lifecycle_workflow.close_tab_discarding_edits(
+            file_path,
+            skip_close_blockers=skip_close_blockers,
+        )
+
+    def close_tab_for_path(self, file_path: str) -> None:
+        self._lifecycle_workflow.close_tab_for_path(file_path)
 
     def close_active_tab(self) -> None:
         self._lifecycle_workflow.close_active_tab()

@@ -28,7 +28,7 @@ Preconditions:
 - Doctor passed.
 - Optional: project open so project/editor chips are populated.
 
-- **Chips after launch.** Read `#shell.startupStatusLabel` (`Startup: Runtime ready (8/8 checks)`), `#shell.runStatusLabel` (`Run: idle`), `#shell.projectStatusLabel` (`Project: none loaded`). Shot `status-launch`.
+- **Chips after launch.** Read `#shell.startupStatusLabel` (`Startup: Runtime ready (9/9 checks)`), `#shell.runStatusLabel` (`Run: idle`), `#shell.projectStatusLabel` (`Project: none loaded`). Shot `status-launch`.
 - **After open + edit.** Project chip shows the name. Editor chip shows `Ln` / `Col` and `modified` after a keystroke.
 - **Zoom.** `control-cbcs trigger "$SID" shell.action.view.zoomIn` twice, then `zoomReset`. Editor remains usable; shot `zoom-in` vs `zoom-reset`.
 - **Reset layout.** Drag `#shell.topSplitter` if the bridge exposes it; then `control-cbcs trigger "$SID" shell.action.view.resetLayout`. Explorer and bottom tabs return to a usable default. Shot `layout-reset`.

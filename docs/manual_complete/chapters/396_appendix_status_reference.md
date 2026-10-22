@@ -7,7 +7,7 @@ panels, so you can interpret the application at a glance.
 
 | Message | Meaning | Action |
 | --- | --- | --- |
-| `Runtime ready (8/8 checks)` | All capability checks passed. | None — you are good to go. |
+| `Runtime ready (9/9 checks)` | All capability checks passed. | None — you are good to go. |
 | `Runtime issues (N/8 checks)` | One or more checks failed. | Open **Tools > Runtime Center** for details. |
 
 The capability checks cover: the runtime launcher, the Qt library, writable settings and

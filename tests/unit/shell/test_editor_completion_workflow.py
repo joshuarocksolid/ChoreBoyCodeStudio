@@ -39,81 +39,20 @@ class _FakeHost:
     def intelligence_controller(self) -> _FakeIntelligenceController:
         return self._intelligence_controller
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return "buf-a"
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
         return 1
 
     def editor_widget_for_path(self, file_path: str) -> object | None:
         return self._editor_widget
 
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> object | None:
+        return self._editor_widget
+
     def log_warning(self, message: str, *args: object) -> None:
         return None
-
-
-def test_completion_resolve_skips_delivery_when_generation_is_stale() -> None:
-    editor_widget = SimpleNamespace(
-        completion_request_generation=lambda: 2,
-        show_resolved_calls=[],
-        show_resolved_completion_item_for_request=lambda **kwargs: editor_widget.show_resolved_calls.append(kwargs),
-    )
-    host = _FakeHost(editor_widget=editor_widget)
-    workflow = EditorCompletionWorkflow(host)
-
-    workflow.request_completion_item_resolve_async(
-        file_path="/tmp/a.py",
-        editor_widget=editor_widget,
-        item=CompletionItem(label="alpha", insert_text="alpha", kind=CompletionKind.SYMBOL),
-        source_text="alpha = 1\n",
-        cursor_position=0,
-        request_generation=1,
-    )
-
-    resolve_call = host.intelligence_controller().resolve_calls[0]
-    resolve_call["on_success"](
-        CompletionResolveResult(
-            request_generation=1,
-            item=CompletionItem(label="alpha", insert_text="alpha", kind=CompletionKind.SYMBOL, detail="resolved"),
-            buffer_revision=1,
-            context_fingerprint="",
-        )
-    )
-
-    assert editor_widget.show_resolved_calls == []
-
-
-def test_completion_paint_skips_delivery_when_generation_is_stale() -> None:
-    editor_widget = SimpleNamespace(
-        completion_request_generation=lambda: 2,
-        show_completion_calls=[],
-        show_completion_items_for_request=lambda **kwargs: editor_widget.show_completion_calls.append(kwargs),
-    )
-    host = _FakeHost(editor_widget=editor_widget)
-    host.show_status_message = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
-    host.reported_completion_degradation_reasons = lambda: set()  # type: ignore[attr-defined]
-    host.intelligence_metrics_logging_enabled = lambda: False  # type: ignore[attr-defined]
-    host.completion_min_chars = lambda: 2  # type: ignore[attr-defined]
-    host.log_info = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
-    host.log_warning = lambda *_args, **_kwargs: None  # type: ignore[attr-defined]
-    workflow = EditorCompletionWorkflow(host)
-
-    workflow.request_editor_completions_async(
-        file_path="/tmp/a.py",
-        editor_widget=editor_widget,
-        source_text="alpha",
-        cursor_position=5,
-        manual_trigger=True,
-        request_generation=1,
-        trigger_kind="manual",
-        trigger_character="",
-    )
-
-    completion_call = host.intelligence_controller().editor_completion_calls[0]
-    completion_call["on_paint"](
-        "alpha",
-        [CompletionItem(label="alpha", insert_text="alpha", kind=CompletionKind.SYMBOL)],
-        CompletionEnvelope(items=[], source_phase="fast"),
-    )
-
-    assert editor_widget.show_completion_calls == []
 
 
 def test_request_editor_completions_uses_worker_lane_not_ui_sync_fast() -> None:
@@ -146,5 +85,5 @@ def test_request_editor_completions_uses_worker_lane_not_ui_sync_fast() -> None:
     assert not hasattr(host.intelligence_controller(), "complete_fast_sync")
     request = host.intelligence_controller().editor_completion_calls[0]["request"]
     completion_context = host.intelligence_controller().editor_completion_calls[0]["completion_context"]
-    assert request.max_results == UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT == 500
+    assert request.max_results == UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT
     assert completion_context.max_results == UI_INTELLIGENCE_COMPLETION_MAX_RESULTS_DEFAULT

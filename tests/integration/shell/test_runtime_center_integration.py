@@ -26,7 +26,7 @@ def test_startup_status_click_opens_runtime_center(
     opened_dialogs: list[dict[str, object]] = []
 
     class _FakeRuntimeCenterDialog:
-        def __init__(self, *, title, report, tokens, open_help_topic=None, parent=None):  # type: ignore[no-untyped-def]
+        def __init__(self, *, title, report, tokens, open_help_topic=None, parent=None, **_kwargs):  # type: ignore[no-untyped-def]
             opened_dialogs.append(
                 {
                     "title": title,
@@ -76,7 +76,7 @@ def test_project_health_check_opens_runtime_center_with_latest_report(
     opened_dialogs: list[dict[str, object]] = []
 
     class _FakeRuntimeCenterDialog:
-        def __init__(self, *, title, report, tokens, open_help_topic=None, parent=None):  # type: ignore[no-untyped-def]
+        def __init__(self, *, title, report, tokens, open_help_topic=None, parent=None, **_kwargs):  # type: ignore[no-untyped-def]
             opened_dialogs.append({"title": title, "report": report})
 
         def exec_(self) -> int:

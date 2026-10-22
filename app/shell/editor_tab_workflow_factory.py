@@ -54,9 +54,11 @@ def create_editor_tab_subworkflows(
     outline_workflow = EditorTabOutlineWorkflow(
         host=host,
         editor_manager=editor_manager,
-        editor_widgets_by_path=host.editor_widgets_by_path,
+        editor_widget_for_buffer_id=lambda buffer_id: host.workspace_controller().widget_for_buffer_id(buffer_id),
         editor_tab_factory=host.editor_tab_factory(),
-        buffer_revision=editor_tabs_coordinator.buffer_revision,
+        buffer_revision_for_buffer_id=lambda buffer_id: host.workspace_controller().buffer_revision_for_buffer_id(
+            buffer_id
+        ),
     )
     markdown_workflow = EditorTabMarkdownWorkflow(
         host=host,

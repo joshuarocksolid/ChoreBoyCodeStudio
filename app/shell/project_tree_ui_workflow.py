@@ -92,7 +92,7 @@ class ProjectTreeUiWorkflowHost(Protocol):
     def editor_tabs_widget(self) -> QTabWidget | None:
         ...
 
-    def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
+    def problems_controller(self) -> Any:
         ...
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
@@ -372,6 +372,10 @@ class ProjectTreeUiWorkflow:
     def apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
         self._host.project_tree_action_coordinator().apply_path_move_updates(source_path, destination_path)
 
+    def migrate_moved_buffer_state(self, old_path: str, new_path: str) -> None:
+        self._host.problems_controller().retarget_buffer_diagnostics(new_path)
+        self._host.local_history_workflow().migrate_draft_for_move(old_path, new_path)
+
     def update_widget_language_for_path(self, widget: CodeEditorWidget, new_path: str) -> None:
         widget.set_language_for_path(new_path)
 
@@ -408,7 +412,7 @@ class ProjectTreeUiWorkflow:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
-        editor_tabs_widget.setTabToolTip(tab_index, new_path)
+        del tab_index  # the presentation refresh updates the tab in every group
         self._host.refresh_tab_presentation(new_path)
 
     def maybe_rewrite_imports_for_move(self, source_path: str, destination_path: str) -> None:
@@ -615,8 +619,8 @@ class MainWindowProjectTreeUiHost:
     def editor_tabs_widget(self) -> QTabWidget | None:
         return self._window._editor_tabs_widget
 
-    def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
-        return self._window._editor_widgets_by_path
+    def problems_controller(self) -> Any:
+        return self._window._problems_controller
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
         return self._window._markdown_panes_by_path

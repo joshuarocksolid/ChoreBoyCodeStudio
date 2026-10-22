@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -11,6 +12,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
+from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.shell.document_safety import (  # noqa: E402
     DocumentCloseIntent,
     DocumentSafetyDecision,
@@ -218,3 +220,70 @@ def test_confirm_proceed_before_tree_delete_proceeds_when_no_dirty_tabs() -> Non
     workflow, _history = _build_workflow(tabs=(clean_tab,))
 
     assert workflow.confirm_proceed_before_tree_delete(["/tmp/project/main.py"]) is True
+
+
+def test_save_tab_does_not_overwrite_a_conflicted_buffer(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    file_path.write_text("other\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path)).tab
+    tab.update_content("mine\n")
+    tab.set_disk_conflict("changed", file_path.stat().st_mtime)
+    prompts: list[str] = []
+
+    class _PromptHost(_FakeSaveDocumentHost):
+        def editor_auto_save(self) -> bool:
+            return True
+
+        def resolve_external_change_before_save(self, path: str) -> str:
+            prompts.append(path)
+            return "abort"
+
+    workflow = SaveWorkflow(
+        local_history=_FakeHistoryWorkflow(),
+        intelligence_cache=SimpleNamespace(start_symbol_indexing=lambda *_a, **_kw: None),
+        host=_PromptHost(
+            editor_exit_behavior=constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT,
+            editor_manager=manager,
+        ),
+        settings_service=SimpleNamespace(update_global=lambda updater: updater({})),
+    )
+
+    assert workflow.save_tab(tab.file_path) is False
+    assert prompts == [tab.file_path]
+    assert file_path.read_text(encoding="utf-8") == "other\n"
+    assert tab.current_content == "mine\n"
+
+
+def test_auto_save_skips_a_conflicted_buffer(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    file_path.write_text("other\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path)).tab
+    tab.update_content("mine\n")
+    tab.set_disk_conflict("changed", file_path.stat().st_mtime)
+    prompts: list[str] = []
+
+    class _PromptHost(_FakeSaveDocumentHost):
+        def editor_auto_save(self) -> bool:
+            return True
+
+        def resolve_external_change_before_save(self, path: str) -> str:
+            prompts.append(path)
+            return "proceed"
+
+    workflow = SaveWorkflow(
+        local_history=_FakeHistoryWorkflow(),
+        intelligence_cache=SimpleNamespace(start_symbol_indexing=lambda *_a, **_kw: None),
+        host=_PromptHost(
+            editor_exit_behavior=constants.UI_EDITOR_EXIT_BEHAVIOR_DEFAULT,
+            editor_manager=manager,
+        ),
+        settings_service=SimpleNamespace(update_global=lambda updater: updater({})),
+    )
+
+    workflow.flush_auto_save_to_file()
+
+    assert prompts == []
+    assert file_path.read_text(encoding="utf-8") == "other\n"
+    assert tab.current_content == "mine\n"

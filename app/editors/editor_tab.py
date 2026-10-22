@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -9,12 +10,25 @@ from typing import Callable, Optional
 from app.editors.tab_content_source import TabContentSource
 
 
+DISK_CONFLICT_CHANGED = "changed"
+DISK_CONFLICT_MISSING = "missing"
+
+
+@dataclass(frozen=True)
+class DiskConflict:
+    """Unresolved divergence between a buffer and its file on disk."""
+
+    kind: str
+    conflict_mtime: float | None
+
+
 @dataclass(init=False)
 class EditorTabState:
     """In-memory state for a single opened file tab.
 
-    ``current_content`` reads ``content_source.current_text()`` when a source is
-    attached, otherwise the stored string. ``is_dirty`` delegates the same way.
+    Tabs are identified by ``buffer_id``. ``current_content`` reads
+    ``content_source.current_text()`` when a source is attached, otherwise the
+    stored string. ``is_dirty`` delegates the same way.
     """
 
     file_path: str
@@ -22,6 +36,8 @@ class EditorTabState:
     original_content: str
     last_known_mtime: float | None
     is_preview: bool
+    buffer_id: str
+    disk_conflict: Optional[DiskConflict]
     content_source: Optional[TabContentSource]
     content_source_unsubscribe: Optional[Callable[[], None]] = field(compare=False)
     _current_content: str = field(repr=False)
@@ -36,6 +52,8 @@ class EditorTabState:
         is_preview: bool = False,
         content_source: Optional[TabContentSource] = None,
         content_source_unsubscribe: Optional[Callable[[], None]] = None,
+        buffer_id: Optional[str] = None,
+        disk_conflict: Optional[DiskConflict] = None,
     ) -> None:
         self.file_path = file_path
         self.display_name = display_name
@@ -43,6 +61,8 @@ class EditorTabState:
         self._current_content = current_content
         self.last_known_mtime = last_known_mtime
         self.is_preview = is_preview
+        self.buffer_id = uuid.uuid4().hex if buffer_id is None else buffer_id
+        self.disk_conflict = disk_conflict
         self.content_source = content_source
         self.content_source_unsubscribe = content_source_unsubscribe
 
@@ -104,10 +124,17 @@ class EditorTabState:
         else:
             self.original_content = self._current_content if saved_text is None else saved_text
         self.last_known_mtime = last_known_mtime
+        self.disk_conflict = None
 
     def set_last_known_mtime(self, mtime: float | None) -> None:
         """Record most recently observed on-disk mtime."""
         self.last_known_mtime = mtime
+
+    def set_disk_conflict(self, kind: str, conflict_mtime: float | None) -> None:
+        self.disk_conflict = DiskConflict(kind=kind, conflict_mtime=conflict_mtime)
+
+    def clear_disk_conflict(self) -> None:
+        self.disk_conflict = None
 
     def promote(self) -> None:
         """Mark a preview tab as permanent."""

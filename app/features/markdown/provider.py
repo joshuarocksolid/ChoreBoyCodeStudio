@@ -7,10 +7,12 @@ and save stay on the source editor's text.
 
 from __future__ import annotations
 
-from typing import Callable, Mapping, Optional, Sequence
+from typing import Any, Callable, Mapping, Optional, Sequence
+
+from app.qt.QtWidgets import QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.editors.markdown_rendering import is_markdown_path
+from app.editors.markdown_rendering import is_markdown_path, qt_markdown_supported
 from app.editors.tab_content_source import TabContentSource
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
 from app.intelligence.diagnostics_models import CodeDiagnostic
@@ -103,8 +105,6 @@ class MarkdownTabContentProvider:
         self._panes_by_path = panes_by_path
         self._on_mode_changed = on_mode_changed
         if markdown_supported is None:
-            from app.editors.markdown_rendering import qt_markdown_supported
-
             markdown_supported = qt_markdown_supported()
         self._markdown_supported = markdown_supported
 
@@ -128,4 +128,45 @@ class MarkdownTabContentProvider:
         return MarkdownTabSurface(pane, self._panes_by_path, request.file_path)
 
 
-__all__ = ["MarkdownTabContentProvider", "MarkdownTabSurface"]
+def build_secondary_pane(
+    view: CodeEditorWidget,
+    path: str,
+    parent: QWidget,
+    theme: ShellThemeTokens,
+    open_linked: Callable[[str], None],
+    on_mode_changed: Callable[[], None],
+) -> Optional[MarkdownEditorPane]:
+    """A second group's preview. None when the path is not a markdown file."""
+    if not is_markdown_path(path) or not qt_markdown_supported():
+        return None
+    pane = MarkdownEditorPane(
+        view,
+        path,
+        parent,
+        local_link_callback=open_linked,
+        initial_mode=MarkdownPreviewMode.SPLIT,
+    )
+    pane.apply_theme(theme)
+    pane.mode_changed.connect(lambda _mode: on_mode_changed())
+    return pane
+
+
+def adopt_secondary_pane(window: Any, path: str, pane: object) -> bool:
+    """Bind a second group's pane when the registered view has closed."""
+    if not isinstance(pane, MarkdownEditorPane):
+        return False
+    registry = window._tab_content_registry
+    if registry.surface_for_path(path) is not None:
+        return False
+    panes = window._markdown_panes_by_path
+    panes[path] = pane
+    registry.bind(path, MarkdownTabSurface(pane, panes, path), "markdown")
+    return True
+
+
+__all__ = [
+    "MarkdownTabContentProvider",
+    "MarkdownTabSurface",
+    "adopt_secondary_pane",
+    "build_secondary_pane",
+]

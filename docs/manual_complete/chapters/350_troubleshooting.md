@@ -7,7 +7,7 @@ Bundle (see "Diagnostics & support tools") so a supporter can help.
 ## The status bar shows "Runtime issues"
 
 **Symptom:** The status bar reads "Runtime issues (N/8 checks)" instead of "Runtime ready
-(8/8 checks)".
+(9/9 checks)".
 
 **Likely cause:** One of the startup capability checks failed (for example, a settings or
 log folder is not writable, or a runtime component did not load).

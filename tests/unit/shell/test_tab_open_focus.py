@@ -10,6 +10,7 @@ from app.editors.editor_manager import OpenedTabResult  # noqa: E402
 from app.editors.editor_tab import EditorTabState  # noqa: E402
 from app.qt.QtWidgets import QTabWidget, QWidget  # noqa: E402
 from app.shell.editor_tab_factory import EditorTabFactory  # noqa: E402
+from app.shell.editor_tabs_coordinator import EditorTabsCoordinator  # noqa: E402
 from app.shell.tab_content_providers import TabContentProviderRegistry, TabMatchContext  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -61,7 +62,7 @@ def test_opening_a_markdown_surface_does_not_focus_it(qapp: object) -> None:
     window._editor_tabs_widget = tabs  # type: ignore[attr-defined]
     window._tab_content_registry = registry  # type: ignore[attr-defined]
     window._loaded_project = None  # type: ignore[attr-defined]
-    window._shell_theme_workflow = type("Theme", (), {"resolve_theme_tokens": staticmethod(lambda: object())})()  # type: ignore[attr-defined]
+    window._shell_theme_workflow = type("Theme", (), {"resolve_theme_tokens": staticmethod(lambda: None)})()  # type: ignore[attr-defined]
     window._editor_tab_workflow = type(  # type: ignore[attr-defined]
         "Tabs",
         (),
@@ -71,6 +72,8 @@ def test_opening_a_markdown_surface_does_not_focus_it(qapp: object) -> None:
             "update_editor_status_for_path": staticmethod(lambda _path: None),
         },
     )()
+    window._external_file_change_workflow = object()  # type: ignore[attr-defined]
+    window._editor_tabs_coordinator = EditorTabsCoordinator(window)  # type: ignore[attr-defined]
     window._refresh_save_action_states = lambda: None  # type: ignore[attr-defined]
     tab = EditorTabState(
         file_path="/tmp/project/README.md",

@@ -2,8 +2,11 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any, Optional
+
+from app.intelligence.completion_metrics import log_completion_phase, note_phase
 
 from app.bootstrap.paths import PathInput
 from app.intelligence.completion_models import CompletionItem
@@ -19,7 +22,10 @@ from app.intelligence.jedi_mappers import (
     completion_kind_from_name,
     completion_signature,
 )
-from app.intelligence.jedi_project_cache import invalidate_project_cache as invalidate_project_cache_impl
+from app.intelligence.jedi_project_cache import (
+    get_project,
+    invalidate_project_cache as invalidate_project_cache_impl,
+)
 from app.intelligence.jedi_runtime import initialize_jedi_runtime
 from app.intelligence.jedi_script_factory import create_script
 from app.intelligence.semantic_models import SemanticDefinitionResult, SemanticHoverResult, SemanticReferenceResult, SemanticSignatureResult
@@ -33,10 +39,57 @@ class JediEngine:
         self._state_root = state_root
         self._lock = threading.RLock()
         self._project_cache: dict[tuple[str, tuple[str, ...]], Any] = {}
+        self._completion_warmed = False
+        self.last_completion_timings: dict[str, float] = {}
 
     def is_available(self) -> bool:
         """Return whether the Jedi runtime is importable."""
         return initialize_jedi_runtime(self._state_root).is_available
+
+    def inference_scope(self) -> tuple[dict[tuple[str, tuple[str, ...]], Any], Optional[PathInput]]:
+        """Project cache and state root shared with runtime-target inference."""
+
+        return self._project_cache, self._state_root
+
+    def warm_open_buffer(
+        self,
+        *,
+        project_root: str | None,
+        current_file_path: str,
+        source_text: str,
+        cursor_position: int,
+    ) -> str:
+        """Parse this buffer on the shared Jedi project and return a runtime target."""
+
+        from app.intelligence.runtime_introspection import warm_open_buffer_target
+
+        with self._lock:
+            return warm_open_buffer_target(
+                project_root=project_root,
+                current_file_path=current_file_path,
+                source_text=source_text,
+                cursor_position=cursor_position,
+                project_cache=self._project_cache,
+                state_root=self._state_root,
+            )
+
+    def warm_completion(self, *, project_root: str | None) -> None:
+        """Import Jedi and complete one tiny buffer. Later calls only cache the project."""
+
+        if self._completion_warmed:
+            if project_root:
+                with self._lock:
+                    get_project(self._project_cache, project_root)
+            return
+        source = "value = 1\nvalue."
+        self.complete(
+            project_root=project_root,
+            current_file_path="warmup.py",
+            source_text=source,
+            cursor_position=len(source),
+            max_results=8,
+        )
+        self._completion_warmed = True
 
     def lookup_definition(
         self,
@@ -185,6 +238,7 @@ class JediEngine:
         source_text: str,
         cursor_position: int,
     ) -> list[Any]:
+        timings: dict[str, float] = {}
         with self._lock:
             script = create_script(
                 state_root=self._state_root,
@@ -192,6 +246,12 @@ class JediEngine:
                 project_root=project_root,
                 current_file_path=current_file_path,
                 source_text=source_text,
+                timings=timings,
             )
             line_number, column_number = offset_to_line_column(source_text, cursor_position)
-            return list(script.complete(line_number, column_number))
+            started_at = time.perf_counter()
+            completions = list(script.complete(line_number, column_number))
+            inference_ms = note_phase(timings, "jedi_inference", started_at)
+            log_completion_phase("jedi_inference", inference_ms, count=len(completions))
+            self.last_completion_timings = dict(timings)
+            return completions

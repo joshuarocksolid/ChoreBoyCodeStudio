@@ -59,6 +59,9 @@ class _Tabs:
     def tabToolTip(self, index: int) -> str:  # noqa: N802
         return self._file_path if index == 0 else ""
 
+    def widget(self, _index: int) -> None:
+        return None
+
     def removeTab(self, index: int) -> None:  # noqa: N802
         self.removed.append(index)
 
@@ -116,6 +119,9 @@ class _CloseHost:
     def local_history_forget_source(self, file_path: str) -> None:
         del file_path
 
+    def indent_source_by_path(self) -> dict[str, object]:
+        return {}
+
 
 def _lifecycle(
     manager: EditorManager,
@@ -128,7 +134,10 @@ def _lifecycle(
     workflow = EditorTabLifecycleWorkflow(
         host=host,  # type: ignore[arg-type]
         editor_manager=manager,
-        editor_tabs_coordinator=SimpleNamespace(tab_index_for_path=lambda _path: 0),
+        editor_tabs_coordinator=SimpleNamespace(
+            tab_index_for_path=lambda _path: 0,
+            file_path_for_tab_index=lambda index: file_path if index == 0 else "",
+        ),
         save_workflow=SimpleNamespace(),
         debug_control_workflow=SimpleNamespace(
             breakpoint_store=SimpleNamespace(clear_file=lambda _path: None),
@@ -166,7 +175,7 @@ def test_delete_releases_a_tab_that_has_no_editor_widget(tmp_path: Path) -> None
 
     controller.close_deleted_editor_paths(
         str(root.resolve()),
-        open_tab_paths=manager.open_paths(),
+        open_tab_paths=manager.open_paths,
         tab_index_for_path=lambda _path: 0,
         remove_tab_at_index=lambda _index: None,
         release_tab_content=workflow.release_tab_content,
@@ -201,7 +210,7 @@ def test_move_rekeys_a_surface_with_no_source_editor(tmp_path: Path) -> None:
         old_path,
         new_path,
         remap_editor_paths=lambda _old, _new: {old_path: new_path},
-        editor_widgets_by_path={},
+        widget_for_path=lambda _path: None,
         tab_index_for_path=lambda _path: -1,
         update_tab_path_and_name=lambda _index, _path: None,
         breakpoint_store=BreakpointStore(),

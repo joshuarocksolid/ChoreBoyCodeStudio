@@ -1,343 +1,122 @@
-"""Custom delegate that renders one completion row.
+"""Paints one completion row: kind chip, full name, muted short type.
 
-Layout per row::
-
-    [icon] label  help_teaser / signature                         origin
-
-* ``[icon]`` is a 22px square chip painted in the kind accent color with the
-  kind glyph centered.
-* ``label`` uses the primary text color; matched characters from the prefix
-  are drawn bold.
-* ``help_teaser`` is a muted one-line docstring/detail glance (preferred),
-  falling back to signature when no docs are available.
-* ``origin`` is a right-aligned badge showing ``engine`` or ``source``.
+Names are never elided; the list is sized to fit the widest name.
+Matched characters are drawn bold in the accent color.
 """
 
 from __future__ import annotations
 
-from app.qt.QtCore import QModelIndex, QPointF, QRect, QRectF, QSize, Qt
-from app.qt.QtGui import (
-    QBrush,
-    QColor,
-    QFont,
-    QFontMetrics,
-    QPainter,
-    QPen,
-    QPalette,
-    QTextCharFormat,
-    QTextCursor,
-    QTextDocument,
-    QTextOption,
-)
+from app.qt.QtCore import QModelIndex, QRect, QRectF, QSize, Qt
+from app.qt.QtGui import QBrush, QColor, QFont, QFontMetrics, QPainter, QPen
 from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem
 
 from app.editors.completion_popup.completion_item_model import (
     ItemRole,
     KindStyleRole,
-    MatchRangesRole,
-    RowKindRole,
+    MatchPositionsRole,
+    ShortTypeRole,
 )
 from app.editors.completion_popup.completion_kind_style import KindGlyphStyle
+from app.intelligence.completion_matcher import is_private_name
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
-
-_ROW_HEIGHT = 24
-_HEADER_ROW_HEIGHT = 22
-_ICON_SIZE = 18
-_ICON_PADDING_LEFT = 6
-_ICON_PADDING_RIGHT = 8
-_RIGHT_PADDING = 8
-_GAP_SECONDARY_ORIGIN = 12
-_GAP_LABEL_HELP = 10
+ROW_HEIGHT = 22
+CHIP_SIZE = 16
+CHIP_LEFT = 6
+CHIP_GAP = 8
+TYPE_GAP = 16
+RIGHT_PADDING = 8
 
 
 class CompletionItemDelegate(QStyledItemDelegate):
-    """Paints a single completion row with icon, label, signature, origin."""
+    """Row painter for :class:`CompletionListView`."""
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
-        self._tokens: ShellThemeTokens | None = None
-        self._color_text: QColor = QColor()
-        self._color_muted: QColor = QColor()
-        self._color_selected_bg: QColor = QColor()
-        self._color_hover_bg: QColor = QColor()
-        self._color_alt_bg: QColor = QColor(0, 0, 0, 0)
-        self._color_badge_bg: QColor = QColor()
-        self._color_badge_text: QColor = QColor()
-        self._color_header_bg: QColor = QColor(0, 0, 0, 0)
-        self._color_header_border: QColor = QColor()
+        self._color_text = QColor("#212529")
+        self._color_muted = QColor("#5A6168")
+        self._color_accent = QColor("#3366FF")
+        self._color_selected_bg = QColor("#D0E2FF")
+        self._color_hover_bg = QColor("#EEF1F5")
+        self._color_chip_text = QColor("#FFFFFF")
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        """Refresh cached painter colors from the supplied theme tokens."""
-        self._tokens = tokens
         self._color_text = QColor(tokens.text_primary)
         self._color_muted = QColor(tokens.text_muted)
+        self._color_accent = QColor(tokens.accent)
         self._color_selected_bg = QColor(tokens.tree_selected_bg)
         self._color_hover_bg = QColor(tokens.tree_hover_bg)
-        self._color_alt_bg = QColor(tokens.row_alt_bg) if tokens.row_alt_bg else QColor(0, 0, 0, 0)
-        self._color_badge_bg = QColor(tokens.badge_bg)
-        self._color_badge_text = QColor(tokens.text_muted)
-        self._color_header_bg = QColor(tokens.row_alt_bg) if tokens.row_alt_bg else QColor(0, 0, 0, 0)
-        self._color_header_border = QColor(tokens.border)
+        self._color_chip_text = QColor(tokens.popup_bg or tokens.panel_bg or "#FFFFFF")
 
     def sizeHint(self, option: QStyleOptionViewItem, index: QModelIndex) -> QSize:  # noqa: N802
-        row_height = _HEADER_ROW_HEIGHT if index.data(RowKindRole) == "header" else _ROW_HEIGHT
-        return QSize(option.rect.width() if option.rect.width() > 0 else 320, row_height)
+        return QSize(option.rect.width() if option.rect.width() > 0 else 240, ROW_HEIGHT)
 
-    def paint(  # noqa: C901 - render path with multiple regions
-        self,
-        painter: QPainter,
-        option: QStyleOptionViewItem,
-        index: QModelIndex,
-    ) -> None:
+    @staticmethod
+    def row_height() -> int:
+        return ROW_HEIGHT
+
+    @staticmethod
+    def width_for(name_width: int, type_width: int) -> int:
+        """Return the row width that fits a name and a short type without eliding."""
+
+        return CHIP_LEFT + CHIP_SIZE + CHIP_GAP + name_width + TYPE_GAP + type_width + RIGHT_PADDING
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: QModelIndex) -> None:
         item = index.data(ItemRole)
         if not isinstance(item, CompletionItem):
             super().paint(painter, option, index)
             return
-
-        if index.data(RowKindRole) == "header":
-            self._paint_tier_header(painter, option, item)
-            return
-
         painter.save()
         painter.setRenderHint(QPainter.Antialiasing, True)
         painter.setRenderHint(QPainter.TextAntialiasing, True)
-
         rect = QRect(option.rect)
-        is_selected = bool(option.state & QStyle.State_Selected)
-        is_hovered = bool(option.state & QStyle.State_MouseOver) and not is_selected
-
-        if is_selected:
+        if option.state & QStyle.State_Selected:
             painter.fillRect(rect, self._color_selected_bg)
-        elif is_hovered:
+        elif option.state & QStyle.State_MouseOver:
             painter.fillRect(rect, self._color_hover_bg)
-        elif index.row() % 2 == 1 and self._color_alt_bg.alpha() > 0:
-            painter.fillRect(rect, self._color_alt_bg)
 
-        kind_style = index.data(KindStyleRole)
-        cursor_x = rect.x() + _ICON_PADDING_LEFT
-        if isinstance(kind_style, KindGlyphStyle):
-            self._paint_kind_chip(painter, rect, cursor_x, kind_style)
-        cursor_x += _ICON_SIZE + _ICON_PADDING_RIGHT
+        style = index.data(KindStyleRole)
+        chip = QRect(rect.x() + CHIP_LEFT, rect.y() + (rect.height() - CHIP_SIZE) // 2, CHIP_SIZE, CHIP_SIZE)
+        small = QFont(option.font)
+        small.setPointSizeF(max(7.5, option.font.pointSizeF() - 1.0))
+        if isinstance(style, KindGlyphStyle):
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(QBrush(QColor(style.accent_color)))
+            painter.drawRoundedRect(QRectF(chip), 3, 3)
+            glyph_font = QFont(small)
+            glyph_font.setBold(True)
+            painter.setFont(glyph_font)
+            painter.setPen(QPen(self._color_chip_text))
+            painter.drawText(chip, Qt.AlignCenter, style.glyph)
 
-        right_edge = rect.right() - _RIGHT_PADDING
-        origin_text = self._origin_text(item)
-        font_metrics = QFontMetrics(option.font)
+        short_type = str(index.data(ShortTypeRole) or "")
+        small_metrics = QFontMetrics(small)
+        type_width = small_metrics.horizontalAdvance(short_type) if short_type else 0
+        type_left = rect.right() - RIGHT_PADDING - type_width
 
-        if origin_text:
-            badge_width = font_metrics.horizontalAdvance(origin_text) + 12
-            badge_height = font_metrics.height() + 2
-            badge_rect = QRect(
-                right_edge - badge_width,
-                rect.y() + (rect.height() - badge_height) // 2,
-                badge_width,
-                badge_height,
+        positions = set(index.data(MatchPositionsRole) or ())
+        regular = QFont(option.font)
+        bold = QFont(option.font)
+        bold.setBold(True)
+        regular_metrics = QFontMetrics(regular)
+        bold_metrics = QFontMetrics(bold)
+        name_color = self._color_muted if is_private_name(item.label) else self._color_text
+        x = chip.right() + 1 + CHIP_GAP
+        baseline = rect.y() + (rect.height() + regular_metrics.ascent() - regular_metrics.descent()) // 2
+        for offset, ch in enumerate(item.label):
+            matched = offset in positions
+            painter.setFont(bold if matched else regular)
+            painter.setPen(QPen(self._color_accent if matched else name_color))
+            painter.drawText(x, baseline, ch)
+            x += (bold_metrics if matched else regular_metrics).horizontalAdvance(ch)
+
+        if short_type and type_left > x + 4:
+            painter.setFont(small)
+            painter.setPen(QPen(self._color_muted))
+            painter.drawText(
+                QRect(type_left, rect.y(), type_width, rect.height()),
+                Qt.AlignRight | Qt.AlignVCenter,
+                short_type,
             )
-            self._paint_origin_badge(painter, badge_rect, origin_text, option.font)
-            right_edge = badge_rect.left() - _GAP_SECONDARY_ORIGIN
-
-        text_top = rect.y()
-        text_height = rect.height()
-
-        help_teaser = _inline_help_teaser(item)
-        secondary_text = help_teaser or _row_secondary_text(item)
-
-        label_width = font_metrics.horizontalAdvance(item.label)
-        label_max_width = max(0, right_edge - cursor_x)
-        if secondary_text:
-            # Reserve roughly half the remaining row for the help/signature glance.
-            label_max_width = min(label_max_width, max(label_width + 8, (right_edge - cursor_x) // 2))
-        label_rect = QRect(cursor_x, text_top, label_max_width, text_height)
-        match_ranges = index.data(MatchRangesRole) or []
-        self._paint_label(
-            painter,
-            label_rect,
-            item.label,
-            match_ranges,
-            base_font=option.font,
-            base_color=self._color_text,
-        )
-
-        if secondary_text:
-            help_x = cursor_x + min(label_width, label_max_width) + _GAP_LABEL_HELP
-            if help_x < right_edge:
-                help_rect = QRect(help_x, text_top, max(0, right_edge - help_x), text_height)
-                elided_help = font_metrics.elidedText(secondary_text, Qt.ElideRight, help_rect.width())
-                painter.setPen(QPen(self._color_muted))
-                painter.setFont(option.font)
-                painter.drawText(help_rect, Qt.AlignVCenter | Qt.AlignLeft, elided_help)
-
         painter.restore()
-
-    def _paint_tier_header(
-        self,
-        painter: QPainter,
-        option: QStyleOptionViewItem,
-        item: CompletionItem,
-    ) -> None:
-        """Paint a non-selectable tier section label."""
-
-        painter.save()
-        painter.setRenderHint(QPainter.TextAntialiasing, True)
-        rect = QRect(option.rect)
-        if self._color_header_bg.alpha() > 0:
-            painter.fillRect(rect, self._color_header_bg)
-        border_y = rect.bottom()
-        painter.setPen(QPen(self._color_header_border))
-        painter.drawLine(rect.left() + _ICON_PADDING_LEFT, border_y, rect.right() - _RIGHT_PADDING, border_y)
-
-        header_font = QFont(option.font)
-        header_font.setBold(True)
-        header_font.setPointSizeF(max(7.5, header_font.pointSizeF() - 1.0))
-        label_rect = QRect(
-            rect.x() + _ICON_PADDING_LEFT,
-            rect.y(),
-            rect.width() - _ICON_PADDING_LEFT - _RIGHT_PADDING,
-            rect.height(),
-        )
-        painter.setFont(header_font)
-        painter.setPen(QPen(self._color_muted))
-        painter.drawText(label_rect, Qt.AlignVCenter | Qt.AlignLeft, item.label)
-        painter.restore()
-
-    def _paint_kind_chip(
-        self,
-        painter: QPainter,
-        row_rect: QRect,
-        x: int,
-        style: KindGlyphStyle,
-    ) -> None:
-        chip_rect = QRect(
-            x,
-            row_rect.y() + (row_rect.height() - _ICON_SIZE) // 2,
-            _ICON_SIZE,
-            _ICON_SIZE,
-        )
-        accent = QColor(style.accent_color)
-        # Background chip uses the accent color at low alpha so the glyph
-        # remains legible in both light and dark themes.
-        chip_bg = QColor(accent)
-        chip_bg.setAlpha(48)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(chip_bg))
-        painter.drawRoundedRect(QRectF(chip_rect), 4, 4)
-
-        glyph_font = QFont(painter.font())
-        glyph_font.setBold(True)
-        glyph_font.setPointSizeF(max(8.0, glyph_font.pointSizeF() - 1.0))
-        painter.setFont(glyph_font)
-        painter.setPen(QPen(accent))
-        painter.drawText(chip_rect, Qt.AlignCenter, style.glyph)
-
-    def _paint_label(
-        self,
-        painter: QPainter,
-        rect: QRect,
-        label: str,
-        match_ranges: list[tuple[int, int]],
-        *,
-        base_font: QFont,
-        base_color: QColor,
-    ) -> None:
-        if rect.width() <= 0 or not label:
-            return
-
-        metrics = QFontMetrics(base_font)
-        # Elide first so the document never has more glyphs than the row can
-        # actually paint; then format the visible substring.
-        if metrics.horizontalAdvance(label) > rect.width():
-            visible_text = metrics.elidedText(label, Qt.ElideRight, rect.width())
-        else:
-            visible_text = label
-
-        document = QTextDocument()
-        document.setDefaultFont(base_font)
-        document.setDocumentMargin(0)
-        # Disable wrapping; the delegate guarantees one visual line per row.
-        text_option = QTextOption()
-        text_option.setWrapMode(QTextOption.NoWrap)
-        document.setDefaultTextOption(text_option)
-        document.setTextWidth(-1)
-        document.setPlainText(visible_text)
-
-        cursor = QTextCursor(document)
-        cursor.select(QTextCursor.Document)
-        base_format = QTextCharFormat()
-        base_format.setForeground(base_color)
-        cursor.mergeCharFormat(base_format)
-
-        if match_ranges:
-            highlight_format = QTextCharFormat()
-            highlight_font = QFont(base_font)
-            highlight_font.setBold(True)
-            highlight_format.setFont(highlight_font)
-            highlight_format.setForeground(base_color)
-            visible_len = len(visible_text)
-            for start, length in match_ranges:
-                if length <= 0 or start >= visible_len:
-                    continue
-                end = min(start + length, visible_len)
-                cursor.setPosition(start)
-                cursor.setPosition(end, QTextCursor.KeepAnchor)
-                cursor.mergeCharFormat(highlight_format)
-
-        painter.save()
-        block_height = metrics.height()
-        y_offset = rect.y() + max(0, (rect.height() - block_height) // 2)
-        painter.translate(QPointF(rect.x(), y_offset))
-        document.drawContents(painter)
-        painter.restore()
-
-    def _paint_origin_badge(
-        self,
-        painter: QPainter,
-        rect: QRect,
-        text: str,
-        font: QFont,
-    ) -> None:
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QBrush(self._color_badge_bg))
-        painter.drawRoundedRect(QRectF(rect), 3, 3)
-        painter.setPen(QPen(self._color_badge_text))
-        badge_font = QFont(font)
-        badge_font.setPointSizeF(max(7.5, font.pointSizeF() - 1.0))
-        painter.setFont(badge_font)
-        painter.drawText(rect, Qt.AlignCenter, text)
-
-    @staticmethod
-    def _origin_text(item: CompletionItem) -> str:
-        engine = (item.engine or "").strip()
-        if engine:
-            return engine
-        source = (item.source or "").strip()
-        if source:
-            return source
-        return ""
-
-    @staticmethod
-    def row_height() -> int:
-        return _ROW_HEIGHT
-
-
-def _inline_help_teaser(item: CompletionItem) -> str:
-    """Return a one-line docstring glance for the completion row."""
-
-    documentation = (item.documentation or "").strip()
-    if documentation:
-        first_line = documentation.splitlines()[0].strip()
-        if first_line:
-            return first_line
-    detail = (item.detail or "").strip()
-    if detail and detail != (item.signature or "").strip():
-        return detail
-    return ""
-
-
-def _row_secondary_text(item: CompletionItem) -> str:
-    """Fallback secondary text when no docstring teaser is available."""
-
-    signature = (item.signature or "").strip()
-    if signature:
-        return signature
-    return (item.detail or "").strip()

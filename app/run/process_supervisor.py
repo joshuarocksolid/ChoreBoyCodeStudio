@@ -32,6 +32,25 @@ class ProcessEvent:
     run_id: str | None = None
 
 
+@dataclass(frozen=True)
+class DetachResult:
+    """Outcome of :meth:`ProcessSupervisor.detach`."""
+
+    process_id: int
+    output_path: str | None
+
+
+# Shell-builtin-only drain loop: confined AppRun may exec ``/bin/sh`` but not
+# ``cat``. fd 0 is the runner's stdout pipe and fd 2 is its stderr pipe.
+_DRAIN_SCRIPT = (
+    'drain() { while IFS= read -r line || [ -n "$line" ]; do printf "%s%s\\n" "$1" "$line"; done; }\n'
+    'drain "[stderr] " <&2 &\n'
+    'drain ""\n'
+    "wait\n"
+)
+_DRAIN_SHELL = "/bin/sh"
+
+
 @dataclass
 class _ProcessResources:
     reader_threads: list[threading.Thread]
@@ -56,6 +75,8 @@ class ProcessSupervisor:
         self._lock = threading.RLock()
         self._process_resources: dict[int, _ProcessResources] = {}
         self._waiter_thread: threading.Thread | None = None
+        # Strong refs, so an id() is never reused for a new run's pipe.
+        self._detached_streams: list[IO[str]] = []
 
     @property
     def state(self) -> ProcessState:
@@ -172,6 +193,63 @@ class ProcessSupervisor:
         self._join_waiter_thread()
         return process.returncode
 
+    def detach(self, *, output_path: str | None = None) -> DetachResult | None:
+        """Stop supervising the active process and leave its process group running.
+
+        No signal is sent. The output pipes are handed to a small ``/bin/sh``
+        drain process in its own session, which appends everything the group
+        prints to *output_path* (or discards it). The pipes therefore stay open
+        after the editor exits, so neither the runner nor a child it started
+        (for example FreeCAD) gets ``SIGPIPE`` / ``BrokenPipeError`` on its next
+        write. The runner's stdin is closed, so it reads EOF.
+        """
+        with self._lock:
+            process = self._process
+            if process is None or process.poll() is not None:
+                return None
+            self._process = None
+            self._waiter_thread = None
+            self._state = "idle"
+            for stream in (process.stdout, process.stderr):
+                if stream is not None:
+                    self._detached_streams.append(stream)
+
+        drained = self._start_output_drain(process, output_path)
+        self._close_streams([process.stdin])
+        return DetachResult(process_id=process.pid, output_path=output_path if drained else None)
+
+    def _start_output_drain(self, process: subprocess.Popen[str], output_path: str | None) -> bool:
+        if process.stdout is None or process.stderr is None:
+            return False
+        try:
+            stdout_fd = process.stdout.fileno()
+            stderr_fd = process.stderr.fileno()
+        except (OSError, ValueError):
+            return False
+        sink: IO[bytes] | None = None
+        if output_path:
+            try:
+                sink = open(output_path, "ab")
+            except OSError as exc:
+                _LOGGER.warning("Cannot open %s for detached run output: %s", output_path, exc)
+        try:
+            subprocess.Popen(
+                [_DRAIN_SHELL, "-c", _DRAIN_SCRIPT, "cbcs-run-drain"],
+                stdin=stdout_fd,
+                stdout=sink if sink is not None else subprocess.DEVNULL,
+                stderr=stderr_fd,
+                cwd="/",
+                close_fds=True,
+                start_new_session=True,
+            )
+        except OSError as exc:
+            _LOGGER.warning("Detached run output drain failed to start: %s", exc)
+            return False
+        finally:
+            if sink is not None:
+                sink.close()
+        return sink is not None
+
     def pause(self) -> bool:
         """Request an interrupt signal for active process."""
         with self._lock:
@@ -233,6 +311,9 @@ class ProcessSupervisor:
         try:
             for chunk in iter(stream.readline, ""):
                 with self._lock:
+                    if any(detached is stream for detached in self._detached_streams):
+                        # The drain process owns this pipe now; drop our copy.
+                        return
                     terminated_by_user = self._terminated_by_user
                 self._emit_event(
                     ProcessEvent(

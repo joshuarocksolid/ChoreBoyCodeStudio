@@ -12,6 +12,7 @@ from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 @dataclass
 class _FakeTabState:
     file_path: str
+    buffer_id: str = "buf-1"
     display_name: str = "main.py"
     is_dirty: bool = False
     is_preview: bool = False
@@ -50,7 +51,7 @@ def test_handle_toggle_comment_delegates_to_active_editor() -> None:
     editor = _FakeEditorWidget()
     window = _FakeWindow(
         _editor_manager=_FakeEditorManager(active_tab_state=tab),
-        _editor_widgets_by_path={tab.file_path: editor},
+        _editor_widgets_by_path={tab.buffer_id: editor},
     )
     coordinator = EditorTabsCoordinator(window)
 
@@ -76,7 +77,7 @@ def test_handle_outdent_delegates_to_active_editor() -> None:
     editor = _FakeEditorWidget()
     window = _FakeWindow(
         _editor_manager=_FakeEditorManager(active_tab_state=tab),
-        _editor_widgets_by_path={tab.file_path: editor},
+        _editor_widgets_by_path={tab.buffer_id: editor},
     )
     coordinator = EditorTabsCoordinator(window)
 

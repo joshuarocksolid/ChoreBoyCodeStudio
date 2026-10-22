@@ -27,10 +27,8 @@ class GeneralTabState:
     exit_behavior: str
     hover_tooltip_enabled: bool
     auto_reindent_flat_python_paste: bool
-    completion_enabled: bool
-    completion_auto_trigger: bool
+    completion_mode: str
     completion_min_chars: int
-    completion_auto_trigger_period: bool
     diagnostics_realtime: bool
     quick_fixes_enabled: bool
     quick_fix_require_preview_for_multifile: bool

@@ -28,6 +28,8 @@ if TYPE_CHECKING:
 
         def _mark_overlay_cache_dirty(self) -> None: ...
         def _refresh_extra_selections(self) -> None: ...
+        def buffer_views(self) -> list[Any]: ...
+        _buffer: Any
 else:
     class _CodeEditorDiagnosticsBase:
         pass
@@ -37,7 +39,13 @@ class CodeEditorDiagnosticsMixin(_CodeEditorDiagnosticsBase):
     """Diagnostics state and tooltip handling split from the main editor widget."""
 
     def set_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
-        """Apply diagnostics: build squiggly underlines, gutter markers, and hover ranges."""
+        """Apply diagnostics to the buffer; every view of it draws them."""
+        self._buffer.diagnostics = list(diagnostics)
+        for view in self.buffer_views():
+            view._render_diagnostics(self._buffer.diagnostics)
+
+    def _render_diagnostics(self, diagnostics: list[CodeDiagnostic]) -> None:
+        """Build this view's squiggly underlines, gutter markers, and hover ranges."""
         self._diagnostic_selections.clear()
         self._diagnostic_lines.clear()
         self._diagnostic_ranges.clear()
@@ -91,6 +99,11 @@ class CodeEditorDiagnosticsMixin(_CodeEditorDiagnosticsBase):
         self._line_number_area.update()
 
     def clear_diagnostics(self) -> None:
+        self._buffer.diagnostics = []
+        for view in self.buffer_views():
+            view._clear_rendered_diagnostics()
+
+    def _clear_rendered_diagnostics(self) -> None:
         self._diagnostic_selections.clear()
         self._diagnostic_lines.clear()
         self._diagnostic_ranges.clear()

@@ -317,6 +317,6 @@ class DebugControlWorkflow:
         return window._debug_session.state.execution_state == DebugExecutionState.PAUSED
 
     def _sync_editor_breakpoints(self, file_path: str) -> None:
-        editor_widget = self._window._editor_widgets_by_path.get(file_path)
+        editor_widget = self._window._workspace_controller.widget_for_path(file_path)
         if editor_widget is not None:
             editor_widget.set_breakpoints(self._store.lines_for_file(file_path))

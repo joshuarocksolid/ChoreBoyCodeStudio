@@ -1,22 +1,37 @@
 """Markdown tab mode actions and menu state.
 
-The pane itself is created by the Markdown tab-content provider. This workflow
-talks to that pane through the surface widget so the shell does not import the
-feature package.
+The first pane is created by the Markdown tab-content provider. A second editor
+group builds its own pane in the editor-groups feature. This workflow talks to
+whichever pane the focused tab is showing, and does not import the feature package.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from app.qt.QtWidgets import QMenu
+from app.qt.QtWidgets import QMenu, QTabWidget, QWidget
 
 from app.editors.editor_manager import EditorManager
 from app.shell.editor_tab_host_protocols import EditorTabMarkdownHost
+from app.shell.editor_tab_page import EditorTabPage
+
 
 _MODE_SOURCE = "source"
 _MODE_PREVIEW = "preview"
 _MODE_SPLIT = "split"
+
+
+def _pane_of_widget(widget: QWidget | None) -> Any | None:
+    if not hasattr(widget, "set_mode") or not hasattr(widget, "toggle_preview"):
+        return None
+    return widget
+
+
+def markdown_pane_of_page(page: QWidget | None) -> Any | None:
+    """The markdown pane an editor tab page shows, or None."""
+    if not isinstance(page, EditorTabPage):
+        return None
+    return _pane_of_widget(page.content())
 
 
 class EditorTabMarkdownWorkflow:
@@ -37,10 +52,22 @@ class EditorTabMarkdownWorkflow:
         self._editor_manager = editor_manager
 
     def active_markdown_pane(self) -> Any | None:
+        tabs = self._host.editor_tabs_widget()
+        if tabs is not None:
+            pane = markdown_pane_of_page(tabs.currentWidget())
+            if pane is not None:
+                return pane
         active_tab = self._editor_manager.active_tab()
         if active_tab is None:
             return None
         return self.pane_for_path(active_tab.file_path)
+
+    def markdown_pane_for_tab(self, tabs: QTabWidget, tab_index: int, file_path: str) -> Any | None:
+        """The pane that tab shows, else the buffer's registered surface."""
+        pane = markdown_pane_of_page(tabs.widget(tab_index))
+        if pane is not None:
+            return pane
+        return self.pane_for_path(file_path)
 
     def set_active_markdown_mode(self, mode: str) -> None:
         markdown_pane = self.active_markdown_pane()
@@ -89,9 +116,8 @@ class EditorTabMarkdownWorkflow:
     def append_context_menu_actions(
         self,
         menu: QMenu,
-        file_path: str,
+        markdown_pane: Any | None,
     ) -> tuple[Any | None, Any | None, Any | None]:
-        markdown_pane = self.pane_for_path(file_path)
         if markdown_pane is None:
             return None, None, None
         markdown_source_action = menu.addAction("Markdown: Show Source")
@@ -111,15 +137,16 @@ class EditorTabMarkdownWorkflow:
     ) -> bool:
         if markdown_pane is None:
             return False
-        if chosen == markdown_source_action:
-            self.set_active_markdown_mode(_MODE_SOURCE)
-            return True
-        if chosen == markdown_preview_action:
-            self.set_active_markdown_mode(_MODE_PREVIEW)
-            return True
-        if chosen == markdown_split_action:
-            self.set_active_markdown_mode(_MODE_SPLIT)
-            return True
+        modes = (
+            (markdown_source_action, _MODE_SOURCE),
+            (markdown_preview_action, _MODE_PREVIEW),
+            (markdown_split_action, _MODE_SPLIT),
+        )
+        for action, mode in modes:
+            if action is not None and chosen == action:
+                markdown_pane.set_mode(mode)
+                self._refresh_markdown_action_states()
+                return True
         return False
 
     def clear_registry(self) -> None:
@@ -128,11 +155,9 @@ class EditorTabMarkdownWorkflow:
     def pane_for_path(self, file_path: str) -> Any | None:
         surface = self._host.tab_content_registry().surface_for_path(file_path)
         if surface is None:
-            return None
-        widget = surface.widget()
-        if not hasattr(widget, "set_mode") or not hasattr(widget, "toggle_preview"):
-            return None
-        return widget
+            panes = self._host.markdown_panes_by_path()
+            return _pane_of_widget(panes.get(file_path))
+        return _pane_of_widget(surface.widget())
 
 
-__all__ = ["EditorTabMarkdownWorkflow"]
+__all__ = ["EditorTabMarkdownWorkflow", "markdown_pane_of_page"]

@@ -696,6 +696,17 @@ These are: `EditorTabFactory._materialize_opened_editor_tab` (asks the registry 
 
 AT-32: on PySide6, step 3 ("Open `.ui` … expected XML highlighting") is done through View XML, which is the same `CodeEditorWidget` with the XML grammar. M2.2 amends AT-32's wording to say so. On PySide2 nothing changes.
 
+### 11.6 Round 2 seam corrections
+
+These are the behaviours the v0.4.13 sync has to keep.
+
+- The project-tree coordinator reads open tab paths from the live `EditorManager`. `reset_editor_tabs()` replaces that manager on project switch. A method bound at composition time is stale, and a delete in the new project would leave the tab open.
+- Replacing a preview releases the closed preview's surface by path and buffer id. The editor manager has already dropped that tab. A lazy surface never registered a source editor, so popping by buffer id alone leaves the path bound.
+- Cancelling the three-way reload prompt on a dirty sourced tab with no source editor marks the tab changed on disk and returns declined. The stale bar stays. The next save still prompts. Acknowledging the mtime and returning cancelled hides both.
+- `close_group` asks `close_blockers` once, for the paths shown only in that group, before the unsaved-changes prompt. The closes that follow pass `skip_close_blockers`. A No leaves the group as it was.
+- The second editor group's markdown pane is built and adopted by the markdown feature (`build_secondary_pane`, `adopt_secondary_pane`). That feature owns `_markdown_panes_by_path`.
+- A tab whose provider declined is a text editor inside a notice container. The container's `source_editor()` returns that editor, so the tab can be split. It does not implement `apply_theme`, `set_mode`, or `toggle_preview`.
+
 ### 11.5 Dune rule `feature-install-imports` (M2.0)
 
 For `app/features/spec.py`, every `app/features/*/install.py` and every `app/features/*/__init__.py`: module-level imports outside `if TYPE_CHECKING:` must come from the stdlib, `typing`, `app.bootstrap.qt_binding_choice`, `app.features.spec`, or the feature's own `engine` subpackage. Imports inside functions are unrestricted. Markdown's `install.py` moves its pane and registry imports into `install_markdown`. The proof is a runtime test, not the lint: a subprocess installs a `sys.meta_path` finder that only **records** import attempts (it never raises, so a lazy import elsewhere can't change behaviour), then imports `app.features.spec` and calls every `enabled()`. It asserts that no `PySide6`/`shiboken6` entry is in `sys.modules` and none was recorded. On a PySide6 machine it also asserts `form_builder_enabled()` is True. It runs on machines without PySide2 too. With `CBCS_QT_API=pyside2` where PySide2 exists, the editor starts and `PySide6` is not in `sys.modules`.
