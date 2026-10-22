@@ -196,6 +196,8 @@ class CommandLog:
     def undo(self) -> bool:
         """Apply the top step's inverses in reverse. False when the stack is empty."""
         self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("Undo is not available during a transaction.")
         if not self._undo:
             return False
         entry = self._undo.pop()
@@ -210,6 +212,8 @@ class CommandLog:
     def redo(self) -> bool:
         """Re-apply the recorded ops. ``apply`` is not re-run."""
         self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("Redo is not available during a transaction.")
         if not self._redo:
             return False
         entry = self._redo.pop()
@@ -243,6 +247,8 @@ class CommandLog:
         return self._tip_token() != self._save_token
 
     def mark_saved(self) -> None:
+        if self._txn is not None:
+            raise CommandRejected("The form cannot be marked saved during a transaction.")
         self._save_token = self._tip_token()
 
     def subscribe(self, listener: Callable[[ChangeSet], None], *, priority: int) -> Subscription:

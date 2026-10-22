@@ -350,6 +350,26 @@ def test_save_on_the_trimmed_bottom_stays_clean() -> None:
     assert not log.is_dirty()
 
 
+def test_undo_redo_and_save_reject_an_open_transaction() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "text", StringValue("A")))
+    with log.transaction("Group"):
+        log.execute(SetProperty(owner, "text", StringValue("B")))
+        with pytest.raises(CommandRejected):
+            log.undo()
+        with pytest.raises(CommandRejected):
+            log.redo()
+        with pytest.raises(CommandRejected):
+            log.mark_saved()
+    assert prop_text(doc, "okButton") == "B"
+    assert log.undo_label() == "Group"
+    assert log.undo()
+    assert prop_text(doc, "okButton") == "A"
+    assert len(log.entries()) == 1
+
+
 def test_redo_does_not_run_apply_again() -> None:
     log = open_log(BOX)
     doc = log.document
