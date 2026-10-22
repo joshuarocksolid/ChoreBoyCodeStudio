@@ -6,6 +6,7 @@ One log per open form tab. It is not thread-safe. Callers use the Qt GUI thread.
 from __future__ import annotations
 
 import logging
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, ContextManager, Iterator, List, Optional, Tuple
@@ -39,7 +40,7 @@ from app.features.form_builder.engine.events import (
 )
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.ui4 import mutate
-from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.ui4.values import semantic_equal
 
@@ -285,6 +286,7 @@ class CommandLog:
         command: Command,
         continue_gesture: bool,
     ) -> bool:
+        self._reject_invalid(ctx)
         after = _selection_after(self._doc, before, ctx)
         merged = self._can_merge(command)
         if merged:
@@ -351,6 +353,7 @@ class CommandLog:
         self._txn = None
         if txn is None or not txn.ctx.ops:
             return
+        self._reject_invalid(txn.ctx)
         before = txn.ctx.selection_before
         if not isinstance(before, SelectionSnapshot):
             before = self._provider()
@@ -386,6 +389,21 @@ class CommandLog:
         self._txn = None
         if txn is not None:
             self._rollback(txn.ctx)
+
+    def _reject_invalid(self, ctx: ApplyContext) -> None:
+        """``validate`` runs once per committed entry, before the entry is stored."""
+        if os.environ.get("CBCS_FB_VALIDATE") != "1":
+            return
+        try:
+            self._doc.validate()
+        except InvariantError as exc:
+            self._rollback(ctx)
+            logger.exception("form builder entry failed validation")
+            raise CommandRejected(
+                "The edit could not be completed.",
+                code="FB999",
+                error=exc,
+            ) from exc
 
     def _rollback(self, ctx: ApplyContext) -> None:
         self._rollback_from(ctx, 0, 0)

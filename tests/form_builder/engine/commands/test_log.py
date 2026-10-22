@@ -16,7 +16,7 @@ from app.features.form_builder.engine.commands.log import replay
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.engine.ui4.spec import Fragment
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log, prop_text, saved
@@ -178,6 +178,25 @@ def test_caught_rejection_inside_a_transaction_replays() -> None:
         )
     replayed = replay(BOX, log.entries())
     assert replayed.fingerprint() == doc.fingerprint()
+
+
+def test_validate_failure_rolls_the_entry_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    log = open_log(BOX)
+    doc = log.document
+    original = saved(doc)
+    fingerprint = doc.fingerprint()
+
+    def refuse(self: UiDocument) -> None:
+        del self
+        raise InvariantError("forced")
+
+    monkeypatch.setattr(UiDocument, "validate", refuse)
+    with pytest.raises(CommandRejected) as caught:
+        log.execute(SetProperty(nid(doc, "okButton"), "text", StringValue("Go")))
+    assert caught.value.code == "FB999"
+    assert saved(doc) == original
+    assert doc.fingerprint() == fingerprint
+    assert not log.can_undo()
 
 
 def test_set_then_reset_in_one_transaction_is_not_property_dirty() -> None:

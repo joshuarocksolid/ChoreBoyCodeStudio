@@ -337,7 +337,6 @@ class UiDocument:
             raise InvariantError("revision went backwards")
         self._peak = self._revision
         self._enum_cache = None
-        self._check_validate()
 
     def _bind_name(self, node: Node) -> None:
         name = _node_name(node)

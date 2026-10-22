@@ -314,26 +314,32 @@ def _point(doc: UiDocument, node: Node) -> None:
 
 
 def _bubble(doc: UiDocument, node: Node) -> None:
-    """Install ``node`` and copy it up the ancestor path. Siblings are shared."""
-    _point(doc, node)
-    while node.parent_id is not None:
-        parent = doc._nodes[node.parent_id]
-        slot = node.parent_slot
+    """Install ``node`` and copy it up the ancestor path. Siblings are shared.
+
+    The ancestor chain is checked before the first write, so a missing parent
+    slot leaves the index untouched.
+    """
+    updates = [node]
+    current = node
+    while current.parent_id is not None:
+        parent = doc._nodes[current.parent_id]
+        slot = current.parent_slot
         if slot is None:
             raise OpError("node has a parent and no slot")
         found = False
         kids: List[Node] = []
         for child in parent.children(slot):
-            if child.id == node.id:
-                kids.append(node)
+            if child.id == current.id:
+                kids.append(current)
                 found = True
             else:
                 kids.append(child)
         if not found:
             raise OpError("parent slot lost its child")
-        parent = _replace_slot(parent, slot, tuple(kids))
-        _point(doc, parent)
-        node = parent
+        current = _replace_slot(parent, slot, tuple(kids))
+        updates.append(current)
+    for item in updates:
+        _point(doc, item)
 
 
 def _retarget_slot(doc: UiDocument, parent: Node, slot: str, kids: List[Node]) -> None:
@@ -341,10 +347,10 @@ def _retarget_slot(doc: UiDocument, parent: Node, slot: str, kids: List[Node]) -
     placed_kids: List[Node] = []
     parent_now = doc._nodes[parent.id]
     for index, child in enumerate(kids):
-        updated = placed(child, parent_now.id, slot, index)
-        placed_kids.append(updated)
-        _point(doc, updated)
+        placed_kids.append(placed(child, parent_now.id, slot, index))
     _bubble(doc, _replace_slot(parent_now, slot, tuple(placed_kids)))
+    for child in placed_kids:
+        _point(doc, child)
 
 
 def _register_subtree(doc: UiDocument, node: Node) -> None:
