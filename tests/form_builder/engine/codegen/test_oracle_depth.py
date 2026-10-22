@@ -166,3 +166,19 @@ def test_dropped_connection_fails_oracle(qapp, tmp_path: Path) -> None:
     path = tmp_path / "connected.ui"
     path.write_text(_CONNECT_UI, encoding="utf-8")
     _expect_diff(path, _drop_lines(".connect("))
+
+
+_KITCHEN_SINK = _CORPUS / "synthetic" / "schema" / "kitchen_sink.ui"
+
+
+@pytest.mark.oracle
+def test_kitchen_sink_matches_through_the_quiloader_fallback(qapp) -> None:
+    """uic's module for this form cannot run, so QUiLoader stands in.
+
+    Only the cited QUiLoader differences are ignored. Dropping the window
+    title (an id-based string) is still a diff.
+    """
+    del qapp
+    _require_uic()
+    _expect_diff(_KITCHEN_SINK, _drop_lines(".setWindowTitle("))
+

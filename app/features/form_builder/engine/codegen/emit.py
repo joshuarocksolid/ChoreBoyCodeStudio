@@ -616,14 +616,14 @@ class _Emitter:
         self._emit_members(widget, ref, skip_attrs)
         self._emit_actions(widget, ref)
         layout = widget.layout
+        # A widget can own a layout and still have direct children that are
+        # not items of that layout (Designer leaves them absolutely placed).
+        # uic's tree walker visits those children before the layout, and the
+        # creation order sets the focus chain.
+        if layout is None or widget.child_widgets:
+            self._emit_children(widget)
         if layout is not None:
             self.emit_layout(layout, ref, nested=False, owner=widget)
-            # A widget can own a layout and still have direct children that are
-            # not items of that layout (Designer leaves them absolutely placed).
-            if widget.child_widgets:
-                self._emit_children(widget)
-        else:
-            self._emit_children(widget)
         self._emit_headers_and_items(widget, ref)
         self._deferred.pop()
         for line in deferred:
@@ -942,7 +942,7 @@ class _Emitter:
         self.note_class("QActionGroup")
         self.add("%s = QActionGroup(%s)" % (ref, owner_ref))
         self.add("%s.setObjectName(%s)" % (ref, py_string(_qobject_name(group, name))))
-        self._emit_members(group, ref, frozenset())
+        self._emit_members(group, ref, frozenset(), attributes=False)
         for action in group.children("actions"):
             if isinstance(action, ActionNode):
                 self._emit_action(action, ref)
@@ -958,7 +958,7 @@ class _Emitter:
         self.note_class("QAction")
         self.add("%s = QAction(%s)" % (ref, owner_ref))
         self.add("%s.setObjectName(%s)" % (ref, py_string(_qobject_name(action, name))))
-        self._emit_members(action, ref, frozenset())
+        self._emit_members(action, ref, frozenset(), attributes=False)
         if action.menu:
             self.menu_binds.append((name, action.menu))
 
@@ -1116,12 +1116,19 @@ class _Emitter:
                 continue
             self._emit_one_property(item, ref, prop, copy_hfw=False)
 
-    def _emit_members(self, node: Node, ref: str, skip_attrs: frozenset) -> None:
+    def _emit_members(
+        self, node: Node, ref: str, skip_attrs: frozenset, *, attributes: bool = True
+    ) -> None:
+        """Properties, then attributes. uic writes no code for the
+        ``<attribute>`` children of ``<action>`` and ``<actiongroup>``, so their
+        callers pass ``attributes=False``."""
         if isinstance(node, LayoutNode):
             self._emit_layout_props(node, ref)
             return
         for prop in node.properties():
             self._emit_one_property(node, ref, prop, copy_hfw=True)
+        if not attributes:
+            return
         for attr in node.attributes():
             if attr.name in skip_attrs or attr.name == "buttonGroup":
                 continue

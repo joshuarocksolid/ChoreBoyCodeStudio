@@ -1041,10 +1041,27 @@ def _exc_text(exc: BaseException) -> str:
     return "%s: %s" % (type(exc).__name__, exc)
 
 
-def _qui_widget(path: Path):
-    from PySide6.QtCore import QFile, QIODevice
+def _qui_widget(path: Path, *, id_based: bool = False):
+    from PySide6.QtCore import QBuffer, QFile, QIODevice
     from PySide6.QtUiTools import QUiLoader
 
+    rewritten = None
+    if id_based:
+        import xml.etree.ElementTree as ET
+
+        try:
+            rewritten = _id_based_xml(path.read_bytes())
+        except ET.ParseError:
+            rewritten = None
+    if rewritten is not None:
+        buffer = QBuffer()
+        buffer.setData(QByteArray(rewritten))
+        if not buffer.open(QIODevice.OpenModeFlag.ReadOnly):
+            return None
+        try:
+            return QUiLoader().load(buffer)
+        finally:
+            buffer.close()
     handle = QFile(str(path))
     if not handle.open(QIODevice.OpenModeFlag.ReadOnly):
         return None
@@ -1054,8 +1071,136 @@ def _qui_widget(path: Path):
         handle.close()
 
 
-def _tree_result(left, right, source: str, other_source: Optional[str]):
-    diffs = _diff(_widget(left), _widget(right))
+# Differences the QUiLoader fallback shows where uic's own code agrees with
+# ours. The fallback runs only when uic's module cannot build a tree, so
+# QUiLoader stands in for uic. Each entry says why QUiLoader differs from uic
+# there. Every other difference still fails.
+_QUILOADER_IGNORES = (
+    (
+        "id-based text",
+        'idbasedtr="true": our module and uic\'s both call qtTrId(id), and with no '
+        'catalog loaded that returns the id ("" when there is none). QUiLoader shows '
+        "the source text, so it loads a copy whose translatable strings hold the id.",
+    ),
+    (
+        "replaced status bar",
+        "QStatusBar(w) followed by setStatusBar leaves two QStatusBar children until "
+        "deleteLater runs, exactly as uic's code does. QUiLoader builds one, so the "
+        "unnamed bar is dropped from our root.",
+    ),
+    (
+        "layout function",
+        "<layoutfunction> names Python functions. uic's code calls them (this harness "
+        "defines cbcsMargin() = 11 and cbcsSpacing() = 6). QUiLoader cannot call them "
+        "and keeps Qt's default, so a margin or spacing equal to the function's value "
+        "on our side is not compared.",
+    ),
+    (
+        "z-order property",
+        "QUiLoader records <zorder> as the dynamic property _q_zOrder. uic writes "
+        "raise_() calls and sets no property.",
+    ),
+    (
+        "float property",
+        "QUiLoader cannot read <float> (Designer: Reading properties of the type 20 is "
+        "not supported yet) and drops the property. uic writes setProperty.",
+    ),
+)
+
+# The values this harness's layout functions return (see ``_load``).
+_LAYOUT_FUNCTION_VALUES = {"margin": 11, "spacing": 6}
+_LAYOUT_VALUE = re.compile(r"^\S+\.layout\.(margins|spacing) (\([^)]*\)|-?\d+) != ")
+
+
+def _drop_replaced_status_bar(tree: dict) -> dict:
+    """Ours, root only: the unnamed QStatusBar setStatusBar replaced."""
+    children = tree.get("children") or []
+    bars = [child for child in children if child.get("class") == "QStatusBar"]
+    if len(bars) < 2 or not any(child.get("objectName") for child in bars):
+        return tree
+    kept = [
+        child
+        for child in children
+        if not (child.get("class") == "QStatusBar" and not child.get("objectName"))
+    ]
+    return dict(tree, children=kept)
+
+
+def _id_based_xml(data: bytes) -> bytes:
+    """The form as qtTrId with no catalog shows it: each translatable string is its id."""
+    import xml.etree.ElementTree as ET
+
+    root = ET.fromstring(data)
+    strings = []
+    for holder in root.iter():
+        if holder.tag == "property":
+            strings.extend(holder.findall("string"))
+            for listed in holder.findall("stringlist"):
+                strings.extend(listed.findall("string"))
+        elif holder.tag == "attribute" and holder.get("name") in _TRANSLATED_ATTRIBUTES:
+            strings.extend(holder.findall("string"))
+    for element in strings:
+        if element.get("notr") == "true":
+            continue
+        element.text = element.get("id", "")
+    return ET.tostring(root, encoding="utf-8")
+
+
+# Page attributes uic writes through the translate function.
+_TRANSLATED_ATTRIBUTES = frozenset({"title", "label", "toolTip", "whatsThis"})
+
+
+class _QuiLoaderRules:
+    """The ``_QUILOADER_IGNORES`` entries, read from one form's XML."""
+
+    def __init__(self, data: bytes) -> None:
+        import xml.etree.ElementTree as ET
+
+        self.layout_values = {}
+        self.float_names = frozenset()
+        try:
+            root = ET.fromstring(data)
+        except ET.ParseError:
+            return
+        functions = root.find("layoutfunction")
+        if functions is not None:
+            if functions.get("margin"):
+                self.layout_values["margins"] = str((_LAYOUT_FUNCTION_VALUES["margin"],) * 4)
+            if functions.get("spacing"):
+                self.layout_values["spacing"] = str(_LAYOUT_FUNCTION_VALUES["spacing"])
+        self.float_names = frozenset(
+            prop.get("name", "")
+            for prop in root.iter("property")
+            if prop.find("float") is not None
+        )
+
+    def ignored(self, item: str) -> bool:
+        match = _LAYOUT_VALUE.match(item)
+        if match is not None:
+            return self.layout_values.get(match.group(1)) == match.group(2)
+        if item.endswith(".props missing left ._q_zOrder"):
+            return True
+        marker = ".props missing right ."
+        if marker in item:
+            return item.rsplit(marker, 1)[1] in self.float_names
+        return False
+
+
+def _tree_result(
+    left,
+    right,
+    source: str,
+    other_source: Optional[str],
+    *,
+    quiloader_xml: Optional[bytes] = None,
+):
+    left_tree = _widget(left)
+    if quiloader_xml is not None:
+        left_tree = _drop_replaced_status_bar(left_tree)
+    diffs = _diff(left_tree, _widget(right))
+    if quiloader_xml is not None:
+        rules = _QuiLoaderRules(quiloader_xml)
+        diffs = [item for item in diffs if not rules.ignored(item)]
     if other_source is not None:
         diffs.extend(_diff(_translate_calls(source), _translate_calls(other_source), "$.translate"))
         fired = source + "\n" + other_source
@@ -1171,23 +1316,28 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
             right = _track(factory())
             _ui_class(theirs)().setupUi(right)
         except Exception as exc:
-            loaded = _track(_qui_widget(path))
+            loaded = _track(_qui_widget(path, id_based=_id_based(read.document)))
             if loaded is None:
                 return "loader", _exc_text(exc)
-            result = _tree_result(left, loaded, source, None)
+            result = _tree_result(left, loaded, source, None, quiloader_xml=data)
             if b"cbcsSplitterSizes" in data:
                 _assert_splitter_sizes(left, source or "")
             return result
         if b"cbcsSplitterSizes" in data:
             _assert_splitter_sizes(left, source or "")
         return _tree_result(left, right, source, uic_text)
-    loaded = _track(_qui_widget(path))
+    loaded = _track(_qui_widget(path, id_based=_id_based(read.document)))
     if loaded is None:
         detail = (uic_stderr or "uic produced no Python")[:400]
         return "loader", detail
     if b"cbcsSplitterSizes" in data:
         _assert_splitter_sizes(left, source or "")
-    return _tree_result(left, loaded, source, None)
+    return _tree_result(left, loaded, source, None, quiloader_xml=data)
+
+
+def _id_based(document) -> bool:
+    raw = document.ui.field("idbasedtr")
+    return isinstance(raw, str) and raw.strip().lower() == "true"
 
 
 _SET_SIZES = re.compile(r"\.setSizes\(\[([0-9,\s-]*)\]\)")

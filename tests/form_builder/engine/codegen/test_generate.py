@@ -411,6 +411,22 @@ def test_open_class_signal_keeps_uics_line_and_raises_when_missing(tmp_path: Pat
                 sys.modules[name] = value
 
 
+def test_action_attributes_write_no_code_as_uic(tmp_path: Path) -> None:
+    body = """<action name="actionNew">
+  <property name="text"><string>New</string></property>
+  <attribute name="cbcsActionRole" stdset="0"><string>file</string></attribute>
+ </action>
+ <actiongroup name="tools">
+  <attribute name="cbcsGroupNote" stdset="0"><string>outer</string></attribute>
+ </actiongroup>"""
+    result = _generate(tmp_path, root_class="QMainWindow", body=body)
+    assert result.text is not None
+    assert "self.actionNew = QAction(Invoice)" in result.text
+    assert "self.tools = QActionGroup(Invoice)" in result.text
+    assert "cbcsActionRole" not in result.text
+    assert "cbcsGroupNote" not in result.text
+
+
 @pytest.mark.parity("R3-327")
 def test_resource_import_styles(tmp_path: Path) -> None:
     path, scope, document = _form(tmp_path, tail='<resources><include location="icons.qrc"/></resources>')
