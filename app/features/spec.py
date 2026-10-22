@@ -57,6 +57,19 @@ def _install_editor_groups(ctx: "ShellCompositionContext") -> None:
     install_editor_groups(ctx)
 
 
+def _form_builder_enabled() -> bool:
+    # feature-install-imports forbids a module-level import of a feature package.
+    from app.features.form_builder.install import form_builder_enabled
+
+    return form_builder_enabled()
+
+
+def _install_form_builder(ctx: "ShellCompositionContext") -> None:
+    from app.features.form_builder.install import install_form_builder
+
+    install_form_builder(ctx)
+
+
 FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="markdown",
@@ -75,6 +88,12 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="hidden-path-policy",
         ownership_globs=("app/features/hidden-path-policy/**",),
+    ),
+    FeatureSpec(
+        key="form-builder",
+        ownership_globs=("app/features/form_builder/**",),
+        install=_install_form_builder,
+        enabled=_form_builder_enabled,
     ),
 )
 

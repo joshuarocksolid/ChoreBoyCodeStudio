@@ -37,6 +37,9 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.welcome` | Welcome pane |
 | `#shell.editorTabs` | Editor tabs |
 | `#shell.editorTabs.textEditor` | Text editor (shared name) |
+| `#shell.editorTabs.uiTextHintFrame` | PySide2 `.ui` notice box (text with Dismiss at its right). |
+| `#shell.editorTabs.uiTextHint` | PySide2 `.ui` notice text. Once per file per window. |
+| `#shell.editorTabs.uiTextHintDismiss` | Focusable Dismiss control on that notice. |
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
 
@@ -456,3 +459,17 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.freecadRequirement.okButton`
 - `#shell.freecadRequirement.section`
 - `#shell.freecadRequirement.works`
+
+## Form builder
+
+Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs.textEditor` through `create_source_editor`.
+
+| Handle | What |
+|--------|------|
+| `formBuilder.surface` | Form tab |
+| `formBuilder.name` | Form name |
+| `formBuilder.viewXml` | View XML toggle |
+| `formBuilder.structure` | Structure tree |
+| `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
+| `formBuilder.xmlBannerText` | View XML notice text |
+| `formBuilder.discardXml` | Discard XML edits |
