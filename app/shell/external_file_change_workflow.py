@@ -312,6 +312,18 @@ class ExternalFileChangeWorkflow:
             self._host.refresh_conflict_presentation(file_path)
             return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
 
+        needs_bar = getattr(surface, "external_change_needs_bar", None)
+        offer_bar = getattr(surface, "offer_external_change", None)
+        if surface is not None and callable(needs_bar) and callable(offer_bar) and needs_bar(disk_content):
+            self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
+            offer_bar(
+                Path(file_path).name,
+                lambda: self.reload_from_disk(file_path),
+                lambda: None,
+                lambda: self.compare_with_disk(file_path),
+            )
+            return ExternalFileChangeOutcome.DECLINED
+
         should_reload = False
         reload_disk_content = disk_content
         reload_mtime = current_mtime

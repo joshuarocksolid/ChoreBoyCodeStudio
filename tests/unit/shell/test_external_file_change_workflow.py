@@ -936,3 +936,57 @@ def test_poll_while_the_stale_save_prompt_is_open_does_not_prompt_again(tmp_path
 
     assert workflow.resolve_before_save(tab.file_path) == "abort"
     assert nested == [ExternalFileChangeOutcome.SKIPPED]
+
+
+def test_form_bar_handles_a_dirty_external_change_without_the_modal(tmp_path: Path) -> None:
+    file_path = tmp_path / "form.ui"
+    manager = EditorManager()
+    sync_host = _SurfaceSyncHost()
+    external_host = _SurfaceExternalHost()
+    tab, source, surface = _open_lazy_sourced_tab(
+        manager, file_path, content="<ui old/>\n", sync_host=sync_host, external_host=external_host
+    )
+    source.text = "<ui draft/>\n"
+
+    class _Bar(_FakeSurface):
+        def __init__(self, content: _FakeContentSource) -> None:
+            super().__init__(content)
+            self.offered: list[str] = []
+            self.compare = lambda: None
+            self.reload = lambda: None
+
+        def external_change_needs_bar(self, disk_text: str) -> bool:
+            del disk_text
+            return True
+
+        def offer_external_change(self, file_name: str, on_reload, on_keep, on_compare) -> None:  # type: ignore[no-untyped-def]
+            del on_keep
+            self.offered.append(file_name)
+            self.reload = on_reload
+            self.compare = on_compare
+
+    bar = _Bar(source)
+    sync_host.surfaces[tab.file_path] = bar
+    external_host.surfaces[tab.file_path] = bar
+    del surface
+    file_path.write_text("<ui new/>\n", encoding="utf-8")
+    save_workflow = _RecordingSaveWorkflow(
+        decision=DocumentSafetyDecision(intent=DocumentCloseIntent.DISCARD, scope=DocumentScope.EXTERNAL_RELOAD)
+    )
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=save_workflow,
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.DECLINED
+    assert save_workflow.requests == []
+    assert bar.offered == ["form.ui"]
+    bar.compare()
+    assert external_host.compares
+    bar.reload()
+    assert bar.restored[-1][0] == "<ui new/>\n"

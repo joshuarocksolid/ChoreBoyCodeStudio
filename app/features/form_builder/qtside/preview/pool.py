@@ -123,6 +123,7 @@ class PreviewPool:
         self._callbacks: Dict[str, _Listener] = {}
         self._listeners: List[Tuple[Optional[str], _Listener]] = []
         self._diagnostics: List[FormDiagnostic] = []
+        self._fb604_at: Dict[str, float] = {}
         self._stderr_lines: List[str] = []
         self._crash_noted = False
         self.spawn_monotonic: List[float] = []
@@ -274,6 +275,8 @@ class PreviewPool:
         if isinstance(message, Ready):
             return self._fanout(message)
         if isinstance(message, ErrorReport):
+            if message.code == "FB604" and not self._admit_fb604(message.view_id):
+                return
             self._diagnostics.append(self._diagnostic(message.code, message.message))
             if message.code == "FB601" and not self._crash_noted:
                 self._crash_noted = True
@@ -298,6 +301,16 @@ class PreviewPool:
             listener(message)
         except Exception:
             _LOGGER.exception("preview listener failed")
+
+    def _admit_fb604(self, view_id: Optional[str]) -> bool:
+        """One FB604 diagnostic per view per second. Later ones in the window are dropped."""
+        key = view_id or ""
+        now = time.monotonic()
+        previous = self._fb604_at.get(key)
+        if previous is not None and now - previous < 1.0:
+            return False
+        self._fb604_at[key] = now
+        return True
 
     def _diagnostic(self, code: str, message: str) -> FormDiagnostic:
         info = CODES.get(code)

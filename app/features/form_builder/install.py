@@ -41,6 +41,22 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     from app.features.form_builder.integration.provider import FormTabProvider
 
     ctx.w._tab_content_registry.register(FormTabProvider())
+    _reset_preview_on_quit()
+
+
+def _reset_preview_on_quit() -> None:
+    """The shell cannot import this feature. The quit hook lives here."""
+    if getattr(_reset_preview_on_quit, "done", False):
+        return
+    from app.qt.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    from app.features.form_builder.qtside.preview.pool import PreviewPool
+
+    app.aboutToQuit.connect(PreviewPool.reset_shared)
+    _reset_preview_on_quit.done = True  # type: ignore[attr-defined]
 
 
 __all__ = ["KILL_SWITCH_ENV", "PROVIDER_ID", "form_builder_enabled", "install_form_builder"]
