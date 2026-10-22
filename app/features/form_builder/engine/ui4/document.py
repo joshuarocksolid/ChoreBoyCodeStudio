@@ -75,6 +75,9 @@ class UiDocument:
         self._custom: Dict[str, NodeId] = {}
         self._enum_cache: Optional[Tuple[int, EnumStyle]] = None
         self._logic_count = 0
+        # Expat folds every line ending to LF. Designer writes a CRLF source
+        # back with CRLF on every line, so the choice has to live beside the tree.
+        self.newline = "\n"
         self._index_tree(ui)
 
     @classmethod

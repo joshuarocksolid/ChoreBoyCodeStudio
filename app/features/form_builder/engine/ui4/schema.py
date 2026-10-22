@@ -263,7 +263,7 @@ SCHEMA: Dict[str, KindSpec] = {
         ),
         has_properties=True,
         has_attributes=True,
-        write_order=("properties", "attributes", "actions", "action_groups"),
+        write_order=("actions", "action_groups", "properties", "attributes"),
         attr_order=("name",),
     ),
     "actionref": KindSpec(

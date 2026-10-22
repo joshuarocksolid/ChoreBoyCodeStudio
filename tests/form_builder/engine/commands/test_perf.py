@@ -2,23 +2,33 @@
 
 from __future__ import annotations
 
-import gc
 import os
 import time
-from typing import Tuple
+from typing import Callable, List, Tuple
 
 import pytest
 
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, MoveNodes, SetProperty, Wrap
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.commands.log import CommandLog
-from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4 import mutate
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.ui4.values import StringValue
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log
+from tests.form_builder.perf.stats import (
+    CPU_TOLERANCE,
+    Distribution,
+    cpu_within_budget,
+    measure,
+    sample_until_budget,
+)
+
+# Section 12's 3 ms command budget at 1000 widgets. One cold sample has no margin.
+_REORDER_BUDGET_MS = 3.0
+_REORDER_WARMUP = 2
+_REORDER_SAMPLES = 5
 
 
 def _bulk(count: int) -> str:
@@ -184,14 +194,36 @@ def test_reordering_a_thousand_siblings_is_one_move() -> None:
     one, five, fifteen = os.getloadavg()
     previous = os.environ.get("CBCS_FB_VALIDATE")
     os.environ["CBCS_FB_VALIDATE"] = "0"
-    gc.collect()
-    gc.disable()
+    load = "loadavg %.2f/%.2f/%.2f" % (one, five, fifteen)
     try:
         first = nid(doc, "b0")
         last = nid(doc, "b999")
-        to_end = _timed_move(log, first, layout.id, 1000)
-        to_start = _timed_move(log, last, layout.id, 0)
-        started = time.process_time()
+        _assert_reorder_cpu(
+            "move to end",
+            lambda: log.execute(MoveNodes((first,), InBoxLayout(layout.id, 1000))),
+            log,
+            load,
+        )
+        _assert_reorder_cpu(
+            "move to start",
+            lambda: log.execute(MoveNodes((last,), InBoxLayout(layout.id, 0))),
+            log,
+            load,
+        )
+        _assert_reorder_cpu(
+            "insert",
+            lambda: log.execute(
+                InsertFragment(
+                    InBoxLayout(layout.id, 500),
+                    Fragment(nodes=(button_spec("mid"),)),
+                    auto_layout=False,
+                )
+            ),
+            log,
+            load,
+        )
+        log.execute(MoveNodes((first,), InBoxLayout(layout.id, 1000)))
+        log.execute(MoveNodes((last,), InBoxLayout(layout.id, 0)))
         outcome = log.execute(
             InsertFragment(
                 InBoxLayout(layout.id, 500),
@@ -199,29 +231,13 @@ def test_reordering_a_thousand_siblings_is_one_move() -> None:
                 auto_layout=False,
             )
         )
-        inserted = time.process_time() - started
     finally:
-        gc.enable()
         if previous is None:
             os.environ.pop("CBCS_FB_VALIDATE", None)
         else:
             os.environ["CBCS_FB_VALIDATE"] = previous
     assert outcome.noop is False
     assert len(log.entries()[-1].ops) == 1
-    detail = "loadavg %.2f/%.2f/%.2f end %.3f ms start %.3f ms insert %.3f ms" % (
-        one,
-        five,
-        fifteen,
-        to_end[0] * 1000.0,
-        to_start[0] * 1000.0,
-        inserted * 1000.0,
-    )
-    print(detail)
-    assert to_end[1] == 1, detail
-    assert to_start[1] == 1, detail
-    assert to_end[0] < 0.003, detail
-    assert to_start[0] < 0.003, detail
-    assert inserted < 0.003, detail
     names = []
     current = doc.root.layout
     assert current is not None
@@ -234,11 +250,40 @@ def test_reordering_a_thousand_siblings_is_one_move() -> None:
     assert names[500] == "mid"
 
 
-def _timed_move(log: CommandLog, node: NodeId, layout_id: NodeId, index: int) -> Tuple[float, int]:
-    started = time.process_time()
-    log.execute(MoveNodes((node,), InBoxLayout(layout_id, index)))
-    elapsed = time.process_time() - started
-    return elapsed, len(log.entries()[-1].ops)
+def _assert_reorder_cpu(label: str, command: Callable[[], object], log: CommandLog, load: str) -> None:
+    """CPU p95 of one structural command, with the harness tolerance and one retry."""
+    seen: List[object] = []
+
+    def timed() -> None:
+        seen.append(command())
+
+    def cleanup() -> None:
+        outcome = seen[-1]
+        assert getattr(outcome, "noop") is False, "%s was a no-op" % label
+        ops = len(log.entries()[-1].ops)
+        assert ops == 1, "%s produced %d ops" % (label, ops)
+        log.undo()
+
+    def once() -> Distribution:
+        return measure(
+            timed,
+            warmup=_REORDER_WARMUP,
+            samples=_REORDER_SAMPLES,
+            cleanup=cleanup,
+        )
+
+    attempt = sample_until_budget(once, _REORDER_BUDGET_MS)
+    p95_ms = attempt.distribution.cpu_p95 * 1000.0
+    detail = "%s cpu p95 %.3f ms budget %.0f ms tolerance %.2f tries %d %s" % (
+        label,
+        p95_ms,
+        _REORDER_BUDGET_MS,
+        CPU_TOLERANCE,
+        attempt.tries,
+        load,
+    )
+    print(detail)
+    assert cpu_within_budget(p95_ms, _REORDER_BUDGET_MS), detail
 
 
 @pytest.mark.perf
