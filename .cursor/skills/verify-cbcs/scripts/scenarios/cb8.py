@@ -31,6 +31,10 @@ def run(ctx: Ctx) -> None:
             return
         ctx.stop()
         _remember(ctx, str(plain.get("artifact") or ""), str(icon.get("artifact") or ""))
+        # The installer only publishes a Desktop copy when ~/Desktop already exists.
+        # Some slot images have that folder (ChoreBoy5) and some do not (ChoreBoy4).
+        had_desktop_folder = bool(_guest_json(ctx, _LISTING).get("desktop_folder"))
+        ctx.metric("desktop_folder_before_install", had_desktop_folder)
         page, _state = _installer(ctx, "install", "cb8-plain-installed", "plain")
         ctx.check(
             "installed",
@@ -60,7 +64,12 @@ def run(ctx: Ctx) -> None:
                 "CRUD Icon is installed beside CRUD Showcase",
                 json.dumps({"title": icon_page.get("title"), "desktop": icon_desktop[:300]})[:500],
             )
-        ctx.check("no-desktop-copy", not listing.get("desktop_folder_copy"), "no copy under ~/Desktop", str(listing.get("desktop_folder_copy")))
+        ctx.check(
+            "desktop-copy",
+            bool(listing.get("desktop_folder_copy")) == had_desktop_folder,
+            "copy under ~/Desktop" if had_desktop_folder else "no copy under ~/Desktop (folder absent)",
+            str(listing.get("desktop_folder_copy")),
+        )
         menu = str(listing.get("menu") or "")
         ctx.check("no-menu-file", menu in ("absent",) or menu.startswith("unreadable"), "no menu launcher", menu)
         ctx.check(
@@ -312,6 +321,7 @@ payload = {
     "desktop_exists": desktop.is_file(),
     "desktop": text[:500],
     "icon_desktop": icon_text[:500],
+    "desktop_folder": desktop_copy.parent.is_dir(),
     "desktop_folder_copy": desktop_copy.is_file(),
     "menu": menu_state,
 }
