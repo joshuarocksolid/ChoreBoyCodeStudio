@@ -50,41 +50,10 @@ def purge_project_modules(root: Optional[str]) -> List[str]:
         path = os.path.realpath(filename)
         if path == real or path.startswith(prefix):
             dropped.append(name)
-            _forget_bytecode(path)
     for name in dropped:
         sys.modules.pop(name, None)
     importlib.invalidate_caches()
     return dropped
-
-
-def _forget_bytecode(path: str) -> None:
-    """Drop a just-imported project's pyc so the next load reads the source.
-
-    A save in the same second leaves the pyc timestamp looking fresh. Preview
-    would keep the old module body after ``sys.modules`` was cleared.
-    """
-    if path.endswith(".pyc"):
-        _remove_file(path)
-        return
-    cache = os.path.join(os.path.dirname(path), "__pycache__")
-    if not os.path.isdir(cache):
-        return
-    stem = os.path.splitext(os.path.basename(path))[0]
-    prefix = stem + "."
-    try:
-        names = os.listdir(cache)
-    except OSError:
-        return
-    for name in names:
-        if name.startswith(prefix) and name.endswith(".pyc"):
-            _remove_file(os.path.join(cache, name))
-
-
-def _remove_file(path: str) -> None:
-    try:
-        os.remove(path)
-    except OSError:
-        return
 
 
 def replace_sys_path(previous: Sequence[str], entries: Sequence[str]) -> List[str]:
@@ -119,7 +88,12 @@ def install_resource_module(name: str, source: str) -> None:
 
 
 def install_promoted(spec: PromotedClass) -> Tuple[type, Optional[BaseException]]:
-    """Import ``spec``. On failure install a stub and return the exception."""
+    """Import ``spec``. On failure return a stub class and the exception.
+
+    The stub stays out of ``sys.modules``. A fake module there uses
+    ``__file__`` ``<stub:...>``, so ``purge_project_modules`` never drops it
+    and a later fix of the real file never loads.
+    """
     try:
         module = importlib.import_module(spec.header_module)
         cls = getattr(module, spec.class_name)
@@ -127,18 +101,7 @@ def install_promoted(spec: PromotedClass) -> Tuple[type, Optional[BaseException]
             raise TypeError("%s is not a class" % spec.class_name)
         return cls, None
     except Exception as exc:
-        stub = make_stub(spec.class_name, spec.extends)
-        _place(spec.header_module, spec.class_name, stub)
-        return stub, exc
-
-
-def _place(module_name: str, class_name: str, cls: type) -> None:
-    module = sys.modules.get(module_name)
-    if module is None:
-        module = types.ModuleType(module_name)
-        module.__file__ = "<stub:%s>" % module_name
-        sys.modules[module_name] = module
-    setattr(module, class_name, cls)
+        return make_stub(spec.class_name, spec.extends), exc
 
 
 def snapshot_texts(widget: QtWidgets.QWidget) -> Dict[str, str]:

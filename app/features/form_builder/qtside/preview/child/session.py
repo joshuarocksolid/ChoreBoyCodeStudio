@@ -89,6 +89,14 @@ class ChildSession:
     def exit_code(self) -> int:
         return self._exit_code
 
+    @property
+    def finished(self) -> bool:
+        return self._closed
+
+    @property
+    def current_view(self) -> Optional[str]:
+        return self._current_view
+
     def push_line(self, line: Optional[str]) -> None:
         self._queue.put(line)
 
@@ -205,6 +213,7 @@ class ChildSession:
             saved = snapshot_texts(existing.widget)
         try:
             purge_project_modules(self._previous_root)
+            self._previous_root = message.project_root
             self._sys_path = replace_sys_path(self._sys_path, message.sys_path)
             for resource in message.resource_modules:
                 install_resource_module(resource.name, resource.source)
@@ -223,7 +232,6 @@ class ChildSession:
             self._apply_appearance(message.appearance)
             scale = float(message.appearance.scale)
             self._replace_view(message.view_id, built.widget, message.revision, scale)
-            self._previous_root = message.project_root
         except Exception:
             self._writer.send(
                 Response(

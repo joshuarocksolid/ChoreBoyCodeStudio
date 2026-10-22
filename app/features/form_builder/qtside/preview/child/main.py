@@ -15,7 +15,7 @@ import threading
 import traceback
 from typing import IO, Optional, Sequence
 
-from app.features.form_builder.engine.ipc.protocol import CrashReport, Ready
+from app.features.form_builder.engine.ipc.protocol import CrashReport, ErrorReport, Ready
 from app.features.form_builder.qtside.preview.child.session import ChildSession
 from app.features.form_builder.qtside.preview.child.stdio import FrameWriter, StreamPair, isolate_stdio
 from app.qt.QtCore import QObject, Qt, QTimer, Signal, qInstallMessageHandler, qVersion
@@ -27,6 +27,13 @@ class _Wake(QObject):
     """Queues ``drain`` onto the GUI thread from the request reader."""
 
     arrived = Signal()
+
+
+class _EventLoop:
+    """True once ``exec_qt`` has been entered. Slot errors after that stay in-process."""
+
+    def __init__(self) -> None:
+        self.started = False
 
 
 class _StdoutLog:
@@ -53,8 +60,9 @@ def main(argv: Sequence[str], streams: Optional[StreamPair] = None) -> int:
         return 1
     app = QApplication(["cbcs-form-preview"])
     session = ChildSession(writer, app)
+    loop = _EventLoop()
     sys.stdout = _StdoutLog(session)  # type: ignore[assignment]
-    sys.excepthook = _crash_hook(writer)
+    sys.excepthook = _crash_hook(writer, session, loop)
     _install_qt_log(session, writer)
     binding = sys.modules.get(QT_API)
     writer.send(
@@ -81,6 +89,7 @@ def main(argv: Sequence[str], streams: Optional[StreamPair] = None) -> int:
     idle = QTimer()
     idle.timeout.connect(session.check_idle)
     idle.start(1000)
+    loop.started = True
     exec_qt(app)
     return session.exit_code
 
@@ -93,14 +102,42 @@ def _read_requests(requests: IO[str], session: ChildSession, wake: _Wake) -> Non
     except Exception:
         session.push_line(None)
         wake.arrived.emit()
+        _arm_eof_exit(session)
         return
     session.push_line(None)
     wake.arrived.emit()
+    _arm_eof_exit(session)
 
 
-def _crash_hook(writer: FrameWriter):
+def _arm_eof_exit(session: ChildSession) -> None:
+    """Hard-exit if user code never returns to drain the EOF sentinel."""
+
+    def fire() -> None:
+        if session.finished:
+            return
+        os._exit(0)
+
+    timer = threading.Timer(5.0, fire)
+    timer.daemon = True
+    timer.start()
+
+
+def _crash_hook(writer: FrameWriter, session: ChildSession, loop: _EventLoop):
     def hook(exc_type: type, value: BaseException, tb: object) -> None:
         text = "".join(traceback.format_exception(exc_type, value, tb))  # type: ignore[arg-type]
+        if loop.started:
+            try:
+                writer.send(
+                    ErrorReport(
+                        view_id=session.current_view,
+                        code="FB604",
+                        message=str(value),
+                        traceback=text,
+                    )
+                )
+            except Exception:
+                return
+            return
         try:
             writer.send(CrashReport(message=str(value), traceback=text))
         finally:

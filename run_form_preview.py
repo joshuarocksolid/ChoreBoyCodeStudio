@@ -7,6 +7,7 @@ and ``CBCS_QT_API`` is forced to PySide6 for this process only.
 import os
 import sys
 
+sys.dont_write_bytecode = True
 os.environ["CBCS_QT_API"] = "pyside6"
 
 from app.features.form_builder.qtside.preview.child.stdio import isolate_stdio
