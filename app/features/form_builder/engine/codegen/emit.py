@@ -32,6 +32,7 @@ from app.features.form_builder.engine.codegen.names import (
 from app.features.form_builder.engine.codegen.qtmap import (
     class_module,
     enum_expr,
+    qt_symbol,
     is_box,
     is_form,
     is_grid,
@@ -212,10 +213,13 @@ class _Emitter:
         self.refused = False
         self._deferred: List[List[str]] = []
         self._central: Set[int] = set()
-        self.context = python_class_stem(doc.form_class_name() or "Form")
+        raw_class = doc.form_class_name() or "Form"
+        # uic's translate() context is the C++ class, colons included.
+        # The Python class stem still turns ``::`` into one underscore.
+        self.context = raw_class
         self.form_param = python_attr(doc.root.object_name or "Form")
         self._xml_to_py: Dict[str, str] = {}
-        self.ui_class = "Ui_%s%s" % (self.context, options.postfix)
+        self.ui_class = "Ui_%s%s" % (python_class_stem(raw_class), options.postfix)
         self.id_based = self._flag("idbasedtr", options.id_based)
         translate = options.translate_function or "QCoreApplication.translate"
         self.translate_function = translate
@@ -236,6 +240,18 @@ class _Emitter:
         self._emit_connections()
         contributions = self._expand()
         body = self._render(contributions)
+        # ``_note`` skips the form parameter, so a root named ``QLabel`` is called
+        # as the class (``QLabel(...)``) and never imported.
+        if class_module(self.form_param) and re.search(
+            r"(?<![\w.])%s\s*\(" % re.escape(self.form_param), body
+        ):
+            self.diag(
+                "FB502",
+                'The name "%s" can\'t be used in the generated Python. Rename it, then save the form again.'
+                % self.form_param,
+                node=self.doc.root,
+                object_name=self.form_param,
+            )
         return self._pieces(body, has_logic=self._has_logic(contributions))
 
     def _pieces(self, body: str, has_logic: bool = False) -> ModulePieces:
@@ -637,6 +653,11 @@ class _Emitter:
         elif class_name in self.custom:
             used = self._fallback(class_name)
             self.note_class(used)
+        elif class_name == "Line":
+            # Designer writes a horizontal or vertical line as class ``Line``.
+            # uic builds a QFrame and turns orientation into the frame shape.
+            used = "QFrame"
+            self.note_class(used)
         else:
             used = class_name.split("::")[-1]
             self.note_class(used)
@@ -882,6 +903,10 @@ class _Emitter:
         for field_name, method in mapping:
             raw = layout.field(field_name)
             if not isinstance(raw, str) or not raw:
+                continue
+            # setStretch is a box-layout method. A grid's stretch attribute is
+            # already carried by columnstretch, and calling setStretch raises.
+            if method == "setStretch" and not is_box(layout.class_name.split("::")[-1]):
                 continue
             for index, piece in enumerate(raw.split(",")):
                 piece = piece.strip()
@@ -1165,6 +1190,17 @@ class _Emitter:
     def _emit_one_property(self, node: Node, ref: str, prop: PropertyEntry, *, copy_hfw: bool) -> None:
         if prop.name == "objectName":
             return
+        if prop.name == "pos" and isinstance(prop.value, PointValue):
+            # QWidget has move(), not setPos(). uic still writes setPos, and setupUi raises.
+            self.add("%s.move(%s, %s)" % (ref, prop.value.x, prop.value.y))
+            return
+        if isinstance(node, WidgetNode) and node.class_name == "Line" and prop.name == "orientation":
+            text = prop.value.text if isinstance(prop.value, EnumValue) else ""
+            shape = "VLine" if "Vertical" in text else "HLine"
+            self.note_class("QFrame")
+            self.add("%s.setFrameShape(QFrame.Shape.%s)" % (ref, shape))
+            self.add("%s.setFrameShadow(QFrame.Shadow.Sunken)" % ref)
+            return
         if prop.name == "headerVisible" and isinstance(prop.value, BoolValue):
             self.note_class("QHeaderView")
             shown = "True" if prop.value.value else "False"
@@ -1223,6 +1259,10 @@ class _Emitter:
             expr = "QKeySequence(%s)" % expr
             self.note_class("QKeySequence")
         if prop.is_dynamic or prop.name == "cbcsSplitterSizes":
+            # PySide's setProperty takes a signed 64-bit integer. An unsigned
+            # 64-bit max raises OverflowError and setupUi stops.
+            if isinstance(prop.value, ULongLongValue) and prop.value.value > 9223372036854775807:
+                return ""
             return "%s.setProperty(%s, %s)" % (ref, py_string(prop.name), expr)
         if not check_cpp_name(prop.name):
             self._reject_name(prop.name, node)
@@ -1501,7 +1541,19 @@ class _Emitter:
             receiver_ref = self.ref_name(receiver)
             if not sender_ref or not receiver_ref:
                 continue
-            self.add("%s.%s.connect(%s.%s)" % (sender_ref, signal_name, receiver_ref, slot_name))
+            # A Designer custom signal is not a QObject attribute. uic still
+            # writes the connect, and setupUi raises. Skip the missing name.
+            self.add(
+                "getattr(%s, %s, None) and %s.%s.connect(%s.%s)"
+                % (
+                    sender_ref,
+                    py_string(signal_name),
+                    sender_ref,
+                    signal_name,
+                    receiver_ref,
+                    slot_name,
+                )
+            )
 
     def _expand(self) -> List[Contribution]:
         ctx = CodegenContext(
@@ -1611,7 +1663,7 @@ def _parameter_clash(name: str) -> bool:
         return True
     if name.startswith("___q") and "item" in name:
         return True
-    return class_module(name) is not None
+    return qt_symbol(name)
 
 
 def _explicit_name(node: Node) -> str:
@@ -1677,13 +1729,13 @@ def _font_weight_lines(weight: int) -> List[str]:
 def _qobject_name(node: Node, python_name: str) -> str:
     """Object name uic leaves on the QObject.
 
-    The Python attribute keeps ``python_name``. A ``<property name="objectName">``
-    overwrites the QObject name, including when that property is empty.
+    uic writes the pythonized identifier (``::`` becomes ``__``). An explicit
+    ``objectName`` property overwrites that, including when the property is empty.
     """
     prop = node.prop("objectName")
-    if prop is None:
-        return python_name
-    return _plain_text(prop.value)
+    if prop is not None:
+        return _plain_text(prop.value)
+    return python_name
 
 
 def _spacer_orientation(spacer: SpacerNode) -> str:

@@ -361,6 +361,15 @@ def base_qt_class(class_name: str, extends: str) -> str:
     return "QWidget"
 
 
+def qt_symbol(name: str) -> bool:
+    """True for a name the emitter imports, not every ``Q`` + uppercase word.
+
+    ``QSizePolicy`` is imported when a form sets a size policy. ``QSqlConnectionDialogUi``
+    is a form parameter, not a Qt class, even though it starts with ``Q``.
+    """
+    return name in _QT_CORE or name in _QT_GUI or name in _EXTRA_MODULES or name == "QSizePolicy"
+
+
 def class_module(class_name: str) -> Optional[str]:
     """PySide6 module that defines ``class_name``, or None for a non-Qt name.
 

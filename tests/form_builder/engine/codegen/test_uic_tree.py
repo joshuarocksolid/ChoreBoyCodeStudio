@@ -4,6 +4,7 @@ from __future__ import annotations
 import difflib
 import os
 import subprocess
+import sys
 from collections import Counter
 from pathlib import Path
 
@@ -17,8 +18,54 @@ from tests.form_builder.corpus.freecad_locator import default_search_roots, find
 from tests.form_builder.engine.codegen.uic_compare import _strip_uic, compare
 
 _CORPUS = Path(__file__).resolve().parents[2] / "corpus"
-_ACCEPT = frozenset({"ok", "same-error", "env", "uic-exec", "uic-setup", "reader"})
+# ``env`` is a pass only when both modules fail with the same exception type.
+# ``uic-setup`` and ``uic-exec`` are not passes: those files are compared to
+# QUiLoader, and a match comes back as ``ok``.
+_ACCEPT = frozenset({"ok", "same-error", "env", "reader"})
 _ARTIFACTS = Path("/opt/cursor/artifacts")
+
+
+def _isolated_status(path: Path):
+    """Recompare in a fresh interpreter.
+
+    A long in-process scan can leave a destroyed QObject on Qt's focus chain.
+    The next file then reports a property diff that a clean process does not.
+    The child process exits with os._exit so Qt teardown cannot hide the status.
+    """
+    import tempfile
+
+    handle = tempfile.NamedTemporaryFile("w", suffix=".txt", delete=False)
+    handle.close()
+    script = (
+        "import os, sys\n"
+        "os.environ['QT_QPA_PLATFORM'] = 'offscreen'\n"
+        "from pathlib import Path\n"
+        "from PySide6.QtWidgets import QApplication\n"
+        "from tests.form_builder.engine.codegen.uic_compare import compare\n"
+        "QApplication.instance() or QApplication([])\n"
+        "status = compare(Path(sys.argv[1]))[0]\n"
+        "Path(sys.argv[2]).write_text(status, encoding='utf-8')\n"
+        "os._exit(0)\n"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", script, str(path), handle.name],
+        capture_output=True,
+        text=True,
+        env=os.environ.copy(),
+    )
+    try:
+        text = Path(handle.name).read_text(encoding="utf-8").strip()
+    except OSError:
+        text = ""
+    try:
+        os.unlink(handle.name)
+    except OSError:
+        pass
+    if text:
+        return text
+    if proc.returncode != 0:
+        return None
+    return None
 
 
 def _only_code(detail: object, code: str) -> bool:
@@ -93,6 +140,11 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
         except Exception as exc:
             result = ("crash", "%s: %s" % (type(exc).__name__, exc))
         status = result[0]
+        if status in ("diff", "crash"):
+            fresh = _isolated_status(path)
+            if fresh in _ACCEPT or fresh == "fb507":
+                result = (fresh, "isolated recheck")
+                status = fresh
         counts[status] += 1
         folder_counts = by_folder.setdefault(folder, Counter())
         folder_counts[status] += 1
@@ -123,6 +175,9 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
         lines.append("text %s lines %d" % (path, delta))
     report = "\n".join(lines) + "\n"
     print(report)
+    assert by_folder["qt_examples"]["ok"] >= 54
+    assert by_folder["synthetic"]["ok"] >= 147
+    assert by_folder["freecad"]["ok"] >= 147
     try:
         _ARTIFACTS.mkdir(parents=True, exist_ok=True)
         (_ARTIFACTS / "uic-oracle.txt").write_text(report, encoding="utf-8")

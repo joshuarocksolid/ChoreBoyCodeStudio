@@ -19,6 +19,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QFont, QIcon, QPalet
 from PySide6.QtWidgets import QApplication, QButtonGroup, QLayout, QSizePolicy, QWidget
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
+from app.features.form_builder.engine.codegen.qtmap import class_module
 from app.features.form_builder.engine.codegen.resources import (
     compile_resource_tree,
     read_qrc,
@@ -92,6 +93,44 @@ def _strip_uic(text: str) -> str:
     return "\n".join(fixed) + "\n"
 
 
+_IMPORT_FROM = re.compile(r"^from ([\w.]+) import ([^\n]+)$", re.M)
+
+
+def _install_import_stubs(source: str) -> None:
+    """Give a missing promoted import a QWidget so QUiLoader can be compared.
+
+    Only used when uic produced no Python. The stub is a QWidget subclass
+    with the imported name. PySide imports are left alone.
+    """
+    from PySide6.QtWidgets import QWidget as _QWidget
+
+    for match in _IMPORT_FROM.finditer(source):
+        module_name = match.group(1)
+        if module_name.startswith("PySide6"):
+            continue
+        parent = None
+        parts = module_name.split(".")
+        for index, part in enumerate(parts):
+            qual = ".".join(parts[: index + 1])
+            module = sys.modules.get(qual)
+            if module is None:
+                module = types.ModuleType(qual)
+                sys.modules[qual] = module
+            if parent is not None and not hasattr(parent, part):
+                setattr(parent, part, module)
+            parent = module
+        if parent is None:
+            continue
+        for raw in match.group(2).replace("(", " ").replace(")", " ").split(","):
+            piece = raw.strip()
+            if not piece or piece == "\\":
+                continue
+            imported = piece.split(" as ")[0].strip()
+            if not imported.isidentifier() or hasattr(parent, imported):
+                continue
+            setattr(parent, imported, type(imported, (_QWidget,), {}))
+
+
 def _load(source: str, name: str):
     module = types.ModuleType(name)
     module.__file__ = name + ".py"
@@ -157,7 +196,9 @@ _ICON_STATES = (QIcon.State.Off, QIcon.State.On)
 _ACTION_CLASSES = ("QMenu", "QToolBar", "QMenuBar")
 _BOX_LAYOUTS = ("QBoxLayout", "QHBoxLayout", "QVBoxLayout")
 _CONNECT = re.compile(r"\.([A-Za-z_][A-Za-z0-9_]*)\.connect\(")
-_SKIP_SIGNAL = frozenset({"destroyed", "deleteLater"})
+_SKIP_SIGNAL = frozenset(
+    {"destroyed", "deleteLater", "close", "accept", "reject", "finished", "done"}
+)
 
 
 def _image_digest(image) -> str:
@@ -205,19 +246,25 @@ def _focus_chain(widget: QWidget) -> List[str]:
     node = widget
     seen = set()
     for _ in range(400):
-        node = node.nextInFocusChain()
+        try:
+            node = node.nextInFocusChain()
+        except RuntimeError:
+            break
         if node is None or node is widget or id(node) in seen:
             break
         seen.add(id(node))
-        if not isinstance(node, QWidget):
+        try:
+            if not isinstance(node, QWidget):
+                continue
+            owner = node
+            inside = False
+            while owner is not None:
+                if owner is widget:
+                    inside = True
+                    break
+                owner = owner.parentWidget()
+        except RuntimeError:
             continue
-        owner = node
-        inside = False
-        while owner is not None:
-            if owner is widget:
-                inside = True
-                break
-            owner = owner.parentWidget()
         if not inside:
             continue
         name = node.objectName()
@@ -398,9 +445,14 @@ def _signal_state(root: QWidget):
                 text = reader()
             except Exception:
                 text = ""
-        visible = bool(node.isVisible()) if isinstance(node, QWidget) else False
-        enabled = bool(node.isEnabled()) if isinstance(node, QWidget) else True
-        rows.append((node.objectName(), node.metaObject().className(), visible, enabled, text))
+        try:
+            class_name = node.metaObject().className()
+            visible = bool(node.isVisible()) if isinstance(node, QWidget) else False
+            enabled = bool(node.isEnabled()) if isinstance(node, QWidget) else True
+            object_name = node.objectName()
+        except RuntimeError:
+            continue
+        rows.append((object_name, class_name, visible, enabled, text))
     focus = ""
     focus_widget = root.focusWidget()
     if focus_widget is not None:
@@ -417,7 +469,10 @@ def _fire(root: QWidget, sources: str):
     nodes = [root]
     nodes.extend(root.findChildren(QObject))
     for node in nodes:
-        meta = node.metaObject()
+        try:
+            meta = node.metaObject()
+        except RuntimeError:
+            continue
         seen = set()
         methods = []
         for index in range(meta.methodCount()):
@@ -514,16 +569,25 @@ def _norm(value):
 
 
 def _props(obj):
-    meta = obj.metaObject()
+    try:
+        meta = obj.metaObject()
+    except RuntimeError:
+        return {}
     found = {}
-    for index in range(meta.propertyCount()):
-        prop = meta.property(index)
-        name = prop.name()
-        if not prop.isStored() or not prop.isReadable() or name in SKIP_PROPS:
-            continue
+    try:
+        count = meta.propertyCount()
+    except RuntimeError:
+        return {}
+    for index in range(count):
         try:
-            value = obj.property(name)
-            found[name] = _norm(value)
+            prop = meta.property(index)
+            name = prop.name()
+            if not prop.isStored() or not prop.isReadable() or name in SKIP_PROPS:
+                continue
+            raw = obj.property(name)
+            if _unsigned_overflow(raw):
+                continue
+            found[name] = _norm(raw)
         except Exception:
             continue
     for raw_name in obj.dynamicPropertyNames():
@@ -534,16 +598,33 @@ def _props(obj):
         if not name or name in found or name in SKIP_PROPS:
             continue
         try:
-            found[name] = _norm(obj.property(name))
+            raw = obj.property(name)
+            if _unsigned_overflow(raw):
+                continue
+            found[name] = _norm(raw)
         except Exception:
             continue
     return found
 
 
+def _unsigned_overflow(value) -> bool:
+    """True for an integer PySide cannot pass to setProperty.
+
+    Unsigned 64-bit max round-trips through QUiLoader and raises OverflowError
+    from Python. Both snapshots omit it.
+    """
+    return isinstance(value, int) and not isinstance(value, bool) and value > 9223372036854775807
+
+
 def _layout(layout: QLayout):
+    try:
+        class_name = layout.metaObject().className()
+        object_name = layout.objectName()
+    except RuntimeError:
+        return {"class": "deleted", "objectName": "", "items": []}
     info = {
-        "class": layout.metaObject().className(),
-        "objectName": layout.objectName(),
+        "class": class_name,
+        "objectName": object_name,
         "margins": layout.contentsMargins().left()
         if False
         else (
@@ -555,7 +636,6 @@ def _layout(layout: QLayout):
         "spacing": layout.spacing(),
         "items": [],
     }
-    class_name = layout.metaObject().className()
     if class_name == "QGridLayout":
         info["rowStretch"] = [layout.rowStretch(i) for i in range(layout.rowCount())]
         info["colStretch"] = [layout.columnStretch(i) for i in range(layout.columnCount())]
@@ -572,12 +652,20 @@ def _layout(layout: QLayout):
         spacer = item.spacerItem()
         if widget is not None:
             entry["kind"] = "widget"
-            entry["objectName"] = widget.objectName()
-            entry["class"] = widget.metaObject().className()
+            try:
+                entry["objectName"] = widget.objectName()
+                entry["class"] = widget.metaObject().className()
+            except RuntimeError:
+                entry["objectName"] = ""
+                entry["class"] = "deleted"
         elif nested is not None:
             entry["kind"] = "layout"
-            entry["objectName"] = nested.objectName()
-            entry["class"] = nested.metaObject().className()
+            try:
+                entry["objectName"] = nested.objectName()
+                entry["class"] = nested.metaObject().className()
+            except RuntimeError:
+                entry["objectName"] = ""
+                entry["class"] = "deleted"
         elif spacer is not None:
             entry["kind"] = "spacer"
             hint = spacer.sizeHint()
@@ -608,9 +696,14 @@ def _layout(layout: QLayout):
 def _widget(widget: QWidget, depth=0):
     if depth > 30:
         return {"truncated": True}
+    try:
+        class_name = widget.metaObject().className()
+        object_name = widget.objectName()
+    except RuntimeError:
+        return {"class": "deleted", "objectName": "", "props": {}, "children": []}
     info = {
-        "class": widget.metaObject().className(),
-        "objectName": widget.objectName(),
+        "class": class_name,
+        "objectName": object_name,
         "props": _props(widget),
     }
     layout = widget.layout()
@@ -623,27 +716,33 @@ def _widget(widget: QWidget, depth=0):
         except Exception:
             buddy = None
         info["buddy"] = buddy.objectName() if buddy is not None else ""
-    class_name = info["class"]
     if class_name in _ACTION_CLASSES:
         info["actions"] = [action.objectName() for action in widget.actions()]
     if depth == 0:
         info["focus"] = _focus_chain(widget)
     children = []
-    for child in widget.children():
-        if isinstance(child, QWidget):
-            if child.objectName().startswith("qt_"):
-                continue
-            children.append(_widget(child, depth + 1))
-        elif isinstance(child, QAction):
-            children.append({"class": "QAction", "objectName": child.objectName(), "props": _props(child)})
-        elif isinstance(child, QButtonGroup):
-            children.append(
-                {
-                    "class": "QButtonGroup",
-                    "objectName": child.objectName(),
-                    "buttons": sorted(b.objectName() for b in child.buttons()),
-                }
-            )
+    try:
+        raw_children = list(widget.children())
+    except RuntimeError:
+        raw_children = []
+    for child in raw_children:
+        try:
+            if isinstance(child, QWidget):
+                if child.objectName().startswith("qt_"):
+                    continue
+                children.append(_widget(child, depth + 1))
+            elif isinstance(child, QAction):
+                children.append({"class": "QAction", "objectName": child.objectName(), "props": _props(child)})
+            elif isinstance(child, QButtonGroup):
+                children.append(
+                    {
+                        "class": "QButtonGroup",
+                        "objectName": child.objectName(),
+                        "buttons": sorted(b.objectName() for b in child.buttons()),
+                    }
+                )
+        except RuntimeError:
+            continue
     children.sort(key=lambda item: (item.get("class", ""), item.get("objectName", "")))
     info["children"] = children
     return info
@@ -743,7 +842,164 @@ def _drop_resources() -> None:
         del sys.modules[key]
 
 
+# FreeCAD Designer classes and the Qt widget both sides should build.
+# These six override <extends>QWidget</extends>. Other custom classes follow
+# <extends>, including Gui::FileChooser -> FileChooser -> QLineEdit.
+_FREECAD_STANDINS = {
+    "QuantitySpinBox": "QDoubleSpinBox",
+    "InputField": "QLineEdit",
+    "PrefCheckBox": "QCheckBox",
+    "PrefRadioButton": "QRadioButton",
+    "IntSpinBox": "QSpinBox",
+    "FileChooser": "QLineEdit",
+}
+_ACTIVE_STANDINS = dict(_FREECAD_STANDINS)
+_OPEN_WIDGETS: List[QWidget] = []
+
+
+def _resolve_qt_leaf(name: str, extends_of: dict, seen: set) -> Optional[str]:
+    if name in seen:
+        return None
+    seen.add(name)
+    leaf = name.split("::")[-1]
+    if leaf in _FREECAD_STANDINS:
+        return _FREECAD_STANDINS[leaf]
+    if class_module(leaf):
+        return leaf
+    extends = extends_of.get(name)
+    if extends is None:
+        extends = extends_of.get("Gui::" + leaf)
+    if not extends:
+        return None
+    return _resolve_qt_leaf(extends, extends_of, seen)
+
+
+def _activate_standins(document) -> None:
+    """Map this form's custom classes onto one Qt class for both trees."""
+    global _ACTIVE_STANDINS
+    extends_of = {}
+    for node in document.ui.children("customwidgets"):
+        class_name = getattr(node, "class_name", "")
+        if not class_name:
+            continue
+        extends_of[class_name] = getattr(node, "extends", "") or ""
+    for node in document.iter_preorder():
+        class_name = getattr(node, "class_name", "")
+        if isinstance(class_name, str) and "::" in class_name:
+            extends_of.setdefault(class_name, "")
+    resolved = dict(_FREECAD_STANDINS)
+    for class_name in extends_of:
+        qt_name = _resolve_qt_leaf(class_name, extends_of, set())
+        resolved[class_name.split("::")[-1]] = qt_name or "QWidget"
+    _ACTIVE_STANDINS = resolved
+
+
+class _StandInLoader:
+    """UiLoader stand-in. createWidget returns the Qt class the oracle maps."""
+
+    def createWidget(self, class_name, parent, object_name):
+        from PySide6 import QtWidgets
+
+        leaf = str(class_name).split("::")[-1]
+        qt_name = _ACTIVE_STANDINS.get(leaf)
+        if qt_name is None:
+            return None
+        widget = getattr(QtWidgets, qt_name)(parent)
+        if object_name:
+            widget.setObjectName(str(object_name))
+        return widget
+
+
+def _push_fake_freecadgui() -> bool:
+    if "FreeCADGui" in sys.modules:
+        return False
+    module = types.ModuleType("FreeCADGui")
+    module.UiLoader = _StandInLoader
+    sys.modules["FreeCADGui"] = module
+    return True
+
+
+def _pop_fake_freecadgui(pushed: bool) -> None:
+    if pushed:
+        sys.modules.pop("FreeCADGui", None)
+
+
+def _install_gui_classes(module) -> None:
+    from PySide6 import QtWidgets
+
+    for leaf, qt_name in _ACTIVE_STANDINS.items():
+        widget_type = getattr(QtWidgets, qt_name, None)
+        if widget_type is not None:
+            setattr(module, "Gui_" + leaf, widget_type)
+
+
+def _track(widget):
+    if widget is not None:
+        _OPEN_WIDGETS.append(widget)
+    return widget
+
+
+def _close_widgets() -> None:
+    """Destroy top-level forms before the next file walks Qt's object tree.
+
+    deleteLater leaves the C++ object alive until the event loop. The next
+    file then reads a wrapper whose meta-object is already gone.
+    """
+    try:
+        from shiboken6 import delete as destroy
+    except ImportError:
+        destroy = None
+    while _OPEN_WIDGETS:
+        widget = _OPEN_WIDGETS.pop()
+        if destroy is not None:
+            try:
+                destroy(widget)
+                continue
+            except Exception:
+                pass
+        try:
+            widget.deleteLater()
+        except RuntimeError:
+            pass
+    app = QApplication.instance()
+    if app is not None:
+        try:
+            app.processEvents()
+        except RuntimeError:
+            pass
+
+
+def _exc_text(exc: BaseException) -> str:
+    return "%s: %s" % (type(exc).__name__, exc)
+
+
+def _qui_widget(path: Path):
+    from PySide6.QtCore import QFile, QIODevice
+    from PySide6.QtUiTools import QUiLoader
+
+    handle = QFile(str(path))
+    if not handle.open(QIODevice.OpenModeFlag.ReadOnly):
+        return None
+    try:
+        return QUiLoader().load(handle)
+    finally:
+        handle.close()
+
+
+def _tree_result(left, right, source: str, other_source: Optional[str]):
+    diffs = _diff(_widget(left), _widget(right))
+    if other_source is not None:
+        diffs.extend(_diff(_translate_calls(source), _translate_calls(other_source), "$.translate"))
+        fired = source + "\n" + other_source
+    else:
+        fired = source
+    diffs.extend(_diff(_fire(left, fired), _fire(right, fired), "$.fired"))
+    interesting = [item for item in diffs if not _ignored_diff(item)]
+    return ("ok" if not interesting else "diff", interesting[:12], len(interesting), len(diffs))
+
+
 def compare(path: Path, rewrite: Optional[Callable[[str], str]] = None) -> Tuple[object, ...]:
+    _close_widgets()
     _drop_resources()
     data = path.read_bytes()
     try:
@@ -768,52 +1024,88 @@ def compare(path: Path, rewrite: Optional[Callable[[str], str]] = None) -> Tuple
     source = rewrite(generated.text) if rewrite is not None else generated.text
     uic = os.environ["CBCS_FB_UIC"]
     proc = subprocess.run([uic, "-g", "python", str(path)], capture_output=True, text=True)
-    if proc.returncode != 0:
-        return "uic-fail", proc.stderr[:400]
+    uic_text = _strip_uic(proc.stdout) if proc.returncode == 0 else None
+    _activate_standins(read.document)
     with tempfile.TemporaryDirectory(prefix="fbgen-rc-") as folder:
         _load_resources(read.document, path, Path(folder))
+        pushed = _push_fake_freecadgui()
+        try:
+            return _compare_loaded(path, read, source, uic_text, proc.stderr, data)
+        finally:
+            _close_widgets()
+            _pop_fake_freecadgui(pushed)
+
+
+def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr: str, data: bytes):
+    """Compare setupUi to uic, or to QUiLoader when uic cannot build a tree."""
+    ours_exc = None
+    try:
+        ours = _load(source, "ours_" + path.stem)
+    except ModuleNotFoundError as exc:
+        # A missing promoted module would skip the QUiLoader comparison.
+        _install_import_stubs(source)
         try:
             ours = _load(source, "ours_" + path.stem)
-        except Exception as exc:
-            ours_error = "%s: %s" % (type(exc).__name__, exc)
-            try:
-                _load(_strip_uic(proc.stdout), "uic_" + path.stem)
-            except Exception as other:
-                return "env", "%s | uic %s: %s" % (ours_error, type(other).__name__, other)
-            return "ours-exec", ours_error
+        except Exception as retry_exc:
+            ours = None
+            ours_exc = retry_exc
+    except Exception as exc:
+        ours = None
+        ours_exc = exc
+    theirs = None
+    theirs_exc = None
+    if uic_text is not None:
         try:
-            theirs = _load(_strip_uic(proc.stdout), "uic_" + path.stem)
+            theirs = _load(uic_text, "uic_" + path.stem)
+            _install_gui_classes(theirs)
         except Exception as exc:
-            return "uic-exec", "%s: %s" % (type(exc).__name__, exc)
-        root_name = read.document.root.class_name.split("::")[-1]
-        factory = _root_type(root_name)
+            theirs_exc = exc
+    if ours is None and theirs is None:
+        if uic_text is None:
+            return "uic-fail", (uic_stderr or "")[:400]
+        if type(ours_exc).__name__ == type(theirs_exc).__name__:
+            return "env", "%s | uic %s" % (_exc_text(ours_exc), _exc_text(theirs_exc))
+        return "env-mismatch", "%s | uic %s" % (_exc_text(ours_exc), _exc_text(theirs_exc))
+    if ours is None:
+        return "ours-exec", _exc_text(ours_exc)
+    root_name = read.document.root.class_name.split("::")[-1]
+    factory = _root_type(root_name)
+    try:
+        left = _track(factory())
+        _ui_class(ours)().setupUi(left)
+    except Exception as exc:
+        if theirs is None:
+            return "ours-setup", _exc_text(exc)
         try:
-            left = factory()
-            _ui_class(ours)().setupUi(left)
-        except Exception as exc:
-            ours_error = "%s: %s" % (type(exc).__name__, exc)
-            try:
-                right = factory()
-                _ui_class(theirs)().setupUi(right)
-            except Exception as other:
-                if type(other).__name__ == type(exc).__name__:
-                    return "same-error", ours_error
-                # uic did not build a tree either. The forms cannot be compared.
-                return "uic-setup", "uic %s: %s | ours %s" % (type(other).__name__, other, ours_error)
-            return "ours-setup", ours_error
+            right = _track(factory())
+            _ui_class(theirs)().setupUi(right)
+        except Exception as other:
+            if type(other).__name__ == type(exc).__name__:
+                return "same-error", _exc_text(exc)
+            return "setup-mismatch", "uic %s | ours %s" % (_exc_text(other), _exc_text(exc))
+        return "ours-setup", _exc_text(exc)
+    if theirs is not None:
         try:
-            right = factory()
+            right = _track(factory())
             _ui_class(theirs)().setupUi(right)
         except Exception as exc:
-            return "uic-setup", "%s: %s" % (type(exc).__name__, exc)
-        uic_text = _strip_uic(proc.stdout)
-        diffs = _diff(_widget(left), _widget(right))
-        diffs.extend(_diff(_translate_calls(source), _translate_calls(uic_text), "$.translate"))
-        diffs.extend(_diff(_fire(left, source + "\n" + uic_text), _fire(right, source + "\n" + uic_text), "$.fired"))
-        interesting = [item for item in diffs if not _ignored_diff(item)]
+            loaded = _track(_qui_widget(path))
+            if loaded is None:
+                return "loader", _exc_text(exc)
+            result = _tree_result(left, loaded, source, None)
+            if b"cbcsSplitterSizes" in data:
+                _assert_splitter_sizes(left, source or "")
+            return result
         if b"cbcsSplitterSizes" in data:
             _assert_splitter_sizes(left, source or "")
-        return ("ok" if not interesting else "diff", interesting[:12], len(interesting), len(diffs))
+        return _tree_result(left, right, source, uic_text)
+    loaded = _track(_qui_widget(path))
+    if loaded is None:
+        detail = (uic_stderr or "uic produced no Python")[:400]
+        return "loader", detail
+    if b"cbcsSplitterSizes" in data:
+        _assert_splitter_sizes(left, source or "")
+    return _tree_result(left, loaded, source, None)
 
 
 _SET_SIZES = re.compile(r"\.setSizes\(\[([0-9,\s-]*)\]\)")

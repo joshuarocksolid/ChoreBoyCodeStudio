@@ -127,6 +127,50 @@ def test_form_parameter_cannot_shadow_setupui(tmp_path: Path, root_name: str) ->
     assert {item.code for item in result.diagnostics} == {"FB502"}
 
 
+def test_unsigned_64_bit_max_is_left_out_of_setupui(tmp_path: Path) -> None:
+    body = (
+        '<widget class="QWidget" name="host">'
+        '<property name="cbcsULongLong" stdset="0">'
+        "<ulonglong>18446744073709551615</ulonglong>"
+        "</property></widget>"
+    )
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert "18446744073709551615" not in result.text
+    ast.parse(result.text, feature_version=(3, 9))
+
+
+def test_widget_pos_property_calls_move(tmp_path: Path) -> None:
+    body = (
+        '<widget class="QLabel" name="label">'
+        "<property name=\"pos\"><point><x>3</x><y>4</y></point></property>"
+        "</widget>"
+    )
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert "self.label.move(3, 4)" in result.text
+    assert "setPos" not in result.text
+
+
+def test_designer_line_widget_is_a_sunken_qframe(tmp_path: Path) -> None:
+    body = (
+        '<widget class="Line" name="line">'
+        '<property name="orientation"><enum>Qt::Horizontal</enum></property>'
+        "</widget>"
+    )
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert "self.line = QFrame(" in result.text
+    assert "self.line.setFrameShape(QFrame.Shape.HLine)" in result.text
+    assert "self.line.setFrameShadow(QFrame.Shadow.Sunken)" in result.text
+
+
+def test_qt_shaped_form_name_that_is_not_imported_still_generates(tmp_path: Path) -> None:
+    result = _generate(tmp_path, root_name="QSqlConnectionDialogUi")
+    assert result.text is not None
+    assert "def setupUi(self, QSqlConnectionDialogUi):" in result.text
+
+
 def test_external_form_is_not_written(tmp_path: Path) -> None:
     path, scope, document = _form(tmp_path)
     external = FormScope(kind="external", ui_path=scope.ui_path)
@@ -381,6 +425,7 @@ def test_scoped_cpp_names_follow_uic(tmp_path: Path) -> None:
     assert "class Ui_Gui_Dialog_RemoteDebugger(object):" in result.text
     assert "def setupUi(self, Gui__Dialog__RemoteDebugger):" in result.text
     assert 'setObjectName(u"Gui__Dialog__RemoteDebugger")' in result.text
+    assert 'translate(u"Gui::Dialog::RemoteDebugger", u"Hi", None)' in result.text
     ast.parse(result.text, feature_version=(3, 9))
 
 

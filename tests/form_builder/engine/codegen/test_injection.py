@@ -26,6 +26,7 @@ _EXTRA = frozenset(
         "clear",
         "clicked",
         "connect",
+        "getattr",
         "setAlignment",
         "setBuddy",
         "setFlat",

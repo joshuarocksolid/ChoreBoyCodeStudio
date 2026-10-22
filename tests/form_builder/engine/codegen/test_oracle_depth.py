@@ -127,6 +127,33 @@ _CONNECT_UI = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 @pytest.mark.oracle
+def test_uic_nameerror_is_compared_to_quiloader(qapp) -> None:
+    del qapp
+    _require_uic()
+    result = compare(_CORPUS / "synthetic/properties/char.ui")
+    assert result[0] == "ok", result
+
+
+@pytest.mark.oracle
+def test_different_import_failures_are_not_env(qapp) -> None:
+    del qapp
+    _require_uic()
+    result = compare(_CORPUS / "synthetic/schema/kitchen_sink.ui")
+    assert result[0] != "env", result
+
+
+@pytest.mark.oracle
+def test_freecad_quantity_spinbox_matches_uic(qapp) -> None:
+    del qapp
+    _require_uic()
+    path = Path("/opt/freecad-1.1/usr/Mod/Fem/Resources/ui/BodyHeatSource.ui")
+    if not path.is_file():
+        pytest.skip("FreeCAD forms are not installed")
+    result = compare(path)
+    assert result[0] == "ok", result
+
+
+@pytest.mark.oracle
 def test_dropped_connection_fails_oracle(qapp, tmp_path: Path) -> None:
     del qapp
     _require_uic()
