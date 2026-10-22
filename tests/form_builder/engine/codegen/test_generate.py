@@ -299,6 +299,35 @@ def test_promoted_header_and_freecad_gui_fallback(tmp_path: Path) -> None:
     assert "QWidget" in gui.text
 
 
+def test_freecadgui_without_uiloader_falls_back(tmp_path: Path) -> None:
+    import sys
+    import types
+
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    if QApplication.instance() is None:
+        QApplication([])
+    fake = types.ModuleType("FreeCADGui")
+    sys.modules["FreeCADGui"] = fake
+    try:
+        path, scope, document = _form(
+            tmp_path,
+            stem="qty",
+            body='<widget class="Gui::QuantitySpinBox" name="qty"/>',
+        )
+        result = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+        assert result.text is not None
+        namespace: dict = {}
+        exec(compile(result.text, "ui_qty.py", "exec"), namespace)
+        host = QWidget()
+        namespace["Ui_Invoice"]().setupUi(host)
+        child = host.findChild(QWidget, "qty")
+        assert child is not None
+        assert type(child).__name__ == "QWidget"
+    finally:
+        sys.modules.pop("FreeCADGui", None)
+
+
 def test_dotted_promoted_header_is_a_module() -> None:
     assert header_module("shop.widgets.invoice_header") == "shop.widgets.invoice_header"
     assert header_module("mypackage/widget.h") == "mypackage.widget"

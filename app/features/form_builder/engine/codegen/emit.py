@@ -151,7 +151,9 @@ _FREECAD_HELPER = """
 def _cbcs_widget(class_name, parent, object_name, fallback):
     widget = None
     if _cbcs_FreeCADGui is not None:
-        widget = _cbcs_FreeCADGui.UiLoader().createWidget(class_name, parent, object_name)
+        loader = getattr(_cbcs_FreeCADGui, "UiLoader", None)
+        if loader is not None:
+            widget = loader().createWidget(class_name, parent, object_name)
     if widget is None:
         widget = fallback(parent)
         widget.setObjectName(object_name)
