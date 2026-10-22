@@ -9,6 +9,7 @@ import shutil
 from typing import Any
 
 from app.bootstrap.paths import project_manifest_path, resolve_app_root
+from app.bootstrap.qt_binding_choice import select_binding
 from app.core.errors import AppValidationError
 from app.project.project_manifest import build_default_project_manifest_payload, parse_project_manifest, save_project_manifest
 
@@ -30,6 +31,7 @@ class TemplateMetadata:
     template_version: int
     default_entry: str
     source_path: str
+    requires_pyside6: bool = False
 
 
 class TemplateService:
@@ -44,10 +46,16 @@ class TemplateService:
         return self._templates_root
 
     def list_templates(self) -> list[TemplateMetadata]:
-        """List discovered templates sorted by template id."""
+        """List discovered templates sorted by template id.
+
+        A template with ``requires_pyside6`` is omitted when the active binding
+        is not PySide6. ``materialize_template`` can still find it by id.
+        """
+        return [item for item in self._discover() if _template_visible(item)]
+
+    def _discover(self) -> list[TemplateMetadata]:
         if not self._templates_root.exists():
             return []
-
         templates: list[TemplateMetadata] = []
         for template_dir in sorted(path for path in self._templates_root.iterdir() if path.is_dir()):
             metadata_path = template_dir / TEMPLATE_METADATA_FILENAME
@@ -92,7 +100,7 @@ class TemplateService:
         return {name for name in names if name in LEGACY_HIDDEN_METADATA_DIRS}
 
     def _find_template(self, template_id: str) -> TemplateMetadata:
-        for template in self.list_templates():
+        for template in self._discover():
             if template.template_id == template_id:
                 return template
         raise AppValidationError(f"Unknown template_id: {template_id}")
@@ -109,6 +117,7 @@ class TemplateService:
             template_version=_require_int(payload, "template_version"),
             default_entry=_optional_non_empty_string(payload, "default_entry", default="main.py"),
             source_path=str(template_dir.resolve()),
+            requires_pyside6=bool(payload.get("requires_pyside6", False)),
         )
 
     def _inject_project_manifest(
@@ -133,6 +142,15 @@ class TemplateService:
             raise AppValidationError(str(exc)) from exc
         metadata = parse_project_manifest(payload, manifest_path=manifest_path)
         save_project_manifest(manifest_path, metadata)
+
+
+def _template_visible(template: TemplateMetadata) -> bool:
+    if not template.requires_pyside6:
+        return True
+    try:
+        return select_binding() == "PySide6"
+    except ImportError:
+        return False
 
 
 def _require_non_empty_string(payload: dict[str, Any], field_name: str) -> str:
