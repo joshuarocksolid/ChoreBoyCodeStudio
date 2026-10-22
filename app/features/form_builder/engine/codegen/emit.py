@@ -941,11 +941,11 @@ class _Emitter:
         self._emit_members(group, ref, frozenset())
         for action in group.children("actions"):
             if isinstance(action, ActionNode):
-                self._emit_action(action, owner_ref)
+                self._emit_action(action, ref)
                 self.add("%s.addAction(self.%s)" % (ref, self.names[action.id]))
         for nested in group.children("action_groups"):
             if isinstance(nested, ActionGroupNode):
-                self._emit_action_group(nested, owner_ref)
+                self._emit_action_group(nested, ref)
 
     def _emit_action(self, action: ActionNode, owner_ref: str) -> None:
         name = self.names[action.id]
