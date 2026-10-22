@@ -58,11 +58,13 @@ class ApplyContext:
     def do(self, op: Op) -> None:
         """Apply ``op`` now. A failed precondition becomes ``CommandRejected``."""
         self._guard(op)
-        change = change_from_op(self.doc, op)
         try:
+            change = change_from_op(self.doc, op)
             inverse = mutate.apply(self.doc, op)
         except OpError as exc:
             raise CommandRejected(str(exc)) from exc
+        except KeyError as exc:
+            raise CommandRejected("That object is no longer in the form.") from exc
         self.ops.append(op)
         self.inverses.append(inverse)
         self.changes.append(change)

@@ -13,12 +13,13 @@ from app.features.form_builder.engine.commands.base import (
 )
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, SetProperty
 from app.features.form_builder.engine.commands.log import replay
+from app.features.form_builder.engine.commands.ops import SetPropertyOp
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
 from app.features.form_builder.engine.ui4.values import SetValue, StringValue
-from app.features.form_builder.engine.ui4.spec import Fragment
+from app.features.form_builder.engine.ui4.spec import Fragment, PropertyEntry
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log, prop_text, saved
 
 
@@ -368,6 +369,38 @@ def test_undo_redo_and_save_reject_an_open_transaction() -> None:
     assert log.undo()
     assert prop_text(doc, "okButton") == "A"
     assert len(log.entries()) == 1
+
+
+def test_stale_op_is_rejected_without_a_crash() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    original = saved(doc)
+
+    class Stale:
+        command_type: ClassVar[str] = "stale"
+        label = "Stale"
+        merge_token = None
+
+        def merge_key(self) -> None:
+            return None
+
+        def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
+            del doc
+            ctx.do(
+                SetPropertyOp(
+                    NodeId(10**9),
+                    "property",
+                    "text",
+                    PropertyEntry("property", "text", StringValue("x")),
+                    None,
+                )
+            )
+
+    with pytest.raises(CommandRejected) as caught:
+        log.execute(Stale())
+    assert caught.value.code != "FB999"
+    assert saved(doc) == original
+    assert not log.can_undo()
 
 
 def test_redo_does_not_run_apply_again() -> None:
