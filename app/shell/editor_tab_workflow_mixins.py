@@ -71,6 +71,7 @@ class EditorTabMarkdownDelegates:
 class EditorTabBufferDelegates:
     _buffer_workflow: Any
     _editor_tabs_coordinator: Any
+    _host: Any
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_text_changed(file_path, editor_widget)
@@ -95,6 +96,9 @@ class EditorTabBufferDelegates:
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
         self._buffer_workflow.handle_editor_tab_changed(tab_index)
+        from app.shell.completion_warmup import schedule_open_buffer_warmup
+
+        schedule_open_buffer_warmup(self._host.parent_widget())
 
 
 class EditorTabLifecycleDelegates:
@@ -110,8 +114,8 @@ class EditorTabLifecycleDelegates:
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
 
-    def remove_tab_widget_for_path(self, file_path: str) -> None:
-        self._lifecycle_workflow.remove_tab_widget_for_path(file_path)
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str) -> None:
+        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id)
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._editor_tabs_coordinator.refresh_tab_presentation(file_path)
@@ -133,6 +137,12 @@ class EditorTabLifecycleDelegates:
 
     def handle_tab_close_requested(self, tab_index: int) -> None:
         self._lifecycle_workflow.handle_tab_close_requested(tab_index)
+
+    def close_tab_discarding_edits(self, file_path: str) -> None:
+        self._lifecycle_workflow.close_tab_discarding_edits(file_path)
+
+    def close_tab_for_path(self, file_path: str) -> None:
+        self._lifecycle_workflow.close_tab_for_path(file_path)
 
     def close_active_tab(self) -> None:
         self._lifecycle_workflow.close_active_tab()

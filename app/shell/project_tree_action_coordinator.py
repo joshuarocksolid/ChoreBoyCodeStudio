@@ -30,8 +30,8 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self,
         *,
         project_tree_controller: ProjectTreeController[W],
-        editor_widgets_by_path: dict[str, W],
         open_tab_paths: Callable[[], Sequence[str]],
+        widget_for_path: Callable[[str], Optional[W]],
         tab_index_for_path: Callable[[str], int],
         remove_tab_at_index: Callable[[int], None],
         release_tab_content: Callable[[str], None],
@@ -47,10 +47,11 @@ class ProjectTreeActionCoordinator(Generic[W]):
         refresh_project: Callable[[RefreshTier], None],
         record_deleted_path: Optional[Callable[[str], None]] = None,
         remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
+        migrate_buffer_state: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         self._project_tree_controller = project_tree_controller
-        self._editor_widgets_by_path = editor_widgets_by_path
         self._open_tab_paths = open_tab_paths
+        self._widget_for_path = widget_for_path
         self._tab_index_for_path = tab_index_for_path
         self._remove_tab_at_index = remove_tab_at_index
         self._release_tab_content = release_tab_content
@@ -66,6 +67,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         self._refresh_project = refresh_project
         self._record_deleted_path = record_deleted_path
         self._remap_file_lineage = remap_file_lineage
+        self._migrate_buffer_state = migrate_buffer_state
 
     def handle_new_file(self, destination_directory: str, file_name: str) -> NewFileResult:
         validated_name = self._validate_child_name(file_name)
@@ -205,7 +207,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
     def close_deleted_editor_paths(self, deleted_path: str) -> None:
         self._project_tree_controller.close_deleted_editor_paths(
             deleted_path,
-            open_tab_paths=self._open_tab_paths(),
+            open_tab_paths=self._open_tab_paths,
             tab_index_for_path=self._tab_index_for_path,
             remove_tab_at_index=self._remove_tab_at_index,
             release_tab_content=self._release_tab_content,
@@ -215,19 +217,26 @@ class ProjectTreeActionCoordinator(Generic[W]):
             record_deleted_path=self._record_deleted_path,
         )
 
-    def apply_path_move_updates(self, source_path: str, destination_path: str) -> None:
+    def apply_path_move_updates(
+        self,
+        source_path: str,
+        destination_path: str,
+        *,
+        rewrite_imports: bool = True,
+    ) -> None:
         self._project_tree_controller.apply_path_move_updates(
             source_path,
             destination_path,
             remap_editor_paths=self._remap_editor_paths,
-            editor_widgets_by_path=self._editor_widgets_by_path,
+            widget_for_path=self._widget_for_path,
             tab_index_for_path=self._tab_index_for_path,
             update_tab_path_and_name=self._update_tab_path_and_name,
             breakpoint_store=self._breakpoint_store,
             apply_breakpoints_to_widget=self._apply_breakpoints_to_widget,
             update_widget_language=self._update_widget_language,
             refresh_breakpoints_list=self._refresh_breakpoints_list,
-            maybe_rewrite_imports=self._maybe_rewrite_imports,
+            maybe_rewrite_imports=self._maybe_rewrite_imports if rewrite_imports else lambda _source, _destination: None,
+            migrate_buffer_state=self._migrate_buffer_state,
             remap_file_lineage=self._remap_file_lineage,
             rekey_tab_content=self._rekey_tab_content,
         )

@@ -37,6 +37,7 @@ class EditorIntelligenceController:
         self._semantic_session = semantic_session
         self._runtime_coordinator = runtime_coordinator
         self._background_tasks = background_tasks
+        semantic_session.bind_runtime_members(runtime_coordinator)
 
     def cancel_all(self) -> None:
         self._semantic_session.cancel_all()

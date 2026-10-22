@@ -2734,28 +2734,31 @@ Verify that the packaging workflow uses the dependency manifest to validate expo
 
 ---
 
-## AT-104 — Optional missing-import blockers at package time
+## AT-104 — Missing imports stop export only when the app loads them
 
 **Purpose:**  
-Verify that a working app can still export when an unused import fails the dependency audit, without weakening native-extension or subprocess blockers.
+Verify that a working app can still export when a missing import is never loaded or is guarded, while a reachable missing import, a native extension, and blocked programs still stop export. There is no checkbox to skip these checks. The old **Allow export with missing imports** checkbox was removed.
 
 **Preconditions:**  
 
-- a project whose entry file runs, and a second unused `.py` file imports a module that is not in the project, `vendor/`, or AppRun
+- a project whose entry file runs
+- a second `.py` file that no loaded file imports, and that imports a module that is not in the project, `vendor/`, or AppRun
+- optionally, an `import` of a missing module inside `try: ... except ImportError:` in a loaded file
 
 **Steps:**  
 
 1. Run Package Project with the default wizard settings.
-2. Confirm export stops and Runtime Center lists the unused import as blocking.
-3. Run Package Project again. Check **Allow export with missing imports**. Finish the wizard.
+2. Open the Packaging Report.
+3. Add a top-level `import` of a missing module to the entry file. Run Package Project again.
 
 **Expected Result:**  
 
-- step 1 does not write an artifact
-- step 3 writes the installable artifact
-- `package_report.json` still lists the unused import as a warning
-- `cbcs/package.json` contains `"skip_missing_dependency_blockers": true`
-- a vendored `.so` with no approved loader still blocks export when the checkbox is on
+- step 1 writes the installable artifact
+- the report lists the unused file as **Unused file imports a missing module: <module>**, second line **Warning: export continues**, and its Import path says it is not imported by any file the app loads
+- a guarded import is listed as **Optional module not found: <module>** with **Warning: export continues**
+- step 3 does not write an artifact. The report title is **Packaging stopped** and the row's second line is **Stops export**
+- the wizard has no **Allow export with missing imports** checkbox. An old `cbcs/package.json` that still has `"skip_missing_dependency_blockers"` packages the same way as one without it
+- a vendored `.so` with no approved loader still stops export
 
 ---
 

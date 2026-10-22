@@ -1,26 +1,30 @@
 # Shop-LAN state
 
-Global settings, logs, history, and plugins live in `/home/default/FreeCAD/CBCS/state`.
-Shared shop state is opt-in via `CBCS_STATE_ROOT` or
-`/home/default/share/Chore_Boy/CBCS/cbcs_state_root`. Leftover
-`choreboy_code_studio_state` trees from earlier releases are copied into dest on first
-launch of the update. Occupancy is dest `settings.json`.
+Local logs, history, plugins, cache, trash, and SQLite stay in `/home/default/FreeCAD/CBCS/state`.
+Shared settings are opt-in and hold only `settings.json`, `recent_projects.json`, and
+`python_console_history.json`. `CBCS_STATE_ROOT` and a `cbcs_state_root` pointer select
+that JSON directory. They never move SQLite or logs. A pointer is read from
+`/home/default/share/Chore_Boy/CBCS/cbcs_state_root` and from the same relative path
+under one `~/share/<child>/` (for example `~/share/net1/Chore_Boy/CBCS/cbcs_state_root`).
+Leftover settings JSON is copied once into the active settings root when that root has
+no `settings.json`. History and SQLite are not copied.
 
 <!-- dune-owners: shop-lan-state, platform.bootstrap -->
 
 ## Sub-features
 
-- `state-default` is `/home/default/FreeCAD/CBCS/state` when env and shop pointer are absent.
-- `state-env` uses `CBCS_STATE_ROOT` when it is non-empty and absolute after expanduser.
-- `state-pointer` reads `/home/default/share/Chore_Boy/CBCS/cbcs_state_root` if that file exists.
-- `state-symlink` keeps the logical state-root path (no final `.resolve()` hop) so a home→share symlink stays meaningful.
-- `state-migrate` copies the first leftover that is not dest (`$HOME/choreboy_code_studio_state`, then XDG, then cache, then `$HOME/FreeCAD/choreboy_code_studio_state`) into dest through `state.migrating` when dest has no `settings.json`. Sources stay.
+- `state-default` local root is `/home/default/FreeCAD/CBCS/state` even when env or a shop pointer is set.
+- `state-env` uses `CBCS_STATE_ROOT` as the shared settings directory when it is non-empty and absolute after expanduser.
+- `state-pointer` reads the server pointer and `~/share/<child>/Chore_Boy/CBCS/cbcs_state_root`.
+- `state-symlink` keeps the logical path (no final `.resolve()` hop). A legacy `~/choreboy_code_studio_state` symlink into `~/share` is the shared settings root, not the local root.
+- `state-migrate` copies the three JSON files from the first leftover that has `settings.json`. Sources stay. No `state.migrating` tree.
 - `shop-install` keeps the product install default at `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. Shop recipe: installer **Ask for install folder** → `/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. Shared settings stay opt-in.
 
 ## How to get to it (user POV)
 
-- First launch creates `/home/default/FreeCAD/CBCS/state` (settings, recents, logs, history), or copies a leftover tree into it.
-- Shop machines that want a shared root write a visible `cbcs_state_root` pointer (one absolute path) or set `CBCS_STATE_ROOT`.
+- First launch creates `/home/default/FreeCAD/CBCS/state` for logs and SQLite. Settings JSON live there until a shared root is configured.
+- Shop machines that want shared settings write a visible `cbcs_state_root` pointer (one absolute path) or set `CBCS_STATE_ROOT`.
+- If that folder cannot be written, CBCS keeps using local settings for the session and says "Shared settings are not available".
 - The product installer still offers a folder picker. Choosing the share installs the app there. That does not by itself share settings.
 
 ## Driving it with control-cbcs
@@ -28,9 +32,9 @@ launch of the update. Occupancy is dest `settings.json`.
 Preconditions:
 
 - Doctor passed.
-- Isolated HOME. `control-cbcs launch` sets `CBCS_STATE_ROOT=$HOME/choreboy_code_studio_state` so a verify session does not write the product dest.
+- Isolated HOME. `control-cbcs launch` sets `CBCS_STATE_ROOT=$HOME/choreboy_code_studio_state`. That env now selects shared settings only. `resolve_global_state_root()` stays `/home/default/FreeCAD/CBCS/state`, so logs and SQLite from a verify session still land in the product dest. Do not treat the env as a full state sandbox.
 
-- **Resolved root.** `control-cbcs ctl "$SID" exec -- "from app.bootstrap.paths import resolve_global_state_root; print(resolve_global_state_root())"`. With the launch env, the print is the disposable `$HOME/choreboy_code_studio_state`.
+- **Local root.** `control-cbcs ctl "$SID" exec -- "from app.bootstrap.paths import resolve_global_state_root; print(resolve_global_state_root())"`. The print is `/home/default/FreeCAD/CBCS/state` even when `CBCS_STATE_ROOT` is set.
 - **Product dest (no env, no pointer).** Disposable HOME may still hold `choreboy_code_studio_state` from launch isolation. That leftover must not change resolve:
 
 ```bash
@@ -47,8 +51,8 @@ print(root == constants.PRODUCT_STATE_ROOT)"
 ```
 
   The second line is `True`. The first line is `/home/default/FreeCAD/CBCS/state`.
-- **Env wins.** Without popping, `print(paths.resolve_global_state_root())` prints exactly the launch `CBCS_STATE_ROOT`.
-- **Pointer wins.** Write one absolute path (a directory inside the disposable HOME) into `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`. The pop-and-resolve exec prints that path. Delete the pointer before `stop`.
+- **Env selects settings only.** Without popping, `print(paths.resolve_global_state_root())` is still the product dest. `print(paths.global_settings_path())` is `$CBCS_STATE_ROOT/settings.json`. `print(paths.global_state_db_path())` stays under the product dest.
+- **Pointer selects settings only.** Write one absolute path (a directory inside the disposable HOME) into `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`, or under `$HOME/share/net1/Chore_Boy/CBCS/cbcs_state_root` when proving the client path. Pop `CBCS_STATE_ROOT` first. `print(paths.global_settings_path().parent)` is that path. `print(paths.resolve_global_state_root())` stays the product dest. Delete the pointer before `stop`.
 - **Symlink logical path.** `ln -s $HOME/real_state $HOME/link_state` (create `real_state` first). `print(paths.resolve_global_state_root('$HOME/link_state'))` prints the `link_state` path, not `real_state`.
 - **First launch on the real dest.** Using `/home/default/FreeCAD/CBCS/state`:
 
@@ -76,8 +80,9 @@ if not existed:
 
 ## Gotchas
 
-- Shared settings are opt-in. Two writers on one NFS state directory can clobber `settings.json` and sibling files.
-- Installing onto the share does not automatically share state.
+- Shared settings are opt-in JSON. Two writers on one shared folder can clobber `settings.json`. SQLite stays on the local dest because `~/share` is a network share in real shops.
+- Installing onto the share does not automatically share settings.
 - State never lives inside `choreboy_code_studio_vX`. The pointer filename is `cbcs_state_root` (visible, not hidden).
-- Compare state-root identity without following the final symlink hop. Clair's home→share symlink must remain the logical path.
-- Leftover sources are copied, not moved. Occupied dest (`settings.json` already there) skips copy.
+- Compare path identity without following the final symlink hop. Clair's home→share symlink must remain the logical path.
+- Leftover settings JSON is copied, not moved. Occupied dest (`settings.json` already there) skips the copy. History and SQLite in the leftover are left untouched.
+- `CBCS_STATE_ROOT` does not keep verify logs and SQLite off the product dest. That is a gap until a local-root override exists.

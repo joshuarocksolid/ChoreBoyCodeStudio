@@ -27,7 +27,7 @@ class ProjectTreeController(Generic[W]):
         self,
         deleted_path: str,
         *,
-        open_tab_paths: Sequence[str],
+        open_tab_paths: Callable[[], Sequence[str]],
         tab_index_for_path: Callable[[str], int],
         remove_tab_at_index: Callable[[int], None],
         release_tab_content: Callable[[str], None],
@@ -37,7 +37,7 @@ class ProjectTreeController(Generic[W]):
         record_deleted_path: Optional[Callable[[str], None]] = None,
     ) -> None:
         deleted_resolved = str(Path(deleted_path).resolve())
-        for open_path in list(open_tab_paths):
+        for open_path in list(open_tab_paths()):
             if open_path != deleted_resolved and not open_path.startswith(f"{deleted_resolved}/"):
                 continue
             tab_index = tab_index_for_path(open_path)
@@ -56,7 +56,7 @@ class ProjectTreeController(Generic[W]):
         destination_path: str,
         *,
         remap_editor_paths: Callable[[str, str], dict[str, str]],
-        editor_widgets_by_path: dict[str, W],
+        widget_for_path: Callable[[str], Optional[W]],
         tab_index_for_path: Callable[[str], int],
         update_tab_path_and_name: Callable[[int, str], None],
         breakpoint_store: BreakpointStore,
@@ -64,23 +64,25 @@ class ProjectTreeController(Generic[W]):
         update_widget_language: Callable[[W, str], None],
         refresh_breakpoints_list: Callable[[], None],
         maybe_rewrite_imports: Callable[[str, str], None],
+        migrate_buffer_state: Optional[Callable[[str, str], None]] = None,
         remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
         rekey_tab_content: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         remapped_paths = remap_editor_paths(source_path, destination_path)
         for old_path, new_path in remapped_paths.items():
-            widget = editor_widgets_by_path.pop(old_path, None)
-            if widget is not None:
-                editor_widgets_by_path[new_path] = widget
-            tab_index = tab_index_for_path(old_path)
+            breakpoint_store.remap_paths({old_path: new_path})
+            if migrate_buffer_state is not None:
+                migrate_buffer_state(old_path, new_path)
+            tab_index = tab_index_for_path(new_path)
             if tab_index >= 0:
                 update_tab_path_and_name(tab_index, new_path)
-            breakpoint_store.remap_paths({old_path: new_path})
-            if widget is not None:
-                apply_breakpoints_to_widget(widget, breakpoint_store.lines_for_file(new_path))
-                update_widget_language(widget, new_path)
             if rekey_tab_content is not None:
                 rekey_tab_content(old_path, new_path)
+            widget = widget_for_path(new_path)
+            if widget is None:
+                continue
+            apply_breakpoints_to_widget(widget, breakpoint_store.lines_for_file(new_path))
+            update_widget_language(widget, new_path)
 
         refresh_breakpoints_list()
         if remap_file_lineage is not None and remapped_paths:

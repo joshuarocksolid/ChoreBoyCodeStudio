@@ -24,8 +24,11 @@ class MainWindowEditorTabHost:
     def editor_tabs_widget(self) -> QTabWidget | None:
         return self._window._editor_tabs_widget
 
+    def editor_groups(self) -> Any | None:
+        return getattr(self._window, "_editor_groups", None)
+
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
-        return self._window._editor_widgets_by_path
+        return self._window._workspace_controller.widgets_by_open_path()
 
     def markdown_panes_by_path(self) -> dict[str, Any]:
         return self._window._markdown_panes_by_path
@@ -97,6 +100,9 @@ class MainWindowEditorTabHost:
 
     def completion_auto_trigger(self) -> bool:
         return self._window._completion_auto_trigger
+
+    def completion_mode(self) -> str:
+        return self._window._shell_preferences_runtime.completion_mode()
 
     def completion_min_chars(self) -> int:
         return self._window._completion_min_chars

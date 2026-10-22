@@ -14,7 +14,7 @@ class MainWindowEditorSyncHost:
         self._window = window
 
     def editor_widget_for_path(self, file_path: str) -> Any:
-        return self._window._editor_widgets_by_path.get(file_path)
+        return self._window._workspace_controller.widget_for_path(file_path)
 
     def surface_for_path(self, file_path: str) -> Any:
         registry = getattr(self._window, "_tab_content_registry", None)

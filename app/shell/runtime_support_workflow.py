@@ -241,6 +241,7 @@ class RuntimeSupportWorkflow:
                     self._open_runtime_center_dialog(
                         title="Packaging Report",
                         report=result.validation.issue_report,
+                        package_location=str(result.artifact_root or ""),
                     )
             else:
                 latest_package_issue_report = result.validation.issue_report

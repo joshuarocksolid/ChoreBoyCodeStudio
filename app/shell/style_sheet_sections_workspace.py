@@ -8,6 +8,7 @@ from app.shell.theme_tokens import ShellThemeTokens
 def shell_section_workspace_tree_editors(tokens: ShellThemeTokens) -> str:
     return f"""QWidget#shell\\.leftRegion,
 QTabWidget#shell\\.editorTabs,
+QTabWidget#shell\\.editorTabs\\.group2,
 QTabWidget#shell\\.bottomRegion\\.tabs {{
     background: {tokens.panel_bg};
     color: {tokens.text_primary};

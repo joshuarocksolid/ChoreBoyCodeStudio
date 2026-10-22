@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Mapping
 
 from app.qt.QtWidgets import QMessageBox
@@ -72,6 +71,10 @@ def build_main_window_menus(
             constants.UI_THEME_MODE_HIGH_CONTRAST_DARK
         ),
         on_zoom_in=window._editor_tab_workflow.handle_zoom_in,
+        on_split_editor_right=lambda: window._editor_groups.split_right(),
+        on_close_editor_group=lambda: window._editor_groups.close_group(),
+        on_focus_first_editor_group=lambda: window._editor_groups.focus_group(0),
+        on_focus_second_editor_group=lambda: window._editor_groups.focus_group(1),
         on_zoom_out=window._editor_tab_workflow.handle_zoom_out,
         on_zoom_reset=window._editor_tab_workflow.handle_zoom_reset,
         on_markdown_show_source=window._editor_tab_workflow.handle_markdown_show_source_action,
@@ -141,7 +144,7 @@ def connect_test_explorer_navigation(window: Any) -> None:
 
     def navigate_to_test(file_path: str, line_number: int) -> None:
         if window._editor_tab_factory.open_file_in_editor(file_path, preview=False):
-            editor_widget = window._editor_widgets_by_path.get(str(Path(file_path).expanduser().resolve()))
+            editor_widget = window._workspace_controller.widget_for_path(file_path)
             if editor_widget is not None:
                 editor_widget.go_to_line(max(1, line_number))
 

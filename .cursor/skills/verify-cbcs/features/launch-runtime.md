@@ -11,6 +11,8 @@ Owns AT-01, AT-02, smoke M1.
 - `launch-window` shows a maximized `ChoreBoy Code Studio v*` window.
 - `launch-ready` writes `Startup: Runtime ready (N/N checks)` on `#shell.startupStatusLabel`.
 - `launch-issues` shows `Runtime issues` plus optional `Syntax highlighting off` when a check fails, without crashing.
+- `launch-startup-problems` shows the modeless "CBCS opened with a problem" dialog when history, the symbol cache, or shared settings had to be turned down. Continue is the default. Copy Details uses the LibrePy group wording. Open Runtime Center opens the existing center.
+- `launch-fatal` shows "CBCS could not start" when the window cannot be built. Stderr is the fallback when Qt itself cannot start.
 - `launch-runtime-center` opens Runtime Center from the startup chip.
 
 ## How to get to it (user POV)

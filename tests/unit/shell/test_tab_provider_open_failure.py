@@ -10,6 +10,8 @@ from app.editors.editor_manager import OpenedTabResult  # noqa: E402
 from app.editors.editor_tab import EditorTabState  # noqa: E402
 from app.qt.QtWidgets import QLabel, QTabWidget, QWidget  # noqa: E402
 from app.shell.editor_tab_factory import EditorTabFactory  # noqa: E402
+from app.shell.editor_tab_page import EditorTabPage  # noqa: E402
+from app.shell.editor_tabs_coordinator import EditorTabsCoordinator  # noqa: E402
 from app.shell.tab_content_providers import (  # noqa: E402
     ProviderDeclined,
     TabContentProviderRegistry,
@@ -53,7 +55,7 @@ def _open(provider: _Provider, qapp: object) -> tuple[QTabWidget, TabContentProv
     window._tab_content_registry = registry  # type: ignore[attr-defined]
     window._loaded_project = None  # type: ignore[attr-defined]
     window._logger = _Logger()  # type: ignore[attr-defined]
-    window._shell_theme_workflow = type("Theme", (), {"resolve_theme_tokens": staticmethod(lambda: object())})()  # type: ignore[attr-defined]
+    window._shell_theme_workflow = type("Theme", (), {"resolve_theme_tokens": staticmethod(lambda: None)})()  # type: ignore[attr-defined]
     window._editor_tab_workflow = type(  # type: ignore[attr-defined]
         "Tabs",
         (),
@@ -64,6 +66,8 @@ def _open(provider: _Provider, qapp: object) -> tuple[QTabWidget, TabContentProv
             "apply_detected_indentation_for_widget": staticmethod(lambda *_args: None),
         },
     )()
+    window._external_file_change_workflow = object()  # type: ignore[attr-defined]
+    window._editor_tabs_coordinator = EditorTabsCoordinator(window)  # type: ignore[attr-defined]
     window._refresh_save_action_states = lambda: None  # type: ignore[attr-defined]
     tab = EditorTabState(
         file_path="/tmp/project/invoice.ui",
@@ -100,9 +104,9 @@ def _open(provider: _Provider, qapp: object) -> tuple[QTabWidget, TabContentProv
 
 
 def _notice_text(tabs: QTabWidget) -> str:
-    content = tabs.widget(0)
-    assert content is not None
-    labels = content.findChildren(QLabel)
+    page = tabs.widget(0)
+    assert isinstance(page, EditorTabPage)
+    labels = page.content().findChildren(QLabel)
     assert len(labels) == 1
     return labels[0].text()
 

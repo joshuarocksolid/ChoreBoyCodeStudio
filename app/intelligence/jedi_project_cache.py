@@ -1,8 +1,11 @@
 """Cached Jedi project instances keyed by project root and source layout."""
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from typing import Any
+
+from app.intelligence.completion_metrics import log_completion_phase
 
 
 def get_project(
@@ -31,12 +34,14 @@ def get_project(
 
     import jedi
 
+    started_at = time.perf_counter()
     project = jedi.Project(
         normalized_root,
         added_sys_path=layout.jedi_added_sys_path,
         load_unsafe_extensions=False,
         smart_sys_path=True,
     )
+    log_completion_phase("jedi_project_create", (time.perf_counter() - started_at) * 1000.0)
     project_cache[cache_key] = project
     return project
 

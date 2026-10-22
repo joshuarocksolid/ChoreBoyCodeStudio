@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.qt.QtWidgets import QMessageBox
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.shell.editor_stale_result_policy import capture_buffer_revision, deliver_revision_gated_editor_result
 from app.shell.semantic_navigation_host import SemanticNavigationHost
 
 
@@ -14,6 +14,13 @@ class InlineIntelligenceWorkflow:
 
     def __init__(self, host: SemanticNavigationHost) -> None:
         self._host = host
+
+    def _capture_buffer_revision(self, file_path: str) -> tuple[str | None, int | None]:
+        return capture_buffer_revision(
+            file_path,
+            buffer_id_for_path=self._host.editor_buffer_id_for_path,
+            buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
+        )
 
     def handle_signature_help_action(self) -> None:
         parent = self._host.dialog_parent()
@@ -30,7 +37,7 @@ class InlineIntelligenceWorkflow:
         request_generation = editor_widget.allocate_signature_help_request_generation()
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, signature = payload
@@ -47,11 +54,11 @@ class InlineIntelligenceWorkflow:
                 editor_widget.show_calltip(tooltip_text)
 
             deliver_revision_gated_editor_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
-                editor_widget_for_path=self._host.editor_widget_for_path,
-                buffer_revision=self._host.editor_buffer_revision,
+                editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
+                buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
                 deliver=deliver,
                 requested_generation=request_generation,
                 current_generation=editor_widget.signature_help_request_generation(),
@@ -85,7 +92,7 @@ class InlineIntelligenceWorkflow:
         request_generation = editor_widget.allocate_hover_request_generation()
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, hover_info = payload
@@ -98,11 +105,11 @@ class InlineIntelligenceWorkflow:
                 editor_widget.show_calltip(tooltip_text)
 
             deliver_revision_gated_editor_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
-                editor_widget_for_path=self._host.editor_widget_for_path,
-                buffer_revision=self._host.editor_buffer_revision,
+                editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
+                buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
                 deliver=deliver,
                 requested_generation=request_generation,
                 current_generation=editor_widget.hover_request_generation(),
@@ -132,7 +139,7 @@ class InlineIntelligenceWorkflow:
     ) -> None:
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, signature = payload
@@ -144,11 +151,11 @@ class InlineIntelligenceWorkflow:
                 )
 
             deliver_revision_gated_editor_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
-                editor_widget_for_path=self._host.editor_widget_for_path,
-                buffer_revision=self._host.editor_buffer_revision,
+                editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
+                buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
                 deliver=deliver,
                 requested_generation=request_generation,
                 current_generation=editor_widget.signature_help_request_generation(),
@@ -178,7 +185,7 @@ class InlineIntelligenceWorkflow:
     ) -> None:
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
-        requested_revision = self._host.editor_buffer_revision(file_path)
+        buffer_id, requested_revision = self._capture_buffer_revision(file_path)
 
         def on_success(payload) -> None:  # type: ignore[no-untyped-def]
             generation, hover_info = payload
@@ -190,11 +197,11 @@ class InlineIntelligenceWorkflow:
                 )
 
             deliver_revision_gated_editor_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=requested_revision,
-                editor_widget_for_path=self._host.editor_widget_for_path,
-                buffer_revision=self._host.editor_buffer_revision,
+                editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
+                buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
                 deliver=deliver,
                 requested_generation=request_generation,
                 current_generation=editor_widget.hover_request_generation(),

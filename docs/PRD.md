@@ -262,7 +262,7 @@ myapp/
 
 ## Where settings live
 
-- Global settings: `<state_root>/settings.json`. The product default is `/home/default/FreeCAD/CBCS/state` (see `docs/ARCHITECTURE.md` §11). A leftover `choreboy_code_studio_state` tree from an earlier release is copied there on first launch of the update. Shared shop state is opt-in via `CBCS_STATE_ROOT` or `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`.
+- Global settings: `settings.json` in the shared settings root when one is configured, otherwise in `/home/default/FreeCAD/CBCS/state` (see `docs/ARCHITECTURE.md` §11). Local logs, history, and SQLite stay in that product directory. Shared settings are opt-in via `CBCS_STATE_ROOT` or a `cbcs_state_root` pointer under `~/share`. Leftover settings JSON is copied once. SQLite is not.
 - Per-project settings overrides: `<project>/cbcs/settings.json`
 - Per-project metadata: `<project>/cbcs/project.json`
 

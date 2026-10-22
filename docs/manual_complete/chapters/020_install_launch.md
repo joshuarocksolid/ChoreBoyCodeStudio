@@ -35,7 +35,7 @@ When the application starts, it runs a quick **capability check** to confirm the
 is healthy. The result appears at the far left of the **status bar** along the bottom of
 the window.
 
-- **Runtime ready (8/8 checks)** means everything is working.
+- **Runtime ready (9/9 checks)** means everything is working.
 - **Runtime issues (N/8 checks)** means one or more checks did not pass. The application
   still opens, but some features may be limited.
 

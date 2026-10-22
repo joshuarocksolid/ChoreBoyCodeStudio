@@ -41,7 +41,8 @@ if TYPE_CHECKING:
         _highlighting_reduced_threshold_chars: int
         _highlighting_lexical_only_threshold_chars: int
         _operation_latency_sink: Callable[[str, float, str | None], None] | None
-        _active_file_path: str | None
+        @property
+        def _active_file_path(self) -> str | None: ...
 
         def _build_bracket_match_selections(self) -> list[QTextEdit.ExtraSelection]: ...
         def _debug_execution_extra_selection(self) -> QTextEdit.ExtraSelection | None: ...

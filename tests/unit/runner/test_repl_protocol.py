@@ -2,20 +2,23 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from app.intelligence.completion_models import CompletionEnvelope, CompletionItem, CompletionKind
+from app.intelligence.runtime_members import RuntimeMember, RuntimeMemberListing
 from app.runner.repl_protocol import (
     REPL_CONTROL_PROTOCOL,
     REPL_ERROR_INCOMPATIBLE_PROTOCOL,
     REPL_ERROR_INVALID_SESSION_TOKEN,
     REPL_ERROR_UNSUPPORTED_METHOD,
     REPL_METHOD_COMPLETE,
+    REPL_METHOD_LIST_MEMBERS,
     REPL_METHOD_PING,
+    REPL_METHOD_RESOLVE_MEMBER,
     ReplControlProtocolError,
     build_complete_request,
-    build_introspect_request,
-    build_ping_request,
     build_repl_error_response,
     build_repl_request,
     build_repl_success_response,
@@ -23,6 +26,8 @@ from app.runner.repl_protocol import (
     completion_item_to_dict,
     envelope_from_dict,
     envelope_to_dict,
+    listing_from_wire,
+    listing_to_wire,
     validate_repl_request,
 )
 
@@ -102,20 +107,36 @@ def test_build_complete_request_includes_protocol_and_method() -> None:
     assert payload["cursor_offset"] == 7
 
 
-def test_build_introspect_and_ping_requests_use_supported_methods() -> None:
-    introspect_payload = build_introspect_request(
-        protocol=REPL_CONTROL_PROTOCOL,
-        session_token="token",
-        target_path="PySide2.QtCore",
-        include_private=False,
-    )
-    ping_payload = build_ping_request(
-        protocol=REPL_CONTROL_PROTOCOL,
-        session_token="token",
+def test_member_listing_survives_the_json_wire() -> None:
+    listing = RuntimeMemberListing.from_members(
+        "PySide2.QtCore.QObject",
+        [
+            RuntimeMember(name="_hidden", kind=CompletionKind.ATTRIBUTE),
+            RuntimeMember(name="objectName", kind=CompletionKind.METHOD),
+            RuntimeMember(name="staticMetaObject", kind=CompletionKind.PROPERTY),
+        ],
     )
 
-    assert introspect_payload["method"] == "introspect"
-    assert ping_payload["method"] == REPL_METHOD_PING
+    restored = listing_from_wire(json.loads(json.dumps(listing_to_wire(listing))))
+
+    assert restored == listing
+
+
+def test_member_listing_wire_keeps_names_with_unknown_kinds() -> None:
+    restored = listing_from_wire(
+        {
+            "target_path": "PySide2.QtCore",
+            "members": [["Signal", "signal_kind_from_the_future"], [7, "method"], ["Qt"]],
+        }
+    )
+
+    assert restored == RuntimeMemberListing.from_members(
+        "PySide2.QtCore",
+        [
+            RuntimeMember(name="Signal", kind=CompletionKind.ATTRIBUTE),
+            RuntimeMember(name="Qt", kind=CompletionKind.ATTRIBUTE),
+        ],
+    )
 
 
 def test_build_repl_request_rejects_unknown_method() -> None:
@@ -153,7 +174,7 @@ def test_validate_repl_request_rejects_invalid_boundary() -> None:
 
 
 def test_validate_repl_request_accepts_supported_methods() -> None:
-    for method in (REPL_METHOD_COMPLETE, "introspect", REPL_METHOD_PING):
+    for method in (REPL_METHOD_COMPLETE, REPL_METHOD_LIST_MEMBERS, REPL_METHOD_RESOLVE_MEMBER, REPL_METHOD_PING):
         validated = validate_repl_request(
             {
                 "protocol": REPL_CONTROL_PROTOCOL,

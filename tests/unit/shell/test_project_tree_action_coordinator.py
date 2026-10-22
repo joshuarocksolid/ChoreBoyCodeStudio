@@ -57,8 +57,8 @@ def _coordinator(
 
     coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=fake_tree_controller,  # type: ignore[arg-type]
-        editor_widgets_by_path={},
         open_tab_paths=lambda: [],
+        widget_for_path=lambda _path: None,
         tab_index_for_path=lambda _path: -1,
         remove_tab_at_index=lambda _index: None,
         release_tab_content=lambda _path: None,

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
 
 from app.qt.QtWidgets import QDialog, QStackedWidget, QVBoxLayout, QWidget
 
 from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
-from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssueReport
+from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssue, RuntimeIssueReport
 from app.persistence.settings_service import SettingsService
 from app.project.recent_projects import load_recent_projects
 from app.shell.background_tasks import GeneralTaskScheduler
@@ -18,12 +19,15 @@ from app.shell.status_bar import ShellStatusBarController, map_startup_report_to
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.welcome_widget import WelcomeWidget
 from app.support.diagnostics import ProjectHealthReport
+from app.persistence.sqlite_index import open_symbol_index
 from app.support.runtime_explainer import (
     HELP_TOPIC_GETTING_STARTED,
     HELP_TOPIC_HEADLESS_NOTES,
     build_project_health_issue_report,
     build_startup_issue_report,
+    local_history_disabled_issue,
     merge_runtime_issue_reports,
+    symbol_index_disabled_issue,
 )
 from app.qt.qt_compat import exec_qt
 
@@ -175,6 +179,20 @@ class MainWindowRuntimeOnboardingHost:
     def loaded_project(self) -> LoadedProject | None:
         return self._window._loaded_project
 
+    def degraded_persistence_issues(self) -> list[RuntimeIssue]:
+        issues: list[RuntimeIssue] = []
+        workflow = getattr(self._window, "_local_history_workflow", None)
+        store = getattr(workflow, "local_history_store", None)
+        reason = getattr(store, "disabled_reason", None)
+        if reason:
+            issues.append(local_history_disabled_issue(str(reason)))
+        cache_path = getattr(self._window, "_symbol_cache_db_path", None)
+        if cache_path:
+            symbol_reason = open_symbol_index(str(cache_path)).disabled_reason
+            if symbol_reason:
+                issues.append(symbol_index_disabled_issue(str(symbol_reason)))
+        return issues
+
     @property
     def welcome_widget(self) -> WelcomeWidget | None:
         return self._window._welcome_widget
@@ -295,6 +313,11 @@ class RuntimeOnboardingWorkflow:
         latest_package_issue_report = self._host.latest_package_issue_report
         if latest_package_issue_report.issues:
             reports.append(latest_package_issue_report)
+        extra_issues = getattr(self._host, "degraded_persistence_issues", None)
+        if extra_issues is not None:
+            issues = list(extra_issues())
+            if issues:
+                reports.append(RuntimeIssueReport(workflow="startup", issues=issues))
         return merge_runtime_issue_reports(*reports, workflow="runtime_center")
 
     def refresh_latest_runtime_issue_report(self) -> None:
@@ -305,15 +328,29 @@ class RuntimeOnboardingWorkflow:
         *,
         title: str = "Runtime Center",
         report: RuntimeIssueReport | None = None,
+        package_location: str = "",
     ) -> None:
+        presentation = "packaging" if title.startswith("Packaging") else "runtime"
         dialog = RuntimeCenterDialog(
             title=title,
             report=report or self._host.latest_runtime_issue_report,
             tokens=self._host.resolve_theme_tokens(),
             open_help_topic=self._host.open_runtime_help_topic,
+            open_location=self._open_packaging_location if presentation == "packaging" else None,
+            presentation=presentation,
+            package_location=package_location,
             parent=self._host.dialog_parent(),
         )
         exec_qt(dialog)
+
+    def _open_packaging_location(self, relative_path: str, line_number: int) -> None:
+        opener = getattr(self._host, "open_file_at_line", None)
+        getter = getattr(self._host, "loaded_project", None)
+        loaded = getter() if callable(getter) else None
+        project_root = getattr(loaded, "project_root", None)
+        if opener is None or not project_root:
+            return
+        opener(str(Path(project_root) / relative_path), line_number)
 
     def handle_runtime_center_action(self) -> None:
         self.refresh_latest_runtime_issue_report()

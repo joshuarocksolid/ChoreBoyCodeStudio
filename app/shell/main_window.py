@@ -148,6 +148,13 @@ class MainWindow(QMainWindow):
                     )
             self._status_controller.set_project_state_text(status_text)
 
+    def _refresh_completion_mode_status(self) -> None:
+        """Show the completion mode in effect and its settings scope in the status bar."""
+        if self._status_controller is None:
+            return
+        mode, scope, global_mode = self._shell_preferences_runtime.completion_mode_status()
+        self._status_controller.set_completion_mode(mode, scope=scope, global_mode=global_mode)
+
     def current_theme_tokens(self) -> ShellThemeTokens:
         """Public accessor used by child dialogs to inherit shell theming."""
         return self._shell_theme_workflow.resolve_theme_tokens()
@@ -291,7 +298,7 @@ class MainWindow(QMainWindow):
         if tab_state.current_content == replacement_text:
             return
         self._editor_manager.replace_tab_content(file_path, replacement_text)
-        editor_widget = self._editor_widgets_by_path.get(file_path)
+        editor_widget = self._workspace_controller.widget_for_path(file_path)
         if editor_widget is not None and editor_widget.toPlainText() != replacement_text:
             editor_widget.replace_document_text(replacement_text)
 

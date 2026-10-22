@@ -51,6 +51,12 @@ def _install_markdown(ctx: "ShellCompositionContext") -> None:
     install_markdown(ctx)
 
 
+def _install_editor_groups(ctx: "ShellCompositionContext") -> None:
+    from app.features.editor_groups.install import install_editor_groups
+
+    install_editor_groups(ctx)
+
+
 FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="markdown",
@@ -60,6 +66,11 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="shop-lan-state",
         ownership_globs=("app/features/shop-lan-state/**",),
+    ),
+    FeatureSpec(
+        key="editor-groups",
+        ownership_globs=("app/features/editor_groups/**",),
+        install=_install_editor_groups,
     ),
     FeatureSpec(
         key="hidden-path-policy",
