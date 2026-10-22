@@ -43,7 +43,8 @@ _strip_uic = _uic._strip_uic
 compare = _uic.compare
 
 _CORPUS = Path(__file__).resolve().parents[2] / "corpus"
-# ``env`` is a pass only when both modules fail with the same exception type.
+# ``env`` and ``same-error`` pass when both modules fail with the same
+# exception type and the same normalised message.
 # ``uic-setup`` and ``uic-exec`` are not passes: those files are compared to
 # QUiLoader, and a match comes back as ``ok``.
 _ACCEPT = frozenset({"ok", "same-error", "env", "reader"})
