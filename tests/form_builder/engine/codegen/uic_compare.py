@@ -1179,6 +1179,12 @@ _QUILOADER_IGNORES = (
         "QUiLoader cannot read <float> (Designer: Reading properties of the type 20 is "
         "not supported yet) and drops the property. uic writes setProperty.",
     ),
+    (
+        "grid item alignment on layouts and spacers",
+        "uic passes an <item alignment> to addLayout/addItem on a grid. QUiLoader "
+        "applies it to widgets only and leaves nested layouts and spacers at 0, so "
+        "our alignment on those items is not compared.",
+    ),
 )
 
 # The values this harness's layout functions return (see ``_load``).
@@ -1198,6 +1204,18 @@ def _drop_replaced_status_bar(tree: dict) -> dict:
         if not (child.get("class") == "QStatusBar" and not child.get("objectName"))
     ]
     return dict(tree, children=kept)
+
+
+def _drop_non_widget_item_alignment(node):
+    """Ours: the grid alignment QUiLoader never sets on nested layouts and spacers."""
+    if isinstance(node, list):
+        return [_drop_non_widget_item_alignment(child) for child in node]
+    if not isinstance(node, dict):
+        return node
+    copied = {key: _drop_non_widget_item_alignment(value) for key, value in node.items()}
+    if copied.get("kind") in ("layout", "spacer") and "alignment" in copied:
+        copied["alignment"] = 0
+    return copied
 
 
 def _id_based_xml(data: bytes) -> bytes:
@@ -1270,7 +1288,7 @@ def _tree_result(
 ):
     left_tree = _widget(left)
     if quiloader_xml is not None:
-        left_tree = _drop_replaced_status_bar(left_tree)
+        left_tree = _drop_non_widget_item_alignment(_drop_replaced_status_bar(left_tree))
     diffs = _diff(left_tree, _widget(right))
     if quiloader_xml is not None:
         rules = _QuiLoaderRules(quiloader_xml)
