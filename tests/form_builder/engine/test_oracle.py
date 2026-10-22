@@ -366,6 +366,57 @@ def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:
     after.deleteLater()
 
 
+def _palette_ui(active_body: str) -> str:
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ui version="4.0"><widget class="QWidget" name="Form">\n'
+        ' <property name="palette"><palette>\n'
+        "  <active>\n%s\n  </active>\n"
+        "  <inactive/>\n  <disabled/>\n"
+        " </palette></property>\n"
+        "</widget></ui>\n" % active_body
+    )
+
+
+def _window_text_hex(text: str, qapp: object) -> str:
+    from app.qt.QtGui import QColor, QPalette
+
+    widget, error = _load_tree(text, qapp)
+    assert widget is not None, error
+    try:
+        color = widget.palette().color(QPalette.ColorGroup.Active, QPalette.ColorRole.WindowText)
+        return color.name(QColor.NameFormat.HexArgb)
+    finally:
+        widget.deleteLater()
+
+
+def _resave(text: str) -> str:
+    return write_ui(read_ui(text, allocator=IdAllocator()).document).text
+
+
+@pytest.mark.oracle
+def test_legacy_color_alpha_loads_opaque_red_before_and_after(qapp: object) -> None:
+    text = _palette_ui('   <color alpha="10"><red>255</red><green>0</green><blue>0</blue></color>')
+    before = _window_text_hex(text, qapp)
+    after = _window_text_hex(_resave(text), qapp)
+    assert before == "#ffff0000"
+    assert after == "#ffff0000"
+
+
+@pytest.mark.oracle
+def test_colorrole_then_legacy_loads_the_same_after_save(qapp: object) -> None:
+    text = _palette_ui(
+        '   <colorrole role="WindowText"><brush brushstyle="SolidPattern">'
+        '<color alpha="255"><red>0</red><green>255</green><blue>0</blue></color>'
+        "</brush></colorrole>\n"
+        "   <color><red>255</red><green>0</green><blue>0</blue></color>"
+    )
+    before = _window_text_hex(text, qapp)
+    after = _window_text_hex(_resave(text), qapp)
+    assert before == "#ff00ff00"
+    assert after == before
+
+
 @pytest.mark.oracle
 @pytest.mark.skipif(not _MALFORMED_FILES, reason="malformed corpus is not checked out")
 @pytest.mark.parametrize("path", _MALFORMED_FILES, ids=[path.name for path in _MALFORMED_FILES])
