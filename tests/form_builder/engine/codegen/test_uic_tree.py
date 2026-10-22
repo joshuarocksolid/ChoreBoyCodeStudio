@@ -34,7 +34,7 @@ def _load_helper(name: str, path: Path) -> ModuleType:
 _HERE = Path(__file__).resolve().parent
 _locator = _load_helper(
     "cbcs_freecad_locator",
-    _HERE.parents[2] / "corpus" / "freecad_locator.py",
+    _HERE.parents[1] / "corpus" / "freecad_locator.py",
 )
 _uic = _load_helper("cbcs_uic_compare", _HERE / "uic_compare.py")
 default_search_roots = _locator.default_search_roots
