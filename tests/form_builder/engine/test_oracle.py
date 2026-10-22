@@ -167,19 +167,23 @@ def _snapshot(widget: object) -> object:
 
     def walk(current: QWidget) -> dict:
         layout = current.layout()
+        # A laid-out child is also in children(). Walking both is 2^depth
+        # snapshots, and the 15-deep corpus form then exceeds the 30s timeout.
+        placed: set = set()
+        layout_snapshot = _layout(layout, placed) if layout is not None else None
         return {
             "class": current.metaObject().className(),
             "name": current.objectName(),
             "properties": _properties(current),
-            "layout": None if layout is None else _layout(layout),
+            "layout": layout_snapshot,
             "children": [
                 walk(child)
                 for child in current.children()
-                if isinstance(child, QWidget) and child.parent() is current
+                if isinstance(child, QWidget) and child.parent() is current and child not in placed
             ],
         }
 
-    def _layout(layout: object) -> dict:
+    def _layout(layout: object, placed: set) -> dict:
         from app.qt.QtWidgets import QBoxLayout
 
         items = []
@@ -194,6 +198,8 @@ def _snapshot(widget: object) -> object:
             else:
                 column = index
             child = item.widget()
+            if isinstance(child, QWidget):
+                placed.add(child)
             nested = item.layout()
             spacer = item.spacerItem()
             spacer_info = None
@@ -212,7 +218,7 @@ def _snapshot(widget: object) -> object:
                     "col_span": col_span,
                     "spacer": spacer_info,
                     "widget": walk(child) if isinstance(child, QWidget) else None,
-                    "layout": _layout(nested) if nested is not None else None,
+                    "layout": _layout(nested, placed) if nested is not None else None,
                 }
             )
         stretch = None
@@ -240,7 +246,7 @@ def _properties(widget: object) -> dict:
     for index in range(meta.propertyCount()):
         prop = meta.property(index)
         name = prop.name()
-        if name in ("objectName", "windowIcon"):
+        if name == "objectName":
             continue
         found[name] = _norm(widget.property(name))
     for name in widget.dynamicPropertyNames():
@@ -258,6 +264,27 @@ def _as_int(value: object) -> int:
     from app.qt.qt_compat import enum_value
 
     return enum_value(value)
+
+
+_GRADIENT_BRUSH_STYLES: object = None
+
+
+def _gradient_brush_styles() -> frozenset:
+    global _GRADIENT_BRUSH_STYLES
+    if isinstance(_GRADIENT_BRUSH_STYLES, frozenset):
+        return _GRADIENT_BRUSH_STYLES
+    from app.qt.QtCore import Qt
+
+    styles = frozenset(
+        _as_int(style)
+        for style in (
+            Qt.BrushStyle.LinearGradientPattern,
+            Qt.BrushStyle.RadialGradientPattern,
+            Qt.BrushStyle.ConicalGradientPattern,
+        )
+    )
+    _GRADIENT_BRUSH_STYLES = styles
+    return styles
 
 
 def _norm_gradient(gradient: object) -> object:
@@ -288,9 +315,15 @@ def _norm_gradient(gradient: object) -> object:
 
 
 def _icon_signature(icon: object) -> object:
-    """Pixels per mode and state. cacheKey is unique per pixmap instance."""
+    """Pixels per mode and state. cacheKey is unique per pixmap instance.
+
+    A null icon has no pixmap to hash. Rendering one for every default
+    windowIcon blows the oracle timeout on the 15-deep nested form.
+    """
     from app.qt.QtGui import QIcon, QImage
 
+    if icon.isNull():
+        return (True, icon.name(), icon.themeName(), ())
     modes = (QIcon.Mode.Normal, QIcon.Mode.Disabled, QIcon.Mode.Active, QIcon.Mode.Selected)
     states = (QIcon.State.Off, QIcon.State.On)
     cells = []
@@ -304,7 +337,7 @@ def _icon_signature(icon: object) -> object:
             image = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
             bits = bytes(image.constBits())
             cells.append((sizes, image.width(), image.height(), hashlib.sha256(bits).hexdigest()))
-    return (icon.isNull(), icon.name(), icon.themeName(), tuple(cells))
+    return (False, icon.name(), icon.themeName(), tuple(cells))
 
 
 def _norm(value: object) -> object:
@@ -367,7 +400,11 @@ def _norm(value: object) -> object:
     if name == "QKeyCombination":
         return (_as_int(value.keyboardModifiers()), _as_int(value.key()))
     if name == "QBrush":
-        return (_as_int(value.style()), _norm(value.color()), _norm_gradient(value.gradient()))
+        style = _as_int(value.style())
+        # Solid and other non-gradient styles have no gradient. Asking for one
+        # on every palette role of every widget blows the nested-form timeout.
+        gradient = _norm_gradient(value.gradient()) if style in _gradient_brush_styles() else None
+        return (style, _norm(value.color()), gradient)
     if name == "QPalette":
         from app.qt.QtGui import QPalette
 
