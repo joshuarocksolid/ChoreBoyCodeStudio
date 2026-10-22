@@ -712,6 +712,9 @@ class _Writer:
         if value is None:
             return False
         if isinstance(value, str):
+            # Appendix E: empty author, comment, and exportmacro are omitted.
+            if value == "" and tag in ("author", "comment", "exportmacro"):
+                return True
             self._text_element(tag, value, indent)
             return True
         if isinstance(value, int) and not isinstance(value, bool):
