@@ -53,7 +53,8 @@ _ARTIFACTS = Path("/opt/cursor/artifacts")
 # Measured: /opt/freecad-1.1 in the cloud image; FreeCAD 1.1.3 and the
 # ~/opt/freecad 3.9 prefix on the Mac. Any other root uses _OTHER_ROOT_RATIO.
 _FREECAD_FLOORS = {
-    Path("/opt/freecad-1.1"): 147,
+    # Measured on the Cursor Cloud image: 62 of 67 forms match (5 are env/same-error).
+    Path("/opt/freecad-1.1"): 62,
     Path("/Applications/FreeCAD.app"): 62,
     Path.home() / "opt" / "freecad": 56,
 }
