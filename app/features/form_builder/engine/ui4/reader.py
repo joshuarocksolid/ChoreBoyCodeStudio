@@ -510,6 +510,19 @@ def _release_arena(arena: _ReadArena) -> None:
             _ARENA_FREE.append(arena)
 
 
+def _newline_of(text: str) -> str:
+    """``\\r\\n`` only when every line ending in ``text`` is CRLF.
+
+    A bare LF keeps the default. Designer rewrites a CRLF file with CRLF on
+    every line and leaves an LF file as LF.
+    """
+    if "\r\n" not in text:
+        return "\n"
+    if "\n" in text.replace("\r\n", ""):
+        return "\n"
+    return "\r\n"
+
+
 def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = None) -> ReadResult:
     """Parse ``text`` (a leading BOM is ignored; CRLF and CR are accepted).
 
@@ -547,6 +560,7 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
         ui = _to_node(built, allocator, line_map, diagnostics, None, None, 0)
         arena.release_built()
         document = UiDocument(ui)
+        document.newline = _newline_of(text)
         document._check_validate()
     except UiReadError:
         raise
