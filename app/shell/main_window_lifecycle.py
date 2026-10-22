@@ -10,6 +10,7 @@ from app.shell import close_while_running_dialog
 from app.shell.close_while_running_dialog import CloseRunChoice, build_running_program_summary
 from app.shell.document_safety import DocumentScope
 from app.shell.python_console_history import save_python_console_history
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 
 
 class MainWindowLifecycle:
@@ -21,6 +22,13 @@ class MainWindowLifecycle:
         if run_choice == CloseRunChoice.CANCEL:
             event.ignore()
             return
+        registry = getattr(window, "_tab_content_registry", None)
+        editor_manager = getattr(window, "_editor_manager", None)
+        if registry is not None and editor_manager is not None:
+            open_paths = [tab.file_path for tab in editor_manager.all_tabs()]
+            if not confirm_tab_close_blockers(window, registry, open_paths):
+                event.ignore()
+                return
         decision = window._save_workflow.request_unsaved_changes_decision(
             "exiting",
             scope=DocumentScope.APPLICATION,

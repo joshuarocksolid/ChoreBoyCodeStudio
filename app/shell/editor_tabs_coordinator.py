@@ -10,9 +10,15 @@ from app.core import constants
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
 from app.editors.text_editing import FlatPythonIndentRepairResult
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.shell.editor_tab_bar import MiddleClickTabBar, editor_tab_tooltip, tab_disk_state
 from app.shell.editor_tab_page import EditorTabPage
+
+
+def _themes_as_secondary_surface(content: QWidget) -> bool:
+    """A second group's pane. The registered pane is themed with the other surfaces."""
+    source_editor = getattr(content, "source_editor", None)
+    apply_theme = getattr(content, "apply_theme", None)
+    return callable(source_editor) and callable(apply_theme)
 
 
 def _index_of_buffer(tabs: QTabWidget, buffer_id: str) -> int:
@@ -144,7 +150,8 @@ class EditorTabsCoordinator:
     def apply_tab_chrome_theme(self, tokens: Any) -> None:
         """Theme the tab markers, the info bars, and editors shown only as extra views."""
         primary_views = set(map(id, self._window._editor_widgets_by_path.values()))
-        registered_panes = set(map(id, self._window._tab_content_registry.markdown_panes_by_path.values()))
+        panes = getattr(self._window, "_markdown_panes_by_path", None) or {}
+        registered_panes = set(map(id, panes.values()))
         groups = getattr(self._window, "_editor_groups", None)
         if groups is not None:
             groups.apply_theme_colors(accent=tokens.accent)
@@ -165,8 +172,7 @@ class EditorTabsCoordinator:
                 content = page.content()
                 if isinstance(content, CodeEditorWidget) and id(content) not in primary_views:
                     content.apply_theme(tokens)
-                elif isinstance(content, MarkdownEditorPane) and id(content) not in registered_panes:
-                    # A second group's markdown view; registered panes are themed with the rest.
+                elif id(content) not in registered_panes and _themes_as_secondary_surface(content):
                     content.apply_theme(tokens)
 
     def replace_tab_content_widget(self, file_path: str, new_widget: object) -> None:

@@ -25,8 +25,9 @@ from app.qt.QtGui import QColor
 from app.qt.QtWidgets import QApplication, QFrame, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
+from app.features.markdown.provider import adopt_secondary_pane, build_secondary_pane
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.editor_tab_page import EditorTabPage, page_editor
 
@@ -336,15 +337,14 @@ class EditorGroupsController:
         tab = window._editor_manager.get_tab_by_id(buffer_id)
         if tab is None:
             return
-        registry = window._tab_content_registry.markdown_registry()
-        if registry.pane_for_path(tab.file_path) is not None:
+        registry = window._tab_content_registry
+        if registry.surface_for_path(tab.file_path) is not None:
             return
         for group in self._groups:
             index = group.index_of_buffer(buffer_id)
             view_page = group.tabs.widget(index) if index >= 0 else None
             content = view_page.content() if isinstance(view_page, EditorTabPage) else None
-            if isinstance(content, MarkdownEditorPane):
-                registry.register(tab.file_path, content)
+            if adopt_secondary_pane(window, tab.file_path, content):
                 return
 
     # -- Project-tree deletes and renames ------------------------------------
@@ -417,15 +417,15 @@ class EditorGroupsController:
         if tab_state is None:
             return -1
         view = window._editor_tab_factory.create_buffer_view(tab_state, source_editor, parent=target.tabs)
-        # A Markdown file gets the same source / preview pane in every group.
-        content = window._editor_tab_workflow.wrap_tab_content_if_markdown(
-            editor_widget=view,
-            file_path=tab_state.file_path,
-            parent=target.tabs,
-            theme_tokens=window._shell_theme_workflow.resolve_theme_tokens(),
-            open_linked_file=lambda linked_path: window._editor_tab_factory.open_file_in_editor(linked_path, preview=False),
-            register=False,
+        pane = build_secondary_pane(
+            view,
+            tab_state.file_path,
+            target.tabs,
+            window._shell_theme_workflow.resolve_theme_tokens(),
+            lambda linked_path: window._editor_tab_factory.open_file_in_editor(linked_path, preview=False),
+            lambda: window._editor_tab_workflow.refresh_markdown_action_states(),
         )
+        content: QWidget = view if pane is None else pane
         page = window._editor_tab_factory.build_tab_page(content, buffer_id)
         index = target.tabs.addTab(page, tab_state.display_name)
         window._editor_tabs_coordinator.present_tab_at(index, tab_state, tabs=target.tabs)
@@ -441,11 +441,18 @@ class EditorGroupsController:
         window = self._window
         other = self._other_group(group)
         only_here = [page.buffer_id for page in group.pages() if other is None or other.index_of_buffer(page.buffer_id) < 0]
-        dirty = [
+        only_here_tabs = [
             tab
             for tab in (window._editor_manager.get_tab_by_id(buffer_id) for buffer_id in only_here)
-            if tab is not None and tab.is_dirty
+            if tab is not None
         ]
+        if not confirm_tab_close_blockers(
+            window,
+            window._tab_content_registry,
+            [tab.file_path for tab in only_here_tabs],
+        ):
+            return False
+        dirty = [tab for tab in only_here_tabs if tab.is_dirty]
         if dirty:
             save_workflow = window._save_workflow
             decision = save_workflow.request_unsaved_changes_decision(
@@ -464,7 +471,10 @@ class EditorGroupsController:
             buffer_id = page.buffer_id if isinstance(page, EditorTabPage) else None
             tab = None if buffer_id is None else window._editor_manager.get_tab_by_id(buffer_id)
             if tab is not None and buffer_id in only_here:
-                window._editor_tab_workflow.close_tab_discarding_edits(tab.file_path)
+                window._editor_tab_workflow.close_tab_discarding_edits(
+                    tab.file_path,
+                    skip_close_blockers=True,
+                )
             else:
                 self._remove_view(group, 0, keep_page=False)
         self._collapse_now()

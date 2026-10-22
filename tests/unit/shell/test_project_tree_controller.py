@@ -58,13 +58,17 @@ def test_close_deleted_editor_paths_removes_nested_entries(tmp_path: Path) -> No
     deleted_records: list[str] = []
     project_path = str((tmp_path / "project").resolve())
 
+    def _release(path: str) -> None:
+        widget = workspace.pop_editor_for_path(path)
+        if widget is not None:
+            widget.deleteLater()
+
     controller.close_deleted_editor_paths(
         project_path,
-        open_editor_paths=workspace.open_editor_paths,
-        pop_editor_for_path=workspace.pop_editor_for_path,
+        open_tab_paths=manager.open_paths,
         tab_index_for_path=lambda _path: 0,
         remove_tab_at_index=removed_tabs.append,
-        release_editor_widget=lambda widget: widget.deleteLater(),  # type: ignore[attr-defined]
+        release_tab_content=_release,
         close_editor_file=lambda file_path: manager.close_file(file_path),
         breakpoint_store=breakpoint_store,
         refresh_breakpoints_list=lambda: None,

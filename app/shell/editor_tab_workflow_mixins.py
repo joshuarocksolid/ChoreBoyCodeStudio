@@ -9,7 +9,6 @@ from app.qt.QtCore import QPoint
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 
@@ -47,7 +46,7 @@ class EditorTabOutlineDelegates:
 class EditorTabMarkdownDelegates:
     _markdown_workflow: Any
 
-    def active_markdown_pane(self) -> MarkdownEditorPane | None:
+    def active_markdown_pane(self) -> Any | None:
         return self._markdown_workflow.active_markdown_pane()
 
     def set_active_markdown_mode(self, mode: str) -> None:
@@ -68,25 +67,6 @@ class EditorTabMarkdownDelegates:
     def refresh_markdown_action_states(self) -> None:
         self._markdown_workflow.refresh_markdown_action_states()
 
-    def wrap_tab_content_if_markdown(
-        self,
-        *,
-        editor_widget: CodeEditorWidget,
-        file_path: str,
-        parent: Any,
-        theme_tokens: Any,
-        open_linked_file: Any,
-        register: bool = True,
-    ) -> Any:
-        return self._markdown_workflow.wrap_tab_content_if_markdown(
-            editor_widget=editor_widget,
-            file_path=file_path,
-            parent=parent,
-            theme_tokens=theme_tokens,
-            open_linked_file=open_linked_file,
-            register=register,
-        )
-
 
 class EditorTabBufferDelegates:
     _buffer_workflow: Any
@@ -95,6 +75,9 @@ class EditorTabBufferDelegates:
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_text_changed(file_path, editor_widget)
+
+    def handle_content_source_changed(self, tab_state: Any) -> None:
+        self._buffer_workflow.handle_content_source_changed(tab_state)
 
     def handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_cursor_position_changed(file_path, editor_widget)
@@ -125,11 +108,14 @@ class EditorTabLifecycleDelegates:
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
         self._lifecycle_workflow.release_editor_widget(widget)
 
+    def release_tab_content(self, file_path: str, buffer_id: str | None = None) -> None:
+        self._lifecycle_workflow.release_tab_content(file_path, buffer_id=buffer_id)
+
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)
 
-    def remove_tab_widget_for_buffer_id(self, buffer_id: str) -> None:
-        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id)
+    def remove_tab_widget_for_buffer_id(self, buffer_id: str, file_path: str | None = None) -> None:
+        self._lifecycle_workflow.remove_tab_widget_for_buffer_id(buffer_id, file_path=file_path)
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._editor_tabs_coordinator.refresh_tab_presentation(file_path)
@@ -149,11 +135,24 @@ class EditorTabLifecycleDelegates:
     def show_editor_tab_context_menu(self, position: QPoint) -> None:
         self._lifecycle_workflow.show_editor_tab_context_menu(position)
 
-    def handle_tab_close_requested(self, tab_index: int) -> None:
-        self._lifecycle_workflow.handle_tab_close_requested(tab_index)
+    def handle_tab_close_requested(
+        self,
+        tab_index: int,
+        *,
+        discard_dirty: bool = False,
+        skip_close_blockers: bool = False,
+    ) -> None:
+        self._lifecycle_workflow.handle_tab_close_requested(
+            tab_index,
+            discard_dirty=discard_dirty,
+            skip_close_blockers=skip_close_blockers,
+        )
 
-    def close_tab_discarding_edits(self, file_path: str) -> None:
-        self._lifecycle_workflow.close_tab_discarding_edits(file_path)
+    def close_tab_discarding_edits(self, file_path: str, *, skip_close_blockers: bool = False) -> None:
+        self._lifecycle_workflow.close_tab_discarding_edits(
+            file_path,
+            skip_close_blockers=skip_close_blockers,
+        )
 
     def close_tab_for_path(self, file_path: str) -> None:
         self._lifecycle_workflow.close_tab_for_path(file_path)

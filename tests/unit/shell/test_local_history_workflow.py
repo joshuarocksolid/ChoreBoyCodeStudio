@@ -160,6 +160,62 @@ def test_maybe_restore_draft_restores_into_buffer_and_reschedules_autosave(
     assert saved_kwargs["project_root"] == str(project_root.resolve())
 
 
+@pytest.mark.parametrize("editor_present", [True, False])
+def test_prompted_draft_restore_uses_draft_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    editor_present: bool,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("print('disk')\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path.resolve())).tab
+    editor_widget = _FakeEditorWidget("print('disk')\n") if editor_present else None
+    restored: list[tuple[str, str]] = []
+
+    class _Surface:
+        def restore_text(self, content: str, reason: str) -> None:
+            restored.append((content, reason))
+
+    class _AcceptDialog:
+        discard_draft = False
+
+        def __init__(self, **kwargs) -> None:  # type: ignore[no-untyped-def]
+            self.kwargs = kwargs
+
+        def exec_(self) -> int:
+            return QDialog.Accepted
+
+    monkeypatch.setattr("app.shell.local_history_workflow.DraftRecoveryDialog", _AcceptDialog)
+    host = LocalHistoryEditorHostStub(
+        loaded_project=lambda: _loaded_project(project_root),
+        editor_widget_for_path=lambda _path: editor_widget,  # type: ignore[return-value]
+        open_file_in_editor=lambda _path: True,
+        open_restored_history_buffer=lambda _path, _content: True,
+    )
+    host.surface_for_path = lambda _path: _Surface()  # type: ignore[attr-defined]
+    workflow = LocalHistoryWorkflow(
+        host=host,
+        local_history_store=LocalHistoryStore(state_root=tmp_path / "state"),
+        autosave_store=_FakeAutosaveStore(  # type: ignore[arg-type]
+            DraftEntry(
+                file_path=str(file_path.resolve()),
+                content="print('draft')\n",
+                saved_at="2026-03-24T10:00:00",
+            )
+        ),
+        autosave_timer=_FakeTimer(),  # type: ignore[arg-type]
+        editor_manager=manager,
+        logger=logging.getLogger("test.local_history_workflow"),
+    )
+
+    workflow.maybe_restore_draft(tab, editor_widget)  # type: ignore[arg-type]
+
+    assert restored == [("print('draft')\n", "draft")]
+
+
 def test_review_draft_entry_shows_dialog_when_draft_matches_disk_but_not_buffer(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

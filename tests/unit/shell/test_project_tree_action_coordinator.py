@@ -57,12 +57,12 @@ def _coordinator(
 
     coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=fake_tree_controller,  # type: ignore[arg-type]
-        open_editor_paths=lambda: [],
+        open_tab_paths=lambda: [],
         widget_for_path=lambda _path: None,
-        pop_editor_for_path=lambda _path: None,
         tab_index_for_path=lambda _path: -1,
         remove_tab_at_index=lambda _index: None,
-        release_editor_widget=lambda _widget: None,
+        release_tab_content=lambda _path: None,
+        rekey_tab_content=lambda _old, _new: None,
         close_editor_file=lambda _path: None,
         breakpoint_store=BreakpointStore(),
         refresh_breakpoints_list=lambda: None,
