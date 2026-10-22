@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>SplitterHost</class>
+ <widget class="QSplitter" name="SplitterHost">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>QSplitter</string>
+  </property>
+  <property name="toolTip">
+   <string>QSplitter host</string>
+  </property>
+  <property name="orientation">
+   <enum>Qt::Orientation::Horizontal</enum>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

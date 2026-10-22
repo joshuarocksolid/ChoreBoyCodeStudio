@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PreferencesGeneral</class>
+ <widget class="QDialog" name="PreferencesGeneral">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Preferences</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_companyEdit">
+     <property name="text">
+      <string>Company</string>
+     </property>
+     <property name="buddy">
+      <cstring>companyEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QLineEdit" name="companyEdit"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_startEdit">
+     <property name="text">
+      <string>Start</string>
+     </property>
+     <property name="buddy">
+      <cstring>startEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QDateEdit" name="startEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_autosaveCheck">
+     <property name="text">
+      <string>Autosave</string>
+     </property>
+     <property name="buddy">
+      <cstring>autosaveCheck</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QCheckBox" name="autosaveCheck"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_minutesEdit">
+     <property name="text">
+      <string>Minutes</string>
+     </property>
+     <property name="buddy">
+      <cstring>minutesEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QSpinBox" name="minutesEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>companyEdit</tabstop>
+  <tabstop>startEdit</tabstop>
+  <tabstop>autosaveCheck</tabstop>
+  <tabstop>minutesEdit</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

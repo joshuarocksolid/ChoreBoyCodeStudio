@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>InventoryAdjust</class>
+ <widget class="QDialog" name="InventoryAdjust">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Adjustment</string>
+  </property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="label_itemCombo">
+     <property name="text">
+      <string>Item</string>
+     </property>
+     <property name="buddy">
+      <cstring>itemCombo</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="0" column="1">
+    <widget class="QComboBox" name="itemCombo"/>
+   </item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="label_deltaEdit">
+     <property name="text">
+      <string>Delta</string>
+     </property>
+     <property name="buddy">
+      <cstring>deltaEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="1" column="1">
+    <widget class="QSpinBox" name="deltaEdit"/>
+   </item>
+   <item row="2" column="0">
+    <widget class="QLabel" name="label_reasonEdit">
+     <property name="text">
+      <string>Reason</string>
+     </property>
+     <property name="buddy">
+      <cstring>reasonEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="2" column="1">
+    <widget class="QLineEdit" name="reasonEdit"/>
+   </item>
+   <item row="3" column="0">
+    <widget class="QLabel" name="label_whenEdit">
+     <property name="text">
+      <string>When</string>
+     </property>
+     <property name="buddy">
+      <cstring>whenEdit</cstring>
+     </property>
+    </widget>
+   </item>
+   <item row="3" column="1">
+    <widget class="QDateTimeEdit" name="whenEdit"/>
+   </item>
+  </layout>
+ </widget>
+ <tabstops>
+  <tabstop>itemCombo</tabstop>
+  <tabstop>deltaEdit</tabstop>
+  <tabstop>reasonEdit</tabstop>
+  <tabstop>whenEdit</tabstop>
+ </tabstops>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropRect</class>
+ <widget class="QWidget" name="PropRect">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>rect</string>
+  </property>
+  <property name="bounds" stdset="0">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>12</width>
+    <height>14</height>
+   </rect>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
