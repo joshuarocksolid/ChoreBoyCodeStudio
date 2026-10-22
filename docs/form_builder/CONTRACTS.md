@@ -523,7 +523,7 @@ The bridge pushes through `ProblemsController.apply_lint_diagnostics_result`, co
 
 ### 8.2 Writer byte rules (`write_ui`, MUST)
 
-1. The first line is `<?xml version="1.0" encoding="UTF-8"?>`. Newlines are `\n` only. The file ends with `</ui>\n`. There's no trailing whitespace on any line outside text content (text content is exact, §2.4.2).
+1. The first line is `<?xml version="1.0" encoding="UTF-8"?>`. Line endings follow the Appendix E "Line endings" row. The file ends with `</ui>\n`. There's no trailing whitespace on any line outside text content (text content is exact, §2.4.2).
 2. Indentation is one space per level, Designer's QXmlStreamWriter auto-format.
 3. Element order follows `schema.write_order`, with opaque children after their anchor (§2.3). Attribute order follows `schema.attr_order`, then unknown attributes in input order.
 4. *(Provisional until M0.4b.)* An element with no content is written `<x/>`. Designer writes empty strings as `<string/>` and `<string notr="true"/>` (verified by the gate reviewer). Elements Designer writes through `writeTextElement` with empty text come out as `<x></x>`. The writer keeps one table, element by element, of which empty form to use; M0.4b fills it from the corpus (see the table below).
@@ -863,7 +863,9 @@ Source: `tests/form_builder/corpus/designer_resaved/FINDINGS.md` (Qt Designer 6.
 | `stdset` | `stdset="1"` is omitted; `stdset="0"` is written. Layout `margin` is stored with `stdset="0"`. |
 | Redundant `objectName` | Omitted when it only repeats the widget or layout `name`. |
 | `<iconset>` | One line: `<iconset [theme=…]><normaloff>a</normaloff>[<normalon>b</normalon>…]a</iconset>`. The normal path is written once as text after the last state. Designer drops `resource` and `alias`; we keep them (allowlisted). |
-| Comments, `<script>`, `<widgetdata>`, `<propertyspecifications>`, `<images>`, `<addpagemethod>` | Designer drops them. We keep them (allowlisted, §2.2 MUST). |
+| `<script>`, `<widgetdata>`, `<propertyspecifications>`, `<images>`, `<addpagemethod>` | Designer drops them. We keep them (allowlisted, §2.2 MUST). |
+| Comments | Comments inside opaque subtrees are kept. Comments outside them are dropped (§2.3). |
+| Palette | Stored roles only. Legacy `<color>` lists are kept verbatim and never converted. No roles are added from the live palette. A `<color>` without `alpha` stays without `alpha` (Designer writes `alpha="0"`, which reloads as transparent). |
 | Line endings | Preserved per file: LF stays LF, and a CRLF source is written CRLF on every line. |
 | Indentation and declaration | One space per level, no trailing whitespace, final newline. `<?xml version="1.0" encoding="UTF-8"?>` is always written first. |
 | Text escaping | `"` in text becomes `&quot;` (already §8.2.5). |
