@@ -11,11 +11,13 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 from app.editors.editor_manager import OpenedTabResult  # noqa: E402
 from app.editors.editor_tab import EditorTabState  # noqa: E402
 from app.features.form_builder.integration.provider import FormTabProvider  # noqa: E402
-from app.qt.QtWidgets import QLabel, QTabWidget, QWidget  # noqa: E402
+from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtWidgets import QLabel, QPushButton, QTabWidget, QWidget  # noqa: E402
 from app.shell.editor_tab_factory import PYSIDE2_UI_HINT, EditorTabFactory  # noqa: E402
 from app.shell.editor_tab_page import EditorTabPage  # noqa: E402
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator  # noqa: E402
 from app.shell.tab_content_providers import TabContentProviderRegistry  # noqa: E402
+from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -114,3 +116,30 @@ def test_pyside2_ui_hint_shows_once_per_file(qapp, monkeypatch: pytest.MonkeyPat
     hint.hide()
     second = _open(factory, path, "<ui/>\n")
     assert second.content().findChild(QLabel, "shell.editorTabs.uiTextHint") is None
+
+
+def test_pyside2_hint_follows_theme_and_dismisses(qapp, monkeypatch: pytest.MonkeyPatch) -> None:  # type: ignore[no-untyped-def]
+    if importlib.util.find_spec("PySide2") is None:
+        pytest.skip("PySide2 is not installed")
+    monkeypatch.setenv("CBCS_QT_API", "pyside2")
+    _tabs, factory = _window(TabContentProviderRegistry())
+    page = _open(factory, "/tmp/project/theme.ui", "<ui/>\n")
+    hint = page.content()
+    notice = hint.findChild(QLabel, "shell.editorTabs.uiTextHint")
+    dismiss = hint.findChild(QPushButton, "shell.editorTabs.uiTextHintDismiss")
+    assert notice is not None
+    assert dismiss is not None
+    assert dismiss.focusPolicy() != Qt.NoFocus
+    previous = ""
+    for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
+        tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
+        hint.apply_theme(tokens)  # type: ignore[attr-defined]
+        sheet = notice.styleSheet()
+        assert tokens.panel_bg in sheet
+        assert tokens.text_primary in sheet
+        assert tokens.text_primary in dismiss.styleSheet()
+        assert sheet != previous
+        previous = sheet
+    dismiss.click()
+    assert notice.isHidden()
+    assert dismiss.isHidden()
