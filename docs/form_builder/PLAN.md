@@ -231,6 +231,7 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
 | M3.0 | UX spec: canvas sections confirmed (written in M0.9) | O-spec | Canvas sections of `UX_SPEC.md` approved |
+| M3.1a | Realizer: `FormSession`, the selection model, model → live widgets with O(changed) patches for every container kind and main-window chrome, runtime palette isolation, and the `app.qt` immediate-delete helper (CONTRACTS §3.7, §5, §6). Added 2026-10-22: no earlier row owned the realizer | G, O-logic | Patch equals rebuild across random commands with undo/redo; zero fallbacks for the standard set; no user code imported; build ≤ 90 ms and patch ≤ 8 ms at 300w |
 | M3.1 | Canvas core: view, zoom, overlay painter, hit-test index, selection model (single, multi, rubber band, parent, siblings), hover, chips that never cover content (fixes the name-chip overlap), move/resize and grid snap, Tab selects next object, in-place text edit, broken-layout marker (R3 17–22, 30–31, 34) | G, O-UX | Interaction tests. Speed holds |
 | M3.1b | Inspector framework: the Properties/Behavior/Data tab shell, the property-editor registry, changed markers, reset and multi-select plumbing, and the object inspector (R3 28–29) | G, O-UX | Registry API used by M3.6 and M4.3 without edits to shared files |
 | M3.2 | Drop and move engine for every layout kind: box, grid (cells, spans, insert row/column), form (label/field), splitter, stacked/tab pages, and bare containers. Auto-layout on first drop, next drop fills the next cell | G, O-UX | Per-kind interaction tests. Pains 1, 4 and 21 |
@@ -325,7 +326,7 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 - M0.3–M0.9 run in parallel: the local Mac lane, lab lanes and cloud lanes. M0.9 (Opus UX spec) and M1.0 (Opus contracts) are written while Grok builds the M0 tooling.
 - M1.0 must be approved before any other M1 code merges. Then M1.1a lands first. M1.1b, M1.1c and M1.2 follow in parallel, then M1.3, M1.4 and M1.5.
 - M2.0 (shell seam) can start right after M1.0, because it doesn't depend on the engine. M2.1–M2.4 follow, and M2.5 is a separate lane once the IPC contract is approved.
-- M3.1 and M3.1b land first. M3.2–M3.6 then split by directory into 2–3 lanes.
+- M3.1a lands first, then M3.1 and M3.1b. M3.2–M3.6 then split by directory into 2–3 lanes.
 - M4.1, M4.2, M4.3a–c and M4.4 run in parallel, each registering through the M3.1b registry.
 - M5.x runs as 2–3 parallel lanes.
 - M6.0, M6.0b and M7.1 (the pure language, no UI) can start during M5.
