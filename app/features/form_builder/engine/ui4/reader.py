@@ -118,6 +118,10 @@ _LEGACY_COLOR_ROLES = (
     "Accent",
 )
 _PALETTE_GROUPS = ("active", "inactive", "disabled")
+# Qt 6.8 writes cursorShape and gradientstop. The schema spellings still occur
+# in older files. Qt reads both casings.
+_CURSOR_SHAPE_TAGS = frozenset({"cursorshape", "cursorShape"})
+_GRADIENT_STOP_TAGS = frozenset({"gradientStop", "gradientstop"})
 _GRADIENT_TEXT_ATTRS = frozenset({"type", "spread", "coordinatemode"})
 _GRADIENT_REAL_ATTRS = frozenset(
     {
@@ -1346,7 +1350,7 @@ def _parse_value(node: _XNode) -> Optional[Value]:
         return _parse_brush(node)
     if tag == "palette":
         return _parse_palette(node)
-    if tag not in VALUE_CLASSES:
+    if tag not in VALUE_CLASSES and tag not in _CURSOR_SHAPE_TAGS:
         return None
     if tag == "bool":
         text = _text_leaf(node)
@@ -1369,7 +1373,7 @@ def _parse_value(node: _XNode) -> Optional[Value]:
         if node.attrs or not _is_plain(node):
             return None
         return CStringValue(_exact_text(node))
-    if tag in ("enum", "set", "cursorshape"):
+    if tag in ("enum", "set") or tag in _CURSOR_SHAPE_TAGS:
         if node.attrs or not _is_plain(node):
             return None
         text = _exact_text(node)
@@ -1748,7 +1752,7 @@ def _parse_gradient(node: _XNode) -> Optional[GradientValue]:
         real_attrs[key] = number
     stops: List[GradientStop] = []
     for child in _elements(node):
-        if child.tag != "gradientStop":
+        if child.tag not in _GRADIENT_STOP_TAGS:
             return None
         stop = _parse_gradient_stop(child)
         if stop is None:

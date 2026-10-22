@@ -187,9 +187,14 @@ class CursorValue:
 
 @dataclass(frozen=True)
 class CursorShapeValue:
-    """``<cursorshape>``: shape name such as ``ArrowCursor``."""
+    """``<cursorShape>``: shape name such as ``ArrowCursor``.
 
-    ELEMENT: ClassVar[str] = "cursorshape"
+    Qt 6.8 writes ``cursorShape``. The ui4 schema and older files use
+    ``cursorshape``. The reader accepts both. JSON kind ``cursorshape`` is
+    the same value.
+    """
+
+    ELEMENT: ClassVar[str] = "cursorShape"
     name: str
 
 
@@ -549,6 +554,8 @@ def value_from_json(data: object) -> Value:
     if kind == "opaque":
         element = data.get("element")
         return OpaqueValue(element=_element_from_json(element))
+    if kind == "cursorshape":
+        kind = CursorShapeValue.ELEMENT
     cls = VALUE_CLASSES.get(kind)
     if cls is None:
         raise ValueError("unknown value kind %r" % (kind,))

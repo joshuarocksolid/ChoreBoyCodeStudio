@@ -158,7 +158,7 @@ _CASES = [
     ("color-no-alpha", _paint(1, 2, 3), ColorValue, lambda value: value.alpha is None),
     ("cstring", "<cstring>nameEdit</cstring>", CStringValue, lambda value: value.text == "nameEdit"),
     ("cursor", "<cursor>4</cursor>", CursorValue, lambda value: value.value == 4),
-    ("cursorshape", "<cursorshape>Qt::IBeamCursor</cursorshape>", CursorShapeValue, lambda value: value.name == "Qt::IBeamCursor"),
+    ("cursorShape", "<cursorShape>IBeamCursor</cursorShape>", CursorShapeValue, lambda value: value.name == "IBeamCursor"),
     ("enum", "<enum>Qt::LeftToRight</enum>", EnumValue, lambda value: value.text == "Qt::LeftToRight"),
     ("font", "<font><family>DejaVu Sans</family><pointsize>11</pointsize><bold>true</bold></font>", FontValue, lambda value: value.family == "DejaVu Sans" and value.bold is True and value.italic is None),
     ("pixmap", '<pixmap resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</pixmap>', ResourcePixmap, lambda value: value == ResourcePixmap(":/cbcs/icons/dot.png", "icons.qrc", "dot")),
@@ -232,6 +232,43 @@ def _iconset_body() -> str:
  <selectedoff>:/g.png</selectedoff>:/g.png
  <selectedon>:/h.png</selectedon>:/h.png
 </iconset>"""
+
+
+def test_qt68_writes_cursorShape_and_gradientstop() -> None:
+    shape, codes = _round_trip("<cursorShape>IBeamCursor</cursorShape>")
+    assert isinstance(shape, CursorShapeValue)
+    assert shape.name == "IBeamCursor"
+    assert "FB005" not in codes
+    saved = write_ui(read_ui(_form("<cursorShape>IBeamCursor</cursorShape>"), allocator=IdAllocator()).document).text
+    assert "<cursorShape>" in saved
+    assert "<cursorshape>" not in saved
+
+    legacy, legacy_codes = _round_trip("<cursorshape>Qt::IBeamCursor</cursorshape>")
+    assert isinstance(legacy, CursorShapeValue)
+    assert legacy.name == "Qt::IBeamCursor"
+    assert "FB005" not in legacy_codes
+
+    body = (
+        '<brush brushstyle="LinearGradientPattern"><gradient type="LinearGradient" startx="0">'
+        "<gradientstop position=\"0.2\">%s</gradientstop></gradient></brush>" % _paint(0, 255, 0, 255)
+    )
+    brush, brush_codes = _round_trip(body)
+    assert isinstance(brush, BrushValue)
+    assert brush.gradient is not None
+    assert brush.gradient.stops == (GradientStop(0.2, ColorValue(0, 255, 0, 255)),)
+    assert "FB005" not in brush_codes
+    saved = write_ui(read_ui(_form(body), allocator=IdAllocator()).document).text
+    assert "<gradientstop " in saved
+    assert "gradientStop" not in saved
+
+    old_stop = (
+        '<brush brushstyle="LinearGradientPattern"><gradient type="LinearGradient">'
+        "<gradientStop position=\"1\">%s</gradientStop></gradient></brush>" % _paint(1, 2, 3, 255)
+    )
+    old_brush, old_codes = _round_trip(old_stop)
+    assert isinstance(old_brush, BrushValue)
+    assert old_brush.gradient is not None
+    assert "FB005" not in old_codes
 
 
 @pytest.mark.parity("R3-284")

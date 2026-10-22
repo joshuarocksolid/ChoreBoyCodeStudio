@@ -390,7 +390,7 @@ class _Writer:
             self._text_element("float", format_float(item.value), indent)
             return
         if isinstance(item, CursorShapeValue):
-            self._text_element("cursorshape", item.name, indent)
+            self._text_element(item.ELEMENT, item.name, indent)
             return
         if isinstance(item, StringListValue):
             self._open(indent, "stringlist", _string_attrs(item))
@@ -548,11 +548,11 @@ class _Writer:
         for stop in item.stops:
             self._open(
                 indent + 1,
-                "gradientStop",
+                "gradientstop",
                 _optional_str_attrs((("position", format_double(stop.position)),)),
             )
             self.value(stop.color, indent + 2)
-            self._close(indent + 1, "gradientStop")
+            self._close(indent + 1, "gradientstop")
         self._close(indent, "gradient")
 
     def _palette(self, item: PaletteValue, indent: int) -> None:
@@ -1069,6 +1069,7 @@ EMPTY_ELEMENT_FORM = {
     "float": "pair",
     "cursor": "pair",
     "cursorshape": "pair",
+    "cursorShape": "pair",
     "author": "pair",
     "comment": "pair",
     "exportmacro": "pair",
