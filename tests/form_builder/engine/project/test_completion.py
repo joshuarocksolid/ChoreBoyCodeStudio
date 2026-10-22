@@ -12,6 +12,7 @@ from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.intelligence.completion_models import CompletionItem
 from app.intelligence.completion_service import CompletionRequest, CompletionService
+from app.intelligence.semantic_facade import SemanticFacade
 
 _BUTTON = (
     '<widget class="QPushButton" name="%(name)s">'
@@ -59,7 +60,10 @@ def test_completion_follows_a_widget_rename(tmp_path: Path) -> None:
     scope = scope_for(str(ui_path), str(root), fs)
     document = read_ui(ui_path.read_text(encoding="utf-8"), allocator=IdAllocator()).document
     write_generated(scope, document, ui_path.read_bytes(), fs)
-    service = CompletionService(cache_db_path=str(tmp_path / "symbols.sqlite3"))
+    cache_db = str(tmp_path / "symbols.sqlite3")
+    # Caches go under the state root; the default is ChoreBoy's /home/default.
+    facade = SemanticFacade(cache_db_path=cache_db, state_root=str(tmp_path / "state"))
+    service = CompletionService(cache_db_path=cache_db, semantic_facade=facade)
     offered = _labels(root, service)
     assert "okButton" in offered
 
