@@ -6,13 +6,21 @@ import time
 from typing import Any, Callable, Optional
 
 from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
 from app.editors.editor_tab import EditorTabState
+from app.editors.tab_content_source import TabContentSource
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
 from app.shell.editor_tab_page import EditorTabPage
+from app.shell.tab_content_providers import (
+    ProviderDeclined,
+    TabContentProviderRegistry,
+    TabMatchContext,
+    TabSurface,
+    TabSurfaceRequest,
+)
 
 
 def _schedule_buffer_warmup(window: Any) -> None:
@@ -85,11 +93,14 @@ class EditorTabFactory:
         if window._editor_tabs_widget is None:
             return False
 
-        if opened_result.closed_preview_tab is not None:
-            window._editor_tab_workflow.remove_tab_widget_for_buffer_id(opened_result.closed_preview_tab.buffer_id)
+        closed_preview = opened_result.closed_preview_tab
+        if closed_preview is not None:
+            window._editor_tab_workflow.remove_tab_widget_for_buffer_id(
+                closed_preview.buffer_id,
+                file_path=closed_preview.file_path,
+            )
 
         if opened_result.was_already_open:
-            # The tab may be in the other editor group; that group takes focus.
             groups = getattr(window, "_editor_groups", None)
             if groups is not None:
                 revealed = groups.reveal_buffer(opened_result.tab.buffer_id)
@@ -104,35 +115,85 @@ class EditorTabFactory:
             window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
             return True
 
-        editor_widget = CodeEditorWidget(window._editor_tabs_widget)
-        self._configure_editor_widget(editor_widget)
-        editor_widget.setPlainText(opened_result.tab.current_content)
-        editor_widget.set_language_for_path(opened_result.tab.file_path)
         tab_file_path = opened_result.tab.file_path
+        theme_tokens = window._shell_theme_workflow.resolve_theme_tokens()
+        loaded_project = getattr(window, "_loaded_project", None)
+        project_root = None if loaded_project is None else loaded_project.project_root
+        created_editor: dict[str, Optional[CodeEditorWidget]] = {"widget": None}
 
-        bindings_host: EditorTabBindingsHost = MainWindowEditorBindingsHost(window)
-        window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, opened_result.tab)
-        window._workspace_controller.register_editor(opened_result.tab.buffer_id, editor_widget)
+        def create_source_editor() -> CodeEditorWidget:
+            if created_editor["widget"] is not None:
+                raise RuntimeError("create_source_editor may be called at most once per surface")
+            editor_widget = self._build_bound_source_editor(
+                opened_result,
+                parent=window._editor_tabs_widget,
+                theme_tokens=theme_tokens,
+            )
+            created_editor["widget"] = editor_widget
+            return editor_widget
 
-        tab_content: QWidget = window._editor_tab_workflow.wrap_tab_content_if_markdown(
-            editor_widget=editor_widget,
-            file_path=tab_file_path,
-            parent=window._editor_tabs_widget,
-            theme_tokens=window._shell_theme_workflow.resolve_theme_tokens(),
-            open_linked_file=lambda linked_path: self.open_file_in_editor(linked_path, preview=False),
+        registry: TabContentProviderRegistry = window._tab_content_registry
+        provider = registry.provider_for(
+            tab_file_path,
+            TabMatchContext(project_root=project_root, forced_text=False),
         )
+        surface: Optional[TabSurface] = None
+        editor_widget: Optional[CodeEditorWidget]
+        if provider is None:
+            editor_widget = create_source_editor()
+            tab_content: QWidget = editor_widget
+        else:
+
+            def open_linked_file(linked_path: str) -> None:
+                self.open_file_in_editor(linked_path, preview=False)
+
+            request = TabSurfaceRequest(
+                file_path=tab_file_path,
+                initial_text=opened_result.tab.current_content,
+                parent=window._editor_tabs_widget,
+                theme=theme_tokens,
+                create_source_editor=create_source_editor,
+                open_linked_file=open_linked_file,
+                project_root=project_root,
+            )
+            try:
+                surface = provider.create_surface(request)
+            except ProviderDeclined as exc:
+                editor_widget = created_editor["widget"] or create_source_editor()
+                tab_content = _DeclinedTextTab(editor_widget, exc.reason, window._editor_tabs_widget)
+            except Exception:
+                window._logger.exception(
+                    "Tab provider %s failed for %s",
+                    provider.provider_id,
+                    tab_file_path,
+                )
+                editor_widget = created_editor["widget"] or create_source_editor()
+                tab_content = _DeclinedTextTab(
+                    editor_widget,
+                    "Couldn't open this view. Opened as text.",
+                    window._editor_tabs_widget,
+                )
+            else:
+                editor_widget = surface.source_editor() or created_editor["widget"]
+                content_source = surface.content_source()
+                if content_source is not None:
+                    self._attach_content_source(opened_result.tab, content_source)
+                registry.bind(tab_file_path, surface, provider.provider_id)
+                tab_content = surface.widget()
 
         page = self.build_tab_page(tab_content, opened_result.tab.buffer_id)
         tab_index = window._editor_tabs_widget.addTab(page, opened_result.tab.display_name)
         window._editor_tabs_coordinator.present_tab_at(tab_index, opened_result.tab)
+        window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
         window._editor_tabs_widget.setCurrentIndex(tab_index)
         if restore_draft:
             window._local_history_workflow.maybe_restore_draft(opened_result.tab, editor_widget)
-        window._editor_tab_workflow.apply_detected_indentation_for_widget(
-            opened_result.tab.file_path,
-            editor_widget,
-            editor_widget.toPlainText(),
-        )
+        if editor_widget is not None:
+            window._editor_tab_workflow.apply_detected_indentation_for_widget(
+                opened_result.tab.file_path,
+                editor_widget,
+                editor_widget.toPlainText(),
+            )
         window._editor_tab_workflow.handle_editor_tab_changed(tab_index)
         window._refresh_save_action_states()
         window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
@@ -164,6 +225,32 @@ class EditorTabFactory:
         editor_widget.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
         editor_widget.cursorPositionChanged.connect(lambda: _schedule_buffer_warmup(window))
 
+    def _build_bound_source_editor(
+        self,
+        opened_result: OpenedTabResult,
+        *,
+        parent: QWidget,
+        theme_tokens: Any,
+    ) -> CodeEditorWidget:
+        del theme_tokens
+        window = self._window
+        editor_widget = CodeEditorWidget(parent)
+        self._configure_editor_widget(editor_widget)
+        editor_widget.setPlainText(opened_result.tab.current_content)
+        editor_widget.set_language_for_path(opened_result.tab.file_path)
+        bindings_host: EditorTabBindingsHost = MainWindowEditorBindingsHost(window)
+        window._editor_tab_workflow.attach_editor_bindings(bindings_host, editor_widget, opened_result.tab)
+        window._workspace_controller.register_editor(opened_result.tab.buffer_id, editor_widget)
+        return editor_widget
+
+    def _attach_content_source(self, tab_state: EditorTabState, source: TabContentSource) -> None:
+        tab_state.content_source = source
+
+        def on_changed() -> None:
+            self._window._editor_tab_workflow.handle_content_source_changed(tab_state)
+
+        tab_state.content_source_unsubscribe = source.subscribe_changed(on_changed)
+
     def create_buffer_view(
         self,
         tab: EditorTabState,
@@ -171,7 +258,7 @@ class EditorTabFactory:
         *,
         parent: QWidget,
     ) -> CodeEditorWidget:
-        """A second editor for an open buffer: shares its document and buffer state."""
+        """A second editor for an open buffer. It shares the source document."""
         window = self._window
         view = CodeEditorWidget(parent)
         self._configure_editor_widget(view)
@@ -191,7 +278,6 @@ class EditorTabFactory:
         horizontal_value = source_editor.horizontalScrollBar().value()
 
         def restore_scroll() -> None:
-            # setTextCursor scrolled the still-unsized view; match the source view instead.
             view.verticalScrollBar().setValue(scroll_value)
             view.horizontalScrollBar().setValue(horizontal_value)
 
@@ -218,6 +304,28 @@ class EditorTabFactory:
         page.info_bar.save_as_requested.connect(lambda: run(conflicts.save_buffer_as))
         page.info_bar.close_tab_requested.connect(lambda: run(window._editor_tab_workflow.close_tab_for_path))
         return page
+
+
+class _DeclinedTextTab(QWidget):
+    """Text fallback after a provider declines, so a split can share the editor.
+
+    No ``apply_theme``, ``set_mode``, or ``toggle_preview``. Tab chrome treats
+    a widget with those as a second-group markdown pane.
+    """
+
+    def __init__(self, editor: CodeEditorWidget, reason: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._editor = editor
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 0)
+        layout.setSpacing(4)
+        notice = QLabel(reason, self)
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        layout.addWidget(editor, 1)
+
+    def source_editor(self) -> CodeEditorWidget:
+        return self._editor
 
 
 __all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost"]

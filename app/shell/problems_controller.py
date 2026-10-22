@@ -80,6 +80,10 @@ class ProblemsController:
             else:
                 editor_widget.set_diagnostics([])
             self.update_tab_diagnostic_indicator(file_path, [])
+        registry = getattr(self._window, "_tab_content_registry", None)
+        if registry is not None:
+            for _file_path, surface in registry.surfaces():
+                surface.set_diagnostics([])
         active_tab = self._window._editor_manager.active_tab()
         if active_tab is not None:
             self.update_status_bar_diagnostics([])
@@ -92,10 +96,20 @@ class ProblemsController:
         return bool(selections)
 
     def push_diagnostics_to_editor(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
+        surface = self._surface_for_path(file_path)
+        if surface is not None:
+            surface.set_diagnostics(diagnostics)
+            return
         editor_widget = self._window._workspace_controller.widget_for_path(file_path)
         if editor_widget is None:
             return
         editor_widget.set_diagnostics(diagnostics)
+
+    def _surface_for_path(self, file_path: str) -> Any:
+        registry = getattr(self._window, "_tab_content_registry", None)
+        if registry is None:
+            return None
+        return registry.surface_for_path(file_path)
 
     def update_tab_diagnostic_indicator(self, file_path: str, diagnostics: list[CodeDiagnostic]) -> None:
         window = self._window

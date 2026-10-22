@@ -115,6 +115,45 @@ def test_apply_disk_content_updates_widget_tab_state_and_revision(tmp_path: Path
     assert host.refreshed_paths == [tab.file_path]
 
 
+def test_apply_disk_content_marks_the_reloaded_text(tmp_path: Path) -> None:
+    file_path = tmp_path / "form.ui"
+    manager = EditorManager()
+    tab = _open_tab(manager, file_path, content="old\n", mtime=1.0)
+    saved: list[str] = []
+
+    class _Source:
+        def current_text(self) -> str:
+            return "not the disk text"
+
+        def is_dirty(self) -> bool:
+            return True
+
+        def mark_saved(self, saved_text: str) -> None:
+            saved.append(saved_text)
+
+        def revision(self) -> int:
+            return 1
+
+        def subscribe_changed(self, listener: object) -> object:
+            del listener
+            return lambda: None
+
+    tab.content_source = _Source()  # type: ignore[assignment]
+    host = _RecordingSyncHost(tab_indices={tab.file_path: 0})
+    host.surface_for_path = lambda _path: SimpleNamespace(restore_text=lambda *_args: None)  # type: ignore[attr-defined]
+    workflow = EditorSyncWorkflow(editor_manager=manager, host=host)  # type: ignore[arg-type]
+
+    applied = workflow.apply_disk_content(
+        tab.file_path,
+        "from disk\n",
+        source=EditorDiskSyncSource.EXTERNAL_RELOAD,
+        last_known_mtime=2.0,
+    )
+
+    assert applied is True
+    assert saved == ["from disk\n"]
+
+
 def test_apply_disk_content_returns_false_when_tab_or_widget_missing(tmp_path: Path) -> None:
     file_path = tmp_path / "main.py"
     manager = EditorManager()
