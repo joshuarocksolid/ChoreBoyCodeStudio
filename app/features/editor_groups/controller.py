@@ -29,6 +29,7 @@ from app.editors.markdown_rendering import is_markdown_path, qt_markdown_support
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
 from app.features.markdown.provider import MarkdownTabSurface
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
+from app.shell.tab_close_blockers import confirm_tab_close_blockers
 from app.shell.editor_tab_bar import MiddleClickTabBar
 from app.shell.editor_tab_page import EditorTabPage, page_editor
 
@@ -456,11 +457,18 @@ class EditorGroupsController:
         window = self._window
         other = self._other_group(group)
         only_here = [page.buffer_id for page in group.pages() if other is None or other.index_of_buffer(page.buffer_id) < 0]
-        dirty = [
+        only_here_tabs = [
             tab
             for tab in (window._editor_manager.get_tab_by_id(buffer_id) for buffer_id in only_here)
-            if tab is not None and tab.is_dirty
+            if tab is not None
         ]
+        if not confirm_tab_close_blockers(
+            window,
+            window._tab_content_registry,
+            [tab.file_path for tab in only_here_tabs],
+        ):
+            return False
+        dirty = [tab for tab in only_here_tabs if tab.is_dirty]
         if dirty:
             save_workflow = window._save_workflow
             decision = save_workflow.request_unsaved_changes_decision(
@@ -479,7 +487,10 @@ class EditorGroupsController:
             buffer_id = page.buffer_id if isinstance(page, EditorTabPage) else None
             tab = None if buffer_id is None else window._editor_manager.get_tab_by_id(buffer_id)
             if tab is not None and buffer_id in only_here:
-                window._editor_tab_workflow.close_tab_discarding_edits(tab.file_path)
+                window._editor_tab_workflow.close_tab_discarding_edits(
+                    tab.file_path,
+                    skip_close_blockers=True,
+                )
             else:
                 self._remove_view(group, 0, keep_page=False)
         self._collapse_now()

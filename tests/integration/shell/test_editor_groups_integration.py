@@ -10,7 +10,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt.QtCore import QEvent, QPoint, Qt  # noqa: E402
 from app.qt.QtGui import QMouseEvent, QTextCursor  # noqa: E402
-from app.qt.QtWidgets import QApplication, QFrame, QSplitter  # noqa: E402
+from app.qt.QtWidgets import QApplication, QFrame, QMessageBox, QSplitter  # noqa: E402
 
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane  # noqa: E402
 from app.project.project_service import create_blank_project  # noqa: E402
@@ -131,6 +131,87 @@ def test_closing_a_group_asks_about_buffers_open_only_there(tmp_path: Path, shel
     assert groups.group_count() == 1
     assert window._editor_manager.open_paths() == [alpha]
     assert window._editor_tabs_widget is groups.tab_widgets()[0]
+    shutdown_main_window_for_test(window, app)
+
+
+class _CloseBlocker:
+    def close_blockers(self) -> tuple[str, ...]:
+        return ("A runner is still using this file.",)
+
+    def widget(self) -> None:
+        return None
+
+    def release(self) -> None:
+        return None
+
+    def source_editor(self) -> None:
+        return None
+
+
+def _move_only_into_second_group(window, groups, file_path: str) -> None:  # type: ignore[no-untyped-def]
+    """Show ``file_path`` in the second group and take it out of the first."""
+    first = groups.tab_widgets()[0]
+    first.setCurrentIndex(window._editor_tab_workflow.tab_index_for_path(file_path))
+    if groups.group_count() == 1:
+        assert groups.split_right() is True
+    buffer_id = window._editor_manager.get_tab(file_path).buffer_id
+    if groups.groups()[0].index_of_buffer(buffer_id) >= 0:
+        assert groups.move_buffer(groups.groups()[0], buffer_id, groups.groups()[1]) is True
+
+
+def test_close_group_asks_blockers_before_unsaved_changes(tmp_path: Path, shell_qapp, monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    app = shell_qapp
+    window, _root, (_alpha, beta) = _open_window(tmp_path, app, ("alpha.py", "beta.py"))
+    groups = window._editor_groups
+    _move_only_into_second_group(window, groups, beta)
+    _type_at_end(page_editor(groups.tab_widgets()[1].currentWidget()), "z = 3\n")
+    window._tab_content_registry.bind(beta, _CloseBlocker(), "close-blocker")  # type: ignore[arg-type]
+    calls: list[str] = []
+
+    def decide(action_description, *, scope, allow_keep_for_next_launch, dirty_buffers=None):  # type: ignore[no-untyped-def]
+        del action_description, allow_keep_for_next_launch, dirty_buffers
+        calls.append("dirty")
+        return DocumentSafetyDecision(intent=DocumentCloseIntent.CANCEL, scope=scope)
+
+    def question(*_args, **_kwargs):  # type: ignore[no-untyped-def]
+        calls.append("blocker")
+        return QMessageBox.No
+
+    monkeypatch.setattr(window._save_workflow, "request_unsaved_changes_decision", decide)
+    monkeypatch.setattr("app.shell.tab_close_blockers.QMessageBox.question", question)
+
+    assert groups.close_group() is False
+    assert calls == ["blocker"]
+    assert groups.group_count() == 2
+    assert window._editor_manager.get_tab(beta).is_dirty
+    shutdown_main_window_for_test(window, app)
+
+
+def test_close_group_asks_blockers_once_for_buffers_only_in_that_group(  # type: ignore[no-untyped-def]
+    tmp_path: Path, shell_qapp, monkeypatch
+) -> None:
+    app = shell_qapp
+    window, _root, (_alpha, beta, gamma) = _open_window(tmp_path, app, ("alpha.py", "beta.py", "gamma.py"))
+    groups = window._editor_groups
+    _move_only_into_second_group(window, groups, beta)
+    _move_only_into_second_group(window, groups, gamma)
+    window._tab_content_registry.bind(beta, _CloseBlocker(), "close-blocker")  # type: ignore[arg-type]
+    window._tab_content_registry.bind(gamma, _CloseBlocker(), "close-blocker")  # type: ignore[arg-type]
+    prompts: list[str] = []
+
+    def question(*args, **_kwargs):  # type: ignore[no-untyped-def]
+        prompts.append(str(args[2]) if len(args) > 2 else "")
+        return QMessageBox.Yes
+
+    monkeypatch.setattr("app.shell.tab_close_blockers.QMessageBox.question", question)
+
+    assert groups.close_group() is True
+    app.processEvents()
+
+    assert len(prompts) == 1
+    assert prompts[0].count("A runner is still using this file.") == 2
+    assert groups.group_count() == 1
+    assert window._editor_manager.open_paths() == [_alpha]
     shutdown_main_window_for_test(window, app)
 
 

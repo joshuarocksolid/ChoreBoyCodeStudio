@@ -135,11 +135,24 @@ class EditorTabLifecycleDelegates:
     def show_editor_tab_context_menu(self, position: QPoint) -> None:
         self._lifecycle_workflow.show_editor_tab_context_menu(position)
 
-    def handle_tab_close_requested(self, tab_index: int) -> None:
-        self._lifecycle_workflow.handle_tab_close_requested(tab_index)
+    def handle_tab_close_requested(
+        self,
+        tab_index: int,
+        *,
+        discard_dirty: bool = False,
+        skip_close_blockers: bool = False,
+    ) -> None:
+        self._lifecycle_workflow.handle_tab_close_requested(
+            tab_index,
+            discard_dirty=discard_dirty,
+            skip_close_blockers=skip_close_blockers,
+        )
 
-    def close_tab_discarding_edits(self, file_path: str) -> None:
-        self._lifecycle_workflow.close_tab_discarding_edits(file_path)
+    def close_tab_discarding_edits(self, file_path: str, *, skip_close_blockers: bool = False) -> None:
+        self._lifecycle_workflow.close_tab_discarding_edits(
+            file_path,
+            skip_close_blockers=skip_close_blockers,
+        )
 
     def close_tab_for_path(self, file_path: str) -> None:
         self._lifecycle_workflow.close_tab_for_path(file_path)

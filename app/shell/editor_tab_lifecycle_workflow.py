@@ -177,7 +177,13 @@ class EditorTabLifecycleWorkflow:
         elif chosen == close_action:
             self.handle_tab_close_requested(tab_index)
 
-    def handle_tab_close_requested(self, tab_index: int, *, discard_dirty: bool = False) -> None:
+    def handle_tab_close_requested(
+        self,
+        tab_index: int,
+        *,
+        discard_dirty: bool = False,
+        skip_close_blockers: bool = False,
+    ) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
         if editor_tabs_widget is None:
             return
@@ -192,7 +198,7 @@ class EditorTabLifecycleWorkflow:
             return
 
         tab_state = self._editor_manager.get_tab(file_path)
-        if not confirm_tab_close_blockers(
+        if not skip_close_blockers and not confirm_tab_close_blockers(
             self._host.parent_widget(),
             self._host.tab_content_registry(),
             (file_path,),
@@ -223,10 +229,14 @@ class EditorTabLifecycleWorkflow:
         self._host.refresh_run_action_states()
         self._markdown_workflow.refresh_markdown_action_states()
 
-    def close_tab_discarding_edits(self, file_path: str) -> None:
+    def close_tab_discarding_edits(self, file_path: str, *, skip_close_blockers: bool = False) -> None:
         tab_index = self._editor_tabs_coordinator.tab_index_for_path(file_path)
         if tab_index >= 0:
-            self.handle_tab_close_requested(tab_index, discard_dirty=True)
+            self.handle_tab_close_requested(
+                tab_index,
+                discard_dirty=True,
+                skip_close_blockers=skip_close_blockers,
+            )
             return
         self._editor_manager.close_file(file_path)
 
