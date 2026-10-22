@@ -28,6 +28,10 @@ def pytest_configure(config: pytest.Config) -> None:
     )
     config.addinivalue_line(
         "markers",
+        "soak: long seeded soak runs (minutes); run on demand with -m soak, not in the gate lanes",
+    )
+    config.addinivalue_line(
+        "markers",
         'parity(*ids): proves R3 parity items, e.g. parity("R3-145"); read by tools/form_builder_parity.py',
     )
     config.addinivalue_line(

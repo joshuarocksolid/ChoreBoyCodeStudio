@@ -12,6 +12,7 @@ import sys
 from typing import Dict, FrozenSet, Iterator, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
+from app.features.form_builder.engine.logic.storage import is_user_logic_key
 from app.features.form_builder.engine.ui4.nodes import (
     CustomWidgetNode,
     LayoutNode,
@@ -68,9 +69,15 @@ class UiDocument:
         self._nodes: Dict[NodeId, Node] = {}
         self._by_name: Dict[str, List[NodeId]] = {}
         self._name_set: set[str] = set()
+        #: Names whose bucket holds two or more ids. A move re-seats only these.
+        self._shared_names: set[str] = set()
         self._names_view: Optional[FrozenSet[str]] = None
         self._custom: Dict[str, NodeId] = {}
         self._enum_cache: Optional[Tuple[int, EnumStyle]] = None
+        self._logic_count = 0
+        # Expat folds every line ending to LF. Designer writes a CRLF source
+        # back with CRLF on every line, so the choice has to live beside the tree.
+        self.newline = "\n"
         self._index_tree(ui)
 
     @classmethod
@@ -85,6 +92,14 @@ class UiDocument:
     @property
     def revision(self) -> int:
         return self._revision
+
+    def logic_property_count(self) -> int:
+        """How many ``cbcs*`` logic properties are set, not counting ``cbcsLogic`` itself.
+
+        Maintained as ops apply. ``SetLogic`` uses it to add or drop the version marker
+        without scanning the form.
+        """
+        return self._logic_count
 
     @property
     def ui(self) -> Node:
@@ -313,12 +328,125 @@ class UiDocument:
                 expected_custom.setdefault(node.class_name, node.id)
         if expected_names != self._by_name:
             raise InvariantError("the name index does not match the tree")
+        if {name for name, ids in expected_names.items() if len(ids) > 1} != self._shared_names:
+            raise InvariantError("the shared-name set does not match the name index")
         if expected_custom != self._custom:
             raise InvariantError("the custom-widget index does not match the tree")
 
     def to_spec(self) -> NodeSpec:
         """Frozen snapshot of the whole document (the ``ui`` spec)."""
         return self.ui.to_spec()
+
+    def _bump(self) -> None:
+        """One primitive op landed. Revision only moves forward."""
+        self._revision += 1
+        if self._revision < self._peak:
+            raise InvariantError("revision went backwards")
+        self._peak = self._revision
+        self._enum_cache = None
+
+    def _bind_name(self, node: Node) -> None:
+        name = _node_name(node)
+        if name is None:
+            return
+        self._insert_name(name, node.id)
+
+    def _unbind_name(self, node: Node) -> None:
+        name = _node_name(node)
+        if name is None:
+            return
+        self._remove_name(name, node.id)
+
+    def _rebind_name(self, node_id: NodeId, old: Optional[str], new: Optional[str]) -> None:
+        if old == new:
+            return
+        if old is not None:
+            self._remove_name(old, node_id)
+        if new is not None:
+            self._insert_name(new, node_id)
+
+    def _insert_name(self, name: str, node_id: NodeId) -> None:
+        bucket = self._by_name.setdefault(name, [])
+        if node_id in bucket:
+            return
+        index = 0
+        for existing in bucket:
+            if self._comes_before(node_id, existing):
+                break
+            index += 1
+        bucket.insert(index, node_id)
+        if len(bucket) > 1:
+            self._shared_names.add(name)
+        self._name_set.add(name)
+        self._names_view = None
+
+    def _remove_name(self, name: str, node_id: NodeId) -> None:
+        bucket = self._by_name.get(name)
+        if not bucket:
+            return
+        if node_id in bucket:
+            bucket.remove(node_id)
+        if len(bucket) < 2:
+            self._shared_names.discard(name)
+        if bucket:
+            return
+        self._by_name.pop(name, None)
+        self._name_set.discard(name)
+        self._names_view = None
+
+    def _comes_before(self, left: NodeId, right: NodeId) -> bool:
+        """Document order. Both ids are already linked into the tree."""
+        if left == right:
+            return False
+        left_chain = self._chain(left)
+        right_chain = self._chain(right)
+        limit = min(len(left_chain), len(right_chain))
+        for index in range(limit):
+            if left_chain[index] != right_chain[index]:
+                parent = self._nodes[left_chain[index - 1]]
+                return self._child_before(parent, left_chain[index], right_chain[index])
+        return len(left_chain) < len(right_chain)
+
+    def _chain(self, node_id: NodeId) -> List[NodeId]:
+        chain = [node_id]
+        current = self._nodes[node_id].parent_id
+        while current is not None:
+            chain.append(current)
+            current = self._nodes[current].parent_id
+        chain.reverse()
+        return chain
+
+    def _child_before(self, parent: Node, left: NodeId, right: NodeId) -> bool:
+        for slot in SCHEMA[parent.kind].slots:
+            ids = [child.id for child in parent.children(slot.name)]
+            if left in ids and right in ids:
+                return ids.index(left) < ids.index(right)
+            if left in ids:
+                return True
+            if right in ids:
+                return False
+        return False
+
+    def _add_logic(self, node: Node) -> None:
+        for entry in node.properties():
+            if is_user_logic_key(entry.name):
+                self._logic_count += 1
+
+    def _sub_logic(self, node: Node) -> None:
+        for entry in node.properties():
+            if is_user_logic_key(entry.name):
+                self._logic_count -= 1
+
+    def _note_logic(self, name: str, delta: int) -> None:
+        if is_user_logic_key(name):
+            self._logic_count += delta
+
+    def _rebuild_custom_index(self) -> None:
+        found: Dict[str, NodeId] = {}
+        for child in self.ui.children("customwidgets"):
+            if isinstance(child, CustomWidgetNode) and child.class_name and child.class_name not in found:
+                found[child.class_name] = child.id
+        self._custom = found
 
     def _index_tree(self, node: Node) -> None:
         if node.id in self._nodes:
@@ -328,26 +456,28 @@ class UiDocument:
             self._custom.setdefault(node.class_name, node.id)
         name = _node_name(node)
         if name is not None:
-            self._by_name.setdefault(name, []).append(node.id)
+            bucket = self._by_name.setdefault(name, [])
+            bucket.append(node.id)
+            if len(bucket) > 1:
+                self._shared_names.add(name)
             self._name_set.add(name)
+        self._add_logic(node)
         for _slot_name, kids in node.slots:
             for child in kids:
                 self._index_tree(child)
 
     def _replace_tree(self, ui: Node) -> None:
-        """Swap the whole tree. ``mutate`` is the only caller."""
+        """Swap the whole tree. ``ReplaceRootOp`` is the only caller."""
         self._nodes = {}
         self._by_name = {}
         self._name_set = set()
+        self._shared_names = set()
         self._names_view = None
         self._custom = {}
         self._enum_cache = None
+        self._logic_count = 0
         self._index_tree(ui)
-        self._revision += 1
-        if self._revision < self._peak:
-            raise InvariantError("revision went backwards")
-        self._peak = self._revision
-        self._check_validate()
+        self._bump()
 
     def _check_validate(self) -> None:
         if os.environ.get("CBCS_FB_VALIDATE") == "1":

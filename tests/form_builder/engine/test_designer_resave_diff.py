@@ -1,13 +1,17 @@
 # pyright: reportAttributeAccessIssue=false
-"""Compare our .ui writer with Qt Designer's own resave. Differences are listed.
+"""Writer bytes against Qt Designer's own resave.
 
-The test does not fail while the writer still diverges. A clean match passes.
+Every changed line must be named by ALLOWLIST.json. An entry that matches
+nothing fails the test as well.
 """
 
 from __future__ import annotations
 
 import difflib
+import json
+import re
 from pathlib import Path
+from typing import Dict, List, NamedTuple, Sequence
 
 import pytest
 
@@ -16,6 +20,14 @@ from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
 
 _RESAVED = Path(__file__).resolve().parents[1] / "corpus" / "designer_resaved"
+_ALLOWLIST = _RESAVED / "ALLOWLIST.json"
+
+
+class AllowEntry(NamedTuple):
+    file: str
+    pattern: re.Pattern[str]
+    appendix: str
+    reason: str
 
 
 def _resaved_files() -> list[Path]:
@@ -29,29 +41,92 @@ def _resaved_files() -> list[Path]:
     return sorted(found)
 
 
-def _snippet(left: str, right: str) -> str:
-    lines = list(
-        difflib.unified_diff(
-            left.splitlines(),
-            right.splitlines(),
+def _load_allowlist() -> List[AllowEntry]:
+    payload = json.loads(_ALLOWLIST.read_text(encoding="utf-8"))
+    raw_entries = payload["entries"]
+    if not isinstance(raw_entries, list):
+        raise AssertionError("ALLOWLIST.json entries must be a list")
+    loaded: List[AllowEntry] = []
+    for index, item in enumerate(raw_entries):
+        if not isinstance(item, dict):
+            raise AssertionError("allowlist entry %d is not an object" % index)
+        file_name = item.get("file")
+        pattern = item.get("pattern")
+        appendix = item.get("appendix")
+        reason = item.get("reason")
+        if not all(isinstance(value, str) and value for value in (file_name, pattern, appendix, reason)):
+            raise AssertionError("allowlist entry %d needs file, pattern, appendix, and reason" % index)
+        assert isinstance(file_name, str) and isinstance(pattern, str)
+        assert isinstance(appendix, str) and isinstance(reason, str)
+        compiled = re.compile(pattern)
+        if compiled.search(""):
+            raise AssertionError("allowlist entry %d pattern matches every line" % index)
+        path = (_RESAVED / file_name).resolve()
+        if _RESAVED.resolve() not in path.parents or not path.is_file():
+            raise AssertionError("allowlist file is not in the resaved corpus: %s" % file_name)
+        loaded.append(AllowEntry(file_name, compiled, appendix, reason))
+    return loaded
+
+
+def _changed_lines(designer: str, written: str) -> List[str]:
+    if designer.splitlines() == written.splitlines():
+        return ["line endings differ"]
+    return [
+        line
+        for line in difflib.unified_diff(
+            designer.splitlines(),
+            written.splitlines(),
             fromfile="designer",
             tofile="writer",
             lineterm="",
-            n=1,
         )
-    )
-    body = [line for line in lines if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))]
-    return " | ".join(body[:4])
+        if line.startswith(("+", "-")) and not line.startswith(("+++", "---"))
+    ]
+
+
+def _summary(
+    paths: Sequence[Path],
+    identical: int,
+    allowlisted_files: int,
+    uncovered: Sequence[str],
+    read_errors: Sequence[str],
+    entries: Sequence[AllowEntry],
+    used: Dict[int, int],
+) -> str:
+    unused = [entries[index].file for index in range(len(entries)) if used.get(index, 0) == 0]
+    lines = [
+        "designer files %d" % len(paths),
+        "byte-identical %d" % identical,
+        "allowlisted files %d" % allowlisted_files,
+        "non-allowlisted files %d" % len(uncovered),
+        "read errors %d" % len(read_errors),
+        "allowlist entries %d" % len(entries),
+        "allowlist used %d" % sum(1 for index in used if used[index]),
+        "allowlist unused %d" % len(unused),
+    ]
+    for name in unused:
+        lines.append("unused %s" % name)
+    for item in uncovered:
+        lines.append(item)
+    for error in read_errors:
+        lines.append("read error %s" % error)
+    return "\n".join(lines)
 
 
 @pytest.mark.oracle
-def test_writer_versus_designer_resave_is_reported() -> None:
+def test_writer_matches_designer_resave() -> None:
     paths = _resaved_files()
     if not paths:
         pytest.skip("designer_resaved corpus is not present")
+    entries = _load_allowlist()
+    by_file: Dict[str, List[int]] = {}
+    for index, entry in enumerate(entries):
+        by_file.setdefault(entry.file, []).append(index)
     identical = 0
-    groups: dict[str, list[str]] = {}
-    read_errors: list[str] = []
+    allowlisted_files = 0
+    used = {index: 0 for index in range(len(entries))}
+    uncovered: List[str] = []
+    read_errors: List[str] = []
     for path in paths:
         rel = path.relative_to(_RESAVED).as_posix()
         raw = path.read_bytes()
@@ -65,25 +140,22 @@ def test_writer_versus_designer_resave_is_reported() -> None:
         if written.encode("utf-8") == raw:
             identical += 1
             continue
-        if designer.splitlines() == written.splitlines():
-            sample = "line endings differ"
+        pending = []
+        for line in _changed_lines(designer, written):
+            hit = False
+            for index in by_file.get(rel, ()):
+                if entries[index].pattern.search(line):
+                    used[index] += 1
+                    hit = True
+            if not hit:
+                pending.append(line)
+        if pending:
+            uncovered.append("%s: %s" % (rel, " | ".join(pending[:6])))
         else:
-            sample = _snippet(designer, written)
-        groups.setdefault(sample, []).append(rel)
-    differing = sum(len(names) for names in groups.values())
-    lines = [
-        "designer files %d" % len(paths),
-        "byte-identical %d" % identical,
-        "differ %d" % differing,
-        "read errors %d" % len(read_errors),
-    ]
-    for sample, names in sorted(groups.items(), key=lambda item: (-len(item[1]), item[0])):
-        lines.append("pattern %d: %s" % (len(names), sample))
-        for name in names:
-            lines.append("  %s" % name)
-    for error in read_errors:
-        lines.append("read error %s" % error)
-    summary = "\n".join(lines)
+            allowlisted_files += 1
+    summary = _summary(paths, identical, allowlisted_files, uncovered, read_errors, entries, used)
     print(summary)
-    if differing or read_errors:
-        pytest.xfail("writer differs from Designer on %d of %d files\n%s" % (differing, len(paths), summary[:4000]))
+    unused = [index for index, count in used.items() if count == 0]
+    assert not read_errors, summary
+    assert not uncovered, summary
+    assert not unused, summary

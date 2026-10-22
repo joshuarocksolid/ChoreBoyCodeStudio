@@ -9,10 +9,23 @@ mechanically from the applied ops, one change per op, in application order
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import FrozenSet, Literal, Optional, Tuple, Union
+from typing import FrozenSet, List, Literal, Optional, Sequence, Tuple, Union
 
-from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.commands.ops import (
+    InsertNodeOp,
+    MoveNodeOp,
+    Op,
+    RemoveNodeOp,
+    ReplaceRootOp,
+    SetFieldOp,
+    SetPropertyOp,
+)
+from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
+from app.features.form_builder.engine.logic.storage import is_logic_key
+from app.features.form_builder.engine.query.tree import is_page_container
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
+from app.features.form_builder.engine.ui4.values import semantic_equal
 
 Origin = Literal["do", "undo", "redo"]
 
@@ -146,3 +159,195 @@ PRIORITY_HIT_INDEX = 20       # hit index invalidation
 PRIORITY_VIEWS = 30           # outline, inspector, overlay repaint requests
 PRIORITY_SHELL = 40           # dirty indicator, Problems bridge, preview update scheduling
 PRIORITY_SELECTION_NOTIFY = 100  # SelectionModel notifies subscribers (after every log listener)
+
+
+def change_from_op(doc: UiDocument, op: Op) -> Change:
+    """One change for ``op``, read from ``doc`` before the op is applied."""
+    if isinstance(op, InsertNodeOp):
+        subtree = op.spec.ids()
+        return NodeInserted(
+            node=op.spec.id if op.spec.id is not None else DOCUMENT_ID,
+            kind=op.spec.kind,
+            parent=op.parent,
+            slot=op.slot,
+            index=op.index,
+            subtree=subtree,
+            category=_structure_category(doc, op.spec.kind, op.parent, op.slot),
+            spec=op.spec,
+        )
+    if isinstance(op, RemoveNodeOp):
+        node = doc.node(op.node)
+        parent = node.parent_id if node.parent_id is not None else DOCUMENT_ID
+        slot = node.parent_slot or ""
+        subtree = tuple(item.id for item in doc.iter_preorder(op.node))
+        return NodeRemoved(
+            node=op.node,
+            kind=node.kind,
+            parent=parent,
+            slot=slot,
+            index=node.slot_index,
+            subtree=subtree,
+            category=_structure_category(doc, node.kind, parent, slot),
+        )
+    if isinstance(op, MoveNodeOp):
+        node = doc.node(op.node)
+        old_parent = node.parent_id if node.parent_id is not None else DOCUMENT_ID
+        old_slot = node.parent_slot or ""
+        origin = _structure_category(doc, node.kind, old_parent, old_slot)
+        destination = _structure_category(doc, node.kind, op.parent, op.slot)
+        category: Category = "page" if "page" in (origin, destination) else destination
+        return NodeMoved(
+            node=op.node,
+            kind=node.kind,
+            old_parent=old_parent,
+            old_slot=old_slot,
+            old_index=node.slot_index,
+            new_parent=op.parent,
+            new_slot=op.slot,
+            new_index=op.index,
+            category=category,
+        )
+    if isinstance(op, SetPropertyOp):
+        owner = doc.node(op.owner)
+        current = owner.prop(op.name) if op.kind == "property" else owner.attr(op.name)
+        return PropertyChanged(
+            owner=op.owner,
+            kind=op.kind,
+            name=op.name,
+            old=current,
+            new=op.entry,
+            category=_property_category(owner.kind, op.name),
+        )
+    if isinstance(op, SetFieldOp):
+        node = doc.node(op.node)
+        return FieldChanged(
+            node=op.node,
+            field=op.field,
+            old=node.field(op.field),
+            new=op.value,
+            category=_field_category(node.kind, op.field),
+        )
+    if isinstance(op, ReplaceRootOp):
+        removed = frozenset(item.id for item in doc.iter_preorder() if item.id != DOCUMENT_ID)
+        return DocumentReplaced(removed=removed, spec=op.spec)
+    raise TypeError("unknown op %s" % (type(op).__name__,))
+
+
+def assemble(
+    changes: Sequence[Change],
+    revision: int,
+    origin: Origin,
+    label: str,
+) -> ChangeSet:
+    """Derived sets for one entry. O(changes)."""
+    removed = set()
+    added = set()
+    structure = set()
+    first_old = {}
+    last_new = {}
+    renamed: List[Tuple[str, str]] = []
+    categories = set()
+    replaced = False
+    for change in changes:
+        categories.add(change.category)
+        if isinstance(change, NodeInserted):
+            for node_id in change.subtree:
+                added.add(node_id)
+                removed.discard(node_id)
+            structure.add(change.parent)
+        elif isinstance(change, NodeRemoved):
+            for node_id in change.subtree:
+                removed.add(node_id)
+                added.discard(node_id)
+            structure.add(change.parent)
+        elif isinstance(change, NodeMoved):
+            structure.add(change.old_parent)
+            structure.add(change.new_parent)
+        elif isinstance(change, PropertyChanged):
+            key = (change.owner, change.kind, change.name)
+            if key not in first_old:
+                first_old[key] = change.old
+            last_new[key] = change.new
+        elif isinstance(change, FieldChanged):
+            if change.field in ("object_name", "name") and isinstance(change.old, str) and isinstance(change.new, str):
+                if change.old != change.new:
+                    renamed.append((change.old, change.new))
+        elif isinstance(change, DocumentReplaced):
+            replaced = True
+            removed.update(change.removed)
+            for node_id in change.spec.ids():
+                if node_id != DOCUMENT_ID:
+                    added.add(node_id)
+                    removed.discard(node_id)
+    dirty = set()
+    for key, old in first_old.items():
+        if not _same_entry(old, last_new[key]):
+            dirty.add(key)
+    structure -= removed
+    return ChangeSet(
+        revision=revision,
+        origin=origin,
+        label=label,
+        changes=tuple(changes),
+        removed=frozenset(removed),
+        added=frozenset(added),
+        structure_dirty=frozenset(structure),
+        property_dirty=frozenset(dirty),
+        renamed=tuple(renamed),
+        categories=frozenset(categories),
+        replaced=replaced,
+    )
+
+
+def _structure_category(doc: UiDocument, kind: str, parent: NodeId, slot: str) -> Category:
+    if kind in ("item", "header"):
+        return "item"
+    if kind == "widget" and slot == "children" and doc.contains(parent) and is_page_container(doc, parent):
+        return "page"
+    if kind in ("action", "actiongroup", "actionref"):
+        return "action"
+    if kind == "connection":
+        return "connection"
+    if kind in ("customwidget", "include", "resource", "buttongroup"):
+        return "form"
+    return "node"
+
+
+def _property_category(kind: str, name: str) -> Category:
+    if is_logic_key(name):
+        return "logic"
+    if kind in ("item", "header"):
+        return "item"
+    return "property"
+
+
+def _field_category(kind: str, field: str) -> Category:
+    if field in ("object_name", "name"):
+        return "name"
+    if field == "zorder":
+        return "node"
+    if kind == "layoutitem" and field in ("row", "column", "rowspan", "colspan", "alignment"):
+        return "layout"
+    if kind == "layout" and field in (
+        "class_name",
+        "stretch",
+        "rowstretch",
+        "columnstretch",
+        "rowminimumheight",
+        "columnminimumwidth",
+    ):
+        return "layout"
+    if kind == "ui" or kind in ("customwidget", "include", "resource", "buttongroup"):
+        return "form"
+    if kind == "connection":
+        return "connection"
+    if kind == "widget" and field == "class_name":
+        return "node"
+    return "node"
+
+
+def _same_entry(old: Optional[PropertyEntry], new: Optional[PropertyEntry]) -> bool:
+    if old is None or new is None:
+        return old is new
+    return old.stdset == new.stdset and old.extra_attrs == new.extra_attrs and semantic_equal(old.value, new.value)
+
