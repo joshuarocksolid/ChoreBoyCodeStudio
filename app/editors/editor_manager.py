@@ -177,8 +177,9 @@ class EditorManager:
         """Save current content for an open tab back to disk."""
         tab = self._require_tab(file_path)
         path = Path(tab.file_path)
-        atomic_write_text(path, tab.current_content)
-        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path))
+        text = tab.current_content
+        atomic_write_text(path, text)
+        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)
         return tab
 
     def current_disk_mtime(self, file_path: str) -> float | None:
@@ -246,8 +247,10 @@ class EditorManager:
     def close_file(self, file_path: str) -> None:
         """Close an open file tab if it exists."""
         normalized_path = str(Path(file_path).expanduser().resolve())
-        if normalized_path not in self._tabs_by_path:
+        tab = self._tabs_by_path.get(normalized_path)
+        if tab is None:
             return
+        tab.drop_content_source_subscription()
         self._tabs_by_path.pop(normalized_path, None)
         self._open_order = [path for path in self._open_order if path != normalized_path]
         if self._preview_file_path == normalized_path:
@@ -285,6 +288,7 @@ class EditorManager:
         if preview_path not in self._tabs_by_path:
             self._preview_file_path = None
             return None
+        self._tabs_by_path[preview_path].drop_content_source_subscription()
         self._tabs_by_path.pop(preview_path, None)
         self._open_order = [path for path in self._open_order if path != preview_path]
         if self._active_file_path == preview_path:

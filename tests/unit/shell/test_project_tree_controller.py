@@ -44,12 +44,17 @@ def test_close_deleted_editor_paths_removes_nested_entries() -> None:
     breakpoint_store.set_line_enabled("/tmp/project/sub/module.py", 4, enabled=True)
     deleted_records: list[str] = []
 
+    def _release(path: str) -> None:
+        widget = editor_widgets.pop(path, None)
+        if widget is not None:
+            widget.deleteLater()
+
     controller.close_deleted_editor_paths(
         "/tmp/project",
-        editor_widgets_by_path=editor_widgets,
+        open_tab_paths=list(editor_widgets),
         tab_index_for_path=lambda _path: 0,
         remove_tab_at_index=removed_tabs.append,
-        release_editor_widget=lambda widget: widget.deleteLater(),
+        release_tab_content=_release,
         close_editor_file=closed.append,
         breakpoint_store=breakpoint_store,
         refresh_breakpoints_list=lambda: None,

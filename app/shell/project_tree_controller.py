@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Generic, Optional, Protocol, TypeVar
+from typing import Callable, Generic, Optional, Protocol, Sequence, TypeVar
 
 from app.project.import_layout import load_project_import_layout
 from app.project.import_rewrite import ImportRewritePreview, apply_import_rewrites, plan_import_rewrites
@@ -27,24 +27,23 @@ class ProjectTreeController(Generic[W]):
         self,
         deleted_path: str,
         *,
-        editor_widgets_by_path: dict[str, W],
+        open_tab_paths: Sequence[str],
         tab_index_for_path: Callable[[str], int],
         remove_tab_at_index: Callable[[int], None],
-        release_editor_widget: Callable[[W], None],
+        release_tab_content: Callable[[str], None],
         close_editor_file: Callable[[str], None],
         breakpoint_store: BreakpointStore,
         refresh_breakpoints_list: Callable[[], None],
         record_deleted_path: Optional[Callable[[str], None]] = None,
     ) -> None:
         deleted_resolved = str(Path(deleted_path).resolve())
-        for open_path in list(editor_widgets_by_path.keys()):
+        for open_path in list(open_tab_paths):
             if open_path != deleted_resolved and not open_path.startswith(f"{deleted_resolved}/"):
                 continue
-            widget = editor_widgets_by_path.pop(open_path)
             tab_index = tab_index_for_path(open_path)
             if tab_index >= 0:
                 remove_tab_at_index(tab_index)
-            release_editor_widget(widget)
+            release_tab_content(open_path)
             close_editor_file(open_path)
             breakpoint_store.clear_file(open_path)
         refresh_breakpoints_list()
@@ -66,19 +65,22 @@ class ProjectTreeController(Generic[W]):
         refresh_breakpoints_list: Callable[[], None],
         maybe_rewrite_imports: Callable[[str, str], None],
         remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
+        rekey_tab_content: Optional[Callable[[str, str], None]] = None,
     ) -> None:
         remapped_paths = remap_editor_paths(source_path, destination_path)
         for old_path, new_path in remapped_paths.items():
             widget = editor_widgets_by_path.pop(old_path, None)
-            if widget is None:
-                continue
-            editor_widgets_by_path[new_path] = widget
+            if widget is not None:
+                editor_widgets_by_path[new_path] = widget
             tab_index = tab_index_for_path(old_path)
             if tab_index >= 0:
                 update_tab_path_and_name(tab_index, new_path)
             breakpoint_store.remap_paths({old_path: new_path})
-            apply_breakpoints_to_widget(widget, breakpoint_store.lines_for_file(new_path))
-            update_widget_language(widget, new_path)
+            if widget is not None:
+                apply_breakpoints_to_widget(widget, breakpoint_store.lines_for_file(new_path))
+                update_widget_language(widget, new_path)
+            if rekey_tab_content is not None:
+                rekey_tab_content(old_path, new_path)
 
         refresh_breakpoints_list()
         if remap_file_lineage is not None and remapped_paths:

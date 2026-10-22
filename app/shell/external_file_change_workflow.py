@@ -54,6 +54,12 @@ class MainWindowExternalFileChangeHost:
     def editor_widget_for_path(self, file_path: str) -> object | None:
         return self._window._editor_widgets_by_path.get(file_path)
 
+    def surface_for_path(self, file_path: str) -> object | None:
+        registry = getattr(self._window, "_tab_content_registry", None)
+        if registry is None:
+            return None
+        return registry.surface_for_path(file_path)
+
     def confirm_clean_tab_reload(self) -> bool:
         choice = QMessageBox.question(
             self._window,
@@ -111,7 +117,10 @@ class ExternalFileChangeWorkflow:
         """Prompt when needed and reload ``file_path`` from disk."""
         tab_state = self._editor_manager.get_tab(file_path)
         editor_widget = self._host.editor_widget_for_path(file_path)
-        if tab_state is None or editor_widget is None:
+        # A lazy sourced surface has no source editor in the widget dict; it is
+        # reached through the provider registry instead (CONTRACTS.md §11.4).
+        surface = getattr(self._host, "surface_for_path", lambda _p: None)(file_path)
+        if tab_state is None or (editor_widget is None and surface is None):
             return ExternalFileChangeOutcome.SKIPPED
 
         current_mtime = self._editor_manager.current_disk_mtime(file_path)
@@ -125,7 +134,7 @@ class ExternalFileChangeWorkflow:
             return ExternalFileChangeOutcome.SKIPPED
 
         if disk_content == tab_state.current_content:
-            tab_state.mark_saved(last_known_mtime=current_mtime)
+            tab_state.mark_saved(last_known_mtime=current_mtime, saved_text=disk_content)
             self._host.refresh_save_action_states()
             return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
 

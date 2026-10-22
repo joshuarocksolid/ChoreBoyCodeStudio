@@ -9,7 +9,6 @@ from app.qt.QtCore import QPoint
 
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 
@@ -47,7 +46,7 @@ class EditorTabOutlineDelegates:
 class EditorTabMarkdownDelegates:
     _markdown_workflow: Any
 
-    def active_markdown_pane(self) -> MarkdownEditorPane | None:
+    def active_markdown_pane(self) -> Any | None:
         return self._markdown_workflow.active_markdown_pane()
 
     def set_active_markdown_mode(self, mode: str) -> None:
@@ -68,17 +67,6 @@ class EditorTabMarkdownDelegates:
     def refresh_markdown_action_states(self) -> None:
         self._markdown_workflow.refresh_markdown_action_states()
 
-    def wrap_tab_content_if_markdown(
-        self, *, editor_widget: CodeEditorWidget, file_path: str, parent: Any, theme_tokens: Any, open_linked_file: Any
-    ) -> Any:
-        return self._markdown_workflow.wrap_tab_content_if_markdown(
-            editor_widget=editor_widget,
-            file_path=file_path,
-            parent=parent,
-            theme_tokens=theme_tokens,
-            open_linked_file=open_linked_file,
-        )
-
 
 class EditorTabBufferDelegates:
     _buffer_workflow: Any
@@ -86,6 +74,9 @@ class EditorTabBufferDelegates:
 
     def handle_editor_text_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_text_changed(file_path, editor_widget)
+
+    def handle_content_source_changed(self, tab_state: Any) -> None:
+        self._buffer_workflow.handle_content_source_changed(tab_state)
 
     def handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         self._buffer_workflow.handle_editor_cursor_position_changed(file_path, editor_widget)
@@ -112,6 +103,9 @@ class EditorTabLifecycleDelegates:
 
     def release_editor_widget(self, widget: CodeEditorWidget) -> None:
         self._lifecycle_workflow.release_editor_widget(widget)
+
+    def release_tab_content(self, file_path: str) -> None:
+        self._lifecycle_workflow.release_tab_content(file_path)
 
     def tab_index_for_path(self, file_path: str) -> int:
         return self._editor_tabs_coordinator.tab_index_for_path(file_path)

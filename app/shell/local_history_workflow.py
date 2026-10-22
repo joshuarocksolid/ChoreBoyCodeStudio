@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Mapping, Optional, Protocol, Sequence
+from typing import Any, Callable, Mapping, Optional, Protocol, Sequence
 
 from app.qt.QtWidgets import QDialog, QMessageBox, QWidget
 
@@ -119,6 +119,12 @@ class MainWindowLocalHistoryEditorHost:
 
     def editor_widget_for_path(self, file_path: str) -> CodeEditorWidget | None:
         return self._window._workspace_controller.widget_for_path(file_path)
+
+    def surface_for_path(self, file_path: str) -> Any:
+        registry = getattr(self._window, "_tab_content_registry", None)
+        if registry is None:
+            return None
+        return registry.surface_for_path(file_path)
 
     def open_file_in_editor(self, file_path: str) -> bool:
         return self._window._editor_tab_factory.open_file_in_editor(file_path, preview=False)
@@ -423,7 +429,13 @@ class LocalHistoryWorkflow:
         except (OSError, UnicodeDecodeError):
             return ""
 
-    def restore_local_history_content_to_buffer(self, file_path: str, content: str) -> None:
+    def restore_local_history_content_to_buffer(
+        self,
+        file_path: str,
+        content: str,
+        *,
+        reason: str = "history",
+    ) -> None:
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None:
             target_path = Path(file_path).expanduser().resolve()
@@ -435,7 +447,7 @@ class LocalHistoryWorkflow:
         if tab_state is None:
             QMessageBox.warning(self._host.parent_widget(), "Local History", f"Could not open {Path(file_path).name} for restore.")
             return
-        self._apply_content_to_open_tab(file_path, content)
+        self._apply_content_to_open_tab(file_path, content, reason=reason)
 
     def show_local_history_for_entry(self, summary: LocalHistoryFileSummary) -> None:
         self.show_local_history_for_path(
@@ -507,7 +519,11 @@ class LocalHistoryWorkflow:
             on_error=on_error,
         )
 
-    def maybe_restore_draft(self, tab_state: EditorTabState, editor_widget: CodeEditorWidget) -> None:
+    def maybe_restore_draft(
+        self,
+        tab_state: EditorTabState,
+        editor_widget: Optional[CodeEditorWidget],
+    ) -> None:
         project_id, project_root = self.local_history_context_for_path(tab_state.file_path)
         draft_entry = self._autosave_store.load_draft(
             tab_state.file_path,
@@ -519,7 +535,12 @@ class LocalHistoryWorkflow:
         if draft_entry.recovery_policy == DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY:
             if draft_entry.content == tab_state.current_content:
                 return
-            self._apply_content_to_open_tab(tab_state.file_path, draft_entry.content, editor_widget=editor_widget)
+            self._apply_content_to_open_tab(
+                tab_state.file_path,
+                draft_entry.content,
+                editor_widget=editor_widget,
+                reason="draft",
+            )
             self._host.show_status_message(
                 f"Restored unsaved changes for {tab_state.display_name}. Save to update the file on disk.",
                 6000,
@@ -538,6 +559,15 @@ class LocalHistoryWorkflow:
 
     def schedule_autosave(self, file_path: str, content: str) -> None:
         self._draft_autosave.schedule_autosave(file_path, content)
+
+    def note_source_changed(self, file_path: str) -> None:
+        self._draft_autosave.note_source_changed(file_path)
+
+    def forget_source(self, file_path: str) -> None:
+        self._draft_autosave.forget_source(file_path)
+
+    def rekey_content_source(self, old_path: str, new_path: str) -> None:
+        self._draft_autosave.rekey_content_source(old_path, new_path)
 
     def discard_pending_autosave(self, file_path: str) -> None:
         self._draft_autosave.discard_pending_autosave(file_path)
@@ -579,16 +609,32 @@ class LocalHistoryWorkflow:
         content: str,
         *,
         editor_widget: CodeEditorWidget | None = None,
+        reason: str = "history",
     ) -> None:
-        if editor_widget is not None:
+        surface = self._surface_for_path(file_path)
+        if surface is not None:
+            surface.restore_text(content, reason)  # type: ignore[arg-type]
+        elif editor_widget is not None:
             editor_widget.replace_document_text(content)
         else:
             self._host.apply_text_to_open_tab(file_path, content)
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is not None and tab_state.content_source is not None:
+            tab_index = self._host.tab_index_for_path(file_path)
+            if tab_index >= 0:
+                self._host.refresh_tab_presentation(tab_state.file_path)
+            return
         updated_tab = self._editor_manager.update_tab_content(file_path, content)
         tab_index = self._host.tab_index_for_path(file_path)
         if tab_index >= 0:
             self._host.refresh_tab_presentation(updated_tab.file_path)
         self.schedule_autosave(updated_tab.file_path, updated_tab.current_content)
+
+    def _surface_for_path(self, file_path: str) -> Any:
+        surface_for_path = getattr(self._host, "surface_for_path", None)
+        if surface_for_path is None:
+            return None
+        return surface_for_path(file_path)
 
     def _open_global_history_picker(self, summaries: Sequence[object]) -> None:
         if not summaries:
@@ -719,12 +765,17 @@ class LocalHistoryWorkflow:
         response = exec_qt(dialog)
         if response == QDialog.Accepted:
             if restore_closed_file or editor_widget is None:
-                self.restore_local_history_content_to_buffer(draft_entry.file_path, draft_entry.content)
+                self.restore_local_history_content_to_buffer(
+                    draft_entry.file_path,
+                    draft_entry.content,
+                    reason="draft",
+                )
             else:
                 self._apply_content_to_open_tab(
                     draft_entry.file_path,
                     draft_entry.content,
                     editor_widget=editor_widget,
+                    reason="draft",
                 )
         elif dialog.discard_draft:
             self._autosave_store.delete_draft(

@@ -194,3 +194,149 @@ def test_local_history_workflow_delegates_autosave_to_draft_module(tmp_path: Pat
     assert timer.started == 1
     workflow.flush_pending_autosaves()
     assert autosave_store.saved[0][1] == "delegated draft"
+
+
+class _RevisionSource:
+    def __init__(self) -> None:
+        self._text = "serialized"
+        self._revision = 1
+        self.reads = 0
+        self._listener: Any = None
+
+    def current_text(self) -> str:
+        self.reads += 1
+        return self._text
+
+    def is_dirty(self) -> bool:
+        return True
+
+    def mark_saved(self, saved_text: str) -> None:
+        del saved_text
+
+    def revision(self) -> int:
+        return self._revision
+
+    def subscribe_changed(self, listener: Any) -> Any:
+        self._listener = listener
+        return lambda: None
+
+    def notify(self, *, revision: int, text: str) -> None:
+        self._revision = revision
+        self._text = text
+        if self._listener is not None:
+            self._listener()
+
+
+def test_sourced_draft_reads_text_only_when_revision_changes(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("print('disk')\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path.resolve())).tab
+    source = _RevisionSource()
+    tab.content_source = source
+    autosave_store = _FakeAutosaveStore()
+    timer = _FakeTimer()
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,  # type: ignore[arg-type]
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_workflow"),
+        autosave_timer=timer,  # type: ignore[arg-type]
+    )
+
+    source.notify(revision=2, text="next")
+    workflow.note_source_changed(tab.file_path)
+    assert source.reads == 0
+    assert timer.started == 1
+
+    workflow.flush_pending_autosaves()
+    assert source.reads == 1
+    assert autosave_store.saved[0][1] == "next"
+
+    source.notify(revision=2, text="unread")
+    workflow.note_source_changed(tab.file_path)
+    workflow.flush_pending_autosaves()
+    assert source.reads == 1
+
+
+def _sourced_workflow(
+    tmp_path: Path,
+    source: _RevisionSource,
+) -> tuple[DraftAutosaveWorkflow, EditorManager, _FakeAutosaveStore, Any]:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "notes.md"
+    file_path.write_text("disk\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path.resolve())).tab
+    tab.content_source = source  # type: ignore[assignment]
+    autosave_store = _FakeAutosaveStore()
+    timer = _FakeTimer()
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,  # type: ignore[arg-type]
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_workflow"),
+        autosave_timer=timer,  # type: ignore[arg-type]
+    )
+    return workflow, manager, autosave_store, tab
+
+
+def test_rename_keeps_a_pending_sourced_draft(tmp_path: Path) -> None:
+    source = _RevisionSource()
+    workflow, manager, autosave_store, tab = _sourced_workflow(tmp_path, source)
+    old_path = tab.file_path
+    new_path = str((tmp_path / "project" / "moved.md").resolve())
+    source.notify(revision=2, text="moved draft")
+    workflow.note_source_changed(old_path)
+    manager.remap_paths_for_move(old_path, new_path)
+
+    workflow.rekey_content_source(old_path, new_path)
+    workflow.flush_pending_autosaves()
+
+    assert autosave_store.saved[0][0] == new_path
+    assert autosave_store.saved[0][1] == "moved draft"
+
+
+def test_forget_source_does_not_unsubscribe(tmp_path: Path) -> None:
+    unsubscribed = {"count": 0}
+
+    class _CountingSource(_RevisionSource):
+        def subscribe_changed(self, listener: Any) -> Any:
+            self._listener = listener
+
+            def _unsubscribe() -> None:
+                unsubscribed["count"] += 1
+
+            return _unsubscribe
+
+    source = _CountingSource()
+    workflow, manager, _store, tab = _sourced_workflow(tmp_path, source)
+    tab.content_source_unsubscribe = source.subscribe_changed(lambda: None)
+    workflow.note_source_changed(tab.file_path)
+
+    tab.drop_content_source_subscription()
+    workflow.forget_source(tab.file_path)
+    workflow.forget_source(tab.file_path)
+    manager.close_file(tab.file_path)
+    workflow.flush_pending_autosaves()
+
+    assert unsubscribed["count"] == 1
+    assert _store.saved == []
+
+
+def test_flush_after_save_writes_no_stale_draft(tmp_path: Path) -> None:
+    source = _RevisionSource()
+    workflow, _manager, autosave_store, tab = _sourced_workflow(tmp_path, source)
+    source.notify(revision=2, text="saved text")
+    workflow.note_source_changed(tab.file_path)
+    workflow.discard_pending_autosave(tab.file_path)
+    workflow.note_source_changed(tab.file_path)
+
+    workflow.flush_pending_autosaves()
+
+    assert autosave_store.saved == []

@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from app.core.models import CapabilityProbeReport
-from app.features import FEATURE_SPECS
+from app.features import FEATURE_SPECS, feature_is_enabled
 from app.shell.main_window_composition_phases import (
     connect_composition_timers,
     create_composition_timers,
@@ -40,6 +40,8 @@ def install_main_window_composition(
     create_composition_timers(ctx)
     install_editors(ctx)
     for feature_spec in FEATURE_SPECS:
+        if not feature_is_enabled(feature_spec):
+            continue
         if feature_spec.install is not None:
             feature_spec.install(ctx)
     install_run_debug(ctx)

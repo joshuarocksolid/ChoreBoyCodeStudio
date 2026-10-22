@@ -9,7 +9,6 @@ from app.qt.QtWidgets import QTabWidget
 from app.core.models import LoadedProject
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
-from app.features.markdown.markdown_editor_pane import MarkdownEditorPane
 from app.intelligence.outline_service import OutlineSymbol
 
 
@@ -28,8 +27,8 @@ class MainWindowEditorTabHost:
     def editor_widgets_by_path(self) -> dict[str, CodeEditorWidget]:
         return self._window._editor_widgets_by_path
 
-    def markdown_panes_by_path(self) -> dict[str, MarkdownEditorPane]:
-        return self._window._tab_content_registry.markdown_panes_by_path
+    def markdown_panes_by_path(self) -> dict[str, Any]:
+        return self._window._markdown_panes_by_path
 
     def tab_content_registry(self) -> Any:
         return self._window._tab_content_registry
@@ -216,6 +215,12 @@ class MainWindowEditorTabHost:
 
     def local_history_schedule_autosave(self, file_path: str, content: str) -> None:
         self._window._local_history_workflow.schedule_autosave(file_path, content)
+
+    def local_history_note_source_changed(self, file_path: str) -> None:
+        self._window._local_history_workflow.note_source_changed(file_path)
+
+    def local_history_forget_source(self, file_path: str) -> None:
+        self._window._local_history_workflow.forget_source(file_path)
 
     def local_history_discard_pending_autosave(self, file_path: str) -> None:
         self._window._local_history_workflow.discard_pending_autosave(file_path)

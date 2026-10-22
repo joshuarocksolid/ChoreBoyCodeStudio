@@ -6,6 +6,7 @@ from typing import Any
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import EditorTabState
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
 
 
@@ -36,7 +37,11 @@ class EditorTabBufferWorkflow:
         if self._editor_manager.get_tab(file_path) is None:
             return
         self._editor_tabs_coordinator.advance_buffer_revision(file_path)
-        tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
+        existing = self._editor_manager.get_tab(file_path)
+        if existing is not None and getattr(existing, "content_source", None) is not None:
+            tab_state = existing
+        else:
+            tab_state = self._editor_manager.update_tab_content(file_path, editor_widget.toPlainText())
         if tab_state.is_preview and tab_state.is_dirty:
             self._editor_tabs_coordinator.promote_preview_tab(file_path)
             refreshed_state = self._editor_manager.get_tab(file_path)
@@ -51,7 +56,8 @@ class EditorTabBufferWorkflow:
             return
         self._editor_tabs_coordinator.refresh_tab_presentation(tab_state.file_path)
         if tab_state.is_dirty:
-            self._host.local_history_schedule_autosave(tab_state.file_path, tab_state.current_content)
+            if getattr(tab_state, "content_source", None) is None:
+                self._host.local_history_schedule_autosave(tab_state.file_path, tab_state.current_content)
             if self._host.editor_auto_save():
                 self._host.start_auto_save_to_file_timer()
         else:
@@ -62,6 +68,31 @@ class EditorTabBufferWorkflow:
         if not self._host.is_shutting_down():
             self._host.diagnostics_schedule_realtime_lint(tab_state.file_path)
         self._outline_workflow.schedule_refresh()
+
+    def handle_content_source_changed(self, tab_state: EditorTabState) -> None:
+        """Dirty-state half of a sourced edit. Reads ``tab_state.file_path`` at fire time."""
+        file_path = tab_state.file_path
+        if self._editor_manager.get_tab(file_path) is None:
+            return
+        if tab_state.is_preview and tab_state.is_dirty:
+            self._editor_tabs_coordinator.promote_preview_tab(file_path)
+            refreshed = self._editor_manager.get_tab(file_path)
+            if refreshed is not None:
+                tab_state = refreshed
+                file_path = tab_state.file_path
+        if self._host.editor_tabs_widget() is None:
+            return
+        if self._editor_tabs_coordinator.tab_index_for_path(file_path) < 0:
+            return
+        self._editor_tabs_coordinator.refresh_tab_presentation(file_path)
+        if tab_state.is_dirty:
+            self._host.local_history_note_source_changed(file_path)
+            if self._host.editor_auto_save():
+                self._host.start_auto_save_to_file_timer()
+        else:
+            self._host.local_history_discard_pending_autosave(file_path)
+            self._host.local_history_delete_draft(file_path)
+        self._host.refresh_save_action_states()
 
     def handle_editor_cursor_position_changed(self, file_path: str, editor_widget: CodeEditorWidget) -> None:
         tab_state = self._editor_manager.get_tab(file_path)

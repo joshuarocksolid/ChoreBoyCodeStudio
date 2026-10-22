@@ -79,20 +79,37 @@ class EditorSyncWorkflow:
         """Replace the open tab buffer with ``text`` and mark it saved."""
         del source  # reserved for caller-specific post-sync hooks
         tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None:
+            return False
+        surface_for_path = getattr(self._host, "surface_for_path", None)
+        surface = None if surface_for_path is None else surface_for_path(file_path)
         editor_widget = self._host.editor_widget_for_path(file_path)
-        if tab_state is None or editor_widget is None:
+        if surface is None and editor_widget is None:
             return False
 
-        editor_widget.blockSignals(True)
-        editor_widget.setPlainText(text)
-        editor_widget.blockSignals(False)
+        if surface is not None:
+            surface.restore_text(text, "external_reload")
+        elif editor_widget is not None:
+            editor_widget.blockSignals(True)
+            editor_widget.setPlainText(text)
+            editor_widget.blockSignals(False)
         self._host.advance_buffer_revision(file_path)
-        self._host.apply_detected_indentation(file_path, editor_widget, text)
+        if editor_widget is not None:
+            self._host.apply_detected_indentation(file_path, editor_widget, text)
+        if tab_state.content_source is not None:
+            resolved_mtime = last_known_mtime
+            if resolved_mtime is None:
+                resolved_mtime = self._editor_manager.current_disk_mtime(file_path)
+            tab_state.mark_saved(last_known_mtime=resolved_mtime, saved_text=text)
+            tab_index = self._host.tab_index_for_path(file_path)
+            if self._host.has_editor_tabs_widget() and tab_index >= 0:
+                self._host.refresh_tab_presentation(file_path)
+            return True
         updated_tab = self._editor_manager.update_tab_content(file_path, text)
         resolved_mtime = last_known_mtime
         if resolved_mtime is None:
             resolved_mtime = self._editor_manager.current_disk_mtime(file_path)
-        updated_tab.mark_saved(last_known_mtime=resolved_mtime)
+        updated_tab.mark_saved(last_known_mtime=resolved_mtime, saved_text=text)
         tab_index = self._host.tab_index_for_path(file_path)
         if self._host.has_editor_tabs_widget() and tab_index >= 0:
             self._host.refresh_tab_presentation(file_path)
