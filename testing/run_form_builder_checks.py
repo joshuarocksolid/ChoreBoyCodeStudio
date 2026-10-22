@@ -28,6 +28,9 @@ PY39_DEFAULT = "~/opt/freecad/AppRun"
 QUICK_SKIP = frozenset({"unit-py39-pyside6", "pyright"})
 # The repo fast shard is minutes, so the default table lists it and does not run it.
 FULL_ONLY = frozenset({"fast-shard-regression"})
+# n=15 across 300, 600 and 1000 widgets. The default table lists it and does not run it.
+OPT_IN = frozenset({"speed"})
+PERF_GATE_TIMEOUT_SECONDS = 30
 
 UNIT_MARKER = "not oracle and not perf and not performance and not soak"
 PYTEST_TIMEOUT_SECONDS = 300
@@ -135,6 +138,9 @@ def _plan(
         return [(name, None) for name in only]
     rows: list[tuple[str, str | None]] = []
     for name in _GATE_RUNNERS:
+        if name in OPT_IN:
+            rows.append((name, "skipped: opt-in --only speed"))
+            continue
         if name in FULL_ONLY and not run_full:
             rows.append((name, "skipped: opt-in --full"))
             continue
@@ -461,7 +467,12 @@ def _apprun_safe(code: str) -> str:
     return text
 
 
-def _pytest_in_runtime(runtime: Path, profile: str, marker: str) -> CommandResult:
+def _pytest_in_runtime(
+    runtime: Path,
+    profile: str,
+    marker: str,
+    timeout: float = PYTEST_TIMEOUT_SECONDS,
+) -> CommandResult:
     if not _is_runtime(runtime):
         return CommandResult(code=127, seconds=0.0, stdout="", stderr="runtime missing: %s" % runtime)
     vendor = _pytest_vendor(profile)
@@ -482,12 +493,17 @@ def _pytest_in_runtime(runtime: Path, profile: str, marker: str) -> CommandResul
     return _run_command(
         [str(runtime), "-c", _pytest_payload(vendor, marker, vendor_first=vendor_first)],
         env=env,
-        timeout=PYTEST_TIMEOUT_SECONDS,
+        timeout=timeout,
     )
 
 
-def _py311_pytest(marker: str) -> CommandResult:
-    return _pytest_in_runtime(_runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT), "py311", marker)
+def _py311_pytest(marker: str, timeout: float | None = None) -> CommandResult:
+    return _pytest_in_runtime(
+        _runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT),
+        "py311",
+        marker,
+        timeout=PYTEST_TIMEOUT_SECONDS if timeout is None else timeout,
+    )
 
 
 def _py39_pytest(marker: str) -> CommandResult:
@@ -754,11 +770,40 @@ def gate_oracle() -> GateResult:
 
 
 def gate_perf() -> GateResult:
+    # Mac profile, 5 samples. The n=15 harness is the opt-in speed gate.
     before = _format_load()
-    judged = _judge_pytest("perf", _py311_pytest("perf"), require_pass=False)
+    judged = _judge_pytest(
+        "perf",
+        _py311_pytest("perf", timeout=PERF_GATE_TIMEOUT_SECONDS),
+        require_pass=True,
+    )
     after = _format_load()
     detail = "%s; loadavg 1m/5m/15m start %s end %s" % (judged.detail, before, after)
     return GateResult(judged.name, judged.status, judged.seconds, detail, judged.log)
+
+
+def gate_speed() -> GateResult:
+    name = "speed"
+    runtime = _runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT)
+    if not _is_runtime(runtime):
+        return _skip(name, "skipped: runtime not found at %s" % runtime)
+    script = REPO_ROOT / "tools" / "form_builder_speed.py"
+    result = _run_command(
+        [str(runtime), str(script), "--profile", "mac"],
+        env=_child_env({"PYTHONPATH": str(REPO_ROOT)}),
+        timeout=180,
+    )
+    if result.timed_out:
+        return _fail(name, result.seconds, "timed out after %.0fs" % result.seconds, _command_log(result))
+    text = result.stdout + "\n" + result.stderr
+    if result.code == 0 and "speed: PASS" in text:
+        return _pass(name, result.seconds, "full mac harness, 15 samples, forms 300/600/1000")
+    return _fail(
+        name,
+        result.seconds,
+        "speed harness exit %s" % result.code,
+        _command_log(result),
+    )
 
 
 def _format_load() -> str:
@@ -778,6 +823,7 @@ _GATE_RUNNERS: dict[str, Callable[[], GateResult]] = {
     "fast-shard-regression": gate_fast_shard,
     "oracle": gate_oracle,
     "perf": gate_perf,
+    "speed": gate_speed,
 }
 
 
