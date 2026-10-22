@@ -106,7 +106,7 @@ def _check_palette(value: Value) -> None:
     assert isinstance(value, PaletteValue)
     assert value.active[0] == ColorRole(
         "WindowText",
-        BrushValue(brushstyle="SolidPattern", color=ColorValue(1, 2, 3)),
+        BrushValue(brushstyle="SolidPattern", color=ColorValue(1, 2, 3, 255)),
     )
     window = value.active[1]
     assert window.role == "Window"

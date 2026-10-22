@@ -492,6 +492,15 @@ def test_legacy_color_alpha_loads_opaque_red_before_and_after(qapp: object) -> N
 
 
 @pytest.mark.oracle
+def test_legacy_color_without_alpha_loads_opaque_red_before_and_after(qapp: object) -> None:
+    text = _palette_ui("   <color><red>255</red><green>0</green><blue>0</blue></color>")
+    before = _window_text_hex(text, qapp)
+    after = _window_text_hex(_resave(text), qapp)
+    assert before == "#ffff0000"
+    assert after == before
+
+
+@pytest.mark.oracle
 def test_colorrole_then_legacy_loads_the_same_after_save(qapp: object) -> None:
     text = _palette_ui(
         '   <colorrole role="WindowText"><brush brushstyle="SolidPattern">'

@@ -1839,8 +1839,9 @@ def _parse_color_group(node: _XNode) -> Optional[Tuple[ColorRole, ...]]:
     if _has_noise(node) or node.attrs:
         return None
     # Qt applies every legacy <color> before any <colorrole>, and ignores
-    # alpha on those legacy colors. A colorrole brush with no alpha attribute
-    # loads as alpha 0, so the opaque color Qt showed is stored as 255.
+    # alpha on those legacy colors, with or without the attribute. A colorrole
+    # brush with no alpha attribute loads as alpha 0, so every legacy color is
+    # stored as 255: the opaque color Qt showed.
     legacy: List[ColorRole] = []
     explicit: List[ColorRole] = []
     legacy_index = 0
@@ -1858,8 +1859,7 @@ def _parse_color_group(node: _XNode) -> Optional[Tuple[ColorRole, ...]]:
         color = _parse_color(child)
         if color is None:
             return None
-        if color.alpha is not None:
-            color = ColorValue(color.red, color.green, color.blue, 255)
+        color = ColorValue(color.red, color.green, color.blue, 255)
         legacy.append(
             ColorRole(
                 _LEGACY_COLOR_ROLES[legacy_index],
