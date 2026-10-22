@@ -60,6 +60,16 @@ _CASES = (
     ("strval.ui", "clean"),
     ("tabstop.ui", "drop"),
     ("wclass.ui", "refuse"),
+    # Names that are not executable but would not parse (final M1.3 gate).
+    ("enum_bare.ui", "refuse"),
+    ("enum_deep.ui", "refuse"),
+    ("enum_kw.ui", "refuse"),
+    ("enum_none.ui", "refuse"),
+    ("kw_prop.ui", "refuse"),
+    ("kw_signal_promo.ui", "refuse"),
+    ("kw_slot.ui", "refuse"),
+    ("scope_slot.ui", "refuse"),
+    ("true_slot.ui", "refuse"),
 )
 
 

@@ -24,6 +24,7 @@ from app.features.form_builder.engine.codegen.logic_hooks import (
 from app.features.form_builder.engine.codegen.names import (
     check_cpp_name,
     check_enum_set,
+    check_py_attr,
     header_module,
     python_attr,
     python_class_stem,
@@ -371,6 +372,15 @@ class _Emitter:
             return
         if not text:
             return
+        self.diag(
+            "FB502",
+            'The name "%s" can\'t be used in the generated Python. Rename it, then save the form again.'
+            % text,
+            node=node,
+            object_name=text,
+        )
+
+    def _diag_unusable(self, text: str, node: Optional[Node] = None) -> None:
         self.diag(
             "FB502",
             'The name "%s" can\'t be used in the generated Python. Rename it, then save the form again.'
@@ -1259,8 +1269,10 @@ class _Emitter:
             if isinstance(prop.value, ULongLongValue) and prop.value.value > 9223372036854775807:
                 return ""
             return "%s.setProperty(%s, %s)" % (ref, py_string(prop.name), expr)
-        if not check_cpp_name(prop.name):
-            self._reject_name(prop.name, node)
+        # The name becomes part of a method name, so a keyword is fine (setClass)
+        # but a scope is not (setA::b).
+        if not (prop.name.isidentifier() and prop.name.isascii()):
+            self._diag_unusable(prop.name, node)
             return ""
         method = "set" + prop.name[:1].upper() + prop.name[1:]
         return "%s.%s(%s)" % (ref, method, expr)
@@ -1529,8 +1541,8 @@ class _Emitter:
             slot_name = slot.split("(", 1)[0].strip()
             if not signal_name or not slot_name:
                 continue
-            if not check_cpp_name(signal_name) or not check_cpp_name(slot_name):
-                self._reject_name(signal_name if not check_cpp_name(signal_name) else slot_name, node)
+            if not check_py_attr(signal_name) or not check_py_attr(slot_name):
+                self._diag_unusable(signal_name if not check_py_attr(signal_name) else slot_name, node)
                 continue
             sender_ref = self.ref_name(sender)
             receiver_ref = self.ref_name(receiver)

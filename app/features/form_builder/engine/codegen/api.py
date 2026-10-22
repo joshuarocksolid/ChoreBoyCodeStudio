@@ -8,6 +8,7 @@ generator never imports user code, never reads the clock, and never runs
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import os
 from typing import Optional
@@ -148,6 +149,28 @@ def generate_form_module(
     text = header_text + pieces.body
     if not text.endswith("\n"):
         text += "\n"
+    try:
+        # Our own lines are name-checked; expander lines are not. Parsing costs
+        # more than generating, so only modules with logic pay for it.
+        if pieces.has_logic:
+            ast.parse(text, feature_version=(3, 9))
+    except SyntaxError as exc:
+        # The old module stays on disk.
+        return CodegenResult(
+            text=None,
+            diagnostics=pieces.diagnostics
+            + (
+                _form_diagnostic(
+                    "FB502",
+                    "The generated Python would not parse (line %s). Check the form's names, then save again."
+                    % exc.lineno,
+                ),
+            ),
+            attribute_names=(),
+            resource_modules=(),
+            uses_freecadgui=False,
+            header=None,
+        )
     return CodegenResult(
         text=text,
         diagnostics=pieces.diagnostics,

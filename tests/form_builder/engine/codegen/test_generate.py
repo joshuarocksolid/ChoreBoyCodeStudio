@@ -793,3 +793,22 @@ def test_raising_expander_adds_nothing_and_reports(tmp_path: Path, monkeypatch: 
     assert any(
         item.severity is Severity.WARNING and "bad_rule" in item.message for item in result.diagnostics
     )
+
+
+def test_module_that_would_not_parse_is_not_written(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class Broken:
+        expander_id = "broken_rule"
+        level = 1
+        order = 1
+
+        def contribute(self, doc, ctx):
+            del doc, ctx
+            return Contribution(setup_lines=("self.lab.(",))
+
+    monkeypatch.setattr(
+        "app.features.form_builder.engine.codegen.emit.load_expanders",
+        lambda: (Broken(),),
+    )
+    result = _generate(tmp_path)
+    assert result.text is None
+    assert any(item.code == "FB502" and item.severity is Severity.ERROR for item in result.diagnostics)

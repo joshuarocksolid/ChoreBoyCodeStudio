@@ -1207,13 +1207,14 @@ def _drop_replaced_status_bar(tree: dict) -> dict:
 
 
 def _drop_non_widget_item_alignment(node):
-    """Ours: the grid alignment QUiLoader never sets on nested layouts and spacers."""
+    """Ours: the grid-item alignment QUiLoader never sets on nested layouts and spacers."""
     if isinstance(node, list):
         return [_drop_non_widget_item_alignment(child) for child in node]
     if not isinstance(node, dict):
         return node
     copied = {key: _drop_non_widget_item_alignment(value) for key, value in node.items()}
-    if copied.get("kind") in ("layout", "spacer") and "alignment" in copied:
+    # Only grid items carry "cell"; box and form items are compared as they are.
+    if copied.get("kind") in ("layout", "spacer") and "cell" in copied and "alignment" in copied:
         copied["alignment"] = 0
     return copied
 

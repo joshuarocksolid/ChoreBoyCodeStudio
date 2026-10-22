@@ -20,8 +20,17 @@ def check_cpp_name(text: str) -> bool:
     """True when ``text`` is a C++ name safe to paste into generated Python.
 
     ``Gui::Dialog::RemoteDebugger`` matches. A call, a quote, or a space does not.
+    Neither does a Python keyword in any part: ``Qt::None`` becomes ``Qt.None``,
+    which does not parse.
     """
-    return bool(text) and _CPP_NAME.fullmatch(text) is not None
+    if not text or _CPP_NAME.fullmatch(text) is None:
+        return False
+    return not any(keyword.iskeyword(part) for part in text.split("::"))
+
+
+def check_py_attr(text: str) -> bool:
+    """True when ``text`` can follow a dot in generated Python: no ``::``, no keyword."""
+    return check_cpp_name(text) and "::" not in text
 
 
 def check_enum_set(text: str) -> bool:

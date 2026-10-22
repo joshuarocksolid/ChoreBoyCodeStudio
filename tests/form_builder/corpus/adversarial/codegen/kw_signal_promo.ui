@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="lay">
+   <item>
+    <widget class="MyButton" name="btn">
+     <property name="text"><string>BODY</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="lab"/>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>MyButton</class>
+   <extends>QPushButton</extends>
+   <header>mybutton.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>btn</sender>
+   <signal>lambda()</signal>
+   <receiver>lab</receiver>
+   <slot>clear()</slot>
+  </connection>
+ </connections>
+</ui>
