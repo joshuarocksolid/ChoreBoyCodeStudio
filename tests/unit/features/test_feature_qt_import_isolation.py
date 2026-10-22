@@ -49,8 +49,12 @@ for spec in FEATURE_SPECS:
 leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in roots)
 if leaked:
     raise SystemExit("leaked " + ",".join(leaked))
-if attempted:
-    raise SystemExit("attempted " + ",".join(attempted))
+# form_builder_enabled calls select_binding, which find_spec's the chosen
+# binding and does not import it. Any other Qt probe is a real import attempt.
+allowed_probe = "PySide6" if api == "pyside6" else "PySide2"
+extra = [name for name in attempted if name != allowed_probe]
+if extra:
+    raise SystemExit("attempted " + ",".join(extra))
 """
 
 _MAIN_WINDOW_CHILD = r"""
@@ -87,10 +91,18 @@ sys.meta_path.insert(0, _Recorder())
 
 from app.qt.QtWidgets import QApplication
 from app.shell.main_window import MainWindow
+from app.shell.tab_content_providers import TabMatchContext
 
 if QApplication.instance() is None:
     QApplication([])
 window = MainWindow(state_root=tempfile.mkdtemp())
+provider = window._tab_content_registry.provider_for(
+    "/tmp/form.ui",
+    TabMatchContext(project_root=None, forced_text=False),
+)
+if provider is not None:
+    finish("form builder registered on PySide2")
+    raise SystemExit(1)
 window.close()
 
 leaked = sorted(name for name in sys.modules if name.split(".", 1)[0] in roots)
