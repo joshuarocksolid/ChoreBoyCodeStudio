@@ -377,8 +377,17 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
         # A mismatched vendor tree stays behind the interpreter's site-packages
         # so a py39 extension does not shadow PySide6.
         path_setup = "sys.path.insert(0, {repo!r});sys.path.append({vendor!r});"
+    # FreeCAD 1.0 installs a meta-path finder without find_spec. Pytest's
+    # importlib mode calls find_spec directly, so give those finders the
+    # legacy find_module wrapper before collection starts.
     payload = (
-        "import os, sys;"
+        "import importlib.util as _iu, os, sys\n"
+        "def _legacy_find_spec(finder, name, path=None, target=None):\n"
+        " loader=finder.find_module(name, path)\n"
+        " return None if loader is None else _iu.spec_from_loader(name, loader)\n"
+        "for _finder in list(sys.meta_path):\n"
+        " if not hasattr(_finder, 'find_spec'):\n"
+        "  _finder.find_spec=_legacy_find_spec.__get__(_finder)\n"
         + path_setup
         + "os.chdir({repo!r});"
         "code=int(__import__('pytest').main({args!r}));"

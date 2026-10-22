@@ -349,6 +349,7 @@ def test_designer_file_widget_tree_matches_after_save(path: Path, qapp) -> None:
         loaded = read_ui(original, allocator=IdAllocator())
     except UiReadError as exc:
         pytest.fail("%s refused by the reader: %s %s" % (path, exc.code, exc))
+        raise  # fail() does not return; without this, pyright treats loaded as unbound
     saved = write_ui(loaded.document).text
     rewritten = read_ui(saved, allocator=IdAllocator())
     again = write_ui(rewritten.document).text
