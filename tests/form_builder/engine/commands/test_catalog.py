@@ -615,6 +615,20 @@ def test_set_logic_maintains_the_version_and_refuses_layout_keys() -> None:
     assert caught.value.code == "FB402"
 
 
+def test_an_attribute_does_not_stick_the_logic_marker() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    button = nid(doc, "okButton")
+    log.execute(
+        SetProperty(button, "cbcsEnabledWhen", StringValue("1"), kind="attribute", stdset="0")
+    )
+    assert doc.logic_property_count() == 0
+    log.execute(SetLogic(button, "cbcsVisibleWhen", "1"))
+    log.execute(SetLogic(button, "cbcsVisibleWhen", None))
+    assert doc.logic_property_count() == 0
+    assert doc.root.prop("cbcsLogic") is None
+
+
 def test_illegal_xml_text_is_rejected() -> None:
     log = open_log(BOX)
     doc = log.document

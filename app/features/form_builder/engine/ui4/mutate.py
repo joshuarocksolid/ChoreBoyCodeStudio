@@ -180,7 +180,8 @@ def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
         old_entry, old_index = existing
         updated = _entries_node(owner, op.kind, _without(current, op.name))
         _bubble(doc, updated)
-        doc._note_logic(op.name, -1)
+        if op.kind == "property":
+            doc._note_logic(op.name, -1)
         doc._bump()
         return SetPropertyOp(owner=op.owner, kind=op.kind, name=op.name, entry=old_entry, index=old_index)
     if op.entry.kind != op.kind or op.entry.name != op.name:
@@ -199,7 +200,8 @@ def _set_property(doc: UiDocument, op: SetPropertyOp) -> Op:
     inserted.insert(op.index, op.entry)
     updated = _entries_node(owner, op.kind, tuple(inserted))
     _bubble(doc, updated)
-    doc._note_logic(op.name, 1)
+    if op.kind == "property":
+        doc._note_logic(op.name, 1)
     doc._bump()
     return SetPropertyOp(owner=op.owner, kind=op.kind, name=op.name, entry=None, index=None)
 
