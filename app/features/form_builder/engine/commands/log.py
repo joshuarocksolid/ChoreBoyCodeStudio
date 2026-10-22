@@ -45,8 +45,9 @@ from app.features.form_builder.engine.ui4.reader import read_ui
 
 logger = logging.getLogger(__name__)
 
-#: Entries kept for undo. Past this, the oldest entry is dropped. If that entry
-#: was the save point, the save point becomes unreachable.
+#: Entries kept for undo. Past this, the oldest entry is dropped. The state
+#: that entry produced becomes the new bottom. A save point on the previous
+#: bottom is then unreachable.
 DEFAULT_UNDO_LIMIT = 2000
 
 
@@ -116,6 +117,7 @@ class CommandLog:
         self._redo_tokens: List[int] = []
         self._next_token = 1
         self._save_token: Optional[int] = 0
+        self._base_token = 0
         self._listeners: List[Tuple[int, int, Callable[[ChangeSet], None]]] = []
         self._listener_seq = 0
         self._in_listener = False
@@ -425,19 +427,23 @@ class CommandLog:
             return
         self._redo.clear()
         self._redo_tokens.clear()
-        if self._save_token not in (None, 0) and self._save_token not in self._tokens:
-            self._save_token = None
+        if self._save_token is None:
+            return
+        if self._save_token == self._base_token or self._save_token in self._tokens:
+            return
+        self._save_token = None
 
     def _trim(self) -> None:
         while len(self._undo) > self._limit:
             token = self._tokens.pop(0)
             self._undo.pop(0)
-            if token == self._save_token:
+            if self._save_token == self._base_token:
                 self._save_token = None
+            self._base_token = token
 
     def _tip_token(self) -> int:
         if not self._tokens:
-            return 0
+            return self._base_token
         return self._tokens[-1]
 
     def _emit(self, change_set: ChangeSet) -> None:

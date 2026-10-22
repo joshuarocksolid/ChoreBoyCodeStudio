@@ -320,6 +320,36 @@ def test_undo_limit_drops_the_oldest_step() -> None:
     assert prop_text(doc, "okButton") == "A"
 
 
+def test_trimmed_original_is_not_clean() -> None:
+    log = open_log(BOX, undo_limit=2)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    for text in ("A", "B", "C"):
+        log.execute(SetProperty(owner, "text", StringValue(text)))
+    while log.undo():
+        pass
+    assert prop_text(doc, "okButton") == "A"
+    assert log.is_dirty()
+
+
+def test_save_on_the_trimmed_bottom_stays_clean() -> None:
+    log = open_log(BOX, undo_limit=2)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "text", StringValue("A")))
+    log.mark_saved()
+    log.execute(SetProperty(owner, "text", StringValue("B")))
+    log.execute(SetProperty(owner, "text", StringValue("C")))
+    while log.undo():
+        pass
+    assert prop_text(doc, "okButton") == "A"
+    assert not log.is_dirty()
+    log.execute(SetProperty(owner, "text", StringValue("D")))
+    assert log.undo()
+    assert prop_text(doc, "okButton") == "A"
+    assert not log.is_dirty()
+
+
 def test_redo_does_not_run_apply_again() -> None:
     log = open_log(BOX)
     doc = log.document
