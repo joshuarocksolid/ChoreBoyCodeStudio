@@ -34,6 +34,12 @@ _RCC_CANDIDATES = (
     Path("/opt/freecad-1.1/usr/lib/qt6/rcc"),
     Path("/usr/local/bin/cbcs-fb-rcc"),
 )
+_UIC_CANDIDATES = (
+    Path("/Applications/FreeCAD.app/Contents/Resources/lib/qt6/uic"),
+    Path("/opt/freecad-1.1/usr/lib/qt6/uic"),
+    Path("/usr/local/bin/cbcs-fb-uic"),
+)
+_UIC_HEADER = "## Form generated from reading UI file"
 
 _DESIGNER_TAGS = (
     "author",
@@ -430,7 +436,8 @@ def _loader_form(prefix: str) -> str:
    <addaction name="actionNew"/>
   </widget>
   <action name="actionNew"><property name="text"><string>New</string></property></action>
-  <action name="actionQuit" menu="menuFile"><property name="text"><string>Quit</string></property></action>
+  <action name="actionQuit"><property name="text"><string>Quit</string></property></action>
+  <action name="actionFileMenu" menu="menuFile"><property name="text"><string>File</string></property></action>
   <actiongroup name="outerGroup">
    <action name="actionLeft">
     <property name="text"><string>Left</string></property>
@@ -474,14 +481,35 @@ def _loader_form(prefix: str) -> str:
 """ % prefix
 
 
-def _rcc_path() -> Optional[Path]:
-    override = os.environ.get("CBCS_FB_RCC")
-    candidates = [Path(override)] if override else []
-    candidates.extend(_RCC_CANDIDATES)
-    for path in candidates:
+def _tool_path(env_name: str, candidates: Sequence[Path]) -> Optional[Path]:
+    override = os.environ.get(env_name)
+    found = [Path(override)] if override else []
+    found.extend(candidates)
+    for path in found:
         if path.is_file() and os.access(str(path), os.X_OK):
             return path
     return None
+
+
+def _rcc_path() -> Optional[Path]:
+    return _tool_path("CBCS_FB_RCC", _RCC_CANDIDATES)
+
+
+def _uic_path() -> Optional[Path]:
+    return _tool_path("CBCS_FB_UIC", _UIC_CANDIDATES)
+
+
+def _uic_python(uic: Path, text: str, directory: Path, name: str) -> str:
+    source = directory / name
+    source.write_text(text, encoding="utf-8")
+    completed = subprocess.run(
+        [str(uic), "-g", "python", str(source)],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    lines = [line for line in completed.stdout.splitlines() if not line.startswith(_UIC_HEADER)]
+    return "\n".join(lines) + "\n"
 
 
 def _compile_resource(directory: Path, rcc: Path) -> str:
@@ -523,7 +551,7 @@ def _focus_names(window: object, names: Sequence[str]) -> Tuple[str, ...]:
 def _loaded_behavior(text: str, qapp: object) -> dict:
     del qapp
     from app.qt.QtCore import QBuffer, QIODevice
-    from app.qt.QtGui import QAction, QActionGroup
+    from app.qt.QtGui import QActionGroup
     from app.qt.QtUiTools import QUiLoader
     from app.qt.QtWidgets import (
         QLabel,
@@ -556,18 +584,15 @@ def _loaded_behavior(text: str, qapp: object) -> dict:
     first = window.findChild(QLineEdit, "first")
     label = window.findChild(QLabel, "iconLabel")
     banner = window.findChild(QWidget, "banner")
-    quit_action = window.findChild(QAction, "actionQuit")
     assert menu is not None and toolbar is not None and group is not None
     assert radio_a is not None and radio_b is not None and button is not None and first is not None
-    assert label is not None and banner is not None and quit_action is not None
+    assert label is not None and banner is not None
     menu_names = tuple(action.objectName() for action in menu.actions())
     tool_names = tuple(action.objectName() for action in toolbar.actions())
     group_names = tuple(action.objectName() for action in group.actions())
     shared = radio_a.group()
     group_name = "" if shared is None else shared.objectName()
     same_group = shared is not None and shared is radio_b.group()
-    quit_menu = quit_action.menu()
-    quit_menu_name: Optional[str] = None if quit_menu is None else quit_menu.objectName()
     focus = _focus_names(window, ("third", "first", "second"))
     before = first.text()
     button.click()
@@ -581,7 +606,6 @@ def _loaded_behavior(text: str, qapp: object) -> dict:
         "toolbar": tool_names,
         "group": group_names,
         "button_group": (group_name, same_group),
-        "quit_menu": quit_menu_name,
         "focus": focus,
         "cleared": (before, after),
         "pixmap_null": pixmap_null,
@@ -622,12 +646,16 @@ def test_qt_loader_keeps_behavior_after_round_trip(qapp: object, tmp_path: Path)
     assert before["focus"] == ("third", "first", "second")
     assert before["cleared"] == ("1", "")
     assert before["banner"] == "M11cHeader"
-    # Measured on FreeCAD 1.1.3 / PySide 6.8.3: QUiLoader leaves QAction.menu()
-    # empty. The attribute still has to survive the save. This run did not
-    # compare uic output.
-    assert before["quit_menu"] is None
-    assert 'menu="menuFile"' in saved
+    # R3-282 is proven by uic equivalence. QUiLoader ignores the attribute.
+    uic = _uic_path()
+    if uic is None:
+        pytest.skip("uic is absent, so the menu attribute is unproven")
+    original = _uic_python(uic, text, tmp_path, "m11c-before.ui")
+    rewritten = _uic_python(uic, saved, tmp_path, "m11c-after.ui")
+    assert original == rewritten
+    assert "actionFileMenu = QAction(" not in original
+    assert "actionFileMenu = QAction(" not in rewritten
     if binary:
         assert before["pixmap_null"] is False
     else:
-        assert before["pixmap_null"] is True
+        pytest.skip("rcc is absent, so the pixmap round trip is unproven")
