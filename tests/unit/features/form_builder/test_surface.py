@@ -136,7 +136,7 @@ def test_view_xml_edit_saves_byte_exact_and_undoes(qapp, tmp_path: Path) -> None
     editor = surface.source_editor()
     assert isinstance(editor, QPlainTextEdit)
     assert surface.content_source().serialize_count == 0
-    banner = surface.findChild(QLabel, "formBuilder.xmlBanner")
+    banner = surface.findChild(QLabel, "formBuilder.xmlBannerText")
     assert banner is not None
     assert banner.text() == XML_APPLY_HINT
     editor.setPlainText(editor.toPlainText().replace(">OK<", ">Save<"))
@@ -239,15 +239,15 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     assert path.read_bytes() == saved_bytes
     assert b"<ui>" in saved_bytes
     assert b"okButton" not in saved_bytes
-    banner = surface.findChild(QLabel, "formBuilder.xmlBanner")
+    banner = surface.findChild(QLabel, "formBuilder.xmlBannerText")
     assert banner is not None
-    assert banner.isHidden() is False
+    assert banner.isVisibleTo(surface) is True
     assert banner.text().startswith("Line ")
     assert banner.text().endswith("this form is not valid XML.")
     discard = surface.findChild(QPushButton, "formBuilder.discardXml")
     assert discard is not None
     assert discard.text() == XML_DISCARD_LABEL
-    assert discard.isHidden() is False
+    assert discard.isVisibleTo(surface) is True
     assert discard.focusPolicy() != Qt.NoFocus
     tree = surface.findChild(QTreeWidget, "formBuilder.structure")
     assert tree is not None
@@ -255,14 +255,14 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
         tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
         surface.apply_theme(tokens)
-        assert tokens.diag_error_color in banner.styleSheet()
+        assert tokens.diag_error_color in banner.parentWidget().styleSheet()
 
     discard.click()
 
     assert surface.content_source().mode == "visual"
     assert toggle.isChecked() is False
-    assert banner.isHidden() is True
-    assert discard.isHidden() is True
+    assert banner.isVisibleTo(surface) is False
+    assert discard.isVisibleTo(surface) is False
     assert "QPushButton  okButton" in _tree_labels(surface)
     assert surface.content_source().log.document.root.object_name == "Form"
     surface.release()
@@ -276,7 +276,7 @@ def test_form_controls_have_accessible_names(qapp) -> None:  # type: ignore[no-u
 
     name = surface.findChild(QLabel, "formBuilder.name")
     tree = surface.findChild(QTreeWidget, "formBuilder.structure")
-    banner = surface.findChild(QLabel, "formBuilder.xmlBanner")
+    banner = surface.findChild(QLabel, "formBuilder.xmlBannerText")
     assert name is not None and tree is not None and banner is not None
     assert name.accessibleName() == "Form name"
     assert tree.accessibleName() == "Form structure"

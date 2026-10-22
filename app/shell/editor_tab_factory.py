@@ -6,7 +6,7 @@ import time
 from typing import Any, Callable, Optional
 
 from app.qt.QtCore import Qt, QTimer
-from app.qt.QtWidgets import QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
 
 from app.bootstrap.qt_binding_choice import select_binding
 
@@ -392,15 +392,21 @@ class _PySide2UiHint(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 0)
         layout.setSpacing(4)
-        self._notice = _DismissibleHint(reason, self._hide_notice, self)
+        # One notice box: the hint, and Dismiss at its right.
+        self._notice_frame = QFrame(self)
+        self._notice_frame.setObjectName("shell.editorTabs.uiTextHintFrame")
+        row = QHBoxLayout(self._notice_frame)
+        row.setContentsMargins(8, 4, 4, 4)
+        self._notice = _DismissibleHint(reason, self._hide_notice, self._notice_frame)
         self._notice.setObjectName("shell.editorTabs.uiTextHint")
         self._notice.setWordWrap(True)
         self._notice.setCursor(Qt.PointingHandCursor)
-        self._dismiss = QPushButton("Dismiss", self)
+        row.addWidget(self._notice, 1)
+        self._dismiss = QPushButton("Dismiss", self._notice_frame)
         self._dismiss.setObjectName("shell.editorTabs.uiTextHintDismiss")
         self._dismiss.clicked.connect(self._hide_notice)
-        layout.addWidget(self._notice)
-        layout.addWidget(self._dismiss)
+        row.addWidget(self._dismiss, 0, Qt.AlignTop)
+        layout.addWidget(self._notice_frame)
         layout.addWidget(editor, 1)
         self.apply_theme(tokens)
 
@@ -411,12 +417,12 @@ class _PySide2UiHint(QWidget):
         if tokens is None:
             return
         width = tokens.focus_border_width
-        self._notice.setStyleSheet(
+        self._notice_frame.setStyleSheet(
+            "QFrame#shell\\.editorTabs\\.uiTextHintFrame {"
+            f" background: {tokens.panel_bg}; border: 1px solid {tokens.border};"
+            f" border-left: {width}px solid {tokens.accent}; }}"
             "QLabel#shell\\.editorTabs\\.uiTextHint {"
-            f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
-            f" border: 1px solid {tokens.border};"
-            f" border-left: {width}px solid {tokens.accent};"
-            f" padding: 6px 8px; }}"
+            f" color: {tokens.text_primary}; background: transparent; border: none; }}"
         )
         self._dismiss.setStyleSheet(
             "QPushButton#shell\\.editorTabs\\.uiTextHintDismiss {"
@@ -427,8 +433,7 @@ class _PySide2UiHint(QWidget):
         )
 
     def _hide_notice(self) -> None:
-        self._notice.hide()
-        self._dismiss.hide()
+        self._notice_frame.hide()
 
 
 __all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost", "PYSIDE2_UI_HINT"]

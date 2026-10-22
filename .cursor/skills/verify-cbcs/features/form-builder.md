@@ -37,7 +37,8 @@ Handles already used by the driver:
 | `formBuilder.name` | Form name |
 | `formBuilder.viewXml` | View XML toggle |
 | `formBuilder.structure` | Structure tree |
-| `formBuilder.xmlBanner` | View XML banner |
+| `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
+| `formBuilder.xmlBannerText` | View XML notice text |
 | `formBuilder.discardXml` | Discard XML edits |
 
 ## Gotchas

@@ -37,7 +37,8 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.welcome` | Welcome pane |
 | `#shell.editorTabs` | Editor tabs |
 | `#shell.editorTabs.textEditor` | Text editor (shared name) |
-| `#shell.editorTabs.uiTextHint` | PySide2 `.ui` notice. Once per file per window. |
+| `#shell.editorTabs.uiTextHintFrame` | PySide2 `.ui` notice box (text with Dismiss at its right). |
+| `#shell.editorTabs.uiTextHint` | PySide2 `.ui` notice text. Once per file per window. |
 | `#shell.editorTabs.uiTextHintDismiss` | Focusable Dismiss control on that notice. |
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
@@ -469,5 +470,6 @@ Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs
 | `formBuilder.name` | Form name |
 | `formBuilder.viewXml` | View XML toggle |
 | `formBuilder.structure` | Structure tree |
-| `formBuilder.xmlBanner` | View XML banner |
+| `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
+| `formBuilder.xmlBannerText` | View XML notice text |
 | `formBuilder.discardXml` | Discard XML edits |

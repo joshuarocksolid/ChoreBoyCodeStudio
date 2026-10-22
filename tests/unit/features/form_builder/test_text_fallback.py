@@ -134,12 +134,13 @@ def test_pyside2_hint_follows_theme_and_dismisses(qapp, monkeypatch: pytest.Monk
     for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
         tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
         hint.apply_theme(tokens)  # type: ignore[attr-defined]
-        sheet = notice.styleSheet()
+        # The notice box carries the colours; the text sits inside it.
+        sheet = notice.parentWidget().styleSheet()
         assert tokens.panel_bg in sheet
         assert tokens.text_primary in sheet
         assert tokens.text_primary in dismiss.styleSheet()
         assert sheet != previous
         previous = sheet
     dismiss.click()
-    assert notice.isHidden()
-    assert dismiss.isHidden()
+    assert not notice.isVisibleTo(hint)
+    assert not dismiss.isVisibleTo(hint)

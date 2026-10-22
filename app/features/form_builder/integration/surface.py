@@ -9,8 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Mapping, Optional, Sequence
 
+from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
     QAbstractItemView,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -96,17 +98,23 @@ class FormSurface(QWidget):
         header.addWidget(self._toggle, 0)
         layout.addLayout(header)
 
-        self._banner = QLabel(self)
-        self._banner.setObjectName("formBuilder.xmlBanner")
+        # One notice box: the message, and Discard at its right on errors.
+        self._banner_frame = QFrame(self)
+        self._banner_frame.setObjectName("formBuilder.xmlBanner")
+        banner_row = QHBoxLayout(self._banner_frame)
+        banner_row.setContentsMargins(8, 4, 4, 4)
+        self._banner = QLabel(self._banner_frame)
+        self._banner.setObjectName("formBuilder.xmlBannerText")
         self._banner.setAccessibleName("XML notice")
         self._banner.setWordWrap(True)
-        self._discard = QPushButton(XML_DISCARD_LABEL, self)
+        banner_row.addWidget(self._banner, 1)
+        self._discard = QPushButton(XML_DISCARD_LABEL, self._banner_frame)
         self._discard.setObjectName("formBuilder.discardXml")
         self._discard.clicked.connect(self._discard_xml)
         self._discard.hide()
-        self._banner.hide()
-        layout.addWidget(self._banner)
-        layout.addWidget(self._discard)
+        banner_row.addWidget(self._discard, 0, Qt.AlignmentFlag.AlignTop)
+        self._banner_frame.hide()
+        layout.addWidget(self._banner_frame)
 
         self._stack = QStackedWidget(self)
         self._tree = QTreeWidget(self._stack)
@@ -270,12 +278,12 @@ class FormSurface(QWidget):
         self._banner.setText(text)
         self._banner_is_error = error
         self._paint_banner()
-        self._banner.show()
         self._discard.setVisible(error)
+        self._banner_frame.show()
 
     def _hide_banner(self) -> None:
         self._banner_is_error = False
-        self._banner.hide()
+        self._banner_frame.hide()
         self._discard.hide()
 
     def _paint_banner(self) -> None:
@@ -289,15 +297,16 @@ class FormSurface(QWidget):
         else:
             color = tokens.text_primary
             border = tokens.border
-        self._banner.setStyleSheet(
-            "QLabel#formBuilder\\.xmlBanner {"
-            f" color: {color}; background: {tokens.editor_bg};"
-            f" border: 1px solid {border}; padding: 4px 8px; }}"
+        self._banner_frame.setStyleSheet(
+            "QFrame#formBuilder\\.xmlBanner {"
+            f" background: {tokens.editor_bg}; border: 1px solid {border}; }}"
+            "QLabel#formBuilder\\.xmlBannerText {"
+            f" color: {color}; background: transparent; border: none; }}"
         )
         self._discard.setStyleSheet(
             "QPushButton#formBuilder\\.discardXml {"
             f" color: {tokens.text_primary}; background: {tokens.input_bg};"
-            f" border: 1px solid {border}; padding: 2px 8px; }}"
+            f" border: 1px solid {tokens.border}; padding: 2px 8px; }}"
             "QPushButton#formBuilder\\.discardXml:focus {"
             f" border: {width}px solid {tokens.accent}; }}"
         )
