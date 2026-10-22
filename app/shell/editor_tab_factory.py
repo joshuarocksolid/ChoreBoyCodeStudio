@@ -5,8 +5,10 @@ from __future__ import annotations
 import time
 from typing import Any, Callable, Optional
 
-from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QLabel, QMessageBox, QVBoxLayout, QWidget
+from app.qt.QtCore import Qt, QTimer
+from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QMessageBox, QPushButton, QVBoxLayout, QWidget
+
+from app.bootstrap.qt_binding_choice import select_binding
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import OpenedTabResult
@@ -45,11 +47,19 @@ class MainWindowEditorBindingsHost:
         return self._window._editor_tabs_coordinator.handle_paste_hint_repair_result
 
 
+#: Shown once per file on a PySide2 runtime. UX-PS2-001. No action button.
+PYSIDE2_UI_HINT = (
+    "Visual form editing needs FreeCAD 1.1 or later. "
+    "This form opens as text here; your changes are kept."
+)
+
+
 class EditorTabFactory:
     """Creates editor widgets and registers them with the shell workspace."""
 
     def __init__(self, window: Any) -> None:
         self._window = window
+        self._shown_ui_hints: set[str] = set()
 
     def open_file_in_editor(self, file_path: str, *, preview: bool = False, restore_draft: bool = True) -> bool:
         window = self._window
@@ -141,7 +151,16 @@ class EditorTabFactory:
         editor_widget: Optional[CodeEditorWidget]
         if provider is None:
             editor_widget = create_source_editor()
-            tab_content: QWidget = editor_widget
+            hint = self._pyside2_ui_hint(tab_file_path)
+            if hint is None:
+                tab_content: QWidget = editor_widget
+            else:
+                tab_content = _PySide2UiHint(
+                    editor_widget,
+                    hint,
+                    theme_tokens,
+                    window._editor_tabs_widget,
+                )
         else:
 
             def open_linked_file(linked_path: str) -> None:
@@ -284,6 +303,24 @@ class EditorTabFactory:
         QTimer.singleShot(0, restore_scroll)
         return view
 
+    def _pyside2_ui_hint(self, file_path: str) -> Optional[str]:
+        """The FreeCAD 1.1 hint, or None.
+
+        The form builder is not installed on PySide2, and the shell must not
+        import that package. This is the text-tab notice for that case.
+        """
+        if not file_path.lower().endswith(".ui"):
+            return None
+        try:
+            if select_binding() == "PySide6":
+                return None
+        except ImportError:
+            return None
+        if file_path in self._shown_ui_hints:
+            return None
+        self._shown_ui_hints.add(file_path)
+        return PYSIDE2_UI_HINT
+
     def build_tab_page(self, content: QWidget, buffer_id: str) -> EditorTabPage:
         """Wrap tab content with the disk-conflict info bar and wire its buttons."""
         window = self._window
@@ -328,4 +365,75 @@ class _DeclinedTextTab(QWidget):
         return self._editor
 
 
-__all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost"]
+class _DismissibleHint(QLabel):
+    """Click hides the notice. Keyboard users use the focusable Dismiss button."""
+
+    def __init__(self, text: str, on_dismiss: Callable[[], None], parent: QWidget) -> None:
+        super().__init__(text, parent)
+        self._on_dismiss = on_dismiss
+
+    def mousePressEvent(self, event: Any) -> None:  # noqa: N802
+        self._on_dismiss()
+        super().mousePressEvent(event)
+
+
+class _PySide2UiHint(QWidget):
+    """Text editor plus the dismissible FreeCAD 1.1 notice."""
+
+    def __init__(
+        self,
+        editor: CodeEditorWidget,
+        reason: str,
+        tokens: Any,
+        parent: QWidget,
+    ) -> None:
+        super().__init__(parent)
+        self._editor = editor
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(8, 8, 8, 0)
+        layout.setSpacing(4)
+        # One notice box: the hint, and Dismiss at its right.
+        self._notice_frame = QFrame(self)
+        self._notice_frame.setObjectName("shell.editorTabs.uiTextHintFrame")
+        row = QHBoxLayout(self._notice_frame)
+        row.setContentsMargins(8, 4, 4, 4)
+        self._notice = _DismissibleHint(reason, self._hide_notice, self._notice_frame)
+        self._notice.setObjectName("shell.editorTabs.uiTextHint")
+        self._notice.setWordWrap(True)
+        self._notice.setCursor(Qt.PointingHandCursor)
+        row.addWidget(self._notice, 1)
+        self._dismiss = QPushButton("Dismiss", self._notice_frame)
+        self._dismiss.setObjectName("shell.editorTabs.uiTextHintDismiss")
+        self._dismiss.clicked.connect(self._hide_notice)
+        row.addWidget(self._dismiss, 0, Qt.AlignTop)
+        layout.addWidget(self._notice_frame)
+        layout.addWidget(editor, 1)
+        self.apply_theme(tokens)
+
+    def source_editor(self) -> CodeEditorWidget:
+        return self._editor
+
+    def apply_theme(self, tokens: Any) -> None:
+        if tokens is None:
+            return
+        width = tokens.focus_border_width
+        self._notice_frame.setStyleSheet(
+            "QFrame#shell\\.editorTabs\\.uiTextHintFrame {"
+            f" background: {tokens.panel_bg}; border: 1px solid {tokens.border};"
+            f" border-left: {width}px solid {tokens.accent}; }}"
+            "QLabel#shell\\.editorTabs\\.uiTextHint {"
+            f" color: {tokens.text_primary}; background: transparent; border: none; }}"
+        )
+        self._dismiss.setStyleSheet(
+            "QPushButton#shell\\.editorTabs\\.uiTextHintDismiss {"
+            f" color: {tokens.text_primary}; background: {tokens.input_bg};"
+            f" border: {width}px solid {tokens.border}; padding: 2px 8px; }}"
+            "QPushButton#shell\\.editorTabs\\.uiTextHintDismiss:focus {"
+            f" border: {width}px solid {tokens.accent}; }}"
+        )
+
+    def _hide_notice(self) -> None:
+        self._notice_frame.hide()
+
+
+__all__ = ["EditorTabFactory", "MainWindowEditorBindingsHost", "PYSIDE2_UI_HINT"]

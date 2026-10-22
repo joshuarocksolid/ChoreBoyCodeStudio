@@ -44,6 +44,7 @@ Each file: H1, one paragraph, then exactly four H2s in this order.
 - [Explorer and files](./explorer-files.md) — AT-05, AT-27, AT-28, AT-83
 - [Editor, save, tabs](./editor-save-tabs.md) — AT-06–09, AT-44, drag-drop open
 - [Markdown](./markdown.md) — AT-102, AT-103
+- [Form builder](./form-builder.md) — AT-32 through View XML on PySide6
 - [Search and navigation](./search-navigation.md) — Find, Find in Files, Quick Open, Outline, Go To
 - [Run](./run.md) — AT-10–16, AT-29, AT-75, AT-RUN-ARGS-*
 - [Debug](./debug.md) — AT-30, AT-31, AT-59–64
