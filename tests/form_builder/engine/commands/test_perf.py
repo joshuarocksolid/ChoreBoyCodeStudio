@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gc
 import os
 import time
 from typing import Tuple
@@ -164,6 +165,8 @@ def test_reordering_a_thousand_siblings_is_one_move() -> None:
     one, five, fifteen = os.getloadavg()
     previous = os.environ.get("CBCS_FB_VALIDATE")
     os.environ["CBCS_FB_VALIDATE"] = "0"
+    gc.collect()
+    gc.disable()
     try:
         first = nid(doc, "b0")
         last = nid(doc, "b999")
@@ -179,6 +182,7 @@ def test_reordering_a_thousand_siblings_is_one_move() -> None:
         )
         inserted = time.process_time() - started
     finally:
+        gc.enable()
         if previous is None:
             os.environ.pop("CBCS_FB_VALIDATE", None)
         else:
