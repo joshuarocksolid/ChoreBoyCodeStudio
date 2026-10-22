@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, ContextManager, Iterator, List, Optional, Tuple
+from typing import Any, Callable, ContextManager, Dict, Iterable, Iterator, List, Optional, Tuple
 
 from app.features.form_builder.engine.commands.base import (
     Command,
@@ -42,6 +42,7 @@ from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.ui4 import mutate
 from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
+from app.features.form_builder.engine.ui4.spec import PropertyEntry
 
 logger = logging.getLogger(__name__)
 
@@ -534,43 +535,63 @@ def _present(doc: UiDocument, snapshot: SelectionSnapshot) -> SelectionSnapshot:
 
 
 def _is_net_nil(entry: Entry, doc: UiDocument) -> bool:
-    """True when every property and field is back at its first inverse, exactly."""
+    """True when undoing ``entry`` would leave every touched list and field as it is now.
+
+    Each touched (owner, kind) entry list is rebuilt by replaying the entry's
+    inverses on a copy, in undo order. That catches a value, a spelling and a
+    position change alike. Cost is O(changed).
+    """
     for op in entry.ops:
         if isinstance(op, (InsertNodeOp, RemoveNodeOp, MoveNodeOp, ReplaceRootOp)):
             return False
-    first_property = {}
+    touched: Dict[Tuple[NodeId, str], List[SetPropertyOp]] = {}
     first_field = {}
     for inverse in entry.inverse_ops:
         if isinstance(inverse, SetPropertyOp):
-            key = (inverse.owner, inverse.kind, inverse.name)
-            if key not in first_property:
-                first_property[key] = inverse
+            touched.setdefault((inverse.owner, inverse.kind), []).append(inverse)
         elif isinstance(inverse, SetFieldOp):
             key = (inverse.node, inverse.field)
             if key not in first_field:
                 first_field[key] = inverse
-    for (owner, kind, name), inverse in first_property.items():
+    for (owner, kind), inverses in touched.items():
         node = doc.get(owner)
         if node is None:
             return False
-        entries = node.properties() if kind == "property" else node.attributes()
-        found = None
-        found_index = None
-        for index, item in enumerate(entries):
-            if item.name == name:
-                found = item
-                found_index = index
-                break
-        if inverse.entry is None:
-            if found is not None:
-                return False
-            continue
-        if found != inverse.entry:
-            return False
-        if inverse.index is not None and found_index != inverse.index:
+        current = node.properties() if kind == "property" else node.attributes()
+        restored = _undo_entries(list(current), reversed(inverses))
+        if restored is None or tuple(restored) != tuple(current):
             return False
     for (node_id, field_name), inverse in first_field.items():
         node = doc.get(node_id)
         if node is None or node.field(field_name) != inverse.value:
             return False
     return True
+
+
+def _undo_entries(
+    entries: List[PropertyEntry],
+    inverses: Iterable[SetPropertyOp],
+) -> Optional[List[PropertyEntry]]:
+    """Apply ``SetPropertyOp`` inverses to a copied entry list, as ``mutate`` would.
+
+    None when an inverse does not fit the list (it then cannot be net nil).
+    """
+    for inverse in inverses:
+        position = None
+        for index, item in enumerate(entries):
+            if item.name == inverse.name:
+                position = index
+                break
+        if inverse.entry is None:
+            if position is None:
+                return None
+            del entries[position]
+        elif position is not None:
+            if inverse.index is not None:
+                return None
+            entries[position] = inverse.entry
+        else:
+            if inverse.index is None or inverse.index < 0 or inverse.index > len(entries):
+                return None
+            entries.insert(inverse.index, inverse.entry)
+    return entries

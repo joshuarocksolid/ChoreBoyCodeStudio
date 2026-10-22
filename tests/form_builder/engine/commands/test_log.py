@@ -111,6 +111,22 @@ def test_reset_then_set_keeps_the_step_when_property_order_changes() -> None:
     assert not log.is_dirty()
 
 
+def test_set_reset_set_keeps_the_step_when_property_order_changes() -> None:
+    log = open_log(ORDERED)
+    doc = log.document
+    original = saved(doc)
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "text", StringValue("X"), merge_token="g"))
+    log.execute(SetProperty(owner, "text", None, merge_token="g"))
+    log.execute(SetProperty(owner, "text", StringValue("OK"), merge_token="g"))
+    assert saved(doc) != original
+    assert log.can_undo()
+    assert log.is_dirty()
+    assert log.undo()
+    assert saved(doc) == original
+    assert not log.is_dirty()
+
+
 def test_reset_then_set_keeps_a_spelling_change() -> None:
     log = open_log(SPELLED)
     doc = log.document
