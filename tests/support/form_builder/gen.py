@@ -317,10 +317,12 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
         roll = rng.randrange(20)
         if roll < 3 and log.can_undo():
             log.undo()
+            doc.validate()
             done += 1
             continue
         if roll == 3 and log.can_redo():
             log.redo()
+            doc.validate()
             done += 1
             continue
         before_spec = doc.to_spec()
@@ -374,14 +376,16 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
     if replayed.fingerprint() != doc.fingerprint():
         raise AssertionError("replay mismatch seed %s" % (seed,))
     while log.redo():
-        pass
+        doc.validate()
     tip = doc.fingerprint()
     while log.undo():
-        pass
+        doc.validate()
+    doc.validate()
     if saved(doc) != original_text or doc.fingerprint() != original_fp:
         raise AssertionError("undo-all mismatch seed %s" % (seed,))
     while log.redo():
-        pass
+        doc.validate()
+    doc.validate()
     if doc.fingerprint() != tip:
         raise AssertionError("redo-all mismatch seed %s" % (seed,))
 
