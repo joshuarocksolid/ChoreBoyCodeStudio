@@ -1,6 +1,6 @@
 # Isolation
 
-The lab has two named desktops (`ChoreBoy`, `ChoreBoyTim`). Each slot still has one desktop **and one guest app runner**. The runner processes one `cbapp` session at a time. If another session is `running` (STATE heartbeat updating), your `START` file will sit unclaimed until that session stops. `wait-ready` then times out with no STATE file. `control-cbcs launch` acquires a slot so two agents can use two desktops.
+The lab has three everyday desktops plus lab Tim. Each slot has one desktop and one guest app runner. The runner processes one `cbapp` session at a time. If another session is `running` (STATE heartbeat updating), your `START` file will sit unclaimed until that session stops. `wait-ready` then times out with no STATE file. `control-cbcs launch` acquires a slot so agents can use separate desktops.
 
 Do not stop a session you did not start. Wait, or refuse. Stale `running` rows whose STATE timestamp is hours old are orphans, not the active runner job.
 
