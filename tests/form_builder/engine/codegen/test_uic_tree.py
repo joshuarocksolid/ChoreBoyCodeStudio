@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import difflib
+import importlib.util
 import os
 import subprocess
 import sys
 from collections import Counter
 from pathlib import Path
+from types import ModuleType
 
 import pytest
 
@@ -14,8 +16,31 @@ from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.ui4.reader import read_ui
-from tests.form_builder.corpus.freecad_locator import default_search_roots, find_freecad_ui_files
-from tests.form_builder.engine.codegen.uic_compare import _strip_uic, compare
+
+
+def _load_helper(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("%s is missing" % path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[name] = module
+    exec_module = getattr(spec.loader, "exec_module", None)
+    if exec_module is None:
+        raise RuntimeError("%s is missing" % path)
+    exec_module(module)
+    return module
+
+
+_HERE = Path(__file__).resolve().parent
+_locator = _load_helper(
+    "cbcs_freecad_locator",
+    _HERE.parents[2] / "corpus" / "freecad_locator.py",
+)
+_uic = _load_helper("cbcs_uic_compare", _HERE / "uic_compare.py")
+default_search_roots = _locator.default_search_roots
+find_freecad_ui_files = _locator.find_freecad_ui_files
+_strip_uic = _uic._strip_uic
+compare = _uic.compare
 
 _CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 # ``env`` is a pass only when both modules fail with the same exception type.

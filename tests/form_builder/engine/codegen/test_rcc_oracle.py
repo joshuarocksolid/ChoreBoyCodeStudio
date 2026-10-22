@@ -30,7 +30,7 @@ def _require_rcc() -> str:
 
 
 def _qfile_bytes(module_text: str, paths: list) -> dict:
-    from PySide6.QtCore import QFile
+    from PySide6.QtCore import QFile, QIODevice
 
     namespace: dict = {"__name__": "cbcs_rc_oracle"}
     exec(compile(module_text, "<rc>", "exec"), namespace)
@@ -38,10 +38,10 @@ def _qfile_bytes(module_text: str, paths: list) -> dict:
     try:
         for resource in paths:
             handle = QFile(resource)
-            if not handle.open(QFile.ReadOnly):
+            if not handle.open(QIODevice.OpenModeFlag.ReadOnly):
                 found[resource] = None
                 continue
-            found[resource] = bytes(handle.readAll())
+            found[resource] = bytes(handle.readAll().data())
             handle.close()
     finally:
         cleanup = namespace.get("qCleanupResources")

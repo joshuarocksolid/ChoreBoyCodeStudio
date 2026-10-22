@@ -556,7 +556,7 @@ def _norm(value):
     if isinstance(value, QPixmap):
         return ("pixmap", value.isNull(), value.width(), value.height(), value.cacheKey() if False else 0)
     if isinstance(value, QByteArray):
-        return ("bytes", bytes(value).hex())
+        return ("bytes", bytes(value.data()).hex())
     if hasattr(value, "value"):
         try:
             return ("enum", _as_int(value))
