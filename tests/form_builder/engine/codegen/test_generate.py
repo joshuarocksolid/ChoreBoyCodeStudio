@@ -119,6 +119,34 @@ def test_stem_that_is_a_keyword_is_not_a_module(tmp_path: Path) -> None:
     assert result.diagnostics[0].code == "FB507"
 
 
+def test_hand_edited_and_stale_truth_table(tmp_path: Path) -> None:
+    path, scope, document = _form(tmp_path)
+    source = path.read_bytes()
+    result = generate_form_module(document, scope=scope, source_bytes=source)
+    assert result.text is not None
+    text = result.text
+    rows = (
+        ("pristine", text, False, False),
+        ("body edit", text.replace("def setupUi", "def setupUi ", 1), True, False),
+        (
+            "header edit",
+            text.replace("# -*- coding: utf-8 -*-", "# -*- coding: utf-8 -*-\nimport os", 1),
+            True,
+            False,
+        ),
+        ("crlf", text.replace("\n", "\r\n"), True, True),
+        (
+            "missing source line",
+            "".join(line + "\n" for line in text.splitlines() if "cbcs-source-sha256" not in line),
+            False,
+            True,
+        ),
+    )
+    for label, sample, hand_edited, stale in rows:
+        assert is_hand_edited(sample) is hand_edited, label
+        assert is_stale(sample, source) is stale, label
+
+
 def test_generated_module_parses_as_python_39_and_tracks_edits(tmp_path: Path) -> None:
     path, scope, document = _form(tmp_path, title='Say "hi"\n')
     source = path.read_bytes()
