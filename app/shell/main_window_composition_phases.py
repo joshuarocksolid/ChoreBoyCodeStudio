@@ -408,7 +408,9 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
     window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
     window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=window._project_tree_controller,
-        open_tab_paths=window._editor_manager.open_paths,
+        # reset_editor_tabs() replaces the manager. A method bound here would
+        # keep listing the project that was open at composition time.
+        open_tab_paths=lambda: window._editor_manager.open_paths(),
         widget_for_path=window._workspace_controller.widget_for_path,
         tab_index_for_path=window._editor_groups.tab_index_for_path_in_any_group,
         remove_tab_at_index=window._editor_groups.remove_tabs_for_last_path,
