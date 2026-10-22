@@ -190,7 +190,7 @@ Topology, VM start, and generic `cbapp` ops live in the user skill `run-choreboy
 
 ## Scenario library
 
-One command replays the v0.4.13 FreeCAD 1.0 acceptance on a leased slot. The runner is `scripts/verify-cbcs` (Mac Python 3). It leases a free slot, checkpoints the guest home, installs the zip once, runs each scenario, reverts, and releases. Revert and release also run on failure and on Ctrl-C.
+One command replays the v0.4.13 FreeCAD 1.0 acceptance on a leased slot. The runner is `scripts/verify-cbcs` (Mac Python 3). It leases a free slot, checkpoints the guest disk, installs the zip once, runs each scenario, reverts, and releases. Revert and release also run on failure and on Ctrl-C.
 
 ```bash
 scripts/verify-cbcs list
@@ -198,13 +198,18 @@ scripts/verify-cbcs run smoke --zip /path/to/choreboy_code_studio_installer_v0.4
 scripts/verify-cbcs run all --zip /path/to/choreboy_code_studio_installer_v0.4.13.zip
 scripts/verify-cbcs run cb3 cb5 --zip ZIP --keep-going
 scripts/verify-cbcs run smoke --want ChoreBoyExp --zip ZIP
+scripts/verify-cbcs run all --zip ZIP --harness /home/joshua/cb_probes_wt/vm-drive
 ```
 
-`all` is the FreeCAD 1.0 set and keeps going after a failed scenario. A named list stops at the first failure unless `--keep-going` is set. `--no-snapshot` skips the home checkpoint. `--want` pins a free slot. The runner refuses a slot it did not lease.
+`all` is the FreeCAD 1.0 set and keeps going after a failed scenario. A named list stops at the first failure unless `--keep-going` is set. `--want` pins a free slot. The runner refuses a slot it did not lease.
+
+`--harness DIR` is the remote cb_probes checkout. When the flag is omitted, the runner uses `/home/joshua/cb_probes_wt/vm-drive` if that directory exists on debian, and otherwise the shared probes tree. Every `cb-slot`, `cbapp`, and `cbprobe` call exports `CHOREBOY_REMOTE_PROBES` to that directory and `CHOREBOY_REMOTE_SHARE` to the lease's `CB_SHARE`, so `SHOT:` files are pulled. `summary.json` records `harness`, `remote_share`, and the detected caps.
+
+Before install, the runner calls `cb-slot checkpoint`. On the way out, including after a failed scenario and on Ctrl-C, it calls `cb-slot revert`. Revert destroys only the leased domain, points the disk back at the slot volume, deletes the overlay, and waits until the guest runner heartbeats. A marker file written in the guest home after the checkpoint must be absent after revert. That proof is `restore-proof.json` with `"method": "snapshot"`. The tar of guest home paths is used only when `cb-slot checkpoint --help` says the subcommand is missing. `--no-snapshot` skips both.
 
 | id | what it checks |
 | --- | --- |
-| smoke | Launch, `Runtime ready`, main-window crop, state dump. Also the Exp smoke path. |
+| smoke | Launch, settled `9/9` chip on FreeCAD 1.0, main-window crop, state dump, Qt binding. Exp smoke waits for `Runtime ready` and records the binding. |
 | gates | Fresh install, 9/9 chip, Runtime Center, Python keyword `#0000ff` |
 | cb1 | Settings import, history `OSError`, fatal `MainWindow` `RuntimeError` |
 | cb2 | Plugin host `PermissionError`, same error on Run |
@@ -237,7 +242,7 @@ Each scenario writes `~/ChoreBoy/artifacts/verify-cbcs/<run-id>/<scenario>/resul
 
 `status` is `pass`, `fail`, `error`, or `skipped`. The run writes `<run-id>/summary.json` and `SUMMARY.md`.
 
-Bridge ops `grab`, `state`, `drag`, `dblclick`, and `hover` are used when `cbapp ctl` accepts them. Otherwise crops use `find(selector).grab().save` onto the virtiofs share, state is built in `eval`, and drag is stepped XTEST motion. `cb-slot checkpoint` / `revert` are used when those subcommands exist. Otherwise the runner tars the guest home paths the v0.4.13 restore used and checks the listing sha256. Capability is detected once per run. Scenario code calls the adapter, not `cbapp`, for those ops.
+Bridge ops `grab`, `state`, `drag`, `dblclick`, and `hover` are used when `cbapp ctl` accepts them. Otherwise crops use `find(selector).grab().save` onto the virtiofs share, state is built in `eval`, and drag is stepped XTEST motion. Disk restore uses `cb-slot checkpoint` / `revert` when those subcommands exist. Otherwise the runner tars the guest home paths the v0.4.13 restore used and checks the listing sha256. Capability is detected once per run and stored in `summary.json`. Scenario code calls the adapter, not `cbapp`, for those ops. A check may set `status` to `skipped` when one observation cannot be made. That sub-check does not skip the rest of the scenario.
 
 To add a scenario, add a module `scripts/scenarios/<id>.py` with `run(ctx)`, register it in `scripts/scenarios/registry.py`, and append the id to `SCENARIO_IDS` in `model.py`. `ctx.check` records a row. `ctx.shot` stores a crop, window, or desktop path. `ctx.wait_json` polls widget state. Raise `scenarios.model.Skip` when the spec cannot be driven. Put guest code in Python 3.9.
 

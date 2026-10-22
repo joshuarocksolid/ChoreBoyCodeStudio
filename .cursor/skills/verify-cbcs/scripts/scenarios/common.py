@@ -62,6 +62,18 @@ def open_file(ctx: Ctx, path: str) -> None:
     )
 
 
+def set_theme(ctx: Ctx, mode: str) -> None:
+    arm(ctx, "shell.action.view.theme." + mode)
+    ctx.wait_json(
+        "import json\n"
+        "data = json.loads(open('/home/default/FreeCAD/CBCS/state/settings.json', encoding='utf-8').read())\n"
+        "theme = data.get('theme') or {}\n"
+        "print('JSON:' + json.dumps({'mode': theme.get('mode')}))\n",
+        lambda row: row.get("mode") == mode,
+        timeout=8,
+    )
+
+
 def arm(ctx: Ctx, action_id: str) -> None:
     ctx.eval(
         "from PySide2.QtWidgets import QAction\n"

@@ -1,5 +1,37 @@
 """Guest probe sources. Python 3.9. Placeholders __TAR__ and __TREES__ are filled on the Mac."""
 
+MARKER_PATH = "/home/default/verify-cbcs-marker.txt"
+
+MARKER_WRITE = r"""
+path = "/home/default/verify-cbcs-marker.txt"
+open(path, "w", encoding="utf-8").write("after-checkpoint\n")
+root = __import__("os").path.dirname(__import__("os").path.abspath(__file__))
+open(__import__("os").path.join(root, "results", "report.txt"), "w").write("MARKER present\n")
+print("MARKER present")
+"""
+
+MARKER_READ = r"""
+import os
+path = "/home/default/verify-cbcs-marker.txt"
+line = "MARKER present" if os.path.isfile(path) else "MARKER absent"
+root = os.path.dirname(os.path.abspath(__file__))
+open(os.path.join(root, "results", "report.txt"), "w").write(line + "\n")
+print(line)
+"""
+
+EXTRACT_INSTALLER = r"""
+import os, shutil, zipfile
+from pathlib import Path
+dest = Path("/home/default/choreboy_code_studio_installer_v0.4.13")
+if dest.exists():
+    shutil.rmtree(dest)
+zipfile.ZipFile("/mnt/cbprobe/verify-cbcs/installer.zip").extractall("/home/default", pwd=b"rsd")
+root = os.path.dirname(os.path.abspath(__file__))
+line = "extracted " + str(dest.is_dir())
+open(os.path.join(root, "results", "report.txt"), "w").write(line + "\n")
+print(line)
+"""
+
 ASIDE_SCRIPT = r"""
 import os
 aside = "/home/default/verify-aside"

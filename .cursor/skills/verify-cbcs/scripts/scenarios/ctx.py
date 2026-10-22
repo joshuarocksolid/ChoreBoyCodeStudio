@@ -30,18 +30,19 @@ class Ctx:
     def metric(self, key: str, value: Any) -> None:
         self.metrics[key] = value
 
-    def check(self, name: str, ok: bool, expected: str, actual: str) -> None:
-        self.checks.append(Check(name, bool(ok), str(expected), str(actual)))
+    def check(self, name: str, ok: bool, expected: str, actual: str, status: str = "") -> None:
+        self.checks.append(Check(name, bool(ok), str(expected), str(actual), status=status))
 
-    def launch(self, entry=None, home="/home/default", name=None, env=None, wait_ready=90, allow_unready=False) -> str:
+    def launch(self, entry=None, home="/home/default", name=None, env=None, wait_ready=90, allow_unready=False, package_root=None) -> str:
         if self.sid:
             self.stop()
         entry = entry or (self.install_dir + "/run_editor.py")
         session_name = name or ("verify-" + self.scenario.replace("-", ""))
+        root = package_root or str(Path(entry).parent)
         argv = [
             "cbapp", "app-run", entry,
-            "--package-root", str(Path(entry).parent),
-            "--cwd", str(Path(entry).parent),
+            "--package-root", root,
+            "--cwd", root,
             "--name", session_name,
             "--env", "HOME=" + home,
             "--wait-ready", str(wait_ready),
@@ -61,8 +62,16 @@ class Ctx:
     def stop(self) -> None:
         if not self.sid:
             return
-        self.adapter.call(["cbapp", "stop", self.sid], timeout=30)
+        sid = self.sid
         self.sid = ""
+        self.adapter.call(["cbapp", "stop", sid], timeout=30)
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            proc = self.adapter.call(["cbapp", "status", sid], timeout=15)
+            text = ((proc.stdout or "") + (proc.stderr or "")).lower()
+            if "exited" in text or "missing" in text or "not found" in text:
+                return
+            time.sleep(0.4)
 
     def eval(self, code: str, wait: int = 45) -> str:
         return self.adapter.eval(code, wait=wait)

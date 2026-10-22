@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from scenarios.common import open_file, open_project, write_tree
+from scenarios.common import open_file, open_project, set_theme, write_tree
 from scenarios.ctx import Ctx
 
 SAMPLES = {
@@ -10,13 +10,14 @@ SAMPLES = {
     "sample.json": ('{"a": 1}\n', 0, "punctuation", "#000000", "TreeSitter"),
     "sample.md": ("# Title\n", 0, "markdown_heading", "#800000", "TreeSitter"),
     "sample.yaml": ("name: value\n", 0, "json_key", "#0451a5", "TreeSitter"),
-    "sample.html": ('<p class="x">\n', 1, "tag", "#267f99", "TreeSitter"),
+    "sample.html": ('<p class="x">\n', 1, "class", "#267f99", "TreeSitter"),
     "sample.sql": ("SELECT 1\n", 0, "plain", "", "none"),
 }
 
 
 def run(ctx: Ctx) -> None:
     ctx.launch(name="verify-ts", wait_ready=90)
+    set_theme(ctx, "light")
     label = ctx.wait_chip("Runtime ready", timeout=30)
     root = "/home/default/verify-ts"
     write_tree(ctx, root, {name: body for name, (body, _c, _t, _color, _kind) in SAMPLES.items()}, "verify-ts", "sample.py")

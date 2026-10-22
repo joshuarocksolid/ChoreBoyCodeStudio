@@ -4,14 +4,26 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import signal
+import subprocess
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from scenarios.adapter import INSTALL_DIR, default_runner
-from scenarios.probes import ASIDE_SCRIPT, INSTALL_PRESENT, RESTORE_SCRIPT, SNAPSHOT_SCRIPT
+from scenarios.ctx import sid_from
+from scenarios.probes import (
+    ASIDE_SCRIPT,
+    EXTRACT_INSTALLER,
+    INSTALL_PRESENT,
+    MARKER_READ,
+    MARKER_WRITE,
+    RESTORE_SCRIPT,
+    SNAPSHOT_SCRIPT,
+)
+from scenarios.wizard import drive as drive_wizard
 
 FREE_PREFERENCE = ("ChoreBoy4", "ChoreBoy5", "ChoreBoy3")
 ARTIFACT_ROOT = Path.home() / "ChoreBoy" / "artifacts" / "verify-cbcs"
@@ -39,7 +51,14 @@ OUR_TREES = (
     "/home/default/share/verify-parent",
     "/home/default/share/verify-no-such-parent",
     "/home/default/share/Chore_Boy/CBCS/cbcs_state_root",
+    "/home/default/verify-cb2",
+    "/home/default/verify-ts",
+    "/home/default/verify-cbcs-marker.txt",
+    "/home/default/.local/share/FreeCAD/Macro/Apps/crud_showcase",
 )
+
+NEW_HARNESS = "/home/joshua/cb_probes_wt/vm-drive"
+SHARED_HARNESS = "/home/joshua/Documents/ChoreBoyCodeStudio_Projects/probes"
 
 
 class Session:
@@ -58,7 +77,13 @@ class Session:
         self.restored = False
         self.released = False
         self.install_dir = INSTALL_DIR
+        self.harness = ""
+        self.remote_share = ""
         self._env_backup: Dict[str, Optional[str]] = {}
+
+    def use_harness(self, harness: str) -> None:
+        self.harness = harness.rstrip("/")
+        self._set_env("CHOREBOY_REMOTE_PROBES", self.harness)
 
     def lease(self) -> str:
         self.slot = self.want or pick_free_slot()
@@ -77,10 +102,23 @@ class Session:
         if not exports.get("CB_SLOT_TOKEN"):
             raise SystemExit("acquire did not print CB_SLOT_TOKEN:\n" + (proc.stdout or ""))
         self._apply_exports(exports)
+        share = exports.get("CB_SHARE") or exports.get("CHOREBOY_REMOTE_SHARE") or ""
+        if share:
+            self.remote_share = share
+            self._set_env("CHOREBOY_REMOTE_SHARE", share)
         self.leased = True
         self.artifacts.mkdir(parents=True, exist_ok=True)
         (self.artifacts / "lease.json").write_text(
-            json.dumps({"slot": self.slot, "run_id": self.run_id}, indent=2) + "\n",
+            json.dumps(
+                {
+                    "slot": self.slot,
+                    "run_id": self.run_id,
+                    "harness": self.harness,
+                    "remote_share": self.remote_share,
+                },
+                indent=2,
+            )
+            + "\n",
             encoding="utf-8",
         )
         _ensure_running()
@@ -99,9 +137,12 @@ class Session:
         )
         if adapter.caps.slot_snapshot:
             proc = _run(["cb-slot", "checkpoint", "--name", self.checkpoint_name], 180)
+            text = (proc.stdout or "") + (proc.stderr or "")
+            (self.artifacts / "checkpoint.log").write_text(text, encoding="utf-8")
             if proc.returncode != 0:
-                raise SystemExit("checkpoint failed\n" + (proc.stderr or proc.stdout or ""))
+                raise SystemExit("checkpoint failed\n" + text[-2000:])
             self.before_hash = "cb-slot:" + self.checkpoint_name
+            self.guest(MARKER_WRITE)
             return self.before_hash
         self.before_hash = self._tar_home("before")
         return self.before_hash
@@ -110,27 +151,46 @@ class Session:
         if not self.zip_path or not os.path.isfile(self.zip_path):
             raise SystemExit("zip not found: " + self.zip_path)
         self.guest(ASIDE_SCRIPT)
+        self._stage_zip()
+        self.guest(EXTRACT_INSTALLER)
+        entry = INSTALLER_DIR + "/installer/install.py"
         proc = _run(
             [
-                "cbapp", "install-test", self.zip_path,
-                "--extract-parent", INSTALL_PARENT,
-                "--extract-dest", INSTALLER_DIR,
-                "--installer-entry", "installer/install.py",
-                "--password", "rsd",
-                "--env", "HOME=/home/default",
+                "cbapp", "app-run", entry,
+                "--package-root", INSTALLER_DIR,
+                "--cwd", INSTALLER_DIR,
                 "--name", "verify-cbcs-install",
-                "--timeout", "600",
+                "--env", "HOME=/home/default",
+                "--wait-ready", "75",
+                "--timeout", "240",
             ],
-            700,
+            160,
         )
         log = (proc.stdout or "") + "\n" + (proc.stderr or "")
+        sid = ""
+        try:
+            sid = sid_from(proc.stdout or "")
+        except RuntimeError:
+            sid = ""
+        if proc.returncode != 0 or not sid:
+            (self.artifacts / "install.log").write_text(log, encoding="utf-8")
+            raise SystemExit("installer launch failed\n" + log[-2000:])
+        from scenarios.adapter import Adapter
+        from scenarios.caps import Caps
+
+        adapter = Adapter(caps=Caps())
+        adapter.bind(sid, self.run_id, "install", self.artifacts)
+        try:
+            outcome = drive_wizard(adapter.eval, mode="install", timeout=150)
+        finally:
+            _run(["cbapp", "stop", sid], 40)
+        log = log + "\n" + json.dumps(outcome.get("log", []), indent=2)
         (self.artifacts / "install.log").write_text(log, encoding="utf-8")
-        self._stop_installer(log)
         present = self.guest(INSTALL_PRESENT)
-        if "PRESENT" not in present:
-            raise SystemExit("install dir missing after install-test:\n" + log[-1500:] + "\n" + present[-1500:])
-        if proc.returncode != 0 and "ChoreBoy Code Studio is installed" not in log:
-            raise SystemExit("install-test failed\n" + log[-2000:])
+        title = str(outcome.get("title") or "")
+        finished = "is installed" in title.lower() or "installation complete" in title.lower()
+        if "PRESENT" not in present or not finished:
+            raise SystemExit("install did not finish\n" + title + "\n" + present[-500:] + "\n" + log[-1500:])
 
     def _stop_installer(self, log: str) -> None:
         for line in log.splitlines():
@@ -155,6 +215,7 @@ class Session:
                 self.restored = False
                 raise SystemExit("revert failed\n" + text[-2000:])
             self.after_hash = self.before_hash
+            self._write_snapshot_proof(text)
             return self.after_hash
         self.after_hash = self._tar_home("restore")
         proof = {
@@ -204,7 +265,9 @@ class Session:
         report = _find_report(dest)
         report_text = report.read_text(encoding="utf-8", errors="replace") if report else ""
         combined = report_text + "\n" + log
-        if proc.returncode != 0 and "SHA256 " not in combined and "PRESENT" not in combined and "aside" not in combined:
+        if proc.returncode != 0 and not any(
+            token in combined for token in ("SHA256 ", "PRESENT", "aside", "MARKER", "extracted ")
+        ):
             (self.artifacts / "guest-fail.log").write_text(combined, encoding="utf-8")
             raise SystemExit("guest probe failed\n" + combined[-4000:])
         return combined
@@ -228,11 +291,51 @@ class Session:
             raise SystemExit("home {} did not print SHA256\n".format(phase) + text[-1500:])
         return digest
 
+    def _stage_zip(self) -> None:
+        share = self.remote_share or os.environ.get("CB_SHARE") or ""
+        if not share:
+            raise SystemExit("CB_SHARE is unset; cannot stage the installer zip")
+        remote = share.rstrip("/") + "/verify-cbcs"
+        made = _run(["ssh", "-o", "BatchMode=yes", "debian", "mkdir -p " + shlex.quote(remote)], 30)
+        if made.returncode != 0:
+            raise SystemExit("could not create " + remote)
+        copied = _run(["scp", "-q", self.zip_path, "debian:" + remote + "/installer.zip"], 180)
+        if copied.returncode != 0:
+            raise SystemExit("could not copy the installer zip\n" + (copied.stderr or "")[-500:])
+
+    def _write_snapshot_proof(self, revert_text: str) -> None:
+        marker = "unknown"
+        try:
+            marker = "absent" if "MARKER absent" in self.guest(MARKER_READ) else "present"
+        except SystemExit as exc:
+            marker = "probe-failed"
+            (self.artifacts / "marker-read.log").write_text(str(exc), encoding="utf-8")
+        line = ""
+        for row in revert_text.splitlines():
+            if "ready=" in row or row.startswith("revert "):
+                line = row
+                break
+        proof = {
+            "method": "snapshot",
+            "checkpoint": self.checkpoint_name,
+            "marker": "/home/default/verify-cbcs-marker.txt",
+            "marker_after_checkpoint": "present",
+            "marker_after_revert": marker,
+            "runner_ready": "ready=runner" in revert_text,
+            "revert_line": line,
+        }
+        (self.artifacts / "restore-proof.json").write_text(
+            json.dumps(proof, indent=2) + "\n", encoding="utf-8"
+        )
+
+    def _set_env(self, key: str, value: str) -> None:
+        if key not in self._env_backup:
+            self._env_backup[key] = os.environ.get(key)
+        os.environ[key] = value
+
     def _apply_exports(self, exports: Dict[str, str]) -> None:
         for key, value in exports.items():
-            if key not in self._env_backup:
-                self._env_backup[key] = os.environ.get(key)
-            os.environ[key] = value
+            self._set_env(key, value)
 
     def _restore_env(self) -> None:
         for key, previous in self._env_backup.items():
@@ -322,6 +425,30 @@ def _find_report(dest: Path) -> Optional[Path]:
     for path in dest.rglob("report.txt"):
         return path
     return None
+
+
+def resolve_harness(explicit: Optional[str], run=None) -> str:
+    """Use the fast vm-drive tree when debian has it. Otherwise the shared probes tree."""
+    if explicit:
+        return explicit.rstrip("/")
+    runner = run or _ssh
+    try:
+        proc = runner(
+            [
+                "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "debian",
+                "test -d /home/joshua/cb_probes_wt/vm-drive && echo yes",
+            ],
+            20,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return SHARED_HARNESS
+    if getattr(proc, "returncode", 1) == 0 and "yes" in (getattr(proc, "stdout", "") or ""):
+        return NEW_HARNESS
+    return SHARED_HARNESS
+
+
+def _ssh(args: List[str], timeout: int):
+    return subprocess.run(list(args), text=True, capture_output=True, timeout=timeout)
 
 
 def now_id() -> str:

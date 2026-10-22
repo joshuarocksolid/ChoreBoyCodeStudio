@@ -139,14 +139,17 @@ class Adapter:
             return shot
         raise RuntimeError("desktop shot missing")
 
-    def state(self) -> dict:
+    def state(self, text_formats: Optional[Sequence[str]] = None, max_lines: Optional[int] = None) -> dict:
         if self.caps.state:
-            proc = self.call(["cbapp", "ctl", self.sid, "state"], timeout=30)
-            if proc.returncode == 0 and (proc.stdout or "").strip().startswith("{"):
-                try:
-                    return json.loads(proc.stdout)
-                except json.JSONDecodeError:
-                    pass
+            argv = ["cbapp", "ctl", self.sid, "state"]
+            for selector in text_formats or []:
+                argv.extend(["--text-formats", selector])
+            if max_lines:
+                argv.extend(["--max-lines", str(int(max_lines))])
+            proc = self.call(argv, timeout=30)
+            payload = _load_json_blob((proc.stdout or "").strip())
+            if proc.returncode == 0 and isinstance(payload, dict):
+                return unwrap_state(payload)
         return self.eval_json(STATE_SNIPPET, wait=30)
 
     def drag(self, x1: int, y1: int, x2: int, y2: int, steps: int = 20) -> None:
@@ -238,6 +241,21 @@ def share_host(rel: str) -> str:
     if not host_root:
         raise RuntimeError("CB_SHARE is unset")
     return host_root.rstrip("/") + "/" + rel.strip("/")
+
+
+def unwrap_state(payload: object) -> dict:
+    """Return the state object from a ctl envelope or from the object itself."""
+    if not isinstance(payload, dict):
+        return {}
+    keys = ("windows", "dialogs", "tabs", "text_formats", "status_bar")
+    result = payload.get("result")
+    if isinstance(result, dict) and any(key in result for key in keys):
+        return result
+    if any(key in payload for key in keys):
+        return payload
+    if isinstance(result, dict):
+        return result
+    return payload
 
 
 def shot_path(text: str) -> str:

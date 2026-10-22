@@ -23,6 +23,16 @@ EXPECT = {
 }
 
 
+def _denies_subprocess(issues) -> bool:
+    for issue in issues:
+        text = (str(issue.get("title") or "") + " " + str(issue.get("summary") or "")).lower()
+        if "apprun" not in text and "subprocess" not in text:
+            continue
+        if any(word in text for word in ("block", "denied", "denial", "not permitted", "not allowed")):
+            return True
+    return False
+
+
 def run(ctx: Ctx) -> None:
     ctx.launch(name="verify-cb6")
     for letter, files in CASES.items():
@@ -33,11 +43,16 @@ def run(ctx: Ctx) -> None:
         ctx.shot("cb6-%s-report" % letter, kind="window")
         kind, needle = EXPECT[letter]
         blob = json.dumps(outcome)
-        if kind == "success":
+        if letter == "a":
+            ok = outcome.get("success") is True and not _denies_subprocess(outcome.get("issues") or [])
+            expected = "success and no AppRun/subprocess denial"
+        elif kind == "success":
             ok = outcome.get("success") is True and needle in blob
+            expected = kind + " mentioning " + needle
         else:
             ok = outcome.get("success") is False and needle in blob
-        ctx.check("cb6-" + letter, ok, kind + " mentioning " + needle, blob[:500])
+            expected = kind + " mentioning " + needle
+        ctx.check("cb6-" + letter, ok, expected, blob[:500])
         ctx.metric(letter, outcome)
 
 

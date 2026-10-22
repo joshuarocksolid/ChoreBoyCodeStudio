@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from scenarios.common import arm, open_file, open_project, write_tree
 from scenarios.ctx import Ctx
@@ -46,39 +47,65 @@ def run(ctx: Ctx) -> None:
     ctx.shot("cb3-04-ctrl-space", selector="#shell.mainWindow", kind="crop")
     ctx.check("ctrl-space-setText", bool(opened.get("has_setText")), "list includes setText", "shown %s total %s" % (opened.get("shown"), opened.get("total")))
     ctx.metric("ctrl_space_shown", opened.get("shown"))
-    ctx.adapter.oskey("set")
+    _keys(ctx, "set")
     filtered = _probe(ctx)
     ctx.check("filter-set", filtered.get("current") == "setAcceptDrops", "current item setAcceptDrops", str(filtered.get("current")))
+    _hide(ctx)
     _newline(ctx)
-    ctx.adapter.oskey("btn.")
+    _keys(ctx, "btn.")
     ctx.adapter.ctrl_space()
     ctx.wait_json(PROBE, lambda row: row.get("visible"), timeout=8)
-    ctx.adapter.oskey("sT")
-    camel = _probe(ctx)
+    _keys(ctx, "sT")
+    camel = ctx.wait_json(PROBE, lambda row: row.get("current") == "setText", timeout=8)
+    docs = ctx.wait_json(
+        PROBE,
+        lambda row: "Loading" not in str(row.get("summary") or ""),
+        timeout=8,
+    )
     ctx.shot("cb3-06-camel", selector="#shell.mainWindow", kind="crop")
     ctx.check(
         "camel-sT",
-        camel.get("current") == "setText" and "setText" in str(camel.get("signature")),
+        camel.get("current") == "setText" and "setText" in str(camel.get("signature") or docs.get("signature")),
         "setText first, signature setText(text: str) -> None",
-        json.dumps({"current": camel.get("current"), "signature": camel.get("signature")}),
+        json.dumps({"current": camel.get("current"), "signature": docs.get("signature")}),
     )
+    ctx.shot("cb3-14-docs", selector="#shell.mainWindow", kind="crop")
+    ctx.check("docs-signature", "setText" in str(docs.get("signature")), "docs pane shows the signature", str(docs.get("signature")))
+    ctx.check("docs-paragraph-empty", not str(docs.get("summary") or "").strip(), "doc paragraph is empty", str(docs.get("summary")))
+    _hide(ctx)
     _newline(ctx)
-    ctx.adapter.oskey("record.")
+    _keys(ctx, "record.")
     ctx.adapter.ctrl_space()
     big = ctx.wait_json(PROBE, lambda row: row.get("has_field_600"), timeout=10)
-    ctx.check("field-600", big.get("field_600_index") == 600, "field_600 index 600", str(big.get("field_600_index")))
+    ctx.check(
+        "field-600",
+        big.get("field_600_index") == 600,
+        "field_600 index 600",
+        "index %s row %s shown %s total %s" % (
+            big.get("field_600_index"),
+            big.get("field_600_row"),
+            big.get("shown"),
+            big.get("total"),
+        ),
+    )
+    _hide(ctx)
     _newline(ctx)
     ctx.adapter.oskey("btn.")
     ctx.adapter.ctrl_space()
     ctx.wait_json(PROBE, lambda row: row.get("visible"), timeout=8)
-    ctx.adapter.oskey("setzzz")
+    _keys(ctx, "setzzz")
     typo = _probe(ctx)
     ctx.check("typo-closes", not typo.get("visible"), "typo closes the list", str(typo.get("visible")))
-    ctx.adapter.oskey(keyname="BackSpace")
-    ctx.adapter.oskey(keyname="BackSpace")
-    ctx.adapter.oskey(keyname="BackSpace")
-    reopened = ctx.wait_json(PROBE, lambda row: row.get("visible"), timeout=4)
-    ctx.check("backspace-reopens", bool(reopened.get("visible")), "backspace reopens the list", str(reopened.get("visible")))
+    for _ in range(3):
+        ctx.adapter.oskey(keyname="BackSpace")
+    time.sleep(0.4)
+    reopened = _probe(ctx)
+    ctx.check(
+        "backspace-reopens",
+        bool(reopened.get("visible")),
+        "backspace reopens the list",
+        json.dumps({"visible": reopened.get("visible"), "line": reopened.get("line"), "shown": reopened.get("shown")}),
+    )
     _newline(ctx)
     ctx.adapter.oskey('btn.set("keep")')
     ctx.eval(_CARET, wait=15)
@@ -87,37 +114,45 @@ def run(ctx: Ctx) -> None:
     ctx.adapter.oskey(keyname="Tab")
     accepted = _probe(ctx)
     ctx.check("tab-accepts", "setText" in str(accepted.get("line")) or "setAcceptDrops" in str(accepted.get("line")), "tab accepts the first set* match", accepted.get("line"))
-    _newline(ctx)
-    ctx.adapter.oskey("btn.")
-    ctx.adapter.ctrl_space()
-    ctx.wait_json(PROBE, lambda row: row.get("visible"), timeout=8)
-    ctx.adapter.oskey("setT")
-    docs = _probe(ctx)
-    ctx.shot("cb3-14-docs", selector="#shell.mainWindow", kind="crop")
-    ctx.check("docs-signature", "setText" in str(docs.get("signature")), "docs pane shows the signature", str(docs.get("signature")))
-    ctx.check("docs-paragraph-empty", not str(docs.get("summary") or "").strip(), "doc paragraph is empty", str(docs.get("summary")))
+    _console(ctx)
     _set_mode(ctx, "typing")
-    chip = _probe(ctx)
+    chip = ctx.wait_json(PROBE, lambda row: "While typing" in str(row.get("status") or ""), timeout=8)
     ctx.shot("cb3-20-chip", selector="#shell.mainWindow", kind="crop")
     ctx.check("while-typing-chip", "While typing" in str(chip.get("status")), "Completion: While typing (Global setting)", chip.get("status"))
     _set_mode(ctx, "off")
     _newline(ctx)
     ctx.adapter.oskey("btn.")
     ctx.adapter.ctrl_space()
-    off = _probe(ctx)
+    off = ctx.wait_json(PROBE, lambda row: "off" in str(row.get("status") or "").lower(), timeout=8)
     ctx.check(
         "off-mode",
         (not off.get("visible")) and "off" in str(off.get("status")).lower(),
         "popup closed and completion is off",
         json.dumps({"visible": off.get("visible"), "status": off.get("status")}),
     )
-    _console(ctx)
 
 
 def _set_mode(ctx: Ctx, mode: str) -> None:
     arm(ctx, "shell.action.file.settings")
     ctx.wait_json(_SETTINGS, lambda row: row.get("open"), timeout=8)
     ctx.eval(_SET_MODE % json.dumps(mode), wait=15)
+
+
+def _keys(ctx: Ctx, text: str) -> None:
+    for ch in text:
+        ctx.adapter.oskey(ch)
+
+
+def _hide(ctx: Ctx) -> None:
+    ctx.eval(
+        "win = next(w for w in app.topLevelWidgets() if type(w).__name__=='MainWindow')\n"
+        "ed = win._editor_tab_workflow.active_editor_widget()\n"
+        "pop = getattr(ed, '_completion_popup', None)\n"
+        "if pop is not None:\n"
+        "    pop.hide()\n"
+        "print('hidden')\n",
+        wait=15,
+    )
 
 
 def _newline(ctx: Ctx) -> None:
@@ -139,23 +174,42 @@ def _probe(ctx: Ctx) -> dict:
     return ctx.eval_json(PROBE, wait=20)
 
 
-def _console(ctx: Ctx) -> None:
+def _newline_focus(ctx: Ctx) -> None:
     ctx.eval(
         "win = next(w for w in app.topLevelWidgets() if type(w).__name__=='MainWindow')\n"
-        "con = win._python_console_widget\n"
-        "con.setFocus()\n"
-        "print('console')\n",
+        "ed = win._editor_tab_workflow.active_editor_widget()\n"
+        "ed.setFocus()\n"
+        "print('focus')\n",
         wait=15,
     )
-    ctx.adapter.oskey('btn = __import__("PySide2").QtWidgets.QPushButton("OK")')
+
+
+def _console(ctx: Ctx) -> None:
+    import time
+    ctx.eval(_CONSOLE_FOCUS, wait=15)
+    for ch in 'btn = __import__("PySide2").QtWidgets.QPushButton("OK")':
+        ctx.adapter.oskey(ch)
+        time.sleep(0.03)
     ctx.adapter.oskey(keyname="Return")
-    ctx.adapter.oskey("btn.")
-    state = _probe(ctx)
+    time.sleep(1.2)
+    ctx.eval(_CONSOLE_FOCUS, wait=15)
+    _keys(ctx, "btn.")
+    state = ctx.eval_json(CONSOLE_PROBE, wait=20)
     ctx.shot("cb3-k01-console", selector="#shell.mainWindow", kind="crop")
-    ctx.check("console-dot", not state.get("visible"), "console btn. does not pop", str(state.get("visible")))
-    ctx.adapter.ctrl_space()
-    opened = ctx.wait_json(PROBE, lambda row: row.get("has_setText"), timeout=8)
-    ctx.check("console-ctrl-space", bool(opened.get("has_setText")), "console Ctrl+Space includes setText", str(opened.get("shown")))
+    ctx.check(
+        "console-dot",
+        not state.get("visible"),
+        "console btn. does not pop",
+        json.dumps({"visible": state.get("visible"), "line": state.get("line")}),
+    )
+    ctx.eval(_CONSOLE_CTRL, wait=15)
+    opened = ctx.wait_json(CONSOLE_PROBE, lambda row: row.get("visible") and row.get("has_setText"), timeout=8)
+    ctx.check(
+        "console-ctrl-space",
+        bool(opened.get("visible")) and bool(opened.get("has_setText")),
+        "console Ctrl+Space includes setText",
+        json.dumps({"shown": opened.get("shown"), "visible": opened.get("visible"), "mode": opened.get("mode"), "line": opened.get("line")}),
+    )
 
 
 _SETTINGS = r"""
@@ -168,17 +222,25 @@ print("JSON:" + json.dumps({"open": open_}))
 """
 
 _SET_MODE = r"""
-from PySide2.QtWidgets import QComboBox, QPushButton
+from dataclasses import replace
+from PySide2.QtWidgets import QComboBox
 dlg = next(w for w in app.topLevelWidgets() if w.objectName()=="shell.settingsDialog")
-dlg._scope_input._buttons["global"].click()
+dlg._set_scope("global", apply_snapshot=True)
+app.processEvents()
 combo = dlg.findChild(QComboBox, "shell.settingsDialog.completionMode")
 wanted = %s
-for i in range(combo.count()):
-    if combo.itemData(i) == wanted:
-        combo.setCurrentIndex(i)
-        break
-dlg.findChild(QPushButton, "shell.settingsDialog.okBtn").click()
-print("saved", wanted)
+index = combo.findData(wanted)
+if index < 0:
+    raise RuntimeError("completion mode missing: " + wanted)
+combo.setCurrentIndex(index)
+app.processEvents()
+snap = dlg._scope_snapshots.get("global")
+if snap is not None:
+    dlg._scope_snapshots["global"] = replace(snap, completion_mode=wanted)
+dlg._active_scope = "global"
+combo.setCurrentIndex(index)
+dlg.accept()
+print("saved", wanted, combo.currentData())
 """
 
 _CARET = r"""
@@ -218,7 +280,62 @@ print("JSON:" + json.dumps({
     "summary": docs.summary_text()[:180],
     "has_field_600": "field_600" in labels,
     "field_600_index": labels.index("field_600") if "field_600" in labels else -1,
+    "field_600_row": pop._model.row_of_label("field_600") if hasattr(pop._model, "row_of_label") else -1,
     "line": ed.textCursor().block().text(),
     "status": status,
+}))
+"""
+
+_CONSOLE_FOCUS = r"""
+from PySide2.QtGui import QTextCursor
+win = next(w for w in app.topLevelWidgets() if type(w).__name__=="MainWindow")
+win.activateWindow()
+win.raise_()
+tabs = None
+for widget in app.allWidgets():
+    if widget.objectName()=="shell.bottomRegion.tabs":
+        tabs = widget
+        break
+if tabs is not None:
+    for index in range(tabs.count()):
+        if "console" in tabs.tabText(index).lower():
+            tabs.setCurrentIndex(index)
+            break
+con = win._python_console_widget
+con.setFocus()
+cursor = con.textCursor()
+cursor.movePosition(QTextCursor.End)
+con.setTextCursor(cursor)
+print("console-focus")
+"""
+
+_CONSOLE_CTRL = r"""
+from PySide2.QtCore import QEvent, Qt
+from PySide2.QtGui import QKeyEvent, QTextCursor
+win = next(w for w in app.topLevelWidgets() if type(w).__name__=="MainWindow")
+con = win._python_console_widget
+con.setFocus()
+cursor = con.textCursor()
+cursor.movePosition(QTextCursor.End)
+con.setTextCursor(cursor)
+press = QKeyEvent(QEvent.KeyPress, Qt.Key_Space, Qt.ControlModifier, " ")
+release = QKeyEvent(QEvent.KeyRelease, Qt.Key_Space, Qt.ControlModifier, " ")
+con.keyPressEvent(press)
+con.keyPressEvent(release)
+print("ctrl-space", con.completion_mode(), cursor.block().text())
+"""
+
+CONSOLE_PROBE = r"""
+import json
+win = next(w for w in app.topLevelWidgets() if type(w).__name__=="MainWindow")
+con = win._python_console_widget
+pop = con._completion_popup
+labels = list(pop._model.labels())
+print("JSON:" + json.dumps({
+    "visible": bool(pop.is_visible()),
+    "has_setText": "setText" in labels,
+    "shown": len(labels),
+    "mode": con.completion_mode(),
+    "line": con.textCursor().block().text() if hasattr(con, "textCursor") else "",
 }))
 """

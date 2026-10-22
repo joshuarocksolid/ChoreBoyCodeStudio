@@ -54,18 +54,48 @@ def run(ctx: Ctx) -> None:
     _cut_paste(ctx)
     pasted = ctx.eval("print(open(%s, encoding='utf-8').read())\n" % json.dumps(ROOT + "/dest_paste/clip_me.py"), wait=15)
     ctx.check("cut-paste", "pasted_line" in pasted, "pasted_line in dest_paste", pasted.strip()[:200])
-    ctx.eval("import os\nos.remove(%s)\nprint('removed')\n" % json.dumps(ROOT + "/dest_paste/clip_me.py"), wait=15)
+    path = ROOT + "/dest_paste/clip_me.py"
+    open_file(ctx, path)
     ctx.eval(
         "from PySide2.QtCore import QTimer\n"
+        "import os\n"
         "path = %s\n"
+        "win = next(w for w in app.topLevelWidgets() if type(w).__name__=='MainWindow')\n"
+        "for widget in list(app.topLevelWidgets()):\n"
+        "    if widget.isVisible() and widget.windowTitle()=='External file change detected':\n"
+        "        widget.reject()\n"
+        "ed = win._editor_tab_workflow.active_editor_widget()\n"
+        "ed.document().setModified(False)\n"
+        "tab = win._editor_manager.get_tab(path)\n"
+        "if tab is not None and os.path.isfile(path):\n"
+        "    tab.mark_saved(last_known_mtime=os.path.getmtime(path))\n"
+        "os.remove(path)\n"
         "def go():\n"
-        "    win = next(w for w in app.topLevelWidgets() if type(w).__name__=='MainWindow')\n"
-        "    win._editor_tab_workflow.open_file_at_line(path, 1, preview=False)\n"
+        "    win._external_file_change_workflow.check_and_handle(path)\n"
         "QTimer.singleShot(0, go)\n"
-        "print('reopen')\n" % json.dumps(ROOT + "/dest_paste/clip_me.py"),
+        "print('missing-armed')\n" % json.dumps(path),
         wait=15,
     )
-    missing = ctx.wait_json(_TITLE, lambda row: "File Missing" in row.get("title", ""), timeout=12)
+    missing = ctx.wait_json(
+        _TITLE,
+        lambda row: "File Missing" in row.get("title", "") or "External file change" in row.get("title", ""),
+        timeout=8,
+    )
+    if "File Missing" not in missing.get("title", ""):
+        ctx.eval(
+            "from PySide2.QtCore import QTimer\n"
+            "path = %s\n"
+            "win = next(w for w in app.topLevelWidgets() if type(w).__name__=='MainWindow')\n"
+            "for widget in list(app.topLevelWidgets()):\n"
+            "    if widget.isVisible() and widget.windowTitle()=='External file change detected':\n"
+            "        widget.reject()\n"
+            "def go():\n"
+            "    win._external_file_change_workflow.check_and_handle(path)\n"
+            "QTimer.singleShot(0, go)\n"
+            "print('missing-retry')\n" % json.dumps(path),
+            wait=15,
+        )
+        missing = ctx.wait_json(_TITLE, lambda row: "File Missing" in row.get("title", ""), timeout=8)
     ctx.shot("cb4-07-missing", kind="window")
     ctx.check("file-missing", "File Missing" in missing.get("title", "") and missing.get("default") == "Save As...", "File Missing, Save As default", json.dumps(missing)[:300])
 

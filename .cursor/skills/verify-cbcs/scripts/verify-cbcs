@@ -25,7 +25,7 @@ from scenarios.model import (  # noqa: E402
     summary_markdown,
 )
 from scenarios.registry import BLURBS, load, resolve  # noqa: E402
-from scenarios.session import Session, install_signal_cleanup, now_id  # noqa: E402
+from scenarios.session import Session, install_signal_cleanup, now_id, resolve_harness  # noqa: E402
 
 
 def cmd_list(_args: argparse.Namespace) -> int:
@@ -43,6 +43,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     keep_going = bool(args.keep_going or args.scenarios == ["all"])
     run_id = args.run_id or now_id()
     session = Session(run_id, args.zip, args.want, snapshot=not args.no_snapshot)
+    session.use_harness(resolve_harness(args.harness))
     install_signal_cleanup(session)
     adapter = Adapter()
     started = datetime.now(timezone.utc).isoformat()
@@ -53,7 +54,9 @@ def cmd_run(args: argparse.Namespace) -> int:
         slot = session.lease()
         print("SLOT", slot, flush=True)
         before = session.checkpoint()
+        adapter.caps.slot_snapshot = session.slot_snapshot
         print("CHECKPOINT", before, flush=True)
+        print("HARNESS", session.harness, flush=True)
         session.install()
         print("INSTALLED", session.install_dir, flush=True)
         runners = load()
@@ -85,7 +88,7 @@ def cmd_run(args: argparse.Namespace) -> int:
             if session.before_hash and session.after_hash:
                 print("HOME_BEFORE", session.before_hash, flush=True)
                 print("HOME_AFTER", session.after_hash, flush=True)
-        except Exception:
+        except BaseException:
             traceback.print_exc()
             exit_code = 1
     payload = summarize(
@@ -98,6 +101,8 @@ def cmd_run(args: argparse.Namespace) -> int:
             "slot": session.slot,
             "home_before": session.before_hash,
             "home_after": session.after_hash,
+            "harness": session.harness,
+            "remote_share": session.remote_share,
             "caps": adapter.caps.to_dict(),
             "slot_snapshot": session.slot_snapshot,
         },
@@ -171,6 +176,7 @@ def main(argv=None) -> int:
     run.add_argument("--no-snapshot", action="store_true")
     run.add_argument("--run-id", default=None)
     run.add_argument("--keep-going", action="store_true")
+    run.add_argument("--harness", default=None, help="remote cb_probes checkout. Default is the vm-drive tree when it exists.")
     args = parser.parse_args(argv)
     if args.command == "list":
         return cmd_list(args)

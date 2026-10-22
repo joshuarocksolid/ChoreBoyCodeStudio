@@ -14,11 +14,19 @@ def run(ctx: Ctx) -> None:
     entry = faults.install(ctx, "plugin")
     try:
         ctx.launch(entry=entry, name="verify-cb2", wait_ready=90, allow_unready=True)
-        dialog = ctx.wait_json(_DIALOG, lambda row: "FreeCAD" in row.get("text", "") or "FreeCAD" in row.get("title", ""), timeout=30)
+        ctx.wait_json(
+            _WINDOWS,
+            lambda row: len(row.get("titles") or []) >= 1,
+            timeout=25,
+        )
+        dialog = ctx.eval_json(_DIALOG, wait=20)
+        chip = ctx.chip()
         ctx.shot("cb2-1-freecad-dialog", kind="window")
         blob = json.dumps(dialog)
-        ctx.check("freecad-required", "FreeCAD 1.0 is required" in blob, "FreeCAD 1.0 is required", blob[:500])
-        ctx.check("freecad-021-sentence", "0.21" in blob, "body still mentions FreeCAD 0.21", blob[:500])
+        proof = blob if "FreeCAD" in blob else chip
+        ctx.metric("startup_chip", chip)
+        ctx.check("freecad-required", "FreeCAD 1.0 is required" in blob, "FreeCAD 1.0 is required", proof[:500])
+        ctx.check("freecad-021-sentence", "0.21" in blob, "body still mentions FreeCAD 0.21", proof[:500])
         ctx.eval(
             "for w in app.topLevelWidgets():\n"
             "    if w.isVisible() and (w.inherits('QDialog') or w.inherits('QMessageBox')):\n"
@@ -34,7 +42,8 @@ def run(ctx: Ctx) -> None:
             "print('JSON:' + json.dumps({'running': alive, 'host': type(host).__name__ if host else ''}))\n",
             wait=20,
         )
-        ctx.check("host-stopped", '"running": false' in running.replace(" ", ""), "plugin host is not running", running.strip())
+        host = _host_payload(running)
+        ctx.check("host-stopped", host.get("running") is False, "plugin host is not running", json.dumps(host))
         ctx.shot("cb2-1-editor-plugins-off", selector="#shell.mainWindow", kind="crop")
         root = "/home/default/verify-cb2"
         write_tree(ctx, root, {"main.py": "print('cb2')\n"}, "verify-cb2", "main.py")
@@ -56,3 +65,24 @@ def run(ctx: Ctx) -> None:
         ctx.check("run-explanation", "Permission denied" in blob and "Traceback" not in blob, "FreeCAD dialog, not a traceback", blob[:500])
     finally:
         faults.remove(ctx)
+
+
+def _host_payload(text: str) -> dict:
+    for line in reversed((text or "").splitlines()):
+        if line.startswith("JSON:"):
+            try:
+                payload = json.loads(line[5:])
+            except json.JSONDecodeError:
+                return {}
+            return payload if isinstance(payload, dict) else {}
+    return {}
+
+
+_WINDOWS = r"""
+import json
+titles = []
+for widget in app.topLevelWidgets():
+    if widget.isVisible() and type(widget).__name__ == "MainWindow":
+        titles.append(widget.windowTitle() or "")
+print("JSON:" + json.dumps({"titles": titles}))
+"""

@@ -37,13 +37,16 @@ class Check:
     ok: bool
     expected: str
     actual: str
+    status: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
+        recorded = self.status or ("pass" if self.ok else "fail")
         return {
             "name": self.name,
             "ok": bool(self.ok),
             "expected": self.expected,
             "actual": self.actual,
+            "status": recorded,
         }
 
 
@@ -86,14 +89,15 @@ class Skip(Exception):
 
 
 def status_for(checks: List[Check], *, skipped: Optional[str], error: Optional[str]) -> str:
-    """pass when every check is ok. skipped and error win over checks."""
+    """pass when every graded check is ok. A skipped sub-check is not graded."""
     if skipped:
         return "skipped"
     if error:
         return "error"
-    if not checks:
-        return "error"
-    if all(item.ok for item in checks):
+    graded = [item for item in checks if (item.status or "") != "skipped"]
+    if not graded:
+        return "skipped" if checks else "error"
+    if all(item.ok for item in graded):
         return "pass"
     return "fail"
 

@@ -10,8 +10,9 @@ SCRIPTS = Path(__file__).resolve().parents[3] / ".cursor/skills/verify-cbcs/scri
 sys.path.insert(0, str(SCRIPTS))
 
 from scenarios.caps import op_supported  # noqa: E402
-from scenarios.adapter import Adapter  # noqa: E402
+from scenarios.adapter import Adapter, unwrap_state  # noqa: E402
 from scenarios.model import Check, ScenarioResult, status_for, summarize, summary_markdown  # noqa: E402
+from scenarios.session import NEW_HARNESS, SHARED_HARNESS, resolve_harness  # noqa: E402
 from scenarios.model import canonical_listing, listing_sha256  # noqa: E402
 
 
@@ -71,6 +72,44 @@ def test_probe_bridge_falls_back_when_the_host_rejects_the_op():
     assert adapter.caps.grab is False
     assert adapter.caps.state is False
     assert adapter.caps.drag is False
+
+
+def test_skipped_subcheck_does_not_skip_the_scenario():
+    checks = [
+        Check("files", True, "present", "present"),
+        Check("idesk", True, "click", "skipped: errno 13", status="skipped"),
+    ]
+    assert status_for(checks, skipped=None, error=None) == "pass"
+    assert checks[1].to_dict()["status"] == "skipped"
+
+
+def test_state_envelope_unwraps_result():
+    payload = {"ok": True, "result": {"windows": [{"title": "Editor"}], "dialogs": []}}
+    assert unwrap_state(payload)["windows"][0]["title"] == "Editor"
+    assert unwrap_state({"windows": [{"title": "Bare"}]})["windows"][0]["title"] == "Bare"
+
+
+def test_resolve_harness_prefers_the_vm_drive_tree():
+    def run(_args, _timeout):
+        class Proc:
+            returncode = 0
+            stdout = "yes\n"
+            stderr = ""
+
+        return Proc()
+
+    assert resolve_harness(None, run=run) == NEW_HARNESS
+    assert resolve_harness("/tmp/custom-harness", run=run) == "/tmp/custom-harness"
+
+    def missing(_args, _timeout):
+        class Proc:
+            returncode = 1
+            stdout = ""
+            stderr = ""
+
+        return Proc()
+
+    assert resolve_harness(None, run=missing) == SHARED_HARNESS
 
 
 def test_listing_hash_changes_when_a_size_changes():
