@@ -32,3 +32,14 @@ Files that merged clean and then needed a seam route:
 - `app/shell/external_file_change_workflow.py` keeps the disk-changed dialog for text buffers (`fdd0fe7`, `1739a5e`). A dirty sourced tab with no source editor still uses the three-way unsaved-changes prompt.
 - `tests/unit/shell/test_lazy_tab_surface_lifecycle.py` calls the post-merge close and move signatures and still expects `release_tab_content` and `rekey_tab_content` for a tab with no widget.
 - `tests/unit/shell/test_tab_open_focus.py` and `tests/unit/shell/test_tab_provider_open_failure.py` stub `EditorTabsCoordinator` and the info-bar host. The notice assertion reads the page content, not the info-bar labels. Opening a markdown surface still does not call `focus_primary`.
+
+## Round 2
+
+The O-logic gate's closed list. Each item has a regression test that failed on this branch before the fix.
+
+- Tree delete after a project switch reads `open_paths` from the live editor manager. `tests/integration/shell/test_project_switch_tree_delete_integration.py`.
+- Replacing a preview passes the closed preview's path into `remove_tab_widget_for_buffer_id`, and `release_tab_content` pops that buffer id when the manager has already dropped the tab. `tests/unit/shell/test_preview_lazy_surface_rebind.py`.
+- Cancelling a sourced dirty reload marks `disk_conflict` changed and returns declined, so the next save prompts. `test_sourced_dirty_cancel_marks_the_conflict_and_the_next_save_prompts`.
+- `close_group` asks close blockers once before the unsaved-changes prompt, then closes with `skip_close_blockers`. `test_close_group_asks_blockers_before_unsaved_changes` and `test_close_group_asks_blockers_once_for_buffers_only_in_that_group`.
+- The second group's markdown pane is built by `build_secondary_pane` and adopted by `adopt_secondary_pane`. The existing second-group preview tests still cover that.
+- A declined provider's text tab is a `_DeclinedTextTab` with `source_editor()` and without markdown pane methods, so split works. `tests/integration/shell/test_declined_provider_split_integration.py`.
