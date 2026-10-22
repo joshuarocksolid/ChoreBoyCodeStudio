@@ -195,12 +195,12 @@ scripts/verify-cbcs run smoke --zip /path/to/choreboy_code_studio_installer_v0.4
 scripts/verify-cbcs run all --zip /path/to/choreboy_code_studio_installer_v0.4.13.zip
 scripts/verify-cbcs run cb3 cb5 --zip ZIP --keep-going
 scripts/verify-cbcs run smoke --want ChoreBoyExp --zip ZIP
-scripts/verify-cbcs run all --zip ZIP --harness /home/joshua/cb_probes_wt/vm-drive
+scripts/verify-cbcs run all --zip ZIP --harness /home/joshua/some/other/probes-checkout
 ```
 
 `all` is the FreeCAD 1.0 set and keeps going after a failed scenario. A named list stops at the first failure unless `--keep-going` is set. `--want` pins a free slot. The runner refuses a slot it did not lease.
 
-`--harness DIR` is the remote cb_probes checkout. When the flag is omitted, the runner uses `/home/joshua/cb_probes_wt/vm-drive` if that directory exists on debian, and otherwise the shared probes tree. Every `cb-slot`, `cbapp`, and `cbprobe` call exports `CHOREBOY_REMOTE_PROBES` to that directory and `CHOREBOY_REMOTE_SHARE` to the lease's `CB_SHARE`, so `SHOT:` files are pulled. `summary.json` records `harness`, `remote_share`, and the detected caps.
+`--harness DIR` is the remote cb_probes checkout. When the flag is omitted, the runner uses the shared probes tree `/home/joshua/Documents/ChoreBoyCodeStudio_Projects/probes`, which carries the bridge ops and `cb-slot checkpoint` / `revert` since cb_probes#5. Every `cb-slot`, `cbapp`, and `cbprobe` call exports `CHOREBOY_REMOTE_PROBES` to that directory and `CHOREBOY_REMOTE_SHARE` to the lease's `CB_SHARE`, so `SHOT:` files are pulled. `summary.json` records `harness`, `remote_share`, and the detected caps.
 
 Before install, the runner calls `cb-slot checkpoint`. On the way out, including after a failed scenario and on Ctrl-C, it calls `cb-slot revert`. Revert destroys only the leased domain, points the disk back at the slot volume, deletes the overlay, and waits until the guest runner heartbeats. A marker file written in the guest home after the checkpoint must be absent after revert. That proof is `restore-proof.json` with `"method": "snapshot"`. The tar of guest home paths is used only when `cb-slot checkpoint --help` says the subcommand is missing. `--no-snapshot` skips both.
 

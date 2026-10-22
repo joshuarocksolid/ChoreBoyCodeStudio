@@ -57,7 +57,6 @@ OUR_TREES = (
     "/home/default/.local/share/FreeCAD/Macro/Apps/crud_showcase",
 )
 
-NEW_HARNESS = "/home/joshua/cb_probes_wt/vm-drive"
 SHARED_HARNESS = "/home/joshua/Documents/ChoreBoyCodeStudio_Projects/probes"
 
 
@@ -427,24 +426,9 @@ def _find_report(dest: Path) -> Optional[Path]:
     return None
 
 
-def resolve_harness(explicit: Optional[str], run=None) -> str:
-    """Use the fast vm-drive tree when debian has it. Otherwise the shared probes tree."""
-    if explicit:
-        return explicit.rstrip("/")
-    runner = run or _ssh
-    try:
-        proc = runner(
-            [
-                "ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12", "debian",
-                "test -d /home/joshua/cb_probes_wt/vm-drive && echo yes",
-            ],
-            20,
-        )
-    except (OSError, subprocess.SubprocessError):
-        return SHARED_HARNESS
-    if getattr(proc, "returncode", 1) == 0 and "yes" in (getattr(proc, "stdout", "") or ""):
-        return NEW_HARNESS
-    return SHARED_HARNESS
+def resolve_harness(explicit: Optional[str]) -> str:
+    """An explicit --harness, else the shared probes tree on debian."""
+    return explicit.rstrip("/") if explicit else SHARED_HARNESS
 
 
 def _ssh(args: List[str], timeout: int):

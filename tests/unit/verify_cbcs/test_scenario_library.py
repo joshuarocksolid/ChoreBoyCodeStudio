@@ -12,7 +12,6 @@ sys.path.insert(0, str(SCRIPTS))
 from scenarios.caps import op_supported  # noqa: E402
 from scenarios.adapter import Adapter, unwrap_state  # noqa: E402
 from scenarios.model import Check, ScenarioResult, status_for, summarize, summary_markdown  # noqa: E402
-from scenarios.session import NEW_HARNESS, SHARED_HARNESS, resolve_harness  # noqa: E402
 from scenarios.model import canonical_listing, listing_sha256  # noqa: E402
 
 
@@ -87,29 +86,6 @@ def test_state_envelope_unwraps_result():
     payload = {"ok": True, "result": {"windows": [{"title": "Editor"}], "dialogs": []}}
     assert unwrap_state(payload)["windows"][0]["title"] == "Editor"
     assert unwrap_state({"windows": [{"title": "Bare"}]})["windows"][0]["title"] == "Bare"
-
-
-def test_resolve_harness_prefers_the_vm_drive_tree():
-    def run(_args, _timeout):
-        class Proc:
-            returncode = 0
-            stdout = "yes\n"
-            stderr = ""
-
-        return Proc()
-
-    assert resolve_harness(None, run=run) == NEW_HARNESS
-    assert resolve_harness("/tmp/custom-harness", run=run) == "/tmp/custom-harness"
-
-    def missing(_args, _timeout):
-        class Proc:
-            returncode = 1
-            stdout = ""
-            stderr = ""
-
-        return Proc()
-
-    assert resolve_harness(None, run=missing) == SHARED_HARNESS
 
 
 def test_listing_hash_changes_when_a_size_changes():
