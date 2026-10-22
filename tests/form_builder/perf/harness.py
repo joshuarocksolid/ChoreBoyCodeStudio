@@ -1287,10 +1287,16 @@ def retained_bytes(root: object) -> int:
 
 
 def _rss_bytes() -> int:
+    """Current RSS from /proc on Linux; elsewhere the peak RSS, which still
+    grows when memory leaks."""
     try:
         status = Path("/proc/self/status").read_text(encoding="ascii")
     except OSError:
-        return 0
+        import resource
+        import sys
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return peak if sys.platform == "darwin" else peak * 1024
     for line in status.splitlines():
         if line.startswith("VmRSS:"):
             return int(line.split()[1]) * 1024

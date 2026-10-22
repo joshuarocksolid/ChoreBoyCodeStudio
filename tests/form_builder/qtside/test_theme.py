@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """The realized form keeps the Fusion runtime look when the shell theme changes."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """Live widgets stay in step with the document. A patch matches a fresh build."""
 
 from __future__ import annotations
@@ -594,7 +595,17 @@ def _expected_corpus_gap(problem: str) -> bool:
 
 
 def _rss_bytes() -> int:
-    for line in Path("/proc/self/status").read_text(encoding="utf-8").splitlines():
+    """Current RSS from /proc on Linux; elsewhere the peak RSS, which still
+    grows when memory leaks."""
+    try:
+        status = Path("/proc/self/status").read_text(encoding="ascii")
+    except OSError:
+        import resource
+        import sys
+
+        peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        return peak if sys.platform == "darwin" else peak * 1024
+    for line in status.splitlines():
         if line.startswith("VmRSS:"):
             return int(line.split()[1]) * 1024
     return 0

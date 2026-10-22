@@ -446,7 +446,7 @@ class Realizer(_Structure):
             widget = self._widgets.get(node_id)
             pooled = self._pool.get(node_id)
             target = widget if isinstance(widget, QWidget) else pooled
-            if not isinstance(target, QWidget) or not wrapper_is_valid(target):
+            if target is None or not isinstance(target, QWidget) or not wrapper_is_valid(target):
                 continue
             parent = target.parentWidget()
             parent_id = _node_id(parent) if parent is not None else None
