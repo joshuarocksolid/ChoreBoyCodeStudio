@@ -54,6 +54,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import child_stack_order, references_to
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, WidgetNode
+from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import (
     CStringValue,
@@ -493,7 +494,11 @@ def test_promote_demote_resources_and_form_field() -> None:
     declaration = NodeSpec(
         "customwidget",
         None,
-        (("class_name", "MyButton"), ("extends", "QPushButton"), ("header", "my_button.h")),
+        (
+            ("class_name", "MyButton"),
+            ("extends", "QPushButton"),
+            ("header", HeaderDecl("my_button.h")),
+        ),
     )
     log.execute(Promote((button,), "MyButton", declaration))
     assert doc.node(button).field("class_name") == "MyButton"
