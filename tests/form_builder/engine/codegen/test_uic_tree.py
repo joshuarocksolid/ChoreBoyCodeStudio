@@ -127,7 +127,10 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
     del qapp
     uic = os.environ.get("CBCS_FB_UIC", "")
     if not uic or not Path(uic).is_file():
-        pytest.skip("CBCS_FB_UIC is not set")
+        message = "CBCS_FB_UIC is not set"
+        if os.environ.get("CBCS_FB_REQUIRE_ORACLE") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
     rows = _rows()
     assert rows
     counts = Counter()

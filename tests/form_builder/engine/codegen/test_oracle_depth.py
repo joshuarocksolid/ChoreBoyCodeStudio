@@ -35,7 +35,10 @@ def _modes_normal(text: str) -> str:
 def _require_uic() -> None:
     uic = os.environ.get("CBCS_FB_UIC", "")
     if not uic or not Path(uic).is_file():
-        pytest.skip("CBCS_FB_UIC is not set")
+        message = "CBCS_FB_UIC is not set"
+        if os.environ.get("CBCS_FB_REQUIRE_ORACLE") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
 
 
 def _expect_diff(path: Path, rewrite) -> None:
@@ -148,7 +151,10 @@ def test_freecad_quantity_spinbox_matches_uic(qapp) -> None:
     _require_uic()
     path = Path("/opt/freecad-1.1/usr/Mod/Fem/Resources/ui/BodyHeatSource.ui")
     if not path.is_file():
-        pytest.skip("FreeCAD forms are not installed")
+        message = "FreeCAD forms are not installed"
+        if os.environ.get("CBCS_FB_REQUIRE_ORACLE") == "1":
+            pytest.fail(message)
+        pytest.skip(message)
     result = compare(path)
     assert result[0] == "ok", result
 

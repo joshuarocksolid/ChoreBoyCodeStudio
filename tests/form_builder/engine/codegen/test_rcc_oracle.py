@@ -18,6 +18,17 @@ from app.features.form_builder.engine.codegen.resources import (
 _CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 
 
+def _require_rcc() -> str:
+    rcc = os.environ.get("CBCS_FB_RCC", "")
+    if rcc and Path(rcc).is_file():
+        return rcc
+    message = "CBCS_FB_RCC is not set"
+    if os.environ.get("CBCS_FB_REQUIRE_ORACLE") == "1":
+        pytest.fail(message)
+    pytest.skip(message)
+    return ""
+
+
 def _qfile_bytes(module_text: str, paths: list) -> dict:
     from PySide6.QtCore import QFile
 
@@ -94,9 +105,7 @@ def _compare_qrc(qrc_path: Path, rcc: str) -> tuple:
 @pytest.mark.timeout(120)
 def test_qfile_bytes_match_rcc(qapp) -> None:
     del qapp
-    rcc = os.environ.get("CBCS_FB_RCC", "")
-    if not rcc or not Path(rcc).is_file():
-        pytest.skip("CBCS_FB_RCC is not set")
+    rcc = _require_rcc()
     files = sorted(_CORPUS.rglob("*.qrc"))
     assert files
     counts = {}
@@ -120,9 +129,7 @@ def test_qfile_bytes_match_rcc(qapp) -> None:
 def test_alias_tree_matches_rcc(qapp, tmp_path: Path) -> None:
     """A two-file tree with an alias, so a corpus gap cannot hide a format bug."""
     del qapp
-    rcc = os.environ.get("CBCS_FB_RCC", "")
-    if not rcc or not Path(rcc).is_file():
-        pytest.skip("CBCS_FB_RCC is not set")
+    rcc = _require_rcc()
     (tmp_path / "dot.bin").write_bytes(b"HELLO")
     (tmp_path / "nested.bin").write_bytes(b"WORLD!!")
     qrc = tmp_path / "demo.qrc"
@@ -164,9 +171,7 @@ def _read_resource(module_text: str, resource: str, locale_name: str):
 def test_locale_and_nonbmp_names_match_rcc(qapp, tmp_path: Path) -> None:
     """A later ``lang`` must not hide the default, and a non-BMP name must be readable."""
     del qapp
-    rcc = os.environ.get("CBCS_FB_RCC", "")
-    if not rcc or not Path(rcc).is_file():
-        pytest.skip("CBCS_FB_RCC is not set")
+    rcc = _require_rcc()
     (tmp_path / "en.txt").write_bytes(b"HELLO")
     (tmp_path / "fr.txt").write_bytes(b"BONJOUR")
     face = "a\U0001f600.txt"

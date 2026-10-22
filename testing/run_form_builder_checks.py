@@ -7,12 +7,12 @@ that package exists. A skip does not fail the process. A failed gate does.
 from __future__ import annotations
 
 import argparse
-import ast
 import json
 import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -277,6 +277,32 @@ def _pytest_vendor(profile: str) -> Path | None:
     return None
 
 
+def _qt_tool(name: str) -> Path | None:
+    """uic or rcc next to the FreeCAD Qt install.
+
+    Darwin keeps the tools under the app bundle. Linux FreeCAD 1.1 keeps them
+    under qt6, sometimes in bin or libexec.
+    """
+    candidates = [
+        Path("/Applications/FreeCAD.app/Contents/Resources/lib/qt6") / name,
+    ]
+    root = Path("/opt/freecad-1.1/usr/lib/qt6")
+    for relative in (name, os.path.join("bin", name), os.path.join("libexec", name)):
+        candidates.append(root / relative)
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _resolved_qt_tool(name: str) -> Path | None:
+    raw = os.environ.get("CBCS_FB_" + name.upper(), "").strip()
+    if raw:
+        path = Path(raw).expanduser()
+        return path if path.is_file() else None
+    return _qt_tool(name)
+
+
 def _child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env = os.environ.copy()
     env.pop("VIRTUAL_ENV", None)
@@ -285,6 +311,11 @@ def _child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
     env["CBCS_SYNC_PROJECT_OPEN"] = "1"
     env["CBCS_QT_API"] = "pyside6"
+    for tool in ("uic", "rcc"):
+        found = _qt_tool(tool)
+        if found is not None:
+            env.setdefault("CBCS_FB_" + tool.upper(), str(found))
+    env["CBCS_FB_REQUIRE_ORACLE"] = "1"
     if not env.get("CBCS_UIC") and env.get("CBCS_FB_UIC"):
         env["CBCS_UIC"] = env["CBCS_FB_UIC"]
     # Captured children block-buffer stdout. os._exit would drop pytest's summary.
@@ -525,59 +556,115 @@ def gate_syntax_py39() -> GateResult:
     if not _package_ready():
         return _skip(name, "skipped: no package")
     apprun = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
-    files = sorted(path for path in FEATURE_DIR.rglob("*.py") if path.is_file())
-    if _is_runtime(apprun):
-        program = _syntax_program(FEATURE_DIR)
-        result = _run_command([str(apprun), "-c", program], env=_child_env(), timeout=60)
-        if result.timed_out:
-            return _fail(name, result.seconds, "timed out after %.0fs" % result.seconds, _command_log(result))
-        if result.code == 0:
-            detail = result.stdout.strip() or "compiled %d files" % len(files)
-            return _pass(name, result.seconds, detail.splitlines()[-1])
-        return _fail(name, result.seconds, "syntax error", _command_log(result))
-    return _syntax_via_ast(name, files)
+    if not _is_runtime(apprun):
+        return _skip(name, "skipped: no Python 3.9 runtime at %s" % apprun)
+    program = _syntax_program(FEATURE_DIR, TESTS_DIR / "corpus")
+    script = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False)
+    script.write(program)
+    script.close()
+    try:
+        result = _run_command(
+            [str(apprun), script.name],
+            env=_child_env(),
+            timeout=COMMAND_TIMEOUT_SECONDS,
+        )
+    finally:
+        os.unlink(script.name)
+    if result.timed_out:
+        return _fail(name, result.seconds, "timed out after %.0fs" % result.seconds, _command_log(result))
+    if result.code == 0:
+        detail = "compiled feature sources and generated corpus output"
+        for line in result.stdout.splitlines():
+            if line.startswith("cbcs-syntax-py39:"):
+                detail = line.split(":", 1)[1].strip()
+        return _pass(name, result.seconds, detail)
+    return _fail(name, result.seconds, "syntax error", _command_log(result))
 
 
-def _syntax_program(root: Path) -> str:
+def _syntax_program(root: Path, corpus: Path) -> str:
     # Runs inside the 3.9 AppRun process. Keep the program free of 3.10 syntax.
     lines = [
-        "import pathlib, sys",
+        "import pathlib, sys, tempfile",
+        "sys.path.insert(0, %s)" % repr(str(REPO_ROOT)),
         "root = pathlib.Path(%s)" % repr(str(root)),
-        "files = sorted(path for path in root.rglob('*.py') if path.is_file())",
+        "corpus = pathlib.Path(%s)" % repr(str(corpus)),
         "errors = []",
+        "files = sorted(path for path in root.rglob('*.py') if path.is_file())",
         "for path in files:",
         "    text = path.read_text(encoding='utf-8')",
         "    try:",
         "        compile(text, str(path), 'exec')",
         "    except SyntaxError as exc:",
         "        errors.append('%s:%s: %s' % (path, exc.lineno, exc.msg))",
+        "from app.features.form_builder.engine.codegen.api import generate_form_module",
+        "from app.features.form_builder.engine.codegen.resources import (",
+        "    compile_resource_tree, read_qrc, render_rc_module,",
+        ")",
+        "from app.features.form_builder.engine.ids import IdAllocator",
+        "from app.features.form_builder.engine.project.forms import FormScope",
+        "from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui",
+        "outputs = []",
+        "for path in sorted(corpus.rglob('*.ui')):",
+        "    data = path.read_bytes()",
+        "    try:",
+        "        xml = data.decode('utf-8')",
+        "    except UnicodeDecodeError:",
+        "        xml = data.decode('latin-1')",
+        "    try:",
+        "        read = read_ui(xml, allocator=IdAllocator())",
+        "        scope = FormScope(",
+        "            kind='project',",
+        "            ui_path=str(path),",
+        "            project_root=str(path.parent),",
+        "            generated_path=str(path.with_name('ui_%s.py' % path.stem)),",
+        "            window_path=str(path.with_name('%s_window.py' % path.stem)),",
+        "            module_name='ui_' + path.stem,",
+        "        )",
+        "        generated = generate_form_module(",
+        "            read.document, scope=scope, source_bytes=data,",
+        "        )",
+        "    except UiReadError:",
+        "        continue",
+        "    except Exception as exc:",
+        "        errors.append('%s: %s: %s' % (path, type(exc).__name__, exc))",
+        "        continue",
+        "    if generated.text:",
+        "        outputs.append((str(path), generated.text))",
+        "def _read_beside(base, rel):",
+        "    target = base / rel",
+        "    if not target.is_file():",
+        "        raise FileNotFoundError(rel)",
+        "    return target.read_bytes()",
+        "for path in sorted(corpus.rglob('*.qrc')):",
+        "    try:",
+        "        document = read_qrc(path.read_text(encoding='utf-8'))",
+        "        tree, _diags = compile_resource_tree(",
+        "            document,",
+        "            read_file=lambda rel, base=path.parent: _read_beside(base, rel),",
+        "        )",
+        "        rendered = render_rc_module(tree, qrc_file_name=path.name)",
+        "    except Exception as exc:",
+        "        errors.append('%s: %s: %s' % (path, type(exc).__name__, exc))",
+        "        continue",
+        "    outputs.append((str(path), rendered))",
+        "folder = pathlib.Path(tempfile.mkdtemp(prefix='fb-syntax-'))",
+        "for index, pair in enumerate(outputs):",
+        "    source, text = pair",
+        "    out = folder / ('gen_%04d.py' % index)",
+        "    out.write_text(text, encoding='utf-8')",
+        "    try:",
+        "        compile(text, str(out), 'exec')",
+        "    except SyntaxError as exc:",
+        "        errors.append('%s -> %s:%s: %s' % (source, out.name, exc.lineno, exc.msg))",
         "if errors:",
         "    sys.stderr.write('\\n'.join(errors) + '\\n')",
         "    raise SystemExit(1)",
-        "sys.stdout.write('compiled %d files\\n' % len(files))",
+        "sys.stdout.write(",
+        "    'cbcs-syntax-py39: compiled %d files and %d generated outputs\\n'",
+        "    % (len(files), len(outputs))",
+        ")",
     ]
-    return _apprun_safe("\n".join(lines) + "\n")
-
-
-def _syntax_via_ast(name: str, files: Sequence[Path]) -> GateResult:
-    started = time.monotonic()
-    errors: list[str] = []
-    for path in files:
-        text = path.read_text(encoding="utf-8")
-        try:
-            ast.parse(text, filename=str(path), feature_version=(3, 9))
-        except SyntaxError as exc:
-            errors.append("%s:%s: %s" % (path, exc.lineno, exc.msg))
-    seconds = time.monotonic() - started
-    if errors:
-        return _fail(name, seconds, "syntax error", "\n".join(errors))
-    apprun = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
-    return _pass(
-        name,
-        seconds,
-        "compiled %d files with ast.parse feature_version=(3, 9); runtime not found at %s"
-        % (len(files), apprun),
-    )
+    return "\n".join(lines) + "\n"
 
 
 def gate_pyright() -> GateResult:
@@ -651,8 +738,10 @@ def gate_fast_shard() -> GateResult:
 
 
 def gate_oracle() -> GateResult:
-    judged = _judge_pytest("oracle", _py311_pytest("oracle"), require_pass=False)
-    return judged
+    missing = [name for name in ("uic", "rcc") if _resolved_qt_tool(name) is None]
+    if missing:
+        return _fail("oracle", 0.0, "missing Qt tool: %s" % ", ".join(missing))
+    return _judge_pytest("oracle", _py311_pytest("oracle"), require_pass=True)
 
 
 def gate_perf() -> GateResult:
