@@ -196,9 +196,20 @@ def _write_json(path: Path, results: Sequence[GateResult]) -> None:
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
 
 
+# Cloud images export the short names. Local runs use the longer ones.
+_RUNTIME_ALIASES = {
+    "CBCS_FORM_BUILDER_PY311": ("CBCS_FB_PY311",),
+    "CBCS_FORM_BUILDER_PY39": ("CBCS_FB_PY39",),
+}
+
+
 def _runtime(env_name: str, default: str) -> Path:
-    raw = os.environ.get(env_name, "").strip() or default
-    return Path(raw).expanduser()
+    names = (env_name,) + _RUNTIME_ALIASES.get(env_name, ())
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if raw:
+            return Path(raw).expanduser()
+    return Path(default).expanduser()
 
 
 def _is_runtime(path: Path) -> bool:
@@ -274,6 +285,8 @@ def _child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
     env["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
     env["CBCS_SYNC_PROJECT_OPEN"] = "1"
     env["CBCS_QT_API"] = "pyside6"
+    if not env.get("CBCS_UIC") and env.get("CBCS_FB_UIC"):
+        env["CBCS_UIC"] = env["CBCS_FB_UIC"]
     # Captured children block-buffer stdout. os._exit would drop pytest's summary.
     env["PYTHONUNBUFFERED"] = "1"
     if extra:
@@ -364,8 +377,17 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
         # A mismatched vendor tree stays behind the interpreter's site-packages
         # so a py39 extension does not shadow PySide6.
         path_setup = "sys.path.insert(0, {repo!r});sys.path.append({vendor!r});"
+    # FreeCAD 1.0 installs a meta-path finder without find_spec. Pytest's
+    # importlib mode calls find_spec directly, so give those finders the
+    # legacy find_module wrapper before collection starts.
     payload = (
-        "import os, sys;"
+        "import importlib.util as _iu, os, sys\n"
+        "def _legacy_find_spec(finder, name, path=None, target=None):\n"
+        " loader=finder.find_module(name, path)\n"
+        " return None if loader is None else _iu.spec_from_loader(name, loader)\n"
+        "for _finder in list(sys.meta_path):\n"
+        " if not hasattr(_finder, 'find_spec'):\n"
+        "  _finder.find_spec=_legacy_find_spec.__get__(_finder)\n"
         + path_setup
         + "os.chdir({repo!r});"
         "code=int(__import__('pytest').main({args!r}));"

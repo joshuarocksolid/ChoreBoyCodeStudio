@@ -352,7 +352,7 @@ def _kitchen_sink() -> str:
        <string>cursor</string>
       </property>
       <property name="cursor">
-       <cursorshape>Qt::PointingHandCursor</cursorshape>
+       <cursorShape>PointingHandCursor</cursorShape>
       </property>
       <property name="pos">
        <point>
@@ -389,21 +389,21 @@ def _kitchen_sink() -> str:
          </colorrole>
          <colorrole role="WindowText">
           <brush brushstyle="LinearGradientPattern">
-           <gradient type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode" startx="0" starty="0" endx="100" endy="20" angle="15" centralx="50" centraly="10" focalx="40" focaly="10" radius="12">
-            <gradientStop position="0">
+           <gradient startx="0" starty="0" endx="100" endy="20" centralx="50" centraly="10" focalx="40" focaly="10" radius="12" angle="15" type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode">
+            <gradientstop position="0">
              <color alpha="255">
               <red>255</red>
               <green>0</green>
               <blue>0</blue>
              </color>
-            </gradientStop>
-            <gradientStop position="1">
+            </gradientstop>
+            <gradientstop position="1">
              <color alpha="128">
               <red>0</red>
               <green>0</green>
               <blue>255</blue>
              </color>
-            </gradientStop>
+            </gradientstop>
            </gradient>
           </brush>
          </colorrole>
@@ -411,14 +411,14 @@ def _kitchen_sink() -> str:
         <inactive>
          <colorrole role="Button">
           <brush brushstyle="RadialGradientPattern">
-           <gradient type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode" startx="0" starty="0" endx="1" endy="1" angle="0" centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8">
-            <gradientStop position="0.2">
+           <gradient startx="0" starty="0" endx="1" endy="1" centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8" angle="0" type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode">
+            <gradientstop position="0.2">
              <color alpha="255">
               <red>0</red>
               <green>255</green>
               <blue>0</blue>
              </color>
-            </gradientStop>
+            </gradientstop>
            </gradient>
           </brush>
          </colorrole>
@@ -426,14 +426,14 @@ def _kitchen_sink() -> str:
         <disabled>
          <colorrole role="Base">
           <brush brushstyle="ConicalGradientPattern">
-           <gradient type="ConicalGradient" spread="ReflectSpread" coordinatemode="StretchToDeviceMode" startx="0" starty="0" endx="1" endy="1" angle="45" centralx="0.5" centraly="0.5" focalx="0.5" focaly="0.5" radius="1">
-            <gradientStop position="0.5">
+           <gradient startx="0" starty="0" endx="1" endy="1" centralx="0.5" centraly="0.5" focalx="0.5" focaly="0.5" radius="1" angle="45" type="ConicalGradient" spread="ReflectSpread" coordinatemode="StretchToDeviceMode">
+            <gradientstop position="0.5">
              <color alpha="200">
               <red>10</red>
               <green>10</green>
               <blue>10</blue>
              </color>
-            </gradientStop>
+            </gradientstop>
            </gradient>
           </brush>
          </colorrole>
@@ -706,14 +706,14 @@ def _kitchen_sink() -> str:
    <property name="shortcut"><string>Ctrl+N</string></property>
    <property name="icon">
     <iconset theme="document-new" resource="icons.qrc">
-     <normaloff resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</normaloff>:/cbcs/icons/dot.png
-     <normalon resource="icons.qrc" alias="mark">:/cbcs/icons/mark.png</normalon>:/cbcs/icons/mark.png
-     <disabledoff resource="icons.qrc">:/cbcs/icons/dot.png</disabledoff>:/cbcs/icons/dot.png
-     <disabledon resource="icons.qrc">:/cbcs/icons/mark.png</disabledon>:/cbcs/icons/mark.png
-     <activeoff resource="icons.qrc">:/cbcs/icons/dot.png</activeoff>:/cbcs/icons/dot.png
-     <activeon resource="icons.qrc">:/cbcs/icons/mark.png</activeon>:/cbcs/icons/mark.png
-     <selectedoff resource="icons.qrc">:/cbcs/icons/dot.png</selectedoff>:/cbcs/icons/dot.png
-     <selectedon resource="icons.qrc">:/cbcs/icons/mark.png</selectedon>:/cbcs/icons/mark.png
+     <normaloff resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</normaloff>
+     <normalon resource="icons.qrc" alias="mark">:/cbcs/icons/mark.png</normalon>
+     <disabledoff resource="icons.qrc">:/cbcs/icons/dot.png</disabledoff>
+     <disabledon resource="icons.qrc">:/cbcs/icons/mark.png</disabledon>
+     <activeoff resource="icons.qrc">:/cbcs/icons/dot.png</activeoff>
+     <activeon resource="icons.qrc">:/cbcs/icons/mark.png</activeon>
+     <selectedoff resource="icons.qrc">:/cbcs/icons/dot.png</selectedoff>
+     <selectedon resource="icons.qrc">:/cbcs/icons/mark.png</selectedon>:/cbcs/icons/dot.png
     </iconset>
    </property>
    <attribute name="cbcsActionRole" stdset="0">
@@ -833,7 +833,7 @@ def _property_bodies() -> Dict[str, tuple]:
         "color": ("swatch", "<color alpha=\"255\"><red>9</red><green>8</green><blue>7</blue></color>"),
         "cstring": ("buddyName", "<cstring>nameEdit</cstring>"),
         "cursor": ("pointer", "<cursor>4</cursor>"),
-        "cursorshape": ("pointer", "<cursorshape>Qt::IBeamCursor</cursorshape>"),
+        "cursorshape": ("pointer", "<cursorShape>IBeamCursor</cursorShape>"),
         "enum": ("direction", "<enum>Qt::LeftToRight</enum>"),
         "font": ("face", "<font><family>DejaVu Sans</family><pointsize>11</pointsize><bold>true</bold></font>"),
         "iconset": ("icon", "<iconset theme=\"document-open\" resource=\"icons.qrc\"><normaloff>:/cbcs/icons/dot.png</normaloff>:/cbcs/icons/dot.png</iconset>"),
@@ -1022,6 +1022,203 @@ def _extra_forms() -> List[tuple]:
     ]
 
 
+def _qformbuilder_palette_cursor() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="windowFilePath">
+   <string/>
+  </property>
+  <property name="enabled">
+   <bool>true</bool>
+  </property>
+  <property name="size" stdset="0">
+   <size>
+    <width>640</width>
+    <height>480</height>
+   </size>
+  </property>
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="tabletTracking">
+   <bool>false</bool>
+  </property>
+  <property name="pos" stdset="0">
+   <point>
+    <x>0</x>
+    <y>0</y>
+   </point>
+  </property>
+  <property name="objectName">
+   <string notr="true">Form</string>
+  </property>
+  <property name="toolTipDuration">
+   <number>-1</number>
+  </property>
+  <property name="font">
+   <font/>
+  </property>
+  <property name="toolTip">
+   <string/>
+  </property>
+  <property name="cursor">
+   <cursorShape>IBeamCursor</cursorShape>
+  </property>
+  <property name="accessibleDescription">
+   <string/>
+  </property>
+  <property name="maximumHeight">
+   <number>16777215</number>
+  </property>
+  <property name="maximumWidth">
+   <number>16777215</number>
+  </property>
+  <property name="windowModified">
+   <bool>false</bool>
+  </property>
+  <property name="acceptDrops">
+   <bool>false</bool>
+  </property>
+  <property name="windowIconText">
+   <string/>
+  </property>
+  <property name="visible">
+   <bool>false</bool>
+  </property>
+  <property name="locale">
+   <locale language="English" country="UnitedStates"/>
+  </property>
+  <property name="sizePolicy">
+   <sizepolicy hsizetype="Preferred" vsizetype="Preferred">
+    <horstretch>0</horstretch>
+    <verstretch>0</verstretch>
+   </sizepolicy>
+  </property>
+  <property name="baseSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="accessibleName">
+   <string/>
+  </property>
+  <property name="maximumSize">
+   <size>
+    <width>16777215</width>
+    <height>16777215</height>
+   </size>
+  </property>
+  <property name="autoFillBackground">
+   <bool>false</bool>
+  </property>
+  <property name="styleSheet">
+   <string notr="true"/>
+  </property>
+  <property name="palette">
+   <palette>
+    <active>
+     <colorrole role="Window">
+      <brush brushstyle="LinearGradientPattern">
+       <gradient startx="0.000000000000000" starty="0.000000000000000" endx="1.000000000000000" endy="1.000000000000000" type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode">
+        <gradientstop position="0.000000000000000">
+         <color alpha="255">
+          <red>255</red>
+          <green>0</green>
+          <blue>0</blue>
+         </color>
+        </gradientstop>
+        <gradientstop position="1.000000000000000">
+         <color alpha="128">
+          <red>0</red>
+          <green>0</green>
+          <blue>255</blue>
+         </color>
+        </gradientstop>
+       </gradient>
+      </brush>
+     </colorrole>
+    </active>
+    <inactive/>
+    <disabled/>
+   </palette>
+  </property>
+  <property name="whatsThis">
+   <string/>
+  </property>
+  <property name="minimumHeight">
+   <number>0</number>
+  </property>
+  <property name="mouseTracking">
+   <bool>false</bool>
+  </property>
+  <property name="windowTitle">
+   <string/>
+  </property>
+  <property name="sizeIncrement">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="minimumSize">
+   <size>
+    <width>0</width>
+    <height>0</height>
+   </size>
+  </property>
+  <property name="updatesEnabled">
+   <bool>true</bool>
+  </property>
+  <property name="windowOpacity">
+   <double>1.000000000000000</double>
+  </property>
+  <property name="statusTip">
+   <string/>
+  </property>
+  <property name="minimumWidth">
+   <number>0</number>
+  </property>
+ </widget>
+ <connections/>
+</ui>
+"""
+
+
+def _designer_two_state_icon() -> str:
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>IconForm</class>
+ <widget class="QWidget" name="IconForm">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Icons</string>
+  </property>
+  <property name="windowIcon">
+   <iconset>
+    <normaloff>tests/form_builder/corpus/synthetic/qt/normaloff.png</normaloff>
+    <normalon>tests/form_builder/corpus/synthetic/qt/normalon.png</normalon>tests/form_builder/corpus/synthetic/qt/normaloff.png
+   </iconset>
+  </property>
+ </widget>
+</ui>
+"""
+
+
 def _write(path: Path, text: str, newline: str) -> None:
     if not text.endswith("\n"):
         text += "\n"
@@ -1058,14 +1255,21 @@ def generate() -> None:
     # Property fixtures that reference icons.qrc live next to the schema qrc files.
     entries: List[dict] = []
 
-    def add(rel: str, text: str, notes: str = "", expect: str = "", newline: str = "\n") -> None:
+    def add(
+        rel: str,
+        text: str,
+        notes: str = "",
+        expect: str = "",
+        newline: str = "\n",
+        source: str = "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+    ) -> None:
         if expect == "":
             ET.fromstring(text.encode("utf-8"))
         path = CORPUS / rel
         _write(path, text, newline)
         item = {
             "path": rel,
-            "source": "hand-authored by tests/form_builder/corpus/generate_synthetic.py",
+            "source": source,
             "licence": "MIT",
             "notes": notes,
         }
@@ -1074,6 +1278,22 @@ def generate() -> None:
         entries.append(item)
 
     add("synthetic/schema/kitchen_sink.ui", _kitchen_sink(), "Covers the ui4 element and attribute names, containers, resources, and cbcs* dynamic properties.")
+    qt_dir = SYNTHETIC / "qt"
+    qt_dir.mkdir(parents=True)
+    (qt_dir / "normaloff.png").write_bytes(_png(1, 1, b"\xff\x00\x00"))
+    (qt_dir / "normalon.png").write_bytes(_png(1, 1, b"\x00\x00\xff"))
+    add(
+        "synthetic/qt/palette_gradient_cursor.ui",
+        _qformbuilder_palette_cursor(),
+        "Active Window is a two-stop linear gradient. cursorShape is IBeamCursor.",
+        source="PySide6 6.8.3 QFormBuilder.save, captured 2026-10-22",
+    )
+    add(
+        "synthetic/qt/iconset_two_state.ui",
+        _designer_two_state_icon(),
+        "Compat path is written once after the last state and equals normaloff. normaloff.png and normalon.png differ. QFormBuilder.save on PySide6 6.8.3 does not emit iconset.",
+        source="Designer iconset form, captured 2026-10-22",
+    )
     for type_name, (prop_name, body) in _property_bodies().items():
         # iconset/pixmap files must sit beside icons.qrc. The other property
         # files do not reference it.
