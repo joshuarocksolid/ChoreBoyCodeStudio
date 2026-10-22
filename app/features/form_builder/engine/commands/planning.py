@@ -877,12 +877,21 @@ def place_nodes(
         adjusted = 0
     if adjusted > len(unselected):
         adjusted = len(unselected)
-    final = unselected[:adjusted] + selected + outside + unselected[adjusted:]
-    for index, node_id in enumerate(final):
-        current = [child.id for child in doc.node(parent).children(slot)]
-        if index < len(current) and current[index] == node_id:
+    positions = list(kids)
+    front = set(unselected[:adjusted])
+    for node_id in selected + outside:
+        removed = [item for item in positions if item != node_id]
+        last = -1
+        for index, item in enumerate(removed):
+            if item in front:
+                last = index
+        index = last + 1
+        if node_id in positions and positions.index(node_id) == index:
+            front.add(node_id)
             continue
         ctx.do(MoveNodeOp(node_id, parent, slot, index))
+        positions = removed[:index] + [node_id] + removed[index:]
+        front.add(node_id)
 
 
 class _Dest:

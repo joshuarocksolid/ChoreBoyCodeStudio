@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.features.form_builder.engine.commands.base import CommandRejected
+from app.features.form_builder.engine.commands.ops import MoveNodeOp
 from app.features.form_builder.engine.commands.catalog import (
     AddActionRef,
     AddConnection,
@@ -211,6 +212,51 @@ def test_move_in_a_box_uses_the_visual_index() -> None:
         assert isinstance(content, WidgetNode)
         names.append(content.object_name)
     assert names == ["label", "okButton"]
+
+
+def _box_of(count: int) -> str:
+    rows = []
+    for index in range(count):
+        rows.append(
+            "<item><widget class=\"QPushButton\" name=\"b%s\">"
+            "<property name=\"text\"><string>x</string></property>"
+            "</widget></item>" % index
+        )
+    return (
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+        "<ui version=\"4.0\"><class>Form</class>"
+        "<widget class=\"QWidget\" name=\"Form\">"
+        "<layout class=\"QVBoxLayout\" name=\"verticalLayout\">%s</layout>"
+        "</widget><resources/><connections/></ui>" % "".join(rows)
+    )
+
+
+def _box_names(doc: UiDocument) -> list:
+    layout = doc.root.layout
+    assert layout is not None
+    names = []
+    for item in layout.items:
+        content = item.content
+        assert isinstance(content, WidgetNode)
+        names.append(content.object_name)
+    return names
+
+
+def test_reordering_siblings_moves_only_the_selection() -> None:
+    """One selected sibling is one MoveNodeOp. Unselected siblings stay put."""
+    log = open_log(_box_of(8))
+    doc = log.document
+    layout = doc.root.layout
+    assert layout is not None
+    button = nid(doc, "b0")
+    carrier = doc.parent(button)
+    assert carrier is not None
+    log.execute(MoveNodes((button,), InBoxLayout(layout.id, len(layout.items))))
+    entry = log.entries()[-1]
+    assert len(entry.ops) == 1
+    assert isinstance(entry.ops[0], MoveNodeOp)
+    assert entry.ops[0].node == carrier.id
+    assert _box_names(doc) == ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b0"]
 
 
 def test_wrap_and_unwrap_round_trip_the_children() -> None:
