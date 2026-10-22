@@ -61,9 +61,28 @@ def event_global_pos(event: Any) -> Any:
 
 def wrapper_is_valid(obj: Any) -> bool:
     """Return whether a Qt wrapper still points at a live C++ object."""
+    if obj is None:
+        return False
     module_name = "shiboken6" if IS_QT6 else "shiboken2"
     shiboken = importlib.import_module(module_name)
     return bool(shiboken.isValid(obj))
+
+
+def delete_now(obj: Any) -> None:
+    """Destroy a Qt object before the caller continues.
+
+    Realized form objects use this instead of ``deleteLater``. Deferred deletes
+    do not run under nested ``processEvents``, and the canvas leaked them.
+    Qt 6 goes through ``shiboken6.delete``. On Qt 5 the helper refuses rather
+    than guessing a binding the form builder does not realize on.
+    """
+    if obj is None:
+        return
+    if not IS_QT6:
+        raise RuntimeError("immediate Qt object delete requires Qt 6")
+    shiboken = importlib.import_module("shiboken6")
+    if shiboken.isValid(obj):
+        shiboken.delete(obj)
 
 
 __all__ = [
@@ -73,6 +92,7 @@ __all__ = [
     "QtCore",
     "QtGui",
     "QtWidgets",
+    "delete_now",
     "enum_value",
     "event_global_pos",
     "event_pos",
