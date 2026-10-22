@@ -752,12 +752,12 @@ def _time_realizer_build(
     def once() -> None:
         scope = forms.FormScope(
             kind="project",
-            ui_path="/tmp/cbcs-speed.ui",
+            ui_path="/tmp/forms/speed_form.ui",
             project_root="/tmp",
-            generated_path="/tmp/ui_cbcs_speed.py",
-            window_path="/tmp/cbcs_speed_window.py",
-            module_name="ui_cbcs_speed",
-            window_module_name="cbcs_speed_window",
+            generated_path="/tmp/forms/ui_speed_form.py",
+            window_path="/tmp/forms/speed_form_window.py",
+            module_name="forms.ui_speed_form",
+            window_module_name="forms.speed_form_window",
         )
         session = session_mod.FormSession.open(xml, path="/tmp/cbcs-speed.ui", scope=scope)
         realizer = realize.Realizer(session)
@@ -816,7 +816,7 @@ def _codegen_and_save(
         )
     except (AttributeError, TypeError, RuntimeError) as exc:
         return (
-            Row("generate_form_module", 300, None, None, None, _ms_budget(CODEGEN_BUDGET_MS), "skip", str(exc)),
+            Row("generate_form_module", 300, None, None, None, _ms_budget(CODEGEN_BUDGET_MS), "fail", str(exc)),
             _missing("save total", 300, _ms_budget(SAVE_BUDGET_MS), "generate_form_module could not be called"),
         )
     generated = _row_from_attempt(
@@ -875,19 +875,24 @@ def _load_generate() -> Optional[Callable[..., object]]:
         forms = importlib.import_module("app.features.form_builder.engine.project.forms")
         scope = forms.FormScope(
             kind="project",
-            ui_path="/tmp/cbcs-speed.ui",
+            ui_path="/tmp/forms/speed_form.ui",
             project_root="/tmp",
-            generated_path="/tmp/ui_cbcs_speed.py",
-            window_path="/tmp/cbcs_speed_window.py",
-            module_name="ui_cbcs_speed",
-            window_module_name="cbcs_speed_window",
+            generated_path="/tmp/forms/ui_speed_form.py",
+            window_path="/tmp/forms/speed_form_window.py",
+            module_name="forms.ui_speed_form",
+            window_module_name="forms.speed_form_window",
         )
         options_mod = importlib.import_module("app.features.form_builder.engine.codegen.api")
         options = getattr(options_mod, "CodegenOptions", None)
         kwargs = {"scope": scope, "source_bytes": source}
         if options is not None:
             kwargs["options"] = options()
-        return fn(document, **kwargs)
+        result = fn(document, **kwargs)
+        # Timing a refusal would report a meaningless pass.
+        if getattr(result, "text", None) is None:
+            codes = [getattr(item, "code", "?") for item in getattr(result, "diagnostics", ())]
+            raise RuntimeError("generate_form_module returned no module: %s" % codes)
+        return result
 
     return call
 
@@ -943,12 +948,12 @@ def _hold_open_form(xml: str) -> Tuple[List[object], str]:
         forms = importlib.import_module("app.features.form_builder.engine.project.forms")
         scope = forms.FormScope(
             kind="project",
-            ui_path="/tmp/cbcs-speed.ui",
+            ui_path="/tmp/forms/speed_form.ui",
             project_root="/tmp",
-            generated_path="/tmp/ui_cbcs_speed.py",
-            window_path="/tmp/cbcs_speed_window.py",
-            module_name="ui_cbcs_speed",
-            window_module_name="cbcs_speed_window",
+            generated_path="/tmp/forms/ui_speed_form.py",
+            window_path="/tmp/forms/speed_form_window.py",
+            module_name="forms.ui_speed_form",
+            window_module_name="forms.speed_form_window",
         )
         session = session_mod.FormSession.open(xml, path="/tmp/cbcs-speed.ui", scope=scope)
         realizer = realize.Realizer(session)
@@ -1179,10 +1184,14 @@ def _read_load() -> Tuple[float, float, float]:
 
 
 def _cpu_count() -> int:
-    try:
-        return len(os.sched_getaffinity(0))
-    except (AttributeError, OSError):
-        return os.cpu_count() or 1
+    # Linux only; macOS has no affinity call.
+    affinity = getattr(os, "sched_getaffinity", None)
+    if affinity is not None:
+        try:
+            return len(affinity(0))
+        except OSError:
+            pass
+    return os.cpu_count() or 1
 
 
 def _ms_budget(value: Optional[float]) -> str:

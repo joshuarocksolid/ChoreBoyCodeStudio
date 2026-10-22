@@ -13,7 +13,7 @@ from typing import Callable, Dict, Optional, cast
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import PySide6
-from PySide6 import QtWidgets
+import PySide6.QtWidgets as QtWidgets
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QApplication, QWidget
 
