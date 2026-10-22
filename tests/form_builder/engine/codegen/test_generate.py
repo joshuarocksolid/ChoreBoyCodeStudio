@@ -297,6 +297,120 @@ def test_connection_is_a_python_connect_call(tmp_path: Path) -> None:
     assert "Invoice.customContextMenuRequested.connect(Invoice.close)" in result.text
 
 
+def _connection(sender: str, signal: str, receiver: str, slot: str) -> str:
+    return """<connection>
+  <sender>%s</sender>
+  <signal>%s</signal>
+  <receiver>%s</receiver>
+  <slot>%s</slot>
+ </connection>""" % (sender, signal, receiver, slot)
+
+
+def _run_setup(text: str, namespace_extra: dict):
+    """Execute a generated module and call setupUi on a fresh root widget."""
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    if QApplication.instance() is None:
+        QApplication([])
+    namespace: dict = dict(namespace_extra)
+    exec(compile(text, "ui_invoice.py", "exec"), namespace)
+    host = QWidget()
+    namespace["Ui_Invoice"]().setupUi(host)
+    return host
+
+
+@pytest.mark.parity("R3-326")
+def test_connections_are_uics_plain_connect_and_fire(tmp_path: Path) -> None:
+    from PySide6.QtWidgets import QPushButton
+
+    body = '<widget class="QPushButton" name="okButton"/>'
+    tail = "<connections>\n %s\n</connections>" % _connection("okButton", "clicked()", "Invoice", "close()")
+    path, scope, document = _form(tmp_path, body=body, tail=tail)
+    result = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+    assert result.text is not None
+    lines = [line.strip() for line in result.text.splitlines()]
+    assert "self.okButton.clicked.connect(Invoice.close)" in lines
+    assert [item.code for item in result.diagnostics] == []
+    host = _run_setup(result.text, {})
+    host.show()
+    button = host.findChild(QPushButton, "okButton")
+    assert button is not None
+    button.click()
+    assert not host.isVisible()
+
+
+def test_unknown_signal_on_a_qt_class_warns_and_is_left_out(tmp_path: Path) -> None:
+    body = '<widget class="QPushButton" name="okButton"/>'
+    tail = "<connections>\n %s\n %s\n</connections>" % (
+        _connection("okButton", "clickd()", "Invoice", "close()"),
+        _connection("Invoice", "customSignal(int)", "okButton", "setFocus()"),
+    )
+    path, scope, document = _form(tmp_path, body=body, tail=tail)
+    result = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+    assert result.text is not None
+    warnings = [item for item in result.diagnostics if item.code == "FB508"]
+    assert [item.severity for item in warnings] == [Severity.WARNING, Severity.WARNING]
+    assert {item.location.object_name for item in warnings} == {"okButton", "Invoice"}
+    assert ".clickd." not in result.text
+    assert ".customSignal." not in result.text
+    _run_setup(result.text, {})
+
+
+def test_open_class_signal_keeps_uics_line_and_raises_when_missing(tmp_path: Path) -> None:
+    import types
+
+    from PySide6.QtCore import Signal
+    from PySide6.QtWidgets import QWidget
+
+    tail = """<customwidgets>
+ <customwidget>
+  <class>InvoiceHeader</class>
+  <extends>QWidget</extends>
+  <header>shop/widgets/invoice_header.h</header>
+  <slots>
+   <signal>totalChanged(int)</signal>
+  </slots>
+ </customwidget>
+</customwidgets>
+<connections>
+ %s
+ %s
+</connections>""" % (
+        _connection("header", "totalChanged(int)", "Invoice", "update()"),
+        _connection("header", "totalChangd(int)", "Invoice", "update()"),
+    )
+    body = '<widget class="InvoiceHeader" name="header"/>'
+    path, scope, document = _form(tmp_path, body=body, tail=tail)
+    result = generate_form_module(document, scope=scope, source_bytes=path.read_bytes())
+    assert result.text is not None
+    lines = [line.strip() for line in result.text.splitlines()]
+    assert "self.header.totalChanged.connect(Invoice.update)" in lines
+    assert "self.header.totalChangd.connect(Invoice.update)" in lines
+    warnings = [item for item in result.diagnostics if item.code == "FB508"]
+    assert len(warnings) == 1
+    assert "totalChangd" in warnings[0].message
+
+    class InvoiceHeader(QWidget):
+        totalChanged = Signal(int)
+
+    module = types.ModuleType("shop.widgets.invoice_header")
+    setattr(module, "InvoiceHeader", InvoiceHeader)
+    names = ("shop", "shop.widgets", "shop.widgets.invoice_header")
+    saved = {name: sys.modules.get(name) for name in names}
+    sys.modules["shop"] = types.ModuleType("shop")
+    sys.modules["shop.widgets"] = types.ModuleType("shop.widgets")
+    sys.modules["shop.widgets.invoice_header"] = module
+    try:
+        with pytest.raises(AttributeError, match="totalChangd"):
+            _run_setup(result.text, {})
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = value
+
+
 @pytest.mark.parity("R3-327")
 def test_resource_import_styles(tmp_path: Path) -> None:
     path, scope, document = _form(tmp_path, tail='<resources><include location="icons.qrc"/></resources>')

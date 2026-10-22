@@ -29,6 +29,7 @@ from app.features.form_builder.engine.codegen.names import (
     python_class_stem,
     unusable_reason,
 )
+from app.features.form_builder.engine.codegen.qt_signals import known_class, signal_names
 from app.features.form_builder.engine.codegen.qtmap import (
     class_module,
     enum_expr,
@@ -64,7 +65,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     WidgetNode,
 )
 from app.features.form_builder.engine.ui4.opaque import OpaqueElement
-from app.features.form_builder.engine.ui4.schema import HeaderDecl, LayoutDefault
+from app.features.form_builder.engine.ui4.schema import HeaderDecl, LayoutDefault, SlotsDecl
 from app.features.form_builder.engine.ui4.spec import PropertyEntry
 from app.features.form_builder.engine.ui4.values import (
     BoolValue,
@@ -219,6 +220,7 @@ class _Emitter:
         self.context = raw_class
         self.form_param = python_attr(doc.root.object_name or "Form")
         self._xml_to_py: Dict[str, str] = {}
+        self._xml_nodes: Dict[str, Node] = {}
         self.ui_class = "Ui_%s%s" % (python_class_stem(raw_class), options.postfix)
         self.id_based = self._flag("idbasedtr", options.id_based)
         translate = options.translate_function or "QCoreApplication.translate"
@@ -467,6 +469,7 @@ class _Emitter:
         root_xml = self.doc.root.object_name
         if root_xml:
             self._xml_to_py[root_xml] = self.form_param
+            self._xml_nodes[root_xml] = self.doc.root
         for node in self.doc.iter_preorder():
             if node.id == self.root_id:
                 continue
@@ -491,6 +494,7 @@ class _Emitter:
             self.kinds[assigned] = _kind_of(node)
             if raw:
                 self._xml_to_py[raw] = assigned
+                self._xml_nodes.setdefault(raw, node)
 
     def _collect_resources(self) -> None:
         for node in self.doc.ui.children("resources"):
@@ -1541,19 +1545,79 @@ class _Emitter:
             receiver_ref = self.ref_name(receiver)
             if not sender_ref or not receiver_ref:
                 continue
-            # A Designer custom signal is not a QObject attribute. uic still
-            # writes the connect, and setupUi raises. Skip the missing name.
-            self.add(
-                "getattr(%s, %s, None) and %s.%s.connect(%s.%s)"
-                % (
-                    sender_ref,
-                    py_string(signal_name),
-                    sender_ref,
-                    signal_name,
-                    receiver_ref,
-                    slot_name,
-                )
+            if not self._signal_line_kept(node, sender, signal_name):
+                continue
+            # uic's own line. A wrong signal raises in setupUi, never silently.
+            self.add("%s.%s.connect(%s.%s)" % (sender_ref, signal_name, receiver_ref, slot_name))
+
+    def _signal_line_kept(self, connection: Node, sender: str, signal_name: str) -> bool:
+        """Check a connection's signal against the sender's class.
+
+        A plain Qt class has a closed signal set. A signal it lacks gets FB508
+        and the line is left out, because the connect could only raise.
+        FreeCAD ``Gui::`` classes, promoted Python classes and C++ ``::`` classes
+        are real classes at run time, so their line is kept as uic writes it.
+        A signal not declared for them gets FB508 too.
+        """
+        found = self._sender_class(sender)
+        if found is None:
+            return True
+        class_name, open_class = found
+        custom = self.custom.get(class_name)
+        declared: Set[str] = set()
+        if custom is not None:
+            slots = custom.field("slots")
+            if isinstance(slots, SlotsDecl):
+                declared = {item.split("(", 1)[0].strip() for item in slots.signals}
+        if open_class:
+            base = self.base(class_name)
+        elif custom is not None:
+            base = self._fallback(class_name)
+        else:
+            base = class_name
+        if not known_class(base):
+            return True
+        names = signal_names(base) or frozenset()
+        if signal_name in names or (open_class and signal_name in declared):
+            return True
+        if open_class:
+            self.warn(
+                "FB508",
+                'The class "%s" of "%s" has no "%s" signal that the form knows about. '
+                "The generated connection raises an error if the class doesn't define it."
+                % (class_name, sender, signal_name),
+                node=connection,
+                object_name=sender,
             )
+            return True
+        self.warn(
+            "FB508",
+            'The class "%s" of "%s" has no "%s" signal, so that connection was left out of the generated Python. '
+            "Define the signal and connect it in the window class instead."
+            % (class_name, sender, signal_name),
+            node=connection,
+            object_name=sender,
+        )
+        return False
+
+    def _sender_class(self, sender: str) -> Optional[Tuple[str, bool]]:
+        """(class name, open class) for a connection sender, or None."""
+        node = self._xml_nodes.get(sender)
+        if isinstance(node, ActionNode):
+            return ("QAction", False)
+        if isinstance(node, ActionGroupNode):
+            return ("QActionGroup", False)
+        if isinstance(node, ButtonGroupNode):
+            return ("QButtonGroup", False)
+        if not isinstance(node, (WidgetNode, LayoutNode)):
+            return None
+        class_name = node.class_name
+        if not isinstance(class_name, str) or not class_name:
+            return None
+        if class_name == "Line":
+            return ("QFrame", False)
+        open_class = "::" in class_name or class_name in self.promoted_modules
+        return (class_name, open_class)
 
     def _expand(self) -> List[Contribution]:
         ctx = CodegenContext(
