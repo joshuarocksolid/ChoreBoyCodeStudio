@@ -21,6 +21,7 @@ from app.qt.QtWidgets import (
 )
 
 from app.core.models import ProjectMetadata
+from app.packaging.layout import form_package_lines
 from app.packaging.models import (
     PACKAGE_PROFILE_INSTALLABLE,
     ProjectPackageConfig,
@@ -329,6 +330,15 @@ class _MetadataPage:
         form.addRow("Description:", self._description_edit)
         metadata_layout.addWidget(metadata_form)
         outer.addWidget(metadata_section)
+
+        form_text = "\n".join(form_package_lines(str(project_root)))
+        if form_text:
+            forms_section, forms_layout = build_run_form_section(self.widget, "Forms")
+            forms_label = QLabel(form_text, forms_section)
+            forms_label.setWordWrap(True)
+            forms_label.setProperty("previewLabel", True)
+            forms_layout.addWidget(forms_label)
+            outer.addWidget(forms_section)
 
         self._ask_install_location_checkbox = QCheckBox(
             "Ask the installer for an install folder",
