@@ -368,8 +368,9 @@ def _acquire_arena() -> _ReadArena:
 def _release_arena(arena: _ReadArena) -> None:
     try:
         arena.reset()
-    except BaseException:
-        # A half-reset arena is dropped, never reused.
+    except Exception:
+        # A half-reset arena is dropped, never reused. KeyboardInterrupt and
+        # SystemExit still propagate; the arena is simply never returned.
         return
     with _ARENA_LOCK:
         if len(_ARENA_FREE) < _ARENA_FREE_CAP:
