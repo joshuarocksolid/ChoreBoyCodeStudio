@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -81,9 +82,9 @@ class _Coordinator:
         self.presented.append(file_path)
 
 
-def test_source_change_after_rename_dirties_the_new_path() -> None:
-    old_path = "/tmp/project/README.md"
-    new_path = "/tmp/project/NOTES.md"
+def test_source_change_after_rename_dirties_the_new_path(tmp_path: Path) -> None:
+    old_path = str((tmp_path / "project" / "README.md").resolve())
+    new_path = str((tmp_path / "project" / "NOTES.md").resolve())
     manager = EditorManager()
     tab = manager.open_file_with_content(old_path, "old", preview=True).tab
     tab.content_source = _DirtySource()  # type: ignore[assignment]
@@ -110,11 +111,13 @@ def test_source_change_after_rename_dirties_the_new_path() -> None:
     assert manager.get_tab(new_path).is_preview is False  # type: ignore[union-attr]
 
 
-def test_attached_listener_reads_the_tab_path_when_it_fires() -> None:
+def test_attached_listener_reads_the_tab_path_when_it_fires(tmp_path: Path) -> None:
+    old_path = str((tmp_path / "project" / "README.md").resolve())
+    new_path = str((tmp_path / "project" / "NOTES.md").resolve())
     seen: list[str] = []
     source = _DirtySource()
     tab = EditorTabState(
-        file_path="/tmp/project/README.md",
+        file_path=old_path,
         display_name="README.md",
         original_content="old",
         current_content="old",
@@ -126,8 +129,8 @@ def test_attached_listener_reads_the_tab_path_when_it_fires() -> None:
     )
     EditorTabFactory(window)._attach_content_source(tab, source)  # type: ignore[arg-type]
 
-    tab.file_path = "/tmp/project/NOTES.md"
+    tab.file_path = new_path
     source.listener()  # type: ignore[attr-defined]
 
-    assert seen == ["/tmp/project/NOTES.md"]
+    assert seen == [new_path]
     assert tab.content_source_unsubscribe is not None
