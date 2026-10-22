@@ -275,6 +275,32 @@ def test_qt68_writes_cursorShape_and_gradientstop() -> None:
     assert "FB005" not in old_codes
 
 
+# Qt 6.8's DomProperty::write spells these three kinds in camelCase. Its reader
+# compares tags case-insensitively, so both spellings load the same.
+_DESIGNER_INT_TAGS = (
+    ("longLong", LongLongValue, "-9223372036854775808"),
+    ("UInt", UIntValue, "4294967295"),
+    ("uLongLong", ULongLongValue, "18446744073709551615"),
+)
+
+
+@pytest.mark.parametrize(("tag", "kind", "text"), _DESIGNER_INT_TAGS, ids=[item[0] for item in _DESIGNER_INT_TAGS])
+def test_designer_camelcase_int_tag_is_typed(tag: str, kind: Type[Value], text: str) -> None:
+    value, codes = _round_trip("<%s>%s</%s>" % (tag, text, tag))
+    assert type(value) is kind
+    assert value == kind(int(text))  # type: ignore[call-arg]
+    assert "FB005" not in codes
+
+
+@pytest.mark.parametrize(("tag", "kind", "text"), _DESIGNER_INT_TAGS, ids=[item[0] for item in _DESIGNER_INT_TAGS])
+def test_designer_camelcase_int_tag_out_of_range_stays_verbatim(tag: str, kind: Type[Value], text: str) -> None:
+    del kind
+    too_big = str(int(text) - 1) if text.startswith("-") else str(int(text) + 1)
+    value, codes = _round_trip("<%s>%s</%s>" % (tag, too_big, tag), compare_values=False)
+    assert isinstance(value, OpaqueValue)
+    assert "FB005" in codes
+
+
 @pytest.mark.parity("R3-284")
 @pytest.mark.parity("R3-286")
 @pytest.mark.parity("R3-291")
@@ -408,26 +434,45 @@ def test_real_formatting_is_independent_of_locale() -> None:
         locale.setlocale(locale.LC_ALL, "C")
 
 
+def _designer_spelled_form() -> str:
+    """Properties spelled the way Qt 6.8's DomProperty::write spells them."""
+    body = "".join(
+        ' <property name="p%s" stdset="0">\n  <%s>5</%s>\n </property>\n' % (index, tag, tag)
+        for index, (tag, _kind, _text) in enumerate(_DESIGNER_INT_TAGS)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ui version="4.0"><widget class="QWidget" name="Form">\n%s</widget></ui>\n' % body
+    )
+
+
+def _is_typed_kind_tag(tag: str) -> bool:
+    # Qt reads value tags case-insensitively, so <longLong> is the longlong kind.
+    return tag.lower() in VALUE_CLASSES
+
+
 def test_corpus_typed_values_are_not_kept_verbatim() -> None:
     failures = []
     folders = ("qt_examples", "synthetic")
     paths = [path for folder in folders for path in sorted((_CORPUS / folder).rglob("*.ui"))]
     assert paths
-    for path in paths:
-        loaded = read_ui(path.read_text(encoding="utf-8"), allocator=IdAllocator())
+    sources = [(path.name, path.read_text(encoding="utf-8")) for path in paths]
+    sources.append(("designer-spelled ints", _designer_spelled_form()))
+    for name, text in sources:
+        loaded = read_ui(text, allocator=IdAllocator())
         for item in loaded.diagnostics:
             if item.code != "FB005":
                 continue
             match = _FB005_TAG.search(item.message)
             tag = match.group(1) if match else ""
-            if tag in VALUE_CLASSES:
-                failures.append("%s: %s" % (path.name, item.message))
+            if _is_typed_kind_tag(tag):
+                failures.append("%s: %s" % (name, item.message))
         for node in loaded.document.iter_preorder():
             entries = node.properties() + node.attributes()
             for entry in entries:
                 element = entry.value.element if isinstance(entry.value, OpaqueValue) else None
-                if element is not None and element.tag in VALUE_CLASSES:
-                    failures.append("%s property %s kept <%s>" % (path.name, entry.name, element.tag))
+                if element is not None and _is_typed_kind_tag(element.tag):
+                    failures.append("%s property %s kept <%s>" % (name, entry.name, element.tag))
     assert failures == []
 
 

@@ -121,6 +121,9 @@ _PALETTE_GROUPS = ("active", "inactive", "disabled")
 # Qt 6.8 writes cursorShape and gradientstop. The schema spellings still occur
 # in older files. Qt reads both casings.
 _CURSOR_SHAPE_TAGS = frozenset({"cursorshape", "cursorShape"})
+# Qt 6.8 writes longLong, UInt and uLongLong. Older files and the schema use
+# the lowercase names. Qt reads both casings.
+_INT_TAG_ALIASES = {"longLong": "longlong", "UInt": "uint", "uLongLong": "ulonglong"}
 _GRADIENT_STOP_TAGS = frozenset({"gradientStop", "gradientstop"})
 _GRADIENT_TEXT_ATTRS = frozenset({"type", "spread", "coordinatemode"})
 _GRADIENT_REAL_ATTRS = frozenset(
@@ -1331,7 +1334,7 @@ def _realize_entries(
 
 
 def _parse_value(node: _XNode) -> Optional[Value]:
-    tag = node.tag
+    tag = _INT_TAG_ALIASES.get(node.tag, node.tag)
     if tag == "string":
         return _parse_string(node)
     if tag == "font":
