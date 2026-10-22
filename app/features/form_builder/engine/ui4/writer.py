@@ -534,9 +534,6 @@ class _Writer:
     def _gradient(self, item: GradientValue, indent: int) -> None:
         pairs: List[Tuple[str, str]] = []
         for name in (
-            "type",
-            "spread",
-            "coordinatemode",
             "startx",
             "starty",
             "endx",
@@ -547,6 +544,9 @@ class _Writer:
             "focaly",
             "radius",
             "angle",
+            "type",
+            "spread",
+            "coordinatemode",
         ):
             value = getattr(item, name)
             if isinstance(value, float):

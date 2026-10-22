@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -415,6 +416,51 @@ def test_colorrole_then_legacy_loads_the_same_after_save(qapp: object) -> None:
     after = _window_text_hex(_resave(text), qapp)
     assert before == "#ff00ff00"
     assert after == before
+
+
+def _gradient_blocks(text: str) -> list[str]:
+    return re.findall(r"<gradient\b.*?</gradient>", text, re.S)
+
+
+def _qformbuilder_save(widget: object) -> str:
+    from app.qt.QtCore import QBuffer, QIODevice
+    from PySide6.QtDesigner import QFormBuilder
+
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    QFormBuilder().save(buffer, widget)
+    return bytes(buffer.data()).decode("utf-8")
+
+
+@pytest.mark.oracle
+def test_gradient_attribute_order_matches_qformbuilder(qapp: object) -> None:
+    """QFormBuilder writes coordinates, then type, spread, and coordinatemode."""
+    del qapp
+    from app.qt.QtGui import QBrush, QColor, QConicalGradient, QLinearGradient, QPalette, QRadialGradient
+    from app.qt.QtWidgets import QWidget
+
+    linear = QLinearGradient(0.0, 0.0, 1.0, 1.0)
+    linear.setColorAt(0.0, QColor(255, 0, 0, 255))
+    linear.setColorAt(1.0, QColor(0, 0, 255, 128))
+    radial = QRadialGradient(0.5, 0.5, 0.5, 0.25, 0.75)
+    radial.setColorAt(0.0, QColor(255, 0, 0))
+    radial.setColorAt(1.0, QColor(0, 0, 255))
+    conical = QConicalGradient(0.5, 0.5, 45.0)
+    conical.setColorAt(0.0, QColor(255, 0, 0))
+    conical.setColorAt(1.0, QColor(0, 0, 255))
+
+    for gradient in (linear, radial, conical):
+        widget = QWidget()
+        palette = widget.palette()
+        palette.setBrush(QPalette.ColorGroup.Active, QPalette.ColorRole.Window, QBrush(gradient))
+        widget.setPalette(palette)
+        qt_text = _qformbuilder_save(widget)
+        saved = write_ui(read_ui(qt_text, allocator=IdAllocator()).document).text
+        qt_blocks = _gradient_blocks(qt_text)
+        saved_blocks = _gradient_blocks(saved)
+        assert qt_blocks, qt_text
+        assert saved_blocks == qt_blocks
+        widget.deleteLater()
 
 
 @pytest.mark.oracle
