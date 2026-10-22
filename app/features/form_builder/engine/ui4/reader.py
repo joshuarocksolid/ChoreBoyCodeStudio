@@ -8,10 +8,11 @@ ElementTree tree), refuses DOCTYPE and entity declarations, and builds a
 
 from __future__ import annotations
 
+import contextvars
 import re
 import threading
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple, TypeVar
 from xml.parsers import expat
 
 from app.features.form_builder.engine.diagnostic_codes import fb0xx as _fb0xx
@@ -403,6 +404,11 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
     if len(encoded) > MAX_INPUT_BYTES:
         raise UiReadError("FB008", "This form is too large to open in the form builder.", 0, 0)
     arena = _acquire_arena()
+    # Equal values and property entries inside one read share an object.
+    # A 300-widget form otherwise allocates thousands of identical tracked
+    # objects, and the next full collection scans the whole process heap
+    # inside the section 12 read budget.
+    share_token = _SHARE.set({})
     try:
         root = _parse_tree(arena, text)
         built = _lower_ui(arena, root)
@@ -432,6 +438,7 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
             0,
         ) from exc
     finally:
+        _SHARE.reset(share_token)
         _release_arena(arena)
     return ReadResult(document=document, diagnostics=tuple(diagnostics), line_map=line_map)
 
@@ -467,6 +474,19 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
     frame_pool = arena.frame_pool
     xnode_pool = arena.xnode_pool
     xnode_live = arena.xnode_live
+    # One string object per distinct token in this read. A 300-widget form
+    # repeats class names, property names, and enum text hundreds of times.
+    # Sharing them keeps collection of the discarded document under the
+    # section 12 read budget. The table dies with this parse. The document
+    # holds the surviving references.
+    shared: Dict[str, str] = {}
+
+    def _share(text: str) -> str:
+        found = shared.get(text)
+        if found is not None:
+            return found
+        shared[text] = text
+        return text
     cap = _POOL_CAP
 
     def take_list() -> list:
@@ -494,15 +514,18 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
         if count == 0:
             pairs: Tuple[Tuple[str, str], ...] = _NO_ATTRS
         elif count == 2:
-            pairs = ((attrs[0], attrs[1]),)
+            pairs = ((_share(attrs[0]), _share(attrs[1])),)
         elif count == 4:
-            pairs = ((attrs[0], attrs[1]), (attrs[2], attrs[3]))
+            pairs = (
+                (_share(attrs[0]), _share(attrs[1])),
+                (_share(attrs[2]), _share(attrs[3])),
+            )
         else:
             built_pairs = []
             for index in range(0, count, 2):
-                built_pairs.append((attrs[index], attrs[index + 1]))
+                built_pairs.append((_share(attrs[index]), _share(attrs[index + 1])))
             pairs = tuple(built_pairs)
-        stack.append(take_frame(name, pairs, parser.CurrentLineNumber))
+        stack.append(take_frame(_share(name), pairs, parser.CurrentLineNumber))
 
     def end(name: str) -> None:
         del name
@@ -531,7 +554,7 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
 
     def data(value: str) -> None:
         if stack:
-            stack[-1][3].append(value)
+            stack[-1][3].append(_share(value))
 
     def comment(value: str) -> None:
         if stack:
@@ -1070,7 +1093,9 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
         if len(attrs) == 1 and attrs[0][0] == "name":
             parsed = _parse_value(children[0])
             if parsed is not None:
-                return PropertyEntry(kind=kind, name=attrs[0][1], value=parsed), _NO_NOTES
+                return _share(
+                    PropertyEntry(kind=kind, name=attrs[0][1], value=parsed)
+                ), _NO_NOTES
         name = ""
         stdset = None
         extra: List[Tuple[str, str]] = []
@@ -1084,12 +1109,14 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
         parsed = _parse_value(children[0])
         if parsed is not None:
             return (
-                PropertyEntry(
-                    kind=kind,
-                    name=name,
-                    value=parsed,
-                    stdset=stdset,
-                    extra_attrs=tuple(extra) if extra else _NO_ATTRS,
+                _share(
+                    PropertyEntry(
+                        kind=kind,
+                        name=name,
+                        value=parsed,
+                        stdset=stdset,
+                        extra_attrs=tuple(extra) if extra else _NO_ATTRS,
+                    )
                 ),
                 _NO_NOTES,
             )
@@ -1116,7 +1143,18 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
             notes.append(_Note("FB005", "Kept this <%s> value as written." % elements[0].tag, elements[0].line, name or None))
         else:
             value = parsed
-    return PropertyEntry(kind=kind, name=name, value=value, stdset=stdset, extra_attrs=tuple(extra)), notes
+    return (
+        _share(
+            PropertyEntry(
+                kind=kind,
+                name=name,
+                value=value,
+                stdset=stdset,
+                extra_attrs=tuple(extra),
+            )
+        ),
+        notes,
+    )
 
 
 def _hold_gap(
@@ -1196,7 +1234,36 @@ def _realize_entries(
         built.attributes = typed
 
 
+_S = TypeVar("_S")
+_SHARE: "contextvars.ContextVar[Dict[object, object]]" = contextvars.ContextVar(
+    "cbcs_form_builder_share"
+)
+
+
+def _share(value: _S) -> _S:
+    """Reuse an equal object already built during this read."""
+    try:
+        table = _SHARE.get()
+    except LookupError:
+        return value
+    try:
+        found = table.get(value)
+    except TypeError:
+        return value
+    if found is None:
+        table[value] = value
+        return value
+    return found  # type: ignore[return-value]
+
+
 def _parse_value(node: _XNode) -> Optional[Value]:
+    parsed = _parse_value_inner(node)
+    if parsed is None:
+        return None
+    return _share(parsed)
+
+
+def _parse_value_inner(node: _XNode) -> Optional[Value]:
     tag = node.tag
     if tag == "string":
         return _parse_string(node)
