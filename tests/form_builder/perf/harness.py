@@ -781,7 +781,7 @@ def _time_realizer_build(
 
 
 def _codegen_and_save(
-    document: object,
+    document: Optional[UiDocument],
     form: Optional[ReferenceForm],
     samples: int,
     warmup: int,
@@ -981,7 +981,7 @@ def _overhead_rows(form: Optional[ReferenceForm], samples: int, warmup: int) -> 
         return (
             Row("raw Qt build and show", 300, None, None, None, "-", "skip", "no 300-widget form in this run"),
         )
-    windows: List[object] = []
+    windows = []
 
     def build_once() -> None:
         windows.append(raw_qt.build_and_show(form.xml))

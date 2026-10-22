@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 import xml.etree.ElementTree as ET
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional, cast
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -25,6 +25,12 @@ _KEEP: list = []
 
 def qt_version() -> str:
     return PySide6.__version__
+
+
+def _invoke(widget: QWidget, method_name: str, *args: object) -> None:
+    method = cast(Optional[Callable[..., None]], getattr(widget, method_name, None))
+    if method is not None:
+        method(*args)
 
 
 def application() -> QApplication:
@@ -198,7 +204,10 @@ def _place_layout(
     if isinstance(layout, QtWidgets.QGridLayout) and row is not None and column is not None:
         layout.addLayout(nested, row, column)
         return
-    layout.addLayout(nested)
+    if isinstance(layout, QtWidgets.QBoxLayout):
+        layout.addLayout(nested)
+        return
+    raise RuntimeError("no place for a nested layout in %s" % type(layout).__name__)
 
 
 def _apply_properties(widget: QWidget, el: ET.Element) -> None:
@@ -208,26 +217,25 @@ def _apply_properties(widget: QWidget, el: ET.Element) -> None:
         text = "" if string_el is None or string_el.text is None else string_el.text
         if string_el is None:
             continue
-        if name == "text" and hasattr(widget, "setText"):
-            widget.setText(text)
+        if name == "text":
+            _invoke(widget, "setText", text)
         elif name == "windowTitle":
             widget.setWindowTitle(text)
         elif name == "toolTip":
             widget.setToolTip(text)
-        elif name == "title" and hasattr(widget, "setTitle"):
-            widget.setTitle(text)
+        elif name == "title":
+            _invoke(widget, "setTitle", text)
 
 
 def _apply_addaction(owner: QWidget, el: ET.Element) -> None:
     name = el.attrib.get("name", "")
     if name == "separator":
-        if hasattr(owner, "addSeparator"):
-            owner.addSeparator()
+        _invoke(owner, "addSeparator")
         return
-    if name.startswith("menu") and hasattr(owner, "addMenu"):
+    if name.startswith("menu"):
         menu = owner.findChild(QtWidgets.QMenu, name)
         if menu is not None:
-            owner.addMenu(menu)
+            _invoke(owner, "addMenu", menu)
             return
     action = _ACTIONS.get(name)
     if action is None:
