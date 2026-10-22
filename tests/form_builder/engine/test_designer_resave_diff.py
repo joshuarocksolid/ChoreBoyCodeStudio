@@ -159,3 +159,58 @@ def test_writer_matches_designer_resave() -> None:
     assert not read_errors, summary
     assert not uncovered, summary
     assert not unused, summary
+
+
+# Constructs Designer drops but Appendix E keeps. Comments are left out: only
+# those inside opaque subtrees survive (section 2.3).
+_KEPT = {
+    "float": r"<float>",
+    "script": r"<script\b",
+    "widgetdata": r"<widgetdata\b",
+    "propertyspecifications": r"<propertyspecifications\b",
+    "images": r"<images\b",
+    "addpagemethod": r"<addpagemethod\b",
+    "iconset resource": r"<iconset[^>]*\bresource=",
+}
+
+
+def _original_files() -> List[Path]:
+    corpus = _RESAVED.parent
+    return sorted(
+        path
+        for folder in ("qt_examples", "synthetic")
+        for path in (corpus / folder).rglob("*.ui")
+        if "malformed" not in path.parts
+    )
+
+
+def test_original_corpus_keeps_what_designer_drops() -> None:
+    files = _original_files()
+    assert files, "original corpus is missing"
+    totals = {name: 0 for name in _KEPT}
+    lost = []
+    for path in files:
+        text = path.read_bytes().decode("utf-8-sig")
+        try:
+            document = read_ui(text, allocator=IdAllocator()).document
+        except UiReadError:
+            continue
+        written = write_ui(document).text
+        for name, pattern in _KEPT.items():
+            before = len(re.findall(pattern, text))
+            totals[name] += before
+            if len(re.findall(pattern, written)) != before:
+                lost.append("%s: %s" % (path.relative_to(_RESAVED.parent).as_posix(), name))
+    assert lost == []
+    assert [name for name, count in totals.items() if count == 0] == []
+
+
+def test_iconset_alias_survives_a_save() -> None:
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0"><class>F</class>'
+        '<widget class="QPushButton" name="F"><property name="icon">'
+        '<iconset resource="app.qrc" alias="go"><normaloff>:/go.png</normaloff>:/go.png</iconset>'
+        "</property></widget></ui>\n"
+    )
+    written = write_ui(read_ui(text, allocator=IdAllocator()).document).text
+    assert re.search(r'<iconset resource="app.qrc" alias="go">', written)
