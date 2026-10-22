@@ -765,6 +765,9 @@ def _lower_ui(arena: "_ReadArena", node: _XNode) -> _Built:
         built.notes.append(_Note("FB003", 'This form says version "%s". The form builder expects 4.x.' % shown, node.line))
     cursor = _Cursor()
     wrappers: set = set()
+    # Whole wrapper elements kept opaque (unknown attributes). Those already
+    # write the tag, so the empty-wrapper pin must not emit a second copy.
+    suppressed: set = set()
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
@@ -779,9 +782,13 @@ def _lower_ui(arena: "_ReadArena", node: _XNode) -> _Built:
             built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
             continue
-        _place_ui_child(arena, built, child, wrappers, cursor, group)
+        _place_ui_child(arena, built, child, wrappers, cursor, group, suppressed)
     if "root" not in built.slots:
         raise UiReadError("FB002", "This form has no root widget.", node.line, 0)
+    # Appendix E: Designer always writes these two, even when the source omitted them.
+    for tag in ("resources", "connections"):
+        if tag not in suppressed:
+            wrappers.add(tag)
     built.set_field("present_wrappers", frozenset(wrappers))
     _order_fields(built)
     return built
@@ -798,9 +805,15 @@ def _place_ui_child(
     wrappers: set,
     cursor: _Cursor,
     group: str,
+    suppressed: set,
 ) -> None:
     tag = child.tag
     if tag in ("author", "comment", "exportmacro", "pixmapfunction"):
+        # Appendix E omits empty author, comment, and exportmacro. A non-empty
+        # value, or one with attributes, stays.
+        if tag != "pixmapfunction" and _text_leaf(child) == "":
+            cursor.advance(group)
+            return
         _set_text_field(built, tag, child)
         cursor.advance(group)
         return
@@ -841,14 +854,27 @@ def _place_ui_child(
         cursor.advance(group)
         return
     if tag in ("customwidgets", "includes", "resources", "connections", "buttongroups"):
-        count = _lower_wrapper(arena, built, child, tag, wrappers)
+        count = _lower_wrapper(arena, built, child, tag, wrappers, suppressed)
         cursor.enter(group, count)
         return
 
 
-def _lower_wrapper(arena: "_ReadArena", built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
+def _lower_wrapper(
+    arena: "_ReadArena",
+    built: _Built,
+    node: _XNode,
+    tag: str,
+    wrappers: set,
+    suppressed: set,
+) -> int:
     slot = _WRAPPER_SLOT[tag]
+    if tag == "resources":
+        # Appendix E drops the name attribute. Includes stay typed resource nodes.
+        kept = tuple(pair for pair in node.attrs if pair[0] != "name")
+        if len(kept) != len(node.attrs):
+            node.attrs = kept
     if node.attrs:
+        suppressed.add(tag)
         wrappers.discard(tag)
         built.add_slot("opaque", _opaque_built(arena, node, (slot, 0)))
         built.notes.append(_Note("FB006", "Kept attributes on <%s>." % tag, node.line))
