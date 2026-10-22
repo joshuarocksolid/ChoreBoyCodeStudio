@@ -133,7 +133,7 @@ def _check_iconset(value: Value) -> None:
     assert isinstance(value, IconSetValue)
     assert value.theme == "document-new"
     assert value.resource == "icons.qrc"
-    assert value.text is None
+    assert value.text == ":/h.png"
     assert value.normaloff == ResourcePixmap(":/a.png", "icons.qrc", "dot")
     assert value.normalon == ResourcePixmap(":/b.png")
     assert value.disabledoff == ResourcePixmap(":/c.png")
@@ -303,6 +303,19 @@ def test_typed_value_round_trips(name: str, body: str, kind: Type[Value], probe:
     probe(value)
 
 
+def test_designer_multistate_iconset_keeps_one_compat_path() -> None:
+    body = "<iconset><normaloff>a.png</normaloff><normalon>b.png</normalon>a.png</iconset>"
+    value, codes = _round_trip(body)
+    assert "FB005" not in codes
+    assert isinstance(value, IconSetValue)
+    assert value.normaloff == ResourcePixmap("a.png")
+    assert value.normalon == ResourcePixmap("b.png")
+    assert value.text == "a.png"
+    saved = write_ui(read_ui(_form(body), allocator=IdAllocator()).document).text
+    assert "<normalon>b.png</normalon>a.png</iconset>" in saved
+    assert "<normaloff>a.png</normaloff>a.png" not in saved
+
+
 @pytest.mark.parity("R3-290")
 @pytest.mark.parity("R3-292")
 @pytest.mark.parity("R3-316")
@@ -337,7 +350,7 @@ def test_palette_iconset_round_trip(body: str, probe: _Probe) -> None:
         '<pixmap extra="1">a.png</pixmap>',
         "<brush><color><red>1</red><green>2</green><blue>3</blue></color><gradient type=\"LinearGradient\"/></brush>",
         "<palette><active/><inactive/></palette>",
-        "<iconset><normaloff>a.png</normaloff>b.png</iconset>",
+        "<iconset><normaloff>a.png</normaloff>nope<normalon>b.png</normalon></iconset>",
         "<char><unicode>nope</unicode></char>",
         '<locale language="English"/>',
         "<url><string>a</string><string>b</string></url>",

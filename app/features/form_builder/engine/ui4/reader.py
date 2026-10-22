@@ -1628,43 +1628,68 @@ def _parse_pixmap_element(node: _XNode) -> Optional[ResourcePixmap]:
     return ResourcePixmap(path=_exact_text(node), resource=attrs.get("resource"), alias=attrs.get("alias"))
 
 
+def _later_icon_state(children: Sequence[object], start: int) -> bool:
+    """True when another icon state element follows, ignoring whitespace."""
+    index = start
+    while index < len(children):
+        child = children[index]
+        if isinstance(child, str):
+            if child.strip():
+                return False
+            index += 1
+            continue
+        return isinstance(child, _XNode) and child.tag in ICON_STATES
+    return False
+
+
 def _parse_iconset(node: _XNode) -> Optional[IconSetValue]:
     attrs = _attr_map(node, frozenset({"theme", "resource"}))
     if attrs is None or _has_comment(node):
         return None
     states: Dict[str, ResourcePixmap] = {}
-    legacy_parts: List[str] = []
+    leading: List[str] = []
+    trailing: List[str] = []
     saw_state = False
     children = list(node.children)
     index = 0
     while index < len(children):
         child = children[index]
         if isinstance(child, str):
-            if saw_state and child.strip():
-                return None
             if not saw_state:
-                legacy_parts.append(child)
+                leading.append(child)
+                index += 1
+                continue
+            # A trailer that matches the state just read is the old per-state
+            # form. Text after the last state is Designer's single compat path.
+            if _later_icon_state(children, index + 1):
+                last = next(reversed(states.values()))
+                if child.strip() and child.strip() != last.path:
+                    return None
+                index += 1
+                continue
+            trailing.append(child)
             index += 1
             continue
+        if trailing and any(part.strip() for part in trailing):
+            return None
         if not isinstance(child, _XNode) or child.tag not in ICON_STATES or child.tag in states:
             return None
         pixmap = _parse_pixmap_element(child)
         if pixmap is None:
             return None
-        index += 1
-        if index < len(children) and isinstance(children[index], str):
-            trailer = children[index]
-            if trailer.strip() == pixmap.path and pixmap.path == pixmap.path.strip():
-                index += 1
-            elif trailer.strip():
-                return None
         states[child.tag] = pixmap
         saw_state = True
-    if saw_state and any(part.strip() for part in legacy_parts):
+        trailing.clear()
+        index += 1
+    if saw_state and any(part.strip() for part in leading):
         return None
     text = None
-    if not saw_state:
-        exact = "".join(legacy_parts)
+    if saw_state:
+        compat = "".join(trailing).strip()
+        if compat:
+            text = compat
+    else:
+        exact = "".join(leading)
         if exact.strip():
             text = exact
     return IconSetValue(

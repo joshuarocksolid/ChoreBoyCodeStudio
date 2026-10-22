@@ -469,19 +469,14 @@ class _Writer:
         raise TypeError("cannot write value %s" % (type(item).__name__,))
 
     def _pixmap(self, item: ResourcePixmap, indent: int) -> None:
-        self._pixmap_tag("pixmap", item, indent, duplicate_path=False)
+        self._pixmap_tag("pixmap", item, indent)
 
-    def _pixmap_tag(self, tag: str, item: ResourcePixmap, indent: int, duplicate_path: bool) -> None:
+    def _pixmap_tag(self, tag: str, item: ResourcePixmap, indent: int) -> None:
         attrs = _optional_str_attrs((("resource", item.resource), ("alias", item.alias)))
-        if item.path == "" and not duplicate_path:
+        if item.path == "":
             self._empty(indent, tag, attrs)
             return
-        if not duplicate_path:
-            self._text_element(tag, item.path, indent, attrs)
-            return
-        prefix = " " * indent
-        path = _esc_text(item.path)
-        self.lines.append("%s<%s%s>%s</%s>%s" % (prefix, tag, attrs, path, tag, path))
+        self._text_element(tag, item.path, indent, attrs)
 
     def _iconset(self, item: IconSetValue, indent: int) -> None:
         attrs = _optional_str_attrs((("theme", item.theme), ("resource", item.resource)))
@@ -496,11 +491,29 @@ class _Writer:
                 return
             self._text_element("iconset", item.text, indent, attrs)
             return
-        # Each state already carries its path. The repeated path is the Designer trailer.
+        # Designer writes each state with no trailer, then the compat path
+        # immediately before </iconset> on that same line.
         self._open(indent, "iconset", attrs)
-        for name, pixmap in present:
-            self._pixmap_tag(name, pixmap, indent + 1, duplicate_path=True)
-        self._close(indent, "iconset")
+        last = len(present) - 1
+        for index, (name, pixmap) in enumerate(present):
+            suffix = ""
+            if index == last and item.text is not None:
+                suffix = _esc_text(item.text) + "</iconset>"
+            self._state_line(name, pixmap, indent + 1, suffix)
+        if item.text is None:
+            self._close(indent, "iconset")
+
+    def _state_line(self, tag: str, item: ResourcePixmap, indent: int, suffix: str) -> None:
+        attrs = _optional_str_attrs((("resource", item.resource), ("alias", item.alias)))
+        prefix = " " * indent
+        if item.path == "":
+            if _empty_form(tag) == "pair":
+                line = "%s<%s%s></%s>" % (prefix, tag, attrs, tag)
+            else:
+                line = "%s<%s%s/>" % (prefix, tag, attrs)
+        else:
+            line = "%s<%s%s>%s</%s>" % (prefix, tag, attrs, _esc_text(item.path), tag)
+        self.lines.append(line + suffix)
 
     def _brush(self, item: BrushValue, indent: int) -> None:
         attrs = _optional_str_attrs((("brushstyle", item.brushstyle),))
