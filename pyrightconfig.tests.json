@@ -14,7 +14,9 @@
       "extraPaths": [
         ".",
         "vendor",
-        "/opt/freecad/usr/lib/python3.11/site-packages"
+        "/opt/freecad/usr/lib/python3.11/site-packages",
+        "/opt/freecad-1.1/usr/lib/python3.11/site-packages",
+        "/ChoreBoyCodeStudio_artifacts/vendor_py311"
       ]
     }
   ],
