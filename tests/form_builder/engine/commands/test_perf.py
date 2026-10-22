@@ -84,9 +84,28 @@ def _touched_move(count: int) -> int:
     return mutate.last_touched
 
 
-def test_insert_and_move_do_not_walk_the_untouched_subtree() -> None:
+def _cost_move_container(count: int, monkeypatch: pytest.MonkeyPatch) -> Tuple[int, int]:
+    log = open_log(_bulk(count))
+    layout = log.document.root.layout
+    assert layout is not None
+    walked = {"n": 0}
+    real = mutate._walk
+
+    def counted(node: object) -> object:
+        found = real(node)  # type: ignore[arg-type]
+        walked["n"] += len(found)
+        return found
+
+    with monkeypatch.context() as patch:
+        patch.setattr(mutate, "_walk", counted)
+        log.execute(MoveNodes((nid(log.document, "bulk"),), InBoxLayout(layout.id, 0)))
+    return walked["n"], mutate.last_touched
+
+
+def test_insert_and_move_do_not_walk_the_untouched_subtree(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _touched_insert(8) == _touched_insert(200)
     assert _touched_move(8) == _touched_move(200)
+    assert _cost_move_container(8, monkeypatch) == _cost_move_container(200, monkeypatch)
     log = open_log(_bulk(200))
     log.execute(SetProperty(nid(log.document, "target"), "text", StringValue("z")))
     assert mutate.last_touched < 30

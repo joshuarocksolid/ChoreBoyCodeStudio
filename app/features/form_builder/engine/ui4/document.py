@@ -69,6 +69,8 @@ class UiDocument:
         self._nodes: Dict[NodeId, Node] = {}
         self._by_name: Dict[str, List[NodeId]] = {}
         self._name_set: set[str] = set()
+        #: Names whose bucket holds two or more ids. A move re-seats only these.
+        self._shared_names: set[str] = set()
         self._names_view: Optional[FrozenSet[str]] = None
         self._custom: Dict[str, NodeId] = {}
         self._enum_cache: Optional[Tuple[int, EnumStyle]] = None
@@ -323,6 +325,8 @@ class UiDocument:
                 expected_custom.setdefault(node.class_name, node.id)
         if expected_names != self._by_name:
             raise InvariantError("the name index does not match the tree")
+        if {name for name, ids in expected_names.items() if len(ids) > 1} != self._shared_names:
+            raise InvariantError("the shared-name set does not match the name index")
         if expected_custom != self._custom:
             raise InvariantError("the custom-widget index does not match the tree")
 
@@ -368,6 +372,8 @@ class UiDocument:
                 break
             index += 1
         bucket.insert(index, node_id)
+        if len(bucket) > 1:
+            self._shared_names.add(name)
         self._name_set.add(name)
         self._names_view = None
 
@@ -377,6 +383,8 @@ class UiDocument:
             return
         if node_id in bucket:
             bucket.remove(node_id)
+        if len(bucket) < 2:
+            self._shared_names.discard(name)
         if bucket:
             return
         self._by_name.pop(name, None)
@@ -445,7 +453,10 @@ class UiDocument:
             self._custom.setdefault(node.class_name, node.id)
         name = _node_name(node)
         if name is not None:
-            self._by_name.setdefault(name, []).append(node.id)
+            bucket = self._by_name.setdefault(name, [])
+            bucket.append(node.id)
+            if len(bucket) > 1:
+                self._shared_names.add(name)
             self._name_set.add(name)
         self._add_logic(node)
         for _slot_name, kids in node.slots:
@@ -457,6 +468,7 @@ class UiDocument:
         self._nodes = {}
         self._by_name = {}
         self._name_set = set()
+        self._shared_names = set()
         self._names_view = None
         self._custom = {}
         self._enum_cache = None

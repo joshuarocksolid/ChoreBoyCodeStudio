@@ -159,7 +159,7 @@ def _move(doc: UiDocument, op: MoveNodeOp) -> Op:
     destination.insert(op.index, current)
     _retarget_slot(doc, parent, op.slot, destination)
     _resort_shared_names(doc, op.node)
-    if _node_has_custom(doc._nodes[op.node]):
+    if node.kind == "customwidget":
         doc._rebuild_custom_index()
     doc._bump()
     return MoveNodeOp(node=op.node, parent=old_parent, slot=old_slot, index=old_index)
@@ -390,20 +390,19 @@ def _node_has_custom(node: Node) -> bool:
     return False
 
 
-def _resort_shared_names(doc: UiDocument, root_id: NodeId) -> None:
-    """A move changes document order. Re-seat names that are not unique."""
-    for item in _walk(doc._nodes[root_id]):
-        field = _NAME_FIELD.get(item.kind)
-        if field is None:
-            continue
-        name = item.field(field)
-        if not isinstance(name, str) or not name:
-            continue
+def _resort_shared_names(doc: UiDocument, moved: NodeId) -> None:
+    """A move changes document order. Re-seat shared names in the moved subtree.
+
+    Only names whose bucket holds two or more ids are looked at, and only the
+    ids that are ``moved`` or lie under it. O(shared x depth), not O(subtree).
+    """
+    for name in tuple(doc._shared_names):
         bucket = doc._by_name.get(name)
-        if bucket is None or len(bucket) < 2:
+        if not bucket:
             continue
-        doc._remove_name(name, item.id)
-        doc._insert_name(name, item.id)
+        for node_id in [item for item in bucket if item == moved or doc.is_ancestor(moved, item)]:
+            doc._remove_name(name, node_id)
+            doc._insert_name(name, node_id)
 
 
 def _walk(node: Node) -> List[Node]:
