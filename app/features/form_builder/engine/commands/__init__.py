@@ -1,1 +1,1 @@
-"""Command op dataclasses. The command log itself is a later work package."""
+"""The command log. Every edit to a form goes through ``CommandLog``."""

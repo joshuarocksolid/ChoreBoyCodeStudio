@@ -29,7 +29,7 @@ QUICK_SKIP = frozenset({"unit-py39-pyside6", "pyright"})
 # The repo fast shard is minutes, so the default table lists it and does not run it.
 FULL_ONLY = frozenset({"fast-shard-regression"})
 
-UNIT_MARKER = "not oracle and not perf and not performance"
+UNIT_MARKER = "not oracle and not perf and not performance and not soak"
 PYTEST_TIMEOUT_SECONDS = 300
 FAST_SHARD_TIMEOUT_SECONDS = 400
 COMMAND_TIMEOUT_SECONDS = 180
@@ -389,10 +389,10 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
         " if not hasattr(_finder, 'find_spec'):\n"
         "  _finder.find_spec=_legacy_find_spec.__get__(_finder)\n"
         + path_setup
-        + "os.chdir({repo!r});"
-        "code=int(__import__('pytest').main({args!r}));"
-        "sys.stdout.flush();sys.stderr.flush();"
-        "os._exit(code)"
+        + "os.chdir({repo!r})\n"
+        "code=int(__import__('pytest').main({args!r}))\n"
+        "sys.stdout.flush();sys.stderr.flush()\n"
+        "os._exit(code)\n"
     ).format(repo=str(REPO_ROOT), vendor=str(vendor), args=args)
     return _apprun_safe(payload)
 
@@ -584,9 +584,18 @@ def gate_pyright() -> GateResult:
     name = "pyright"
     if not _package_ready():
         return _skip(name, "skipped: no package")
+    python = str(_runtime("CBCS_FORM_BUILDER_PY311", PY311_DEFAULT))
     commands = (
-        ["npx", "pyright", "app/features/form_builder"],
-        ["npx", "pyright", "-p", "pyrightconfig.tests.json", "tests/form_builder"],
+        ["npx", "pyright", "--pythonpath", python, "app/features/form_builder"],
+        [
+            "npx",
+            "pyright",
+            "--pythonpath",
+            python,
+            "-p",
+            "pyrightconfig.tests.json",
+            "tests/form_builder",
+        ],
     )
     started = time.monotonic()
     details: list[str] = []
