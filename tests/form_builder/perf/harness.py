@@ -27,7 +27,7 @@ import sys
 import tracemalloc
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.catalog import SetProperty
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
@@ -51,6 +51,7 @@ from tests.form_builder.perf.stats import (
     OVERHEAD_RATIO_LIMIT,
     Attempt,
     Distribution,
+    Sample,
     cpu_within_budget,
     judge_timed,
     measure,
@@ -326,15 +327,12 @@ def _collect(
         )
 
     rows.append(_class_table_row(samples, warmup, enforce_absolute, wall_on))
-    rows.extend(_realize_rows(forms.get(300), samples, warmup, enforce_absolute, wall_on))
+    realize_rows = _realize_rows(forms.get(300), samples, warmup, enforce_absolute, wall_on)
+    rows.extend(realize_rows)
+    build_p95 = next((row.p95 for row in realize_rows if row.point == "Realizer.build"), None)
     rows.append(_missing("outline full build", 300, _ms_budget(OUTLINE_BUILD_BUDGET_MS), "no outline yet"))
     rows.append(
-        _missing(
-            "open total",
-            300,
-            _ms_budget(OPEN_BUDGET_MS),
-            "needs read, Realizer.build, outline, inspector and the hit index",
-        )
+        _open_total_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
 
     for count in sizes:
@@ -378,7 +376,9 @@ def _collect(
             )
         )
 
-    rows.append(_missing("realize patch", 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet"))
+    rows.append(
+        _realize_patch_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
+    )
     rows.append(_missing("hit index invalidate", None, "-", "no hit index yet"))
     for count, budget in HIT_REFRESH_BUDGET_MS.items():
         rows.append(_missing("hit index refresh", count, _ms_budget(budget), "no hit index yet"))
@@ -465,7 +465,7 @@ def _collect(
     rows.append(_missing("preview cold start", None, "-", "no preview yet. No budget. Report against the M0.7 cold start when it exists"))
 
     if profile in ("choreboy", "capped"):
-        rows.extend(_overhead_rows(forms.get(300), samples, warmup))
+        rows.extend(_overhead_rows(forms.get(300), samples, warmup, build_p95))
     return tuple(rows)
 
 
@@ -750,26 +750,12 @@ def _time_realizer_build(
     held: List[object] = []
 
     def once() -> None:
-        scope = forms.FormScope(
-            kind="project",
-            ui_path="/tmp/forms/speed_form.ui",
-            project_root="/tmp",
-            generated_path="/tmp/forms/ui_speed_form.py",
-            window_path="/tmp/forms/speed_form_window.py",
-            module_name="forms.ui_speed_form",
-            window_module_name="forms.speed_form_window",
-        )
-        session = session_mod.FormSession.open(xml, path="/tmp/cbcs-speed.ui", scope=scope)
-        realizer = realize.Realizer(session)
-        realizer.build()
+        session, realizer = _open_realized(xml, session_mod, forms, realize)
+        held.append(realizer)
         held.append(session)
 
     def cleanup() -> None:
-        while held:
-            session = held.pop()
-            dispose = getattr(session, "dispose", None)
-            if dispose is not None:
-                dispose()
+        _dispose_held(held)
 
     try:
         return sample_until_budget(
@@ -932,7 +918,7 @@ def _open_memory(texts: Sequence[str]) -> Tuple[float, float, str]:
         rss_after = _rss_bytes()
     finally:
         tracemalloc.stop()
-    del held
+        _dispose_held(held)
     return peak / (1024.0 * 1024.0), max(0.0, rss_after - rss_before) / (1024.0 * 1024.0), note
 
 
@@ -946,18 +932,7 @@ def _hold_open_form(xml: str) -> Tuple[List[object], str]:
         realize = importlib.import_module("app.features.form_builder.qtside.realize")
         session_mod = importlib.import_module("app.features.form_builder.engine.session")
         forms = importlib.import_module("app.features.form_builder.engine.project.forms")
-        scope = forms.FormScope(
-            kind="project",
-            ui_path="/tmp/forms/speed_form.ui",
-            project_root="/tmp",
-            generated_path="/tmp/forms/ui_speed_form.py",
-            window_path="/tmp/forms/speed_form_window.py",
-            module_name="forms.ui_speed_form",
-            window_module_name="forms.speed_form_window",
-        )
-        session = session_mod.FormSession.open(xml, path="/tmp/cbcs-speed.ui", scope=scope)
-        realizer = realize.Realizer(session)
-        realizer.build()
+        session, realizer = _open_realized(xml, session_mod, forms, realize)
         held.extend((session, realizer))
     except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
         return held, "read only. realize could not be called (%s)" % exc
@@ -981,7 +956,139 @@ def _undo_log_row(form: ReferenceForm) -> Row:
     return Row("undo log", 300, UNDO_LOG_EDITS, None, size_mb, "%.0f MB" % UNDO_LOG_BUDGET_MB, verdict, detail)
 
 
-def _overhead_rows(form: Optional[ReferenceForm], samples: int, warmup: int) -> Tuple[Row, ...]:
+def _open_total_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    """Read plus realize. Outline, inspector and the first hit index come later."""
+    detail = "read plus Realizer.build. Outline, inspector and the first hit index are not in this number"
+    if form is None or not _module_exists("app.features.form_builder.qtside.realize"):
+        return _missing("open total", 300, _ms_budget(OPEN_BUDGET_MS), detail)
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+    except ImportError as exc:
+        return Row("open total", 300, None, None, None, _ms_budget(OPEN_BUDGET_MS), "skip", str(exc))
+    held: List[object] = []
+
+    def once() -> None:
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+        held.append(realizer)
+        held.append(session)
+
+    try:
+        row, _dist = _timed(
+            "open total",
+            300,
+            once,
+            OPEN_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            cleanup=lambda: _dispose_held(held),
+        )
+    except (AttributeError, TypeError, RuntimeError) as exc:
+        _dispose_held(held)
+        return Row("open total", 300, None, None, None, _ms_budget(OPEN_BUDGET_MS), "skip", str(exc))
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, detail)
+
+
+def _realize_patch_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    """One toolTip edit. The clock is PatchStats.cpu_ms, the realize listener only."""
+    del wall_on
+    if form is None or not _module_exists("app.features.form_builder.qtside.realize"):
+        return _missing("realize patch", 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet")
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return Row("realize patch", 300, None, None, None, _ms_budget(REALIZER_PATCH_BUDGET_MS), "skip", str(exc))
+    owner = session.document.by_name(form.edit_name)
+    if not owner:
+        _dispose_held([realizer, session])
+        return Row(
+            "realize patch",
+            300,
+            None,
+            None,
+            None,
+            _ms_budget(REALIZER_PATCH_BUDGET_MS),
+            "skip",
+            "reference form has no %s" % form.edit_name,
+        )
+
+    def take(count: int) -> Distribution:
+        taken: List[Sample] = []
+        for index in range(count):
+            session.log.execute(SetProperty(owner[0], "toolTip", StringValue("speed-%d" % index)))
+            seconds = realizer.last_stats.cpu_ms / 1000.0
+            taken.append(Sample(seconds, seconds))
+        return Distribution(tuple(taken))
+
+    try:
+        take(warmup)
+        attempt = sample_until_budget(lambda: take(samples), REALIZER_PATCH_BUDGET_MS if enforce_absolute else None)
+    except (AttributeError, TypeError, RuntimeError) as exc:
+        return Row("realize patch", 300, None, None, None, _ms_budget(REALIZER_PATCH_BUDGET_MS), "skip", str(exc))
+    finally:
+        _dispose_held([realizer, session])
+    row = _row_from_attempt(
+        "realize patch",
+        300,
+        attempt,
+        REALIZER_PATCH_BUDGET_MS,
+        enforce_absolute,
+        False,
+    )
+    detail = "PatchStats.cpu_ms for one toolTip edit. Command planning is the one-command row"
+    if row.detail:
+        detail = "%s. %s" % (detail, row.detail)
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, detail)
+
+
+def _open_realized(xml: str, session_mod: Any, forms: Any, realize: Any) -> Tuple[Any, Any]:
+    scope = forms.FormScope(
+        kind="project",
+        ui_path="/tmp/forms/speed_form.ui",
+        project_root="/tmp",
+        generated_path="/tmp/forms/ui_speed_form.py",
+        window_path="/tmp/forms/speed_form_window.py",
+        module_name="forms.ui_speed_form",
+        window_module_name="forms.speed_form_window",
+    )
+    session = session_mod.FormSession.open(xml, path="/tmp/cbcs-speed.ui", scope=scope)
+    realizer = realize.Realizer(session)
+    realizer.build()
+    return session, realizer
+
+
+def _dispose_held(held: List[object]) -> None:
+    while held:
+        item = held.pop()
+        dispose = getattr(item, "dispose", None)
+        if dispose is not None:
+            dispose()
+
+
+def _overhead_rows(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    realize_build_p95: Optional[float],
+) -> Tuple[Row, ...]:
     if form is None:
         return (
             Row("raw Qt build and show", 300, None, None, None, "-", "skip", "no 300-widget form in this run"),
@@ -1029,19 +1136,34 @@ def _overhead_rows(form: Optional[ReferenceForm], samples: int, warmup: int) -> 
         "reported",
         "setToolTip, repaint and processEvents on the edit target",
     )
-    open_ratio = _missing(
+    patch = _realize_patch_row(form, samples, warmup, False, False)
+    open_ratio = _overhead_ratio(
         "open / raw Qt build",
-        300,
-        "%.1fx" % OVERHEAD_RATIO_LIMIT,
-        "needs Realizer.build. The raw baseline is the row above",
+        realize_build_p95,
+        build_row.p95,
+        "Realizer.build p95 / raw Qt build and show p95",
     )
-    edit_ratio = _missing(
+    edit_ratio = _overhead_ratio(
         "edit / raw Qt update",
-        300,
-        "%.1fx" % OVERHEAD_RATIO_LIMIT,
-        "needs the realize patch. The raw baseline is the row above",
+        patch.p95,
+        edit_row.p95,
+        "realize patch p95 / raw Qt update and repaint p95",
     )
     return (build_row, edit_row, open_ratio, edit_ratio)
+
+
+def _overhead_ratio(
+    point: str,
+    ours: Optional[float],
+    raw: Optional[float],
+    detail: str,
+) -> Row:
+    budget = "%.1fx" % OVERHEAD_RATIO_LIMIT
+    if ours is None or raw is None or raw <= 0.0:
+        return _missing(point, 300, budget, detail)
+    ratio = ours / raw
+    verdict = "pass" if ratio <= OVERHEAD_RATIO_LIMIT else "fail"
+    return Row(point, 300, None, None, ratio, budget, verdict, "%s (%.2f)" % (detail, ratio))
 
 
 def _missing(point: str, widgets: Optional[int], budget: str, detail: str) -> Row:
