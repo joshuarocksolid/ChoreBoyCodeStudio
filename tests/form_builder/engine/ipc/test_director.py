@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from app.features.form_builder.engine.ipc.director import (
@@ -23,7 +25,10 @@ from app.features.form_builder.engine.ipc.protocol import (
     decode_line,
     encode_frame,
 )
-from app.features.form_builder.engine.ipc.timing import SHUTDOWN_GRACE_SECONDS, DirectorConfig
+from app.features.form_builder.engine.ipc.timing import (
+    SHUTDOWN_GRACE_SECONDS,
+    DirectorConfig,
+)
 
 
 def _form(request_id: str, view_id: str) -> LoadForm:
@@ -80,7 +85,9 @@ def _handshake(director: PreviewDirector, spawn_effects, now: float):
     director.on_stdout(now, encode_frame(_ready_message()))
     return director.on_stdout(
         now,
-        encode_frame(Response(request_id=hello.request_id, ok=True, result={"ready": True})),
+        encode_frame(
+            Response(request_id=hello.request_id, ok=True, result={"ready": True})
+        ),
     )
 
 
@@ -160,14 +167,48 @@ def test_protocol_mismatch_stays_open_when_the_user_retries():
 
 
 @pytest.mark.unit
-def test_exit_code_3_is_not_a_crash_loop():
-    director = PreviewDirector(host_pid=1, config=DirectorConfig(prewarm=True))
+def test_bare_exit_3_is_a_crash():
+    director = PreviewDirector(
+        host_pid=1,
+        config=DirectorConfig(prewarm=True, backoff=(30.0,)),
+    )
     director.note_form_opened(0)
     effects = director.on_exit(1, 3)
+    assert "FB601" in _codes(effects)
     assert not _has(effects, SpawnChild)
-    assert "FB601" not in _codes(effects)
-    assert director.status(1).state == "circuit_open"
-    assert director.retry(2) == ()
+    assert director.status(1).state == "backoff"
+    assert _has(director.retry(2), SpawnChild)
+
+
+@pytest.mark.unit
+def test_load_during_open_circuit_is_what_retry_sends():
+    director = PreviewDirector(
+        host_pid=1,
+        config=DirectorConfig(prewarm=False, backoff=()),
+    )
+    spawned = director.request(0, _form("load-1", "view"))
+    ready = _handshake(director, spawned, 1)
+    sent = next(item for item in _written(ready) if isinstance(item, LoadForm))
+    director.on_stdout(
+        1,
+        encode_frame(Response(request_id=sent.request_id, ok=True, result={})),
+    )
+    director.on_exit(2, 1)
+    assert director.status(2).state == "circuit_open"
+    refused = director.request(3, replace(_form("load-2", "view"), revision=2))
+    busy = [
+        effect.message
+        for effect in refused
+        if isinstance(effect, Deliver) and isinstance(effect.message, Response)
+    ]
+    assert busy[0].ok is False
+    assert busy[0].error == "busy"
+    assert not _has(refused, SpawnChild)
+    restarted = director.retry(4)
+    assert _has(restarted, SpawnChild)
+    ready = _handshake(director, restarted, 5)
+    resent = [item for item in _written(ready) if isinstance(item, LoadForm)]
+    assert [item.revision for item in resent] == [2]
 
 
 @pytest.mark.unit
@@ -217,7 +258,9 @@ def test_two_missed_pings_are_a_hang():
     spawned = director.request(0, _form("load-1", "view"))
     ready = _handshake(director, spawned, 1)
     sent = next(item for item in _written(ready) if isinstance(item, LoadForm))
-    director.on_stdout(1, encode_frame(Response(request_id=sent.request_id, ok=True, result={})))
+    director.on_stdout(
+        1, encode_frame(Response(request_id=sent.request_id, ok=True, result={}))
+    )
     director.advance(6)
     director.advance(11)
     effects = director.advance(16)
@@ -273,7 +316,9 @@ def test_crash_reloads_the_last_successful_load():
     spawned = director.request(0, _form("a", "view"))
     ready = _handshake(director, spawned, 1)
     sent = next(item for item in _written(ready) if isinstance(item, LoadForm))
-    director.on_stdout(1, encode_frame(Response(request_id=sent.request_id, ok=True, result={})))
+    director.on_stdout(
+        1, encode_frame(Response(request_id=sent.request_id, ok=True, result={}))
+    )
     died = director.on_exit(2, -11)
     assert _has(died, SpawnChild)
     reloaded = _handshake(director, died, 3)

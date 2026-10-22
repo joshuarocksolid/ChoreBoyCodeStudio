@@ -202,6 +202,12 @@ class PreviewDirector:
         if isinstance(message, Shutdown):
             return self.shutdown(now)
         if self._state == "circuit_open":
+            if isinstance(message, LoadForm):
+                view = self._views.get(message.view_id)
+                if view is None:
+                    view = _View()
+                    self._views[message.view_id] = view
+                view.desired = message
             return tuple(self._refuse_circuit(message))
         if is_mutation(message):
             return tuple(self._mutation(message))  # type: ignore[arg-type]
@@ -315,7 +321,7 @@ class PreviewDirector:
             self._state = "stopped"
             self._stop_deadline = None
             return ()
-        if self._mismatch or code == 3:
+        if self._mismatch:
             self._mismatch = False
             self._version_mismatch = True
             self._state = "circuit_open"
