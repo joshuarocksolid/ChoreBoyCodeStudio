@@ -155,6 +155,7 @@ def _move(doc: UiDocument, op: MoveNodeOp) -> Op:
     destination = [item for item in parent.children(op.slot) if item.id != op.node]
     destination.insert(op.index, current)
     _retarget_slot(doc, parent, op.slot, destination)
+    _resort_shared_names(doc, op.node)
     doc._rebuild_custom_index()
     doc._bump()
     return MoveNodeOp(node=op.node, parent=old_parent, slot=old_slot, index=old_index)
@@ -358,6 +359,22 @@ def _forget_subtree(doc: UiDocument, node: Node) -> None:
         doc._unbind_name(item)
         doc._sub_logic(item)
         doc._nodes.pop(item.id, None)
+
+
+def _resort_shared_names(doc: UiDocument, root_id: NodeId) -> None:
+    """A move changes document order. Re-seat names that are not unique."""
+    for item in _walk(doc._nodes[root_id]):
+        field = _NAME_FIELD.get(item.kind)
+        if field is None:
+            continue
+        name = item.field(field)
+        if not isinstance(name, str) or not name:
+            continue
+        bucket = doc._by_name.get(name)
+        if bucket is None or len(bucket) < 2:
+            continue
+        doc._remove_name(name, item.id)
+        doc._insert_name(name, item.id)
 
 
 def _walk(node: Node) -> List[Node]:

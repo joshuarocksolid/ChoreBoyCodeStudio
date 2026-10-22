@@ -428,6 +428,17 @@ def test_rename_of_a_shared_name_does_not_rewrite_references() -> None:
     assert _entry_text(buddy) == "same"
 
 
+def test_moving_a_shared_name_keeps_document_order() -> None:
+    log = open_log(SHARED)
+    doc = log.document
+    root = doc.root
+    first = doc.by_name("same")[0]
+    log.execute(MoveNodes((first,), InContainer(root.id, len(root.child_widgets))))
+    fresh = UiDocument.from_spec(doc.to_spec())
+    assert doc.by_name("same") == fresh.by_name("same")
+    assert doc.by_name("same")[0] != first
+
+
 @pytest.mark.parametrize(
     ("name", "code"),
     [("form", "FB106"), ("class", "FB011"), ("okButton", "FB010"), ("cbcsThing", "FB106")],
