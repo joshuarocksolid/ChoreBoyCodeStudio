@@ -8,10 +8,11 @@ ElementTree tree), refuses DOCTYPE and entity declarations, and builds a
 
 from __future__ import annotations
 
+import gc
 import re
 import threading
 from dataclasses import dataclass
-from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple, TypeVar
 from xml.parsers import expat
 
 from app.features.form_builder.engine.diagnostic_codes import fb0xx as _fb0xx
@@ -160,6 +161,10 @@ _NO_PROPS: Tuple[PropertyEntry, ...] = ()
 _NO_SLOTS: Tuple[Tuple[str, Tuple[Node, ...]], ...] = ()
 _NO_NOTES: List["_Note"] = []
 _POOL_CAP = 20000
+# One read shares identical frozen values and property entries. The cache is
+# thread-local so overlapping reads do not see each other's objects, and it
+# is cleared when the outermost read returns so it does not pin them.
+_INTERN = threading.local()
 _WIDGET_CHILD_GROUP = {
     "row": "rows",
     "column": "columns",
@@ -403,8 +408,80 @@ class _ReadArena:
 
 _ARENA_LOCK = threading.Lock()
 _ARENA_FREE: List[_ReadArena] = []
+# A realistic form allocates thousands of tracked tuples. Left alone, that
+# promotes a full gen2 scan into the timed read and blows the 25 ms budget.
+# Collections are paused for the outermost read and one generation is drained
+# after the tree is built, so the scan stays in gen0 or gen1.
+_GC_LOCK = threading.Lock()
+_GC_DEPTH = 0
+_GC_WAS_ON = True
 #: Idle arenas kept for reuse. More concurrent reads than this get fresh arenas.
 _ARENA_FREE_CAP = 4
+
+
+def _pause_collections() -> None:
+    global _GC_DEPTH, _GC_WAS_ON
+    with _GC_LOCK:
+        if _GC_DEPTH == 0:
+            _GC_WAS_ON = gc.isenabled()
+            if _GC_WAS_ON:
+                gc.disable()
+        _GC_DEPTH += 1
+
+
+def _resume_collections() -> None:
+    global _GC_DEPTH
+    with _GC_LOCK:
+        _GC_DEPTH -= 1
+        if _GC_DEPTH > 0 or not _GC_WAS_ON:
+            return
+        gc.enable()
+        counts = gc.get_count()
+        thresholds = gc.get_threshold()
+        if counts[2] >= thresholds[2]:
+            generation = 2
+        elif counts[1] >= thresholds[1]:
+            generation = 1
+        elif counts[0] >= thresholds[0]:
+            generation = 0
+        else:
+            generation = -1
+    if generation >= 0:
+        gc.collect(generation)
+
+
+def _intern_push() -> None:
+    state = getattr(_INTERN, "state", None)
+    if state is None:
+        state = [0, {}]
+        _INTERN.state = state
+    state[0] += 1
+
+
+def _intern_pop() -> None:
+    state = _INTERN.state
+    state[0] -= 1
+    if state[0] == 0:
+        state[1].clear()
+
+
+_ShareT = TypeVar("_ShareT")
+
+
+def _share(value: _ShareT) -> _ShareT:
+    """Return the first equal frozen value built during this read."""
+    state = getattr(_INTERN, "state", None)
+    if state is None or not state[0]:
+        return value
+    cache = state[1]
+    try:
+        found = cache.get(value)
+    except TypeError:
+        return value
+    if found is not None:
+        return found
+    cache[value] = value
+    return value
 
 
 def _acquire_arena() -> _ReadArena:
@@ -452,6 +529,8 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
     if len(encoded) > MAX_INPUT_BYTES:
         raise UiReadError("FB008", "This form is too large to open in the form builder.", 0, 0)
     arena = _acquire_arena()
+    _intern_push()
+    _pause_collections()
     try:
         root = _parse_tree(arena, text)
         built = _lower_ui(arena, root)
@@ -481,7 +560,9 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
             0,
         ) from exc
     finally:
+        _intern_pop()
         _release_arena(arena)
+        _resume_collections()
     return ReadResult(document=document, diagnostics=tuple(diagnostics), line_map=line_map)
 
 
@@ -1119,7 +1200,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
         if len(attrs) == 1 and attrs[0][0] == "name":
             parsed = _parse_value(children[0])
             if parsed is not None:
-                return PropertyEntry(kind=kind, name=attrs[0][1], value=parsed), _NO_NOTES
+                return _share(PropertyEntry(kind=kind, name=attrs[0][1], value=_share(parsed))), _NO_NOTES
         name = ""
         stdset = None
         extra: List[Tuple[str, str]] = []
@@ -1133,13 +1214,13 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
         parsed = _parse_value(children[0])
         if parsed is not None:
             return (
-                PropertyEntry(
+                _share(PropertyEntry(
                     kind=kind,
                     name=name,
-                    value=parsed,
+                    value=_share(parsed),
                     stdset=stdset,
                     extra_attrs=tuple(extra) if extra else _NO_ATTRS,
-                ),
+                )),
                 _NO_NOTES,
             )
     attrs = list(node.attrs)
@@ -1165,7 +1246,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
             notes.append(_Note("FB005", "Kept this <%s> value as written." % elements[0].tag, elements[0].line, name or None))
         else:
             value = parsed
-    return PropertyEntry(kind=kind, name=name, value=value, stdset=stdset, extra_attrs=tuple(extra)), notes
+    return _share(PropertyEntry(kind=kind, name=name, value=_share(value), stdset=stdset, extra_attrs=tuple(extra))), notes
 
 
 def _hold_gap(

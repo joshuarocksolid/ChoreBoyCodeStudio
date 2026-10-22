@@ -173,6 +173,9 @@ class _Writer:
                 self.line_map[node.id] = self._next_line()
                 self._text_element("include", text, indent, _attrs(node))
                 return
+        if not _has_opaque(node):
+            self._node_plain(node, indent)
+            return
         spec = SCHEMA[node.kind]
         tag = _tag(node)
         attrs = _attrs(node)
@@ -189,6 +192,109 @@ class _Writer:
         for key in list(buckets):
             self._flush(buckets, key, indent + 1)
         self._close(indent, tag)
+
+    def _node_plain(self, node: Node, indent: int) -> None:
+        """Write a node that has no preserved unknown children.
+
+        Skips the opaque-anchor buckets. Output matches ``node`` when those
+        buckets are empty.
+        """
+        spec = SCHEMA[node.kind]
+        kind = node.kind
+        tag = _tag(node)
+        attrs = _attrs(node)
+        self.line_map[node.id] = self._next_line()
+        if kind == "widget":
+            self._widget_plain(node, indent, attrs)
+            return
+        if kind == "layoutitem":
+            self._item_plain(node, indent, attrs)
+            return
+        if not _has_body_plain(node):
+            self._empty(indent, tag, attrs)
+            return
+        self._open(indent, tag, attrs)
+        for group in spec.write_order:
+            self._group(node, group, indent + 1, _NO_BUCKETS)
+        self._close(indent, tag)
+
+    def _widget_plain(self, node: Node, indent: int, attrs: str) -> None:
+        slots = node._slot_map()
+        zorder = node.field("zorder")
+        names = zorder if isinstance(zorder, tuple) else None
+        child_indent = indent + 1
+        if (
+            not node.properties()
+            and not node.attributes()
+            and names is None
+            and not any(slots.get(name) for name in _WIDGET_SLOTS)
+        ):
+            self._empty(indent, "widget", attrs)
+            return
+        self._open(indent, "widget", attrs)
+        for entry in node.properties():
+            self._property("property", entry, child_indent)
+        for entry in node.attributes():
+            self._property("attribute", entry, child_indent)
+        for name in _WIDGET_SLOTS:
+            children = slots.get(name)
+            if not children:
+                continue
+            for child in children:
+                self.node(child, child_indent)
+        if names is not None:
+            for name in names:
+                if isinstance(name, str):
+                    self._text_element("zorder", name, child_indent)
+        self._close(indent, "widget")
+
+    def _item_plain(self, node: Node, indent: int, attrs: str) -> None:
+        children = node._slot_map().get("content")
+        if not children:
+            self._empty(indent, "item", attrs)
+            return
+        self._open(indent, "item", attrs)
+        for child in children:
+            self.node(child, indent + 1)
+        self._close(indent, "item")
+
+    def _group_plain(self, node: Node, group: str, indent: int) -> None:
+        if group == "properties":
+            for entry in node.properties():
+                self._property("property", entry, indent)
+            return
+        if group == "attributes":
+            for entry in node.attributes():
+                self._property("attribute", entry, indent)
+            return
+        if group.startswith("child:"):
+            tag = group[len("child:"):]
+            if tag == "zorder":
+                value = node.field("zorder")
+                names = value if isinstance(value, tuple) else ()
+                for name in names:
+                    if isinstance(name, str):
+                        self._text_element("zorder", name, indent)
+                return
+            self._child_field(node, tag, indent)
+            return
+        slot = _slot(node.kind, group)
+        if slot is None:
+            return
+        children = node.children(group)
+        if slot.wrapper:
+            if not children and group not in _wrappers(node):
+                return
+            if not children:
+                self._empty(indent, slot.wrapper, "")
+                return
+            self._open(indent, slot.wrapper, "")
+            for child in children:
+                self.node(child, indent + 1)
+            self._close(indent, slot.wrapper)
+            return
+        for child in children:
+            self.node(child, indent)
 
     def opaque(self, element: OpaqueElement, indent: int) -> None:
         if element.tag == "":
@@ -227,11 +333,40 @@ class _Writer:
         self._close(indent, element.tag)
 
     def value(self, item: Value, indent: int) -> None:
+        # Exact-type checks for the values a realistic form writes most.
+        kind = type(item)
+        if kind is StringValue:
+            self._text_element("string", item.text, indent, _string_attrs(item))
+            return
+        if kind is NumberValue:
+            self._text_element("number", format_int(item.value), indent)
+            return
+        if kind is SizePolicyValue:
+            attrs = ' hsizetype="%s" vsizetype="%s"' % (_esc_attr(item.hsizetype), _esc_attr(item.vsizetype))
+            self._open(indent, "sizepolicy", attrs)
+            self._text_element("horstretch", format_int(item.horstretch), indent + 1)
+            self._text_element("verstretch", format_int(item.verstretch), indent + 1)
+            self._close(indent, "sizepolicy")
+            return
+        if kind is SizeValue:
+            self._int_box("size", (("width", item.width), ("height", item.height)), indent)
+            return
+        if kind is FontValue:
+            self._open(indent, "font", "")
+            for name in _FONT_ORDER:
+                child = getattr(item, name)
+                if child is None:
+                    continue
+                if isinstance(child, bool):
+                    self._text_element(name, format_bool(child), indent + 1)
+                elif isinstance(child, int):
+                    self._text_element(name, format_int(child), indent + 1)
+                else:
+                    self._text_element(name, str(child), indent + 1)
+            self._close(indent, "font")
+            return
         if isinstance(item, OpaqueValue):
             self.opaque(item.element, indent)
-            return
-        if isinstance(item, StringValue):
-            self._text_element("string", item.text, indent, _string_attrs(item))
             return
         if isinstance(item, CStringValue):
             self._text_element("cstring", item.text, indent)
@@ -269,9 +404,6 @@ class _Writer:
         if isinstance(item, RectFValue):
             self._real_box("rectf", (("x", item.x), ("y", item.y), ("width", item.width), ("height", item.height)), indent)
             return
-        if isinstance(item, SizeValue):
-            self._int_box("size", (("width", item.width), ("height", item.height)), indent)
-            return
         if isinstance(item, SizeFValue):
             self._real_box("sizef", (("width", item.width), ("height", item.height)), indent)
             return
@@ -280,27 +412,6 @@ class _Writer:
             return
         if isinstance(item, PointFValue):
             self._real_box("pointf", (("x", item.x), ("y", item.y)), indent)
-            return
-        if isinstance(item, SizePolicyValue):
-            attrs = ' hsizetype="%s" vsizetype="%s"' % (_esc_attr(item.hsizetype), _esc_attr(item.vsizetype))
-            self._open(indent, "sizepolicy", attrs)
-            self._text_element("horstretch", format_int(item.horstretch), indent + 1)
-            self._text_element("verstretch", format_int(item.verstretch), indent + 1)
-            self._close(indent, "sizepolicy")
-            return
-        if isinstance(item, FontValue):
-            self._open(indent, "font", "")
-            for name in _FONT_ORDER:
-                child = getattr(item, name)
-                if child is None:
-                    continue
-                if isinstance(child, bool):
-                    self._text_element(name, format_bool(child), indent + 1)
-                elif isinstance(child, int):
-                    self._text_element(name, format_int(child), indent + 1)
-                else:
-                    self._text_element(name, str(child), indent + 1)
-            self._close(indent, "font")
             return
         if isinstance(item, CharValue):
             self._open(indent, "char", "")
@@ -466,6 +577,9 @@ class _Writer:
         indent: int,
         buckets: Dict[Tuple[str, int], List[OpaqueNode]],
     ) -> None:
+        if not buckets:
+            self._group_plain(node, group, indent)
+            return
         if group == "properties":
             self._sequence(
                 group,
@@ -779,6 +893,51 @@ def _wrappers(node: Node) -> frozenset:
     return frozenset()
 
 
+_NO_BUCKETS: Dict[Tuple[str, int], List[OpaqueNode]] = {}
+_WIDGET_SLOTS = (
+    "rows",
+    "columns",
+    "items",
+    "layout",
+    "children",
+    "actions",
+    "action_groups",
+    "add_actions",
+)
+
+
+def _has_opaque(node: Node) -> bool:
+    try:
+        return bool(node.children("opaque"))
+    except KeyError:
+        return False
+
+
+def _has_body_plain(node: Node) -> bool:
+    """``_has_body`` for a node whose opaque slot is empty."""
+    spec = SCHEMA[node.kind]
+    if node.properties() or node.attributes():
+        return True
+    for group in spec.write_order:
+        if group in ("properties", "attributes"):
+            continue
+        if group.startswith("child:"):
+            field_name = _child_field_name(node.kind, group[len("child:"):])
+            if field_name is not None and node.field(field_name) is not None:
+                return True
+            continue
+        if node.children(group):
+            return True
+        slot = _slot(node.kind, group)
+        if slot is not None and slot.wrapper and group in _wrappers(node):
+            return True
+    if node.kind == "include":
+        text = node.field("text")
+        if isinstance(text, str) and text != "":
+            return True
+    return False
+
+
 def _has_body(node: Node) -> bool:
     spec = SCHEMA[node.kind]
     if node.properties() or node.attributes() or node.opaque():
@@ -1005,19 +1164,29 @@ def _empty_form(tag: str) -> str:
     return EMPTY_ELEMENT_FORM.get(tag, "self")
 
 
+_TEXT_ESCAPE = str.maketrans({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "\r": "&#13;",
+})
+
+
 def _esc_text(text: str) -> str:
-    require_xml_text(text)
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("\r", "&#13;")
-    )
+    if text.isascii() and text.isprintable():
+        if "&" not in text and "<" not in text and ">" not in text and '"' not in text:
+            return text
+    else:
+        require_xml_text(text)
+    return text.translate(_TEXT_ESCAPE)
 
 
 def _esc_attr(text: str) -> str:
-    return _esc_text(text).replace("\t", "&#9;").replace("\n", "&#10;")
+    escaped = _esc_text(text)
+    if "\t" not in escaped and "\n" not in escaped:
+        return escaped
+    return escaped.replace("\t", "&#9;").replace("\n", "&#10;")
 
 
 def _fragment_spec(fragment: Fragment, allocator: IdAllocator) -> NodeSpec:
