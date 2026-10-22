@@ -532,14 +532,15 @@ def _fire(root: QWidget, sources: str):
             if name not in names or name in _SKIP_SIGNAL or name in seen:
                 continue
             signal = getattr(node, name, None)
-            if not callable(getattr(signal, "emit", None)):
+            emit = getattr(signal, "emit", None)
+            if not callable(emit):
                 continue
             args = _emit_args(method)
             if args is None:
                 continue
             before = _signal_state(root)
             try:
-                signal.emit(*args)
+                emit(*args)
             except Exception:
                 continue
             seen.add(name)
@@ -759,7 +760,8 @@ def _widget(widget: QWidget, depth=0):
             buddy = buddy_fn()
         except Exception:
             buddy = None
-        info["buddy"] = buddy.objectName() if buddy is not None else ""
+        name_fn = getattr(buddy, "objectName", None)
+        info["buddy"] = name_fn() if callable(name_fn) else ""
     if class_name in _ACTION_CLASSES:
         info["actions"] = [action.objectName() for action in widget.actions()]
     if depth == 0:
@@ -978,7 +980,7 @@ def _push_fake_freecadgui() -> bool:
     if "FreeCADGui" in sys.modules:
         return False
     module = types.ModuleType("FreeCADGui")
-    module.UiLoader = _StandInLoader
+    setattr(module, "UiLoader", _StandInLoader)
     sys.modules["FreeCADGui"] = module
     return True
 
@@ -1010,7 +1012,9 @@ def _close_widgets() -> None:
     file then reads a wrapper whose meta-object is already gone.
     """
     try:
-        from shiboken6 import delete as destroy
+        import shiboken6
+
+        destroy = getattr(shiboken6, "delete", None)
     except ImportError:
         destroy = None
     while _OPEN_WIDGETS:
@@ -1134,11 +1138,18 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
     if ours is None and theirs is None:
         if uic_text is None:
             return "uic-fail", (uic_stderr or "")[:400]
-        if type(ours_exc).__name__ == type(theirs_exc).__name__:
+        if (
+            ours_exc is not None
+            and theirs_exc is not None
+            and type(ours_exc).__name__ == type(theirs_exc).__name__
+        ):
             return "env", "%s | uic %s" % (_exc_text(ours_exc), _exc_text(theirs_exc))
-        return "env-mismatch", "%s | uic %s" % (_exc_text(ours_exc), _exc_text(theirs_exc))
+        return "env-mismatch", "%s | uic %s" % (
+            _exc_text(ours_exc) if ours_exc is not None else "load failed",
+            _exc_text(theirs_exc) if theirs_exc is not None else "load failed",
+        )
     if ours is None:
-        return "ours-exec", _exc_text(ours_exc)
+        return "ours-exec", _exc_text(ours_exc) if ours_exc is not None else "load failed"
     root_name = read.document.root.class_name.split("::")[-1]
     factory = _root_type(root_name)
     try:

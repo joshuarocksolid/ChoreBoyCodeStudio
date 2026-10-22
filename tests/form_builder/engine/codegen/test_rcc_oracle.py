@@ -45,7 +45,7 @@ def _qfile_bytes(module_text: str, paths: list) -> dict:
             handle.close()
     finally:
         cleanup = namespace.get("qCleanupResources")
-        if cleanup is not None:
+        if callable(cleanup):
             cleanup()
     return found
 
@@ -162,7 +162,7 @@ def _read_resource(module_text: str, resource: str, locale_name: str):
             handle.close()
     finally:
         cleanup = namespace.get("qCleanupResources")
-        if cleanup is not None:
+        if callable(cleanup):
             cleanup()
 
 
