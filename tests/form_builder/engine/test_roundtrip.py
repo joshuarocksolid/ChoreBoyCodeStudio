@@ -1,15 +1,20 @@
+# pyright: reportAttributeAccessIssue=false
 """Reader and writer behavior for the ui4 core."""
 from __future__ import annotations
 
 import random
+import sys
+import threading
+from pathlib import Path
+from typing import List
 
 import pytest
 
-from app.features.form_builder.engine.commands.ops import SetPropertyOp
-from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.commands.ops import InsertNodeOp, SetPropertyOp
+from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.ui4.mutate import OpError, apply
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
-from app.features.form_builder.engine.ui4.spec import PropertyEntry
+from app.features.form_builder.engine.ui4.spec import NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import BoolValue, OpaqueValue, StringValue
 from app.features.form_builder.engine.ui4.writer import write_ui
 
@@ -146,6 +151,97 @@ def test_ids_follow_schema_preorder_and_stay_stable() -> None:
     assert layout_parent.id == root.id
 
 
+def test_spaced_bool_stays_opaque_and_matches_qt(qapp: object) -> None:
+    del qapp
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="enabled">
+   <bool> true</bool>
+  </property>
+  <property name="font">
+   <font>
+    <bold> true</bold>
+   </font>
+  </property>
+ </widget>
+</ui>
+"""
+    from app.qt.QtCore import QBuffer, QIODevice
+    from app.qt.QtUiTools import QUiLoader
+
+    def load(xml: str) -> object:
+        buffer = QBuffer()
+        buffer.setData(xml.encode("utf-8"))
+        buffer.open(QIODevice.ReadOnly)
+        widget = QUiLoader().load(buffer)
+        assert widget is not None
+        return widget
+
+    original = load(text)
+    saved = write_ui(_load(text).document).text
+    assert "<bool> true</bool>" in saved
+    assert "<bold> true</bold>" in saved
+    rewritten = load(saved)
+    assert original.isEnabled() == rewritten.isEnabled()
+    assert original.font().bold() == rewritten.font().bold()
+
+
+def test_unknown_sibling_after_a_wrapper_stays_outside() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form"/>
+ <resources>
+  <include location="other.qrc"/>
+  <zzin/>
+ </resources>
+ <zzout/>
+ <connections/>
+</ui>
+"""
+    loaded = _load(text)
+    saved = write_ui(loaded.document).text
+    compact = "".join(line.strip() for line in saved.splitlines())
+    assert "<resources><include" in compact
+    assert "<zzin/></resources><zzout/><connections" in compact
+    again = _load(saved)
+    assert again.document.structure_fingerprint() == loaded.document.structure_fingerprint()
+    empty = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form"/>
+ <resources/>
+ <zz/>
+ <connections/>
+</ui>
+"""
+    loaded = _load(empty)
+    saved = write_ui(loaded.document).text
+    compact = "".join(line.strip() for line in saved.splitlines())
+    assert "<resources/><zz/><connections" in compact
+    assert _load(saved).document.structure_fingerprint() == loaded.document.structure_fingerprint()
+
+
+def test_odd_property_content_rereads_with_the_same_fingerprint() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="empty"/>
+  <property name="text"/>
+  <property name="noted"><!--c--><string>A</string></property>
+  <property name="two"><string>A</string><string>B</string></property>
+ </widget>
+</ui>
+"""
+    loaded = _load(text)
+    saved = write_ui(loaded.document).text
+    assert "#value" not in saved
+    assert '<property name="empty"/>' in saved
+    assert '<property name="text"/>' in saved
+    again = _load(saved)
+    assert again.document.structure_fingerprint() == loaded.document.structure_fingerprint()
+    assert write_ui(again.document).text == saved
+
+
 def test_duplicate_property_keeps_the_last_value() -> None:
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
@@ -210,18 +306,26 @@ def test_earlier_duplicate_stays_at_its_position() -> None:
     assert between.index(">A1<") < between.index("<extra") < between.index(">A2<")
 
 
-def test_empty_element_table_records_the_expat_choice() -> None:
-    """Expat cannot tell ``<author/>`` from ``<author></author>``. The table is the choice."""
-    from app.features.form_builder.engine.ui4.writer import EMPTY_ELEMENT_FORM
+def test_empty_pair_is_one_line_and_the_table_is_the_flip_point() -> None:
+    from app.features.form_builder.engine.ui4 import writer as writer_module
 
-    assert EMPTY_ELEMENT_FORM["string"] == "self"
-    assert EMPTY_ELEMENT_FORM["author"] == "pair"
-    assert EMPTY_ELEMENT_FORM["comment"] == "pair"
-    assert EMPTY_ELEMENT_FORM["class"] == "pair"
-    assert EMPTY_ELEMENT_FORM["exportmacro"] == "pair"
-    assert EMPTY_ELEMENT_FORM["resources"] == "self"
-    assert EMPTY_ELEMENT_FORM["connections"] == "self"
-    assert set(EMPTY_ELEMENT_FORM.values()) <= {"self", "pair"}
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <widget class="QWidget" name="Form">
+  <property name="value"><number></number></property>
+ </widget>
+</ui>
+"""
+    saved = _saved(text)
+    assert "<number></number>" in saved
+    original = writer_module.EMPTY_ELEMENT_FORM["number"]
+    writer_module.EMPTY_ELEMENT_FORM["number"] = "self"
+    try:
+        flipped = _saved(text)
+    finally:
+        writer_module.EMPTY_ELEMENT_FORM["number"] = original
+    assert "<number/>" in flipped
+    assert flipped != saved
 
 
 def test_empty_string_matches_designer_self_close() -> None:
@@ -271,6 +375,21 @@ def test_float_uses_eight_decimals_and_double_uses_fifteen() -> None:
     )
     assert "<float>1.50000000</float>" in saved
     assert "<double>1.500000000000000</double>" in saved
+
+
+def test_insert_rejects_an_illegal_xml_char() -> None:
+    document = _load(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><widget class="QWidget" name="Form"/></ui>
+"""
+    ).document
+    spec = NodeSpec(
+        kind="widget",
+        id=NodeId(50),
+        fields=(("class_name", "QPushButton"), ("object_name", "a\x00b")),
+    )
+    with pytest.raises(OpError):
+        apply(document, InsertNodeOp(document.root.id, "children", 0, spec))
 
 
 def test_illegal_xml_char_is_rejected() -> None:
@@ -423,3 +542,78 @@ def _random_form(rng: random.Random) -> str:
         '<?xml version="1.0" encoding="UTF-8"?><ui version="4.0"><class>Form</class>'
         '<widget class="QWidget" name="Form">%s</widget></ui>' % "".join(widgets)
     )
+
+
+_QT_CORPUS = Path(__file__).resolve().parents[1] / "corpus" / "qt_examples"
+
+
+def _corpus_texts(count: int) -> List[str]:
+    paths = sorted(_QT_CORPUS.rglob("*.ui"))[:count]
+    if not paths:
+        pytest.skip("qt_examples corpus is not checked out")
+    return [path.read_text(encoding="utf-8") for path in paths]
+
+
+def test_concurrent_reads_match_sequential() -> None:
+    # Overlapping reads used to share module-level reuse pools and corrupt each other.
+    texts = _corpus_texts(20)
+    expected = [_load(text).document.structure_fingerprint() for text in texts]
+    wrong: List[str] = []
+    unexpected: List[BaseException] = []
+    lock = threading.Lock()
+
+    def work() -> None:
+        for _round in range(5):
+            for index, text in enumerate(texts):
+                try:
+                    got = _load(text).document.structure_fingerprint()
+                except BaseException as exc:  # recorded, then asserted below
+                    with lock:
+                        unexpected.append(exc)
+                    continue
+                if got != expected[index]:
+                    with lock:
+                        wrong.append("round %s file %s" % (_round, index))
+
+    previous = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        threads = [threading.Thread(target=work) for _ in range(4)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+    finally:
+        sys.setswitchinterval(previous)
+    assert not unexpected, "%s reads raised, first: %r" % (len(unexpected), unexpected[0])
+    assert not wrong, "%s reads differ from the sequential read, first: %s" % (len(wrong), wrong[0])
+
+
+class _NestingAllocator(IdAllocator):
+    """Starts a second read on the same thread while the first is mid-read."""
+
+    def __init__(self, nested_text: str, every: int) -> None:
+        super().__init__()
+        self.nested_text = nested_text
+        self.every = every
+        self.nested: List[str] = []
+
+    def alloc(self) -> NodeId:
+        node_id = super().alloc()
+        if int(node_id) % self.every == 0:
+            nested = read_ui(self.nested_text, allocator=IdAllocator())
+            self.nested.append(nested.document.structure_fingerprint())
+        return node_id
+
+
+def test_reentrant_read_from_the_allocator_matches_plain_reads() -> None:
+    texts = _corpus_texts(20)
+    outer_text = max(texts, key=len)
+    nested_text = texts[0] if texts[0] is not outer_text else texts[1]
+    expected_outer = _load(outer_text).document.structure_fingerprint()
+    expected_nested = _load(nested_text).document.structure_fingerprint()
+    allocator = _NestingAllocator(nested_text, every=3)
+    outer = read_ui(outer_text, allocator=allocator)
+    assert allocator.nested, "the outer read allocated too few ids to nest"
+    assert outer.document.structure_fingerprint() == expected_outer
+    assert set(allocator.nested) == {expected_nested}

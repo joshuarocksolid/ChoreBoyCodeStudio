@@ -95,6 +95,7 @@ def _insert(doc: UiDocument, op: InsertNodeOp) -> Op:
     if slot.max_len and len(kids) >= slot.max_len:
         raise OpError("slot %s already holds its only child" % (op.slot,))
     _require_fresh_ids(doc, op.spec)
+    _reject_illegal_text(op.spec)
     if op.spec.id is None:
         raise OpError("inserted spec has no id")
     child = _node_from_spec(op.spec, op.parent, op.slot, op.index)

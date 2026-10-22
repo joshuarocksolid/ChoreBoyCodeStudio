@@ -9,8 +9,9 @@ ElementTree tree), refuses DOCTYPE and entity declarations, and builds a
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Tuple
+import threading
+from dataclasses import dataclass
+from typing import Dict, FrozenSet, List, Optional, Sequence, Tuple
 from xml.parsers import expat
 
 from app.features.form_builder.engine.diagnostic_codes import fb0xx as _fb0xx
@@ -21,8 +22,8 @@ from app.features.form_builder.engine.diagnostics import (
     Severity,
 )
 from app.features.form_builder.engine.ids import DOCUMENT_ID, IdAllocator, NodeId
-from app.features.form_builder.engine.ui4 import mutate as mutate_module
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import Node, build_node
 from app.features.form_builder.engine.ui4.numfmt import parse_real, real_round_trips
 from app.features.form_builder.engine.ui4.opaque import OpaqueComment, OpaqueElement, OpaquePI
 from app.features.form_builder.engine.ui4.schema import (
@@ -81,7 +82,6 @@ _INT32 = (-2147483648, 2147483647)
 _UINT32 = (0, 4294967295)
 _INT64 = (-9223372036854775808, 9223372036854775807)
 _UINT64 = (0, 18446744073709551615)
-_INT_RE = re.compile(r"[+-]?[0-9]+\Z")
 _DEFERRED_VALUES = frozenset({"palette", "brush", "iconset", "pixmap", "gradient"})
 # QSizePolicy::Policy values, not the old SizeType index. 5 is Preferred.
 _POLICY_BY_INT = {
@@ -96,6 +96,90 @@ _POLICY_BY_INT = {
 _FONT_INT = frozenset({"pointsize", "weight"})
 _FONT_BOOL = frozenset({"italic", "bold", "underline", "strikeout", "antialiasing", "kerning"})
 _FONT_TEXT = frozenset({"family", "stylestrategy", "hintingpreference", "fontweight"})
+_INT_LIMITS = {
+    "number": _INT32,
+    "uint": _UINT32,
+    "longlong": _INT64,
+    "ulonglong": _UINT64,
+    "cursor": _INT32,
+}
+_INT_ATTR_NAMES = frozenset({"row", "column", "rowspan", "colspan"})
+_NO_ATTRS: Tuple[Tuple[str, str], ...] = ()
+_NO_CHILDREN: Tuple[object, ...] = ()
+_NO_FIELDS: Tuple[Tuple[str, object], ...] = ()
+_NO_PROPS: Tuple[PropertyEntry, ...] = ()
+_NO_SLOTS: Tuple[Tuple[str, Tuple[Node, ...]], ...] = ()
+_NO_NOTES: List["_Note"] = []
+_POOL_CAP = 20000
+_WIDGET_CHILD_GROUP = {
+    "row": "rows",
+    "column": "columns",
+    "item": "items",
+    "layout": "layout",
+    "widget": "children",
+    "action": "actions",
+    "actiongroup": "action_groups",
+    "addaction": "add_actions",
+    "zorder": "child:zorder",
+}
+_UI_CHILD_GROUP = {
+    "author": "child:author",
+    "comment": "child:comment",
+    "exportmacro": "child:exportmacro",
+    "class": "child:class",
+    "widget": "root",
+    "layoutdefault": "child:layoutdefault",
+    "layoutfunction": "child:layoutfunction",
+    "pixmapfunction": "child:pixmapfunction",
+    "customwidgets": "customwidgets",
+    "tabstops": "child:tabstops",
+    "images": "child:images",
+    "includes": "includes",
+    "resources": "resources",
+    "connections": "connections",
+    "designerdata": "child:designerdata",
+    "slots": "child:slots",
+    "buttongroups": "buttongroups",
+}
+_WRAPPER_SLOT = {
+    "customwidgets": "customwidgets",
+    "includes": "includes",
+    "resources": "resources",
+    "connections": "connections",
+    "buttongroups": "buttongroups",
+}
+
+
+def _compile_lookups() -> Tuple[Dict[str, Dict[str, str]], Dict[str, Dict[str, int]], Dict[str, Tuple[str, ...]]]:
+    attr: Dict[str, Dict[str, str]] = {}
+    rank: Dict[str, Dict[str, int]] = {}
+    required: Dict[str, Tuple[str, ...]] = {}
+    prefix = "attr:"
+    width = len(prefix)
+    for kind, spec in SCHEMA.items():
+        attr[kind] = {
+            item.xml[width:]: item.name
+            for item in spec.fields
+            if item.xml.startswith(prefix)
+        }
+        rank[kind] = {item.name: index for index, item in enumerate(spec.fields)}
+        required[kind] = tuple(item.name for item in spec.fields if item.required)
+    return attr, rank, required
+
+
+def _field_key(rank: Dict[str, int]):
+    return lambda item, rank=rank: rank.get(item[0], 1000)
+
+
+_ATTR_FIELD, _FIELD_RANK, _REQUIRED_FIELD = _compile_lookups()
+_FIELD_KEY = {kind: _field_key(rank) for kind, rank in _FIELD_RANK.items()}
+
+
+class _Miss:
+    """Sentinel: a fast path does not apply; the general parser must run."""
+
+
+_MISS = _Miss()
 
 
 class UiReadError(ValueError):
@@ -126,12 +210,22 @@ class ReadResult:
     line_map: Dict[NodeId, int]
 
 
-@dataclass
 class _XNode:
-    tag: str
-    attrs: Tuple[Tuple[str, str], ...]
-    children: Tuple[object, ...]
-    line: int
+    """One element. Children stay a list when expat already coalesced text."""
+
+    __slots__ = ("tag", "attrs", "children", "line")
+
+    def __init__(
+        self,
+        tag: str,
+        attrs: Tuple[Tuple[str, str], ...],
+        children: Sequence[object],
+        line: int,
+    ) -> None:
+        self.tag = tag
+        self.attrs = attrs
+        self.children = children
+        self.line = line
 
 
 @dataclass
@@ -142,16 +236,18 @@ class _Note:
     prop: Optional[str] = None
 
 
-@dataclass
 class _Built:
-    kind: str
-    line: int
-    fields: List[Tuple[str, object]] = field(default_factory=list)
-    properties: List[PropertyEntry] = field(default_factory=list)
-    attributes: List[PropertyEntry] = field(default_factory=list)
-    slots: Dict[str, List["_Built"]] = field(default_factory=dict)
-    extra_attrs: List[Tuple[str, str]] = field(default_factory=list)
-    notes: List[_Note] = field(default_factory=list)
+    __slots__ = ("kind", "line", "fields", "properties", "attributes", "slots", "extra_attrs", "notes")
+
+    def __init__(self, kind: str, line: int) -> None:
+        self.kind = kind
+        self.line = line
+        self.fields: List[Tuple[str, object]] = []
+        self.properties: List[PropertyEntry] = []
+        self.attributes: List[PropertyEntry] = []
+        self.slots: Dict[str, List[_Built]] = {}
+        self.extra_attrs: List[Tuple[str, str]] = []
+        self.notes: List[_Note] = []
 
     def add_slot(self, name: str, child: "_Built") -> None:
         self.slots.setdefault(name, []).append(child)
@@ -162,6 +258,123 @@ class _Built:
     def set_field(self, name: str, value: object) -> None:
         self.fields = [(key, item) for key, item in self.fields if key != name]
         self.fields.append((name, value))
+
+
+class _ReadArena:
+    """Reuse pools for one read at a time.
+
+    Each ``read_ui`` call owns one arena from start to finish, so overlapping
+    reads (other threads, or a nested read from an allocator or listener on the
+    same thread) never share pooled objects. Each pool keeps at most
+    ``_POOL_CAP`` objects.
+    """
+
+    __slots__ = ("xnode_pool", "xnode_live", "list_pool", "frame_pool", "built_pool", "built_live", "seen")
+
+    def __init__(self) -> None:
+        self.xnode_pool: List[_XNode] = []
+        self.xnode_live: List[_XNode] = []
+        self.list_pool: List[list] = []
+        self.frame_pool: List[list] = []
+        self.built_pool: List[_Built] = []
+        self.built_live: List[_Built] = []
+        self.seen: List[str] = []
+
+    def take_list(self) -> list:
+        pool = self.list_pool
+        if pool:
+            return pool.pop()
+        return []
+
+    def take_built(self, kind: str, line: int) -> _Built:
+        pool = self.built_pool
+        if pool:
+            built = pool.pop()
+            built.kind = kind
+            built.line = line
+            built.fields.clear()
+            built.properties.clear()
+            built.attributes.clear()
+            built.slots.clear()
+            built.extra_attrs.clear()
+            built.notes.clear()
+        else:
+            built = _Built(kind, line)
+        self.built_live.append(built)
+        return built
+
+    def release_xnodes(self) -> None:
+        """Return this read's elements to the pool without walking the tree."""
+        live = self.xnode_live
+        if not live:
+            return
+        lists = self.list_pool
+        cap = _POOL_CAP
+        for node in live:
+            children = node.children
+            node.children = _NO_CHILDREN
+            node.attrs = _NO_ATTRS
+            node.tag = ""
+            if isinstance(children, list):
+                children.clear()
+                if len(lists) < cap:
+                    lists.append(children)
+        pool = self.xnode_pool
+        room = cap - len(pool)
+        if room >= len(live):
+            pool.extend(live)
+        elif room > 0:
+            pool.extend(live[:room])
+        del live[:]
+
+    def release_built(self) -> None:
+        live = self.built_live
+        if not live:
+            return
+        for built in live:
+            built.fields.clear()
+            built.properties.clear()
+            built.attributes.clear()
+            built.slots.clear()
+            built.extra_attrs.clear()
+            built.notes.clear()
+        pool = self.built_pool
+        room = _POOL_CAP - len(pool)
+        if room >= len(live):
+            pool.extend(live)
+        elif room > 0:
+            pool.extend(live[:room])
+        del live[:]
+
+    def reset(self) -> None:
+        self.release_xnodes()
+        self.release_built()
+        self.seen.clear()
+
+
+_ARENA_LOCK = threading.Lock()
+_ARENA_FREE: List[_ReadArena] = []
+#: Idle arenas kept for reuse. More concurrent reads than this get fresh arenas.
+_ARENA_FREE_CAP = 4
+
+
+def _acquire_arena() -> _ReadArena:
+    with _ARENA_LOCK:
+        if _ARENA_FREE:
+            return _ARENA_FREE.pop()
+    return _ReadArena()
+
+
+def _release_arena(arena: _ReadArena) -> None:
+    try:
+        arena.reset()
+    except Exception:
+        # A half-reset arena is dropped, never reused. KeyboardInterrupt and
+        # SystemExit still propagate; the arena is simply never returned.
+        return
+    with _ARENA_LOCK:
+        if len(_ARENA_FREE) < _ARENA_FREE_CAP:
+            _ARENA_FREE.append(arena)
 
 
 def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = None) -> ReadResult:
@@ -176,6 +389,8 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
       in input order.
     * A value element that does not parse losslessly becomes OpaqueValue.
     * Ids come from ``allocator`` in pre-order.
+    * Only ``UiReadError`` escapes for bad input (section 8.1). Safe to call
+      from several threads at once, and re-entrantly.
     O(input). Budget: 25 ms CPU for a 300-widget form (section 12).
     """
     del source_path
@@ -187,17 +402,28 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
         raise UiReadError("FB001", "This form is not valid XML.", 0, 0) from exc
     if len(encoded) > MAX_INPUT_BYTES:
         raise UiReadError("FB008", "This form is too large to open in the form builder.", 0, 0)
+    arena = _acquire_arena()
     try:
-        root = _parse_tree(text)
-        built = _lower_ui(root)
+        root = _parse_tree(arena, text)
+        built = _lower_ui(arena, root)
+        arena.release_xnodes()
         line_map: Dict[NodeId, int] = {}
         diagnostics: List[FormDiagnostic] = []
-        spec = _to_spec(built, allocator, line_map, diagnostics)
-        document = mutate_module.load_spec(spec)
+        ui = _to_node(built, allocator, line_map, diagnostics, None, None, 0)
+        arena.release_built()
+        document = UiDocument(ui)
+        document._check_validate()
     except UiReadError:
         raise
     except (KeyboardInterrupt, SystemExit):
         raise
+    except RecursionError as exc:
+        raise UiReadError(
+            "FB008",
+            "This form is nested too deeply to open in the form builder.",
+            0,
+            0,
+        ) from exc
     except Exception as exc:
         raise UiReadError(
             "FB001",
@@ -205,6 +431,8 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
             0,
             0,
         ) from exc
+    finally:
+        _release_arena(arena)
     return ReadResult(document=document, diagnostics=tuple(diagnostics), line_map=line_map)
 
 
@@ -228,12 +456,32 @@ def read_fragment(text: str, *, source_path: Optional[str] = None) -> Fragment:
     )
 
 
-def _parse_tree(text: str) -> _XNode:
+def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
     parser = expat.ParserCreate()
     parser.ordered_attributes = True
     parser.buffer_text = True
     stack: List[List[object]] = []
     root: List[Optional[_XNode]] = [None]
+    # The handlers run per element, so they bind this read's pools locally.
+    list_pool = arena.list_pool
+    frame_pool = arena.frame_pool
+    xnode_pool = arena.xnode_pool
+    xnode_live = arena.xnode_live
+    cap = _POOL_CAP
+
+    def take_list() -> list:
+        if list_pool:
+            return list_pool.pop()
+        return []
+
+    def take_frame(name: str, pairs: Tuple[Tuple[str, str], ...], line: int) -> list:
+        if frame_pool:
+            frame = frame_pool.pop()
+            frame[0] = name
+            frame[1] = pairs
+            frame[2] = line
+            return frame
+        return [name, pairs, line, take_list()]
 
     def _position() -> Tuple[int, int]:
         return parser.CurrentLineNumber, parser.CurrentColumnNumber + 1
@@ -242,14 +490,40 @@ def _parse_tree(text: str) -> _XNode:
         if len(stack) >= MAX_DEPTH:
             line, column = _position()
             raise UiReadError("FB008", "This form is nested too deeply to open in the form builder.", line, column)
-        pairs = tuple((attrs[index], attrs[index + 1]) for index in range(0, len(attrs), 2))
-        stack.append([name, pairs, parser.CurrentLineNumber, []])
+        count = len(attrs)
+        if count == 0:
+            pairs: Tuple[Tuple[str, str], ...] = _NO_ATTRS
+        elif count == 2:
+            pairs = ((attrs[0], attrs[1]),)
+        elif count == 4:
+            pairs = ((attrs[0], attrs[1]), (attrs[2], attrs[3]))
+        else:
+            built_pairs = []
+            for index in range(0, count, 2):
+                built_pairs.append((attrs[index], attrs[index + 1]))
+            pairs = tuple(built_pairs)
+        stack.append(take_frame(name, pairs, parser.CurrentLineNumber))
 
     def end(name: str) -> None:
         del name
         frame = stack.pop()
         tag, attrs, line, parts = frame
-        node = _XNode(tag=str(tag), attrs=attrs, children=_coalesce(parts), line=int(line))
+        children = _coalesce(parts)
+        if children is not parts and len(list_pool) < cap:
+            parts.clear()
+            list_pool.append(parts)
+        frame[3] = take_list()
+        if len(frame_pool) < 128:
+            frame_pool.append(frame)
+        if xnode_pool:
+            node = xnode_pool.pop()
+            node.tag = tag
+            node.attrs = attrs
+            node.children = children
+            node.line = line
+        else:
+            node = _XNode(tag, attrs, children, line)
+        xnode_live.append(node)
         if stack:
             stack[-1][3].append(node)
         else:
@@ -298,14 +572,30 @@ def _parse_tree(text: str) -> _XNode:
     return root[0]
 
 
-def _coalesce(parts: List[object]) -> Tuple[object, ...]:
+def _coalesce(parts: List[object]) -> Sequence[object]:
+    """Join adjacent text. ``buffer_text`` already joins most runs, so the
+    common shapes (nothing, one child, or elements with no adjacent text)
+    keep the parser's list instead of copying it into a tuple."""
+    count = len(parts)
+    if count < 2:
+        return parts
+    previous_text = isinstance(parts[0], str)
+    for index in range(1, count):
+        this_text = isinstance(parts[index], str)
+        if this_text and previous_text:
+            return _merge_text(parts)
+        previous_text = this_text
+    return parts
+
+
+def _merge_text(parts: List[object]) -> List[object]:
     merged: List[object] = []
     for part in parts:
         if isinstance(part, str) and merged and isinstance(merged[-1], str):
             merged[-1] = merged[-1] + part
         else:
             merged.append(part)
-    return tuple(merged)
+    return merged
 
 
 class _Cursor:
@@ -327,13 +617,11 @@ class _Cursor:
         self.anchor = (group, count)
 
 
-def _lower_ui(node: _XNode) -> _Built:
+def _lower_ui(arena: "_ReadArena", node: _XNode) -> _Built:
     if node.tag != "ui":
         raise UiReadError("FB002", "This file is not a form.", node.line, 0)
-    built = _Built(kind="ui", line=node.line)
-    fields, extra = _split_attrs("ui", node.attrs)
-    built.fields = fields
-    built.extra_attrs = extra
+    built = arena.take_built("ui", node.line)
+    _apply_attrs(built, node.attrs)
     version = built.field_map().get("version")
     if not (isinstance(version, str) and version.split(".")[0] == "4"):
         shown = version if isinstance(version, str) else ""
@@ -343,7 +631,7 @@ def _lower_ui(node: _XNode) -> _Built:
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
-                built.add_slot("opaque", _text_opaque(child, cursor.here(), node.line))
+                built.add_slot("opaque", _text_opaque(arena, child, cursor.here(), node.line))
             continue
         if isinstance(child, (OpaqueComment, OpaquePI)):
             continue
@@ -351,10 +639,10 @@ def _lower_ui(node: _XNode) -> _Built:
             continue
         group = _ui_group(child.tag)
         if group is None:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
             continue
-        _place_ui_child(built, child, wrappers, cursor, group)
+        _place_ui_child(arena, built, child, wrappers, cursor, group)
     if "root" not in built.slots:
         raise UiReadError("FB002", "This form has no root widget.", node.line, 0)
     built.set_field("present_wrappers", frozenset(wrappers))
@@ -363,28 +651,11 @@ def _lower_ui(node: _XNode) -> _Built:
 
 
 def _ui_group(tag: str) -> Optional[str]:
-    return {
-        "author": "child:author",
-        "comment": "child:comment",
-        "exportmacro": "child:exportmacro",
-        "class": "child:class",
-        "widget": "root",
-        "layoutdefault": "child:layoutdefault",
-        "layoutfunction": "child:layoutfunction",
-        "pixmapfunction": "child:pixmapfunction",
-        "customwidgets": "customwidgets",
-        "tabstops": "child:tabstops",
-        "images": "child:images",
-        "includes": "includes",
-        "resources": "resources",
-        "connections": "connections",
-        "designerdata": "child:designerdata",
-        "slots": "child:slots",
-        "buttongroups": "buttongroups",
-    }.get(tag)
+    return _UI_CHILD_GROUP.get(tag)
 
 
 def _place_ui_child(
+    arena: "_ReadArena",
     built: _Built,
     child: _XNode,
     wrappers: set,
@@ -393,32 +664,31 @@ def _place_ui_child(
 ) -> None:
     tag = child.tag
     if tag in ("author", "comment", "exportmacro", "pixmapfunction"):
-        built.set_field(tag if tag != "pixmapfunction" else "pixmapfunction", _exact_text(child))
+        _set_text_field(built, tag, child)
         cursor.advance(group)
         return
     if tag == "class":
-        built.set_field("class_name", _exact_text(child))
+        _set_text_field(built, "class_name", child)
         cursor.advance(group)
         return
     if tag == "widget":
         if "root" in built.slots:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept an extra root widget.", child.line))
             return
-        built.add_slot("root", _lower_widget(child))
+        built.add_slot("root", _lower_widget(arena, child))
         cursor.advance("root")
         return
     if tag == "layoutdefault":
-        built.set_field("layoutdefault", _layout_default(child))
+        _set_parsed_field(built, "layoutdefault", child, _layout_default(child))
         cursor.advance(group)
         return
     if tag == "layoutfunction":
-        built.set_field("layoutfunction", _layout_function(child))
+        _set_parsed_field(built, "layoutfunction", child, _layout_function(child))
         cursor.advance(group)
         return
     if tag == "tabstops":
-        names = tuple(_exact_text(item) for item in _elements(child) if item.tag == "tabstop")
-        built.set_field("tabstops", names)
+        _set_parsed_field(built, "tabstops", child, _tabstops(child))
         cursor.advance(group)
         return
     if tag == "images":
@@ -430,34 +700,28 @@ def _place_ui_child(
         cursor.advance(group)
         return
     if tag == "slots":
-        built.set_field("form_slots", _slots_decl(child))
+        _set_parsed_field(built, "form_slots", child, _slots_decl(child))
         cursor.advance(group)
         return
     if tag in ("customwidgets", "includes", "resources", "connections", "buttongroups"):
-        count = _lower_wrapper(built, child, tag, wrappers)
+        count = _lower_wrapper(arena, built, child, tag, wrappers)
         cursor.enter(group, count)
         return
 
 
-def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
-    slot = {
-        "customwidgets": "customwidgets",
-        "includes": "includes",
-        "resources": "resources",
-        "connections": "connections",
-        "buttongroups": "buttongroups",
-    }[tag]
+def _lower_wrapper(arena: "_ReadArena", built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
+    slot = _WRAPPER_SLOT[tag]
     if node.attrs:
         wrappers.discard(tag)
-        built.add_slot("opaque", _opaque_built(node, (slot, 0)))
+        built.add_slot("opaque", _opaque_built(arena, node, (slot, 0)))
         built.notes.append(_Note("FB006", "Kept attributes on <%s>." % tag, node.line))
         return 0
     wrappers.add(tag)
     typed = 0
     for child in _elements(node):
-        lowered = _lower_known(child, tag)
+        lowered = _lower_known(arena, child, tag)
         if lowered is None:
-            built.add_slot("opaque", _opaque_built(child, (slot, typed)))
+            built.add_slot("opaque", _opaque_built(arena, child, ("%s:inner" % slot, typed)))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
         else:
             built.add_slot(slot, lowered)
@@ -465,29 +729,39 @@ def _lower_wrapper(built: _Built, node: _XNode, tag: str, wrappers: set) -> int:
     return typed
 
 
-def _lower_known(node: _XNode, parent_tag: str) -> Optional[_Built]:
+def _lower_known(arena: "_ReadArena", node: _XNode, parent_tag: str) -> Optional[_Built]:
     if parent_tag == "customwidgets" and node.tag == "customwidget":
-        return _lower_custom(node)
+        return _lower_custom(arena, node)
     if parent_tag == "includes" and node.tag == "include":
-        return _lower_include(node)
+        return _lower_include(arena, node)
     if parent_tag == "resources" and node.tag == "include":
-        return _lower_resource(node)
+        return _lower_resource(arena, node)
     if parent_tag == "connections" and node.tag == "connection":
-        return _lower_connection(node)
+        return _lower_connection(arena, node)
     if parent_tag == "buttongroups" and node.tag == "buttongroup":
-        return _lower_named_box(node, "buttongroup")
+        return _lower_named_box(arena, node, "buttongroup")
     return None
 
 
-def _lower_widget(node: _XNode) -> _Built:
-    return _lower_box(node, "widget")
+def _lower_widget(arena: "_ReadArena", node: _XNode) -> _Built:
+    return _lower_box(arena, node, "widget")
 
 
-def _lower_box(node: _XNode, kind: str) -> _Built:
-    built = _Built(kind=kind, line=node.line)
-    fields, extra = _split_attrs(kind, node.attrs)
-    built.fields = fields
-    built.extra_attrs = extra
+def _lower_box(arena: "_ReadArena", node: _XNode, kind: str) -> _Built:
+    if kind == "widget":
+        fast = _lower_property_widget(arena, node)
+        if fast is not None:
+            return fast
+    elif kind == "layout":
+        fast = _lower_item_layout(arena, node)
+        if fast is not None:
+            return fast
+    elif kind == "layoutitem":
+        fast = _lower_single_content_item(arena, node)
+        if fast is not None:
+            return fast
+    built = arena.take_built(kind, node.line)
+    _apply_attrs(built, node.attrs)
     _ensure_required(built)
     cursor = _Cursor()
     properties: List[Tuple[PropertyEntry, _XNode, List[_Note]]] = []
@@ -497,13 +771,13 @@ def _lower_box(node: _XNode, kind: str) -> _Built:
     for child in node.children:
         if isinstance(child, str):
             if child.strip():
-                _hold_gap(built, cursor, prop_stream, attr_stream, ("gap-text", (child, node.line)))
+                _hold_gap(arena, built, cursor, prop_stream, attr_stream, ("gap-text", (child, node.line)))
             continue
         if not isinstance(child, _XNode):
             continue
         group = _box_group(kind, child.tag, built)
         if group == "layout" and "layout" in built.slots:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept an extra layout.", child.line))
             continue
         if group == "properties":
@@ -519,14 +793,100 @@ def _lower_box(node: _XNode, kind: str) -> _Built:
             cursor.enter("attributes", 0)
             continue
         if group is None:
-            _hold_gap(built, cursor, prop_stream, attr_stream, ("gap-node", child))
+            _hold_gap(arena, built, cursor, prop_stream, attr_stream, ("gap-node", child))
             continue
-        _place_box_child(built, child, group)
+        _place_box_child(arena, built, child, group)
         cursor.advance(group)
-    _realize_entries(built, properties, prop_stream, "properties")
-    _realize_entries(built, attributes, attr_stream, "attributes")
+    _realize_entries(arena, built, properties, prop_stream, "properties")
+    _realize_entries(arena, built, attributes, attr_stream, "attributes")
     if kind == "header" and not built.field_map().get("axis"):
         built.set_field("axis", "row")
+    _order_fields(built)
+    return built
+
+
+def _lower_property_widget(arena: "_ReadArena", node: _XNode) -> Optional[_Built]:
+    """Widget whose element children are only ``<property>``. Other shapes
+    (a layout, a child widget, stray text) use the general lowerer."""
+    props: List[_XNode] = []
+    for child in node.children:
+        if isinstance(child, str):
+            if child.strip():
+                return None
+            continue
+        if not isinstance(child, _XNode):
+            continue
+        if child.tag != "property":
+            return None
+        props.append(child)
+    built = arena.take_built("widget", node.line)
+    _apply_attrs(built, node.attrs)
+    _ensure_required(built)
+    seen = arena.seen
+    seen.clear()
+    properties = built.properties
+    for child in props:
+        entry, notes = _parse_property(child, "property")
+        if entry.name in seen:
+            return None
+        seen.append(entry.name)
+        properties.append(entry)
+        if notes:
+            built.notes.extend(notes)
+    _order_fields(built)
+    return built
+
+
+def _lower_item_layout(arena: "_ReadArena", node: _XNode) -> Optional[_Built]:
+    """Layout whose element children are only ``<item>``."""
+    items: List[_XNode] = []
+    for child in node.children:
+        if isinstance(child, str):
+            if child.strip():
+                return None
+            continue
+        if not isinstance(child, _XNode):
+            continue
+        if child.tag != "item":
+            return None
+        items.append(child)
+    built = arena.take_built("layout", node.line)
+    _apply_attrs(built, node.attrs)
+    _ensure_required(built)
+    if items:
+        built.slots["layout_items"] = [_lower_box(arena, child, "layoutitem") for child in items]
+    _order_fields(built)
+    return built
+
+
+def _lower_single_content_item(arena: "_ReadArena", node: _XNode) -> Optional[_Built]:
+    """Layout ``<item>`` with one widget, layout, or spacer and no stray text."""
+    content: Optional[_XNode] = None
+    for child in node.children:
+        if isinstance(child, str):
+            if child.strip():
+                return None
+            continue
+        if not isinstance(child, _XNode):
+            continue
+        if content is not None:
+            return None
+        content = child
+    if content is None:
+        return None
+    tag = content.tag
+    if tag == "widget":
+        lowered = _lower_box(arena, content, "widget")
+    elif tag == "layout":
+        lowered = _lower_box(arena, content, "layout")
+    elif tag == "spacer":
+        lowered = _lower_box(arena, content, "spacer")
+    else:
+        return None
+    built = arena.take_built("layoutitem", node.line)
+    _apply_attrs(built, node.attrs)
+    _ensure_required(built)
+    built.add_slot("content", lowered)
     _order_fields(built)
     return built
 
@@ -538,17 +898,7 @@ def _box_group(kind: str, tag: str, built: _Built) -> Optional[str]:
     if tag == "attribute" and spec.has_attributes:
         return "attributes"
     if kind == "widget":
-        return {
-            "row": "rows",
-            "column": "columns",
-            "item": "items",
-            "layout": "layout",
-            "widget": "children",
-            "action": "actions",
-            "actiongroup": "action_groups",
-            "addaction": "add_actions",
-            "zorder": "child:zorder",
-        }.get(tag)
+        return _WIDGET_CHILD_GROUP.get(tag)
     if kind == "layout" and tag == "item":
         return "layout_items"
     if kind == "layoutitem" and tag in ("widget", "layout", "spacer"):
@@ -564,100 +914,100 @@ def _box_group(kind: str, tag: str, built: _Built) -> Optional[str]:
     return None
 
 
-def _place_box_child(built: _Built, child: _XNode, group: str) -> None:
+def _place_box_child(arena: "_ReadArena", built: _Built, child: _XNode, group: str) -> None:
     if group == "child:zorder":
+        text = _text_leaf(child)
         current = built.field_map().get("zorder")
         names = list(current) if isinstance(current, tuple) else []
-        names.append(_exact_text(child))
+        if text is None:
+            built.add_slot("opaque", _opaque_built(arena, child, ("child:zorder", len(names))))
+            built.notes.append(_Note("FB006", "Kept <zorder> as written.", child.line))
+            return
+        names.append(text)
         built.set_field("zorder", tuple(names))
         return
     if group == "rows":
-        header = _lower_box(child, "header")
+        header = _lower_box(arena, child, "header")
         header.set_field("axis", "row")
         built.add_slot("rows", header)
         return
     if group == "columns":
-        header = _lower_box(child, "header")
+        header = _lower_box(arena, child, "header")
         header.set_field("axis", "column")
         built.add_slot("columns", header)
         return
     if group == "items":
-        built.add_slot("items", _lower_box(child, "item"))
+        built.add_slot("items", _lower_box(arena, child, "item"))
         return
     if group == "subitems":
-        built.add_slot("subitems", _lower_box(child, "item"))
+        built.add_slot("subitems", _lower_box(arena, child, "item"))
         return
     if group == "layout":
-        built.add_slot("layout", _lower_box(child, "layout"))
+        built.add_slot("layout", _lower_box(arena, child, "layout"))
         return
     if group == "layout_items":
-        built.add_slot("layout_items", _lower_box(child, "layoutitem"))
+        built.add_slot("layout_items", _lower_box(arena, child, "layoutitem"))
         return
     if group == "content":
         if child.tag == "widget":
-            built.add_slot("content", _lower_box(child, "widget"))
+            built.add_slot("content", _lower_box(arena, child, "widget"))
         elif child.tag == "layout":
-            built.add_slot("content", _lower_box(child, "layout"))
+            built.add_slot("content", _lower_box(arena, child, "layout"))
         elif child.tag == "spacer":
-            built.add_slot("content", _lower_box(child, "spacer"))
+            built.add_slot("content", _lower_box(arena, child, "spacer"))
         return
     if group == "children":
-        built.add_slot("children", _lower_box(child, "widget"))
+        built.add_slot("children", _lower_box(arena, child, "widget"))
         return
     if group == "actions":
-        built.add_slot("actions", _lower_box(child, "action"))
+        built.add_slot("actions", _lower_box(arena, child, "action"))
         return
     if group == "action_groups":
-        built.add_slot("action_groups", _lower_box(child, "actiongroup"))
+        built.add_slot("action_groups", _lower_box(arena, child, "actiongroup"))
         return
     if group == "add_actions":
-        built.add_slot("add_actions", _lower_box(child, "actionref"))
+        built.add_slot("add_actions", _lower_box(arena, child, "actionref"))
 
 
-def _lower_custom(node: _XNode) -> _Built:
-    built = _Built(kind="customwidget", line=node.line)
+def _lower_custom(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("customwidget", node.line)
+    _apply_attrs(built, node.attrs)
+    if built.extra_attrs:
+        built.notes.append(_Note("FB006", "Kept attributes on <customwidget>.", node.line))
     cursor = _Cursor()
     for child in _elements(node):
         tag = child.tag
         if tag == "class":
-            built.set_field("class_name", _exact_text(child))
+            _set_text_field(built, "class_name", child)
             cursor.advance("child:class")
         elif tag == "extends":
-            built.set_field("extends", _exact_text(child))
+            _set_text_field(built, "extends", child)
             cursor.advance("child:extends")
         elif tag == "header":
-            location = dict(child.attrs).get("location")
-            built.set_field("header", HeaderDecl(_exact_text(child), location))
+            _set_parsed_field(built, "header", child, _header_decl(child))
             cursor.advance("child:header")
         elif tag == "sizehint":
-            width = _child_int(child, "width")
-            height = _child_int(child, "height")
-            if width is None or height is None:
-                built.add_slot("opaque", _opaque_built(child, cursor.here()))
-            else:
-                built.set_field("sizehint", SizeValue(width, height))
-                cursor.advance("child:sizehint")
+            _set_parsed_field(built, "sizehint", child, _size_hint(child))
+            cursor.advance("child:sizehint")
         elif tag == "addpagemethod":
-            built.set_field("addpagemethod", _exact_text(child))
+            _set_text_field(built, "addpagemethod", child)
             cursor.advance("child:addpagemethod")
         elif tag == "container":
-            number = _parse_int(_exact_text(child), _INT32)
-            if number is None:
-                built.add_slot("opaque", _opaque_built(child, cursor.here()))
-            else:
-                built.set_field("container", number)
-                cursor.advance("child:container")
+            text = _text_leaf(child)
+            number = None if text is None else _parse_int(text, _INT32)
+            _set_parsed_field(built, "container", child, number)
+            cursor.advance("child:container")
         elif tag == "pixmap":
-            built.set_field("pixmap", _exact_text(child))
+            _set_text_field(built, "pixmap", child)
             cursor.advance("child:pixmap")
         elif tag == "slots":
-            built.set_field("slots", _slots_decl(child))
+            _set_parsed_field(built, "slots", child, _slots_decl(child))
             cursor.advance("child:slots")
         elif tag == "propertyspecifications":
             built.set_field("propertyspecifications", _to_opaque(child))
             cursor.advance("child:propertyspecifications")
         else:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % tag, child.line))
     if "class_name" not in built.field_map():
         built.set_field("class_name", "")
@@ -667,11 +1017,9 @@ def _lower_custom(node: _XNode) -> _Built:
     return built
 
 
-def _lower_include(node: _XNode) -> _Built:
-    built = _Built(kind="include", line=node.line)
-    fields, extra = _split_attrs("include", node.attrs)
-    built.fields = fields
-    built.extra_attrs = extra
+def _lower_include(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("include", node.line)
+    _apply_attrs(built, node.attrs)
     text = _exact_text(node)
     if text:
         built.set_field("text", text)
@@ -679,37 +1027,30 @@ def _lower_include(node: _XNode) -> _Built:
     return built
 
 
-def _lower_resource(node: _XNode) -> _Built:
-    built = _Built(kind="resource", line=node.line)
-    fields, extra = _split_attrs("resource", node.attrs)
-    built.fields = fields
-    built.extra_attrs = extra
+def _lower_resource(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("resource", node.line)
+    _apply_attrs(built, node.attrs)
     if "location" not in built.field_map():
         built.set_field("location", "")
     _order_fields(built)
     return built
 
 
-def _lower_connection(node: _XNode) -> _Built:
-    built = _Built(kind="connection", line=node.line)
+def _lower_connection(arena: "_ReadArena", node: _XNode) -> _Built:
+    built = arena.take_built("connection", node.line)
+    _apply_attrs(built, node.attrs)
+    if built.extra_attrs:
+        built.notes.append(_Note("FB006", "Kept attributes on <connection>.", node.line))
     cursor = _Cursor()
     for child in _elements(node):
         if child.tag in ("sender", "signal", "receiver", "slot"):
-            built.set_field(child.tag, _exact_text(child))
+            _set_text_field(built, child.tag, child)
             cursor.advance("child:" + child.tag)
         elif child.tag == "hints":
-            hints = []
-            for hint in _elements(child):
-                if hint.tag != "hint":
-                    continue
-                hint_type = dict(hint.attrs).get("type", "")
-                x_value = _child_int(hint, "x")
-                y_value = _child_int(hint, "y")
-                hints.append(ConnectionHint(hint_type, 0 if x_value is None else x_value, 0 if y_value is None else y_value))
-            built.set_field("hints", tuple(hints))
+            _set_parsed_field(built, "hints", child, _connection_hints(child))
             cursor.advance("child:hints")
         else:
-            built.add_slot("opaque", _opaque_built(child, cursor.here()))
+            built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
     for name in ("sender", "signal", "receiver", "slot"):
         if name not in built.field_map():
@@ -718,11 +1059,40 @@ def _lower_connection(node: _XNode) -> _Built:
     return built
 
 
-def _lower_named_box(node: _XNode, kind: str) -> _Built:
-    return _lower_box(node, kind)
+def _lower_named_box(arena: "_ReadArena", node: _XNode, kind: str) -> _Built:
+    return _lower_box(arena, node, kind)
 
 
 def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]]:
+    children = node.children
+    attrs = node.attrs
+    if len(children) == 1 and isinstance(children[0], _XNode):
+        if len(attrs) == 1 and attrs[0][0] == "name":
+            parsed = _parse_value(children[0])
+            if parsed is not None:
+                return PropertyEntry(kind=kind, name=attrs[0][1], value=parsed), _NO_NOTES
+        name = ""
+        stdset = None
+        extra: List[Tuple[str, str]] = []
+        for key, value in attrs:
+            if key == "name" and name == "":
+                name = value
+            elif key == "stdset" and stdset is None:
+                stdset = value
+            else:
+                extra.append((key, value))
+        parsed = _parse_value(children[0])
+        if parsed is not None:
+            return (
+                PropertyEntry(
+                    kind=kind,
+                    name=name,
+                    value=parsed,
+                    stdset=stdset,
+                    extra_attrs=tuple(extra) if extra else _NO_ATTRS,
+                ),
+                _NO_NOTES,
+            )
     attrs = list(node.attrs)
     name = ""
     stdset = None
@@ -737,7 +1107,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
     notes: List[_Note] = []
     elements = _elements(node)
     if len(elements) != 1 or _has_significant_text(node) or _has_comment(node):
-        value: Value = OpaqueValue(_to_opaque(_synthetic_value(node)))
+        value = OpaqueValue(_property_content(node))
         notes.append(_Note("FB005", "Kept this property value as written.", node.line, name or None))
     else:
         parsed = _parse_value(elements[0])
@@ -750,6 +1120,7 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
 
 
 def _hold_gap(
+    arena: "_ReadArena",
     built: _Built,
     cursor: _Cursor,
     prop_stream: List[Tuple[str, object]],
@@ -767,14 +1138,15 @@ def _hold_gap(
     if kind == "gap-text" and isinstance(payload, tuple) and len(payload) == 2:
         text, line = payload
         if isinstance(text, str) and isinstance(line, int):
-            built.add_slot("opaque", _text_opaque(text, cursor.here(), line))
+            built.add_slot("opaque", _text_opaque(arena, text, cursor.here(), line))
         return
     if isinstance(payload, _XNode):
-        built.add_slot("opaque", _opaque_built(payload, cursor.here()))
+        built.add_slot("opaque", _opaque_built(arena, payload, cursor.here()))
         built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
 
 
 def _realize_entries(
+    arena: "_ReadArena",
     built: _Built,
     entries: List[Tuple[PropertyEntry, _XNode, List[_Note]]],
     stream: List[Tuple[str, object]],
@@ -796,7 +1168,7 @@ def _realize_entries(
                 continue
             entry, source, notes = entries[payload]
             if last_index[entry.name] != payload:
-                built.add_slot("opaque", _opaque_built(source, (group, typed_so_far)))
+                built.add_slot("opaque", _opaque_built(arena, source, (group, typed_so_far)))
                 built.notes.append(
                     _Note(
                         "FB007",
@@ -813,10 +1185,10 @@ def _realize_entries(
         if kind == "gap-text" and isinstance(payload, tuple) and len(payload) == 2:
             text, line = payload
             if isinstance(text, str) and isinstance(line, int):
-                built.add_slot("opaque", _text_opaque(text, (group, typed_so_far), line))
+                built.add_slot("opaque", _text_opaque(arena, text, (group, typed_so_far), line))
             continue
         if kind == "gap-node" and isinstance(payload, _XNode):
-            built.add_slot("opaque", _opaque_built(payload, (group, typed_so_far)))
+            built.add_slot("opaque", _opaque_built(arena, payload, (group, typed_so_far)))
             built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
     if group == "properties":
         built.properties = typed
@@ -826,31 +1198,35 @@ def _realize_entries(
 
 def _parse_value(node: _XNode) -> Optional[Value]:
     tag = node.tag
+    if tag == "string":
+        return _parse_string(node)
+    if tag == "font":
+        return _parse_font(node)
+    if tag == "size":
+        return _int_record(node, SizeValue, ("width", "height"))
+    if tag == "sizepolicy":
+        return _parse_sizepolicy(node)
+    if tag == "number":
+        return _parse_counted(node, NumberValue, _INT32)
     if tag in _DEFERRED_VALUES or tag not in VALUE_CLASSES:
         return None
     if tag == "bool":
-        text = _exact_text(node).strip()
+        text = _text_leaf(node)
         if text == "true":
             return BoolValue(True)
         if text == "false":
             return BoolValue(False)
         return None
-    if tag in ("number", "uint", "longlong", "ulonglong", "cursor"):
-        limits = {"number": _INT32, "uint": _UINT32, "longlong": _INT64, "ulonglong": _UINT64, "cursor": _INT32}[tag]
-        number = _parse_int(_exact_text(node), limits)
-        if number is None:
-            return None
-        cls = VALUE_CLASSES[tag]
-        return cls(number)  # type: ignore[call-arg, no-any-return]
+    if tag in _INT_LIMITS:
+        return _parse_counted(node, VALUE_CLASSES[tag], _INT_LIMITS[tag])
     if tag in ("double", "float"):
-        value = _lossless_real(_exact_text(node), tag)
+        text = _text_leaf(node)
+        value = None if text is None else _lossless_real(text, tag)
         if value is None:
             return None
         if tag == "double":
             return DoubleValue(value)
         return FloatValue(value)
-    if tag == "string":
-        return _parse_string(node)
     if tag == "cstring":
         if node.attrs or not _is_plain(node):
             return None
@@ -870,25 +1246,14 @@ def _parse_value(node: _XNode) -> Optional[Value]:
         return _int_record(node, RectValue, ("x", "y", "width", "height"))
     if tag == "rectf":
         return _real_record(node, RectFValue, ("x", "y", "width", "height"))
-    if tag == "size":
-        return _int_record(node, SizeValue, ("width", "height"))
     if tag == "sizef":
         return _real_record(node, SizeFValue, ("width", "height"))
     if tag == "point":
         return _int_record(node, PointValue, ("x", "y"))
     if tag == "pointf":
         return _real_record(node, PointFValue, ("x", "y"))
-    if tag == "sizepolicy":
-        return _parse_sizepolicy(node)
-    if tag == "font":
-        return _parse_font(node)
     if tag == "char":
-        if _has_noise(node):
-            return None
-        number = _child_int(node, "unicode")
-        if number is None:
-            return None
-        return CharValue(number)
+        return _parse_char(node)
     if tag == "color":
         return _parse_color(node)
     if tag == "date":
@@ -898,24 +1263,41 @@ def _parse_value(node: _XNode) -> Optional[Value]:
     if tag == "datetime":
         return _int_record(node, DateTimeValue, ("hour", "minute", "second", "year", "month", "day"))
     if tag == "locale":
-        attrs = dict(node.attrs)
-        if "language" not in attrs or "country" not in attrs or _elements(node):
+        attrs = _known_attrs(node, frozenset({"language", "country"}))
+        if attrs is None or "language" not in attrs or "country" not in attrs:
             return None
         return LocaleValue(attrs["language"], attrs["country"])
     if tag == "url":
-        strings = [child for child in _elements(node) if child.tag == "string"]
-        if len(strings) != 1:
+        if node.attrs or _has_noise(node):
             return None
-        parsed = _parse_string(strings[0])
+        children = _elements(node)
+        if len(children) != 1 or children[0].tag != "string":
+            return None
+        parsed = _parse_string(children[0])
         if parsed is None:
             return None
         return UrlValue(parsed)
     return None
 
 
-def _parse_string(node: _XNode) -> Optional[StringValue]:
-    if not _is_plain(node):
+def _parse_counted(node: _XNode, cls: type, limits: Tuple[int, int]) -> Optional[Value]:
+    if node.attrs:
         return None
+    text = _one_text(node)
+    if text is None:
+        return None
+    number = _parse_int(text, limits)
+    if number is None:
+        return None
+    return cls(number)  # type: ignore[call-arg, no-any-return]
+
+
+def _parse_string(node: _XNode) -> Optional[StringValue]:
+    text = _one_text(node)
+    if text is None:
+        return None
+    if not node.attrs:
+        return StringValue(text)
     notr = None
     comment = None
     extracomment = None
@@ -931,7 +1313,7 @@ def _parse_string(node: _XNode) -> Optional[StringValue]:
             string_id = value
         else:
             return None
-    return StringValue(_exact_text(node), notr, comment, extracomment, string_id)
+    return StringValue(text, notr, comment, extracomment, string_id)
 
 
 def _parse_stringlist(node: _XNode) -> Optional[StringListValue]:
@@ -949,15 +1331,43 @@ def _parse_stringlist(node: _XNode) -> Optional[StringListValue]:
 
 
 def _parse_sizepolicy(node: _XNode) -> Optional[SizePolicyValue]:
-    if _has_noise(node):
+    attrs = node.attrs
+    children = node.children
+    if (
+        len(attrs) == 2
+        and attrs[0][0] == "hsizetype"
+        and attrs[1][0] == "vsizetype"
+        and attrs[0][1]
+        and attrs[1][1]
+        and len(children) == 2
+        and isinstance(children[0], _XNode)
+        and isinstance(children[1], _XNode)
+        and children[0].tag == "horstretch"
+        and children[1].tag == "verstretch"
+        and not children[0].attrs
+        and not children[1].attrs
+    ):
+        hor_text = _one_text(children[0])
+        ver_text = _one_text(children[1])
+        if hor_text is not None and ver_text is not None:
+            horstretch = _parse_int(hor_text, _INT32)
+            verstretch = _parse_int(ver_text, _INT32)
+            if horstretch is not None and verstretch is not None:
+                return SizePolicyValue(attrs[0][1], attrs[1][1], horstretch, verstretch)
+    if _has_comment(node) or _has_significant_text(node):
         return None
-    attrs = dict(node.attrs)
+    attrs = _attr_map(node, frozenset({"hsizetype", "vsizetype"}))
+    if attrs is None:
+        return None
     horizontal = attrs.get("hsizetype")
     vertical = attrs.get("vsizetype")
     horstretch = 0
     verstretch = 0
     for child in _elements(node):
-        text = _exact_text(child).strip()
+        leaf = _text_leaf(child)
+        if leaf is None:
+            return None
+        text = leaf.strip()
         if child.tag == "hsizetype" and horizontal is None:
             horizontal = _POLICY_BY_INT.get(text, text if not text.isdigit() else None)
         elif child.tag == "vsizetype" and vertical is None:
@@ -980,19 +1390,26 @@ def _parse_sizepolicy(node: _XNode) -> Optional[SizePolicyValue]:
 
 
 def _parse_font(node: _XNode) -> Optional[FontValue]:
-    if _has_noise(node):
+    fast = _parse_font_fast(node)
+    if fast is not _MISS:
+        return fast  # type: ignore[return-value]
+    if node.attrs or _has_noise(node):
         return None
     values: Dict[str, object] = {}
     for child in _elements(node):
-        if child.tag in values or child.tag not in _FONT_INT | _FONT_BOOL | _FONT_TEXT:
+        if child.attrs or _has_comment(child) or child.tag in values or child.tag not in _FONT_INT | _FONT_BOOL | _FONT_TEXT:
             return None
         if child.tag in _FONT_INT:
+            if not _is_plain(child):
+                return None
             number = _parse_int(_exact_text(child), _INT32)
             if number is None:
                 return None
             values[child.tag] = number
         elif child.tag in _FONT_BOOL:
-            text = _exact_text(child).strip()
+            if not _is_plain(child):
+                return None
+            text = _exact_text(child)
             if text not in ("true", "false"):
                 return None
             values[child.tag] = text == "true"
@@ -1008,31 +1425,88 @@ def _parse_font(node: _XNode) -> Optional[FontValue]:
     return FontValue(**values)  # type: ignore[arg-type]
 
 
+def _parse_char(node: _XNode) -> Optional[CharValue]:
+    if node.attrs or _has_noise(node):
+        return None
+    children = _elements(node)
+    if len(children) != 1 or children[0].tag != "unicode":
+        return None
+    text = _text_leaf(children[0])
+    number = None if text is None else _parse_int(text, _INT32)
+    if number is None:
+        return None
+    return CharValue(number)
+
+
 def _parse_color(node: _XNode) -> Optional[ColorValue]:
-    if _has_noise(node):
+    if _has_comment(node) or _has_significant_text(node):
         return None
-    red = _child_int(node, "red")
-    green = _child_int(node, "green")
-    blue = _child_int(node, "blue")
-    if red is None or green is None or blue is None:
-        return None
-    alpha = None
-    raw_alpha = dict(node.attrs).get("alpha")
-    if raw_alpha is not None:
-        alpha = _parse_int(raw_alpha, _INT32)
-        if alpha is None:
-            return None
-    return ColorValue(red, green, blue, alpha)
-
-
-def _int_record(node: _XNode, cls: type, names: Tuple[str, ...]) -> Optional[Value]:
-    if _has_noise(node):
+    attrs = _attr_map(node, frozenset({"alpha"}))
+    if attrs is None:
         return None
     found: Dict[str, int] = {}
     for child in _elements(node):
-        if child.tag in found or child.tag not in names:
+        text = _text_leaf(child)
+        if text is None or child.tag in found or child.tag not in ("red", "green", "blue"):
             return None
-        number = _parse_int(_exact_text(child), _INT32)
+        number = _parse_int(text, _INT32)
+        if number is None:
+            return None
+        found[child.tag] = number
+    if set(found) != {"red", "green", "blue"}:
+        return None
+    alpha = None
+    if "alpha" in attrs:
+        alpha = _parse_int(attrs["alpha"], _INT32)
+        if alpha is None:
+            return None
+    return ColorValue(found["red"], found["green"], found["blue"], alpha)
+
+
+def _parse_font_fast(node: _XNode) -> object:
+    if node.attrs:
+        return _MISS
+    values: Dict[str, object] = {}
+    for child in node.children:
+        if not isinstance(child, _XNode) or child.attrs or child.tag in values:
+            return _MISS
+        text = _one_text(child)
+        if text is None:
+            return _MISS
+        tag = child.tag
+        if tag in _FONT_INT:
+            number = _parse_int(text, _INT32)
+            if number is None:
+                return None
+            values[tag] = number
+        elif tag in _FONT_BOOL:
+            if text == "true":
+                values[tag] = True
+            elif text == "false":
+                values[tag] = False
+            else:
+                return None
+        elif tag in _FONT_TEXT:
+            values[tag] = text
+        else:
+            return _MISS
+    return FontValue(**values)  # type: ignore[arg-type]
+
+
+def _int_record(node: _XNode, cls: type, names: Tuple[str, ...]) -> Optional[Value]:
+    ordered = _ordered_ints(node, names)
+    if ordered is not _MISS:
+        if ordered is None:
+            return None
+        return cls(*ordered)  # type: ignore[operator, no-any-return]
+    if node.attrs or _has_noise(node):
+        return None
+    found: Dict[str, int] = {}
+    for child in _elements(node):
+        text = _text_leaf(child)
+        if text is None or child.tag in found or child.tag not in names:
+            return None
+        number = _parse_int(text, _INT32)
         if number is None:
             return None
         found[child.tag] = number
@@ -1042,13 +1516,14 @@ def _int_record(node: _XNode, cls: type, names: Tuple[str, ...]) -> Optional[Val
 
 
 def _real_record(node: _XNode, cls: type, names: Tuple[str, ...]) -> Optional[Value]:
-    if _has_noise(node):
+    if node.attrs or _has_noise(node):
         return None
     found: Dict[str, float] = {}
     for child in _elements(node):
-        if child.tag in found or child.tag not in names:
+        text = _text_leaf(child)
+        if text is None or child.tag in found or child.tag not in names:
             return None
-        number = _lossless_real(_exact_text(child))
+        number = _lossless_real(text)
         if number is None:
             return None
         found[child.tag] = number
@@ -1057,33 +1532,218 @@ def _real_record(node: _XNode, cls: type, names: Tuple[str, ...]) -> Optional[Va
     return cls(*(found[name] for name in names))  # type: ignore[no-any-return, operator]
 
 
-def _layout_default(node: _XNode) -> LayoutDefault:
-    attrs = dict(node.attrs)
-    return LayoutDefault(_parse_int(attrs["spacing"], _INT32) if "spacing" in attrs else None, _parse_int(attrs["margin"], _INT32) if "margin" in attrs else None)
+def _layout_default(node: _XNode) -> Optional[LayoutDefault]:
+    attrs = _known_attrs(node, frozenset({"spacing", "margin"}))
+    if attrs is None:
+        return None
+    spacing = None
+    margin = None
+    if "spacing" in attrs:
+        spacing = _parse_int(attrs["spacing"], _INT32)
+        if spacing is None:
+            return None
+    if "margin" in attrs:
+        margin = _parse_int(attrs["margin"], _INT32)
+        if margin is None:
+            return None
+    return LayoutDefault(spacing, margin)
 
 
-def _layout_function(node: _XNode) -> LayoutFunction:
-    attrs = dict(node.attrs)
+def _layout_function(node: _XNode) -> Optional[LayoutFunction]:
+    attrs = _known_attrs(node, frozenset({"spacing", "margin"}))
+    if attrs is None:
+        return None
     return LayoutFunction(attrs.get("spacing"), attrs.get("margin"))
 
 
-def _slots_decl(node: _XNode) -> SlotsDecl:
-    signals = tuple(_exact_text(child) for child in _elements(node) if child.tag == "signal")
-    slots = tuple(_exact_text(child) for child in _elements(node) if child.tag == "slot")
-    return SlotsDecl(signals, slots)
+def _slots_decl(node: _XNode) -> Optional[SlotsDecl]:
+    if node.attrs or _has_comment(node) or _has_significant_text(node):
+        return None
+    signals = []
+    slots = []
+    for child in _elements(node):
+        text = _text_leaf(child)
+        if text is None:
+            return None
+        if child.tag == "signal":
+            signals.append(text)
+        elif child.tag == "slot":
+            slots.append(text)
+        else:
+            return None
+    return SlotsDecl(tuple(signals), tuple(slots))
 
 
-def _split_attrs(kind: str, attrs: Tuple[Tuple[str, str], ...]) -> Tuple[List[Tuple[str, object]], List[Tuple[str, str]]]:
-    known = {field.xml[len("attr:"):]: field.name for field in SCHEMA[kind].fields if field.xml.startswith("attr:")}
-    int_fields = {"row", "column", "rowspan", "colspan"}
-    fields: List[Tuple[str, object]] = []
-    extra: List[Tuple[str, str]] = []
+def _tabstops(node: _XNode) -> Optional[Tuple[str, ...]]:
+    if node.attrs or _has_comment(node) or _has_significant_text(node):
+        return None
+    names = []
+    for child in _elements(node):
+        if child.tag != "tabstop":
+            return None
+        text = _text_leaf(child)
+        if text is None:
+            return None
+        names.append(text)
+    return tuple(names)
+
+
+def _header_decl(node: _XNode) -> Optional[HeaderDecl]:
+    if _elements(node) or _has_comment(node):
+        return None
+    location = None
+    for key, value in node.attrs:
+        if key != "location" or location is not None:
+            return None
+        location = value
+    return HeaderDecl(_exact_text(node), location)
+
+
+def _size_hint(node: _XNode) -> Optional[SizeValue]:
+    if node.attrs or _has_noise(node):
+        return None
+    found: Dict[str, int] = {}
+    for child in _elements(node):
+        text = _text_leaf(child)
+        if text is None or child.tag in found or child.tag not in ("width", "height"):
+            return None
+        number = _parse_int(text, _INT32)
+        if number is None:
+            return None
+        found[child.tag] = number
+    if set(found) != {"width", "height"}:
+        return None
+    return SizeValue(found["width"], found["height"])
+
+
+def _connection_hints(node: _XNode) -> Optional[Tuple[ConnectionHint, ...]]:
+    if node.attrs or _has_noise(node):
+        return None
+    hints = []
+    for child in _elements(node):
+        hint = _one_hint(child)
+        if hint is None:
+            return None
+        hints.append(hint)
+    return tuple(hints)
+
+
+def _one_hint(node: _XNode) -> Optional[ConnectionHint]:
+    if node.tag != "hint" or _has_noise(node):
+        return None
+    hint_type = ""
+    seen_type = False
+    for key, value in node.attrs:
+        if key != "type" or seen_type:
+            return None
+        hint_type = value
+        seen_type = True
+    found: Dict[str, int] = {}
+    for child in _elements(node):
+        text = _text_leaf(child)
+        if text is None or child.tag in found or child.tag not in ("x", "y"):
+            return None
+        number = _parse_int(text, _INT32)
+        if number is None:
+            return None
+        found[child.tag] = number
+    if set(found) != {"x", "y"}:
+        return None
+    return ConnectionHint(hint_type, found["x"], found["y"])
+
+
+def _attr_map(node: _XNode, allowed: FrozenSet[str]) -> Optional[Dict[str, str]]:
+    found: Dict[str, str] = {}
+    for key, value in node.attrs:
+        if key in found or key not in allowed:
+            return None
+        found[key] = value
+    return found
+
+
+def _known_attrs(node: _XNode, allowed: FrozenSet[str]) -> Optional[Dict[str, str]]:
+    if _elements(node) or _has_comment(node) or _has_significant_text(node):
+        return None
+    return _attr_map(node, allowed)
+
+
+def _one_text(node: _XNode) -> Optional[str]:
+    """Exact character data when every child is text. None if an element, comment, or PI is present."""
+    children = node.children
+    count = len(children)
+    if count == 1:
+        child = children[0]
+        if isinstance(child, str):
+            return child
+        return None
+    if count == 0:
+        return ""
+    parts: List[str] = []
+    for child in children:
+        if not isinstance(child, str):
+            return None
+        parts.append(child)
+    return "".join(parts)
+
+
+def _ordered_ints(node: _XNode, names: Tuple[str, ...]) -> object:
+    if node.attrs:
+        return _MISS
+    children = node.children
+    count = len(names)
+    if len(children) != count:
+        return _MISS
+    values = []
+    for index in range(count):
+        child = children[index]
+        if not isinstance(child, _XNode) or child.tag != names[index] or child.attrs:
+            return _MISS
+        text = _one_text(child)
+        if text is None:
+            return _MISS
+        number = _parse_int(text, _INT32)
+        if number is None:
+            return None
+        values.append(number)
+    return tuple(values)
+
+
+def _text_leaf(node: _XNode) -> Optional[str]:
+    if node.attrs:
+        return None
+    return _one_text(node)
+
+
+def _set_text_field(built: _Built, field: str, node: _XNode) -> None:
+    text = _text_leaf(node)
+    if text is None:
+        _keep_element(built, field, node)
+    else:
+        built.set_field(field, text)
+
+
+def _set_parsed_field(built: _Built, field: str, node: _XNode, parsed: object) -> None:
+    if parsed is None:
+        _keep_element(built, field, node)
+    else:
+        built.set_field(field, parsed)
+
+
+def _keep_element(built: _Built, field: str, node: _XNode) -> None:
+    built.set_field(field, _to_opaque(node))
+    built.notes.append(_Note("FB006", "Kept <%s> as written." % node.tag, node.line))
+
+
+def _apply_attrs(built: _Built, attrs: Tuple[Tuple[str, str], ...]) -> None:
+    known = _ATTR_FIELD[built.kind]
+    fields = built.fields
+    extra = built.extra_attrs
     for key, value in attrs:
         field_name = known.get(key)
         if field_name is None:
             extra.append((key, value))
             continue
-        if field_name in int_fields:
+        if field_name in _INT_ATTR_NAMES:
             number = _parse_int(value, _INT32)
             if number is None:
                 extra.append((key, value))
@@ -1091,61 +1751,92 @@ def _split_attrs(kind: str, attrs: Tuple[Tuple[str, str], ...]) -> Tuple[List[Tu
                 fields.append((field_name, number))
             continue
         fields.append((field_name, value))
-    return fields, extra
 
 
 def _ensure_required(built: _Built) -> None:
-    mapping = built.field_map()
-    for item in SCHEMA[built.kind].fields:
-        if item.required and item.name not in mapping:
-            built.set_field(item.name, "")
+    required = _REQUIRED_FIELD[built.kind]
+    if not required:
+        return
+    fields = built.fields
+    for name in required:
+        for key, _value in fields:
+            if key == name:
+                break
+        else:
+            built.set_field(name, "")
 
 
 def _order_fields(built: _Built) -> None:
-    order = [item.name for item in SCHEMA[built.kind].fields]
-    built.fields.sort(key=lambda item: order.index(item[0]) if item[0] in order else 1000)
+    built.fields.sort(key=_FIELD_KEY[built.kind])
 
 
-def _to_spec(
+def _to_node(
     built: _Built,
     allocator: IdAllocator,
     line_map: Dict[NodeId, int],
     diagnostics: List[FormDiagnostic],
-) -> NodeSpec:
+    parent_id: Optional[NodeId],
+    parent_slot: Optional[str],
+    index: int,
+) -> Node:
     node_id = DOCUMENT_ID if built.kind == "ui" else allocator.alloc()
     line_map[node_id] = built.line
-    object_name = _built_name(built)
-    for note in built.notes:
-        info = CODES.get(note.code)
-        severity = info.severity if info is not None else Severity.INFO
-        diagnostics.append(
-            FormDiagnostic(
-                code=note.code,
-                severity=severity,
-                message=note.message,
-                location=DiagnosticLocation(
-                    node_id=node_id,
-                    object_name=object_name,
-                    property=note.prop,
-                    line=note.line,
-                ),
-                source="reader",
+    if built.notes:
+        object_name = _built_name(built)
+        for note in built.notes:
+            info = CODES.get(note.code)
+            severity = info.severity if info is not None else Severity.INFO
+            diagnostics.append(
+                FormDiagnostic(
+                    code=note.code,
+                    severity=severity,
+                    message=note.message,
+                    location=DiagnosticLocation(
+                        node_id=node_id,
+                        object_name=object_name,
+                        property=note.prop,
+                        line=note.line,
+                    ),
+                    source="reader",
+                )
             )
-        )
-    slots = []
+    first = None
+    extra_slots = None
     for slot in SCHEMA[built.kind].slots:
-        kids = built.slots.get(slot.name, [])
+        kids = built.slots.get(slot.name)
         if not kids:
             continue
-        slots.append((slot.name, tuple(_to_spec(child, allocator, line_map, diagnostics) for child in kids)))
-    return NodeSpec(
+        item = (
+            slot.name,
+            tuple(
+                _to_node(child, allocator, line_map, diagnostics, node_id, slot.name, child_index)
+                for child_index, child in enumerate(kids)
+            ),
+        )
+        if first is None:
+            first = item
+            continue
+        if extra_slots is None:
+            extra_slots = [first, item]
+        else:
+            extra_slots.append(item)
+    if extra_slots is not None:
+        slot_tuple = tuple(extra_slots)
+    elif first is not None:
+        slot_tuple = (first,)
+    else:
+        slot_tuple = _NO_SLOTS
+    return build_node(
         kind=built.kind,
-        id=node_id,
-        fields=tuple(built.fields),
-        properties=tuple(built.properties),
-        attributes=tuple(built.attributes),
-        slots=tuple(slots),
-        extra_attrs=tuple(built.extra_attrs),
+        node_id=node_id,
+        parent_id=parent_id,
+        parent_slot=parent_slot,
+        slot_index=index,
+        fields=tuple(built.fields) if built.fields else _NO_FIELDS,
+        properties=tuple(built.properties) if built.properties else _NO_PROPS,
+        attributes=tuple(built.attributes) if built.attributes else _NO_PROPS,
+        slots=slot_tuple,
+        extra_attrs=tuple(built.extra_attrs) if built.extra_attrs else _NO_ATTRS,
     )
 
 
@@ -1170,16 +1861,16 @@ def _strip_ids(spec: NodeSpec) -> NodeSpec:
     )
 
 
-def _opaque_built(node: _XNode, anchor: Tuple[str, int]) -> _Built:
-    built = _Built(kind="opaque", line=node.line)
+def _opaque_built(arena: "_ReadArena", node: _XNode, anchor: Tuple[str, int]) -> _Built:
+    built = arena.take_built("opaque", node.line)
     built.set_field("element", _to_opaque(node))
     built.set_field("anchor", anchor)
     return built
 
 
-def _text_opaque(text: str, anchor: Tuple[str, int], line: int) -> _Built:
-    built = _Built(kind="opaque", line=line)
-    built.set_field("element", OpaqueElement("", (), (text,)))
+def _text_opaque(arena: "_ReadArena", text: str, anchor: Tuple[str, int], line: int) -> _Built:
+    built = arena.take_built("opaque", line)
+    built.set_field("element", OpaqueElement("", (), (text.strip(),)))
     built.set_field("anchor", anchor)
     return built
 
@@ -1193,14 +1884,28 @@ def _to_opaque(node: _XNode) -> OpaqueElement:
             children.append(_to_opaque(child))
         elif isinstance(child, (OpaqueComment, OpaquePI)):
             children.append(child)
+    if any(not isinstance(child, str) for child in children):
+        children = [child for child in children if not isinstance(child, str) or child.strip()]
     return OpaqueElement(node.tag, node.attrs, tuple(children))
 
 
-def _synthetic_value(node: _XNode) -> _XNode:
-    elements = [child for child in node.children if not isinstance(child, str) or child.strip()]
-    if len(elements) == 1 and isinstance(elements[0], _XNode):
-        return elements[0]
-    return _XNode("#value", (), node.children, node.line)
+def _property_content(node: _XNode) -> OpaqueElement:
+    """The property's own children, with no invented wrapper element.
+
+    Indentation between those children is not content. A tag of ``""`` tells
+    the writer to emit the children in place.
+    """
+    children: List[object] = []
+    for child in node.children:
+        if isinstance(child, str):
+            stripped = child.strip()
+            if stripped:
+                children.append(stripped)
+        elif isinstance(child, _XNode):
+            children.append(_to_opaque(child))
+        elif isinstance(child, (OpaqueComment, OpaquePI)):
+            children.append(child)
+    return OpaqueElement("", (), tuple(children))
 
 
 def _elements(node: _XNode) -> List[_XNode]:
@@ -1241,15 +1946,23 @@ def _child_int(node: _XNode, tag: str) -> Optional[int]:
     return _parse_int(text, _INT32)
 
 
+def _ascii_int(text: str) -> Optional[int]:
+    if not text:
+        return None
+    start = 1 if text[0] in "+-" else 0
+    if start == len(text):
+        return None
+    for char in text[start:]:
+        if char < "0" or char > "9":
+            return None
+    return int(text, 10)
+
+
 def _parse_int(text: str, limits: Tuple[int, int]) -> Optional[int]:
-    stripped = text.strip()
-    if _INT_RE.match(stripped) is None:
-        return None
-    try:
-        value = int(stripped, 10)
-    except ValueError:
-        return None
-    if value < limits[0] or value > limits[1]:
+    value = _ascii_int(text)
+    if value is None and text != text.strip():
+        value = _ascii_int(text.strip())
+    if value is None or value < limits[0] or value > limits[1]:
         return None
     return value
 
