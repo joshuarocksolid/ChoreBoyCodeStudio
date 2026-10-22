@@ -8,7 +8,7 @@ from pathlib import Path
 
 from app.core.errors import AppValidationError, ProjectManifestValidationError
 from app.core.models import LoadedProject
-from app.project.project_manifest import save_project_manifest
+from app.project.project_manifest import load_project_manifest, save_project_manifest
 from app.project.run_configs import (
     RunConfiguration,
     parse_env_overrides_text,
@@ -98,8 +98,12 @@ class RunConfigController:
 
     def persist_run_configs(self, *, loaded_project: LoadedProject, run_configs: list[RunConfiguration]) -> None:
         manifest_path = Path(loaded_project.manifest_path)
+        try:
+            current = load_project_manifest(manifest_path)
+        except ProjectManifestValidationError:
+            current = loaded_project.metadata
         merged = replace(
-            loaded_project.metadata,
+            current,
             run_configs=[config.to_payload() for config in run_configs],
         )
         try:
