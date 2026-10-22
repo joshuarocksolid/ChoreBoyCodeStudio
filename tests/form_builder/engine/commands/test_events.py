@@ -142,30 +142,10 @@ def _live_properties(doc: UiDocument) -> Dict[NodeId, Dict[Tuple[str, str], Prop
 
 
 def test_shadow_tree_matches_after_edits_undo_and_redo() -> None:
-    log = open_log(BOX)
-    doc = log.document
-    shadow = ShadowTree(doc)
-    seen: List[str] = []
+    from tests.support.form_builder.gen import run_sequence
 
-    def listener(change_set: ChangeSet) -> None:
-        shadow.apply(change_set)
-        if not shadow.matches(doc):
-            seen.append(change_set.label)
-
-    log.subscribe(listener, priority=0)
-    button = nid(doc, "okButton")
-    label = nid(doc, "label")
-    layout = doc.root.layout
-    assert layout is not None
-    log.execute(SetProperty(button, "text", StringValue("Go")))
-    log.execute(Rename(label, "caption"))
-    log.execute(MoveNodes((button,), InBoxLayout(layout.id, len(layout.items))))
-    log.execute(AddConnection("okButton", "clicked", "caption", "clear"))
-    log.execute(SetLogic(button, "cbcsEnabledWhen", "1"))
-    assert log.undo()
-    assert log.undo()
-    assert log.redo()
-    assert seen == []
+    for seed in range(4):
+        run_sequence(seed, 20)
 
 
 def test_categories_follow_the_op() -> None:

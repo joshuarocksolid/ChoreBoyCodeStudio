@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+from typing import FrozenSet, List, Optional, Tuple
+
 import pytest
 
 from app.features.form_builder.engine.commands.base import CommandRejected
-from app.features.form_builder.engine.commands.ops import MoveNodeOp
+from app.features.form_builder.engine.commands.ops import MoveNodeOp, Op, SetPropertyOp
+from app.features.form_builder.engine.commands.participants import (
+    ParticipantRegistry,
+    default_registry,
+)
 from app.features.form_builder.engine.commands.catalog import (
     AddActionRef,
     AddConnection,
@@ -644,3 +650,92 @@ def test_stale_id_is_rejected() -> None:
     with pytest.raises(CommandRejected):
         log.execute(DeleteNodes((NodeId(10**9),)))
     assert not log.can_undo()
+
+
+class _Probe:
+    """Records rename calls and, when asked, adds a toolTip the entry must undo."""
+
+    participant_id = "zz-probe"
+
+    def __init__(self, emit: bool = False) -> None:
+        self.rows: List[Tuple[Tuple[Tuple[str, str], ...], Optional[FrozenSet[NodeId]]]] = []
+        self.emit = emit
+
+    def rename_ops(
+        self,
+        doc: UiDocument,
+        renames: Tuple[Tuple[str, str], ...],
+        scope: Optional[FrozenSet[NodeId]],
+    ) -> Tuple[Op, ...]:
+        self.rows.append((renames, scope))
+        if not self.emit or not renames:
+            return ()
+        owner = doc.by_name(renames[0][1])[0]
+        entry = PropertyEntry("property", "toolTip", StringValue("noted"))
+        return (
+            SetPropertyOp(owner, "property", "toolTip", entry, len(doc.node(owner).properties())),
+        )
+
+    def references(self, doc: UiDocument, name: str) -> Tuple[Tuple[NodeId, str], ...]:
+        del doc, name
+        return ()
+
+
+def _with_probe(emit: bool = False) -> Tuple[ParticipantRegistry, _Probe]:
+    registry = default_registry()
+    probe = _Probe(emit)
+    registry.add_rename(probe)
+    return registry, probe
+
+
+def _drop_probe(registry: ParticipantRegistry, probe: _Probe) -> None:
+    registry._rename = [item for item in registry._rename if item is not probe]
+
+
+def test_rename_tells_participants_the_one_pair() -> None:
+    registry, probe = _with_probe(emit=True)
+    try:
+        log = open_log(BOX)
+        doc = log.document
+        button = nid(doc, "okButton")
+        log.execute(Rename(button, "submit"))
+        assert probe.rows == [((("okButton", "submit"),), None)]
+        assert doc.node(button).prop("toolTip") is not None
+        assert log.undo()
+        assert doc.node(button).prop("toolTip") is None
+    finally:
+        _drop_probe(registry, probe)
+
+
+def test_insert_tells_participants_the_whole_map() -> None:
+    registry, probe = _with_probe()
+    try:
+        log = open_log(BOX)
+        doc = log.document
+        before = {node.id for node in doc.iter_preorder()}
+        layout = doc.root.layout
+        assert layout is not None
+        log.execute(
+            InsertFragment(
+                InBoxLayout(layout.id, 0),
+                Fragment(nodes=(button_spec("okButton"), button_spec("label"))),
+            )
+        )
+        assert len(probe.rows) == 1
+        renames, scope = probe.rows[0]
+        assert {old for old, _new in renames} == {"okButton", "label"}
+        added = {node.id for node in doc.iter_preorder()} - before
+        assert scope == frozenset(added)
+    finally:
+        _drop_probe(registry, probe)
+
+
+def test_shared_rename_skips_participants() -> None:
+    registry, probe = _with_probe(emit=True)
+    try:
+        log = open_log(SHARED)
+        outcome = log.execute(Rename(nid(log.document, "same"), "other"))
+        assert outcome.result == ("FB010",)
+        assert probe.rows == []
+    finally:
+        _drop_probe(registry, probe)
