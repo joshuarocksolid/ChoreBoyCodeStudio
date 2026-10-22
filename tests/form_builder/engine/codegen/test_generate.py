@@ -427,6 +427,13 @@ def test_action_attributes_write_no_code_as_uic(tmp_path: Path) -> None:
     assert "cbcsGroupNote" not in result.text
 
 
+def test_empty_number_property_is_zero(tmp_path: Path) -> None:
+    body = '<property name="prefType" stdset="0"><number></number></property>'
+    result = _generate(tmp_path, body=body)
+    assert result.text is not None
+    assert 'Invoice.setProperty(u"prefType", 0)' in result.text
+
+
 @pytest.mark.parity("R3-327")
 def test_resource_import_styles(tmp_path: Path) -> None:
     path, scope, document = _form(tmp_path, tail='<resources><include location="icons.qrc"/></resources>')

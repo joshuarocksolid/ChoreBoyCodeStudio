@@ -182,3 +182,71 @@ def test_kitchen_sink_matches_through_the_quiloader_fallback(qapp) -> None:
     _require_uic()
     _expect_diff(_KITCHEN_SINK, _drop_lines(".setWindowTitle("))
 
+
+_FREECAD_STANDIN_UI = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Panel</class>
+ <widget class="QWidget" name="Panel">
+  <layout class="QVBoxLayout" name="box">
+   <item>
+    <widget class="Gui::InputField" name="length">
+     <property name="singleStep"><double>0.5</double></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="Gui::FileChooser" name="folder">
+     <property name="mode"><enum>Gui::FileChooser::Directory</enum></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="MatGui::MaterialTreeWidget" name="materials">
+     <property name="minimumSize"><size><width>20</width><height>20</height></size></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="Gui::ColorButton" name="color">
+     <property name="alignment"><set>Qt::AlignRight</set></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>Gui::InputField</class>
+   <extends>QLineEdit</extends>
+   <header>Gui/InputField.h</header>
+  </customwidget>
+  <customwidget>
+   <class>Gui::FileChooser</class>
+   <extends>QWidget</extends>
+   <header>Gui/FileDialog.h</header>
+  </customwidget>
+  <customwidget>
+   <class>MatGui::MaterialTreeWidget</class>
+   <extends>QWidget</extends>
+   <header>Mod/Material/Gui/MaterialTreeWidget.h</header>
+  </customwidget>
+  <customwidget>
+   <class>Gui::ColorButton</class>
+   <extends>QPushButton</extends>
+   <header>Gui/Widgets.h</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+@pytest.mark.oracle
+@pytest.mark.parametrize(
+    "token",
+    (".setSingleStep(", ".setMode(", ".setAlignment("),
+)
+def test_freecad_standins_record_setters_the_qt_class_lacks(qapp, tmp_path: Path, token: str) -> None:
+    """Each FreeCAD stand-in keeps a setter Qt lacks, so both trees are compared."""
+    del qapp
+    _require_uic()
+    path = tmp_path / "panel.ui"
+    path.write_text(_FREECAD_STANDIN_UI, encoding="utf-8")
+    _expect_diff(path, _drop_lines(token))

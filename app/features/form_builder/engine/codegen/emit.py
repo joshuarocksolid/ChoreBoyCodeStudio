@@ -1916,8 +1916,11 @@ def _opaque_box(element: OpaqueElement) -> str:
     """A ``<size>`` (or point/rect) the reader kept because a field was missing.
 
     uic fills the missing field with 0. ``<size><width>100</width></size>`` is
-    ``QSize(100, 0)``.
+    ``QSize(100, 0)``. An empty ``<number/>`` is 0 the same way.
     """
+    if element.tag == "number":
+        text = "".join(part for part in element.children if isinstance(part, str)).strip()
+        return "0" if not text and not element.children else ""
     boxes = {
         "size": ("QSize", ("width", "height")),
         "point": ("QPoint", ("x", "y")),

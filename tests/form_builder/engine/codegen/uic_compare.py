@@ -10,13 +10,13 @@ import sys
 import tempfile
 import types
 from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Any, Callable, List, Optional, Tuple
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QPointF, QRectF, QSize, QSizeF, Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
-from PySide6.QtWidgets import QApplication, QButtonGroup, QLayout, QSizePolicy, QWidget
+from PySide6.QtWidgets import QApplication, QButtonGroup, QSizePolicy, QWidget
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.codegen.qtmap import class_module
@@ -459,7 +459,7 @@ def _emit_args(method: QMetaMethod):
     args = []
     for index in range(method.parameterCount()):
         try:
-            kind = bytes(method.parameterTypeName(index)).decode()
+            kind = bytes(method.parameterTypeName(index).data()).decode()
         except Exception:
             return None
         if kind in ("int", "qlonglong", "qint32", "uint", "short"):
@@ -479,7 +479,7 @@ def _emit_args(method: QMetaMethod):
 
 def _signal_state(root: QWidget):
     rows = []
-    nodes = [root]
+    nodes: List[Any] = [root]
     nodes.extend(root.findChildren(QObject))
     for node in nodes:
         text = ""
@@ -510,7 +510,7 @@ def _fire(root: QWidget, sources: str):
     if not names:
         return []
     records = []
-    nodes = [root]
+    nodes: List[Any] = [root]
     nodes.extend(root.findChildren(QObject))
     for node in nodes:
         try:
@@ -661,7 +661,8 @@ def _unsigned_overflow(value) -> bool:
     return isinstance(value, int) and not isinstance(value, bool) and value > 9223372036854775807
 
 
-def _layout(layout: QLayout):
+def _layout(layout: Any):
+    """``layout`` is any QLayout. Grid, form and box methods are read by class name."""
     try:
         class_name = layout.metaObject().className()
         object_name = layout.objectName()
@@ -716,7 +717,7 @@ def _layout(layout: QLayout):
             hint = spacer.sizeHint()
             entry["hint"] = (hint.width(), hint.height())
             directions = spacer.expandingDirections()
-            entry["policy"] = int(directions.value) if hasattr(directions, "value") else int(directions)
+            entry["policy"] = _as_int(directions)
         else:
             entry["kind"] = "other"
         geo = item.geometry()
@@ -920,7 +921,66 @@ _FREECAD_STANDINS = {
     "FileChooser": "QLineEdit",
 }
 _ACTIVE_STANDINS = dict(_FREECAD_STANDINS)
+# Python names (``Gui_InputField``, ``MatGui_MaterialTreeWidget``) of this
+# form's ``::`` classes, mapped to their leaf in ``_ACTIVE_STANDINS``.
+_ACTIVE_CPP_NAMES: dict = {}
+# First ``::`` scope of each such class (``Gui``, ``MatGui``).
+_ACTIVE_SCOPES: set = set()
+_RECORDING_TYPES: dict = {}
+
+
+class _CppName(str):
+    """A C++ scope both modules spell the same, such as ``Gui.FileChooser.Directory``.
+
+    uic and our generator write a FreeCAD enum value as a Python attribute
+    path. Each step returns the longer ``::`` name, so the recorded property
+    holds the same text on both sides.
+    """
+
+    def __getattr__(self, name: str) -> "_CppName":
+        if name.startswith("__"):
+            raise AttributeError(name)
+        return _CppName("%s::%s" % (self, name))
 _OPEN_WIDGETS: List[QWidget] = []
+
+
+def _record_setter(self, name: str):
+    """A ``set<X>`` the Qt class lacks stores its value as property ``x``.
+
+    FreeCAD's real class has the setter (Gui::InputField.setSingleStep,
+    Gui::FileChooser.setMode, ...). The stand-in keeps the call and its value,
+    so both trees show what the form set instead of both raising.
+    """
+    if not (name.startswith("set") and name[3:4].isupper()):
+        raise AttributeError(name)
+    prop = name[3].lower() + name[4:]
+
+    def record(*args):
+        value = args[0] if len(args) == 1 else list(args)
+        try:
+            self.setProperty(prop, value)
+        except Exception:
+            self.setProperty(prop, repr(value))
+
+    return record
+
+
+def _recording_type(qt_name: str):
+    """One subclass per Qt class, shared by our tree and uic's.
+
+    It keeps the Qt class name, so its meta-object class matches the widget
+    QUiLoader builds for the same element.
+    """
+    from PySide6 import QtWidgets
+
+    found = _RECORDING_TYPES.get(qt_name)
+    if found is None:
+        base = getattr(QtWidgets, qt_name, None)
+        if not isinstance(base, type):
+            base = QWidget
+        found = type(base.__name__, (base,), {"__getattr__": _record_setter})
+        _RECORDING_TYPES[qt_name] = found
+    return found
 
 
 def _resolve_qt_leaf(name: str, extends_of: dict, seen: set) -> Optional[str]:
@@ -954,23 +1014,29 @@ def _activate_standins(document) -> None:
         if isinstance(class_name, str) and "::" in class_name:
             extends_of.setdefault(class_name, "")
     resolved = dict(_FREECAD_STANDINS)
+    cpp_names = {}
+    _ACTIVE_SCOPES.clear()
     for class_name in extends_of:
         qt_name = _resolve_qt_leaf(class_name, extends_of, set())
-        resolved[class_name.split("::")[-1]] = qt_name or "QWidget"
+        leaf = class_name.split("::")[-1]
+        resolved[leaf] = qt_name or "QWidget"
+        if "::" in class_name:
+            cpp_names[class_name.replace("::", "_")] = leaf
+            _ACTIVE_SCOPES.add(class_name.split("::", 1)[0])
     _ACTIVE_STANDINS = resolved
+    _ACTIVE_CPP_NAMES.clear()
+    _ACTIVE_CPP_NAMES.update(cpp_names)
 
 
 class _StandInLoader:
     """UiLoader stand-in. createWidget returns the Qt class the oracle maps."""
 
     def createWidget(self, class_name, parent, object_name):
-        from PySide6 import QtWidgets
-
         leaf = str(class_name).split("::")[-1]
         qt_name = _ACTIVE_STANDINS.get(leaf)
         if qt_name is None:
             return None
-        widget = getattr(QtWidgets, qt_name)(parent)
+        widget = _recording_type(qt_name)(parent)
         if object_name:
             widget.setObjectName(str(object_name))
         return widget
@@ -991,12 +1057,20 @@ def _pop_fake_freecadgui(pushed: bool) -> None:
 
 
 def _install_gui_classes(module) -> None:
-    from PySide6 import QtWidgets
+    """Give a module this form's ``Gui_*`` and other ``A_B`` class names.
 
+    uic spells ``Gui::InputField`` and ``MatGui::MaterialTreeWidget`` as
+    ``Gui_InputField`` and ``MatGui_MaterialTreeWidget``. Each name is the
+    recording stand-in that ``_StandInLoader`` builds for our module.
+    """
     for leaf, qt_name in _ACTIVE_STANDINS.items():
-        widget_type = getattr(QtWidgets, qt_name, None)
-        if widget_type is not None:
-            setattr(module, "Gui_" + leaf, widget_type)
+        setattr(module, "Gui_" + leaf, _recording_type(qt_name))
+    for python_name, leaf in _ACTIVE_CPP_NAMES.items():
+        qt_name = _ACTIVE_STANDINS.get(leaf, "QWidget")
+        setattr(module, python_name, _recording_type(qt_name))
+    for scope in _ACTIVE_SCOPES:
+        if scope.isidentifier() and not hasattr(module, scope):
+            setattr(module, scope, _CppName(scope))
 
 
 def _track(widget):
@@ -1265,6 +1339,8 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
     except Exception as exc:
         ours = None
         ours_exc = exc
+    if ours is not None:
+        _install_gui_classes(ours)
     theirs = None
     theirs_exc = None
     if uic_text is not None:
