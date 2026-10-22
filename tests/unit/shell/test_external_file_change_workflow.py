@@ -517,8 +517,16 @@ class _FakeContentSource:
         self.text = text
         self.saved_text = text
         self.mark_saved_calls: list[str] = []
+        # When set, every current_text() call after the first one returns this
+        # instead: a re-serialization that differs from what was read from disk.
+        self.drift_text: "str | None" = None
+        self._calls_since_drift = 0
 
     def current_text(self) -> str:
+        if self.drift_text is not None:
+            self._calls_since_drift += 1
+            if self._calls_since_drift > 1:
+                return self.drift_text
         return self.text
 
     def is_dirty(self) -> bool:
@@ -662,6 +670,9 @@ def test_sourced_tab_matching_disk_marks_saved_with_disk_text(tmp_path: Path) ->
         manager, file_path, content="<ui old/>\n", sync_host=sync_host, external_host=external_host
     )
     source.text = "<ui same/>\n"
+    # After the content comparison, a re-read of the source would yield a different
+    # serialization. The baseline must be the exact disk text, not a fresh read.
+    source.drift_text = "<ui same />\n"
     file_path.write_text("<ui same/>\n", encoding="utf-8")
     workflow = _build_workflows(
         manager,
@@ -677,8 +688,8 @@ def test_sourced_tab_matching_disk_marks_saved_with_disk_text(tmp_path: Path) ->
 
     assert outcome is ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
     assert source.mark_saved_calls[-1] == "<ui same/>\n"
+    assert tab.original_content == "<ui same/>\n"
     assert surface.restored == []
-    assert tab.is_dirty is False
 
 
 def test_markdown_style_tab_with_widget_and_surface_reloads_through_surface(tmp_path: Path) -> None:
