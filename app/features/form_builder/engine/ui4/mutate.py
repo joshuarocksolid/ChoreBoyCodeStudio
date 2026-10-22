@@ -102,7 +102,8 @@ def _insert(doc: UiDocument, op: InsertNodeOp) -> Op:
     kids.insert(op.index, child)
     _retarget_slot(doc, parent, op.slot, kids)
     _register_subtree(doc, doc._nodes[op.spec.id])
-    doc._rebuild_custom_index()
+    if _spec_has_custom(op.spec):
+        doc._rebuild_custom_index()
     doc._bump()
     return RemoveNodeOp(op.spec.id)
 
@@ -117,11 +118,13 @@ def _remove(doc: UiDocument, op: RemoveNodeOp) -> Op:
     slot = node.parent_slot
     index = node.slot_index
     snapshot = node.to_spec()
+    custom = _node_has_custom(node)
     parent = doc._nodes[parent_id]
     kids = [child for child in parent.children(slot) if child.id != op.node]
     _forget_subtree(doc, node)
     _retarget_slot(doc, doc._nodes[parent_id], slot, kids)
-    doc._rebuild_custom_index()
+    if custom:
+        doc._rebuild_custom_index()
     doc._bump()
     return InsertNodeOp(parent=parent_id, slot=slot, index=index, spec=snapshot)
 
@@ -156,7 +159,8 @@ def _move(doc: UiDocument, op: MoveNodeOp) -> Op:
     destination.insert(op.index, current)
     _retarget_slot(doc, parent, op.slot, destination)
     _resort_shared_names(doc, op.node)
-    doc._rebuild_custom_index()
+    if _node_has_custom(doc._nodes[op.node]):
+        doc._rebuild_custom_index()
     doc._bump()
     return MoveNodeOp(node=op.node, parent=old_parent, slot=old_slot, index=old_index)
 
@@ -367,6 +371,23 @@ def _forget_subtree(doc: UiDocument, node: Node) -> None:
         doc._unbind_name(item)
         doc._sub_logic(item)
         doc._nodes.pop(item.id, None)
+
+
+def _spec_has_custom(spec: NodeSpec) -> bool:
+    if spec.kind == "customwidget":
+        return True
+    for _name, kids in spec.slots:
+        for kid in kids:
+            if _spec_has_custom(kid):
+                return True
+    return False
+
+
+def _node_has_custom(node: Node) -> bool:
+    for item in _walk(node):
+        if item.kind == "customwidget":
+            return True
+    return False
 
 
 def _resort_shared_names(doc: UiDocument, root_id: NodeId) -> None:

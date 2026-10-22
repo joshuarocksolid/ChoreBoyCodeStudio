@@ -76,10 +76,10 @@ def insert_fragment(
     auto_layout: bool,
 ) -> Tuple[Tuple[NodeId, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...]]:
     dest = _destination(doc, ctx, placement, auto_layout, moving=())
-    taken = set(doc.names())
+    chosen: set = set()
     counts = _name_counts(fragment.nodes)
     mapping: Dict[str, str] = {}
-    prepared = tuple(_assign_names(spec, taken, counts, mapping) for spec in fragment.nodes)
+    prepared = tuple(_assign_names(spec, doc, chosen, counts, mapping) for spec in fragment.nodes)
     prepared = tuple(rewrite_spec_refs(spec, mapping) for spec in prepared)
     conflicts = _merge_declarations(doc, ctx, fragment)
     _merge_resources(doc, ctx, fragment)
@@ -595,7 +595,7 @@ def create_action(
         if parent_node.kind != "actiongroup":
             raise CommandRejected("That is not an action group.")
         parent = group
-    prepared = _assign_names(spec, set(doc.names()), _name_counts((spec,)), {})
+    prepared = _assign_names(spec, doc, set(), _name_counts((spec,)), {})
     allocated = allocate_spec(ctx, prepared)
     count = len(doc.node(parent).children("actions"))
     ctx.do(InsertNodeOp(parent, "actions", count, allocated))
@@ -619,7 +619,7 @@ def create_menu(doc: UiDocument, ctx: PlanContext, placement: Placement, title: 
     if not isinstance(placement, InActionList):
         raise CommandRejected("A menu is added to a menu bar or a menu.")
     host = _require(doc, placement.widget)
-    name = _take_name("menu", set(doc.names()))
+    name = _take_name("menu", doc, set())
     allocated = allocate_spec(ctx, _widget_spec("QMenu", name))
     count = len(host.children("children"))
     ctx.do(InsertNodeOp(host.id, "children", count, allocated))
@@ -1384,7 +1384,7 @@ def _wrap_for_dest(spec: NodeSpec, dest: _Dest, offset: int) -> NodeSpec:
 
 
 def _alloc_layout(doc: UiDocument, ctx: PlanContext, class_name: str) -> NodeSpec:
-    name = _take_name(_default_name(class_name), set(doc.names()))
+    name = _take_name(_default_name(class_name), doc, set())
     return allocate_spec(ctx, _layout_spec(class_name, name))
 
 
@@ -1394,9 +1394,9 @@ def _alloc_container(
     container_class: str,
     layout_class: str,
 ) -> Tuple[NodeSpec, NodeSpec]:
-    taken = set(doc.names())
-    widget_name = _take_name(_default_name(container_class), taken)
-    layout_name = _take_name(_default_name(layout_class), taken)
+    chosen: set = set()
+    widget_name = _take_name(_default_name(container_class), doc, chosen)
+    layout_name = _take_name(_default_name(layout_class), doc, chosen)
     layout = allocate_spec(ctx, _layout_spec(layout_class, layout_name))
     widget = allocate_spec(ctx, _widget_spec(container_class, widget_name, (("layout", (layout,)),)))
     return widget, layout
@@ -1474,7 +1474,8 @@ def _ordered(kind: str, values: Dict[str, object]) -> Tuple[Tuple[str, object], 
 
 def _assign_names(
     spec: NodeSpec,
-    taken: set,
+    doc: UiDocument,
+    chosen: set,
     counts: Dict[str, int],
     mapping: Dict[str, str],
 ) -> NodeSpec:
@@ -1483,12 +1484,12 @@ def _assign_names(
     if field_name is not None:
         old = spec.field(field_name)
         if isinstance(old, str) and old:
-            new = _take_name(old, taken)
+            new = _take_name(old, doc, chosen)
             fields_out = [(key, new if key == field_name else value) for key, value in fields_out]
             if counts.get(old, 0) == 1 and new != old:
                 mapping[old] = new
     slots = tuple(
-        (slot, tuple(_assign_names(child, taken, counts, mapping) for child in kids))
+        (slot, tuple(_assign_names(child, doc, chosen, counts, mapping) for child in kids))
         for slot, kids in spec.slots
     )
     return NodeSpec(spec.kind, spec.id, tuple(fields_out), spec.properties, spec.attributes, slots, spec.extra_attrs)
@@ -1512,16 +1513,17 @@ def _name_counts(specs: Sequence[NodeSpec]) -> Dict[str, int]:
     return counts
 
 
-def _take_name(base: str, taken: set) -> str:
-    if base not in taken:
-        taken.add(base)
+def _take_name(base: str, doc: UiDocument, chosen: set) -> str:
+    if base not in chosen and base not in doc.names():
+        chosen.add(base)
         return base
     suffix = 2
-    while "%s_%s" % (base, suffix) in taken:
+    while True:
+        candidate = "%s_%s" % (base, suffix)
+        if candidate not in chosen and candidate not in doc.names():
+            chosen.add(candidate)
+            return candidate
         suffix += 1
-    name = "%s_%s" % (base, suffix)
-    taken.add(name)
-    return name
 
 
 def _check_name(doc: UiDocument, new_name: str) -> None:

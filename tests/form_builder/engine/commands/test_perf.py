@@ -7,12 +7,13 @@ import time
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog import InsertFragment, MoveNodes, SetProperty
+from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, MoveNodes, SetProperty, Wrap
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.ui4 import mutate
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.ui4.values import StringValue
-from tests.form_builder.engine.commands._support import button_spec, nid, open_log
+from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log
 
 
 def _bulk(count: int) -> str:
@@ -84,6 +85,69 @@ def test_insert_and_move_do_not_walk_the_untouched_subtree() -> None:
     log = open_log(_bulk(200))
     log.execute(SetProperty(nid(log.document, "target"), "text", StringValue("z")))
     assert mutate.last_touched < 30
+
+
+def test_naming_a_new_widget_does_not_walk_every_name(monkeypatch: pytest.MonkeyPatch) -> None:
+    log = open_log(BOX)
+    doc = log.document
+    consumed = {"n": 0}
+    real = UiDocument.names
+
+    class _Watch:
+        def __init__(self, inner: frozenset) -> None:
+            self._inner = inner
+
+        def __contains__(self, item: object) -> bool:
+            return item in self._inner
+
+        def __iter__(self) -> object:
+            consumed["n"] += 1
+            return iter(self._inner)
+
+    def names(self: UiDocument) -> _Watch:
+        return _Watch(real(self))
+
+    monkeypatch.setattr(UiDocument, "names", names)
+    layout = doc.root.layout
+    assert layout is not None
+    log.execute(
+        InsertFragment(
+            InBoxLayout(layout.id, 0),
+            Fragment(nodes=(button_spec("extra"),)),
+            auto_layout=False,
+        )
+    )
+    log.execute(Wrap((nid(doc, "okButton"),), "QFrame", "QVBoxLayout"))
+    assert consumed["n"] == 0
+    assert "extra" in doc.names()
+
+
+def test_structural_edits_rebuild_custom_widgets_only_when_present(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    log = open_log(BOX)
+    doc = log.document
+    calls = {"n": 0}
+    real = UiDocument._rebuild_custom_index
+
+    def wrapped(self: UiDocument) -> None:
+        calls["n"] += 1
+        real(self)
+
+    monkeypatch.setattr(UiDocument, "_rebuild_custom_index", wrapped)
+    layout = doc.root.layout
+    assert layout is not None
+    button = nid(doc, "okButton")
+    log.execute(
+        InsertFragment(
+            InBoxLayout(layout.id, 0),
+            Fragment(nodes=(button_spec("extra"),)),
+            auto_layout=False,
+        )
+    )
+    log.execute(MoveNodes((button,), InBoxLayout(layout.id, len(layout.items))))
+    log.execute(DeleteNodes((nid(doc, "extra"),)))
+    assert calls["n"] == 0
 
 
 @pytest.mark.perf
