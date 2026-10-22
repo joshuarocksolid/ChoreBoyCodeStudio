@@ -75,7 +75,7 @@
        <string>cursor</string>
       </property>
       <property name="cursor">
-       <cursorshape>Qt::PointingHandCursor</cursorshape>
+       <cursorShape>PointingHandCursor</cursorShape>
       </property>
       <property name="pos">
        <point>
@@ -112,21 +112,21 @@
          </colorrole>
          <colorrole role="WindowText">
           <brush brushstyle="LinearGradientPattern">
-           <gradient type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode" startx="0" starty="0" endx="100" endy="20" angle="15" centralx="50" centraly="10" focalx="40" focaly="10" radius="12">
-            <gradientStop position="0">
+           <gradient startx="0" starty="0" endx="100" endy="20" centralx="50" centraly="10" focalx="40" focaly="10" radius="12" angle="15" type="LinearGradient" spread="PadSpread" coordinatemode="LogicalMode">
+            <gradientstop position="0">
              <color alpha="255">
               <red>255</red>
               <green>0</green>
               <blue>0</blue>
              </color>
-            </gradientStop>
-            <gradientStop position="1">
+            </gradientstop>
+            <gradientstop position="1">
              <color alpha="128">
               <red>0</red>
               <green>0</green>
               <blue>255</blue>
              </color>
-            </gradientStop>
+            </gradientstop>
            </gradient>
           </brush>
          </colorrole>
@@ -134,14 +134,14 @@
         <inactive>
          <colorrole role="Button">
           <brush brushstyle="RadialGradientPattern">
-           <gradient type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode" startx="0" starty="0" endx="1" endy="1" angle="0" centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8">
-            <gradientStop position="0.2">
+           <gradient startx="0" starty="0" endx="1" endy="1" centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8" angle="0" type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode">
+            <gradientstop position="0.2">
              <color alpha="255">
               <red>0</red>
               <green>255</green>
               <blue>0</blue>
              </color>
-            </gradientStop>
+            </gradientstop>
            </gradient>
           </brush>
          </colorrole>
@@ -149,14 +149,14 @@
         <disabled>
          <colorrole role="Base">
           <brush brushstyle="ConicalGradientPattern">
-           <gradient type="ConicalGradient" spread="ReflectSpread" coordinatemode="StretchToDeviceMode" startx="0" starty="0" endx="1" endy="1" angle="45" centralx="0.5" centraly="0.5" focalx="0.5" focaly="0.5" radius="1">
-            <gradientStop position="0.5">
+           <gradient startx="0" starty="0" endx="1" endy="1" centralx="0.5" centraly="0.5" focalx="0.5" focaly="0.5" radius="1" angle="45" type="ConicalGradient" spread="ReflectSpread" coordinatemode="StretchToDeviceMode">
+            <gradientstop position="0.5">
              <color alpha="200">
               <red>10</red>
               <green>10</green>
               <blue>10</blue>
              </color>
-            </gradientStop>
+            </gradientstop>
            </gradient>
           </brush>
          </colorrole>
@@ -429,14 +429,14 @@
    <property name="shortcut"><string>Ctrl+N</string></property>
    <property name="icon">
     <iconset theme="document-new" resource="icons.qrc">
-     <normaloff resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</normaloff>:/cbcs/icons/dot.png
-     <normalon resource="icons.qrc" alias="mark">:/cbcs/icons/mark.png</normalon>:/cbcs/icons/mark.png
-     <disabledoff resource="icons.qrc">:/cbcs/icons/dot.png</disabledoff>:/cbcs/icons/dot.png
-     <disabledon resource="icons.qrc">:/cbcs/icons/mark.png</disabledon>:/cbcs/icons/mark.png
-     <activeoff resource="icons.qrc">:/cbcs/icons/dot.png</activeoff>:/cbcs/icons/dot.png
-     <activeon resource="icons.qrc">:/cbcs/icons/mark.png</activeon>:/cbcs/icons/mark.png
-     <selectedoff resource="icons.qrc">:/cbcs/icons/dot.png</selectedoff>:/cbcs/icons/dot.png
-     <selectedon resource="icons.qrc">:/cbcs/icons/mark.png</selectedon>:/cbcs/icons/mark.png
+     <normaloff resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</normaloff>
+     <normalon resource="icons.qrc" alias="mark">:/cbcs/icons/mark.png</normalon>
+     <disabledoff resource="icons.qrc">:/cbcs/icons/dot.png</disabledoff>
+     <disabledon resource="icons.qrc">:/cbcs/icons/mark.png</disabledon>
+     <activeoff resource="icons.qrc">:/cbcs/icons/dot.png</activeoff>
+     <activeon resource="icons.qrc">:/cbcs/icons/mark.png</activeon>
+     <selectedoff resource="icons.qrc">:/cbcs/icons/dot.png</selectedoff>
+     <selectedon resource="icons.qrc">:/cbcs/icons/mark.png</selectedon>:/cbcs/icons/dot.png
     </iconset>
    </property>
    <attribute name="cbcsActionRole" stdset="0">

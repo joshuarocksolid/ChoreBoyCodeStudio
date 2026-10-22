@@ -238,6 +238,19 @@ def _redact(text: str, path: Path) -> str:
     return text
 
 
+_ELEMENT_CANON = {name.casefold(): name for name in ELEMENTS}
+
+
+def _canon_element(name: str) -> str:
+    """Map Qt's tag spelling onto the ui4 schema name.
+
+    Qt 6.8 writes ``cursorShape`` and ``gradientstop``. The schema names are
+    ``cursorshape`` and ``gradientStop``. Coverage is case-insensitive so a
+    Qt-sourced file still counts for the schema name.
+    """
+    return _ELEMENT_CANON.get(name.casefold(), name)
+
+
 def _coverage(rows: List[dict]) -> dict:
     element_counts: Dict[str, int] = defaultdict(int)
     attribute_counts: Dict[str, int] = defaultdict(int)
@@ -247,13 +260,14 @@ def _coverage(rows: List[dict]) -> dict:
         if row["folder"] == "malformed":
             continue
         for name in row["_elements"]:
-            element_counts[name] += 1
-            samples.setdefault(name, row["path"])
+            canon = _canon_element(name)
+            element_counts[canon] += 1
+            samples.setdefault(canon, row["path"])
         for name in row["_attributes"]:
             attribute_counts[name] += 1
             samples.setdefault("@%s" % name, row["path"])
         for parent, child in row["_edges"]:
-            parents[child].add(parent)
+            parents[_canon_element(child)].add(_canon_element(parent))
     missing_elements = sorted(ELEMENTS - set(element_counts))
     missing_attributes = sorted(ATTRIBUTES - set(attribute_counts))
     missing_parents = []

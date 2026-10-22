@@ -133,7 +133,7 @@ def _check_iconset(value: Value) -> None:
     assert isinstance(value, IconSetValue)
     assert value.theme == "document-new"
     assert value.resource == "icons.qrc"
-    assert value.text == ":/h.png"
+    assert value.text == ":/a.png"
     assert value.normaloff == ResourcePixmap(":/a.png", "icons.qrc", "dot")
     assert value.normalon == ResourcePixmap(":/b.png")
     assert value.disabledoff == ResourcePixmap(":/c.png")
@@ -191,7 +191,7 @@ _CASES = [
     ("brush-empty", '<brush brushstyle="NoBrush"/>', BrushValue, lambda value: value.brushstyle == "NoBrush" and value.color is None),
     (
         "brush-gradient",
-        '<brush brushstyle="LinearGradientPattern"><gradient type="LinearGradient" startx="0" endy="1"><gradientStop position="0.2">%s</gradientStop></gradient></brush>' % _paint(0, 255, 0, 255),
+        '<brush brushstyle="LinearGradientPattern"><gradient startx="0" endy="1" type="LinearGradient"><gradientstop position="0.2">%s</gradientstop></gradient></brush>' % _paint(0, 255, 0, 255),
         BrushValue,
         lambda value: value.gradient is not None and value.gradient.stops == (GradientStop(0.2, ColorValue(0, 255, 0, 255)),) and value.gradient.endx is None,
     ),
@@ -203,13 +203,13 @@ def _palette_body() -> str:
  <active>
   <color><red>1</red><green>2</green><blue>3</blue></color>
   <colorrole role="Window"><brush brushstyle="SolidPattern">%s</brush></colorrole>
-  <colorrole role="WindowText"><brush brushstyle="LinearGradientPattern"><gradient type="LinearGradient" spread="PadSpread" startx="0" starty="0" endx="100" endy="20" angle="15"><gradientStop position="0">%s</gradientStop><gradientStop position="1">%s</gradientStop></gradient></brush></colorrole>
+  <colorrole role="WindowText"><brush brushstyle="LinearGradientPattern"><gradient startx="0" starty="0" endx="100" endy="20" angle="15" type="LinearGradient" spread="PadSpread"><gradientstop position="0">%s</gradientstop><gradientstop position="1">%s</gradientstop></gradient></brush></colorrole>
  </active>
  <inactive>
-  <colorrole role="Button"><brush brushstyle="RadialGradientPattern"><gradient type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode" centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8"><gradientStop position="0.2">%s</gradientStop></gradient></brush></colorrole>
+  <colorrole role="Button"><brush brushstyle="RadialGradientPattern"><gradient centralx="0.5" centraly="0.5" focalx="0.4" focaly="0.4" radius="0.8" type="RadialGradient" spread="RepeatSpread" coordinatemode="ObjectMode"><gradientstop position="0.2">%s</gradientstop></gradient></brush></colorrole>
  </inactive>
  <disabled>
-  <colorrole role="Base"><brush brushstyle="ConicalGradientPattern"><gradient type="ConicalGradient" spread="ReflectSpread" angle="45" centralx="0.5" centraly="0.5"><gradientStop position="0.5">%s</gradientStop></gradient></brush></colorrole>
+  <colorrole role="Base"><brush brushstyle="ConicalGradientPattern"><gradient centralx="0.5" centraly="0.5" angle="45" type="ConicalGradient" spread="ReflectSpread"><gradientstop position="0.5">%s</gradientstop></gradient></brush></colorrole>
   <colorrole role="AlternateBase"><brush brushstyle="TexturePattern"><texture name="windowTexture"><pixmap resource="icons.qrc" alias="dot">:/cbcs/icons/dot.png</pixmap></texture></brush></colorrole>
  </disabled>
 </palette>""" % (
@@ -222,15 +222,17 @@ def _palette_body() -> str:
 
 
 def _iconset_body() -> str:
+    # Designer writes the backward-compat path once, after the last state,
+    # and that path equals normaloff.
     return """<iconset theme="document-new" resource="icons.qrc">
- <normaloff resource="icons.qrc" alias="dot">:/a.png</normaloff>:/a.png
+ <normaloff resource="icons.qrc" alias="dot">:/a.png</normaloff>
  <normalon>:/b.png</normalon>
- <disabledoff>:/c.png</disabledoff>:/c.png
- <disabledon>:/d.png</disabledon>:/d.png
- <activeoff>:/e.png</activeoff>:/e.png
- <activeon>:/f.png</activeon>:/f.png
- <selectedoff>:/g.png</selectedoff>:/g.png
- <selectedon>:/h.png</selectedon>:/h.png
+ <disabledoff>:/c.png</disabledoff>
+ <disabledon>:/d.png</disabledon>
+ <activeoff>:/e.png</activeoff>
+ <activeon>:/f.png</activeon>
+ <selectedoff>:/g.png</selectedoff>
+ <selectedon>:/h.png</selectedon>:/a.png
 </iconset>"""
 
 

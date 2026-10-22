@@ -2,6 +2,7 @@
 """Designer files load, save, and load again to the same widget tree."""
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -259,6 +260,53 @@ def _as_int(value: object) -> int:
     return enum_value(value)
 
 
+def _norm_gradient(gradient: object) -> object:
+    if gradient is None:
+        return None
+    kind = type(gradient).__name__
+    if kind == "QLinearGradient":
+        start = gradient.start()
+        end = gradient.finalStop()
+        coords = (start.x(), start.y(), end.x(), end.y())
+    elif kind == "QRadialGradient":
+        center = gradient.center()
+        focal = gradient.focalPoint()
+        coords = (center.x(), center.y(), focal.x(), focal.y(), gradient.radius())
+    elif kind == "QConicalGradient":
+        center = gradient.center()
+        coords = (center.x(), center.y(), gradient.angle())
+    else:
+        coords = ()
+    stops = tuple((position, _norm(color)) for position, color in gradient.stops())
+    return (
+        _as_int(gradient.type()),
+        _as_int(gradient.spread()),
+        _as_int(gradient.coordinateMode()),
+        coords,
+        stops,
+    )
+
+
+def _icon_signature(icon: object) -> object:
+    """Pixels per mode and state. cacheKey is unique per pixmap instance."""
+    from app.qt.QtGui import QIcon, QImage
+
+    modes = (QIcon.Mode.Normal, QIcon.Mode.Disabled, QIcon.Mode.Active, QIcon.Mode.Selected)
+    states = (QIcon.State.Off, QIcon.State.On)
+    cells = []
+    for mode in modes:
+        for state in states:
+            sizes = tuple(sorted((size.width(), size.height()) for size in icon.availableSizes(mode, state)))
+            pixmap = icon.pixmap(16, 16, mode, state)
+            if pixmap.isNull():
+                cells.append((sizes, None))
+                continue
+            image = pixmap.toImage().convertToFormat(QImage.Format.Format_ARGB32)
+            bits = bytes(image.constBits())
+            cells.append((sizes, image.width(), image.height(), hashlib.sha256(bits).hexdigest()))
+    return (icon.isNull(), icon.name(), icon.themeName(), tuple(cells))
+
+
 def _norm(value: object) -> object:
     if value is None or isinstance(value, (str, bool, int, float)):
         return value
@@ -279,7 +327,9 @@ def _norm(value: object) -> object:
     if name in ("QRect", "QRectF"):
         return (value.x(), value.y(), value.width(), value.height())
     if name == "QColor":
-        return None if not value.isValid() else value.name()
+        from app.qt.QtGui import QColor
+
+        return None if not value.isValid() else value.name(QColor.NameFormat.HexArgb)
     if name == "QFont":
         return (
             value.family(),
@@ -298,7 +348,7 @@ def _norm(value: object) -> object:
             value.verticalStretch(),
         )
     if name == "QIcon":
-        return (value.isNull(), value.name(), value.themeName())
+        return _icon_signature(value)
     if name == "QPixmap":
         return (value.isNull(), value.width(), value.height())
     if name in ("QDate", "QTime", "QDateTime"):
@@ -317,13 +367,13 @@ def _norm(value: object) -> object:
     if name == "QKeyCombination":
         return (_as_int(value.keyboardModifiers()), _as_int(value.key()))
     if name == "QBrush":
-        return (_as_int(value.style()), _norm(value.color()))
+        return (_as_int(value.style()), _norm(value.color()), _norm_gradient(value.gradient()))
     if name == "QPalette":
         from app.qt.QtGui import QPalette
 
         groups = (QPalette.ColorGroup.Active, QPalette.ColorGroup.Disabled, QPalette.ColorGroup.Inactive)
         roles = [role for role in QPalette.ColorRole if role.name not in ("NColorRoles", "NoRole")]
-        return tuple(_norm(value.color(group, role)) for group in groups for role in roles)
+        return tuple(_norm(value.brush(group, role)) for group in groups for role in roles)
     try:
         return _as_int(value)
     except (TypeError, ValueError):
