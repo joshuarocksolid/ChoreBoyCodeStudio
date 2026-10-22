@@ -481,6 +481,7 @@ The ranges are in `diagnostics.py`. Codes 101–402 come from LOGIC_DESIGN §2.9
 | FB506 | Info | The form isn't part of a project, so no Python is generated |
 | FB507 | Error | The form's file name can't be a Python module name |
 | FB508 | Warning | A `<connection>` names a signal the sender's class doesn't have. A plain Qt sender's line is left out; a `Gui::`, promoted or C++ `::` sender keeps uic's line (§9.3) |
+| FB509 | Error | A generated file could not be written |
 | FB601 | Error | The preview process stopped unexpectedly (stderr tail attached) |
 | FB602 | Warning | A custom widget couldn't load in the preview; the base class was used |
 | FB603 | Error | Preview protocol version mismatch |

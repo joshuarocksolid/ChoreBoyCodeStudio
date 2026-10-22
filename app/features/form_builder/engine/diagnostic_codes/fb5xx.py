@@ -1,4 +1,4 @@
-"""Codegen diagnostic codes (CONTRACTS.md section 7.2, FB501-FB508)."""
+"""Codegen diagnostic codes (CONTRACTS.md section 7.2, FB501-FB509)."""
 
 from __future__ import annotations
 
@@ -12,3 +12,4 @@ declare("FB505", Severity.WARNING, "A generated file is out of date.")
 declare("FB506", Severity.INFO, "This form is outside the project.")
 declare("FB507", Severity.ERROR, "The form file name can't be a Python module.")
 declare("FB508", Severity.WARNING, "A connection names a signal its sender's class doesn't have.")
+declare("FB509", Severity.ERROR, "A generated file could not be written.")

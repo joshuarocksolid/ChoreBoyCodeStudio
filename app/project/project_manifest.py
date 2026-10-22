@@ -439,6 +439,46 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
             normalize_source_root_entries(manifest_project_root, normalized_source_roots)
         )
 
+    form_builder_raw = payload.get("form_builder", {})
+    if form_builder_raw is None:
+        form_builder_raw = {}
+    if not isinstance(form_builder_raw, dict):
+        _raise_validation_error(
+            "form_builder must be an object.",
+            field="form_builder",
+            manifest_path=resolved_path,
+        )
+    normalized_form_builder: dict[str, Any] = {}
+    for key, value in form_builder_raw.items():
+        if not isinstance(key, str):
+            _raise_validation_error(
+                "form_builder keys must be strings.",
+                field="form_builder",
+                manifest_path=resolved_path,
+            )
+        if key == "adopted_forms":
+            if not isinstance(value, list):
+                _raise_validation_error(
+                    "form_builder.adopted_forms must be a list.",
+                    field="form_builder.adopted_forms",
+                    manifest_path=resolved_path,
+                )
+            adopted_paths: list[str] = []
+            for index, item in enumerate(value):
+                if not isinstance(item, str):
+                    _raise_validation_error(
+                        "form_builder.adopted_forms entries must be strings.",
+                        field="form_builder.adopted_forms[%s]" % index,
+                        manifest_path=resolved_path,
+                    )
+                stripped = item.strip().replace("\\", "/")
+                if stripped:
+                    adopted_paths.append(stripped)
+            if adopted_paths:
+                normalized_form_builder["adopted_forms"] = adopted_paths
+            continue
+        normalized_form_builder[key] = value
+
     return ProjectMetadata(
         schema_version=schema_version,
         project_id=project_id,
@@ -452,6 +492,7 @@ def parse_project_manifest(payload: Mapping[str, Any], manifest_path: Optional[P
         project_notes=project_notes,
         exclude_patterns=normalized_exclude_patterns,
         source_roots=normalized_source_roots,
+        form_builder=normalized_form_builder,
     )
 
 
