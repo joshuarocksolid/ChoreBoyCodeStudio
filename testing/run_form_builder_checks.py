@@ -364,13 +364,29 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
         # A mismatched vendor tree stays behind the interpreter's site-packages
         # so a py39 extension does not shadow PySide6.
         path_setup = "sys.path.insert(0, {repo!r});sys.path.append({vendor!r});"
+    # FreeCAD 1.0's FemMigrateApp implements the old import hook but not
+    # find_spec. pytest calls find_spec on every meta_path entry while loading
+    # conftest, so the Python 3.9 lane dies before collection. FreeCAD 1.1
+    # already provides find_spec, and this shim leaves that class alone.
+    shim = (
+        "for _finder in sys.meta_path:\n"
+        "    if type(_finder).__name__ != 'FemMigrateApp' or hasattr(_finder, 'find_spec'):\n"
+        "        continue\n"
+        "    def _find_spec(self, fullname, path=None, target=None):\n"
+        "        found = self.find_module(fullname, path)\n"
+        "        if found is None:\n"
+        "            return None\n"
+        "        return __import__('importlib.util', fromlist=['spec_from_loader']).spec_from_loader(fullname, found)\n"
+        "    type(_finder).find_spec = _find_spec\n"
+    )
     payload = (
-        "import os, sys;"
+        "import os, sys\n"
+        + shim
         + path_setup
-        + "os.chdir({repo!r});"
-        "code=int(__import__('pytest').main({args!r}));"
-        "sys.stdout.flush();sys.stderr.flush();"
-        "os._exit(code)"
+        + "os.chdir({repo!r})\n"
+        "code=int(__import__('pytest').main({args!r}))\n"
+        "sys.stdout.flush();sys.stderr.flush()\n"
+        "os._exit(code)\n"
     ).format(repo=str(REPO_ROOT), vendor=str(vendor), args=args)
     return _apprun_safe(payload)
 
