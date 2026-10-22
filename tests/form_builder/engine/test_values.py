@@ -236,6 +236,8 @@ def _iconset_body() -> str:
 </iconset>"""
 
 
+@pytest.mark.parity("R3-287")
+@pytest.mark.parity("R3-317")
 def test_qt68_writes_cursorShape_and_gradientstop() -> None:
     shape, codes = _round_trip("<cursorShape>IBeamCursor</cursorShape>")
     assert isinstance(shape, CursorShapeValue)
@@ -275,7 +277,6 @@ def test_qt68_writes_cursorShape_and_gradientstop() -> None:
 
 @pytest.mark.parity("R3-284")
 @pytest.mark.parity("R3-286")
-@pytest.mark.parity("R3-287")
 @pytest.mark.parity("R3-291")
 @pytest.mark.parity("R3-293")
 @pytest.mark.parity("R3-296")
@@ -305,6 +306,7 @@ def test_typed_value_round_trips(name: str, body: str, kind: Type[Value], probe:
     probe(value)
 
 
+@pytest.mark.parity("R3-290")
 def test_designer_multistate_iconset_keeps_one_compat_path() -> None:
     body = "<iconset><normaloff>a.png</normaloff><normalon>b.png</normalon>a.png</iconset>"
     value, codes = _round_trip(body)
@@ -318,19 +320,22 @@ def test_designer_multistate_iconset_keeps_one_compat_path() -> None:
     assert "<normaloff>a.png</normaloff>a.png" not in saved
 
 
-@pytest.mark.parity("R3-290")
+@pytest.mark.parity("R3-320")
+def test_designer_eight_icon_states_round_trip() -> None:
+    value, codes = _round_trip(_iconset_body())
+    assert "FB005" not in codes
+    _check_iconset(value)
+
+
 @pytest.mark.parity("R3-292")
 @pytest.mark.parity("R3-316")
-@pytest.mark.parity("R3-317")
 @pytest.mark.parity("R3-318")
 @pytest.mark.parity("R3-319")
-@pytest.mark.parity("R3-320")
 @pytest.mark.parity("R3-321")
 @pytest.mark.parametrize(
     ("body", "probe"),
     [
         (_palette_body(), _check_palette),
-        (_iconset_body(), _check_iconset),
         ('<iconset resource="remotecontrol.qrc">:/remotecontrol/enter.png</iconset>', _check_legacy_icon),
         ('<iconset theme="document-open"/>', lambda value: isinstance(value, IconSetValue) and value.theme == "document-open" and value.text is None),
     ],
