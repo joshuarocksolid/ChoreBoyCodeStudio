@@ -12,7 +12,7 @@ def test_generated_sequences_hold_the_invariants() -> None:
     assert "failed 0" in summary
 
 
-@pytest.mark.perf
+@pytest.mark.soak
 @pytest.mark.timeout(280)
 def test_gate_run_holds_the_invariants() -> None:
     summary = run_many(5000, 50)

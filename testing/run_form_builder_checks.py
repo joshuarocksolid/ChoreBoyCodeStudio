@@ -29,7 +29,7 @@ QUICK_SKIP = frozenset({"unit-py39-pyside6", "pyright"})
 # The repo fast shard is minutes, so the default table lists it and does not run it.
 FULL_ONLY = frozenset({"fast-shard-regression"})
 
-UNIT_MARKER = "not oracle and not perf and not performance"
+UNIT_MARKER = "not oracle and not perf and not performance and not soak"
 PYTEST_TIMEOUT_SECONDS = 300
 FAST_SHARD_TIMEOUT_SECONDS = 400
 COMMAND_TIMEOUT_SECONDS = 180
