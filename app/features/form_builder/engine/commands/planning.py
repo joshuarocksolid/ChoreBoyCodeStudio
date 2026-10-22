@@ -817,7 +817,7 @@ def replace_document_text(doc: UiDocument, ctx: PlanContext, text: str) -> None:
         name = identity_name(node)
         if name:
             names.append(name)
-    ctx.do(ReplaceRootOp(loaded.document.to_spec()))
+    ctx.do(ReplaceRootOp(loaded.document.to_spec(), loaded.document.newline))
     matched = []
     for name in names:
         found = doc.by_name(name)

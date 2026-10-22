@@ -241,10 +241,13 @@ def _replace_root(doc: UiDocument, op: ReplaceRootOp) -> Op:
         if node_id != DOCUMENT_ID and doc.contains(node_id):
             raise OpError("replacement id %s is already in use" % (int(node_id),))
     previous = doc.to_spec()
+    previous_newline = doc.newline
     doc._replace_tree(UiDocument.from_spec(op.spec).ui)
+    if op.newline is not None:
+        doc.newline = op.newline
     global _touched
     _touched += len(op.spec.ids()) + len(previous.ids())
-    return ReplaceRootOp(previous)
+    return ReplaceRootOp(previous, previous_newline)
 
 
 def _require(doc: UiDocument, node_id: NodeId) -> Node:
