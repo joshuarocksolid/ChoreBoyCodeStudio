@@ -508,3 +508,226 @@ def test_check_and_handle_follows_replaced_editor_manager(tmp_path: Path) -> Non
 
     assert outcome is ExternalFileChangeOutcome.RELOADED
     assert tab.current_content == "print('new')\n"
+
+
+class _FakeContentSource:
+    """Sourced buffer whose text only changes through the surface."""
+
+    def __init__(self, text: str) -> None:
+        self.text = text
+        self.saved_text = text
+        self.mark_saved_calls: list[str] = []
+
+    def current_text(self) -> str:
+        return self.text
+
+    def is_dirty(self) -> bool:
+        return self.text != self.saved_text
+
+    def mark_saved(self, saved_text: str) -> None:
+        self.mark_saved_calls.append(saved_text)
+        self.saved_text = saved_text
+
+    def revision(self) -> int:
+        return 0
+
+    def subscribe_changed(self, listener):  # type: ignore[no-untyped-def]
+        del listener
+        return lambda: None
+
+
+class _FakeSurface:
+    def __init__(self, source: _FakeContentSource) -> None:
+        self._source = source
+        self.restored: list[tuple[str, str]] = []
+
+    def restore_text(self, text: str, reason: str) -> None:
+        self.restored.append((text, reason))
+        self._source.text = text
+
+
+@dataclass
+class _SurfaceSyncHost(_RecordingSyncHost):
+    surfaces: dict[str, _FakeSurface] = field(default_factory=dict)
+
+    def surface_for_path(self, file_path: str) -> _FakeSurface | None:
+        return self.surfaces.get(file_path)
+
+
+@dataclass
+class _SurfaceExternalHost(_RecordingExternalHost):
+    surfaces: dict[str, _FakeSurface] = field(default_factory=dict)
+    confirm_calls: int = 0
+
+    def surface_for_path(self, file_path: str) -> _FakeSurface | None:
+        return self.surfaces.get(file_path)
+
+    def confirm_clean_tab_reload(self) -> bool:
+        self.confirm_calls += 1
+        return self.confirm_reload
+
+
+def _open_lazy_sourced_tab(
+    manager: EditorManager,
+    file_path: Path,
+    *,
+    content: str,
+    sync_host: _SurfaceSyncHost,
+    external_host: _SurfaceExternalHost,
+) -> tuple[EditorTabState, _FakeContentSource, _FakeSurface]:
+    """A provider-owned tab with a surface and no source editor widget."""
+    file_path.write_text(content, encoding="utf-8")
+    tab = manager.open_file(str(file_path)).tab
+    source = _FakeContentSource(content)
+    tab.content_source = source  # type: ignore[assignment]
+    tab.mark_saved(last_known_mtime=1.0)
+    surface = _FakeSurface(source)
+    sync_host.surfaces[tab.file_path] = surface
+    external_host.surfaces[tab.file_path] = surface
+    sync_host.tab_indices[tab.file_path] = 0
+    return tab, source, surface
+
+
+def test_lazy_sourced_clean_tab_prompts_and_reloads_through_surface(tmp_path: Path) -> None:
+    file_path = tmp_path / "form.ui"
+    manager = EditorManager()
+    sync_host = _SurfaceSyncHost()
+    external_host = _SurfaceExternalHost(confirm_reload=True)
+    tab, source, surface = _open_lazy_sourced_tab(
+        manager, file_path, content="<ui old/>\n", sync_host=sync_host, external_host=external_host
+    )
+    file_path.write_text("<ui new/>\n", encoding="utf-8")
+    new_mtime = file_path.stat().st_mtime
+    local_history = _RecordingLocalHistory()
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=local_history,
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.RELOADED
+    assert external_host.confirm_calls == 1
+    assert sync_host.widgets == {}
+    assert surface.restored == [("<ui new/>\n", "external_reload")]
+    assert source.saved_text == "<ui new/>\n"
+    assert tab.is_dirty is False
+    assert tab.last_known_mtime == new_mtime
+    assert local_history.checkpoints[-1][2] == "external_reload"
+
+
+def test_lazy_sourced_dirty_tab_gets_three_way_prompt_then_reloads(tmp_path: Path) -> None:
+    file_path = tmp_path / "form.ui"
+    manager = EditorManager()
+    sync_host = _SurfaceSyncHost()
+    external_host = _SurfaceExternalHost()
+    tab, source, surface = _open_lazy_sourced_tab(
+        manager, file_path, content="<ui old/>\n", sync_host=sync_host, external_host=external_host
+    )
+    source.text = "<ui draft/>\n"
+    file_path.write_text("<ui new/>\n", encoding="utf-8")
+    save_workflow = _RecordingSaveWorkflow(
+        decision=DocumentSafetyDecision(intent=DocumentCloseIntent.DISCARD, scope=DocumentScope.EXTERNAL_RELOAD)
+    )
+    local_history = _RecordingLocalHistory()
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=save_workflow,
+        local_history=local_history,
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.RELOADED
+    assert save_workflow.requests == [("request", DocumentScope.EXTERNAL_RELOAD)]
+    assert external_host.confirm_calls == 0
+    assert local_history.checkpoints[0][1:3] == ("<ui draft/>\n", "external_reload_discarded_buffer")
+    assert surface.restored == [("<ui new/>\n", "external_reload")]
+    assert tab.is_dirty is False
+
+
+def test_sourced_tab_matching_disk_marks_saved_with_disk_text(tmp_path: Path) -> None:
+    file_path = tmp_path / "form.ui"
+    manager = EditorManager()
+    sync_host = _SurfaceSyncHost()
+    external_host = _SurfaceExternalHost()
+    tab, source, surface = _open_lazy_sourced_tab(
+        manager, file_path, content="<ui old/>\n", sync_host=sync_host, external_host=external_host
+    )
+    source.text = "<ui same/>\n"
+    file_path.write_text("<ui same/>\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
+    assert source.mark_saved_calls[-1] == "<ui same/>\n"
+    assert surface.restored == []
+    assert tab.is_dirty is False
+
+
+def test_markdown_style_tab_with_widget_and_surface_reloads_through_surface(tmp_path: Path) -> None:
+    file_path = tmp_path / "README.md"
+    manager = EditorManager()
+    sync_host = _SurfaceSyncHost()
+    external_host = _SurfaceExternalHost(confirm_reload=True)
+    tab, _source, surface = _open_lazy_sourced_tab(
+        manager, file_path, content="# old\n", sync_host=sync_host, external_host=external_host
+    )
+    widget = _FakeEditorWidget("# old\n")
+    sync_host.widgets[tab.file_path] = widget
+    external_host.widgets[tab.file_path] = widget
+    file_path.write_text("# new\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.RELOADED
+    assert external_host.confirm_calls == 1
+    assert surface.restored == [("# new\n", "external_reload")]
+    assert widget.text == "# old\n"
+    assert sync_host.indent_calls == [(tab.file_path, "# new\n")]
+
+
+def test_tab_without_widget_or_surface_is_skipped(tmp_path: Path) -> None:
+    file_path = tmp_path / "main.py"
+    file_path.write_text("old\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path)).tab
+    tab.mark_saved(last_known_mtime=1.0)
+    external_host = _SurfaceExternalHost()
+    workflow = _build_workflows(
+        manager,
+        sync_host=_SurfaceSyncHost(),
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.SKIPPED
+    assert external_host.confirm_calls == 0
