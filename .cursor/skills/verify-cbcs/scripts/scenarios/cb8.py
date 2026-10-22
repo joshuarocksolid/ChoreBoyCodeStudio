@@ -12,28 +12,54 @@ from scenarios.ctx import Ctx
 from scenarios.wizard import drive
 
 EXAMPLE = "/home/default/FreeCAD/CBCS/choreboy_code_studio_v0.4.13/example_projects/crud_showcase"
-OUT = "/home/default/verify-pkg-out/crud"
-APPS = "/home/default/FreeCAD/Apps/crud_showcase"
-DESKTOP = "/home/default/crud_showcase.desktop"
+OUT = "/home/default/verify-pkg-out"
+PLAIN_ICON = "Icon=/home/default/FreeCAD/Apps/crud_showcase/app_icon.png"
+CUSTOM_ICON = "Icon=/home/default/FreeCAD/Apps/crud_icon/app_files/brand.png"
 
 
 def run(ctx: Ctx) -> None:
     try:
         ctx.launch(name="verify-cb8")
-        packaged = ctx.eval_json(_PACKAGE, wait=120)
-        ctx.metric("artifact", packaged.get("artifact"))
-        ctx.check("packaged", packaged.get("success") is True, "crud_showcase installer", json.dumps(packaged)[:400])
-        if not packaged.get("artifact"):
+        packaged = ctx.eval_json(_PACKAGE, wait=180)
+        plain = packaged.get("plain") if isinstance(packaged.get("plain"), dict) else {}
+        icon = packaged.get("icon") if isinstance(packaged.get("icon"), dict) else {}
+        ctx.metric("artifact", plain.get("artifact"))
+        ctx.metric("icon_artifact", icon.get("artifact"))
+        ctx.check("packaged", plain.get("success") is True, "crud_showcase installer", json.dumps(plain)[:400])
+        ctx.check("packaged-icon", icon.get("success") is True, "crud_icon installer", json.dumps(icon)[:400])
+        if not plain.get("artifact"):
             return
         ctx.stop()
-        _remember(ctx, str(packaged["artifact"]))
-        page, _state = _installer(ctx, "install", "cb8-1-done")
-        ctx.check("installed", "is installed" in str(page.get("title") or "").lower(), "done page says installed", str(page.get("title")))
+        _remember(ctx, str(plain.get("artifact") or ""), str(icon.get("artifact") or ""))
+        page, _state = _installer(ctx, "install", "cb8-plain-installed", "plain")
+        ctx.check(
+            "installed",
+            "crud showcase is installed" in str(page.get("title") or "").lower(),
+            "CRUD Showcase is installed",
+            str(page.get("title")),
+        )
         listing = _guest_json(ctx, _LISTING)
         ctx.metric("install_listing", listing)
-        ctx.check("apps-dir", bool(listing.get("apps")), "install dir " + APPS, json.dumps(listing)[:400])
+        ctx.check("apps-dir", bool(listing.get("apps")), "install dir /home/default/FreeCAD/Apps/crud_showcase", json.dumps(listing)[:400])
         desktop = str(listing.get("desktop") or "")
-        ctx.check("home-launcher", bool(listing.get("desktop_exists")) and "Icon=" not in desktop, "home launcher without Icon=", desktop[:300])
+        ctx.check(
+            "home-launcher",
+            bool(listing.get("desktop_exists")) and PLAIN_ICON in desktop,
+            "home launcher Icon= app_icon.png",
+            desktop[:400],
+        )
+        if icon.get("artifact"):
+            icon_page, _icon_state = _installer(ctx, "install", "cb8-icon-installed", "icon")
+            icon_listing = _guest_json(ctx, _LISTING)
+            icon_desktop = str(icon_listing.get("icon_desktop") or "")
+            ctx.check(
+                "custom-icon-installed",
+                "crud icon is installed" in str(icon_page.get("title") or "").lower()
+                and bool(icon_listing.get("icon_apps"))
+                and CUSTOM_ICON in icon_desktop,
+                "CRUD Icon is installed beside CRUD Showcase",
+                json.dumps({"title": icon_page.get("title"), "desktop": icon_desktop[:300]})[:500],
+            )
         ctx.check("no-desktop-copy", not listing.get("desktop_folder_copy"), "no copy under ~/Desktop", str(listing.get("desktop_folder_copy")))
         menu = str(listing.get("menu") or "")
         ctx.check("no-menu-file", menu in ("absent",) or menu.startswith("unreadable"), "no menu launcher", menu)
@@ -45,7 +71,7 @@ def run(ctx: Ctx) -> None:
             status="skipped",
         )
         _guest_json(ctx, _PLANT_DATA)
-        page, _state = _installer(ctx, "install", "cb8-reinstall")
+        page, _state = _installer(ctx, "install", "cb8-reinstall", "plain")
         kept = _guest_json(ctx, _LISTING)
         ctx.check(
             "reinstall-keeps-data",
@@ -54,7 +80,7 @@ def run(ctx: Ctx) -> None:
             json.dumps({"buttons": _buttons(page), "data": kept.get("data")})[:400],
         )
         before = _guest_json(ctx, _LOCK_APPS)
-        page, state = _installer(ctx, "install", "cb8-6-failure")
+        page, state = _installer(ctx, "install", "cb8-6-failure", "plain")
         after = _guest_json(ctx, _UNLOCK_APPS)
         blob = _dialog_text(state) + "\n" + str(page.get("details") or "") + "\n" + str(page.get("title") or "")
         same = before.get("hashes") == after.get("hashes")
@@ -64,7 +90,7 @@ def run(ctx: Ctx) -> None:
             "Installation failed, PermissionError, hashes unchanged",
             "hash_same %s mode %s -> %s\n%s" % (same, before.get("mode"), after.get("mode"), blob[:700]),
         )
-        page, _state = _installer(ctx, "uninstall", "cb8-uninstall")
+        page, _state = _installer(ctx, "uninstall", "cb8-uninstall", "plain")
         gone = _guest_json(ctx, _LISTING)
         ctx.check(
             "uninstall-keeps-data",
@@ -80,8 +106,8 @@ def run(ctx: Ctx) -> None:
             ctx.note("mode restore: {}".format(exc))
 
 
-def _installer(ctx: Ctx, mode: str, shot: str):
-    artifact = _artifact(ctx)
+def _installer(ctx: Ctx, mode: str, shot: str, key: str):
+    artifact = _artifact(ctx, key)
     ctx.launch(
         entry=artifact + "/installer/install.py",
         package_root=artifact,
@@ -107,16 +133,16 @@ def _installer(ctx: Ctx, mode: str, shot: str):
     return page, state
 
 
-def _remember(ctx: Ctx, artifact: str) -> None:
-    quoted = json.dumps(artifact)
-    _guest_json(ctx, _REMEMBER % (quoted, quoted))
+def _remember(ctx: Ctx, plain: str, icon: str) -> None:
+    payload = json.dumps({"plain": plain, "icon": icon})
+    _guest_json(ctx, _REMEMBER % json.dumps(payload))
 
 
-def _artifact(ctx: Ctx) -> str:
+def _artifact(ctx: Ctx, key: str) -> str:
     found = _guest_json(ctx, _FIND)
-    path = str(found.get("artifact") or "")
+    path = str(found.get(key) or "")
     if not path:
-        raise RuntimeError("crud installer artifact is missing")
+        raise RuntimeError("crud installer artifact is missing: " + key)
     return path
 
 
@@ -157,16 +183,21 @@ print("JSON:" + json.dumps({"text": "\n".join(chunks)[:2500]}))
 """
 
 _PACKAGE = r"""
-import json
+import json, shutil
 from pathlib import Path
-root = Path(%s)
-meta = root / "cbcs" / "project.json"
-if not meta.is_file():
-    meta.parent.mkdir(parents=True, exist_ok=True)
-    meta.write_text(json.dumps({
+from PySide2.QtCore import Qt
+from PySide2.QtGui import QColor, QImage, QPainter
+from app.packaging.packager import package_project
+
+example = Path(%s)
+out = Path(%s)
+out.mkdir(parents=True, exist_ok=True)
+
+def project_meta(name, project_id):
+    return {
         "schema_version": 2,
-        "name": "CRUD Showcase",
-        "project_id": "proj_crud_showcase",
+        "name": name,
+        "project_id": project_id,
         "default_entry": "main.py",
         "default_argv": [],
         "env_overrides": {},
@@ -175,24 +206,58 @@ if not meta.is_file():
         "project_notes": "",
         "template": "blank_project",
         "working_directory": ".",
-    }), encoding="utf-8")
-from app.packaging.packager import package_project
-out = Path(%s)
-out.mkdir(parents=True, exist_ok=True)
-result = package_project(project_root=str(root), project_name="CRUD Showcase", entry_file="main.py", output_dir=str(out))
-print("JSON:" + json.dumps({
-    "success": bool(result.success),
-    "error": str(result.error or ""),
-    "artifact": str(result.artifact_root or ""),
-}))
+    }
+
+def prepare(dest, name, project_id, package_id, display_name, icon_path):
+    if dest.exists():
+        shutil.rmtree(dest)
+    shutil.copytree(example, dest)
+    meta = dest / "cbcs" / "project.json"
+    meta.parent.mkdir(parents=True, exist_ok=True)
+    meta.write_text(json.dumps(project_meta(name, project_id), indent=2) + "\n", encoding="utf-8")
+    package = {
+        "schema_version": 1,
+        "package_id": package_id,
+        "display_name": display_name,
+        "version": "0.1.0",
+        "entry_file": "main.py",
+        "icon_path": icon_path,
+    }
+    (dest / "cbcs" / "package.json").write_text(json.dumps(package, indent=2) + "\n", encoding="utf-8")
+
+def pack(root, display_name, dest):
+    dest.mkdir(parents=True, exist_ok=True)
+    result = package_project(project_root=str(root), project_name=display_name, entry_file="main.py", output_dir=str(dest))
+    return {
+        "success": bool(result.success),
+        "error": str(result.error or ""),
+        "artifact": str(result.artifact_root or ""),
+    }
+
+plain_root = Path("/home/default/verify-pkg-proj/crud_showcase")
+prepare(plain_root, "CRUD Showcase", "proj_crud_showcase", "crud_showcase", "CRUD Showcase", "")
+icon_root = Path("/home/default/verify-pkg-proj/crud_icon")
+prepare(icon_root, "CRUD Icon", "proj_crud_icon", "crud_icon", "CRUD Icon", "brand.png")
+image = QImage(64, 64, QImage.Format_ARGB32)
+image.fill(QColor("red"))
+painter = QPainter(image)
+painter.setBrush(QColor("yellow"))
+painter.setPen(Qt.NoPen)
+painter.drawEllipse(16, 16, 32, 32)
+painter.end()
+image.save(str(icon_root / "brand.png"))
+plain = pack(plain_root, "CRUD Showcase", out / "plain")
+icon = pack(icon_root, "CRUD Icon", out / "icon")
+print("JSON:" + json.dumps({"plain": plain, "icon": icon}))
 """ % (json.dumps(EXAMPLE), json.dumps(OUT))
 
 _REMEMBER = r"""
-import json, os
+import os
 path = "/home/default/verify-pkg-out/crud-artifact.txt"
-open(path, "w", encoding="utf-8").write(%s + "\n")
+text = %s
+open(path, "w", encoding="utf-8").write(text + "\n")
 root = os.path.dirname(os.path.abspath(__file__))
-line = "JSON:" + json.dumps({"artifact": %s})
+line = "JSON:" + text
 open(os.path.join(root, "results", "report.txt"), "w").write(line + "\n")
 print(line)
 """
@@ -200,9 +265,9 @@ print(line)
 _FIND = r"""
 import json, os
 path = "/home/default/verify-pkg-out/crud-artifact.txt"
-artifact = open(path, encoding="utf-8").read().strip() if os.path.isfile(path) else ""
+payload = json.loads(open(path, encoding="utf-8").read()) if os.path.isfile(path) else {}
 root = os.path.dirname(os.path.abspath(__file__))
-line = "JSON:" + json.dumps({"artifact": artifact})
+line = "JSON:" + json.dumps(payload)
 open(os.path.join(root, "results", "report.txt"), "w").write(line + "\n")
 print(line)
 """
@@ -211,7 +276,9 @@ _LISTING = r"""
 import json, os
 from pathlib import Path
 apps = Path("/home/default/FreeCAD/Apps/crud_showcase")
+icon_apps = Path("/home/default/FreeCAD/Apps/crud_icon")
 desktop = Path("/home/default/crud_showcase.desktop")
+icon_desktop = Path("/home/default/crud_icon.desktop")
 desktop_copy = Path("/home/default/Desktop/crud_showcase.desktop")
 menu = Path("/home/default/.local/share/applications/crud_showcase.desktop")
 data = ""
@@ -235,13 +302,16 @@ except OSError as exc:
     menu_note = getattr(exc, "errno", None)
     menu_state = "unreadable errno %s" % menu_note
 text = desktop.read_text(encoding="utf-8") if desktop.is_file() else ""
+icon_text = icon_desktop.read_text(encoding="utf-8") if icon_desktop.is_file() else ""
 payload = {
     "apps": apps.is_dir(),
+    "icon_apps": icon_apps.is_dir(),
     "files": files[:40],
     "main_py": main_py,
     "data": data,
     "desktop_exists": desktop.is_file(),
     "desktop": text[:500],
+    "icon_desktop": icon_text[:500],
     "desktop_folder_copy": desktop_copy.is_file(),
     "menu": menu_state,
 }

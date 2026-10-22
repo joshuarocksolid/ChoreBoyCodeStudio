@@ -65,10 +65,33 @@ except Exception:
     raise
 '''
 
+PLUGIN_OLD = '''
+import os
+import traceback
+try:
+    import app.shell.plugin_host_unavailable_dialog as dlg
+    import app.plugins.host_supervisor as host
+
+    dlg.freecad_version_label = lambda: "0.21.0"
+
+    def _boom(self, *args, **kwargs):
+        raise PermissionError(13, "Permission denied", "/opt/freecad/AppRun")
+
+    host.PluginHostSupervisor.start = _boom
+    import runpy
+    runpy.run_path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "run_editor.py"), run_name="__main__")
+except SystemExit:
+    raise
+except Exception:
+    open("/home/default/verify-aside/wrap_plugin_old.err", "w").write(traceback.format_exc())
+    raise
+'''
+
 _NAMES = {
     "history": ("verify_wrap_history.py", HISTORY),
     "fatal": ("verify_wrap_fatal.py", FATAL),
     "plugin": ("verify_wrap_plugin.py", PLUGIN),
+    "plugin_old": ("verify_wrap_plugin_old.py", PLUGIN_OLD),
 }
 
 
@@ -83,7 +106,7 @@ def remove(ctx: Ctx) -> None:
     ctx.guest(
         "import os\n"
         "root = %s\n"
-        "for name in ('verify_wrap_history.py', 'verify_wrap_fatal.py', 'verify_wrap_plugin.py'):\n"
+        "for name in ('verify_wrap_history.py', 'verify_wrap_fatal.py', 'verify_wrap_plugin.py', 'verify_wrap_plugin_old.py'):\n"
         "    path = root + '/' + name\n"
         "    if os.path.isfile(path):\n"
         "        os.remove(path)\n"

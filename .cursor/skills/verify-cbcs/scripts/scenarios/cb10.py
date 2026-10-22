@@ -14,7 +14,7 @@ def run(ctx: Ctx) -> None:
     planted = _guest_json(ctx, _PLANT)
     ctx.metric("legacy", planted)
     ctx.check("legacy-planted", planted.get("planted") is True, "version 0.0.9 with old_data.txt", json.dumps(planted)[:300])
-    page, _state = _installer(ctx, "install", "cb10-replace")
+    page, _state = _installer(ctx, "install", "cb10-replace", "plain")
     buttons = [str(step.get("button") or "") for step in (page.get("log") or [])]
     moved = _guest_json(ctx, _CHECK)
     ctx.metric("moved", moved)
