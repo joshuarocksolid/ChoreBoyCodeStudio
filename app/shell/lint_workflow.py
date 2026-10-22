@@ -11,8 +11,9 @@ from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSever
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.plugins.workflow_adapters import analyze_python_with_workflow
 from app.project.file_inventory import ProjectInventorySnapshot
-from app.shell.editor_stale_result_policy import deliver_revision_gated_editor_result
+from app.shell.editor_stale_result_policy import capture_buffer_revision, deliver_revision_gated_editor_result
 from app.shell.import_issue_adapter import resolve_import_explanation
+from app.shell.problems_controller import retarget_diagnostics
 from app.support.runtime_explainer import build_import_issue_report
 
 
@@ -32,7 +33,16 @@ class LintWorkflowHost(Protocol):
     def editor_widgets_by_path(self) -> dict[str, Any]:
         ...
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        ...
+
+    def editor_path_for_buffer_id(self, buffer_id: str) -> str | None:
+        ...
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> Any | None:
+        ...
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
         ...
 
     def known_runtime_modules(self) -> frozenset[str] | None:
@@ -75,6 +85,9 @@ class LintWorkflowHost(Protocol):
         ...
 
     def stored_lint_diagnostics(self) -> dict[str, list[CodeDiagnostic]]:
+        ...
+
+    def lint_diagnostics_key(self, file_path: str) -> str:
         ...
 
     def problems_panel(self) -> Any | None:
@@ -125,10 +138,13 @@ class LintWorkflow:
         started_at = time.perf_counter()
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root
-        editor_widgets = self._host.editor_widgets_by_path()
-        editor_widget = editor_widgets.get(file_path)
+        buffer_id, buffer_revision = capture_buffer_revision(
+            file_path,
+            buffer_id_for_path=self._host.editor_buffer_id_for_path,
+            buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
+        )
+        editor_widget = None if buffer_id is None else self._host.editor_widget_for_buffer_id(buffer_id)
         buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
-        buffer_revision = None if editor_widget is None else self._host.editor_buffer_revision(file_path)
         allow_runtime_import_probe = False
         key = f"lint::{file_path}"
 
@@ -150,7 +166,7 @@ class LintWorkflow:
             return diagnostics
 
         def on_success(diagnostics) -> None:  # type: ignore[no-untyped-def]
-            if editor_widget is None:
+            if editor_widget is None or buffer_id is None:
                 self._host.apply_lint_diagnostics_result(file_path, diagnostics)
                 return
 
@@ -171,14 +187,16 @@ class LintWorkflow:
                             elapsed_ms,
                             len(diagnostics),
                         )
-                self._host.apply_lint_diagnostics_result(file_path, diagnostics)
+                current_path = self._host.editor_path_for_buffer_id(buffer_id) or file_path
+                delivered = diagnostics if current_path == file_path else retarget_diagnostics(diagnostics, current_path)
+                self._host.apply_lint_diagnostics_result(current_path, delivered)
 
             deliver_revision_gated_editor_result(
-                file_path=file_path,
+                buffer_id=buffer_id,
                 editor_widget=editor_widget,
                 requested_revision=buffer_revision,
-                editor_widget_for_path=lambda path: self._host.editor_widgets_by_path().get(path),
-                buffer_revision=self._host.editor_buffer_revision,
+                editor_widget_for_buffer_id=self._host.editor_widget_for_buffer_id,
+                buffer_revision_for_buffer_id=self._host.editor_buffer_revision_for_buffer_id,
                 deliver=deliver,
             )
 
@@ -207,7 +225,7 @@ class LintWorkflow:
             self._host.render_merged_problems_panel()
             active_tab = self._host.editor_manager().active_tab()
             if active_tab is not None:
-                active_diags = self._host.stored_lint_diagnostics().get(active_tab.file_path, [])
+                active_diags = self._host.stored_lint_diagnostics().get(active_tab.buffer_id, [])
                 self._host.update_status_bar_diagnostics(active_diags)
 
     def run_import_analysis(self) -> None:
@@ -262,7 +280,7 @@ class LintWorkflow:
             for path in list(stored.keys()):
                 stored[path] = [diag for diag in stored[path] if diag.code != "PY200"]
             for diag in import_diags:
-                stored.setdefault(diag.file_path, []).append(diag)
+                stored.setdefault(self._host.lint_diagnostics_key(diag.file_path), []).append(diag)
             self._host.render_merged_problems_panel()
             self._host.focus_problems_tab()
             import_report = build_import_issue_report(
@@ -302,10 +320,20 @@ class MainWindowLintHost:
         return self._window._loaded_project
 
     def editor_widgets_by_path(self) -> dict[str, Any]:
-        return self._window._editor_widgets_by_path
+        return self._window._workspace_controller.widgets_by_open_path()
 
-    def editor_buffer_revision(self, file_path: str) -> int | None:
-        return self._window._editor_tab_workflow.buffer_revision(file_path)
+    def editor_buffer_id_for_path(self, file_path: str) -> str | None:
+        return self._window._workspace_controller.buffer_id_for_path(file_path)
+
+    def editor_path_for_buffer_id(self, buffer_id: str) -> str | None:
+        tab = self._window._editor_manager.get_tab_by_id(buffer_id)
+        return None if tab is None else tab.file_path
+
+    def editor_widget_for_buffer_id(self, buffer_id: str) -> Any | None:
+        return self._window._workspace_controller.widget_for_buffer_id(buffer_id)
+
+    def editor_buffer_revision_for_buffer_id(self, buffer_id: str) -> int | None:
+        return self._window._workspace_controller.buffer_revision_for_buffer_id(buffer_id)
 
     def known_runtime_modules(self) -> frozenset[str] | None:
         return self._window._known_runtime_modules
@@ -348,6 +376,9 @@ class MainWindowLintHost:
 
     def stored_lint_diagnostics(self) -> dict[str, list[CodeDiagnostic]]:
         return self._window._stored_lint_diagnostics
+
+    def lint_diagnostics_key(self, file_path: str) -> str:
+        return self._window._problems_controller.diagnostics_key(file_path)
 
     def problems_panel(self) -> Any | None:
         return self._window._problems_panel

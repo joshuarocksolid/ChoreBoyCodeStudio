@@ -8,6 +8,7 @@ from pathlib import Path
 from app.packaging.launcher_bootstrap import validate_packaged_entry_relative_path
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 
+FREECAD_APPS_BASE = "/home/default/FreeCAD/Apps"
 FREECAD_MACRO_APPS_BASE = "~/.local/share/FreeCAD/Macro/Apps"
 
 
@@ -25,8 +26,9 @@ def build_launcher_filename(display_name: str) -> str:
     return f"{sanitize_project_name(display_name)}.desktop"
 
 
-def build_apps_slot_dirname(display_name: str) -> str:
-    return sanitize_project_name(display_name)
+def build_apps_slot_dirname(package_id: str) -> str:
+    """Return the install-folder leaf. It follows package_id, not the display name."""
+    return sanitize_project_name(package_id)
 
 
 def build_default_install_dirname(display_name: str, version: str) -> str:

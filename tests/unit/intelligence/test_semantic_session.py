@@ -246,3 +246,193 @@ def test_semantic_session_submit_priorities() -> None:
         ("hover:/tmp/a.py", 30),
     ]
     session.shutdown()
+
+
+def test_remembered_receiver_type_paints_at_once_and_inference_corrects_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    import time
+
+    import app.intelligence.semantic_session as semantic_session_module
+    from app.intelligence.completion_context import build_completion_context
+    from app.intelligence.completion_merge_policy import merge_completion_display
+    from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator, RuntimeIntrospectionQuery
+    from app.intelligence.runtime_members import RuntimeMember, RuntimeMemberListing
+
+    class _Port:
+        def list_members(self, *, target_path: str) -> RuntimeMemberListing:
+            name = "labelOnly" if target_path.endswith("QLabel") else "buttonOnly"
+            return RuntimeMemberListing.from_members(target_path, [RuntimeMember(name, CompletionKind.METHOD)])
+
+        def resolve_member(self, ref: object) -> object:
+            raise AssertionError("not used")
+
+    class _ServiceStub:
+        def complete_fast(self, request: CompletionRequest) -> CompletionEnvelope:
+            return CompletionEnvelope(items=[])
+
+        def complete_semantic(self, request: CompletionRequest) -> CompletionEnvelope:
+            return CompletionEnvelope(items=[])
+
+        def merge_for_editor_display(self, **kwargs: object) -> CompletionEnvelope:
+            return merge_completion_display(**kwargs)  # type: ignore[arg-type]
+
+        def attach_runtime_replacement_metadata(self, items: list, *, context: object) -> list:
+            return items
+
+    inferred = ["PySide2.QtWidgets.QLabel", "PySide2.QtWidgets.QPushButton"]
+    infer_gate = threading.Event()
+
+    def _fake_infer(**_kwargs: object) -> RuntimeIntrospectionQuery:
+        infer_gate.wait(timeout=2.0)
+        return RuntimeIntrospectionQuery(target_path=inferred.pop(0), member_prefix="")
+
+    monkeypatch.setattr(semantic_session_module, "resolve_runtime_introspection_query_with_inference", _fake_infer)
+    session = SemanticSession(dispatch_to_main_thread=lambda callback: callback(), cache_db_path=":memory:")
+    session._completion_service = _ServiceStub()  # type: ignore[assignment]
+    coordinator = RuntimeIntrospectionCoordinator(runner_port=_Port())  # type: ignore[arg-type]
+    for target in inferred:
+        coordinator.fetch_and_cache_from_runner(RuntimeIntrospectionQuery(target_path=target, member_prefix=""))
+    source = "w = make()\nw."
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path="/tmp/example.py",
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+    )
+    context = build_completion_context(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path="/tmp/example.py",
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+        max_results=100,
+    )
+    paints: list[list[str]] = []
+
+    def _request() -> None:
+        session.request_editor_completions(
+            request=request,
+            request_generation=1,
+            completion_context=context,
+            runtime_coordinator=coordinator,
+            schedule_background_task=None,
+            on_paint=lambda _prefix, items, _envelope: paints.append([item.label for item in items]),
+        )
+
+    def _settle() -> None:
+        seen = -1
+        while seen != len(paints):
+            seen = len(paints)
+            time.sleep(0.2)
+
+    infer_gate.set()
+    _request()
+    _settle()
+    assert paints[-1] == ["labelOnly"]
+
+    infer_gate.clear()
+    before = len(paints)
+    _request()
+    assert paints[before] == ["labelOnly"]
+    infer_gate.set()
+    _settle()
+
+    assert paints[-1] == ["buttonOnly"]
+    session.shutdown()
+
+
+def test_known_receiver_paints_before_fast_or_infer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A remembered runtime target lists members before Jedi or the fast tier run."""
+
+    import time
+
+    import app.intelligence.semantic_session as semantic_session_module
+    from app.intelligence.completion_context import build_completion_context
+    from app.intelligence.completion_merge_policy import merge_completion_display
+    from app.intelligence.runtime_introspection import RuntimeIntrospectionCoordinator, RuntimeIntrospectionQuery
+    from app.intelligence.runtime_members import RuntimeMember, RuntimeMemberListing
+
+    class _Port:
+        def list_members(self, *, target_path: str) -> RuntimeMemberListing:
+            return RuntimeMemberListing.from_members(
+                target_path,
+                [RuntimeMember("fromRepl", CompletionKind.METHOD)],
+            )
+
+        def resolve_member(self, ref: object) -> object:
+            raise AssertionError("not used")
+
+    calls: list[str] = []
+
+    class _ServiceStub:
+        def complete_fast(self, request: CompletionRequest) -> CompletionEnvelope:
+            calls.append("fast")
+            return CompletionEnvelope(items=[])
+
+        def complete_semantic(self, request: CompletionRequest) -> CompletionEnvelope:
+            calls.append("semantic")
+            return CompletionEnvelope(items=[])
+
+        def merge_for_editor_display(self, **kwargs: object) -> CompletionEnvelope:
+            return merge_completion_display(**kwargs)  # type: ignore[arg-type]
+
+        def attach_runtime_replacement_metadata(self, items: list, *, context: object) -> list:
+            return items
+
+    def _fake_infer(**_kwargs: object) -> RuntimeIntrospectionQuery:
+        calls.append("infer")
+        return RuntimeIntrospectionQuery(target_path="PySide2.QtWidgets.QPushButton", member_prefix="")
+
+    monkeypatch.setattr(semantic_session_module, "resolve_runtime_introspection_query_with_inference", _fake_infer)
+    session = SemanticSession(dispatch_to_main_thread=lambda callback: callback(), cache_db_path=":memory:")
+    session._completion_service = _ServiceStub()  # type: ignore[assignment]
+    source = "w = make()\nw."
+    path = "/tmp/example.py"
+    session._runtime_targets[(path, "w")] = "PySide2.QtWidgets.QPushButton"
+    request = CompletionRequest(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=path,
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+    )
+    context = build_completion_context(
+        source_text=source,
+        cursor_position=len(source),
+        current_file_path=path,
+        project_root=None,
+        trigger_is_manual=True,
+        min_prefix_chars=1,
+        max_results=100,
+    )
+    scheduled: dict[str, object] = {}
+
+    def schedule(key: str, task: object, on_success: object, on_error: object) -> None:
+        scheduled["task"] = task
+        scheduled["on_success"] = on_success
+
+    paints: list[list[str]] = []
+    session.request_editor_completions(
+        request=request,
+        request_generation=1,
+        completion_context=context,
+        runtime_coordinator=RuntimeIntrospectionCoordinator(runner_port=_Port()),  # type: ignore[arg-type]
+        schedule_background_task=schedule,
+        on_paint=lambda _prefix, items, _envelope: paints.append([item.label for item in items]),
+    )
+    assert paints == []
+    assert calls == []
+    task = scheduled["task"]
+    on_success = scheduled["on_success"]
+    items = task(None)  # type: ignore[operator]
+    on_success(items)  # type: ignore[operator]
+    assert paints == [["fromRepl"]]
+    assert calls == []
+    time.sleep(0.2)
+    assert paints[0] == ["fromRepl"]
+    assert "fast" in calls
+    assert "infer" in calls
+    session.shutdown()

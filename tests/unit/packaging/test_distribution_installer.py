@@ -13,11 +13,12 @@ import zipfile
 import pytest
 
 from app.packaging import product_builder as product_package
+from app.packaging.tree_sitter_cp39 import GrammarStageResult
 from app.packaging.installer_manifest import (
     create_distribution_manifest,
     parse_distribution_manifest,
 )
-from app.packaging.layout import FREECAD_MACRO_APPS_BASE, build_apps_slot_dirname
+from app.packaging.layout import FREECAD_APPS_BASE, build_apps_slot_dirname
 from app.packaging.models import (
     LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
     PACKAGE_KIND_PROJECT,
@@ -38,7 +39,35 @@ LINUX_X86_64_ELF_STUB = (
 MACHO_ARM64_STUB = b"\xcf\xfa\xed\xfe" + bytes(16)
 
 
+def _alias_pyside_when_shim_missing() -> None:
+    """The installer imports FreeCAD's PySide shim.
+
+    AppRun on this Mac execs bin/python, which does not put Ext/PySide on
+    sys.path. ChoreBoy's freecad binary does. Alias the shim to the binding
+    this process already selected so the installer module can load.
+    """
+    if "PySide" in sys.modules or importlib.util.find_spec("PySide") is not None:
+        return
+    forced = __import__("os").environ.get("CBCS_QT_API", "")
+    if forced == "pyside6":
+        root = "PySide6"
+    elif forced == "pyside2":
+        root = "PySide2"
+    elif importlib.util.find_spec("PySide6") is not None:
+        root = "PySide6"
+    else:
+        root = "PySide2"
+    pyside = ModuleType("PySide")
+    pyside.__path__ = []  # type: ignore[attr-defined]
+    sys.modules["PySide"] = pyside
+    for name in ("QtCore", "QtGui", "QtWidgets"):
+        module = importlib.import_module(f"{root}.{name}")
+        sys.modules[f"PySide.{name}"] = module
+        setattr(pyside, name, module)
+
+
 def _load_module(module_name: str, relative_path: str) -> ModuleType:
+    _alias_pyside_when_shim_missing()
     repo_root = Path(__file__).resolve().parents[3]
     module_path = repo_root / relative_path
     spec = importlib.util.spec_from_file_location(module_name, module_path)
@@ -133,6 +162,10 @@ def _make_product_repo(root: Path) -> Path:
 
 def _existing_tree_sitter_stager(staged_tree_sitter_dir: Path, _cache_dir: Path) -> Path:
     return staged_tree_sitter_dir / product_package.CHOREBOY_PRODUCT_TREE_SITTER_BINDINGS["tree_sitter"]
+
+
+def _noop_grammar_stager(_vendor_dir: Path, _cache_dir: Path) -> GrammarStageResult:
+    return GrammarStageResult(overlaid=(), exclusions=())
 
 
 def test_distribution_install_instructions_require_home_default_staging() -> None:
@@ -310,6 +343,7 @@ def test_build_product_artifact_writes_manifest_zip_and_no_hidden_runtime_dirs(t
         version="0.2.0",
         artifacts_dir=artifacts_dir,
         tree_sitter_core_stager=_existing_tree_sitter_stager,
+        tree_sitter_grammar_stager=_noop_grammar_stager,
         strip_shared_objects=False,
         validate_python_tooling=False,
         print_status=False,
@@ -490,19 +524,10 @@ def test_desktop_shortcut_icon_is_copied_off_xdg_local(tmp_path: Path) -> None:
     )
 
     assert result.ok is True
-    published = Path(result.path)
-    published_icon = _icon_path_from_desktop(published.read_text(encoding="utf-8"))
-    assert ".local" not in published_icon.parts
-    assert published_icon.parent == desktop_dir.resolve()
-    assert published_icon.name == ".invoice_app.png"
-    assert published_icon.read_bytes() == b"png-bytes"
-    assert f"Icon={source_icon.resolve()}" in launcher_path.read_text(encoding="utf-8")
-    visible_pngs = [
-        path
-        for path in desktop_dir.iterdir()
-        if path.suffix == ".png" and not path.name.startswith(".")
-    ]
-    assert visible_pngs == []
+    published_icon = _icon_path_from_desktop(Path(result.path).read_text(encoding="utf-8"))
+    assert published_icon == source_icon.resolve()
+    assert list(desktop_dir.glob("*.png")) == []
+    assert list(desktop_dir.glob(".*.png")) == []
 
 
 def test_desktop_shortcut_icon_falls_back_to_visible_sidecar_when_hidden_name_is_denied(
@@ -542,9 +567,8 @@ def test_desktop_shortcut_icon_falls_back_to_visible_sidecar_when_hidden_name_is
 
     assert result.ok is True
     published_icon = _icon_path_from_desktop(Path(result.path).read_text(encoding="utf-8"))
-    assert published_icon == (desktop_dir / "invoice_app.icon.png").resolve()
-    assert published_icon.read_bytes() == b"png-bytes"
-    assert ".local" not in published_icon.parts
+    assert published_icon == source_icon.resolve()
+    assert list(desktop_dir.glob("*.png")) == []
     assert list(desktop_dir.glob(".*.png")) == []
 
 
@@ -869,13 +893,13 @@ def test_project_export_seeds_silent_apps_slot(tmp_path: Path) -> None:
 
     manifest_payload = json.loads(Path(result.artifact_root, "package_manifest.json").read_text(encoding="utf-8"))
     assert result.success is True
-    assert manifest_payload["default_install_base"] == FREECAD_MACRO_APPS_BASE
-    assert manifest_payload["default_install_dirname"] == build_apps_slot_dirname("Demo App")
+    assert manifest_payload["default_install_base"] == FREECAD_APPS_BASE
+    assert manifest_payload["default_install_dirname"] == build_apps_slot_dirname("demo_app")
     assert manifest_payload["default_install_dirname"] == "demo_app"
+    assert manifest_payload["launcher_filename"] == "demo_app.desktop"
     assert "_v" not in manifest_payload["default_install_dirname"]
     assert manifest_payload["ask_install_location"] is False
-    assert "~" in manifest_payload["default_install_base"]
-    assert "/home/default" not in manifest_payload["default_install_base"]
+    assert manifest_payload["default_install_base"] == "/home/default/FreeCAD/Apps"
 
 
 def test_product_manifest_stays_versioned_under_freecad_cbcs() -> None:
@@ -933,7 +957,7 @@ def test_load_package_manifest_reads_ask_install_location(tmp_path: Path) -> Non
         description="",
         entry_relative_path="app_files/main.py",
         launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
-        default_install_base=FREECAD_MACRO_APPS_BASE,
+        default_install_base="~/.local/share/FreeCAD/Macro/Apps",
         default_install_dirname="demo_app",
         ask_install_location=False,
     ).to_dict()
@@ -946,5 +970,272 @@ def test_load_package_manifest_reads_ask_install_location(tmp_path: Path) -> Non
     loaded = installer_module.load_package_manifest(tmp_path)
 
     assert loaded.ask_install_location is False
-    assert loaded.default_install_base == FREECAD_MACRO_APPS_BASE
+    assert loaded.default_install_base == "~/.local/share/FreeCAD/Macro/Apps"
     assert loaded.default_install_dirname == "demo_app"
+
+
+def _project_manifest(display_name: str = "Shop Tracker", version: str = "1.2.0"):
+    return create_distribution_manifest(
+        package_kind=PACKAGE_KIND_PROJECT,
+        profile=PACKAGE_PROFILE_INSTALLABLE,
+        package_id="shop_tracker",
+        display_name=display_name,
+        version=version,
+        description="",
+        entry_relative_path="app.py",
+        launcher_mode=LAUNCHER_MODE_ABSOLUTE_INSTALL_ROOT,
+        launcher_filename="shop_tracker.desktop",
+        icon_relative_path="icon.png",
+        default_install_base="/home/default/FreeCAD/Apps",
+        default_install_dirname="shop_tracker",
+    )
+
+
+def _write_payload(package_root: Path, source: str = "print('installed')\n") -> None:
+    payload = package_root / "payload"
+    payload.mkdir(parents=True, exist_ok=True)
+    (payload / "app.py").write_text(source, encoding="utf-8")
+    (payload / "icon.png").write_bytes(b"png")
+
+
+def test_slot_dirname_follows_package_id_when_title_changes(tmp_path: Path) -> None:
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (project / "cbcs").mkdir()
+    (project / "cbcs" / "project.json").write_text('{"name":"Shop Tracker"}\n', encoding="utf-8")
+    package_json = project / "cbcs" / "package.json"
+    package_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "package_id": "shop_tracker",
+                "display_name": "Shop Tracker",
+                "version": "1.0.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    first = package_project(
+        project_root=str(project),
+        project_name="Shop Tracker",
+        entry_file="main.py",
+        output_dir=str(tmp_path / "exports-a"),
+    )
+    package_json.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "package_id": "shop_tracker",
+                "display_name": "Workshop Tracker",
+                "version": "1.0.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    second = package_project(
+        project_root=str(project),
+        project_name="Shop Tracker",
+        entry_file="main.py",
+        output_dir=str(tmp_path / "exports-b"),
+    )
+
+    first_manifest = json.loads(Path(first.artifact_root, "package_manifest.json").read_text(encoding="utf-8"))
+    second_manifest = json.loads(Path(second.artifact_root, "package_manifest.json").read_text(encoding="utf-8"))
+    assert first_manifest["default_install_dirname"] == "shop_tracker"
+    assert second_manifest["default_install_dirname"] == "shop_tracker"
+    assert second_manifest["launcher_filename"] == "shop_tracker.desktop"
+    assert second_manifest["display_name"] == "Workshop Tracker"
+    assert second_manifest["launcher_name"] == "Workshop Tracker"
+
+
+def test_replace_keeps_a_data_file_the_payload_does_not_own(tmp_path: Path) -> None:
+    installer = _load_module("distribution_installer_replace", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root, "print('new')\n")
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    install_dir.mkdir(parents=True)
+    (install_dir / "app.py").write_text("print('old')\n", encoding="utf-8")
+    (install_dir / "notes.txt").write_text("keep me\n", encoding="utf-8")
+    (install_dir / "cbcs_installed_package.json").write_text(
+        json.dumps(
+            {
+                "package_id": "shop_tracker",
+                "version": "1.0.0",
+                "owned_relative_paths": ["app.py", "cbcs_installed_package.json", "shop_tracker.desktop"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    home = tmp_path / "home"
+    home.mkdir()
+
+    outcome = installer.perform_install(
+        manifest=_project_manifest(),
+        package_root=package_root,
+        install_dir=install_dir,
+        home_roots=[home],
+    )
+
+    assert outcome.ok is True
+    assert (install_dir / "notes.txt").read_text(encoding="utf-8") == "keep me\n"
+    assert "print('new')" in (install_dir / "app.py").read_text(encoding="utf-8")
+    assert (home / "shop_tracker.desktop").is_file()
+    assert not (home / "Desktop").exists()
+
+
+def test_uninstall_removes_launchers_and_keeps_data_unless_asked(tmp_path: Path) -> None:
+    installer = _load_module("distribution_installer_uninstall", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    nested = package_root / "payload" / "app"
+    nested.mkdir()
+    (nested / "window.py").write_text("window\n", encoding="utf-8")
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    home = tmp_path / "home"
+    (home / "Desktop").mkdir(parents=True)
+    outcome = installer.perform_install(
+        manifest=_project_manifest(),
+        package_root=package_root,
+        install_dir=install_dir,
+        home_roots=[home],
+    )
+    assert outcome.ok is True
+    (install_dir / "notes.txt").write_text("keep me\n", encoding="utf-8")
+    menu = home / ".local" / "share" / "applications" / "shop_tracker.desktop"
+    desktop = home / "Desktop" / "shop_tracker.desktop"
+    icon = install_dir / "icon.png"
+    assert menu.is_file()
+    assert desktop.is_file()
+    assert icon.is_file()
+
+    kept = installer.uninstall_installed_package(
+        install_dir,
+        marker_filename="cbcs_installed_package.json",
+        delete_data=False,
+        home_roots=[home],
+    )
+
+    assert not menu.exists()
+    assert not desktop.exists()
+    assert not (home / "shop_tracker.desktop").exists()
+    assert not icon.exists()
+    assert (install_dir / "notes.txt").read_text(encoding="utf-8") == "keep me\n"
+    assert not (install_dir / "app").exists()
+    assert kept.kept_data_dir
+
+    installer.uninstall_installed_package(
+        install_dir,
+        marker_filename="cbcs_installed_package.json",
+        delete_data=True,
+        home_roots=[home],
+    )
+    assert not install_dir.exists()
+
+
+def test_a_shipped_file_the_app_changed_is_kept_as_data(tmp_path: Path) -> None:
+    installer = _load_module("distribution_installer_changed_data", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    (package_root / "payload" / "tasks.sqlite3").write_bytes(b"empty db")
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    home = tmp_path / "home"
+    home.mkdir()
+    assert installer.perform_install(
+        manifest=_project_manifest(), package_root=package_root, install_dir=install_dir, home_roots=[home]
+    ).ok
+    (install_dir / "tasks.sqlite3").write_bytes(b"the shop's tasks")
+    (install_dir / "__pycache__").mkdir()
+    (install_dir / "__pycache__" / "app.cpython-39.pyc").write_bytes(b"cache")
+
+    assert installer.perform_install(
+        manifest=_project_manifest(), package_root=package_root, install_dir=install_dir, home_roots=[home]
+    ).ok
+    assert (install_dir / "tasks.sqlite3").read_bytes() == b"the shop's tasks"
+    assert installer.perform_install(
+        manifest=_project_manifest(), package_root=package_root, install_dir=install_dir, home_roots=[home]
+    ).ok
+    assert (install_dir / "tasks.sqlite3").read_bytes() == b"the shop's tasks"
+
+    plan = installer.plan_uninstall(install_dir, marker_filename="cbcs_installed_package.json", home_roots=[home])
+    assert plan.data_files == ("tasks.sqlite3",)
+    installer.uninstall_installed_package(
+        install_dir, marker_filename="cbcs_installed_package.json", delete_data=False, home_roots=[home]
+    )
+    assert (install_dir / "tasks.sqlite3").read_bytes() == b"the shop's tasks"
+    assert not (install_dir / "app.py").exists()
+    assert not (install_dir / "__pycache__").exists()
+
+
+def test_replace_migrates_data_out_of_the_old_local_slot(tmp_path: Path) -> None:
+    installer = _load_module("distribution_installer_migrate", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    legacy_base = tmp_path / "legacy-apps"
+    legacy_slot = legacy_base / "shop_tracker"
+    (legacy_slot / "data").mkdir(parents=True)
+    (legacy_slot / "data" / "keep.txt").write_text("from the old slot\n", encoding="utf-8")
+    (legacy_slot / "cbcs_installed_package.json").write_text(
+        json.dumps({"package_id": "shop_tracker", "version": "1.0.0", "launcher_filename": "Shop Tracker.desktop"}),
+        encoding="utf-8",
+    )
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    home = tmp_path / "home"
+    home.mkdir()
+
+    outcome = installer.perform_install(
+        manifest=_project_manifest(),
+        package_root=package_root,
+        install_dir=install_dir,
+        home_roots=[home],
+        legacy_bases=[legacy_base],
+    )
+
+    assert outcome.ok is True
+    assert (install_dir / "data" / "keep.txt").read_text(encoding="utf-8") == "from the old slot\n"
+    assert not legacy_slot.exists()
+
+
+def test_launcher_failure_is_a_warning_after_files_are_installed(tmp_path: Path) -> None:
+    installer = _load_module("distribution_installer_launcher_warn", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    blocked_home = tmp_path / "not-a-directory"
+    blocked_home.write_text("x", encoding="utf-8")
+
+    outcome = installer.perform_install(
+        manifest=_project_manifest(),
+        package_root=package_root,
+        install_dir=install_dir,
+        home_roots=[blocked_home],
+    )
+
+    assert outcome.ok is True
+    assert outcome.warnings
+    assert (install_dir / "app.py").is_file()
+    assert "print('installed')" in (install_dir / "app.py").read_text(encoding="utf-8")
+
+
+def test_denied_menu_copy_is_not_a_done_page_warning(tmp_path: Path) -> None:
+    # ChoreBoy denies ~/.local/share/applications; the home launcher still has to land.
+    installer = _load_module("distribution_installer_menu_denied", "packaging/install.py")
+    package_root = tmp_path / "package"
+    _write_payload(package_root)
+    install_dir = tmp_path / "Apps" / "shop_tracker"
+    home = tmp_path / "home"
+    (home / ".local" / "share").mkdir(parents=True)
+    (home / ".local" / "share" / "applications").write_text("not a folder", encoding="utf-8")
+
+    outcome = installer.perform_install(
+        manifest=_project_manifest(),
+        package_root=package_root,
+        install_dir=install_dir,
+        home_roots=[home],
+    )
+
+    assert outcome.ok is True
+    assert outcome.warnings == ()
+    assert str(home / "shop_tracker.desktop") in outcome.published_paths
+    assert not any(".local/share/applications" in path for path in outcome.published_paths)

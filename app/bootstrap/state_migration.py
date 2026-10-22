@@ -1,152 +1,126 @@
-"""One-shot copy of leftover global state into the product dest."""
+"""Copy leftover settings JSON into the active settings root.
+
+History, caches, SQLite databases, and their WAL or SHM files stay where
+they are. The source tree is not deleted or modified. Copy runs only when
+the destination has no settings.json.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Union
-import os
 import shutil
+from typing import Optional, Union
 
-from app.bootstrap.paths import (
-    DEFAULT_PRODUCT_STATE_LAYOUT,
-    PathInput,
-    normalize_state_root_identity,
-    resolve_global_state_root,
+from app.bootstrap import paths as path_api
+from app.bootstrap.paths import PathInput, normalize_state_root_identity
+from app.bootstrap.state_roots import resolve_settings_root
+from app.core import constants
+
+_SETTINGS_FILES = (
+    constants.GLOBAL_SETTINGS_FILENAME,
+    constants.GLOBAL_RECENT_PROJECTS_FILENAME,
+    constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME,
 )
 
+_LAST_OUTCOME: Optional["MigrationOutcome"] = None
+
 
 @dataclass(frozen=True)
-class CopiedLegacyState:
+class SettingsImported:
     dest: Path
     source: Path
+    leftover_count: int
+    message: str
 
 
 @dataclass(frozen=True)
-class OccupiedStateRoot:
-    dest: Path
-    settings_path: Path
-
-
-@dataclass(frozen=True)
-class NoLegacyStateFound:
+class SettingsAlreadyPresent:
     dest: Path
 
 
 @dataclass(frozen=True)
-class PromotedStaging:
+class NoSettingsToImport:
     dest: Path
-    staging: Path
+    leftover_count: int
 
 
 @dataclass(frozen=True)
-class MigrationFailed:
+class SettingsImportFailed:
     dest: Path
     source: Path
-    staging: Path
     error: str
 
 
 MigrationOutcome = Union[
-    CopiedLegacyState,
-    OccupiedStateRoot,
-    NoLegacyStateFound,
-    PromotedStaging,
-    MigrationFailed,
+    SettingsImported,
+    SettingsAlreadyPresent,
+    NoSettingsToImport,
+    SettingsImportFailed,
 ]
 
 
-def migrate_legacy_global_state(
-    state_root: Optional[PathInput] = None,
-) -> MigrationOutcome:
-    """Copy the first leftover legacy tree into dest when dest has no settings.json."""
-    dest = resolve_global_state_root(state_root)
-    layout = DEFAULT_PRODUCT_STATE_LAYOUT
-    settings = layout.occupancy_path(dest)
-    if _is_file(settings):
-        _remove_stale_staging(layout.staging_path(dest))
-        return OccupiedStateRoot(dest=dest, settings_path=settings)
+def last_migration_outcome() -> Optional[MigrationOutcome]:
+    """Return the outcome from the last ``migrate_legacy_global_state`` call."""
+    return _LAST_OUTCOME
 
-    staging = layout.staging_path(dest)
-    if _is_file(layout.occupancy_path(staging)) and not dest.exists():
-        try:
-            _promote_staging(staging, dest)
-        except OSError as exc:
-            return MigrationFailed(dest=dest, source=staging, staging=staging, error=str(exc))
-        return PromotedStaging(dest=dest, staging=staging)
 
-    source = _first_legacy_source(dest)
+def migrate_legacy_global_state(state_root: Optional[PathInput] = None) -> MigrationOutcome:
+    """Copy settings JSON from the first leftover root that has settings.json."""
+    global _LAST_OUTCOME
+    dest = resolve_settings_root(state_root).path
+    if _is_file(dest / constants.GLOBAL_SETTINGS_FILENAME):
+        outcome: MigrationOutcome = SettingsAlreadyPresent(dest=dest)
+        _LAST_OUTCOME = outcome
+        return outcome
+
+    leftovers = _leftover_dirs(dest)
+    source = next(
+        (candidate for candidate in leftovers if _is_file(candidate / constants.GLOBAL_SETTINGS_FILENAME)),
+        None,
+    )
     if source is None:
-        return NoLegacyStateFound(dest=dest)
+        outcome = NoSettingsToImport(dest=dest, leftover_count=len(leftovers))
+        _LAST_OUTCOME = outcome
+        return outcome
 
     try:
-        _replace_tree(source, staging)
-        _promote_staging(staging, dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        for name in _SETTINGS_FILES:
+            src = source / name
+            target = dest / name
+            if _is_file(src) and not _is_file(target):
+                shutil.copy2(src, target)
     except OSError as exc:
-        return MigrationFailed(dest=dest, source=source, staging=staging, error=str(exc))
-    return CopiedLegacyState(dest=dest, source=source)
+        outcome = SettingsImportFailed(dest=dest, source=source, error=str(exc))
+        _LAST_OUTCOME = outcome
+        return outcome
+
+    if len(leftovers) > 1:
+        message = f"Several leftover folders were found and settings came from {source}."
+    else:
+        message = f"Settings imported from {source}."
+    outcome = SettingsImported(
+        dest=dest,
+        source=source,
+        leftover_count=len(leftovers),
+        message=message,
+    )
+    _LAST_OUTCOME = outcome
+    return outcome
 
 
-def _first_legacy_source(dest: Path) -> Optional[Path]:
+def _leftover_dirs(dest: Path) -> list[Path]:
     dest_id = normalize_state_root_identity(dest)
-    for candidate in DEFAULT_PRODUCT_STATE_LAYOUT.legacy_source_roots(Path.home()):
+    found: list[Path] = []
+    for candidate in path_api.DEFAULT_PRODUCT_STATE_LAYOUT.legacy_source_roots(Path.home()):
         if not _is_directory(candidate):
             continue
-        if normalize_state_root_identity(candidate) == dest_id:
+        identity = normalize_state_root_identity(candidate)
+        if identity == dest_id:
             continue
-        return normalize_state_root_identity(candidate)
-    return None
-
-
-def _replace_tree(source: Path, staging: Path) -> None:
-    if staging.exists() or staging.is_symlink():
-        _remove_path(staging)
-    shutil.copytree(source, staging, symlinks=True)
-
-
-def _promote_staging(staging: Path, dest: Path) -> None:
-    if not dest.exists() and not dest.is_symlink():
-        os.rename(str(staging), str(dest))
-        return
-    if dest.is_dir() and not dest.is_symlink():
-        try:
-            dest.rmdir()
-        except OSError:
-            _copy_children_without_overwrite(staging, dest)
-            _remove_path(staging)
-            return
-        os.rename(str(staging), str(dest))
-        return
-    _copy_children_without_overwrite(staging, dest)
-    _remove_path(staging)
-
-
-def _copy_children_without_overwrite(staging: Path, dest: Path) -> None:
-    if not dest.is_dir():
-        dest.mkdir(parents=True, exist_ok=True)
-    for child in staging.iterdir():
-        target = dest / child.name
-        if child.is_dir() and _is_directory(target):
-            _copy_children_without_overwrite(child, target)
-            continue
-        if target.exists() or target.is_symlink():
-            continue
-        if child.is_dir() and not child.is_symlink():
-            shutil.copytree(child, target, symlinks=True)
-        else:
-            shutil.copy2(child, target, follow_symlinks=False)
-
-
-def _remove_stale_staging(staging: Path) -> None:
-    if staging.exists() or staging.is_symlink():
-        _remove_path(staging)
-
-
-def _remove_path(path: Path) -> None:
-    if path.is_symlink() or path.is_file():
-        path.unlink()
-        return
-    shutil.rmtree(path)
+        found.append(identity)
+    return found
 
 
 def _is_file(path: Path) -> bool:

@@ -13,7 +13,7 @@ from app.core import constants  # noqa: E402
 try:  # noqa: SIM105
     from app.shell.main_window import MainWindow  # noqa: E402
 except ModuleNotFoundError as exc:  # pragma: no cover - environment guard
-    if exc.name == "PySide2.QtSvg":
+    if (exc.name or "").endswith(".QtSvg"):
         pytest.skip("PySide2.QtSvg unavailable in current environment", allow_module_level=True)
     raise
 

@@ -1,0 +1,81 @@
+{
+  "captured_at": "2026-10-20T21:40:24.717795+00:00",
+  "chore_boy": {
+    "cleanup": {
+      "left": [],
+      "removed": [
+        "cbcs_phase0_20261020_wal.sqlite3",
+        ".cbcs_phase0_20261020_hid",
+        "cbcs_phase0_20261020_del.sqlite3",
+        "cbcs_phase0_20261020_vis",
+        "cbcs_phase0_20261020_lock.bin"
+      ]
+    },
+    "exists_dir": true,
+    "fcntl_lock": {
+      "ok": true
+    },
+    "mkdir_hidden": "ok",
+    "mkdir_visible": "ok",
+    "parent": "/home/default/share/Chore_Boy",
+    "sqlite_delete": {
+      "journal_mode": "delete",
+      "ok": true,
+      "requested": "DELETE"
+    },
+    "sqlite_wal": {
+      "journal_mode": "wal",
+      "ok": true,
+      "requested": "WAL"
+    },
+    "stat": {
+      "dev": 65030,
+      "gid": 1000,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "uid": 1000
+    }
+  },
+  "chore_boy_list_after": {
+    "count": 1,
+    "names": [
+      "CBCS"
+    ],
+    "truncated": false
+  },
+  "desktop_list": {
+    "errno": 2,
+    "error": "[Errno 2] No such file or directory: '/home/default/Desktop'",
+    "error_type": "FileNotFoundError"
+  },
+  "desktop_stat": {
+    "errno": 2,
+    "error": "[Errno 2] No such file or directory: '/home/default/Desktop'",
+    "error_type": "FileNotFoundError"
+  },
+  "hostname": "net1",
+  "nested_interest": {
+    "CBCS": {
+      "count": 0,
+      "names": [],
+      "truncated": false
+    }
+  },
+  "share_list": {
+    "count": 2,
+    "names": [
+      "Chore_Boy",
+      "IntellaQuote Backup"
+    ],
+    "truncated": false
+  },
+  "share_stat": {
+    "dev": 65030,
+    "gid": 0,
+    "is_dir": true,
+    "is_link": false,
+    "mode": "0o40755",
+    "uid": 1000
+  }
+}

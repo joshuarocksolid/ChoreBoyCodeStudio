@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.editors.editor_manager import EditorManager
-from app.features.markdown.markdown_tab_registry import MarkdownTabRegistry
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsWorkflow
 from app.shell.editor_tab_buffer_workflow import EditorTabBufferWorkflow
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
@@ -24,7 +23,6 @@ from app.shell.editor_sync_workflow import EditorSyncWorkflow
 @dataclass(frozen=True)
 class EditorTabSubworkflows:
     bindings_workflow: EditorTabBindingsWorkflow
-    markdown_registry: MarkdownTabRegistry
     preferences_workflow: EditorTabPreferencesWorkflow
     poll_workflow: EditorTabPollWorkflow
     outline_workflow: EditorTabOutlineWorkflow
@@ -46,7 +44,6 @@ def create_editor_tab_subworkflows(
     tab_workflow: Any,
     refresh_markdown_action_states: Any,
 ) -> EditorTabSubworkflows:
-    markdown_registry = host.tab_content_registry().markdown_registry()
     preferences_workflow = EditorTabPreferencesWorkflow(
         host=host,
         editor_manager=editor_manager,
@@ -57,19 +54,19 @@ def create_editor_tab_subworkflows(
     outline_workflow = EditorTabOutlineWorkflow(
         host=host,
         editor_manager=editor_manager,
-        editor_widgets_by_path=host.editor_widgets_by_path,
+        editor_widget_for_buffer_id=lambda buffer_id: host.workspace_controller().widget_for_buffer_id(buffer_id),
         editor_tab_factory=host.editor_tab_factory(),
-        buffer_revision=editor_tabs_coordinator.buffer_revision,
+        buffer_revision_for_buffer_id=lambda buffer_id: host.workspace_controller().buffer_revision_for_buffer_id(
+            buffer_id
+        ),
     )
     markdown_workflow = EditorTabMarkdownWorkflow(
         host=host,
         editor_manager=editor_manager,
-        markdown_registry=markdown_registry,
         refresh_markdown_action_states=refresh_markdown_action_states,
     )
     return EditorTabSubworkflows(
         bindings_workflow=EditorTabBindingsWorkflow(),
-        markdown_registry=markdown_registry,
         preferences_workflow=preferences_workflow,
         poll_workflow=EditorTabPollWorkflow(
             host=host,
@@ -94,7 +91,6 @@ def create_editor_tab_subworkflows(
             editor_tabs_coordinator=editor_tabs_coordinator,
             save_workflow=save_workflow,
             debug_control_workflow=debug_control_workflow,
-            markdown_registry=markdown_registry,
             markdown_workflow=markdown_workflow,
             tab_workflow=tab_workflow,
         ),

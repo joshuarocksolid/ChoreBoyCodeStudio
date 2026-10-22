@@ -192,7 +192,7 @@ def test_handle_debug_navigate_permanent_opens_project_file_as_permanent() -> No
 
 
 def test_release_editor_widget_clears_active_debug_editor_pointer() -> None:
-    from app.shell.project_tree_ui_workflow import ProjectTreeUiWorkflow
+    from app.shell.editor_tab_lifecycle_workflow import EditorTabLifecycleWorkflow
 
     editor = _FakeEditorWidget()
     cleared: list[bool] = []
@@ -211,11 +211,20 @@ def test_release_editor_widget_clears_active_debug_editor_pointer() -> None:
 
         def tab_content_registry(self) -> object:
             return SimpleNamespace(
-                markdown_registry=lambda: SimpleNamespace(release_widget=lambda _widget: False)
+                surface_for_source_editor=lambda _widget: None,
+                path_for_source_editor=lambda _widget: None,
             )
 
     host = _ReleaseEditorHost()
-    workflow = ProjectTreeUiWorkflow(host)  # type: ignore[arg-type]
+    workflow = EditorTabLifecycleWorkflow(
+        host=host,  # type: ignore[arg-type]
+        editor_manager=None,  # type: ignore[arg-type]
+        editor_tabs_coordinator=None,
+        save_workflow=None,
+        debug_control_workflow=None,
+        markdown_workflow=None,
+        tab_workflow=None,
+    )
 
     workflow.release_editor_widget(editor)
 

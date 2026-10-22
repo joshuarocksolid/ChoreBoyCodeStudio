@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropColor</class>
+ <widget class="QWidget" name="PropColor">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>color</string>
+  </property>
+  <property name="swatch" stdset="0">
+   <color>
+    <red>9</red>
+    <green>8</green>
+    <blue>7</blue>
+   </color>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

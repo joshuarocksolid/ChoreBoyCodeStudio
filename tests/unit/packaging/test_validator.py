@@ -134,8 +134,7 @@ def test_build_package_validation_report_short_circuits_dependency_audit_for_blo
 def test_missing_import_blocks_export_by_default(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
-    (project_root / "main.py").write_text("print('ok')\n", encoding="utf-8")
-    (project_root / "bunny_trail.py").write_text(
+    (project_root / "main.py").write_text(
         "import definitely_not_a_runtime_module\n",
         encoding="utf-8",
     )
@@ -158,7 +157,7 @@ def test_missing_import_blocks_export_by_default(tmp_path: Path) -> None:
     )
 
 
-def test_skip_missing_dependency_blockers_allows_export_with_warning(tmp_path: Path) -> None:
+def test_unreachable_missing_import_warns_and_export_continues(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
     (project_root / "main.py").write_text("print('ok')\n", encoding="utf-8")
@@ -174,7 +173,6 @@ def test_skip_missing_dependency_blockers_allows_export_with_warning(tmp_path: P
         description="Demo package",
         entry_file="main.py",
         icon_path="",
-        skip_missing_dependency_blockers=True,
     )
 
     report = build_package_validation_report(
@@ -193,15 +191,12 @@ def test_skip_missing_dependency_blockers_allows_export_with_warning(tmp_path: P
         if issue.issue_id == "package.dependency.missing.definitely_not_a_runtime_module"
     ]
     assert missing
-    assert all(issue.severity == "advisory" for issue in missing)
+    assert all(issue.severity == "degraded" for issue in missing)
+    assert missing[0].evidence["import_path"] == "not imported by any file the app loads"
     assert report.is_ready is True
-    assert report.dependency_audit.summary == (
-        "Missing-import blockers were downgraded to warnings because "
-        "skip_missing_dependency_blockers is set."
-    )
 
 
-def test_skip_missing_dependency_blockers_still_blocks_native_extension(tmp_path: Path) -> None:
+def test_native_extension_still_blocks_export(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     vendor_dir = project_root / "vendor"
     vendor_dir.mkdir(parents=True)
@@ -215,7 +210,6 @@ def test_skip_missing_dependency_blockers_still_blocks_native_extension(tmp_path
         description="Demo package",
         entry_file="main.py",
         icon_path="",
-        skip_missing_dependency_blockers=True,
     )
 
     report = build_package_validation_report(

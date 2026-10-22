@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>EnabledBind</class>
+ <widget class="QWidget" name="EnabledBind">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>420</width>
+    <height>180</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Enabled when</string>
+  </property>
+  <widget class="QCheckBox" name="discountCheck">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>20</y>
+     <width>180</width>
+     <height>24</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>Discount</string>
+   </property>
+  </widget>
+  <widget class="QLineEdit" name="amountEdit">
+   <property name="geometry">
+    <rect>
+     <x>20</x>
+     <y>60</y>
+     <width>240</width>
+     <height>28</height>
+    </rect>
+   </property>
+   <property name="text">
+    <string>0.00</string>
+   </property>
+   <property name="cbcsEnabledWhen" stdset="0">
+    <string notr="true">discountCheck</string>
+   </property>
+   <property name="cbcsBind" stdset="0">
+    <string notr="true" comment="column">amount</string>
+   </property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

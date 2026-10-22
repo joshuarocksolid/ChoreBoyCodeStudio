@@ -5,6 +5,8 @@ import logging
 import importlib
 import os
 import sys
+import time
+import traceback
 from typing import Callable
 from typing import Any, Optional
 
@@ -14,10 +16,9 @@ from app.bootstrap.capability_probe import (
 )
 from app.bootstrap.logging_setup import configure_app_logging, get_subsystem_logger, TIER_STDERR
 from app.bootstrap.state_migration import (
-    CopiedLegacyState,
-    MigrationFailed,
     MigrationOutcome,
-    PromotedStaging,
+    SettingsImportFailed,
+    SettingsImported,
     migrate_legacy_global_state,
 )
 from app.core.models import CapabilityProbeReport
@@ -25,6 +26,7 @@ from app.treesitter.loader import initialize_tree_sitter_runtime, runtime_traceb
 
 _LAST_STARTUP_CAPABILITY_REPORT: Optional[CapabilityProbeReport] = None
 _STARTUP_REPORT_REFRESH_CALLBACK: Optional[Callable[[CapabilityProbeReport], None]] = None
+_PROCESS_STARTED_AT = time.perf_counter()
 
 
 def _start_editor() -> int:
@@ -37,6 +39,14 @@ def _start_editor() -> int:
 
     window = main_window_class(startup_report=_LAST_STARTUP_CAPABILITY_REPORT)
     window.showMaximized()
+    get_subsystem_logger("editor").info(
+        "Window shown telemetry: elapsed_ms=%.2f",
+        (time.perf_counter() - _PROCESS_STARTED_AT) * 1000.0,
+    )
+    from app.shell.completion_warmup import note_window_shown, schedule_completion_warmup
+
+    note_window_shown()
+    schedule_completion_warmup(window)
     from app.qt.qt_compat import exec_qt
 
     exit_code = exec_qt(application)
@@ -137,20 +147,32 @@ def _enable_fault_handler(logger: logging.Logger) -> None:
 
 
 def _log_migration_outcome(logger: logging.Logger, outcome: MigrationOutcome) -> None:
-    if isinstance(outcome, CopiedLegacyState):
-        logger.info("Copied leftover global state from %s to %s.", outcome.source, outcome.dest)
+    if isinstance(outcome, SettingsImported):
+        logger.info("%s", outcome.message)
         return
-    if isinstance(outcome, PromotedStaging):
-        logger.info("Promoted leftover migrating state into %s.", outcome.dest)
-        return
-    if isinstance(outcome, MigrationFailed):
+    if isinstance(outcome, SettingsImportFailed):
         logger.warning(
-            "Legacy state migration failed; continuing startup. dest=%s source=%s staging=%s error=%s",
+            "Settings import failed; continuing startup. dest=%s source=%s error=%s",
             outcome.dest,
             outcome.source,
-            outcome.staging,
             outcome.error,
         )
+
+
+def present_startup_failure_dialog(summary: str, log_path: str, details: str) -> bool:
+    """Show the last-resort startup dialog. Return False when Qt itself cannot start."""
+    try:
+        from app.shell.startup_dialogs import present_fatal_startup_dialog
+
+        present_fatal_startup_dialog(summary, log_path, details)
+    except Exception:
+        log_display = log_path or "unavailable"
+        print(
+            f"Editor startup failed: {summary}\nLog file: {log_display}\n{details}",
+            file=sys.stderr,
+        )
+        return False
+    return True
 
 
 def main() -> int:
@@ -177,6 +199,11 @@ def main() -> int:
     try:
         _LAST_STARTUP_CAPABILITY_REPORT = run_minimal_startup_capability_probe()
         _log_capability_probe_results(logger, _LAST_STARTUP_CAPABILITY_REPORT)
+    except Exception:
+        logger.exception("Startup capability probe failed.")
+        _LAST_STARTUP_CAPABILITY_REPORT = None
+
+    try:
         tree_sitter_status = initialize_tree_sitter_runtime()
         if tree_sitter_status.is_available:
             if getattr(tree_sitter_status, "missing_default_language_keys", ()):
@@ -188,11 +215,20 @@ def main() -> int:
             failure_traceback = runtime_traceback()
             if failure_traceback:
                 logger.debug("Tree-sitter initialization traceback:\n%s", failure_traceback)
-
-        logger.info("Editor startup initialized.")
-        return _start_editor()
     except Exception:
+        logger.exception("Tree-sitter initialization failed.")
+
+    logger.info("Editor startup initialized.")
+    try:
+        return _start_editor()
+    except Exception as exc:
         logger.exception("Editor startup failed.")
+        log_path = "" if logging_result.log_path is None else str(logging_result.log_path)
+        present_startup_failure_dialog(
+            str(exc),
+            log_path,
+            traceback.format_exc(),
+        )
         return 1
 
 

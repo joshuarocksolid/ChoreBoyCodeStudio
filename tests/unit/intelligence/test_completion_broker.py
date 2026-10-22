@@ -197,7 +197,7 @@ class _DottedMemberSemanticStub:
         ]
 
 
-def test_dotted_member_semantic_hides_dunders_unless_underscore_prefix(tmp_path: Path) -> None:
+def test_dotted_member_semantic_keeps_every_member_for_the_popup(tmp_path: Path) -> None:
     broker = CompletionBroker(
         cache_db_path=str(tmp_path / "symbols.sqlite3"),
         semantic_facade=_DottedMemberSemanticStub(),  # type: ignore[arg-type]
@@ -217,11 +217,7 @@ def test_dotted_member_semantic_hides_dunders_unless_underscore_prefix(tmp_path:
     envelope = broker.complete_semantic(request)
     labels = [item.label for item in envelope.items]
 
-    assert "paint" in labels
-    assert "resize" in labels
-    assert "__init__" not in labels
-    assert "_private" not in labels
-    assert labels.index("paint") < labels.index("resize") or "resize" in labels
+    assert {"paint", "resize", "__init__", "_private"} <= set(labels)
 
 
 def test_dotted_member_semantic_keeps_private_when_prefix_starts_with_underscore(tmp_path: Path) -> None:

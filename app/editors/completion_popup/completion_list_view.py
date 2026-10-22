@@ -1,52 +1,45 @@
-"""List view used by the completion popup.
-
-Thin wrapper around :class:`QListView` that:
-
-* uses the custom :class:`CompletionItemDelegate` for row rendering;
-* emits :pyattr:`current_item_changed` when the highlighted row changes; and
-* applies a small style sheet derived from the active :class:`ShellThemeTokens`.
-"""
+"""List view used by the completion popup."""
 
 from __future__ import annotations
 
-from typing import Any
+import time
+from typing import Any, Dict, Optional, Tuple
 
 from app.qt.QtCore import QModelIndex, Qt, Signal
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtGui import QPaintEvent
 from app.qt.QtWidgets import QAbstractItemView, QFrame, QListView
 
 from app.editors.completion_popup.completion_item_delegate import CompletionItemDelegate
-from app.editors.completion_popup.completion_item_model import (
-    CompletionItemModel,
-    ItemRole,
-)
-from app.core.completion_tier import is_tier_header_item
+from app.editors.completion_popup.completion_item_model import ItemRole
 from app.intelligence.completion_models import CompletionItem
 from app.shell.theme_tokens import ShellThemeTokens
 
-
-_VISIBLE_ROW_COUNT = 12
-_MIN_WIDTH = 320
-_WIDTH_PADDING = 24
+VISIBLE_ROWS = 10
+PAGE_ROWS = 10
 
 
 class CompletionListView(QListView):
-    """List view with custom delegate and a current-item-changed signal."""
+    """List view with the row delegate and a current-item-changed signal."""
 
     current_item_changed: Any = Signal(object)
 
     def __init__(self, parent: object | None = None) -> None:
         super().__init__(parent)
-        self.setUniformItemSizes(False)
+        self.setUniformItemSizes(True)
         self.setSelectionMode(QAbstractItemView.SingleSelection)
         self.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.setVerticalScrollMode(QAbstractItemView.ScrollPerPixel)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.NoFocus)
         self.setFrameShape(QFrame.NoFrame)
         self._delegate = CompletionItemDelegate(self)
         self.setItemDelegate(self._delegate)
+        self.last_paint_at = 0.0
+        self._paint_probe: Optional[Tuple[Dict[str, Any], float]] = None
+
+    def delegate(self) -> CompletionItemDelegate:
+        return self._delegate
 
     def setModel(self, model: object) -> None:  # noqa: N802
         previous = self.selectionModel()
@@ -61,20 +54,15 @@ class CompletionListView(QListView):
             selection_model.currentRowChanged.connect(self._on_current_row_changed)
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        """Forward theme tokens to the delegate and restyle scrollbars."""
         self._delegate.apply_theme(tokens)
         bg = tokens.popup_bg or tokens.panel_bg
-        text = tokens.text_primary
-        scrollbar_handle = tokens.border
-        scrollbar_hover = tokens.text_muted
         self.setStyleSheet(
             f"""
             QListView {{
                 background-color: {bg};
-                color: {text};
+                color: {tokens.text_primary};
                 border: none;
                 outline: 0;
-                padding: 4px 0;
             }}
             QScrollBar:vertical {{
                 background: transparent;
@@ -82,12 +70,9 @@ class CompletionListView(QListView):
                 margin: 0;
             }}
             QScrollBar::handle:vertical {{
-                background: {scrollbar_handle};
+                background: {tokens.border};
                 min-height: 24px;
                 border-radius: 4px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {scrollbar_hover};
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
                 height: 0;
@@ -96,77 +81,51 @@ class CompletionListView(QListView):
         )
         self.viewport().update()
 
-    def width_hint(self) -> int:
-        """Return a width that fits the longest visible row."""
-        column_hint = self.sizeHintForColumn(0) if self.model() is not None else 0
-        return max(_MIN_WIDTH, column_hint + _WIDTH_PADDING)
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        super().paintEvent(event)
+        self.last_paint_at = time.perf_counter()
+        probe = self._paint_probe
+        if probe is not None:
+            self._paint_probe = None
+            entry, started_at = probe
+            entry["to_paint_ms"] = round((self.last_paint_at - started_at) * 1000.0, 3)
 
-    def height_hint(self) -> int:
-        """Return a height that shows up to ``_VISIBLE_ROW_COUNT`` rows."""
-        model = self.model()
-        if model is None:
-            return self._delegate.row_height() * 4
-        rows = min(_VISIBLE_ROW_COUNT, max(1, model.rowCount()))
-        return self._delegate.row_height() * rows + 8
+    def measure_next_paint(self, entry: Dict[str, Any], started_at: float) -> None:
+        """Record in ``entry`` how long it took from ``started_at`` to the next paint."""
 
-    def select_first_row(self) -> None:
+        self._paint_probe = (entry, started_at)
+
+    def height_for_rows(self, rows: int) -> int:
+        return self._delegate.row_height() * max(1, min(VISIBLE_ROWS, rows)) + 2 * self.frameWidth()
+
+    def select_row(self, row: int) -> None:
         model = self.model()
         if model is None or model.rowCount() == 0:
             return
-        if isinstance(model, CompletionItemModel):
-            for row in range(model.rowCount()):
-                item = model.item_at(row)
-                if item is not None and not is_tier_header_item(item):
-                    index = model.index(row, 0)
-                    self.setCurrentIndex(index)
-                    self._on_current_row_changed(index, QModelIndex())
-                    return
-        index = model.index(0, 0)
+        row = max(0, min(row, model.rowCount() - 1))
+        index = model.index(row, 0)
+        if index == self.currentIndex():
+            self._on_current_row_changed(index, QModelIndex())
         self.setCurrentIndex(index)
-        self._on_current_row_changed(index, QModelIndex())
+        self.scrollTo(index, QAbstractItemView.EnsureVisible)
 
-    def move_to_next_selectable(self) -> None:
+    def move_selection(self, key: int) -> None:
+        """Up/Down wrap around; PageUp/PageDown move ten rows and stop at the ends."""
+
         model = self.model()
-        if model is None or not isinstance(model, CompletionItemModel):
+        if model is None or model.rowCount() == 0:
             return
-        start_row = self.currentIndex().row() + 1 if self.currentIndex().isValid() else 0
-        for row in range(start_row, model.rowCount()):
-            item = model.item_at(row)
-            if item is not None and not is_tier_header_item(item):
-                index = model.index(row, 0)
-                self.setCurrentIndex(index)
-                self._on_current_row_changed(index, QModelIndex())
-                return
-
-    def move_to_previous_selectable(self) -> None:
-        model = self.model()
-        if model is None or not isinstance(model, CompletionItemModel):
-            return
-        start_row = self.currentIndex().row() - 1 if self.currentIndex().isValid() else model.rowCount() - 1
-        for row in range(start_row, -1, -1):
-            item = model.item_at(row)
-            if item is not None and not is_tier_header_item(item):
-                index = model.index(row, 0)
-                self.setCurrentIndex(index)
-                self._on_current_row_changed(index, QModelIndex())
-                return
-
-    def handle_navigation_key(self, event: QKeyEvent) -> None:
-        """Apply a navigation key without ``QApplication.sendEvent`` re-delivery.
-
-        Calling ``sendEvent`` on this view from the popup ``eventFilter`` causes
-        unconsumed boundary keys to bubble back to the popup parent and recurse.
-        Direct ``keyPressEvent`` dispatch plus explicit ``accept`` breaks that loop.
-        """
-        self.keyPressEvent(event)
-        event.accept()
-        item = self.current_item()
-        if item is None or not is_tier_header_item(item):
-            return
-        if event.key() in {Qt.Key_Down, Qt.Key_PageDown, Qt.Key_End}:
-            self.move_to_next_selectable()
-        elif event.key() in {Qt.Key_Up, Qt.Key_PageUp, Qt.Key_Home}:
-            self.move_to_previous_selectable()
+        count = model.rowCount()
+        row = self.currentIndex().row() if self.currentIndex().isValid() else 0
+        if key == Qt.Key_Down:
+            row = (row + 1) % count
+        elif key == Qt.Key_Up:
+            row = (row - 1) % count
+        elif key == Qt.Key_PageDown:
+            row = min(count - 1, row + PAGE_ROWS)
+        elif key == Qt.Key_PageUp:
+            row = max(0, row - PAGE_ROWS)
+        self.select_row(row)
 
     def current_item(self) -> CompletionItem | None:
         index = self.currentIndex()
@@ -176,8 +135,5 @@ class CompletionListView(QListView):
         return item if isinstance(item, CompletionItem) else None
 
     def _on_current_row_changed(self, current: QModelIndex, _previous: QModelIndex) -> None:
-        if not current.isValid():
-            self.current_item_changed.emit(None)
-            return
-        item = current.data(ItemRole)
+        item = current.data(ItemRole) if current.isValid() else None
         self.current_item_changed.emit(item if isinstance(item, CompletionItem) else None)

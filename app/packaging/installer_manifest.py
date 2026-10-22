@@ -210,6 +210,9 @@ def build_installed_package_record(
         install_dir=str(Path(install_dir).expanduser().resolve()),
         launcher_filename=manifest.launcher_filename,
         installed_at=datetime.now(timezone.utc).isoformat(),
+        icon_path=str(Path(install_dir).expanduser().resolve() / manifest.icon_relative_path)
+        if manifest.icon_relative_path
+        else "",
     )
 
 
@@ -232,7 +235,10 @@ def load_installed_package_record(path: str | Path) -> InstalledPackageRecord:
         profile=str(payload["profile"]),
         install_dir=str(payload["install_dir"]),
         launcher_filename=str(payload["launcher_filename"]),
-        installed_at=str(payload["installed_at"]),
+        installed_at=str(payload.get("installed_at", "")),
+        owned_relative_paths=tuple(str(item) for item in payload.get("owned_relative_paths", [])),
+        published_launcher_paths=tuple(str(item) for item in payload.get("published_launcher_paths", [])),
+        icon_path=str(payload.get("icon_path", "")),
     )
 
 

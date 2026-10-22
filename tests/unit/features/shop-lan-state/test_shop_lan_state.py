@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -65,7 +66,10 @@ def test_shop_pointer_uses_first_absolute_path_ignoring_comments(
             legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
         ),
     )
-    assert paths.resolve_global_state_root() == pointed
+    local = Path(constants.PRODUCT_STATE_ROOT)
+    assert paths.resolve_global_state_root() == local
+    assert paths.global_recent_projects_path().parent == Path(os.path.abspath(str(pointed)))
+    assert paths.global_logs_dir().parent == local
 
 
 def test_pointer_filename_and_state_leaves_are_visible() -> None:
@@ -89,14 +93,13 @@ def test_empty_product_dest_copies_home_leftover(
         legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
     )
     monkeypatch.setattr(paths, "DEFAULT_PRODUCT_STATE_LAYOUT", layout)
-    monkeypatch.setattr(state_migration, "DEFAULT_PRODUCT_STATE_LAYOUT", layout)
     leftover = fake_home / constants.GLOBAL_STATE_DIRNAME
     leftover.mkdir()
     (leftover / constants.GLOBAL_SETTINGS_FILENAME).write_text("{}", encoding="utf-8")
 
     outcome = state_migration.migrate_legacy_global_state()
 
-    assert isinstance(outcome, state_migration.CopiedLegacyState)
+    assert isinstance(outcome, state_migration.SettingsImported)
     assert outcome.dest.name == "state"
     assert (outcome.dest / constants.GLOBAL_SETTINGS_FILENAME).is_file()
     assert (leftover / constants.GLOBAL_SETTINGS_FILENAME).is_file()
@@ -116,7 +119,6 @@ def test_second_migrate_is_noop_occupied(
         legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
     )
     monkeypatch.setattr(paths, "DEFAULT_PRODUCT_STATE_LAYOUT", layout)
-    monkeypatch.setattr(state_migration, "DEFAULT_PRODUCT_STATE_LAYOUT", layout)
     leftover = fake_home / constants.GLOBAL_STATE_DIRNAME
     leftover.mkdir()
     (leftover / constants.GLOBAL_SETTINGS_FILENAME).write_text("{}", encoding="utf-8")
@@ -124,4 +126,4 @@ def test_second_migrate_is_noop_occupied(
     state_migration.migrate_legacy_global_state()
     outcome = state_migration.migrate_legacy_global_state()
 
-    assert isinstance(outcome, state_migration.OccupiedStateRoot)
+    assert isinstance(outcome, state_migration.SettingsAlreadyPresent)

@@ -27,6 +27,18 @@ _PLUGIN_RUNTIME_LOG_FILENAME = "plugin_host.log"
 _LOGGER = logging.getLogger(__name__)
 
 
+def format_plugin_host_start_error(exc: BaseException) -> str:
+    """Include the exception and its cause so a wrapped PermissionError stays visible."""
+    parts = [f"{type(exc).__name__}: {exc}"]
+    seen = {id(exc)}
+    current = exc.__cause__
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        parts.append(f"{type(current).__name__}: {current}")
+        current = current.__cause__
+    return " | ".join(parts)
+
+
 @dataclass(frozen=True)
 class PluginRuntimeJob:
     job_id: str
@@ -48,6 +60,7 @@ class PluginRuntimeManager:
         self._job_event_handlers: dict[str, Callable[[str, Mapping[str, Any]], None]] = {}
         self._pending_lock = threading.RLock()
         self._last_error: str | None = None
+        self._last_stderr = ""
         self._log_path = global_plugins_logs_dir(state_root) / _PLUGIN_RUNTIME_LOG_FILENAME
         self._host_supervisor = PluginHostSupervisor(
             on_event=self._handle_event,
@@ -70,7 +83,13 @@ class PluginRuntimeManager:
         if self._host_supervisor.is_running():
             return
         self._append_runtime_log("starting plugin host")
-        self._host_supervisor.start()
+        self._last_error = None
+        self._last_stderr = ""
+        try:
+            self._host_supervisor.start()
+        except (RunLifecycleError, OSError) as exc:
+            self._last_error = format_plugin_host_start_error(exc)
+            self._append_runtime_log(self._last_error)
 
     def stop(self) -> None:
         self._host_supervisor.stop()
@@ -87,6 +106,8 @@ class PluginRuntimeManager:
         if background_runtime_disabled():
             return
         self.start()
+        if not self._host_supervisor.is_running():
+            return
         self._append_runtime_log("reloading plugin host commands")
         self._host_supervisor.send_input(encode_message({"type": "reload"}))
 
@@ -247,7 +268,8 @@ class PluginRuntimeManager:
     def _handle_event(self, event: ProcessEvent) -> None:
         if event.event_type == "output":
             if event.stream == "stderr":
-                self._last_error = event.text or ""
+                # Stderr alone is not a failure: FreeCAD 1.1's AppRun prints DEBUG lines there.
+                self._last_stderr = (event.text or "").strip() or self._last_stderr
                 self._append_runtime_log(f"stderr: {(event.text or '').rstrip()}")
                 return
             text = event.text or ""
@@ -269,6 +291,8 @@ class PluginRuntimeManager:
             self._append_runtime_log(
                 f"host exited return_code={event.return_code} terminated_by_user={event.terminated_by_user}"
             )
+            if not event.terminated_by_user and event.return_code not in (0, None):
+                self._last_error = self._last_stderr or f"Plugin host exited with code {event.return_code}."
             with self._pending_lock:
                 pending = list(self._pending_requests.items())
                 self._pending_requests.clear()

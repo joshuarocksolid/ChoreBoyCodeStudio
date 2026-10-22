@@ -68,6 +68,9 @@ class SessionState:
     active_file_path: str | None = None
     project_tree: SessionTreeState | None = None
     tree_restore_policy: TreeRestorePolicy = TreeRestorePolicy.REVEAL_ACTIVE_FILE
+    # Split editor layout ({"groups": [[path, ...], [path, ...]], "active", "focused", "sizes"}).
+    # None when only one editor group was open.
+    editor_groups: Mapping[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -78,6 +81,8 @@ class SessionState:
         }
         if self.project_tree is not None:
             payload["project_tree"] = self.project_tree.to_dict()
+        if self.editor_groups is not None:
+            payload["editor_groups"] = dict(self.editor_groups)
         return payload
 
 
@@ -114,11 +119,13 @@ def parse_session_state(payload: Mapping[str, Any]) -> SessionState:
     )
     if project_tree is None and tree_restore_policy == TreeRestorePolicy.RESTORE_SAVED:
         tree_restore_policy = TreeRestorePolicy.REVEAL_ACTIVE_FILE
+    raw_editor_groups = payload.get("editor_groups")
     return SessionState(
         open_files=tuple(open_files),
         active_file_path=active_file_path,
         project_tree=project_tree,
         tree_restore_policy=tree_restore_policy,
+        editor_groups=dict(raw_editor_groups) if isinstance(raw_editor_groups, Mapping) else None,
     )
 
 

@@ -696,6 +696,17 @@ These are: `EditorTabFactory._materialize_opened_editor_tab` (asks the registry 
 
 AT-32: on PySide6, step 3 ("Open `.ui` … expected XML highlighting") is done through View XML, which is the same `CodeEditorWidget` with the XML grammar. M2.2 amends AT-32's wording to say so. On PySide2 nothing changes.
 
+### 11.6 Round 2 seam corrections
+
+These are the behaviours the v0.4.13 sync has to keep.
+
+- The project-tree coordinator reads open tab paths from the live `EditorManager`. `reset_editor_tabs()` replaces that manager on project switch. A method bound at composition time is stale, and a delete in the new project would leave the tab open.
+- Replacing a preview releases the closed preview's surface by path and buffer id. The editor manager has already dropped that tab. A lazy surface never registered a source editor, so popping by buffer id alone leaves the path bound.
+- Cancelling the three-way reload prompt on a dirty sourced tab with no source editor marks the tab changed on disk and returns declined. The stale bar stays. The next save still prompts. Acknowledging the mtime and returning cancelled hides both.
+- `close_group` asks `close_blockers` once, for the paths shown only in that group, before the unsaved-changes prompt. The closes that follow pass `skip_close_blockers`. A No leaves the group as it was.
+- The second editor group's markdown pane is built and adopted by the markdown feature (`build_secondary_pane`, `adopt_secondary_pane`). That feature owns `_markdown_panes_by_path`.
+- A tab whose provider declined is a text editor inside a notice container. The container's `source_editor()` returns that editor, so the tab can be split. It does not implement `apply_theme`, `set_mode`, or `toggle_preview`.
+
 ### 11.5 Dune rule `feature-install-imports` (M2.0)
 
 For `app/features/spec.py`, every `app/features/*/install.py` and every `app/features/*/__init__.py`: module-level imports outside `if TYPE_CHECKING:` must come from the stdlib, `typing`, `app.bootstrap.qt_binding_choice`, `app.features.spec`, or the feature's own `engine` subpackage. Imports inside functions are unrestricted. Markdown's `install.py` moves its pane and registry imports into `install_markdown`. The proof is a runtime test, not the lint: a subprocess installs a `sys.meta_path` finder that only **records** import attempts (it never raises, so a lazy import elsewhere can't change behaviour), then imports `app.features.spec` and calls every `enabled()`. It asserts that no `PySide6`/`shiboken6` entry is in `sys.modules` and none was recorded. On a PySide6 machine it also asserts `form_builder_enabled()` is True. It runs on machines without PySide2 too. With `CBCS_QT_API=pyside2` where PySide2 exists, the editor starts and `PySide6` is not in `sys.modules`.
@@ -830,3 +841,29 @@ Nothing was rejected.
 
 - **Codegen options (uic-flag equivalents):** stored in project settings (`cbcs/project.json`), with a per-project default and per-form overrides, as proposed. They only affect M5.5b.
 - **Stub location:** the typed stubs live in `docs/form_builder/contracts/stubs/` as the reference. Each work package copies the stubs it owns into `app/...` and implements them; it does not import from `docs/`.
+
+## Appendix E. Writer pins from the Designer resave corpus (M0.4b, fixed 2026-10-21)
+
+Source: `tests/form_builder/corpus/designer_resaved/FINDINGS.md` (Qt Designer 6.8.3 from the FreeCAD 1.1.4 AppImage re-saved 209 forms). These replace every "provisional" rule in §8.2.
+
+**Policy.** The writer's target is Designer's bytes for every construct Designer keeps. Where Designer drops data, our writer stays lossless, and the difference goes on an allowlist. The oracle `test_designer_resave_diff.py` turns from xfail into a hard gate once only allowlisted differences remain (WP M1.1d).
+
+| Rule | Fixed value |
+| --- | --- |
+| Empty elements | Self-closing `<x/>` when present and empty, `<string/>` and `<string notr="true"/>` included. Empty `<author>`, `<comment>` and `<exportmacro>` are omitted. |
+| `<double>` | 15 fraction digits everywhere, including inside pointf, rectf, sizef and gradient stops. `-0` is written `0.000000000000000`. |
+| `<float>` | Designer drops floats on save. We keep them, written with 8 fraction digits; `-0` is written `0.00000000`. Allowlisted. |
+| Enums | Written qualified: `Qt::Orientation::Horizontal`, `QFrame::Shape::Box`. Single-token attribute enums such as `TopToolBarArea` stay as they are. Values read unqualified are written qualified, as Designer does. |
+| Unknown dynamic enums and sets | Designer drops them. We keep them verbatim. Allowlisted. |
+| `<resources/>` and `<connections/>` | Always written, self-closed when empty. The `name` attribute on `<resources>` is dropped, as Designer does. |
+| Dynamic `cbcs*` properties | Written after the widget's standard properties, with `stdset="0"` and attribute order `name`, `stdset`. `notr` is kept when present and never added. |
+| Attribute order | `<property name stdset>`; `<string notr comment extracomment id>`; the same for `<stringlist>`. |
+| Tag spellings | `longLong`, `UInt`, `uLongLong`, `gradientstop`, `cursorShape` (named shape). Reading stays case-insensitive. |
+| `<sizepolicy>` | Attribute form: `hsizetype="Preferred" vsizetype="Preferred"`, with `horstretch` and `verstretch` children. |
+| `stdset` | `stdset="1"` is omitted; `stdset="0"` is written. Layout `margin` is stored with `stdset="0"`. |
+| Redundant `objectName` | Omitted when it only repeats the widget or layout `name`. |
+| `<iconset>` | One line: `<iconset [theme=…]><normaloff>a</normaloff>[<normalon>b</normalon>…]a</iconset>`. The normal path is written once as text after the last state. Designer drops `resource` and `alias`; we keep them (allowlisted). |
+| Comments, `<script>`, `<widgetdata>`, `<propertyspecifications>`, `<images>`, `<addpagemethod>` | Designer drops them. We keep them (allowlisted, §2.2 MUST). |
+| Line endings | Preserved per file: LF stays LF, and a CRLF source is written CRLF on every line. |
+| Indentation and declaration | One space per level, no trailing whitespace, final newline. `<?xml version="1.0" encoding="UTF-8"?>` is always written first. |
+| Text escaping | `"` in text becomes `&quot;` (already §8.2.5). |

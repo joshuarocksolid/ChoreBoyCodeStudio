@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import shutil
 
@@ -58,6 +59,24 @@ def test_package_project_builds_installable_artifact_by_default(tmp_path: Path) 
     assert (artifact_root / "payload" / "app_files" / "main.py").is_file()
     assert (artifact_root / "payload" / "app_files" / "helpers.py").is_file()
     assert (artifact_root / "install_my_project.desktop").is_file()
+
+
+def test_package_without_an_icon_ships_the_default_icon(tmp_path: Path) -> None:
+    project = _make_project(tmp_path / "project")
+
+    result = package_project(
+        project_root=str(project),
+        project_name="My Project",
+        entry_file="main.py",
+        output_dir=str(tmp_path / "exports"),
+    )
+
+    artifact_root = Path(result.artifact_root)
+    manifest = json.loads((artifact_root / "package_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["icon_relative_path"] == "app_icon.png"
+    assert (artifact_root / "payload" / "app_icon.png").is_file()
+    installer_launcher = (artifact_root / "install_my_project.desktop").read_text(encoding="utf-8")
+    assert "Icon=" in installer_launcher
 
 
 def test_package_project_writes_project_package_config_on_export(tmp_path: Path) -> None:

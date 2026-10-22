@@ -1,0 +1,2001 @@
+{
+  "apparmor_current": {
+    "errno": 13,
+    "error": "[Errno 13] Permission denied: '/proc/self/attr/current'",
+    "error_type": "PermissionError"
+  },
+  "captured_at": "2026-10-20T21:22:34.273411+00:00",
+  "cwd": "/home/default/cbprobe_jobs/platform-20261020T162221Z-20261020T212222Z-ca515a/payload",
+  "debian_version": {
+    "errno": 13,
+    "error": "[Errno 13] Permission denied: '/etc/debian_version'",
+    "error_type": "PermissionError"
+  },
+  "desktop": {
+    "desktop_dir": {
+      "files": [],
+      "list": {
+        "errno": 2,
+        "error": "[Errno 2] No such file or directory: '/home/default/Desktop'",
+        "error_type": "FileNotFoundError"
+      }
+    },
+    "fluxbox_keys": {
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/home/default/.fluxbox/keys'",
+      "error_type": "PermissionError"
+    },
+    "fluxbox_startup": {
+      "errno": 2,
+      "error": "[Errno 2] No such file or directory: '/home/default/.fluxbox/startup'",
+      "error_type": "FileNotFoundError"
+    },
+    "home_desktop_files": [
+      {
+        "name": ".intellaquote-icon",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1189280,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": ".intellaquote.png",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1055395,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 13,
+          "uid": 1000
+        },
+        "text": {
+          "errno": 13,
+          "error": "[Errno 13] Permission denied: '/home/default/.intellaquote.png'",
+          "error_type": "PermissionError"
+        }
+      },
+      {
+        "name": "IQ-shell-cache-test.desktop",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1069971,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100754",
+          "size": 294,
+          "uid": 1000
+        },
+        "text": "[Desktop Entry]\nType=Application\nVersion=1.0\nName=IQ Shell Cache Test\nComment=Temporary native launch probe\nTerminal=false\nCategories=Utility;\nIcon=/home/default/.local/share/icons/hicolor/256x256/apps/intellaquote.png\nExec=/bin/sh -c \"printf shell-ok > /home/default/IQHomeProof/sh-proof.txt\"\n"
+      },
+      {
+        "name": "IntellaQuote Setup",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1312207,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "IntellaQuote-activation-request.iqreq",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1069975,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 298,
+          "uid": 1000
+        },
+        "text": "{\n  \"fingerprint_formula\": \"f14_clean\",\n  \"machine_fingerprint\": \"33962912b8e66a7c19be0e7640c67cb0822c498c1e6c077729098c5416bb5947\",\n  \"product_id\": \"intellaquote\",\n  \"request_code\": \"IQ-GQMC-UEX2-63XH-2DS\",\n  \"request_display_id\": \"IQ-GQMC-UEX2-63XH-2DS\",\n  \"schema\": \"iq_activation_request_v1\"\n}\n"
+      },
+      {
+        "name": "IntellaQuote-install-iqinstall-20260922T234939Z",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1322236,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "IntellaQuote-install-iqinstall-20260924T210642Z",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1441986,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "IntellaQuote-install-iqinstall-20261017T185906Z",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1213539,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "IntellaQuote-install-iqinstall-20261019T225238Z",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1447978,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "IntellaQuote-install-iqinstall-20261020T015158Z",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1448195,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "IntellaQuote.desktop",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1069978,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100754",
+          "size": 41421,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "intellaquote",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1052204,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "intellaquote_data",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1203017,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "intellaquote_installer_v0.9.4",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1064360,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      {
+        "name": "kitchen_penmate.desktop",
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1069980,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100754",
+          "size": 391,
+          "uid": 1000
+        },
+        "text": "[Desktop Entry]\nType=Application\nVersion=1.0\nName=Kitchen Penmate\nComment=Launch Kitchen Penmate (Qt via FreeCAD AppRun)\nTerminal=false\nCategories=Utility;\n\nExec=/opt/freecad/AppRun -c \"import os,runpy,sys;root='/home/default/kitchen_penmate_v2.0.0a4';sys.path.insert(0,root) if root not in sys.path else None;os.chdir(root);runpy.run_path(os.path.join(root,'main.py'),run_name='__main__')\"\n"
+      }
+    ],
+    "home_list": {
+      "count": 99,
+      "names": [
+        ".Xauthority",
+        ".cache",
+        ".config",
+        ".fluxbox",
+        ".icons",
+        ".ideskrc",
+        ".idesktop",
+        ".intellaquote-icon",
+        ".intellaquote.png",
+        ".local",
+        ".nfs_log.txt",
+        ".xsession-errors",
+        ".xsession-errors.old",
+        "ChoreBoy2-lab.iqgr",
+        "FreeCAD",
+        "IQ-shell-cache-test.desktop",
+        "IQHomeFixed",
+        "IQHomeProof",
+        "IQInstallFolder",
+        "IQLogoView",
+        "IQSplit",
+        "IntellaQuote Setup",
+        "IntellaQuote-activation-request.iqreq",
+        "IntellaQuote-install-iqinstall-20260922T234939Z",
+        "IntellaQuote-install-iqinstall-20260924T210642Z",
+        "IntellaQuote-install-iqinstall-20261017T185906Z",
+        "IntellaQuote-install-iqinstall-20261019T225238Z",
+        "IntellaQuote-install-iqinstall-20261020T015158Z",
+        "IntellaQuote.desktop",
+        "KitchenPenmate",
+        "Library",
+        "cbapp_runner.log",
+        "cbcs-verify-20260903T153026Z-prep",
+        "cbcs-verify-install-20260903T153131Z",
+        "cbcs-verify-install-20260924T224830Z",
+        "cbcs-verify-v0412",
+        "cbcs-verify-v0412b",
+        "cbprobe_jobs",
+        "cbprobe_runner.log",
+        "cbprobe_sessions",
+        "config",
+        "ia-cb2-diag-runtime-6f15abc2",
+        "ia-cb2-diag-runtime-6f15abc2-auto",
+        "ia-cb2-diag-runtime-lifetime-20260930",
+        "ia-cb2-diag-runtime-lifetime-dsn-20260930",
+        "ia-cb2-diag-runtime-lifetime-dsn2-20260930",
+        "ia-cb2-diag-runtime-lifetime-final-20260930",
+        "ia-update-acceptance-20260908",
+        "ia-update-acceptance-full-20260908",
+        "ia-update-runtime-doctor-20260908",
+        "intellaquote",
+        "intellaquote_data",
+        "intellaquote_installer_v0.9.4",
+        "iq_v4_diag_readlogs",
+        "iq_v4_inventory_readonly",
+        "iron_advantage_installer_v0.14.0",
+        "iron_advantage_installer_v0.15.0",
+        "iron_advantage_v0.14.0",
+        "iron_advantage_v0.15.0",
+        "kitchen_penmate.desktop",
+        "kitchen_penmate_installer_v2.0.0a1",
+        "kitchen_penmate_installer_v2.0.0a2",
+        "kitchen_penmate_installer_v2.0.0a3",
+        "kitchen_penmate_installer_v2.0.0a4",
+        "kitchen_penmate_v2.0.0a1",
+        "kitchen_penmate_v2.0.0a1.manifest-trust.hex",
+        "kitchen_penmate_v2.0.0a2",
+        "kitchen_penmate_v2.0.0a2.manifest-trust.hex",
+        "kitchen_penmate_v2.0.0a3",
+        "kitchen_penmate_v2.0.0a3.manifest-trust.hex",
+        "kitchen_penmate_v2.0.0a4",
+        "kitchen_penmate_v2.0.0a4.manifest-trust.hex",
+        "kp_final",
+        "kp_native_configured_20260909T033827Z",
+        "kp_native_test",
+        "kp_report_beea325f_cb2_app_r4",
+        "kp_report_beea325f_cb2_closure",
+        "kp_report_beea325f_cb2_config_fingerprint",
+        "kp_report_beea325f_cb2_config_fingerprint2",
+        "kp_report_beea325f_cb2_config_fingerprint3",
+        "kp_report_beea325f_cb2_config_smoke",
+        "kp_report_beea325f_cb2_fixture_r1",
+        "kp_report_beea325f_cb2_full",
+        "kp_report_beea325f_cb2_guest_db_probe",
+        "kp_report_beea325f_cb2_guest_db_probe2",
+        "kp_report_beea325f_cb2_guest_postgres_probe",
+        "kp_report_beea325f_cb2_guest_postgres_probe2",
+        "kp_report_beea325f_cb2_guest_postgres_probe3",
+        "kp_report_beea325f_cb2_guest_postgres_probe4",
+        "kp_report_beea325f_cb2_migration_r3",
+        "kp_report_beea325f_cb2_network_probe",
+        "kp_report_beea325f_cb2_onecab",
+        "kp_report_beea325f_cb2_pg_binary_probe",
+        "kp_report_beea325f_cb2_recovery",
+        "kp_report_beea325f_cb2_restore_r4",
+        "kp_report_beea325f_cb2_typst_smoke",
+        "kp_rewrite_7ee8ff52_8ebb96eb0f22",
+        "post_frame_logs",
+        "share"
+      ]
+    },
+    "ideskrc": {
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/home/default/.ideskrc'",
+      "error_type": "PermissionError"
+    },
+    "idesktop": {
+      "files": [],
+      "list": {
+        "errno": 13,
+        "error": "[Errno 13] Permission denied: '/home/default/.idesktop'",
+        "error_type": "PermissionError"
+      }
+    },
+    "intellaquote": "[Desktop Entry]\nType=Application\nVersion=1.0\nName=IntellaQuote\nComment=Open IntellaQuote\nTerminal=false\nCategories=Utility;\nIcon=/home/default/.cache/FreeCAD/intellaquote/intellaquote.png\nExec=/opt/freecad/AppRun -c \"import base64;exec(compile(base64.b64decode('aW1wb3J0IG9zIGFzIF9pcV9sYXVuY2hfb3MKaW1wb3J0IHRpbWUgYXMgX2lxX2xhdW5jaF90aW1lCl9pcV9sYXVuY2hfb3MuZW52aXJvbi5zZXRkZWZhdWx0KCdJUV9MQVVOQ0hfRVBPQ0gnLCByZXByKF9pcV9sYXVuY2hfdGltZS50aW1lKCkpKQpkZWYgX2lxX2Vhcmx5X3NwbGFzaF9jaGlsZChfaXFfZXNfcGFyZW50KToKICAgIGltcG9ydCBvcyBhcyBfaXFfZXNfb3MKICAgIGltcG9ydCB0aW1lIGFzIF9pcV9lc190aW1lCgogICAgZnJvbSBQeVNpZGUgaW1wb3J0IFF0Q29yZSBhcyBfaXFfZXNfY29yZQogICAgZnJvbSBQeVNpZGUgaW1wb3J0IFF0R3VpIGFzIF9pcV9lc19ndWkKCiAgICBfaXFfZXNfd2lkZ2V0cyA9IF9pcV9lc19ndWkKICAgIHRyeToKICAgICAgICBmcm9tIFB5U2lkZSBpbXBvcnQgUXRXaWRnZXRzIGFzIF9pcV9lc193aWRnZXRzCiAgICBleGNlcHQgSW1wb3J0RXJyb3I6CiAgICAgICAgcGFzcwogICAgX2lxX2VzX2FwcCA9IF9pcV9lc193aWRnZXRzLlFBcHBsaWNhdGlvbihbJ0ludGVsbGFRdW90ZSddKQogICAgX2lxX2VzX2NlbnRlciA9IGludChfaXFfZXNfY29yZS5RdC5BbGlnbkhDZW50ZXIgfCBfaXFfZXNfY29yZS5RdC5BbGlnblZDZW50ZXIpCgogICAgZGVmIF9pcV9lc190ZXh0KF9pcV9lc19wYWludGVyLCBfaXFfZXNfdG9wLCBfaXFfZXNfaCwgX2lxX2VzX3B0LCBfaXFfZXNfYm9sZCwgX2lxX2VzX2NvbG9yLCBfaXFfZXNfdmFsdWUpOgogICAgICAgIF9pcV9lc19mb250ID0gX2lxX2VzX3BhaW50ZXIuZm9udCgpCiAgICAgICAgX2lxX2VzX2ZvbnQuc2V0UG9pbnRTaXplKF9pcV9lc19wdCkKICAgICAgICBfaXFfZXNfZm9udC5zZXRCb2xkKF9pcV9lc19ib2xkKQogICAgICAgIF9pcV9lc19wYWludGVyLnNldEZvbnQoX2lxX2VzX2ZvbnQpCiAgICAgICAgX2lxX2VzX3BhaW50ZXIuc2V0UGVuKF9pcV9lc19ndWkuUUNvbG9yKF9pcV9lc19jb2xvcikpCiAgICAgICAgX2lxX2VzX3BhaW50ZXIuZHJhd1RleHQoCiAgICAgICAgICAgIF9pcV9lc19jb3JlLlFSZWN0KDIwLCBfaXFfZXNfdG9wLCA0MjAgLSA0MCwgX2lxX2VzX2gpLAogICAgICAgICAgICBfaXFfZXNfY2VudGVyLAogICAgICAgICAgICBfaXFfZXNfdmFsdWUsCiAgICAgICAgKQoKICAgIGRlZiBfaXFfZXNfZHJhdyhfaXFfZXNfc3RhdHVzKToKICAgICAgICAjIE5vIHN0YXR1czogdGhlIHBsYWluICJTdGFydGluZy4uLiIgc3BsYXNoLiBBbiB1cGRhdGUgaW4gcHJvZ3Jlc3MKICAgICAgICAjIChoZWFkbGluZSwgZGV0YWlsKSBzaHJpbmtzIHRoZSBpY29uIHRvIG1ha2Ugcm9vbSBmb3IgdGhyZWUgbGluZXMuCiAgICAgICAgX2lxX2VzX3BpeG1hcCA9IF9pcV9lc19ndWkuUVBpeG1hcCg0MjAsIDI0MCkKICAgICAgICBfaXFfZXNfcGl4bWFwLmZpbGwoX2lxX2VzX2d1aS5RQ29sb3IoJyMxQjNBNEInKSkKICAgICAgICBfaXFfZXNfcGFpbnRlciA9IF9pcV9lc19ndWkuUVBhaW50ZXIoX2lxX2VzX3BpeG1hcCkKICAgICAgICB0cnk6CiAgICAgICAgICAgIF9pcV9lc19wYWludGVyLnNldFJlbmRlckhpbnQoX2lxX2VzX2d1aS5RUGFpbnRlci5BbnRpYWxpYXNpbmcsIFRydWUpCiAgICAgICAgICAgIF9pcV9lc19pY29uX3RvcCwgX2lxX2VzX2ljb25fcHggPSAoMzYsIDk2KSBpZiBfaXFfZXNfc3RhdHVzIGlzIE5vbmUgZWxzZSAoMTgsIDU2KQogICAgICAgICAgICBfaXFfZXNfeSA9IF9pcV9lc19pY29uX3RvcCArIDI4CiAgICAgICAgICAgIF9pcV9lc19pY29uID0gX2lxX2VzX2d1aS5RUGl4bWFwKCcvaG9tZS9kZWZhdWx0Ly5jYWNoZS9GcmVlQ0FEL2ludGVsbGFxdW90ZS9pbnRlbGxhcXVvdGUucG5nJykKICAgICAgICAgICAgaWYgbm90IF9pcV9lc19pY29uLmlzTnVsbCgpOgogICAgICAgICAgICAgICAgX2lxX2VzX3BhaW50ZXIuZHJhd1BpeG1hcCgKICAgICAgICAgICAgICAgICAgICBfaXFfZXNfY29yZS5RUmVjdCgoNDIwIC0gX2lxX2VzX2ljb25fcHgpIC8vIDIsIF9pcV9lc19pY29uX3RvcCwgX2lxX2VzX2ljb25fcHgsIF9pcV9lc19pY29uX3B4KSwKICAgICAgICAgICAgICAgICAgICBfaXFfZXNfaWNvbiwKICAgICAgICAgICAgICAgICkKICAgICAgICAgICAgICAgIF9pcV9lc195ID0gX2lxX2VzX2ljb25fdG9wICsgX2lxX2VzX2ljb25fcHggKyAoMjAgaWYgX2lxX2VzX3N0YXR1cyBpcyBOb25lIGVsc2UgOCkKICAgICAgICAgICAgaWYgX2lxX2VzX3N0YXR1cyBpcyBOb25lOgogICAgICAgICAgICAgICAgX2lxX2VzX3RleHQoX2lxX2VzX3BhaW50ZXIsIF9pcV9lc195LCAzNiwgMTgsIFRydWUsICcjRkZGRkZGJywgJ0ludGVsbGFRdW90ZScpCiAgICAgICAgICAgICAgICBfaXFfZXNfdGV4dChfaXFfZXNfcGFpbnRlciwgX2lxX2VzX3kgKyA0MCwgMjgsIDExLCBGYWxzZSwgJyM0REE4REEnLCAnU3RhcnRpbmfigKYnKQogICAgICAgICAgICBlbHNlOgogICAgICAgICAgICAgICAgX2lxX2VzX3RleHQoX2lxX2VzX3BhaW50ZXIsIF9pcV9lc195LCAzMCwgMTUsIFRydWUsICcjRkZGRkZGJywgJ0ludGVsbGFRdW90ZScpCiAgICAgICAgICAgICAgICBfaXFfZXNfdGV4dChfaXFfZXNfcGFpbnRlciwgX2lxX2VzX3kgKyAzMiwgMjQsIDEyLCBUcnVlLCAnI0ZGRkZGRicsIF9pcV9lc19zdGF0dXNbMF0pCiAgICAgICAgICAgICAgICBfaXFfZXNfdGV4dChfaXFfZXNfcGFpbnRlciwgX2lxX2VzX3kgKyA1NiwgMjQsIDExLCBGYWxzZSwgJyM0REE4REEnLCBfaXFfZXNfc3RhdHVzWzFdKQogICAgICAgICAgICAgICAgX2lxX2VzX3RleHQoX2lxX2VzX3BhaW50ZXIsIF9pcV9lc195ICsgODIsIDIyLCA5LCBGYWxzZSwgJyNGRkZGRkYnLCAnVGhpcyB0YWtlcyBhIGZldyBtaW51dGVzLiBQbGVhc2UgbGVhdmUgdGhpcyB3aW5kb3cgYWxvbmUuJykKICAgICAgICBmaW5hbGx5OgogICAgICAgICAgICBfaXFfZXNfcGFpbnRlci5lbmQoKQogICAgICAgIHJldHVybiBfaXFfZXNfcGl4bWFwCgogICAgX2lxX2VzX3N0YXJ0ZWQgPSBfaXFfZXNfdGltZS50aW1lKCkKCiAgICBkZWYgX2lxX2VzX3JlYWRfc3RhdHVzKCk6CiAgICAgICAgIyBUaGUgbGF1bmNoZXIncyB1cGRhdGUgc3RhdHVzIChzaGFyZWQvaW5zdGFsbC91cGRhdGVfc3RhdHVzLnB5KToKICAgICAgICAjIGhlYWRsaW5lIGFuZCBkZXRhaWwsIG9yIE5vbmUuIEEgZmlsZSBvbGRlciB0aGFuIHRoaXMgbGF1bmNoIHdhcwogICAgICAgICMgbGVmdCBieSBvbmUgdGhhdCB3YXMga2lsbGVkIGFuZCBpcyBub3QgdGhpcyBsYXVuY2gncyBuZXdzLgogICAgICAgIHRyeToKICAgICAgICAgICAgaWYgX2lxX2VzX29zLnN0YXQoJy9ob21lL2RlZmF1bHQvLmNhY2hlL0ZyZWVDQUQvaW50ZWxsYXF1b3RlL3N0YXJ0dXAtc3RhdHVzLnR4dCcpLnN0X210aW1lIDwgX2lxX2VzX3N0YXJ0ZWQgLSA1LjA6CiAgICAgICAgICAgICAgICByZXR1cm4gTm9uZQogICAgICAgICAgICB3aXRoIG9wZW4oJy9ob21lL2RlZmF1bHQvLmNhY2hlL0ZyZWVDQUQvaW50ZWxsYXF1b3RlL3N0YXJ0dXAtc3RhdHVzLnR4dCcsIGVuY29kaW5nPSd1dGYtOCcpIGFzIF9pcV9lc19maWxlOgogICAgICAgICAgICAgICAgX2lxX2VzX2xpbmVzID0gX2lxX2VzX2ZpbGUucmVhZCgpLnNwbGl0bGluZXMoKQogICAgICAgIGV4Y2VwdCAoT1NFcnJvciwgVmFsdWVFcnJvcik6CiAgICAgICAgICAgIHJldHVybiBOb25lCiAgICAgICAgaWYgbm90IF9pcV9lc19saW5lcyBvciBub3QgX2lxX2VzX2xpbmVzWzBdLnN0cmlwKCk6CiAgICAgICAgICAgIHJldHVybiBOb25lCiAgICAgICAgcmV0dXJuIChfaXFfZXNfbGluZXNbMF0sIF9pcV9lc19saW5lc1sxXSBpZiBsZW4oX2lxX2VzX2xpbmVzKSA+IDEgZWxzZSAnJykKCiAgICBfaXFfZXNfc3RhdGUgPSB7J3N0YXR1cyc6IF9pcV9lc19yZWFkX3N0YXR1cygpfQogICAgX2lxX2VzX2xhYmVsID0gX2lxX2VzX3dpZGdldHMuUUxhYmVsKCkKICAgIF9pcV9lc19sYWJlbC5zZXRXaW5kb3dGbGFncygKICAgICAgICBfaXFfZXNfY29yZS5RdC5TcGxhc2hTY3JlZW4gfCBfaXFfZXNfY29yZS5RdC5GcmFtZWxlc3NXaW5kb3dIaW50CiAgICApCiAgICBfaXFfZXNfbGFiZWwuc2V0UGl4bWFwKF9pcV9lc19kcmF3KF9pcV9lc19zdGF0ZVsnc3RhdHVzJ10pKQogICAgX2lxX2VzX2xhYmVsLnNldEZpeGVkU2l6ZSg0MjAsIDI0MCkKICAgIF9pcV9lc19zY3JlZW4gPSBfaXFfZXNfYXBwLnByaW1hcnlTY3JlZW4oKQogICAgaWYgX2lxX2VzX3NjcmVlbiBpcyBub3QgTm9uZToKICAgICAgICBfaXFfZXNfYXJlYSA9IF9pcV9lc19zY3JlZW4uYXZhaWxhYmxlR2VvbWV0cnkoKQogICAgICAgIF9pcV9lc19sYWJlbC5tb3ZlKAogICAgICAgICAgICBfaXFfZXNfYXJlYS54KCkgKyAoX2lxX2VzX2FyZWEud2lkdGgoKSAtIDQyMCkgLy8gMiwKICAgICAgICAgICAgX2lxX2VzX2FyZWEueSgpICsgKF9pcV9lc19hcmVhLmhlaWdodCgpIC0gMjQwKSAvLyAyLAogICAgICAgICkKICAgIF9pcV9lc19ub3cgPSBfaXFfZXNfdGltZS5tb25vdG9uaWMoKQogICAgIyBBbiB1cGRhdGUga2VlcHMgdGhlIHNwbGFzaCB1cCB3aGlsZSBpdCBydW5zLCBuZXZlciBwYXN0IHRoZSBjYXA7IHRoZQogICAgIyBwbGFpbiBsaW1pdCBzdGFydHMgb3ZlciB3aGVuIGl0cyBzdGF0dXMgaXMgY2xlYXJlZCBmb3IgdGhlIHJlc3RhcnQuCiAgICBfaXFfZXNfY2FwID0gX2lxX2VzX25vdyArIDEyMDAuMAogICAgX2lxX2VzX3N0YXRlWydkZWFkbGluZSddID0gX2lxX2VzX25vdyArIDEyMC4wCgogICAgZGVmIF9pcV9lc19jaGVjaygpOgogICAgICAgIF9pcV9lc19ub3cgPSBfaXFfZXNfdGltZS5tb25vdG9uaWMoKQogICAgICAgIF9pcV9lc19zdGF0dXMgPSBfaXFfZXNfcmVhZF9zdGF0dXMoKQogICAgICAgIGlmIF9pcV9lc19zdGF0dXMgaXMgbm90IE5vbmU6CiAgICAgICAgICAgIF9pcV9lc19zdGF0ZVsnZGVhZGxpbmUnXSA9IG1pbihfaXFfZXNfY2FwLCBfaXFfZXNfbm93ICsgMTIwLjApCiAgICAgICAgaWYgX2lxX2VzX3N0YXR1cyAhPSBfaXFfZXNfc3RhdGVbJ3N0YXR1cyddOgogICAgICAgICAgICBfaXFfZXNfc3RhdGVbJ3N0YXR1cyddID0gX2lxX2VzX3N0YXR1cwogICAgICAgICAgICBfaXFfZXNfbGFiZWwuc2V0UGl4bWFwKF9pcV9lc19kcmF3KF9pcV9lc19zdGF0dXMpKQogICAgICAgIGlmICgKICAgICAgICAgICAgX2lxX2VzX29zLmdldHBwaWQoKSAhPSBfaXFfZXNfcGFyZW50CiAgICAgICAgICAgIG9yIF9pcV9lc19ub3cgPiBfaXFfZXNfc3RhdGVbJ2RlYWRsaW5lJ10KICAgICAgICApOgogICAgICAgICAgICBfaXFfZXNfYXBwLnF1aXQoKQoKICAgIF9pcV9lc190aW1lciA9IF9pcV9lc19jb3JlLlFUaW1lcigpCiAgICBfaXFfZXNfdGltZXIudGltZW91dC5jb25uZWN0KF9pcV9lc19jaGVjaykKICAgIF9pcV9lc190aW1lci5zdGFydCgxMDApCiAgICBfaXFfZXNfbGFiZWwuc2hvdygpCiAgICAoZ2V0YXR0cihfaXFfZXNfYXBwLCAnZXhlY18nLCBOb25lKSBvciBfaXFfZXNfYXBwLmV4ZWMpKCkKCgpkZWYgX2lxX3N0YXJ0X2Vhcmx5X3NwbGFzaCgpOgogICAgaW1wb3J0IG9zIGFzIF9pcV9lc19vcwoKICAgIGlmIF9pcV9lc19vcy5lbnZpcm9uLmdldCgnSVFfRUFSTFlfU1BMQVNIJywgJycpLnN0cmlwKCkgPT0gJzAnOgogICAgICAgIHJldHVybgogICAgaWYgX2lxX2VzX29zLmVudmlyb24uZ2V0KCdJUV9FQVJMWV9TUExBU0hfUElEJyk6CiAgICAgICAgcmV0dXJuICAjIGEgcmVzdGFydCBvZiB0aGlzIGxhdW5jaDsgaXRzIHNwbGFzaCBpcyBzdGlsbCB1cAogICAgdHJ5OgogICAgICAgIF9pcV9lc19wYXJlbnQgPSBfaXFfZXNfb3MuZ2V0cGlkKCkKICAgICAgICBfaXFfZXNfcGlkID0gX2lxX2VzX29zLm",
+    "usr_share_idesk": {
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/usr/share/idesk'",
+      "error_type": "PermissionError"
+    }
+  },
+  "dev_ids": {
+    "/": {
+      "dev": 64768,
+      "gid": 1000,
+      "ino": 2,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 36864,
+      "uid": 1000
+    },
+    "/home": {
+      "dev": 65030,
+      "gid": 0,
+      "ino": 2,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 36864,
+      "uid": 0
+    },
+    "/home/default": {
+      "dev": 65030,
+      "gid": 1000,
+      "ino": 1048577,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 16384,
+      "uid": 1000
+    },
+    "/home/default/.cache": {
+      "dev": 65030,
+      "gid": 1000,
+      "ino": 1581443,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 4096,
+      "uid": 1000
+    },
+    "/home/default/.local": {
+      "dev": 65030,
+      "gid": 1000,
+      "ino": 1187362,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 4096,
+      "uid": 1000
+    },
+    "/home/default/FreeCAD": {
+      "dev": 65030,
+      "gid": 1000,
+      "ino": 1576803,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 4096,
+      "uid": 1000
+    },
+    "/home/default/share": {
+      "dev": 65030,
+      "gid": 0,
+      "ino": 1051727,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 4096,
+      "uid": 1000
+    },
+    "/mnt": {
+      "dev": 64768,
+      "gid": 0,
+      "ino": 659138,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40755",
+      "size": 4096,
+      "uid": 0
+    },
+    "/mnt/cbprobe": {
+      "dev": 36,
+      "gid": 1000,
+      "ino": 13153041,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o40777",
+      "size": 12288,
+      "uid": 1000
+    },
+    "/tmp": {
+      "dev": 64768,
+      "gid": 0,
+      "ino": 788394,
+      "is_dir": true,
+      "is_link": false,
+      "mode": "0o41777",
+      "size": 28672,
+      "uid": 0
+    }
+  },
+  "exec": [
+    {
+      "access_x": true,
+      "argv": [
+        "/opt/freecad/AppRun",
+        "-c",
+        "print('APPRUN_CHILD_OK')"
+      ],
+      "exists": true,
+      "returncode": 0,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 522558,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 1557,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "/opt/freecad/usr/lib/x86_64-linux-gnu:/opt/freecad/usr/lib\nAPPRUN_CHILD_OK\n",
+      "timeout_s": 45
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "echo SH_OK"
+      ],
+      "exists": true,
+      "returncode": 0,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 260638,
+        "is_dir": false,
+        "is_link": true,
+        "link_target": "dash",
+        "mode": "0o120777",
+        "size": 4,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "SH_OK\n",
+      "timeout_s": 8
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "pdftoppm -v"
+      ],
+      "exists": true,
+      "returncode": 126,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 260638,
+        "is_dir": false,
+        "is_link": true,
+        "link_target": "dash",
+        "mode": "0o120777",
+        "size": 4,
+        "uid": 0
+      },
+      "stderr": "/bin/sh: 1: pdftoppm: Permission denied\n",
+      "stdout": "",
+      "timeout_s": 15
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/bin/ls",
+        "/bin/sh"
+      ],
+      "exists": true,
+      "returncode": 0,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 260662,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 147176,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "/bin/sh\n",
+      "timeout_s": 8
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/usr/bin/pdftoppm",
+        "-v"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/usr/bin/pdftoppm'",
+      "error_type": "PermissionError",
+      "exists": true,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 663410,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 34928,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 15
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/usr/bin/python3",
+        "--version"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/usr/bin/python3'",
+      "error_type": "PermissionError",
+      "exists": true,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 663375,
+        "is_dir": false,
+        "is_link": true,
+        "link_target": "python3.9",
+        "mode": "0o120777",
+        "size": 9,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 8
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/bin/bash",
+        "-c",
+        "echo BASH_OK"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/bin/bash'",
+      "error_type": "PermissionError",
+      "exists": true,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 260691,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 1234376,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 8
+    },
+    {
+      "argv": [
+        "pcmanfm",
+        "--version"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: 'pcmanfm'",
+      "error_type": "PermissionError",
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 8
+    },
+    {
+      "access_x": false,
+      "argv": [
+        "/usr/bin/pcmanfm",
+        "--version"
+      ],
+      "errno": 2,
+      "error": "[Errno 2] No such file or directory: '/usr/bin/pcmanfm'",
+      "error_type": "FileNotFoundError",
+      "exists": false,
+      "stat": {
+        "errno": 2,
+        "error": "[Errno 2] No such file or directory: '/usr/bin/pcmanfm'",
+        "error_type": "FileNotFoundError"
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 8
+    },
+    {
+      "argv": [
+        "xdg-open",
+        "--help"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: 'xdg-open'",
+      "error_type": "PermissionError",
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 5
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/usr/bin/xdg-open",
+        "--help"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/usr/bin/xdg-open'",
+      "error_type": "PermissionError",
+      "exists": true,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 662347,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 26075,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 5
+    },
+    {
+      "argv": [
+        "okular",
+        "--version"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: 'okular'",
+      "error_type": "PermissionError",
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 12
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/usr/bin/okular",
+        "--version"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/usr/bin/okular'",
+      "error_type": "PermissionError",
+      "exists": true,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 666135,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 121136,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 12
+    },
+    {
+      "argv": [
+        "soffice",
+        "--version"
+      ],
+      "errno": 2,
+      "error": "[Errno 2] No such file or directory: 'soffice'",
+      "error_type": "FileNotFoundError",
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 20
+    },
+    {
+      "access_x": false,
+      "argv": [
+        "/usr/bin/soffice",
+        "--version"
+      ],
+      "errno": 2,
+      "error": "[Errno 2] No such file or directory: '/usr/bin/soffice'",
+      "error_type": "FileNotFoundError",
+      "exists": false,
+      "stat": {
+        "errno": 2,
+        "error": "[Errno 2] No such file or directory: '/usr/bin/soffice'",
+        "error_type": "FileNotFoundError"
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 20
+    },
+    {
+      "argv": [
+        "libreoffice",
+        "--version"
+      ],
+      "errno": 2,
+      "error": "[Errno 2] No such file or directory: 'libreoffice'",
+      "error_type": "FileNotFoundError",
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 20
+    },
+    {
+      "access_x": false,
+      "argv": [
+        "/usr/bin/libreoffice",
+        "--version"
+      ],
+      "errno": 2,
+      "error": "[Errno 2] No such file or directory: '/usr/bin/libreoffice'",
+      "error_type": "FileNotFoundError",
+      "exists": false,
+      "stat": {
+        "errno": 2,
+        "error": "[Errno 2] No such file or directory: '/usr/bin/libreoffice'",
+        "error_type": "FileNotFoundError"
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 20
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/usr/bin/env",
+        "true"
+      ],
+      "errno": 13,
+      "error": "[Errno 13] Permission denied: '/usr/bin/env'",
+      "error_type": "PermissionError",
+      "exists": true,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 663102,
+        "is_dir": false,
+        "is_link": false,
+        "mode": "0o100755",
+        "size": 48480,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "",
+      "timeout_s": 8
+    },
+    {
+      "access_x": true,
+      "argv": [
+        "/bin/sh",
+        "-c",
+        "command -v pdftoppm; command -v pcmanfm; command -v xdg-open; command -v okular; command -v soffice; command -v libreoffice; command -v python3; command -v bash; command -v env; command -v ls; command -v which"
+      ],
+      "exists": true,
+      "returncode": 0,
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 260638,
+        "is_dir": false,
+        "is_link": true,
+        "link_target": "dash",
+        "mode": "0o120777",
+        "size": 4,
+        "uid": 0
+      },
+      "stderr": "",
+      "stdout": "/usr/bin/pdftoppm\n/usr/local/bin/pcmanfm\n/usr/bin/xdg-open\n/usr/bin/okular\n/opt/freecad/usr/bin/python3\n/bin/bash\n/opt/freecad/usr/bin/env\n/bin/ls\n/opt/freecad/usr/bin/which\n",
+      "timeout_s": 8
+    }
+  ],
+  "executable": "/opt/freecad/usr/bin/FreeCAD",
+  "freecad_version": [
+    "1",
+    "0",
+    "0",
+    "39109 (Git)",
+    "https://github.com/FreeCAD/FreeCAD",
+    "2024/11/18 16:48:00",
+    "(HEAD detached at 1.0.0)",
+    "2fcc5317fe3aee96ca73475986a577719fc78e20"
+  ],
+  "fstab": {
+    "errno": 13,
+    "error": "[Errno 13] Permission denied: '/etc/fstab'",
+    "error_type": "PermissionError"
+  },
+  "gid": 1000,
+  "hostname": "net2",
+  "hostname_file": {
+    "errno": 13,
+    "error": "[Errno 13] Permission denied: '/etc/hostname'",
+    "error_type": "PermissionError"
+  },
+  "kernel": "6.1.12",
+  "os_release": "PRETTY_NAME=\"Debian GNU/Linux 11 (bullseye)\"\nNAME=\"Debian GNU/Linux\"\nVERSION_ID=\"11\"\nVERSION=\"11 (bullseye)\"\nVERSION_CODENAME=bullseye\nID=debian\nHOME_URL=\"https://www.debian.org/\"\nSUPPORT_URL=\"https://www.debian.org/support\"\nBUG_REPORT_URL=\"https://bugs.debian.org/\"\n",
+  "parents_probed": [
+    "/home/default",
+    "/home/default/FreeCAD",
+    "/home/default/FreeCAD/CBCS",
+    "/home/default/.local/share/FreeCAD",
+    "/home/default/.local/share/FreeCAD/Macro/Apps",
+    "/home/default/.cache/FreeCAD",
+    "/tmp",
+    "/home/default/share",
+    "/home/default/share/Chore_Boy",
+    "/home/default/Desktop"
+  ],
+  "paths": [
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "ok": true,
+        "op": "fcntl.lockf LOCK_EX|LOCK_NB"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "errno": 13,
+        "error": "[Errno 13] Permission denied: '/home/default/.cbcs_phase0_20261020_hid'",
+        "error_type": "PermissionError"
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default",
+      "sqlite_delete": {
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1069988,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "delete",
+        "ok": true,
+        "read_back": 1,
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1069987,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "wal",
+        "ok": true,
+        "read_back": 1,
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 1000,
+        "ino": 1048577,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 16384,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1069982,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "ok": true,
+        "op": "fcntl.lockf LOCK_EX|LOCK_NB"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974832,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default/FreeCAD",
+      "sqlite_delete": {
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1602676,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "delete",
+        "ok": true,
+        "read_back": 1,
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1602675,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "wal",
+        "ok": true,
+        "read_back": 1,
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 1000,
+        "ino": 1576803,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 4096,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1602673,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "ok": true,
+        "op": "fcntl.lockf LOCK_EX|LOCK_NB"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974832,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default/FreeCAD/CBCS",
+      "sqlite_delete": {
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1602676,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/CBCS/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/CBCS/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/CBCS/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "delete",
+        "ok": true,
+        "read_back": 1,
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1602675,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/CBCS/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/CBCS/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/FreeCAD/CBCS/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "wal",
+        "ok": true,
+        "read_back": 1,
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 1000,
+        "ino": 1576804,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 4096,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1602673,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "errno": 13,
+        "error": "[Errno 13] Permission denied",
+        "error_type": "PermissionError"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974832,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default/.local/share/FreeCAD",
+      "sqlite_delete": {
+        "errno": null,
+        "error": "database is locked",
+        "error_type": "OperationalError",
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1213679,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 0,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "errno": null,
+        "error": "database is locked",
+        "error_type": "OperationalError",
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1213678,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 0,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 1000,
+        "ino": 1189273,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 4096,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1213676,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "errno": 13,
+        "error": "[Errno 13] Permission denied",
+        "error_type": "PermissionError"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974832,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default/.local/share/FreeCAD/Macro/Apps",
+      "sqlite_delete": {
+        "errno": null,
+        "error": "database is locked",
+        "error_type": "OperationalError",
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1213679,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 0,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/Macro/Apps/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/Macro/Apps/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/Macro/Apps/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "errno": null,
+        "error": "database is locked",
+        "error_type": "OperationalError",
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1213678,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 0,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/Macro/Apps/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/Macro/Apps/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.local/share/FreeCAD/Macro/Apps/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 1000,
+        "ino": 1189275,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 4096,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1213676,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "ok": true,
+        "op": "fcntl.lockf LOCK_EX|LOCK_NB"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974832,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default/.cache/FreeCAD",
+      "sqlite_delete": {
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1602676,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.cache/FreeCAD/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.cache/FreeCAD/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.cache/FreeCAD/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "delete",
+        "ok": true,
+        "read_back": 1,
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1602675,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.cache/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.cache/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/.cache/FreeCAD/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "wal",
+        "ok": true,
+        "read_back": 1,
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 1000,
+        "ino": 1581450,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 4096,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1602673,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "ok": true,
+        "op": "fcntl.lockf LOCK_EX|LOCK_NB"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 64768,
+          "gid": 1000,
+          "ino": 930219,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 64768,
+          "gid": 1000,
+          "ino": 930218,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/tmp",
+      "sqlite_delete": {
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 64768,
+            "gid": 1000,
+            "ino": 831270,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/tmp/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/tmp/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/tmp/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "delete",
+        "ok": true,
+        "read_back": 1,
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 64768,
+            "gid": 1000,
+            "ino": 831269,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/tmp/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/tmp/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/tmp/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "wal",
+        "ok": true,
+        "read_back": 1,
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 64768,
+        "gid": 0,
+        "ino": 788394,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o41777",
+        "size": 28672,
+        "uid": 0
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 64768,
+          "gid": 1000,
+          "ino": 831267,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "cleanup": {
+        "left": [],
+        "removed": {
+          ".cbcs_phase0_20261020_hid": "removed",
+          "cbcs_phase0_20261020_del.sqlite3": "removed",
+          "cbcs_phase0_20261020_file.txt": "removed",
+          "cbcs_phase0_20261020_lock.bin": "removed",
+          "cbcs_phase0_20261020_vis": "removed",
+          "cbcs_phase0_20261020_wal.sqlite3": "removed"
+        }
+      },
+      "exists_dir": true,
+      "fcntl_lock": {
+        "ok": true,
+        "op": "fcntl.lockf LOCK_EX|LOCK_NB"
+      },
+      "is_link": false,
+      "mkdir_hidden": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974832,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "mkdir_visible": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1974831,
+          "is_dir": true,
+          "is_link": false,
+          "mode": "0o40755",
+          "size": 4096,
+          "uid": 1000
+        }
+      },
+      "parent": "/home/default/share",
+      "sqlite_delete": {
+        "files": {
+          "cbcs_phase0_20261020_del.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1069988,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_del.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/share/cbcs_phase0_20261020_del.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/share/cbcs_phase0_20261020_del.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_del.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/share/cbcs_phase0_20261020_del.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "delete",
+        "ok": true,
+        "read_back": 1,
+        "requested": "DELETE"
+      },
+      "sqlite_wal": {
+        "files": {
+          "cbcs_phase0_20261020_wal.sqlite3": {
+            "dev": 65030,
+            "gid": 1000,
+            "ino": 1069987,
+            "is_dir": false,
+            "is_link": false,
+            "mode": "0o100644",
+            "size": 8192,
+            "uid": 1000
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-journal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/share/cbcs_phase0_20261020_wal.sqlite3-journal'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-shm": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/share/cbcs_phase0_20261020_wal.sqlite3-shm'",
+            "error_type": "FileNotFoundError"
+          },
+          "cbcs_phase0_20261020_wal.sqlite3-wal": {
+            "errno": 2,
+            "error": "[Errno 2] No such file or directory: '/home/default/share/cbcs_phase0_20261020_wal.sqlite3-wal'",
+            "error_type": "FileNotFoundError"
+          }
+        },
+        "journal_mode": "wal",
+        "ok": true,
+        "read_back": 1,
+        "requested": "WAL"
+      },
+      "stat": {
+        "dev": 65030,
+        "gid": 0,
+        "ino": 1051727,
+        "is_dir": true,
+        "is_link": false,
+        "mode": "0o40755",
+        "size": 4096,
+        "uid": 1000
+      },
+      "write_file": {
+        "ok": true,
+        "stat": {
+          "dev": 65030,
+          "gid": 1000,
+          "ino": 1069982,
+          "is_dir": false,
+          "is_link": false,
+          "mode": "0o100644",
+          "size": 7,
+          "uid": 1000
+        }
+      }
+    },
+    {
+      "exists_dir": false,
+      "is_link": false,
+      "parent": "/home/default/share/Chore_Boy",
+      "skipped": "parent_missing_or_not_dir",
+      "stat": {
+        "errno": 2,
+        "error": "[Errno 2] No such file or directory: '/home/default/share/Chore_Boy'",
+        "error_type": "FileNotFoundError"
+      }
+    },
+    {
+      "exists_dir": false,
+      "is_link": false,
+      "parent": "/home/default/Desktop",
+      "skipped": "parent_missing_or_not_dir",
+      "stat": {
+        "errno": 2,
+        "error": "[Errno 2] No such file or directory: '/home/default/Desktop'",
+        "error_type": "FileNotFoundError"
+      }
+    }
+  ],
+  "prefix": "cbcs_phase0_20261020",
+  "proc_mountinfo": {
+    "errno": 13,
+    "error": "[Errno 13] Permission denied: '/proc/self/mountinfo'",
+    "error_type": "PermissionError"
+  },
+  "proc_mounts": {
+    "errno": 13,
+    "error": "[Errno 13] Permission denied: '/proc/mounts'",
+    "error_type": "PermissionError"
+  },
+  "python": "3.9.2 (default, Feb 28 2021, 17:03:44)  [GCC 10.2.1 20210110]",
+  "share_listing": {
+    "count": 1,
+    "names": [
+      "IntellaQuote Backup"
+    ],
+    "truncated": false
+  },
+  "sqlite": "3.34.1",
+  "uid": 1000
+}

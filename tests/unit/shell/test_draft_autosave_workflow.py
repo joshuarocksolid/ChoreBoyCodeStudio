@@ -12,11 +12,12 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
-from app.persistence.autosave_store import DraftEntry  # noqa: E402
+from app.persistence.autosave_store import AutosaveStore, DraftEntry  # noqa: E402
 from app.persistence.history_models import (  # noqa: E402
     DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,
     DRAFT_SOURCE_KEPT_ON_EXIT,
 )
+from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
 from app.shell.draft_autosave_workflow import DraftAutosaveWorkflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -162,7 +163,6 @@ def test_keep_drafts_for_paths_persists_restore_policy_and_clears_pending(tmp_pa
 
 
 def test_local_history_workflow_delegates_autosave_to_draft_module(tmp_path: Path) -> None:
-    from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
     from app.shell.local_history_workflow import LocalHistoryWorkflow  # noqa: E402
     from tests.support.local_history_editor_host_stub import LocalHistoryEditorHostStub  # noqa: E402
 
@@ -194,3 +194,201 @@ def test_local_history_workflow_delegates_autosave_to_draft_module(tmp_path: Pat
     assert timer.started == 1
     workflow.flush_pending_autosaves()
     assert autosave_store.saved[0][1] == "delegated draft"
+
+
+class _RevisionSource:
+    def __init__(self) -> None:
+        self._text = "serialized"
+        self._revision = 1
+        self.reads = 0
+        self._listener: Any = None
+
+    def current_text(self) -> str:
+        self.reads += 1
+        return self._text
+
+    def is_dirty(self) -> bool:
+        return True
+
+    def mark_saved(self, saved_text: str) -> None:
+        del saved_text
+
+    def revision(self) -> int:
+        return self._revision
+
+    def subscribe_changed(self, listener: Any) -> Any:
+        self._listener = listener
+        return lambda: None
+
+    def notify(self, *, revision: int, text: str) -> None:
+        self._revision = revision
+        self._text = text
+        if self._listener is not None:
+            self._listener()
+
+
+def test_sourced_draft_reads_text_only_when_revision_changes(tmp_path: Path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "main.py"
+    file_path.write_text("print('disk')\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path.resolve())).tab
+    source = _RevisionSource()
+    tab.content_source = source
+    autosave_store = _FakeAutosaveStore()
+    timer = _FakeTimer()
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,  # type: ignore[arg-type]
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_workflow"),
+        autosave_timer=timer,  # type: ignore[arg-type]
+    )
+
+    source.notify(revision=2, text="next")
+    workflow.note_source_changed(tab.file_path)
+    assert source.reads == 0
+    assert timer.started == 1
+
+    workflow.flush_pending_autosaves()
+    assert source.reads == 1
+    assert autosave_store.saved[0][1] == "next"
+
+    source.notify(revision=2, text="unread")
+    workflow.note_source_changed(tab.file_path)
+    workflow.flush_pending_autosaves()
+    assert source.reads == 1
+
+
+def _sourced_workflow(
+    tmp_path: Path,
+    source: _RevisionSource,
+) -> tuple[DraftAutosaveWorkflow, EditorManager, _FakeAutosaveStore, Any]:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    file_path = project_root / "notes.md"
+    file_path.write_text("disk\n", encoding="utf-8")
+    manager = EditorManager()
+    tab = manager.open_file(str(file_path.resolve())).tab
+    tab.content_source = source  # type: ignore[assignment]
+    autosave_store = _FakeAutosaveStore()
+    timer = _FakeTimer()
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,  # type: ignore[arg-type]
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_workflow"),
+        autosave_timer=timer,  # type: ignore[arg-type]
+    )
+    return workflow, manager, autosave_store, tab
+
+
+def test_rename_keeps_a_pending_sourced_draft(tmp_path: Path) -> None:
+    source = _RevisionSource()
+    workflow, manager, autosave_store, tab = _sourced_workflow(tmp_path, source)
+    old_path = tab.file_path
+    new_path = str((tmp_path / "project" / "moved.md").resolve())
+    source.notify(revision=2, text="moved draft")
+    workflow.note_source_changed(old_path)
+    manager.remap_paths_for_move(old_path, new_path)
+
+    workflow.rekey_content_source(old_path, new_path)
+    workflow.flush_pending_autosaves()
+
+    assert autosave_store.saved[0][0] == new_path
+    assert autosave_store.saved[0][1] == "moved draft"
+
+
+def test_forget_source_does_not_unsubscribe(tmp_path: Path) -> None:
+    unsubscribed = {"count": 0}
+
+    class _CountingSource(_RevisionSource):
+        def subscribe_changed(self, listener: Any) -> Any:
+            self._listener = listener
+
+            def _unsubscribe() -> None:
+                unsubscribed["count"] += 1
+
+            return _unsubscribe
+
+    source = _CountingSource()
+    workflow, manager, _store, tab = _sourced_workflow(tmp_path, source)
+    tab.content_source_unsubscribe = source.subscribe_changed(lambda: None)
+    workflow.note_source_changed(tab.file_path)
+
+    tab.drop_content_source_subscription()
+    workflow.forget_source(tab.file_path)
+    workflow.forget_source(tab.file_path)
+    manager.close_file(tab.file_path)
+    workflow.flush_pending_autosaves()
+
+    assert unsubscribed["count"] == 1
+    assert _store.saved == []
+
+
+def test_flush_after_save_writes_no_stale_draft(tmp_path: Path) -> None:
+    source = _RevisionSource()
+    workflow, _manager, autosave_store, tab = _sourced_workflow(tmp_path, source)
+    source.notify(revision=2, text="saved text")
+    workflow.note_source_changed(tab.file_path)
+    workflow.discard_pending_autosave(tab.file_path)
+    workflow.note_source_changed(tab.file_path)
+
+    workflow.flush_pending_autosaves()
+
+    assert autosave_store.saved == []
+
+def _real_store_workflow(tmp_path: Path) -> tuple[DraftAutosaveWorkflow, EditorManager, AutosaveStore, Path]:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    manager = EditorManager()
+    autosave_store = AutosaveStore(history_store=LocalHistoryStore(state_root=tmp_path / "state"))
+    workflow = DraftAutosaveWorkflow(
+        parent=None,
+        autosave_store=autosave_store,
+        editor_manager=manager,
+        context_for_path=_context_for_path(project_root),
+        logger=logging.getLogger("test.draft_autosave_workflow"),
+        autosave_timer=_FakeTimer(),  # type: ignore[arg-type]
+    )
+    return workflow, manager, autosave_store, project_root.resolve()
+
+
+def test_pending_autosave_scheduled_before_move_flushes_to_new_path(tmp_path: Path) -> None:
+    workflow, manager, autosave_store, project_root = _real_store_workflow(tmp_path)
+    old_path = project_root / "old.py"
+    old_path.write_text("print('disk')\n", encoding="utf-8")
+    tab = manager.open_file(str(old_path)).tab
+    workflow.schedule_autosave(tab.file_path, "print('draft')\n")
+    new_path = str(project_root / "new.py")
+
+    manager.remap_paths_for_move(str(old_path), new_path)
+    workflow.flush_pending_autosaves()
+
+    restored = autosave_store.load_draft(new_path, project_id="proj_demo", project_root=str(project_root))
+    assert restored is not None and restored.content == "print('draft')\n"
+    assert autosave_store.load_draft(str(old_path), project_id="proj_demo", project_root=str(project_root)) is None
+
+
+def test_migrate_draft_for_move_moves_persisted_draft_to_new_path(tmp_path: Path) -> None:
+    workflow, _manager, autosave_store, project_root = _real_store_workflow(tmp_path)
+    old_path = str(project_root / "old.py")
+    new_path = str(project_root / "pkg" / "old.py")
+    autosave_store.save_draft(
+        old_path,
+        "print('draft')\n",
+        project_id="proj_demo",
+        project_root=str(project_root),
+        recovery_policy=DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY,
+    )
+
+    workflow.migrate_draft_for_move(old_path, new_path)
+
+    moved = autosave_store.load_draft(new_path, project_id="proj_demo", project_root=str(project_root))
+    assert moved is not None
+    assert moved.content == "print('draft')\n"
+    assert moved.recovery_policy == DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY
+    assert autosave_store.load_draft(old_path, project_id="proj_demo", project_root=str(project_root)) is None

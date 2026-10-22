@@ -14,6 +14,7 @@ Owns AT-37–42, AT-85–89.
 - `plugin-quarantine` auto-disables after repeated host failures.
 - `plugin-pin` pin / clear pin / project enable / prefer provider (AT-86).
 - `plugin-compat` rejects incompatible API / runtime.
+- `plugin-freecad-1021` explains that plugins, running, debugging, and the Python console need FreeCAD 1.0, because each one starts `/opt/freecad/AppRun`. The same dialog is used when Run, Debug, or the Python console gets `PermissionError` from that start.
 - `plugin-support` support bundle includes plugin/provider state (AT-88).
 
 ## How to get to it (user POV)

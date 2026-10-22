@@ -20,7 +20,7 @@ pytestmark = pytest.mark.unit
 class FakeConsoleWidget:
     shown_generations: list[int] = field(default_factory=list)
     shown_items: list[list[CompletionItem]] = field(default_factory=list)
-    auto_trigger_period: bool | None = None
+    completion_mode: str | None = None
 
     def show_completion_items_for_request(
         self,
@@ -32,8 +32,8 @@ class FakeConsoleWidget:
         self.shown_generations.append(request_generation)
         self.shown_items.append(list(items))
 
-    def set_auto_trigger_period(self, enabled: bool) -> None:
-        self.auto_trigger_period = bool(enabled)
+    def set_completion_mode(self, mode: str) -> None:
+        self.completion_mode = mode
 
 
 @dataclass
@@ -45,7 +45,7 @@ class FakePythonConsoleHost:
     repl_warnings: list[tuple[str, Exception]] = field(default_factory=list)
     clear_console_calls: int = 0
     last_clear_host: FakeClearConsoleHost | None = None
-    period_auto_trigger: bool = True
+    mode: str = "manual"
 
     def python_console_widget(self) -> FakeConsoleWidget | None:
         return self.console_widget
@@ -68,8 +68,8 @@ class FakePythonConsoleHost:
         self.last_clear_host = FakeClearConsoleHost()
         return self.last_clear_host
 
-    def completion_auto_trigger_period(self) -> bool:
-        return self.period_auto_trigger
+    def completion_mode(self) -> str:
+        return self.mode
 
 
 @dataclass
@@ -394,11 +394,39 @@ def test_handle_clear_display_action_clears_python_console_display_only() -> Non
     assert host.last_clear_host.cleared is False
 
 
-def test_apply_completion_preferences_pushes_period_flag_to_console() -> None:
-    host = FakePythonConsoleHost(period_auto_trigger=False)
+def test_apply_completion_preferences_pushes_mode_to_console() -> None:
+    host = FakePythonConsoleHost(mode="typing")
     workflow = PythonConsoleWorkflow(repl_manager=FakeReplSession(), host=host)
 
     workflow.apply_completion_preferences()
 
     assert host.console_widget is not None
-    assert host.console_widget.auto_trigger_period is False
+    assert host.console_widget.completion_mode == "typing"
+
+
+def test_console_bound_after_the_intelligence_runtime_still_resolves_docs() -> None:
+    class _Signal:
+        def connect(self, _slot: object) -> None:
+            return None
+
+    class _BindableConsole(FakeConsoleWidget):
+        input_submitted = _Signal()
+        interrupt_requested = _Signal()
+        restart_requested = _Signal()
+        resolve_requester: object = None
+
+        def set_completion_requester(self, _requester: object) -> None:
+            return None
+
+        def set_completion_resolve_requester(self, requester: object) -> None:
+            self.resolve_requester = requester
+
+    host = FakePythonConsoleHost(console_widget=None)
+    workflow = PythonConsoleWorkflow(repl_manager=FakeReplSession(), host=host)
+    workflow.bind_intelligence_controller(object())
+    console = _BindableConsole()
+    host.console_widget = console
+
+    workflow.bind_widget(console)  # type: ignore[arg-type]
+
+    assert console.resolve_requester is not None

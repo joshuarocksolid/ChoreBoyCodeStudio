@@ -40,6 +40,31 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
 
+## Editor tabs and groups
+
+Tabs are movable. Split Right (tab context menu, View menu, `Ctrl+\`) shows the current file in a second group; `Ctrl+1` / `Ctrl+2` focus a group; drag a tab down out of its bar and over the other group (or the right part of a lone group) to move it. Actions: `shell.action.view.splitEditorRight`, `shell.action.view.closeEditorGroup`, `shell.action.view.focusFirstEditorGroup`, `shell.action.view.focusSecondEditorGroup`. A stale tab (changed on disk, user kept their version) shows an amber triangle; a missing tab shows a red x and a struck-through name. Tab data (`tabBar().tabData(i)`) carries `buffer_id`, `is_preview`, `is_stale`, `is_missing`.
+
+| Handle | What |
+|--------|------|
+| `#shell.editorGroupsHost` | Editor area: the groups splitter plus the drag ghost and drop overlay |
+| `#shell.editorGroups` | Splitter holding the editor groups (one or two) |
+| `#shell.editorGroup` | One group's frame (accent border when focused and split). `groupNumber` property is 1 or 2. |
+| `#shell.editorTabs.group2` | Second group's tab widget (the first is `#shell.editorTabs`). The focused group's tab widget is `window._editor_tabs_widget`. |
+| `#shell.editorGroups.dragGhost` | Label that follows a tab dragged out of its bar |
+| `#shell.editorGroups.dropOverlay` | Dashed overlay on the group a dragged tab will drop into |
+| `#shell.editorTabPage` | One tab's page: info bar above the editor |
+| `#shell.editorInfoBar` | Stale / missing info bar (hidden when the buffer matches disk) |
+| `#shell.editorInfoBar.icon` | Info bar icon |
+| `#shell.editorInfoBar.message` | Info bar text |
+| `#shell.editorInfoBar.reloadBtn` | Reload from Disk (stale) |
+| `#shell.editorInfoBar.compareBtn` | Compare... (stale) |
+| `#shell.editorInfoBar.saveAsBtn` | Save As... (missing) |
+| `#shell.editorInfoBar.closeTabBtn` | Close Tab (missing) |
+| `#shell.missingFileDialog` | File Missing: Close Tab / Keep Editing / Save As... (default). Modal. |
+| `#shell.staleSaveDialog` | Save on a stale tab: Cancel / Compare... / Reload from Disk / Save My Version (default). Modal. |
+| `#shell.diskCompareDialog` | Side-by-side On Disk / Your Version diff. Modal. |
+| `#shell.diskChangedDialog` | The poller found a dirty buffer's file changed on disk: Compare... / Reload from Disk / Keep My Version (default; Esc also keeps). Modal. |
+
 ## Welcome
 
 | Handle | What |
@@ -70,7 +95,8 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.runStatusLabel` | `Run: idle` / `Run: running` / `Run: success (code=0)` / `Run: failed (code=N)` / `Run: terminated` |
 | `#shell.projectStatusLabel` | Project name + `(project overrides)` |
 | `#shell.indentStatusLabel` | Spaces / Tabs |
-| `#shell.editorStatusLabel` | file, line, col, modified/saved |
+| `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
+| `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
 
 ## Find, search, markdown
@@ -120,14 +146,16 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
-| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). AT-104/105 checkboxes are `vis=False` on Step 1 and visible/unchecked on Step 2. |
-| `#shell.packageWizard.skipMissingDependencyBlockers` | **Allow export with missing imports** (AT-104). Not on page 0 / Step 1. |
+| `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). The install-folder checkbox is `vis=False` on Step 1 and visible/unchecked on Step 2. |
 | `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked). Not on page 0 / Step 1. |
+| `#shell.runtimeCenterDialog.copyDetails` | Packaging report only. Copies the report text. Hidden on other Runtime Center reports. |
+| `#shell.runtimeCenterDialog.goToFile` | Packaging report only. Opens the issue file at the reported line. Hidden on other Runtime Center reports. |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |
 | `#shell.quickSymbolDialog` | Go to Symbol |
 | `#shell.helpDialog` | Built-in help |
+| `shell.closeWhileRunningDialog` | Close while a run is active. Modal, from the real window close path (`cbapp stop` skips it). Footer buttons are the shared `shell.dialogChrome.button.*`; click `text:Keep It Running` (default), `text:Stop It` or `text:Cancel`. Rows: `shell.closeWhileRunningDialog.runCard` · `runName` · `runDetail` · `alsoOpened` (only when a FreeCAD child is known) · `help`. |
 
 ## Menus
 
@@ -296,6 +324,7 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.runWithArgumentsDialog.prefill`
 - `#shell.runWithArgumentsDialog.wdHelper`
 - `#shell.runWithArgumentsDialog.workingDir`
+- `#shell.runtimeCenterDialog.appRunNote`
 - `#shell.runtimeCenterDialog.closeButton`
 - `#shell.runtimeCenterDialog.detailBrowser`
 - `#shell.runtimeCenterDialog.footer`
@@ -304,6 +333,7 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.runtimeCenterDialog.issueList`
 - `#shell.runtimeCenterDialog.summary`
 - `#shell.runtimeCenterDialog.title`
+- `#shell.runtimeCenterDialog.titleIcon`
 - `#shell.searchSidebar.caseBtn`
 - `#shell.searchSidebar.clearBtn`
 - `#shell.searchSidebar.excludeInput`
@@ -324,6 +354,9 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.settingsDialog.appearanceGroup`
 - `#shell.settingsDialog.buttonBox`
 - `#shell.settingsDialog.cancelBtn`
+- `#shell.settingsDialog.completionMode`
+- `#shell.settingsDialog.completionModeEffective`
+- `#shell.settingsDialog.completionModeHelp`
 - `#shell.settingsDialog.editorGroup`
 - `#shell.settingsDialog.editorResetGlobal`
 - `#shell.settingsDialog.fileExcludeInput`
@@ -388,3 +421,38 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.welcome.recentLabel`
 - `#shell.welcome.subtitle`
 - `#shell.welcome.title`
+
+## Startup dialogs
+
+- `#shell.startupProblemsDialog`
+- `#shell.startupProblems.card`
+- `#shell.startupProblems.cardSummary`
+- `#shell.startupProblems.cardTitle`
+- `#shell.startupProblems.continueButton`
+- `#shell.startupProblems.copyDetails`
+- `#shell.startupProblems.dismiss`
+- `#shell.startupProblems.error`
+- `#shell.startupProblems.field`
+- `#shell.startupProblems.fieldKey`
+- `#shell.startupProblems.fix`
+- `#shell.startupProblems.folder`
+- `#shell.startupProblems.logPath`
+- `#shell.startupProblems.openRuntimeCenter`
+- `#shell.startupProblems.section`
+- `#shell.startupProblems.stillWorking`
+- `#shell.startupFatalDialog`
+- `#shell.startupFatal.closeButton`
+- `#shell.startupFatal.copyDetails`
+- `#shell.startupFatal.details`
+- `#shell.startupFatal.showDetails`
+- `#shell.freecadRequirementDialog`
+- `#shell.freecadRequirement.card`
+- `#shell.freecadRequirement.cardBody`
+- `#shell.freecadRequirement.cardTitle`
+- `#shell.freecadRequirement.copyDetails`
+- `#shell.freecadRequirement.detail`
+- `#shell.freecadRequirement.logPath`
+- `#shell.freecadRequirement.message`
+- `#shell.freecadRequirement.okButton`
+- `#shell.freecadRequirement.section`
+- `#shell.freecadRequirement.works`

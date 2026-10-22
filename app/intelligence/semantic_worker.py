@@ -9,7 +9,11 @@ import time
 from typing import Callable, Optional
 
 
+from app.intelligence.completion_metrics import log_completion_phase
+
 logger = logging.getLogger(__name__)
+
+_TIMED_KEY_PREFIXES = ("runtime_infer:", "completion:", "completion_fast:")
 
 
 @dataclass(order=True)
@@ -104,6 +108,13 @@ class SemanticWorker:
             for key in list(self._generations):
                 self._generations[key] += 1
 
+    def invalidate(self, key: str) -> None:
+        """Drop a queued task. A task that has already started still finishes."""
+
+        with self._lock:
+            if key in self._generations:
+                self._generations[key] += 1
+
     def shutdown(self) -> None:
         """Stop the worker thread."""
         with self._lock:
@@ -140,9 +151,19 @@ class SemanticWorker:
             queue_wait_ms = (time.perf_counter() - queued.enqueued_at) * 1000.0
             with self._lock:
                 self._last_queue_wait_ms_by_key[queued.key] = queue_wait_ms
+            timed = queued.key.startswith(_TIMED_KEY_PREFIXES)
+            started_at = time.perf_counter()
             try:
                 result = queued.task()
             except Exception as exc:
+                if timed:
+                    log_completion_phase(
+                        "semantic_worker",
+                        (time.perf_counter() - started_at) * 1000.0,
+                        key=queued.key,
+                        queue_wait_ms=round(queue_wait_ms, 3),
+                        ok=False,
+                    )
                 logger.exception("Semantic worker task failed for key=%s", queued.key)
                 if queued.on_error is not None and self._is_current(queued.key, queued.generation):
                     if queued.dispatch_on_main_thread:
@@ -150,6 +171,14 @@ class SemanticWorker:
                     else:
                         queued.on_error(exc)
                 continue
+            if timed:
+                log_completion_phase(
+                    "semantic_worker",
+                    (time.perf_counter() - started_at) * 1000.0,
+                    key=queued.key,
+                    queue_wait_ms=round(queue_wait_ms, 3),
+                    ok=True,
+                )
             if queued.on_success is not None and self._is_current(queued.key, queued.generation):
                 if queued.dispatch_on_main_thread:
                     self._dispatch_to_main_thread(lambda result=result, callback=queued.on_success: callback(result))

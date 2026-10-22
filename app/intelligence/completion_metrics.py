@@ -4,10 +4,14 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+import logging
 import time
 from typing import Iterator
 
+from app.core.constants import APP_LOGGER_NAMESPACE
 from app.core.metrics import LatencySnapshot, RollingLatencyTracker
+
+_phase_logger = logging.getLogger(f"{APP_LOGGER_NAMESPACE}.intelligence")
 
 
 @dataclass(frozen=True)
@@ -51,3 +55,24 @@ class CompletionTelemetry:
             if breakdown is not None:
                 breakdown[operation] = elapsed_ms
             self.record(operation, elapsed_ms)
+
+
+def note_phase(breakdown: dict[str, float] | None, phase: str, started_at: float) -> float:
+    """Store one phase duration in milliseconds and return it."""
+
+    elapsed_ms = (time.perf_counter() - started_at) * 1000.0
+    if breakdown is not None:
+        breakdown[phase] = elapsed_ms
+    return elapsed_ms
+
+
+def log_completion_phase(phase: str, elapsed_ms: float, **fields: object) -> None:
+    """Write one completion phase onto the app intelligence log."""
+
+    extra = " ".join(f"{key}={value}" for key, value in fields.items())
+    _phase_logger.info(
+        "Completion phase telemetry: phase=%s elapsed_ms=%.2f %s",
+        phase,
+        elapsed_ms,
+        extra.strip(),
+    )

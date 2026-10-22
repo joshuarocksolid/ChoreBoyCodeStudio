@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>LogicJson</class>
+ <widget class="QWidget" name="LogicJson">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>120</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Logic</string>
+  </property>
+  <property name="cbcsLogic" stdset="0">
+   <string notr="true">{
+ &quot;version&quot;: 1
+}</string>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

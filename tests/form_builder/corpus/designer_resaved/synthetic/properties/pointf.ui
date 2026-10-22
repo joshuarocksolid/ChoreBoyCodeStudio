@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>PropPointf</class>
+ <widget class="QWidget" name="PropPointf">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>640</width>
+    <height>480</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>pointf</string>
+  </property>
+  <property name="originF" stdset="0">
+   <pointf>
+    <x>1.250000000000000</x>
+    <y>2.500000000000000</y>
+   </pointf>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

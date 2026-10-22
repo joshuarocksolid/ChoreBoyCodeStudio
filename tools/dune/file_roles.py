@@ -45,13 +45,13 @@ FILE_ROLES = (
     FileRole(
         "app.shell",
         ("app/shell/**",),
-        ("app.runner", "app.packaging"),
+        ("app.runner", "app.packaging", "app.features.markdown", "app.features.form_builder"),
         allowed_imports=_UI_IMPORT_CONTRACTS,
     ),
     FileRole(
         "app.editors",
         ("app/editors/**",),
-        ("app.runner", "app.packaging"),
+        ("app.runner", "app.packaging", "app.features.markdown", "app.features.form_builder"),
         allowed_imports=_UI_IMPORT_CONTRACTS,
     ),
     FileRole("app.runner", ("app/runner/**",), ("app.features",)),
