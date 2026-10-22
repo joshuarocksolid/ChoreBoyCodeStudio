@@ -14,7 +14,7 @@ from typing import Callable, List, Optional, Tuple
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QSize, Qt
+from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QPointF, QRectF, QSize, QSizeF, Qt
 from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
 from PySide6.QtWidgets import QApplication, QButtonGroup, QLayout, QSizePolicy, QWidget
 
@@ -90,17 +90,58 @@ def _strip_uic(text: str) -> str:
         next_indent = len(follower) - len(follower.lstrip(" ")) if follower is not None else 0
         if follower is None or next_indent <= indent:
             fixed.append(" " * (indent + 4) + "pass")
-    return "\n".join(fixed) + "\n"
+    return _pythonize_uic("\n".join(fixed) + "\n")
+
+
+def _pythonize_uic(text: str) -> str:
+    """uic still emits tokens Python 3 will not run.
+
+    ``4294967295u`` is a C++ unsigned suffix. ``static_cast`` and
+    ``QPalette::Active`` are C++. ``Q_UINT64_C`` of a value past signed 64-bit
+    overflows PySide, and this generator omits that literal.
+    """
+    lines = []
+    for line in text.splitlines():
+        line = re.sub(r"(\d+)[uU]\b", r"\1", line)
+        line = re.sub(r"static_cast<Qt::(\w+)>\(([^)]*)\)", r"Qt.\1(\2)", line)
+        line = line.replace("QPalette::", "QPalette.ColorGroup.")
+        line = re.sub(r"Q_INT64_C\((\d+)\)", r"\1", line)
+        line = re.sub(r"QChar\((\d+)\)", lambda match: repr(chr(int(match.group(1)))), line)
+        line = line.replace(".setPos(", ".move(")
+        margin = re.search(r"\.setMargin\((.+)\)\s*$", line)
+        if margin is not None:
+            arg = margin.group(1)
+            line = line[: margin.start()] + ".setContentsMargins(%s, %s, %s, %s)" % (
+                (arg,) * 4
+            )
+        match = re.search(r"Q_UINT64_C\((\d+)\)", line)
+        if match is not None:
+            if int(match.group(1)) > 2**63 - 1:
+                continue
+            line = line.replace(match.group(0), match.group(1))
+        lines.append(line)
+    grids = set()
+    for line in lines:
+        found = re.search(r"(\w+)\.setRowStretch\(", line)
+        if found is not None:
+            grids.add(found.group(1))
+    kept = []
+    for line in lines:
+        found = re.search(r"(\w+)\.setStretch\(", line)
+        if found is not None and found.group(1) in grids:
+            continue
+        kept.append(line)
+    return "\n".join(kept) + "\n"
 
 
 _IMPORT_FROM = re.compile(r"^from ([\w.]+) import ([^\n]+)$", re.M)
 
 
 def _install_import_stubs(source: str) -> None:
-    """Give a missing promoted import a QWidget so QUiLoader can be compared.
+    """Give a missing promoted import a QWidget so both modules can run.
 
-    Only used when uic produced no Python. The stub is a QWidget subclass
-    with the imported name. PySide imports are left alone.
+    The stub is a QWidget subclass with the imported name. PySide imports
+    are left alone.
     """
     from PySide6.QtWidgets import QWidget as _QWidget
 
@@ -134,6 +175,15 @@ def _install_import_stubs(source: str) -> None:
 def _load(source: str, name: str):
     module = types.ModuleType(name)
     module.__file__ = name + ".py"
+    # id-based forms call qtTrId. uic 6.8.3 does not import it.
+    module.__dict__["qtTrId"] = lambda text: text
+    module.__dict__["cbcsPixmap"] = lambda path: path
+    module.__dict__["qPixmapFromMimeSource"] = lambda path: path
+    module.__dict__["cbcsSpacing"] = lambda: 6
+    module.__dict__["cbcsMargin"] = lambda: 11
+    module.__dict__["QPointF"] = QPointF
+    module.__dict__["QRectF"] = QRectF
+    module.__dict__["QSizeF"] = QSizeF
     exec(compile(source, name + ".py", "exec"), module.__dict__)
     return module
 
@@ -803,25 +853,45 @@ def _diff(left, right, path="$"):
     return diffs
 
 
+def _resource_locations(document) -> List[str]:
+    found: List[str] = []
+    for node in document.ui.children("resources"):
+        location = node.location if hasattr(node, "location") else ""
+        if location:
+            found.append(location)
+    for node in document.ui.children("opaque"):
+        element = node.element
+        if element.tag != "resources":
+            continue
+        for child in element.children:
+            if child.tag != "include":
+                continue
+            location = dict(child.attrs).get("location", "")
+            if location:
+                found.append(location)
+    return found
+
+
 def _load_resources(document, ui_path: Path, folder: Path) -> None:
     if str(folder) not in sys.path:
         sys.path.insert(0, str(folder))
-    for node in document.ui.children("resources"):
-        location = node.field("location") if hasattr(node, "field") else None
-        if not isinstance(location, str) or not location:
-            continue
-        qrc_path = (ui_path.parent / location).resolve()
-        if not qrc_path.is_file():
-            continue
-        qrc = read_qrc(qrc_path.read_text(encoding="utf-8"))
+    for location in _resource_locations(document):
+        _write_one_resource(ui_path, folder, location)
 
-        def read_file(rel: str, base: Path = qrc_path.parent) -> bytes:
-            return (base / rel).read_bytes()
 
-        tree, _diagnostics = compile_resource_tree(qrc, read_file=read_file)
-        text = render_rc_module(tree, qrc_file_name=qrc_path.name)
-        module = qrc_path.stem + "_rc.py"
-        (folder / module).write_text(text, encoding="utf-8")
+def _write_one_resource(ui_path: Path, folder: Path, location: str) -> None:
+    qrc_path = (ui_path.parent / location).resolve()
+    if not qrc_path.is_file():
+        return
+    qrc = read_qrc(qrc_path.read_text(encoding="utf-8"))
+
+    def read_file(rel: str, base: Path = qrc_path.parent) -> bytes:
+        return (base / rel).read_bytes()
+
+    tree, _diagnostics = compile_resource_tree(qrc, read_file=read_file)
+    text = render_rc_module(tree, qrc_file_name=qrc_path.name)
+    module = qrc_path.stem + "_rc.py"
+    (folder / module).write_text(text, encoding="utf-8")
 
 
 def _drop_resources() -> None:
@@ -1058,6 +1128,13 @@ def _compare_loaded(path, read, source: str, uic_text: Optional[str], uic_stderr
         try:
             theirs = _load(uic_text, "uic_" + path.stem)
             _install_gui_classes(theirs)
+        except ModuleNotFoundError:
+            _install_import_stubs(uic_text)
+            try:
+                theirs = _load(uic_text, "uic_" + path.stem)
+                _install_gui_classes(theirs)
+            except Exception as exc:
+                theirs_exc = exc
         except Exception as exc:
             theirs_exc = exc
     if ours is None and theirs is None:
