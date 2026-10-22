@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import ast
+import os
+import subprocess
+import sys
 import unicodedata
 from pathlib import Path
 
@@ -12,6 +15,8 @@ from app.features.form_builder.engine.codegen.api import (
     is_hand_edited,
     is_stale,
 )
+from app.features.form_builder.engine.codegen.logic_hooks import Contribution
+from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
 from app.features.form_builder.engine.codegen.literals import py_bytes, py_float, py_string
 from app.features.form_builder.engine.codegen.names import header_module
@@ -541,3 +546,91 @@ def test_classify_form_matches_forms_dir_and_adopted(tmp_path: Path) -> None:
     outside = classify_form(str(adopted_path), project_root=str(project))
     assert outside.kind == "external"
     assert outside.generates is False
+
+
+def _emit_bytes(path: Path, seed: str) -> bytes:
+    script = (
+        "import sys\n"
+        "from pathlib import Path\n"
+        "from app.features.form_builder.engine.codegen.api import generate_form_module\n"
+        "from app.features.form_builder.engine.ids import IdAllocator\n"
+        "from app.features.form_builder.engine.project.forms import FormScope\n"
+        "from app.features.form_builder.engine.ui4.reader import read_ui\n"
+        "path = Path(sys.argv[1])\n"
+        "data = path.read_bytes()\n"
+        "document = read_ui(data.decode('utf-8'), allocator=IdAllocator()).document\n"
+        "scope = FormScope(kind='project', ui_path=str(path), project_root=str(path.parent.parent),\n"
+        "    generated_path=str(path.with_name('ui_invoice.py')), window_path=str(path.with_name('invoice_window.py')),\n"
+        "    module_name='forms.ui_invoice')\n"
+        "result = generate_form_module(document, scope=scope, source_bytes=data)\n"
+        "if result.text is None:\n"
+        "    raise SystemExit(result.diagnostics[0].message)\n"
+        "sys.stdout.buffer.write(result.text.encode('utf-8'))\n"
+    )
+    env = os.environ.copy()
+    env["PYTHONHASHSEED"] = seed
+    proc = subprocess.run(
+        [sys.executable, "-c", script, str(path)],
+        capture_output=True,
+        env=env,
+    )
+    assert proc.returncode == 0, proc.stderr.decode("utf-8", "replace")
+    return proc.stdout
+
+
+def test_generated_bytes_match_across_hash_seeds(tmp_path: Path) -> None:
+    body = (
+        '<widget class="QLabel" name="label"/>'
+        '<widget class="QPushButton" name="button"/>'
+        '<widget class="QLineEdit" name="edit"/>'
+        '<widget class="QComboBox" name="combo"/>'
+    )
+    path, _scope, _document = _form(tmp_path, body=body)
+    assert _emit_bytes(path, "0") == _emit_bytes(path, "1")
+
+
+def test_node_ids_are_absent_from_generated_python(tmp_path: Path) -> None:
+    path, scope, _document = _form(tmp_path, body='<widget class="QLabel" name="label"/>')
+    data = path.read_bytes()
+    xml = data.decode("utf-8")
+    first = generate_form_module(
+        read_ui(xml, allocator=IdAllocator(1)).document, scope=scope, source_bytes=data
+    )
+    second = generate_form_module(
+        read_ui(xml, allocator=IdAllocator(5000)).document, scope=scope, source_bytes=data
+    )
+    assert first.text is not None and second.text is not None
+    assert first.text == second.text
+    assert "5000" not in first.text
+
+
+def test_raising_expander_adds_nothing_and_reports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    class Bad:
+        expander_id = "bad_rule"
+        level = 1
+        order = 1
+
+        def contribute(self, doc, ctx):
+            del doc, ctx
+            raise RuntimeError("boom")
+
+    class Good:
+        expander_id = "good_rule"
+        level = 1
+        order = 2
+
+        def contribute(self, doc, ctx):
+            del doc, ctx
+            return Contribution(setup_lines=("self._cbcs_good()",))
+
+    monkeypatch.setattr(
+        "app.features.form_builder.engine.codegen.emit.load_expanders",
+        lambda: (Bad(), Good()),
+    )
+    result = _generate(tmp_path)
+    assert result.text is not None
+    assert "self._cbcs_good()" in result.text
+    assert "boom" not in result.text
+    assert any(
+        item.severity is Severity.WARNING and "bad_rule" in item.message for item in result.diagnostics
+    )

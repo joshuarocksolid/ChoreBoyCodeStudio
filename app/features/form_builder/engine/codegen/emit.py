@@ -1563,7 +1563,15 @@ class _Emitter:
         )
         found = []
         for expander in load_expanders():
-            found.append(expander.contribute(self.doc, ctx))
+            try:
+                found.append(expander.contribute(self.doc, ctx))
+            except Exception:
+                # A broken expander adds no lines. The rest of the form still generates.
+                name = getattr(expander, "expander_id", type(expander).__name__)
+                self.warn(
+                    "FB504",
+                    'Logic expander "%s" failed and added nothing.' % name,
+                )
         return found
 
     def _has_logic(self, contributions: Sequence[Contribution]) -> bool:

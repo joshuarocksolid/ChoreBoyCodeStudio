@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import ast
+import os
 from pathlib import Path
 
 import pytest
@@ -44,6 +45,24 @@ def test_missing_file_is_fb503_and_the_module_still_parses(tmp_path: Path) -> No
     ast.parse(text, feature_version=(3, 9))
     assert "qRegisterResourceData" in text
     assert b"HELLO" in tree.data
+
+
+def test_resource_bytes_do_not_depend_on_mtime(tmp_path: Path) -> None:
+    blob = tmp_path / "dot.bin"
+    blob.write_bytes(b"HELLO")
+    other = tmp_path / "nested.bin"
+    other.write_bytes(b"WORLD")
+    document = read_qrc(_QRC)
+
+    def read_file(rel: str) -> bytes:
+        return (tmp_path / rel).read_bytes()
+
+    first, first_diag = compile_resource_tree(document, read_file=read_file)
+    os.utime(blob, (1_000, 1_000))
+    os.utime(other, (2_000, 2_000))
+    second, second_diag = compile_resource_tree(document, read_file=read_file)
+    assert first_diag == second_diag
+    assert first == second
 
 
 def test_qt_hash_matches_the_rcc_value_for_cbcs() -> None:
