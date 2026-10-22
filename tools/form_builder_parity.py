@@ -753,9 +753,11 @@ def _walk_body(
             _handle_function(stmt, rel_path, scope, inherited_skip, uses, findings)
         elif isinstance(stmt, ast.ClassDef):
             _handle_class(stmt, rel_path, scope, inherited_skip, uses, findings)
-        elif isinstance(stmt, (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith)):
+        elif isinstance(stmt, (ast.If, ast.For, ast.AsyncFor, ast.While)):
             _walk_body(stmt.body, rel_path, scope, inherited_skip, uses, findings)
             _walk_body(stmt.orelse, rel_path, scope, inherited_skip, uses, findings)
+        elif isinstance(stmt, (ast.With, ast.AsyncWith)):
+            _walk_body(stmt.body, rel_path, scope, inherited_skip, uses, findings)
         elif isinstance(stmt, ast.Try):
             _walk_body(stmt.body, rel_path, scope, inherited_skip, uses, findings)
             _walk_body(stmt.orelse, rel_path, scope, inherited_skip, uses, findings)

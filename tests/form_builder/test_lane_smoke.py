@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Prove a form-builder lane can build a widget on the active runtime."""
 from __future__ import annotations
 

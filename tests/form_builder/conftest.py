@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """PySide6-only collection for the form-builder lanes.
 
 ``testing/run_form_builder_checks.py`` runs this directory on FreeCAD 1.1's
@@ -13,6 +14,7 @@ from pathlib import Path
 import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("CBCS_FB_VALIDATE", "1")
 
 
 def pytest_configure(config: pytest.Config) -> None:
