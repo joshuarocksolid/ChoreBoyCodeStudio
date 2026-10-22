@@ -44,6 +44,8 @@ def _is_stale_test_process(cmdline: str) -> bool:
         return True
     if "ChoreBoyCodeStudio/run_runner.py" in cmdline:
         return True
+    if "run_form_preview.py" in cmdline:
+        return True
     if "pytest.main" in cmdline and "ChoreBoyCodeStudio" in cmdline:
         return True
     if " run_tests.py " in cmdline or cmdline.rstrip().endswith("run_tests.py"):

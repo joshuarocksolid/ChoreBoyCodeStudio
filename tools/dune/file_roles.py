@@ -70,6 +70,30 @@ FILE_ROLES = (
         ),
     ),
     FileRole(
+        "form_builder.qtside",
+        ("app/features/form_builder/qtside/**",),
+        (
+            "app.shell",
+            "app.editors",
+            "app.features.form_builder.integration",
+            "app.runner",
+            "app.packaging",
+        ),
+    ),
+    FileRole(
+        "form_builder.child",
+        ("app/features/form_builder/qtside/preview/child/**",),
+        (
+            "app.shell",
+            "app.editors",
+            "app.features.form_builder.integration",
+            "app.features.form_builder.qtside.canvas",
+            "app.features.form_builder.qtside.inspector",
+            "app.features.form_builder.qtside.outline",
+            "app.run",
+        ),
+    ),
+    FileRole(
         "form_builder.mutate_guard",
         ("app/features/form_builder/**",),
         ("app.features.form_builder.engine.ui4.mutate",),

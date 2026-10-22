@@ -6,7 +6,7 @@ import os
 import signal
 import time
 
-_RUNTIME_CHILD_MARKERS = ("run_plugin_host.py", "run_runner.py")
+_RUNTIME_CHILD_MARKERS = ("run_plugin_host.py", "run_runner.py", "run_form_preview.py")
 _PROC_CACHE_TTL_SECONDS = 0.5
 
 _children_map_cache: dict[int, list[int]] | None = None
@@ -96,7 +96,7 @@ def pid_alive(pid: int) -> bool:
 
 
 def leaked_runtime_child_pids(root_pid: int | None = None) -> list[int]:
-    """Return descendant PIDs whose cmdline matches run_plugin_host or run_runner."""
+    """Return descendant PIDs whose cmdline matches a supervised runtime child."""
     if not os.path.isdir("/proc"):
         return []
     resolved_root = os.getpid() if root_pid is None else root_pid
@@ -109,7 +109,7 @@ def leaked_runtime_child_pids(root_pid: int | None = None) -> list[int]:
 
 
 def reap_leaked_runtime_children(*, root_pid: int | None = None) -> None:
-    """SIGTERM/SIGKILL any leaked run_plugin_host/run_runner descendants."""
+    """SIGTERM/SIGKILL any leaked runtime-child descendants."""
     targets = leaked_runtime_child_pids(root_pid)
     if not targets:
         return
