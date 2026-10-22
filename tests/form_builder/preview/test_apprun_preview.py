@@ -8,13 +8,40 @@ import uuid
 
 import pytest
 
+from app.core.constants import APP_RUN_PATH
 from app.features.form_builder.engine.ipc.protocol import Appearance, LoadForm
 from app.features.form_builder.engine.ipc.timing import DirectorConfig
-from app.features.form_builder.qtside.preview.launch import apprun_preview_command, default_apprun, repo_root
+from app.features.form_builder.qtside.preview.launch import (
+    apprun_preview_command,
+    default_apprun,
+    repo_root,
+)
 from app.features.form_builder.qtside.preview.pool import PreviewPool
 from tests.form_builder.preview.test_child_and_pool import _LABEL, _pump, _wait
 
 _SOURCE = _LABEL
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("primary", "alias", "expected"),
+    [
+        (None, None, APP_RUN_PATH),
+        ("/tmp/cbcs-primary", "/tmp/cbcs-alias", "/tmp/cbcs-primary"),
+        (None, "/tmp/cbcs-alias", "/tmp/cbcs-alias"),
+        ("", "/tmp/cbcs-alias", "/tmp/cbcs-alias"),
+    ],
+)
+def test_default_apprun_prefers_cbcs_fb_apprun(monkeypatch, primary, alias, expected):
+    if primary is None:
+        monkeypatch.delenv("CBCS_FB_APPRUN", raising=False)
+    else:
+        monkeypatch.setenv("CBCS_FB_APPRUN", primary)
+    if alias is None:
+        monkeypatch.delenv("CBCS_FB_APPRUN_11", raising=False)
+    else:
+        monkeypatch.setenv("CBCS_FB_APPRUN_11", alias)
+    assert default_apprun() == expected
 
 
 def _load(view_id: str) -> LoadForm:
@@ -40,7 +67,7 @@ def _load(view_id: str) -> LoadForm:
 def test_apprun_cold_handshake_and_warm_load(qapp):
     apprun = default_apprun()
     if not os.path.isfile(apprun):
-        pytest.skip("FreeCAD 1.1 AppRun is not installed at %s" % apprun)
+        pytest.skip("FreeCAD AppRun is not installed at %s" % apprun)
     pool = PreviewPool(
         command=apprun_preview_command(apprun, repo_root()),
         config=DirectorConfig(
@@ -67,8 +94,6 @@ def test_apprun_cold_handshake_and_warm_load(qapp):
             len(pool.spawn_monotonic),
         )
         print(line)
-        with open("/tmp/cbcs-preview-timing.txt", "a", encoding="utf-8") as handle:
-            handle.write(line + "\n")
         assert first.ok, first.detail
         assert second.ok, second.detail
         assert len(pool.spawn_monotonic) == 1

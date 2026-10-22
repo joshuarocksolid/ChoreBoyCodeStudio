@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import List
 
+from app.core.constants import APP_RUN_PATH
 from app.run.runtime_launch import build_runpy_bootstrap_payload
 
 _PREVIEW_SCRIPT = "run_form_preview.py"
@@ -17,10 +18,18 @@ def repo_root() -> str:
 
 
 def default_apprun() -> str:
-    configured = os.environ.get("CBCS_FB_APPRUN_11", "").strip()
-    if configured:
-        return configured
-    return "/opt/freecad-1.1/AppRun"
+    """AppRun for the preview child.
+
+    ``CBCS_FB_APPRUN`` wins. ``CBCS_FB_APPRUN_11`` is the older name for the
+    same override. The default is the ChoreBoy Qt 6 runtime.
+    """
+    primary = os.environ.get("CBCS_FB_APPRUN", "").strip()
+    if primary:
+        return primary
+    alias = os.environ.get("CBCS_FB_APPRUN_11", "").strip()
+    if alias:
+        return alias
+    return APP_RUN_PATH
 
 
 def current_runtime_python() -> str:
