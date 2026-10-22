@@ -157,6 +157,25 @@ class _Writer:
         return "\n".join(self.lines) + "\n"
 
     def node(self, node: Node, indent: int) -> None:
+        if _plain_widget(node):
+            self.line_map[node.id] = len(self.lines) + 1
+            attrs = _attrs(node)
+            props = node.prop_entries
+            if not props:
+                self._empty(indent, "widget", attrs)
+                return
+            self._open(indent, "widget", attrs)
+            inner = indent + 1
+            for entry in props:
+                self._property("property", entry, inner)
+            self._close(indent, "widget")
+            return
+        if _plain_item(node):
+            self.line_map[node.id] = len(self.lines) + 1
+            self._open(indent, "item", _attrs(node))
+            self.node(node.slots[0][1][0], indent + 1)
+            self._close(indent, "item")
+            return
         if isinstance(node, OpaqueNode):
             self.line_map[node.id] = self._next_line()
             self.opaque(node.element, indent)
@@ -605,6 +624,28 @@ class _Writer:
 
     def _next_line(self) -> int:
         return len(self.lines) + 1
+
+
+def _plain_widget(node: Node) -> bool:
+    """A widget whose body is only ``<property>`` elements, or nothing.
+
+    Slots, attributes, unknown attributes, and ``zorder`` need the general
+    writer so preserved siblings stay in order.
+    """
+    if node.node_kind != "widget" or node.slots or node.attr_entries or node.unknown_attrs:
+        return False
+    for name, _value in node.fields:
+        if name == "zorder":
+            return False
+    return True
+
+
+def _plain_item(node: Node) -> bool:
+    """A layout item with one content child and no preserved siblings."""
+    if node.node_kind != "layoutitem" or node.unknown_attrs or len(node.slots) != 1:
+        return False
+    name, kids = node.slots[0]
+    return name == "content" and len(kids) == 1
 
 
 def _tag(node: Node) -> str:
