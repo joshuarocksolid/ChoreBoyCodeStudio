@@ -2,6 +2,7 @@
 """Reader and writer behavior for the ui4 core."""
 from __future__ import annotations
 
+import gc
 import random
 import sys
 import threading
@@ -578,6 +579,30 @@ def test_concurrent_reads_match_sequential() -> None:
         sys.setswitchinterval(previous)
     assert not unexpected, "%s reads raised, first: %r" % (len(unexpected), unexpected[0])
     assert not wrong, "%s reads differ from the sequential read, first: %s" % (len(wrong), wrong[0])
+
+
+def test_foreign_gc_disable_survives_a_concurrent_read() -> None:
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ui version="4.0"><widget class="QWidget" name="Form"/></ui>'
+    )
+    gc.disable()
+    try:
+        errors: List[BaseException] = []
+
+        def work() -> None:
+            try:
+                read_ui(text, allocator=IdAllocator())
+            except BaseException as exc:
+                errors.append(exc)
+
+        thread = threading.Thread(target=work)
+        thread.start()
+        thread.join()
+        assert not errors, errors[0]
+        assert not gc.isenabled()
+    finally:
+        gc.enable()
 
 
 class _NestingAllocator(IdAllocator):
