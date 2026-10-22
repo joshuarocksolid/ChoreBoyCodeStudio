@@ -400,8 +400,12 @@ def _resort_shared_names(doc: UiDocument, moved: NodeId) -> None:
         bucket = doc._by_name.get(name)
         if not bucket:
             continue
-        for node_id in [item for item in bucket if item == moved or doc.is_ancestor(moved, item)]:
+        stale = [item for item in bucket if item == moved or doc.is_ancestor(moved, item)]
+        # Remove every stale id before re-inserting any of them, so each insert is
+        # compared only against ids that are already at their correct positions.
+        for node_id in stale:
             doc._remove_name(name, node_id)
+        for node_id in stale:
             doc._insert_name(name, node_id)
 
 

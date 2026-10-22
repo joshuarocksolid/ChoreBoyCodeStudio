@@ -206,3 +206,33 @@ def _layout(node_id: NodeId) -> NodeSpec:
 
 def _tip(kind: str = "property") -> PropertyEntry:
     return PropertyEntry(kind, "toolTip", StringValue("hint"))
+
+
+def test_moving_a_container_reseats_several_shared_names_under_it() -> None:
+    """Two shared-name ids under one moved node must keep document order.
+
+    Regression for the O-logic gate's M1.2 rescue finding: re-seating one id at
+    a time compared each insert against siblings still at stale positions.
+    """
+    from app.features.form_builder.engine.commands.catalog import MoveNodes
+    from app.features.form_builder.engine.commands.placement import InBoxLayout
+
+    def label(name: str) -> str:
+        return '<item><widget class="QLabel" name="%s"/></item>' % name
+
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ui version="4.0"><class>Form</class><widget class="QWidget" name="Form">'
+        '<layout class="QVBoxLayout" name="v">%s'
+        '<item><widget class="QWidget" name="box"><layout class="QVBoxLayout" name="v2">%s%s</layout></widget></item>'
+        "%s</layout></widget><resources/><connections/></ui>"
+    ) % (label("dup"), label("dup"), label("dup"), label("dup"))
+    log = open_log(text)
+    doc = log.document
+    box = nid(doc, "box")
+    root_layout = doc.root.layout
+    assert root_layout is not None
+    log.execute(MoveNodes((box,), InBoxLayout(root_layout.id, 3)))
+    doc.validate()
+    log.undo()
+    doc.validate()
