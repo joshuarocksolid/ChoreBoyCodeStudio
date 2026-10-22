@@ -1,13 +1,15 @@
 """The uic oracle must notice the five generator mutants the shallow snapshot missed."""
 from __future__ import annotations
 
+import importlib.util
 import os
 import re
+import sys
 from pathlib import Path
 
 import pytest
 
-from tests.form_builder.engine.codegen.uic_compare import compare
+from tests.form_builder.engine.codegen.uic_compare import compare  # pyright: ignore[reportMissingImports]
 
 _CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 _ICONS = _CORPUS / "synthetic" / "qt"
@@ -30,6 +32,24 @@ def _modes_normal(text: str) -> str:
         .replace("QIcon.Mode.Active", "QIcon.Mode.Normal")
         .replace("QIcon.Mode.Selected", "QIcon.Mode.Normal")
     )
+
+
+def _freecad_forms() -> list:
+    """FreeCAD .ui paths from the corpus locator, plus the cloud image's /opt/freecad-1.1."""
+    name = "cbcs_freecad_locator"
+    locator = sys.modules.get(name)
+    if locator is None:
+        spec = importlib.util.spec_from_file_location(name, _CORPUS / "freecad_locator.py")
+        if spec is None or spec.loader is None:
+            raise RuntimeError("freecad_locator.py is missing")
+        locator = importlib.util.module_from_spec(spec)
+        sys.modules[name] = locator
+        getattr(spec.loader, "exec_module")(locator)
+    roots = list(locator.default_search_roots())
+    extra = Path("/opt/freecad-1.1")
+    if extra.is_dir():
+        roots.append(extra)
+    return locator.find_freecad_ui_files(roots)
 
 
 def _require_uic() -> None:
@@ -149,13 +169,18 @@ def test_different_import_failures_are_not_env(qapp) -> None:
 def test_freecad_quantity_spinbox_matches_uic(qapp) -> None:
     del qapp
     _require_uic()
-    path = Path("/opt/freecad-1.1/usr/Mod/Fem/Resources/ui/BodyHeatSource.ui")
-    if not path.is_file():
-        message = "FreeCAD forms are not installed"
+    suffix = "Mod/Fem/Resources/ui/BodyHeatSource.ui"
+    found = [
+        raw
+        for raw in _freecad_forms()
+        if raw.replace(os.sep, "/").endswith("/" + suffix)
+    ]
+    if not found:
+        message = "FreeCAD forms are not installed (%s)" % suffix
         if os.environ.get("CBCS_FB_REQUIRE_ORACLE") == "1":
             pytest.fail(message)
         pytest.skip(message)
-    result = compare(path)
+    result = compare(Path(found[0]))
     assert result[0] == "ok", result
 
 

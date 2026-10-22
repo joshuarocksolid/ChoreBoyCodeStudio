@@ -48,6 +48,15 @@ _CORPUS = Path(__file__).resolve().parents[2] / "corpus"
 # QUiLoader, and a match comes back as ``ok``.
 _ACCEPT = frozenset({"ok", "same-error", "env", "reader"})
 _ARTIFACTS = Path("/opt/cursor/artifacts")
+# Minimum FreeCAD forms that match uic, by the locator root that found them.
+# Measured: /opt/freecad-1.1 in the cloud image; FreeCAD 1.1.3 and the
+# ~/opt/freecad 3.9 prefix on the Mac. Any other root uses _OTHER_ROOT_RATIO.
+_FREECAD_FLOORS = {
+    Path("/opt/freecad-1.1"): 147,
+    Path("/Applications/FreeCAD.app"): 62,
+    Path.home() / "opt" / "freecad": 56,
+}
+_OTHER_ROOT_RATIO = 0.75
 
 
 def _isolated_status(path: Path):
@@ -99,6 +108,27 @@ def _only_code(detail: object, code: str) -> bool:
     return all(isinstance(item, tuple) and item and item[0] == code for item in detail)
 
 
+def _freecad_roots() -> list:
+    roots = list(default_search_roots())
+    extra = Path("/opt/freecad-1.1")
+    if extra.is_dir():
+        roots.append(extra)
+    return roots
+
+
+def _root_of(path: Path, roots: list) -> Path:
+    """The first locator root that holds ``path`` (the locator resolves paths)."""
+    text = str(path)
+    for root in roots:
+        try:
+            resolved = str(root.resolve())
+        except OSError:
+            continue
+        if text == resolved or text.startswith(resolved.rstrip("/") + "/"):
+            return root
+    return path.parent
+
+
 def _rows() -> list:
     rows = []
     for folder in ("qt_examples", "synthetic"):
@@ -107,13 +137,23 @@ def _rows() -> list:
             continue
         for path in sorted(root.rglob("*.ui")):
             rows.append((folder, path))
-    roots = list(default_search_roots())
-    extra = Path("/opt/freecad-1.1")
-    if extra.is_dir():
-        roots.append(extra)
-    for raw in find_freecad_ui_files(roots):
+    for raw in find_freecad_ui_files(_freecad_roots()):
         rows.append(("freecad", Path(raw)))
     return rows
+
+
+def _freecad_floor_failures(by_root: dict) -> list:
+    """Roots whose matched count is under their floor, as report lines."""
+    failures = []
+    for root, counts in sorted(by_root.items(), key=lambda item: str(item[0])):
+        total = sum(counts.values())
+        matched = counts.get("ok", 0)
+        floor = _FREECAD_FLOORS.get(root)
+        if floor is None:
+            floor = _OTHER_ROOT_RATIO * (total - counts.get("fb507", 0))
+        if matched < floor:
+            failures.append("%s: %d ok, floor %s of %d" % (root, matched, floor, total))
+    return failures
 
 
 def _text_delta(path: Path, uic: str) -> int:
@@ -158,8 +198,10 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
         pytest.skip(message)
     rows = _rows()
     assert rows
+    roots = _freecad_roots()
     counts = Counter()
     by_folder = {}
+    by_root = {}
     problems = []
     text_deltas = []
     for folder, path in rows:
@@ -183,6 +225,8 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
             counts["refused"] -= 1
             folder_counts["fb507"] += 1
             folder_counts["refused"] -= 1
+        if folder == "freecad":
+            by_root.setdefault(_root_of(path, roots), Counter())[status] += 1
         if status not in _ACCEPT and status != "fb507":
             problems.append((folder, str(path), status, detail))
         if folder != "freecad" and status in ("ok", "diff"):
@@ -193,6 +237,12 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
         matched = by_folder[folder].get("ok", 0)
         lines.append(
             "%s %d/%d ok %s" % (folder, matched, total, dict(by_folder[folder]))
+        )
+    for root in sorted(by_root, key=str):
+        root_counts = by_root[root]
+        lines.append(
+            "freecad root %s %d/%d ok %s"
+            % (root, root_counts.get("ok", 0), sum(root_counts.values()), dict(root_counts))
         )
     for item in problems:
         lines.append("MISMATCH %s %s %s %s" % item)
@@ -208,7 +258,9 @@ def test_corpus_widget_trees_match_uic(qapp) -> None:
         (_ARTIFACTS / "uic-oracle.txt").write_text(report, encoding="utf-8")
     except OSError:
         pass
+    assert not problems, report
+    if os.environ.get("CBCS_FB_REQUIRE_ORACLE") == "1":
+        assert by_root, "no FreeCAD forms found under %s" % [str(root) for root in roots]
     assert by_folder["qt_examples"]["ok"] >= 54
     assert by_folder["synthetic"]["ok"] >= 147
-    assert by_folder["freecad"]["ok"] >= 147
-    assert not problems, report
+    assert not _freecad_floor_failures(by_root), report
