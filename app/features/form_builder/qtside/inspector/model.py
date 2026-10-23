@@ -1,0 +1,711 @@
+"""What the inspector shows, as frozen values. No Qt. Tests assert on these."""
+
+from __future__ import annotations
+
+import dataclasses
+import os
+from collections import Counter
+from dataclasses import dataclass, field
+from enum import Enum
+from types import MappingProxyType
+from typing import Callable, Dict, FrozenSet, List, Mapping, Optional, Sequence, Tuple, Union
+
+from app.features.form_builder.engine.commands.base import Command
+from app.features.form_builder.engine.commands.catalog import (
+    SetGeometry,
+    SetLayoutCell,
+    SetProperty,
+    SetPropertyMany,
+)
+from app.features.form_builder.engine.events import ChangeSet, PropertyChanged
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.tree import effective_tab_order
+from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.defaults import PropertyInfo, QtClassTable
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import (
+    ConnectionNode,
+    LayoutItemNode,
+    LayoutNode,
+    Node,
+    SpacerNode,
+    WidgetNode,
+)
+from app.features.form_builder.engine.ui4.spec import PropertyEntry
+from app.features.form_builder.engine.ui4.values import (
+    BoolValue,
+    ColorValue,
+    CStringValue,
+    CursorShapeValue,
+    EnumValue,
+    FontValue,
+    PointValue,
+    RectValue,
+    SetValue,
+    SizePolicyValue,
+    SizeValue,
+    StringListValue,
+    StringValue,
+    Value,
+    semantic_equal,
+)
+from app.features.form_builder.qtside.inspector.api import (
+    ALIGNMENT,
+    EditorKey,
+    EnumSpec,
+    GroupId,
+    LayoutProp,
+    LockedRow,
+    Match,
+    MatchWhere,
+    Mixed,
+    OpenRow,
+    Prop,
+    PropKind,
+    Row,
+    RowSpec,
+    RowValue,
+    RowWrite,
+    Unset,
+    ValueSpec,
+    Written,
+    editor_key,
+)
+from app.features.form_builder.qtside.inspector.catalog import Catalog
+from app.features.form_builder.qtside.inspector.words import class_words, default_signal, event_words
+
+SET_BY_LAYOUT = "Set by the layout."
+SELECT_ONE_FOR_POSITION = "Select one widget to edit its position."
+KEPT_AS_IS = "Kept as is"
+NOT_SET = "\u2014"
+
+LAYOUT_OWNED: FrozenSet[str] = frozenset({"geometry"})
+_HEADER_OWNED: FrozenSet[str] = frozenset({"objectName"})
+
+
+@dataclass(frozen=True)
+class LiveProperty:
+    name: str
+    declared_by: str
+    element: str
+    enum: Optional[EnumSpec] = None
+
+
+@dataclass(frozen=True)
+class LiveClass:
+    """Parsed from a QMetaObject. Plain data that stays valid across change sets."""
+
+    chain: Tuple[str, ...]
+    properties: Tuple[LiveProperty, ...]
+    signals: Tuple[str, ...]
+    slots: Tuple[str, ...]
+    _by_name: Mapping[str, LiveProperty] = field(init=False, repr=False, compare=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "_by_name", {prop.name: prop for prop in self.properties})
+
+    def find(self, name: str) -> Optional[LiveProperty]:
+        return self._by_name.get(name)
+
+
+@dataclass(frozen=True)
+class Facts:
+    """What a row source may read. ``live`` lacks an id that has no realized object."""
+
+    document: UiDocument
+    live: Mapping[NodeId, LiveClass]
+    classes: QtClassTable
+    editors: FrozenSet[EditorKey]
+
+
+@dataclass(frozen=True)
+class PropertyWrite:
+    owners: Tuple[NodeId, ...]
+    name: str
+    kind: PropKind = "property"
+
+    def edit(self, value: Value, token: Optional[str]) -> Command:
+        return self._command(value, token)
+
+    def reset(self) -> Command:
+        return self._command(None, None)
+
+    def _command(self, value: Optional[Value], token: Optional[str]) -> Command:
+        if len(self.owners) == 1:
+            return SetProperty(self.owners[0], self.name, value, kind=self.kind, merge_token=token)
+        return SetPropertyMany(self.owners, self.name, value, kind=self.kind, merge_token=token)
+
+
+@dataclass(frozen=True)
+class GeometryWrite:
+    """A free widget's position and size."""
+
+    owner: NodeId
+
+    def edit(self, value: Value, token: Optional[str]) -> Command:
+        if not isinstance(value, RectValue):
+            raise TypeError("geometry takes a RectValue, not %s" % type(value).__name__)
+        return SetGeometry(self.owner, value, merge_token=token)
+
+    def reset(self) -> Command:
+        return SetProperty(self.owner, "geometry", None)
+
+
+@dataclass(frozen=True)
+class CellWrite:
+    """SetLayoutCell clears every field passed as None, so the cell rides along."""
+
+    item: NodeId
+    row: Optional[int]
+    column: Optional[int]
+    rowspan: Optional[int]
+    colspan: Optional[int]
+
+    def edit(self, value: Value, token: Optional[str]) -> Command:
+        if not isinstance(value, SetValue):
+            raise TypeError("cell alignment takes a SetValue, not %s" % type(value).__name__)
+        return self._command(value.text or None)
+
+    def reset(self) -> Command:
+        return self._command(None)
+
+    def _command(self, alignment: Optional[str]) -> Command:
+        return SetLayoutCell(self.item, self.row, self.column, self.rowspan, self.colspan, alignment)
+
+
+@dataclass(frozen=True)
+class Crumb:
+    node: NodeId
+    label: str
+
+
+@dataclass(frozen=True)
+class OneHeader:
+    node: NodeId
+    name: str
+    friendly: str
+    qt_class: str
+    glyph: str
+    crumbs: Tuple[Crumb, ...]
+
+
+@dataclass(frozen=True)
+class ManyHeader:
+    count: int
+    kinds: str
+
+
+HeaderView = Union[OneHeader, ManyHeader]
+
+
+@dataclass(frozen=True)
+class Block:
+    """``title`` is the declaring class in All properties, and empty in curated groups."""
+
+    title: str
+    rows: Tuple[Row, ...]
+
+
+@dataclass(frozen=True)
+class GroupView:
+    group: GroupId
+    blocks: Tuple[Block, ...]
+
+    def rows(self) -> Tuple[Row, ...]:
+        return tuple(row for block in self.blocks for row in block.rows)
+
+    def find(self, key: str) -> Optional[Row]:
+        return next((row for row in self.rows() if row.key == key), None)
+
+
+@dataclass(frozen=True)
+class NodeBody:
+    owners: Tuple[NodeId, ...]
+    groups: Tuple[GroupView, ...]
+
+    def group(self, group: GroupId) -> GroupView:
+        """The group, or an empty one when the selection has no rows in it."""
+        return next((view for view in self.groups if view.group is group), GroupView(group, ()))
+
+    def find(self, key: str) -> Optional[Row]:
+        """The first row with ``key``, in group order."""
+        return next((row for view in self.groups for row in view.rows() if row.key == key), None)
+
+
+@dataclass(frozen=True)
+class FormBody:
+    window: Optional[Row]
+    design_size: str
+    root_layout: str
+    tab_order: Tuple[str, ...]
+    problems: str
+    files: str
+
+
+BodyView = Union[FormBody, NodeBody]
+
+
+@dataclass(frozen=True)
+class ConnectionView:
+    id: NodeId
+    signal: str
+    receiver: str
+    slot: str
+    words: str
+
+
+@dataclass(frozen=True)
+class OneBehavior:
+    sender: NodeId
+    sender_name: str
+    connections: Tuple[ConnectionView, ...]
+    empty: str
+    add_signal: Optional[str]
+
+
+@dataclass(frozen=True)
+class ManyBehavior:
+    count: int
+
+
+BehaviorView = Union[OneBehavior, ManyBehavior]
+
+
+@dataclass(frozen=True)
+class Pages:
+    body: BodyView
+    behavior: BehaviorView
+
+
+_NO_LIVE: Mapping[NodeId, LiveClass] = MappingProxyType({})
+
+_WINDOW_TITLE = RowSpec(
+    "windowTitle", GroupId.CONTENT, "Title", "The text in the window's title bar.", Prop("windowTitle")
+)
+
+
+def project_header(session: FormSession) -> HeaderView:
+    """O(depth). Nothing selected names the root widget with no crumbs."""
+    document = session.document
+    ids = session.selection.state.ids
+    if len(ids) > 1:
+        return ManyHeader(len(ids), _kinds(document, ids))
+    if not ids:
+        node: Node = document.root
+        crumbs: Tuple[Crumb, ...] = ()
+    else:
+        node = document.node(ids[0])
+        crumbs = _crumbs(document, node)
+    name, qt_class = _name_and_class(node)
+    words = class_words(qt_class)
+    return OneHeader(node.id, name, words.friendly, qt_class, words.glyph, crumbs)
+
+
+def project(
+    session: FormSession,
+    catalog: Catalog,
+    *,
+    search: str = "",
+    live: Mapping[NodeId, LiveClass] = _NO_LIVE,
+    tab_order: Optional[Callable[[], Tuple[str, ...]]] = None,
+) -> Pages:
+    """Everything under the header for the current selection.
+
+    An owner missing from ``live`` lists only what the document stores and the
+    class table knows. ``tab_order`` defaults to effective_tab_order. The form
+    section ignores ``search``.
+    """
+    document = session.document
+    owners = session.selection.state.ids
+    facts = Facts(document, live, QtClassTable.shared(), catalog.editor_keys())
+    if not owners:
+        return Pages(_form_body(session, facts, tab_order), _behavior(facts, (document.root.id,)))
+    return Pages(_node_body(facts, catalog, owners, search), _behavior(facts, owners))
+
+
+def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
+    """The row ``spec`` shows for ``owners``, or None when it does not apply to every owner."""
+    source = spec.source
+    if isinstance(source, Prop):
+        return read_property(facts, spec, owners, source.name, source.kind, curated=curated)
+    if isinstance(source, LayoutProp):
+        layouts = [facts.document.layout_of(owner) for owner in owners]
+        ids = tuple(layout.id for layout in layouts if layout is not None)
+        if len(ids) != len(owners):
+            return None
+        return read_property(facts, spec, ids, source.name, "property", curated=curated)
+    return _cell_alignment(facts, spec, owners)
+
+
+def read_property(
+    facts: Facts,
+    spec: RowSpec,
+    owners: Tuple[NodeId, ...],
+    name: str,
+    kind: PropKind,
+    *,
+    curated: bool,
+) -> Optional[Row]:
+    """The one rule for a property row, curated or in All properties.
+
+    None when any owner lacks ``name`` in its live class, its stored entries and
+    the class table. A LAYOUT_OWNED name on a widget inside a layout is None when
+    curated, and locked otherwise. Several free widgets lock it too.
+    """
+    nodes = [facts.document.node(owner) for owner in owners]
+    entries = [_entry(node, name, kind) for node in nodes]
+    lives = [_live_property(facts, owner, name, kind) for owner in owners]
+    infos = [_table_property(facts, node, name, kind) for node in nodes]
+    if any(entry is None and live is None and info is None for entry, live, info in zip(entries, lives, infos)):
+        return None
+    value = _row_value(entries, infos)
+    write: RowWrite = PropertyWrite(owners, name, kind)
+    if kind == "property" and name in LAYOUT_OWNED:
+        if any(facts.document.containing_layout_item(owner) is not None for owner in owners):
+            return None if curated else _locked(spec, name, value, SET_BY_LAYOUT)
+        if len(owners) > 1:
+            return _locked(spec, name, value, SELECT_ONE_FOR_POSITION)
+        write = GeometryWrite(owners[0])
+    element, enum = _element(entries, lives, infos)
+    return _open_or_kept(facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write)
+
+
+def filter_rows(rows: Sequence[Row], search: str) -> Tuple[Row, ...]:
+    """Case-insensitive substring over the label, then the Qt name, then value_text."""
+    needle = search.strip().lower()
+    if not needle:
+        return tuple(rows)
+    kept: List[Row] = []
+    for row in rows:
+        match = _match(row, needle)
+        if match is not None:
+            kept.append(dataclasses.replace(row, match=match))
+    return tuple(kept)
+
+
+def value_text(value: RowValue) -> str:
+    """The text search matches and a locked row shows. Empty for Mixed and an Unset without a default."""
+    if isinstance(value, Written):
+        return describe_value(value.value)
+    if isinstance(value, Unset) and value.default is not None:
+        return describe_value(value.default)
+    return ""
+
+
+def describe_value(value: Value) -> str:
+    if isinstance(value, (StringValue, CStringValue)):
+        return value.text
+    if isinstance(value, StringListValue):
+        return ", ".join(value.items)
+    if isinstance(value, BoolValue):
+        return "True" if value.value else "False"
+    if isinstance(value, EnumValue):
+        return value.key()[1]
+    if isinstance(value, SetValue):
+        return ", ".join(name for _scope, name in value.keys())
+    if isinstance(value, SizeValue):
+        return "%d \u00d7 %d" % (value.width, value.height)
+    if isinstance(value, RectValue):
+        return "%d, %d, %d \u00d7 %d" % (value.x, value.y, value.width, value.height)
+    if isinstance(value, PointValue):
+        return "%d, %d" % (value.x, value.y)
+    if isinstance(value, ColorValue):
+        return "#%02X%02X%02X" % (value.red, value.green, value.blue)
+    if isinstance(value, FontValue):
+        parts = [value.family or "", "%d pt" % value.pointsize if value.pointsize else ""]
+        return " ".join(part for part in parts if part)
+    if isinstance(value, CursorShapeValue):
+        return value.name
+    if isinstance(value, SizePolicyValue):
+        return "%s, %s" % (value.hsizetype, value.vsizetype)
+    plain = getattr(value, "value", None)
+    if isinstance(plain, (int, float)):
+        return str(plain)
+    return value.ELEMENT
+
+
+class EscAction(Enum):
+    CLEAR_SEARCH = "clear_search"
+    REVERT_FIELD = "revert_field"
+    LEAVE = "leave"
+
+
+def esc_action(search: str, field_invalid: bool) -> EscAction:
+    """Search first, then an invalid field, then leave the inspector."""
+    if search:
+        return EscAction.CLEAR_SEARCH
+    if field_invalid:
+        return EscAction.REVERT_FIELD
+    return EscAction.LEAVE
+
+
+def tab_order_stale(changeset: ChangeSet) -> bool:
+    """False only when every change is a PropertyChanged. Tab order never reads properties."""
+    return not all(isinstance(change, PropertyChanged) for change in changeset.changes)
+
+
+def files_line(scope: FormScope) -> str:
+    """The files caption. A project form reads "Saves invoice.ui and ui_invoice.py in forms/."."""
+    ui_name = os.path.basename(scope.ui_path)
+    if not scope.generates or scope.generated_path is None:
+        return "Saves %s." % ui_name
+    folder = os.path.dirname(scope.ui_path)
+    if scope.project_root:
+        folder = os.path.relpath(folder, scope.project_root).replace(os.sep, "/")
+    where = "the project folder" if folder == "." else folder + "/"
+    return "Saves %s and %s in %s." % (ui_name, os.path.basename(scope.generated_path), where)
+
+
+def problems_line(count: int) -> str:
+    if count == 0:
+        return "No problems."
+    return "1 problem." if count == 1 else "%d problems." % count
+
+
+def _node_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...], search: str) -> NodeBody:
+    curated: Dict[GroupId, List[Row]] = {}
+    for spec in catalog.rows():
+        if spec.classes and not all(_admits(facts, owner, spec.classes) for owner in owners):
+            continue
+        row = bind(facts, spec, owners)
+        if row is not None:
+            curated.setdefault(spec.group, []).append(row)
+    groups: List[GroupView] = []
+    for group in GroupId:
+        if group is GroupId.ALL:
+            blocks = _all_blocks(facts, owners)
+        else:
+            blocks = (Block("", tuple(curated.get(group, ()))),)
+        kept = tuple(Block(block.title, filter_rows(block.rows, search)) for block in blocks)
+        kept = tuple(block for block in kept if block.rows)
+        if kept:
+            groups.append(GroupView(group, kept))
+    return NodeBody(owners, tuple(groups))
+
+
+def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...]) -> Tuple[Block, ...]:
+    """Live properties every owner shares, by declaring class, then entries only the file has."""
+    by_class: Dict[str, List[Row]] = {}
+    listed = set()
+    lives = [facts.live.get(owner) for owner in owners]
+    first = lives[0]
+    if first is not None and all(live is not None for live in lives):
+        for prop in first.properties:
+            if prop.name in _HEADER_OWNED or any(live is None or live.find(prop.name) is None for live in lives):
+                continue
+            row = read_property(facts, _all_spec(prop.name, "property"), owners, prop.name, "property", curated=False)
+            if row is not None:
+                by_class.setdefault(prop.declared_by, []).append(row)
+                listed.add(("property", prop.name))
+    stored: List[Row] = []
+    lead = facts.document.node(owners[0])
+    for entry in lead.properties() + lead.attributes():
+        kind: PropKind = "attribute" if entry.kind == "attribute" else "property"
+        if (kind, entry.name) in listed or entry.name in _HEADER_OWNED:
+            continue
+        row = read_property(facts, _all_spec(entry.name, kind), owners, entry.name, kind, curated=False)
+        if row is not None:
+            stored.append(row)
+    blocks = [Block(title, tuple(rows)) for title, rows in by_class.items()]
+    if stored:
+        blocks.append(Block("In the file", tuple(stored)))
+    return tuple(blocks)
+
+
+def _all_spec(name: str, kind: PropKind) -> RowSpec:
+    key = name if kind == "property" else "attribute." + name
+    return RowSpec(key, GroupId.ALL, name, "", Prop(name, kind))
+
+
+def _cell_alignment(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...]) -> Optional[Row]:
+    if len(owners) != 1:
+        return None
+    item_id = facts.document.containing_layout_item(owners[0])
+    if item_id is None:
+        return None
+    item = facts.document.node(item_id)
+    if not isinstance(item, LayoutItemNode):
+        return None
+    value: RowValue = Written(SetValue(item.alignment)) if item.alignment else Unset()
+    write = CellWrite(item_id, item.row, item.column, item.rowspan, item.colspan)
+    return _open_or_kept(facts, spec, "alignment", value, ValueSpec(SetValue.ELEMENT), ALIGNMENT, write)
+
+
+def _open_or_kept(
+    facts: Facts,
+    spec: RowSpec,
+    qt_name: str,
+    value: RowValue,
+    value_spec: ValueSpec,
+    key: EditorKey,
+    write: RowWrite,
+) -> Row:
+    if key not in facts.editors:
+        return _locked(spec, qt_name, value, KEPT_AS_IS)
+    return OpenRow(spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write)
+
+
+def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str) -> LockedRow:
+    return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason)
+
+
+def _entry(node: Node, name: str, kind: PropKind) -> Optional[PropertyEntry]:
+    return node.prop(name) if kind == "property" else node.attr(name)
+
+
+def _live_property(facts: Facts, owner: NodeId, name: str, kind: PropKind) -> Optional[LiveProperty]:
+    live = facts.live.get(owner)
+    if live is None or kind != "property":
+        return None
+    return live.find(name)
+
+
+def _table_property(facts: Facts, node: Node, name: str, kind: PropKind) -> Optional[PropertyInfo]:
+    if kind != "property" or not isinstance(node, (WidgetNode, LayoutNode)):
+        return None
+    return facts.classes.property_info(node.class_name, name)
+
+
+def _row_value(entries: Sequence[Optional[PropertyEntry]], infos: Sequence[Optional[PropertyInfo]]) -> RowValue:
+    present = [entry.value for entry in entries if entry is not None]
+    if not present:
+        return Unset(_default(infos))
+    if len(present) == len(entries) and all(semantic_equal(present[0], other) for other in present[1:]):
+        return Written(present[0])
+    return Mixed()
+
+
+def _default(infos: Sequence[Optional[PropertyInfo]]) -> Optional[Value]:
+    if not infos or any(info is None or info.volatile for info in infos):
+        return None
+    defaults = [info.default for info in infos if info is not None]
+    first = defaults[0]
+    return first if all(semantic_equal(first, other) for other in defaults[1:]) else None
+
+
+def _element(
+    entries: Sequence[Optional[PropertyEntry]],
+    lives: Sequence[Optional[LiveProperty]],
+    infos: Sequence[Optional[PropertyInfo]],
+) -> Tuple[str, Optional[EnumSpec]]:
+    """The stored element wins, so a cstring entry stays a cstring. Enum choices come from the live class."""
+    live = next((item for item in lives if item is not None), None)
+    stored = next((entry.value.ELEMENT for entry in entries if entry is not None), None)
+    if stored is not None:
+        return stored, live.enum if live is not None and live.element == stored else None
+    if live is not None:
+        return live.element, live.enum
+    info = next((item for item in infos if item is not None), None)
+    return (info.kind if info is not None else ""), None
+
+
+def _match(row: Row, needle: str) -> Optional[Match]:
+    candidates: Tuple[Tuple[MatchWhere, str], ...] = (
+        ("label", row.label),
+        ("qt_name", row.qt_name),
+        ("value", value_text(row.value)),
+    )
+    for where, text in candidates:
+        start = text.lower().find(needle)
+        if start >= 0:
+            return Match(where, start, start + len(needle))
+    return None
+
+
+def _admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
+    chain = _chain(facts, owner)
+    return any(name in chain for name in classes)
+
+
+def _chain(facts: Facts, owner: NodeId) -> Tuple[str, ...]:
+    live = facts.live.get(owner)
+    if live is not None:
+        return live.chain
+    _name, qt_class = _name_and_class(facts.document.node(owner))
+    return tuple(info.name for info in facts.classes.chain(qt_class)) or (qt_class,)
+
+
+def _name_and_class(node: Node) -> Tuple[str, str]:
+    if isinstance(node, (WidgetNode, LayoutNode)):
+        return node.object_name, node.class_name
+    if isinstance(node, SpacerNode):
+        return node.name, "Spacer"
+    return node.kind, node.kind
+
+
+def _crumbs(document: UiDocument, node: Node) -> Tuple[Crumb, ...]:
+    """Widget and layout ancestors, root first, then the node itself."""
+    found: List[Crumb] = []
+    for ancestor_id in reversed(document.ancestors(node.id)):
+        ancestor = document.node(ancestor_id)
+        if isinstance(ancestor, (WidgetNode, LayoutNode)):
+            found.append(Crumb(ancestor_id, _crumb_label(ancestor)))
+    found.append(Crumb(node.id, _crumb_label(node)))
+    return tuple(found)
+
+
+def _crumb_label(node: Node) -> str:
+    name, qt_class = _name_and_class(node)
+    if isinstance(node, LayoutNode):
+        return class_words(qt_class).friendly.lower()
+    return name or class_words(qt_class).friendly
+
+
+def _kinds(document: UiDocument, ids: Sequence[NodeId]) -> str:
+    """Counts by class in first-seen order, as in "2 line edits, 1 combo box"."""
+    counts = Counter(_name_and_class(document.node(node_id))[1] for node_id in ids)
+    parts = []
+    for qt_class, count in counts.items():
+        words = class_words(qt_class)
+        parts.append("%d %s" % (count, words.plural if count > 1 else words.friendly.lower()))
+    return ", ".join(parts)
+
+
+def _form_body(
+    session: FormSession,
+    facts: Facts,
+    tab_order: Optional[Callable[[], Tuple[str, ...]]],
+) -> FormBody:
+    document = session.document
+    root = document.root
+    geometry = root.value("geometry")
+    layout = root.layout
+    return FormBody(
+        window=bind(facts, _WINDOW_TITLE, (root.id,)),
+        design_size=(
+            "%d \u00d7 %d" % (geometry.width, geometry.height) if isinstance(geometry, RectValue) else NOT_SET
+        ),
+        root_layout=class_words(layout.class_name).friendly if layout is not None else "No layout",
+        tab_order=tab_order() if tab_order is not None else effective_tab_order(document),
+        problems=problems_line(len(session.diagnostics.all())),
+        files=files_line(session.scope),
+    )
+
+
+def _behavior(facts: Facts, owners: Tuple[NodeId, ...]) -> BehaviorView:
+    if len(owners) != 1:
+        return ManyBehavior(len(owners))
+    node = facts.document.node(owners[0])
+    name, qt_class = _name_and_class(node)
+    connections = tuple(
+        _connection_view(connection)
+        for connection in facts.document.connections()
+        if isinstance(connection, ConnectionNode) and name and connection.sender == name
+    )
+    signal = default_signal(_chain(facts, node.id), facts.classes)
+    noun = class_words(qt_class).noun
+    if signal is None:
+        empty = "Nothing happens yet with this %s." % noun
+    else:
+        empty = "Nothing happens yet when %s." % event_words(signal).clause.format(noun=noun)
+    return OneBehavior(node.id, name, connections, empty, signal)
+
+
+def _connection_view(connection: ConnectionNode) -> ConnectionView:
+    words = "When %s \u2192 %s \u00b7 %s" % (
+        event_words(connection.signal).short,
+        connection.receiver,
+        connection.slot,
+    )
+    return ConnectionView(connection.id, connection.signal, connection.receiver, connection.slot, words)
