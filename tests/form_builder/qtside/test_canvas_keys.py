@@ -7,7 +7,7 @@ from typing import Iterator, Tuple
 
 import pytest
 
-from app.qt.QtCore import QPoint, Qt
+from app.qt.QtCore import QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.engine.ids import NodeId

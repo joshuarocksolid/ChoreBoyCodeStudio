@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QPushButton, QWidget
 from app.features.form_builder.engine.ui4.document import UiDocument

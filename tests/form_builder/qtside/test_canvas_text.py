@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 import pytest
 
-from app.qt.QtCore import QPoint, Qt
+from app.qt.QtCore import QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
 from app.features.form_builder.engine.session import FormSession

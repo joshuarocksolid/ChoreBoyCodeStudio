@@ -6,8 +6,8 @@ from typing import List, Tuple
 
 import pytest
 
-from app.qt.QtCore import QRectF, Qt
-from app.qt.QtGui import QImage, QPainter
+from app.qt.QtCore import QRectF, Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QImage, QPainter  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.integration.canvas import FormCanvas

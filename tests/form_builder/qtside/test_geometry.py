@@ -5,7 +5,7 @@ from typing import Iterator, List, Optional, Tuple
 
 import pytest
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.engine.commands.catalog import SetProperty
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX

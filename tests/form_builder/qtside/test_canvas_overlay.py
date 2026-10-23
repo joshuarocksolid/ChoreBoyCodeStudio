@@ -7,8 +7,8 @@ from typing import List, Tuple
 
 import pytest
 
-from app.qt.QtCore import QEvent, QPoint, Qt
-from app.qt.QtGui import QMouseEvent
+from app.qt.QtCore import QEvent, QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QMouseEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.engine.ids import NodeId
