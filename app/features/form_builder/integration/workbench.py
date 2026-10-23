@@ -31,6 +31,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.layout import (
     INSPECTOR_MAX,
     INSPECTOR_MIN,
@@ -703,9 +704,6 @@ class FormWorkbench(QWidget):
             )
         )
         self.canvas.apply_theme(tokens)
-        # new_form imports the tab provider, which imports this module.
-        from app.features.form_builder.integration.new_form import chrome_for
-
         self.inspector.apply_chrome(chrome_for(tokens))
 
     def open_left(self) -> None:

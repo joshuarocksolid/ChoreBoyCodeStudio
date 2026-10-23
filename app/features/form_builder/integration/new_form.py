@@ -21,10 +21,10 @@ from app.features.form_builder.engine.project.recents import (
     remember_form,
 )
 from app.features.form_builder.engine.project.templates import first_useful_widget
+from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
 from app.features.form_builder.qtside.start.panel import NewFormPanel
-from app.features.form_builder.qtside.theme.chrome import FormChrome, chrome_from_values
 from app.qt.qt_compat import exec_qt
 from app.shell.tab_content_providers import TabMatchContext, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
@@ -42,23 +42,6 @@ def bind_adopt_entry(handler: Callable[[], None]) -> None:
 
 def adopt_entry() -> Optional[Callable[[], None]]:
     return _ADOPT
-
-
-def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
-    return chrome_from_values(
-        window=tokens.window_bg,
-        panel=tokens.panel_bg,
-        text=tokens.text_primary,
-        muted=tokens.text_muted,
-        faint=tokens.gutter_text,
-        border=tokens.border,
-        accent=tokens.accent,
-        row_hover=tokens.tree_hover_bg,
-        input_bg=tokens.input_bg,
-        error=tokens.diag_error_color,
-        focus_width=tokens.focus_border_width,
-        search_match_bg=tokens.search_match_bg,
-    )
 
 
 def new_form_tab_path(project_root: str) -> str:
