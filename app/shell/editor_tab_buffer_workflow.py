@@ -117,6 +117,7 @@ class EditorTabBufferWorkflow:
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
             disk_state=editor_disk_state(tab_state),
+            sentence=self._editor_status_sentence(tab_state.file_path),
         )
         self._outline_workflow.highlight_symbol_at_line(line_number)
 
@@ -135,6 +136,7 @@ class EditorTabBufferWorkflow:
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
             disk_state=editor_disk_state(tab_state),
+            sentence=self._editor_status_sentence(file_path),
         )
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:
@@ -155,6 +157,23 @@ class EditorTabBufferWorkflow:
         self._host.render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_workflow.handle_active_tab_changed()
         self._host.reveal_project_tree_path(tab_path)
+
+    def _editor_status_sentence(self, file_path: str) -> str | None:
+        """A tab surface may replace the line and column with its own sentence."""
+        registry_getter = getattr(self._host, "tab_content_registry", None)
+        if not callable(registry_getter):
+            return None
+        registry = registry_getter()
+        if registry is None:
+            return None
+        surface = registry.surface_for_path(file_path)
+        reader = getattr(surface, "editor_status_sentence", None)
+        if not callable(reader):
+            return None
+        text = reader()
+        if isinstance(text, str) and text:
+            return text
+        return None
 
 
 __all__ = ["EditorTabBufferWorkflow"]

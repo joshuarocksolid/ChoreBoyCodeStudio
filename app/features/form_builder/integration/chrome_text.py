@@ -4,8 +4,9 @@ from __future__ import annotations
 
 from typing import Optional
 
+from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutNode
+from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue
 
 _LAYOUT_PHRASE = {
@@ -54,6 +55,67 @@ def page_size_text(document: UiDocument) -> Optional[str]:
     return "%d × %d" % (value.width, value.height)
 
 
+def widget_class_phrase(class_name: str) -> str:
+    """``QLineEdit`` reads as ``Line edit``."""
+    text = class_name[1:] if class_name.startswith("Q") and len(class_name) > 1 else class_name
+    parts: list[str] = []
+    current = ""
+    for char in text:
+        if char.isupper() and current:
+            parts.append(current)
+            current = char
+        else:
+            current += char
+    if current:
+        parts.append(current)
+    if not parts:
+        return class_name or "Widget"
+    return parts[0] + "".join(" " + part.lower() for part in parts[1:])
+
+
+def selection_sentence(document: UiDocument, current: Optional[NodeId], count: int) -> str:
+    """Status-bar sentence. Object names only. Never a session id."""
+    if count > 1:
+        return "%d widgets selected" % count
+    if current is None:
+        name, phrase = page_chip_text(document, "Form")
+        return "%s · %s" % (name, phrase)
+    node = document.get(current)
+    if not isinstance(node, WidgetNode):
+        name, phrase = page_chip_text(document, "Form")
+        return "%s · %s" % (name, phrase)
+    name = node.object_name or "Widget"
+    kind = widget_class_phrase(node.class_name)
+    place = _place_phrase(document, node)
+    if place:
+        return "%s · %s · %s" % (name, kind, place)
+    return "%s · %s" % (name, kind)
+
+
+def _place_phrase(document: UiDocument, node: WidgetNode) -> str:
+    parent = document.parent(node.id)
+    if not isinstance(parent, LayoutItemNode):
+        return ""
+    layout = document.parent(parent.id)
+    if not isinstance(layout, LayoutNode):
+        return ""
+    index = parent.index_in_parent() + 1
+    row = parent.row
+    column = parent.column
+    if layout.class_name == "QFormLayout":
+        number = row + 1 if isinstance(row, int) else index
+        return "row %d of the form layout" % number
+    if layout.class_name == "QGridLayout":
+        row_number = row + 1 if isinstance(row, int) else index
+        column_number = column + 1 if isinstance(column, int) else 1
+        return "row %d, column %d of the grid" % (row_number, column_number)
+    if layout.class_name == "QHBoxLayout":
+        return "column %d of the horizontal layout" % index
+    if layout.class_name == "QVBoxLayout":
+        return "row %d of the vertical layout" % index
+    return "item %d of the layout" % index
+
+
 def draft_clock(saved_at: str) -> str:
     """``14:02`` from an ISO timestamp. Empty when the text has no clock."""
     text = saved_at.strip()
@@ -86,5 +148,7 @@ __all__ = [
     "page_chip_text",
     "page_size_text",
     "recovered_draft_sentence",
+    "selection_sentence",
     "undo_menu_text",
+    "widget_class_phrase",
 ]

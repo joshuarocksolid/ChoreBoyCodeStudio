@@ -157,6 +157,7 @@ def map_editor_status_view(
     is_dirty: bool,
     *,
     disk_state: str | None = None,
+    sentence: str | None = None,
 ) -> EditorStatusView:
     """Format editor telemetry into deterministic status copy.
 
@@ -164,6 +165,8 @@ def map_editor_status_view(
     version) or ``"missing"`` (the file is gone). A missing file has no saved
     copy, so "missing from disk" replaces modified/saved.
     """
+    if sentence:
+        return EditorStatusView(text=sentence)
     if not file_name:
         return EditorStatusView(text="Editor: no file")
 
@@ -405,6 +408,7 @@ class ShellStatusBarController:
         is_dirty: bool,
         *,
         disk_state: str | None = None,
+        sentence: str | None = None,
     ) -> None:
         """Update current editor telemetry in the status bar."""
         view = map_editor_status_view(
@@ -413,6 +417,7 @@ class ShellStatusBarController:
             column=column,
             is_dirty=is_dirty,
             disk_state=disk_state,
+            sentence=sentence,
         )
         self._editor_label.setText(view.text)
 
