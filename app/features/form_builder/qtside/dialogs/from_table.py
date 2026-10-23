@@ -11,7 +11,6 @@ import sqlite3
 from typing import Callable, Dict, List, Optional
 
 from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QTimer, Qt, Signal
-from app.qt.QtGui import QPalette
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
     QComboBox,
@@ -22,7 +21,6 @@ from app.qt.QtWidgets import (
     QLabel,
     QListWidget,
     QPushButton,
-    QStyleFactory,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -41,7 +39,7 @@ from app.features.form_builder.engine.project.table_form import (
     sqlite_tables,
 )
 from app.features.form_builder.qtside.theme.chrome import FormChrome
-from app.features.form_builder.qtside.theme.runtime import runtime_palette
+from app.features.form_builder.qtside.theme.runtime import host_form
 
 _INCLUDE_REASON = "Include at least one column"
 _CHOOSE_DATABASE = "Choose a SQLite file"
@@ -56,7 +54,6 @@ _SHOWS_AS_WORDS = (
     ("QDateTimeEdit", "Date and time"),
     ("QComboBox", "Choice list"),
 )
-_RUNTIME_LABELS = "QLabel { color: palette(window-text); background-color: palette(window); }"
 
 
 def locale_date_format() -> str:
@@ -155,7 +152,9 @@ class FromTableDialog(QDialog):
     def _build(self) -> None:
         root = QVBoxLayout(self)
         path_row = QHBoxLayout()
-        path_row.addWidget(QLabel("Database", self))
+        database = QLabel("Database", self)
+        database.setObjectName("formBuilder.fromTable.databaseLabel")
+        path_row.addWidget(database)
         self._path = QLabel("Choose a SQLite file", self)
         self._path.setObjectName("formBuilder.fromTable.path")
         path_row.addWidget(self._path, 1)
@@ -184,13 +183,13 @@ class FromTableDialog(QDialog):
         preview_host = QWidget(self)
         preview_host.setObjectName("formBuilder.fromTable.preview")
         preview_host.setLayout(self._preview)
-        _paint_runtime(preview_host, label_sheet=False)
         body.addWidget(preview_host, 2)
 
         footer = QHBoxLayout()
         self._reason = QLabel("", self)
         self._reason.setObjectName("formBuilder.fromTable.reason")
         footer.addWidget(self._reason, 1)
+        footer.addStretch(1)
         self._cancel = QPushButton("Cancel", self)
         self._cancel.setObjectName("formBuilder.fromTable.cancel")
         self._cancel.setFixedHeight(24)
@@ -212,15 +211,18 @@ class FromTableDialog(QDialog):
         chrome = self._chrome
         self.setStyleSheet(
             "QDialog#formBuilder\\.fromTable { background: %s; color: %s; }"
+            "QLabel#formBuilder\\.fromTable\\.databaseLabel { color: %s; }"
             "QLabel#formBuilder\\.fromTable\\.path { color: %s; }"
-            "QLabel#formBuilder\\.fromTable\\.reason { color: %s; }"
+            "QLabel#formBuilder\\.fromTable\\.reason,"
+            "QLabel#formBuilder\\.fromTable\\.previewMessage { color: %s; }"
             "QListWidget#formBuilder\\.fromTable\\.tables,"
             "QTableWidget#formBuilder\\.fromTable\\.mapping"
             " { background: %s; color: %s; border: 1px solid %s; }"
             "QPushButton#formBuilder\\.fromTable\\.create"
-            " { background: %s; color: #ffffff; border: 0; min-height: 28px; max-height: 28px; }"
+            " { background: %s; color: %s; border: 0; min-height: 28px; max-height: 28px; }"
             % (
                 chrome.window,
+                chrome.text,
                 chrome.text,
                 chrome.muted,
                 chrome.muted,
@@ -228,6 +230,7 @@ class FromTableDialog(QDialog):
                 chrome.text,
                 chrome.border,
                 chrome.accent,
+                chrome.on_accent,
             )
         )
 
@@ -478,44 +481,22 @@ class FromTableDialog(QDialog):
         if widget is None:
             self._show_preview_message(error or "The preview could not be built.")
             return
-        _paint_runtime(widget, label_sheet=True)
-        self._swap_preview(widget)
+        # A proxy in its own scene: the app style sheet cannot reach it (UX-ISO-001).
+        self._swap_preview(host_form(widget), widget)
 
     def _show_preview_message(self, text: str) -> None:
         label = QLabel(text, self)
         label.setWordWrap(True)
-        _paint_runtime(label, label_sheet=False)
-        label.setStyleSheet("color: palette(window-text); background-color: palette(window);")
-        self._swap_preview(label)
+        label.setObjectName("formBuilder.fromTable.previewMessage")
+        self._swap_preview(label, None)
 
-    def _swap_preview(self, widget: QWidget) -> None:
+    def _swap_preview(self, shown: QWidget, form: Optional[QWidget]) -> None:
         while self._preview.count():
             item = self._preview.takeAt(0)
             old = item.widget()
             if old is not None:
                 old.setParent(None)
                 old.deleteLater()
-        self._preview_widget = widget
-        self._preview.addWidget(widget)
+        self._preview_widget = form
+        self._preview.addWidget(shown)
 
-
-def _paint_runtime(widget: QWidget, *, label_sheet: bool) -> None:
-    """Fusion and Qt's standard palette, so chrome sheets do not restyle the preview.
-
-    Each widget owns the Fusion style it is given. The shared ``runtime_style()``
-    instance stays with the module, because a widget deletes a style it was handed.
-    """
-    palette = runtime_palette()
-    _give_runtime_style(widget, palette)
-    widget.setAutoFillBackground(True)
-    for child in widget.findChildren(QWidget):
-        _give_runtime_style(child, palette)
-    if label_sheet:
-        widget.setStyleSheet(_RUNTIME_LABELS + "\n" + widget.styleSheet())
-
-
-def _give_runtime_style(widget: QWidget, palette: QPalette) -> None:
-    style = QStyleFactory.create("Fusion")
-    if style is not None:
-        widget.setStyle(style)
-    widget.setPalette(palette)

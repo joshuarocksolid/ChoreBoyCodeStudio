@@ -457,38 +457,43 @@ def test_an_integer_primary_key_starts_unchecked(tmp_path: Path, qapp: object) -
 
 
 def test_the_preview_stays_on_the_runtime_palette(tmp_path: Path, qapp: object) -> None:
+    # CONTRACTS 5.4: chrome rules live on the window; the app sheet is tooltip-only.
     app = QApplication.instance()
     assert app is not None
-    previous = app.styleSheet()
-    app.setStyleSheet("QLabel { color: #ffffff; }")
-    dialog = None
+    window = QWidget()
+    window.setStyleSheet(
+        "QLabel { color: #ffffff; background: #1e1e1e; }"
+        " QCheckBox::indicator { background: #000000; }"
+    )
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="customer",
+        chrome=chrome_from_values(
+            window="#1e1e1e",
+            panel="#252526",
+            text="#ffffff",
+            muted="#bbbbbb",
+            faint="#888888",
+            border="#444444",
+            accent="#5b8cff",
+            row_hover="#333333",
+            input_bg="#1e1e1e",
+            error="#ff6666",
+            focus_width=1,
+        ),
+        date_format="M/d/yy",
+        name_reason=lambda: None,
+        parent=window,
+    )
     try:
-        dialog = FromTableDialog(
-            project_root=str(tmp_path),
-            stem="customer",
-            chrome=chrome_from_values(
-                window="#1e1e1e",
-                panel="#252526",
-                text="#ffffff",
-                muted="#bbbbbb",
-                faint="#888888",
-                border="#444444",
-                accent="#5b8cff",
-                row_hover="#333333",
-                input_bg="#1e1e1e",
-                error="#ff6666",
-                focus_width=1,
-            ),
-            date_format="M/d/yy",
-            name_reason=lambda: None,
-        )
         dialog.set_database(str(_database(tmp_path)))
         dialog.resize(960, 560)
         dialog.show()
         app.processEvents()
-        host = dialog.findChild(QWidget, "formBuilder.fromTable.preview")
-        assert host is not None
-        labels = [label for label in host.findChildren(QLabel) if label.text() == "Customer"]
+        form = dialog._preview_widget
+        assert form is not None
+        assert form.graphicsProxyWidget() is not None
+        labels = [label for label in form.findChildren(QLabel) if label.text() == "Customer"]
         assert labels
         image = labels[0].grab().toImage()
         light = 0
@@ -503,9 +508,8 @@ def test_the_preview_stays_on_the_runtime_palette(tmp_path: Path, qapp: object) 
         assert dark > 0
         assert light > dark
     finally:
-        app.setStyleSheet(previous)
-        if dialog is not None:
-            dialog.close()
+        dialog.close()
+        window.deleteLater()
     del qapp
 
 
@@ -594,3 +598,10 @@ def test_the_tree_menu_hides_new_form_without_the_callback(
     show_single_item_tree_context_menu(window, QPoint(0, 0), (str(folder), "forms", True))
     assert "New Form…" not in seen
     window.close()
+
+
+def test_primary_button_text_meets_contrast_on_the_accent() -> None:
+    from app.features.form_builder.qtside.theme.chrome import _contrast, on_accent_for
+
+    for accent in ("#1971C2", "#5B8CFF", "#9CC0FF", "#0B5CAD"):
+        assert _contrast(accent, on_accent_for(accent)) >= 4.5
