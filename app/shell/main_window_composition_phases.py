@@ -456,6 +456,18 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     window._shell_preferences_runtime.configure_keep_preview_open_shortcut()
     menu_registry = build_main_window_menus(window, shortcut_overrides=window._effective_shortcuts)
     window._menu_registry = menu_registry
+
+    def refresh_active_editor_status() -> None:
+        active_tab = window._editor_manager.active_tab()
+        if active_tab is not None:
+            window._editor_tab_workflow.update_editor_status_for_path(active_tab.file_path)
+
+    window._editor_tab_workflow.active_surface_chrome.bind(
+        menu_registry,
+        window.menuBar(),
+        before_menu_id="shell.menu.view",
+        on_sentence_changed=refresh_active_editor_status,
+    )
     if menu_registry is not None:
         window._action_registry = ShellActionRegistry(
             menu_registry=menu_registry,

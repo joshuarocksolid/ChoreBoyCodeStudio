@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.project.save import opening_diagnostics
 from app.features.form_builder.engine.session import FormSession
@@ -12,8 +14,9 @@ from app.features.form_builder.integration.content_source import (
     form_scope,
     plain_read_error,
 )
+from app.features.form_builder.integration.form_commands import form_tab_menu
 from app.features.form_builder.integration.surface import FormSurface
-from app.shell.tab_content_providers import ProviderDeclined, TabMatchContext, TabSurfaceRequest
+from app.shell.tab_content_providers import ProviderDeclined, TabMatchContext, TabMenu, TabSurfaceRequest
 
 
 class FormTabProvider:
@@ -21,6 +24,7 @@ class FormTabProvider:
 
     provider_id = PROVIDER_ID
     priority = 100
+    menu: Optional[TabMenu] = form_tab_menu()
 
     def matches(self, file_path: str, context: TabMatchContext) -> bool:
         if context.forced_text:

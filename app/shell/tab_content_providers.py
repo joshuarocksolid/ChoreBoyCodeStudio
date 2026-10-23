@@ -7,7 +7,7 @@ The shell does not import a feature package.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Dict, List, Literal, Mapping, Optional, Protocol, Sequence, Tuple
 
 from app.editors.tab_content_source import TabContentSource
@@ -57,6 +57,52 @@ class TabSurfaceRequest:
     show_problems: Callable[[], None]
 
 
+@dataclass(frozen=True)
+class CommandState:
+    """``checked`` None: not checkable. ``label`` None keeps the shell's label."""
+
+    enabled: bool
+    checked: Optional[bool] = None
+    label: Optional[str] = None
+    tooltip: str = ""
+
+
+@dataclass(frozen=True)
+class SurfaceShellState:
+    """What the shell shows while the surface's tab is active.
+
+    ``sentence`` replaces the editor status segment. None keeps Ln/Col.
+    ``commands`` holds every id the surface claims: its own menu items and the
+    shell actions it takes over. An absent id is not claimed.
+    """
+
+    sentence: Optional[str] = None
+    commands: Mapping[str, CommandState] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TabMenuItem:
+    """``key_text`` is display-only. The menu item gets no Qt shortcut.
+    ``path`` names the submenus. ``separator_before`` goes in the parent menu
+    when the item opens a new submenu."""
+
+    command_id: str
+    label: str
+    key_text: str = ""
+    path: Tuple[str, ...] = ()
+    checkable: bool = False
+    separator_before: bool = False
+
+
+@dataclass(frozen=True)
+class TabMenu:
+    """A menu-bar menu shown only while the provider owns the active tab."""
+
+    menu_id: str
+    title: str
+    items: Tuple[TabMenuItem, ...]
+
+
 class TabSurface(Protocol):
     """The tab's content. The shell routes provider-owned tabs through this protocol."""
 
@@ -102,6 +148,17 @@ class TabSurface(Protocol):
         """Focus the surface's main view."""
         ...
 
+    def shell_state(self) -> SurfaceShellState:
+        ...
+
+    def subscribe_shell_state(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """``listener`` runs when ``shell_state()`` may have changed. Returns the unsubscribe."""
+        ...
+
+    def run_command(self, command_id: str) -> bool:
+        """A menu item or a claimed shell action. False when the surface has no such command."""
+        ...
+
     def release(self) -> None:
         """Tab closing: dispose the surface. Idempotent."""
         ...
@@ -111,6 +168,7 @@ class TabContentProvider(Protocol):
     provider_id: str
     #: Higher wins when several providers match; ties are a registration error.
     priority: int
+    menu: Optional[TabMenu]
 
     def matches(self, file_path: str, context: TabMatchContext) -> bool:
         """Pure path test; must not read the file or import Qt-heavy modules."""
@@ -173,6 +231,13 @@ class TabContentProviderRegistry:
         if not matches:
             return None
         return max(matches, key=lambda provider: provider.priority)
+
+    def menus(self) -> Tuple[Tuple[str, TabMenu], ...]:
+        return tuple(
+            (provider_id, provider.menu)
+            for provider_id, provider in self._providers.items()
+            if provider.menu is not None
+        )
 
     def bind(self, file_path: str, surface: TabSurface, provider_id: str) -> None:
         if file_path in self._surfaces:

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.editors.editor_manager import EditorManager
+from app.shell.active_surface_chrome import ActiveSurfaceChrome
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsWorkflow
 from app.shell.editor_tab_buffer_workflow import EditorTabBufferWorkflow
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
@@ -43,6 +44,7 @@ def create_editor_tab_subworkflows(
     editor_sync_workflow: EditorSyncWorkflow,
     tab_workflow: Any,
     refresh_markdown_action_states: Any,
+    active_surface_chrome: ActiveSurfaceChrome,
 ) -> EditorTabSubworkflows:
     preferences_workflow = EditorTabPreferencesWorkflow(
         host=host,
@@ -64,6 +66,7 @@ def create_editor_tab_subworkflows(
         host=host,
         editor_manager=editor_manager,
         refresh_markdown_action_states=refresh_markdown_action_states,
+        active_surface_chrome=active_surface_chrome,
     )
     return EditorTabSubworkflows(
         bindings_workflow=EditorTabBindingsWorkflow(),
@@ -84,6 +87,7 @@ def create_editor_tab_subworkflows(
             outline_workflow=outline_workflow,
             markdown_workflow=markdown_workflow,
             tab_workflow=tab_workflow,
+            active_surface_chrome=active_surface_chrome,
         ),
         lifecycle_workflow=EditorTabLifecycleWorkflow(
             host=host,

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Union
+from typing import Mapping, Union
 
 from app.shell.shortcut_preferences import ShortcutCommand, ShortcutScope, default_shortcut_map
+from app.shell.tab_content_providers import CommandState, TabMenu, TabMenuItem
 
 FORM_CATEGORY = "Form designer"
+FORM_MENU_ID = "shell.menu.form"
 
 
 @dataclass(frozen=True)
@@ -316,9 +318,64 @@ def form_command_set() -> tuple[ShortcutCommand, ...]:
     return tuple(rows)
 
 
+def unavailable_reason(command: FormCommand) -> str:
+    """``Insert widget is not available yet.`` No milestone names."""
+    return "%s is not available yet." % command.label.rstrip("…")
+
+
+def _key_text(key: Key, shell_keys: Mapping[str, str]) -> str:
+    if isinstance(key, OwnKey):
+        return key.default
+    if isinstance(key, SharedKey):
+        return shell_keys.get(key.shell_action_id, "")
+    return ""
+
+
+def form_tab_menu() -> TabMenu:
+    shell_keys = default_shortcut_map()
+    items = tuple(
+        TabMenuItem(
+            command.command_id,
+            command.label,
+            _key_text(command.key, shell_keys),
+            command.placement.path,
+            command.placement.checkable,
+            command.placement.separator_before,
+        )
+        for command in FORM_COMMANDS
+        if isinstance(command.placement, InFormMenu)
+    )
+    return TabMenu(FORM_MENU_ID, "F&orm", items)
+
+
+def unavailable_claims(design: bool) -> dict[str, CommandState]:
+    """Every Form menu row that is not ready, and in Design the shell Edit rows that are not, claimed disabled."""
+    claims: dict[str, CommandState] = {}
+    for command in FORM_COMMANDS:
+        if command.ready:
+            continue
+        placement = command.placement
+        state = CommandState(False, tooltip=unavailable_reason(command))
+        if isinstance(placement, InFormMenu):
+            claims[command.command_id] = state
+        elif isinstance(placement, InShellMenu) and design:
+            claims[placement.shell_action_id] = state
+    return claims
+
+
+def bound_keys() -> tuple[tuple[str, str], ...]:
+    """``(command id, key)`` for the ready rows that own a key. Only these get a ``QShortcut``."""
+    return tuple(
+        (command.command_id, command.key.default)
+        for command in FORM_COMMANDS
+        if command.ready and isinstance(command.key, OwnKey)
+    )
+
+
 __all__ = [
     "FORM_CATEGORY",
     "FORM_COMMANDS",
+    "FORM_MENU_ID",
     "FormCommand",
     "InFormMenu",
     "InShellMenu",
@@ -327,5 +384,9 @@ __all__ = [
     "OwnKey",
     "Placement",
     "SharedKey",
+    "bound_keys",
     "form_command_set",
+    "form_tab_menu",
+    "unavailable_claims",
+    "unavailable_reason",
 ]

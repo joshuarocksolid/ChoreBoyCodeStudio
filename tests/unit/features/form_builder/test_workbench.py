@@ -223,57 +223,6 @@ def test_two_tabs_do_not_share_history(qapp, tmp_path: Path) -> None:  # type: i
     second.release()
 
 
-def test_edit_undo_uses_the_command_name(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    from app.qt.QtWidgets import QAction
-
-    class _Registry:
-        def __init__(self, parent: QWidget) -> None:
-            self.undo = QAction("Undo", parent)
-            self.redo = QAction("Redo", parent)
-
-        def action(self, action_id: str) -> QAction | None:
-            if action_id.endswith(".undo"):
-                return self.undo
-            if action_id.endswith(".redo"):
-                return self.redo
-            return None
-
-    class _Window(QWidget):
-        def __init__(self) -> None:
-            super().__init__()
-            self._registry = _Registry(self)
-
-        def menu_registry(self) -> _Registry:
-            return self._registry
-
-    canonical = write_ui(open_document_log(_FORM).document).text
-    window = _Window()
-    surface = _open(window, canonical, tmp_path / "invoice.ui")
-    window.resize(1280, 800)
-    window.show()
-    qapp.processEvents()
-    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
-    assert toggle is not None
-    toggle.setChecked(True)
-    editor = surface.source_editor()
-    assert editor is not None
-    editor.setPlainText(editor.toPlainText().replace(">OK<", ">Save<"))
-    toggle.setChecked(False)
-    qapp.processEvents()
-    tree = surface.findChild(QTreeWidget, "formBuilder.structure")
-    assert tree is not None
-    qapp.setActiveWindow(window)
-    tree.setFocus()
-    qapp.processEvents()
-
-    assert window._registry.undo.text() == "Undo XML edits"
-    assert window._registry.undo.isEnabled() is True
-    window._registry.undo.trigger()
-    assert ">OK<" in surface.content_source().current_text()
-    surface.release()
-    window.close()
-
-
 def test_save_writes_generated_bytes_and_a_refusal_still_saves(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     del qapp
     forms = tmp_path / "forms"
@@ -536,62 +485,6 @@ def _edit_xml(surface: FormSurface, old: str, new: str) -> None:
     assert editor is not None
     editor.setPlainText(editor.toPlainText().replace(old, new))
     toggle.setChecked(False)
-
-
-def test_shell_undo_follows_the_focused_form(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    from app.qt.QtWidgets import QAction, QHBoxLayout
-
-    class _Registry:
-        def __init__(self, parent: QWidget) -> None:
-            self.undo = QAction("Undo", parent)
-            self.redo = QAction("Redo", parent)
-
-        def action(self, action_id: str) -> QAction | None:
-            if action_id.endswith(".undo"):
-                return self.undo
-            if action_id.endswith(".redo"):
-                return self.redo
-            return None
-
-    class _Window(QWidget):
-        def __init__(self) -> None:
-            super().__init__()
-            self._registry = _Registry(self)
-
-        def menu_registry(self) -> _Registry:
-            return self._registry
-
-    canonical = write_ui(open_document_log(_FORM).document).text
-    window = _Window()
-    layout = QHBoxLayout(window)
-    layout.setContentsMargins(0, 0, 0, 0)
-    first = _open(window, canonical, tmp_path / "one.ui")
-    second = _open(window, canonical, tmp_path / "two.ui")
-    layout.addWidget(first)
-    layout.addWidget(second)
-    window.resize(1600, 800)
-    window.show()
-    qapp.processEvents()
-    _edit_xml(first, ">OK<", ">Aaa<")
-    _edit_xml(second, ">OK<", ">Bbb<")
-    second.hide()
-    qapp.processEvents()
-    second.show()
-    qapp.processEvents()
-    tree = first.findChild(QTreeWidget, "formBuilder.structure")
-    assert tree is not None
-    qapp.setActiveWindow(window)
-    tree.setFocus()
-    qapp.processEvents()
-
-    assert window._registry.undo.isEnabled() is True
-    window._registry.undo.trigger()
-    assert ">OK<" in first.content_source().current_text()
-    assert ">Aaa<" not in first.content_source().current_text()
-    assert ">Bbb<" in second.content_source().current_text()
-    first.release()
-    second.release()
-    window.close()
 
 
 def test_keep_recovered_draft_survives_a_crash(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

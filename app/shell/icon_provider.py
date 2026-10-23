@@ -81,6 +81,7 @@ __all__ = [
     "save_as_icon",
     "save_icon",
     "search_icon",
+    "select_all_icon",
     "settings_icon",
     "signature_help_icon",
     "source_root_icon",
@@ -446,6 +447,11 @@ def save_icon(color: str) -> QIcon:
 def search_icon(color: str) -> QIcon:
     """Magnifying glass icon for search actions."""
     return render_glyph_icon(SVG_GLYPHS["search_icon"], color)
+
+
+def select_all_icon(color: str) -> QIcon:
+    """Dashed frame around text lines for select-all actions."""
+    return render_glyph_icon(SVG_GLYPHS["select_all_icon"], color)
 
 
 def settings_icon(color: str) -> QIcon:

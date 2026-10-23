@@ -7,6 +7,7 @@ from typing import Any
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
+from app.shell.active_surface_chrome import ActiveSurfaceChrome
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
 from app.shell.status_bar import EDITOR_DISK_STATE_MISSING, EDITOR_DISK_STATE_STALE
 
@@ -34,6 +35,7 @@ class EditorTabBufferWorkflow:
         outline_workflow: Any,
         markdown_workflow: Any,
         tab_workflow: Any,
+        active_surface_chrome: ActiveSurfaceChrome,
     ) -> None:
         self._host = host
         self._editor_manager = editor_manager
@@ -41,6 +43,7 @@ class EditorTabBufferWorkflow:
         self._outline_workflow = outline_workflow
         self._markdown_workflow = markdown_workflow
         self._tab_workflow = tab_workflow
+        self._active_surface_chrome = active_surface_chrome
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -110,6 +113,8 @@ class EditorTabBufferWorkflow:
         if self._editor_manager.active_tab() is not tab_state:
             # A background tab's cursor moved (session restore, an edit in another view).
             return
+        if self._surface_sentence(file_path) is not None:
+            return
         line_number = editor_widget.textCursor().blockNumber() + 1
         status_controller.set_editor_status(
             file_name=tab_state.display_name,
@@ -125,6 +130,16 @@ class EditorTabBufferWorkflow:
         if status_controller is None:
             return
         tab_state = self._editor_manager.get_tab(file_path)
+        sentence = self._surface_sentence(file_path)
+        if tab_state is not None and sentence is not None:
+            status_controller.set_editor_status(
+                file_name=tab_state.display_name,
+                line=None,
+                column=None,
+                is_dirty=tab_state.is_dirty,
+                sentence=sentence,
+            )
+            return
         editor_widget = self._host.editor_widgets_by_path().get(file_path)
         if tab_state is None or editor_widget is None:
             status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
@@ -137,15 +152,22 @@ class EditorTabBufferWorkflow:
             disk_state=editor_disk_state(tab_state),
         )
 
+    def _surface_sentence(self, file_path: str) -> str | None:
+        surface = self._host.tab_content_registry().surface_for_path(file_path)
+        if surface is None:
+            return None
+        return surface.shell_state().sentence
+
     def handle_editor_tab_changed(self, tab_index: int) -> None:
         editor_tabs_widget = self._host.editor_tabs_widget()
-        if tab_index < 0 or editor_tabs_widget is None:
+        tab_path = None
+        if tab_index >= 0 and editor_tabs_widget is not None:
+            tab_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index) or None
+        if tab_path is not None:
+            self._editor_manager.set_active_file(tab_path)
+        self._active_surface_chrome.follow(tab_path)
+        if tab_path is None:
             return
-
-        tab_path = self._editor_tabs_coordinator.file_path_for_tab_index(tab_index)
-        if not tab_path:
-            return
-        self._editor_manager.set_active_file(tab_path)
         self._host.refresh_save_action_states()
         self._host.refresh_run_action_states()
         self._markdown_workflow.refresh_markdown_action_states()

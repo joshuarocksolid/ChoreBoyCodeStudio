@@ -26,6 +26,7 @@ def build_main_window_menus(
             window._activity_bar.set_active_view("test_explorer")
         window._test_runner_workflow.refresh_discovery()
 
+    route = window._editor_tab_workflow.active_surface_chrome.route
     callbacks = MenuCallbacks(
         on_open_project=window._file_project_commands_workflow.handle_open_project_action,
         on_open_file=window._file_project_commands_workflow.handle_open_file_action,
@@ -80,7 +81,10 @@ def build_main_window_menus(
         on_markdown_show_source=window._editor_tab_workflow.handle_markdown_show_source_action,
         on_markdown_show_preview=window._editor_tab_workflow.handle_markdown_show_preview_action,
         on_markdown_show_split=window._editor_tab_workflow.handle_markdown_show_split_action,
-        on_markdown_toggle_preview=window._editor_tab_workflow.handle_markdown_toggle_preview_action,
+        on_markdown_toggle_preview=route(
+            "shell.action.view.markdownTogglePreview",
+            window._editor_tab_workflow.handle_markdown_toggle_preview_action,
+        ),
         on_format_current_file=window._python_style_workflow.handle_format_current_file_action,
         on_organize_imports_current_file=window._python_style_workflow.handle_organize_imports_action,
         on_lint_current_file=window._python_style_workflow.handle_lint_current_file_action,
@@ -101,6 +105,13 @@ def build_main_window_menus(
         on_quick_open=window._file_project_commands_workflow.handle_quick_open_action,
         on_open_recovery_center=window._local_history_workflow.open_recovery_center,
         on_open_global_history=window._local_history_workflow.open_global_history,
+        on_undo=route("shell.action.edit.undo"),
+        on_redo=route("shell.action.edit.redo"),
+        on_cut=route("shell.action.edit.cut"),
+        on_copy=route("shell.action.edit.copy"),
+        on_paste=route("shell.action.edit.paste"),
+        on_delete=route("shell.action.edit.delete"),
+        on_select_all=route("shell.action.edit.selectAll"),
         on_find=window._find_replace_workflow.open_find,
         on_replace=window._find_replace_workflow.open_replace,
         on_go_to_line=window._file_project_commands_workflow.handle_go_to_line_action,

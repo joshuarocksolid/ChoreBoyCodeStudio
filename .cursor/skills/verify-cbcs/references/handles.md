@@ -163,7 +163,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 
 ## Menus
 
-`#shell.menuBar` · `#shell.menu.file` · `#shell.menu.edit` · `#shell.menu.run` · `#shell.menu.view` · `#shell.menu.view.theme` · `#shell.menu.tools` · `#shell.menu.help` · `#shell.menu.file.openRecent`
+`#shell.menuBar` · `#shell.menu.file` · `#shell.menu.edit` · `#shell.menu.run` · `#shell.menu.view` · `#shell.menu.view.theme` · `#shell.menu.tools` · `#shell.menu.help` · `#shell.menu.file.openRecent` · `shell.menu.form` (between Run and View while a form tab is active, PySide6 only)
 
 ## File actions
 
@@ -171,7 +171,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 
 ## Edit actions
 
-`shell.action.edit.undo` · `redo` · `find` · `replace` · `goToLine` · `findInFiles` · `findReferences` · `renameSymbol` · `toggleComment` · `indent` · `outdent` · `pasteReindentedFlatPython` · `goToDefinition` · `signatureHelp` · `hoverInfo`
+`shell.action.edit.undo` · `redo` · `cut` · `copy` · `paste` · `delete` · `selectAll` · `find` · `replace` · `goToLine` · `findInFiles` · `findReferences` · `renameSymbol` · `toggleComment` · `indent` · `outdent` · `pasteReindentedFlatPython` · `goToDefinition` · `signatureHelp` · `hoverInfo`
 
 ## Run actions
 
@@ -474,3 +474,4 @@ Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs
 | `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
 | `formBuilder.xmlBannerText` | View XML notice text |
 | `formBuilder.discardXml` | Discard XML edits |
+| `form.viewXml`, `form.createWindowClass`, … | Form menu rows. The object name is the command id in `FORM_COMMANDS`. A row that is not ready is disabled with the tooltip "<Label> is not available yet." |

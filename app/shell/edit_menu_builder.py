@@ -10,6 +10,7 @@ def build_edit_menu(ctx: MenuBuildContext) -> object:
     callbacks = ctx.callbacks
     edit_menu = ctx.menu_bar.addMenu("&Edit")
     edit_menu.setObjectName("shell.menu.edit")
+    edit_menu.setToolTipsVisible(True)
     ctx.menus["shell.menu.edit"] = edit_menu
 
     register_menu_action(
@@ -19,6 +20,7 @@ def build_edit_menu(ctx: MenuBuildContext) -> object:
         action_id="shell.action.edit.undo",
         label="Undo",
         shortcut="Ctrl+Z",
+        callback=callbacks.on_undo,
         shortcut_overrides=ctx.shortcut_overrides,
     )
     register_menu_action(
@@ -28,8 +30,27 @@ def build_edit_menu(ctx: MenuBuildContext) -> object:
         action_id="shell.action.edit.redo",
         label="Redo",
         shortcut="Ctrl+Shift+Z",
+        callback=callbacks.on_redo,
         shortcut_overrides=ctx.shortcut_overrides,
     )
+    edit_menu.addSeparator()
+
+    # Shown only while a tab surface claims them. No shortcut, so native editors keep Ctrl+X/C/V/A and Delete.
+    for action_id, label, callback in [
+        ("shell.action.edit.cut", "Cut", callbacks.on_cut),
+        ("shell.action.edit.copy", "Copy", callbacks.on_copy),
+        ("shell.action.edit.paste", "Paste", callbacks.on_paste),
+        ("shell.action.edit.delete", "Delete", callbacks.on_delete),
+        ("shell.action.edit.selectAll", "Select All", callbacks.on_select_all),
+    ]:
+        register_menu_action(
+            qt_widgets=ctx.qt_widgets,
+            menu=edit_menu,
+            action_lookup=ctx.actions,
+            action_id=action_id,
+            label=label,
+            callback=callback,
+        ).setVisible(False)
     edit_menu.addSeparator()
 
     for action_id, label, shortcut, callback in [

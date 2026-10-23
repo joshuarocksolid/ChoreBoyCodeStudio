@@ -11,8 +11,10 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.editors.editor_tab import EditorTabState  # noqa: E402
+from app.shell.active_surface_chrome import ActiveSurfaceChrome  # noqa: E402
 from app.shell.editor_tab_buffer_workflow import EditorTabBufferWorkflow  # noqa: E402
 from app.shell.editor_tab_factory import EditorTabFactory  # noqa: E402
+from app.shell.tab_content_providers import TabContentProviderRegistry  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -98,6 +100,7 @@ def test_source_change_after_rename_dirties_the_new_path(tmp_path: Path) -> None
         outline_workflow=SimpleNamespace(),
         markdown_workflow=SimpleNamespace(),
         tab_workflow=SimpleNamespace(),
+        active_surface_chrome=ActiveSurfaceChrome(TabContentProviderRegistry()),
     )
 
     workflow.handle_content_source_changed(tab)

@@ -7,6 +7,7 @@ from typing import Any
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import EditorTabState
+from app.shell.active_surface_chrome import ActiveSurfaceChrome
 from app.shell.editor_tab_bindings_workflow import EditorTabBindingsHost
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
 from app.shell.editor_tab_workflow_factory import create_editor_tab_subworkflows
@@ -49,6 +50,7 @@ class EditorTabWorkflow(
         self._editor_manager = editor_manager
         self._editor_tabs_coordinator = editor_tabs_coordinator
         self._debug_control_workflow = debug_control_workflow
+        self.active_surface_chrome = ActiveSurfaceChrome(host.tab_content_registry())
         subworkflows = create_editor_tab_subworkflows(
             host=host,
             editor_manager=editor_manager,
@@ -59,6 +61,7 @@ class EditorTabWorkflow(
             editor_sync_workflow=editor_sync_workflow,
             tab_workflow=self,
             refresh_markdown_action_states=self.refresh_markdown_action_states,
+            active_surface_chrome=self.active_surface_chrome,
         )
         self._bindings_workflow = subworkflows.bindings_workflow
         self._preferences_workflow = subworkflows.preferences_workflow

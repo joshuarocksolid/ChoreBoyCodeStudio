@@ -94,6 +94,11 @@ _ACTION_ICON_BUILDERS: dict[str, MenuIconBuilder] = {
     # Edit
     "shell.action.edit.undo": lambda c: icon_provider.undo_icon(c.primary),
     "shell.action.edit.redo": lambda c: icon_provider.redo_icon(c.primary),
+    "shell.action.edit.cut": lambda c: icon_provider.cut_icon(c.primary),
+    "shell.action.edit.copy": lambda c: icon_provider.copy_icon(c.primary),
+    "shell.action.edit.paste": lambda c: icon_provider.paste_icon(c.primary),
+    "shell.action.edit.delete": lambda c: icon_provider.trash_icon(c.primary),
+    "shell.action.edit.selectAll": lambda c: icon_provider.select_all_icon(c.primary),
     "shell.action.edit.find": lambda c: icon_provider.search_icon(c.primary),
     "shell.action.edit.replace": lambda c: icon_provider.replace_icon(c.primary),
     "shell.action.edit.goToLine": lambda c: icon_provider.go_to_line_icon(c.primary),

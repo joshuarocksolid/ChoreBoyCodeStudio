@@ -12,6 +12,7 @@ from typing import Any
 from app.qt.QtWidgets import QMenu, QTabWidget, QWidget
 
 from app.editors.editor_manager import EditorManager
+from app.shell.active_surface_chrome import ActiveSurfaceChrome
 from app.shell.editor_tab_host_protocols import EditorTabMarkdownHost
 from app.shell.editor_tab_page import EditorTabPage
 
@@ -43,10 +44,12 @@ class EditorTabMarkdownWorkflow:
         host: EditorTabMarkdownHost,
         editor_manager: EditorManager,
         refresh_markdown_action_states: Any,
+        active_surface_chrome: ActiveSurfaceChrome,
     ) -> None:
         self._host = host
         self._editor_manager = editor_manager
         self._refresh_markdown_action_states = refresh_markdown_action_states
+        self._active_surface_chrome = active_surface_chrome
 
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
@@ -88,24 +91,9 @@ class EditorTabMarkdownWorkflow:
     def handle_markdown_toggle_preview_action(self) -> None:
         markdown_pane = self.active_markdown_pane()
         if markdown_pane is None:
-            toggle = self._source_view_toggle()
-            if toggle is not None:
-                toggle()
             return
         markdown_pane.toggle_preview()
         self._refresh_markdown_action_states()
-
-    def _source_view_toggle(self) -> Any | None:
-        active_tab = self._editor_manager.active_tab()
-        if active_tab is None:
-            return None
-        surface = self._host.tab_content_registry().surface_for_path(active_tab.file_path)
-        if surface is None:
-            return None
-        toggle = getattr(surface, "toggle_source_view", None)
-        if not callable(toggle):
-            return None
-        return toggle
 
     def refresh_markdown_action_states(self) -> None:
         menu_registry = self._host.menu_registry()
@@ -124,9 +112,10 @@ class EditorTabMarkdownWorkflow:
                 action.setEnabled(enabled)
                 if enabled and action.isCheckable():
                     action.setChecked(current_mode == mode)
-        toggle_action = menu_registry.action("shell.action.view.markdownTogglePreview")
+        toggle_id = "shell.action.view.markdownTogglePreview"
+        toggle_action = menu_registry.action(toggle_id)
         if toggle_action is not None:
-            toggle_action.setEnabled(enabled or self._source_view_toggle() is not None)
+            toggle_action.setEnabled(enabled or self._active_surface_chrome.claims(toggle_id))
 
     def append_context_menu_actions(
         self,

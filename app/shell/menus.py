@@ -48,6 +48,13 @@ class MenuCallbacks:
     on_quick_open: Callable[[], object] | None = None
     on_open_recovery_center: Callable[[], object] | None = None
     on_open_global_history: Callable[[], object] | None = None
+    on_undo: Callable[[], object] | None = None
+    on_redo: Callable[[], object] | None = None
+    on_cut: Callable[[], object] | None = None
+    on_copy: Callable[[], object] | None = None
+    on_paste: Callable[[], object] | None = None
+    on_delete: Callable[[], object] | None = None
+    on_select_all: Callable[[], object] | None = None
     on_find: Callable[[], object] | None = None
     on_replace: Callable[[], object] | None = None
     on_go_to_line: Callable[[], object] | None = None

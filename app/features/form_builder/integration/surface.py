@@ -5,20 +5,19 @@ One tab owns one ``FormSession``. Closing the tab disposes that session.
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
-from typing import Callable, List, Mapping, Optional, Sequence
+from typing import Callable, Dict, List, Mapping, Optional, Sequence
 
 from app.qt.QtCore import Qt, QTimer
 from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
-    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
     QShortcut,
     QStackedWidget,
-    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -33,11 +32,13 @@ from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+from app.features.form_builder.integration.adopt_flow import adopt_from_tree
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
     problem_property_sentence,
     problem_summary,
     recovered_draft_sentence,
+    selection_sentence,
     undo_menu_text,
 )
 from app.features.form_builder.integration.content_source import (
@@ -45,6 +46,7 @@ from app.features.form_builder.integration.content_source import (
     form_scope,
     plain_read_error,
 )
+from app.features.form_builder.integration.form_commands import bound_keys, unavailable_claims
 from app.features.form_builder.integration.layout import (
     TOOLBAR_HEIGHT,
     LayoutPlan,
@@ -57,12 +59,15 @@ from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
-from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
+from app.shell.tab_content_providers import CommandState, RestoreReason, SurfaceShellState, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
 XML_APPLY_HINT = "Edits here apply to the design when you switch back."
 XML_DISCARD_LABEL = "Discard XML edits"
-VIEW_XML_TOOLTIP = "View XML (Ctrl+Shift+V)"
+
+_SHELL_UNDO = "shell.action.edit.undo"
+_SHELL_REDO = "shell.action.edit.redo"
+_SHELL_TOGGLE_SOURCE = "shell.action.view.markdownTogglePreview"
 
 _RESTORE_REASON = {
     "draft": "draft",
@@ -91,16 +96,6 @@ def plain_banner_error(error: str) -> str:
     return message[0].upper() + message[1:] + "."
 
 
-def _shell_history(window: QWidget, redo: bool) -> None:
-    surface = getattr(window, "_form_undo_surface", None)
-    if not isinstance(surface, FormSurface):
-        return
-    if redo:
-        surface.redo()
-    else:
-        surface.undo()
-
-
 class FormSurface(QWidget):
     """``TabSurface`` for one ``.ui`` tab."""
 
@@ -120,7 +115,7 @@ class FormSurface(QWidget):
         self._tokens = request.theme
         self._banner_is_error = False
         self._save_faded = True
-        self._tab_widget: Optional[QTabWidget] = None
+        self._shell_listeners: List[Callable[[], None]] = []
         self._store: Optional[WorkbenchMemoryStore] = None
         self._plan = plan_workbench(0, 0, WorkbenchMemory())
         self._preview_request: Optional[str] = None
@@ -186,23 +181,29 @@ class FormSurface(QWidget):
         self._saved_timer = QTimer(self)
         self._saved_timer.setSingleShot(True)
         self._saved_timer.timeout.connect(self._fade_saved)
-        self._alt_outline = QShortcut(QKeySequence("Alt+1"), self)
-        self._alt_outline.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
-        self._alt_outline.activated.connect(self._focus_outline)
-        self._alt_insert = QShortcut(QKeySequence("Alt+2"), self)
-        self._alt_insert.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
-        self._alt_insert.activated.connect(self._focus_insert)
-        self._esc = QShortcut(QKeySequence("Esc"), self)
-        self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
-        self._esc.setEnabled(False)
-        self._esc.activated.connect(self._workbench.close_drawers)
+        self._commands: Dict[str, Callable[[], object]] = {
+            "form.viewXml": self._toggle_xml,
+            _SHELL_TOGGLE_SOURCE: self._toggle_xml,
+            "form.createWindowClass": self._create_window_class,
+            "form.escape": self._workbench.close_drawers,
+            "form.focus.outline": partial(self._focus, self._workbench.focus_outline),
+            "form.focus.insert": partial(self._focus, self._workbench.focus_insert),
+            "form.focus.canvas": partial(self._focus, self._workbench.canvas_view().setFocus),
+            "form.focus.inspector": partial(self._focus, self._workbench.focus_inspector),
+            _SHELL_UNDO: self.undo,
+            _SHELL_REDO: self.redo,
+        }
+        self._shortcuts: Dict[str, QShortcut] = {}
+        for command_id, key in bound_keys():
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+            shortcut.activated.connect(partial(self.run_command, command_id))
+            self._shortcuts[command_id] = shortcut
+        self._sync_drawer_escape()
         self._workbench.set_drawer_listener(self._sync_drawer_escape)
         self._order_focus()
         self._refresh_design()
         self.apply_theme(request.theme)
-        app = QApplication.instance()
-        if app is not None:
-            app.focusChanged.connect(self._on_focus_changed)
 
     def widget(self) -> QWidget:
         return self
@@ -292,15 +293,10 @@ class FormSurface(QWidget):
 
     def file_path_changed(self, new_path: str) -> None:
         self._path = new_path
-        scope = form_scope(new_path, self._request.project_root)
-        self._session.set_path(new_path, scope)
-        self._source.set_scope(scope)
+        self._apply_scope()
         self._problems.set_path(new_path)
         self._refresh_save_state()
-
-    def toggle_source_view(self) -> None:
-        """Switch Design and XML. The shell's Ctrl+Shift+V action calls this."""
-        self._toolbar.xml.setChecked(not self._toolbar.xml.isChecked())
+        self._notify_shell()
 
     def focus_primary(self) -> None:
         editor = self._editor
@@ -309,17 +305,45 @@ class FormSurface(QWidget):
             return
         self._workbench.outline.tree.setFocus()
 
+    def shell_state(self) -> SurfaceShellState:
+        """Design claims Undo, Redo and the Edit rows the form owns. XML leaves them to the XML editor."""
+        if self._released:
+            return SurfaceShellState()
+        design = self._source.mode == "visual"
+        claims = unavailable_claims(design)
+        claims["form.viewXml"] = CommandState(True, checked=not design)
+        claims[_SHELL_TOGGLE_SOURCE] = CommandState(True)
+        claims["form.createWindowClass"] = CommandState(not self._session.scope.generates)
+        if not design:
+            return SurfaceShellState(None, claims)
+        log = self._session.log
+        claims[_SHELL_UNDO] = CommandState(log.can_undo(), label=undo_menu_text("Undo", log.undo_label()))
+        claims[_SHELL_REDO] = CommandState(log.can_redo(), label=undo_menu_text("Redo", log.redo_label()))
+        sentence = selection_sentence(self._session.document, self._session.selection.state)
+        return SurfaceShellState(sentence, claims)
+
+    def subscribe_shell_state(self, listener: Callable[[], None]) -> Callable[[], None]:
+        self._shell_listeners.append(listener)
+
+        def unsubscribe() -> None:
+            if listener in self._shell_listeners:
+                self._shell_listeners.remove(listener)
+
+        return unsubscribe
+
+    def run_command(self, command_id: str) -> bool:
+        handler = self._commands.get(command_id)
+        if handler is None or self._released:
+            return False
+        handler()
+        return True
+
     def release(self) -> None:
         if self._released:
             return
         self._released = True
-        app = QApplication.instance()
-        if app is not None:
-            try:
-                app.focusChanged.disconnect(self._on_focus_changed)
-            except (RuntimeError, TypeError):
-                pass
-        self._clear_shell_undo()
+        self._notify_shell()
+        self._shell_listeners.clear()
         self._problems.close()
         self._selection_unsub()
         self._source_unsub()
@@ -336,7 +360,6 @@ class FormSurface(QWidget):
             return False
         done = self._session.log.undo()
         self._refresh_undo_buttons()
-        self._sync_shell_undo()
         return done
 
     def redo(self) -> bool:
@@ -344,7 +367,6 @@ class FormSurface(QWidget):
             return False
         done = self._session.log.redo()
         self._refresh_undo_buttons()
-        self._sync_shell_undo()
         return done
 
     def external_change_needs_bar(self, disk_text: str) -> bool:
@@ -412,15 +434,6 @@ class FormSurface(QWidget):
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
-        self._attach_tab_watch()
-
-    def focusInEvent(self, event: object) -> None:  # noqa: N802
-        super().focusInEvent(event)  # type: ignore[arg-type]
-        self._bind_shell_undo()
-
-    def hideEvent(self, event: object) -> None:  # noqa: N802
-        super().hideEvent(event)  # type: ignore[arg-type]
-        self._clear_shell_undo()
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
@@ -449,7 +462,7 @@ class FormSurface(QWidget):
             self._show_banner(XML_APPLY_HINT, error=False)
         self._stack.setCurrentWidget(editor)
         self._workbench.outline.tree.hide()
-        self._sync_shell_undo()
+        self._notify_shell()
         editor.setFocus()
 
     def _commit_xml(self) -> None:
@@ -468,7 +481,6 @@ class FormSurface(QWidget):
         self._stack.setCurrentWidget(self._workbench)
         self._refresh_design()
         self._workbench.outline.tree.setFocus()
-        self._sync_shell_undo()
 
     def _discard_xml(self) -> None:
         self._source.cancel_xml_mode()
@@ -559,12 +571,36 @@ class FormSurface(QWidget):
         self._save_faded = False
         self._refresh_save_state()
         self._refresh_undo_buttons()
-        self._sync_shell_undo()
+        self._notify_shell()
 
     def _on_selection(self, change: object) -> None:
         current = getattr(getattr(change, "after", None), "current", None)
         self._workbench.inspector.show_selection(self._session.document, current)
         self._workbench.outline.rebuild(self._session.document, current)
+        self._notify_shell()
+
+    def _notify_shell(self) -> None:
+        for listener in tuple(self._shell_listeners):
+            listener()
+
+    def _toggle_xml(self) -> None:
+        self._toolbar.xml.setChecked(not self._toolbar.xml.isChecked())
+
+    def _apply_scope(self) -> None:
+        scope = form_scope(self._path, self._request.project_root)
+        self._session.set_path(self._path, scope)
+        self._source.set_scope(scope)
+
+    def _create_window_class(self) -> None:
+        adopt_from_tree(self.window(), self._path)
+        self._apply_scope()
+        self._notify_shell()
+
+    def _focus(self, move: Callable[[], None]) -> None:
+        if self._source.mode != "visual":
+            return
+        move()
+        self._sync_drawer_escape()
 
     def _on_outline_pick(self, node_id: NodeId) -> None:
         self._session.selection.set((node_id,), source=SelectionSource.OUTLINE)
@@ -589,6 +625,7 @@ class FormSurface(QWidget):
         self._stack.setCurrentWidget(editor)
         self._workbench.outline.tree.hide()
         self._show_banner(error, error=True)
+        self._notify_shell()
 
     def _toolbar_undo(self) -> None:
         self.undo()
@@ -633,18 +670,6 @@ class FormSurface(QWidget):
             return
         self._toolbar.set_save("", error=False, tokens=self._tokens)
 
-    def _focus_outline(self) -> None:
-        if self._source.mode != "visual":
-            return
-        self._workbench.focus_outline()
-        self._esc.setEnabled(self._workbench.drawer_open())
-
-    def _focus_insert(self) -> None:
-        if self._source.mode != "visual":
-            return
-        self._workbench.focus_insert()
-        self._esc.setEnabled(self._workbench.drawer_open())
-
     def _apply_responsive(self) -> None:
         width = self.width()
         height = self.height()
@@ -653,7 +678,7 @@ class FormSurface(QWidget):
         self._plan = plan_workbench(width, height, self._memory)
         self._toolbar.set_compact(self._plan.toolbar_compact)
         self._workbench.apply_plan(self._plan)
-        self._esc.setEnabled(self._workbench.drawer_open())
+        self._sync_drawer_escape()
 
     def _load_memory(self) -> None:
         window = self.window()
@@ -731,103 +756,8 @@ class FormSurface(QWidget):
         self._save_memory()
         self._apply_responsive()
 
-    def _on_focus_changed(self, _old: object, new: object) -> None:
-        if self._released or new is None:
-            return
-        if new is self or self.isAncestorOf(new):  # type: ignore[arg-type]
-            self._bind_shell_undo()
-
-    def _attach_tab_watch(self) -> None:
-        widget: Optional[QWidget] = self.parentWidget()
-        found: Optional[QTabWidget] = None
-        while widget is not None:
-            if isinstance(widget, QTabWidget):
-                found = widget
-                break
-            widget = widget.parentWidget()
-        if found is self._tab_widget:
-            return
-        previous = self._tab_widget
-        if previous is not None:
-            try:
-                previous.currentChanged.disconnect(self._on_tab_activated)
-            except (RuntimeError, TypeError):
-                pass
-        self._tab_widget = found
-        if found is not None:
-            found.currentChanged.connect(self._on_tab_activated)
-
-    def _on_tab_activated(self, _index: int) -> None:
-        tab = self._tab_widget
-        if tab is None or self._released:
-            return
-        current = tab.currentWidget()
-        if current is None:
-            return
-        if current is self or current.isAncestorOf(self) or self.isAncestorOf(current):
-            self._bind_shell_undo()
-
     def _sync_drawer_escape(self) -> None:
-        self._esc.setEnabled(self._workbench.drawer_open())
-
-    def _bind_shell_undo(self) -> None:
-        window = self.window()
-        registry_fn = getattr(window, "menu_registry", None)
-        if not callable(registry_fn):
-            return
-        registry = registry_fn()
-        if registry is None:
-            return
-        undo = registry.action("shell.action.edit.undo")
-        redo = registry.action("shell.action.edit.redo")
-        if undo is None or redo is None:
-            return
-        if not getattr(window, "_form_undo_wired", False):
-            undo.triggered.connect(lambda _checked=False, host=window: _shell_history(host, False))
-            redo.triggered.connect(lambda _checked=False, host=window: _shell_history(host, True))
-            window._form_undo_wired = True  # type: ignore[attr-defined]
-        window._form_undo_surface = self  # type: ignore[attr-defined]
-        self._sync_shell_undo()
-
-    def _clear_shell_undo(self) -> None:
-        window = self.window()
-        if getattr(window, "_form_undo_surface", None) is not self:
-            return
-        window._form_undo_surface = None  # type: ignore[attr-defined]
-        self._set_shell_actions("Undo", False, "Redo", False)
-
-    def _sync_shell_undo(self) -> None:
-        window = self.window()
-        if getattr(window, "_form_undo_surface", None) is not self:
-            return
-        design = self._source.mode == "visual" and self.isVisible()
-        log = self._session.log
-        if not design:
-            self._set_shell_actions("Undo", False, "Redo", False)
-            return
-        self._set_shell_actions(
-            undo_menu_text("Undo", log.undo_label()),
-            log.can_undo(),
-            undo_menu_text("Redo", log.redo_label()),
-            log.can_redo(),
-        )
-
-    def _set_shell_actions(self, undo_text: str, undo_on: bool, redo_text: str, redo_on: bool) -> None:
-        window = self.window()
-        registry_fn = getattr(window, "menu_registry", None)
-        if not callable(registry_fn):
-            return
-        registry = registry_fn()
-        if registry is None:
-            return
-        undo = registry.action("shell.action.edit.undo")
-        redo = registry.action("shell.action.edit.redo")
-        if undo is not None:
-            undo.setText(undo_text)
-            undo.setEnabled(undo_on)
-        if redo is not None:
-            redo.setText(redo_text)
-            redo.setEnabled(redo_on)
+        self._shortcuts["form.escape"].setEnabled(self._workbench.drawer_open())
 
     def _order_focus(self) -> None:
         order = [
@@ -879,4 +809,4 @@ def _parses(text: str) -> bool:
     return True
 
 
-__all__ = ["XML_APPLY_HINT", "XML_DISCARD_LABEL", "VIEW_XML_TOOLTIP", "FormSurface"]
+__all__ = ["XML_APPLY_HINT", "XML_DISCARD_LABEL", "FormSurface"]

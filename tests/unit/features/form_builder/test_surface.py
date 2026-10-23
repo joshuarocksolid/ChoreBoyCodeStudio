@@ -10,22 +10,18 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.features.form_builder.engine.ui4.writer import write_ui  # noqa: E402
-from app.features.form_builder.install import PROVIDER_ID  # noqa: E402
 from app.features.form_builder.integration.content_source import open_document_log  # noqa: E402
 from app.features.form_builder.integration.provider import FormTabProvider  # noqa: E402
 from app.features.form_builder.integration.surface import (  # noqa: E402
     XML_APPLY_HINT,
     XML_DISCARD_LABEL,
-    VIEW_XML_TOOLTIP,
     FormSurface,
 )
 from app.qt.QtCore import Qt  # noqa: E402
 from app.qt.QtGui import QTextCursor  # noqa: E402
 from app.qt.QtWidgets import QLabel, QPlainTextEdit, QPushButton, QToolButton, QTreeWidget, QWidget  # noqa: E402
-from app.shell.editor_tab_markdown_workflow import EditorTabMarkdownWorkflow  # noqa: E402
 from app.shell.tab_content_providers import (  # noqa: E402
     ProviderDeclined,
-    TabContentProviderRegistry,
     TabMatchContext,
     TabSurfaceRequest,
 )
@@ -293,82 +289,4 @@ def test_form_controls_have_accessible_names(qapp) -> None:  # type: ignore[no-u
     assert name.accessibleName() == "Form · Vertical layout"
     assert tree.accessibleName() == "Form structure"
     assert banner.accessibleName() == "XML notice"
-    surface.release()
-
-
-class _MenuAction:
-    def __init__(self) -> None:
-        self.enabled = False
-
-    def setEnabled(self, value: bool) -> None:  # noqa: N802
-        self.enabled = value
-
-    def isCheckable(self) -> bool:  # noqa: N802
-        return False
-
-    def setChecked(self, value: bool) -> None:  # noqa: N802
-        del value
-
-
-class _Menus:
-    def __init__(self) -> None:
-        self._actions = {
-            "shell.action.view.markdownShowSource": _MenuAction(),
-            "shell.action.view.markdownShowPreview": _MenuAction(),
-            "shell.action.view.markdownShowSplit": _MenuAction(),
-            "shell.action.view.markdownTogglePreview": _MenuAction(),
-        }
-
-    def action(self, action_id: str) -> _MenuAction:
-        return self._actions[action_id]
-
-
-class _ToggleHost:
-    def __init__(self, registry: TabContentProviderRegistry, menus: _Menus) -> None:
-        self._registry = registry
-        self._menus = menus
-
-    def editor_tabs_widget(self) -> None:
-        return None
-
-    def markdown_panes_by_path(self) -> dict[str, object]:
-        return {}
-
-    def tab_content_registry(self) -> TabContentProviderRegistry:
-        return self._registry
-
-    def menu_registry(self) -> _Menus:
-        return self._menus
-
-
-def test_shell_toggle_source_view_switches_form_xml(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    del qapp
-    canonical = write_ui(open_document_log(_FORM).document).text
-    path = tmp_path / "invoice.ui"
-    path.write_text(canonical, encoding="utf-8")
-    parent = QWidget()
-    surface = FormTabProvider().create_surface(_request(parent, canonical, str(path)))
-    manager = EditorManager()
-    opened = manager.open_file(str(path))
-    registry = TabContentProviderRegistry()
-    registry.bind(opened.tab.file_path, surface, PROVIDER_ID)
-    menus = _Menus()
-    workflow = EditorTabMarkdownWorkflow(
-        host=_ToggleHost(registry, menus),  # type: ignore[arg-type]
-        editor_manager=manager,
-        refresh_markdown_action_states=lambda: None,
-    )
-    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
-    assert toggle is not None
-    assert toggle.toolTip() == VIEW_XML_TOOLTIP
-
-    workflow.refresh_markdown_action_states()
-    assert menus.action("shell.action.view.markdownTogglePreview").enabled is True
-    workflow.handle_markdown_toggle_preview_action()
-    assert surface.content_source().mode == "xml"
-    assert toggle.isChecked() is True
-
-    workflow.handle_markdown_toggle_preview_action()
-    assert surface.content_source().mode == "visual"
-    assert toggle.isChecked() is False
     surface.release()

@@ -16,8 +16,18 @@ from app.editors.markdown_rendering import is_markdown_path, qt_markdown_support
 from app.editors.tab_content_source import TabContentSource
 from app.features.markdown.markdown_editor_pane import MarkdownEditorPane, MarkdownPreviewMode
 from app.intelligence.diagnostics_models import CodeDiagnostic
-from app.shell.tab_content_providers import RestoreReason, TabMatchContext, TabSurfaceRequest
+from app.shell.tab_content_providers import (
+    RestoreReason,
+    SurfaceShellState,
+    TabMatchContext,
+    TabMenu,
+    TabSurfaceRequest,
+)
 from app.shell.theme_tokens import ShellThemeTokens
+
+
+def _no_subscription() -> None:
+    return None
 
 
 class MarkdownTabSurface:
@@ -81,6 +91,17 @@ class MarkdownTabSurface:
             return
         self._pane.preview_widget().setFocus()
 
+    def shell_state(self) -> SurfaceShellState:
+        return SurfaceShellState()
+
+    def subscribe_shell_state(self, listener: Callable[[], None]) -> Callable[[], None]:
+        del listener
+        return _no_subscription
+
+    def run_command(self, command_id: str) -> bool:
+        del command_id
+        return False
+
     def release(self) -> None:
         if self._released:
             return
@@ -94,6 +115,7 @@ class MarkdownTabContentProvider:
 
     provider_id = "markdown"
     priority = 0
+    menu: Optional[TabMenu] = None
 
     def __init__(
         self,
