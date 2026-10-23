@@ -24,10 +24,15 @@ from app.persistence.autosave_store import DraftEntry  # noqa: E402
 from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
 from app.qt.QtCore import QRect  # noqa: E402
 from app.qt.QtGui import QPalette  # noqa: E402
+from app.features.form_builder.integration.workbench import FormWorkbench  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
+    QFrame,
     QLabel,
     QPushButton,
+    QShortcut,
+    QToolButton,
+    QTreeWidget,
     QWidget,
 )
 from app.shell.document_safety import dirty_buffer_snapshots  # noqa: E402
@@ -149,7 +154,7 @@ def test_new_open_save_and_close_prompt(qapp, tmp_path: Path) -> None:  # type: 
     manager.save_tab(str(ui_path))
     assert ui_path.read_bytes() == before
 
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     editor = surface.source_editor()
@@ -202,7 +207,7 @@ def test_two_tabs_do_not_share_history(qapp, tmp_path: Path) -> None:  # type: i
     canonical = write_ui(open_document_log(_FORM).document).text
     first = _open(QWidget(), canonical, tmp_path / "one.ui")
     second = _open(QWidget(), canonical, tmp_path / "two.ui")
-    toggle = first.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = first.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     editor = first.source_editor()
@@ -245,13 +250,18 @@ def test_edit_undo_uses_the_command_name(qapp, tmp_path: Path) -> None:  # type:
     window.resize(1280, 800)
     window.show()
     qapp.processEvents()
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     editor = surface.source_editor()
     assert editor is not None
     editor.setPlainText(editor.toPlainText().replace(">OK<", ">Save<"))
     toggle.setChecked(False)
+    qapp.processEvents()
+    tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+    assert tree is not None
+    qapp.setActiveWindow(window)
+    tree.setFocus()
     qapp.processEvents()
 
     assert window._registry.undo.text() == "Undo XML edits"
@@ -323,7 +333,7 @@ def test_external_change_choices_and_invalid_xml(qapp, tmp_path: Path) -> None: 
     assert calls == ["compare", "keep"]
     assert notice.isVisibleTo(surface) is False
 
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     assert surface.external_change_needs_bar("<not-xml") is True
@@ -382,11 +392,20 @@ def test_recovered_draft_can_be_discarded(qapp, tmp_path: Path) -> None:  # type
     assert notice is not None
     assert notice.text() == "Recovered unsaved changes from 14:02."
     assert ">Later<" in surface.content_source().current_text()
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
+    assert toggle is not None
+    toggle.setChecked(True)
+    editor = surface.source_editor()
+    assert editor is not None
+    editor.setPlainText(editor.toPlainText().replace(">Later<", ">Edited<"))
+    toggle.setChecked(False)
+    assert ">Edited<" in surface.content_source().current_text()
     discard = [button for button in surface.findChildren(QPushButton, "formBuilder.noticeButton") if button.text() == "Discard"]
     assert discard
     discard[0].click()
     assert ">OK<" in surface.content_source().current_text()
     assert ">Later<" not in surface.content_source().current_text()
+    assert ">Edited<" not in surface.content_source().current_text()
     assert store.deleted is True
     surface.release()
 
@@ -467,19 +486,381 @@ def test_theme_changes_chrome_and_not_the_page(qapp, tmp_path: Path) -> None:  #
 
 
 def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    canonical = write_ui(open_document_log(_FORM).document).text
-    # CBCS_FB_SCREENSHOT_DIR keeps the captures (cloud artifacts, roadmap).
+    corpus = (
+        Path(__file__).resolve().parents[4]
+        / "tests/form_builder/corpus/qt_examples/qtbase/examples/sql/sqlbrowser/qsqlconnectiondialog.ui"
+    )
+    text = corpus.read_text(encoding="utf-8")
     out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)
     out.mkdir(parents=True, exist_ok=True)
-    parent = QWidget()
-    surface = _open(parent, canonical, tmp_path / "invoice.ui")
+    host = QWidget()
+    surface = _open(host, text, tmp_path / "connection.ui")
+    host.show()
     surface.show()
     for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
         surface.apply_theme(tokens_from_palette(qapp.palette(), force_mode=mode))
-        for width, height in ((1280, 800), (1080, 600)):
+        for width, height in ((1280, 800), (1080, 600), (800, 600)):
+            host.resize(width, height)
             surface.resize(width, height)
             qapp.processEvents()
+            if width <= 800:
+                bench = surface.findChild(FormWorkbench, "formBuilder.workbench")
+                assert bench is not None
+                bench.open_left()
+                qapp.processEvents()
+                drawer = surface.findChild(QFrame, "formBuilder.drawer")
+                assert drawer is not None and drawer.width() >= 200, drawer.geometry()
+            tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+            assert tree is not None and tree.isVisibleTo(surface)
             image = surface.grab()
             assert (image.width(), image.height()) == (width, height)
             image.save(str(out / ("form-tab-%s-%dx%d.png" % (mode, width, height))))
     surface.release()
+    host.close()
+
+
+def _esc_enabled(surface: QWidget) -> bool:
+    for shortcut in surface.findChildren(QShortcut):
+        if shortcut.key().toString() == "Esc":
+            return bool(shortcut.isEnabled())
+    return False
+
+
+def _edit_xml(surface: FormSurface, old: str, new: str) -> None:
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
+    assert toggle is not None
+    toggle.setChecked(True)
+    editor = surface.source_editor()
+    assert editor is not None
+    editor.setPlainText(editor.toPlainText().replace(old, new))
+    toggle.setChecked(False)
+
+
+def test_shell_undo_follows_the_focused_form(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.qt.QtWidgets import QAction, QHBoxLayout
+
+    class _Registry:
+        def __init__(self, parent: QWidget) -> None:
+            self.undo = QAction("Undo", parent)
+            self.redo = QAction("Redo", parent)
+
+        def action(self, action_id: str) -> QAction | None:
+            if action_id.endswith(".undo"):
+                return self.undo
+            if action_id.endswith(".redo"):
+                return self.redo
+            return None
+
+    class _Window(QWidget):
+        def __init__(self) -> None:
+            super().__init__()
+            self._registry = _Registry(self)
+
+        def menu_registry(self) -> _Registry:
+            return self._registry
+
+    canonical = write_ui(open_document_log(_FORM).document).text
+    window = _Window()
+    layout = QHBoxLayout(window)
+    layout.setContentsMargins(0, 0, 0, 0)
+    first = _open(window, canonical, tmp_path / "one.ui")
+    second = _open(window, canonical, tmp_path / "two.ui")
+    layout.addWidget(first)
+    layout.addWidget(second)
+    window.resize(1600, 800)
+    window.show()
+    qapp.processEvents()
+    _edit_xml(first, ">OK<", ">Aaa<")
+    _edit_xml(second, ">OK<", ">Bbb<")
+    second.hide()
+    qapp.processEvents()
+    second.show()
+    qapp.processEvents()
+    tree = first.findChild(QTreeWidget, "formBuilder.structure")
+    assert tree is not None
+    qapp.setActiveWindow(window)
+    tree.setFocus()
+    qapp.processEvents()
+
+    assert window._registry.undo.isEnabled() is True
+    window._registry.undo.trigger()
+    assert ">OK<" in first.content_source().current_text()
+    assert ">Aaa<" not in first.content_source().current_text()
+    assert ">Bbb<" in second.content_source().current_text()
+    first.release()
+    second.release()
+    window.close()
+
+
+def test_keep_recovered_draft_survives_a_crash(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.persistence.autosave_store import AutosaveStore
+
+    canonical = write_ui(open_document_log(_FORM).document).text
+    project = tmp_path / "project"
+    project.mkdir()
+    ui_path = (project / "invoice.ui").resolve()
+    parent = QWidget()
+    surface = _open(parent, canonical, ui_path)
+    drafted = canonical.replace(">OK<", ">Later<")
+    store = AutosaveStore(state_root=tmp_path / "state")
+    store.save_draft(str(ui_path), drafted)
+    manager = EditorManager()
+    tab = manager.open_file(str(ui_path)).tab
+    tab.content_source = surface.content_source()
+    host = LocalHistoryEditorHostStub(parent=parent)
+    host.surface_for_path = lambda _path: surface  # type: ignore[attr-defined]
+    workflow = LocalHistoryWorkflow(
+        host=host,
+        local_history_store=LocalHistoryStore(state_root=tmp_path / "history"),
+        autosave_store=store,
+        editor_manager=manager,
+        logger=logging.getLogger("test.form_keep"),
+    )
+    workflow.maybe_restore_draft(tab, None)  # type: ignore[arg-type]
+    qapp.processEvents()
+    assert ">Later<" in surface.content_source().current_text()
+    workflow.note_source_changed(tab.file_path)
+    workflow.flush_pending_autosaves()
+    keep = [button for button in surface.findChildren(QPushButton, "formBuilder.noticeButton") if button.text() == "Keep recovered"]
+    assert keep
+    keep[0].click()
+    workflow.note_source_changed(tab.file_path)
+    workflow.flush_pending_autosaves()
+    assert store.load_draft(str(ui_path)) is not None
+    surface.release()
+
+    parent2 = QWidget()
+    again = _open(parent2, canonical, ui_path)
+    manager2 = EditorManager()
+    tab2 = manager2.open_file(str(ui_path)).tab
+    tab2.content_source = again.content_source()
+    host2 = LocalHistoryEditorHostStub(parent=parent2)
+    host2.surface_for_path = lambda _path: again  # type: ignore[attr-defined]
+    crashed = LocalHistoryWorkflow(
+        host=host2,
+        local_history_store=LocalHistoryStore(state_root=tmp_path / "history"),
+        autosave_store=store,
+        editor_manager=manager2,
+        logger=logging.getLogger("test.form_keep_again"),
+    )
+    crashed.maybe_restore_draft(tab2, None)  # type: ignore[arg-type]
+    qapp.processEvents()
+    assert ">Later<" in again.content_source().current_text()
+    notice = again.findChild(QLabel, "formBuilder.noticeText")
+    assert notice is not None and notice.isVisibleTo(again)
+    again.release()
+
+
+def test_stale_recovered_draft_is_dropped(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.persistence.autosave_store import AutosaveStore
+
+    del qapp
+    canonical = write_ui(open_document_log(_FORM).document).text
+    ui_path = (tmp_path / "invoice.ui").resolve()
+    parent = QWidget()
+    surface = _open(parent, canonical, ui_path)
+    store = AutosaveStore(state_root=tmp_path / "state")
+    store.save_draft(str(ui_path), surface.content_source().current_text())
+    manager = EditorManager()
+    tab = manager.open_file(str(ui_path)).tab
+    tab.content_source = surface.content_source()
+    host = LocalHistoryEditorHostStub(parent=parent)
+    host.surface_for_path = lambda _path: surface  # type: ignore[attr-defined]
+    workflow = LocalHistoryWorkflow(
+        host=host,
+        local_history_store=LocalHistoryStore(state_root=tmp_path / "history"),
+        autosave_store=store,
+        editor_manager=manager,
+        logger=logging.getLogger("test.form_stale"),
+    )
+    workflow.maybe_restore_draft(tab, None)  # type: ignore[arg-type]
+    notice = surface.findChild(QLabel, "formBuilder.noticeText")
+    assert notice is not None
+    assert notice.isVisibleTo(surface) is False
+    assert store.load_draft(str(ui_path)) is None
+    assert ">OK<" in surface.content_source().current_text()
+    surface.release()
+
+
+def test_xml_edit_keeps_crlf_on_disk(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    del qapp
+    canonical = write_ui(open_document_log(_FORM).document).text
+    crlf = canonical.replace("\n", "\r\n")
+    path = tmp_path / "invoice.ui"
+    parent = QWidget()
+    surface = _open(parent, crlf, path)
+    manager = EditorManager()
+    tab = manager.open_file(str(path)).tab
+    tab.content_source = surface.content_source()
+    _edit_xml(surface, ">OK<", ">Save<")
+    manager.save_tab(str(path))
+    raw = path.read_bytes()
+    text = raw.decode("utf-8")
+    assert ">Save<" in text
+    assert "\r\n" in text
+    assert "\n" not in text.replace("\r\n", "")
+    surface.release()
+
+
+def test_reload_does_not_write_generated_python(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow
+
+    del qapp
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    ui_path = forms / "invoice.ui"
+    parent = QWidget()
+    surface = _open(parent, _FORM, ui_path, str(tmp_path))
+    manager = EditorManager()
+    tab = manager.open_file(str(ui_path)).tab
+    tab.content_source = surface.content_source()
+
+    class _Host:
+        def editor_widget_for_path(self, _file_path: str) -> None:
+            return None
+
+        def advance_buffer_revision(self, _file_path: str) -> int:
+            return 1
+
+        def apply_detected_indentation(self, _file_path: str, _editor: object, _text: str) -> None:
+            return None
+
+        def tab_index_for_path(self, _file_path: str) -> int:
+            return -1
+
+        def refresh_tab_presentation(self, _file_path: str) -> None:
+            return None
+
+        def has_editor_tabs_widget(self) -> bool:
+            return False
+
+        def surface_for_path(self, _file_path: str) -> FormSurface:
+            return surface
+
+    sync = EditorSyncWorkflow(editor_manager=manager, host=_Host())  # type: ignore[arg-type]
+    applied = sync.apply_disk_content(
+        str(ui_path),
+        surface.content_source().current_text(),
+        source=EditorDiskSyncSource.EXTERNAL_RELOAD,
+    )
+    assert applied is True
+    assert not (forms / "ui_invoice.py").exists()
+    label = surface.findChild(QLabel, "formBuilder.saveState")
+    assert label is not None
+    assert "Saved" not in label.text()
+    surface.release()
+
+
+def test_generation_failure_names_the_file(qapp, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture) -> None:  # type: ignore[no-untyped-def]
+    del qapp
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    ui_path = forms / "invoice.ui"
+    parent = QWidget()
+    surface = _open(parent, _FORM, ui_path, str(tmp_path))
+    manager = EditorManager()
+    tab = manager.open_file(str(ui_path)).tab
+    tab.content_source = surface.content_source()
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr("app.features.form_builder.integration.save_pipeline.write_generated", boom)
+    with caplog.at_level(logging.ERROR, logger="app.features.form_builder.integration.save_pipeline"):
+        manager.save_tab(str(ui_path))
+    notice = surface.content_source().save_notice
+    assert notice.diagnostics
+    assert notice.diagnostics[0].code == "FB509"
+    assert "ui_invoice.py" in notice.diagnostics[0].message
+    label = surface.findChild(QLabel, "formBuilder.saveState")
+    assert label is not None
+    assert "ui_invoice.py" in label.text()
+    assert any("ui_invoice.py" in record.getMessage() for record in caplog.records)
+    surface.release()
+
+
+def test_outline_rail_opens_a_visible_drawer(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    canonical = write_ui(open_document_log(_FORM).document).text
+    host = QWidget()
+    surface = _open(host, canonical, tmp_path / "invoice.ui")
+    host.show()
+    surface.show()
+    host.resize(800, 600)
+    surface.resize(800, 600)
+    qapp.processEvents()
+    assert (surface.width(), surface.height()) == (800, 600)
+    outline = surface.findChild(QToolButton, "formBuilder.leftRail.outline")
+    insert = surface.findChild(QToolButton, "formBuilder.leftRail.insert")
+    assert outline is not None and insert is not None
+    assert outline.accessibleName() == "Outline"
+    assert insert.accessibleName() == "Insert"
+    qapp.setActiveWindow(host)
+    outline.click()
+    qapp.processEvents()
+    tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+    assert tree is not None
+    assert tree.isVisibleTo(surface)
+    assert tree.width() > 20 and tree.height() > 20
+    drawer = surface.findChild(QFrame, "formBuilder.drawer")
+    assert drawer is not None and drawer.width() >= 200, None if drawer is None else drawer.geometry()
+    assert qapp.focusWidget() is tree
+    assert _esc_enabled(surface) is True
+    surface.release()
+    host.close()
+
+
+def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    canonical = write_ui(open_document_log(_FORM).document).text
+    host = QWidget()
+    surface = _open(host, canonical, tmp_path / "invoice.ui")
+    host.show()
+    surface.show()
+    host.resize(700, 500)
+    surface.resize(700, 500)
+    qapp.processEvents()
+    assert (surface.width(), surface.height()) == (700, 500)
+    insert = surface.findChild(QToolButton, "formBuilder.leftRail.insert")
+    assert insert is not None
+    qapp.setActiveWindow(host)
+    insert.click()
+    qapp.processEvents()
+    body = surface.findChild(QLabel, "formBuilder.insertBody")
+    assert body is not None
+    assert body.isVisibleTo(surface)
+    assert body.width() > 20 and body.height() > 20
+    assert qapp.focusWidget() is body
+    assert _esc_enabled(surface) is True
+    right = surface.findChild(QToolButton, "formBuilder.rightRail.properties")
+    assert right is not None
+    assert right.accessibleName() == "Properties"
+    right.click()
+    qapp.processEvents()
+    page = surface.findChild(QLabel, "formBuilder.inspectorBody")
+    assert page is not None and page.isVisibleTo(surface)
+    assert qapp.focusWidget() is page
+    tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+    assert tree is not None
+
+    def walk(item):  # type: ignore[no-untyped-def]
+        if "okButton" in item.text(0):
+            return item
+        for index in range(item.childCount()):
+            found = walk(item.child(index))
+            if found is not None:
+                return found
+        return None
+
+    chosen = None
+    for index in range(tree.topLevelItemCount()):
+        chosen = walk(tree.topLevelItem(index))
+        if chosen is not None:
+            break
+    assert chosen is not None
+    tree.setCurrentItem(chosen)
+    header = surface.findChild(QLabel, "formBuilder.inspectorHeader")
+    assert header is not None
+    assert "\n" not in header.text()
+    assert "okButton" in header.text()
+    assert "QPushButton" in header.text()
+    surface.release()
+    host.close()
