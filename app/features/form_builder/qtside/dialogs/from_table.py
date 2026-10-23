@@ -16,6 +16,7 @@ from app.qt.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
+    QGraphicsView,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -90,6 +91,7 @@ class FromTableDialog(QDialog):
         self._mappings: Dict[str, List[TableColumn]] = {}
         self._loading = False
         self._preview_widget: Optional[QWidget] = None
+        self._preview_view: Optional[QGraphicsView] = None
         self._build()
         self._apply_chrome()
         self._sync_button()
@@ -219,7 +221,8 @@ class FromTableDialog(QDialog):
             "QTableWidget#formBuilder\\.fromTable\\.mapping"
             " { background: %s; color: %s; border: 1px solid %s; }"
             "QPushButton#formBuilder\\.fromTable\\.create"
-            " { background: %s; color: %s; border: 0; min-height: 28px; max-height: 28px; }"
+            " { background: %s; color: %s; border: 0; padding: 0 12px;"
+            " min-height: 28px; max-height: 28px; }"
             % (
                 chrome.window,
                 chrome.text,
@@ -387,6 +390,10 @@ class FromTableDialog(QDialog):
         viewport = self._mapping.viewport()
         if watched is viewport and enum_value(getattr(event, "type")()) == enum_value(QEvent.Resize):
             self._fit_columns()
+        view = getattr(self, "_preview_view", None)
+        if view is not None and watched is view.viewport():
+            if enum_value(getattr(event, "type")()) == enum_value(QEvent.Resize):
+                self._fit_preview()
         return bool(super().eventFilter(watched, event))  # type: ignore[arg-type]
 
     def _fit_columns(self) -> None:
@@ -482,12 +489,35 @@ class FromTableDialog(QDialog):
             self._show_preview_message(error or "The preview could not be built.")
             return
         # A proxy in its own scene: the app style sheet cannot reach it (UX-ISO-001).
-        self._swap_preview(host_form(widget), widget)
+        view = host_form(widget)
+        # Top-left and fitted to the pane width, so the form reflows like the app would.
+        view.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        view.viewport().installEventFilter(self)
+        self._preview_view = view
+        self._swap_preview(view, widget)
+        QTimer.singleShot(0, self._fit_preview)
+
+    def _fit_preview(self) -> None:
+        view = self._preview_view
+        form = self._preview_widget
+        if view is None or form is None:
+            return
+        proxy = form.graphicsProxyWidget()
+        if proxy is None:
+            return
+        width = view.viewport().width()
+        height = form.heightForWidth(width) if form.hasHeightForWidth() else -1
+        if height <= 0:
+            height = form.minimumSizeHint().height()
+        proxy.resize(width, max(view.viewport().height(), height))
+        view.setSceneRect(0, 0, width, max(view.viewport().height(), height))
 
     def _show_preview_message(self, text: str) -> None:
         label = QLabel(text, self)
         label.setWordWrap(True)
         label.setObjectName("formBuilder.fromTable.previewMessage")
+        self._preview_view = None
         self._swap_preview(label, None)
 
     def _swap_preview(self, shown: QWidget, form: Optional[QWidget]) -> None:

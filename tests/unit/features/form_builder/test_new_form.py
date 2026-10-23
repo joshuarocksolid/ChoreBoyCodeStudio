@@ -605,3 +605,36 @@ def test_primary_button_text_meets_contrast_on_the_accent() -> None:
 
     for accent in ("#1971C2", "#5B8CFF", "#9CC0FF", "#0B5CAD"):
         assert _contrast(accent, on_accent_for(accent)) >= 4.5
+
+
+def test_preview_fits_its_pane_so_every_label_shows(tmp_path: Path, qapp: object) -> None:
+    dialog = FromTableDialog(
+        project_root=str(tmp_path),
+        stem="customer",
+        chrome=chrome_from_values(
+            window="#ffffff", panel="#ffffff", text="#000000", muted="#555555", faint="#888888",
+            border="#cccccc", accent="#1971c2", row_hover="#eeeeee", input_bg="#ffffff",
+            error="#c00000", focus_width=1,
+        ),
+        date_format="M/d/yy",
+        name_reason=lambda: None,
+    )
+    try:
+        dialog.set_database(str(_database(tmp_path)))
+        dialog.resize(960, 560)
+        dialog.show()
+        for _ in range(3):
+            QApplication.processEvents()
+        form = dialog._preview_widget
+        view = dialog._preview_view
+        assert form is not None and view is not None
+        viewport = view.viewport().rect()
+        labels = [label for label in form.findChildren(QLabel) if label.isVisible() and label.text()]
+        assert labels
+        for label in labels:
+            corner = view.mapFromScene(label.mapTo(form, label.rect().topLeft()))
+            assert viewport.contains(corner), label.text()
+            assert corner.x() + label.width() <= viewport.width() + 1, label.text()
+    finally:
+        dialog.close()
+    del qapp
