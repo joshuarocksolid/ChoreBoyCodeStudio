@@ -20,7 +20,7 @@ from app.qt.QtWidgets import (
     QLabel,
     QWidget,
 )
-from app.qt.qt_compat import wrapper_is_valid
+from app.qt.qt_compat import enum_value, wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.session import FormSession
@@ -347,7 +347,9 @@ class FormCanvas(QGraphicsView):
         text_rect = QRectF(bar.left() + int(Space.S), bar.top(), max(0, bar.width() - glyphs_w - int(Space.S) * 2), bar.height())
         elide = _qt(Qt, "TextElideMode", "ElideRight")
         shown = painter.fontMetrics().elidedText(self._window_title, elide, int(text_rect.width()))
-        align = _qt(Qt, "AlignmentFlag", "AlignLeft") | _qt(Qt, "AlignmentFlag", "AlignVCenter")
+        align = enum_value(_qt(Qt, "AlignmentFlag", "AlignLeft")) | enum_value(
+            _qt(Qt, "AlignmentFlag", "AlignVCenter")
+        )
         painter.drawText(text_rect, align, shown)
         index = 0
         for mark in marks:
