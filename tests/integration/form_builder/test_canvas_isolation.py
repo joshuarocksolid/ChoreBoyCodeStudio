@@ -117,13 +117,12 @@ def _render_runtime_png(ui_path: str, png_path: str) -> None:
     realizer = Realizer(session)
     try:
         root = realizer.build()
-        # sizeHint is the layout size. A later show() reports the window
-        # geometry instead, so read the hint first. The show still has to
-        # happen: setWidget shows the page, and that first show adjusts
-        # children that were never resized.
-        hint = root.sizeHint()
+        # sizeHint() while the window is still hidden posts a layout pass
+        # that puts the .ui geometry back after resize(). Show first, then
+        # size to the hint the canvas uses after setWidget.
         root.show()
         app.processEvents()
+        hint = root.sizeHint()
         width = hint.width() if hint.width() > 0 else max(root.width(), 320)
         height = hint.height() if hint.height() > 0 else max(root.height(), 240)
         root.resize(width, height)
