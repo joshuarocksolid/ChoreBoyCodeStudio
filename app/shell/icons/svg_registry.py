@@ -221,6 +221,12 @@ SVG_GLYPHS: dict[str, SvgGlyphSpec] = {
         cached=True,
         two_color=False,
     ),
+    "lock_icon": SvgGlyphSpec(
+        cache_name="lock",
+        body='<rect x="3.5" y="7" width="9" height="7" rx="1.2" fill="{color}" fill-opacity="0.12" stroke="{color}" stroke-width="1.2"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" fill="none" stroke="{color}" stroke-width="1.2" stroke-linecap="round"/><path d="M8 9.8v1.6" stroke="{color}" stroke-width="1.2" stroke-linecap="round"/>',
+        cached=True,
+        two_color=False,
+    ),
     "markdown_preview_icon": SvgGlyphSpec(
         cache_name="markdown_preview",
         body='<path d="M1.8 8s2.2-4 6.2-4 6.2 4 6.2 4-2.2 4-6.2 4-6.2-4-6.2-4z" fill="{color}" fill-opacity="0.08" stroke="{color}" stroke-width="1.1" stroke-linejoin="round"/><circle cx="8" cy="8" r="2" fill="none" stroke="{color}" stroke-width="1.1"/>',

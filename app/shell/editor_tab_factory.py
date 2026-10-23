@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any, Callable, Optional
 
@@ -151,6 +152,9 @@ class EditorTabFactory:
         editor_widget: Optional[CodeEditorWidget]
         if provider is None:
             editor_widget = create_source_editor()
+            window._editor_tab_workflow.generated_files.lock_from_text(
+                opened_result.tab, opened_result.tab.current_content
+            )
             hint = self._pyside2_ui_hint(tab_file_path)
             if hint is None:
                 tab_content: QWidget = editor_widget
@@ -326,10 +330,12 @@ class EditorTabFactory:
         return PYSIDE2_UI_HINT
 
     def build_tab_page(self, content: QWidget, buffer_id: str) -> EditorTabPage:
-        """Wrap tab content with the disk-conflict info bar and wire its buttons."""
+        """Wrap tab content with the disk-conflict and generated-file bars and wire their buttons."""
         window = self._window
         page = EditorTabPage(content, buffer_id=buffer_id)
-        page.info_bar.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+        tokens = window._shell_theme_workflow.resolve_theme_tokens()
+        page.info_bar.apply_theme(tokens)
+        page.generated_bar.apply_theme(tokens)
         conflicts = window._external_file_change_workflow
 
         def path() -> str | None:
@@ -344,6 +350,16 @@ class EditorTabFactory:
         page.info_bar.compare_requested.connect(lambda: run(conflicts.compare_with_disk))
         page.info_bar.save_as_requested.connect(lambda: run(conflicts.save_buffer_as))
         page.info_bar.close_tab_requested.connect(lambda: run(window._editor_tab_workflow.close_tab_for_path))
+
+        def open_sibling(name: str) -> None:
+            file_path = path()
+            if file_path is not None:
+                self.open_file_in_editor(os.path.join(os.path.dirname(file_path), name))
+
+        page.generated_bar.open_requested.connect(open_sibling)
+        page.generated_bar.edit_anyway_requested.connect(
+            lambda: run(window._editor_tab_workflow.generated_files.edit_anyway)
+        )
         return page
 
 

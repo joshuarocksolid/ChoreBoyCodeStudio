@@ -69,6 +69,47 @@ def test_enter_key_auto_indents_with_tab_preference(editor: CodeEditorWidget) ->
     assert editor.toPlainText() == "if ready:\n\t"
 
 
+def _press(key: int):  # type: ignore[no-untyped-def]
+    return lambda widget: widget.keyPressEvent(QKeyEvent(QEvent.KeyPress, key, Qt.NoModifier))
+
+
+def _paste_with_auto_reindent(widget: CodeEditorWidget) -> None:
+    widget.set_editor_preferences(
+        tab_width=4,
+        font_point_size=10,
+        indent_style="spaces",
+        indent_size=4,
+        auto_reindent_flat_python_paste=True,
+    )
+    mime = QMimeData()
+    mime.setText("def first():\nreturn 1")
+    widget.insertFromMimeData(mime)
+
+
+@pytest.mark.parametrize(
+    "edit",
+    [
+        _press(Qt.Key_Tab),
+        _press(Qt.Key_Return),
+        _press(Qt.Key_Backspace),
+        lambda widget: widget.toggle_comment_selection(),
+        _paste_with_auto_reindent,
+    ],
+    ids=["tab", "enter", "backspace", "toggle-comment", "paste"],
+)
+def test_read_only_editor_keeps_its_text(editor: CodeEditorWidget, edit) -> None:  # type: ignore[no-untyped-def]
+    text = "if ready:\n        pass\n"
+    editor.setPlainText(text)
+    cursor = editor.textCursor()
+    cursor.setPosition(len("if ready:\n        "))
+    editor.setTextCursor(cursor)
+    editor.setReadOnly(True)
+
+    edit(editor)
+
+    assert editor.toPlainText() == text
+
+
 def test_replace_document_text_preserves_single_undo_step(editor: CodeEditorWidget) -> None:
     editor.setPlainText("import b\nimport a\n")
 

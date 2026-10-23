@@ -232,6 +232,10 @@ class CodeEditorSemanticsMixin(_CodeEditorSemanticsBase):
     # ------------------------------------------------------------------
 
     def keyPressEvent(self, e: QKeyEvent) -> None:  # noqa: N802 - Qt signature
+        if self.isReadOnly():
+            # Qt's read-only flag only covers Qt's own key handling, not the edits below.
+            super().keyPressEvent(e)
+            return
         popup = self._completion_popup
         if popup.handle_key_press(e):
             return

@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from typing import Any, cast
 
 from app.core import constants
+from app.editors.editor_manager import EditorManager
 from app.intelligence.diagnostics_service import CodeDiagnostic
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_shell_host import DebugShellHost
@@ -75,7 +76,7 @@ class LintHostStub:
         self._stored_lint_diagnostics: dict[str, list[CodeDiagnostic]] = {}
         self._intelligence_runtime_settings = SimpleNamespace(metrics_logging_enabled=False)
         self._logger = SimpleNamespace(info=lambda *_a, **_kw: None, warning=lambda *_a, **_kw: None)
-        self._editor_manager = SimpleNamespace(active_tab=lambda: None)
+        self._editor_manager = EditorManager()
         self._background_tasks = _FakeBackgroundTasks()
         self._workflow_broker = object()
         self._workspace_controller = SimpleNamespace(

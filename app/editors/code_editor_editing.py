@@ -34,6 +34,8 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
     """Editing transforms split out from the main editor widget."""
 
     def indent_selection(self) -> None:
+        if self.isReadOnly():
+            return
         cursor = self.textCursor()
         if not cursor.hasSelection():
             self.insertPlainText(self._indent_text())
@@ -45,7 +47,7 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
 
     def outdent_selection(self) -> None:
         cursor = self.textCursor()
-        if not cursor.hasSelection():
+        if self.isReadOnly() or not cursor.hasSelection():
             return
         self._transform_selected_lines(
             cursor,
@@ -72,6 +74,8 @@ class CodeEditorEditingMixin(_CodeEditorEditingBase):
         self.setTextCursor(restored)
 
     def toggle_comment_selection(self) -> None:
+        if self.isReadOnly():
+            return
         cursor = self.textCursor()
         if cursor.hasSelection():
             cursor = self._expand_selection_to_full_lines(cursor)

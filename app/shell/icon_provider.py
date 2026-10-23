@@ -50,6 +50,7 @@ __all__ = [
     "keyboard_icon",
     "language_mode_icon",
     "lint_icon",
+    "lock_icon",
     "markdown_preview_icon",
     "markdown_source_icon",
     "markdown_split_icon",
@@ -292,6 +293,11 @@ def language_mode_icon(color: str) -> QIcon:
 def lint_icon(color: str) -> QIcon:
     """Checklist icon for lint."""
     return render_glyph_icon(SVG_GLYPHS["lint_icon"], color)
+
+
+def lock_icon(color: str) -> QIcon:
+    """Padlock icon for files Code Studio generates."""
+    return render_glyph_icon(SVG_GLYPHS["lock_icon"], color)
 
 
 def markdown_preview_icon(color: str) -> QIcon:

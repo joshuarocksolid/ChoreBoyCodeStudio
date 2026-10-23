@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
 
+from app.editors.generated_banner import GeneratedLock
 from app.editors.tab_content_source import TabContentSource
 
 
@@ -40,6 +41,7 @@ class EditorTabState:
     disk_conflict: Optional[DiskConflict]
     content_source: Optional[TabContentSource]
     content_source_unsubscribe: Optional[Callable[[], None]] = field(compare=False)
+    generated: Optional[GeneratedLock]
     _current_content: str = field(repr=False)
 
     def __init__(
@@ -65,6 +67,7 @@ class EditorTabState:
         self.disk_conflict = disk_conflict
         self.content_source = content_source
         self.content_source_unsubscribe = content_source_unsubscribe
+        self.generated = None
 
     @classmethod
     def from_file(

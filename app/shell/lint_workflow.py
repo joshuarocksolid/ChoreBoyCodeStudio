@@ -135,6 +135,15 @@ class LintWorkflow:
                     "Linting is currently available for Python files only.",
                 )
             return
+        tab = self._host.editor_manager().get_tab(file_path)
+        if tab is not None and tab.generated is not None:
+            if trigger == "manual":
+                QMessageBox.information(
+                    parent,
+                    "Lint Current File",
+                    "Code Studio generates this file, so it is not linted.",
+                )
+            return
         started_at = time.perf_counter()
         loaded_project = self._host.loaded_project()
         project_root = None if loaded_project is None else loaded_project.project_root

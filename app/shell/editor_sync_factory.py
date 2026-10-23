@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.editors.editor_tab import EditorTabState
 from app.shell.editor_sync_workflow import EditorSyncWorkflow
 
 
@@ -45,6 +46,9 @@ class MainWindowEditorSyncHost:
 
     def refresh_tab_presentation(self, file_path: str) -> None:
         self._window._editor_tab_workflow.refresh_tab_presentation(file_path)
+
+    def lock_generated(self, tab: EditorTabState, text: str) -> None:
+        self._window._editor_tab_workflow.generated_files.lock_from_text(tab, text)
 
 
 def build_editor_sync_workflow(window: Any) -> EditorSyncWorkflow:

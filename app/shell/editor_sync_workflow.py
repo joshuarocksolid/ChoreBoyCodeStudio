@@ -6,6 +6,7 @@ from enum import Enum
 from typing import Protocol
 
 from app.editors.editor_manager import EditorManager
+from app.editors.editor_tab import EditorTabState
 
 
 class EditorDiskSyncSource(str, Enum):
@@ -50,6 +51,9 @@ class EditorSyncHostPorts(Protocol):
         ...
 
     def has_editor_tabs_widget(self) -> bool:
+        ...
+
+    def lock_generated(self, tab: EditorTabState, text: str) -> None:
         ...
 
 
@@ -106,6 +110,7 @@ class EditorSyncWorkflow:
                 self._host.refresh_tab_presentation(file_path)
             return True
         updated_tab = self._editor_manager.update_tab_content(file_path, text)
+        self._host.lock_generated(updated_tab, text)
         resolved_mtime = last_known_mtime
         if resolved_mtime is None:
             resolved_mtime = self._editor_manager.current_disk_mtime(file_path)

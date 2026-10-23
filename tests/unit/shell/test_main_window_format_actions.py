@@ -11,6 +11,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants
+from app.editors.generated_banner import GeneratedBanner, GeneratedLock
 from app.plugins.workflow_broker import WorkflowProviderDescriptor
 from app.python_tools.models import (
     PYTHON_TOOLING_CONFIG_SOURCE_DEFAULTS,
@@ -48,6 +49,7 @@ class _FakeEditorManager:
             is_dirty=True,
             display_name=Path(file_path).name,
             content_source=None,
+            generated=None,
         )
         self.saved_contents: list[str] = []
         self.stale_paths: list[str] = []
@@ -730,6 +732,31 @@ def test_save_tab_applies_generic_hygiene_without_python_format_on_save(
 
     assert save_workflow.save_tab("/tmp/project/notes.txt") is True
     assert editor_manager.saved_contents == ["note\n"]
+
+
+@pytest.mark.parametrize("edit_anyway", [False, True], ids=["locked", "edit-anyway"])
+def test_save_tab_writes_a_generated_file_as_it_is(monkeypatch: pytest.MonkeyPatch, edit_anyway: bool) -> None:
+    text = "import b  \nimport a"
+    save_workflow, save_host, editor_manager = _build_save_window("/tmp/project/ui_invoice.py", text)
+    save_host._editor_organize_imports_on_save = True
+    save_host._editor_format_on_save = True
+    banner = GeneratedBanner(kind="module", source_name="invoice.ui", window_name="invoice_window.py")
+    editor_manager._tab.generated = GeneratedLock(banner=banner, edit_anyway=edit_anyway)
+    monkeypatch.setattr(
+        "app.shell.save_workflow.organize_imports_with_workflow",
+        lambda *_a, **_kw: pytest.fail("a generated file is not organized on save"),
+    )
+    monkeypatch.setattr(
+        "app.shell.save_workflow.format_python_with_workflow",
+        lambda *_a, **_kw: pytest.fail("a generated file is not formatted on save"),
+    )
+    monkeypatch.setattr(
+        "app.shell.save_workflow.should_refresh_index_after_save",
+        lambda *_args, **_kwargs: False,
+    )
+
+    assert save_workflow.save_tab("/tmp/project/ui_invoice.py") is True
+    assert editor_manager.saved_contents == [text]
 
 
 def test_flush_auto_save_to_file_does_not_apply_save_transforms(

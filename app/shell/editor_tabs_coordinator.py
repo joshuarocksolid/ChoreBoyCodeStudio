@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.qt.QtWidgets import QInputDialog, QMessageBox, QTabWidget, QWidget
+from app.qt.QtCore import Qt
+from app.qt.QtWidgets import QInputDialog, QMessageBox, QPlainTextEdit, QTabWidget, QWidget
 
 from app.core import constants
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
 from app.editors.text_editing import FlatPythonIndentRepairResult
 from app.shell.editor_tab_bar import MiddleClickTabBar, editor_tab_tooltip, tab_disk_state
-from app.shell.editor_tab_page import EditorTabPage
+from app.shell.editor_tab_page import EditorTabPage, page_editor
 
 
 def _themes_as_secondary_surface(content: QWidget) -> bool:
@@ -19,6 +20,15 @@ def _themes_as_secondary_surface(content: QWidget) -> bool:
     source_editor = getattr(content, "source_editor", None)
     apply_theme = getattr(content, "apply_theme", None)
     return callable(source_editor) and callable(apply_theme)
+
+
+def _show_read_only(editor: QPlainTextEdit, read_only: bool) -> None:
+    if editor.isReadOnly() == read_only:
+        return
+    editor.setReadOnly(read_only)
+    if read_only:
+        # Qt's read-only mode drops keyboard selection; a locked file stays readable and copyable from the keyboard.
+        editor.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
 
 
 def _index_of_buffer(tabs: QTabWidget, buffer_id: str) -> int:
@@ -145,6 +155,10 @@ class EditorTabsCoordinator:
         page = target.widget(tab_index)
         if isinstance(page, EditorTabPage):
             page.info_bar.set_state(tab_disk_state(data), tab_state.file_path)
+            page.generated_bar.set_lock(tab_state.generated)
+            editor = page_editor(page)
+            if editor is not None:
+                _show_read_only(editor, tab_state.generated is not None and not tab_state.generated.edit_anyway)
         tab_bar.update()
 
     def apply_tab_chrome_theme(self, tokens: Any) -> None:
@@ -169,6 +183,7 @@ class EditorTabsCoordinator:
                 if not isinstance(page, EditorTabPage):
                     continue
                 page.info_bar.apply_theme(tokens)
+                page.generated_bar.apply_theme(tokens)
                 content = page.content()
                 if isinstance(content, CodeEditorWidget) and id(content) not in primary_views:
                     content.apply_theme(tokens)

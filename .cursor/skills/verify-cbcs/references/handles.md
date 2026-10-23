@@ -55,7 +55,7 @@ Tabs are movable. Split Right (tab context menu, View menu, `Ctrl+\`) shows the 
 | `#shell.editorTabs.group2` | Second group's tab widget (the first is `#shell.editorTabs`). The focused group's tab widget is `window._editor_tabs_widget`. |
 | `#shell.editorGroups.dragGhost` | Label that follows a tab dragged out of its bar |
 | `#shell.editorGroups.dropOverlay` | Dashed overlay on the group a dragged tab will drop into |
-| `#shell.editorTabPage` | One tab's page: info bar above the editor |
+| `#shell.editorTabPage` | One tab's page: info bar and generated-file bar above the editor |
 | `#shell.editorInfoBar` | Stale / missing info bar (hidden when the buffer matches disk) |
 | `#shell.editorInfoBar.icon` | Info bar icon |
 | `#shell.editorInfoBar.message` | Info bar text |
@@ -63,6 +63,12 @@ Tabs are movable. Split Right (tab context menu, View menu, `Ctrl+\`) shows the 
 | `#shell.editorInfoBar.compareBtn` | Compare... (stale) |
 | `#shell.editorInfoBar.saveAsBtn` | Save As... (missing) |
 | `#shell.editorInfoBar.closeTabBtn` | Close Tab (missing) |
+| `#shell.generatedFileBar` | Bar above a file whose banner says Code Studio generated it (`ui_*.py`, `*_rc.py`). The editor is read-only until Edit anyway |
+| `#shell.generatedFileBar.icon` | Lock icon |
+| `#shell.generatedFileBar.message` | What the file is made from and where code belongs; after Edit anyway, the caution sentence |
+| `#shell.generatedFileBar.openSourceBtn` | Open the `.ui` or `.qrc` beside the file |
+| `#shell.generatedFileBar.openWindowBtn` | Open the window file (form modules only) |
+| `#shell.generatedFileBar.editAnywayBtn` | Edit anyway: makes this tab writable. Hidden after use |
 | `#shell.missingFileDialog` | File Missing: Close Tab / Keep Editing / Save As... (default). Modal. |
 | `#shell.staleSaveDialog` | Save on a stale tab: Cancel / Compare... / Reload from Disk / Save My Version (default). Modal. |
 | `#shell.diskCompareDialog` | Side-by-side On Disk / Your Version diff. Modal. |

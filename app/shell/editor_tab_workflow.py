@@ -21,6 +21,7 @@ from app.shell.editor_tab_workflow_mixins import (
 )
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator
 from app.shell.external_file_change_workflow import ExternalFileChangeWorkflow
+from app.shell.generated_file_workflow import GeneratedFileWorkflow
 from app.shell.main_window_editor_tab_host import MainWindowEditorTabHost
 from app.shell.editor_sync_factory import build_editor_sync_workflow
 
@@ -51,6 +52,10 @@ class EditorTabWorkflow(
         self._editor_tabs_coordinator = editor_tabs_coordinator
         self._debug_control_workflow = debug_control_workflow
         self.active_surface_chrome = ActiveSurfaceChrome(host.tab_content_registry())
+        self.generated_files = GeneratedFileWorkflow(
+            tab_for_path=lambda file_path: self._editor_manager.get_tab(file_path),
+            refresh_tab_presentation=self.refresh_tab_presentation,
+        )
         subworkflows = create_editor_tab_subworkflows(
             host=host,
             editor_manager=editor_manager,

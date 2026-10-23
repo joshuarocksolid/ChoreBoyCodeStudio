@@ -74,6 +74,9 @@ class _RecordingSyncHost:
     def has_editor_tabs_widget(self) -> bool:
         return True
 
+    def lock_generated(self, tab: EditorTabState, text: str) -> None:
+        del tab, text
+
 
 @dataclass
 class _RecordingExternalHost:

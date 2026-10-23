@@ -242,6 +242,7 @@ def test_external_reload_applies_without_an_editor_widget(tmp_path: Path) -> Non
         tab_index_for_path=lambda _path: 0,
         refresh_tab_presentation=lambda _path: None,
         has_editor_tabs_widget=lambda: True,
+        lock_generated=lambda _tab, _text: None,
     )
     workflow = EditorSyncWorkflow(editor_manager=manager, host=host)  # type: ignore[arg-type]
 

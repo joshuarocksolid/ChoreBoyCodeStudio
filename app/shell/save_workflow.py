@@ -540,7 +540,7 @@ class SaveWorkflow:
             )
         host.refresh_save_action_states()
         host.update_editor_status_for_path(saved_tab.file_path)
-        if saved_tab.file_path.lower().endswith(".py"):
+        if saved_tab.generated is None and saved_tab.file_path.lower().endswith(".py"):
             host.render_lint_for_file(saved_tab.file_path, trigger="save")
             host.refresh_test_discovery()
         getattr(host.logger(), "info")("Saved file: %s", saved_tab.file_path)
@@ -580,8 +580,9 @@ class SaveWorkflow:
         host = self._host
         tab_state = self._editor_manager().get_tab(file_path)
         # A content source owns the bytes Save writes. Trim, a final newline,
-        # and the Python formatters would change them.
-        if tab_state is None or tab_state.content_source is not None:
+        # and the Python formatters would change them. In a generated file
+        # they would change the body hash and make codegen read it as hand-edited.
+        if tab_state is None or tab_state.content_source is not None or tab_state.generated is not None:
             return
 
         original_text = tab_state.current_content

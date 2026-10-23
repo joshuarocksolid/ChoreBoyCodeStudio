@@ -16,6 +16,7 @@ from app.qt.QtWidgets import QLabel, QPushButton, QTabWidget, QWidget  # noqa: E
 from app.shell.editor_tab_factory import PYSIDE2_UI_HINT, EditorTabFactory  # noqa: E402
 from app.shell.editor_tab_page import EditorTabPage  # noqa: E402
 from app.shell.editor_tabs_coordinator import EditorTabsCoordinator  # noqa: E402
+from app.shell.generated_file_workflow import GeneratedFileWorkflow  # noqa: E402
 from app.shell.tab_content_providers import TabContentProviderRegistry  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 
@@ -38,6 +39,10 @@ def _window(registry: TabContentProviderRegistry) -> tuple[QTabWidget, EditorTab
             "handle_editor_tab_changed": staticmethod(lambda _index: None),
             "update_editor_status_for_path": staticmethod(lambda _path: None),
             "apply_detected_indentation_for_widget": staticmethod(lambda *_args: None),
+            "generated_files": GeneratedFileWorkflow(
+                tab_for_path=lambda _path: None,
+                refresh_tab_presentation=lambda _path: None,
+            ),
         },
     )()
     window._external_file_change_workflow = object()  # type: ignore[attr-defined]

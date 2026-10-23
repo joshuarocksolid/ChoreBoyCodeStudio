@@ -15,6 +15,7 @@ from app.editors.editor_tab import EditorTabState  # noqa: E402
 from app.shell.editor_sync_factory import MainWindowEditorSyncHost  # noqa: E402
 from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkflow, EditorWidgetPort  # noqa: E402
 from app.shell.editor_workspace_controller import EditorWorkspaceController  # noqa: E402
+from app.shell.generated_file_workflow import GeneratedFileWorkflow  # noqa: E402
 
 pytestmark = pytest.mark.unit
 
@@ -70,6 +71,9 @@ class _RecordingSyncHost:
 
     def has_editor_tabs_widget(self) -> bool:
         return self.has_tabs_widget
+
+    def lock_generated(self, tab: EditorTabState, text: str) -> None:
+        del tab, text
 
 
 def _open_tab(
@@ -210,6 +214,10 @@ def test_main_window_sync_host_can_apply_disk_content(tmp_path: Path) -> None:
             apply_detected_indentation_for_widget=lambda *_args: None,
             tab_index_for_path=lambda _path: 0,
             refresh_tab_presentation=lambda _path: None,
+            generated_files=GeneratedFileWorkflow(
+                tab_for_path=manager.get_tab,
+                refresh_tab_presentation=lambda _path: None,
+            ),
         ),
     )
     workflow = EditorSyncWorkflow(

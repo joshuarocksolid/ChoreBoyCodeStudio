@@ -64,6 +64,8 @@ class CodeEditorPasteHintMixin(_CodeEditorPasteHintBase):
 
     def insertFromMimeData(self, source: QMimeData) -> None:  # noqa: N802 - Qt signature
         """Apply flat-Python repair when accepted, else paste literally and maybe hint."""
+        if self.isReadOnly():
+            return
         pasted_text = source.text() if source.hasText() else ""
         if self._auto_reindent_flat_python_paste and pasted_text:
             result = repair_flat_python_indentation(pasted_text, indent_text=self._indent_text())
