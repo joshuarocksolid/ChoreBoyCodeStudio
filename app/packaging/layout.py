@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from app.packaging.form_files import form_lines
 from app.packaging.launcher_bootstrap import validate_packaged_entry_relative_path
 from app.packaging.payload_policy import DEFAULT_PACKAGING_PAYLOAD_POLICY
 
@@ -99,6 +100,15 @@ def resolve_entry_path(*, root: Path, entry_file: str) -> tuple[Path | None, str
     if not resolved_entry.exists() or not resolved_entry.is_file():
         return None, f"Entry file not found in project: {entry_file}"
     return resolved_entry, None
+
+
+def form_package_lines(project_root: str) -> list[str]:
+    """Generated form files for the package wizard.
+
+    Shell code already imports this module. The shell import list does not
+    include ``app.packaging.form_files``.
+    """
+    return form_lines(project_root)
 
 
 def is_packaging_excluded_path(rel_path: Path) -> bool:

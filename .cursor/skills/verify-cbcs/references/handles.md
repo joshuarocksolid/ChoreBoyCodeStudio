@@ -153,6 +153,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.packageWizard.askInstallLocation` | **Ask the installer for an install folder** (AT-105 when unchecked). Not on page 0 / Step 1. |
 | `#shell.runtimeCenterDialog.copyDetails` | Packaging report only. Copies the report text. Hidden on other Runtime Center reports. |
 | `#shell.runtimeCenterDialog.goToFile` | Packaging report only. Opens the issue file at the reported line. Hidden on other Runtime Center reports. |
+| `#shell.runtimeCenterDialog.saveFormButton` | Packaging report only. Saves the form for the selected stale or missing generated file. Hidden when no form saver is bound, and hidden on other Runtime Center reports. |
 | `#shell.pluginManagerDialog` | Plugin Manager |
 | `#shell.runWithArgumentsDialog` | Run With Arguments |
 | `#shell.runConfigurationsDialog` | Run Configurations |

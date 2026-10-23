@@ -37,19 +37,49 @@ def form_builder_enabled() -> bool:
 
 
 def install_form_builder(ctx: "ShellCompositionContext") -> None:
-    """Register the ``.ui`` provider and the New form tab.
+    """Register the ``.ui`` provider, the New form tab, and the run, package
+    and adopt hooks.
 
-    One provider id owns ``.ui`` files. ``RememberingFormTabProvider`` is that
-    provider and records recent forms. ``attach_new_form`` adds the virtual tab
-    and the callback menus read after this install.
+    Qt and shell imports stay inside this function so importing the module
+    on PySide2 does not load a binding. ``form_builder_enabled`` is the gate.
+    ``RememberingFormTabProvider`` owns ``.ui`` files and records recent forms.
     """
+    from app.features.form_builder.integration.adopt_flow import (
+        START_ENTRIES,
+        adopt_from_start,
+        adopt_from_tree,
+    )
     from app.features.form_builder.integration.new_form import (
         RememberingFormTabProvider,
         attach_new_form,
+        bind_adopt_entry,
     )
+    from app.packaging.form_files import save_packaged_form
+    from app.shell.shell_composition_context import bind_private_attrs
 
-    ctx.w._tab_content_registry.register(RememberingFormTabProvider())
-    attach_new_form(ctx.w)
+    window = ctx.w
+
+    def save_form(ui_path: str) -> str:
+        project = getattr(window, "_loaded_project", None)
+        root = getattr(project, "project_root", None)
+        if not root:
+            return "Open a project before saving the form."
+        return save_packaged_form(str(root), ui_path)
+
+    def adopt(ui_path: str) -> None:
+        adopt_from_tree(window, ui_path)
+
+    window._tab_content_registry.register(RememberingFormTabProvider())
+    attach_new_form(window)
+    bind_adopt_entry(lambda: adopt_from_start(window))
+    bind_private_attrs(
+        window,
+        {
+            "_form_builder_save_form": save_form,
+            "_form_builder_adopt_form": adopt,
+            "_form_builder_start_entries": START_ENTRIES,
+        },
+    )
 
 
 __all__ = ["KILL_SWITCH_ENV", "PROVIDER_ID", "form_builder_enabled", "install_form_builder"]

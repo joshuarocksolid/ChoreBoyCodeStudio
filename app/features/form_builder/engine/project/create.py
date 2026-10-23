@@ -3,19 +3,32 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from typing import Optional, Tuple
+from xml.sax.saxutils import escape as xml_escape
 
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.forms import FormScope
-from app.features.form_builder.engine.project.fs import Journal, OsFileSystem, inside_project
+from app.features.form_builder.engine.project.fs import (
+    Journal,
+    OsFileSystem,
+    ProjectOpError,
+    inside_project,
+)
 from app.features.form_builder.engine.project.names import class_name_for_stem, explain_form_name
 from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.project.templates import build_template_ui, template_keys
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
+
+
+_WINDOW_TITLE = re.compile(
+    r'(<property name="windowTitle"><string(?:\s[^>]*)?>)(.*?)(</string></property>)',
+    re.DOTALL,
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +105,29 @@ def create_form(
         scope=scope,
         refused=None,
     )
+
+
+def stamp_window_title(project_root: str, ui_path: str, title: str, fs: OsFileSystem) -> None:
+    """Set the form's window title and regenerate its Python module."""
+    text = fs.read_text(ui_path)
+    updated = _replace_window_title(text, title)
+    if updated == text:
+        return
+    fs.write_text(ui_path, updated)
+    scope = scope_for(ui_path, project_root, fs)
+    document = read_ui(updated, allocator=IdAllocator()).document
+    written = write_generated(scope, document, updated.encode("utf-8"), fs)
+    if not written.text_written:
+        detail = written.diagnostics[0].message if written.diagnostics else "the form could not be generated"
+        raise ProjectOpError(detail)
+
+
+def _replace_window_title(xml: str, title: str) -> str:
+    escaped = xml_escape(title)
+    updated, count = _WINDOW_TITLE.subn(lambda match: match.group(1) + escaped + match.group(3), xml, count=1)
+    if count != 1:
+        return xml
+    return updated
 
 
 def _ui_text(template: str, class_name: str, ui_text: Optional[str]) -> str:

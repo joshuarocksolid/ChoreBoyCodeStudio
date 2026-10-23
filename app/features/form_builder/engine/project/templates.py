@@ -278,6 +278,77 @@ def _form(layout_name: str, rows: tuple, indent: str = "") -> str:
     return "".join(pad + line if line else line for line in text.splitlines(keepends=True))
 
 
+# The "Qt app with a form" project's window: a labelled field, space below it,
+# and a right-aligned Save button wired to a stub in the window class.
+_APP_WINDOW_TEMPLATE = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<ui version="4.0">\n'
+    " <class>%s</class>\n"
+    ' <widget class="QMainWindow" name="%s">\n'
+    '  <property name="windowTitle"><string>%s</string></property>\n'
+    '  <widget class="QWidget" name="central">\n'
+    '   <layout class="QVBoxLayout" name="verticalLayout">\n'
+    "    <item>\n"
+    '     <layout class="QFormLayout" name="formLayout">\n'
+    '      <item row="0" column="0">\n'
+    '       <widget class="QLabel" name="nameLabel">\n'
+    '        <property name="text"><string>Name</string></property>\n'
+    '        <property name="buddy"><cstring>nameEdit</cstring></property>\n'
+    "       </widget>\n"
+    "      </item>\n"
+    '      <item row="0" column="1">\n'
+    '       <widget class="QLineEdit" name="nameEdit"/>\n'
+    "      </item>\n"
+    "     </layout>\n"
+    "    </item>\n"
+    "    <item>\n"
+    '     <spacer name="verticalSpacer">\n'
+    '      <property name="orientation"><enum>Qt::Vertical</enum></property>\n'
+    '      <property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property>\n'
+    "     </spacer>\n"
+    "    </item>\n"
+    "    <item>\n"
+    '     <layout class="QHBoxLayout" name="buttonRow">\n'
+    "      <item>\n"
+    '       <spacer name="horizontalSpacer">\n'
+    '        <property name="orientation"><enum>Qt::Horizontal</enum></property>\n'
+    '        <property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property>\n'
+    "       </spacer>\n"
+    "      </item>\n"
+    "      <item>\n"
+    '       <widget class="QPushButton" name="saveButton">\n'
+    '        <property name="text"><string>Save</string></property>\n'
+    "       </widget>\n"
+    "      </item>\n"
+    "     </layout>\n"
+    "    </item>\n"
+    "   </layout>\n"
+    "  </widget>\n"
+    '  <widget class="QStatusBar" name="statusBar">\n'
+    '   <property name="currentMessage" stdset="0"><string>Ready</string></property>\n'
+    "  </widget>\n"
+    " </widget>\n"
+    " <connections>\n"
+    "  <connection>\n"
+    "   <sender>saveButton</sender>\n"
+    "   <signal>clicked()</signal>\n"
+    "   <receiver>%s</receiver>\n"
+    "   <slot>save_clicked()</slot>\n"
+    "  </connection>\n"
+    " </connections>\n"
+    " <slots>\n"
+    "  <slot>save_clicked()</slot>\n"
+    " </slots>\n"
+    "</ui>\n"
+)
+
+
+
+def _app_window(class_name: str) -> str:
+    """The qt_app_with_form project's window; not a New form card."""
+    return _APP_WINDOW_TEMPLATE % (class_name, class_name, "Main window", class_name)
+
+
 _BUILDERS = {
     "data_entry": _data_entry,
     "list_detail": _list_detail,
@@ -286,4 +357,5 @@ _BUILDERS = {
     "widget": _blank("QWidget"),
     "dialog": _blank("QDialog"),
     "main_window": _main_window,
+    "app_window": _app_window,
 }
