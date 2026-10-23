@@ -358,6 +358,15 @@ def _sibling_key(doc: UiDocument, widget: WidgetNode) -> Optional[NodeId]:
     return widget.parent_id
 
 
+
+def _fail_on_validation(seed: object, exc: CommandRejected) -> None:
+    """FB999 is a broken invariant or a crash inside apply, not a refusal.
+
+    The one expected FB999 is the generator's own injected ``_Boom``.
+    """
+    if exc.code == "FB999" and not isinstance(exc.error, _Boom):
+        raise AssertionError("seed %s entry failed validation: %s" % (seed, exc.error or exc))
+
 def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
     """One sequence. Failures name the seed."""
     from tests.form_builder.engine.commands._support import open_log
@@ -441,11 +450,12 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
                         for item in commands:
                             try:
                                 tx.execute(cast(Command, item))
-                            except CommandRejected:
-                                pass
+                            except CommandRejected as exc:
+                                _fail_on_validation(seed, exc)
                         if roll == 5 and commands:
                             tx.execute(cast(Command, _FailAfter(commands[0])))
-                except CommandRejected:
+                except CommandRejected as exc:
+                    _fail_on_validation(seed, exc)
                     if doc.fingerprint() != before_fp or len(seen) != event_count:
                         raise AssertionError("transaction rollback diverged seed %s" % (seed,))
                     continue
@@ -458,7 +468,8 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
             if command is None:
                 continue
             outcome = log.execute(cast(Command, command), continue_gesture=rng.randrange(8) == 0)
-        except CommandRejected:
+        except CommandRejected as exc:
+            _fail_on_validation(seed, exc)
             if doc.fingerprint() != before_fp or len(seen) != event_count:
                 raise AssertionError("rejected command changed the form seed %s" % (seed,))
             continue
