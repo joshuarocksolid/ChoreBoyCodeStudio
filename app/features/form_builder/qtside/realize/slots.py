@@ -60,13 +60,14 @@ Taken = List[Tuple[Optional[NodeId], object]]
 class _Mirror:
     """What one QLayout holds, in item order. ``ids`` is kept for list.index."""
 
-    __slots__ = ("layout", "fields", "ids", "objects")
+    __slots__ = ("layout", "fields", "ids", "objects", "nested")
 
     def __init__(self, layout: QLayout) -> None:
         self.layout = layout
         self.fields: List[object] = []
         self.ids: List[NodeId] = []
         self.objects: List[object] = []
+        self.nested = 0
 
     def __len__(self) -> int:
         return len(self.ids)
@@ -81,15 +82,21 @@ class _Mirror:
         self.fields.insert(index, fields)
         self.ids.insert(index, content_id)
         self.objects.insert(index, obj)
+        if isinstance(obj, QLayout):
+            self.nested += 1
 
     def remove(self, index: int) -> Tuple[NodeId, object]:
         del self.fields[index]
-        return self.ids.pop(index), self.objects.pop(index)
+        obj = self.objects.pop(index)
+        if isinstance(obj, QLayout):
+            self.nested -= 1
+        return self.ids.pop(index), obj
 
     def clear(self) -> None:
         del self.fields[:]
         del self.ids[:]
         del self.objects[:]
+        self.nested = 0
 
 
 class LayoutHints:
@@ -477,9 +484,12 @@ class _LayoutSlots:
                     continue
                 if content_id is not None and content_id in self._unplaced:
                     continue
+                # Parked in place. A container takes it back within the window,
+                # or destroy and the sweep delete it where it is.
                 if content_id is not None:
                     self._hold_widget(content_id, obj)
-                obj.setParent(None)
+                else:
+                    obj.setParent(None)
             elif isinstance(obj, QLayout):
                 if not wrapper_is_valid(obj) or isinstance(obj.parent(), QWidget):
                     # Gone, or installed as some widget's own layout.

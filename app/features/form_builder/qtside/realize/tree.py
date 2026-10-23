@@ -160,20 +160,23 @@ class _Structure(_LayoutSlots):
             if not wrapper_is_valid(pooled):
                 self._wipe(node.id)
             else:
-                if pooled.parentWidget() is not parent:
+                # ``parent`` None means the container reparents on insert, so
+                # a widget parked in place keeps its parent until then.
+                if parent is not None and pooled.parentWidget() is not parent:
                     pooled.setParent(parent)
                 self._widgets[node.id] = pooled
                 self._objects[node.id] = pooled
                 self._apply_node_properties(node, pooled, is_root=pooled is self._root)
-                # Morph and settle park descendants on their own. The pooled
-                # widget is empty until something fills it, and a fresh build
-                # fills every descendant. Do that here, when a container asks.
-                self._fill_widget(node, pooled)
+                if node.id in self._needs_fill:
+                    # A morph's new widget is empty until something fills it.
+                    # A parked widget keeps its subtree, so it is not refilled.
+                    self._needs_fill.discard(node.id)
+                    self._fill_widget(node, pooled)
                 return pooled
         current = self._widgets.get(node.id)
         if isinstance(current, QWidget) and current is not pooled:
             if wrapper_is_valid(current):
-                if current.parentWidget() is not parent:
+                if parent is not None and current.parentWidget() is not parent:
                     current.setParent(parent)
                 return current
             self._wipe(node.id)
@@ -220,11 +223,14 @@ class _Structure(_LayoutSlots):
             self._obtain_widget(child, widget)
 
     def _fill_pages(self, node: WidgetNode, widget: QWidget) -> None:
+        if isinstance(widget, (QTabWidget, QToolBox, QStackedWidget)):
+            self._sync_stack_pages(node, widget)
+            return
         self._drain_pages(widget)
         children = node.child_widgets
+        # Adding a pane shows it, and show() activates its layout, which moves
+        # the widgets it manages off their document rects.
         for child_node in children:
-            # Adding a page shows it, and show() activates the page's layout,
-            # which moves the widgets it manages off their document rects.
             self._note_managed_children(child_node)
         if isinstance(widget, QScrollArea):
             if children:
@@ -242,7 +248,13 @@ class _Structure(_LayoutSlots):
             for child_node in children:
                 page = self._obtain_widget(child_node, None)
                 if not isinstance(page, QWizardPage):
-                    self._problems.append("class %s is not a wizard page" % child_node.class_name)
+                    problem = "class %s is not a wizard page" % child_node.class_name
+                    if problem not in self._problems:
+                        self._problems.append(problem)
+                    # A fresh build leaves it parentless. A page parked in
+                    # place would otherwise stay under its old parent.
+                    if page.parentWidget() is not None:
+                        page.setParent(None)
                     continue
                 title = _page_title(child_node)
                 if title and hasattr(page, "setTitle"):
@@ -262,6 +274,68 @@ class _Structure(_LayoutSlots):
                     widget.setItemToolTip(index, tip)
             else:
                 widget.addWidget(page)
+
+    def _sync_stack_pages(self, node: WidgetNode, widget: QWidget) -> None:
+        """Insert and remove only the pages that differ.
+
+        Draining a tab widget hides and re-shows the current page, which walks
+        its whole subtree. Pages the document keeps in order stay where they are.
+        """
+        children = node.child_widgets
+        wanted = {child.id: self._widgets.get(child.id) for child in children}
+        shown: Set[NodeId] = set()
+
+        def note_current() -> None:
+            current = widget.currentWidget()  # type: ignore[attr-defined]
+            current_id = _node_id(current) if current is not None else None
+            if current_id is not None:
+                shown.add(current_id)
+
+        for index in range(widget.count() - 1, -1, -1):  # type: ignore[attr-defined]
+            page = widget.widget(index)  # type: ignore[attr-defined]
+            page_id = _node_id(page)
+            if page_id is not None and wanted.get(page_id) is page:
+                continue
+            _remove_stack_page(widget, index, page)
+            if page_id is not None and wrapper_is_valid(page):
+                self._hold_widget(page_id, page)
+            note_current()
+        kept = [_node_id(widget.widget(index)) for index in range(widget.count())]  # type: ignore[attr-defined]
+        if kept != [child.id for child in children if child.id in set(kept)]:
+            self._drain_pages(widget)
+        position = 0
+        for child_node in children:
+            if position < widget.count() and _node_id(widget.widget(position)) == child_node.id:  # type: ignore[attr-defined]
+                position += 1
+                continue
+            page = self._obtain_widget(child_node, None)
+            title = _page_title(child_node)
+            if isinstance(widget, QTabWidget):
+                index = widget.insertTab(position, page, title)
+                _apply_page_attrs(widget, index, child_node)
+            elif isinstance(widget, QToolBox):
+                index = widget.insertItem(position, page, title)
+                tip = _attr_text(child_node, "toolTip")
+                if tip:
+                    widget.setItemToolTip(index, tip)
+            else:
+                widget.insertWidget(position, page)  # type: ignore[attr-defined]
+            position += 1
+            note_current()
+        if node.prop("currentIndex") is None and widget.count() and widget.currentIndex() != 0:  # type: ignore[attr-defined]
+            # A fresh build leaves the first page added current.
+            widget.setCurrentIndex(0)  # type: ignore[attr-defined]
+            note_current()
+        current = _current_index(node)
+        if 0 <= current < len(children):
+            shown.add(children[current].id)
+        document = self._session.document
+        for page_id in shown:
+            # Showing a page activates its layout, which moves the widgets it
+            # manages off their document rects.
+            page_node = document.get(page_id)
+            if isinstance(page_node, WidgetNode):
+                self._note_managed_children(page_node)
 
     def _fill_dock(self, node: WidgetNode, widget: QDockWidget) -> None:
         children = node.child_widgets
@@ -618,8 +692,10 @@ class _Structure(_LayoutSlots):
             kind = self._qt_class_name(node.class_name)
             # A layout reconciles by difference and a main window keeps parts
             # already in place. Everything else parks its children first.
-            keeps_children = isinstance(node.layout, LayoutNode) or (
-                kind == "QMainWindow" and isinstance(widget, QMainWindow)
+            keeps_children = (
+                isinstance(node.layout, LayoutNode)
+                or (kind == "QMainWindow" and isinstance(widget, QMainWindow))
+                or isinstance(widget, (QTabWidget, QToolBox, QStackedWidget))
             )
             if not keeps_children:
                 self._park_children(node, widget)
@@ -660,38 +736,44 @@ class _Structure(_LayoutSlots):
                 widget.removeSubWindow(sub)
                 delete_now(sub)
             return
+        # Pages come off the end so the current page changes only once, and
+        # they stay parented: the container takes them back in the same window.
         if isinstance(widget, QTabWidget):
             while widget.count():
-                self._park_page(widget.widget(0))
-                widget.removeTab(0)
+                last = widget.count() - 1
+                self._park_page(widget.widget(last), keep_parent=True)
+                widget.removeTab(last)
             return
         if isinstance(widget, QToolBox):
             while widget.count():
-                self._park_page(widget.widget(0))
-                widget.removeItem(0)
+                last = widget.count() - 1
+                self._park_page(widget.widget(last), keep_parent=True)
+                widget.removeItem(last)
             return
         if isinstance(widget, QStackedWidget):
             while widget.count():
-                page = widget.widget(0)
+                page = widget.widget(widget.count() - 1)
                 widget.removeWidget(page)
-                self._park_page(page)
+                self._park_page(page, keep_parent=True)
             return
         if isinstance(widget, QWizard):
             for page_id in list(widget.pageIds()):
-                self._park_page(widget.page(page_id))
+                self._park_page(widget.page(page_id), keep_parent=True)
                 widget.removePage(page_id)
             return
         if isinstance(widget, QSplitter):
+            # addWidget moves a pane that is already in the splitter.
             pages = [widget.widget(index) for index in range(widget.count())]
             for page in pages:
-                self._park_page(page)
+                self._park_page(page, keep_parent=True)
             return
 
-    def _park_page(self, widget: Optional[QWidget]) -> None:
+    def _park_page(self, widget: Optional[QWidget], *, keep_parent: bool = False) -> None:
         if widget is None:
             return
         node_id = _node_id(widget)
-        widget.setParent(None)
+        if not keep_parent:
+            widget.setParent(None)
         if node_id is not None:
             self._hold_widget(node_id, widget)
 
@@ -710,7 +792,7 @@ class _Structure(_LayoutSlots):
                 continue
             if child is widget:
                 continue
-            self._detach_widget(child)
+            self._detach_widget(child, unparent=False)
             self._hold_widget(node_id, child)
 
     def _detach_widget(self, widget: QWidget, *, unparent: bool = True) -> None:
@@ -769,9 +851,19 @@ class _Structure(_LayoutSlots):
             elif wizard is not None and _wizard_has_page(wizard, widget):
                 _remove_wizard_page(wizard, widget)
                 removed = True
-            if not removed and host is not None and host.layout() is not None and wrapper_is_valid(host.layout()):
-                host.layout().removeWidget(widget)
-        widget.setParent(None)
+            host_layout = host.layout() if host is not None else None
+            if not removed and host_layout is not None and wrapper_is_valid(host_layout) and not self._mirrors_without(host_layout):
+                host_layout.removeWidget(widget)
+        if unparent:
+            widget.setParent(None)
+
+    def _mirrors_without(self, qlayout: QLayout) -> bool:
+        """True when ``qlayout`` is ours and its trusted mirror says it holds only
+        what ``_slot_of`` names, so a widget missing there is not in it."""
+        layout_id = _node_id(qlayout)
+        mirror = None if layout_id is None else self._mirror(layout_id, qlayout)
+        # removeWidget also searches nested layouts, so those must be absent.
+        return mirror is not None and mirror.nested == 0
 
     def _drop_layout(self, widget: QWidget) -> None:
         """Remove a layout this realizer installed, including a tagged stand-in.
@@ -802,10 +894,9 @@ class _Structure(_LayoutSlots):
             return True
         if existing is not None:
             if not _is_stand_in(existing) and _node_id(existing) is None:
-                self._problems.append(
-                    "class %s keeps its own layout; the document layout was not installed"
-                    % type(host).__name__
-                )
+                problem = "class %s keeps its own layout; the document layout was not installed" % type(host).__name__
+                if problem not in self._problems:
+                    self._problems.append(problem)
                 return False
             self._drop_layout(host)
         host.setLayout(qlayout)
@@ -913,6 +1004,7 @@ class _Structure(_LayoutSlots):
         self._objects.pop(node.id, None)
         self._discard_pooled(node.id)
         self._pool[node.id] = created
+        self._needs_fill.add(node.id)
         self._queue_widget_host(node)
         self._pending_containers.add(node.id)
 
@@ -952,7 +1044,8 @@ class _Structure(_LayoutSlots):
         if not wrapper_is_valid(widget):
             return
         self._wipe_objects_under(widget)
-        self._detach_widget(widget)
+        # Delete in place: leaving the window first costs a focus-chain walk.
+        self._detach_widget(widget, unparent=False)
         if wrapper_is_valid(widget):
             delete_now(widget)
 
@@ -1252,6 +1345,21 @@ def _tree_item(node: object) -> object:
     for child in node.children("subitems"):  # type: ignore[attr-defined]
         item.addChild(_tree_item(child))
     return item
+
+
+def _remove_stack_page(widget: QWidget, index: int, page: QWidget) -> None:
+    if isinstance(widget, QTabWidget):
+        widget.removeTab(index)
+    elif isinstance(widget, QToolBox):
+        widget.removeItem(index)
+    elif isinstance(widget, QStackedWidget):
+        widget.removeWidget(page)
+
+
+def _current_index(node: WidgetNode) -> int:
+    entry = node.prop("currentIndex")
+    value = getattr(entry.value, "value", None) if entry is not None else None
+    return value if isinstance(value, int) else 0
 
 
 def _under(obj: object, root: object) -> bool:

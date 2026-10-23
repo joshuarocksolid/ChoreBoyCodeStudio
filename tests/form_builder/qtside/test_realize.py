@@ -909,6 +909,40 @@ def test_a_form_cell_that_is_taken_is_reported() -> None:
         _same(realizer, session, "taken cell")
 
 
+def test_delete_and_undo_cycles_keep_the_buddy_index_bounded() -> None:
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QFormLayout" name="form">
+   <item row="0" column="0"><widget class="QLabel" name="lab"><property name="buddy"><cstring>edit</cstring></property></widget></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="edit"/></item>
+  </layout>
+""",
+    )
+    with opened(text) as (session, realizer):
+        label = _named(session, "lab")
+        for _cycle in range(20):
+            session.log.execute(DeleteNodes((label,)))
+            session.log.undo()
+        users = realizer._buddy_users.get("edit", ())
+        assert list(users).count(label) == 1, users
+        assert len(users) == 1, users
+        _same(realizer, session, "buddy cycles")
+
+
+def test_a_widget_that_keeps_its_own_layout_is_reported_once() -> None:
+    text = form(
+        'class="QDialogButtonBox" name="Form"',
+        '<layout class="QVBoxLayout" name="lay"><item><widget class="QPushButton" name="a"/></item></layout>',
+    )
+    with opened(text) as (session, realizer):
+        box = _layout_of(session, "Form")
+        for index in range(3):
+            session.log.execute(InsertFragment(InBoxLayout(box, 0), Fragment(nodes=(button_spec("b%d" % index),))))
+        kept = [problem for problem in realizer.problems() if "keeps its own layout" in problem]
+        assert len(kept) == 1, realizer.problems()
+
+
 def opened_pair(text: str) -> Tuple[FormSession, Realizer]:
     session = open_session(text)
     realizer = Realizer(session)

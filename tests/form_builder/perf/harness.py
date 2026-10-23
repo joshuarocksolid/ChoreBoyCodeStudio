@@ -39,7 +39,7 @@ from app.features.form_builder.engine.commands.catalog import (
     MoveNodes,
     SetProperty,
 )
-from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InGridCell
+from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InContainer, InGridCell
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.qt.QtWidgets import QApplication
@@ -1086,6 +1086,8 @@ def _realize_patch_row(
 STRUCTURAL_POINTS: Tuple[str, ...] = (
     "insert into layout",
     "insert into box layout",
+    "insert into loose container",
+    "insert tab page",
     "delete from layout",
     "move into earlier container",
     "morph",
@@ -1093,10 +1095,13 @@ STRUCTURAL_POINTS: Tuple[str, ...] = (
 )
 # Edits whose changed set does not grow with the form. Their realize p95 at
 # 1000 widgets stays within CHANGED_RATIO_LIMIT of the 300-widget p95.
-# ``insert into layout`` shifts every grid row, and a delete renumbers the
-# siblings, so those two are reported at 1000 widgets and not ratio-judged.
+# ``insert into layout`` shifts every grid row, so it is reported at 1000
+# widgets and not ratio-judged.
 STRUCTURAL_RATIO_POINTS: Tuple[str, ...] = (
     "insert into box layout",
+    "insert into loose container",
+    "insert tab page",
+    "delete from layout",
     "move into earlier container",
     "morph",
     "toolbar edit",
@@ -1270,6 +1275,8 @@ def _structural_ops(session: Any) -> Tuple[Tuple[str, Callable[[], None]], ...]:
     grid_id = session.document.by_name("grid")[0]
     header_id = session.document.by_name("headerBar")[0]
     toolbar_id = session.document.by_name("toolBar")[0]
+    details_id = session.document.by_name("tabDetails")[0]
+    tabs_id = session.document.by_name("tabs")[0]
     grid = session.document.get(grid_id)
     header = session.document.get(header_id)
     if not isinstance(grid, LayoutNode) or not isinstance(header, LayoutNode):
@@ -1300,6 +1307,22 @@ def _structural_ops(session: Any) -> Tuple[Tuple[str, Callable[[], None]], ...]:
             )
         )
 
+    def loose() -> None:
+        counter["n"] += 1
+        live = session.document.get(details_id)
+        session.log.execute(
+            InsertFragment(
+                InContainer(details_id, len(live.child_widgets)),
+                Fragment(nodes=(button_spec("speedLoose%d" % counter["n"]),)),
+            )
+        )
+
+    def tab_page() -> None:
+        counter["n"] += 1
+        live = session.document.get(tabs_id)
+        page = NodeSpec("widget", None, (("class_name", "QWidget"), ("object_name", "speedPage%d" % counter["n"])))
+        session.log.execute(InsertFragment(InContainer(tabs_id, len(live.child_widgets)), Fragment(nodes=(page,))))
+
     def delete() -> None:
         session.log.execute(DeleteNodes((deleted,)))
 
@@ -1320,6 +1343,8 @@ def _structural_ops(session: Any) -> Tuple[Tuple[str, Callable[[], None]], ...]:
     return (
         ("insert into layout", insert),
         ("insert into box layout", append),
+        ("insert into loose container", loose),
+        ("insert tab page", tab_page),
         ("delete from layout", delete),
         ("move into earlier container", move),
         ("morph", morph),

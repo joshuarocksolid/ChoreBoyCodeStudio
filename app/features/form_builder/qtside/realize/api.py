@@ -129,6 +129,8 @@ class Realizer(_Structure):
         self._fresh: Set[NodeId] = set()
         self._unplaced: Set[NodeId] = set()
         self._geometry_targets: Set[NodeId] = set()
+        # Pooled widgets whose children were never filled (a morph's new object).
+        self._needs_fill: Set[NodeId] = set()
         self._mdi: Dict[NodeId, object] = {}
         self._nursery_widget: Optional[QWidget] = None
         self._buddy_of: Dict[NodeId, str] = {}
@@ -172,6 +174,7 @@ class Realizer(_Structure):
         self._fresh.clear()
         self._unplaced.clear()
         self._geometry_targets.clear()
+        self._needs_fill.clear()
 
     def on_changeset(self, changeset: ChangeSet) -> PatchStats:
         """Reconcile in three phases. Patches re-read the document, not ``change.new``."""
@@ -519,7 +522,9 @@ class Realizer(_Structure):
             self._buddy_users[previous].remove(node.id)
         if target:
             self._buddy_of[node.id] = target
-            self._buddy_users.setdefault(target, []).append(node.id)
+            users = self._buddy_users.setdefault(target, [])
+            if node.id not in users:
+                users.append(node.id)
         else:
             self._buddy_of.pop(node.id, None)
 
@@ -551,7 +556,7 @@ class Realizer(_Structure):
         for pooled in list(self._pool.values()):
             # A moved widget waits in the pool under its old host. If that
             # host dies here, the widget must not die with it.
-            if isinstance(pooled, QWidget) and wrapper_is_valid(pooled):
+            if isinstance(pooled, QWidget) and wrapper_is_valid(pooled) and _node_id(pooled) not in removed:
                 host = pooled.parentWidget()
                 if host is not None and _node_id(host) in removed:
                     pooled.setParent(None)
@@ -599,7 +604,10 @@ class Realizer(_Structure):
             self._spacer_ids.pop(id(spacer), None)
         self._pool.pop(node_id, None)
         self._mdi.pop(node_id, None)
-        self._buddy_of.pop(node_id, None)
+        target = self._buddy_of.pop(node_id, None)
+        users = self._buddy_users.get(target) if target else None
+        if users is not None and node_id in users:
+            users.remove(node_id)
         self._forget_slots(node_id)
         self._slot_of.pop(node_id, None)
 
