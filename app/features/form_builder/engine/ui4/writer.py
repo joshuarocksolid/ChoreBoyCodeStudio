@@ -103,6 +103,7 @@ class WriteResult:
 
     text: str
     line_map: Dict[NodeId, int]
+    opaque_spans: Tuple[Tuple[int, int], ...] = ()
 
 
 def write_ui(doc: UiDocument) -> WriteResult:
@@ -116,7 +117,12 @@ def write_ui(doc: UiDocument) -> WriteResult:
     Budget: 10 ms CPU for a 300-widget form."""
     writer = _Writer(doc.newline)
     writer.node(doc.ui, 0)
-    return WriteResult(writer.finish(), writer.line_map)
+    return WriteResult(writer.finish(), writer.line_map, tuple(writer.opaque_spans))
+
+
+def kept_as_is_line_spans(result: WriteResult) -> Tuple[Tuple[int, int], ...]:
+    """1-based inclusive line ranges of opaque nodes the builder did not interpret."""
+    return result.opaque_spans
 
 
 def write_fragment(fragment: Fragment) -> str:
@@ -167,6 +173,7 @@ class _Writer:
         self.newline = newline
         self.lines: List[str] = [XML_DECLARATION]
         self.line_map: Dict[NodeId, int] = {}
+        self.opaque_spans: List[Tuple[int, int]] = []
 
     def finish(self) -> str:
         text = "\n".join(self.lines) + "\n"
@@ -328,6 +335,15 @@ class _Writer:
             self.node(child, indent)
 
     def opaque(self, element: OpaqueElement, indent: int) -> None:
+        start = len(self.lines) + 1
+        self._write_opaque(element, indent)
+        if not element.tag:
+            return
+        end = len(self.lines)
+        if end >= start:
+            self.opaque_spans.append((start, end))
+
+    def _write_opaque(self, element: OpaqueElement, indent: int) -> None:
         if element.tag == "":
             for child in element.children:
                 if isinstance(child, str):
