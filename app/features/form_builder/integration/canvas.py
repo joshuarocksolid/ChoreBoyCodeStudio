@@ -24,7 +24,7 @@ from app.qt.qt_compat import wrapper_is_valid
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.integration.chrome_text import page_chip_text, page_size_text
+from app.features.form_builder.integration.chrome_text import page_chip_label, page_size_text
 from app.features.form_builder.integration.layout import GUTTER
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.runtime import isolate_scene
@@ -57,8 +57,8 @@ class FormCanvas(QGraphicsView):
         self._session = session
         self._realizer = realizer
         self._tokens: Optional[ShellThemeTokens] = None
-        self._canvas_bg = "#FFFFFF"
-        self._dot = "#C5CAD1"
+        self._canvas_bg = "#E9EBEF"
+        self._dot = "#D3D8DF"
         self._banner_push = 0
         self._closer: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.canvas")
@@ -99,20 +99,22 @@ class FormCanvas(QGraphicsView):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Chrome only. The page palette stays the runtime palette."""
         self._tokens = tokens
-        self._canvas_bg = tokens.editor_bg
-        self._dot = tokens.text_muted or tokens.border
+        self._canvas_bg, self._dot = _backdrop(tokens)
         width = tokens.focus_border_width
+        faint = tokens.gutter_text or tokens.text_muted
         self.setStyleSheet(
             "QGraphicsView#formBuilder\\.canvas {"
-            f" background: {tokens.editor_bg}; border: 1px solid {tokens.border}; }}"
+            f" background: {self._canvas_bg}; border: 1px solid {tokens.border}; }}"
             "QGraphicsView#formBuilder\\.canvas:focus {"
             f" border: {width}px solid {tokens.accent}; }}"
-            "QLabel#formBuilder\\.name, QLabel#formBuilder\\.pagePhrase,"
-            " QLabel#formBuilder\\.sizeReadout {"
+            "QLabel#formBuilder\\.name {"
             f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
-            f" border: 1px solid {tokens.border}; padding: 2px 6px; }}"
+            f" border: 1px solid {tokens.border}; border-radius: 4px; padding: 1px 6px;"
+            " font-size: 11px; font-weight: 600; }"
+            "QLabel#formBuilder\\.sizeReadout {"
+            f" color: {tokens.text_muted}; background: transparent; border: none; padding: 0; }}"
             "QWidget#formBuilder\\.grabberRight, QWidget#formBuilder\\.grabberBottom {"
-            f" background: {tokens.border}; border: none; }}"
+            f" background: {faint}; border: none; }}"
             "QLabel#formBuilder\\.toast {"
             f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
             f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
@@ -150,6 +152,8 @@ class FormCanvas(QGraphicsView):
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         painter.fillRect(rect, QColor(self._canvas_bg))
+        if not self._dot:
+            return
         color = QColor(self._dot)
         pen = getattr(getattr(Qt, "PenStyle", Qt), "NoPen")
         painter.setPen(pen)
@@ -170,9 +174,6 @@ class FormCanvas(QGraphicsView):
         self._name = QLabel(self)
         self._name.setObjectName("formBuilder.name")
         self._name.setAccessibleName("Form name")
-        self._phrase = QLabel(self)
-        self._phrase.setObjectName("formBuilder.pagePhrase")
-        self._phrase.setAccessibleName("Page kind")
         self._size = QLabel(self)
         self._size.setObjectName("formBuilder.sizeReadout")
         self._size.setAccessibleName("Page size")
@@ -209,9 +210,9 @@ class FormCanvas(QGraphicsView):
 
     def _refresh_chip(self) -> None:
         document = self._session.document
-        name, phrase = page_chip_text(document, "Form")
-        self._name.setText(name)
-        self._phrase.setText(phrase)
+        label = page_chip_label(document, "Form")
+        self._name.setText(label)
+        self._name.setAccessibleName(label)
         self._size.setText(self._size_text(document))
         self._position_chrome()
 
@@ -252,13 +253,11 @@ class FormCanvas(QGraphicsView):
         top_left = self.mapFromScene(rect.topLeft())
         bottom_right = self.mapFromScene(rect.bottomRight())
         self._fit_label(self._name)
-        self._fit_label(self._phrase)
         self._fit_label(self._size)
-        self._name.move(top_left.x(), max(4, top_left.y() - self._name.height() - 6))
-        self._phrase.move(self._name.x() + self._name.width() + 6, self._name.y())
-        self._size.move(self._phrase.x() + self._phrase.width() + 6, self._name.y())
+        self._name.move(top_left.x(), max(0, top_left.y() - self._name.height() - 4))
         self._name.raise_()
-        self._phrase.raise_()
+        size_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - self._size.width()) // 2)
+        self._size.move(size_x, bottom_right.y() + 6)
         self._size.raise_()
         mid_y = top_left.y() + max(0, (bottom_right.y() - top_left.y() - 32) // 2)
         self._grabber_right.move(bottom_right.x() + 2, mid_y)
@@ -279,6 +278,15 @@ class FormCanvas(QGraphicsView):
             self._toast.adjustSize()
             toast_x = max(0, (self.width() - self._toast.width()) // 2)
             self._toast.move(toast_x, self.height() - self._toast.height() - 16)
+
+
+def _backdrop(tokens: ShellThemeTokens) -> tuple[str, str]:
+    """UX-TOK-002. High contrast has a flat backdrop and no dots."""
+    if tokens.is_high_contrast:
+        return ("#000000" if tokens.is_dark else "#FFFFFF", "")
+    if tokens.is_dark:
+        return ("#16191D", "#262B31")
+    return ("#E9EBEF", "#D3D8DF")
 
 
 __all__ = ["FormCanvas"]

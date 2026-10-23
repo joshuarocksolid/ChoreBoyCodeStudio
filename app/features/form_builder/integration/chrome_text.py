@@ -37,6 +37,12 @@ def page_chip_text(document: UiDocument, fallback_name: str) -> tuple[str, str]:
     return name, phrase
 
 
+def page_chip_label(document: UiDocument, fallback_name: str) -> str:
+    """``Name · Vertical layout`` for the single chip above the page."""
+    name, phrase = page_chip_text(document, fallback_name)
+    return "%s · %s" % (name, phrase)
+
+
 def page_size_text(document: UiDocument) -> Optional[str]:
     """``640 × 480`` from the root geometry, or None when the form has none."""
     entry = document.root.prop("geometry")
@@ -76,6 +82,7 @@ def external_change_sentence(file_name: str) -> str:
 __all__ = [
     "draft_clock",
     "external_change_sentence",
+    "page_chip_label",
     "page_chip_text",
     "page_size_text",
     "recovered_draft_sentence",
