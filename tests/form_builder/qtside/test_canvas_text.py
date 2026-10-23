@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 import pytest
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QPoint, Qt
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
 from app.features.form_builder.engine.session import FormSession
@@ -80,6 +80,22 @@ def test_escape_cancels_without_a_write() -> None:
         assert _button(canvas).text() == "OK"
         assert _stored(session) == "OK"
         assert not session.log.can_undo()
+        assert _visible_edit(canvas) is None
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_a_click_elsewhere_commits_the_text() -> None:
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        _click(canvas, "ok")
+        edit = _open(canvas)
+        QTest.keyClicks(edit, "Save")
+        QTest.mouseClick(canvas.viewport(), _mouse("LeftButton"), _mods("NoModifier"), QPoint(8, 8))
+        _flush()
+        assert _button(canvas).text() == "Save"
+        assert _stored(session) == "Save"
+        assert session.log.undo_label() == "Edit text"
         assert _visible_edit(canvas) is None
         canvas.dispose()
         parent.deleteLater()

@@ -32,6 +32,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Commit,
     Cursor,
     DocumentChanged,
+    Editing,
     EditorDone,
     Effect,
     EndPreview,
@@ -197,6 +198,8 @@ class CanvasController:
         self._diagnostics_unsub()
 
     def _feed(self, event: Event) -> bool:
+        if isinstance(event, Press) and isinstance(self._gesture, Editing):
+            self._editor.commit_on_press()
         if needs_fresh_geometry(self._gesture, event):
             self._index.ensure_fresh()
             self._rebuild(static=self._static_stale())

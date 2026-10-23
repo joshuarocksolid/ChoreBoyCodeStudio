@@ -57,6 +57,12 @@ class InPlaceEditor:
             return
         self._place()
 
+    def commit_on_press(self) -> None:
+        """A press outside the editor commits. Escape is the only cancel."""
+        if self._edit is None:
+            return
+        self._finish("focus_out")
+
     def close(self, restore_focus: bool) -> None:
         edit = self._edit
         self._edit = None
