@@ -337,3 +337,67 @@ def test_handles_law_and_checker_cannot_hide_removed_object_name(
         "policy: judge edit would fail baseline checker: "
         "handles: shell.welcome is documented but has no setObjectName in app\n"
     )
+
+
+def test_adding_a_documented_handle_passes_the_baseline_judge(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    baseline_root = tmp_path / "baseline"
+    current_root = tmp_path / "current"
+    manifest = (
+        "owners:\n"
+        "  shell:\n"
+        "    - app/shell/**\n"
+    )
+    _write_checker_tree(baseline_root, manifest)
+    _write_checker_tree(current_root, manifest)
+
+    relative_app_path = "app/shell/runtime_center_dialog.py"
+    baseline_source = (
+        "class RuntimeCenterDialog:\n"
+        "    def configure(self) -> None:\n"
+        '        self.setObjectName("shell.welcome")\n'
+    )
+    current_source = (
+        baseline_source
+        + '        save_button.setObjectName('
+        + '"shell.runtimeCenterDialog.saveFormButton")\n'
+    )
+    handles = (
+        "| Handle | What |\n"
+        "| --- | --- |\n"
+        "| `#shell.welcome` | Welcome pane |\n"
+    )
+    current_handles = (
+        handles
+        + "| `#shell.runtimeCenterDialog.saveFormButton` | Save the form |\n"
+    )
+    for root, source, handle_text in (
+        (baseline_root, baseline_source, handles),
+        (current_root, current_source, current_handles),
+    ):
+        app_path = root / relative_app_path
+        app_path.parent.mkdir(parents=True)
+        app_path.write_text(source, encoding="utf-8")
+        handles_path = (
+            root
+            / ".cursor"
+            / "skills"
+            / "verify-cbcs"
+            / "references"
+            / "handles.md"
+        )
+        handles_path.parent.mkdir(parents=True)
+        handles_path.write_text(handle_text, encoding="utf-8")
+
+    exit_code = run(
+        current_root,
+        [relative_app_path],
+        baseline_root=baseline_root,
+    )
+
+    captured = capsys.readouterr()
+    assert captured.err == ""
+    assert exit_code == 0
+    assert captured.out == "dune check ok\n"
