@@ -105,6 +105,16 @@ _GEOMETRY_PROPS = frozenset(
 _DIRECT = Qt.FindDirectChildrenOnly
 
 
+def _direct_widgets(widget: QWidget) -> List[QWidget]:
+    """Direct QWidget children.
+
+    PySide2 ``findChildren`` takes a type and an optional name. It has no
+    ``FindChildOption`` argument, so the Qt6 ``options=`` keyword cannot be
+    the shared call.
+    """
+    return [child for child in widget.children() if isinstance(child, QWidget)]
+
+
 class _Structure(_LayoutSlots):
     """Methods mixed into ``Realizer``. Attributes live on the realizer."""
 
@@ -370,7 +380,7 @@ class _Structure(_LayoutSlots):
             live = self._widgets.get(child.id)
             if isinstance(live, QWidget) and wrapper_is_valid(live) and _installed(widget, live, role):
                 installed.add(child.id)
-        for stale in list(widget.findChildren(QWidget, options=_DIRECT)):
+        for stale in _direct_widgets(widget):
             stale_id = _node_id(stale)
             if stale_id is None or stale_id in installed or stale is widget or stale_id in self._pool:
                 continue
@@ -577,7 +587,7 @@ class _Structure(_LayoutSlots):
         if not order:
             return
         by_name = {}
-        for child in widget.findChildren(QWidget, options=_DIRECT):
+        for child in _direct_widgets(widget):
             if child.objectName():
                 by_name[child.objectName()] = child
         for name in order:
@@ -786,7 +796,7 @@ class _Structure(_LayoutSlots):
             self._hold_widget(child.id, widget)
 
     def _park_direct(self, widget: QWidget) -> None:
-        for child in list(widget.findChildren(QWidget, options=_DIRECT)):
+        for child in _direct_widgets(widget):
             node_id = _node_id(child)
             if node_id is None or node_id in self._pool:
                 continue

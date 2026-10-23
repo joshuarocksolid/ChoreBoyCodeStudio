@@ -7,6 +7,7 @@ from typing import Any, Callable, Protocol
 
 from app.qt.QtWidgets import QMessageBox
 
+from app.editors.generated_file import excluded_from_lint
 from app.intelligence.diagnostics_service import CodeDiagnostic, DiagnosticSeverity, find_unresolved_imports
 from app.intelligence.lint_profile import LINT_SEVERITY_ERROR, LINT_SEVERITY_INFO, resolve_lint_rule_settings
 from app.plugins.workflow_adapters import analyze_python_with_workflow
@@ -145,6 +146,15 @@ class LintWorkflow:
         )
         editor_widget = None if buffer_id is None else self._host.editor_widget_for_buffer_id(buffer_id)
         buffer_source = editor_widget.toPlainText() if editor_widget is not None else None
+        if excluded_from_lint(file_path, buffer_source or ""):
+            self._host.apply_lint_diagnostics_result(file_path, [])
+            if trigger == "manual":
+                QMessageBox.information(
+                    parent,
+                    "Lint Current File",
+                    "Generated files are left out of Problems.",
+                )
+            return
         allow_runtime_import_probe = False
         key = f"lint::{file_path}"
 

@@ -281,11 +281,14 @@ def tokens_from_palette(
             **syntax_kwargs,
         )
     if is_dark:
-        return _shell_theme_tokens_dark(
+        tokens = _shell_theme_tokens_dark(
             dark_chrome_palette,
             syntax_kwargs=syntax_kwargs,
             ui_font_weight_css=ui_font_weight_css,
         )
+        if dark_chrome_palette == constants.UI_THEME_DARK_CHROME_PALETTE_NEUTRAL_GRAY:
+            return replace(tokens, gutter_text="#979797")
+        return tokens
     return ShellThemeTokens(
         window_bg="#F8F9FA",
         panel_bg="#FFFFFF",

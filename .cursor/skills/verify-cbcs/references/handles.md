@@ -40,6 +40,12 @@ Dependency Inspector title is **Project Dependencies**. No `#shell.dependency*` 
 | `#shell.editorTabs.uiTextHintFrame` | PySide2 `.ui` notice box (text with Dismiss at its right). |
 | `#shell.editorTabs.uiTextHint` | PySide2 `.ui` notice text. Once per file per window. |
 | `#shell.editorTabs.uiTextHintDismiss` | Focusable Dismiss control on that notice. |
+| `#shell.generatedFileBar` | Read-only banner on a generated `ui_*.py` / `*_rc.py` tab (UX-GEN-001). |
+| `#shell.generatedFileBar.icon` | Lock glyph on that banner. |
+| `#shell.generatedFileBar.message` | Banner sentence naming the source form. |
+| `#shell.generatedFileBar.openSource` | Opens the `.ui` the file is generated from. |
+| `#shell.generatedFileBar.openLogic` | Opens the logic expansion source, when there is one. |
+| `#shell.generatedFileBar.editAnyway` | Makes this tab's buffer writable (UX-GEN-002). |
 | `#shell.bottomRegion.tabs` | Console / Debug / Problems / Run Log |
 | `#shell.statusBar` | Status bar |
 

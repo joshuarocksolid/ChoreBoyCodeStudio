@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from app.qt.QtCore import QPoint, Qt, Signal
-from app.qt.QtGui import QColor, QIcon, QPainter, QPixmap, QPolygon
+from app.qt.QtGui import QColor, QIcon, QPainter, QPalette, QPixmap, QPolygon
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 ROLE_FILE_PATH = 320
 ROLE_LINE_NUMBER = 321
 ROLE_DIAGNOSTIC_CODE = 322
+ROLE_DETAIL = 323
 
 
 @dataclass(frozen=True)
@@ -235,6 +236,7 @@ class ProblemsPanel(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("shell.problemsPanel")
+        self._last_detail: dict[str, str] = {}
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -442,12 +444,20 @@ class ProblemsPanel(QWidget):
                     child.setIcon(0, severity_icon(entry.severity, color_hex))
                     child.setText(1, entry.message)
                     child.setForeground(1, QColor(color_hex))
-                    child.setText(2, f"Ln {entry.line_number}")
+                    detail = dict(entry.detail) if entry.detail else {}
+                    location = detail.get("location_label") or f"Ln {entry.line_number}"
+                    child.setText(2, location)
                     child.setText(3, entry.code)
-                    child.setToolTip(1, entry.file_path)
+                    source_label = detail.get("source_label") or ""
+                    if source_label:
+                        child.setToolTip(1, "%s\n%s" % (source_label, entry.file_path))
+                        child.setForeground(3, self._tree.palette().color(QPalette.PlaceholderText))
+                    else:
+                        child.setToolTip(1, entry.file_path)
                     child.setData(0, ROLE_FILE_PATH, entry.file_path)
                     child.setData(0, ROLE_LINE_NUMBER, entry.line_number)
                     child.setData(0, ROLE_DIAGNOSTIC_CODE, entry.code)
+                    child.setData(0, ROLE_DETAIL, detail)
                 else:
                     assert isinstance(entry, ProblemEntry)
                     color_hex = self._severity_colors.get(DiagnosticSeverity.ERROR, "#E03131")
@@ -535,7 +545,12 @@ class ProblemsPanel(QWidget):
             resolved_line = int(line_number)
         except (TypeError, ValueError):
             return
+        detail = item.data(0, ROLE_DETAIL)
+        self._last_detail = dict(detail) if isinstance(detail, dict) else {}
         self.item_activated.emit(str(file_path), resolved_line)
+
+    def last_activation_detail(self) -> dict[str, str]:
+        return dict(self._last_detail)
 
     def _on_context_menu(self, position: "QPoint") -> None:
         item = self._tree.itemAt(position)

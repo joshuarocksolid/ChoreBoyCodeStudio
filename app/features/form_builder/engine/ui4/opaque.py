@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Tuple, Union
 
 
@@ -19,11 +19,15 @@ class OpaqueElement:
     An empty ``tag`` is an internal text carrier used when a known element has
     non-whitespace text between its children. The writer emits the text and no
     wrapper element.
+
+    ``line`` is the 1-based source line of the start tag, or 0 when the element
+    was not read from text. It is not content: equality and hashing ignore it.
     """
 
     tag: str
     attrs: Tuple[Tuple[str, str], ...] = ()
     children: Tuple["OpaqueChild", ...] = ()
+    line: int = field(default=0, compare=False, repr=False)
 
 
 @dataclass(frozen=True)

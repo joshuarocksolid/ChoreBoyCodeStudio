@@ -8,10 +8,10 @@ from app.qt.QtWidgets import QMessageBox, QKeySequenceEdit, QPushButton, QTableW
 
 from app.shell.settings_models import EditorSettingsSnapshot
 from app.shell.shortcut_preferences import (
-    SHORTCUT_COMMANDS,
     build_effective_shortcut_map,
     default_shortcut_map,
     find_shortcut_conflicts,
+    iter_shortcut_commands,
     normalize_shortcut,
 )
 
@@ -31,8 +31,9 @@ class SettingsKeybindingsHandlersMixin:
     def _populate_shortcut_table(self, snapshot: EditorSettingsSnapshot) -> None:
         defaults = default_shortcut_map()
         effective = build_effective_shortcut_map(snapshot.shortcut_overrides)
-        self._shortcut_table.setRowCount(len(SHORTCUT_COMMANDS))
-        for row_index, command in enumerate(SHORTCUT_COMMANDS):
+        commands = iter_shortcut_commands()
+        self._shortcut_table.setRowCount(len(commands))
+        for row_index, command in enumerate(commands):
             self._shortcut_rows[command.action_id] = row_index
             command_item = QTableWidgetItem(f"{command.category} / {command.label}")
             command_item.setData(Qt.UserRole, command.action_id)
@@ -91,7 +92,7 @@ class SettingsKeybindingsHandlersMixin:
             return
         command_labels = {
             command.action_id: f"{command.category} / {command.label}"
-            for command in SHORTCUT_COMMANDS
+            for command in iter_shortcut_commands()
         }
         conflict_names = ", ".join(command_labels.get(item, item) for item in conflicting_action_ids)
         choice = QMessageBox.question(

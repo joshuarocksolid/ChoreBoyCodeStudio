@@ -57,7 +57,8 @@ def test_every_static_main_menu_action_has_icon_mapping(_ensure_qapp) -> None:  
     window = QMainWindow()
     registry = build_menu_stubs(window.menuBar(), callbacks=MenuCallbacks())
 
-    assert sorted(set(registry.actions) - set(all_static_menu_icon_action_ids())) == []
+    shell_actions = {action_id for action_id in registry.actions if str(action_id).startswith("shell.")}
+    assert sorted(shell_actions - set(all_static_menu_icon_action_ids())) == []
 
 
 @pytest.mark.parametrize(

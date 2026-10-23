@@ -1,7 +1,7 @@
 """Gutter, breakpoint, and debug-line chrome for CodeEditorWidget."""
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import TYPE_CHECKING, Any, cast
 
 from app.qt.QtCore import QPointF, QRect, QSize, Qt
@@ -24,6 +24,8 @@ if TYPE_CHECKING:
         _debug_execution_line_bg: QColor
         _gutter_bg: QColor
         _gutter_text: QColor
+        _gutter_notes: dict[int, str]
+        _gutter_note_width: int
         _breakpoint_color: QColor
         _diagnostic_lines: dict[int, Any]
 
@@ -60,6 +62,8 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
     _ICON_ZONE_WIDTH = 20
 
     def _init_chrome_state(self) -> None:
+        self._gutter_notes: dict[int, str] = {}
+        self._gutter_note_width = 0
         self._line_number_area = _LineNumberArea(self)
         self._breakpoint_toggled_callback: Callable[[int, bool], None] | None = None
         self._debug_execution_color = QColor("#D97706")
@@ -135,9 +139,25 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
             top = bottom
             bottom = top + int(self.blockBoundingRect(block).height())
 
+    def set_gutter_notes(self, notes: Mapping[int, str]) -> None:
+        """Line to a short note painted left of the line number. ``{}`` clears them."""
+        self._gutter_notes = {int(line): text for line, text in notes.items() if text}
+        self._update_line_number_area_width(0)
+        cr = self.contentsRect()
+        self._line_number_area.setGeometry(
+            QRect(cr.left(), cr.top(), self.line_number_area_width(), cr.height())
+        )
+        self._line_number_area.update()
+
     def line_number_area_width(self) -> int:
         digits = len(str(max(1, self.blockCount())))
-        return self._ICON_ZONE_WIDTH + 8 + self.fontMetrics().horizontalAdvance("9") * digits
+        note_width = 0
+        notes = getattr(self, "_gutter_notes", None) or {}
+        if notes:
+            metrics = self.fontMetrics()
+            note_width = max(metrics.horizontalAdvance(text) for text in notes.values()) + 8
+        self._gutter_note_width = note_width
+        return self._ICON_ZONE_WIDTH + 8 + self.fontMetrics().horizontalAdvance("9") * digits + note_width
 
     def _update_line_number_area_width(self, _new_block_count: int) -> None:
         self.setViewportMargins(self.line_number_area_width(), 0, 0, 0)
@@ -209,8 +229,16 @@ class CodeEditorChromeMixin(_CodeEditorChromeBase):
                         ]))
 
                     painter.setPen(color)
+                    note = self._gutter_notes.get(line_number, "")
+                    note_width = self._gutter_note_width
+                    if note:
+                        painter.drawText(
+                            QRect(icon_zone, top, note_width, font_height),
+                            int(Qt.AlignLeft | Qt.AlignVCenter),
+                            note,
+                        )
                     painter.drawText(
-                        QRect(icon_zone, top, self._line_number_area.width() - icon_zone - 4, font_height),  # type: ignore
+                        QRect(icon_zone + note_width, top, self._line_number_area.width() - icon_zone - note_width - 4, font_height),  # type: ignore
                         int(Qt.AlignRight),
                         number_text,
                     )  # type: ignore[call-overload]

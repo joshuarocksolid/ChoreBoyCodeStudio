@@ -29,6 +29,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     LayoutItemNode,
     LayoutNode,
     Node,
+    OpaqueNode,
     SpacerNode,
     WidgetNode,
     build_node,
@@ -594,6 +595,67 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
         _release_arena(arena)
         _resume_collections()
     return ReadResult(document=document, diagnostics=tuple(diagnostics), line_map=line_map)
+
+
+def kept_as_is_spans(text: str) -> Tuple[Tuple[int, int], ...]:
+    """1-based inclusive line spans of the top-level kept-as-is elements in ``text``.
+
+    The spans come from reading ``text`` itself, so they match the lines the
+    XML view shows whatever its layout. An element inside a kept element is not
+    a span of its own (UX-XML-005). Text that does not read gives no spans.
+    """
+    try:
+        result = read_ui(text, allocator=IdAllocator())
+    except UiReadError:
+        return ()
+    found: List[OpaqueElement] = []
+    for node in result.document.iter_preorder():
+        if isinstance(node, OpaqueNode):
+            _top_level_opaque(node.element, found)
+        for entry in (*node.properties(), *node.attributes()):
+            if isinstance(entry.value, OpaqueValue):
+                _top_level_opaque(entry.value.element, found)
+    starts = _line_starts(text)
+    spans = {}
+    for element in found:
+        if element.line > 0 and element.line not in spans:
+            spans[element.line] = _element_end_line(text, starts, element.tag, element.line)
+    return tuple(sorted(spans.items()))
+
+
+def _top_level_opaque(element: OpaqueElement, found: List[OpaqueElement]) -> None:
+    if element.tag:
+        found.append(element)
+        return
+    # A tagless carrier writes its children in place. Each tagged child is top level.
+    for child in element.children:
+        if isinstance(child, OpaqueElement):
+            _top_level_opaque(child, found)
+
+
+def _line_starts(text: str) -> List[int]:
+    starts = [0]
+    index = text.find("\n")
+    while index >= 0:
+        starts.append(index + 1)
+        index = text.find("\n", index + 1)
+    return starts
+
+
+def _element_end_line(text: str, starts: List[int], tag: str, line: int) -> int:
+    """Line of the end tag that closes the ``<tag`` opened on ``line``."""
+    begin = starts[line - 1]
+    pattern = re.compile(r"<(/?)%s(?=[\s/>])[^>]*?(/?)>" % re.escape(tag))
+    depth = 0
+    for match in pattern.finditer(text, begin):
+        closing, empty = match.group(1), match.group(2)
+        if closing:
+            depth -= 1
+        elif not empty:
+            depth += 1
+        if depth <= 0:
+            return text.count("\n", 0, match.start()) + 1
+    return line
 
 
 def read_fragment(text: str, *, source_path: Optional[str] = None) -> Fragment:
@@ -2403,7 +2465,7 @@ def _to_opaque(node: _XNode) -> OpaqueElement:
             children.append(child)
     if any(not isinstance(child, str) for child in children):
         children = [child for child in children if not isinstance(child, str) or child.strip()]
-    return OpaqueElement(node.tag, node.attrs, tuple(children))
+    return OpaqueElement(node.tag, node.attrs, tuple(children), node.line)
 
 
 def _property_content(node: _XNode) -> OpaqueElement:

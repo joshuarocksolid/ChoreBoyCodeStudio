@@ -7,21 +7,23 @@ it carries XML text.
 
 from __future__ import annotations
 
-from typing import List, Optional
+from dataclasses import replace
+from typing import Dict, List, Optional, Tuple
 
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
-from app.features.form_builder.engine.diagnostics import DiagnosticsStore
+from app.features.form_builder.engine.diagnostics import DiagnosticsStore, FormDiagnostic
 from app.features.form_builder.engine.events import (
+    PRIORITY_DIAGNOSTICS,
     PRIORITY_SELECTION,
     PRIORITY_SELECTION_NOTIFY,
     ChangeSet,
 )
-from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.selection import SelectionModel, SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.reader import read_ui
+from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import SerializationCache
 
 
@@ -53,6 +55,7 @@ class FormSession:
         self._subscriptions = [
             self._log.subscribe(self._on_selection, priority=PRIORITY_SELECTION),
             self._log.subscribe(self._on_selection_notify, priority=PRIORITY_SELECTION_NOTIFY),
+            self._log.subscribe(self._on_replaced, priority=PRIORITY_DIAGNOSTICS),
         ]
 
     @classmethod
@@ -147,6 +150,13 @@ class FormSession:
             SelectionState(snap.ids, snap.current),
         )
 
+    def _on_replaced(self, changeset: ChangeSet) -> None:
+        """A replaced document has new ids. Read it again so reader rows point at live nodes."""
+        if not changeset.replaced:
+            return
+        text = self._serializer.text(self._document)
+        self._diagnostics.publish("reader", live_reader_diagnostics(self._document, text))
+
     def _on_selection_notify(self, changeset: ChangeSet) -> None:
         del changeset
         self._selection.release()
@@ -158,6 +168,36 @@ class FormSession:
     def _live(self) -> None:
         if self._disposed:
             raise RuntimeError("session is disposed")
+
+
+def live_reader_diagnostics(document: UiDocument, text: str) -> Tuple[FormDiagnostic, ...]:
+    """Reader findings for ``text`` (the serialization of ``document``) keyed to its node ids.
+
+    The fresh read has the same tree as ``document``, so the n-th node in
+    pre-order is the same node. When the trees differ the object name is used.
+    """
+    try:
+        result = read_ui(text, allocator=IdAllocator())
+    except UiReadError:
+        return ()
+    fresh = [node.id for node in result.document.iter_preorder()]
+    live = [node.id for node in document.iter_preorder()]
+    same_shape = len(fresh) == len(live)
+    position: Dict[NodeId, int] = {node_id: index for index, node_id in enumerate(fresh)}
+    found: List[FormDiagnostic] = []
+    for diagnostic in result.diagnostics:
+        location = diagnostic.location
+        node_id = location.node_id
+        if node_id is not None:
+            mapped: Optional[NodeId] = None
+            if same_shape and node_id in position:
+                mapped = live[position[node_id]]
+            elif location.object_name:
+                named = document.by_name(location.object_name)
+                mapped = named[0] if named else None
+            location = replace(location, node_id=mapped)
+        found.append(replace(diagnostic, location=location))
+    return tuple(found)
 
 
 def _pure_prune(before: SelectionState, snap: SelectionSnapshot, changeset: ChangeSet) -> bool:

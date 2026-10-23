@@ -11,6 +11,7 @@ from typing import Any, Protocol, cast
 from app.qt.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 
 from app.editors.editor_manager import EditorManager
+from app.editors.generated_file import generated_banner
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING
 from app.shell.document_safety import DocumentCloseIntent, DocumentScope
 from app.shell.disk_conflict_dialogs import (
@@ -26,6 +27,14 @@ from app.shell.editor_sync_workflow import EditorDiskSyncSource, EditorSyncWorkf
 from app.shell.save_workflow import LocalHistoryPort, SaveWorkflowPort
 from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.qt.qt_compat import exec_qt
+
+
+def _clean_generated_readonly(editor_widget: object, file_path: str, content: str) -> bool:
+    """A clean tab still showing the generated banner reloads without a prompt."""
+    probe = getattr(editor_widget, "isReadOnly", None)
+    if not callable(probe) or not probe():
+        return False
+    return generated_banner(file_path, content) is not None
 
 
 class ExternalFileChangeOutcome(str, Enum):
@@ -363,10 +372,14 @@ class ExternalFileChangeWorkflow:
                 reload_disk_content = refreshed_content
                 reload_mtime = refreshed_mtime
         else:
-            if not self._host.confirm_clean_tab_reload():
+            content = tab_state.current_content if isinstance(tab_state.current_content, str) else ""
+            if _clean_generated_readonly(editor_widget, file_path, content):
+                should_reload = True
+            elif not self._host.confirm_clean_tab_reload():
                 self._remember_conflict(file_path, DISK_CONFLICT_CHANGED, current_mtime)
                 return ExternalFileChangeOutcome.DECLINED
-            should_reload = True
+            else:
+                should_reload = True
 
         if not should_reload:
             return ExternalFileChangeOutcome.DECLINED

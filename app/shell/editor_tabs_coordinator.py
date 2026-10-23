@@ -169,6 +169,7 @@ class EditorTabsCoordinator:
                 if not isinstance(page, EditorTabPage):
                     continue
                 page.info_bar.apply_theme(tokens)
+                page.generated_bar.apply_theme(tokens)
                 content = page.content()
                 if isinstance(content, CodeEditorWidget) and id(content) not in primary_views:
                     content.apply_theme(tokens)

@@ -39,8 +39,15 @@ class EditorTabOutlineDelegates:
     def handle_outline_symbol_activated(self, file_path: str, line_number: int) -> None:
         self._outline_workflow.handle_symbol_activated(file_path, line_number)
 
-    def open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
-        self._outline_workflow.open_file_at_line(file_path, line_number, preview=preview)
+    def open_file_at_line(
+        self,
+        file_path: str,
+        line_number: int | None,
+        *,
+        preview: bool = False,
+        detail: object = None,
+    ) -> None:
+        self._outline_workflow.open_file_at_line(file_path, line_number, preview=preview, detail=detail)
 
 
 class EditorTabMarkdownDelegates:
