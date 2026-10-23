@@ -6,9 +6,11 @@ in a layout and ``write(read(text))`` is byte-identical to ``text``.
 
 from __future__ import annotations
 
+from typing import Sequence, Tuple
 from xml.sax.saxutils import escape
 
 from app.features.form_builder.engine.ids import IdAllocator
+from app.features.form_builder.engine.ui4.numfmt import format_double
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
 
@@ -25,8 +27,13 @@ def form_document(
     inner: str,
     *,
     tabstops: str = "",
+    connections: Sequence[Tuple[str, str, str, str]] = (),
 ) -> str:
-    """A root widget with geometry and window title, then ``inner`` markup."""
+    """A root widget with geometry and window title, then ``inner`` markup.
+
+    ``connections`` is ``(sender, signal, receiver, slot)`` in Designer order.
+    The receiver for the dialog's own slots is the root object name.
+    """
     title = escape(class_name)
     stops = tabstops
     if stops and not stops.endswith("\n"):
@@ -50,8 +57,9 @@ def form_document(
         "%s"
         " </widget>\n"
         "%s"
+        "%s"
         "</ui>\n"
-    ) % (title, root_class, title, title, inner, stops)
+    ) % (title, root_class, title, title, inner, stops, _connection_block(connections))
     return canonicalize(draft)
 
 
@@ -91,12 +99,46 @@ def form_row(
     ) % (row, label_name, escape(label_text), buddy, row, widget)
 
 
+def number_property(name: str, value: int, indent: str = "     ") -> str:
+    return (
+        '%s<property name="%s">\n'
+        "%s <number>%d</number>\n"
+        "%s</property>\n"
+    ) % (indent, name, indent, value, indent)
+
+
+def double_property(name: str, value: float, indent: str = "     ") -> str:
+    return (
+        '%s<property name="%s">\n'
+        "%s <double>%s</double>\n"
+        "%s</property>\n"
+    ) % (indent, name, indent, format_double(value), indent)
+
+
 def string_property(name: str, text: str, indent: str = "     ") -> str:
     return (
         "%s<property name=\"%s\">\n"
         "%s <string>%s</string>\n"
         "%s</property>\n"
     ) % (indent, name, indent, escape(text), indent)
+
+
+def _connection_block(connections: Sequence[Tuple[str, str, str, str]]) -> str:
+    if not connections:
+        return ""
+    lines = [" <connections>\n"]
+    for sender, signal, receiver, slot in connections:
+        lines.append(
+            "  <connection>\n"
+            "   <sender>%s</sender>\n"
+            "   <signal>%s</signal>\n"
+            "   <receiver>%s</receiver>\n"
+            "   <slot>%s</slot>\n"
+            "  </connection>\n"
+            % (escape(sender), escape(signal), escape(receiver), escape(slot))
+        )
+    lines.append(" </connections>\n")
+    return "".join(lines)
 
 
 def tabstop_block(names: tuple) -> str:

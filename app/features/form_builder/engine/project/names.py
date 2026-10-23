@@ -87,10 +87,19 @@ def class_name_for_stem(stem: str) -> str:
 
 
 def creation_caption(folder_display: str, stem: str) -> str:
-    """Live caption under the name row. ``folder_display`` may end in ``/``."""
-    folder = folder_display.strip().strip("/") or "forms"
+    """Live caption under the name row.
+
+    ``(project root)`` and a blank folder name the files without a directory
+    prefix, because that is where they are written.
+    """
     leaf = stem.strip() or "new_form"
-    return "Creates %s/%s.ui, ui_%s.py and %s_window.py." % (folder, leaf, leaf, leaf)
+    files = "%s.ui, ui_%s.py and %s_window.py." % (leaf, leaf, leaf)
+    folder = folder_display.strip()
+    if folder.endswith("/"):
+        folder = folder[:-1]
+    if not folder or folder == "(project root)":
+        return "Creates " + files
+    return "Creates %s/%s" % (folder, files)
 
 
 def _clash(folder: str, stem: str, fs: OsFileSystem) -> Optional[str]:

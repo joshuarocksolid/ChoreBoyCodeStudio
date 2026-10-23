@@ -11,10 +11,13 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
+from urllib.parse import quote
 
 from app.features.form_builder.engine.project.form_xml import (
+    double_property,
     form_document,
     form_row,
+    number_property,
     string_property,
     tabstop_block,
 )
@@ -36,6 +39,27 @@ _DATE = frozenset({"DATE"})
 _DATETIME = frozenset({"DATETIME", "TIMESTAMP"})
 _BOOL = frozenset({"BOOL", "BOOLEAN"})
 _DATE_WIDGETS = frozenset({"QDateEdit", "QDateTimeEdit"})
+
+
+_INT_MIN = -2147483647
+_INT_MAX = 2147483647
+_DOUBLE_SPAN = 1e12
+
+
+@dataclass(frozen=True)
+class SqliteColumn:
+    """One column as SQLite reports it. ``primary_key`` is true when ``pk`` > 0."""
+
+    name: str
+    sql_type: str
+    primary_key: bool
+
+
+def included_by_default(column: SqliteColumn) -> bool:
+    """An integer primary key starts unchecked. Every other column starts included."""
+    if not column.primary_key:
+        return True
+    return _sql_token(column.sql_type) not in _INTEGER
 
 
 @dataclass(frozen=True)
@@ -83,7 +107,7 @@ def label_from_column(name: str) -> str:
 
 def default_shows_as(sql_type: str) -> str:
     """SQLite declared type to a Qt field class. Blank types become a line edit."""
-    token = sql_type.strip().upper().split("(", 1)[0].strip()
+    token = _sql_token(sql_type)
     if token in _INTEGER:
         return "QSpinBox"
     if token in _REAL:
@@ -118,7 +142,7 @@ def column_widget_name(column: str, used: Sequence[str]) -> str:
 
 
 def sqlite_tables(path: str) -> Tuple[str, ...]:
-    connection = sqlite3.connect(path)
+    connection = _connect_readonly(path)
     try:
         rows = connection.execute(
             "SELECT name FROM sqlite_master "
@@ -130,10 +154,10 @@ def sqlite_tables(path: str) -> Tuple[str, ...]:
     return tuple(str(row[0]) for row in rows)
 
 
-def sqlite_columns(path: str, table: str) -> Tuple[Tuple[str, str], ...]:
-    """``(column name, declared type)`` from ``PRAGMA table_info``."""
+def sqlite_columns(path: str, table: str) -> Tuple[SqliteColumn, ...]:
+    """Columns from ``PRAGMA table_info``, opened read-only."""
     quoted = '"' + table.replace('"', '""') + '"'
-    connection = sqlite3.connect(path)
+    connection = _connect_readonly(path)
     try:
         rows = connection.execute("PRAGMA table_info(%s)" % quoted).fetchall()
     finally:
@@ -141,8 +165,33 @@ def sqlite_columns(path: str, table: str) -> Tuple[Tuple[str, str], ...]:
     found = []
     for row in rows:
         declared = row[2] if row[2] is not None else ""
-        found.append((str(row[1]), str(declared)))
+        found.append(SqliteColumn(str(row[1]), str(declared), bool(row[5])))
     return tuple(found)
+
+
+def _connect_readonly(path: str) -> sqlite3.Connection:
+    return sqlite3.connect("file:%s?mode=ro" % quote(path), uri=True)
+
+
+def _sql_token(sql_type: str) -> str:
+    return sql_type.strip().upper().split("(", 1)[0].strip()
+
+
+def _editor_extra(widget_class: str, date_format: str) -> str:
+    parts = []
+    if widget_class == "QSpinBox":
+        parts.append(number_property("minimum", _INT_MIN))
+        parts.append(number_property("maximum", _INT_MAX))
+    elif widget_class == "QDoubleSpinBox":
+        parts.append(number_property("decimals", 2))
+        parts.append(double_property("minimum", -_DOUBLE_SPAN))
+        parts.append(double_property("maximum", _DOUBLE_SPAN))
+    if widget_class in _DATE_WIDGETS:
+        pattern = four_digit_year_format(date_format)
+        if widget_class == "QDateTimeEdit" and "h" not in pattern.lower():
+            pattern = pattern + " hh:mm"
+        parts.append(string_property("displayFormat", pattern))
+    return "".join(parts)
 
 
 def build_table_form_ui(
@@ -165,12 +214,7 @@ def build_table_form_ui(
         label_name = _label_name(widget_name, used)
         used.append(label_name)
         widget_class = column.widget_class()
-        extra = ""
-        if widget_class in _DATE_WIDGETS:
-            pattern = four_digit_year_format(date_format)
-            if widget_class == "QDateTimeEdit" and "h" not in pattern.lower():
-                pattern = pattern + " hh:mm"
-            extra = string_property("displayFormat", pattern)
+        extra = _editor_extra(widget_class, date_format)
         rows.append(
             form_row(
                 index,

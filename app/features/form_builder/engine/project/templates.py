@@ -39,7 +39,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "data_entry",
             "Data entry form",
-            "Labels and fields in a form layout.",
+            "Labels and fields.",
             GROUP_TEMPLATES,
             "QWidget",
             True,
@@ -48,7 +48,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "list_detail",
             "List and detail",
-            "A list beside the fields for one item.",
+            "A list beside one item.",
             GROUP_TEMPLATES,
             "QWidget",
             True,
@@ -57,7 +57,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "table_search",
             "Table with search",
-            "A search box above a table.",
+            "Search above a table.",
             GROUP_TEMPLATES,
             "QWidget",
             True,
@@ -66,7 +66,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "dialog_ok_cancel",
             "Dialog with OK and Cancel",
-            "Fields and a button box.",
+            "Fields, OK and Cancel.",
             GROUP_TEMPLATES,
             "QDialog",
             True,
@@ -75,7 +75,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "widget",
             "Widget",
-            "An empty form with a vertical layout.",
+            "Empty vertical layout.",
             GROUP_BLANK,
             "QWidget",
             True,
@@ -84,7 +84,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "main_window",
             "Main window",
-            "A main window with an empty central layout.",
+            "Empty central area.",
             GROUP_BLANK,
             "QMainWindow",
             True,
@@ -93,7 +93,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "dialog",
             "Dialog",
-            "An empty dialog with a vertical layout.",
+            "Empty dialog layout.",
             GROUP_BLANK,
             "QDialog",
             True,
@@ -102,7 +102,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "from_table",
             "Build a form from a table",
-            "Fields from a SQLite table.",
+            "Fields from a table.",
             GROUP_FROM_EXISTING,
             "QWidget",
             False,
@@ -111,7 +111,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         FormTemplate(
             "adopt",
             "Adopt a form your code already loads",
-            "Keep a .ui file that your app already opens.",
+            "Use a form the app opens.",
             GROUP_FROM_EXISTING,
             "QWidget",
             False,
@@ -241,6 +241,10 @@ def _dialog_ok_cancel(class_name: str) -> str:
         "QDialog",
         inner,
         tabstops=tabstop_block(("nameEdit", "emailEdit", "buttonBox")),
+        connections=(
+            ("buttonBox", "accepted()", class_name, "accept()"),
+            ("buttonBox", "rejected()", class_name, "reject()"),
+        ),
     )
 
 

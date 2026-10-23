@@ -6,7 +6,7 @@ import os
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import Qt, Signal
-from app.qt.QtGui import QColor, QPalette
+from app.qt.QtGui import QColor, QFont, QPainter, QPalette, QPen
 from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -160,7 +160,12 @@ class NewFormPanel(QWidget):
         return str(data)
 
     def folder_display(self) -> str:
-        return self._folder.currentText() or "forms/"
+        text = self._folder.currentText()
+        if text:
+            return text
+        if os.path.abspath(self.directory()) == self._project_root:
+            return "(project root)"
+        return "forms/"
 
     def stem(self) -> str:
         return self._name.text()
@@ -209,18 +214,64 @@ class NewFormPanel(QWidget):
         return max(1, min(4, (width + _CARD_GAP) // (CARD_WIDTH + _CARD_GAP)))
 
     def move_card(self, key: str, dx: int, dy: int) -> None:
-        enabled = [card for card in self._cards if card.isEnabled()]
-        if not enabled:
+        """Move by row and column inside a group. Down crosses into the next group."""
+        rows = self._card_rows()
+        found = None
+        for row_index, row in enumerate(rows):
+            for col_index, card in enumerate(row):
+                if card.key == key:
+                    found = (row_index, col_index)
+                    break
+            if found is not None:
+                break
+        if found is None:
             return
-        index = next((pos for pos, card in enumerate(enabled) if card.key == key), 0)
-        columns = self.columns()
+        row_index, col_index = found
         if dx:
-            target = index + dx
-        else:
-            target = index + dy * columns
-        if target < 0 or target >= len(enabled):
+            group = self._group_of(key)
+            flat = []
+            for row in rows:
+                if row and self._group_of(row[0].key) == group:
+                    flat.extend(row)
+            index = next(pos for pos, card in enumerate(flat) if card.key == key)
+            step = 1 if dx > 0 else -1
+            cursor = index + step
+            while 0 <= cursor < len(flat):
+                if flat[cursor].isEnabled():
+                    flat[cursor].setFocus()
+                    return
+                cursor += step
             return
-        enabled[target].setFocus()
+        step = 1 if dy > 0 else -1
+        cursor_row = row_index + step
+        while 0 <= cursor_row < len(rows):
+            row = rows[cursor_row]
+            col = min(col_index, len(row) - 1)
+            if row[col].isEnabled():
+                row[col].setFocus()
+                return
+            cursor_row += step
+
+    def _group_of(self, key: str) -> str:
+        spec = template_for(key)
+        if spec is None:
+            return ""
+        return spec.group
+
+    def _card_rows(self) -> List[List[StartCard]]:
+        columns = max(1, self.columns())
+        rows: List[List[StartCard]] = []
+        for group, _title in _GROUP_TITLES:
+            cards = []
+            for card in self._cards:
+                spec = template_for(card.key)
+                if spec is not None and spec.group == group:
+                    cards.append(card)
+            for start in range(0, len(cards), columns):
+                chunk = cards[start:start + columns]
+                if chunk:
+                    rows.append(chunk)
+        return rows
 
     def resizeEvent(self, event: object) -> None:  # type: ignore[override]
         super().resizeEvent(event)  # type: ignore[arg-type]
@@ -275,7 +326,7 @@ class NewFormPanel(QWidget):
         hero.setObjectName("formBuilder.newForm.hero")
         hero_font = hero.font()
         hero_font.setPixelSize(22)
-        hero_font.setBold(True)
+        hero_font.setWeight(QFont.DemiBold)
         hero.setFont(hero_font)
         column.addWidget(hero)
 
@@ -288,10 +339,12 @@ class NewFormPanel(QWidget):
         column.addWidget(self._sentence)
 
         name_row = QHBoxLayout()
-        name_row.addWidget(QLabel("Name", self._column))
         self._name = QLineEdit(self._column)
         self._name.setObjectName("formBuilder.newForm.name")
         self._name.textChanged.connect(self._on_name_changed)
+        name_label = QLabel("Name", self._column)
+        name_label.setBuddy(self._name)
+        name_row.addWidget(name_label)
         name_row.addWidget(self._name, 1)
         name_row.addWidget(QLabel("in", self._column))
         self._folder = QComboBox(self._column)
@@ -444,6 +497,7 @@ class NewFormPanel(QWidget):
     def _paint_recent_rows(self) -> None:
         chrome = self._chrome
         for row in self._recent_rows:
+            row.set_chrome(chrome)
             name = row.findChild(QLabel, "formBuilder.newForm.recentName")
             folder = row.findChild(QLabel, "formBuilder.newForm.recentFolder")
             if name is not None:
@@ -465,6 +519,9 @@ class _RecentRow(QWidget):
         self.setObjectName("formBuilder.newForm.recentRow")
         self._relative = relative
         self._open_path = open_path
+        self._chrome: Optional[FormChrome] = None
+        self.setFocusPolicy(Qt.StrongFocus)
+        self.setAccessibleName(name)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 2, 0, 2)
         self._name = QLabel(name, self)
@@ -477,18 +534,44 @@ class _RecentRow(QWidget):
         layout.addWidget(self._folder)
         layout.addStretch(1)
 
+    def set_chrome(self, chrome: FormChrome) -> None:
+        self._chrome = chrome
+        self.update()
+
     def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
         button = getattr(event, "button", None)
         if callable(button) and enum_value(button()) == enum_value(Qt.LeftButton):
             self._open_path(self._relative)  # type: ignore[operator]
         super().mouseReleaseEvent(event)  # type: ignore[arg-type]
 
+    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
+        key = enum_value(getattr(event, "key")())
+        if key in (enum_value(Qt.Key_Return), enum_value(Qt.Key_Enter)):
+            self._open_path(self._relative)  # type: ignore[operator]
+            getattr(event, "accept")()
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
+
+    def paintEvent(self, event: object) -> None:  # type: ignore[override]
+        super().paintEvent(event)  # type: ignore[arg-type]
+        chrome = self._chrome
+        if chrome is None or not self.hasFocus():
+            return
+        width = max(2, chrome.focus_width)
+        painter = QPainter(self)
+        pen = QPen(QColor(chrome.accent))
+        pen.setWidth(width)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRect(width // 2, width // 2, self.width() - width, self.height() - width)
+        painter.end()
+
 
 def _display_for(project_root: str, folder: str) -> str:
     rel = os.path.relpath(os.path.abspath(folder), os.path.abspath(project_root))
     rel = rel.replace(os.sep, "/")
     if rel in (".", ""):
-        return ""
+        return "(project root)"
     if not rel.endswith("/"):
         rel += "/"
     return rel

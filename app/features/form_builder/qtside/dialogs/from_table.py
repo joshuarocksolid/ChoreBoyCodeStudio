@@ -10,36 +10,53 @@ import os
 import sqlite3
 from typing import Callable, Dict, List, Optional
 
-from app.qt.QtCore import QBuffer, QIODevice, QLocale, Qt, Signal
+from app.qt.QtCore import QBuffer, QEvent, QIODevice, QLocale, QTimer, Qt, Signal
+from app.qt.QtGui import QPalette
 from app.qt.QtUiTools import QUiLoader
 from app.qt.QtWidgets import (
     QComboBox,
     QDialog,
     QFileDialog,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListWidget,
     QPushButton,
+    QStyleFactory,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
+from app.qt.qt_compat import enum_value
 
 from app.features.form_builder.engine.project.names import class_name_for_stem
 from app.features.form_builder.engine.project.table_form import (
-    SHOWS_AS_CHOICES,
     BuiltTableForm,
     TableColumn,
     build_table_form_ui,
     four_digit_year_format,
+    included_by_default,
     sqlite_columns,
     sqlite_tables,
 )
 from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.runtime import runtime_palette
 
 _INCLUDE_REASON = "Include at least one column"
+_CHOOSE_DATABASE = "Choose a SQLite file"
 _HEADERS = ("Include", "Column", "Type", "Shows as", "Label")
+_SHOWS_AS_WORDS = (
+    ("QLineEdit", "Text"),
+    ("QPlainTextEdit", "Long text"),
+    ("QSpinBox", "Whole number"),
+    ("QDoubleSpinBox", "Decimal"),
+    ("QCheckBox", "Checkbox"),
+    ("QDateEdit", "Date"),
+    ("QDateTimeEdit", "Date and time"),
+    ("QComboBox", "Choice list"),
+)
+_RUNTIME_LABELS = "QLabel { color: palette(window-text); background-color: palette(window); }"
 
 
 def locale_date_format() -> str:
@@ -159,34 +176,60 @@ class FromTableDialog(QDialog):
         self._mapping.setObjectName("formBuilder.fromTable.mapping")
         self._mapping.setHorizontalHeaderLabels(list(_HEADERS))
         self._mapping.itemChanged.connect(self._on_item_changed)
+        self._mapping.viewport().installEventFilter(self)
+        self._fitting_columns = False
         body.addWidget(self._mapping, 3)
 
         self._preview = QVBoxLayout()
         preview_host = QWidget(self)
         preview_host.setObjectName("formBuilder.fromTable.preview")
         preview_host.setLayout(self._preview)
+        _paint_runtime(preview_host, label_sheet=False)
         body.addWidget(preview_host, 2)
 
         footer = QHBoxLayout()
         self._reason = QLabel("", self)
         self._reason.setObjectName("formBuilder.fromTable.reason")
         footer.addWidget(self._reason, 1)
+        self._cancel = QPushButton("Cancel", self)
+        self._cancel.setObjectName("formBuilder.fromTable.cancel")
+        self._cancel.setFixedHeight(24)
+        self._cancel.clicked.connect(self.reject)
+        footer.addWidget(self._cancel)
         self._create = QPushButton(self)
         self._create.setObjectName("formBuilder.fromTable.create")
+        self._create.setFixedHeight(28)
         self._create.clicked.connect(self.create_requested.emit)
         footer.addWidget(self._create)
         root.addLayout(footer)
+        self._fit_columns()
+
+    def showEvent(self, event: object) -> None:  # type: ignore[override]
+        super().showEvent(event)  # type: ignore[arg-type]
+        QTimer.singleShot(0, self._fit_columns)
 
     def _apply_chrome(self) -> None:
         chrome = self._chrome
         self.setStyleSheet(
             "QDialog#formBuilder\\.fromTable { background: %s; color: %s; }"
-            "QLabel { color: %s; }"
-            "QListWidget, QTableWidget { background: %s; color: %s; border: 1px solid %s; }"
-            % (chrome.window, chrome.text, chrome.text, chrome.panel, chrome.text, chrome.border)
+            "QLabel#formBuilder\\.fromTable\\.path { color: %s; }"
+            "QLabel#formBuilder\\.fromTable\\.reason { color: %s; }"
+            "QListWidget#formBuilder\\.fromTable\\.tables,"
+            "QTableWidget#formBuilder\\.fromTable\\.mapping"
+            " { background: %s; color: %s; border: 1px solid %s; }"
+            "QPushButton#formBuilder\\.fromTable\\.create"
+            " { background: %s; color: #ffffff; border: 0; min-height: 28px; max-height: 28px; }"
+            % (
+                chrome.window,
+                chrome.text,
+                chrome.muted,
+                chrome.muted,
+                chrome.panel,
+                chrome.text,
+                chrome.border,
+                chrome.accent,
+            )
         )
-        self._reason.setStyleSheet("color: %s;" % chrome.muted)
-        self._path.setStyleSheet("color: %s;" % chrome.muted)
 
     def _browse(self) -> None:
         chosen, _selected = QFileDialog.getOpenFileName(
@@ -217,7 +260,12 @@ class FromTableDialog(QDialog):
                 self._show_preview_message("Could not read %s: %s" % (name, exc))
                 return
             self._mappings[name] = [
-                TableColumn(column_name, declared) for column_name, declared in raw
+                TableColumn(
+                    column.name,
+                    column.sql_type,
+                    include=included_by_default(column),
+                )
+                for column in raw
             ]
         self._fill_mapping(self._mappings[name])
 
@@ -235,16 +283,16 @@ class FromTableDialog(QDialog):
             type_item = QTableWidgetItem(column.sql_type or "untyped")
             type_item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
             self._mapping.setItem(row, 2, type_item)
-            combo = QComboBox(self._mapping)
-            for choice in SHOWS_AS_CHOICES:
-                combo.addItem(choice)
-            combo.setCurrentText(column.widget_class())
-            combo.currentTextChanged.connect(lambda text, index=row: self._set_shows_as(index, text))
+            combo = self._shows_as_combo(column.widget_class())
+            combo.currentIndexChanged.connect(
+                lambda _index, row_index=row, box=combo: self._on_shows_as_changed(row_index, box)
+            )
             self._mapping.setCellWidget(row, 3, combo)
             label = QTableWidgetItem(column.field_label())
             label.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable | Qt.ItemIsEditable)
             self._mapping.setItem(row, 4, label)
         self._loading = False
+        self._fit_columns()
         self._refresh_preview()
         self._sync_button()
 
@@ -311,11 +359,102 @@ class FromTableDialog(QDialog):
                 return row
         raise KeyError(column)
 
+    def _shows_as_combo(self, widget_class: str) -> QComboBox:
+        combo = QComboBox(self._mapping)
+        chosen = 0
+        for index, (qt_name, word) in enumerate(_SHOWS_AS_WORDS):
+            combo.addItem(word, qt_name)
+            combo.setItemData(index, qt_name, Qt.ToolTipRole)
+            if qt_name == widget_class:
+                chosen = index
+        combo.blockSignals(True)
+        combo.setCurrentIndex(chosen)
+        combo.setToolTip(widget_class)
+        combo.blockSignals(False)
+        return combo
+
+    def _on_shows_as_changed(self, row: int, box: QComboBox) -> None:
+        chosen = box.currentData()
+        box.setToolTip("" if chosen is None else str(chosen))
+        if chosen is None:
+            return
+        self._set_shows_as(row, str(chosen))
+
+    def eventFilter(self, watched: object, event: object) -> bool:  # type: ignore[override]
+        viewport = self._mapping.viewport()
+        if watched is viewport and enum_value(getattr(event, "type")()) == enum_value(QEvent.Resize):
+            self._fit_columns()
+        return bool(super().eventFilter(watched, event))  # type: ignore[arg-type]
+
+    def _fit_columns(self) -> None:
+        """Keep the Label column inside the viewport on both Qt bindings."""
+        if self._fitting_columns:
+            return
+        self._fitting_columns = True
+        try:
+            for _attempt in range(3):
+                before = self._mapping.viewport().width()
+                self._fit_columns_now()
+                if self._mapping.viewport().width() == before:
+                    break
+        finally:
+            self._fitting_columns = False
+
+    def _fit_columns_now(self) -> None:
+        table = self._mapping
+        header = table.horizontalHeader()
+        count = table.columnCount()
+        last = count - 1
+        if last < 1:
+            return
+        viewport = table.viewport().width()
+        if viewport < 80:
+            header.setStretchLastSection(True)
+            header.setSectionResizeMode(last, QHeaderView.Stretch)
+            return
+        measured = []
+        for column in range(count):
+            header.setSectionResizeMode(column, QHeaderView.ResizeToContents)
+            table.resizeColumnToContents(column)
+            measured.append(max(16, header.sectionSize(column)))
+        label_width = max(48, measured[last])
+        others = measured[:last]
+        spare = viewport - label_width
+        if spare < 16 * last:
+            spare = 16 * last
+            label_width = max(48, viewport - spare)
+        if sum(others) > spare and sum(others) > 0:
+            scaled = [max(16, int(width * spare / sum(others))) for width in others]
+            overflow = sum(scaled) - spare
+            guard = 0
+            while overflow > 0 and guard < 64:
+                victim = max(range(last), key=lambda index: scaled[index])
+                if scaled[victim] <= 16:
+                    break
+                scaled[victim] -= 1
+                overflow -= 1
+                guard += 1
+            others = scaled
+        label_width = viewport - sum(others)
+        if label_width < 48:
+            label_width = 48
+        header.setStretchLastSection(False)
+        for column, width in enumerate(others):
+            header.setSectionResizeMode(column, QHeaderView.Fixed)
+            header.resizeSection(column, width)
+        header.setSectionResizeMode(last, QHeaderView.Fixed)
+        header.resizeSection(last, label_width)
+
     def _sync_button(self) -> None:
         count = self.included_count()
-        self._create.setText("Create form with %d fields" % count)
+        if count == 1:
+            self._create.setText("Create form with 1 field")
+        else:
+            self._create.setText("Create form with %d fields" % count)
         reason = self._name_reason()
-        if not reason and count == 0:
+        if not reason and not self._database:
+            reason = _CHOOSE_DATABASE
+        elif not reason and count == 0:
             reason = _INCLUDE_REASON
         self._create.setEnabled(not reason)
         self._reason.setText(reason or "")
@@ -331,16 +470,22 @@ class FromTableDialog(QDialog):
         buffer.setData(built.text.encode("utf-8"))
         buffer.open(QIODevice.ReadOnly)
         loader = QUiLoader()
+        clear = getattr(loader, "clearPluginPaths", None)
+        if callable(clear):
+            clear()
         widget = loader.load(buffer)
         error = loader.errorString()
         if widget is None:
             self._show_preview_message(error or "The preview could not be built.")
             return
+        _paint_runtime(widget, label_sheet=True)
         self._swap_preview(widget)
 
     def _show_preview_message(self, text: str) -> None:
         label = QLabel(text, self)
         label.setWordWrap(True)
+        _paint_runtime(label, label_sheet=False)
+        label.setStyleSheet("color: palette(window-text); background-color: palette(window);")
         self._swap_preview(label)
 
     def _swap_preview(self, widget: QWidget) -> None:
@@ -352,3 +497,25 @@ class FromTableDialog(QDialog):
                 old.deleteLater()
         self._preview_widget = widget
         self._preview.addWidget(widget)
+
+
+def _paint_runtime(widget: QWidget, *, label_sheet: bool) -> None:
+    """Fusion and Qt's standard palette, so chrome sheets do not restyle the preview.
+
+    Each widget owns the Fusion style it is given. The shared ``runtime_style()``
+    instance stays with the module, because a widget deletes a style it was handed.
+    """
+    palette = runtime_palette()
+    _give_runtime_style(widget, palette)
+    widget.setAutoFillBackground(True)
+    for child in widget.findChildren(QWidget):
+        _give_runtime_style(child, palette)
+    if label_sheet:
+        widget.setStyleSheet(_RUNTIME_LABELS + "\n" + widget.styleSheet())
+
+
+def _give_runtime_style(widget: QWidget, palette: QPalette) -> None:
+    style = QStyleFactory.create("Fusion")
+    if style is not None:
+        widget.setStyle(style)
+    widget.setPalette(palette)

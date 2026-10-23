@@ -78,8 +78,8 @@ def recent_entries(project_root: str, fs: OsFileSystem) -> tuple:
 def select_created_widget(surface: object, object_name: Optional[str]) -> bool:
     """Select ``object_name`` when the form tab grows ``select_object``.
 
-    This base's form tab has no selection API, so the new form opens with the
-    root in place until that method exists.
+    The form tab has no selection API yet, so the new form opens with the
+    root in place (UX-START-004).
     """
     if surface is None or not object_name:
         return False
@@ -129,7 +129,7 @@ def perform_create(
         chosen = first_widget if ui_text is not None else first_useful_widget(template)
         select_created_widget(surface, chosen)
     tree = getattr(window, "_project_tree_ui_workflow", None)
-    refresh = getattr(tree, "refresh_project_tree", None)
+    refresh = getattr(tree, "refresh_project_tree_from_disk", None)
     if callable(refresh):
         refresh()
     QTimer.singleShot(0, lambda: _close_start_tab(window, root))
@@ -164,7 +164,11 @@ def open_new_form_tab(window: object, directory: Optional[str] = None) -> None:
 
 
 def attach_new_form(window: object) -> None:
-    """Register the virtual tab and the File / tree callback. Menus read it later."""
+    """Register the virtual tab and the File / tree callback. Menus read it later.
+
+    The Welcome page has no extension point, so there is no Welcome-page
+    button (UX-START-001).
+    """
     registry = window._tab_content_registry  # type: ignore[attr-defined]
     registry.register(NewFormTabProvider(window))
 

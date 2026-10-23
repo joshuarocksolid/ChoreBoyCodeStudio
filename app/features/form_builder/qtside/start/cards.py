@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import Qt, Signal
-from app.qt.QtGui import QColor, QFont, QPainter, QPen
+from app.qt.QtCore import QRectF, Qt, Signal
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from app.qt.QtWidgets import QWidget
 from app.qt.qt_compat import enum_value
 
@@ -14,6 +14,7 @@ from app.features.form_builder.qtside.theme.chrome import FormChrome
 CARD_WIDTH = 200
 CARD_HEIGHT = 156
 THUMB_HEIGHT = 120
+_CORNER_RADIUS = 8.0
 
 _Draw = Callable[[QPainter, FormChrome, int, int, int, int], None]
 
@@ -35,6 +36,8 @@ class StartCard(QWidget):
         self.setFixedSize(CARD_WIDTH, CARD_HEIGHT)
         self.setFocusPolicy(Qt.StrongFocus)
         self.setAccessibleName(title)
+        self.setAccessibleDescription(description)
+        self.setToolTip(title + "\n" + description)
         self.setCursor(Qt.PointingHandCursor)
 
     def set_chrome(self, chrome: FormChrome) -> None:
@@ -78,39 +81,61 @@ class StartCard(QWidget):
     def paintEvent(self, event: object) -> None:  # type: ignore[override]
         del event
         chrome = self._chrome
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing, False)
-        painter.fillRect(self.rect(), QColor(chrome.panel))
         focused = self.hasFocus()
         if focused:
-            width = chrome.focus_width
+            ring = max(2, chrome.focus_width)
             color = chrome.accent
         elif self._hover and self.isEnabled():
-            width = 1
+            ring = 1
             color = chrome.accent
         else:
-            width = 1
+            ring = 1
             color = chrome.border
-        pen = QPen(QColor(color))
-        pen.setWidth(width)
-        painter.setPen(pen)
-        painter.drawRect(width // 2, width // 2, self.width() - width, self.height() - width)
-        painter.fillRect(1, 1, self.width() - 2, THUMB_HEIGHT - 1, QColor(chrome.row_hover))
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing, True)
+        outer = QRectF(
+            ring / 2.0,
+            ring / 2.0,
+            max(0.0, self.width() - ring),
+            max(0.0, self.height() - ring),
+        )
+        clip = QPainterPath()
+        clip.addRoundedRect(outer, _CORNER_RADIUS, _CORNER_RADIUS)
+        painter.save()
+        painter.setClipPath(clip)
+        painter.fillRect(self.rect(), QColor(chrome.panel))
+        painter.fillRect(0, 0, self.width(), THUMB_HEIGHT, QColor(chrome.row_hover))
         drawer = _WIREFRAMES.get(self.key, _draw_blank)
         painter.setPen(QPen(QColor(chrome.faint)))
         drawer(painter, chrome, 12, 16, self.width() - 24, THUMB_HEIGHT - 28)
+        text_width = max(0, self.width() - 16)
         painter.setPen(QColor(chrome.text if self.isEnabled() else chrome.faint))
         title_font = QFont(self.font())
         title_font.setBold(True)
         title_font.setPixelSize(12)
         painter.setFont(title_font)
-        painter.drawText(8, THUMB_HEIGHT + 2, self.width() - 16, 16, int(Qt.AlignLeft | Qt.AlignVCenter), self._title)
+        title = QFontMetrics(title_font).elidedText(self._title, Qt.ElideRight, text_width)
+        painter.drawText(8, THUMB_HEIGHT + 2, text_width, 16, int(Qt.AlignLeft | Qt.AlignVCenter), title)
         painter.setPen(QColor(chrome.muted if self.isEnabled() else chrome.faint))
         caption = QFont(self.font())
         caption.setBold(False)
         caption.setPixelSize(11)
         painter.setFont(caption)
-        painter.drawText(8, THUMB_HEIGHT + 18, self.width() - 16, 16, int(Qt.AlignLeft | Qt.AlignVCenter), self._description)
+        description = QFontMetrics(caption).elidedText(self._description, Qt.ElideRight, text_width)
+        painter.drawText(
+            8,
+            THUMB_HEIGHT + 18,
+            text_width,
+            16,
+            int(Qt.AlignLeft | Qt.AlignVCenter),
+            description,
+        )
+        painter.restore()
+        pen = QPen(QColor(color))
+        pen.setWidth(ring)
+        painter.setPen(pen)
+        painter.setBrush(Qt.NoBrush)
+        painter.drawRoundedRect(outer, _CORNER_RADIUS, _CORNER_RADIUS)
         painter.end()
 
 

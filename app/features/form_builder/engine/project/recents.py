@@ -1,14 +1,14 @@
-"""Recent forms for one project, stored in ``cbcs/project.json``.
+"""Recent forms for one project.
 
-The list lives beside ``form_builder.adopted_forms``. Writing one key leaves
-the other, and every other manifest key, untouched.
+The list is per-user state in ``cbcs/recent_forms.json``, the same directory
+the shell uses for ``cbcs/session.json``. This module never creates or
+rewrites the project manifest.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import uuid
 from typing import Optional, Tuple
 
 from app.features.form_builder.engine.project.fs import (
@@ -18,8 +18,8 @@ from app.features.form_builder.engine.project.fs import (
     relative_posix,
 )
 
-_BLOCK = "form_builder"
 _LIST = "recent_forms"
+_FILENAME = "recent_forms.json"
 RECENT_LIMIT = 8
 EMPTY_RECENT_TEXT = "Forms you open show up here."
 
@@ -29,10 +29,7 @@ def recent_forms(project_root: str, fs: OsFileSystem) -> Tuple[str, ...]:
     payload = _read(project_root, fs)
     if payload is None:
         return ()
-    block = payload.get(_BLOCK)
-    if not isinstance(block, dict):
-        return ()
-    raw = block.get(_LIST)
+    raw = payload.get(_LIST)
     if not isinstance(raw, list):
         return ()
     found = []
@@ -80,54 +77,22 @@ def recent_name(relative_path: str) -> str:
 
 
 def _read(project_root: str, fs: OsFileSystem) -> Optional[dict]:
-    path = _manifest(project_root)
+    path = _store(project_root)
     if not fs.is_file(path):
         return None
     try:
         payload = json.loads(fs.read_text(path))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
-        raise ProjectOpError("cbcs/project.json could not be read.") from exc
+        raise ProjectOpError("cbcs/recent_forms.json could not be read.") from exc
     if not isinstance(payload, dict):
-        raise ProjectOpError("cbcs/project.json is not an object.")
+        raise ProjectOpError("cbcs/recent_forms.json is not an object.")
     return payload
 
 
 def _write(project_root: str, fs: OsFileSystem, recent: Tuple[str, ...]) -> None:
-    path = _manifest(project_root)
-    payload = _read(project_root, fs)
-    if payload is None:
-        payload = _new_manifest(project_root)
-    block = payload.get(_BLOCK)
-    if not isinstance(block, dict):
-        block = {}
-    else:
-        block = dict(block)
-    if recent:
-        block[_LIST] = list(recent)
-    else:
-        block.pop(_LIST, None)
-    if block:
-        payload[_BLOCK] = block
-    else:
-        payload.pop(_BLOCK, None)
-    fs.write_text(path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+    path = _store(project_root)
+    fs.write_text(path, json.dumps({_LIST: list(recent)}, indent=2) + "\n")
 
 
-def _manifest(project_root: str) -> str:
-    return os.path.join(os.path.abspath(project_root), "cbcs", "project.json")
-
-
-def _new_manifest(project_root: str) -> dict:
-    name = os.path.basename(project_root).strip() or "Project"
-    return {
-        "schema_version": 2,
-        "project_id": "proj_%s" % uuid.uuid4().hex,
-        "name": name,
-        "default_entry": "main.py",
-        "default_argv": [],
-        "working_directory": ".",
-        "template": "utility_script",
-        "run_configs": [],
-        "env_overrides": {},
-        "project_notes": "",
-    }
+def _store(project_root: str) -> str:
+    return os.path.join(os.path.abspath(project_root), "cbcs", _FILENAME)
