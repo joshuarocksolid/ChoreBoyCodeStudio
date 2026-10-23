@@ -13,7 +13,6 @@ from app.qt.QtCore import QEvent, QRectF, Qt
 from app.qt.QtGui import QColor, QPainter
 from app.qt.QtWidgets import (
     QFrame,
-    QGraphicsProxyWidget,
     QGraphicsScene,
     QGraphicsView,
     QLabel,
@@ -21,12 +20,13 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import wrapper_is_valid
 
-from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
+from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS, ChangeSet
+from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.integration.chrome_text import page_chip_label, page_size_text
-from app.features.form_builder.integration.layout import GUTTER
+from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
+from app.features.form_builder.qtside.canvas.stage import Stage
 from app.features.form_builder.qtside.realize.api import Realizer
+from app.features.form_builder.qtside.theme.overlay import backdrop_fill
 from app.features.form_builder.qtside.theme.runtime import isolate_scene
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -59,7 +59,6 @@ class FormCanvas(QGraphicsView):
         self._tokens: Optional[ShellThemeTokens] = None
         self._canvas_bg = "#E9EBEF"
         self._dot = "#D3D8DF"
-        self._banner_push = 0
         self._closer: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.canvas")
         self.setAccessibleName("Form canvas")
@@ -72,20 +71,22 @@ class FormCanvas(QGraphicsView):
         scene = QGraphicsScene(self)
         isolate_scene(scene)
         self.setScene(scene)
-        self._proxy = QGraphicsProxyWidget()
-        scene.addItem(self._proxy)
+        self._index = HitIndex(LiveGeometrySource(realizer))
+        self._hit_sub = session.log.subscribe(
+            HitIndexInvalidator(self._index).on_changeset, priority=PRIORITY_HIT_INDEX
+        )
+        self._stage = Stage(self, session, realizer, self._index.invalidate)
         # setWidget(None) drops the proxy's hold without deleting the widget.
         # The realizer deletes the old root on a replace. Detach first.
         self._detach_sub = session.log.subscribe(self._detach_for_replace, priority=_DETACH_BEFORE_REALIZE)
         self._view_sub = session.log.subscribe(self._sync_root, priority=PRIORITY_VIEWS)
-        root = realizer.build()
-        self._proxy.setWidget(root)
+        realizer.build()
         self._build_chrome()
         self.viewport().installEventFilter(self)
         self.horizontalScrollBar().valueChanged.connect(self._position_chrome)
         self.verticalScrollBar().valueChanged.connect(self._position_chrome)
-        self._refresh_chip()
-        self._place_page()
+        self._stage.place()
+        self._position_chrome()
 
     def page_widget(self) -> Optional[QWidget]:
         root = self._realizer.root_widget
@@ -123,17 +124,16 @@ class FormCanvas(QGraphicsView):
         self._position_chrome()
 
     def refresh_chip(self) -> None:
-        self._refresh_chip()
-        self._place_page()
+        self._stage.place()
+        self._position_chrome()
 
     def detach(self) -> None:
-        widget = self._proxy.widget()
-        if widget is not None:
-            self._proxy.setWidget(None)
+        self._stage.detach()
 
     def dispose(self) -> None:
         self._detach_sub.close()
         self._view_sub.close()
+        self._hit_sub.close()
         self.detach()
 
     def eventFilter(self, watched: object, event: QEvent) -> bool:  # noqa: N802
@@ -148,7 +148,8 @@ class FormCanvas(QGraphicsView):
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
-        self._place_page()
+        self._stage.place()
+        self._position_chrome()
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         painter.fillRect(rect, QColor(self._canvas_bg))
@@ -171,12 +172,6 @@ class FormCanvas(QGraphicsView):
             y += _DOT
 
     def _build_chrome(self) -> None:
-        self._name = QLabel(self)
-        self._name.setObjectName("formBuilder.name")
-        self._name.setAccessibleName("Form name")
-        self._size = QLabel(self)
-        self._size.setObjectName("formBuilder.sizeReadout")
-        self._size.setAccessibleName("Page size")
         self._grabber_right = QWidget(self)
         self._grabber_right.setObjectName("formBuilder.grabberRight")
         self._grabber_right.setFocusPolicy(_no_focus())
@@ -197,68 +192,17 @@ class FormCanvas(QGraphicsView):
             self.detach()
 
     def _sync_root(self, _changeset: ChangeSet) -> None:
-        root = self._realizer.root_widget
-        if root is None:
-            return
-        current = self._proxy.widget()
-        if current is not root:
-            if current is not None and wrapper_is_valid(current):
-                self._proxy.setWidget(None)
-            self._proxy.setWidget(root)
-        self._refresh_chip()
-        self._place_page()
-
-    def _refresh_chip(self) -> None:
-        document = self._session.document
-        label = page_chip_label(document, "Form")
-        self._name.setText(label)
-        self._name.setAccessibleName(label)
-        self._size.setText(self._size_text(document))
-        self._position_chrome()
-
-    def _size_text(self, document: UiDocument) -> str:
-        authored = page_size_text(document)
-        if authored:
-            return authored
-        root = self.page_widget()
-        if root is None:
-            return ""
-        hint = root.sizeHint()
-        width = hint.width() if hint.width() > 0 else root.width()
-        height = hint.height() if hint.height() > 0 else root.height()
-        if width <= 0 or height <= 0:
-            return ""
-        return "%d × %d" % (width, height)
-
-    def _place_page(self) -> None:
-        root = self._proxy.widget()
-        if root is None or not wrapper_is_valid(root):
-            return
-        hint = root.sizeHint()
-        width = hint.width() if hint.width() > 0 else max(root.width(), 320)
-        height = hint.height() if hint.height() > 0 else max(root.height(), 240)
-        root.resize(width, height)
-        view_w = max(self.viewport().width(), width + GUTTER * 2)
-        view_h = max(self.viewport().height(), height + GUTTER * 2)
-        self.scene().setSceneRect(0, 0, view_w, view_h)
-        x = max(GUTTER, (view_w - width) // 2)
-        y = max(GUTTER, (view_h - height) // 2) + self._banner_push
-        self._proxy.setPos(x, y)
+        self._stage.place()
         self._position_chrome()
 
     def _position_chrome(self) -> None:
-        if self._proxy.widget() is None:
+        proxy = self._stage.proxy
+        if proxy.widget() is None:
             return
-        rect = self._proxy.sceneBoundingRect()
+        self._stage.position_labels()
+        rect = proxy.sceneBoundingRect()
         top_left = self.mapFromScene(rect.topLeft())
         bottom_right = self.mapFromScene(rect.bottomRight())
-        self._fit_label(self._name)
-        self._fit_label(self._size)
-        self._name.move(top_left.x(), max(0, top_left.y() - self._name.height() - 4))
-        self._name.raise_()
-        size_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - self._size.width()) // 2)
-        self._size.move(size_x, bottom_right.y() + 6)
-        self._size.raise_()
         mid_y = top_left.y() + max(0, (bottom_right.y() - top_left.y() - 32) // 2)
         self._grabber_right.move(bottom_right.x() + 2, mid_y)
         self._grabber_right.raise_()
@@ -266,12 +210,6 @@ class FormCanvas(QGraphicsView):
         self._grabber_bottom.move(mid_x, bottom_right.y() + 2)
         self._grabber_bottom.raise_()
         self._place_toast()
-
-    def _fit_label(self, label: QLabel) -> None:
-        text = label.text()
-        width = label.fontMetrics().horizontalAdvance(text) + 16
-        height = max(22, label.fontMetrics().height() + 8)
-        label.setFixedSize(max(width, 8), height)
 
     def _place_toast(self) -> None:
         if self._toast.isVisible():
@@ -281,12 +219,7 @@ class FormCanvas(QGraphicsView):
 
 
 def _backdrop(tokens: ShellThemeTokens) -> tuple[str, str]:
-    """UX-TOK-002. High contrast has a flat backdrop and no dots."""
-    if tokens.is_high_contrast:
-        return ("#000000" if tokens.is_dark else "#FFFFFF", "")
-    if tokens.is_dark:
-        return ("#16191D", "#262B31")
-    return ("#E9EBEF", "#D3D8DF")
+    return backdrop_fill(tokens.is_dark, tokens.is_high_contrast)
 
 
 __all__ = ["FormCanvas"]

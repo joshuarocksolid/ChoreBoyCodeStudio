@@ -109,6 +109,17 @@ def no_layout_text() -> str:
     return "No layout"
 
 
+def page_chip_label(document: UiDocument, fallback_name: str) -> str:
+    """``Name · Vertical layout`` above the page."""
+    name = document.root.object_name or fallback_name or "Form"
+    layout = document.root.layout
+    if isinstance(layout, LayoutNode) and layout.class_name:
+        phrase = _layout_words(layout.class_name)[1]
+    else:
+        phrase = no_layout_text()
+    return "%s · %s" % (name, phrase)
+
+
 def hover_sentence(document: UiDocument, node: NodeId, double_click_edits: bool) -> str:
     found = document.get(node)
     action = "double-click to edit text" if double_click_edits else "click to select"

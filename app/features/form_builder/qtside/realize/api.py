@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QObject, qRegisterResourceData, qUnregisterResourceData
 from app.qt.QtWidgets import (
@@ -258,6 +258,10 @@ class Realizer(_Structure):
         if not isinstance(spacer, QSpacerItem) or not wrapper_is_valid(spacer):
             return None
         return spacer
+
+    def reapply_geometry(self, ids: Sequence[NodeId]) -> None:
+        """Write those nodes' document geometry back onto the live widgets."""
+        self._reapply_document_geometry(set(ids))
 
     def node_for(self, obj: object) -> Optional[NodeId]:
         current = obj
