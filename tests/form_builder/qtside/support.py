@@ -8,7 +8,7 @@ import subprocess
 import sys
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator, Sequence, Tuple
+from typing import Iterator, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.session import FormSession
@@ -37,7 +37,11 @@ def opened(text: str, path: str = "/tmp/cbcs-form.ui") -> Iterator[Tuple[FormSes
         session.dispose()
 
 
-def run_module(module: str, args: Sequence[str]) -> "subprocess.CompletedProcess[str]":
+def run_module(
+    module: str,
+    args: Sequence[str],
+    extra_env: Optional[Mapping[str, str]] = None,
+) -> "subprocess.CompletedProcess[str]":
     """Run ``module`` under this interpreter.
 
     FreeCAD AppRun rejects ``-m``. A short ``-c`` payload plus ``runpy`` works
@@ -50,6 +54,8 @@ def run_module(module: str, args: Sequence[str]) -> "subprocess.CompletedProcess
     env.setdefault("QT_QPA_PLATFORM", "offscreen")
     env["CBCS_FB_MODULE"] = module
     env["CBCS_FB_MODULE_ARGS"] = json.dumps(list(args))
+    if extra_env:
+        env.update(extra_env)
     payload = (
         "import json, os, runpy, sys\n"
         "sys.argv = [os.environ['CBCS_FB_MODULE']] + json.loads(os.environ['CBCS_FB_MODULE_ARGS'])\n"

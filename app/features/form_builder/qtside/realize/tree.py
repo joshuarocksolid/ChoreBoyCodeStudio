@@ -3,11 +3,16 @@
 Phase 1 detaches every moved object before any container is rebuilt. Phase 2
 then walks dirty containers shallow-first, so a widget that moved into an
 earlier container is already in the pool when that container asks for it.
+
+The pool lives for one patch. A pooled widget that no container asked for is
+one a fresh build would not create, and ``_sweep_pool`` deletes it. Layouts
+never sit in the pool: ``_layouts`` names them, and a layout outside the live
+tree is always empty (``slots.py``).
 """
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Set, Tuple, Union
 
 from app.qt import QtGui, QtWidgets
 from app.qt.QtCore import QObject, Qt
@@ -15,7 +20,6 @@ from app.qt.QtGui import QAction, QActionGroup, QIcon
 from app.qt.QtWidgets import (
     QComboBox,
     QDockWidget,
-    QFormLayout,
     QGridLayout,
     QLayout,
     QListWidget,
@@ -28,6 +32,7 @@ from app.qt.QtWidgets import (
     QSpacerItem,
     QSplitter,
     QStackedWidget,
+    QStatusBar,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -56,13 +61,19 @@ from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
-    resolve_enum,
     splitter_sizes,
     text_of,
     to_qt,
 )
+from app.features.form_builder.qtside.realize.slots import (
+    NODE_ID_PROPERTY,
+    LayoutHints,
+    _LayoutSlots,
+    _form_role,  # noqa: F401  (kept importable from tree for existing scripts)
+    _node_id,
+    grid_extent as _grid_extent,
+)
 
-NODE_ID_PROPERTY = "_cbcsNodeId"
 STAND_IN_PROPERTY = "_cbcsStandIn"
 
 _PAGE_CLASSES = frozenset(
@@ -94,7 +105,7 @@ _GEOMETRY_PROPS = frozenset(
 _DIRECT = Qt.FindDirectChildrenOnly
 
 
-class _Structure:
+class _Structure(_LayoutSlots):
     """Methods mixed into ``Realizer``. Attributes live on the realizer."""
 
     def _qt_class_name(self, class_name: str) -> str:
@@ -130,6 +141,8 @@ class _Structure:
         self._widgets[node.id] = widget
         self._objects[node.id] = widget
         self._created += 1
+        self._touched.add(node.id)
+        self._fresh.add(node.id)
         is_root = parent is None and self._root is None
         self._apply_node_properties(node, widget, is_root=is_root or widget is self._root)
         return widget
@@ -141,6 +154,7 @@ class _Structure:
         return widget
 
     def _obtain_widget(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:
+        self._touched.add(node.id)
         pooled = self._pool.pop(node.id, None)
         if isinstance(pooled, QWidget):
             if not wrapper_is_valid(pooled):
@@ -187,6 +201,20 @@ class _Structure:
         self._sync_items(node, widget)
         self._apply_late(node, widget)
 
+    def _note_managed_children(self, node: WidgetNode) -> None:
+        layout = node.layout
+        if not isinstance(layout, LayoutNode):
+            return
+        pending = [layout]
+        while pending:
+            current = pending.pop()
+            for item in current.items:
+                content = item.content
+                if isinstance(content, WidgetNode):
+                    self._geometry_targets.add(content.id)
+                elif isinstance(content, LayoutNode):
+                    pending.append(content)
+
     def _fill_loose(self, node: WidgetNode, widget: QWidget) -> None:
         for child in node.child_widgets:
             self._obtain_widget(child, widget)
@@ -194,6 +222,10 @@ class _Structure:
     def _fill_pages(self, node: WidgetNode, widget: QWidget) -> None:
         self._drain_pages(widget)
         children = node.child_widgets
+        for child_node in children:
+            # Adding a page shows it, and show() activates the page's layout,
+            # which moves the widgets it manages off their document rects.
+            self._note_managed_children(child_node)
         if isinstance(widget, QScrollArea):
             if children:
                 child = self._obtain_widget(children[0], None)
@@ -238,32 +270,53 @@ class _Structure:
         child = self._obtain_widget(children[0], None)
         current = widget.widget()
         if current is not None and current is not child:
+            current_id = _node_id(current)
             current.setParent(None)
+            if current_id is not None:
+                self._hold_widget(current_id, current)
         widget.setWidget(child)
 
     def _fill_main_window(self, node: WidgetNode, widget: QMainWindow) -> None:
+        """Install the chrome and the central widget. Parts already in place stay.
+
+        A toolbar edit reconciles the window, and the central subtree is most
+        of the form. Leaving installed parts alone keeps that edit O(chrome).
+        """
+        parts: List[Tuple[WidgetNode, str]] = []
         central = None
         for child in node.child_widgets:
             kind = self._qt_class_name(child.class_name)
-            if kind == "QMenuBar":
-                bar = self._obtain_widget(child, widget)
-                if isinstance(bar, QMenuBar):
-                    widget.setMenuBar(bar)
-            elif kind == "QStatusBar":
-                bar = self._obtain_widget(child, widget)
-                widget.setStatusBar(bar)
-            elif kind == "QToolBar":
-                bar = self._obtain_widget(child, widget)
-                if isinstance(bar, QToolBar):
-                    widget.addToolBar(bar)
-            elif kind == "QDockWidget":
-                dock = self._obtain_widget(child, widget)
-                if isinstance(dock, QDockWidget):
-                    widget.addDockWidget(Qt.LeftDockWidgetArea, dock)
+            if kind in ("QMenuBar", "QStatusBar", "QToolBar", "QDockWidget", "QMenu"):
+                parts.append((child, kind))
             elif central is None:
                 central = child
-                body = self._obtain_widget(child, widget)
-                widget.setCentralWidget(body)
+                parts.append((child, "central"))
+        installed = set()
+        for child, role in parts:
+            live = self._widgets.get(child.id)
+            if isinstance(live, QWidget) and wrapper_is_valid(live) and _installed(widget, live, role):
+                installed.add(child.id)
+        for stale in list(widget.findChildren(QWidget, options=_DIRECT)):
+            stale_id = _node_id(stale)
+            if stale_id is None or stale_id in installed or stale is widget or stale_id in self._pool:
+                continue
+            self._detach_widget(stale)
+            self._hold_widget(stale_id, stale)
+        for child, role in parts:
+            if child.id in installed:
+                continue
+            part = self._obtain_widget(child, widget)
+            if role == "QMenuBar" and isinstance(part, QMenuBar):
+                widget.setMenuBar(part)
+            elif role == "QStatusBar":
+                widget.setStatusBar(part)
+            elif role == "QToolBar" and isinstance(part, QToolBar):
+                widget.addToolBar(part)
+            elif role == "QDockWidget" and isinstance(part, QDockWidget):
+                widget.addDockWidget(Qt.LeftDockWidgetArea, part)
+            elif role == "central":
+                widget.setCentralWidget(part)
+            self._note_managed_children(child)
         self._fill_menu(node, widget)
 
     def _fill_menu(self, node: WidgetNode, widget: QWidget) -> None:
@@ -316,7 +369,10 @@ class _Structure:
         existing = self._actions.get(child.id)
         if existing is not None:
             if wrapper_is_valid(existing):
-                existing.setParent(widget)
+                if self._pool.get(child.id) is existing:
+                    del self._pool[child.id]
+                if existing.parent() is not widget:
+                    existing.setParent(widget)
                 return
             self._wipe(child.id)
         created = cls(widget)
@@ -354,80 +410,10 @@ class _Structure:
         self._apply_node_properties(node, qlayout, is_root=False)
         return qlayout
 
-    def _fill_layout(self, node: LayoutNode, host: Optional[QWidget] = None) -> QLayout:
-        install_host = None
-        owner_id = node.owner_widget_id()
-        if owner_id is not None:
-            install_host = self._widgets.get(owner_id)
-        if host is None:
-            host = install_host
-        if node.class_name == "QGridLayout":
-            self._drop_oversized_grid(node)
-        qlayout = self._ensure_layout(node, install_host)
-        self._detach_layout(qlayout)
-        if node.class_name == "QFormLayout" and isinstance(qlayout, QFormLayout):
-            for item in _form_order(node):
-                self._place_form(qlayout, item, host)
-        elif node.class_name == "QGridLayout" and isinstance(qlayout, QGridLayout):
-            for item in node.items:
-                self._place_grid(qlayout, item, host)
-        else:
-            for item in node.items:
-                self._place_box(qlayout, item, host)
-        self._apply_stretches(node, qlayout)
-        return qlayout
-
-    def _place_box(self, qlayout: QLayout, item: LayoutItemNode, host: Optional[QWidget]) -> None:
-        content = item.content
-        parent = host if host is not None else qlayout.parentWidget()
-        if isinstance(content, WidgetNode):
-            widget = self._obtain_widget(content, parent)
-            qlayout.addWidget(widget)
-            _align(qlayout, widget, item)
-        elif isinstance(content, LayoutNode):
-            nested = self._fill_layout(content, host)
-            self._release_layout(nested)
-            qlayout.addLayout(nested)
-        elif isinstance(content, SpacerNode):
-            qlayout.addItem(self._spacer(content))
-
-    def _place_grid(self, qlayout: QGridLayout, item: LayoutItemNode, host: Optional[QWidget]) -> None:
-        content = item.content
-        parent = host if host is not None else qlayout.parentWidget()
-        row = item.row or 0
-        column = item.column or 0
-        rowspan = item.rowspan or 1
-        colspan = item.colspan or 1
-        if isinstance(content, WidgetNode):
-            widget = self._obtain_widget(content, parent)
-            qlayout.addWidget(widget, row, column, rowspan, colspan)
-            _align(qlayout, widget, item)
-        elif isinstance(content, LayoutNode):
-            nested = self._fill_layout(content, host)
-            self._release_layout(nested)
-            qlayout.addLayout(nested, row, column, rowspan, colspan)
-        elif isinstance(content, SpacerNode):
-            qlayout.addItem(self._spacer(content), row, column, rowspan, colspan)
-
-    def _place_form(self, qlayout: QFormLayout, item: LayoutItemNode, host: Optional[QWidget]) -> None:
-        content = item.content
-        parent = host if host is not None else qlayout.parentWidget()
-        row = item.row or 0
-        role = _form_role(item)
-        if isinstance(content, WidgetNode):
-            widget = self._obtain_widget(content, parent)
-            qlayout.setWidget(row, role, widget)
-        elif isinstance(content, LayoutNode):
-            nested = self._fill_layout(content, host)
-            self._release_layout(nested)
-            qlayout.setLayout(row, role, nested)
-        elif isinstance(content, SpacerNode):
-            qlayout.setItem(row, role, self._spacer(content))
-
     def _spacer(self, node: SpacerNode) -> object:
         pooled = self._pool.pop(node.id, None)
         if isinstance(pooled, QSpacerItem):
-            self._spacers[node.id] = pooled
+            self._remember_spacer(node.id, pooled)
             return pooled
         width, height = 40, 20
         hint = node.prop("sizeHint")
@@ -443,8 +429,15 @@ class _Structure:
             item = QSpacerItem(width, height, fixed, grow)
         else:
             item = QSpacerItem(width, height, grow, fixed)
-        self._spacers[node.id] = item
+        self._remember_spacer(node.id, item)
         return item
+
+    def _remember_spacer(self, node_id: NodeId, item: object) -> None:
+        previous = self._spacers.get(node_id)
+        if previous is not None and previous is not item:
+            self._spacer_ids.pop(id(previous), None)
+        self._spacers[node_id] = item
+        self._spacer_ids[id(item)] = node_id
 
     def _sync_items(self, node: WidgetNode, widget: QWidget) -> None:
         items = node.children("items")
@@ -527,23 +520,27 @@ class _Structure:
             return
         widget = self._widgets.get(node_id)
         if isinstance(widget, QWidget):
-            self._detach_widget(widget)
+            # Reconcile runs before destroy, so the old host is still alive
+            # when the new container takes the widget back.
+            self._detach_widget(widget, unparent=False)
             self._hold_widget(node_id, widget)
             return
         layout = self._layouts.get(node_id)
-        if layout is not None:
+        if layout is not None and wrapper_is_valid(layout):
             self._detach_layout(layout)
             self._release_layout(layout)
-            if wrapper_is_valid(layout):
-                self._pool[node_id] = layout
+            return
+        spacer = self._spacers.get(node_id)
+        if spacer is not None and self._take_from_slot(node_id, spacer):
+            self._pool[node_id] = spacer
 
     def _release_layout(self, qlayout: QLayout) -> None:
         """Unparent a nested layout. Delete a layout a widget owns.
 
         ``setParent(None)`` on a widget's layout leaves ``layout()`` dangling,
         and the next ``setLayout`` segfaults. Deleting that layout through a
-        temporary holder clears the pointer. A nested layout's parent is
-        another layout, so ``setParent(None)`` is safe and the object stays.
+        temporary holder clears the pointer. A nested layout is taken out of
+        its parent layout first, so the parent never keeps an item for it.
         """
         if not wrapper_is_valid(qlayout):
             return
@@ -555,7 +552,12 @@ class _Structure:
             # pointer, and destroying that holder at shutdown segfaults.
             self._delete_layout_object(qlayout)
             return
-        qlayout.setParent(None)
+        node_id = _node_id(qlayout)
+        taken = node_id is not None and self._take_from_slot(node_id, qlayout)
+        if not taken and isinstance(parent, QLayout) and wrapper_is_valid(parent):
+            parent.removeItem(qlayout)
+        if wrapper_is_valid(qlayout) and qlayout.parent() is not None:
+            qlayout.setParent(None)
 
     def _delete_layout_object(self, qlayout: QLayout) -> None:
         """Delete a layout after clearing the widget pointer that would dangle."""
@@ -564,7 +566,7 @@ class _Structure:
         node_id = None if _is_stand_in(qlayout) else _node_id(qlayout)
         if node_id is not None:
             self._detach_layout(qlayout)
-            self._settle_descendants(qlayout, replacing=node_id, delete_dead=False)
+            self._settle_descendants(qlayout, replacing=node_id)
         if not wrapper_is_valid(qlayout):
             if node_id is not None:
                 self._forget_layout(node_id)
@@ -575,8 +577,13 @@ class _Structure:
             holder.setLayout(qlayout)
             delete_now(holder)
         else:
-            qlayout.setParent(None)
-            delete_now(qlayout)
+            if node_id is not None:
+                self._take_from_slot(node_id, qlayout)
+            if wrapper_is_valid(qlayout) and isinstance(qlayout.parent(), QLayout):
+                qlayout.parent().removeItem(qlayout)
+            if wrapper_is_valid(qlayout):
+                qlayout.setParent(None)
+                delete_now(qlayout)
         if node_id is not None:
             self._forget_layout(node_id)
 
@@ -586,6 +593,18 @@ class _Structure:
         if node is None:
             return
         if isinstance(node, LayoutNode):
+            owner_id = node.owner_widget_id()
+            if owner_id is None:
+                live = self._layouts.get(node.id)
+                if live is None or not wrapper_is_valid(live) or live.parent() is None:
+                    # A nested layout outside the tree. Its parent layout fills
+                    # it when it places it, and an unplaced one stays empty.
+                    return
+            elif owner_id not in self._widgets:
+                # The owner is pooled or not realized. Filling the layout now
+                # would leave a hostless layout holding items. The owner's
+                # fill installs and fills it when a container takes it back.
+                return
             self._fill_layout(node)
             self._reconciled += 1
             return
@@ -596,7 +615,17 @@ class _Structure:
             widget = self._widgets.get(node.id)
             if widget is None:
                 return
-            self._park_children(node, widget)
+            kind = self._qt_class_name(node.class_name)
+            # A layout reconciles by difference and a main window keeps parts
+            # already in place. Everything else parks its children first.
+            keeps_children = isinstance(node.layout, LayoutNode) or (
+                kind == "QMainWindow" and isinstance(widget, QMainWindow)
+            )
+            if not keeps_children:
+                self._park_children(node, widget)
+            self._geometry_targets.add(node.id)
+            for child in node.child_widgets:
+                self._geometry_targets.add(child.id)
             self._fill_widget(node, widget)
             self._reconciled += 1
 
@@ -614,7 +643,7 @@ class _Structure:
             qlayout = self._layouts.get(node.layout.id)
             if qlayout is None and widget.layout() is not None:
                 qlayout = widget.layout()
-            if qlayout is not None:
+            if qlayout is not None and wrapper_is_valid(qlayout):
                 self._detach_layout(qlayout)
             return
         self._park_direct(widget)
@@ -684,7 +713,18 @@ class _Structure:
             self._detach_widget(child)
             self._hold_widget(node_id, child)
 
-    def _detach_widget(self, widget: QWidget) -> None:
+    def _detach_widget(self, widget: QWidget, *, unparent: bool = True) -> None:
+        """Take ``widget`` out of its container.
+
+        ``unparent=False`` keeps a layout item's widget under its old host. A
+        move uses that: the new container reparents it within the same window,
+        which skips the focus-chain walk Qt does when a widget leaves a window.
+        """
+        node_id = _node_id(widget)
+        if node_id is not None and self._take_from_slot(node_id, widget):
+            if unparent:
+                widget.setParent(None)
+            return
         parent = widget.parentWidget()
         if isinstance(parent, QTabWidget):
             index = parent.indexOf(widget)
@@ -733,39 +773,6 @@ class _Structure:
                 host.layout().removeWidget(widget)
         widget.setParent(None)
 
-    def _detach_layout(self, qlayout: QLayout) -> None:
-        if isinstance(qlayout, QFormLayout):
-            while qlayout.rowCount():
-                taken = qlayout.takeRow(0)
-                for item in (taken.labelItem, taken.fieldItem):
-                    if item is not None:
-                        self._pool_taken_item(item)
-            return
-        while qlayout.count():
-            item = qlayout.takeAt(0)
-            if item is None:
-                break
-            self._pool_taken_item(item)
-
-    def _pool_taken_item(self, item: object) -> None:
-        child = item.widget() if hasattr(item, "widget") else None
-        nested = item.layout() if hasattr(item, "layout") else None
-        if child is not None:
-            node_id = _node_id(child)
-            if node_id is not None:
-                self._hold_widget(node_id, child)
-            child.setParent(None)
-            return
-        if nested is not None:
-            node_id = _node_id(nested)
-            self._release_layout(nested)
-            if node_id is not None and wrapper_is_valid(nested):
-                self._pool[node_id] = nested
-            return
-        spacer_id = self._spacer_of(item)
-        if spacer_id is not None:
-            self._pool[spacer_id] = item
-
     def _drop_layout(self, widget: QWidget) -> None:
         """Remove a layout this realizer installed, including a tagged stand-in.
 
@@ -805,22 +812,19 @@ class _Structure:
         return True
 
     def _forget_layout(self, node_id: NodeId) -> None:
+        self._forget_slots(node_id)
         self._layouts.pop(node_id, None)
         self._objects.pop(node_id, None)
         self._pool.pop(node_id, None)
 
-    def _spacer_of(self, item: object) -> Optional[NodeId]:
-        for node_id, spacer in self._spacers.items():
-            if spacer is item:
-                return node_id
-        return None
-
     def _morph_widget(self, node: WidgetNode) -> None:
-        """Replace the live widget and let reconcile reattach it from the pool.
+        """Replace the live widget.
 
-        Swapping by hand mis-reads grid positions, drops box items, and treats
-        a tab page's stack as the QTabWidget. The parent container is queued
-        and ``_reconcile_node`` installs the new object.
+        A widget in a realized layout swaps in place through
+        ``QLayout.replaceWidget``, which keeps the grid cell, form role or box
+        index and leaves the layout untouched. Any other widget goes to the
+        pool, and its parent container is queued so ``_reconcile_node``
+        installs it.
         """
         old = self._widgets.get(node.id)
         was_root = self._root is old
@@ -830,23 +834,61 @@ class _Structure:
             self._discard_pooled(node.id)
             if was_root:
                 self._root = None
-            created = self._construct(node, None)
-            self._adopt_morphed(node, created, was_root=was_root or self._root is None and node.parent_id is None)
+            becomes_root = was_root or self._root is None and node.parent_id is None
+            created = self._construct(node, None if becomes_root else self._nursery())
+            self._adopt_morphed(node, created, was_root=becomes_root)
             self._remember_morph_buddies(node)
             return
         self._park_children(node, old)
-        self._settle_descendants(old, replacing=node.id, delete_dead=False)
-        self._detach_widget(old)
+        self._settle_descendants(old, replacing=node.id)
         self._widgets.pop(node.id, None)
         self._objects.pop(node.id, None)
         self._pool.pop(node.id, None)
         if was_root:
             self._root = None
+        created = self._construct(node, None if was_root else self._nursery())
+        swapped = not was_root and self._swap_in_layout(node.id, old, created)
+        if not swapped:
+            self._detach_widget(old)
         if wrapper_is_valid(old):
             delete_now(old)
-        created = self._construct(node, None)
-        self._adopt_morphed(node, created, was_root=was_root)
+        if swapped:
+            self._pending_containers.add(node.id)
+        else:
+            self._adopt_morphed(node, created, was_root=was_root)
         self._remember_morph_buddies(node)
+
+    def _nursery(self) -> QWidget:
+        """A hidden parent for a morph's new widget until a container takes it.
+
+        A parentless widget is a window, and a window's layout pins its minimum
+        size when it activates (QStatusBar does that on construction). A fresh
+        build never makes form parts windows, so a patch must not either.
+        """
+        nursery = self._nursery_widget
+        if nursery is None or not wrapper_is_valid(nursery):
+            nursery = QWidget()
+            nursery.setObjectName("_cbcsNursery")
+            self._nursery_widget = nursery
+        return nursery
+
+    def _swap_in_layout(self, node_id: NodeId, old: QWidget, created: QWidget) -> bool:
+        layout_id = self._slot_of.get(node_id)
+        qlayout = None if layout_id is None else self._layouts.get(layout_id)
+        mirror = None if qlayout is None or layout_id is None else self._mirror(layout_id, qlayout)
+        if mirror is None or qlayout is None:
+            return False
+        index = mirror.find(node_id)
+        host = qlayout.parentWidget()
+        if index < 0 or mirror.objects[index] is not old or host is None:
+            return False
+        created.setParent(host)
+        if qlayout.replaceWidget(old, created, _DIRECT) is None:
+            created.setParent(None)
+            return False
+        mirror.objects[index] = created
+        old.setParent(None)
+        return True
 
     def _adopt_morphed(self, node: WidgetNode, created: QWidget, *, was_root: bool) -> None:
         if was_root:
@@ -864,69 +906,118 @@ class _Structure:
         self._pending_containers.add(node.id)
 
     def _hold_widget(self, node_id: NodeId, widget: QWidget) -> None:
-        """Park a widget until a container asks for it.
+        """Park a widget until a container asks for it during this patch.
 
-        Leaving it in ``_widgets`` makes a patch report a widget that a fresh
-        build never creates, such as a dock's child after the dock becomes a
-        plain frame. Descendants go with it. A fresh build does not create
-        them either.
+        Its subtree stays inside it. ``_sweep_pool`` deletes a widget no
+        container asked for, since a fresh build would not create it either.
         """
+        prior = self._pool.get(node_id)
+        if prior is not None and prior is not widget and isinstance(prior, QWidget):
+            if self._widgets.get(node_id) is widget or not wrapper_is_valid(prior):
+                self._pool.pop(node_id, None)
+                self._delete_widget(prior)
+            else:
+                # ``widget`` is a stale object for this id. The pooled one wins.
+                self._delete_widget(widget)
+                return
         self._pool[node_id] = widget
         self._widgets.pop(node_id, None)
         if self._objects.get(node_id) is widget:
             self._objects.pop(node_id, None)
-        self._hold_descendants(node_id)
-
-    def _hold_descendants(self, node_id: NodeId) -> None:
-        document = self._session.document
-        if not document.contains(node_id):
-            return
-        for desc in document.iter_preorder(node_id):
-            if desc.id == node_id:
-                continue
-            if isinstance(desc, WidgetNode):
-                live = self._widgets.get(desc.id)
-                if isinstance(live, QWidget):
-                    self._pool[desc.id] = live
-                    self._widgets.pop(desc.id, None)
-                    if self._objects.get(desc.id) is live:
-                        self._objects.pop(desc.id, None)
-                continue
-            if isinstance(desc, LayoutNode):
-                self._layouts.pop(desc.id, None)
-                if isinstance(self._objects.get(desc.id), QLayout):
-                    self._objects.pop(desc.id, None)
 
     def _discard_pooled(self, node_id: NodeId) -> None:
         discarded = self._pool.pop(node_id, None)
-        if discarded is not None and wrapper_is_valid(discarded):
+        if isinstance(discarded, QWidget):
+            self._delete_widget(discarded)
+        elif discarded is not None and isinstance(discarded, QObject) and wrapper_is_valid(discarded):
             delete_now(discarded)
 
-    def _drop_oversized_grid(self, node: LayoutNode) -> None:
-        """QGridLayout.rowCount never shrinks. A fresh layout does."""
+    def _delete_widget(self, widget: QWidget) -> None:
+        """Delete a widget nothing else names.
+
+        Map entries for it and its tagged descendants go first, and it leaves
+        any realized layout through its mirror, so no layout item outlives it.
+        """
+        if not wrapper_is_valid(widget):
+            return
+        self._wipe_objects_under(widget)
+        self._detach_widget(widget)
+        if wrapper_is_valid(widget):
+            delete_now(widget)
+
+    def _wipe_objects_under(self, root: QObject) -> None:
+        """Drop map entries that point at ``root`` or a tagged descendant."""
+        objects = [root]
+        if hasattr(root, "findChildren"):
+            objects.extend(root.findChildren(QObject))
+        for obj in objects:
+            node_id = _node_id(obj)
+            if node_id is None:
+                continue
+            for table in (self._widgets, self._layouts, self._actions, self._objects):
+                if table.get(node_id) is obj:
+                    del table[node_id]
+            if isinstance(obj, QLayout):
+                self._forget_slots(node_id)
+            if self._pool.get(node_id) is obj:
+                del self._pool[node_id]
+
+    def _sweep_pool(self) -> None:
+        """Delete what this patch pooled and no container took back."""
+        while self._pool:
+            node_id, obj = self._pool.popitem()
+            if isinstance(obj, QWidget):
+                if self._widgets.get(node_id) is obj:
+                    continue
+                self._delete_widget(obj)
+            elif isinstance(obj, QObject):
+                if self._actions.get(node_id) is obj and obj.parent() is not None:
+                    continue
+                if wrapper_is_valid(obj):
+                    self._wipe_objects_under(obj)
+                    delete_now(obj)
+            elif self._spacers.get(node_id) is obj:
+                # A spacer nothing placed again. The wrapper owns it now.
+                self._spacers.pop(node_id, None)
+                self._spacer_ids.pop(id(obj), None)
+
+    def _drop_oversized_grid(self, node: LayoutNode) -> List[Tuple[Optional[NodeId], object]]:
+        """QGridLayout.rowCount never shrinks. A fresh layout does.
+
+        The items come out first and stay parented to the host, so the fresh
+        grid takes them back without a reparent.
+        """
         existing = self._layouts.get(node.id)
         if not isinstance(existing, QGridLayout) or not wrapper_is_valid(existing):
-            return
+            return []
         rows, columns = _grid_extent(node)
         if existing.rowCount() <= rows and existing.columnCount() <= columns:
-            return
-        parent = existing.parent()
-        parent_id = _node_id(parent) if isinstance(parent, QLayout) else None
+            return []
+        nested = isinstance(existing.parent(), QLayout)
+        taken = self._take_all(node.id, existing)
         self._delete_layout_object(existing)
         # The new grid is created unparented. The layout that contained this
         # one has to run again, or the nested grid stays out of the tree.
-        if parent_id is not None:
-            self._pending_containers.add(parent_id)
+        if nested:
+            self._requeue_host_of(node)
+        return taken
 
-    def _reapply_document_geometry(self) -> None:
+    def _reapply_document_geometry(self, targets: Optional[Set[NodeId]] = None) -> None:
         """Write the document rect again after Qt has inserted the widget.
 
         A fresh build applies geometry before ``addTab`` or ``addWidget``, and
         those calls replace it. A patch applies geometry after the widget is
         already in place, so Qt does not get a second chance. Doing this last
-        on both paths leaves the live rect equal to the document.
+        on both paths leaves the live rect equal to the document. ``build``
+        passes no targets. A patch passes the widgets it placed, the children
+        of the containers it reconciled and the owners of geometry edits.
         """
-        for node in self._session.document.iter_preorder():
+        document = self._session.document
+        if targets is None:
+            nodes = (node for node in document.iter_preorder() if isinstance(node, WidgetNode))
+        else:
+            nodes = (document.get(node_id) for node_id in targets)
+        for node in nodes:
             if not isinstance(node, WidgetNode):
                 continue
             entry = node.prop("geometry")
@@ -943,10 +1034,24 @@ class _Structure:
             return
         parent = self._session.document.get(parent_id)
         if isinstance(parent, LayoutItemNode):
-            if parent.parent_id is not None:
-                self._pending_containers.add(parent.parent_id)
+            self._requeue_host_of(node)
             return
         self._pending_containers.add(parent_id)
+
+    def _requeue_host_of(self, node: object) -> None:
+        """Reconcile the layout whose item holds ``node``, hinting that item.
+
+        A layout already filled in this patch runs again only for its hints.
+        """
+        parent_id = getattr(node, "parent_id", None)
+        item = self._session.document.get(parent_id) if parent_id is not None else None
+        if not isinstance(item, LayoutItemNode) or item.parent_id is None:
+            return
+        hints = self._layout_hints.get(item.parent_id)
+        if hints is None:
+            hints = self._layout_hints[item.parent_id] = LayoutHints()
+        hints.items.add(item.id)
+        self._pending_containers.add(item.parent_id)
 
     def _remember_morph_buddies(self, node: WidgetNode) -> None:
         self._morph_buddies.add(node.id)
@@ -963,45 +1068,56 @@ class _Structure:
         if node.owner_widget_id() is not None:
             self._pending_containers.add(node.id)
             return
-        parent = self._session.document.get(node.parent_id) if node.parent_id is not None else None
-        if isinstance(parent, LayoutItemNode) and parent.parent_id is not None:
-            self._pending_containers.add(parent.parent_id)
+        self._requeue_host_of(node)
 
-    def _settle_descendants(self, root_obj: object, *, replacing: NodeId, delete_dead: bool) -> None:
-        """Pool tagged descendants the document still has. Wipe ids that die.
+    def _settle_descendants(self, root_obj: object, *, replacing: NodeId) -> None:
+        """Pool the tagged children the document still has. Delete the ones that die.
 
-        Kept objects are reparented off ``root_obj`` before it is deleted, so
-        a later ``delete_now`` cannot free a QAction or nested layout the pool
-        still names.
+        Shallow first: a kept object takes its own subtree along, so nothing
+        under it is taken apart. A dead object is deleted wherever it sits.
         """
         if not wrapper_is_valid(root_obj) or not hasattr(root_obj, "findChildren"):
             return
         children = [
             child
             for child in root_obj.findChildren(QObject)  # type: ignore[attr-defined]
-            if wrapper_is_valid(child)
+            if wrapper_is_valid(child) and _node_id(child) is not None
         ]
-        children.sort(key=self._object_depth, reverse=True)
+        children.sort(key=self._object_depth)
+        document = self._session.document
         for child in children:
             if not wrapper_is_valid(child):
                 continue
             node_id = _node_id(child)
             if node_id is None or node_id == replacing:
                 continue
-            if self._session.document.contains(node_id):
-                self._rehome(child)
-                if wrapper_is_valid(child):
-                    self._pool[node_id] = child
-                if isinstance(child, QWidget):
-                    self._widgets.pop(node_id, None)
-                    if self._objects.get(node_id) is child:
-                        self._objects.pop(node_id, None)
+            if not document.contains(node_id):
+                self._wipe(node_id)
+                self._delete_dead(child)
                 continue
-            self._wipe(node_id)
-            if delete_dead:
-                self._rehome(child)
-                if wrapper_is_valid(child):
-                    delete_now(child)
+            if not _under(child, root_obj):
+                continue
+            if isinstance(child, QLayout):
+                # Layouts are not pooled. ``_layouts`` keeps the object, emptied.
+                self._detach_layout(child)
+                self._release_layout(child)
+                continue
+            self._rehome(child)
+            if not wrapper_is_valid(child):
+                continue
+            if isinstance(child, QWidget):
+                self._hold_widget(node_id, child)
+            else:
+                self._pool[node_id] = child
+
+    def _delete_dead(self, obj: object) -> None:
+        if isinstance(obj, QWidget):
+            self._delete_widget(obj)
+        elif isinstance(obj, QLayout):
+            self._delete_layout_object(obj)
+        elif wrapper_is_valid(obj):
+            obj.setParent(None)  # type: ignore[attr-defined]
+            delete_now(obj)
 
     def _rehome(self, obj: object) -> None:
         if isinstance(obj, QWidget):
@@ -1082,47 +1198,6 @@ class _Structure:
                     continue
 
 
-def _grid_extent(node: LayoutNode) -> Tuple[int, int]:
-    """Rows and columns a fresh grid reports, which is at least 1."""
-    rows = 1
-    columns = 1
-    for item in node.items:
-        if item.content is None:
-            continue
-        rows = max(rows, (item.row or 0) + (item.rowspan or 1))
-        columns = max(columns, (item.column or 0) + (item.colspan or 1))
-    for field_name, axis in (
-        ("rowstretch", "rows"),
-        ("rowminimumheight", "rows"),
-        ("columnstretch", "columns"),
-        ("columnminimumwidth", "columns"),
-    ):
-        raw = node.field(field_name)
-        if not isinstance(raw, str) or not raw.strip():
-            continue
-        length = 0
-        for index, piece in enumerate(part.strip() for part in raw.split(",")):
-            if piece:
-                length = index + 1
-        if axis == "rows":
-            rows = max(rows, length)
-        else:
-            columns = max(columns, length)
-    return rows, columns
-
-
-def _node_id(obj: object) -> Optional[NodeId]:
-    if obj is None or not hasattr(obj, "property"):
-        return None
-    raw = obj.property(NODE_ID_PROPERTY)  # type: ignore[attr-defined]
-    if raw is None or raw == "":
-        return None
-    try:
-        return NodeId(int(raw))
-    except (TypeError, ValueError):
-        return None
-
-
 def _page_title(node: WidgetNode) -> str:
     for name in ("title", "label"):
         text = _attr_text(node, name)
@@ -1168,31 +1243,29 @@ def _tree_item(node: object) -> object:
     return item
 
 
-def _form_order(node: LayoutNode) -> Tuple[LayoutItemNode, ...]:
-    return tuple(sorted(node.items, key=lambda item: (item.row or 0, item.column or 0)))
+def _under(obj: object, root: object) -> bool:
+    current = obj.parent() if hasattr(obj, "parent") else None  # type: ignore[attr-defined]
+    seen = set()
+    while current is not None and id(current) not in seen:
+        if current is root:
+            return True
+        seen.add(id(current))
+        current = current.parent() if hasattr(current, "parent") else None
+    return False
 
 
-def _form_role(item: LayoutItemNode) -> object:
-    role_type = getattr(QFormLayout, "ItemRole", QFormLayout)
-    colspan = item.colspan or 1
-    column = item.column or 0
-    if colspan > 1 or column >= 2:
-        return getattr(role_type, "SpanningRole")
-    if column == 1:
-        return getattr(role_type, "FieldRole")
-    return getattr(role_type, "LabelRole")
+def _installed(window: QMainWindow, part: QWidget, role: str) -> bool:
+    """Whether ``part`` already fills ``role`` on ``window``.
 
-
-def _align(qlayout: QLayout, widget: QWidget, item: LayoutItemNode) -> None:
-    if not item.alignment:
-        return
-    flag = resolve_enum(item.alignment)
-    if flag is None:
-        return
-    try:
-        qlayout.setAlignment(widget, flag)
-    except (TypeError, AttributeError):
-        return
+    The status bar, toolbars, docks and loose menus have no getter that does
+    not create one, so being the window's child of the right class counts.
+    """
+    if role == "central":
+        return window.centralWidget() is part
+    if role == "QMenuBar":
+        return window.menuWidget() is part
+    kinds = {"QStatusBar": QStatusBar, "QToolBar": QToolBar, "QDockWidget": QDockWidget, "QMenu": QMenu}
+    return part.parentWidget() is window and isinstance(part, kinds[role])
 
 
 def _owning_tab(widget: QWidget) -> Optional[QTabWidget]:

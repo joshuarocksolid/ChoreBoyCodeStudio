@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 
 from app.qt.QtCore import QObject, qRegisterResourceData, qUnregisterResourceData
 from app.qt.QtWidgets import (
@@ -56,6 +56,7 @@ from app.features.form_builder.qtside.realize.props import (
     splitter_sizes,
     text_of,
 )
+from app.features.form_builder.qtside.realize.slots import LayoutHints, _Mirror, collect_layout_hints
 from app.features.form_builder.qtside.realize.tree import (
     NODE_ID_PROPERTY,
     _GEOMETRY_PROPS,
@@ -110,7 +111,26 @@ class Realizer(_Structure):
         self._objects: Dict[NodeId, object] = {}
         self._spacers: Dict[NodeId, object] = {}
         self._pool: Dict[NodeId, object] = {}
+        # Layout mirrors (slots.py): layout id -> (QLayout, entries), and the
+        # layout each placed content id sits in.
+        self._placed: Dict[NodeId, _Mirror] = {}
+        self._slot_of: Dict[NodeId, NodeId] = {}
+        self._spacer_ids: Dict[int, NodeId] = {}
+        # Per patch: what each dirty layout must take out and place, the
+        # layouts already filled, and grids whose row count may have shrunk.
+        self._layout_hints: Dict[NodeId, LayoutHints] = {}
+        self._filled: Set[NodeId] = set()
+        self._grid_check: Set[NodeId] = set()
+        # Form layouts with a cell two items claim. They always diff in full.
+        self._crowded: Set[NodeId] = set()
+        # Per patch: widgets obtained or created, the ones created, the ones a
+        # taken form cell left loose, and the widgets whose geometry is re-applied.
+        self._touched: Set[NodeId] = set()
+        self._fresh: Set[NodeId] = set()
+        self._unplaced: Set[NodeId] = set()
+        self._geometry_targets: Set[NodeId] = set()
         self._mdi: Dict[NodeId, object] = {}
+        self._nursery_widget: Optional[QWidget] = None
         self._buddy_of: Dict[NodeId, str] = {}
         self._buddy_users: Dict[str, List[NodeId]] = {}
         self._pending_containers: set = set()
@@ -132,15 +152,26 @@ class Realizer(_Structure):
         self._destroy_tree()
         self._pool.clear()
         self._problems.clear()
+        self._start_patch()
         self._register_resources()
         root_node = self._session.document.root
         widget = self._create_widget(root_node, None)
         self._root = widget
+        self._sweep_pool()
         isolate_widget(widget)
         self._reapply_authored_look(root_node, widget)
         self._index_buddies()
         self._reapply_document_geometry()
         return widget
+
+    def _start_patch(self) -> None:
+        self._layout_hints = {}
+        self._filled.clear()
+        self._grid_check.clear()
+        self._touched.clear()
+        self._fresh.clear()
+        self._unplaced.clear()
+        self._geometry_targets.clear()
 
     def on_changeset(self, changeset: ChangeSet) -> PatchStats:
         """Reconcile in three phases. Patches re-read the document, not ``change.new``."""
@@ -152,6 +183,7 @@ class Realizer(_Structure):
         destroyed = 0
         fallbacks = 0
         roots: List[NodeId] = []
+        self._start_patch()
         try:
             if changeset.replaced or self._root is None:
                 destroyed = self._removed_widget_count(changeset)
@@ -164,6 +196,7 @@ class Realizer(_Structure):
             fallbacks += 1
             try:
                 roots.append(self._fallback(changeset))
+                self._sweep_pool()
             except Exception:
                 logger.exception("FB901 realize ancestor rebuild failed on %s", changeset.label)
                 self.build()
@@ -249,11 +282,15 @@ class Realizer(_Structure):
         self._subscription.close()
         self._destroy_tree()
         self._unregister_resources()
+        if self._nursery_widget is not None:
+            delete_now(self._nursery_widget)
+            self._nursery_widget = None
 
     def _patch(self, changeset: ChangeSet) -> int:
         # Count before reconcile parks removed widgets out of the map.
         destroyed = self._removed_widget_count(changeset)
         document = self._session.document
+        self._layout_hints = collect_layout_hints(changeset, document, self._slot_of)
         for change in changeset.changes:
             if not isinstance(change, FieldChanged):
                 continue
@@ -278,6 +315,7 @@ class Realizer(_Structure):
                     containers.add(node.parent_id)
                 elif isinstance(node, LayoutNode):
                     containers.add(node.id)
+                    self._grid_check.add(node.id)
         self._reconcile_ids(containers)
         self._destroy_removed(changeset)
         for owner, kind, name in changeset.property_dirty:
@@ -301,10 +339,15 @@ class Realizer(_Structure):
                     renamed.add(current)
             elif isinstance(change, FieldChanged) and change.field == "zorder":
                 self._restack(change.node)
+        self._sweep_pool()
+        self._buddies_touched()
         self._refresh_buddies(changeset, renamed)
         self._flush_morph_buddies()
-        if containers or _geometry_touched(changeset):
-            self._reapply_document_geometry()
+        targets = self._geometry_targets
+        targets.update(self._touched)
+        targets.update(_geometry_owners(changeset))
+        if targets:
+            self._reapply_document_geometry(targets)
         return destroyed
 
     def _reconcile_ids(self, node_ids: set) -> None:
@@ -315,7 +358,6 @@ class Realizer(_Structure):
         )
         for node_id in ordered:
             self._reconcile_node(node_id)
-        self._buddies_in(ordered)
 
     def _flush_morph_buddies(self) -> None:
         document = self._session.document
@@ -443,14 +485,23 @@ class Realizer(_Structure):
                     self._note_buddy(node)
                     self._set_buddy(node)
 
-    def _buddies_in(self, roots: Sequence[NodeId]) -> None:
+    def _buddies_touched(self) -> None:
+        """Buddies of the widgets this patch placed, and labels naming new widgets."""
         document = self._session.document
-        for node_id in roots:
-            if not document.contains(node_id):
+        for node_id in self._touched:
+            node = document.get(node_id)
+            if isinstance(node, WidgetNode) and node.prop("buddy") is not None:
+                if node_id in self._fresh:
+                    self._note_buddy(node)
+                self._set_buddy(node)
+        for node_id in self._fresh:
+            node = document.get(node_id)
+            if not isinstance(node, WidgetNode) or not node.object_name:
                 continue
-            for node in document.iter_preorder(node_id):
-                if isinstance(node, WidgetNode) and node.prop("buddy") is not None:
-                    self._set_buddy(node)
+            for user_id in list(self._buddy_users.get(node.object_name, ())):
+                user = document.get(user_id)
+                if isinstance(user, WidgetNode):
+                    self._set_buddy(user)
 
     def _index_buddies(self) -> None:
         self._buddy_of.clear()
@@ -496,21 +547,29 @@ class Realizer(_Structure):
 
     def _destroy_removed(self, changeset: ChangeSet) -> int:
         count = self._removed_widget_count(changeset)
+        removed = set(changeset.removed)
+        for pooled in list(self._pool.values()):
+            # A moved widget waits in the pool under its old host. If that
+            # host dies here, the widget must not die with it.
+            if isinstance(pooled, QWidget) and wrapper_is_valid(pooled):
+                host = pooled.parentWidget()
+                if host is not None and _node_id(host) in removed:
+                    pooled.setParent(None)
         for node_id in list(changeset.removed):
-            if node_id not in self._widgets:
+            found: object = self._widgets.get(node_id)
+            if found is None:
+                found = self._pool.get(node_id)
+            if not isinstance(found, QWidget) or not wrapper_is_valid(found):
                 continue
-            widget = self._widgets.get(node_id)
-            pooled = self._pool.get(node_id)
-            target = widget if isinstance(widget, QWidget) else pooled
-            if target is None or not isinstance(target, QWidget) or not wrapper_is_valid(target):
-                continue
+            target: QWidget = found
             parent = target.parentWidget()
             parent_id = _node_id(parent) if parent is not None else None
-            if parent_id in changeset.removed:
+            if parent_id in removed and wrapper_is_valid(parent):
                 continue
-            self._detach_widget(target)
-            delete_now(target)
+            self._pool.pop(node_id, None)
+            self._delete_widget(target)
         for node_id in changeset.removed:
+            self._drop_removed_object(node_id)
             self._wipe(node_id)
         for change in changeset.changes:
             if isinstance(change, NodeRemoved):
@@ -521,15 +580,28 @@ class Realizer(_Structure):
     def _removed_widget_count(self, changeset: ChangeSet) -> int:
         return len([node_id for node_id in changeset.removed if node_id in self._widgets])
 
+    def _drop_removed_object(self, node_id: NodeId) -> None:
+        """Delete a removed layout or action now instead of leaving it to the GC."""
+        layout = self._layouts.get(node_id)
+        if layout is not None and wrapper_is_valid(layout):
+            self._delete_layout_object(layout)
+        action = self._actions.get(node_id)
+        if action is not None and wrapper_is_valid(action):
+            delete_now(action)
+
     def _wipe(self, node_id: NodeId) -> None:
         self._widgets.pop(node_id, None)
         self._layouts.pop(node_id, None)
         self._objects.pop(node_id, None)
         self._actions.pop(node_id, None)
-        self._spacers.pop(node_id, None)
+        spacer = self._spacers.pop(node_id, None)
+        if spacer is not None:
+            self._spacer_ids.pop(id(spacer), None)
         self._pool.pop(node_id, None)
         self._mdi.pop(node_id, None)
         self._buddy_of.pop(node_id, None)
+        self._forget_slots(node_id)
+        self._slot_of.pop(node_id, None)
 
     def _fallback(self, changeset: ChangeSet) -> NodeId:
         document = self._session.document
@@ -552,7 +624,7 @@ class Realizer(_Structure):
             self.build()
             return document.root.id
         self._park_children(node, widget)
-        self._settle_descendants(widget, replacing=target, delete_dead=True)
+        self._settle_descendants(widget, replacing=target)
         self._fill_widget(node, widget)
         return target
 
@@ -609,6 +681,10 @@ class Realizer(_Structure):
                 items.append(None)
                 continue
             items.append(self._layout_item_signature(layout, item, index))
+        if isinstance(layout, (QGridLayout, QFormLayout)):
+            # Grid and form items carry their cell. Qt's item order is only
+            # insertion order there, so the cells are compared, not the order.
+            items.sort(key=repr)
         return (
             type(layout).__name__,
             layout.objectName(),
@@ -711,6 +787,10 @@ class Realizer(_Structure):
         self._actions.clear()
         self._objects.clear()
         self._spacers.clear()
+        self._spacer_ids.clear()
+        self._placed.clear()
+        self._slot_of.clear()
+        self._crowded.clear()
         self._pool.clear()
         self._mdi.clear()
 
@@ -765,11 +845,8 @@ def _ensure_app() -> None:
         QApplication([])
 
 
-def _geometry_touched(changeset: ChangeSet) -> bool:
-    for _owner, kind, name in changeset.property_dirty:
-        if kind == "property" and name in _GEOMETRY_PROPS:
-            return True
-    return False
+def _geometry_owners(changeset: ChangeSet) -> Set[NodeId]:
+    return {owner for owner, kind, name in changeset.property_dirty if kind == "property" and name in _GEOMETRY_PROPS}
 
 
 def _document_object_name(node: object) -> str:
@@ -831,11 +908,22 @@ def _layout_metrics(layout: QLayout, node: object) -> Tuple[object, ...]:
         # rowCount() never shrinks, so a patched grid can report empty rows a
         # fresh layout does not. Compare the rows the document still occupies.
         rows, columns = _grid_extent(node)  # type: ignore[arg-type]
+        # Qt does not bound-check these getters. A row or column the grid does
+        # not have reads as 0, which is what a fresh grid would hold.
+        have_rows = layout.rowCount()
+        have_columns = layout.columnCount()
+
+        def per_row(getter: object) -> Tuple[int, ...]:
+            return tuple(int(getter(index)) if index < have_rows else 0 for index in range(rows))  # type: ignore[operator]
+
+        def per_column(getter: object) -> Tuple[int, ...]:
+            return tuple(int(getter(index)) if index < have_columns else 0 for index in range(columns))  # type: ignore[operator]
+
         return (
-            tuple(int(layout.rowStretch(index)) for index in range(rows)),
-            tuple(int(layout.columnStretch(index)) for index in range(columns)),
-            tuple(int(layout.rowMinimumHeight(index)) for index in range(rows)),
-            tuple(int(layout.columnMinimumWidth(index)) for index in range(columns)),
+            per_row(layout.rowStretch),
+            per_column(layout.columnStretch),
+            per_row(layout.rowMinimumHeight),
+            per_column(layout.columnMinimumWidth),
         )
     if isinstance(layout, QBoxLayout):
         return tuple(int(layout.stretch(index)) for index in range(layout.count()))

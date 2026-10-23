@@ -49,12 +49,13 @@ from app.features.form_builder.engine.commands.catalog import (
     SetProperty,
     SetZOrder,
 )
-from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout
+from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InFormRow
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
+from app.features.form_builder.qtside.realize import tree as tree_module
 from app.features.form_builder.qtside.realize.tree import NODE_ID_PROPERTY
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.realize import Realizer
@@ -456,7 +457,10 @@ FAST_STEPS = 30
 FAST_SEEDS = 200
 SOAK_STEPS = 50
 SOAK_SEEDS = 5000
-PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49)
+PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 653, 805, 1219)
+PINNED_HASH_SEEDS = ("0", "1")
+# Allocator settings that overwrite freed memory, so a use-after-free crashes.
+SCRIBBLE_ENV = {"MallocScribble": "1", "MallocPreScribble": "1", "MALLOC_PERTURB_": "165"}
 
 
 def test_morph_in_a_grid_keeps_the_cell() -> None:
@@ -695,10 +699,30 @@ def test_dispose_closes_the_realizer_and_selection_listeners() -> None:
     realizer.dispose()
 
 
-@pytest.mark.parametrize("seed", PINNED_SEEDS)
+@pytest.mark.parametrize("hash_seed", PINNED_HASH_SEEDS)
+@pytest.mark.timeout(120)
+def test_pinned_realize_seeds_under_malloc_scribble(hash_seed: str) -> None:
+    # A child process with the allocator scribble env: a stale layout item
+    # then crashes on every run instead of reading memory that still looks
+    # valid. 653 and 805 freed a widget that a parked layout still named.
+    _run_seed_batches(PINNED_SEEDS, FAST_STEPS, len(PINNED_SEEDS), hash_seed=hash_seed)
+
+
 @pytest.mark.timeout(60)
-def test_pinned_realize_seed(seed: int) -> None:
-    run_realize_seeds((seed,), FAST_STEPS)
+def test_a_crashing_seed_reports_how_to_replay_it() -> None:
+    with pytest.raises(AssertionError) as caught:
+        _run_seed_batches(
+            (0, 1),
+            1,
+            2,
+            hash_seed="77",
+            extra_env={"CBCS_FB_REALIZE_ABORT_SEED": "1"},
+        )
+    message = str(caught.value)
+    assert "seed 1" in message
+    assert "PYTHONHASHSEED=77" in message
+    assert "MallocScribble=1" in message and "MALLOC_PERTURB_=" in message
+    assert "--seeds 1 " in message
 
 
 @pytest.mark.timeout(240)
@@ -796,6 +820,95 @@ def test_corpus_builds_offscreen() -> None:
     assert property_failures == [], property_failures[:30]
 
 
+def test_a_structural_patch_reapplies_geometry_only_near_the_change(monkeypatch: pytest.MonkeyPatch) -> None:
+    loose = "\n".join(
+        '<widget class="QLabel" name="l%d"><property name="geometry"><rect><x>%d</x><y>0</y>'
+        "<width>10</width><height>10</height></rect></property></widget>" % (index, index)
+        for index in range(40)
+    )
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QWidget" name="pane">
+   <property name="geometry"><rect><x>0</x><y>40</y><width>100</width><height>40</height></rect></property>
+   <layout class="QVBoxLayout" name="paneLay"><item><widget class="QPushButton" name="a"/></item></layout>
+  </widget>
+  %s
+"""
+        % loose,
+    )
+    with opened(text) as (session, realizer):
+        calls: List[object] = []
+        original = tree_module.apply_geometry
+
+        def counting(widget: object, value: object, is_root: bool) -> None:
+            calls.append(widget)
+            original(widget, value, is_root)
+
+        monkeypatch.setattr(tree_module, "apply_geometry", counting)
+        box = _layout_of(session, "pane")
+        session.log.execute(InsertFragment(InBoxLayout(box, 0), Fragment(nodes=(button_spec("added"),))))
+        assert realizer.last_stats.fallback_rebuilds == 0
+        assert len(calls) <= 2, "a box insert re-applied %d geometries" % len(calls)
+        monkeypatch.setattr(tree_module, "apply_geometry", original)
+        _same(realizer, session, "insert")
+
+
+def test_a_toolbar_edit_leaves_the_central_subtree_alone() -> None:
+    rows = "\n".join(
+        '<item><widget class="QLabel" name="row%d"><property name="text"><string>r%d</string></property>'
+        '<property name="toolTip"><string>t%d</string></property></widget></item>' % (index, index, index)
+        for index in range(30)
+    )
+    text = _MAIN.replace(
+        '<widget class="QLabel" name="body"><property name="text"><string>Body</string></property></widget>',
+        '<layout class="QVBoxLayout" name="bodyLay">%s</layout>' % rows,
+    )
+    with opened(text) as (session, realizer):
+        window = realizer.root_widget
+        assert isinstance(window, QMainWindow)
+        central = window.centralWidget()
+        first = realizer.widget_for(_named(session, "row0"))
+        toolbar = _named(session, "toolBar")
+        session.log.execute(
+            CreateAction(
+                NodeSpec("action", None, (("name", "actionSpeed"),)),
+                ref_at=InActionList(toolbar, 0),
+            )
+        )
+        stats = realizer.last_stats
+        assert stats.fallback_rebuilds == 0
+        assert window.centralWidget() is central
+        assert realizer.widget_for(_named(session, "row0")) is first
+        # Only the new action's properties. The 30 rows are not touched.
+        assert stats.patched_properties <= 2, stats
+        _same(realizer, session, "toolbar edit")
+        session.log.undo()
+        assert realizer.last_stats.patched_properties <= 2, realizer.last_stats
+        _same(realizer, session, "toolbar edit undo")
+
+
+def test_a_form_cell_that_is_taken_is_reported() -> None:
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QFormLayout" name="form">
+   <item row="0" column="1"><widget class="QLineEdit" name="first"/></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="second"/></item>
+  </layout>
+""",
+    )
+    with opened(text) as (session, realizer):
+        assert any("second" in problem and "form" in problem for problem in realizer.problems()), realizer.problems()
+        session.log.execute(SetProperty(_named(session, "first"), "toolTip", StringValue("x")))
+        layout = _layout_of(session, "Form")
+        session.log.execute(InsertFragment(InFormRow(layout, 1, "field"), Fragment(nodes=(button_spec("third"),))))
+        assert realizer.last_stats.fallback_rebuilds == 0
+        reported = [problem for problem in realizer.problems() if "second" in problem]
+        assert len(reported) == 1, realizer.problems()
+        _same(realizer, session, "taken cell")
+
+
 def opened_pair(text: str) -> Tuple[FormSession, Realizer]:
     session = open_session(text)
     realizer = Realizer(session)
@@ -824,7 +937,26 @@ def _check_step(
         removed = captured["cs"].removed  # type: ignore[attr-defined]
         destroyed = len([node_id for node_id in removed if node_id in realized])
         assert realizer.last_stats.destroyed_widgets == destroyed, label
+    _assert_no_loaded_orphan_layouts(session, realizer, label)
     _same(realizer, session, label)
+
+
+def _assert_no_loaded_orphan_layouts(session: FormSession, realizer: Realizer, label: str) -> None:
+    """A layout outside the live tree must hold no items.
+
+    Its items would keep pointers to widgets that later move or die, and the
+    next read of such an item is a use-after-free.
+    """
+    for node in session.document.iter_preorder():
+        if not isinstance(node, LayoutNode):
+            continue
+        layout = realizer.layout_for(node.id)
+        if layout is not None and layout.parent() is None:
+            assert layout.count() == 0, "%s: detached layout %s holds %d items" % (
+                label,
+                node.object_name,
+                layout.count(),
+            )
 
 
 def _offscreen_class(problem: str) -> Optional[str]:
@@ -892,11 +1024,14 @@ def sequence_forms() -> Tuple[str, ...]:
     return (NESTED, _MAIN, tab, stack, toolbox, wizard, splitter)
 
 
-def run_realize_seeds(seeds: Sequence[int], steps: int) -> None:
+def run_realize_seeds(seeds: Sequence[int], steps: int, hash_seed: str = "") -> None:
     """One process. Prints the seed before each step so a crash names it."""
     forms = sequence_forms()
+    abort_at = os.environ.get("CBCS_FB_REALIZE_ABORT_SEED")
     for seed in seeds:
-        print("SEED %d" % seed, file=sys.stderr, flush=True)
+        print("SEED %d PYTHONHASHSEED=%s" % (seed, hash_seed), file=sys.stderr, flush=True)
+        if abort_at is not None and int(abort_at) == seed:
+            os.abort()
         session, realizer = opened_pair(forms[seed % len(forms)])
         try:
             rng = random.Random(seed)
@@ -934,19 +1069,69 @@ def run_realize_seeds(seeds: Sequence[int], steps: int) -> None:
             session.dispose()
 
 
-def _run_seed_batches(seeds: Sequence[int], steps: int, batch_size: int) -> None:
+def _run_seed_batches(
+    seeds: Sequence[int],
+    steps: int,
+    batch_size: int,
+    *,
+    hash_seed: Optional[str] = None,
+    extra_env: Optional[Dict[str, str]] = None,
+) -> None:
+    """Children run under ``SCRIBBLE_ENV`` and a known ``PYTHONHASHSEED``."""
     seed_list = list(seeds)
+    if hash_seed is None:
+        hash_seed = os.environ.get("PYTHONHASHSEED") or str(random.randrange(1, 2 ** 31))
+    env = dict(SCRIBBLE_ENV)
+    env["PYTHONHASHSEED"] = hash_seed
+    env.update(extra_env or {})
     for start in range(0, len(seed_list), batch_size):
         chunk = seed_list[start : start + batch_size]
         proc = run_module(
             "tests.form_builder.qtside.tools.realize_sequence",
             ["--steps", str(steps), "--seeds", ",".join(str(item) for item in chunk)],
+            extra_env=env,
         )
         if proc.returncode != 0:
-            tail = (proc.stderr or "")[-4000:]
+            stderr = proc.stderr or ""
             raise AssertionError(
-                "realize seeds %s..%s exited %s\n%s" % (chunk[0], chunk[-1], proc.returncode, tail)
+                "realize seeds %s..%s exited %s at %s\nreplay: %s\n%s"
+                % (
+                    chunk[0],
+                    chunk[-1],
+                    proc.returncode,
+                    _last_step(stderr),
+                    _replay_command(_failing_seed(stderr, chunk[0]), steps, env),
+                    stderr[-4000:],
+                )
             )
+
+
+def _failing_seed(stderr: str, default: int) -> int:
+    seed = default
+    for line in stderr.splitlines():
+        if line.startswith("SEED "):
+            seed = int(line.split()[1])
+    return seed
+
+
+def _last_step(stderr: str) -> str:
+    found = "start"
+    for line in stderr.splitlines():
+        if line.startswith("SEED "):
+            found = "seed %s start" % line.split()[1]
+        elif line.startswith("STEP "):
+            found = line[len("STEP ") :]
+    return found
+
+
+def _replay_command(seed: int, steps: int, env: Dict[str, str]) -> str:
+    names = ("PYTHONHASHSEED",) + tuple(sorted(SCRIBBLE_ENV))
+    settings = " ".join("%s=%s" % (name, env[name]) for name in names if name in env)
+    return "%s QT_QPA_PLATFORM=offscreen python -m tests.form_builder.qtside.tools.realize_sequence --seeds %d --steps %d" % (
+        settings,
+        seed,
+        steps,
+    )
 
 
 def _part_for(signature: Tuple[object, ...], node_id: NodeId) -> Tuple[object, ...]:
