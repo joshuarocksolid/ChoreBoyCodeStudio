@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 import logging
 from pathlib import Path
 
@@ -466,7 +468,8 @@ def test_theme_changes_chrome_and_not_the_page(qapp, tmp_path: Path) -> None:  #
 
 def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     canonical = write_ui(open_document_log(_FORM).document).text
-    out = Path("/opt/cursor/artifacts")
+    # CBCS_FB_SCREENSHOT_DIR keeps the captures (cloud artifacts, roadmap).
+    out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)
     out.mkdir(parents=True, exist_ok=True)
     parent = QWidget()
     surface = _open(parent, canonical, tmp_path / "invoice.ui")
@@ -477,5 +480,6 @@ def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-unt
             surface.resize(width, height)
             qapp.processEvents()
             image = surface.grab()
+            assert (image.width(), image.height()) == (width, height)
             image.save(str(out / ("form-tab-%s-%dx%d.png" % (mode, width, height))))
     surface.release()
