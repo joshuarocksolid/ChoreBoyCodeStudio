@@ -11,15 +11,11 @@ from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.fs import Journal, OsFileSystem, inside_project
-from app.features.form_builder.engine.project.names import explain_form_name
+from app.features.form_builder.engine.project.names import class_name_for_stem, explain_form_name
 from app.features.form_builder.engine.project.save import write_generated
-from app.features.form_builder.engine.ui4.reader import read_ui
-
-_TEMPLATES = {
-    "widget": "QWidget",
-    "dialog": "QDialog",
-    "main_window": "QMainWindow",
-}
+from app.features.form_builder.engine.project.templates import build_template_ui, template_keys
+from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+from app.features.form_builder.engine.ui4.writer import write_ui
 
 
 @dataclass(frozen=True)
@@ -39,22 +35,29 @@ def create_form(
     *,
     template: str = "widget",
     directory: Optional[str] = None,
+    ui_text: Optional[str] = None,
 ) -> CreateResult:
-    """Write ``<stem>.ui``, generate ``ui_<stem>.py``, and create the window once."""
+    """Write ``<stem>.ui``, generate ``ui_<stem>.py``, and create the window once.
+
+    ``ui_text`` is a finished ``.ui`` document (the from-table builder). When it
+    is set, ``template`` is not used. The file on disk is the writer's text.
+    """
     root = os.path.abspath(project_root)
     folder = os.path.abspath(directory) if directory else os.path.join(root, "forms")
     if not inside_project(folder, root):
         return _refused("The form folder is outside the project.")
-    widget = _TEMPLATES.get(template)
-    if widget is None:
-        known = ", ".join(sorted(_TEMPLATES))
-        return _refused("There is no form template named %s. Use %s." % (template, known))
     reason = explain_form_name(stem, folder=folder, fs=fs)
     if reason is not None:
         return _refused(reason)
     clean = stem.strip()
+    try:
+        text = _ui_text(template, class_name_for_stem(clean), ui_text)
+    except (KeyError, UiReadError) as exc:
+        if isinstance(exc, KeyError):
+            known = ", ".join(sorted(template_keys()))
+            return _refused("There is no form template named %s. Use %s." % (template, known))
+        return _refused("The form could not be created: %s" % exc)
     ui_path = os.path.join(folder, clean + ".ui")
-    text = _template_xml(widget, _class_name(clean))
     journal = Journal(fs)
     try:
         fs.makedirs(folder)
@@ -91,22 +94,11 @@ def create_form(
     )
 
 
-def _class_name(stem: str) -> str:
-    parts = [part for part in stem.split("_") if part]
-    joined = "".join(part[:1].upper() + part[1:] for part in parts)
-    return joined or "Form"
-
-
-def _template_xml(widget: str, class_name: str) -> str:
-    return (
-        '<?xml version="1.0" encoding="UTF-8"?>\n'
-        '<ui version="4.0">\n'
-        " <class>%s</class>\n"
-        ' <widget class="%s" name="%s">\n'
-        '  <property name="windowTitle"><string>%s</string></property>\n'
-        " </widget>\n"
-        "</ui>\n"
-    ) % (class_name, widget, class_name, class_name)
+def _ui_text(template: str, class_name: str, ui_text: Optional[str]) -> str:
+    if ui_text is None:
+        return build_template_ui(template, class_name)
+    document = read_ui(ui_text, allocator=IdAllocator()).document
+    return write_ui(document).text
 
 
 def _refused(reason: str) -> CreateResult:

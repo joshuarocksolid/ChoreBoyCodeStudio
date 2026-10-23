@@ -4,10 +4,16 @@ from __future__ import annotations
 
 import keyword
 import os
+import re
 from typing import Optional
 
 from app.features.form_builder.engine.codegen.names import module_stem_ok
 from app.features.form_builder.engine.project.fs import OsFileSystem
+
+#: Shown under the name field when the characters themselves are illegal.
+NAME_PATTERN_MESSAGE = "Use letters, digits and _, starting with a letter."
+
+_NAME_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 
 
 def explain_form_name(name: str, *, folder: str, fs: OsFileSystem) -> Optional[str]:
@@ -43,6 +49,48 @@ def explain_form_name(name: str, *, folder: str, fs: OsFileSystem) -> Optional[s
             % clash
         )
     return None
+
+
+def name_row_reason(name: str, *, folder: str, fs: OsFileSystem) -> Optional[str]:
+    """Message under the New form name field, or None when the name can be created.
+
+    Character-class failures use the Start screen sentence. Keywords, reserved
+    prefixes and folder clashes keep the project-layer wording.
+    """
+    reason = explain_form_name(name, folder=folder, fs=fs)
+    if reason is None:
+        return None
+    stem = name.strip()
+    if stem and _NAME_PATTERN.fullmatch(stem) is None:
+        return NAME_PATTERN_MESSAGE
+    return reason
+
+
+def unique_form_stem(folder: str, fs: OsFileSystem, base: str = "new_form") -> str:
+    """``base``, or ``base_2``, ``base_3``, … until the folder can hold it."""
+    if explain_form_name(base, folder=folder, fs=fs) is None:
+        return base
+    number = 2
+    while number < 10000:
+        candidate = "%s_%d" % (base, number)
+        if explain_form_name(candidate, folder=folder, fs=fs) is None:
+            return candidate
+        number += 1
+    return "%s_form" % base
+
+
+def class_name_for_stem(stem: str) -> str:
+    """``new_form`` becomes ``NewForm``. The ``<class>`` and root object name."""
+    parts = [part for part in stem.split("_") if part]
+    joined = "".join(part[:1].upper() + part[1:] for part in parts)
+    return joined or "Form"
+
+
+def creation_caption(folder_display: str, stem: str) -> str:
+    """Live caption under the name row. ``folder_display`` may end in ``/``."""
+    folder = folder_display.strip().strip("/") or "forms"
+    leaf = stem.strip() or "new_form"
+    return "Creates %s/%s.ui, ui_%s.py and %s_window.py." % (folder, leaf, leaf, leaf)
 
 
 def _clash(folder: str, stem: str, fs: OsFileSystem) -> Optional[str]:
