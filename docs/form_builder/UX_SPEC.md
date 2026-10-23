@@ -417,7 +417,7 @@ Every empty surface says what it is and what to do next, in one or two sentences
 
 **UX-EMPTY-007** `M5.6` `[S]` Tab-order list with no inputs: "No fields to visit yet. Inputs join the order as you add them."
 
-**UX-EMPTY-008** `M2.2` `[S]` An unreadable file opens as a text tab with an info bar: "This file isn't a form Code Studio can read." plus the reason. There is no centred panel and no [Open as text] button. This matches CONTRACTS §8.5: the provider declines and the shell opens the file as text.
+**UX-EMPTY-008** `M2.2` `[S]` An unreadable file opens as a text tab with an info bar: "This form can't be opened in the form builder:" plus the reason (the CONTRACTS §8.5 wording). There is no centred panel and no [Open as text] button. This matches CONTRACTS §8.5: the provider declines and the shell opens the file as text.
 
 **UX-EMPTY-009** `M2.2` `[S]` Recovered draft and external change are info bars at the top of the tab (not modal dialogs): "Recovered unsaved changes from 14:02. [Keep recovered] [Discard]"; "invoice.ui changed on disk. [Reload from disk] [Keep mine] [Compare…]". Compare opens the shell diff of the two XML texts.
 

@@ -249,7 +249,8 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     assert banner is not None
     assert banner.isVisibleTo(surface) is True
     assert banner.text().startswith("Line ")
-    assert "Fix it, or [Discard XML edits]" in banner.text()
+    assert banner.text().endswith("Fix it, or")
+    assert "[Discard" not in banner.text()
     discard = surface.findChild(QPushButton, "formBuilder.discardXml")
     assert discard is not None
     assert discard.text() == XML_DISCARD_LABEL

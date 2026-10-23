@@ -69,7 +69,7 @@ _SAVED_FADE_MS = 4000
 
 
 def plain_banner_error(error: str) -> str:
-    """``Line 42: the tag is not closed. Fix it, or [Discard XML edits]`` when a line is known."""
+    """``Line 42: the tag is not closed. Fix it, or`` (then the Discard button) when a line is known."""
     message = error.strip()
     line = ""
     marker = " (line "
@@ -80,7 +80,8 @@ def plain_banner_error(error: str) -> str:
     if message:
         message = message[0].lower() + message[1:]
     if line:
-        return "Line %s: %s. Fix it, or [Discard XML edits]" % (line, message)
+        # The Discard XML edits button beside this text is the "or".
+        return "Line %s: %s. Fix it, or" % (line, message)
     if not message:
         return error
     return message[0].upper() + message[1:] + "."
