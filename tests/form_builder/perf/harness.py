@@ -837,36 +837,20 @@ def _codegen_and_save(
         enforce_absolute,
         wall_on,
     )
-    save_budget = SAVE_BUDGET_MS if enforce_absolute else None
-    # Save is write plus generate. Reuse the two p95 numbers. They were measured
-    # separately, so the sum is an upper bound, not one timed region.
-    write_row = _timed(
-        "write_ui",
-        300,
-        lambda doc=document: _write(doc),
-        None,
-        samples=samples,
-        warmup=warmup,
-        enforce_absolute=False,
-        wall_on=False,
-    )[0]
-    write_p95 = write_row.p95 or 0.0
-    gen_p95 = generated.p95 or 0.0
-    total = write_p95 + gen_p95
-    if save_budget is None:
-        verdict = "reported"
-    else:
-        verdict = "pass" if cpu_within_budget(total, save_budget) else "fail"
-    save = Row(
+    def once_save() -> None:
+        text = write_ui(document).text
+        generate(document, text.encode("utf-8"))
+
+    save = _timed(
         "save total",
         300,
-        samples,
-        None,
-        total,
-        _ms_budget(SAVE_BUDGET_MS),
-        verdict,
-        "sum of write_ui p95 and generate_form_module p95",
-    )
+        once_save,
+        SAVE_BUDGET_MS,
+        samples=samples,
+        warmup=warmup,
+        enforce_absolute=enforce_absolute,
+        wall_on=wall_on,
+    )[0]
     return (generated, save)
 
 

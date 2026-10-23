@@ -20,7 +20,8 @@ from app.features.form_builder.integration.surface import (  # noqa: E402
     FormSurface,
 )
 from app.qt.QtCore import Qt  # noqa: E402
-from app.qt.QtWidgets import QLabel, QPlainTextEdit, QPushButton, QTreeWidget, QWidget  # noqa: E402
+from app.qt.QtGui import QTextCursor  # noqa: E402
+from app.qt.QtWidgets import QLabel, QPlainTextEdit, QPushButton, QToolButton, QTreeWidget, QWidget  # noqa: E402
 from app.shell.editor_tab_markdown_workflow import EditorTabMarkdownWorkflow  # noqa: E402
 from app.shell.tab_content_providers import (  # noqa: E402
     ProviderDeclined,
@@ -57,7 +58,12 @@ class _Editor(QPlainTextEdit):
         return None
 
     def go_to_line(self, line_number: int) -> None:
-        del line_number
+        cursor = self.textCursor()
+        move = getattr(QTextCursor, "MoveOperation", QTextCursor)
+        mode = getattr(QTextCursor, "MoveMode", QTextCursor)
+        cursor.movePosition(getattr(move, "Start"))
+        cursor.movePosition(getattr(move, "Down"), getattr(mode, "MoveAnchor"), max(0, int(line_number) - 1))
+        self.setTextCursor(cursor)
 
 
 def _request(parent: QWidget, text: str, path: str) -> TabSurfaceRequest:
@@ -110,7 +116,7 @@ def test_open_shows_the_form_name_and_structure(qapp) -> None:  # type: ignore[n
     assert isinstance(surface, FormSurface)
     name = surface.findChild(QLabel, "formBuilder.name")
     assert name is not None
-    assert name.text() == "Form"
+    assert name.text() == "Form · Vertical layout"
     labels = _tree_labels(surface)
     assert "QWidget  Form" in labels
     assert "QPushButton  okButton" in labels
@@ -130,7 +136,7 @@ def test_view_xml_edit_saves_byte_exact_and_undoes(qapp, tmp_path: Path) -> None
     opened = manager.open_file(str(path))
     opened.tab.content_source = surface.content_source()
 
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     editor = surface.source_editor()
@@ -205,7 +211,7 @@ def test_save_without_edits_keeps_noncanonical_bytes(qapp, tmp_path: Path) -> No
     manager.save_tab(str(path))
 
     assert path.read_bytes() == before
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     editor = surface.source_editor()
@@ -223,12 +229,12 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     manager = EditorManager()
     opened = manager.open_file(str(path))
     opened.tab.content_source = surface.content_source()
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     toggle.setChecked(True)
     editor = surface.source_editor()
     assert isinstance(editor, QPlainTextEdit)
-    editor.setPlainText("<ui>")
+    editor.setPlainText("\n" * 5 + "<ui>")
 
     manager.save_tab(str(path))
     saved_bytes = path.read_bytes()
@@ -243,7 +249,8 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     assert banner is not None
     assert banner.isVisibleTo(surface) is True
     assert banner.text().startswith("Line ")
-    assert banner.text().endswith("this form is not valid XML.")
+    assert banner.text().endswith("Fix it, or")
+    assert "[Discard" not in banner.text()
     discard = surface.findChild(QPushButton, "formBuilder.discardXml")
     assert discard is not None
     assert discard.text() == XML_DISCARD_LABEL
@@ -256,6 +263,9 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
         tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
         surface.apply_theme(tokens)
         assert tokens.diag_error_color in banner.parentWidget().styleSheet()
+
+    reported = int(banner.text().split(":", 1)[0].replace("Line ", ""))
+    assert editor.textCursor().blockNumber() == reported - 1
 
     discard.click()
 
@@ -278,7 +288,7 @@ def test_form_controls_have_accessible_names(qapp) -> None:  # type: ignore[no-u
     tree = surface.findChild(QTreeWidget, "formBuilder.structure")
     banner = surface.findChild(QLabel, "formBuilder.xmlBannerText")
     assert name is not None and tree is not None and banner is not None
-    assert name.accessibleName() == "Form name"
+    assert name.accessibleName() == "Form · Vertical layout"
     assert tree.accessibleName() == "Form structure"
     assert banner.accessibleName() == "XML notice"
     surface.release()
@@ -346,7 +356,7 @@ def test_shell_toggle_source_view_switches_form_xml(qapp, tmp_path: Path) -> Non
         editor_manager=manager,
         refresh_markdown_action_states=lambda: None,
     )
-    toggle = surface.findChild(QPushButton, "formBuilder.viewXml")
+    toggle = surface.findChild(QToolButton, "formBuilder.viewXml")
     assert toggle is not None
     assert toggle.toolTip() == VIEW_XML_TOOLTIP
 

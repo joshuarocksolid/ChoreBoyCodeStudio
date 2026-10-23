@@ -175,3 +175,56 @@ def test_loader_scan_skips_vendor_and_node_modules(tmp_path: Path) -> None:
     (root / "app" / "open.py").write_text("loadUi('invoice.ui')\n", encoding="utf-8")
     sites = scan_ui_loaders(str(root))
     assert [Path(site.path).name for site in sites] == ["open.py"]
+
+
+class _ShellSave:
+    """The shell's save_tab: writes the file and runs the form's after_save codegen."""
+
+    def __init__(self, surface: "_Surface", notice: object) -> None:
+        self.surface = surface
+        self.notice = notice
+        self.calls = 0
+
+    def save_tab(self, path: str) -> bool:
+        self.calls += 1
+        Path(path).write_text(self.surface.text, encoding="utf-8")
+        return True
+
+
+def _shell_run(root: Path, ui_path: str, notice: object, monkeypatch: pytest.MonkeyPatch):
+    surface = _Surface(ui_path, Path(ui_path).read_text(encoding="utf-8"))
+    surface.content_source = lambda: SimpleNamespace(save_notice=notice)  # type: ignore[attr-defined]
+    saver = _ShellSave(surface, notice)
+    generated: list[str] = []
+    import app.features.form_builder.integration.run_action as run_action
+
+    real = run_action.write_generated
+    monkeypatch.setattr(
+        run_action, "write_generated", lambda *a, **k: generated.append("x") or real(*a, **k)
+    )
+    bar = _Messages()
+    ran: list[str] = []
+    project = SimpleNamespace(project_root=str(root), metadata=SimpleNamespace(default_entry="main.py"))
+    window = SimpleNamespace(_save_workflow=saver)
+    host = SimpleNamespace(loaded_project=lambda: project, status_bar=lambda: bar, _window=window)
+    workflow = SimpleNamespace(_host=host, handle_run_project_action=lambda: ran.append("project") or True)
+    result = run_open_form(surface, workflow)
+    return result, saver, generated, bar, ran
+
+
+def test_f5_through_the_shell_save_does_not_generate_twice(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, ui_path = _project(tmp_path, "main.py")
+    notice = SimpleNamespace(error=False, text="Saved")
+    result, saver, generated, bar, ran = _shell_run(root, ui_path, notice, monkeypatch)
+    assert result is True and saver.calls == 1
+    assert generated == []
+    assert ran == ["project"]
+
+
+def test_f5_does_not_run_when_the_save_could_not_generate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root, ui_path = _project(tmp_path, "main.py")
+    notice = SimpleNamespace(error=True, text="Could not write ui_invoice.py.")
+    result, saver, generated, bar, ran = _shell_run(root, ui_path, notice, monkeypatch)
+    assert result is False
+    assert ran == []
+    assert bar.messages == ["Could not write ui_invoice.py."]

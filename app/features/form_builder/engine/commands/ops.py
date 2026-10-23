@@ -90,9 +90,15 @@ class ReplaceRootOp:
     checked by ``ctx.do`` on forward application only, as for InsertNodeOp.
     Inverse: ReplaceRootOp with the old snapshot.
     Used only by ReplaceDocument (View XML commit, draft/history restore,
-    external reload)."""
+    external reload).
+
+    ``newline`` is the line ending the replacement was parsed from. None keeps
+    the document's current ending, so a spec-only replace does not turn CRLF
+    into LF. The inverse stores the ending it replaced.
+    """
 
     spec: NodeSpec
+    newline: Optional[str] = None
 
 
 Op = Union[InsertNodeOp, RemoveNodeOp, MoveNodeOp, SetPropertyOp, SetFieldOp, ReplaceRootOp]
@@ -173,6 +179,10 @@ def _decode_field(key: str, value: object) -> object:
         if not isinstance(value, str):
             raise ValueError("expected a string")
         return value
+    if key == "newline":
+        if value is None or isinstance(value, str):
+            return value
+        raise ValueError("expected a newline")
     if key == "value":
         return value
     raise ValueError("unexpected op field %s" % (key,))

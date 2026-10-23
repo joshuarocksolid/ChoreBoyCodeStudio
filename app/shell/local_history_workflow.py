@@ -555,6 +555,29 @@ class LocalHistoryWorkflow:
         )
         if draft_entry is None:
             return
+        surface = self._surface_for_path(tab_state.file_path)
+        offer_draft = getattr(surface, "offer_recovered_draft", None) if surface is not None else None
+        if callable(offer_draft):
+            path = tab_state.file_path
+            if draft_entry.content == tab_state.current_content:
+                self.delete_draft(path)
+                return
+            self._apply_content_to_open_tab(
+                path,
+                draft_entry.content,
+                editor_widget=editor_widget,
+                reason="draft",
+            )
+
+            def _keep() -> None:
+                # Save deletes the draft. Keep must leave it so a crash can recover it.
+                return
+
+            def _drop() -> None:
+                self.delete_draft(path)
+
+            offer_draft(draft_entry.saved_at, _keep, _drop)
+            return
         if draft_entry.recovery_policy == DRAFT_RECOVERY_POLICY_RESTORE_SILENTLY:
             if draft_entry.content == tab_state.current_content:
                 return

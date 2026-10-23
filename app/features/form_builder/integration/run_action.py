@@ -34,9 +34,14 @@ def run_open_form(surface: Any, workflow: Any) -> bool:
     )
     if plan.save:
         text = str(surface.current_text())
-        if not _persist_form(host, surface, path, text, files):
+        saved = _persist_form(host, surface, path, text, files)
+        if saved is None:
             return False
-        if scope.generates:
+        if saved == "shell":
+            # The shell's save already ran the form's after_save codegen.
+            if not _shell_save_ok(host, surface):
+                return False
+        elif scope.generates:
             if not _generate(host, scope, path, files):
                 return False
     if plan.action == "preview":
@@ -71,19 +76,31 @@ def _entry_file(project: Any) -> str:
     return str(entry or "").strip()
 
 
-def _persist_form(host: Any, surface: Any, path: str, text: str, files: OsFileSystem) -> bool:
+def _persist_form(host: Any, surface: Any, path: str, text: str, files: OsFileSystem) -> Optional[str]:
+    """``"shell"`` when the shell saved (and generated), ``"direct"`` when we wrote it, None on failure."""
     window = getattr(host, "_window", None)
     save_workflow = getattr(window, "_save_workflow", None) if window is not None else None
     save_tab = getattr(save_workflow, "save_tab", None) if save_workflow is not None else None
     if callable(save_tab):
-        return bool(save_tab(path))
+        return "shell" if save_tab(path) else None
     try:
         files.write_text(path, text)
     except OSError:
-        return False
+        return None
     marker = getattr(surface, "mark_saved", None)
     if callable(marker):
         marker(text)
+    return "direct"
+
+
+def _shell_save_ok(host: Any, surface: Any) -> bool:
+    """False when the save's codegen failed, so F5 never runs stale generated code."""
+    source_getter = getattr(surface, "content_source", None)
+    source = source_getter() if callable(source_getter) else None
+    notice = getattr(source, "save_notice", None)
+    if notice is not None and getattr(notice, "error", False):
+        _status(host, str(getattr(notice, "text", "")) or "The form could not be generated.")
+        return False
     return True
 
 

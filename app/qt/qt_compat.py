@@ -73,14 +73,13 @@ def delete_now(obj: Any) -> None:
 
     Realized form objects use this instead of ``deleteLater``. Deferred deletes
     do not run under nested ``processEvents``, and the canvas leaked them.
-    Qt 6 goes through ``shiboken6.delete``. On Qt 5 the helper refuses rather
-    than guessing a binding the form builder does not realize on.
+    The binding matches ``wrapper_is_valid``: ``shiboken6`` on Qt 6 and
+    ``shiboken2`` on Qt 5.
     """
     if obj is None:
         return
-    if not IS_QT6:
-        raise RuntimeError("immediate Qt object delete requires Qt 6")
-    shiboken = importlib.import_module("shiboken6")
+    module_name = "shiboken6" if IS_QT6 else "shiboken2"
+    shiboken = importlib.import_module(module_name)
     if shiboken.isValid(obj):
         shiboken.delete(obj)
 

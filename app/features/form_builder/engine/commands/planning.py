@@ -797,8 +797,18 @@ def set_form_field(doc: UiDocument, ctx: PlanContext, field: str, value: object)
     set_field(doc, ctx, doc.ui.id, field, value)
 
 
-def replace_document_text(doc: UiDocument, ctx: PlanContext, text: str) -> None:
-    """Parse ``text`` with ids from ``ctx`` and replace the document."""
+def replace_document_text(
+    doc: UiDocument,
+    ctx: PlanContext,
+    text: str,
+    *,
+    reason: str = "xml_edit",
+) -> None:
+    """Parse ``text`` with ids from ``ctx`` and replace the document.
+
+    View XML and history restore arrive as editor text, which has no carriage
+    returns. Those reasons keep the document newline when ``text`` has none.
+    """
 
     class _Bridge(IdAllocator):
         def alloc(self) -> NodeId:  # type: ignore[override]
@@ -817,7 +827,10 @@ def replace_document_text(doc: UiDocument, ctx: PlanContext, text: str) -> None:
         name = identity_name(node)
         if name:
             names.append(name)
-    ctx.do(ReplaceRootOp(loaded.document.to_spec()))
+    newline = loaded.document.newline
+    if reason in ("xml_edit", "history") and "\r" not in text:
+        newline = None
+    ctx.do(ReplaceRootOp(loaded.document.to_spec(), newline))
     matched = []
     for name in names:
         found = doc.by_name(name)
