@@ -391,6 +391,38 @@ def test_clean_read_only_generated_tab_reloads_without_asking(tmp_path: Path) ->
     assert tab.current_content == "label = 'new'\n"
 
 
+def test_editable_generated_tab_still_asks_before_reload(tmp_path: Path) -> None:
+    """Edit anyway clears read-only, so the next disk change asks again."""
+    (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
+    file_path = tmp_path / "ui_invoice.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost(confirm_reload=False)
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="label = 'old'\n",
+        mtime=1.0,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    file_path.write_text("label = 'new'\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.DECLINED
+    assert external_host.confirm_calls == 1
+
+
 def test_check_and_handle_declines_clean_tab_and_keeps_the_conflict(tmp_path: Path) -> None:
     file_path = tmp_path / "main.py"
     manager = EditorManager()

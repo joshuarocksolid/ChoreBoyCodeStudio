@@ -27,6 +27,7 @@ def test_edit_anyway_unlocks_only_that_tab(qapp, tmp_path: Path) -> None:  # typ
     editor = QPlainTextEdit()
     page = EditorTabPage(editor, buffer_id="buf")
     page.generated_bar.apply_theme(tokens_from_palette(qapp.palette(), force_mode="light"))
+    (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
     page.show_generated(str(tmp_path / "ui_invoice.py"), "")
     assert editor.isReadOnly()
     assert "invoice.ui" in page.generated_bar.message()
