@@ -8,3 +8,7 @@ class MainWindowWindow(QMainWindow):
         super().__init__(parent)
         self.ui = Ui_MainWindow()
         self.ui.setupUi(self)
+        self.statusBar().showMessage(u"Ready")
+
+    def save_clicked(self):
+        pass

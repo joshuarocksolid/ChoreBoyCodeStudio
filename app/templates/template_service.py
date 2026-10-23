@@ -11,6 +11,9 @@ from typing import Any
 from app.bootstrap.paths import project_manifest_path, resolve_app_root
 from app.bootstrap.qt_binding_choice import select_binding
 from app.core.errors import AppValidationError
+from app.features.form_builder.engine.project.create import stamp_window_title
+from app.features.form_builder.engine.project.fs import OsFileSystem, ProjectOpError
+from app.features.form_builder.engine.ui4.reader import UiReadError
 from app.project.project_manifest import build_default_project_manifest_payload, parse_project_manifest, save_project_manifest
 
 TEMPLATE_METADATA_FILENAME = "template.json"
@@ -93,6 +96,7 @@ class TemplateService:
             template_id=template.template_id,
             default_entry=template.default_entry,
         )
+        self._stamp_form_title(destination, project_name.strip())
         return destination
 
     @staticmethod
@@ -142,6 +146,16 @@ class TemplateService:
             raise AppValidationError(str(exc)) from exc
         metadata = parse_project_manifest(payload, manifest_path=manifest_path)
         save_project_manifest(manifest_path, metadata)
+
+    @staticmethod
+    def _stamp_form_title(destination: Path, project_name: str) -> None:
+        ui_path = destination / "forms" / "main_window.ui"
+        if not ui_path.is_file() or not project_name:
+            return
+        try:
+            stamp_window_title(str(destination), str(ui_path), project_name, OsFileSystem())
+        except (OSError, UnicodeError, ValueError, ProjectOpError, UiReadError) as exc:
+            raise AppValidationError(str(exc)) from exc
 
 
 def _template_visible(template: TemplateMetadata) -> bool:

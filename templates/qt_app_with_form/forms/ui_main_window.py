@@ -4,17 +4,40 @@
 ## it is rewritten every time the form is saved. Put your code in
 ## main_window_window.py.
 ## cbcs-codegen: 1
-## cbcs-source-sha256: 5167e7478c3fd7dc61d30518042231a1a80bd5fb51e49a3d87f0306a2964d772
-## cbcs-body-sha256: 4eea2dc8d21493658de66cc1d3536e357c45a7b2261a963c6eaf1db06362db58
+## cbcs-source-sha256: 364a0df0a0d58fa3f42429608ffb5e3fbc9369927f1940604cbab6458d59fa88
+## cbcs-body-sha256: 4a939d35956c8fca56b513d9a203b108ffe72632a2e0f7fc6586fd7c9ea14c9e
 ################################################################################
 from PySide6.QtCore import (QCoreApplication, QMetaObject)
+from PySide6.QtWidgets import (
+    QLabel, QLineEdit, QPushButton, QStatusBar, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         if not MainWindow.objectName():
             MainWindow.setObjectName(u"MainWindow")
+        self.central = QWidget(MainWindow)
+        self.central.setObjectName(u"central")
+        self.verticalLayout = QVBoxLayout(self.central)
+        self.verticalLayout.setObjectName(u"verticalLayout")
+        self.titleLabel = QLabel(self.central)
+        self.titleLabel.setObjectName(u"titleLabel")
+        self.verticalLayout.addWidget(self.titleLabel)
+        self.nameEdit = QLineEdit(self.central)
+        self.nameEdit.setObjectName(u"nameEdit")
+        self.verticalLayout.addWidget(self.nameEdit)
+        self.saveButton = QPushButton(self.central)
+        self.saveButton.setObjectName(u"saveButton")
+        self.verticalLayout.addWidget(self.saveButton)
+        MainWindow.setCentralWidget(self.central)
+        self.statusBar = QStatusBar(MainWindow)
+        self.statusBar.setObjectName(u"statusBar")
+        MainWindow.setStatusBar(self.statusBar)
+        self.saveButton.clicked.connect(MainWindow.save_clicked)
         self.retranslateUi(MainWindow)
         QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
-        MainWindow.setWindowTitle(QCoreApplication.translate(u"MainWindow", u"MainWindow", None))
+        MainWindow.setWindowTitle(QCoreApplication.translate(u"MainWindow", u"Main window", None))
+        self.titleLabel.setText(QCoreApplication.translate(u"MainWindow", u"Welcome", None))
+        self.saveButton.setText(QCoreApplication.translate(u"MainWindow", u"Save", None))
+        self.statusBar.setProperty(u"currentMessage", QCoreApplication.translate(u"MainWindow", u"Ready", None))
