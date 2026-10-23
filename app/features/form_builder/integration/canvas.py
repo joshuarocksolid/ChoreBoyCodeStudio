@@ -104,6 +104,7 @@ class FormCanvas(QGraphicsView):
         self._palette = _palette(tokens)
         self._canvas_bg = self._palette.backdrop.fill
         self._dot = self._palette.backdrop.dot
+        self.viewport().setProperty("formBuilderHighContrast", tokens.is_high_contrast)
         width = tokens.focus_border_width
         self.setStyleSheet(
             "QGraphicsView#formBuilder\\.canvas {"

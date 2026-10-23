@@ -1,0 +1,181 @@
+"""In-place text. One undo step, Esc cancels, and typing does not reflow."""
+
+from __future__ import annotations
+
+from typing import Optional, Tuple
+
+import pytest
+
+from app.qt.QtCore import Qt
+from app.qt.QtTest import QTest
+from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
+from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.engine.ui4.values import StringValue
+from app.features.form_builder.integration.canvas import FormCanvas
+from tests.form_builder.qtside.support import form, opened
+
+pytestmark = pytest.mark.usefixtures("qapp")
+
+BUTTON = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <widget class="QPushButton" name="ok">
+   <property name="geometry"><rect><x>40</x><y>40</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>OK</string></property>
+  </widget>
+""",
+)
+
+
+class _Host:
+    def canvas_pressed(self) -> None:
+        return None
+
+    def narrate(self, sentence: str) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
+
+
+def test_enter_writes_one_undo_step() -> None:
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        _click(canvas, "ok")
+        edit = _open(canvas)
+        QTest.keyClicks(edit, "Save")
+        QTest.keyClick(edit, _qt_key("Key_Return"))
+        _flush()
+        assert _button(canvas).text() == "Save"
+        assert _stored(session) == "Save"
+        assert session.log.undo_label() == "Edit text"
+        assert session.log.undo()
+        _flush()
+        assert _button(canvas).text() == "OK"
+        assert _stored(session) == "OK"
+        assert not session.log.can_undo()
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_escape_cancels_without_a_write() -> None:
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        _click(canvas, "ok")
+        edit = _open(canvas)
+        QTest.keyClicks(edit, "Save")
+        QTest.keyClick(edit, _qt_key("Key_Escape"))
+        _flush()
+        assert _button(canvas).text() == "OK"
+        assert _stored(session) == "OK"
+        assert not session.log.can_undo()
+        assert _visible_edit(canvas) is None
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_typing_does_not_reflow_the_form() -> None:
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        _click(canvas, "ok")
+        button = _button(canvas)
+        root = canvas.page_widget()
+        assert root is not None
+        geometry = button.geometry()
+        size = (root.width(), root.height())
+        revision = session.document.revision
+        edit = _open(canvas)
+        QTest.keyClicks(edit, "A label long enough to change the hint")
+        assert button.geometry() == geometry
+        assert (root.width(), root.height()) == size
+        assert session.document.revision == revision
+        assert button.text() == "OK"
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def _canvas(session: object, realizer: object) -> Tuple[FormCanvas, QWidget]:
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = FormCanvas(session, realizer, _Host(), parent)  # type: ignore[arg-type]
+    canvas.resize(960, 720)
+    parent.show()
+    canvas.setFocus()
+    _flush()
+    return canvas, parent
+
+
+def _open(canvas: FormCanvas) -> QLineEdit:
+    QTest.keyClick(canvas, _qt_key("Key_Return"))
+    _flush()
+    edit = _visible_edit(canvas)
+    assert edit is not None
+    return edit
+
+
+def _visible_edit(canvas: FormCanvas) -> Optional[QLineEdit]:
+    for edit in canvas.viewport().findChildren(QLineEdit):
+        if edit.isVisible():
+            return edit
+    return None
+
+
+def _button(canvas: FormCanvas) -> QWidget:
+    root = canvas.page_widget()
+    assert root is not None
+    button = root.findChild(QWidget, "ok")
+    assert button is not None
+    return button
+
+
+def _stored(session: FormSession) -> str:
+    node = next(item for item in session.document.iter_preorder() if getattr(item, "object_name", None) == "ok")
+    assert isinstance(node, WidgetNode)
+    entry = node.prop("text")
+    assert entry is not None and isinstance(entry.value, StringValue)
+    return entry.value.text
+
+
+def _click(canvas: FormCanvas, name: str) -> None:
+    QTest.mouseClick(canvas.viewport(), _mouse("LeftButton"), _mods("NoModifier"), _center(canvas, name))
+    _flush()
+
+
+def _center(canvas: FormCanvas, name: str) -> object:
+    root = canvas.page_widget()
+    assert root is not None
+    widget = root.findChild(QWidget, name)
+    assert widget is not None
+    proxy = root.graphicsProxyWidget()
+    assert proxy is not None
+    return canvas.mapFromScene(proxy.mapToScene(widget.mapTo(root, widget.rect().center())))
+
+
+def _flush() -> None:
+    app = QApplication.instance()
+    assert app is not None
+    for _ in range(4):
+        app.processEvents()
+
+
+def _mouse(name: str) -> Qt.MouseButton:
+    return getattr(getattr(Qt, "MouseButton", Qt), name)
+
+
+def _mods(name: str) -> Qt.KeyboardModifier:
+    return getattr(getattr(Qt, "KeyboardModifier", Qt), name)
+
+
+def _qt_key(name: str) -> Qt.Key:
+    return getattr(getattr(Qt, "Key", Qt), name)
