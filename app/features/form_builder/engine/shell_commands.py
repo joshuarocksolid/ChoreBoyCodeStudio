@@ -366,16 +366,23 @@ _EDITOR_ONLY = frozenset(
 
 
 def registered_commands() -> Tuple[FormCommand, ...]:
-    """Commands Settings and the collision test treat as form bindings.
+    """Settings rows. One shortcut text per row.
 
-    Shell reuse, inert keys, and Qt standard keys are not a second binding.
-    A command with no key is a menu row only.
+    Canvas arrows and outline arrows share Up, Down, Left, and Right in
+    different focus contexts. The shell category allows one row per key, so
+    Settings shows the canvas row. The outline row stays in the command table.
     """
-    return tuple(
-        command
-        for command in FORM_COMMANDS
-        if command.kind == "new" and command.shortcut
-    )
+    seen = set()
+    chosen = []
+    for command in FORM_COMMANDS:
+        if command.kind != "new" or not command.shortcut:
+            continue
+        key = normalize_form_shortcut(command.shortcut)
+        if key in seen:
+            continue
+        seen.add(key)
+        chosen.append(command)
+    return tuple(chosen)
 
 
 def menu_commands() -> Tuple[FormCommand, ...]:
@@ -428,7 +435,9 @@ def shortcut_collisions(
     ``shell_shortcuts`` maps a shell action id to its portable key text.
     """
     problems = []
-    form_rows = registered_commands()
+    form_rows = tuple(
+        command for command in FORM_COMMANDS if command.kind == "new" and command.shortcut
+    )
     for command in FORM_COMMANDS:
         shortcut = normalize_form_shortcut(command.shortcut)
         if shortcut and shortcut in _WM_FORBIDDEN:

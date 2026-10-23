@@ -43,10 +43,13 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     on PySide2 does not load a binding. ``form_builder_enabled`` is the gate.
     Sessions start when a tab opens.
     """
+    from app.features.form_builder.engine.shell_commands import shortcut_rows
     from app.features.form_builder.integration.adopt_flow import START_ENTRIES, adopt_from_tree
+    from app.features.form_builder.integration.form_menu import register_form_menu
     from app.features.form_builder.integration.provider import FormTabProvider
     from app.packaging.form_files import save_packaged_form
     from app.shell.shell_composition_context import bind_private_attrs
+    from app.shell.shortcut_preferences import ShortcutCommand, register_shortcut_commands
 
     window = ctx.w
 
@@ -61,6 +64,14 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         adopt_from_tree(window, ui_path)
 
     window._tab_content_registry.register(FormTabProvider())
+    register_shortcut_commands(
+        tuple(
+            ShortcutCommand(action_id, label, shortcut, category)
+            for action_id, label, shortcut, category in shortcut_rows()
+        )
+    )
+    _refresh_shortcut_maps(window)
+    register_form_menu(window)
     bind_private_attrs(
         window,
         {
@@ -70,6 +81,22 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         },
     )
     _reset_preview_on_quit()
+
+
+def _refresh_shortcut_maps(window: object) -> None:
+    """Re-read keybindings now that form rows are known ids."""
+    from app.shell.shortcut_preferences import (
+        build_effective_shortcut_map,
+        parse_shortcut_overrides,
+    )
+
+    service = getattr(window, "_settings_service", None)
+    load_global = getattr(service, "load_global", None)
+    if not callable(load_global):
+        return
+    overrides = parse_shortcut_overrides(load_global())
+    setattr(window, "_shortcut_overrides", overrides)
+    setattr(window, "_effective_shortcuts", build_effective_shortcut_map(overrides))
 
 
 def _reset_preview_on_quit() -> None:
