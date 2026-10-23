@@ -111,7 +111,7 @@ def test_inert_keys_are_reserved_and_not_registered() -> None:
     registered = {command.shortcut for command in registered_commands()}
     for key in INERT_SHORTCUTS:
         assert key not in registered
-    assert "Ctrl+R" in INERT_STATUS
+    assert INERT_STATUS == "Not used in the form designer."
 
 
 def test_registered_rows_use_portable_ctrl_text_and_the_form_category() -> None:

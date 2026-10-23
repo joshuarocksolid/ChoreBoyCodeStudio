@@ -60,3 +60,14 @@ def test_generated_and_metadata_paths_are_left_out_of_lint() -> None:
     assert not excluded_from_lint("/work/invoice_window.py", "def open():\n    return None\n")
     assert is_generated_module("/work/window.py", _HEADER)
     assert not is_generated_module("/work/ui_invoice.py", "")
+
+
+def test_a_markdown_file_quoting_the_header_stays_editable() -> None:
+    assert not is_generated_module("/work/notes.md", "Saved forms start with:\n\n" + _HEADER)
+    assert generated_banner("/work/notes.md", _HEADER) is None
+
+
+def test_the_header_counts_only_at_the_start_of_the_file() -> None:
+    late = "x = 1\n" * 200 + _HEADER
+    assert not is_generated_module("/work/report.py", late)
+    assert is_generated_module("/work/report.py", _HEADER + "x = 1\n" * 200)

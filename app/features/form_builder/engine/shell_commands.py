@@ -14,7 +14,8 @@ from typing import Iterable, Mapping, Sequence, Tuple
 
 FORM_SHORTCUT_CATEGORY = "Form designer"
 
-INERT_STATUS = "Not used in the form designer. Ctrl+R goes to a widget."
+#: Names Ctrl+R once Go to widget exists. Until then it would point at a disabled command.
+INERT_STATUS = "Not used in the form designer."
 
 _WIDGET = frozenset({"canvas", "outline", "inspector"})
 

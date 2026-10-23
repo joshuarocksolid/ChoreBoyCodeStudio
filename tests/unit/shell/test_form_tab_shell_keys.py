@@ -252,3 +252,172 @@ def test_reveal_with_a_stale_id_falls_back_to_the_name_and_keeps_focus_when_noth
         assert qapp.focusWidget() is tree
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def _status_label(window: MainWindow) -> object:
+    from app.qt.QtWidgets import QLabel
+
+    label = window.findChild(QLabel, "shell.editorStatusLabel")
+    assert label is not None
+    return label
+
+
+def test_reveal_applies_pending_xml_edits_first(tmp_path: Path, qapp: QApplication) -> None:
+    _require_feature()
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "invoice.ui")
+        session = surface._session  # type: ignore[attr-defined]  # noqa: SLF001
+        surface.toggle_source_view()  # type: ignore[attr-defined]
+        qapp.processEvents()
+        editor = surface.source_editor()  # type: ignore[attr-defined]
+        editor.setPlainText(editor.toPlainText().replace("Invoice entry", "Invoice entry form"))
+        qapp.processEvents()
+        assert surface.reveal(1, {"fb_object": "okButton"})  # type: ignore[attr-defined]
+        qapp.processEvents()
+        assert session.selection.state.current == session.document.by_name("okButton")[0]
+        assert surface.content_source().mode == "visual"  # type: ignore[attr-defined]
+        assert "Invoice entry form" in session.text()
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_an_inert_shell_key_explains_itself_on_the_status_bar(tmp_path: Path, qapp: QApplication) -> None:
+    _require_feature()
+    from app.features.form_builder.engine.shell_commands import INERT_STATUS
+
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "invoice.ui")
+        assert INERT_STATUS == "Not used in the form designer."
+        tree = surface._workbench.outline.tree  # type: ignore[attr-defined]  # noqa: SLF001
+        tree.setFocus()
+        qapp.processEvents()
+        for key, mods in (
+            (Qt.Key_H, Qt.ControlModifier),
+            (Qt.Key_G, Qt.ControlModifier),
+            (Qt.Key_Slash, Qt.ControlModifier),
+            (Qt.Key_F9, Qt.NoModifier),
+        ):
+            surface._inert_note = ""  # type: ignore[attr-defined]  # noqa: SLF001
+            QTest.keyClick(tree, key, mods)
+            qapp.processEvents()
+            assert _status_label(window).text() == INERT_STATUS, key  # type: ignore[attr-defined]
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_tab_leaves_the_inspector(tmp_path: Path, qapp: QApplication) -> None:
+    _require_feature()
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "invoice.ui")
+        body = surface.findChild(QWidget, "formBuilder.inspectorBody")  # type: ignore[attr-defined]
+        assert body is not None and body.isVisible()
+        body.setFocus()
+        qapp.processEvents()
+        assert qapp.focusWidget() is body
+        # With "Show in Problems" showing, the first Tab lands on the link.
+        for _ in range(2):
+            if qapp.focusWidget() is not body:
+                break
+            QTest.keyClick(body, Qt.Key_Tab)
+            qapp.processEvents()
+        assert qapp.focusWidget() is not body
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_tab_still_indents_in_the_xml_view(tmp_path: Path, qapp: QApplication) -> None:
+    _require_feature()
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "invoice.ui")
+        surface.toggle_source_view()  # type: ignore[attr-defined]
+        qapp.processEvents()
+        editor = surface.source_editor()  # type: ignore[attr-defined]
+        editor.setFocus()
+        qapp.processEvents()
+        before = editor.toPlainText()
+        QTest.keyClick(editor, Qt.Key_Tab)
+        qapp.processEvents()
+        assert editor.toPlainText() != before
+        assert qapp.focusWidget() is editor
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_show_in_problems_link_uses_a_token_colour_and_takes_the_keyboard(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    _require_feature()
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "invoice.ui")
+        qapp.processEvents()
+        body = surface.findChild(QWidget, "formBuilder.inspectorBody")  # type: ignore[attr-defined]
+        assert "Show in Problems" in body.text()  # type: ignore[attr-defined]
+        tokens = window._shell_theme_workflow.resolve_theme_tokens()  # noqa: SLF001
+        assert ("color:%s" % tokens.text_primary).lower() in body.text().replace(" ", "").lower()  # type: ignore[attr-defined]
+        flags = body.textInteractionFlags()  # type: ignore[attr-defined]
+        keyboard = getattr(Qt, "TextInteractionFlag", Qt).LinksAccessibleByKeyboard
+        assert flags & keyboard
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_the_tree_lock_draws_its_shackle_in_the_muted_token(tmp_path: Path, qapp: QApplication) -> None:
+    from app.core import constants
+    from app.core.models import LoadedProject, ProjectFileEntry, ProjectMetadata
+    from app.qt.QtGui import QColor
+    from app.shell.theme_tokens import tokens_from_palette
+    from app.shell.tree_item_roles import TREE_ROLE_RELATIVE_PATH
+
+    root = tmp_path / "project"
+    forms = root / "forms"
+    forms.mkdir(parents=True)
+    (forms / "invoice.ui").write_text(_FORM, encoding="utf-8")
+    (forms / "ui_invoice.py").write_text("label = 1\n", encoding="utf-8")
+    entries = [
+        ProjectFileEntry(relative_path="forms", absolute_path=str(forms.resolve()), is_directory=True),
+        ProjectFileEntry(
+            relative_path="forms/ui_invoice.py",
+            absolute_path=str((forms / "ui_invoice.py").resolve()),
+            is_directory=False,
+        ),
+        ProjectFileEntry(
+            relative_path="forms/invoice.ui",
+            absolute_path=str((forms / "invoice.ui").resolve()),
+            is_directory=False,
+        ),
+    ]
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        dark = tokens_from_palette(qapp.palette(), force_mode=constants.UI_THEME_MODE_DARK)
+        window._shell_theme_workflow.resolve_theme_tokens = lambda: dark  # type: ignore[method-assign]  # noqa: SLF001
+        loaded = LoadedProject(
+            project_root=str(root.resolve()),
+            manifest_path=str((root / "cbcs" / "project.json").resolve()),
+            metadata=ProjectMetadata(schema_version=1, name="Tree", default_entry="forms/invoice.ui"),
+            entries=entries,
+        )
+        window._loaded_project = loaded  # noqa: SLF001
+        window._project_tree_ui_workflow.populate_project_tree(loaded)  # noqa: SLF001
+        item = None
+        for candidate in window._project_tree_ui_workflow.iter_project_tree_items():  # noqa: SLF001
+            if str(candidate.data(0, TREE_ROLE_RELATIVE_PATH) or "") == "forms":
+                window._project_tree_presenter.ensure_children_loaded(candidate)  # noqa: SLF001
+        for candidate in window._project_tree_ui_workflow.iter_project_tree_items():  # noqa: SLF001
+            if str(candidate.data(0, TREE_ROLE_RELATIVE_PATH) or "") == "forms/ui_invoice.py":
+                item = candidate
+        assert item is not None
+        image = item.icon(0).pixmap(16, 16).toImage()
+        want = QColor(dark.text_muted)
+        body = image.pixelColor(8, 11)
+        assert (body.red(), body.green(), body.blue()) == (want.red(), want.green(), want.blue())
+        shackle = [
+            image.pixelColor(x, y).alpha() for y in range(1, 6) for x in range(16)
+        ]
+        assert max(shackle) > 128
+    finally:
+        shutdown_main_window_for_test(window, qapp)

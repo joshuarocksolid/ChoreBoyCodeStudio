@@ -101,7 +101,10 @@ def generated_banner(path: str, text: str = "") -> Optional[GeneratedBanner]:
 
 
 def _header_source(path: str, text: Optional[str]) -> str:
-    sample = _peek(path) if text is None else text
+    """The header names the source only on a ``.py`` file, in its first 512 characters."""
+    if not path.lower().endswith(".py"):
+        return ""
+    sample = _peek(path) if text is None else text[:_PEEK_CHARS]
     if not sample:
         return ""
     match = _HEADER_SOURCE.search(sample)

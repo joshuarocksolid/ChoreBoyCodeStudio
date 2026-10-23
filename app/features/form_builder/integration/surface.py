@@ -126,24 +126,54 @@ def _key_text(event: object) -> str:
     return normalize_form_shortcut(sequence.toString(QKeySequence.SequenceFormat.PortableText))
 
 
-class _EditorKeyGuard(QObject):
-    """Keeps the shell's code-editor keys (Tab, Shift+Tab) off the canvas and outline.
+class _ShellKeyGuard(QObject):
+    """Keeps shell window keys that mean nothing here off the builder chrome.
 
-    Accepting ``ShortcutOverride`` sends the key to the focused widget, so Tab
-    moves focus until the builder gives it a meaning (UX-A11Y-009).
+    Installed on the workbench and toolbar widgets, never on the XML editor.
+    Accepting ``ShortcutOverride`` sends the key to the focused widget instead
+    of a window action:
+
+    * code-editor keys (Tab, Shift+Tab) then move focus (UX-A11Y-009);
+    * inert keys (Ctrl+H, Ctrl+G, ...) are swallowed on their key press and
+      the status bar says they are not used (UX-KEY-004).
+
+    The shell also binds the inert keys, so a QShortcut of the same key would
+    be ambiguous and fire nothing.
     """
 
-    def __init__(self, keys: Callable[[], frozenset], parent: QObject) -> None:
+    def __init__(
+        self,
+        editor_keys: Callable[[], frozenset],
+        inert_keys: frozenset,
+        on_inert: Callable[[], None],
+        parent: QObject,
+    ) -> None:
         super().__init__(parent)
-        self._keys = keys
+        self._editor_keys = editor_keys
+        self._inert_keys = inert_keys
+        self._on_inert = on_inert
+        self._pending = ""
 
     def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
         del watched
-        if getattr(event, "type")() != QEvent.Type.ShortcutOverride:
+        kind = getattr(event, "type")()
+        if kind == QEvent.Type.ShortcutOverride:
+            text = _key_text(event)
+            if text in self._inert_keys:
+                self._pending = text
+                getattr(event, "accept")()
+                return True
+            if text in self._editor_keys():
+                getattr(event, "accept")()
+                return True
             return False
-        if _key_text(event) in self._keys():
-            getattr(event, "accept")()
-            return True
+        if kind == QEvent.Type.KeyPress and self._pending:
+            text = _key_text(event)
+            if text == self._pending:
+                self._pending = ""
+                getattr(event, "accept")()
+                self._on_inert()
+                return True
         return False
 
 
@@ -233,7 +263,6 @@ class FormSurface(QWidget):
         self._problem_timer.timeout.connect(self._flush_problems)
         self._diagnostics_unsub = session.diagnostics.subscribe(self._schedule_problems)
         source.set_open_buffer_probe(self._open_buffer_state)
-        self._install_inert_shortcuts()
         self._install_widget_shortcuts()
         self._schedule_problems(())
         self._saved_timer = QTimer(self)
@@ -324,10 +353,13 @@ class FormSurface(QWidget):
         return selection_sentence(self._session.document, state.current, len(state.ids))
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
+        if detail and self._toolbar.xml.isChecked():
+            # Apply the XML first: it replaces the document and every id.
+            self._on_design()
+            if self._toolbar.xml.isChecked():
+                return False
         node_id = self._node_for_detail(detail)
         if node_id is not None:
-            if self._toolbar.xml.isChecked():
-                self._on_design()
             self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
             if self._session.selection.state.current != node_id:
                 return False
@@ -762,9 +794,18 @@ class FormSurface(QWidget):
                 if live and handler is not None:
                     shortcut.activated.connect(handler)
                 self._widget_shortcuts.append(shortcut)
-        self._editor_key_guard = _EditorKeyGuard(self._editor_only_keys, self)
-        hosts["canvas"].installEventFilter(self._editor_key_guard)
-        hosts["outline"].installEventFilter(self._editor_key_guard)
+        self._key_guard = _ShellKeyGuard(
+            self._editor_only_keys,
+            frozenset(normalize_form_shortcut(key) for key in INERT_SHORTCUTS),
+            self._note_inert,
+            self,
+        )
+        # Every focusable builder widget, so the guard sees a key press before
+        # the widget does. Widgets made later are covered by their ancestors.
+        for root in (self._workbench, self._toolbar, self._notice, self._banner_frame):
+            root.installEventFilter(self._key_guard)
+            for child in root.findChildren(QWidget):
+                child.installEventFilter(self._key_guard)
 
     def _editor_only_keys(self) -> frozenset:
         effective = getattr(self.window(), "_effective_shortcuts", None)
@@ -779,13 +820,6 @@ class FormSurface(QWidget):
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
         """Gestures behind canvas, outline, and inspector keys. None exist yet."""
         return {}
-
-    def _install_inert_shortcuts(self) -> None:
-        context = getattr(Qt, "WidgetWithChildrenShortcut")
-        for sequence in INERT_SHORTCUTS:
-            shortcut = QShortcut(QKeySequence(sequence), self)
-            shortcut.setContext(context)
-            shortcut.activated.connect(self._note_inert)
 
     def _note_inert(self) -> None:
         self._inert_note = INERT_STATUS

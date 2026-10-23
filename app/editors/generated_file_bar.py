@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from app.qt.QtCore import Qt, Signal
-from app.qt.QtGui import QColor, QIcon, QPainter, QPixmap
+from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QWidget
 
 from app.editors.generated_file import GeneratedBanner
@@ -23,8 +23,8 @@ def generated_lock_icon(color: str = "#5A6168", size: int = 16) -> QIcon:
     body_top = int(size * 0.42)
     painter.drawRoundedRect(int(size * 0.18), body_top, int(size * 0.64), int(size * 0.46), 1, 1)
     painter.setBrush(Qt.NoBrush)
-    pen = painter.pen()
-    pen.setColor(QColor(color))
+    # A fresh pen: painter.pen() is still the NoPen set for the body.
+    pen = QPen(QColor(color))
     pen.setWidth(max(1, size // 8))
     painter.setPen(pen)
     shackle_w = int(size * 0.34)

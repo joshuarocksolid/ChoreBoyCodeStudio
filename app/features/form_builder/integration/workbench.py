@@ -96,6 +96,11 @@ def _tool(text: str, name: str, tip: str, parent: QWidget) -> QToolButton:
     return button
 
 
+def problems_link_color(tokens: ShellThemeTokens) -> str:
+    """Body text colour: it clears 4.5:1 (7:1 in high contrast) on the panel in every theme."""
+    return tokens.text_primary
+
+
 class NoticeBar(QFrame):
     """One info bar for a recovered draft or a file that changed on disk."""
 
@@ -483,6 +488,11 @@ class InspectorPane(QWidget):
         self._problem_count = 0
         self._on_show_problems: Optional[Callable[[], None]] = None
         self.properties.linkActivated.connect(self._follow_problem_link)
+        self.properties.setTextInteractionFlags(
+            getattr(Qt, "TextInteractionFlag", Qt).LinksAccessibleByMouse
+            | getattr(Qt, "TextInteractionFlag", Qt).LinksAccessibleByKeyboard
+        )
+        self._link_color = ""
         self.behavior = QLabel("Select a widget to see what you can configure.", self.tabs)
         self.behavior.setObjectName("formBuilder.behaviorBody")
         self.behavior.setWordWrap(True)
@@ -525,9 +535,18 @@ class InspectorPane(QWidget):
             return
         noun = "problem" if count == 1 else "problems"
         self.properties.setTextFormat(getattr(Qt, "RichText"))
+        style = ""
+        if self._link_color:
+            style = ' style="color:%s; text-decoration: underline;"' % self._link_color
         self.properties.setText(
-            '%d %s. <a href="problems">Show in Problems</a>' % (count, noun)
+            '%d %s. <a href="problems"%s>Show in Problems</a>' % (count, noun, style)
         )
+
+    def set_link_color(self, color: str) -> None:
+        """The palette link colour fails contrast on dark panels. Use a token."""
+        self._link_color = color
+        if not self._has_node:
+            self._paint_empty_properties()
 
     def _follow_problem_link(self, href: str) -> None:
         if href != "problems":
@@ -805,6 +824,7 @@ class FormWorkbench(QWidget):
             )
         )
         self.canvas.apply_theme(tokens)
+        self.inspector.set_link_color(problems_link_color(tokens))
 
     def open_left(self) -> None:
         self._open_drawer("left")
@@ -985,4 +1005,4 @@ class FormWorkbench(QWidget):
             self._applying = False
 
 
-__all__ = ["FormToolbar", "FormWorkbench", "NoticeBar"]
+__all__ = ["FormToolbar", "FormWorkbench", "NoticeBar", "problems_link_color"]

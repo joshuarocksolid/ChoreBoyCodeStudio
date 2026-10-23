@@ -13,6 +13,7 @@ from app.features.form_builder.qtside.theme.chrome import (  # noqa: E402
     PAGE_TITLE_GLYPH,
     on_accent_for,
 )
+from app.features.form_builder.integration.workbench import problems_link_color  # noqa: E402
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -83,6 +84,7 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
             ("selected row", tokens.text_primary, tokens.tree_selected_bg, text_floor),
             ("on accent", on_accent_for(tokens.accent), tokens.accent, text_floor),
             ("chip", tokens.text_primary, tokens.panel_bg, text_floor),
+            ("show in problems link", problems_link_color(tokens), tokens.panel_bg, text_floor),
         )
         for name, foreground, background, floor in pairs:
             ratio = _contrast(foreground, background)

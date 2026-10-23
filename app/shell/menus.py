@@ -11,7 +11,6 @@ from app.shell.edit_menu_builder import build_edit_menu
 from app.shell.menu_build_context import MenuBuildContext
 from app.shell.file_menu_builder import build_file_menu
 from app.shell.help_menu_builder import build_help_menu
-from app.shell.menu_build_context import MenuBuildContext
 from app.shell.run_menu_builder import build_run_menu
 from app.shell.tools_menu_builder import build_tools_menu
 from app.shell.view_menu_builder import build_view_menu
