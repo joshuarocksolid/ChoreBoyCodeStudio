@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Built-in templates round-trip and build a module the loader can show."""
 
 from __future__ import annotations
