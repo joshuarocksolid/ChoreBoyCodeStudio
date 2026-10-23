@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
-from app.qt.QtCore import Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, Qt, QTimer
 from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
     QApplication,
@@ -36,10 +36,11 @@ from app.features.form_builder.engine.shell_commands import (
     FORM_COMMANDS,
     INERT_SHORTCUTS,
     INERT_STATUS,
+    editor_only_shell_actions,
     is_widget_shortcut,
+    normalize_form_shortcut,
 )
-from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
-from app.features.form_builder.engine.ui4.writer import kept_as_is_spans_for_text
+from app.features.form_builder.engine.ui4.reader import UiReadError, kept_as_is_spans, read_ui
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
     recovered_draft_sentence,
@@ -63,6 +64,7 @@ from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
+from app.shell.shortcut_preferences import default_shortcut_map
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -76,6 +78,7 @@ _RESTORE_REASON = {
     "external_reload": "reload",
 }
 _SAVED_FADE_MS = 4000
+_KEPT_REFRESH_MS = 300
 
 
 def plain_banner_error(error: str) -> str:
@@ -105,6 +108,43 @@ def _shell_history(window: QWidget, redo: bool) -> None:
         surface.redo()
     else:
         surface.undo()
+
+
+def _key_text(event: object) -> str:
+    """Portable text of a key event, with Backtab spelled Shift+Tab."""
+    key = int(getattr(event, "key")())
+    mods = getattr(event, "modifiers")()
+    shift = getattr(Qt, "ShiftModifier")
+    if key == int(getattr(Qt, "Key_Backtab")):
+        key = int(getattr(Qt, "Key_Tab"))
+        mods = mods | shift
+    flags = getattr(mods, "value", mods)
+    try:
+        sequence = QKeySequence(int(flags) | key)
+    except TypeError:
+        return ""
+    return normalize_form_shortcut(sequence.toString(QKeySequence.SequenceFormat.PortableText))
+
+
+class _EditorKeyGuard(QObject):
+    """Keeps the shell's code-editor keys (Tab, Shift+Tab) off the canvas and outline.
+
+    Accepting ``ShortcutOverride`` sends the key to the focused widget, so Tab
+    moves focus until the builder gives it a meaning (UX-A11Y-009).
+    """
+
+    def __init__(self, keys: Callable[[], frozenset], parent: QObject) -> None:
+        super().__init__(parent)
+        self._keys = keys
+
+    def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
+        del watched
+        if getattr(event, "type")() != QEvent.Type.ShortcutOverride:
+            return False
+        if _key_text(event) in self._keys():
+            getattr(event, "accept")()
+            return True
+        return False
 
 
 class FormSurface(QWidget):
@@ -199,6 +239,11 @@ class FormSurface(QWidget):
         self._saved_timer = QTimer(self)
         self._saved_timer.setSingleShot(True)
         self._saved_timer.timeout.connect(self._fade_saved)
+        # XML edits move lines. Read the shown text again once typing pauses.
+        self._kept_timer = QTimer(self)
+        self._kept_timer.setSingleShot(True)
+        self._kept_timer.setInterval(_KEPT_REFRESH_MS)
+        self._kept_timer.timeout.connect(self._refresh_kept_lines)
         self._alt_outline = QShortcut(QKeySequence("Alt+1"), self)
         self._alt_outline.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._alt_outline.activated.connect(self._focus_outline)
@@ -284,6 +329,8 @@ class FormSurface(QWidget):
             if self._toolbar.xml.isChecked():
                 self._on_design()
             self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
+            if self._session.selection.state.current != node_id:
+                return False
             name = self._object_name(node_id)
             if name:
                 self._workbench.canvas.ensure_widget_visible(name)
@@ -337,6 +384,8 @@ class FormSurface(QWidget):
             return
         self._released = True
         self._problem_timer.stop()
+        self._kept_timer.stop()
+        self._saved_timer.stop()
         self._diagnostics_unsub()
         app = QApplication.instance()
         if app is not None:
@@ -561,6 +610,14 @@ class FormSurface(QWidget):
         if editor is None:
             return
         self._source.xml_text_changed(editor.toPlainText())
+        self._kept_timer.start()
+
+    def _refresh_kept_lines(self) -> None:
+        editor = self._editor
+        if self._released or editor is None or self._source.mode != "xml":
+            return
+        if _parses(editor.toPlainText()):
+            self._mark_kept_lines(editor)
 
     def _on_log(self, _change_set: object) -> None:
         if self._source.mode != "visual":
@@ -649,16 +706,18 @@ class FormSurface(QWidget):
     def _node_for_detail(self, detail: Optional[Mapping[str, str]]) -> Optional[NodeId]:
         if not detail:
             return None
+        document = self._session.document
         key = detail.get("fb_key") or ""
         if key:
             for diagnostic in self._session.diagnostics.all():
                 node_id = diagnostic.location.node_id
-                if diagnostic.key == key and node_id is not None:
+                # A row made before an XML apply can hold an id that is gone.
+                if diagnostic.key == key and node_id is not None and document.get(node_id) is not None:
                     return node_id
         name = detail.get("fb_object") or ""
         if not name:
             return None
-        ids = self._session.document.by_name(name)
+        ids = document.by_name(name)
         if not ids:
             return None
         return ids[0]
@@ -680,18 +739,46 @@ class FormSurface(QWidget):
             "inspector": self._workbench.inspector,
         }
         context = getattr(Qt, "WidgetWithChildrenShortcut")
+        effective = getattr(self.window(), "_effective_shortcuts", None)
+        keys: Mapping[str, str] = effective if isinstance(effective, Mapping) else {}
+        handlers = self._widget_handlers()
         self._widget_shortcuts: list[QShortcut] = []
         for command in FORM_COMMANDS:
             if not is_widget_shortcut(command):
                 continue
+            # Settings may rebind the key. A command with no gesture yet keeps
+            # its QShortcut disabled, so the key reaches the focused widget.
+            key = keys.get(command.command_id, command.shortcut)
+            handler = handlers.get(command.command_id)
+            live = command.available and handler is not None
             for name in command.contexts:
                 host = hosts.get(name)
                 if host is None:
                     continue
-                shortcut = QShortcut(QKeySequence(command.shortcut), host)
+                shortcut = QShortcut(QKeySequence(key), host)
                 shortcut.setContext(context)
                 shortcut.setObjectName(command.command_id)
+                shortcut.setEnabled(live)
+                if live and handler is not None:
+                    shortcut.activated.connect(handler)
                 self._widget_shortcuts.append(shortcut)
+        self._editor_key_guard = _EditorKeyGuard(self._editor_only_keys, self)
+        hosts["canvas"].installEventFilter(self._editor_key_guard)
+        hosts["outline"].installEventFilter(self._editor_key_guard)
+
+    def _editor_only_keys(self) -> frozenset:
+        effective = getattr(self.window(), "_effective_shortcuts", None)
+        keys = effective if isinstance(effective, Mapping) else default_shortcut_map()
+        found = set()
+        for action_id in editor_only_shell_actions():
+            text = normalize_form_shortcut(str(keys.get(action_id, "") or ""))
+            if text:
+                found.add(text)
+        return frozenset(found)
+
+    def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
+        """Gestures behind canvas, outline, and inspector keys. None exist yet."""
+        return {}
 
     def _install_inert_shortcuts(self) -> None:
         context = getattr(Qt, "WidgetWithChildrenShortcut")
@@ -754,10 +841,7 @@ class FormSurface(QWidget):
             return
         reader = getattr(editor, "toPlainText", None)
         text = reader() if callable(reader) else ""
-        notes = {
-            start: "Kept as is"
-            for start, _end in kept_as_is_spans_for_text(text if isinstance(text, str) else "", self._session.document)
-        }
+        notes = {start: "Kept as is" for start, _end in kept_as_is_spans(text if isinstance(text, str) else "")}
         setter(notes)
 
     def _show_hold(self, text: str) -> None:

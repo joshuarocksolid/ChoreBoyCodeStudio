@@ -405,6 +405,14 @@ def menu_hint(command: FormCommand) -> str:
     return ""
 
 
+def editor_only_shell_actions() -> frozenset[str]:
+    """Shell actions that belong to the code editor (Tab indents, Shift+Tab outdents).
+
+    Their window keys must not fire while the canvas or the outline has focus.
+    """
+    return _EDITOR_ONLY
+
+
 def shell_command_contexts(action_id: str) -> frozenset[str]:
     """Focus contexts where a shell binding is active.
 
@@ -497,6 +505,7 @@ __all__ = [
     "INERT_STATUS",
     "FormCommand",
     "contexts_overlap",
+    "editor_only_shell_actions",
     "is_widget_shortcut",
     "menu_commands",
     "menu_hint",

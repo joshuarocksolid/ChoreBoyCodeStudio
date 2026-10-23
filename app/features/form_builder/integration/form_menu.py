@@ -8,6 +8,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
+from app.qt.QtCore import QObject, Qt
+from app.qt.QtGui import QKeySequence
+
 from app.features.form_builder.engine.shell_commands import FormCommand, menu_commands, menu_hint
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.menu_action_builder import register_menu_action
@@ -44,8 +47,24 @@ def _build(window: Any, ctx: Any) -> None:
     menu.aboutToShow.connect(lambda: _sync(window, menu, actions))
     tabs = getattr(window, "_editor_tabs_widget", None)
     if tabs is not None and _qt_alive(tabs):
-        tabs.currentChanged.connect(lambda _index: _sync(window, menu, actions))
+        # A receiver owned by the menu drops this connection when the menu
+        # goes, so a tab change during window teardown never reaches a
+        # deleted menu.
+        watcher = _TabWatcher(window, menu, actions)
+        tabs.currentChanged.connect(watcher.on_current_changed)
     _sync(window, menu, actions)
+
+
+class _TabWatcher(QObject):
+    def __init__(self, window: Any, menu: Any, actions: Dict[str, Any]) -> None:
+        super().__init__(menu)
+        self._window = window
+        self._menu = menu
+        self._actions = actions
+
+    def on_current_changed(self, _index: int) -> None:
+        if _qt_alive(self._menu):
+            _sync(self._window, self._menu, self._actions)
 
 
 def _fill(
@@ -95,6 +114,13 @@ def _add(window: Any, ctx: Any, menu: Any, command: FormCommand, actions: Dict[s
         callback=lambda _checked=False, command_id=command.command_id: _trigger(window, command_id),
         shortcut_overrides=ctx.shortcut_overrides,
     )
+    if hint:
+        # The key lives on a canvas or outline QShortcut, or on the shell
+        # action. ``register_menu_action`` applied the effective map, which
+        # holds the form rows, so clear it. Settings re-applies every menu
+        # key later; a widget-scope context keeps that key off the window.
+        action.setShortcut(QKeySequence())
+        action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
     actions[command.command_id] = action
 
 

@@ -121,79 +121,11 @@ def write_ui(doc: UiDocument) -> WriteResult:
 
 
 def kept_as_is_line_spans(result: WriteResult) -> Tuple[Tuple[int, int], ...]:
-    """1-based inclusive line ranges of opaque nodes the builder did not interpret."""
+    """1-based inclusive line ranges of the top-level opaque elements in ``result.text``.
+
+    For text that is not this writer's output, ``reader.kept_as_is_spans`` reads
+    the text itself."""
     return result.opaque_spans
-
-
-def kept_as_is_spans_for_text(text: str, document: UiDocument) -> Tuple[Tuple[int, int], ...]:
-    """Line spans of opaque elements in the text the XML view is showing.
-
-    ``write_ui`` renumbers a non-canonical file. The gutter has to mark the
-    lines the user can see.
-    """
-    lines = text.splitlines()
-    spans: List[Tuple[int, int]] = []
-    search_from = 0
-    for element in _opaque_elements(document):
-        tag = element.tag
-        if not tag:
-            continue
-        start = _open_tag_line(lines, tag, search_from)
-        if start is None:
-            continue
-        spans.append((start, _close_tag_line(lines, tag, start)))
-        search_from = start
-    return tuple(spans)
-
-
-def _opaque_elements(document: UiDocument) -> List[OpaqueElement]:
-    found: List[OpaqueElement] = []
-    for node in document.iter_preorder():
-        if isinstance(node, OpaqueNode):
-            _collect_opaque_element(node.element, found)
-        for entry in (*node.properties(), *node.attributes()):
-            if isinstance(entry.value, OpaqueValue):
-                _collect_opaque_element(entry.value.element, found)
-    return found
-
-
-def _collect_opaque_element(element: OpaqueElement, found: List[OpaqueElement]) -> None:
-    if element.tag:
-        found.append(element)
-    for child in element.children:
-        if isinstance(child, OpaqueElement):
-            _collect_opaque_element(child, found)
-
-
-def _open_tag_line(lines: List[str], tag: str, start_index: int) -> Optional[int]:
-    needle = "<" + tag
-    for index in range(start_index, len(lines)):
-        if _tag_at(lines[index], needle):
-            return index + 1
-    return None
-
-
-def _close_tag_line(lines: List[str], tag: str, start_line: int) -> int:
-    start_index = start_line - 1
-    if "/>" in lines[start_index]:
-        return start_line
-    close = "</" + tag
-    for index in range(start_index, len(lines)):
-        if _tag_at(lines[index], close):
-            return index + 1
-    return start_line
-
-
-def _tag_at(line: str, needle: str) -> bool:
-    start = 0
-    while True:
-        found = line.find(needle, start)
-        if found < 0:
-            return False
-        after = found + len(needle)
-        if after >= len(line) or not (line[after].isalnum() or line[after] in "._:-"):
-            return True
-        start = after
 
 
 def write_fragment(fragment: Fragment) -> str:
@@ -245,6 +177,7 @@ class _Writer:
         self.lines: List[str] = [XML_DECLARATION]
         self.line_map: Dict[NodeId, int] = {}
         self.opaque_spans: List[Tuple[int, int]] = []
+        self._opaque_depth = 0
 
     def finish(self) -> str:
         text = "\n".join(self.lines) + "\n"
@@ -407,8 +340,16 @@ class _Writer:
 
     def opaque(self, element: OpaqueElement, indent: int) -> None:
         start = len(self.lines) + 1
-        self._write_opaque(element, indent)
         if not element.tag:
+            self._write_opaque(element, indent)
+            return
+        nested = self._opaque_depth > 0
+        self._opaque_depth += 1
+        try:
+            self._write_opaque(element, indent)
+        finally:
+            self._opaque_depth -= 1
+        if nested:
             return
         end = len(self.lines)
         if end >= start:
