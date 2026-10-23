@@ -257,11 +257,9 @@ class FormSurface(QWidget):
             editor.apply_theme(tokens)
 
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
-        """The shell echoes this form's own rows. The session's store is the source."""
         del diagnostics
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
-        """Select the widget a Problems row names. Otherwise show ``line`` in XML."""
         ref = None if detail is None else parse_problem_detail(detail)
         document = self._session.document
         matches = document.by_name(ref.object_name) if ref is not None and ref.object_name else ()

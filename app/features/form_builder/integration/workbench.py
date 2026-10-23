@@ -528,7 +528,6 @@ class InspectorPane(QWidget):
         self._paint_header()
 
     def set_problem_summary(self, text: str) -> None:
-        """One line from the form's problems, shown while nothing is selected."""
         self.problem_summary.setText(text)
         self._sync_summary()
 
@@ -548,7 +547,6 @@ class InspectorPane(QWidget):
         self._paint_header()
 
     def show_problem(self, document: UiDocument, selected: NodeId, sentence: str) -> None:
-        """Show ``selected``. A non-empty ``sentence`` names the property the problem is about."""
         self.show_selection(document, selected)
         if sentence:
             self.properties.setText(sentence)

@@ -1,5 +1,3 @@
-"""Form diagnostics to the shell Problems panel (CONTRACTS.md section 7.4)."""
-
 from __future__ import annotations
 
 import os
@@ -14,7 +12,6 @@ Push = Callable[[str, List[CodeDiagnostic]], None]
 
 
 def to_code_diagnostics(file_path: str, diagnostics: Sequence[FormDiagnostic]) -> List[CodeDiagnostic]:
-    """One row per diagnostic, same order. FB9xx rows only when ``CBCS_FB_DEBUG=1``."""
     debug = os.environ.get("CBCS_FB_DEBUG") == "1"
     return [
         _row(file_path, diagnostic)
@@ -38,12 +35,6 @@ def _row(file_path: str, diagnostic: FormDiagnostic) -> CodeDiagnostic:
 
 
 class ProblemsBridge:
-    """Pushes a session's rows for one ``.ui`` path, at most once per event-loop turn.
-
-    ``push`` is ``ProblemsController.apply_lint_diagnostics_result``. ``.ui``
-    files are never linted, so the form owns that path's rows.
-    """
-
     def __init__(self, file_path: str, store: DiagnosticsStore, push: Push) -> None:
         self._path = file_path
         self._store = store
@@ -60,7 +51,6 @@ class ProblemsBridge:
         self._timer.start()
 
     def close(self) -> None:
-        """Unsubscribe and clear this path's rows."""
         self._unsubscribe()
         self._timer.stop()
         self._push(self._path, [])

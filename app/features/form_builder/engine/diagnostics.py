@@ -225,14 +225,11 @@ class DiagnosticsStore:
 
 @dataclass(frozen=True)
 class ProblemRef:
-    """What a Problems row points at. Empty strings mean not known."""
-
     object_name: str
     property: str
 
 
 def parse_problem_detail(detail: Mapping[str, str]) -> ProblemRef:
-    """Read back ``to_problem_detail``. The object name falls back to the one in ``fb_key``."""
     object_name = detail.get("fb_object", "")
     if not object_name:
         parts = detail.get("fb_key", "").split("|")
