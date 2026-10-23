@@ -167,7 +167,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 
 ## File actions
 
-`shell.action.file.newProject` · `newWindow` · `newProjectFromTemplate` · `openProject` · `openFile` · `quickOpen` · `recoveryCenter` · `globalHistory` · `save` · `saveAs` · `saveAll` · `autoSave` · `settings` · `exit`
+`shell.action.file.newProject` · `newWindow` · `newProjectFromTemplate` · `newForm` · `openProject` · `openFile` · `quickOpen` · `recoveryCenter` · `globalHistory` · `save` · `saveAs` · `saveAll` · `autoSave` · `settings` · `exit`
 
 ## Edit actions
 
@@ -474,3 +474,7 @@ Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs
 | `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
 | `formBuilder.xmlBannerText` | View XML notice text |
 | `formBuilder.discardXml` | Discard XML edits |
+| `formBuilder.newForm` | New form tab |
+| `formBuilder.newForm.name` | Name field |
+| `formBuilder.newForm.card.*` | Start cards |
+| `formBuilder.fromTable` | Build a form from a table |
