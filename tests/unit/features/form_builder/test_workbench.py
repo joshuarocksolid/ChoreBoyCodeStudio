@@ -14,6 +14,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.features.form_builder.engine.codegen.api import generate_form_module  # noqa: E402
+from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.features.form_builder.engine.ids import NodeId  # noqa: E402
 from app.features.form_builder.engine.ui4.nodes import WidgetNode  # noqa: E402
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue  # noqa: E402
@@ -506,6 +507,8 @@ def test_breakpoint_layouts_do_not_clip_the_toolbar(qapp, tmp_path: Path) -> Non
 
 
 def test_theme_switch_keeps_the_page_in_the_runtime_palette(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    if not form_builder_enabled():
+        pytest.skip("the form builder needs PySide6")
     ui_path = _stage_kitchen(tmp_path)
     parent = QWidget()
     surface = _open(parent, ui_path.read_text(encoding="utf-8"), ui_path)
