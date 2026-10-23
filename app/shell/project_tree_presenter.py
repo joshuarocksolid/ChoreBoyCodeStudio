@@ -6,7 +6,11 @@ from pathlib import Path
 from typing import Any
 
 from app.qt.QtCore import QTimer
+from app.qt.QtGui import QColor
 from app.qt.QtWidgets import QAbstractItemView, QTreeWidgetItem
+
+from app.editors.generated_file import is_generated_python_path
+from app.editors.generated_file_bar import generated_lock_icon
 
 from app.core.models import LoadedProject
 from app.project.project_tree import build_project_tree
@@ -269,6 +273,13 @@ class ProjectTreePresenter:
                 font.setBold(True)
                 item.setFont(0, font)
                 item.setIcon(0, window._tree_entrypoint_icon)
+            if is_generated_python_path(node.absolute_path):
+                item.setIcon(0, generated_lock_icon())
+                workflow = getattr(window, "_shell_theme_workflow", None)
+                resolve = getattr(workflow, "resolve_theme_tokens", None)
+                tokens = resolve() if callable(resolve) else None
+                if tokens is not None:
+                    item.setForeground(0, QColor(tokens.text_muted))
         return item
 
     def selected_paths(self) -> list[tuple[str, str, bool]]:

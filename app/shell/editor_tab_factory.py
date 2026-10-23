@@ -201,6 +201,11 @@ class EditorTabFactory:
                 tab_content = surface.widget()
 
         page = self.build_tab_page(tab_content, opened_result.tab.buffer_id)
+        self.attach_generated_banner(
+            page,
+            opened_result.tab.file_path,
+            opened_result.tab.current_content,
+        )
         tab_index = window._editor_tabs_widget.addTab(page, opened_result.tab.display_name)
         window._editor_tabs_coordinator.present_tab_at(tab_index, opened_result.tab)
         window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
@@ -341,6 +346,19 @@ class EditorTabFactory:
         page.info_bar.save_as_requested.connect(lambda: run(conflicts.save_buffer_as))
         page.info_bar.close_tab_requested.connect(lambda: run(window._editor_tab_workflow.close_tab_for_path))
         return page
+
+    def attach_generated_banner(self, page: EditorTabPage, file_path: str, text: str) -> None:
+        """Show the generated-file banner when this buffer is one, and wire its buttons."""
+        window = self._window
+        page.generated_bar.apply_theme(window._shell_theme_workflow.resolve_theme_tokens())
+        page.show_generated(file_path, text)
+
+        def open_linked(linked: str) -> None:
+            self.open_file_in_editor(linked, preview=False)
+
+        page.generated_bar.open_source_requested.connect(open_linked)
+        page.generated_bar.open_logic_requested.connect(open_linked)
+        page.generated_bar.edit_anyway_requested.connect(page.make_generated_editable)
 
 
 class _DeclinedTextTab(QWidget):

@@ -8,6 +8,8 @@ from typing import Any, Optional
 from app.qt.QtCore import Signal
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
+from app.editors.generated_file import generated_banner
+from app.editors.generated_file_bar import GeneratedFileBar
 from app.shell.editor_tab_bar import TAB_STATE_MISSING, TAB_STATE_STALE, missing_marker_icon, warning_marker_icon
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -124,6 +126,8 @@ class EditorTabPage(QWidget):
         self._layout.setSpacing(0)
         self.info_bar = DiskConflictInfoBar(self)
         self._layout.addWidget(self.info_bar, 0)
+        self.generated_bar = GeneratedFileBar(self)
+        self._layout.addWidget(self.generated_bar, 0)
         self._content = content
         content.setParent(self)
         self._layout.addWidget(content, 1)
@@ -135,6 +139,23 @@ class EditorTabPage(QWidget):
 
     def content(self) -> QWidget:
         return self._content
+
+    def show_generated(self, path: str, text: str) -> None:
+        """Read-only banner for a generated module. Ordinary files stay as they are."""
+        banner = generated_banner(path, text)
+        if banner is None:
+            return
+        self.generated_bar.show_banner(banner)
+        editor = page_editor(self)
+        if editor is not None:
+            editor.setReadOnly(True)
+
+    def make_generated_editable(self) -> None:
+        """Edit anyway. This tab's editor becomes writable. The banner stays."""
+        editor = page_editor(self)
+        if editor is not None:
+            editor.setReadOnly(False)
+        self.generated_bar.note_editable()
 
     def set_content(self, content: QWidget) -> None:
         if content is self._content:

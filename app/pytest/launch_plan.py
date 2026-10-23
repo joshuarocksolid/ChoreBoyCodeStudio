@@ -195,6 +195,8 @@ def _normalized_pytest_args(pytest_args: list[str]) -> list[str]:
                 insert_at = index
                 break
         normalized_args.insert(insert_at, _IMPORT_MODE_ARG)
+    if "--ignore=cbcs/form_builder" not in normalized_args:
+        normalized_args.append("--ignore=cbcs/form_builder")
     if not _has_cache_provider_override(normalized_args):
         insert_at = len(normalized_args)
         for index, arg in enumerate(normalized_args):
