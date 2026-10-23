@@ -56,7 +56,6 @@ class SqliteColumn:
 
 
 def included_by_default(column: SqliteColumn) -> bool:
-    """An integer primary key starts unchecked. Every other column starts included."""
     if not column.primary_key:
         return True
     return _sql_token(column.sql_type) not in _INTEGER

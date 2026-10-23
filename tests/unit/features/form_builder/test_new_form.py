@@ -287,7 +287,7 @@ def test_create_on_a_real_window_refreshes_the_tree(tmp_path: Path, qapp: object
     try:
         loaded = open_project(str(root))
         before = manifest.read_text(encoding="utf-8")
-        window._loaded_project = loaded  # noqa: SLF001 - real window, real tree refresh
+        window._loaded_project = loaded  # noqa: SLF001
         window._project_tree_ui_workflow.populate_project_tree(loaded)  # noqa: SLF001
         result = perform_create(
             window,
@@ -366,7 +366,7 @@ def test_from_table_maps_columns_to_widgets(tmp_path: Path, qapp: object) -> Non
     )
     shows_as = table.cellWidget(id_row, 3)
     assert shows_as is not None
-    assert shows_as.toolTip() == "QSpinBox"  # type: ignore[attr-defined]
+    assert shows_as.toolTip() == "QSpinBox"
     built = dialog.built_form()
     assert 'name="customer_id"' in built.text
     assert "yyyy" in built.text

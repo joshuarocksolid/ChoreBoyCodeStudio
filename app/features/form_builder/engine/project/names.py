@@ -87,11 +87,6 @@ def class_name_for_stem(stem: str) -> str:
 
 
 def creation_caption(folder_display: str, stem: str) -> str:
-    """Live caption under the name row.
-
-    ``(project root)`` and a blank folder name the files without a directory
-    prefix, because that is where they are written.
-    """
     leaf = stem.strip() or "new_form"
     files = "%s.ui, ui_%s.py and %s_window.py." % (leaf, leaf, leaf)
     folder = folder_display.strip()

@@ -3,10 +3,19 @@
 from __future__ import annotations
 
 import os
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import Qt, Signal
-from app.qt.QtGui import QColor, QFont, QPainter, QPalette, QPen
+from app.qt.QtGui import (
+    QColor,
+    QFont,
+    QKeyEvent,
+    QMouseEvent,
+    QPaintEvent,
+    QPainter,
+    QPalette,
+    QPen,
+)
 from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -214,7 +223,6 @@ class NewFormPanel(QWidget):
         return max(1, min(4, (width + _CARD_GAP) // (CARD_WIDTH + _CARD_GAP)))
 
     def move_card(self, key: str, dx: int, dy: int) -> None:
-        """Move by row and column inside a group. Down crosses into the next group."""
         rows = self._card_rows()
         found = None
         for row_index, row in enumerate(rows):
@@ -512,7 +520,7 @@ class _RecentRow(QWidget):
         name: str,
         folder: str,
         relative: str,
-        open_path: object,
+        open_path: Callable[[str], None],
         parent: QWidget,
     ) -> None:
         super().__init__(parent)
@@ -538,22 +546,21 @@ class _RecentRow(QWidget):
         self._chrome = chrome
         self.update()
 
-    def mouseReleaseEvent(self, event: object) -> None:  # type: ignore[override]
-        button = getattr(event, "button", None)
-        if callable(button) and enum_value(button()) == enum_value(Qt.LeftButton):
-            self._open_path(self._relative)  # type: ignore[operator]
-        super().mouseReleaseEvent(event)  # type: ignore[arg-type]
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:  # noqa: N802
+        if enum_value(event.button()) == enum_value(Qt.LeftButton):
+            self._open_path(self._relative)
+        super().mouseReleaseEvent(event)
 
-    def keyPressEvent(self, event: object) -> None:  # type: ignore[override]
-        key = enum_value(getattr(event, "key")())
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        key = enum_value(event.key())
         if key in (enum_value(Qt.Key_Return), enum_value(Qt.Key_Enter)):
-            self._open_path(self._relative)  # type: ignore[operator]
-            getattr(event, "accept")()
+            self._open_path(self._relative)
+            event.accept()
             return
-        super().keyPressEvent(event)  # type: ignore[arg-type]
+        super().keyPressEvent(event)
 
-    def paintEvent(self, event: object) -> None:  # type: ignore[override]
-        super().paintEvent(event)  # type: ignore[arg-type]
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        super().paintEvent(event)
         chrome = self._chrome
         if chrome is None or not self.hasFocus():
             return

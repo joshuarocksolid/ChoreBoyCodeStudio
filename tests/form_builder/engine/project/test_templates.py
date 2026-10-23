@@ -105,7 +105,6 @@ def test_the_default_name_skips_a_form_already_in_the_folder(tmp_path: Path) -> 
 
 
 def test_ok_on_the_generated_dialog_accepts(tmp_path: Path, qapp: object) -> None:
-    """The generated window module accepts the dialog when OK is clicked."""
     import importlib
     import sys
 

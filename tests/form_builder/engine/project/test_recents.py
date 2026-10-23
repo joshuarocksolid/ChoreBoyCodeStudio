@@ -1,5 +1,3 @@
-"""Recent forms are per-user state beside the session file, and cap at eight."""
-
 from __future__ import annotations
 
 import json

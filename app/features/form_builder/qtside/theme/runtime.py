@@ -31,7 +31,6 @@ def runtime_style() -> QStyle:
 
 
 def runtime_palette() -> QPalette:
-    """``runtime_style().standardPalette()``. Never derived from the shell theme."""
     return runtime_style().standardPalette()
 
 
