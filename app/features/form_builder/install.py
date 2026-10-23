@@ -37,14 +37,24 @@ def form_builder_enabled() -> bool:
 
 
 def install_form_builder(ctx: "ShellCompositionContext") -> None:
-    """Register the ``.ui`` provider and the run, package, and adopt hooks.
+    """Register the ``.ui`` provider, the New form tab, and the run, package
+    and adopt hooks.
 
     Qt and shell imports stay inside this function so importing the module
     on PySide2 does not load a binding. ``form_builder_enabled`` is the gate.
+    ``RememberingFormTabProvider`` owns ``.ui`` files and records recent forms.
     Sessions start when a tab opens.
     """
-    from app.features.form_builder.integration.adopt_flow import START_ENTRIES, adopt_from_tree
-    from app.features.form_builder.integration.provider import FormTabProvider
+    from app.features.form_builder.integration.adopt_flow import (
+        START_ENTRIES,
+        adopt_from_start,
+        adopt_from_tree,
+    )
+    from app.features.form_builder.integration.new_form import (
+        RememberingFormTabProvider,
+        attach_new_form,
+        bind_adopt_entry,
+    )
     from app.packaging.form_files import save_packaged_form
     from app.shell.shell_composition_context import bind_private_attrs
 
@@ -60,7 +70,9 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     def adopt(ui_path: str) -> None:
         adopt_from_tree(window, ui_path)
 
-    window._tab_content_registry.register(FormTabProvider())
+    window._tab_content_registry.register(RememberingFormTabProvider())
+    attach_new_form(window)
+    bind_adopt_entry(lambda: adopt_from_start(window))
     bind_private_attrs(
         window,
         {

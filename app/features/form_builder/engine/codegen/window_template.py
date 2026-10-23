@@ -20,11 +20,13 @@ from app.features.form_builder.engine.ui4.values import StringValue
 
 _INHERITED_SLOTS = frozenset(
     {
+        "accept",
         "close",
         "deleteLater",
         "hide",
         "lower",
         "raise_",
+        "reject",
         "repaint",
         "setDisabled",
         "setEnabled",

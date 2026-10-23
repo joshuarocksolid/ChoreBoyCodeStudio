@@ -27,6 +27,7 @@ markers = [
     "parity(*ids): proves R3 parity items, e.g. parity(\"R3-145\"); read by tools/form_builder_parity.py",
     "pain(*ids): proves ranked pains, e.g. pain(\"P-3\"); read by tools/form_builder_parity.py",
     "logic(*ids): proves logic scenarios and features, e.g. logic(\"L-line-total-live\")",
+    "soak: full CONTRACTS section 13 sequences; excluded from the unit gate",
 ]
 # Rope emits this internal deprecation until upstream removes legacy init paths; mute CI noise.
 filterwarnings = [

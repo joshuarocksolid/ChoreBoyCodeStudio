@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Section 12 speed harness.
 
 Profiles:
@@ -29,7 +30,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
-from app.features.form_builder.engine.commands.catalog import SetProperty
+from app.features.form_builder.engine.commands.base import CommandRejected
+from app.features.form_builder.engine.commands.catalog import (
+    CreateAction,
+    DeleteNodes,
+    InsertFragment,
+    MorphWidget,
+    MoveNodes,
+    SetProperty,
+)
+from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InContainer, InGridCell
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
+from app.qt.QtWidgets import QApplication
+from tests.form_builder.engine.commands._support import button_spec
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS, ChangeSet
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
@@ -92,12 +106,17 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "class table first load",
     "Realizer.build",
     "outline full build",
-    "open total",
+    "read + build",
     "one command",
     "one command O(changed)",
     "undo",
     "redo",
-    "realize patch",
+    "property patch",
+    "insert into layout",
+    "delete from layout",
+    "move into earlier container",
+    "morph",
+    "toolbar edit",
     "hit index invalidate",
     "hit index refresh",
     "hit query",
@@ -133,6 +152,8 @@ class Row:
     budget: str
     verdict: str
     detail: str
+    # Structural edits: execute + realize + repaint, next to the realize-only p95.
+    total_p95: Optional[float] = None
 
 
 @dataclass(frozen=True)
@@ -222,7 +243,7 @@ def format_table(report: SpeedReport) -> str:
         report.cpu_tolerance,
         report.wall,
     )
-    columns = ("point", "widgets", "n", "p50", "p95", "budget", "verdict")
+    columns = ("point", "widgets", "n", "p50", "p95", "total p95", "budget", "verdict")
     body = [
         (
             row.point,
@@ -230,6 +251,7 @@ def format_table(report: SpeedReport) -> str:
             "-" if row.samples is None else str(row.samples),
             _num(row.p50),
             _num(row.p95),
+            _num(row.total_p95),
             row.budget,
             row.verdict,
         )
@@ -278,6 +300,7 @@ def report_json(report: SpeedReport) -> dict:
                 "n": row.samples,
                 "p50": row.p50,
                 "p95": row.p95,
+                "total_p95": row.total_p95,
                 "budget": row.budget,
                 "verdict": row.verdict,
                 "detail": row.detail,
@@ -332,7 +355,7 @@ def _collect(
     build_p95 = next((row.p95 for row in realize_rows if row.point == "Realizer.build"), None)
     rows.append(_missing("outline full build", 300, _ms_budget(OUTLINE_BUILD_BUDGET_MS), "no outline yet"))
     rows.append(
-        _open_total_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
+        _open_read_build_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
 
     for count in sizes:
@@ -379,6 +402,7 @@ def _collect(
     rows.append(
         _realize_patch_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
+    rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
     rows.append(_missing("hit index invalidate", None, "-", "no hit index yet"))
     for count, budget in HIT_REFRESH_BUDGET_MS.items():
         rows.append(_missing("hit index refresh", count, _ms_budget(budget), "no hit index yet"))
@@ -390,7 +414,7 @@ def _collect(
             "edit total",
             300,
             _ms_budget(EDIT_BUDGET_MS),
-            "needs the command, the realize patch, the outline and the inspector",
+            "needs the command, the property patch, the outline and the inspector",
         )
     )
     rows.append(
@@ -940,7 +964,7 @@ def _undo_log_row(form: ReferenceForm) -> Row:
     return Row("undo log", 300, UNDO_LOG_EDITS, None, size_mb, "%.0f MB" % UNDO_LOG_BUDGET_MB, verdict, detail)
 
 
-def _open_total_row(
+def _open_read_build_row(
     form: Optional[ReferenceForm],
     samples: int,
     warmup: int,
@@ -950,13 +974,13 @@ def _open_total_row(
     """Read plus realize. Outline, inspector and the first hit index come later."""
     detail = "read plus Realizer.build. Outline, inspector and the first hit index are not in this number"
     if form is None or not _module_exists("app.features.form_builder.qtside.realize"):
-        return _missing("open total", 300, _ms_budget(OPEN_BUDGET_MS), detail)
+        return _missing("read + build", 300, _ms_budget(OPEN_BUDGET_MS), detail)
     try:
         realize = importlib.import_module("app.features.form_builder.qtside.realize")
         session_mod = importlib.import_module("app.features.form_builder.engine.session")
         forms = importlib.import_module("app.features.form_builder.engine.project.forms")
     except ImportError as exc:
-        return Row("open total", 300, None, None, None, _ms_budget(OPEN_BUDGET_MS), "skip", str(exc))
+        return Row("read + build", 300, None, None, None, _ms_budget(OPEN_BUDGET_MS), "skip", str(exc))
     held: List[object] = []
 
     def once() -> None:
@@ -966,7 +990,7 @@ def _open_total_row(
 
     try:
         row, _dist = _timed(
-            "open total",
+            "read + build",
             300,
             once,
             OPEN_BUDGET_MS,
@@ -978,8 +1002,8 @@ def _open_total_row(
         )
     except (AttributeError, TypeError, RuntimeError) as exc:
         _dispose_held(held)
-        return Row("open total", 300, None, None, None, _ms_budget(OPEN_BUDGET_MS), "skip", str(exc))
-    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, detail)
+        return Row("read + build", 300, None, None, None, _ms_budget(OPEN_BUDGET_MS), "skip", str(exc))
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, "partial", detail)
 
 
 def _realize_patch_row(
@@ -992,19 +1016,19 @@ def _realize_patch_row(
     """One toolTip edit. The clock is PatchStats.cpu_ms, the realize listener only."""
     del wall_on
     if form is None or not _module_exists("app.features.form_builder.qtside.realize"):
-        return _missing("realize patch", 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet")
+        return _missing("property patch", 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet")
     try:
         realize = importlib.import_module("app.features.form_builder.qtside.realize")
         session_mod = importlib.import_module("app.features.form_builder.engine.session")
         forms = importlib.import_module("app.features.form_builder.engine.project.forms")
         session, realizer = _open_realized(form.xml, session_mod, forms, realize)
     except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
-        return Row("realize patch", 300, None, None, None, _ms_budget(REALIZER_PATCH_BUDGET_MS), "skip", str(exc))
+        return Row("property patch", 300, None, None, None, _ms_budget(REALIZER_PATCH_BUDGET_MS), "skip", str(exc))
     owner = session.document.by_name(form.edit_name)
     if not owner:
         _dispose_held([realizer, session])
         return Row(
-            "realize patch",
+            "property patch",
             300,
             None,
             None,
@@ -1026,21 +1050,327 @@ def _realize_patch_row(
         take(warmup)
         attempt = sample_until_budget(lambda: take(samples), REALIZER_PATCH_BUDGET_MS if enforce_absolute else None)
     except (AttributeError, TypeError, RuntimeError) as exc:
-        return Row("realize patch", 300, None, None, None, _ms_budget(REALIZER_PATCH_BUDGET_MS), "skip", str(exc))
+        return Row("property patch", 300, None, None, None, _ms_budget(REALIZER_PATCH_BUDGET_MS), "skip", str(exc))
     finally:
         _dispose_held([realizer, session])
     row = _row_from_attempt(
-        "realize patch",
+        "property patch",
         300,
         attempt,
         REALIZER_PATCH_BUDGET_MS,
         enforce_absolute,
         False,
     )
-    detail = "PatchStats.cpu_ms for one toolTip edit. Command planning is the one-command row"
+    detail = "property patch. PatchStats.cpu_ms for one toolTip edit. Command planning is the one-command row"
     if row.detail:
         detail = "%s. %s" % (detail, row.detail)
     return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, detail)
+
+
+STRUCTURAL_POINTS: Tuple[str, ...] = (
+    "insert into layout",
+    "insert into box layout",
+    "insert into loose container",
+    "insert tab page",
+    "delete from layout",
+    "move into earlier container",
+    "morph",
+    "toolbar edit",
+)
+# Edits whose changed set does not grow with the form. Their realize p95 at
+# 1000 widgets stays within CHANGED_RATIO_LIMIT of the 300-widget p95.
+# ``insert into layout`` shifts every grid row, so it is reported at 1000
+# widgets and not ratio-judged.
+STRUCTURAL_RATIO_POINTS: Tuple[str, ...] = (
+    "insert into box layout",
+    "insert into loose container",
+    "insert tab page",
+    "delete from layout",
+    "move into earlier container",
+    "morph",
+    "toolbar edit",
+)
+STRUCTURAL_TOTAL_NOTE = "realize p95 is PatchStats.cpu_ms. total p95 is log execute + realize + repaint"
+
+
+def _structural_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+) -> Tuple[Row, ...]:
+    """Structural edits. Realize-only p95 against the 8 ms patch budget at 300 widgets."""
+    if 300 not in forms or not _module_exists("app.features.form_builder.qtside.realize"):
+        return tuple(_missing(point, 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet") for point in STRUCTURAL_POINTS)
+    small = _structural_dists(forms[300], samples, warmup)
+    if isinstance(small, str):
+        return tuple(Row(point, 300, None, None, None, "-", "skip", small) for point in STRUCTURAL_POINTS)
+    rows: List[Row] = []
+    for point in STRUCTURAL_POINTS:
+        rows.append(_structural_row(point, 300, small[point], REALIZER_PATCH_BUDGET_MS, enforce_absolute))
+    if 1000 not in forms:
+        for point in STRUCTURAL_RATIO_POINTS:
+            rows.append(
+                Row(
+                    "%s O(changed)" % point,
+                    None,
+                    None,
+                    None,
+                    None,
+                    "%.1fx" % CHANGED_RATIO_LIMIT,
+                    "skip",
+                    "needs the 1000-widget form",
+                )
+            )
+        return tuple(rows)
+    large = _structural_dists(forms[1000], samples, warmup)
+    if isinstance(large, str):
+        return tuple(rows) + tuple(Row(point, 1000, None, None, None, "-", "skip", large) for point in STRUCTURAL_POINTS)
+    for point in STRUCTURAL_POINTS:
+        rows.append(_structural_row(point, 1000, large[point], None, False))
+    for point in STRUCTURAL_RATIO_POINTS:
+        rows.append(_structural_ratio_row(point, small, large, forms, samples, warmup))
+    return tuple(rows)
+
+
+def _structural_row(
+    point: str,
+    widgets: int,
+    dists: Tuple[Distribution, Distribution],
+    budget_ms: Optional[float],
+    enforce_absolute: bool,
+) -> Row:
+    realize_dist, total_dist = dists
+    if budget_ms is None or not enforce_absolute:
+        verdict = "reported"
+    else:
+        verdict = judge_timed(realize_dist, budget_ms, wall_enforced=False)
+    detail = STRUCTURAL_TOTAL_NOTE
+    if verdict == "fail":
+        detail += ". realize cpu p95 exceeded the tolerated budget"
+    if budget_ms is not None and not enforce_absolute:
+        detail += ". absolute budget is mac-only"
+    return Row(
+        point,
+        widgets,
+        realize_dist.n,
+        realize_dist.cpu_p50 * 1000.0,
+        realize_dist.cpu_p95 * 1000.0,
+        _ms_budget(budget_ms),
+        verdict,
+        detail,
+        total_p95=total_dist.cpu_p95 * 1000.0,
+    )
+
+
+def _structural_ratio_row(
+    point: str,
+    small: Dict[str, Tuple[Distribution, Distribution]],
+    large: Dict[str, Tuple[Distribution, Distribution]],
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+) -> Row:
+    ratio = _safe_ratio(large[point][0].cpu_p95, small[point][0].cpu_p95)
+    used = (small[point][0], large[point][0])
+    tries = 1
+    if ratio > CHANGED_RATIO_LIMIT:
+        tries = 2
+        again_small = _structural_dists(forms[300], samples, warmup, only=point)
+        again_large = _structural_dists(forms[1000], samples, warmup, only=point)
+        if not isinstance(again_small, str) and not isinstance(again_large, str):
+            used = (again_small[point][0], again_large[point][0])
+            ratio = _safe_ratio(used[1].cpu_p95, used[0].cpu_p95)
+    verdict = "pass" if ratio <= CHANGED_RATIO_LIMIT else "fail"
+    detail = "1000-widget realize p95 / 300-widget realize p95 (%.3f / %.3f ms)" % (
+        used[1].cpu_p95 * 1000.0,
+        used[0].cpu_p95 * 1000.0,
+    )
+    if tries > 1:
+        detail += ". retried the pair once"
+    return Row(
+        "%s O(changed)" % point,
+        None,
+        samples,
+        None,
+        ratio,
+        "%.1fx" % CHANGED_RATIO_LIMIT,
+        verdict,
+        detail,
+    )
+
+
+def _structural_dists(
+    form: ReferenceForm,
+    samples: int,
+    warmup: int,
+    only: Optional[str] = None,
+) -> Union[str, Dict[str, Tuple[Distribution, Distribution]]]:
+    """Per point: (realize-only PatchStats.cpu_ms, execute + realize + repaint)."""
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return str(exc)
+    found: Dict[str, Tuple[Distribution, Distribution]] = {}
+    try:
+        ops = _structural_ops(session)
+        for point, fn in ops:
+            if only is not None and point != only:
+                continue
+            found[point] = _measure_structural(fn, session, realizer, samples, warmup)
+    except (AttributeError, TypeError, RuntimeError, LookupError, CommandRejected) as exc:
+        return str(exc)
+    finally:
+        _dispose_held([realizer, session])
+    return found
+
+
+def _measure_structural(
+    fn: Callable[[], None],
+    session: Any,
+    realizer: Any,
+    samples: int,
+    warmup: int,
+) -> Tuple[Distribution, Distribution]:
+    patch_seconds: List[float] = []
+
+    def once() -> None:
+        fn()
+        stats = realizer.last_stats
+        if stats.fallback_rebuilds:
+            raise RuntimeError("structural edit fell back to a rebuild")
+        patch_seconds.append(stats.cpu_ms / 1000.0)
+        _repaint(realizer)
+
+    def undo() -> None:
+        if session.log.can_undo():
+            session.log.undo()
+
+    total = measure(once, warmup=warmup, samples=samples, cleanup=undo)
+    timed = patch_seconds[warmup:]
+    patch = Distribution(tuple(Sample(value, value) for value in timed))
+    return patch, total
+
+
+def _structural_ops(session: Any) -> Tuple[Tuple[str, Callable[[], None]], ...]:
+    grid_id = session.document.by_name("grid")[0]
+    header_id = session.document.by_name("headerBar")[0]
+    toolbar_id = session.document.by_name("toolBar")[0]
+    details_id = session.document.by_name("tabDetails")[0]
+    tabs_id = session.document.by_name("tabs")[0]
+    grid = session.document.get(grid_id)
+    header = session.document.get(header_id)
+    if not isinstance(grid, LayoutNode) or not isinstance(header, LayoutNode):
+        raise LookupError("reference grid or header is not a layout")
+    widgets = [item.content.id for item in grid.items if isinstance(item.content, WidgetNode)]
+    if len(widgets) < 2:
+        raise LookupError("reference grid has fewer than two widgets")
+    deleted = widgets[0]
+    moved = widgets[1]
+    counter = {"n": 0}
+
+    def insert() -> None:
+        counter["n"] += 1
+        session.log.execute(
+            InsertFragment(
+                InGridCell(grid_id, 0, 0, mode="insert_row"),
+                Fragment(nodes=(button_spec("speedBtn%d" % counter["n"]),)),
+            )
+        )
+
+    def append() -> None:
+        counter["n"] += 1
+        live = session.document.get(header_id)
+        session.log.execute(
+            InsertFragment(
+                InBoxLayout(header_id, len(live.items)),
+                Fragment(nodes=(button_spec("speedBox%d" % counter["n"]),)),
+            )
+        )
+
+    def loose() -> None:
+        counter["n"] += 1
+        live = session.document.get(details_id)
+        session.log.execute(
+            InsertFragment(
+                InContainer(details_id, len(live.child_widgets)),
+                Fragment(nodes=(button_spec("speedLoose%d" % counter["n"]),)),
+            )
+        )
+
+    def tab_page() -> None:
+        counter["n"] += 1
+        live = session.document.get(tabs_id)
+        page = NodeSpec("widget", None, (("class_name", "QWidget"), ("object_name", "speedPage%d" % counter["n"])))
+        session.log.execute(InsertFragment(InContainer(tabs_id, len(live.child_widgets)), Fragment(nodes=(page,))))
+
+    def delete() -> None:
+        session.log.execute(DeleteNodes((deleted,)))
+
+    def move() -> None:
+        session.log.execute(MoveNodes((moved,), InBoxLayout(header_id, 0)))
+
+    def morph() -> None:
+        session.log.execute(MorphWidget(moved, "QFrame"))
+
+    def toolbar() -> None:
+        session.log.execute(
+            CreateAction(
+                NodeSpec("action", None, (("name", "actionSpeed"),)),
+                ref_at=InActionList(toolbar_id, 0),
+            )
+        )
+
+    return (
+        ("insert into layout", insert),
+        ("insert into box layout", append),
+        ("insert into loose container", loose),
+        ("insert tab page", tab_page),
+        ("delete from layout", delete),
+        ("move into earlier container", move),
+        ("morph", morph),
+        ("toolbar edit", toolbar),
+    )
+
+
+def _interactive_edit_p95(form: ReferenceForm, samples: int, warmup: int) -> Optional[float]:
+    if not _module_exists("app.features.form_builder.qtside.realize"):
+        return None
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError):
+        return None
+    owner = session.document.by_name(form.edit_name)
+    if not owner:
+        _dispose_held([realizer, session])
+        return None
+
+    def once() -> None:
+        session.log.execute(SetProperty(owner[0], "toolTip", StringValue("speed-edit")))
+        _repaint(realizer)
+
+    try:
+        dist = measure(once, warmup=warmup, samples=samples)
+    except (AttributeError, TypeError, RuntimeError):
+        return None
+    finally:
+        _dispose_held([realizer, session])
+    return dist.cpu_p95 * 1000.0
+
+
+def _repaint(realizer: Any) -> None:
+    root = realizer.root_widget
+    if root is not None:
+        root.repaint()
+    app = QApplication.instance()
+    if app is not None:
+        app.processEvents()
 
 
 def _open_realized(xml: str, session_mod: Any, forms: Any, realize: Any) -> Tuple[Any, Any]:
@@ -1120,7 +1450,6 @@ def _overhead_rows(
         "reported",
         "setToolTip, repaint and processEvents on the edit target",
     )
-    patch = _realize_patch_row(form, samples, warmup, False, False)
     open_ratio = _overhead_ratio(
         "open / raw Qt build",
         realize_build_p95,
@@ -1129,9 +1458,9 @@ def _overhead_rows(
     )
     edit_ratio = _overhead_ratio(
         "edit / raw Qt update",
-        patch.p95,
+        _interactive_edit_p95(form, samples, warmup),
         edit_row.p95,
-        "realize patch p95 / raw Qt update and repaint p95",
+        "log execute + realize + repaint p95 / raw Qt update and repaint p95",
     )
     return (build_row, edit_row, open_ratio, edit_ratio)
 

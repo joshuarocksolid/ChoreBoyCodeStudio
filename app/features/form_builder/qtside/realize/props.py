@@ -74,7 +74,7 @@ def apply_entry(
         return False
     try:
         if name == "geometry" and isinstance(value, (RectValue, RectFValue)):
-            _apply_geometry(obj, value, is_root)
+            apply_geometry(obj, value, is_root)
             return True
         if name in _MARGINS or name == "margin":
             _apply_margin(obj, name, int(_number(value)))
@@ -190,7 +190,7 @@ def splitter_sizes(value: Value) -> Tuple[int, ...]:
     return tuple(found)
 
 
-def _apply_geometry(obj: object, value: object, is_root: bool) -> None:
+def apply_geometry(obj: object, value: object, is_root: bool) -> None:
     if isinstance(value, RectValue):
         x, y, width, height = value.x, value.y, value.width, value.height
     elif isinstance(value, RectFValue):

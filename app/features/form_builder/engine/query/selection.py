@@ -141,6 +141,11 @@ class SelectionModel:
 
         return unsubscribe
 
+    def clear_listeners(self) -> None:
+        """Drop subscribers. Idempotent."""
+        self._listeners.clear()
+        self._pending = None
+
     def _commit(
         self,
         ids: Tuple[NodeId, ...],
