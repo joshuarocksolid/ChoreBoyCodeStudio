@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
+import os
+import random
+
+import pytest
+
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, MoveNodes
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS
-from app.features.form_builder.engine.query.selection import SelectionSource
+from app.features.form_builder.engine.query.selection import SelectionSource, SelectionState
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment
 from tests.form_builder.engine.commands._support import button_spec
 from tests.form_builder.qtside.support import open_session
+from tests.support.form_builder.gen import NESTED, command_for
 
 _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
@@ -101,3 +107,59 @@ def test_listeners_run_after_the_rest_of_the_log() -> None:
         raise AssertionError("insert was rejected: %s" % exc)
     assert during == [0]
     assert seen
+
+
+def test_removing_current_moves_to_the_nearest_ancestor() -> None:
+    session = open_session(_FORM)
+    button = _named(session, "moved")
+    chain = []
+    node = session.document.get(button)
+    while node is not None and node.parent_id is not None:
+        chain.append(node.parent_id)
+        node = session.document.get(node.parent_id)
+    session.selection.set((button,), source=SelectionSource.CANVAS)
+    session.log.execute(DeleteNodes((button,)))
+    expected = next(node_id for node_id in chain if session.document.contains(node_id))
+    state = session.selection.state
+    assert state.current == expected
+    assert state.current in state.ids
+    assert button not in state.ids
+
+
+@pytest.mark.timeout(60)
+def test_selection_follows_random_sequences() -> None:
+    chosen = os.environ.get("FB_SEED")
+    seeds = [int(chosen)] if chosen else range(200)
+    forms = (NESTED, _FORM)
+    for seed in seeds:
+        rng = random.Random(seed)
+        session = open_session(forms[seed % len(forms)])
+        session.selection.set((session.document.root.id,), source=SelectionSource.PROGRAM)
+        for step in range(30):
+            command = command_for(session.document, rng, step)
+            if command is None:
+                continue
+            try:
+                session.log.execute(command)
+            except CommandRejected:
+                continue
+            _assert_selection(session)
+            if not session.log.can_undo():
+                continue
+            before = session.log.entries()[-1].selection_before
+            after = session.log.entries()[-1].selection_after
+            assert session.log.undo()
+            _assert_selection(session)
+            assert session.selection.state == SelectionState(before.ids, before.current)
+            assert session.log.redo()
+            _assert_selection(session)
+            assert session.selection.state == SelectionState(after.ids, after.current)
+
+
+def _assert_selection(session) -> None:
+    state = session.selection.state
+    assert all(session.document.contains(node_id) for node_id in state.ids)
+    if not state.ids:
+        assert state.current is None
+        return
+    assert state.current in state.ids

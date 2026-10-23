@@ -123,13 +123,19 @@ class FormSession:
             self._scope = scope
 
     def dispose(self) -> None:
-        """Close subscriptions. Later calls raise ``RuntimeError``."""
+        """Close every log subscription and the selection listeners.
+
+        Later calls raise ``RuntimeError``. The realizer's subscription lives
+        on the log, so ``log.close`` drops it with the session's own listeners.
+        """
         if self._disposed:
             return
         self._disposed = True
         for subscription in self._subscriptions:
             subscription.close()
         self._subscriptions = []
+        self._log.close()
+        self._selection.clear_listeners()
 
     def _on_selection(self, changeset: ChangeSet) -> None:
         snap = self._log.selection

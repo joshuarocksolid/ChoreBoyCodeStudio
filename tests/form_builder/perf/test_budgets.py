@@ -16,6 +16,8 @@ from tests.form_builder.perf.harness import (
     GATE_SIZES,
     GATE_WARMUP,
     SECTION_12_POINTS,
+    STRUCTURAL_POINTS,
+    STRUCTURAL_RATIO_POINTS,
     Row,
     SpeedReport,
     run_speed,
@@ -50,6 +52,19 @@ def test_one_command_at_1000_stays_within_1_6x_of_300(mac_report: SpeedReport) -
     assert ratio.verdict == "pass", _explain(ratio)
     assert ratio.p95 is not None
     assert ratio.p95 <= 1.6
+
+
+@pytest.mark.perf
+@pytest.mark.timeout(60)
+def test_structural_realize_patches_meet_section_12(mac_report: SpeedReport) -> None:
+    for point in STRUCTURAL_POINTS:
+        row = _row(mac_report, point, 300)
+        assert row.verdict == "pass", _explain(row)
+        assert row.budget == "8 ms"
+        assert row.total_p95 is not None
+    for point in STRUCTURAL_RATIO_POINTS:
+        ratio = _row(mac_report, "%s O(changed)" % point, None)
+        assert ratio.verdict == "pass", _explain(ratio)
 
 
 @pytest.mark.perf

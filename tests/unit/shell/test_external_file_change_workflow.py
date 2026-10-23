@@ -216,6 +216,41 @@ def _open_tab_with_widget(
     return tab
 
 
+def test_a_virtual_tab_does_not_prompt_for_a_missing_file(tmp_path: Path) -> None:
+    path = tmp_path / "cbcs" / "new-form.cbcs-tab"
+    manager = EditorManager()
+    opened = manager.open_file_with_content(
+        str(path),
+        "",
+        original_content="",
+        last_known_mtime=None,
+    )
+    opened.tab.virtual_tab = True
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost()
+    widget = _FakeEditorWidget("")
+    sync_host.widgets[opened.tab.file_path] = widget
+    external_host.widgets[opened.tab.file_path] = widget
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(
+                intent=DocumentCloseIntent.PROCEED,
+                scope=DocumentScope.EXTERNAL_RELOAD,
+            )
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(opened.tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.SKIPPED
+    assert external_host.missing_presentations == []
+    assert workflow.resolve_before_save(opened.tab.file_path) == "abort"
+
+
 def test_check_and_handle_skips_when_mtime_unchanged(tmp_path: Path) -> None:
     file_path = tmp_path / "main.py"
     manager = EditorManager()
