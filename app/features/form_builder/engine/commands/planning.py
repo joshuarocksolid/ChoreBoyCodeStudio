@@ -8,7 +8,7 @@ from __future__ import annotations
 import keyword
 from dataclasses import fields, is_dataclass
 from functools import cmp_to_key
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.ops import (
@@ -44,7 +44,11 @@ from app.features.form_builder.engine.logic.storage import (
     is_logic_key,
     logic_version_text,
 )
-from app.features.form_builder.engine.query.tree import is_page_container
+from app.features.form_builder.engine.query.tree import (
+    form_item_role,
+    form_occupied_cells,
+    is_page_container,
+)
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, Node, WidgetNode
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
@@ -75,7 +79,7 @@ def insert_fragment(
     fragment: Fragment,
     auto_layout: bool,
 ) -> Tuple[Tuple[NodeId, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...]]:
-    dest = _destination(doc, ctx, placement, auto_layout, moving=())
+    dest = _destination(doc, ctx, placement, auto_layout, moving=(), incoming=len(fragment.nodes))
     chosen: set = set()
     counts = _name_counts(fragment.nodes)
     mapping: Dict[str, str] = {}
@@ -180,10 +184,13 @@ def move_nodes(doc: UiDocument, ctx: PlanContext, ids: Tuple[NodeId, ...], place
         _require(doc, node_id)
     ordered = _sort_ids(doc, ids)
     if isinstance(placement, InBoxLayout):
-        _require_layout(doc, placement.layout)
-        carriers = [_ensure_item(doc, ctx, node_id, placement.layout) for node_id in ordered]
-        _reject_into_self(doc, carriers, placement.layout)
-        place_nodes(doc, ctx, carriers, placement.layout, "layout_items", placement.index)
+        layout = _require_layout(doc, placement.layout)
+        if layout.class_name == _FORM:
+            _move_box_into_form(doc, ctx, ordered, placement)
+        else:
+            carriers = [_ensure_item(doc, ctx, node_id, placement.layout) for node_id in ordered]
+            _reject_into_self(doc, carriers, placement.layout)
+            place_nodes(doc, ctx, carriers, placement.layout, "layout_items", placement.index)
     elif isinstance(placement, (InGridCell, InFormRow)):
         _move_grid(doc, ctx, ordered, placement)
     elif isinstance(placement, InContainer):
@@ -224,6 +231,7 @@ def wrap_nodes(
         raise CommandRejected("Wrap only works on siblings.")
     parent_id, slot = next(iter(parents))
     parent = doc.node(parent_id)
+    anchor = _form_anchor(doc, parent, carriers)
     first = min(doc.node(carrier).slot_index for carrier in carriers)
     if container_class is None:
         if parent.kind != "layout":
@@ -233,16 +241,23 @@ def wrap_nodes(
         ctx.do(InsertNodeOp(parent_id, slot, first, item))
         place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0)  # type: ignore[arg-type]
         _apply_named_cells(doc, ctx, layout.id, cells)  # type: ignore[arg-type]
+        _finish_form_layout(doc, ctx, layout.id, bool(cells))  # type: ignore[arg-type]
+        if anchor is not None:
+            _place_form_anchor(doc, ctx, parent_id, item.id, anchor)  # type: ignore[arg-type]
         ctx.select((layout.id,))  # type: ignore[arg-type]
         return layout.id  # type: ignore[return-value]
     widget, layout = _alloc_container(doc, ctx, container_class, layout_class)
+    held: Optional[NodeSpec] = None
     if parent.kind == "layout":
-        item = _alloc_item_holding(ctx, widget)
-        ctx.do(InsertNodeOp(parent_id, slot, first, item))
+        held = _alloc_item_holding(ctx, widget)
+        ctx.do(InsertNodeOp(parent_id, slot, first, held))
     else:
         ctx.do(InsertNodeOp(parent_id, slot, first, widget))
     place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0)  # type: ignore[arg-type]
     _apply_named_cells(doc, ctx, layout.id, cells)  # type: ignore[arg-type]
+    _finish_form_layout(doc, ctx, layout.id, bool(cells))  # type: ignore[arg-type]
+    if anchor is not None and held is not None:
+        _place_form_anchor(doc, ctx, parent_id, held.id, anchor)  # type: ignore[arg-type]
     ctx.select((widget.id,))  # type: ignore[arg-type]
     return widget.id  # type: ignore[return-value]
 
@@ -267,6 +282,7 @@ def unwrap_node(doc: UiDocument, ctx: PlanContext, node_id: NodeId) -> None:
     for offset, child in enumerate(children):
         ctx.do(MoveNodeOp(child, parent.id, "layout_items", index + offset))
     ctx.do(RemoveNodeOp(item_id))
+    _reseat_form_items(doc, ctx, parent.id, children)
     ctx.select(tuple(_content_id(doc, child) for child in children))
 
 
@@ -310,6 +326,7 @@ def apply_layout_command(
         ctx.do(MoveNodeOp(child_id, item.id, "content", 0))  # type: ignore[arg-type]
         if doc.node(child_id).prop("geometry") is not None:
             ctx.do(SetPropertyOp(child_id, "property", "geometry", None, None))
+    _finish_form_layout(doc, ctx, layout.id, bool(cell_map))  # type: ignore[arg-type]
     ctx.select((layout.id,))  # type: ignore[arg-type]
     return layout.id  # type: ignore[return-value]
 
@@ -361,14 +378,11 @@ def morph_layout(doc: UiDocument, ctx: PlanContext, layout_id: NodeId, new_class
                 _set_cell(doc, ctx, item.id, index, 0, 1, 1)
             else:
                 _set_cell(doc, ctx, item.id, 0, index, 1, 1)
-    elif old in _BOX and new_class == _FORM:
-        for index, item in enumerate(items):
-            _set_cell(doc, ctx, item.id, index // 2, index % 2, 1, 1)
+    elif new_class == _FORM and (old in _BOX or old == _GRID):
+        _normalize_form_items(doc, ctx, layout_id)
     elif old in (_GRID, _FORM) and new_class in _BOX:
         _reorder_reading(doc, ctx, layout_id)
         _clear_cells(doc, ctx, layout_id)
-    elif old == _GRID and new_class == _FORM:
-        _pack_form(doc, ctx, layout_id)
     ctx.select((layout_id,))
 
 
@@ -530,7 +544,16 @@ def set_layout_cell(
         "colspan": colspan,
         "alignment": alignment,
     }
-    if isinstance(parent, LayoutNode) and parent.class_name == _GRID and _would_overlap(parent, item, proposed):
+    if isinstance(parent, LayoutNode) and parent.class_name == _FORM:
+        if (
+            (rowspan is not None and rowspan > 1)
+            or (column is not None and column > 1)
+            or (column == 1 and colspan is not None and colspan > 1)
+        ):
+            raise CommandRejected("A form row has only a label and a field cell.")
+        if _form_conflict(doc, parent.id, form_occupied_cells(row, column, colspan), (item,)):
+            raise CommandRejected("That cell overlaps another item.")
+    elif isinstance(parent, LayoutNode) and parent.class_name == _GRID and _would_overlap(parent, item, proposed):
         raise CommandRejected("That cell overlaps another item.")
     for field_name, value in proposed.items():
         set_field(doc, ctx, item, field_name, value)
@@ -937,12 +960,19 @@ def _destination(
     placement: Placement,
     auto_layout: bool,
     moving: Sequence[NodeId],
+    incoming: int = 1,
 ) -> _Dest:
     if isinstance(placement, InBoxLayout):
-        _require_layout(doc, placement.layout)
+        layout = _require_layout(doc, placement.layout)
+        if layout.class_name == _FORM and incoming > 0:
+            start = _form_row_for_index(doc, placement.layout, placement.index)
+            _shift_axis(doc, ctx, placement.layout, "row", start, moving, delta=incoming)
+            if _form_conflict(doc, placement.layout, _stacked_cells(start, 0, 1, incoming), moving):
+                raise CommandRejected("That cell is already occupied.")
+            return _Dest(placement.layout, "layout_items", placement.index, True, row=start, column=0)
         return _Dest(placement.layout, "layout_items", placement.index, True)
     if isinstance(placement, InGridCell):
-        _require_layout(doc, placement.layout)
+        _require_cell_layout(doc, placement)
         _shift_for_mode(doc, ctx, placement, moving)
         count = len(doc.node(placement.layout).children("layout_items"))
         return _Dest(
@@ -956,10 +986,13 @@ def _destination(
             colspan=placement.colspan,
         )
     if isinstance(placement, InFormRow):
-        _require_layout(doc, placement.layout)
+        _require_cell_layout(doc, placement)
         column, colspan = _form_role(placement.role)
-        if placement.insert_row:
-            _shift_axis(doc, ctx, placement.layout, "row", placement.row, moving)
+        if placement.insert_row and incoming:
+            _shift_axis(doc, ctx, placement.layout, "row", placement.row, moving, delta=incoming)
+        cells = _stacked_cells(placement.row, column, colspan, incoming)
+        if _form_conflict(doc, placement.layout, cells, moving):
+            raise CommandRejected("That cell is already occupied.")
         count = len(doc.node(placement.layout).children("layout_items"))
         return _Dest(
             placement.layout,
@@ -1002,18 +1035,21 @@ def _container_dest(doc: UiDocument, ctx: PlanContext, placement: InContainer, a
 
 def _move_grid(doc: UiDocument, ctx: PlanContext, ids: Sequence[NodeId], placement: Placement) -> None:
     if isinstance(placement, InGridCell):
+        _require_cell_layout(doc, placement)
         layout_id = placement.layout
         row, column, rowspan, colspan = placement.row, placement.column, placement.rowspan, placement.colspan
         _shift_for_mode(doc, ctx, placement, ids)
     elif isinstance(placement, InFormRow):
+        _require_cell_layout(doc, placement)
         layout_id = placement.layout
         column, colspan = _form_role(placement.role)
         row, rowspan = placement.row, 1
         if placement.insert_row:
-            _shift_axis(doc, ctx, layout_id, "row", placement.row, ids)
+            _shift_axis(doc, ctx, layout_id, "row", row, ids, delta=len(ids))
+        if _form_conflict(doc, layout_id, _stacked_cells(row, column, colspan, len(ids)), ids):
+            raise CommandRejected("That cell is already occupied.")
     else:
         return
-    _require_layout(doc, layout_id)
     carriers = [_ensure_item(doc, ctx, node_id, layout_id) for node_id in ids]
     _reject_into_self(doc, carriers, layout_id)
     if isinstance(placement, InGridCell) and placement.mode == "cell":
@@ -1069,6 +1105,7 @@ def _shift_axis(
     field: str,
     start: int,
     moving: Sequence[NodeId],
+    delta: int = 1,
 ) -> None:
     ignore = set()
     for node_id in moving:
@@ -1081,7 +1118,7 @@ def _shift_axis(
         current = item.row if field == "row" else item.column
         current = 0 if current is None else current
         if current >= start:
-            ctx.do(SetFieldOp(item.id, field, current + 1))
+            ctx.do(SetFieldOp(item.id, field, current + delta))
 
 
 def _ensure_vbox(doc: UiDocument, ctx: PlanContext, widget_id: NodeId) -> NodeId:
@@ -1145,6 +1182,7 @@ def _lift_layout(doc: UiDocument, ctx: PlanContext, layout: LayoutNode) -> None:
     for offset, child in enumerate(children):
         ctx.do(MoveNodeOp(child, grand.id, "layout_items", index + offset))
     ctx.do(RemoveNodeOp(parent.id))
+    _reseat_form_items(doc, ctx, grand.id, children)
     ctx.select(tuple(_content_id(doc, child) for child in children))
 
 
@@ -1185,24 +1223,6 @@ def _clear_cells(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
         for field_name in ("row", "column", "rowspan", "colspan"):
             if item.field(field_name) is not None:
                 ctx.do(SetFieldOp(item.id, field_name, None))
-
-
-def _pack_form(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
-    layout = doc.node(layout_id)
-    if not isinstance(layout, LayoutNode):
-        return
-    for item in layout.items:
-        colspan = item.colspan or 1
-        column = item.column or 0
-        if colspan >= 2:
-            _assign(doc, ctx, item, "column", 0)
-            _assign(doc, ctx, item, "colspan", 2)
-        elif column <= 0:
-            _assign(doc, ctx, item, "column", 0)
-            _assign(doc, ctx, item, "colspan", None)
-        else:
-            _assign(doc, ctx, item, "column", 1)
-            _assign(doc, ctx, item, "colspan", None)
 
 
 def _apply_named_cells(
@@ -1572,6 +1592,194 @@ def _form_role(role: str) -> Tuple[int, int]:
     if role == "spanning":
         return 0, 2
     return 0, 1
+
+
+def _form_rect(item: LayoutItemNode) -> Tuple[int, str]:
+    return (item.row or 0, form_item_role(item.column, item.colspan))
+
+
+def _stacked_cells(row: int, column: int, colspan: int, count: int) -> Set[Tuple[int, str]]:
+    cells: Set[Tuple[int, str]] = set()
+    for offset in range(count):
+        cells |= form_occupied_cells(row + offset, column, colspan)
+    return cells
+
+
+def _require_cell_layout(doc: UiDocument, placement: Union[InGridCell, InFormRow]) -> LayoutNode:
+    layout = _require_layout(doc, placement.layout)
+    if (layout.class_name == _FORM) != isinstance(placement, InFormRow):
+        raise CommandRejected("That layout does not have cells like that.")
+    return layout
+
+
+def _taken_form_cells(doc: UiDocument, layout_id: NodeId, ignore: Sequence[NodeId]) -> Set[Tuple[int, str]]:
+    skipped = set(ignore)
+    for node_id in list(skipped):
+        carrier = _item_carrier(doc, node_id)
+        if carrier is not None:
+            skipped.add(carrier)
+    taken: Set[Tuple[int, str]] = set()
+    for item in doc.node(layout_id).children("layout_items"):
+        if item.id in skipped or not isinstance(item, LayoutItemNode):
+            continue
+        taken |= form_occupied_cells(item.row, item.column, item.colspan)
+    return taken
+
+
+def _form_conflict(
+    doc: UiDocument,
+    layout_id: NodeId,
+    cells: Iterable[Tuple[int, str]],
+    ignore: Sequence[NodeId],
+) -> bool:
+    return not _taken_form_cells(doc, layout_id, ignore).isdisjoint(cells)
+
+
+def _form_has_overlap(doc: UiDocument, layout_id: NodeId) -> bool:
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode):
+        return False
+    covered: Set[Tuple[int, str]] = set()
+    for item in layout.items:
+        cells = form_occupied_cells(item.row, item.column, item.colspan)
+        if not covered.isdisjoint(cells):
+            return True
+        covered |= cells
+    return False
+
+
+def _form_row_for_index(doc: UiDocument, layout_id: NodeId, index: int) -> int:
+    items = [item for item in doc.node(layout_id).children("layout_items") if isinstance(item, LayoutItemNode)]
+    if not items:
+        return 0
+    if index < 0:
+        index = 0
+    if index >= len(items):
+        return max(item.row or 0 for item in items) + 1
+    return items[index].row or 0
+
+
+def _free_form_slots(
+    doc: UiDocument, layout_id: NodeId, count: int, ignore: Sequence[NodeId]
+) -> List[Tuple[int, int]]:
+    return _free_form_cells(_taken_form_cells(doc, layout_id, ignore), count)
+
+
+def _free_form_cells(taken: Set[Tuple[int, str]], count: int) -> List[Tuple[int, int]]:
+    slots: List[Tuple[int, int]] = []
+    row = 0
+    while len(slots) < count:
+        for column, role in ((0, "label"), (1, "field")):
+            if len(slots) < count and (row, role) not in taken:
+                slots.append((row, column))
+        row += 1
+    return slots
+
+
+def _normalize_form_items(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode):
+        return
+    ordered = sorted(layout.items, key=lambda item: (item.row or 0, item.column or 0, item.slot_index))
+    claimed: Set[Tuple[int, str]] = set()
+    plan: List[Tuple[NodeId, int, int, int]] = []
+    displaced: List[NodeId] = []
+    for item in ordered:
+        row, role = _form_rect(item)
+        column, colspan = _form_role(role)
+        cells = form_occupied_cells(row, column, colspan)
+        if not claimed.isdisjoint(cells):
+            displaced.append(item.id)
+            continue
+        claimed |= cells
+        plan.append((item.id, row, column, colspan))
+    for item_id, (row, column) in zip(displaced, _free_form_cells(claimed, len(displaced))):
+        plan.append((item_id, row, column, 1))
+    for item_id, row, column, colspan in plan:
+        _set_cell(doc, ctx, item_id, row, column, 1, colspan)
+
+
+def _form_anchor(
+    doc: UiDocument, parent: Node, carriers: Sequence[NodeId]
+) -> Optional[Tuple[int, str]]:
+    if not isinstance(parent, LayoutNode) or parent.class_name != _FORM or not carriers:
+        return None
+    first_id = min(carriers, key=lambda carrier: doc.node(carrier).slot_index)
+    first = doc.node(first_id)
+    if not isinstance(first, LayoutItemNode):
+        return None
+    return _form_rect(first)
+
+
+def _place_form_anchor(
+    doc: UiDocument,
+    ctx: PlanContext,
+    layout_id: NodeId,
+    item_id: NodeId,
+    anchor: Tuple[int, str],
+) -> None:
+    row, role = anchor
+    column, colspan = _form_role(role)
+    if not _form_conflict(doc, layout_id, form_occupied_cells(row, column, colspan), (item_id,)):
+        _set_cell(doc, ctx, item_id, row, column, 1, colspan)
+        return
+    row, column = _free_form_slots(doc, layout_id, 1, (item_id,))[0]
+    _set_cell(doc, ctx, item_id, row, column, 1, 1)
+
+
+def _finish_form_layout(doc: UiDocument, ctx: PlanContext, layout_id: NodeId, cells_given: bool) -> None:
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode) or layout.class_name != _FORM:
+        return
+    if cells_given:
+        if _form_has_overlap(doc, layout_id):
+            raise CommandRejected("That cell is already occupied.")
+        return
+    _normalize_form_items(doc, ctx, layout_id)
+
+
+def _reseat_form_items(
+    doc: UiDocument, ctx: PlanContext, layout_id: NodeId, item_ids: Sequence[NodeId]
+) -> None:
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode) or layout.class_name != _FORM or not item_ids:
+        return
+    wanted: Set[Tuple[int, str]] = set()
+    shared = False
+    for item_id in item_ids:
+        node = doc.node(item_id)
+        if isinstance(node, LayoutItemNode):
+            cells = form_occupied_cells(node.row, node.column, node.colspan)
+            shared = shared or not wanted.isdisjoint(cells)
+            wanted |= cells
+    if not shared and not _form_conflict(doc, layout_id, wanted, item_ids):
+        return
+    slots = _free_form_slots(doc, layout_id, len(item_ids), item_ids)
+    for item_id, (row, column) in zip(item_ids, slots):
+        _set_cell(doc, ctx, item_id, row, column, 1, 1)
+
+
+def _move_box_into_form(
+    doc: UiDocument, ctx: PlanContext, ids: Sequence[NodeId], placement: InBoxLayout
+) -> None:
+    fresh = []
+    for node_id in ids:
+        carrier = _item_carrier(doc, node_id)
+        parent = doc.parent(carrier) if carrier is not None else None
+        if parent is None or parent.id != placement.layout:
+            fresh.append(node_id)
+    start = _form_row_for_index(doc, placement.layout, placement.index) if fresh else 0
+    carriers = [_ensure_item(doc, ctx, node_id, placement.layout) for node_id in ids]
+    _reject_into_self(doc, carriers, placement.layout)
+    fresh_set = set(fresh)
+    newcomers = [carrier for node_id, carrier in zip(ids, carriers) if node_id in fresh_set]
+    if newcomers:
+        _shift_axis(doc, ctx, placement.layout, "row", start, newcomers, delta=len(newcomers))
+        if _form_conflict(doc, placement.layout, _stacked_cells(start, 0, 1, len(newcomers)), newcomers):
+            raise CommandRejected("That cell is already occupied.")
+    place_nodes(doc, ctx, carriers, placement.layout, "layout_items", placement.index)
+    for offset, carrier in enumerate(newcomers):
+        _set_cell(doc, ctx, carrier, start + offset, 0, 1, 1)
 
 
 def _reject_overlap(

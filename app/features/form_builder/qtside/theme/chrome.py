@@ -1,11 +1,37 @@
-"""Colours the Start screen and dialogs paint with.
+"""Builder chrome colours: dialog/Start roles (FormChrome) and canvas chrome
+(UX-TOK-001, UX-TOK-002, UX-ISO-003).
 
-Callers fill this from shell theme tokens. This module does not import the shell.
+Hex values for the builder live here. Callers fill roles from shell theme
+tokens and pass theme flags. This module does not import the shell.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional, Tuple
+
+PAGE_TITLE_HEIGHT = 22
+PAGE_TITLE_FILL = "#E4E4E4"
+PAGE_TITLE_GLYPH = "#6B6B6B"
+PAGE_TITLE_TEXT = "#3C3C3C"
+
+
+def backdrop_colors(*, is_dark: bool, is_high_contrast: bool) -> Tuple[str, str]:
+    """Backdrop fill and 1 px dot colour. High contrast has no dots."""
+    if is_high_contrast:
+        return ("#000000", "") if is_dark else ("#FFFFFF", "")
+    if is_dark:
+        return ("#16191D", "#262B31")
+    return ("#E9EBEF", "#D3D8DF")
+
+
+def page_shadow_rgba(*, is_dark: bool, is_high_contrast: bool) -> Optional[Tuple[int, int, int, int]]:
+    """Drop shadow for the page card. High contrast uses a border instead."""
+    if is_high_contrast:
+        return None
+    if is_dark:
+        return (0, 0, 0, 115)
+    return (16, 24, 40, 26)
 
 
 @dataclass(frozen=True)

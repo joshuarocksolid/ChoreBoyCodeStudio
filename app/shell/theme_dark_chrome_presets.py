@@ -6,7 +6,7 @@ from app.core import constants
 
 # Shared dark chrome tokens (#37 contrast floors). WCAG notes keyed by panel_bg:
 #   standard #262C33: text_muted 8.43:1, gutter_text 4.58:1 on panel
-#   neutral  #303030: text_muted ~8.2:1, gutter_text ~4.5:1 on panel
+#   neutral  #303030: text_muted ~8.2:1; shared gutter_text is 4.29:1, theme_tokens uses #979797 (4.52:1)
 DARK_CHROME_SHARED: dict[str, str | bool] = {
     "text_primary": "#E9ECEF",
     "text_muted": "#C2C9D1",

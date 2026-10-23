@@ -110,14 +110,21 @@ class EditorTabOutlineWorkflow:
     def handle_symbol_activated(self, file_path: str, line_number: int) -> None:
         self.open_file_at_line(file_path, line_number)
 
-    def open_file_at_line(self, file_path: str, line_number: int | None, *, preview: bool = False) -> None:
+    def open_file_at_line(
+        self,
+        file_path: str,
+        line_number: int | None,
+        *,
+        preview: bool = False,
+        detail: object = None,
+    ) -> None:
         if not self._editor_tab_factory.open_file_in_editor(file_path, preview=preview):
             return
-        if line_number is None:
+        if line_number is None and not detail:
             return
         surface = self._surface_for_path(file_path)
         if surface is not None:
-            surface.reveal(line_number, None)
+            surface.reveal(line_number or 1, detail if isinstance(detail, dict) else None)
             return
         editor_widget = self._editor_widget_for_path(file_path)
         if editor_widget is None:

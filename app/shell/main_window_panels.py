@@ -313,6 +313,7 @@ def build_bottom_panel(window: Any) -> QWidget:
             file_path,
             line_number,
             preview=False,
+            detail=window._problems_panel.last_activation_detail(),
         )
     )
     window._problems_panel.context_menu_requested.connect(

@@ -80,6 +80,9 @@ class InspectorPane(QWidget):
         self._selection_unsub: Optional[Callable[[], None]] = None
         self._diag_unsub: Optional[Callable[[], None]] = None
         self._filtered_app: Optional[QApplication] = None
+        self._problem_count = 0
+        self._on_show_problems: Optional[Callable[[], None]] = None
+        self._link_color = ""
         self.header = Header(self._services, self)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("formBuilder.inspectorTabs")
@@ -118,6 +121,17 @@ class InspectorPane(QWidget):
     def set_short(self, short: bool) -> None:
         self._short = short
         self._paint_header()
+
+    def set_problem_summary(self, count: int, on_show: Callable[[], None]) -> None:
+        """Problems for this form, from the shell's rows (UX-PROB-003)."""
+        self._problem_count = count
+        self._on_show_problems = on_show
+        self.properties.set_problem_link(count, on_show, self._link_color)
+
+    def set_link_color(self, color: str) -> None:
+        """The palette link colour fails contrast on dark panels; a token is passed in."""
+        self._link_color = color
+        self.properties.set_problem_link(self._problem_count, self._on_show_problems, color)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self.setStyleSheet(_stylesheet(chrome))

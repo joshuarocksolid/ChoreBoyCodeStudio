@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 from app.shell.edit_menu_builder import build_edit_menu
+from app.shell.menu_build_context import MenuBuildContext
 from app.shell.file_menu_builder import build_file_menu
 from app.shell.help_menu_builder import build_help_menu
-from app.shell.menu_build_context import MenuBuildContext
 from app.shell.run_menu_builder import build_run_menu
 from app.shell.tools_menu_builder import build_tools_menu
 from app.shell.view_menu_builder import build_view_menu
@@ -141,6 +141,34 @@ class RecentProjectMenuItem:
     display_text: str
 
 
+_MENU_CONTRIBUTORS: list[tuple[str, str, Callable[[MenuBuildContext], None]]] = []
+
+
+def register_menu_contributor(
+    contributor_id: str,
+    after_menu_id: str,
+    builder: Callable[[MenuBuildContext], None],
+) -> None:
+    """Insert ``builder``'s menu just after ``after_menu_id`` has been built.
+
+    The same ``contributor_id`` replaces its previous builder.
+    """
+    kept = [item for item in _MENU_CONTRIBUTORS if item[0] != contributor_id]
+    kept.append((contributor_id, after_menu_id, builder))
+    _MENU_CONTRIBUTORS[:] = kept
+
+
+def _run_menu_contributors(ctx: MenuBuildContext, after_menu_id: str) -> None:
+    for _contributor_id, anchor, builder in _MENU_CONTRIBUTORS:
+        if anchor == after_menu_id:
+            builder(ctx)
+
+
+def clear_menu_contributors() -> None:
+    """Drop feature menus. Tests use this so a registration does not leak."""
+    _MENU_CONTRIBUTORS.clear()
+
+
 def build_recent_project_menu_items(project_paths: list[str]) -> list[RecentProjectMenuItem]:
     """Normalize recent-project paths into deterministic menu items."""
     deduped: list[str] = []
@@ -186,6 +214,7 @@ def build_menu_stubs(
     build_edit_menu(ctx)
     build_run_menu(ctx)
     build_view_menu(ctx)
+    _run_menu_contributors(ctx, "shell.menu.view")
     build_tools_menu(ctx)
     build_help_menu(ctx)
     _finalize_menu_chrome(ctx)

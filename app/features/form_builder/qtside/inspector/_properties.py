@@ -98,6 +98,11 @@ class PropertiesPage(QWidget):
     def search(self) -> str:
         return self._search.text()
 
+    def set_problem_link(
+        self, count: int, on_show: Optional[Callable[[], None]], color: str
+    ) -> None:
+        self._form.set_problem_link(count, on_show, color)
+
     def set_match_color(self, color: str) -> None:
         self._match_color = color
 
@@ -198,6 +203,16 @@ class _FormSection(QWidget):
         self._order = QLabel(self)
         self._order.setWordWrap(True)
         self._problems = QLabel(self)
+        self._problems.setObjectName("formBuilder.inspectorProblems")
+        flags = getattr(Qt, "TextInteractionFlag", Qt)
+        self._problems.setTextInteractionFlags(
+            flags.LinksAccessibleByMouse | flags.LinksAccessibleByKeyboard
+        )
+        self._problems.linkActivated.connect(self._follow_problem_link)
+        self._problem_count: Optional[int] = None
+        self._on_show_problems: Optional[Callable[[], None]] = None
+        self._link_color = ""
+        self._last_problems = ""
         self._files = QLabel(self)
         self._files.setWordWrap(True)
         layout = QVBoxLayout(self)
@@ -225,8 +240,38 @@ class _FormSection(QWidget):
         self._size.setText(body.design_size)
         self._layout_name.setText(body.root_layout)
         self._order.setText("\n".join(body.tab_order))
-        self._problems.setText(body.problems)
+        self._last_problems = body.problems
+        self._paint_problems()
         self._files.setText(body.files)
+
+    def set_problem_link(
+        self, count: int, on_show: Optional[Callable[[], None]], color: str
+    ) -> None:
+        """UX-PROB-003: the form view's problem line links to the Problems panel."""
+        self._problem_count = count
+        self._on_show_problems = on_show
+        self._link_color = color
+        self._paint_problems()
+
+    def _paint_problems(self) -> None:
+        count = self._problem_count
+        if not count or self._on_show_problems is None:
+            self._problems.setTextFormat(getattr(Qt, "PlainText"))
+            self._problems.setText(self._last_problems)
+            return
+        noun = "problem" if count == 1 else "problems"
+        style = ""
+        if self._link_color:
+            style = ' style="color:%s; text-decoration: underline;"' % self._link_color
+        self._problems.setTextFormat(getattr(Qt, "RichText"))
+        self._problems.setText(
+            '%d %s. <a href="problems"%s>Show in Problems</a>' % (count, noun, style)
+        )
+
+    def _follow_problem_link(self, href: str) -> None:
+        callback = self._on_show_problems
+        if href == "problems" and callback is not None:
+            callback()
 
     def row_holding(self, focus: QWidget) -> Optional["_Row"]:
         row = self._window
