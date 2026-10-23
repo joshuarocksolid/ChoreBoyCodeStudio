@@ -20,8 +20,14 @@ def _live() -> dict:
     """
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "offscreen"
+    # AppRun rejects a script path plus ``--json``. ``-c`` reaches Python.
+    payload = (
+        "import runpy, sys\n"
+        "sys.argv = [%r, '--json']\n"
+        "runpy.run_path(%r, run_name='__main__')\n" % (str(_TOOL), str(_TOOL))
+    )
     proc = subprocess.run(
-        [sys.executable, str(_TOOL), "--json"],
+        [sys.executable, "-c", payload],
         capture_output=True,
         text=True,
         env=env,

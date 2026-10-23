@@ -3,16 +3,19 @@
 
 from __future__ import annotations
 
+import json
+import os
+import tempfile
+
 import pytest
 
+from app.core import constants
 from app.qt.QtGui import QColor, QPalette  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QApplication, QLabel, QMainWindow
-from app.features.form_builder.qtside.theme.runtime import (
-    host_form,
-    runtime_palette,
-    selectors_are_tooltip_only,
-)
-from tests.form_builder.qtside.support import form, opened
+from app.features.form_builder.qtside.theme.runtime import host_form, selectors_are_tooltip_only
+from app.shell.style_sheet import build_shell_style_sheet
+from app.shell.theme_tokens import tokens_from_palette
+from tests.form_builder.qtside.support import form, opened, run_module
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -36,7 +39,7 @@ def _color(widget: object, name: str) -> str:
 
 
 def test_theme_switch_does_not_reach_the_realized_form(qapp: QApplication) -> None:
-    reference = runtime_palette()
+    reference = _bare_reference()
     saved_palette = QPalette(qapp.palette())
     saved_sheet = qapp.styleSheet()
     try:
@@ -48,33 +51,53 @@ def test_theme_switch_does_not_reach_the_realized_form(qapp: QApplication) -> No
             assert isinstance(label, QLabel)
             assert root.styleSheet() == "QLabel#caption { color: #123456; }"
             view = host_form(root)
-            assert view.scene() is not None
+            scene = view.scene()
+            assert scene is not None
+            window = QMainWindow()
+            window.setCentralWidget(view)
+            window.show()
+            qapp.processEvents()
             window_role = _role("Window")
-            fusion_window = reference.color(window_role).name()
-            assert _color(root, "Window") == fusion_window
-            chrome = QMainWindow()
-            chrome.setStyleSheet("QWidget { color: #ff00ff; background-color: #00ff00; }")
-            for window, text in (("#000000", "#ffffff"), ("#ffffff", "#000000")):
+            text_role = _role("WindowText")
+            modes = (
+                constants.UI_THEME_MODE_DARK,
+                constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
+                constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+            )
+            for mode in modes:
+                tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
                 themed = QPalette(saved_palette)
-                themed.setColor(window_role, QColor(window))
-                themed.setColor(_role("WindowText"), QColor(text))
+                themed.setColor(window_role, QColor(tokens.window_bg))
+                themed.setColor(text_role, QColor(tokens.text_primary))
                 qapp.setPalette(themed)
-                assert _color(root, "Window") == fusion_window
-                assert _color(label, "WindowText") != "#ff00ff"
+                window.setStyleSheet(build_shell_style_sheet(tokens))
+                qapp.processEvents()
+                assert scene.palette().color(window_role).name() == reference["scene_window"]
+                assert scene.palette().color(text_role).name() == reference["scene_text"]
+                assert _color(label, "Window") == reference["label_window"]
+                assert _color(label, "WindowText") == reference["label_text"]
+                assert _color(root, "Window") == reference["root_window"]
                 assert root.styleSheet() == "QLabel#caption { color: #123456; }"
-            with opened(_FORM) as (other_session, other):
-                other_root = other.root_widget
-                assert other_root is not None
-                other_label = other.widget_for(other_session.document.by_name("caption")[0])
-                assert isinstance(other_label, QLabel)
-                assert _color(other_root, "Window") == fusion_window
-                assert other_root.styleSheet() == root.styleSheet()
-                assert _color(other_label, "WindowText") != "#ff00ff"
-            del chrome
+                if mode == constants.UI_THEME_MODE_HIGH_CONTRAST_DARK:
+                    assert tokens.text_primary.lower() != reference["label_text"].lower()
+            del window
             del view
     finally:
         qapp.setPalette(saved_palette)
         qapp.setStyleSheet(saved_sheet)
+
+
+def _bare_reference() -> dict:
+    """Colors from a form realized in a bare QApplication, in a subprocess."""
+    with tempfile.NamedTemporaryFile("w", suffix=".ui", delete=False, encoding="utf-8") as handle:
+        handle.write(_FORM)
+        path = handle.name
+    try:
+        proc = run_module("tests.form_builder.qtside.tools.bare_palette", [path])
+    finally:
+        os.unlink(path)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    return json.loads(proc.stdout)
 
 
 def test_application_stylesheet_rules_are_tooltip_only(qapp: QApplication) -> None:
