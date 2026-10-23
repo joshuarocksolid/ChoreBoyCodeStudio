@@ -150,10 +150,7 @@ class BreakLayout(_CommandBase):
 
 @dataclass(frozen=True)
 class MorphLayout(_CommandBase):
-    """Change a layout class using the Designer morph rules.
-
-    Morphing to a form layout pairs items in reading order.
-    """
+    """Change a layout class using the Designer morph rules."""
 
     command_type: ClassVar[str] = "morph_layout"
     _label_text: ClassVar[str] = "Change layout"

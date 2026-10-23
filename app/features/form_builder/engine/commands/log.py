@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, ContextManager, Dict, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, ContextManager, Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
 
 from app.features.form_builder.engine.commands.base import (
     Command,
@@ -39,6 +39,7 @@ from app.features.form_builder.engine.events import (
     change_from_op,
 )
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.query.tree import form_collision_groups
 from app.features.form_builder.engine.ui4 import mutate
 from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
@@ -124,6 +125,7 @@ class CommandLog:
         self._in_listener = False
         self._txn: Optional[_OpenTxn] = None
         self._txn_depth = 0
+        self._cells_before: FrozenSet[FrozenSet[NodeId]] = frozenset()
         self.selection = selection_provider()
 
     @property
@@ -141,7 +143,9 @@ class CommandLog:
         ctx = self._new_context()
         before = self._provider()
         ctx.selection_before = before
+        self._snapshot_cells()
         result = self._apply(command, ctx)
+        self._adopt_replaced_cells(ctx, 0)
         ctx.commands.append(command)
         if not ctx.ops:
             return CommandOutcome(result, self._doc.revision, noop=True)
@@ -159,6 +163,7 @@ class CommandLog:
         if outermost:
             ctx = self._new_context()
             ctx.selection_before = self._provider()
+            self._snapshot_cells()
             self._txn = _OpenTxn(label, ctx)
         self._txn_depth += 1
         try:
@@ -263,7 +268,9 @@ class CommandLog:
         txn = self._txn
         if txn is None:
             raise CommandRejected("There is no open transaction.")
+        start = len(txn.ctx.ops)
         result = self._apply(command, txn.ctx)
+        self._adopt_replaced_cells(txn.ctx, start)
         txn.ctx.commands.append(command)
         return result
 
@@ -398,12 +405,28 @@ class CommandLog:
         if txn is not None:
             self._rollback(txn.ctx)
 
+    def _snapshot_cells(self) -> None:
+        if _validating():
+            self._cells_before = form_collision_groups(self._doc)
+
+    def _adopt_replaced_cells(self, ctx: ApplyContext, start: int) -> None:
+        if not _validating():
+            return
+        for op in ctx.ops[start:]:
+            if isinstance(op, ReplaceRootOp):
+                self._cells_before = form_collision_groups(self._doc)
+                return
+
     def _reject_invalid(self, ctx: ApplyContext) -> None:
         """``validate`` runs once per committed entry, before the entry is stored."""
-        if os.environ.get("CBCS_FB_VALIDATE") != "1":
+        if not _validating():
             return
         try:
             self._doc.validate()
+            after = form_collision_groups(self._doc)
+            added = any(not any(group <= old for old in self._cells_before) for group in after)
+            if added:
+                raise InvariantError("a command put two items in one form cell")
         except InvariantError as exc:
             self._rollback(ctx)
             logger.exception("form builder entry failed validation")
@@ -496,6 +519,10 @@ def replay(initial_text: str, entries: Tuple[Entry, ...]) -> UiDocument:
         if tuple(ctx.ops) != tuple(entry.ops):
             raise AssertionError("replay produced a different op sequence")
     return doc
+
+
+def _validating() -> bool:
+    return os.environ.get("CBCS_FB_VALIDATE") == "1"
 
 
 def _apply_ops(doc: UiDocument, ops: Any) -> Tuple[Change, ...]:

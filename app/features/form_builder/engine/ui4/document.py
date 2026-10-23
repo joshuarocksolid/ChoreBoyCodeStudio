@@ -307,9 +307,6 @@ class UiDocument:
         """Check every integrity invariant (CONTRACTS.md section 2.7); raise
         InvariantError naming the first violation. O(form). Called after every
         log entry when ``CBCS_FB_VALIDATE=1`` (always on in tests).
-
-        A form layout has at most one item on each (row, column). A span covers
-        every cell of its rectangle.
         """
         if self._revision < self._peak:
             raise InvariantError("revision went backwards")
@@ -336,7 +333,6 @@ class UiDocument:
             raise InvariantError("the shared-name set does not match the name index")
         if expected_custom != self._custom:
             raise InvariantError("the custom-widget index does not match the tree")
-        self._check_form_cells()
 
     def to_spec(self) -> NodeSpec:
         """Frozen snapshot of the whole document (the ``ui`` spec)."""
@@ -487,24 +483,6 @@ class UiDocument:
     def _check_validate(self) -> None:
         if os.environ.get("CBCS_FB_VALIDATE") == "1":
             self.validate()
-
-    def _check_form_cells(self) -> None:
-        for node in self.iter_preorder():
-            if not isinstance(node, LayoutNode) or node.class_name != "QFormLayout":
-                continue
-            covered = set()
-            for item in node.items:
-                row = item.row or 0
-                column = item.column or 0
-                rowspan = item.rowspan or 1
-                colspan = item.colspan or 1
-                for r in range(row, row + rowspan):
-                    for c in range(column, column + colspan):
-                        if (r, c) in covered:
-                            raise InvariantError(
-                                "form layout %s has two items in row %s column %s" % (int(node.id), r, c)
-                            )
-                        covered.add((r, c))
 
     def _walk_invariants(
         self,

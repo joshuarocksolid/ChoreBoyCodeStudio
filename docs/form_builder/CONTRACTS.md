@@ -201,6 +201,8 @@ Only the command log changes a document (§3). Node accessors return immutable d
 
 Semantic problems are **diagnostics**, never invariant failures. That covers duplicate names, dangling buddies, overlapping grid cells and missing connection endpoints. Files on disk contain them, and so may documents that are in the middle of an edit. `CBCS_FB_VALIDATE=1` runs `validate()` after every entry. It's always on in tests.
 
+A QFormLayout cell is (row, role): colspan 2 is the spanning role and covers both cells; column 0 is the label role, any other column the field role; rowspan is ignored. Files may contain two items in one cell (FB023, a diagnostic). Commands never create one; the log checks this after every entry when `CBCS_FB_VALIDATE=1`.
+
 ### 2.8 Read-only query helpers
 
 These are in `document.py` and `query/tree.py`: traversal, name lookups and `unique_name` (Designer's `_2`, `_3` suffix rule), grid occupancy, the next free cell, form rows, visual children, reading order, the effective tab order and tab-order splicing (the spike's rule, kept), the real child stacking order (pain 24), native references to a name, page children, container tests and form kind. Each one states its complexity. All are pure.
@@ -268,7 +270,7 @@ Owner WP in brackets. The stub `commands/catalog.py` has the fields and full sem
 | `SetProperty` [M1.2] | owner, name, value or None, kind, stdset, merge_token | None means Reset (removes the entry). A semantically equal value is a no-op. Rank insertion | — | `("set_property", owner, kind, name)` |
 | `SetPropertyMany` [M1.2] | owners, … | R3 147. Owners without the property are skipped and reported | — | `("set_many", owners, kind, name)` |
 | `Rename` [M1.2] | id, new_name | Rejects invalid names, keywords, names starting with `cbcs`, reserved formula names and names already used (FB011, FB106, FB010). Updates every native reference, and `<class>` when the old root name matched it. Participants add logic ops. User code isn't touched | — | — |
-| `SetLayoutCell` [M1.2] | item, row, column, spans, alignment | Rejects grid overlaps | — | — |
+| `SetLayoutCell` [M1.2] | item, row, column, spans, alignment | Rejects grid overlaps and form cells that are taken. | — | — |
 | `SetLayoutStretch` [M1.2] | layout, field, value | Comma-list text | — | `("layout_stretch", layout, field)` |
 | `SetGeometry` [M1.2] | id, rect | Free widgets and resizing the root page edge | — | `("geometry", id)` |
 | `MovePage` [M4.2] | container, from, to | Keeps the current page current | page | — |
@@ -471,6 +473,7 @@ The ranges are in `diagnostics.py`. Codes 101–402 come from LOGIC_DESIGN §2.9
 | FB020 | Warning | Grid items overlap |
 | FB021 | Warning | A widget sits outside the layout of a laid-out container (the broken-layout marker, R3 34) |
 | FB022 | Info | An empty layout |
+| FB023 | Warning | Two items share a form cell |
 | FB030 | Warning | A promoted class is used but not declared (Info when declared but unused) |
 | FB106 | Error | A widget uses a name reserved for formulas (`form`, `record`, `window`, `cbcs…`, function names). LOGIC 4.5 said FB101; FB101 stays "unknown name in a formula" |
 | FB501 | Warning | `ui_<name>.py` had been edited by hand; a copy was saved before regenerating |
