@@ -127,7 +127,18 @@ class EditorTabBufferWorkflow:
             return
         tab_state = self._editor_manager.get_tab(file_path)
         editor_widget = self._host.editor_widgets_by_path().get(file_path)
+        sentence = self._editor_status_sentence(file_path)
         if tab_state is None or editor_widget is None:
+            if sentence:
+                status_controller.set_editor_status(
+                    file_name=None if tab_state is None else tab_state.display_name,
+                    line=None,
+                    column=None,
+                    is_dirty=False if tab_state is None else tab_state.is_dirty,
+                    disk_state=None if tab_state is None else editor_disk_state(tab_state),
+                    sentence=sentence,
+                )
+                return
             status_controller.set_editor_status(file_name=None, line=None, column=None, is_dirty=False)
             return
         status_controller.set_editor_status(
@@ -136,7 +147,7 @@ class EditorTabBufferWorkflow:
             column=editor_widget.textCursor().positionInBlock() + 1,
             is_dirty=tab_state.is_dirty,
             disk_state=editor_disk_state(tab_state),
-            sentence=self._editor_status_sentence(file_path),
+            sentence=sentence,
         )
 
     def handle_editor_tab_changed(self, tab_index: int) -> None:

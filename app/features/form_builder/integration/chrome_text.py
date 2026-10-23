@@ -7,7 +7,7 @@ from typing import Optional
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import RectValue
+from app.features.form_builder.engine.ui4.values import RectValue, StringValue
 
 _LAYOUT_PHRASE = {
     "QFormLayout": "Form layout",
@@ -36,6 +36,15 @@ def page_chip_text(document: UiDocument, fallback_name: str) -> tuple[str, str]:
     else:
         phrase = "No layout"
     return name, phrase
+
+
+def page_title_text(document: UiDocument) -> str:
+    """Window title, or the object name when the form has none."""
+    entry = document.root.prop("windowTitle")
+    value = None if entry is None else entry.value
+    if isinstance(value, StringValue) and value.text:
+        return value.text
+    return document.root.object_name or "Form"
 
 
 def page_chip_label(document: UiDocument, fallback_name: str) -> str:
@@ -77,7 +86,7 @@ def selection_sentence(document: UiDocument, current: Optional[NodeId], count: i
     """Status-bar sentence. Object names only. Never a session id."""
     if count > 1:
         return "%d widgets selected" % count
-    if current is None:
+    if current is None or current == document.root.id:
         name, phrase = page_chip_text(document, "Form")
         return "%s · %s" % (name, phrase)
     node = document.get(current)
@@ -147,6 +156,7 @@ __all__ = [
     "page_chip_label",
     "page_chip_text",
     "page_size_text",
+    "page_title_text",
     "recovered_draft_sentence",
     "selection_sentence",
     "undo_menu_text",
