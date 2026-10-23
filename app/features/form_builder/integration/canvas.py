@@ -9,8 +9,8 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.qt.QtCore import QEvent, QRectF, Qt
-from app.qt.QtGui import QColor, QPainter
+from app.qt.QtCore import QEvent, QPoint, QRectF, Qt
+from app.qt.QtGui import QColor, QFont, QPainter, QPen
 from app.qt.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -25,17 +25,18 @@ from app.qt.qt_compat import wrapper_is_valid
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.integration.chrome_text import page_chip_label, page_size_text
+from app.features.form_builder.integration.chrome_text import page_chip_label, page_size_text, page_title_text
 from app.features.form_builder.integration.layout import GUTTER
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
     PAGE_TITLE_FILL,
     PAGE_TITLE_GLYPH,
     PAGE_TITLE_HEIGHT,
+    PAGE_TITLE_TEXT,
     backdrop_colors,
     page_shadow_rgba,
 )
-from app.features.form_builder.qtside.theme.runtime import isolate_scene
+from app.features.form_builder.qtside.theme.runtime import isolate_scene, startup_font
 from app.shell.theme_tokens import ShellThemeTokens
 
 _DETACH_BEFORE_REALIZE = 9
@@ -65,8 +66,7 @@ class FormCanvas(QGraphicsView):
         self._session = session
         self._realizer = realizer
         self._tokens: Optional[ShellThemeTokens] = None
-        self._canvas_bg = "#E9EBEF"
-        self._dot = "#D3D8DF"
+        self._canvas_bg, self._dot = backdrop_colors(is_dark=False, is_high_contrast=False)
         self._banner_push = PAGE_TITLE_HEIGHT
         self._closer: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.canvas")
@@ -133,6 +133,23 @@ class FormCanvas(QGraphicsView):
         )
         self.viewport().update()
         self._position_chrome()
+
+    def ensure_widget_visible(self, object_name: str) -> None:
+        """Scroll so the named widget on the page is inside the viewport."""
+        root = self.page_widget()
+        if root is None or not object_name:
+            return
+        target = root if root.objectName() == object_name else root.findChild(QWidget, object_name)
+        if target is None or not wrapper_is_valid(target):
+            return
+        origin = target.mapTo(root, QPoint(0, 0))
+        rect = QRectF(
+            float(origin.x()),
+            float(origin.y()),
+            float(max(target.width(), 1)),
+            float(max(target.height(), 1)),
+        )
+        self.ensureVisible(self._proxy.mapRectToScene(rect), 0, 0)
 
     def refresh_chip(self) -> None:
         self._refresh_chip()
@@ -203,10 +220,7 @@ class FormCanvas(QGraphicsView):
         self._toast.setObjectName("formBuilder.toast")
         self._toast.setAccessibleName("Notice")
         self._toast.hide()
-        self._title = QLabel(self)
-        self._title.setObjectName("formBuilder.pageTitle")
-        self._title.setAccessibleName("Page title")
-        self._title.setFixedHeight(PAGE_TITLE_HEIGHT)
+        self._title = _PageTitle(self)
         self._frame = QWidget(self)
         self._frame.setObjectName("formBuilder.pageFrame")
         self._frame.setFocusPolicy(_no_focus())
@@ -233,7 +247,7 @@ class FormCanvas(QGraphicsView):
         label = page_chip_label(document, "Form")
         self._name.setText(label)
         self._name.setAccessibleName(label)
-        self._title.setText(document.root.object_name or "Form")
+        self._title.setText(page_title_text(document))
         self._size.setText(self._size_text(document))
         self._position_chrome()
 
@@ -321,18 +335,86 @@ class FormCanvas(QGraphicsView):
             self._toast.move(toast_x, self.height() - self._toast.height() - 16)
 
 
-def _apply_page_chrome_style(title: QLabel, frame: QWidget, tokens: Optional[ShellThemeTokens]) -> None:
-    border = "none"
+def _apply_page_chrome_style(title: QWidget, frame: QWidget, tokens: Optional[ShellThemeTokens]) -> None:
+    border = ""
     if tokens is not None and tokens.is_high_contrast:
-        border = "1px solid %s" % tokens.text_primary
-    title.setStyleSheet(
-        "QLabel#formBuilder\\.pageTitle { background: %s; color: %s; border: none;"
-        " border-bottom: %s; font-size: 11px; font-weight: 600; padding: 2px 8px; }"
-        % (PAGE_TITLE_FILL, PAGE_TITLE_GLYPH, border)
-    )
+        border = tokens.text_primary
+    setter = getattr(title, "set_border", None)
+    if callable(setter):
+        setter(border)
+    frame_border = "1px solid %s" % border if border else "none"
     frame.setStyleSheet(
-        "QWidget#formBuilder\\.pageFrame { background: transparent; border: %s; }" % border
+        "QWidget#formBuilder\\.pageFrame { background: transparent; border: %s; }" % frame_border
     )
+
+
+def _title_font() -> QFont:
+    font = QFont(startup_font())
+    font.setPixelSize(11)
+    weight = getattr(getattr(QFont, "Weight", QFont), "DemiBold")
+    font.setWeight(weight)
+    return font
+
+
+class _PageTitle(QWidget):
+    """22 px caption. Fill, glyphs, and title text stay the same in every theme."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("formBuilder.pageTitle")
+        self.setAccessibleName("Page title")
+        self.setFixedHeight(PAGE_TITLE_HEIGHT)
+        self.setFont(_title_font())
+        self._text = ""
+        self._border = ""
+
+    def text(self) -> str:
+        return self._text
+
+    def setText(self, text: str) -> None:  # noqa: N802 - Qt-style setter the canvas already calls
+        self._text = text
+        self.update()
+
+    def set_border(self, color: str) -> None:
+        self._border = color
+        self.update()
+
+    def paintEvent(self, _event: object) -> None:  # noqa: N802 - Qt override
+        painter = QPainter(self)
+        painter.fillRect(self.rect(), QColor(PAGE_TITLE_FILL))
+        if self._border:
+            pen = QPen(QColor(self._border))
+            painter.setPen(pen)
+            painter.drawLine(0, self.height() - 1, self.width(), self.height() - 1)
+        painter.setFont(self.font())
+        painter.setPen(QColor(PAGE_TITLE_TEXT))
+        metrics = painter.fontMetrics()
+        available = max(0, self.width() - 8 - 56)
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        shown = metrics.elidedText(self._text, elide, available)
+        baseline = (self.height() + metrics.ascent() - metrics.descent()) // 2
+        painter.drawText(8, baseline, shown)
+        _paint_caption_glyphs(painter, self.width())
+        painter.end()
+
+
+def _paint_caption_glyphs(painter: QPainter, width: int) -> None:
+    pen = QPen(QColor(PAGE_TITLE_GLYPH))
+    pen.setWidth(1)
+    painter.setPen(pen)
+    no_brush = getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush")
+    painter.setBrush(no_brush)
+    size = 10
+    top = 6
+    right = width - 8
+    close_x = right - size
+    painter.drawLine(close_x, top, close_x + size, top + size)
+    painter.drawLine(close_x, top + size, close_x + size, top)
+    square_x = close_x - size - 6
+    painter.drawRect(square_x, top, size, size)
+    dash_x = square_x - size - 6
+    mid = top + size // 2
+    painter.drawLine(dash_x, mid, dash_x + size, mid)
 
 
 __all__ = ["FormCanvas"]

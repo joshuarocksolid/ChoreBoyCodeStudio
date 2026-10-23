@@ -13,6 +13,7 @@ from typing import Optional, Tuple
 PAGE_TITLE_HEIGHT = 22
 PAGE_TITLE_FILL = "#E4E4E4"
 PAGE_TITLE_GLYPH = "#6B6B6B"
+PAGE_TITLE_TEXT = "#3C3C3C"
 
 
 def backdrop_colors(*, is_dark: bool, is_high_contrast: bool) -> Tuple[str, str]:
