@@ -31,7 +31,7 @@ from app.features.form_builder.integration.provider import FormTabProvider  # no
 from app.features.form_builder.integration.surface import FormSurface  # noqa: E402
 from app.persistence.autosave_store import DraftEntry  # noqa: E402
 from app.persistence.local_history_store import LocalHistoryStore  # noqa: E402
-from app.qt.QtCore import QRect  # noqa: E402
+from app.qt.QtCore import QRect, Qt  # noqa: E402
 from app.qt.QtGui import QPalette  # noqa: E402
 from app.features.form_builder.integration.workbench import FormWorkbench  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
@@ -534,6 +534,20 @@ def test_theme_switch_keeps_the_page_in_the_runtime_palette(qapp, tmp_path: Path
         surface.release()
 
 
+def _select_outline_line_edit(tree: QTreeWidget) -> None:
+    flags = getattr(Qt, "MatchFlag", Qt)
+    match = getattr(flags, "MatchExactly") | getattr(flags, "MatchRecursive")
+    matches = tree.findItems("QLineEdit  editDatabase", match, 0)
+    assert matches
+    # Picking a row rebuilds the tree, which deletes the item just chosen.
+    tree.setCurrentItem(matches[0])
+    matches = tree.findItems("QLineEdit  editDatabase", match, 0)
+    assert matches
+    current = tree.currentItem()
+    assert current is not None and current.text(0) == "QLineEdit  editDatabase"
+    tree.scrollToItem(current)
+
+
 def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     corpus = (
         Path(__file__).resolve().parents[4]
@@ -561,6 +575,8 @@ def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-unt
                 assert drawer is not None and drawer.width() >= 200, drawer.geometry()
             tree = surface.findChild(QTreeWidget, "formBuilder.structure")
             assert tree is not None and tree.isVisibleTo(surface)
+            _select_outline_line_edit(tree)
+            qapp.processEvents()
             image = surface.grab()
             assert (image.width(), image.height()) == (width, height)
             image.save(str(out / ("form-tab-%s-%dx%d.png" % (mode, width, height))))
