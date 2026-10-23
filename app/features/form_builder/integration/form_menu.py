@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-from app.features.form_builder.engine.shell_commands import FormCommand, menu_commands
+from app.features.form_builder.engine.shell_commands import FormCommand, menu_commands, menu_hint
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.menu_action_builder import register_menu_action
 from app.shell.menus import register_menu_contributor
@@ -79,13 +79,17 @@ def _fill(
 
 
 def _add(window: Any, ctx: Any, menu: Any, command: FormCommand, actions: Dict[str, Any]) -> None:
-    shortcut = command.shortcut if command.kind == "new" else None
+    hint = menu_hint(command)
+    label = command.menu_path[-1]
+    if hint:
+        label = "%s\t%s" % (label, hint)
+    shortcut = None if hint or command.kind != "new" else command.shortcut
     action = register_menu_action(
         qt_widgets=ctx.qt_widgets,
         menu=menu,
         action_lookup=ctx.actions,
         action_id=command.command_id,
-        label=command.menu_path[-1],
+        label=label,
         shortcut=shortcut,
         enabled=False,
         callback=lambda _checked=False, command_id=command.command_id: _trigger(window, command_id),

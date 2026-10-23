@@ -389,6 +389,22 @@ def menu_commands() -> Tuple[FormCommand, ...]:
     return tuple(command for command in FORM_COMMANDS if command.menu_path)
 
 
+def is_widget_shortcut(command: FormCommand) -> bool:
+    """True when the key belongs only to the canvas, outline, or inspector."""
+    if command.kind != "new" or not command.shortcut:
+        return False
+    return frozenset(command.contexts) <= _WIDGET
+
+
+def menu_hint(command: FormCommand) -> str:
+    """Key text for the menu. These keys are not window shortcuts."""
+    if not command.shortcut or not command.menu_path:
+        return ""
+    if command.kind == "shell" or is_widget_shortcut(command):
+        return command.shortcut
+    return ""
+
+
 def shell_command_contexts(action_id: str) -> frozenset[str]:
     """Focus contexts where a shell binding is active.
 
@@ -481,7 +497,9 @@ __all__ = [
     "INERT_STATUS",
     "FormCommand",
     "contexts_overlap",
+    "is_widget_shortcut",
     "menu_commands",
+    "menu_hint",
     "normalize_form_shortcut",
     "registered_commands",
     "shell_command_contexts",
