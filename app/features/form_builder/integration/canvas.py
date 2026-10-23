@@ -1,8 +1,8 @@
 """Design canvas (UX-WB-004).
 
 The realized form sits in a proxy on the runtime scene. The controller owns
-selection, hover and gestures. Grabbers and the toast stay view chrome until
-the overlay paints them.
+selection, hover and gestures. ``drawForeground`` paints the overlay frame.
+The toast stays view chrome.
 """
 
 from __future__ import annotations
@@ -27,9 +27,15 @@ from app.features.form_builder.qtside.canvas.controller import CanvasController,
 from app.features.form_builder.qtside.canvas.core.frame import OverlayFrame
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
+from app.features.form_builder.qtside.canvas.paint import paint_frame
 from app.features.form_builder.qtside.canvas.stage import Stage
 from app.features.form_builder.qtside.realize.api import Realizer
-from app.features.form_builder.qtside.theme.overlay import backdrop_fill
+from app.features.form_builder.qtside.theme.overlay import (
+    BackdropPalette,
+    CanvasPalette,
+    backdrop_fill,
+    overlay_palette,
+)
 from app.features.form_builder.qtside.theme.runtime import isolate_scene
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -39,16 +45,6 @@ _DOT = 16
 def _focus_policy() -> Qt.FocusPolicy:
     policy = getattr(Qt, "FocusPolicy", Qt)
     return getattr(policy, "StrongFocus")
-
-
-def _no_focus() -> Qt.FocusPolicy:
-    policy = getattr(Qt, "FocusPolicy", Qt)
-    return getattr(policy, "NoFocus")
-
-
-def _transparent() -> Qt.WidgetAttribute:
-    attrs = getattr(Qt, "WidgetAttribute", Qt)
-    return getattr(attrs, "WA_TransparentForMouseEvents")
 
 
 class FormCanvas(QGraphicsView):
@@ -65,8 +61,9 @@ class FormCanvas(QGraphicsView):
         self._session = session
         self._realizer = realizer
         self._tokens: Optional[ShellThemeTokens] = None
-        self._canvas_bg = "#E9EBEF"
-        self._dot = "#D3D8DF"
+        self._palette = _palette(None)
+        self._canvas_bg = self._palette.backdrop.fill
+        self._dot = self._palette.backdrop.dot
         self.setObjectName("formBuilder.canvas")
         self.setAccessibleName("Form canvas")
         self.setFocusPolicy(_focus_policy())
@@ -104,9 +101,10 @@ class FormCanvas(QGraphicsView):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Chrome only. The page palette stays the runtime palette."""
         self._tokens = tokens
-        self._canvas_bg, self._dot = _backdrop(tokens)
+        self._palette = _palette(tokens)
+        self._canvas_bg = self._palette.backdrop.fill
+        self._dot = self._palette.backdrop.dot
         width = tokens.focus_border_width
-        faint = tokens.gutter_text or tokens.text_muted
         self.setStyleSheet(
             "QGraphicsView#formBuilder\\.canvas {"
             f" background: {self._canvas_bg}; border: 1px solid {tokens.border}; }}"
@@ -118,8 +116,6 @@ class FormCanvas(QGraphicsView):
             " font-size: 11px; font-weight: 600; }"
             "QLabel#formBuilder\\.sizeReadout {"
             f" color: {tokens.text_muted}; background: transparent; border: none; padding: 0; }}"
-            "QWidget#formBuilder\\.grabberRight, QWidget#formBuilder\\.grabberBottom {"
-            f" background: {faint}; border: none; }}"
             "QLabel#formBuilder\\.toast {"
             f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
             f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
@@ -164,6 +160,12 @@ class FormCanvas(QGraphicsView):
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._position_chrome()
 
+    def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
+        controller = getattr(self, "_controller", None)
+        if controller is None:
+            return
+        paint_frame(painter, controller.frame, self._palette, rect)
+
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         painter.fillRect(rect, QColor(self._canvas_bg))
         if not self._dot:
@@ -185,16 +187,6 @@ class FormCanvas(QGraphicsView):
             y += _DOT
 
     def _build_chrome(self) -> None:
-        self._grabber_right = QWidget(self)
-        self._grabber_right.setObjectName("formBuilder.grabberRight")
-        self._grabber_right.setFocusPolicy(_no_focus())
-        self._grabber_right.setAttribute(_transparent(), True)
-        self._grabber_right.resize(4, 32)
-        self._grabber_bottom = QWidget(self)
-        self._grabber_bottom.setObjectName("formBuilder.grabberBottom")
-        self._grabber_bottom.setFocusPolicy(_no_focus())
-        self._grabber_bottom.setAttribute(_transparent(), True)
-        self._grabber_bottom.resize(32, 4)
         self._toast = QLabel(self)
         self._toast.setObjectName("formBuilder.toast")
         self._toast.setAccessibleName("Notice")
@@ -208,15 +200,6 @@ class FormCanvas(QGraphicsView):
         if proxy.widget() is None:
             return
         self._stage.position_labels()
-        rect = proxy.sceneBoundingRect()
-        top_left = self.mapFromScene(rect.topLeft())
-        bottom_right = self.mapFromScene(rect.bottomRight())
-        mid_y = top_left.y() + max(0, (bottom_right.y() - top_left.y() - 32) // 2)
-        self._grabber_right.move(bottom_right.x() + 2, mid_y)
-        self._grabber_right.raise_()
-        mid_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - 32) // 2)
-        self._grabber_bottom.move(mid_x, bottom_right.y() + 2)
-        self._grabber_bottom.raise_()
         self._place_toast()
 
     def _place_toast(self) -> None:
@@ -226,8 +209,37 @@ class FormCanvas(QGraphicsView):
             self._toast.move(toast_x, self.height() - self._toast.height() - 16)
 
 
-def _backdrop(tokens: ShellThemeTokens) -> tuple[str, str]:
-    return backdrop_fill(tokens.is_dark, tokens.is_high_contrast)
+def _palette(tokens: Optional[ShellThemeTokens]) -> CanvasPalette:
+    if tokens is None:
+        fill, dot = backdrop_fill(False, False)
+        # Light shell colours until apply_theme runs. Overlay hues stay on the palette.
+        return CanvasPalette(
+            overlay=overlay_palette(False),
+            backdrop=BackdropPalette(
+                fill=fill,
+                dot=dot,
+                faint="#666F76",
+                accent="#3366FF",
+                muted="#5A6168",
+                panel="#FFFFFF",
+                border="#DEE2E6",
+                text="#212529",
+            ),
+        )
+    fill, dot = backdrop_fill(tokens.is_dark, tokens.is_high_contrast)
+    return CanvasPalette(
+        overlay=overlay_palette(tokens.is_high_contrast),
+        backdrop=BackdropPalette(
+            fill=fill,
+            dot=dot,
+            faint=tokens.gutter_text or tokens.text_muted,
+            accent=tokens.accent,
+            muted=tokens.text_muted,
+            panel=tokens.panel_bg,
+            border=tokens.border,
+            text=tokens.text_primary,
+        ),
+    )
 
 
 __all__ = ["FormCanvas"]
