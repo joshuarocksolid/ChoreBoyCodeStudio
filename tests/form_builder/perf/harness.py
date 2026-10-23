@@ -42,7 +42,9 @@ from app.features.form_builder.engine.commands.catalog import (
 from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InContainer, InGridCell
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
-from app.qt.QtWidgets import QApplication
+from app.qt.QtCore import QRectF
+from app.qt.QtGui import QImage, QPainter
+from app.qt.QtWidgets import QApplication, QWidget
 from tests.form_builder.engine.commands._support import button_spec
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS, ChangeSet
@@ -404,24 +406,8 @@ def _collect(
     )
     rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
     rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
-    rows.append(_missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), "no canvas overlay yet"))
+    rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no outline yet"))
-    rows.append(
-        _missing(
-            "edit total",
-            300,
-            _ms_budget(EDIT_BUDGET_MS),
-            "needs the command, the property patch, the outline and the inspector",
-        )
-    )
-    rows.append(
-        _missing(
-            "selection change",
-            300,
-            _ms_budget(SELECTION_BUDGET_MS),
-            "no canvas selection yet. Inspector repopulate budget is 16 ms",
-        )
-    )
 
     probe = documents[sizes[0]]
     rows.append(
@@ -874,6 +860,180 @@ def _hit_rows(
             root.hide()
             _dispose_held([realizer, session])
     return tuple(invalidate_rows + refresh_rows + query_rows)
+
+
+def _canvas_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Overlay paint, selection to the canvas frame, and one property edit.
+
+    Outline and the inspector are not in this fixture. Those rows stay open.
+    """
+    if not _module_exists("app.features.form_builder.qtside.canvas.paint"):
+        reason = "no canvas paint in this tree"
+        return (
+            _missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), reason),
+            _missing("edit total", 300, _ms_budget(EDIT_BUDGET_MS), reason),
+            _missing("selection change", 300, _ms_budget(SELECTION_BUDGET_MS), reason),
+        )
+    form = forms.get(300)
+    if form is None:
+        reason = "no 300-widget form in this run"
+        return (
+            _missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), reason),
+            _missing("edit total", 300, _ms_budget(EDIT_BUDGET_MS), reason),
+            _missing("selection change", 300, _ms_budget(SELECTION_BUDGET_MS), reason),
+        )
+    if QApplication.instance() is None:
+        QApplication([])
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    paint_mod = importlib.import_module("app.features.form_builder.qtside.canvas.paint")
+    theme = importlib.import_module("app.features.form_builder.qtside.theme.overlay")
+    selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    nodes = importlib.import_module("app.features.form_builder.engine.ui4.nodes")
+    session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    parent.show()
+    app = QApplication.instance()
+    assert app is not None
+    # Show posts a resize after the first frame. Drain until the overlay matches the placed page.
+    for _ in range(4):
+        app.processEvents()
+    painted_items = len(canvas.overlay().items)
+    if painted_items == 0:
+        raise RuntimeError("overlay frame is empty, so paint would time nothing")
+    try:
+        fill, dot = theme.backdrop_fill(False, False)
+        palette = theme.CanvasPalette(
+            overlay=theme.overlay_palette(False),
+            backdrop=theme.BackdropPalette(
+                fill=fill,
+                dot=dot,
+                faint="#666F76",
+                accent="#3366FF",
+                muted="#5A6168",
+                panel="#FFFFFF",
+                border="#DEE2E6",
+                text="#212529",
+            ),
+        )
+        scene = canvas.sceneRect()
+        image = QImage(
+            max(1, int(scene.width())),
+            max(1, int(scene.height())),
+            getattr(getattr(QImage, "Format", QImage), "Format_ARGB32"),
+        )
+        image.fill(0)
+        painter = QPainter(image)
+        exposed = QRectF(scene)
+        try:
+            paint = _timed(
+                "overlay paint",
+                300,
+                lambda: paint_mod.paint_frame(painter, canvas.overlay(), palette, exposed),
+                OVERLAY_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        finally:
+            painter.end()
+        ids = [
+            node.id
+            for node in session.document.iter_preorder()
+            if isinstance(node, nodes.WidgetNode) and node.id != session.document.root.id
+        ]
+        if not ids:
+            ids = [session.document.root.id]
+        cursor = {"n": 0}
+
+        def choose() -> None:
+            cursor["n"] = (cursor["n"] + 1) % len(ids)
+            node_id = ids[cursor["n"]]
+            session.selection.set((node_id,), current=node_id, source=selection.SelectionSource.CANVAS)
+            app.processEvents()
+
+        chosen = _timed(
+            "selection change",
+            300,
+            choose,
+            SELECTION_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        owner = ids[0]
+        step = {"n": 0}
+        expected = {"n": canvas._index.refresh_count}
+
+        def edit() -> None:
+            step["n"] += 1
+            outcome = session.log.execute(SetProperty(owner, "toolTip", StringValue("e%d" % step["n"])))
+            if outcome.noop:
+                raise RuntimeError("text edit was a no-op")
+            app.processEvents()
+            expected["n"] += 1
+            if canvas._index.refresh_count != expected["n"]:
+                raise RuntimeError(
+                    "hit index refreshed %s times, wanted %s" % (canvas._index.refresh_count, expected["n"])
+                )
+
+        edited = _timed(
+            "edit total",
+            300,
+            edit,
+            EDIT_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        return (
+            _with_detail(
+                paint,
+                "paint_frame of %d overlay items into a %dx%d image"
+                % (painted_items, image.width(), image.height()),
+            ),
+            _with_detail(chosen, "selection.set plus one frame. Outline is not attached"),
+            _with_detail(edited, "SetProperty plus one frame. The hit index refreshes once. Inspector is not attached"),
+        )
+    finally:
+        canvas.dispose()
+        parent.deleteLater()
+        app.processEvents()
+        _dispose_held([realizer, session])
+
+
+class _SpeedHost:
+    def canvas_pressed(self) -> None:
+        return None
+
+    def narrate(self, sentence: str) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
 
 
 def _deepest_point(index: Any, width: int, height: int) -> Tuple[int, int, int]:
