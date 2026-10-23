@@ -9,9 +9,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from app.bootstrap.qt_binding_choice import select_binding
 from app.core.models import RuntimeIssue
 from app.features.form_builder.engine.project.fs import ProjectOpError, relative_posix
-from app.features.form_builder.engine.project.loaders import scan_ui_loaders
+from app.features.form_builder.engine.project.loaders import loader_kind_label, scan_ui_loaders
 from app.features.form_builder.engine.project.packaging import (
     GeneratedFile,
     inspect_forms,
@@ -20,6 +21,15 @@ from app.features.form_builder.engine.project.packaging import (
 from app.features.form_builder.engine.ui4.reader import UiReadError
 
 _FIX_LABEL = "Save the form now"
+_PYSIDE2_NEXT = "Open this project in FreeCAD 1.1 or later and save the form."
+
+
+def _form_save_available() -> bool:
+    """True when this process can run the form builder saver."""
+    try:
+        return select_binding() == "PySide6"
+    except ImportError:
+        return False
 
 
 def form_packaging_issues(project_root: str) -> list[RuntimeIssue]:
@@ -50,13 +60,22 @@ def form_report_dict(project_root: str) -> dict[str, Any]:
     return {"forms": [_file_dict(item) for item in report.files]}
 
 
-def save_packaged_form(project_root: str, ui_path: str) -> bool:
-    """Regenerate one form from disk. True when the Python files were written."""
+def save_packaged_form(project_root: str, ui_path: str) -> str:
+    """Regenerate one form from disk.
+
+    An empty string means the Python files were written. Otherwise the string
+    is the reason, including an FB code when the generator reported one.
+    """
     try:
         written = save_form_now(project_root, ui_path)
-    except (OSError, UnicodeError, ProjectOpError, UiReadError, ValueError):
-        return False
-    return bool(written.text_written)
+    except (OSError, UnicodeError, ProjectOpError, UiReadError, ValueError) as exc:
+        text = str(exc).strip()
+        return text or "The form could not be saved."
+    if written.text_written:
+        return ""
+    if written.diagnostics:
+        return written.diagnostics[0].message
+    return "The form could not be saved."
 
 
 def _issue_for_file(project_root: str, item: GeneratedFile) -> RuntimeIssue | None:
@@ -84,15 +103,20 @@ def _issue_for_file(project_root: str, item: GeneratedFile) -> RuntimeIssue | No
         "report_row": item.message,
         "role": item.role,
     }
+    can_save = bool(fixable and ui_path and _form_save_available())
+    severity = "blocking"
     next_steps = ["Open the form and save it so the Python files match."]
-    if fixable and ui_path:
+    if can_save:
         evidence["fix_action"] = "save_form"
         evidence["fix_label"] = _FIX_LABEL
         next_steps = [_FIX_LABEL]
+    elif fixable and ui_path:
+        severity = "degraded"
+        next_steps = [_PYSIDE2_NEXT]
     return RuntimeIssue(
         issue_id=issue_id,
         workflow="package",
-        severity="blocking",
+        severity=severity,
         title=title,
         summary=item.message,
         why_it_happened=(
@@ -112,11 +136,7 @@ def _loader_issues(project_root: str) -> list[RuntimeIssue]:
             rel = relative_posix(site.path, project_root)
         except ProjectOpError:
             continue
-        kind = {
-            "qui_loader": "QUiLoader.load",
-            "load_ui": "loadUi",
-            "pyside_uic": "PySideUic.loadUi",
-        }.get(site.kind, site.kind)
+        kind = loader_kind_label(site.kind)
         summary = "%s loads a .ui file with %s." % (rel, kind)
         issues.append(
             RuntimeIssue(

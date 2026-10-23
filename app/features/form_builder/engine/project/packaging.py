@@ -27,7 +27,7 @@ from app.features.form_builder.engine.project.save import resource_destination, 
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 CONNECTIONS_FILENAME = "cbcs_connections.py"
-_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git"})
+_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git", "vendor", "node_modules"})
 
 FileRole = str
 FileState = str

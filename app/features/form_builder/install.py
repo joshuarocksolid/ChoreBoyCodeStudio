@@ -49,11 +49,11 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
 
     window = ctx.w
 
-    def save_form(ui_path: str) -> bool:
+    def save_form(ui_path: str) -> str:
         project = getattr(window, "_loaded_project", None)
         root = getattr(project, "project_root", None)
         if not root:
-            return False
+            return "Open a project before saving the form."
         return save_packaged_form(str(root), ui_path)
 
     def adopt(ui_path: str) -> None:

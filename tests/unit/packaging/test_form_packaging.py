@@ -13,6 +13,7 @@ from app.features.form_builder.engine.project.create import create_form
 from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import read_ui
+from app.features.form_builder.engine.project.packaging import inspect_forms
 from app.packaging.form_files import form_packaging_issues, save_packaged_form
 from app.packaging.packager import package_project
 
@@ -94,7 +95,10 @@ def test_package_payload_includes_generated_form_files(tmp_path: Path) -> None:
     assert "loadUi(" not in packaged
 
 
-def test_stale_generated_module_stops_export_until_save(tmp_path: Path) -> None:
+def test_stale_generated_module_stops_export_until_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.packaging.form_files.select_binding", lambda: "PySide6")
     root = _form_project(tmp_path)
     ui_py = root / "forms" / "ui_invoice.py"
     ui_py.write_text(_zero_source_sha(ui_py.read_text(encoding="utf-8")), encoding="utf-8")
@@ -104,19 +108,56 @@ def test_stale_generated_module_stops_export_until_save(tmp_path: Path) -> None:
     assert stale[0].is_blocking
     failed = _package(root, tmp_path / "exports")
     assert failed.success is False
-    assert save_packaged_form(str(root), str(root / "forms" / "invoice.ui"))
+    assert save_packaged_form(str(root), str(root / "forms" / "invoice.ui")) == ""
     assert [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.stale"] == []
 
 
-def test_missing_generated_module_stops_export_until_save(tmp_path: Path) -> None:
+def test_missing_generated_module_stops_export_until_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.packaging.form_files.select_binding", lambda: "PySide6")
     root = _form_project(tmp_path)
     (root / "forms" / "ui_invoice.py").unlink()
     missing = [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.missing"]
     assert any(issue.summary == "ui_invoice.py is missing." for issue in missing)
     assert missing[0].evidence["fix_action"] == "save_form"
-    assert save_packaged_form(str(root), str(root / "forms" / "invoice.ui"))
+    assert save_packaged_form(str(root), str(root / "forms" / "invoice.ui")) == ""
     assert (root / "forms" / "ui_invoice.py").is_file()
     assert [issue for issue in form_packaging_issues(str(root)) if issue.summary == "ui_invoice.py is missing."] == []
+
+
+def test_stale_form_on_pyside2_warns_and_export_continues(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr("app.packaging.form_files.select_binding", lambda: "PySide2")
+    root = _form_project(tmp_path)
+    ui_py = root / "forms" / "ui_invoice.py"
+    ui_py.write_text(_zero_source_sha(ui_py.read_text(encoding="utf-8")), encoding="utf-8")
+    stale = [issue for issue in form_packaging_issues(str(root)) if issue.issue_id == "package.form.stale"]
+    assert len(stale) == 1
+    assert stale[0].severity == "degraded"
+    assert stale[0].next_steps == ["Open this project in FreeCAD 1.1 or later and save the form."]
+    assert "fix_action" not in stale[0].evidence
+    result = _package(root, tmp_path / "exports")
+    assert result.success, [issue.summary for issue in result.validation.issue_report.issues]
+
+
+def test_save_packaged_form_returns_the_failure_message(tmp_path: Path) -> None:
+    root = _form_project(tmp_path)
+    ui = root / "forms" / "invoice.ui"
+    ui.write_text("<not-ui>\n", encoding="utf-8")
+    message = save_packaged_form(str(root), str(ui))
+    assert message
+    assert isinstance(message, str)
+
+
+def test_form_scan_ignores_vendor_and_node_modules(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    for name in ("vendor", "node_modules"):
+        folder = root / name
+        folder.mkdir(parents=True)
+        (folder / "old.ui").write_text("<ui/>\n", encoding="utf-8")
+    assert inspect_forms(str(root)).files == ()
 
 
 def test_runtime_ui_loader_is_a_warning_and_export_continues(tmp_path: Path) -> None:
