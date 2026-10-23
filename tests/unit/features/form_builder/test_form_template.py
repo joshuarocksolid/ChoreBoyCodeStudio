@@ -30,12 +30,12 @@ _MODES = (
 
 
 def test_template_files_match_create_form(tmp_path: Path) -> None:
-    created = create_form(str(tmp_path), "main_window", OsFileSystem(), template="main_window")
+    created = create_form(str(tmp_path), "main_window", OsFileSystem(), template="app_window")
     assert created.refused is None
     for name in _FORM_FILES:
         assert (_TEMPLATE_FORMS / name).read_bytes() == (tmp_path / "forms" / name).read_bytes()
     ui = (tmp_path / "forms" / "main_window.ui").read_text(encoding="utf-8")
-    assert "QLabel" in ui and "titleLabel" in ui
+    assert "QFormLayout" in ui and "nameLabel" in ui and "<cstring>nameEdit</cstring>" in ui
     assert "QLineEdit" in ui and "nameEdit" in ui
     assert "QPushButton" in ui and "saveButton" in ui
     assert "QStatusBar" in ui and "Ready" in ui
@@ -179,3 +179,11 @@ def _freecad_11_python() -> Path | None:
         if path.is_file():
             return path
     return None
+
+
+def test_blank_main_window_is_only_a_central_widget(tmp_path: Path) -> None:
+    created = create_form(str(tmp_path), "shell", OsFileSystem(), template="main_window")
+    assert created.refused is None
+    ui = (tmp_path / "forms" / "shell.ui").read_text(encoding="utf-8")
+    assert '<widget class="QWidget" name="central"/>' in ui
+    assert "saveButton" not in ui and "<connections>" not in ui

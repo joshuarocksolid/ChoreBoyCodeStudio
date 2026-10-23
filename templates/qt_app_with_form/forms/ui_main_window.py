@@ -4,12 +4,13 @@
 ## it is rewritten every time the form is saved. Put your code in
 ## main_window_window.py.
 ## cbcs-codegen: 1
-## cbcs-source-sha256: 364a0df0a0d58fa3f42429608ffb5e3fbc9369927f1940604cbab6458d59fa88
-## cbcs-body-sha256: 4a939d35956c8fca56b513d9a203b108ffe72632a2e0f7fc6586fd7c9ea14c9e
+## cbcs-source-sha256: b97494e6059988b073cccf868cfc691b43bbdf807fd71ed9fe91e274044d21e6
+## cbcs-body-sha256: 6ddf3b5b6aef8be509efed216d149069107e98d05062ddb8aaed6c8ba2c7503c
 ################################################################################
 from PySide6.QtCore import (QCoreApplication, QMetaObject)
 from PySide6.QtWidgets import (
-    QLabel, QLineEdit, QPushButton, QStatusBar, QVBoxLayout, QWidget)
+    QFormLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QSizePolicy, QSpacerItem,
+    QStatusBar, QVBoxLayout, QWidget)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
@@ -19,25 +20,36 @@ class Ui_MainWindow(object):
         self.central.setObjectName(u"central")
         self.verticalLayout = QVBoxLayout(self.central)
         self.verticalLayout.setObjectName(u"verticalLayout")
-        self.titleLabel = QLabel(self.central)
-        self.titleLabel.setObjectName(u"titleLabel")
-        self.verticalLayout.addWidget(self.titleLabel)
+        self.formLayout = QFormLayout()
+        self.formLayout.setObjectName(u"formLayout")
+        self.nameLabel = QLabel(self.central)
+        self.nameLabel.setObjectName(u"nameLabel")
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.LabelRole, self.nameLabel)
         self.nameEdit = QLineEdit(self.central)
         self.nameEdit.setObjectName(u"nameEdit")
-        self.verticalLayout.addWidget(self.nameEdit)
+        self.formLayout.setWidget(0, QFormLayout.ItemRole.FieldRole, self.nameEdit)
+        self.verticalLayout.addLayout(self.formLayout)
+        self.verticalSpacer = QSpacerItem(20, 40, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        self.verticalLayout.addItem(self.verticalSpacer)
+        self.buttonRow = QHBoxLayout()
+        self.buttonRow.setObjectName(u"buttonRow")
+        self.horizontalSpacer = QSpacerItem(40, 20, QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+        self.buttonRow.addItem(self.horizontalSpacer)
         self.saveButton = QPushButton(self.central)
         self.saveButton.setObjectName(u"saveButton")
-        self.verticalLayout.addWidget(self.saveButton)
+        self.buttonRow.addWidget(self.saveButton)
+        self.verticalLayout.addLayout(self.buttonRow)
         MainWindow.setCentralWidget(self.central)
         self.statusBar = QStatusBar(MainWindow)
         self.statusBar.setObjectName(u"statusBar")
         MainWindow.setStatusBar(self.statusBar)
+        self.nameLabel.setBuddy(self.nameEdit)
         self.saveButton.clicked.connect(MainWindow.save_clicked)
         self.retranslateUi(MainWindow)
         QMetaObject.connectSlotsByName(MainWindow)
 
     def retranslateUi(self, MainWindow):
         MainWindow.setWindowTitle(QCoreApplication.translate(u"MainWindow", u"Main window", None))
-        self.titleLabel.setText(QCoreApplication.translate(u"MainWindow", u"Welcome", None))
+        self.nameLabel.setText(QCoreApplication.translate(u"MainWindow", u"Name", None))
         self.saveButton.setText(QCoreApplication.translate(u"MainWindow", u"Save", None))
         self.statusBar.setProperty(u"currentMessage", QCoreApplication.translate(u"MainWindow", u"Ready", None))
