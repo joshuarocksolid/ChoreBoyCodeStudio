@@ -1,1 +1,1 @@
-"""Theme aliases for form-builder chrome. No hex colours live here."""
+"""Form-builder theme: the runtime look for the realized form, and chrome aliases. No hex colours live here."""
