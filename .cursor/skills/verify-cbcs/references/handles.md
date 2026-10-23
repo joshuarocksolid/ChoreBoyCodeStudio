@@ -477,6 +477,9 @@ Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs
 | `formBuilder.name` | Form name |
 | `formBuilder.viewXml` | View XML toggle |
 | `formBuilder.structure` | Structure tree |
+| `formBuilder.sectionSearch` | Outline and Insert search glyph |
+| `formBuilder.sectionAdd` | Outline add control |
+| `formBuilder.pin` | Drawer pin. Flat tool button |
 | `formBuilder.xmlBanner` | View XML notice box (frame; Discard sits inside it on errors) |
 | `formBuilder.xmlBannerText` | View XML notice text |
 | `formBuilder.discardXml` | Discard XML edits |

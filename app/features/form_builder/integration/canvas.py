@@ -7,10 +7,11 @@ page. Nothing on the canvas selects or drags in this slice.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+import re
+from typing import Callable, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QRectF, Qt
-from app.qt.QtGui import QColor, QPainter
+from app.qt.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPixmap
 from app.qt.QtWidgets import (
     QFrame,
     QGraphicsProxyWidget,
@@ -24,14 +25,30 @@ from app.qt.qt_compat import wrapper_is_valid
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.integration.chrome_text import page_chip_label, page_size_text
+from app.features.form_builder.integration.chrome_text import page_chip_label, page_size_text, window_title
 from app.features.form_builder.integration.layout import GUTTER
 from app.features.form_builder.qtside.realize.api import Realizer
-from app.features.form_builder.qtside.theme.runtime import isolate_scene
+from app.features.form_builder.qtside.theme.chrome import (
+    TITLE_BAR,
+    ChromeKind,
+    ChromeTokens,
+    DOT_SIZE_PX,
+    DOT_STEP_PX,
+    Elevation,
+    Height,
+    Radius,
+    Space,
+    backdrop_of,
+    chrome_tokens,
+    elevation,
+    font_css,
+)
+from app.features.form_builder.qtside.theme.runtime import isolate_scene, startup_font
 from app.shell.theme_tokens import ShellThemeTokens
 
 _DETACH_BEFORE_REALIZE = 9
-_DOT = 16
+_RGBA = re.compile(r"rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([0-9.]+)\s*\)")
+_SHADOW_PAD = 24
 
 
 def _focus_policy() -> Qt.FocusPolicy:
@@ -49,6 +66,20 @@ def _transparent() -> Qt.WidgetAttribute:
     return getattr(attrs, "WA_TransparentForMouseEvents")
 
 
+def _qt(owner: object, group: str, name: str) -> object:
+    return getattr(getattr(owner, group, owner), name)
+
+
+def _token_color(value: str) -> QColor:
+    match = _RGBA.fullmatch(value.strip())
+    if match is None:
+        return QColor(value)
+    red, green, blue, alpha = match.groups()
+    color = QColor(int(red), int(green), int(blue))
+    color.setAlphaF(float(alpha))
+    return color
+
+
 class FormCanvas(QGraphicsView):
     """Dot grid, centred page, and the chrome around it."""
 
@@ -56,9 +87,10 @@ class FormCanvas(QGraphicsView):
         super().__init__(parent)
         self._session = session
         self._realizer = realizer
-        self._tokens: Optional[ShellThemeTokens] = None
-        self._canvas_bg = "#E9EBEF"
-        self._dot = "#D3D8DF"
+        self._chrome: Optional[ChromeTokens] = None
+        self._window_title = ""
+        self._shadow_key: Optional[Tuple[object, ...]] = None
+        self._shadow_pixmap: Optional[QPixmap] = None
         self._banner_push = 0
         self._closer: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.canvas")
@@ -98,26 +130,51 @@ class FormCanvas(QGraphicsView):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Chrome only. The page palette stays the runtime palette."""
-        self._tokens = tokens
-        self._canvas_bg, self._dot = _backdrop(tokens)
-        width = tokens.focus_border_width
-        faint = tokens.gutter_text or tokens.text_muted
+        chrome = chrome_tokens(tokens)
+        self._chrome = chrome
+        self._shadow_key = None
+        self._shadow_pixmap = None
+        card = elevation(2, chrome)
+        # Level 2 is 2 px only in high contrast, where the stroke is text.
+        stroke = chrome.paint("text", "popup") if card.border_px >= 2 else chrome.popup_border
         self.setStyleSheet(
             "QGraphicsView#formBuilder\\.canvas {"
-            f" background: {self._canvas_bg}; border: 1px solid {tokens.border}; }}"
-            "QGraphicsView#formBuilder\\.canvas:focus {"
-            f" border: {width}px solid {tokens.accent}; }}"
+            " background: %s; border: 1px solid %s; }"
+            "QGraphicsView#formBuilder\\.canvas:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.name {"
-            f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
-            f" border: 1px solid {tokens.border}; border-radius: 4px; padding: 1px 6px;"
-            " font-size: 11px; font-weight: 600; }"
+            " color: %s; background: %s; border: 1px solid %s; border-radius: %dpx;"
+            " padding: %dpx %dpx; %s }"
             "QLabel#formBuilder\\.sizeReadout {"
-            f" color: {tokens.text_muted}; background: transparent; border: none; padding: 0; }}"
+            " color: %s; background: transparent; border: none; padding: 0; %s }"
             "QWidget#formBuilder\\.grabberRight, QWidget#formBuilder\\.grabberBottom {"
-            f" background: {faint}; border: none; }}"
+            " background: %s; border: none; border-radius: %dpx; }"
             "QLabel#formBuilder\\.toast {"
-            f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
-            f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
+            " color: %s; background: %s; border: %dpx solid %s; border-radius: %dpx;"
+            " padding: %dpx %dpx; }"
+            % (
+                chrome.backdrop,
+                chrome.border,
+                chrome.focus_width,
+                chrome.paint("accent", "backdrop"),
+                chrome.paint("text", "panel"),
+                chrome.panel,
+                chrome.border,
+                int(Radius.CONTROL),
+                int(Space.XS),
+                int(Space.S),
+                font_css(chrome.scale.chip(), lock_weight=True),
+                chrome.paint("muted", "backdrop"),
+                font_css(chrome.scale.caption),
+                chrome.paint("faint", "backdrop"),
+                int(Radius.CONTROL),
+                chrome.paint("text", "popup"),
+                chrome.popup,
+                card.border_px,
+                stroke,
+                int(Radius.POPOVER),
+                int(Space.XS),
+                int(Space.S),
+            )
         )
         self.viewport().update()
         self._position_chrome()
@@ -151,24 +208,144 @@ class FormCanvas(QGraphicsView):
         self._place_page()
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
-        painter.fillRect(rect, QColor(self._canvas_bg))
-        if not self._dot:
+        backdrop, dots = self._backdrop()
+        painter.fillRect(rect, QColor(backdrop))
+        self._paint_dots(painter, rect, dots)
+        self._paint_page_card(painter)
+
+    def _backdrop(self) -> Tuple[str, str]:
+        chrome = self._chrome
+        if chrome is None:
+            return backdrop_of(ChromeKind.LIGHT)
+        return chrome.backdrop, chrome.dots
+
+    def _paint_dots(self, painter: QPainter, rect: QRectF, dots: str) -> None:
+        if not dots:
             return
-        color = QColor(self._dot)
-        pen = getattr(getattr(Qt, "PenStyle", Qt), "NoPen")
-        painter.setPen(pen)
-        painter.setBrush(color)
-        left = int(rect.left()) - (int(rect.left()) % _DOT)
-        top = int(rect.top()) - (int(rect.top()) % _DOT)
-        right = int(rect.right()) + _DOT
-        bottom = int(rect.bottom()) + _DOT
+        painter.save()
+        painter.setRenderHint(_qt(QPainter, "RenderHint", "Antialiasing"), False)
+        painter.setPen(_qt(Qt, "PenStyle", "NoPen"))
+        painter.setBrush(QColor(dots))
+        left = int(rect.left()) - (int(rect.left()) % DOT_STEP_PX)
+        top = int(rect.top()) - (int(rect.top()) % DOT_STEP_PX)
+        right = int(rect.right()) + DOT_STEP_PX
+        bottom = int(rect.bottom()) + DOT_STEP_PX
         y = top
         while y < bottom:
             x = left
             while x < right:
-                painter.drawEllipse(x, y, 2, 2)
-                x += _DOT
-            y += _DOT
+                painter.drawRect(x, y, DOT_SIZE_PX, DOT_SIZE_PX)
+                x += DOT_STEP_PX
+            y += DOT_STEP_PX
+        painter.restore()
+
+    def _paint_page_card(self, painter: QPainter) -> None:
+        page = self._page_scene_rect()
+        if page is None:
+            return
+        card = QRectF(page.left(), page.top() - TITLE_BAR.height, page.width(), page.height() + TITLE_BAR.height)
+        chrome = self._chrome
+        if chrome is not None:
+            self._paint_page_shadow(painter, card, elevation(1, chrome))
+        self._paint_title_bar(painter, card)
+        if chrome is None:
+            return
+        level = elevation(1, chrome)
+        if level.border_px <= 0:
+            return
+        painter.save()
+        pen = QPen(QColor(chrome.paint("text", "backdrop")))
+        pen.setWidth(level.border_px)
+        pen.setCosmetic(True)
+        painter.setPen(pen)
+        painter.setBrush(_qt(Qt, "BrushStyle", "NoBrush"))
+        painter.drawRoundedRect(card, float(Radius.PAGE), float(Radius.PAGE))
+        painter.restore()
+
+    def _page_scene_rect(self) -> Optional[QRectF]:
+        widget = self._proxy.widget()
+        if widget is None or not wrapper_is_valid(widget):
+            return None
+        rect = self._proxy.sceneBoundingRect()
+        if rect.isEmpty():
+            return None
+        return rect
+
+    def _paint_page_shadow(self, painter: QPainter, card: QRectF, level: Elevation) -> None:
+        if not level.shadows:
+            return
+        pixmap = self._shadow_for(card, level)
+        if pixmap is None:
+            return
+        painter.drawPixmap(int(card.left()) - _SHADOW_PAD, int(card.top()) - _SHADOW_PAD, pixmap)
+
+    def _shadow_for(self, card: QRectF, level: Elevation) -> Optional[QPixmap]:
+        key = (
+            int(card.width()),
+            int(card.height()),
+            tuple((shadow.x, shadow.y, shadow.blur, shadow.color) for shadow in level.shadows),
+        )
+        if key == self._shadow_key and self._shadow_pixmap is not None:
+            return self._shadow_pixmap
+        width = int(card.width()) + _SHADOW_PAD * 2
+        height = int(card.height()) + _SHADOW_PAD * 2
+        if width <= 0 or height <= 0:
+            return None
+        pixmap = QPixmap(width, height)
+        pixmap.fill(QColor(0, 0, 0, 0))
+        shadow_painter = QPainter(pixmap)
+        shadow_painter.setRenderHint(_qt(QPainter, "RenderHint", "Antialiasing"), True)
+        shadow_painter.setPen(_qt(Qt, "PenStyle", "NoPen"))
+        for shadow in level.shadows:
+            color = _token_color(shadow.color)
+            steps = max(shadow.blur, 1)
+            step = steps
+            while step > 0:
+                layer = QColor(color)
+                layer.setAlphaF(min(1.0, color.alphaF() * (steps - step + 1) / (steps * steps)))
+                shadow_painter.setBrush(layer)
+                rect = QRectF(
+                    _SHADOW_PAD + shadow.x - step,
+                    _SHADOW_PAD + shadow.y - step,
+                    card.width() + step * 2,
+                    card.height() + step * 2,
+                )
+                radius = float(Radius.PAGE) + step
+                shadow_painter.drawRoundedRect(rect, radius, radius)
+                step -= 1
+        shadow_painter.end()
+        self._shadow_key = key
+        self._shadow_pixmap = pixmap
+        return pixmap
+
+    def _paint_title_bar(self, painter: QPainter, card: QRectF) -> None:
+        bar = QRectF(card.left(), card.top(), card.width(), TITLE_BAR.height)
+        painter.save()
+        painter.setRenderHint(_qt(QPainter, "RenderHint", "Antialiasing"), True)
+        clip = QPainterPath()
+        clip.addRoundedRect(card, float(Radius.PAGE), float(Radius.PAGE))
+        painter.setClipPath(clip)
+        painter.fillRect(bar, QColor(TITLE_BAR.fill))
+        font = QFont(startup_font())
+        font.setPixelSize(TITLE_BAR.title_px)
+        # Qt 5 setWeight takes the 0-99 scale. DemiBold is CSS 600.
+        font.setWeight(_qt(QFont, "Weight", "DemiBold"))
+        painter.setFont(font)
+        painter.setPen(QColor(TITLE_BAR.glyph))
+        marks = TITLE_BAR.marks
+        glyph_w = int(Space.L)
+        glyphs_w = glyph_w * len(marks)
+        text_rect = QRectF(bar.left() + int(Space.S), bar.top(), max(0, bar.width() - glyphs_w - int(Space.S) * 2), bar.height())
+        elide = _qt(Qt, "TextElideMode", "ElideRight")
+        shown = painter.fontMetrics().elidedText(self._window_title, elide, int(text_rect.width()))
+        align = _qt(Qt, "AlignmentFlag", "AlignLeft") | _qt(Qt, "AlignmentFlag", "AlignVCenter")
+        painter.drawText(text_rect, align, shown)
+        index = 0
+        for mark in marks:
+            cell = QRectF(bar.right() - glyphs_w - int(Space.S) + index * glyph_w, bar.top(), glyph_w, bar.height())
+            painter.drawText(cell, _qt(Qt, "AlignmentFlag", "AlignCenter"), mark)
+            index += 1
+        painter.restore()
 
     def _build_chrome(self) -> None:
         self._name = QLabel(self)
@@ -213,6 +390,8 @@ class FormCanvas(QGraphicsView):
         label = page_chip_label(document, "Form")
         self._name.setText(label)
         self._name.setAccessibleName(label)
+        self._window_title = window_title(document)
+        self.viewport().update()
         self._size.setText(self._size_text(document))
         self._position_chrome()
 
@@ -254,10 +433,13 @@ class FormCanvas(QGraphicsView):
         bottom_right = self.mapFromScene(rect.bottomRight())
         self._fit_label(self._name)
         self._fit_label(self._size)
-        self._name.move(top_left.x(), max(0, top_left.y() - self._name.height() - 4))
+        self._name.move(
+            top_left.x(),
+            max(0, top_left.y() - TITLE_BAR.height - self._name.height() - int(Space.XS)),
+        )
         self._name.raise_()
         size_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - self._size.width()) // 2)
-        self._size.move(size_x, bottom_right.y() + 6)
+        self._size.move(size_x, bottom_right.y() + int(Space.S))
         self._size.raise_()
         mid_y = top_left.y() + max(0, (bottom_right.y() - top_left.y() - 32) // 2)
         self._grabber_right.move(bottom_right.x() + 2, mid_y)
@@ -269,24 +451,15 @@ class FormCanvas(QGraphicsView):
 
     def _fit_label(self, label: QLabel) -> None:
         text = label.text()
-        width = label.fontMetrics().horizontalAdvance(text) + 16
-        height = max(22, label.fontMetrics().height() + 8)
+        width = label.fontMetrics().horizontalAdvance(text) + int(Space.L)
+        height = max(int(Height.CONTROL), label.fontMetrics().height() + int(Space.S))
         label.setFixedSize(max(width, 8), height)
 
     def _place_toast(self) -> None:
         if self._toast.isVisible():
             self._toast.adjustSize()
             toast_x = max(0, (self.width() - self._toast.width()) // 2)
-            self._toast.move(toast_x, self.height() - self._toast.height() - 16)
-
-
-def _backdrop(tokens: ShellThemeTokens) -> tuple[str, str]:
-    """UX-TOK-002. High contrast has a flat backdrop and no dots."""
-    if tokens.is_high_contrast:
-        return ("#000000" if tokens.is_dark else "#FFFFFF", "")
-    if tokens.is_dark:
-        return ("#16191D", "#262B31")
-    return ("#E9EBEF", "#D3D8DF")
+            self._toast.move(toast_x, self.height() - self._toast.height() - int(Space.L))
 
 
 __all__ = ["FormCanvas"]

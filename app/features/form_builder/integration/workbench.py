@@ -8,6 +8,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QSize, Qt
+from app.qt.QtGui import QColor, QPainter
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -16,6 +17,7 @@ from app.qt.QtWidgets import (
     QPushButton,
     QSizePolicy,
     QSplitter,
+    QSplitterHandle,
     QStackedWidget,
     QTabWidget,
     QToolButton,
@@ -41,8 +43,19 @@ from app.features.form_builder.integration.layout import (
 )
 from app.features.form_builder.integration.structure import structure_entries
 from app.features.form_builder.qtside.realize.api import Realizer
+from app.features.form_builder.qtside.theme.chrome import (
+    SEARCH_GLYPH,
+    SEARCH_GLYPH_PX,
+    SPLITTER_HIT_PX,
+    ChromeTokens,
+    Height,
+    Radius,
+    Space,
+    chrome_tokens,
+    elevation,
+    font_css,
+)
 from app.shell.theme_tokens import ShellThemeTokens
-from app.shell.toolbar_style import flat_tool_button_qss, mode_group_qss
 
 Choice = Tuple[str, Callable[[], None]]
 
@@ -96,6 +109,55 @@ def _tool(text: str, name: str, tip: str, parent: QWidget) -> QToolButton:
     return button
 
 
+class _LineSplitter(QSplitter):
+    """1 px line, ``SPLITTER_HIT_PX`` grab. Stylesheet margins paint the whole handle."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._line: Optional[QColor] = None
+        self._fill: Optional[QColor] = None
+        self.setHandleWidth(SPLITTER_HIT_PX)
+
+    def set_line(self, line: QColor, fill: QColor) -> None:
+        self._line = QColor(line)
+        self._fill = QColor(fill)
+        index = 1
+        while index < self.count():
+            self.handle(index).update()
+            index += 1
+
+    def line_color(self) -> Optional[QColor]:
+        return self._line
+
+    def fill_color(self) -> Optional[QColor]:
+        return self._fill
+
+    def createHandle(self) -> QSplitterHandle:  # noqa: N802
+        return _LineHandle(self.orientation(), self)
+
+
+class _LineHandle(QSplitterHandle):
+    def paintEvent(self, event: object) -> None:  # noqa: N802
+        parent = self.splitter()
+        line = parent.line_color() if isinstance(parent, _LineSplitter) else None
+        fill = parent.fill_color() if isinstance(parent, _LineSplitter) else None
+        if line is None or fill is None:
+            super().paintEvent(event)  # type: ignore[arg-type]
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(getattr(getattr(QPainter, "RenderHint", QPainter), "Antialiasing"), False)
+        painter.fillRect(self.rect(), fill)
+        rect = self.rect()
+        horizontal = getattr(getattr(Qt, "Orientation", Qt), "Horizontal")
+        if self.orientation() == horizontal:
+            x = rect.x() + (rect.width() - 1) // 2
+            painter.fillRect(x, rect.y(), 1, rect.height(), line)
+        else:
+            y = rect.y() + (rect.height() - 1) // 2
+            painter.fillRect(rect.x(), y, rect.width(), 1, line)
+        painter.end()
+
+
 class NoticeBar(QFrame):
     """One info bar for a recovered draft or a file that changed on disk."""
 
@@ -103,8 +165,8 @@ class NoticeBar(QFrame):
         super().__init__(parent)
         self.setObjectName("formBuilder.notice")
         self._row = QHBoxLayout(self)
-        self._row.setContentsMargins(8, 4, 4, 4)
-        self._row.setSpacing(6)
+        self._row.setContentsMargins(int(Space.S), int(Space.XS), int(Space.XS), int(Space.XS))
+        self._row.setSpacing(int(Space.S))
         self._label = QLabel(self)
         self._label.setObjectName("formBuilder.noticeText")
         self._label.setWordWrap(True)
@@ -144,10 +206,10 @@ class FormToolbar(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.toolbar")
-        self.setFixedHeight(36)
+        self.setFixedHeight(int(Height.TOOLBAR))
         row = QHBoxLayout(self)
-        row.setContentsMargins(8, 0, 8, 0)
-        row.setSpacing(4)
+        row.setContentsMargins(int(Space.S), 0, int(Space.S), 0)
+        row.setSpacing(int(Space.XS))
 
         self._mode = QWidget(self)
         self._mode.setObjectName("formBuilder.modeGroup")
@@ -248,45 +310,100 @@ class FormToolbar(QWidget):
         self.save_state.setText(text)
         if tokens is None:
             return
-        color = (tokens.diag_error_color or tokens.accent) if error else (tokens.gutter_text or tokens.text_primary)
+        chrome = chrome_tokens(tokens)
+        role = "error" if error else "faint"
         self.save_state.setStyleSheet(
-            "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % color
+            "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }"
+            % chrome.paint(role, "panel")
         )
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        self.setStyleSheet(_toolbar_qss(tokens))
+        self.setStyleSheet(_toolbar_qss(chrome_tokens(tokens)))
 
 
-def _splitter_qss(tokens: ShellThemeTokens) -> str:
-    """A 1 px line inside the 6 px handle. The handle stays the hit area."""
+def _join(selectors: Sequence[str], suffix: str) -> str:
+    return ", ".join("%s%s" % (selector, suffix) for selector in selectors)
+
+
+def _flat_tools(chrome: ChromeTokens, selectors: Sequence[str]) -> str:
     return (
-        "QSplitter#formBuilder\\.splitter::handle, QSplitter#formBuilder\\.leftSplitter::handle {"
-        " background: %s; border: none; image: none; }"
-        "QSplitter#formBuilder\\.splitter::handle:horizontal { margin: 0px 2px 0px 3px; }"
-        "QSplitter#formBuilder\\.leftSplitter::handle:vertical { margin: 2px 0px 3px 0px; }"
-        % tokens.border
-    )
-
-
-def _problem_summary_qss(tokens: ShellThemeTokens) -> str:
-    return (
-        "QWidget#formBuilder\\.problemSummaryRow { background: transparent; }"
-        "QLabel#formBuilder\\.problemSummary { color: %s; background: transparent; border: none; }"
-        "QPushButton#formBuilder\\.showProblems {"
-        " color: %s; background: transparent; border: %dpx solid transparent; padding: 0px 2px;"
-        " text-decoration: underline; }"
-        "QPushButton#formBuilder\\.showProblems:focus { border: %dpx solid %s; }"
+        "%s { color: %s; background: transparent; border: 1px solid transparent; padding: 0px %dpx; }"
+        "%s { color: %s; background: %s; }"
+        "%s { color: %s; background: %s; }"
+        "%s { color: %s; }"
+        "%s { border: %dpx solid %s; }"
         % (
-            tokens.text_primary,
-            tokens.accent,
-            tokens.focus_border_width,
-            tokens.focus_border_width,
-            tokens.accent,
+            ", ".join(selectors),
+            chrome.paint("text", "panel"),
+            int(Space.S),
+            _join(selectors, ":hover"),
+            chrome.paint("text", "row_hover"),
+            chrome.row_hover,
+            _join(selectors, ":checked"),
+            chrome.paint("text", "row_selected"),
+            chrome.row_selected,
+            _join(selectors, ":disabled"),
+            chrome.paint("faint", "panel"),
+            _join(selectors, ":focus"),
+            chrome.focus_width,
+            chrome.paint("accent", "panel"),
         )
     )
 
 
-def _toolbar_qss(tokens: ShellThemeTokens) -> str:
+def _mode_group_qss(chrome: ChromeTokens) -> str:
+    return (
+        "QWidget#formBuilder\\.modeGroup {"
+        " border: 1px solid %s; border-radius: %dpx; background: %s; }"
+        "QWidget#formBuilder\\.modeGroup QToolButton {"
+        " background: transparent; color: %s; border: none;"
+        " border-right: 1px solid %s; border-radius: 0; padding: %dpx %dpx; %s }"
+        "QWidget#formBuilder\\.modeGroup QToolButton:hover { background: %s; color: %s; }"
+        "QWidget#formBuilder\\.modeGroup QToolButton:checked { background: %s; color: %s; }"
+        "QWidget#formBuilder\\.modeGroup QToolButton:disabled { color: %s; }"
+        "QWidget#formBuilder\\.modeGroup QToolButton:focus { border: %dpx solid %s; }"
+        "QWidget#formBuilder\\.modeGroup QToolButton#formBuilder\\.viewXml { border-right: none; }"
+        % (
+            chrome.border,
+            int(Radius.CONTROL),
+            chrome.input,
+            chrome.paint("muted", "input"),
+            chrome.border,
+            int(Space.XS),
+            int(Space.S),
+            font_css(chrome.scale.caption),
+            chrome.row_hover,
+            chrome.paint("text", "row_hover"),
+            chrome.row_selected,
+            chrome.paint("text", "row_selected"),
+            chrome.paint("faint", "input"),
+            chrome.focus_width,
+            chrome.paint("accent", "input"),
+        )
+    )
+
+
+def _problem_summary_qss(chrome: ChromeTokens) -> str:
+    return (
+        "QWidget#formBuilder\\.problemSummaryRow { background: transparent; }"
+        "QLabel#formBuilder\\.problemSummary { color: %s; background: transparent; border: none; %s }"
+        "QPushButton#formBuilder\\.showProblems {"
+        " color: %s; background: transparent; border: %dpx solid transparent; padding: 0px %dpx;"
+        " text-decoration: underline; }"
+        "QPushButton#formBuilder\\.showProblems:focus { border: %dpx solid %s; }"
+        % (
+            chrome.paint("text", "panel"),
+            font_css(chrome.scale.body),
+            chrome.paint("text", "panel"),
+            chrome.focus_width,
+            int(Space.XS),
+            chrome.focus_width,
+            chrome.paint("accent", "panel"),
+        )
+    )
+
+
+def _toolbar_qss(chrome: ChromeTokens) -> str:
     names = (
         "tabOrder",
         "buddies",
@@ -301,18 +418,56 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
         "overflow",
     )
     selectors = ["QToolButton#formBuilder\\.%s" % name for name in names]
-    faint = tokens.gutter_text or tokens.text_primary
     return "".join(
         (
             "QWidget#formBuilder\\.toolbar { background: %s; color: %s; border-bottom: 1px solid %s; }"
-            % (tokens.panel_bg, tokens.text_primary, tokens.border),
-            mode_group_qss(tokens, "formBuilder\\.modeGroup"),
-            "QWidget#formBuilder\\.modeGroup QToolButton#formBuilder\\.viewXml { border-right: none; }",
-            "QFrame#formBuilder\\.modeDivider { background: %s; border: none; }" % tokens.border,
-            flat_tool_button_qss(tokens, selectors),
-            "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % faint,
+            % (chrome.panel, chrome.paint("text", "panel"), chrome.border),
+            _mode_group_qss(chrome),
+            "QFrame#formBuilder\\.modeDivider { background: %s; border: none; }" % chrome.border,
+            _flat_tools(chrome, selectors),
+            "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }"
+            % chrome.paint("faint", "panel"),
         )
     )
+
+
+def _search_qss() -> str:
+    return (
+        "QToolButton#formBuilder\\.sectionSearch {"
+        " font-size: %dpx; padding: 0; border: none;"
+        " min-width: %dpx; max-width: %dpx; min-height: %dpx; max-height: %dpx; }"
+        % (
+            SEARCH_GLYPH_PX,
+            int(Height.CONTROL),
+            int(Height.CONTROL),
+            int(Height.CONTROL),
+            int(Height.CONTROL),
+        )
+    )
+
+
+def _pin_qss(chrome: ChromeTokens) -> str:
+    return (
+        "QToolButton#formBuilder\\.pin {"
+        " color: %s; background: transparent; border: none; padding: 0px %dpx; }"
+        "QToolButton#formBuilder\\.pin:hover { color: %s; background: %s; }"
+        "QToolButton#formBuilder\\.pin:focus { border: %dpx solid %s; }"
+        % (
+            chrome.paint("text", "popup"),
+            int(Space.S),
+            chrome.paint("text", "row_hover"),
+            chrome.row_hover,
+            chrome.focus_width,
+            chrome.paint("accent", "popup"),
+        )
+    )
+
+
+def _level2_stroke(chrome: ChromeTokens) -> Tuple[int, str]:
+    level = elevation(2, chrome)
+    if level.border_px >= 2:
+        return level.border_px, chrome.paint("text", "popup")
+    return level.border_px, chrome.popup_border
 
 
 class _Header(QWidget):
@@ -321,20 +476,23 @@ class _Header(QWidget):
     def __init__(self, title: str, parent: QWidget, on_toggle: Callable[[], None]) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.sectionHeader")
+        self.setFixedHeight(int(Height.SECTION))
         self.setAccessibleName(title)
         self.setFocusPolicy(_strong())
         self._on_toggle = on_toggle
         row = QHBoxLayout(self)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(4)
+        row.setSpacing(int(Space.XS))
         self.title = QLabel(title.upper(), self)
         self.title.setObjectName("formBuilder.sectionTitle")
         self.title.setAttribute(_transparent(), True)
         row.addWidget(self.title, 1)
         self.extra: List[QToolButton] = []
 
-    def add_extra(self, text: str, tip: str) -> QToolButton:
-        button = _tool(text, "formBuilder.sectionExtra", tip, self)
+    def add_extra(self, text: str, tip: str, name: str) -> QToolButton:
+        button = _tool(text, name, tip, self)
+        if name == "formBuilder.sectionSearch":
+            button.setFixedSize(int(Height.CONTROL), int(Height.CONTROL))
         button.setEnabled(False)
         button.setAccessibleName(tip)
         layout = self.layout()
@@ -384,8 +542,8 @@ class OutlinePane(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.header = _Header("Outline", self, self._toggle)
-        self.header.add_extra("+", "Not available yet")
-        self.header.add_extra("⌕", "Not available yet")
+        self.header.add_extra("+", "Not available yet", "formBuilder.sectionAdd")
+        self.header.add_extra(SEARCH_GLYPH, "Not available yet", "formBuilder.sectionSearch")
         layout.addWidget(self.header)
         self.tree = QTreeWidget(self)
         self.tree.setObjectName("formBuilder.structure")
@@ -452,7 +610,7 @@ class InsertPane(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.header = _Header("Insert", self, self._toggle)
-        self.header.add_extra("⌕", "Not available yet")
+        self.header.add_extra(SEARCH_GLYPH, "Not available yet", "formBuilder.sectionSearch")
         layout.addWidget(self.header)
         self.body = QLabel("Widgets you can place will show up here.", self)
         self.body.setObjectName("formBuilder.insertBody")
@@ -506,8 +664,8 @@ class InspectorPane(QWidget):
         self._summary_row = QWidget(self)
         self._summary_row.setObjectName("formBuilder.problemSummaryRow")
         summary_layout = QHBoxLayout(self._summary_row)
-        summary_layout.setContentsMargins(0, 4, 0, 0)
-        summary_layout.setSpacing(6)
+        summary_layout.setContentsMargins(0, int(Space.XS), 0, 0)
+        summary_layout.setSpacing(int(Space.S))
         self.problem_summary = QLabel(self._summary_row)
         self.problem_summary.setObjectName("formBuilder.problemSummary")
         self.problem_summary.setAccessibleName("Problems")
@@ -590,7 +748,8 @@ class _Rail(QWidget):
         super().__init__(parent)
         self.setObjectName(name)
         self._layout = QVBoxLayout(self)
-        self._layout.setContentsMargins(2, 4, 2, 4)
+        # 2 px is the inset that still leaves a 32 px button inside a 36 px rail.
+        self._layout.setContentsMargins(2, int(Space.XS), 2, int(Space.XS))
         self._layout.setSpacing(2)
         self._layout.addStretch(1)
 
@@ -644,9 +803,8 @@ class FormWorkbench(QWidget):
         self._drawer_listener: Optional[Callable[[], None]] = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
-        self._splitter = QSplitter(self)
+        self._splitter = _LineSplitter(self)
         self._splitter.setObjectName("formBuilder.splitter")
-        self._splitter.setHandleWidth(6)
         self._splitter.setChildrenCollapsible(False)
         self._splitter.splitterMoved.connect(self._remember_widths)
         orient = getattr(Qt, "Orientation", Qt)
@@ -657,9 +815,8 @@ class FormWorkbench(QWidget):
         self.outline = OutlinePane(on_pick, lambda collapsed: on_collapsed("outline", collapsed), self._left_stack)
         self.insert = InsertPane(lambda collapsed: on_collapsed("insert", collapsed), self._left_stack)
         self._left_body = QWidget(self._left_stack)
-        self._left_split = QSplitter(self._left_body)
+        self._left_split = _LineSplitter(self._left_body)
         self._left_split.setObjectName("formBuilder.leftSplitter")
-        self._left_split.setHandleWidth(6)
         self._left_split.setChildrenCollapsible(False)
         self._left_split.setOrientation(getattr(orient, "Vertical"))
         self._left_body.setObjectName("formBuilder.leftBody")
@@ -705,7 +862,7 @@ class FormWorkbench(QWidget):
         drawer_layout = QVBoxLayout(self._drawer)
         drawer_layout.setContentsMargins(0, 0, 0, 0)
         pin_row = QHBoxLayout()
-        self._pin = _button("Pin", "formBuilder.pin", "Keep this pane open", self._drawer)
+        self._pin = _tool("Pin", "formBuilder.pin", "Keep this pane open", self._drawer)
         self._pin.clicked.connect(self._pin_clicked)
         pin_row.addStretch(1)
         pin_row.addWidget(self._pin)
@@ -746,80 +903,103 @@ class FormWorkbench(QWidget):
         self._place_drawer()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        width = tokens.focus_border_width
-        self.setStyleSheet(
+        chrome = chrome_tokens(tokens)
+        self._splitter.set_line(QColor(chrome.border), QColor(chrome.panel))
+        self._left_split.set_line(QColor(chrome.border), QColor(chrome.panel))
+        drawer_px, drawer_border = _level2_stroke(chrome)
+        panes = (
             "QWidget#formBuilder\\.workbench, QWidget#formBuilder\\.outline,"
             " QWidget#formBuilder\\.insert, QWidget#formBuilder\\.inspector,"
             " QWidget#formBuilder\\.leftBody, QWidget#formBuilder\\.leftRail,"
             " QWidget#formBuilder\\.rightRail { background: %s; color: %s; }"
+            % (chrome.panel, chrome.paint("text", "panel"))
+        )
+        tree = (
             "QTreeWidget#formBuilder\\.structure { background: %s; color: %s; border: 1px solid %s; }"
+            "QTreeWidget#formBuilder\\.structure::item { min-height: %dpx; }"
             "QTreeWidget#formBuilder\\.structure::item:selected { background: %s; color: %s; }"
             "QTreeWidget#formBuilder\\.structure:focus { border: %dpx solid %s; }"
-            "QLabel#formBuilder\\.inspectorHeader,"
-            " QLabel#formBuilder\\.inspectorBody, QLabel#formBuilder\\.behaviorBody,"
-            " QLabel#formBuilder\\.noticeText { color: %s; background: transparent; }"
-            "QLabel#formBuilder\\.insertBody { color: %s; background: transparent; border: none; }"
+            % (
+                chrome.input,
+                chrome.paint("text", "input"),
+                chrome.border,
+                int(Height.OUTLINE_ROW),
+                chrome.row_selected,
+                chrome.paint("text", "row_selected"),
+                chrome.focus_width,
+                chrome.paint("accent", "input"),
+            )
+        )
+        labels = (
+            "QLabel#formBuilder\\.inspectorHeader { color: %s; background: transparent; border: none; %s }"
+            "QLabel#formBuilder\\.inspectorBody, QLabel#formBuilder\\.behaviorBody {"
+            " color: %s; background: transparent; border: none; %s }"
+            "QLabel#formBuilder\\.insertBody { color: %s; background: transparent; border: none; %s }"
             "QWidget#formBuilder\\.sectionHeader { background: transparent; color: %s; border: none; }"
             "QWidget#formBuilder\\.sectionHeader:focus { border: %dpx solid %s; }"
-            "QLabel#formBuilder\\.sectionTitle {"
-            " color: %s; background: transparent; border: none;"
-            " font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }"
-            "QLabel#formBuilder\\.railLabel {"
-            " color: %s; background: transparent; border: none; font-size: 8px; }"
-            "QFrame#formBuilder\\.notice, QFrame#formBuilder\\.drawer {"
-            " background: %s; color: %s; border: 1px solid %s; }"
+            "QLabel#formBuilder\\.sectionTitle { color: %s; background: transparent; border: none; %s }"
+            "QLabel#formBuilder\\.railLabel { color: %s; background: transparent; border: none; %s }"
+            % (
+                chrome.paint("text", "panel"),
+                font_css(chrome.scale.title, lock_weight=True),
+                chrome.paint("text", "panel"),
+                font_css(chrome.scale.body),
+                chrome.paint("muted", "panel"),
+                font_css(chrome.scale.caption),
+                chrome.paint("text", "panel"),
+                chrome.focus_width,
+                chrome.paint("accent", "panel"),
+                chrome.paint("muted", "panel"),
+                font_css(chrome.scale.overline, lock_weight=True),
+                chrome.paint("muted", "panel"),
+                font_css(chrome.scale.caption),
+            )
+        )
+        drawer = (
+            "QFrame#formBuilder\\.drawer {"
+            " background: %s; color: %s; border: %dpx solid %s; border-radius: %dpx; }"
+            % (
+                chrome.popup,
+                chrome.paint("text", "popup"),
+                drawer_px,
+                drawer_border,
+                int(Radius.POPOVER),
+            )
+        )
+        tabs = (
             "QTabWidget#formBuilder\\.inspectorTabs::pane, QTabWidget#formBuilder\\.leftTabs::pane {"
             " background: %s; color: %s; border: 1px solid %s; }"
             "QTabWidget#formBuilder\\.inspectorTabs QTabBar::tab,"
             " QTabWidget#formBuilder\\.leftTabs QTabBar::tab {"
-            " background: %s; color: %s; border: 1px solid %s; padding: 4px 8px; }"
+            " background: %s; color: %s; border: 1px solid %s; padding: %dpx %dpx; }"
             "QTabWidget#formBuilder\\.inspectorTabs QTabBar::tab:selected,"
-            " QTabWidget#formBuilder\\.leftTabs QTabBar::tab:selected {"
-            " background: %s; color: %s; }"
-            "%s"
-            "%s"
-            "%s"
+            " QTabWidget#formBuilder\\.leftTabs QTabBar::tab:selected { background: %s; color: %s; }"
             % (
-                tokens.panel_bg,
-                tokens.text_primary,
-                tokens.editor_bg,
-                tokens.text_primary,
-                tokens.border,
-                tokens.tree_selected_bg,
-                tokens.text_primary,
-                width,
-                tokens.accent,
-                tokens.text_primary,
-                tokens.text_muted,
-                tokens.text_primary,
-                width,
-                tokens.accent,
-                tokens.text_muted,
-                tokens.text_primary,
-                tokens.panel_bg,
-                tokens.text_primary,
-                tokens.border,
-                tokens.panel_bg,
-                tokens.text_primary,
-                tokens.border,
-                tokens.panel_bg,
-                tokens.text_primary,
-                tokens.border,
-                tokens.tree_selected_bg,
-                tokens.text_primary,
-                _splitter_qss(tokens),
-                flat_tool_button_qss(
-                    tokens,
-                    (
-                        "QToolButton#formBuilder\\.leftRail\\.outline",
-                        "QToolButton#formBuilder\\.leftRail\\.insert",
-                        "QToolButton#formBuilder\\.rightRail\\.properties",
-                        "QToolButton#formBuilder\\.rightRail\\.behavior",
-                        "QToolButton#formBuilder\\.sectionExtra",
-                    ),
-                ),
-                _problem_summary_qss(tokens),
+                chrome.panel,
+                chrome.paint("text", "panel"),
+                chrome.border,
+                chrome.panel,
+                chrome.paint("text", "panel"),
+                chrome.border,
+                int(Space.XS),
+                int(Space.S),
+                chrome.row_selected,
+                chrome.paint("text", "row_selected"),
             )
+        )
+        tools = _flat_tools(
+            chrome,
+            (
+                "QToolButton#formBuilder\\.leftRail\\.outline",
+                "QToolButton#formBuilder\\.leftRail\\.insert",
+                "QToolButton#formBuilder\\.rightRail\\.properties",
+                "QToolButton#formBuilder\\.rightRail\\.behavior",
+                "QToolButton#formBuilder\\.sectionAdd",
+                "QToolButton#formBuilder\\.sectionSearch",
+            ),
+        )
+        self.setStyleSheet(
+            panes + tree + labels + drawer + tabs + tools + _search_qss() + _pin_qss(chrome) + _problem_summary_qss(chrome)
         )
         self.canvas.apply_theme(tokens)
 

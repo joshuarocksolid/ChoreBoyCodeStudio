@@ -55,6 +55,14 @@ from app.features.form_builder.integration.layout import (
     WorkbenchMemory,
     plan_workbench,
 )
+from app.features.form_builder.qtside.theme.chrome import (
+    ChromeTokens,
+    Height,
+    Radius,
+    Space,
+    chrome_tokens,
+    font_css,
+)
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
 from app.features.form_builder.integration.problems_bridge import ProblemsBridge
 from app.features.form_builder.integration.run_action import run_open_form
@@ -66,6 +74,35 @@ from app.shell.theme_tokens import ShellThemeTokens
 
 XML_APPLY_HINT = "Edits here apply to the design when you switch back."
 XML_DISCARD_LABEL = "Discard XML edits"
+
+
+def _surface_qss(chrome: ChromeTokens) -> str:
+    return (
+        "QWidget#formBuilder\\.surface { background: %s; color: %s; }"
+        "QFrame#formBuilder\\.notice { background: %s; color: %s; border: 1px solid %s; }"
+        "QLabel#formBuilder\\.noticeText { color: %s; background: transparent; border: none; %s }"
+        "QPushButton#formBuilder\\.noticeButton {"
+        " color: %s; background: %s; border: 1px solid %s; border-radius: %dpx;"
+        " padding: 0px %dpx; min-height: %dpx; }"
+        "QPushButton#formBuilder\\.noticeButton:focus { border: %dpx solid %s; }"
+        % (
+            chrome.panel,
+            chrome.paint("text", "panel"),
+            chrome.panel,
+            chrome.paint("text", "panel"),
+            chrome.border,
+            chrome.paint("text", "panel"),
+            font_css(chrome.scale.body),
+            chrome.paint("text", "input"),
+            chrome.input,
+            chrome.border,
+            int(Radius.CONTROL),
+            int(Space.S),
+            int(Height.CONTROL),
+            chrome.focus_width,
+            chrome.paint("accent", "input"),
+        )
+    )
 
 _SHELL_UNDO = "shell.action.edit.undo"
 _SHELL_REDO = "shell.action.edit.redo"
@@ -144,7 +181,7 @@ class FormSurface(QWidget):
         self._banner_frame = QFrame(self)
         self._banner_frame.setObjectName("formBuilder.xmlBanner")
         banner_row = QHBoxLayout(self._banner_frame)
-        banner_row.setContentsMargins(8, 4, 4, 4)
+        banner_row.setContentsMargins(int(Space.S), int(Space.XS), int(Space.XS), int(Space.XS))
         self._banner = QLabel(self._banner_frame)
         self._banner.setObjectName("formBuilder.xmlBannerText")
         self._banner.setAccessibleName("XML notice")
@@ -243,10 +280,7 @@ class FormSurface(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
-        self.setStyleSheet(
-            "QWidget#formBuilder\\.surface { background: %s; color: %s; }"
-            % (tokens.panel_bg, tokens.text_primary)
-        )
+        self.setStyleSheet(_surface_qss(chrome_tokens(tokens)))
         self._toolbar.apply_theme(tokens)
         self._workbench.apply_theme(tokens)
         self._paint_banner()
@@ -552,25 +586,33 @@ class FormSurface(QWidget):
         tokens = self._tokens
         if tokens is None:
             return
-        width = tokens.focus_border_width
+        chrome = chrome_tokens(tokens)
         if self._banner_is_error:
-            color = tokens.diag_error_color or tokens.accent
+            color = chrome.paint("error", "input")
             border = color
         else:
-            color = tokens.text_primary
-            border = tokens.border
+            color = chrome.paint("text", "input")
+            border = chrome.border
         self._banner_frame.setStyleSheet(
-            "QFrame#formBuilder\\.xmlBanner {"
-            f" background: {tokens.editor_bg}; border: 1px solid {border}; }}"
-            "QLabel#formBuilder\\.xmlBannerText {"
-            f" color: {color}; background: transparent; border: none; }}"
+            "QFrame#formBuilder\\.xmlBanner { background: %s; border: 1px solid %s; }"
+            "QLabel#formBuilder\\.xmlBannerText { color: %s; background: transparent; border: none; %s }"
+            % (chrome.input, border, color, font_css(chrome.scale.body))
         )
         self._discard.setStyleSheet(
             "QPushButton#formBuilder\\.discardXml {"
-            f" color: {tokens.text_primary}; background: {tokens.input_bg};"
-            f" border: 1px solid {tokens.border}; padding: 2px 8px; }}"
-            "QPushButton#formBuilder\\.discardXml:focus {"
-            f" border: {width}px solid {tokens.accent}; }}"
+            " color: %s; background: %s; border: 1px solid %s; border-radius: %dpx;"
+            " padding: 0px %dpx; min-height: %dpx; }"
+            "QPushButton#formBuilder\\.discardXml:focus { border: %dpx solid %s; }"
+            % (
+                chrome.paint("text", "input"),
+                chrome.input,
+                chrome.border,
+                int(Radius.CONTROL),
+                int(Space.S),
+                int(Height.BUTTON),
+                chrome.focus_width,
+                chrome.paint("accent", "input"),
+            )
         )
 
     def _ensure_editor(self) -> CodeEditorWidget:

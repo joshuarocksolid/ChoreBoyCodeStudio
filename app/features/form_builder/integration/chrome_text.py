@@ -8,7 +8,7 @@ from typing import Optional, Sequence
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, Node, SpacerNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import RectValue
+from app.features.form_builder.engine.ui4.values import RectValue, StringValue
 from app.intelligence.diagnostics_models import CodeDiagnostic, DiagnosticSeverity
 
 _LAYOUT_PHRASE = {
@@ -38,6 +38,13 @@ def page_chip_text(document: UiDocument, fallback_name: str) -> tuple[str, str]:
     else:
         phrase = "No layout"
     return name, phrase
+
+
+def window_title(document: UiDocument) -> str:
+    value = document.root.value("windowTitle")
+    if isinstance(value, StringValue) and value.text:
+        return value.text
+    return document.root.object_name or "Form"
 
 
 def page_chip_label(document: UiDocument, fallback_name: str) -> str:

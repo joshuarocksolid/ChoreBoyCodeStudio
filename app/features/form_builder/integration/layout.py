@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.features.form_builder.qtside.theme.chrome import Height, Space
+
 
 LEFT_MIN = 184
 LEFT_MAX = 360
@@ -22,7 +24,7 @@ DRAWER_WIDTH = 240
 INSPECTOR_DRAWER = 288
 CANVAS_MIN = 360
 GUTTER = 64
-TOOLBAR_HEIGHT = 36
+TOOLBAR_HEIGHT = int(Height.TOOLBAR)
 
 WIDE_MIN = 1180
 COMPACT_MIN = 900
@@ -84,28 +86,28 @@ def plan_workbench(width: int, height: int, memory: WorkbenchMemory) -> LayoutPl
     toolbar_compact = width < TOOLBAR_FOLD
     if width >= WIDE_MIN:
         density = "wide"
-        padding = 12
+        padding = int(Space.M)
         left = remembered.left
         inspector = remembered.inspector
         left_docked = True
         inspector_docked = True
     elif width >= COMPACT_MIN:
         density = "compact"
-        padding = 8
+        padding = int(Space.S)
         left = COMPACT_LEFT
         inspector = COMPACT_INSPECTOR
         left_docked = True
         inspector_docked = True
     elif width >= RAIL_MIN:
         density = "rail"
-        padding = 8
+        padding = int(Space.S)
         left = remembered.left if remembered.pin_left else RAIL_WIDTH
         inspector = remembered.inspector
         left_docked = remembered.pin_left
         inspector_docked = True
     else:
         density = "drawer"
-        padding = 8
+        padding = int(Space.S)
         left = remembered.left if remembered.pin_left else RAIL_WIDTH
         inspector = remembered.inspector if remembered.pin_inspector else RAIL_WIDTH
         left_docked = remembered.pin_left
