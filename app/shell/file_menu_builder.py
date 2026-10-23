@@ -46,6 +46,16 @@ def build_file_menu(ctx: MenuBuildContext) -> object:
         enabled=True,
         callback=callbacks.on_new_project_from_template,
     )
+    if callbacks.on_new_form is not None:
+        register_menu_action(
+            qt_widgets=ctx.qt_widgets,
+            menu=file_menu,
+            action_lookup=ctx.actions,
+            action_id="shell.action.file.newForm",
+            label="New Form…",
+            enabled=True,
+            callback=callbacks.on_new_form,
+        )
     file_menu.addSeparator()
     register_menu_action(
         qt_widgets=ctx.qt_widgets,

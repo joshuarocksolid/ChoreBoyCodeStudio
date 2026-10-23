@@ -129,6 +129,10 @@ def show_single_item_tree_context_menu(
     menu, icons = _new_tree_menu(window)
     shortcuts = _tree_menu_shortcuts(window)
     new_file_action = _add_menu_action(menu, icons["new_file"], "New File…")
+    new_form_opener = getattr(window, "_open_new_form", None)
+    new_form_action = None
+    if callable(new_form_opener):
+        new_form_action = _add_menu_action(menu, icons["new_file"], "New Form…")
     new_folder_action = _add_menu_action(menu, icons["new_folder"], "New Folder…")
     menu.addSeparator()
     rename_action = _add_menu_action(
@@ -256,6 +260,13 @@ def show_single_item_tree_context_menu(
 
     if chosen == new_file_action:
         workflow.handle_tree_new_file(absolute_path if is_directory else str(Path(absolute_path).parent))
+    elif (
+        new_form_action is not None
+        and chosen == new_form_action
+        and callable(new_form_opener)
+    ):
+        folder = absolute_path if is_directory else str(Path(absolute_path).parent)
+        new_form_opener(folder)
     elif chosen == new_folder_action:
         workflow.handle_tree_new_folder(absolute_path if is_directory else str(Path(absolute_path).parent))
     elif chosen == rename_action:
