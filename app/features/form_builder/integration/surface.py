@@ -10,7 +10,18 @@ from typing import Callable, Mapping, Optional, Sequence
 
 from app.qt.QtCore import Qt, QTimer
 from app.qt.QtGui import QKeySequence
-from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QShortcut, QStackedWidget, QVBoxLayout, QWidget
+from app.qt.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QShortcut,
+    QStackedWidget,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
@@ -57,7 +68,7 @@ _SAVED_FADE_MS = 4000
 
 
 def plain_banner_error(error: str) -> str:
-    """``Line 134: this form is not valid XML.`` from a reader sentence."""
+    """``Line 42: the tag is not closed. Fix it, or [Discard XML edits]`` when a line is known."""
     message = error.strip()
     line = ""
     marker = " (line "
@@ -68,7 +79,7 @@ def plain_banner_error(error: str) -> str:
     if message:
         message = message[0].lower() + message[1:]
     if line:
-        return "Line %s: %s." % (line, message)
+        return "Line %s: %s. Fix it, or [Discard XML edits]" % (line, message)
     if not message:
         return error
     return message[0].upper() + message[1:] + "."
@@ -103,6 +114,7 @@ class FormSurface(QWidget):
         self._tokens = request.theme
         self._banner_is_error = False
         self._save_faded = True
+        self._tab_widget: Optional[QTabWidget] = None
         self._store: Optional[WorkbenchMemoryStore] = None
         self._plan = plan_workbench(0, 0, WorkbenchMemory())
         self.setObjectName("formBuilder.surface")
@@ -174,9 +186,13 @@ class FormSurface(QWidget):
         self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._esc.setEnabled(False)
         self._esc.activated.connect(self._workbench.close_drawers)
+        self._workbench.set_drawer_listener(self._sync_drawer_escape)
         self._order_focus()
         self._refresh_design()
         self.apply_theme(request.theme)
+        app = QApplication.instance()
+        if app is not None:
+            app.focusChanged.connect(self._on_focus_changed)
 
     def widget(self) -> QWidget:
         return self
@@ -262,6 +278,12 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        app = QApplication.instance()
+        if app is not None:
+            try:
+                app.focusChanged.disconnect(self._on_focus_changed)
+            except (RuntimeError, TypeError):
+                pass
         self._clear_shell_undo()
         self._selection_unsub()
         self._source_unsub()
@@ -331,8 +353,19 @@ class FormSurface(QWidget):
 
         def discard() -> None:
             self._notice.dismiss()
-            if not self.undo():
+            disk = self._source.saved_text()
+            try:
+                self._session.log.execute(ReplaceDocument(disk, reason="history"))
+            except CommandRejected:
                 self._discard_xml()
+            else:
+                if self._source.mode == "xml":
+                    self._source.cancel_xml_mode()
+                    self._set_xml_checked(False)
+                    self._hide_banner()
+                    self._stack.setCurrentWidget(self._workbench)
+                self._source.mark_saved(disk)
+                self._refresh_design()
             on_discard()
 
         self._notice.show_choices(
@@ -342,8 +375,11 @@ class FormSurface(QWidget):
 
     def showEvent(self, event: object) -> None:  # noqa: N802
         super().showEvent(event)  # type: ignore[arg-type]
-        self._load_memory()
         self._apply_responsive()
+        self._attach_tab_watch()
+
+    def focusInEvent(self, event: object) -> None:  # noqa: N802
+        super().focusInEvent(event)  # type: ignore[arg-type]
         self._bind_shell_undo()
 
     def hideEvent(self, event: object) -> None:  # noqa: N802
@@ -387,6 +423,9 @@ class FormSurface(QWidget):
         error = self._source.leave_xml_mode()
         if error is not None:
             self._set_xml_checked(True)
+            line = _error_line(error)
+            if line > 0 and editor is not None:
+                editor.go_to_line(line)
             self._show_banner(plain_banner_error(error), error=True)
             return
         self._hide_banner()
@@ -644,6 +683,45 @@ class FormSurface(QWidget):
         self._save_memory()
         self._apply_responsive()
 
+    def _on_focus_changed(self, _old: object, new: object) -> None:
+        if self._released or new is None:
+            return
+        if new is self or self.isAncestorOf(new):  # type: ignore[arg-type]
+            self._bind_shell_undo()
+
+    def _attach_tab_watch(self) -> None:
+        widget: Optional[QWidget] = self.parentWidget()
+        found: Optional[QTabWidget] = None
+        while widget is not None:
+            if isinstance(widget, QTabWidget):
+                found = widget
+                break
+            widget = widget.parentWidget()
+        if found is self._tab_widget:
+            return
+        previous = self._tab_widget
+        if previous is not None:
+            try:
+                previous.currentChanged.disconnect(self._on_tab_activated)
+            except (RuntimeError, TypeError):
+                pass
+        self._tab_widget = found
+        if found is not None:
+            found.currentChanged.connect(self._on_tab_activated)
+
+    def _on_tab_activated(self, _index: int) -> None:
+        tab = self._tab_widget
+        if tab is None or self._released:
+            return
+        current = tab.currentWidget()
+        if current is None:
+            return
+        if current is self or current.isAncestorOf(self) or self.isAncestorOf(current):
+            self._bind_shell_undo()
+
+    def _sync_drawer_escape(self) -> None:
+        self._esc.setEnabled(self._workbench.drawer_open())
+
     def _bind_shell_undo(self) -> None:
         window = self.window()
         registry_fn = getattr(window, "menu_registry", None)
@@ -717,15 +795,31 @@ class FormSurface(QWidget):
             self._toolbar.text_size,
             self._toolbar.two_widths,
             self._toolbar.preview,
+            self._workbench.outline.header,
+            *self._workbench.outline.header.extra,
             self._workbench.outline.tree,
+            self._workbench.insert.header,
+            *self._workbench.insert.header.extra,
             self._workbench.insert.body,
             self._workbench.canvas_view(),
+            self._workbench.inspector.header,
             self._workbench.inspector.tabs,
         ]
         previous = order[0]
         for widget in order[1:]:
             self.setTabOrder(previous, widget)
             previous = widget
+
+
+def _error_line(error: str) -> int:
+    message = error.strip()
+    marker = " (line "
+    if not message.endswith(")") or marker not in message:
+        return 0
+    tail = message.rpartition(marker)[2][:-1].strip()
+    if tail.isdigit():
+        return int(tail)
+    return 0
 
 
 def _parses(text: str) -> bool:

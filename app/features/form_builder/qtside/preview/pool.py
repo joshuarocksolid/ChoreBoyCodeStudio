@@ -40,6 +40,7 @@ from app.features.form_builder.engine.ipc.protocol import (
     HostMessage,
     Ready,
     Response,
+    ViewClosed,
 )
 from app.features.form_builder.engine.ipc.timing import (
     BACKOFF_SCHEDULE,
@@ -273,6 +274,9 @@ class PreviewPool:
 
     def _deliver(self, message: ChildMessage) -> None:
         if isinstance(message, Ready):
+            return self._fanout(message)
+        if isinstance(message, ViewClosed):
+            self._fb604_at.pop(message.view_id, None)
             return self._fanout(message)
         if isinstance(message, ErrorReport):
             if message.code == "FB604" and not self._admit_fb604(message.view_id):
