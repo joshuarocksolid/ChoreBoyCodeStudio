@@ -130,6 +130,9 @@ QMenu::item:selected {{
     background: {tokens.tree_hover_bg};
     color: {tokens.text_primary};
 }}
+QMenu::item:disabled {{
+    color: {tokens.text_muted};
+}}
 QMenu::separator {{
     height: 1px;
     background: {tokens.border};
