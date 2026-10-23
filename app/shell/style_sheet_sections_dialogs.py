@@ -410,7 +410,8 @@ QPushButton#shell\\.runtimeCenterDialog\\.closeButton:pressed {{
     background: {tokens.accent_pressed};
 }}
 QPushButton#shell\\.runtimeCenterDialog\\.copyDetails,
-QPushButton#shell\\.runtimeCenterDialog\\.goToFile {{
+QPushButton#shell\\.runtimeCenterDialog\\.goToFile,
+QPushButton#shell\\.runtimeCenterDialog\\.saveFormButton {{
     background: {tokens.input_bg};
     color: {tokens.text_primary};
     border: 1px solid {tokens.border};
@@ -420,7 +421,8 @@ QPushButton#shell\\.runtimeCenterDialog\\.goToFile {{
     font-weight: 600;
 }}
 QPushButton#shell\\.runtimeCenterDialog\\.copyDetails:hover,
-QPushButton#shell\\.runtimeCenterDialog\\.goToFile:hover {{
+QPushButton#shell\\.runtimeCenterDialog\\.goToFile:hover,
+QPushButton#shell\\.runtimeCenterDialog\\.saveFormButton:hover {{
     background: {tokens.tree_hover_bg};
     border-color: {tokens.accent};
 }}

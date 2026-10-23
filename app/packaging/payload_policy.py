@@ -21,14 +21,15 @@ class PackagingPayloadPolicy:
     - ``vendor/`` ships in the payload but top-level vendor Python is not
       statically audited (vendored code is assumed managed separately).
     - ``cbcs/`` metadata (``package.json``, ``project.json``, etc.) ships;
-      ``cbcs/runs``, ``cbcs/logs``, and ``cbcs/cache`` are pruned from copy.
+      ``cbcs/runs``, ``cbcs/logs``, ``cbcs/cache``, and ``cbcs/form_builder``
+      are pruned from copy. Hand-edit backups under ``cbcs/form_builder`` never ship.
     - Hidden dot-paths, ``__pycache__``, and ``*.pyc`` / ``*.pyo`` never ship.
     """
 
     include_vendor: bool = True
     audit_vendor_python: bool = False
     include_cbcs_metadata: bool = True
-    prune_cbcs_subtrees: tuple[str, ...] = ("runs", "logs", "cache")
+    prune_cbcs_subtrees: tuple[str, ...] = ("runs", "logs", "cache", "form_builder")
 
     def is_payload_excluded(self, rel_path: Path) -> bool:
         """Return True when *rel_path* must not appear in the exported payload."""
