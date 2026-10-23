@@ -8,9 +8,27 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import qRegisterResourceData, qUnregisterResourceData
-from app.qt.QtWidgets import QApplication, QLayout, QSplitter, QTabWidget, QToolBox, QWidget
-from app.qt.qt_compat import delete_now, wrapper_is_valid
+from app.qt.QtCore import QObject, qRegisterResourceData, qUnregisterResourceData
+from app.qt.QtWidgets import (
+    QApplication,
+    QBoxLayout,
+    QComboBox,
+    QFormLayout,
+    QGridLayout,
+    QLayout,
+    QListWidget,
+    QMenu,
+    QMenuBar,
+    QSplitter,
+    QStackedWidget,
+    QTableWidget,
+    QTabWidget,
+    QToolBar,
+    QToolBox,
+    QWidget,
+    QWizard,
+)
+from app.qt.qt_compat import delete_now, enum_value, wrapper_is_valid
 from app.features.form_builder.engine.codegen.resources import compile_resource_tree, read_qrc
 from app.features.form_builder.engine.events import (
     PRIORITY_REALIZE,
@@ -38,7 +56,13 @@ from app.features.form_builder.qtside.realize.props import (
     splitter_sizes,
     text_of,
 )
-from app.features.form_builder.qtside.realize.tree import NODE_ID_PROPERTY, _Structure, _node_id
+from app.features.form_builder.qtside.realize.tree import (
+    NODE_ID_PROPERTY,
+    _GEOMETRY_PROPS,
+    _Structure,
+    _grid_extent,
+    _node_id,
+)
 from app.features.form_builder.qtside.theme.runtime import isolate_widget
 
 logger = logging.getLogger(__name__)
@@ -89,6 +113,8 @@ class Realizer(_Structure):
         self._mdi: Dict[NodeId, object] = {}
         self._buddy_of: Dict[NodeId, str] = {}
         self._buddy_users: Dict[str, List[NodeId]] = {}
+        self._pending_containers: set = set()
+        self._morph_buddies: set = set()
         self._registered: List[object] = []
         self._problems: List[str] = []
         self._root: Optional[QWidget] = None
@@ -113,6 +139,7 @@ class Realizer(_Structure):
         isolate_widget(widget)
         self._reapply_authored_look(root_node, widget)
         self._index_buddies()
+        self._reapply_document_geometry()
         return widget
 
     def on_changeset(self, changeset: ChangeSet) -> PatchStats:
@@ -224,6 +251,8 @@ class Realizer(_Structure):
         self._unregister_resources()
 
     def _patch(self, changeset: ChangeSet) -> int:
+        # Count before reconcile parks removed widgets out of the map.
+        destroyed = self._removed_widget_count(changeset)
         document = self._session.document
         for change in changeset.changes:
             if not isinstance(change, FieldChanged):
@@ -240,6 +269,8 @@ class Realizer(_Structure):
             if isinstance(change, NodeMoved):
                 self._detach_moved(change.node)
         containers = set(changeset.structure_dirty)
+        containers.update(self._pending_containers)
+        self._pending_containers.clear()
         for change in changeset.changes:
             if isinstance(change, FieldChanged) and change.field in _LAYOUT_FIELDS:
                 node = document.get(change.node)
@@ -247,32 +278,53 @@ class Realizer(_Structure):
                     containers.add(node.parent_id)
                 elif isinstance(node, LayoutNode):
                     containers.add(node.id)
-        ordered = sorted(
-            (node_id for node_id in containers if document.contains(node_id)),
-            key=self._order_key,
-        )
-        for node_id in ordered:
-            self._reconcile_node(node_id)
-        self._buddies_in(ordered)
-        destroyed = self._destroy_removed(changeset)
+        self._reconcile_ids(containers)
+        self._destroy_removed(changeset)
         for owner, kind, name in changeset.property_dirty:
             node = document.get(owner)
             if isinstance(node, WidgetNode) and (node.class_name, name) in REBUILD_PROPERTIES:
                 self._morph_widget(node)
                 continue
             self._patch_property(owner, kind, name)
+        if self._pending_containers:
+            extra = set(self._pending_containers)
+            self._pending_containers.clear()
+            self._reconcile_ids(extra)
         renamed = set()
         for change in changeset.changes:
             if isinstance(change, FieldChanged) and change.field in ("object_name", "name"):
-                self._rename(change.node, change.new)
+                self._rename(change.node)
                 if isinstance(change.old, str):
                     renamed.add(change.old)
-                if isinstance(change.new, str):
-                    renamed.add(change.new)
+                current = _document_object_name(document.get(change.node))
+                if current:
+                    renamed.add(current)
             elif isinstance(change, FieldChanged) and change.field == "zorder":
                 self._restack(change.node)
         self._refresh_buddies(changeset, renamed)
+        self._flush_morph_buddies()
+        if containers or _geometry_touched(changeset):
+            self._reapply_document_geometry()
         return destroyed
+
+    def _reconcile_ids(self, node_ids: set) -> None:
+        document = self._session.document
+        ordered = sorted(
+            (node_id for node_id in node_ids if document.contains(node_id)),
+            key=self._order_key,
+        )
+        for node_id in ordered:
+            self._reconcile_node(node_id)
+        self._buddies_in(ordered)
+
+    def _flush_morph_buddies(self) -> None:
+        document = self._session.document
+        pending = list(self._morph_buddies)
+        self._morph_buddies.clear()
+        for node_id in pending:
+            node = document.get(node_id)
+            if isinstance(node, WidgetNode):
+                self._set_buddy(node)
 
     def _patch_property(self, owner: NodeId, kind: str, name: str) -> None:
         node = self._session.document.get(owner)
@@ -360,12 +412,16 @@ class Realizer(_Structure):
         except (TypeError, RuntimeError, AttributeError):
             return
 
-    def _rename(self, node_id: NodeId, new: object) -> None:
-        if not isinstance(new, str):
+    def _rename(self, node_id: NodeId, new: object = None) -> None:
+        """Re-read the name from the document. ``new`` is the event value and is ignored."""
+        del new
+        node = self._session.document.get(node_id)
+        name = _document_object_name(node)
+        if not name and node is None:
             return
         obj = self._objects.get(node_id)
         if obj is not None and wrapper_is_valid(obj):
-            obj.setObjectName(new)  # type: ignore[attr-defined]
+            obj.setObjectName(name)  # type: ignore[attr-defined]
 
     def _refresh_buddies(self, changeset: ChangeSet, renamed: set) -> None:
         document = self._session.document
@@ -492,17 +548,11 @@ class Realizer(_Structure):
             return document.root.id
         node = document.get(target)
         widget = self._widgets.get(target)
-        if not isinstance(node, WidgetNode) or widget is None:
+        if not isinstance(node, WidgetNode) or widget is None or not wrapper_is_valid(widget):
             self.build()
             return document.root.id
-        for desc in document.iter_preorder(target):
-            if desc.id != target:
-                self._wipe(desc.id)
         self._park_children(node, widget)
-        for pooled in list(self._pool.values()):
-            if isinstance(pooled, QWidget):
-                delete_now(pooled)
-        self._pool.clear()
+        self._settle_descendants(widget, replacing=target, delete_dead=True)
         self._fill_widget(node, widget)
         return target
 
@@ -527,7 +577,7 @@ class Realizer(_Structure):
         parent = widget.parentWidget()
         parent_id = _node_id(parent) if parent is not None else None
         buddy_name = None
-        if hasattr(widget, "buddy") and widget.buddy() is not None:
+        if hasattr(widget, "buddy") and widget.buddy() is not None and wrapper_is_valid(widget.buddy()):
             buddy_name = widget.buddy().objectName()
         pages: Tuple[str, ...] = ()
         if isinstance(widget, QTabWidget):
@@ -543,6 +593,9 @@ class Realizer(_Structure):
             buddy_name,
             pages,
             widget.styleSheet(),
+            _current_index(widget),
+            _item_texts(widget),
+            _action_names(widget),
         )
 
     def _layout_signature(self, node: LayoutNode) -> Tuple[object, ...]:
@@ -555,13 +608,40 @@ class Realizer(_Structure):
             if item is None:
                 items.append(None)
                 continue
-            child = item.widget()
-            nested = item.layout()
-            child_id = _node_id(child) if child is not None else None
-            if child_id is None and nested is not None:
-                child_id = _node_id(nested)
-            items.append(None if child_id is None else int(child_id))
-        return (type(layout).__name__, layout.objectName(), int(node.id), tuple(items))
+            items.append(self._layout_item_signature(layout, item, index))
+        return (
+            type(layout).__name__,
+            layout.objectName(),
+            int(node.id),
+            tuple(items),
+            _layout_metrics(layout, node),
+        )
+
+    def _layout_item_signature(self, layout: QLayout, item: object, index: int) -> Tuple[object, ...]:
+        align = _align_int(item)
+        position = _item_position(layout, index)
+        spacer = item.spacerItem() if hasattr(item, "spacerItem") else None
+        if spacer is not None:
+            hint = spacer.sizeHint()
+            spacer_id = self._spacer_of(spacer)
+            if spacer_id is None:
+                spacer_id = self._spacer_of(item)
+            return (
+                "spacer",
+                None if spacer_id is None else int(spacer_id),
+                int(hint.width()),
+                int(hint.height()),
+                align,
+                position,
+            )
+        child = item.widget() if hasattr(item, "widget") else None
+        nested = item.layout() if hasattr(item, "layout") else None
+        child_id = _node_id(child) if child is not None else None
+        kind = "widget"
+        if child_id is None and nested is not None:
+            child_id = _node_id(nested)
+            kind = "layout"
+        return (kind, None if child_id is None else int(child_id), align, position)
 
     def _register_resources(self) -> None:
         self._unregister_resources()
@@ -613,9 +693,19 @@ class Realizer(_Structure):
     def _destroy_tree(self) -> None:
         root = self._root
         self._root = None
+        # A replaced layout can sit in the pool still holding widgets that the
+        # live tree also parents. Deleting the root first frees those widgets,
+        # and deleting the layout afterwards crashes. Empty those layouts now,
+        # while the widgets are alive, and delete the layouts before the root.
+        self._delete_layouts_outside(root)
+        orphans = [obj for obj in self._pool.values() if wrapper_is_valid(obj)]
         if root is not None and wrapper_is_valid(root):
+            self._wipe_ids_under(root)
             root.setParent(None)
             delete_now(root)
+        for pooled in orphans:
+            if wrapper_is_valid(pooled):
+                delete_now(pooled)
         self._widgets.clear()
         self._layouts.clear()
         self._actions.clear()
@@ -623,6 +713,33 @@ class Realizer(_Structure):
         self._spacers.clear()
         self._pool.clear()
         self._mdi.clear()
+
+    def _delete_layouts_outside(self, root: Optional[QWidget]) -> None:
+        seen = set()
+        pending = list(self._pool.values()) + list(self._layouts.values())
+        for obj in pending:
+            if not isinstance(obj, QLayout) or not wrapper_is_valid(obj) or id(obj) in seen:
+                continue
+            seen.add(id(obj))
+            if root is not None and _nested_under(obj, root):
+                continue
+            while obj.count():
+                obj.takeAt(0)
+            if wrapper_is_valid(obj):
+                delete_now(obj)
+
+    def _wipe_ids_under(self, root: QWidget) -> None:
+        """Drop map entries for a tree that ``delete_now`` is about to free."""
+        self._wipe_if_tagged(root)
+        if not hasattr(root, "findChildren"):
+            return
+        for child in root.findChildren(QObject):
+            self._wipe_if_tagged(child)
+
+    def _wipe_if_tagged(self, obj: object) -> None:
+        node_id = _node_id(obj)
+        if node_id is not None:
+            self._wipe(node_id)
 
     def _resolve_path(self, path: str) -> str:
         return path_under(self._base_dir, path)
@@ -646,3 +763,97 @@ def _fresh_widget(short_name: str, cls: type) -> Optional[QWidget]:
 def _ensure_app() -> None:
     if QApplication.instance() is None:
         QApplication([])
+
+
+def _geometry_touched(changeset: ChangeSet) -> bool:
+    for _owner, kind, name in changeset.property_dirty:
+        if kind == "property" and name in _GEOMETRY_PROPS:
+            return True
+    return False
+
+
+def _document_object_name(node: object) -> str:
+    if node is None:
+        return ""
+    object_name = getattr(node, "object_name", None)
+    if isinstance(object_name, str) and object_name:
+        return object_name
+    name = getattr(node, "name", None)
+    if isinstance(name, str):
+        return name
+    if isinstance(object_name, str):
+        return object_name
+    return ""
+
+
+def _current_index(widget: QWidget) -> Optional[int]:
+    if isinstance(widget, QWizard):
+        return int(widget.currentId())
+    if isinstance(widget, (QStackedWidget, QTabWidget, QToolBox)):
+        return int(widget.currentIndex())
+    return None
+
+
+def _item_texts(widget: QWidget) -> Tuple[object, ...]:
+    if isinstance(widget, QComboBox):
+        return tuple(widget.itemText(index) for index in range(widget.count()))
+    if isinstance(widget, QListWidget):
+        return tuple(widget.item(index).text() for index in range(widget.count()) if widget.item(index) is not None)
+    if isinstance(widget, QTableWidget):
+        texts: List[object] = []
+        for row in range(widget.rowCount()):
+            for column in range(widget.columnCount()):
+                cell = widget.item(row, column)
+                texts.append((row, column, "" if cell is None else cell.text()))
+        return tuple(texts)
+    return ()
+
+
+def _nested_under(obj: object, root: QWidget) -> bool:
+    current = obj.parent() if hasattr(obj, "parent") else None
+    seen = set()
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if current is root:
+            return True
+        current = current.parent() if hasattr(current, "parent") else None
+    return False
+
+
+def _action_names(widget: QWidget) -> Tuple[str, ...]:
+    if not isinstance(widget, (QMenu, QMenuBar, QToolBar)):
+        return ()
+    return tuple(action.objectName() for action in widget.actions())
+
+
+def _layout_metrics(layout: QLayout, node: object) -> Tuple[object, ...]:
+    if isinstance(layout, QGridLayout):
+        # rowCount() never shrinks, so a patched grid can report empty rows a
+        # fresh layout does not. Compare the rows the document still occupies.
+        rows, columns = _grid_extent(node)  # type: ignore[arg-type]
+        return (
+            tuple(int(layout.rowStretch(index)) for index in range(rows)),
+            tuple(int(layout.columnStretch(index)) for index in range(columns)),
+            tuple(int(layout.rowMinimumHeight(index)) for index in range(rows)),
+            tuple(int(layout.columnMinimumWidth(index)) for index in range(columns)),
+        )
+    if isinstance(layout, QBoxLayout):
+        return tuple(int(layout.stretch(index)) for index in range(layout.count()))
+    return ()
+
+
+def _item_position(layout: QLayout, index: int) -> Optional[Tuple[int, ...]]:
+    if isinstance(layout, QGridLayout):
+        row, column, rowspan, colspan = layout.getItemPosition(index)
+        return (int(row), int(column), int(rowspan), int(colspan))
+    if isinstance(layout, QFormLayout):
+        row, role = layout.getItemPosition(index)
+        return (int(row), int(enum_value(role)))
+    return None
+
+
+def _align_int(item: object) -> int:
+    try:
+        return int(enum_value(item.alignment()))  # type: ignore[attr-defined]
+    except (TypeError, AttributeError, ValueError):
+        return 0
