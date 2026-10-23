@@ -1,4 +1,3 @@
-"""Raw XML stubs. A later lane replaces one by registering its key without baseline."""
 
 from __future__ import annotations
 
@@ -36,13 +35,11 @@ _UI = (
     "</ui>\n"
 )
 
-
 class RawValueError(ValueError):
-    """The text is not one value element of the expected kind."""
+    pass
 
 
 def raw_text(value: Optional[Value]) -> str:
-    """The value's own XML element, or empty when there is no value."""
     if value is None:
         return ""
     fragment = Fragment(
@@ -56,9 +53,7 @@ def raw_text(value: Optional[Value]) -> str:
     )
     return _cut_element(write_fragment(fragment), value.ELEMENT)
 
-
 def parse_raw_value(element: str, text: str) -> Value:
-    """The inverse of raw_text. Raises RawValueError when the text is not one ``element``."""
     body = text.strip()
     if _opens(body, element, 0) != 0:
         raise RawValueError("expected a <%s> value" % element)
@@ -73,9 +68,7 @@ def parse_raw_value(element: str, text: str) -> Value:
         raise RawValueError("expected a <%s> value" % element)
     return found[0].value
 
-
 class RawXmlEditor:
-    """A Raw XML button that opens a box captioned Raw value (XML)."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -121,12 +114,10 @@ class RawXmlEditor:
             return
         self._host.commit(parsed)
 
-
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(PaletteValue.ELEMENT), RawXmlEditor, baseline=True)
     registrar.editor(EditorKey(IconSetValue.ELEMENT), RawXmlEditor, baseline=True)
     registrar.editor(STYLESHEET, RawXmlEditor, baseline=True)
-
 
 def _shown_xml(value: RowValue) -> str:
     if isinstance(value, Written):
@@ -134,7 +125,6 @@ def _shown_xml(value: RowValue) -> str:
     if isinstance(value, Unset):
         return raw_text(value.default)
     return ""
-
 
 def _opens(text: str, element: str, start: int) -> int:
     token = "<" + element
@@ -145,7 +135,6 @@ def _opens(text: str, element: str, start: int) -> int:
             return index
         index = text.find(token, index + 1)
     return -1
-
 
 def _cut_element(text: str, element: str) -> str:
     start = _opens(text, element, 0)

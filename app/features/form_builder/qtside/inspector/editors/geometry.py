@@ -1,4 +1,3 @@
-"""Size, rectangle, and size policy."""
 
 from __future__ import annotations
 
@@ -33,7 +32,6 @@ _POLICIES = (
     "Ignored",
 )
 
-
 class SizeEditor:
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
@@ -54,7 +52,6 @@ class SizeEditor:
 
     def _commit(self, _number: int) -> None:
         self._host.commit(SizeValue(self._width.value(), self._height.value()))
-
 
 class RectEditor:
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
@@ -85,9 +82,7 @@ class RectEditor:
     def _commit(self, _number: int) -> None:
         self._host.commit(RectValue(self._x.value(), self._y.value(), self._width.value(), self._height.value()))
 
-
 class SizePolicyEditor:
-    """Horizontal and vertical policies, then the two stretch fields."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
@@ -135,12 +130,10 @@ class SizePolicyEditor:
             )
         )
 
-
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(SizeValue.ELEMENT), SizeEditor, baseline=True)
     registrar.editor(EditorKey(RectValue.ELEMENT), RectEditor, baseline=True)
     registrar.editor(EditorKey(SizePolicyValue.ELEMENT), SizePolicyEditor, baseline=True)
-
 
 def _pair(
     parent: QWidget, captions: Tuple[str, str], on_change: object
@@ -158,7 +151,6 @@ def _pair(
         boxes.append(box)
     return row, boxes[0], boxes[1]
 
-
 def _set_pair(first: QSpinBox, second: QSpinBox, left: int, right: int) -> None:
     first.blockSignals(True)
     second.blockSignals(True)
@@ -167,12 +159,10 @@ def _set_pair(first: QSpinBox, second: QSpinBox, left: int, right: int) -> None:
     first.blockSignals(False)
     second.blockSignals(False)
 
-
 def _policy_combo(parent: QWidget) -> QComboBox:
     combo = QComboBox(parent)
     combo.addItems(_POLICIES)
     return combo
-
 
 def _select(combo: QComboBox, name: str) -> None:
     combo.blockSignals(True)
@@ -180,21 +170,17 @@ def _select(combo: QComboBox, name: str) -> None:
     combo.setCurrentIndex(index if index >= 0 else 0)
     combo.blockSignals(False)
 
-
 def _size(value: RowValue) -> Optional[SizeValue]:
     found = _payload(value)
     return found if isinstance(found, SizeValue) else None
-
 
 def _rect(value: RowValue) -> Optional[RectValue]:
     found = _payload(value)
     return found if isinstance(found, RectValue) else None
 
-
 def _policy(value: RowValue) -> Optional[SizePolicyValue]:
     found = _payload(value)
     return found if isinstance(found, SizePolicyValue) else None
-
 
 def _payload(value: RowValue) -> object:
     if isinstance(value, Written):

@@ -1,8 +1,8 @@
-"""Inspector keyboard, focus, and selection on PySide6."""
 
 from __future__ import annotations
 
 import re
+from typing import Optional
 
 import pytest
 
@@ -16,7 +16,16 @@ from app.features.form_builder.qtside.realize import Realizer
 from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtGui import QKeySequence  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QAction, QApplication, QLabel, QLineEdit, QVBoxLayout, QWidget
+from app.qt.QtWidgets import (
+    QAction,
+    QApplication,
+    QLabel,
+    QLineEdit,
+    QTreeWidget,
+    QTreeWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 from tests.form_builder.qtside.support import realize
 
 _FORM = """<?xml version="1.0" encoding="UTF-8"?>
@@ -42,13 +51,11 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 </ui>
 """
 
-
 def _control() -> Qt.KeyboardModifier:
     return getattr(Qt, "ControlModifier")
 
-
 @pytest.mark.parity("R3-29")
-def test_keyboard_path_through_the_inspector(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_keyboard_path_through_the_inspector(qapp: QApplication) -> None:
     session, realizer = realize(_FORM)
     fired = {"f2": 0, "find": 0}
     left = {"n": 0}
@@ -109,9 +116,8 @@ def test_keyboard_path_through_the_inspector(qapp) -> None:  # type: ignore[no-u
     session.dispose()
     window.close()
 
-
 @pytest.mark.parity("R3-145")
-def test_commit_keeps_focus_in_the_editor(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_commit_keeps_focus_in_the_editor(qapp: QApplication) -> None:
     session, realizer = realize(_FORM)
     window = _shown(session, realizer)
     pane = window.findChild(InspectorPane, "formBuilder.inspector")
@@ -134,9 +140,8 @@ def test_commit_keeps_focus_in_the_editor(qapp) -> None:  # type: ignore[no-unty
     assert reset is not None and reset.isVisible()
     _close(window, pane, realizer, session)
 
-
 @pytest.mark.parity("R3-28")
-def test_outline_click_fills_the_header(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_outline_click_fills_the_header(qapp: QApplication) -> None:
     del qapp
     session, realizer = realize(_FORM)
     window = QWidget()
@@ -161,9 +166,8 @@ def test_outline_click_fills_the_header(qapp) -> None:  # type: ignore[no-untype
     assert "QPushButton" in kind.text()
     _close(window, pane, realizer, session)
 
-
 @pytest.mark.parity("R3-28")
-def test_crumb_click_selects_the_ancestor(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_crumb_click_selects_the_ancestor(qapp: QApplication) -> None:
     del qapp
     session, realizer = realize(_FORM)
     window = _shown(session, realizer)
@@ -187,9 +191,8 @@ def test_crumb_click_selects_the_ancestor(qapp) -> None:  # type: ignore[no-unty
     assert name.text() == "Invoice"
     _close(window, pane, realizer, session)
 
-
 @pytest.mark.parity("R3-146")
-def test_changed_marker_and_reset(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_changed_marker_and_reset(qapp: QApplication) -> None:
     del qapp
     session, realizer = realize(_FORM)
     window = _shown(session, realizer)
@@ -217,9 +220,8 @@ def test_changed_marker_and_reset(qapp) -> None:  # type: ignore[no-untyped-def]
     assert not bar.isVisible()
     _close(window, pane, realizer, session)
 
-
 @pytest.mark.parity("R3-147")
-def test_multi_select_edit_is_one_undo(qapp) -> None:  # type: ignore[no-untyped-def]
+def test_multi_select_edit_is_one_undo(qapp: QApplication) -> None:
     del qapp
     session, realizer = realize(_FORM)
     window = _shown(session, realizer)
@@ -245,7 +247,6 @@ def test_multi_select_edit_is_one_undo(qapp) -> None:  # type: ignore[no-untyped
     assert session.document.node(phone).prop("text") is None
     _close(window, pane, realizer, session)
 
-
 def _action(window: QWidget, shortcut: QKeySequence, fired: dict, key: str) -> QAction:
     action = QAction(window)
     action.setShortcut(shortcut)
@@ -253,7 +254,6 @@ def _action(window: QWidget, shortcut: QKeySequence, fired: dict, key: str) -> Q
     action.triggered.connect(lambda: fired.__setitem__(key, fired[key] + 1))
     window.addAction(action)
     return action
-
 
 def _shown(session: FormSession, realizer: Realizer) -> QWidget:
     window = QWidget()
@@ -266,13 +266,10 @@ def _shown(session: FormSession, realizer: Realizer) -> QWidget:
     pane.flush()
     return window
 
-
 def _activate(window: QWidget) -> None:
-    # The offscreen plugin ignores activateWindow, so focusWidget stays empty.
     app = QApplication.instance()
     if isinstance(app, QApplication):
         app.setActiveWindow(window)
-
 
 def _text_editor(pane: QWidget) -> QLineEdit:
     row = pane.findChild(QWidget, "formBuilder.row.text")
@@ -281,26 +278,31 @@ def _text_editor(pane: QWidget) -> QLineEdit:
     assert editor is not None
     return editor
 
-
-def _tree_item(tree: object, needle: str) -> object:
-    def walk(item: object) -> object:
-        if needle in item.text(0):  # type: ignore[attr-defined]
+def _tree_item(tree: QTreeWidget, needle: str) -> QTreeWidgetItem:
+    def walk(item: QTreeWidgetItem) -> Optional[QTreeWidgetItem]:
+        if needle in item.text(0):
             return item
-        for index in range(item.childCount()):  # type: ignore[attr-defined]
-            found = walk(item.child(index))  # type: ignore[attr-defined]
+        for index in range(item.childCount()):
+            child = item.child(index)
+            if child is None:
+                continue
+            found = walk(child)
             if found is not None:
                 return found
         return None
 
-    for index in range(tree.topLevelItemCount()):  # type: ignore[attr-defined]
-        found = walk(tree.topLevelItem(index))  # type: ignore[attr-defined]
+    for index in range(tree.topLevelItemCount()):
+        top = tree.topLevelItem(index)
+        if top is None:
+            continue
+        found = walk(top)
         if found is not None:
             return found
     raise AssertionError(needle)
 
 
-def _close(window: QWidget, pane: InspectorPane, realizer: object, session: object) -> None:
+def _close(window: QWidget, pane: InspectorPane, realizer: Realizer, session: FormSession) -> None:
     pane.dispose()
-    realizer.dispose()  # type: ignore[attr-defined]
-    session.dispose()  # type: ignore[attr-defined]
+    realizer.dispose()
+    session.dispose()
     window.close()

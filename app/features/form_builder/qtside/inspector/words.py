@@ -1,4 +1,3 @@
-"""The English the inspector speaks about Qt classes and signals."""
 
 from __future__ import annotations
 
@@ -9,14 +8,12 @@ from typing import Mapping, Optional, Sequence
 from app.features.form_builder.engine.codegen.qt_signals import signal_names
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 
-
 @dataclass(frozen=True)
 class ClassWords:
     friendly: str
     plural: str
     noun: str
     glyph: str
-
 
 _CLASS_WORDS: Mapping[str, ClassWords] = {
     "QWidget": ClassWords("Widget", "widgets", "widget", "widget"),
@@ -59,9 +56,7 @@ _CLASS_WORDS: Mapping[str, ClassWords] = {
 
 _CAMEL = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+")
 
-
 def class_words(qt_class: str) -> ClassWords:
-    """Known classes come from one table. Unknown ones derive words from the class name."""
     known = _CLASS_WORDS.get(qt_class)
     if known is not None:
         return known
@@ -71,14 +66,11 @@ def class_words(qt_class: str) -> ClassWords:
     plural = noun + ("es" if noun.endswith(("s", "x", "ch", "sh")) else "s")
     return ClassWords(noun[:1].upper() + noun[1:], plural, noun, "widget")
 
-
 @dataclass(frozen=True)
 class EventWords:
-    """``short`` reads after "When". ``clause`` completes "Nothing happens yet when ..."."""
 
     short: str
     clause: str
-
 
 _EVENT_WORDS: Mapping[str, EventWords] = {
     "clicked": EventWords("clicked", "this {noun} is clicked"),
@@ -102,21 +94,16 @@ _EVENT_WORDS: Mapping[str, EventWords] = {
     "triggered": EventWords("triggered", "this {noun} is triggered"),
 }
 
-
 def signal_name(signature: str) -> str:
-    """``textChanged(QString)`` gives ``textChanged``."""
     return signature.split("(", 1)[0].strip()
 
-
 def event_words(signature: str) -> EventWords:
-    """The phrases for a signal. Signals outside the table read as their split name."""
     name = signal_name(signature)
     known = _EVENT_WORDS.get(name)
     if known is not None:
         return known
     spoken = " ".join(part.lower() for part in _CAMEL.findall(name)) or name
     return EventWords(spoken, "this {noun} sends " + name)
-
 
 _DEFAULT_SIGNALS: Mapping[str, str] = {
     "QCheckBox": "toggled(bool)",
@@ -138,14 +125,7 @@ _DEFAULT_SIGNALS: Mapping[str, str] = {
     "QAction": "triggered()",
 }
 
-
 def default_signal(chain: Sequence[str], classes: QtClassTable) -> Optional[str]:
-    """The signal a new connection starts from, as a signature, or None.
-
-    ClassInfo.default_signal wins for the first class in ``chain`` that has one.
-    Otherwise the LOGIC_DESIGN 2.2 table is read leaf first. A signal is kept
-    only when ``signal_names(chain[0])`` lists it, or when that class is unknown.
-    """
     if not chain:
         return None
     found: Optional[str] = None

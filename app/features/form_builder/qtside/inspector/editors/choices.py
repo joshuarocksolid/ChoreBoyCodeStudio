@@ -1,4 +1,3 @@
-"""Enumerations, flag sets, alignment, and cursors."""
 
 from __future__ import annotations
 
@@ -65,9 +64,7 @@ _CURSORS = (
     "ClosedHandCursor",
 )
 
-
 class EnumEditor:
-    """A combo of spec.enum.names. With no spec.enum the stored text is read-only."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -108,9 +105,7 @@ class EnumEditor:
             return
         self._host.commit(self._host.enum_value(self._enum, (self._enum.names[index],)))
 
-
 class SetEditor:
-    """A checkable list of flag names. Commits through the host's enum spelling."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._host = host
@@ -145,9 +140,7 @@ class SetEditor:
         ]
         self._host.commit(self._host.enum_value(enum, names))
 
-
 class AlignmentEditor:
-    """Horizontal and vertical button rows over the Qt alignment flags."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
@@ -194,9 +187,7 @@ class AlignmentEditor:
         names = ["Qt::" + name for name, button in self._buttons if button.isChecked()]
         self._host.commit(SetValue("|".join(names)))
 
-
 class CursorEditor:
-    """A combo of Qt cursor shape names."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -229,14 +220,12 @@ class CursorEditor:
             return
         self._host.commit(CursorShapeValue(name))
 
-
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(EnumValue.ELEMENT), EnumEditor, baseline=True)
     registrar.editor(EditorKey(SetValue.ELEMENT), SetEditor, baseline=True)
     registrar.editor(ALIGNMENT, AlignmentEditor, baseline=True)
     for element in (CursorShapeValue.ELEMENT, CursorValue.ELEMENT):
         registrar.editor(EditorKey(element), CursorEditor, baseline=True)
-
 
 def _enum_text(value: RowValue) -> str:
     found = _payload(value)
@@ -246,17 +235,14 @@ def _enum_text(value: RowValue) -> str:
         return found.text
     return ""
 
-
 def _set_text(value: RowValue) -> str:
     found = _payload(value)
     if isinstance(found, SetValue):
         return found.text
     return ""
 
-
 def _size_policy(name: str) -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
-
 
 def _payload(value: RowValue) -> object:
     if isinstance(value, Written):
@@ -265,7 +251,6 @@ def _payload(value: RowValue) -> object:
         return value.default
     return None
 
-
 def _flag_tails(text: str) -> Tuple[str, ...]:
     tails = []
     for piece in text.split("|"):
@@ -273,7 +258,6 @@ def _flag_tails(text: str) -> Tuple[str, ...]:
         if name and name != "0":
             tails.append(name)
     return tuple(tails)
-
 
 def _cursor_name(value: RowValue) -> str:
     found = _payload(value)
@@ -285,16 +269,13 @@ def _cursor_name(value: RowValue) -> str:
         return ""
     return ""
 
-
 def _item_checkable() -> object:
     item_flag = getattr(Qt, "ItemIsUserCheckable")
     enabled = getattr(Qt, "ItemIsEnabled")
     return item_flag | enabled
 
-
 def _checked() -> object:
     return getattr(Qt, "Checked")
-
 
 def _unchecked() -> object:
     return getattr(Qt, "Unchecked")

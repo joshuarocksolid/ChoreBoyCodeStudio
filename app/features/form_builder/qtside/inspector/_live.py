@@ -1,4 +1,3 @@
-"""A live QMetaObject parsed into LiveClass. Holds data keyed by Qt class name, never a QObject."""
 
 from __future__ import annotations
 
@@ -83,11 +82,9 @@ _ELEMENT_FOR_TYPE: Mapping[str, str] = {
 
 _CACHE: Dict[str, LiveClass] = {}
 
-
 def live_classes(
     realizer: Realizer, document: UiDocument, ids: Sequence[NodeId]
 ) -> Dict[NodeId, LiveClass]:
-    """The parsed class of each id that has a realized object. Looked up now, never kept."""
     found: Dict[NodeId, LiveClass] = {}
     for node_id in ids:
         node = document.node(node_id)
@@ -108,15 +105,8 @@ def live_classes(
         found[node_id] = cached
     return found
 
-
 def parse_meta_object(meta: QMetaObject) -> LiveClass:
-    """Designable, writable properties, then public signal and slot signatures.
-
-    Enumerator properties become "enum" and flag properties "set". A type outside
-    _ELEMENT_FOR_TYPE is left out, so All properties lists it only when it is stored.
-    """
     return LiveClass(_chain(meta), _properties(meta), *_methods(meta))
-
 
 def _chain(meta: QMetaObject) -> Tuple[str, ...]:
     names = []
@@ -130,7 +120,6 @@ def _chain(meta: QMetaObject) -> Tuple[str, ...]:
         names.append(name)
         current = current.superClass()
     return tuple(names)
-
 
 def _properties(meta: QMetaObject) -> Tuple[LiveProperty, ...]:
     found = []
@@ -152,7 +141,6 @@ def _properties(meta: QMetaObject) -> Tuple[LiveProperty, ...]:
         current = current.superClass()
     return tuple(found)
 
-
 def _property(prop: QMetaProperty, declared: str) -> Optional[LiveProperty]:
     name = _text(prop.name())
     if _flag(prop, "isEnumType"):
@@ -161,7 +149,6 @@ def _property(prop: QMetaProperty, declared: str) -> Optional[LiveProperty]:
     if element is None:
         return None
     return LiveProperty(name, declared, element)
-
 
 def _enum_property(prop: QMetaProperty, name: str, declared: str) -> LiveProperty:
     enumerator = prop.enumerator()
@@ -185,7 +172,6 @@ def _enum_property(prop: QMetaProperty, name: str, declared: str) -> LivePropert
         element,
         EnumSpec(scope, type_name, tuple(names), is_flag),
     )
-
 
 def _methods(meta: QMetaObject) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     signals = []
@@ -211,7 +197,6 @@ def _methods(meta: QMetaObject) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
         current = current.superClass()
     return tuple(signals), tuple(slots)
 
-
 def _flag(prop: QMetaProperty, name: str) -> bool:
     method = getattr(prop, name)
     try:
@@ -219,10 +204,8 @@ def _flag(prop: QMetaProperty, name: str) -> bool:
     except TypeError:
         return bool(method(None))
 
-
 def _same(left: object, right: object) -> bool:
     return enum_value(left) == enum_value(right)
-
 
 def _text(value: object) -> str:
     if value is None:

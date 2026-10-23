@@ -1,4 +1,3 @@
-"""Registrations become one frozen Catalog. The conflict rule lives here and nowhere else."""
 
 from __future__ import annotations
 
@@ -16,13 +15,11 @@ from app.features.form_builder.qtside.inspector.api import (
 K = TypeVar("K", bound=Hashable)
 V = TypeVar("V")
 
-
 class RegistryConflict(RuntimeError):
-    """Two baselines, or two overrides, of one key. The message names both modules."""
+    pass
 
 
 class _Slots(Generic[K, V]):
-    """Per key, at most one baseline and one override. The override wins in the baseline's place."""
 
     def __init__(self, kind: str) -> None:
         self._kind = kind
@@ -45,9 +42,7 @@ class _Slots(Generic[K, V]):
             merged[key] = value
         return merged
 
-
 class Registrations:
-    """Collects registrations in load order. Freeze once."""
 
     def __init__(self) -> None:
         self.editors: _Slots[EditorKey, EditorFactory] = _Slots("editor")
@@ -55,12 +50,10 @@ class Registrations:
         self.bodies: _Slots[GroupId, GroupBodyFactory] = _Slots("group body")
 
     def scope(self, module: str) -> Registrar:
-        """A Registrar that stamps each registration with ``module``."""
         return _Scope(self, module)
 
     def freeze(self) -> Catalog:
         return Catalog(tuple(self.rows.resolve().values()), self.editors.resolve(), self.bodies.resolve())
-
 
 class _Scope:
     def __init__(self, found: Registrations, module: str) -> None:
@@ -76,9 +69,7 @@ class _Scope:
     def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None:
         self._found.bodies.add(group, factory, self._module, baseline)
 
-
 class Catalog:
-    """Frozen. Registrations.freeze builds one."""
 
     def __init__(
         self,
@@ -92,7 +83,6 @@ class Catalog:
         self._editor_keys = frozenset(self._editors)
 
     def rows(self) -> Tuple[RowSpec, ...]:
-        """Curated rows in resolved order."""
         return self._rows
 
     def editor(self, key: EditorKey) -> Optional[EditorFactory]:

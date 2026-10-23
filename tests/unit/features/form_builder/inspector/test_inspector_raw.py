@@ -1,4 +1,3 @@
-"""Raw XML stubs show a value as its ui4 element and parse it back."""
 
 from __future__ import annotations
 
@@ -27,7 +26,6 @@ _PALETTE = PaletteValue(
 )
 _ICON = IconSetValue(resource="icons.qrc", normaloff=ResourcePixmap(":/icons/ok.png", resource="icons.qrc"))
 
-
 @pytest.mark.parametrize(
     "value",
     [_PALETTE, _ICON, StringValue("color: red;")],
@@ -38,7 +36,6 @@ def test_raw_text_is_the_value_element_and_parses_back(value: Value) -> None:
 
     assert text.startswith("<" + value.ELEMENT)
     assert parse_raw_value(value.ELEMENT, text) == value
-
 
 @pytest.mark.parametrize("text", ["<string>x</string>", "<palette>", ""], ids=["other-kind", "broken", "empty"])
 def test_raw_text_that_is_not_one_palette_is_rejected(text: str) -> None:

@@ -1,4 +1,3 @@
-"""The form builder's inspector."""
 
 from __future__ import annotations
 

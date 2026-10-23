@@ -1,4 +1,3 @@
-"""The inspector projection: rows, their writes, mixed values, search, and the form section."""
 
 from __future__ import annotations
 
@@ -142,7 +141,6 @@ _GRID_FORM = """<?xml version="1.0" encoding="UTF-8"?>
 </ui>
 """
 
-
 _PAIR_FORM = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>Invoice</class>
@@ -155,7 +153,6 @@ _PAIR_FORM = """<?xml version="1.0" encoding="UTF-8"?>
 </ui>
 """
 
-
 def _tooltip(name: str, text: Optional[str]) -> str:
     if text is None:
         return '<widget class="QLineEdit" name="%s"/>' % name
@@ -164,20 +161,16 @@ def _tooltip(name: str, text: Optional[str]) -> str:
         % (name, text)
     )
 
-
 def _two_line_edits(first: Optional[str], second: Optional[str]) -> str:
     return _PAIR_FORM % (_tooltip("first", first), _tooltip("second", second))
 
-
 def _open(xml: str) -> FormSession:
     return FormSession.open(xml, path=_UI_PATH, scope=classify_form(_UI_PATH, project_root="/tmp/proj"))
-
 
 def _select(session: FormSession, *names: str) -> Tuple[NodeId, ...]:
     ids = tuple(session.document.by_name(name)[0] for name in names)
     session.selection.set(ids, source=SelectionSource.PROGRAM)
     return ids
-
 
 def _body(session: FormSession, search: str = "") -> NodeBody:
     live = {
@@ -189,18 +182,15 @@ def _body(session: FormSession, search: str = "") -> NodeBody:
     assert isinstance(body, NodeBody)
     return body
 
-
 def _row(body: NodeBody, key: str, group: Optional[GroupId] = None) -> Row:
     found = body.find(key) if group is None else body.group(group).find(key)
     assert found is not None, key
     return found
 
-
 def _open_row(body: NodeBody, key: str, group: Optional[GroupId] = None) -> OpenRow:
     found = _row(body, key, group)
     assert isinstance(found, OpenRow), found
     return found
-
 
 def test_one_edit_is_one_undoable_set_property() -> None:
     session = _open(_FORM)
@@ -214,7 +204,6 @@ def test_one_edit_is_one_undoable_set_property() -> None:
     assert session.log.undo()
     assert session.document.node(email).value("text") == StringValue("Pay")
 
-
 def test_reset_removes_the_entry() -> None:
     session = _open(_FORM)
     (email,) = _select(session, "email")
@@ -225,7 +214,6 @@ def test_reset_removes_the_entry() -> None:
     assert command == SetProperty(email, "text", None)
     assert session.document.node(email).prop("text") is None
     assert isinstance(_row(_body(session), "text").value, Unset)
-
 
 def test_multi_select_edit_is_one_set_property_many_step() -> None:
     session = _open(_FORM)
@@ -242,7 +230,6 @@ def test_multi_select_edit_is_one_set_property_many_step() -> None:
     assert session.document.node(email).value("text") == StringValue("Pay")
     assert session.document.node(phone).prop("text") is None
 
-
 @pytest.mark.parametrize(
     "first, second, expected",
     [("a", "a", Written), ("a", "b", Mixed), ("a", None, Mixed), (None, None, Unset)],
@@ -254,7 +241,6 @@ def test_row_value_follows_the_owners_entries(
     _select(session, "first", "second")
 
     assert type(_row(_body(session), "toolTip").value) is expected
-
 
 @pytest.mark.parametrize(
     "search, group, key, where",
@@ -275,7 +261,6 @@ def test_search_keeps_only_matching_rows(search: str, group: GroupId, key: str, 
     assert all(row.match is not None for view in body.groups for row in view.rows())
     assert GroupId.ACCESSIBILITY not in [view.group for view in body.groups]
 
-
 def test_empty_selection_shows_the_form_section() -> None:
     session = _open(_FORM)
 
@@ -295,7 +280,6 @@ def test_empty_selection_shows_the_form_section() -> None:
         "Saves invoice.ui and ui_invoice.py in forms/.",
     )
 
-
 def test_layout_child_geometry_is_set_by_the_layout() -> None:
     session = _open(_FORM)
     _select(session, "email")
@@ -307,7 +291,6 @@ def test_layout_child_geometry_is_set_by_the_layout() -> None:
     assert isinstance(geometry, LockedRow)
     assert geometry.reason == "Set by the layout."
 
-
 def test_one_free_widget_geometry_edit_is_set_geometry() -> None:
     session = _open(_FREE_FORM)
     (name,) = _select(session, "nameEdit")
@@ -318,7 +301,6 @@ def test_one_free_widget_geometry_edit_is_set_geometry() -> None:
     assert write.edit(rect, "gesture") == SetGeometry(name, rect, merge_token="gesture")
     assert write.reset() == SetProperty(name, "geometry", None)
 
-
 def test_several_free_widgets_lock_geometry() -> None:
     session = _open(_FREE_FORM)
     _select(session, "nameEdit", "okButton")
@@ -327,7 +309,6 @@ def test_several_free_widgets_lock_geometry() -> None:
 
     assert isinstance(geometry, LockedRow)
     assert geometry.reason == "Select one widget to edit its position."
-
 
 def test_cell_alignment_edit_keeps_the_cell() -> None:
     session = _open(_GRID_FORM)

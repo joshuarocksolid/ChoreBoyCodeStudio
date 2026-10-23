@@ -1,4 +1,3 @@
-"""The inspector widget a host constructs."""
 
 from __future__ import annotations
 
@@ -38,17 +37,13 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value
 
-
 class TabId(str, Enum):
-    """Declaration order is tab order. DATA exists only when the pane is built with data_tab."""
 
     PROPERTIES = "properties"
     BEHAVIOR = "behavior"
     DATA = "data"
 
-
 class InspectorPane(QWidget):
-    """Shows session.selection. Subscribes itself. Writes only through Services."""
 
     header: Header
     tabs: QTabWidget
@@ -112,12 +107,10 @@ class InspectorPane(QWidget):
         self._schedule()
 
     def set_short(self, short: bool) -> None:
-        """The short drawer. Name and class share one line."""
         self._short = short
         self._paint_header()
 
     def apply_chrome(self, chrome: FormChrome) -> None:
-        """One stylesheet for the pane, built from ``chrome``."""
         self.setStyleSheet(_stylesheet(chrome))
         self.properties.apply_colors(chrome.panel, chrome.text, chrome.faint)
         self.properties.set_match_color(chrome.search_match_bg)
@@ -132,7 +125,6 @@ class InspectorPane(QWidget):
         self._schedule()
 
     def focus_tab(self, tab: TabId) -> None:
-        """Show ``tab`` and focus its first field. Properties focuses search."""
         index = self._tab_index.get(tab)
         if index is None:
             return
@@ -145,11 +137,9 @@ class InspectorPane(QWidget):
             page.setFocus()
 
     def begin_rename(self) -> None:
-        """Focus the name field with its text selected. No-op when several nodes are selected."""
         self.header.begin_rename()
 
     def flush(self) -> None:
-        """Run a pending body repaint now. Returns at once when nothing is pending."""
         if not self._pending and not self._stale:
             return
         if not self.isVisible():
@@ -182,7 +172,6 @@ class InspectorPane(QWidget):
             self.tabs.setTabText(index, title)
 
     def dispose(self) -> None:
-        """Close the three subscriptions and stop the timer. Idempotent."""
         self._timer.stop()
         app = self._filtered_app
         if app is not None:
@@ -323,7 +312,6 @@ class InspectorPane(QWidget):
         invalid = self.header.has_invalid_name() or self.properties.focused_row_invalid()
         return esc_action(self.properties.search, invalid)
 
-
 class _TabOrderMemo:
     def __init__(self, session: FormSession) -> None:
         self._session = session
@@ -338,7 +326,6 @@ class _TabOrderMemo:
             self._names = tuple(effective_tab_order(self._session.document))
         return self._names
 
-
 def _data_page(parent: QWidget) -> QWidget:
     page = QWidget(parent)
     page.setObjectName("formBuilder.dataBody")
@@ -350,7 +337,6 @@ def _data_page(parent: QWidget) -> QWidget:
     layout.addWidget(caption)
     layout.addStretch(1)
     return page
-
 
 def _stylesheet(chrome: FormChrome) -> str:
     width = chrome.focus_width if chrome.focus_width > 0 else 1
@@ -384,18 +370,14 @@ def _stylesheet(chrome: FormChrome) -> str:
         )
     )
 
-
 def _key(event: QKeyEvent) -> int:
     return int(enum_value(event.key()))
-
 
 def _mods(event: QKeyEvent) -> int:
     return int(enum_value(event.modifiers()))
 
-
 def _code(value: object) -> int:
     return int(enum_value(value))
-
 
 def _is_find(event: QKeyEvent) -> bool:
     sequence = QKeySequence(_mods(event) | _key(event))

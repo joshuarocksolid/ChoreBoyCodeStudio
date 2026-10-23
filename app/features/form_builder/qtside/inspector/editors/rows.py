@@ -1,4 +1,3 @@
-"""The curated baseline rows. Their order here is their order inside each group."""
 
 from __future__ import annotations
 
@@ -91,7 +90,6 @@ _ROWS: Tuple[RowSpec, ...] = (
     RowSpec("statusTip", _ACCESS, "Status tip", "Shown in the status bar when the pointer rests on it.", Prop("statusTip")),
     RowSpec("whatsThis", _ACCESS, "What's this", "Help shown by the What's This tool.", Prop("whatsThis")),
 )
-
 
 def register(registrar: Registrar) -> None:
     for spec in _ROWS:

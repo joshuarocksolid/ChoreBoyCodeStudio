@@ -1,4 +1,3 @@
-"""The Properties tab. Rows reconcile by key, so a focused editor survives its own commit."""
 
 from __future__ import annotations
 
@@ -46,9 +45,7 @@ from app.qt.QtWidgets import (
 _DRAG = "Drag the page's right or bottom edge to try other sizes."
 _LABEL_WIDTH = 104
 
-
 class PropertiesPage(QWidget):
-    """Object name formBuilder.inspectorBody. Search sits above the scrolled groups."""
 
     def __init__(self, services: Services, on_search: Callable[[], None], parent: QWidget) -> None:
         super().__init__(parent)
@@ -188,7 +185,6 @@ class PropertiesPage(QWidget):
     def _set_expanded(self, group: GroupId, expanded: bool) -> None:
         self._expanded[group] = expanded
 
-
 class _FormSection(QWidget):
     def __init__(self, services: Services, parent: QWidget) -> None:
         super().__init__(parent)
@@ -237,9 +233,7 @@ class _FormSection(QWidget):
             return row
         return None
 
-
 class _Group(QWidget):
-    """A collapsible group. A collapsed group builds no rows."""
 
     def __init__(self, services: Services, group: GroupId, page: PropertiesPage, parent: QWidget) -> None:
         super().__init__(parent)
@@ -371,7 +365,6 @@ class _Group(QWidget):
             self._page.setFocus()
 
 class _Row(QWidget):
-    """Label, editor, changed bar, reset, and caption. The editor's EditorHost."""
 
     def __init__(self, services: Services, parent: QWidget) -> None:
         super().__init__(parent)
@@ -581,9 +574,7 @@ class _Row(QWidget):
         self._caption.setText(text)
         self._caption.show()
 
-
 class _GroupHost:
-    """GroupHost for a registered group body."""
 
     def __init__(self, services: Services, owners: Tuple[NodeId, ...]) -> None:
         self._services = services
@@ -608,7 +599,6 @@ class _GroupHost:
         widget.paint(row, "")
         return _BoundEditor(widget)
 
-
 class _BoundEditor:
     def __init__(self, row: _Row) -> None:
         self._row = row
@@ -620,14 +610,12 @@ class _BoundEditor:
     def show(self, value: RowValue) -> None:
         self._row.show_value(value)
 
-
 def _spell(enum: EnumSpec, name: str, style: str) -> str:
     if not name or "::" in name or not enum.scope:
         return name
     if style == "qualified" and enum.type_name and enum.type_name != enum.scope:
         return "%s::%s::%s" % (enum.scope, enum.type_name, name)
     return "%s::%s" % (enum.scope, name)
-
 
 def _marked(text: str, match: Optional[Match], where: str, color: str) -> str:
     if match is None or match.where != where or not color:
@@ -641,14 +629,12 @@ def _marked(text: str, match: Optional[Match], where: str, color: str) -> str:
         _escape(text[end:]),
     )
 
-
 def _value_name(value: object) -> str:
     if isinstance(value, Mixed):
         return "formBuilder.rowMixed"
     if isinstance(value, Unset):
         return "formBuilder.rowDefault"
     return "formBuilder.rowValue"
-
 
 def _escape(text: str) -> str:
     return (
@@ -657,7 +643,6 @@ def _escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
-
 
 def _no_frame() -> QFrame.Shape:
     return getattr(getattr(QFrame, "Shape", QFrame), "NoFrame")

@@ -1,4 +1,3 @@
-"""The Behavior tab. Connections only."""
 
 from __future__ import annotations
 
@@ -22,9 +21,7 @@ from app.qt.QtWidgets import (
     QWidget,
 )
 
-
 class BehaviorPage(QWidget):
-    """Object name formBuilder.behaviorBody."""
 
     def __init__(self, services: Services, realizer: Realizer, parent: QWidget) -> None:
         super().__init__(parent)
@@ -167,7 +164,6 @@ class BehaviorPage(QWidget):
         names = [widget.object_name for widget in document.iter_widgets() if widget.object_name]
         return tuple(names)
 
-
 class _ConnectionRow(QWidget):
     def __init__(self, page: BehaviorPage, node_id: NodeId, parent: QWidget) -> None:
         super().__init__(parent)
@@ -215,7 +211,6 @@ class _ConnectionRow(QWidget):
         if text:
             self._page._on_picked(self._id, field, text)
 
-
 def _fill(box: QComboBox, choices: Tuple[str, ...], current: str) -> None:
     items = _with_current(choices, current)
     box.blockSignals(True)
@@ -225,7 +220,6 @@ def _fill(box: QComboBox, choices: Tuple[str, ...], current: str) -> None:
     if index >= 0:
         box.setCurrentIndex(index)
     box.blockSignals(False)
-
 
 def _with_current(choices: Tuple[str, ...], current: str) -> Tuple[str, ...]:
     found: List[str] = list(choices)

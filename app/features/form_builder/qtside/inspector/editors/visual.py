@@ -1,4 +1,3 @@
-"""Color and font."""
 
 from __future__ import annotations
 
@@ -26,9 +25,7 @@ from app.qt.QtWidgets import (
     QWidget,
 )
 
-
 class ColorEditor:
-    """A hex field and a swatch that opens a color picker."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
@@ -88,9 +85,7 @@ class ColorEditor:
             return
         self._swatch.setStyleSheet("background: palette(button); border: 1px solid palette(mid);")
 
-
 class FontEditor:
-    """Family, point size, bold, and italic."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
@@ -160,25 +155,20 @@ class FontEditor:
             )
         )
 
-
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(ColorValue.ELEMENT), ColorEditor, baseline=True)
     registrar.editor(EditorKey(FontValue.ELEMENT), FontEditor, baseline=True)
 
-
 def _font_policy(name: str) -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
-
 
 def _color(value: RowValue) -> object:
     found = _payload(value)
     return found if isinstance(found, ColorValue) else None
 
-
 def _font(value: RowValue) -> object:
     found = _payload(value)
     return found if isinstance(found, FontValue) else None
-
 
 def _payload(value: RowValue) -> object:
     if isinstance(value, Written):
@@ -187,12 +177,10 @@ def _payload(value: RowValue) -> object:
         return value.default
     return None
 
-
 def _hex(color: ColorValue) -> str:
     if color.alpha is None:
         return "#%02X%02X%02X" % (color.red, color.green, color.blue)
     return "#%02X%02X%02X%02X" % (color.alpha, color.red, color.green, color.blue)
-
 
 def _parse_hex(text: str) -> ColorValue:
     raw = text.strip().lstrip("#")
@@ -201,7 +189,6 @@ def _parse_hex(text: str) -> ColorValue:
     if len(raw) == 8:
         return ColorValue(int(raw[2:4], 16), int(raw[4:6], 16), int(raw[6:8], 16), int(raw[0:2], 16))
     raise ValueError(text)
-
 
 def _qcolor(color: ColorValue) -> QColor:
     if color.alpha is None:

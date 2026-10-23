@@ -1,4 +1,3 @@
-"""Text, true or false, whole numbers, decimals, and key sequences."""
 
 from __future__ import annotations
 
@@ -46,7 +45,6 @@ _INT_RANGE: Dict[str, Tuple[int, int]] = {
     ULongLongValue.ELEMENT: (0, 2147483647),
 }
 class TextEditor:
-    """One line. Commits on Enter and when focus leaves. Mixed is an empty field."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -75,9 +73,7 @@ class TextEditor:
             return
         self._host.commit(StringValue(text))
 
-
 class BoolEditor:
-    """A check box. Mixed is the partially checked state, which a click leaves."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
@@ -104,9 +100,7 @@ class BoolEditor:
         self._box.setTristate(False)
         self._host.commit(BoolValue(bool(checked)))
 
-
 class IntEditor:
-    """A spin box. The value class follows spec.element."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -134,9 +128,7 @@ class IntEditor:
     def _commit(self, number: int) -> None:
         self._host.commit(self._cls(int(number)))
 
-
 class DoubleEditor:
-    """A double spin box. The value class follows spec.element."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -166,9 +158,7 @@ class DoubleEditor:
     def _commit(self, number: float) -> None:
         self._host.commit(self._cls(float(number)))
 
-
 class KeySequenceEditor:
-    """Edits a key sequence and commits portable text."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -192,7 +182,6 @@ class KeySequenceEditor:
             return
         self._host.commit(StringValue(text))
 
-
 def register(registrar: Registrar) -> None:
     for element in (StringValue.ELEMENT, CStringValue.ELEMENT):
         registrar.editor(EditorKey(element), TextEditor, baseline=True)
@@ -203,13 +192,11 @@ def register(registrar: Registrar) -> None:
         registrar.editor(EditorKey(element), DoubleEditor, baseline=True)
     registrar.editor(KEY_SEQUENCE, KeySequenceEditor, baseline=True)
 
-
 def _text_of(value: RowValue) -> str:
     found = _written(value)
     if isinstance(found, (StringValue, CStringValue)):
         return found.text
     return ""
-
 
 def _placeholder(value: RowValue) -> str:
     if isinstance(value, Mixed):
@@ -220,7 +207,6 @@ def _placeholder(value: RowValue) -> str:
         return NOT_SET_TEXT
     return ""
 
-
 def _written(value: RowValue) -> Optional[Value]:
     if isinstance(value, Written):
         return value.value
@@ -228,20 +214,17 @@ def _written(value: RowValue) -> Optional[Value]:
         return value.default
     return None
 
-
 def _written_bool(value: RowValue) -> Optional[bool]:
     found = _written(value)
     if isinstance(found, BoolValue):
         return found.value
     return None
 
-
 def _number_of(value: RowValue) -> float:
     found = _written(value)
     if isinstance(found, (NumberValue, UIntValue, LongLongValue, ULongLongValue, DoubleValue, FloatValue)):
         return float(found.value)
     return 0.0
-
 
 def _clamp(number: float, low: int, high: int) -> int:
     value = int(number)

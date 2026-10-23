@@ -1,4 +1,3 @@
-"""The part of the inspector that never scrolls."""
 
 from __future__ import annotations
 
@@ -10,11 +9,10 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.inspector._services import Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.model import Crumb, HeaderView, ManyHeader, OneHeader
 from app.qt.QtCore import Qt
+from app.qt.QtGui import QResizeEvent
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 
-
 class Header(QWidget):
-    """Object name formBuilder.inspectorHeader. Its focus proxy is the name field."""
 
     def __init__(self, services: Services, parent: QWidget) -> None:
         super().__init__(parent)
@@ -93,8 +91,8 @@ class Header(QWidget):
         self._error.hide()
         self._error.clear()
 
-    def resizeEvent(self, event: object) -> None:  # noqa: N802
-        super().resizeEvent(event)  # type: ignore[arg-type]
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
         self._render_crumbs()
 
     def _paint_many(self, view: ManyHeader) -> None:
@@ -186,7 +184,6 @@ class Header(QWidget):
         self._crumbs.setText(" \u203a ".join(parts))
         self._crumbs.show()
 
-
 def _plain_width(label: QLabel, crumbs: list) -> int:
     text = " \u203a ".join(crumb.label for crumb in crumbs)
     metrics = label.fontMetrics()
@@ -194,7 +191,6 @@ def _plain_width(label: QLabel, crumbs: list) -> int:
     if callable(advance):
         return int(advance(text))
     return int(metrics.width(text))
-
 
 def _escape(text: str) -> str:
     return (
@@ -204,10 +200,8 @@ def _escape(text: str) -> str:
         .replace('"', "&quot;")
     )
 
-
 def _ignored() -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Ignored")
-
 
 def _preferred() -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Preferred")

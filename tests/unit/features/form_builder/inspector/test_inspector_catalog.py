@@ -1,4 +1,3 @@
-"""The inspector registry: discovery order, overrides, and conflicts."""
 
 from __future__ import annotations
 
@@ -26,7 +25,6 @@ def register(registrar):
     registrar.row(RowSpec({key!r}, GroupId.CONTENT, {label!r}, "", Prop({key!r})))
 """
 
-
 def _package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, modules: Dict[str, str]) -> ModuleType:
     name = "inspector_contrib_%s" % uuid.uuid4().hex
     root = tmp_path / name
@@ -37,7 +35,6 @@ def _package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, modules: Dict[str,
     monkeypatch.syspath_prepend(str(tmp_path))
     return importlib.import_module(name)
 
-
 def test_modules_load_in_sorted_name_order(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = _package(
         tmp_path,
@@ -46,7 +43,6 @@ def test_modules_load_in_sorted_name_order(tmp_path: Path, monkeypatch: pytest.M
     )
 
     assert [spec.key for spec in load_catalog(package).rows()] == ["a", "b"]
-
 
 def test_underscore_modules_are_never_imported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     package = _package(
@@ -57,7 +53,6 @@ def test_underscore_modules_are_never_imported(tmp_path: Path, monkeypatch: pyte
 
     assert [spec.key for spec in load_catalog(package).rows()] == ["a"]
 
-
 def test_a_public_module_without_register_fails_to_load(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -65,7 +60,6 @@ def test_a_public_module_without_register_fails_to_load(
 
     with pytest.raises(TypeError, match="forgot"):
         load_catalog(package)
-
 
 def test_a_later_package_overrides_baselines_without_editing_shared_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -101,7 +95,6 @@ def test_a_later_package_overrides_baselines_without_editing_shared_files(
     assert catalog.group_body(GroupId.SIZE) is importlib.import_module(later.__name__ + ".m3_6_size").SizeBody
     assert catalog.editor(EditorKey("string")) is TextEditor
 
-
 def test_an_overriding_row_keeps_the_baseline_position(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     baseline = [spec.key for spec in load_catalog(editors).rows()]
     later = _package(tmp_path, monkeypatch, {"m4_text": _ROW.format(key="text", label="Caption")})
@@ -110,7 +103,6 @@ def test_an_overriding_row_keeps_the_baseline_position(tmp_path: Path, monkeypat
 
     assert [spec.key for spec in rows] == baseline
     assert rows[baseline.index("text")].label == "Caption"
-
 
 @pytest.mark.parametrize(
     "call",

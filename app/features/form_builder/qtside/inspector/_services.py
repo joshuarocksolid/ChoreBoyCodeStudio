@@ -1,4 +1,3 @@
-"""The inspector's one door to session.log."""
 
 from __future__ import annotations
 
@@ -10,23 +9,20 @@ from app.features.form_builder.engine.commands.base import Command, CommandOutco
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.inspector.catalog import Catalog
 
-
 @dataclass(frozen=True)
 class Rejected:
     message: str
     code: Optional[str] = None
 
-
 @dataclass(frozen=True)
 class Dropped:
-    """A write that arrived while the pane painted."""
+    pass
 
 
 def rejection_text(result: Rejected) -> str:
     if result.code:
         return "%s %s" % (result.code, result.message)
     return result.message
-
 
 class Services:
     def __init__(self, session: FormSession, catalog: Catalog) -> None:
@@ -47,7 +43,6 @@ class Services:
 
     @contextmanager
     def painting(self) -> Iterator[None]:
-        """Writes inside return Dropped. Nests."""
         self._depth += 1
         try:
             yield
@@ -55,7 +50,6 @@ class Services:
             self._depth -= 1
 
     def token(self, row_key: str) -> str:
-        """One gesture token per row key. A different key mints a new token."""
         if row_key != self._token_key or not self._token:
             self._seq += 1
             self._token_key = row_key
@@ -73,7 +67,6 @@ class Services:
     def execute_all(
         self, label: str, commands: Sequence[Command]
     ) -> Union[Tuple[object, ...], Rejected, Dropped]:
-        """One undo step. A rejection aborts the whole step."""
         if self._depth:
             return Dropped()
         try:

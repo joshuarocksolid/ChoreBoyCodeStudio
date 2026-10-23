@@ -1,4 +1,3 @@
-"""The contract an editor module sees. Import nothing else from the inspector package."""
 
 from __future__ import annotations
 
@@ -14,9 +13,7 @@ from app.features.form_builder.engine.ui4.values import CStringValue, SetValue, 
 if TYPE_CHECKING:
     from app.qt.QtWidgets import QWidget
 
-
 class GroupId(str, Enum):
-    """Declaration order is display order. An empty group is omitted."""
 
     CONTENT = "content"
     INPUT = "input"
@@ -30,7 +27,6 @@ class GroupId(str, Enum):
     @property
     def title(self) -> str:
         return "All properties" if self is GroupId.ALL else self.value.capitalize()
-
 
 EditorKey = NewType("EditorKey", str)
 
@@ -47,11 +43,8 @@ _KEY_BY_NAME: Mapping[Tuple[str, str], EditorKey] = {
     ("styleSheet", StringValue.ELEMENT): STYLESHEET,
 }
 
-
 def editor_key(name: str, element: str) -> EditorKey:
-    """The editor for property ``name`` whose value element is ``element``."""
     return _KEY_BY_NAME.get((name, element), EditorKey(element))
-
 
 @dataclass(frozen=True)
 class EnumSpec:
@@ -60,7 +53,6 @@ class EnumSpec:
     names: Tuple[str, ...]
     is_flag: bool
 
-
 @dataclass(frozen=True)
 class ValueSpec:
     """``enum`` is set only when ``element`` is "enum" or "set" and the choices are known."""
@@ -68,13 +60,11 @@ class ValueSpec:
     element: str
     enum: Optional[EnumSpec] = None
 
-
 @dataclass(frozen=True)
 class Unset:
     """No owner has an entry. ``default`` is a non-volatile class-table default, or None."""
 
     default: Optional[Value] = None
-
 
 @dataclass(frozen=True)
 class Written:
@@ -82,11 +72,9 @@ class Written:
 
     value: Value
 
-
 @dataclass(frozen=True)
 class Mixed:
     """The owners disagree, and at least one has an entry."""
-
 
 RowValue = Union[Unset, Written, Mixed]
 
@@ -95,21 +83,17 @@ NOT_SET_TEXT = "\u2014"
 
 MatchWhere = Literal["label", "qt_name", "value"]
 
-
 @dataclass(frozen=True)
 class Match:
-    """Where a search matched, as a span of the label, the Qt name or the value text."""
 
     where: MatchWhere
     start: int
     end: int
 
-
 class RowWrite(Protocol):
     def edit(self, value: Value, token: Optional[str]) -> Command: ...
 
     def reset(self) -> Command: ...
-
 
 @dataclass(frozen=True)
 class OpenRow:
@@ -127,7 +111,6 @@ class OpenRow:
     def changed(self) -> bool:
         return not isinstance(self.value, Unset)
 
-
 @dataclass(frozen=True)
 class LockedRow:
     key: str
@@ -142,34 +125,27 @@ class LockedRow:
     def changed(self) -> bool:
         return not isinstance(self.value, Unset)
 
-
 Row = Union[OpenRow, LockedRow]
 
 PropKind = Literal["property", "attribute"]
 
-
 @dataclass(frozen=True)
 class Prop:
-    """A property, or an attribute, on each owner."""
 
     name: str
     kind: PropKind = "property"
 
-
 @dataclass(frozen=True)
 class LayoutProp:
-    """A property of each owner's own layout."""
 
     name: str
 
-
 @dataclass(frozen=True)
 class CellAlignment:
-    """The alignment of one owner inside its layout cell."""
+    pass
 
 
 RowSource = Union[Prop, LayoutProp, CellAlignment]
-
 
 @dataclass(frozen=True)
 class RowSpec:
@@ -181,7 +157,6 @@ class RowSpec:
     help: str
     source: RowSource
     classes: Tuple[str, ...] = ()
-
 
 class EditorHost(Protocol):
     def commit(self, value: Value) -> None:
@@ -196,7 +171,6 @@ class EditorHost(Protocol):
         """An EnumValue for one of ``enum``'s names, or a SetValue of flags, spelled in the document's style."""
         ...
 
-
 class Editor(Protocol):
     @property
     def widget(self) -> QWidget: ...
@@ -205,10 +179,8 @@ class Editor(Protocol):
         """Paint ``value``. The pane drops any write that this call triggers."""
         ...
 
-
 class EditorFactory(Protocol):
     def __call__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> Editor: ...
-
 
 class GroupHost(Protocol):
     @property
@@ -225,7 +197,6 @@ class GroupHost(Protocol):
         """The standard row widget for ``row``, wired to its write, with its caption line."""
         ...
 
-
 class GroupBody(Protocol):
     @property
     def widget(self) -> QWidget: ...
@@ -234,10 +205,8 @@ class GroupBody(Protocol):
         """The group's projected rows. Called once per flush while the group is expanded."""
         ...
 
-
 class GroupBodyFactory(Protocol):
     def __call__(self, host: GroupHost, parent: QWidget) -> GroupBody: ...
-
 
 class Registrar(Protocol):
     def editor(self, key: EditorKey, factory: EditorFactory, *, baseline: bool = False) -> None: ...
@@ -245,7 +214,6 @@ class Registrar(Protocol):
     def row(self, spec: RowSpec, *, baseline: bool = False) -> None: ...
 
     def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None: ...
-
 
 __all__ = [
     "ALIGNMENT",

@@ -1,4 +1,3 @@
-"""What the inspector shows, as frozen values. No Qt. Tests assert on these."""
 
 from __future__ import annotations
 
@@ -83,7 +82,6 @@ NOT_SET = "\u2014"
 LAYOUT_OWNED: FrozenSet[str] = frozenset({"geometry"})
 _HEADER_OWNED: FrozenSet[str] = frozenset({"objectName"})
 
-
 @dataclass(frozen=True)
 class LiveProperty:
     name: str
@@ -91,10 +89,8 @@ class LiveProperty:
     element: str
     enum: Optional[EnumSpec] = None
 
-
 @dataclass(frozen=True)
 class LiveClass:
-    """Parsed from a QMetaObject. Plain data that stays valid across change sets."""
 
     chain: Tuple[str, ...]
     properties: Tuple[LiveProperty, ...]
@@ -108,16 +104,13 @@ class LiveClass:
     def find(self, name: str) -> Optional[LiveProperty]:
         return self._by_name.get(name)
 
-
 @dataclass(frozen=True)
 class Facts:
-    """What a row source may read. ``live`` lacks an id that has no realized object."""
 
     document: UiDocument
     live: Mapping[NodeId, LiveClass]
     classes: QtClassTable
     editors: FrozenSet[EditorKey]
-
 
 @dataclass(frozen=True)
 class PropertyWrite:
@@ -136,10 +129,8 @@ class PropertyWrite:
             return SetProperty(self.owners[0], self.name, value, kind=self.kind, merge_token=token)
         return SetPropertyMany(self.owners, self.name, value, kind=self.kind, merge_token=token)
 
-
 @dataclass(frozen=True)
 class GeometryWrite:
-    """A free widget's position and size."""
 
     owner: NodeId
 
@@ -151,10 +142,8 @@ class GeometryWrite:
     def reset(self) -> Command:
         return SetProperty(self.owner, "geometry", None)
 
-
 @dataclass(frozen=True)
 class CellWrite:
-    """SetLayoutCell clears every field passed as None, so the cell rides along."""
 
     item: NodeId
     row: Optional[int]
@@ -173,12 +162,10 @@ class CellWrite:
     def _command(self, alignment: Optional[str]) -> Command:
         return SetLayoutCell(self.item, self.row, self.column, self.rowspan, self.colspan, alignment)
 
-
 @dataclass(frozen=True)
 class Crumb:
     node: NodeId
     label: str
-
 
 @dataclass(frozen=True)
 class OneHeader:
@@ -189,23 +176,18 @@ class OneHeader:
     glyph: str
     crumbs: Tuple[Crumb, ...]
 
-
 @dataclass(frozen=True)
 class ManyHeader:
     count: int
     kinds: str
 
-
 HeaderView = Union[OneHeader, ManyHeader]
-
 
 @dataclass(frozen=True)
 class Block:
-    """``title`` is the declaring class in All properties, and empty in curated groups."""
 
     title: str
     rows: Tuple[Row, ...]
-
 
 @dataclass(frozen=True)
 class GroupView:
@@ -218,20 +200,16 @@ class GroupView:
     def find(self, key: str) -> Optional[Row]:
         return next((row for row in self.rows() if row.key == key), None)
 
-
 @dataclass(frozen=True)
 class NodeBody:
     owners: Tuple[NodeId, ...]
     groups: Tuple[GroupView, ...]
 
     def group(self, group: GroupId) -> GroupView:
-        """The group, or an empty one when the selection has no rows in it."""
         return next((view for view in self.groups if view.group is group), GroupView(group, ()))
 
     def find(self, key: str) -> Optional[Row]:
-        """The first row with ``key``, in group order."""
         return next((row for view in self.groups for row in view.rows() if row.key == key), None)
-
 
 @dataclass(frozen=True)
 class FormBody:
@@ -242,9 +220,7 @@ class FormBody:
     problems: str
     files: str
 
-
 BodyView = Union[FormBody, NodeBody]
-
 
 @dataclass(frozen=True)
 class ConnectionView:
@@ -254,7 +230,6 @@ class ConnectionView:
     slot: str
     words: str
 
-
 @dataclass(frozen=True)
 class OneBehavior:
     sender: NodeId
@@ -263,20 +238,16 @@ class OneBehavior:
     empty: str
     add_signal: Optional[str]
 
-
 @dataclass(frozen=True)
 class ManyBehavior:
     count: int
 
-
 BehaviorView = Union[OneBehavior, ManyBehavior]
-
 
 @dataclass(frozen=True)
 class Pages:
     body: BodyView
     behavior: BehaviorView
-
 
 _NO_LIVE: Mapping[NodeId, LiveClass] = MappingProxyType({})
 
@@ -284,9 +255,7 @@ _WINDOW_TITLE = RowSpec(
     "windowTitle", GroupId.CONTENT, "Title", "The text in the window's title bar.", Prop("windowTitle")
 )
 
-
 def project_header(session: FormSession) -> HeaderView:
-    """O(depth). Nothing selected names the root widget with no crumbs."""
     document = session.document
     ids = session.selection.state.ids
     if len(ids) > 1:
@@ -301,7 +270,6 @@ def project_header(session: FormSession) -> HeaderView:
     words = class_words(qt_class)
     return OneHeader(node.id, name, words.friendly, qt_class, words.glyph, crumbs)
 
-
 def project(
     session: FormSession,
     catalog: Catalog,
@@ -310,12 +278,6 @@ def project(
     live: Mapping[NodeId, LiveClass] = _NO_LIVE,
     tab_order: Optional[Callable[[], Tuple[str, ...]]] = None,
 ) -> Pages:
-    """Everything under the header for the current selection.
-
-    An owner missing from ``live`` lists only what the document stores and the
-    class table knows. ``tab_order`` defaults to effective_tab_order. The form
-    section ignores ``search``.
-    """
     document = session.document
     owners = session.selection.state.ids
     facts = Facts(document, live, QtClassTable.shared(), catalog.editor_keys())
@@ -323,9 +285,7 @@ def project(
         return Pages(_form_body(session, facts, tab_order), _behavior(facts, (document.root.id,)))
     return Pages(_node_body(facts, catalog, owners, search), _behavior(facts, owners))
 
-
 def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
-    """The row ``spec`` shows for ``owners``, or None when it does not apply to every owner."""
     source = spec.source
     if isinstance(source, Prop):
         return read_property(facts, spec, owners, source.name, source.kind, curated=curated)
@@ -337,7 +297,6 @@ def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bo
         return read_property(facts, spec, ids, source.name, "property", curated=curated)
     return _cell_alignment(facts, spec, owners)
 
-
 def read_property(
     facts: Facts,
     spec: RowSpec,
@@ -347,12 +306,6 @@ def read_property(
     *,
     curated: bool,
 ) -> Optional[Row]:
-    """The one rule for a property row, curated or in All properties.
-
-    None when any owner lacks ``name`` in its live class, its stored entries and
-    the class table. A LAYOUT_OWNED name on a widget inside a layout is None when
-    curated, and locked otherwise. Several free widgets lock it too.
-    """
     nodes = [facts.document.node(owner) for owner in owners]
     entries = [_entry(node, name, kind) for node in nodes]
     lives = [_live_property(facts, owner, name, kind) for owner in owners]
@@ -370,9 +323,7 @@ def read_property(
     element, enum = _element(entries, lives, infos)
     return _open_or_kept(facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write)
 
-
 def filter_rows(rows: Sequence[Row], search: str) -> Tuple[Row, ...]:
-    """Case-insensitive substring over the label, then the Qt name, then value_text."""
     needle = search.strip().lower()
     if not needle:
         return tuple(rows)
@@ -383,15 +334,12 @@ def filter_rows(rows: Sequence[Row], search: str) -> Tuple[Row, ...]:
             kept.append(dataclasses.replace(row, match=match))
     return tuple(kept)
 
-
 def value_text(value: RowValue) -> str:
-    """The text search matches and a locked row shows. Empty for Mixed and an Unset without a default."""
     if isinstance(value, Written):
         return describe_value(value.value)
     if isinstance(value, Unset) and value.default is not None:
         return describe_value(value.default)
     return ""
-
 
 def describe_value(value: Value) -> str:
     if isinstance(value, (StringValue, CStringValue)):
@@ -424,29 +372,22 @@ def describe_value(value: Value) -> str:
         return str(plain)
     return value.ELEMENT
 
-
 class EscAction(Enum):
     CLEAR_SEARCH = "clear_search"
     REVERT_FIELD = "revert_field"
     LEAVE = "leave"
 
-
 def esc_action(search: str, field_invalid: bool) -> EscAction:
-    """Search first, then an invalid field, then leave the inspector."""
     if search:
         return EscAction.CLEAR_SEARCH
     if field_invalid:
         return EscAction.REVERT_FIELD
     return EscAction.LEAVE
 
-
 def tab_order_stale(changeset: ChangeSet) -> bool:
-    """False only when every change is a PropertyChanged. Tab order never reads properties."""
     return not all(isinstance(change, PropertyChanged) for change in changeset.changes)
 
-
 def files_line(scope: FormScope) -> str:
-    """The files caption. A project form reads "Saves invoice.ui and ui_invoice.py in forms/."."""
     ui_name = os.path.basename(scope.ui_path)
     if not scope.generates or scope.generated_path is None:
         return "Saves %s." % ui_name
@@ -456,12 +397,10 @@ def files_line(scope: FormScope) -> str:
     where = "the project folder" if folder == "." else folder + "/"
     return "Saves %s and %s in %s." % (ui_name, os.path.basename(scope.generated_path), where)
 
-
 def problems_line(count: int) -> str:
     if count == 0:
         return "No problems."
     return "1 problem." if count == 1 else "%d problems." % count
-
 
 def _node_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...], search: str) -> NodeBody:
     curated: Dict[GroupId, List[Row]] = {}
@@ -483,9 +422,7 @@ def _node_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...], searc
             groups.append(GroupView(group, kept))
     return NodeBody(owners, tuple(groups))
 
-
 def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...]) -> Tuple[Block, ...]:
-    """Live properties every owner shares, by declaring class, then entries only the file has."""
     by_class: Dict[str, List[Row]] = {}
     listed = set()
     lives = [facts.live.get(owner) for owner in owners]
@@ -512,11 +449,9 @@ def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...]) -> Tuple[Block, ...]:
         blocks.append(Block("In the file", tuple(stored)))
     return tuple(blocks)
 
-
 def _all_spec(name: str, kind: PropKind) -> RowSpec:
     key = name if kind == "property" else "attribute." + name
     return RowSpec(key, GroupId.ALL, name, "", Prop(name, kind))
-
 
 def _cell_alignment(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...]) -> Optional[Row]:
     if len(owners) != 1:
@@ -531,7 +466,6 @@ def _cell_alignment(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...]) -> 
     write = CellWrite(item_id, item.row, item.column, item.rowspan, item.colspan)
     return _open_or_kept(facts, spec, "alignment", value, ValueSpec(SetValue.ELEMENT), ALIGNMENT, write)
 
-
 def _open_or_kept(
     facts: Facts,
     spec: RowSpec,
@@ -545,14 +479,11 @@ def _open_or_kept(
         return _locked(spec, qt_name, value, KEPT_AS_IS)
     return OpenRow(spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write)
 
-
 def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str) -> LockedRow:
     return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason)
 
-
 def _entry(node: Node, name: str, kind: PropKind) -> Optional[PropertyEntry]:
     return node.prop(name) if kind == "property" else node.attr(name)
-
 
 def _live_property(facts: Facts, owner: NodeId, name: str, kind: PropKind) -> Optional[LiveProperty]:
     live = facts.live.get(owner)
@@ -560,12 +491,10 @@ def _live_property(facts: Facts, owner: NodeId, name: str, kind: PropKind) -> Op
         return None
     return live.find(name)
 
-
 def _table_property(facts: Facts, node: Node, name: str, kind: PropKind) -> Optional[PropertyInfo]:
     if kind != "property" or not isinstance(node, (WidgetNode, LayoutNode)):
         return None
     return facts.classes.property_info(node.class_name, name)
-
 
 def _row_value(entries: Sequence[Optional[PropertyEntry]], infos: Sequence[Optional[PropertyInfo]]) -> RowValue:
     present = [entry.value for entry in entries if entry is not None]
@@ -575,7 +504,6 @@ def _row_value(entries: Sequence[Optional[PropertyEntry]], infos: Sequence[Optio
         return Written(present[0])
     return Mixed()
 
-
 def _default(infos: Sequence[Optional[PropertyInfo]]) -> Optional[Value]:
     if not infos or any(info is None or info.volatile for info in infos):
         return None
@@ -583,13 +511,11 @@ def _default(infos: Sequence[Optional[PropertyInfo]]) -> Optional[Value]:
     first = defaults[0]
     return first if all(semantic_equal(first, other) for other in defaults[1:]) else None
 
-
 def _element(
     entries: Sequence[Optional[PropertyEntry]],
     lives: Sequence[Optional[LiveProperty]],
     infos: Sequence[Optional[PropertyInfo]],
 ) -> Tuple[str, Optional[EnumSpec]]:
-    """The stored element wins, so a cstring entry stays a cstring. Enum choices come from the live class."""
     live = next((item for item in lives if item is not None), None)
     stored = next((entry.value.ELEMENT for entry in entries if entry is not None), None)
     if stored is not None:
@@ -598,7 +524,6 @@ def _element(
         return live.element, live.enum
     info = next((item for item in infos if item is not None), None)
     return (info.kind if info is not None else ""), None
-
 
 def _match(row: Row, needle: str) -> Optional[Match]:
     candidates: Tuple[Tuple[MatchWhere, str], ...] = (
@@ -612,11 +537,9 @@ def _match(row: Row, needle: str) -> Optional[Match]:
             return Match(where, start, start + len(needle))
     return None
 
-
 def _admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
     chain = _chain(facts, owner)
     return any(name in chain for name in classes)
-
 
 def _chain(facts: Facts, owner: NodeId) -> Tuple[str, ...]:
     live = facts.live.get(owner)
@@ -625,7 +548,6 @@ def _chain(facts: Facts, owner: NodeId) -> Tuple[str, ...]:
     _name, qt_class = _name_and_class(facts.document.node(owner))
     return tuple(info.name for info in facts.classes.chain(qt_class)) or (qt_class,)
 
-
 def _name_and_class(node: Node) -> Tuple[str, str]:
     if isinstance(node, (WidgetNode, LayoutNode)):
         return node.object_name, node.class_name
@@ -633,9 +555,7 @@ def _name_and_class(node: Node) -> Tuple[str, str]:
         return node.name, "Spacer"
     return node.kind, node.kind
 
-
 def _crumbs(document: UiDocument, node: Node) -> Tuple[Crumb, ...]:
-    """Widget and layout ancestors, root first, then the node itself."""
     found: List[Crumb] = []
     for ancestor_id in reversed(document.ancestors(node.id)):
         ancestor = document.node(ancestor_id)
@@ -644,23 +564,19 @@ def _crumbs(document: UiDocument, node: Node) -> Tuple[Crumb, ...]:
     found.append(Crumb(node.id, _crumb_label(node)))
     return tuple(found)
 
-
 def _crumb_label(node: Node) -> str:
     name, qt_class = _name_and_class(node)
     if isinstance(node, LayoutNode):
         return class_words(qt_class).friendly.lower()
     return name or class_words(qt_class).friendly
 
-
 def _kinds(document: UiDocument, ids: Sequence[NodeId]) -> str:
-    """Counts by class in first-seen order, as in "2 line edits, 1 combo box"."""
     counts = Counter(_name_and_class(document.node(node_id))[1] for node_id in ids)
     parts = []
     for qt_class, count in counts.items():
         words = class_words(qt_class)
         parts.append("%d %s" % (count, words.plural if count > 1 else words.friendly.lower()))
     return ", ".join(parts)
-
 
 def _form_body(
     session: FormSession,
@@ -682,7 +598,6 @@ def _form_body(
         files=files_line(session.scope),
     )
 
-
 def _behavior(facts: Facts, owners: Tuple[NodeId, ...]) -> BehaviorView:
     if len(owners) != 1:
         return ManyBehavior(len(owners))
@@ -700,7 +615,6 @@ def _behavior(facts: Facts, owners: Tuple[NodeId, ...]) -> BehaviorView:
     else:
         empty = "Nothing happens yet when %s." % event_words(signal).clause.format(noun=noun)
     return OneBehavior(node.id, name, connections, empty, signal)
-
 
 def _connection_view(connection: ConnectionNode) -> ConnectionView:
     words = "When %s \u2192 %s \u00b7 %s" % (

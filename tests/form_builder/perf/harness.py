@@ -1385,7 +1385,6 @@ def _inspector_row(
     enforce_absolute: bool,
     wall_on: bool,
 ) -> Row:
-    """One body repopulate after a selection flip. The clock is InspectorPane.flush."""
     if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
         return _missing(
             "inspector repopulate",
