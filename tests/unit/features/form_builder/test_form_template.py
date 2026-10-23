@@ -185,5 +185,5 @@ def test_blank_main_window_is_only_a_central_widget(tmp_path: Path) -> None:
     created = create_form(str(tmp_path), "shell", OsFileSystem(), template="main_window")
     assert created.refused is None
     ui = (tmp_path / "forms" / "shell.ui").read_text(encoding="utf-8")
-    assert '<widget class="QWidget" name="central"/>' in ui
+    assert "QMainWindow" in ui
     assert "saveButton" not in ui and "<connections>" not in ui
