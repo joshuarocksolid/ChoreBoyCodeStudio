@@ -154,3 +154,16 @@ def to_problem_detail(diagnostic: FormDiagnostic) -> Mapping[str, str]:
     ``fb_key``, ``fb_object``, ``fb_property``, ``fb_rule_path`` (JSON), ``fb_source``.
     Never contains the session-local node id."""
     ...
+
+
+@dataclass(frozen=True)
+class ProblemRef:
+    """What a Problems row points at. Empty strings mean not known."""
+
+    object_name: str
+    property: str
+
+
+def parse_problem_detail(detail: Mapping[str, str]) -> ProblemRef:
+    """Read back ``to_problem_detail``. The object name falls back to the one in ``fb_key``."""
+    ...

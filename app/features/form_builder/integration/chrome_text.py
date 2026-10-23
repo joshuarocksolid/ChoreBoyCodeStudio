@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Optional
+import re
+from typing import Optional, Sequence
 
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode
 from app.features.form_builder.engine.ui4.values import RectValue
+from app.intelligence.diagnostics_models import CodeDiagnostic, DiagnosticSeverity
 
 _LAYOUT_PHRASE = {
     "QFormLayout": "Form layout",
@@ -79,12 +81,37 @@ def external_change_sentence(file_name: str) -> str:
     return "%s changed on disk." % file_name
 
 
+def problem_summary(rows: Sequence[CodeDiagnostic]) -> str:
+    """``2 problems: 1 error, 1 warning``. Empty when there are none."""
+    if not rows:
+        return ""
+    parts = []
+    for severity, one, many in (
+        (DiagnosticSeverity.ERROR, "error", "errors"),
+        (DiagnosticSeverity.WARNING, "warning", "warnings"),
+        (DiagnosticSeverity.INFO, "info", "info"),
+    ):
+        count = sum(1 for row in rows if row.severity == severity)
+        if count:
+            parts.append("%d %s" % (count, one if count == 1 else many))
+    noun = "problem" if len(rows) == 1 else "problems"
+    return "%d %s: %s" % (len(rows), noun, ", ".join(parts))
+
+
+def problem_property_sentence(property_name: str) -> str:
+    """``This problem is about Buddy.`` for ``buddy``; ``toolTip`` reads ``Tool tip``."""
+    words = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", property_name).lower()
+    return "This problem is about %s." % (words[:1].upper() + words[1:])
+
+
 __all__ = [
     "draft_clock",
     "external_change_sentence",
     "page_chip_label",
     "page_chip_text",
     "page_size_text",
+    "problem_property_sentence",
+    "problem_summary",
     "recovered_draft_sentence",
     "undo_menu_text",
 ]

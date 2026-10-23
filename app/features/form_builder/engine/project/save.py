@@ -52,7 +52,10 @@ def opening_diagnostics(
     """FB505 when a generated module is out of date with the form just opened."""
     if not scope.generates or not scope.generated_path or not fs.is_file(scope.generated_path):
         return ()
-    text = fs.read_text(scope.generated_path)
+    try:
+        text = fs.read_text(scope.generated_path)
+    except (OSError, UnicodeError):
+        return ()
     if not is_stale(text, ui_bytes):
         return ()
     name = os.path.basename(scope.generated_path)

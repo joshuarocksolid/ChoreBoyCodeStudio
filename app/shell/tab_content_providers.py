@@ -42,6 +42,8 @@ class TabSurfaceRequest:
     (Markdown) or lazily (form builder: first View XML). It may be called at most
     once per surface.
     ``open_linked_file``: opens another path in the editor.
+    ``publish_problems``: replaces the Problems rows for a path the shell does
+    not lint. ``show_problems``: brings the Problems tab forward.
     """
 
     file_path: str
@@ -51,6 +53,8 @@ class TabSurfaceRequest:
     create_source_editor: Callable[[], "CodeEditorWidget"]
     open_linked_file: Callable[[str], None]
     project_root: Optional[str]
+    publish_problems: Callable[[str, List["CodeDiagnostic"]], None]
+    show_problems: Callable[[], None]
 
 
 class TabSurface(Protocol):
@@ -78,7 +82,8 @@ class TabSurface(Protocol):
         ...
 
     def reveal(self, line: int, detail: "Optional[Mapping[str, str]]") -> bool:
-        """Problems double-click / go-to-line. Returns False when it cannot."""
+        """Problems click / go-to-line. ``detail`` is the row's ``CodeDiagnostic.detail``.
+        Returns False when it cannot."""
         ...
 
     def restore_text(self, text: str, reason: RestoreReason) -> None:

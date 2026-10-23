@@ -108,6 +108,8 @@ def _request(parent: QWidget, text: str, path: str, project_root: str | None = N
         create_source_editor=create_source_editor,  # type: ignore[arg-type]
         open_linked_file=lambda _linked: None,
         project_root=project_root,
+        publish_problems=lambda _path, _rows: None,
+        show_problems=lambda: None,
     )
 
 

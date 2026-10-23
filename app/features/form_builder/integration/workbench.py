@@ -268,6 +268,24 @@ def _splitter_qss(tokens: ShellThemeTokens) -> str:
     )
 
 
+def _problem_summary_qss(tokens: ShellThemeTokens) -> str:
+    return (
+        "QWidget#formBuilder\\.problemSummaryRow { background: transparent; }"
+        "QLabel#formBuilder\\.problemSummary { color: %s; background: transparent; border: none; }"
+        "QPushButton#formBuilder\\.showProblems {"
+        " color: %s; background: transparent; border: %dpx solid transparent; padding: 0px 2px;"
+        " text-decoration: underline; }"
+        "QPushButton#formBuilder\\.showProblems:focus { border: %dpx solid %s; }"
+        % (
+            tokens.text_primary,
+            tokens.accent,
+            tokens.focus_border_width,
+            tokens.focus_border_width,
+            tokens.accent,
+        )
+    )
+
+
 def _toolbar_qss(tokens: ShellThemeTokens) -> str:
     names = (
         "tabOrder",
@@ -485,10 +503,34 @@ class InspectorPane(QWidget):
         self.tabs.addTab(self.properties, "Properties")
         self.tabs.addTab(self.behavior, "Behavior")
         layout.addWidget(self.tabs, 1)
+        self._summary_row = QWidget(self)
+        self._summary_row.setObjectName("formBuilder.problemSummaryRow")
+        summary_layout = QHBoxLayout(self._summary_row)
+        summary_layout.setContentsMargins(0, 4, 0, 0)
+        summary_layout.setSpacing(6)
+        self.problem_summary = QLabel(self._summary_row)
+        self.problem_summary.setObjectName("formBuilder.problemSummary")
+        self.problem_summary.setAccessibleName("Problems")
+        self.problem_summary.setWordWrap(True)
+        summary_layout.addWidget(self.problem_summary, 1)
+        self.show_problems = _button(
+            "Show in Problems",
+            "formBuilder.showProblems",
+            "Show in Problems",
+            self._summary_row,
+        )
+        summary_layout.addWidget(self.show_problems, 0)
+        self._summary_row.hide()
+        layout.addWidget(self._summary_row)
 
     def set_short(self, short: bool) -> None:
         self._short = short
         self._paint_header()
+
+    def set_problem_summary(self, text: str) -> None:
+        """One line from the form's problems, shown while nothing is selected."""
+        self.problem_summary.setText(text)
+        self._sync_summary()
 
     def show_selection(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         node = None if selected is None else document.get(selected)
@@ -502,7 +544,17 @@ class InspectorPane(QWidget):
             self._title, self._kind = _node_title(node)
             self.properties.setText("Properties are not available yet.")
             self.behavior.setText("Nothing to configure on this widget yet.")
+        self._sync_summary()
         self._paint_header()
+
+    def show_problem(self, document: UiDocument, selected: NodeId, sentence: str) -> None:
+        """Show ``selected``. A non-empty ``sentence`` names the property the problem is about."""
+        self.show_selection(document, selected)
+        if sentence:
+            self.properties.setText(sentence)
+
+    def _sync_summary(self) -> None:
+        self._summary_row.setVisible(bool(self.problem_summary.text()) and not self._has_node)
 
     def _paint_header(self) -> None:
         if not self._has_node:
@@ -728,6 +780,7 @@ class FormWorkbench(QWidget):
             " background: %s; color: %s; }"
             "%s"
             "%s"
+            "%s"
             % (
                 tokens.panel_bg,
                 tokens.text_primary,
@@ -767,6 +820,7 @@ class FormWorkbench(QWidget):
                         "QToolButton#formBuilder\\.sectionExtra",
                     ),
                 ),
+                _problem_summary_qss(tokens),
             )
         )
         self.canvas.apply_theme(tokens)
@@ -805,6 +859,9 @@ class FormWorkbench(QWidget):
         if self._plan is not None and self._plan.stack_left:
             self._left_tabs.setCurrentWidget(self.insert)
         self.insert.body.setFocus()
+
+    def focus_inspector(self) -> None:
+        self._focus_inspector_tab(0)
 
     def _focus_inspector_tab(self, index: int) -> None:
         if self._plan is not None and not self._plan.inspector_docked:

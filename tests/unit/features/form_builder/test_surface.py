@@ -89,6 +89,8 @@ def _request(parent: QWidget, text: str, path: str) -> TabSurfaceRequest:
         create_source_editor=create_source_editor,  # type: ignore[arg-type]
         open_linked_file=lambda _linked: None,
         project_root=None,
+        publish_problems=lambda _path, _rows: None,
+        show_problems=lambda: None,
     )
 
 

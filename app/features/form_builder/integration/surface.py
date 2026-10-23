@@ -6,7 +6,7 @@ One tab owns one ``FormSession``. Closing the tab disposes that session.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence
+from typing import Callable, List, Mapping, Optional, Sequence
 
 from app.qt.QtCore import Qt, QTimer
 from app.qt.QtGui import QKeySequence
@@ -27,6 +27,7 @@ from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
+from app.features.form_builder.engine.diagnostics import parse_problem_detail
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
@@ -34,6 +35,8 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
+    problem_property_sentence,
+    problem_summary,
     recovered_draft_sentence,
     undo_menu_text,
 )
@@ -49,6 +52,7 @@ from app.features.form_builder.integration.layout import (
     plan_workbench,
 )
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
+from app.features.form_builder.integration.problems_bridge import ProblemsBridge
 from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.qtside.realize.api import Realizer
@@ -174,6 +178,8 @@ class FormSurface(QWidget):
         layout.addWidget(self._stack, 1)
 
         self._load_memory()
+        self._workbench.inspector.show_problems.clicked.connect(request.show_problems)
+        self._problems = ProblemsBridge(request.file_path, session.diagnostics, self._publish_problems)
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
         self._selection_unsub = session.selection.subscribe(self._on_selection)
         self._source_unsub = source.subscribe_changed(self._on_source_changed)
@@ -251,16 +257,23 @@ class FormSurface(QWidget):
             editor.apply_theme(tokens)
 
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
+        """The shell echoes this form's own rows. The session's store is the source."""
         del diagnostics
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
-        del detail
-        editor = self._editor
-        if editor is None or line < 1:
-            return False
-        if not self._toolbar.xml.isChecked():
-            self._toolbar.xml.setChecked(True)
-        editor.go_to_line(line)
+        """Select the widget a Problems row names. Otherwise show ``line`` in XML."""
+        ref = None if detail is None else parse_problem_detail(detail)
+        document = self._session.document
+        matches = document.by_name(ref.object_name) if ref is not None and ref.object_name else ()
+        if ref is None or not matches or self._source.has_unapplied_xml():
+            return self._reveal_line(line)
+        node_id = matches[0]
+        if self._toolbar.xml.isChecked():
+            self._toolbar.xml.setChecked(False)
+        self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
+        sentence = problem_property_sentence(ref.property) if ref.property else ""
+        self._workbench.inspector.show_problem(document, node_id, sentence)
+        self._workbench.focus_inspector()
         return True
 
     def restore_text(self, text: str, reason: RestoreReason) -> None:
@@ -284,6 +297,7 @@ class FormSurface(QWidget):
         scope = form_scope(new_path, self._request.project_root)
         self._session.set_path(new_path, scope)
         self._source.set_scope(scope)
+        self._problems.set_path(new_path)
         self._refresh_save_state()
 
     def toggle_source_view(self) -> None:
@@ -308,6 +322,7 @@ class FormSurface(QWidget):
             except (RuntimeError, TypeError):
                 pass
         self._clear_shell_undo()
+        self._problems.close()
         self._selection_unsub()
         self._source_unsub()
         self._changes.close()
@@ -464,6 +479,18 @@ class FormSurface(QWidget):
         self._stack.setCurrentWidget(self._workbench)
         self._refresh_design()
         self._workbench.outline.tree.setFocus()
+
+    def _reveal_line(self, line: int) -> bool:
+        if line < 1:
+            return False
+        if not self._toolbar.xml.isChecked():
+            self._toolbar.xml.setChecked(True)
+        self._ensure_editor().go_to_line(line)
+        return True
+
+    def _publish_problems(self, path: str, rows: List[CodeDiagnostic]) -> None:
+        self._request.publish_problems(path, rows)
+        self._workbench.inspector.set_problem_summary(problem_summary(rows))
 
     def _set_xml_checked(self, checked: bool) -> None:
         self._toolbar.xml.blockSignals(True)
@@ -827,6 +854,7 @@ class FormSurface(QWidget):
             self._workbench.canvas_view(),
             self._workbench.inspector.header,
             self._workbench.inspector.tabs,
+            self._workbench.inspector.show_problems,
         ]
         previous = order[0]
         for widget in order[1:]:

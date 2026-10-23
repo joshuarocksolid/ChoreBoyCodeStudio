@@ -505,10 +505,20 @@ The ranges are in `diagnostics.py`. Codes 101–402 come from LOGIC_DESIGN §2.9
 - severity: the same value
 - file_path: the `.ui` path
 - line_number: `location.line` or 1. The line comes from the last serialization's line map, or the reader's
-- message: `"<object>: <message>"`
+- message: the record's plain message, with no object-name prefix
+- source: `"Form"`
+- location_label: `location.object_name`, or empty when the problem is not about one widget
 - detail: `to_problem_detail`, which carries `fb_key`, `fb_object`, `fb_property`, `fb_rule_path` and `fb_source`, **never the node id**
 
-The bridge pushes through `ProblemsController.apply_lint_diagnostics_result`, coalesced to one push per event-loop turn. `.ui` files aren't linted, so the form owns that path's slot. A double-click calls `TabSurface.reveal(line, detail)`, which selects the node by `fb_key` (falling back to the object name) and opens the property or rule.
+FB9xx records are dropped unless `CBCS_FB_DEBUG=1`.
+
+The Problems panel shows `location_label` in the location column when it is set, and `Ln N` when it is empty. The code column reads `Form FB012`, with the code in the gutter text color. The file name stays the group header.
+
+The surface's `ProblemsBridge` subscribes to the session's `DiagnosticsStore` and pushes the store's full `all()` through `TabSurfaceRequest.publish_problems`, which is `ProblemsController.apply_lint_diagnostics_result`. Pushes are coalesced to one per event-loop turn. `.ui` files aren't linted, so the form owns that path's slot. Closing the tab pushes an empty list for the path. On open, the provider publishes `opening_diagnostics` (FB505) under the `codegen` source, so the next save replaces it.
+
+A click previews and a double-click opens. Both pass the row's `detail` to `TabSurface.reveal(line, detail)`. `reveal` reads the object name from `fb_object`, or from the object field of `fb_key` when `fb_object` is empty. When the document has a widget with that name, `reveal` selects the first one in document order with source `program`, focuses the inspector, and names the property in one sentence ("This problem is about Buddy."). It leaves XML when the XML text matches the document. Otherwise `reveal` shows `line` in XML. That covers no detail, a form-level row, an unknown name, and typed XML that the document has not taken yet. `reveal` returns False only when `line` is below 1.
+
+While nothing is selected, the inspector shows one summary line ("2 problems: 1 error, 1 warning") and a **Show in Problems** button. The button calls `TabSurfaceRequest.show_problems`. The workbench does not list problems.
 
 ---
 
@@ -675,7 +685,7 @@ User code runs **only** in the child. That includes window classes, promoted and
 ### 11.1 Protocols (stubs `app/shell/tab_content_providers.py`, `app/editors/tab_content_source.py`)
 
 - `TabContentProvider(provider_id, priority, matches(path, ctx), create_surface(request))`. `matches` is a pure path test. `create_surface` may raise `ProviderDeclined(reason)`, in which case the shell opens a text tab with an info bar.
-- `TabSurfaceRequest` gives the provider the path, the initial text, the parent, the theme, `open_linked_file`, the project root, and `create_source_editor()`. That builds a **fully bound** `CodeEditorWidget` (the same code path as text tabs, including the `shell.editorTabs.textEditor` object name and workspace registration). It can be called at most once. Markdown calls it eagerly. The form builder calls it on the first View XML, which keeps a ~100 KB XML editor out of the 150 ms open budget.
+- `TabSurfaceRequest` gives the provider the path, the initial text, the parent, the theme, `open_linked_file`, the project root, `publish_problems(path, rows)`, `show_problems()`, and `create_source_editor()`. `publish_problems` replaces the Problems rows for a path the shell does not lint. `show_problems` brings the Problems tab forward. That builds a **fully bound** `CodeEditorWidget` (the same code path as text tabs, including the `shell.editorTabs.textEditor` object name and workspace registration). It can be called at most once. Markdown calls it eagerly. The form builder calls it on the first View XML, which keeps a ~100 KB XML editor out of the 150 ms open budget.
 - `TabSurface` has `widget()`, `content_source()`, `source_editor()`, `apply_theme`, `set_diagnostics`, `reveal(line, detail)`, `restore_text(text, reason)`, `close_blockers()`, `file_path_changed`, `focus_primary` and `release`.
 - `TabContentProviderRegistry` has `register`, `provider_for`, `surface_for_path`, `surfaces` and `apply_all_themes`. It's a committed window field bound by the platform. Features call `register` from `install`.
 

@@ -302,17 +302,19 @@ def build_bottom_panel(window: Any) -> QWidget:
 
     window._problems_panel = ProblemsPanel(tabs)
     window._problems_panel.item_preview_requested.connect(
-        lambda file_path, line_number: window._editor_tab_workflow.open_file_at_line(
+        lambda file_path, line_number, detail: window._editor_tab_workflow.open_file_at_line(
             file_path,
             line_number,
             preview=True,
+            detail=detail,
         )
     )
     window._problems_panel.item_activated.connect(
-        lambda file_path, line_number: window._editor_tab_workflow.open_file_at_line(
+        lambda file_path, line_number, detail: window._editor_tab_workflow.open_file_at_line(
             file_path,
             line_number,
             preview=False,
+            detail=detail,
         )
     )
     window._problems_panel.context_menu_requested.connect(

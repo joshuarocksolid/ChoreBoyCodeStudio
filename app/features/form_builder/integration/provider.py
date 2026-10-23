@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from app.features.form_builder.engine.project.fs import OsFileSystem
+from app.features.form_builder.engine.project.save import opening_diagnostics
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.reader import UiReadError
 from app.features.form_builder.install import PROVIDER_ID
@@ -34,6 +36,11 @@ class FormTabProvider:
             raise ProviderDeclined(
                 f"This form can't be opened in the form builder: {detail}."
             ) from exc
+        # Save republishes "codegen", which replaces this FB505 once the module is current.
+        session.diagnostics.publish(
+            "codegen",
+            opening_diagnostics(session.scope, request.initial_text.encode("utf-8"), OsFileSystem()),
+        )
         source = FormContentSource(
             session.log,
             request.initial_text,

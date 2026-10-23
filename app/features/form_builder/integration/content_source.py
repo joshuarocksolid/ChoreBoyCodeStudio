@@ -174,6 +174,10 @@ class FormContentSource:
         self._applied_text = shown_text
         self._typed = shown_text
 
+    def has_unapplied_xml(self) -> bool:
+        """True in XML mode when the typed text differs from what the document last took."""
+        return self._mode == "xml" and self._typed != self._applied_text
+
     def xml_text_changed(self, text: str) -> None:
         if self._mode != "xml" or text == self._typed:
             return

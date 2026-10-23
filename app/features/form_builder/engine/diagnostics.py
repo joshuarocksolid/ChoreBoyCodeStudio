@@ -223,6 +223,23 @@ class DiagnosticsStore:
             listener(snapshot)
 
 
+@dataclass(frozen=True)
+class ProblemRef:
+    """What a Problems row points at. Empty strings mean not known."""
+
+    object_name: str
+    property: str
+
+
+def parse_problem_detail(detail: Mapping[str, str]) -> ProblemRef:
+    """Read back ``to_problem_detail``. The object name falls back to the one in ``fb_key``."""
+    object_name = detail.get("fb_object", "")
+    if not object_name:
+        parts = detail.get("fb_key", "").split("|")
+        object_name = parts[1] if len(parts) > 1 else ""
+    return ProblemRef(object_name=object_name, property=detail.get("fb_property", ""))
+
+
 def to_problem_detail(diagnostic: FormDiagnostic) -> Mapping[str, str]:
     """The ``CodeDiagnostic.detail`` mapping the Problems bridge sends to the shell:
     ``fb_key``, ``fb_object``, ``fb_property``, ``fb_rule_path`` (JSON), ``fb_source``.

@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 ROLE_FILE_PATH = 320
 ROLE_LINE_NUMBER = 321
 ROLE_DIAGNOSTIC_CODE = 322
+ROLE_DETAIL = 323
 
 
 @dataclass(frozen=True)
@@ -228,8 +229,8 @@ class _FilterToggle(QToolButton):
 class ProblemsPanel(QWidget):
     """VS Code-style problems panel with grouped tree and filter toolbar."""
 
-    item_preview_requested: Any = Signal(str, int)
-    item_activated: Any = Signal(str, int)
+    item_preview_requested: Any = Signal(str, int, object)
+    item_activated: Any = Signal(str, int, object)
     context_menu_requested: Any = Signal(str, str)
 
     def __init__(self, parent: QWidget | None = None) -> None:
@@ -317,6 +318,7 @@ class ProblemsPanel(QWidget):
             DiagnosticSeverity.WARNING: "#D97706",
             DiagnosticSeverity.INFO: "#3366FF",
         }
+        self._source_code_color = "#666F76"
 
     # -- public API --
 
@@ -327,6 +329,7 @@ class ProblemsPanel(QWidget):
             tokens.diag_warning_color or tokens.text_muted,
             tokens.diag_info_color or tokens.accent,
         )
+        self._source_code_color = tokens.gutter_text or tokens.text_muted
 
     def set_severity_colors(
         self,
@@ -442,12 +445,15 @@ class ProblemsPanel(QWidget):
                     child.setIcon(0, severity_icon(entry.severity, color_hex))
                     child.setText(1, entry.message)
                     child.setForeground(1, QColor(color_hex))
-                    child.setText(2, f"Ln {entry.line_number}")
-                    child.setText(3, entry.code)
+                    child.setText(2, entry.location_label or f"Ln {entry.line_number}")
+                    child.setText(3, f"{entry.source} {entry.code}".strip())
+                    if entry.source:
+                        child.setForeground(3, QColor(self._source_code_color))
                     child.setToolTip(1, entry.file_path)
                     child.setData(0, ROLE_FILE_PATH, entry.file_path)
                     child.setData(0, ROLE_LINE_NUMBER, entry.line_number)
                     child.setData(0, ROLE_DIAGNOSTIC_CODE, entry.code)
+                    child.setData(0, ROLE_DETAIL, entry.detail)
                 else:
                     assert isinstance(entry, ProblemEntry)
                     color_hex = self._severity_colors.get(DiagnosticSeverity.ERROR, "#E03131")
@@ -524,7 +530,7 @@ class ProblemsPanel(QWidget):
             resolved_line = int(line_number)
         except (TypeError, ValueError):
             return
-        self.item_preview_requested.emit(str(file_path), resolved_line)
+        self.item_preview_requested.emit(str(file_path), resolved_line, item.data(0, ROLE_DETAIL))
 
     def _on_item_activated(self, item: QTreeWidgetItem) -> None:
         file_path = item.data(0, ROLE_FILE_PATH)
@@ -535,7 +541,7 @@ class ProblemsPanel(QWidget):
             resolved_line = int(line_number)
         except (TypeError, ValueError):
             return
-        self.item_activated.emit(str(file_path), resolved_line)
+        self.item_activated.emit(str(file_path), resolved_line, item.data(0, ROLE_DETAIL))
 
     def _on_context_menu(self, position: "QPoint") -> None:
         item = self._tree.itemAt(position)

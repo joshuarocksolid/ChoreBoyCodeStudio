@@ -48,3 +48,5 @@ class CodeDiagnostic:
     col_start: int | None = None
     col_end: int | None = None
     detail: Mapping[str, str] | None = None
+    source: str = ""
+    location_label: str = ""

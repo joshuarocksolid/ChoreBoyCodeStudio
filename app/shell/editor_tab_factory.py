@@ -174,6 +174,10 @@ class EditorTabFactory:
                 create_source_editor=create_source_editor,
                 open_linked_file=open_linked_file,
                 project_root=project_root,
+                publish_problems=lambda path, rows: window._problems_controller.apply_lint_diagnostics_result(
+                    path, rows
+                ),
+                show_problems=lambda: window._run_event_workflow.focus_problems_tab(),
             )
             try:
                 surface = provider.create_surface(request)
