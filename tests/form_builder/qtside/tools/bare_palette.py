@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Print Fusion palette colors for a form realized in a bare QApplication.
 
 The parent test compares a themed shell against this output. The process must

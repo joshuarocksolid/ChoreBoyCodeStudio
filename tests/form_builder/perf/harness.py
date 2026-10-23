@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Section 12 speed harness.
 
 Profiles:
