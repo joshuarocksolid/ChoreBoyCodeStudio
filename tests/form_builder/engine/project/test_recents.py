@@ -1,4 +1,4 @@
-"""Recent forms stay on the project manifest and cap at eight."""
+"""Recent forms are per-user state beside the session file, and cap at eight."""
 
 from __future__ import annotations
 
@@ -26,6 +26,7 @@ def test_recent_forms_keep_the_eight_newest(tmp_path: Path) -> None:
     assert "forms/form_1.ui" not in found
     remember_form(str(root), str(forms / "form_5.ui"), fs)
     assert recent_forms(str(root), fs)[0] == "forms/form_5.ui"
+    assert not (root / "cbcs" / "project.json").exists()
 
 
 def test_remembering_a_form_keeps_adopted_forms(tmp_path: Path) -> None:
@@ -46,7 +47,11 @@ def test_remembering_a_form_keeps_adopted_forms(tmp_path: Path) -> None:
         ),
         encoding="utf-8",
     )
+    before = manifest.read_text(encoding="utf-8")
     fs = OsFileSystem()
     remember_form(str(root), str(ui_path), fs)
+    assert manifest.read_text(encoding="utf-8") == before
     assert adopted_forms(str(root), fs) == ("src/legacy.ui",)
     assert recent_forms(str(root), fs) == ("forms/invoice.ui",)
+    assert (root / "cbcs" / "recent_forms.json").is_file()
+    assert "project.json" not in (root / "cbcs" / "recent_forms.json").read_text(encoding="utf-8")
