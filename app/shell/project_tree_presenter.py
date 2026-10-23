@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Collection
 
 from app.qt.QtCore import QTimer
+from app.qt.QtGui import QColor
 from app.qt.QtWidgets import QAbstractItemView, QTreeWidgetItem
 
 from app.core.models import LoadedProject
+from app.editors.generated_banner import generated_sibling
+from app.shell.icon_provider import lock_icon
 from app.project.project_tree import build_project_tree
 from app.project.project_tree_presenter import ProjectTreeDisplayNode, build_project_tree_display
 from app.shell.project_tree_context_menu import (
@@ -53,8 +56,9 @@ class ProjectTreePresenter:
             source_roots=tuple(loaded_project.metadata.source_roots),
         )
         self._index_display_nodes(display_nodes)
+        root_names = tuple(display_node.name for display_node in display_nodes)
         for display_node in display_nodes:
-            root_item = self.build_tree_item(display_node, lazy=True)
+            root_item = self.build_tree_item(display_node, lazy=True, sibling_names=root_names)
             window._project_tree_widget.addTopLevelItem(root_item)
         if saved_state is not None:
             self.restore_view_state(saved_state)
@@ -73,8 +77,9 @@ class ProjectTreePresenter:
             return
         item.takeChildren()
         item.setData(0, TREE_ROLE_LAZY_UNLOADED, False)
+        child_names = tuple(child_node.name for child_node in display_node.children)
         for child_node in display_node.children:
-            item.addChild(self.build_tree_item(child_node, lazy=True))
+            item.addChild(self.build_tree_item(child_node, lazy=True, sibling_names=child_names))
 
     def capture_view_state(self) -> SessionTreeState:
         window = self._window
@@ -237,7 +242,13 @@ class ProjectTreePresenter:
             collected.extend(self.collect_descendants(child_item))
         return collected
 
-    def build_tree_item(self, node: ProjectTreeDisplayNode, *, lazy: bool = False) -> QTreeWidgetItem:
+    def build_tree_item(
+        self,
+        node: ProjectTreeDisplayNode,
+        *,
+        lazy: bool = False,
+        sibling_names: Collection[str] = (),
+    ) -> QTreeWidgetItem:
         window = self._window
         item = QTreeWidgetItem([node.display_label])
         item.setData(0, TREE_ROLE_ABSOLUTE_PATH, node.absolute_path)
@@ -252,15 +263,22 @@ class ProjectTreePresenter:
                     item.addChild(QTreeWidgetItem([""]))
                     item.setData(0, TREE_ROLE_LAZY_UNLOADED, True)
                 else:
+                    child_names = tuple(child_node.name for child_node in node.children)
                     for child_node in node.children:
-                        item.addChild(self.build_tree_item(child_node, lazy=False))
+                        item.addChild(self.build_tree_item(child_node, lazy=False, sibling_names=child_names))
         else:
-            filename = Path(node.absolute_path).name.lower()
-            icon = window._tree_filename_icon_map.get(filename)
-            if icon is None:
-                ext = Path(node.absolute_path).suffix.lower()
-                icon = window._tree_file_icon_map.get(ext, window._tree_file_icon)
-            item.setIcon(0, icon)
+            source = generated_sibling(node.name, sibling_names)
+            if source is not None:
+                muted = window.current_theme_tokens().text_muted
+                item.setIcon(0, lock_icon(muted))
+                item.setForeground(0, QColor(muted))
+            else:
+                filename = Path(node.absolute_path).name.lower()
+                icon = window._tree_filename_icon_map.get(filename)
+                if icon is None:
+                    ext = Path(node.absolute_path).suffix.lower()
+                    icon = window._tree_file_icon_map.get(ext, window._tree_file_icon)
+                item.setIcon(0, icon)
             if (
                 window._loaded_project is not None
                 and node.relative_path == window._loaded_project.metadata.default_entry

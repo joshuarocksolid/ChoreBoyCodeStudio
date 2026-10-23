@@ -20,6 +20,7 @@ from app.run.runtime_launch import (
 
 _IMPORT_MODE_ARG = "--import-mode=importlib"
 _PYTEST_CACHE_PROVIDER_DISABLE_ARGS = ["-p", "no:cacheprovider"]
+_FORM_BUILDER_STATE_IGNORE = "--ignore=cbcs/form_builder"
 _RUN_TESTS_FILENAME = "run_tests.py"
 
 
@@ -202,7 +203,23 @@ def _normalized_pytest_args(pytest_args: list[str]) -> list[str]:
                 insert_at = index
                 break
         normalized_args[insert_at:insert_at] = list(_PYTEST_CACHE_PROVIDER_DISABLE_ARGS)
+    if _FORM_BUILDER_STATE_IGNORE not in normalized_args:
+        normalized_args.insert(_flag_insert_at(normalized_args), _FORM_BUILDER_STATE_IGNORE)
     return normalized_args
+
+
+def _flag_insert_at(pytest_args: list[str]) -> int:
+    """Index of the first positional. ``-p`` takes the following token as its value."""
+    index = 0
+    while index < len(pytest_args):
+        arg = pytest_args[index]
+        if arg == "-p" and index + 1 < len(pytest_args):
+            index += 2
+            continue
+        if not arg.startswith("-"):
+            return index
+        index += 1
+    return len(pytest_args)
 
 
 def _has_cache_provider_override(pytest_args: list[str]) -> bool:
