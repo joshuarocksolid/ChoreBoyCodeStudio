@@ -364,9 +364,9 @@ def read_property(
     if kind == "property" and name in LAYOUT_OWNED:
         if any(facts.document.containing_layout_item(owner) is not None for owner in owners):
             return None if curated else _locked(spec, name, value, SET_BY_LAYOUT)
-        if len(owners) > 1:
+        if len(owners) != 1:
             return _locked(spec, name, value, SELECT_ONE_FOR_POSITION)
-        write = GeometryWrite(owners[0])
+        write = GeometryWrite(next(iter(owners)))
     element, enum = _element(entries, lives, infos)
     return _open_or_kept(facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write)
 

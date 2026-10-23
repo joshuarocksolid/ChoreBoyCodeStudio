@@ -26,10 +26,11 @@ from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
     QButtonGroup,
     QComboBox,
-    QHBoxLayout,
+    QGridLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -38,6 +39,10 @@ from app.qt.qt_compat import enum_value
 
 _HORIZONTAL = ("AlignLeft", "AlignHCenter", "AlignRight", "AlignJustify")
 _VERTICAL = ("AlignTop", "AlignVCenter", "AlignBottom")
+_SHORT_ALIGN = {
+    "AlignHCenter": "Center",
+    "AlignVCenter": "Center",
+}
 _CURSORS = (
     "ArrowCursor",
     "UpArrowCursor",
@@ -167,17 +172,21 @@ class AlignmentEditor:
 
     def _row(self, names: Tuple[str, ...]) -> QWidget:
         row = QWidget(self._root)
-        layout = QHBoxLayout(row)
+        layout = QGridLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(2)
+        layout.setVerticalSpacing(2)
         group = QButtonGroup(row)
         group.setExclusive(True)
-        for name in names:
+        for index, name in enumerate(names):
             button = QToolButton(row)
-            button.setText(name.replace("Align", ""))
+            button.setText(_SHORT_ALIGN.get(name, name.replace("Align", "")))
+            button.setToolTip(name)
             button.setCheckable(True)
+            button.setSizePolicy(_size_policy("Expanding"), _size_policy("Fixed"))
             button.toggled.connect(self._commit)
             group.addButton(button)
-            layout.addWidget(button)
+            layout.addWidget(button, index // 2, index % 2)
             self._buttons.append((name, button))
         return row
 
@@ -243,6 +252,10 @@ def _set_text(value: RowValue) -> str:
     if isinstance(found, SetValue):
         return found.text
     return ""
+
+
+def _size_policy(name: str) -> QSizePolicy.Policy:
+    return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
 
 
 def _payload(value: RowValue) -> object:

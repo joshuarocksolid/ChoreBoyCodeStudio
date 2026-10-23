@@ -119,7 +119,16 @@ class InspectorPane(QWidget):
     def apply_chrome(self, chrome: FormChrome) -> None:
         """One stylesheet for the pane, built from ``chrome``."""
         self.setStyleSheet(_stylesheet(chrome))
+        self.properties.apply_colors(chrome.panel, chrome.text, chrome.faint)
         self.properties.set_match_color(chrome.search_match_bg)
+        self.behavior.apply_colors(chrome.panel, chrome.text)
+        data = self.findChild(QWidget, "formBuilder.dataBody")
+        if data is not None:
+            data.setStyleSheet(
+                "QWidget#formBuilder\\.dataBody { background: %s; color: %s; }"
+                "QLabel { color: %s; }"
+                % (chrome.panel, chrome.faint, chrome.faint)
+            )
         self._schedule()
 
     def focus_tab(self, tab: TabId) -> None:

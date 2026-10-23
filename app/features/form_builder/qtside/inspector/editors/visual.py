@@ -20,6 +20,7 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -101,6 +102,15 @@ class FontEditor:
         fields = QHBoxLayout(row)
         fields.setContentsMargins(0, 0, 0, 0)
         self._family = QFontComboBox(row)
+        self._family.setMinimumContentsLength(10)
+        self._family.setSizeAdjustPolicy(
+            getattr(
+                getattr(QFontComboBox, "SizeAdjustPolicy", QFontComboBox),
+                "AdjustToMinimumContentsLengthWithIcon",
+            )
+        )
+        self._family.setSizePolicy(_font_policy("Ignored"), _font_policy("Fixed"))
+        self._family.setMinimumWidth(0)
         self._size = QSpinBox(row)
         self._size.setRange(0, 256)
         fields.addWidget(self._family, 1)
@@ -154,6 +164,10 @@ class FontEditor:
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(ColorValue.ELEMENT), ColorEditor, baseline=True)
     registrar.editor(EditorKey(FontValue.ELEMENT), FontEditor, baseline=True)
+
+
+def _font_policy(name: str) -> QSizePolicy.Policy:
+    return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
 
 
 def _color(value: RowValue) -> object:

@@ -7,10 +7,14 @@ import re
 import pytest
 
 from app.features.form_builder.engine.query.selection import SelectionSource
+from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.integration.workbench import OutlinePane
 from app.features.form_builder.qtside.inspector import InspectorPane
-from app.qt.QtCore import Qt
-from app.qt.QtGui import QKeySequence
+from app.features.form_builder.qtside.realize import Realizer
+from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QKeySequence  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QAction, QApplication, QLabel, QLineEdit, QVBoxLayout, QWidget
 from tests.form_builder.qtside.support import realize
@@ -91,7 +95,9 @@ def test_keyboard_path_through_the_inspector(qapp) -> None:  # type: ignore[no-u
     assert error is not None
     assert "FB011" in error.text()
     assert name.text() == "1bad"
-    assert session.document.node(button).object_name == "okButton"
+    button_node = session.document.node(button)
+    assert isinstance(button_node, WidgetNode)
+    assert button_node.object_name == "okButton"
     QTest.keyClick(name, Qt.Key_Escape)
     assert name.text() == "okButton"
     assert "FB011" not in error.text()
@@ -234,7 +240,8 @@ def test_multi_select_edit_is_one_undo(qapp) -> None:  # type: ignore[no-untyped
     assert session.log.undo() is True
     assert session.log.undo() is False
     email_text = session.document.node(email).prop("text")
-    assert email_text is not None and email_text.value.text == "Pay"
+    assert email_text is not None and isinstance(email_text.value, StringValue)
+    assert email_text.value.text == "Pay"
     assert session.document.node(phone).prop("text") is None
     _close(window, pane, realizer, session)
 
@@ -248,7 +255,7 @@ def _action(window: QWidget, shortcut: QKeySequence, fired: dict, key: str) -> Q
     return action
 
 
-def _shown(session: object, realizer: object) -> QWidget:
+def _shown(session: FormSession, realizer: Realizer) -> QWidget:
     window = QWidget()
     pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None, parent=window)
     layout = QVBoxLayout(window)

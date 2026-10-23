@@ -51,6 +51,14 @@ class BehaviorPage(QWidget):
         layout.addWidget(self._add, 0)
         layout.addStretch(1)
 
+    def apply_colors(self, panel: str, text: str) -> None:
+        """Tab pages do not inherit the inspector stylesheet."""
+        self.setStyleSheet(
+            "QWidget#formBuilder\\.behaviorBody { background: %s; color: %s; }"
+            "QLabel { color: %s; background: transparent; }"
+            % (panel, text, text)
+        )
+
     def paint(self, view: BehaviorView) -> None:
         if isinstance(view, ManyBehavior):
             self._view = None

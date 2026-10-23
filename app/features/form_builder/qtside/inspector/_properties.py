@@ -70,9 +70,11 @@ class PropertiesPage(QWidget):
         self._pill.linkActivated.connect(lambda _link: self.clear_search())
         self._pill.hide()
         self._scroll = QScrollArea(self)
+        self._scroll.setObjectName("formBuilder.inspectorScroll")
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(_no_frame())
         self._content = QWidget(self._scroll)
+        self._content.setObjectName("formBuilder.inspectorContent")
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(8, 4, 8, 8)
         self._content_layout.setSpacing(4)
@@ -100,6 +102,28 @@ class PropertiesPage(QWidget):
 
     def set_match_color(self, color: str) -> None:
         self._match_color = color
+
+    def apply_colors(self, panel: str, text: str, faint: str) -> None:
+        """The scroll viewport does not inherit the inspector stylesheet."""
+        self.setStyleSheet(
+            "QWidget#formBuilder\\.inspectorBody { background: %s; color: %s; }"
+            "QLabel { color: %s; background: transparent; }"
+            % (panel, text, text)
+        )
+        self._scroll.setStyleSheet(
+            "QScrollArea#formBuilder\\.inspectorScroll { background: %s; border: none; }" % panel
+        )
+        viewport = self._scroll.viewport()
+        viewport.setAutoFillBackground(False)
+        viewport.setStyleSheet("background: %s;" % panel)
+        self._content.setStyleSheet(
+            "QWidget#formBuilder\\.inspectorContent { background: %s; color: %s; }"
+            "QLabel { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.rowQtName, QLabel#formBuilder\\.rowDefault,"
+            " QLabel#formBuilder\\.rowMixed { color: %s; }"
+            "QToolButton { color: %s; background: transparent; border: none; }"
+            % (panel, text, text, faint, text)
+        )
 
     def paint(self, body: BodyView) -> None:
         searching = bool(self.search.strip())
