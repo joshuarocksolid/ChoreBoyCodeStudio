@@ -225,7 +225,7 @@ The neutral-gray dark chrome palette substitutes its own surfaces through the sa
 
 **UX-XML-004** `M2.2` `[S T]` Switching back with invalid XML keeps the XML view, moves the caret to the error, and shows an error bar: "Line 42: the tag `<widget>` is not closed. Fix it, or [Discard XML edits]." Discard restores the last valid design. Neither version is ever lost.
 
-**UX-XML-005** `M2.2` `[S]` If the file has nodes the builder does not understand, Design shows them untouched and the XML view marks them with a gutter note "Kept as is". Nothing is silently dropped (survey failure mode "serializer vandalism").
+**UX-XML-005** `M2.3` `[S]` If the file has nodes the builder does not understand, Design shows them untouched and the XML view marks them with a gutter note "Kept as is". Nothing is silently dropped (survey failure mode "serializer vandalism"). Moved out of M2.2 because the gutter mark needs the code editor's marker API, which this slice does not own. Design already keeps unknown nodes.
 
 ### 3.3 Generated files
 
@@ -417,7 +417,7 @@ Every empty surface says what it is and what to do next, in one or two sentences
 
 **UX-EMPTY-007** `M5.6` `[S]` Tab-order list with no inputs: "No fields to visit yet. Inputs join the order as you add them."
 
-**UX-EMPTY-008** `M2.2` `[S]` Unreadable file: the tab shows a centred message: "This file isn't a form Code Studio can read." the reason in Caption ("Line 3: not a `<ui>` document."), and [Open as text].
+**UX-EMPTY-008** `M2.2` `[S]` An unreadable file opens as a text tab with an info bar: "This file isn't a form Code Studio can read." plus the reason. There is no centred panel and no [Open as text] button. This matches CONTRACTS §8.5: the provider declines and the shell opens the file as text.
 
 **UX-EMPTY-009** `M2.2` `[S]` Recovered draft and external change are info bars at the top of the tab (not modal dialogs): "Recovered unsaved changes from 14:02. [Keep recovered] [Discard]"; "invoice.ui changed on disk. [Reload from disk] [Keep mine] [Compare…]". Compare opens the shell diff of the two XML texts.
 
