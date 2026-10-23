@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, ClassVar, Optional
 
 import pytest
 
@@ -162,13 +162,19 @@ FORM_SHAPED_GRID = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 class _RawRowWrite:
-    command_type = "raw_row_write"
-    label = "Raw row write"
-    merge_token = None
+    command_type: ClassVar[str] = "raw_row_write"
 
     def __init__(self, item: NodeId, row: int) -> None:
         self.item = item
         self.row = row
+
+    @property
+    def label(self) -> str:
+        return "Raw row write"
+
+    @property
+    def merge_token(self) -> Optional[str]:
+        return None
 
     def merge_key(self) -> None:
         return None
