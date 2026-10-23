@@ -446,7 +446,7 @@ There's one `SelectionModel` per session, shared by canvas, outline and inspecto
 
 ### 7.1 Record
 
-`FormDiagnostic(code, severity, message, location, source, fixes)` and `key`. `DiagnosticLocation(node_id, object_name, property, rule_path, span, line)` points at a node, a property or attribute, a path inside logic JSON (`("cbcsValidate", 1, "pattern")`) or a connection index, a span inside a formula, and the XML line. `QuickFix` holds either an engine `command` (run through the log; if planning rejects it the fix is shown disabled) or a Qt-side `action` id (`open-raw`, `go-to-code`, `refresh-schema`, `create-method`…). Messages use LOGIC_DESIGN §2.9's plain voice.
+`FormDiagnostic(code, severity, message, location, source, fixes)` and `key`. `DiagnosticLocation(node_id, object_name, property, rule_path, span, line, end_line)` points at a node, a property or attribute, a path inside logic JSON (`("cbcsValidate", 1, "pattern")`) or a connection index, a span inside a formula, and the XML line. `end_line` is the last line of a kept range. 0 means the note is that one line. `QuickFix` holds either an engine `command` (run through the log; if planning rejects it the fix is shown disabled) or a Qt-side `action` id (`open-raw`, `go-to-code`, `refresh-schema`, `create-method`…). Messages use LOGIC_DESIGN §2.9's plain voice.
 
 ### 7.2 Codes
 
