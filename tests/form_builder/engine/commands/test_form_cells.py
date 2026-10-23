@@ -1,4 +1,4 @@
-"""Form-layout cells stay unique (CONTRACTS.md section 2.7)."""
+"""Form-layout cells stay unique."""
 
 from __future__ import annotations
 
