@@ -49,6 +49,7 @@ from app.features.form_builder.integration.content_source import (
     plain_read_error,
 )
 from app.features.form_builder.integration.form_commands import bound_keys, unavailable_claims
+from app.features.form_builder.integration.kept_notes import line_notes_for_xml
 from app.features.form_builder.integration.layout import (
     TOOLBAR_HEIGHT,
     LayoutPlan,
@@ -114,6 +115,7 @@ _RESTORE_REASON = {
     "external_reload": "reload",
 }
 _SAVED_FADE_MS = 4000
+_KEPT_NOTE_MS = 400
 
 
 def plain_banner_error(error: str) -> str:
@@ -220,6 +222,9 @@ class FormSurface(QWidget):
         self._saved_timer = QTimer(self)
         self._saved_timer.setSingleShot(True)
         self._saved_timer.timeout.connect(self._fade_saved)
+        self._kept_notes_timer = QTimer(self)
+        self._kept_notes_timer.setSingleShot(True)
+        self._kept_notes_timer.timeout.connect(self._apply_kept_notes)
         self._commands: Dict[str, Callable[[], object]] = {
             "form.viewXml": self._toggle_xml,
             _SHELL_TOGGLE_SOURCE: self._toggle_xml,
@@ -318,6 +323,7 @@ class FormSurface(QWidget):
             self._show_unparsed(text, plain_banner_error(plain_read_error(exc)))
             return
         if self._source.mode == "xml":
+            self._clear_kept_notes()
             self._source.cancel_xml_mode()
             self._set_xml_checked(False)
             self._hide_banner()
@@ -386,6 +392,7 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        self._kept_notes_timer.stop()
         self._notify_shell()
         self._shell_listeners.clear()
         self._problems.close()
@@ -462,6 +469,7 @@ class FormSurface(QWidget):
                 self._discard_xml()
             else:
                 if self._source.mode == "xml":
+                    self._clear_kept_notes()
                     self._source.cancel_xml_mode()
                     self._set_xml_checked(False)
                     self._hide_banner()
@@ -525,6 +533,7 @@ class FormSurface(QWidget):
         self._stack.setCurrentWidget(editor)
         self._workbench.outline.tree.hide()
         self._notify_shell()
+        self._show_kept_notes()
         editor.setFocus()
 
     def _commit_xml(self) -> None:
@@ -539,12 +548,14 @@ class FormSurface(QWidget):
                 editor.go_to_line(line)
             self._show_banner(plain_banner_error(error), error=True)
             return
+        self._clear_kept_notes()
         self._hide_banner()
         self._stack.setCurrentWidget(self._workbench)
         self._refresh_design()
         self._workbench.outline.tree.setFocus()
 
     def _discard_xml(self) -> None:
+        self._clear_kept_notes()
         self._source.cancel_xml_mode()
         self._set_xml_checked(False)
         self._hide_banner()
@@ -630,6 +641,23 @@ class FormSurface(QWidget):
         if editor is None:
             return
         self._source.xml_text_changed(editor.toPlainText())
+        self._kept_notes_timer.start(_KEPT_NOTE_MS)
+
+    def _show_kept_notes(self) -> None:
+        self._kept_notes_timer.stop()
+        self._apply_kept_notes()
+
+    def _apply_kept_notes(self) -> None:
+        editor = self._editor
+        if editor is None or self._source.mode != "xml":
+            return
+        editor.set_line_notes(line_notes_for_xml(editor.toPlainText()))
+
+    def _clear_kept_notes(self) -> None:
+        self._kept_notes_timer.stop()
+        editor = self._editor
+        if editor is not None:
+            editor.set_line_notes(())
 
     def _on_log(self, _change_set: object) -> None:
         if self._source.mode != "visual":
@@ -696,6 +724,7 @@ class FormSurface(QWidget):
         self._workbench.outline.tree.hide()
         self._show_banner(error, error=True)
         self._notify_shell()
+        self._show_kept_notes()
 
     def _toolbar_undo(self) -> None:
         self.undo()

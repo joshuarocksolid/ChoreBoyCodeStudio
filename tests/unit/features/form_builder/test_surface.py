@@ -61,6 +61,9 @@ class _Editor(QPlainTextEdit):
         cursor.movePosition(getattr(move, "Down"), getattr(mode, "MoveAnchor"), max(0, int(line_number) - 1))
         self.setTextCursor(cursor)
 
+    def set_line_notes(self, _notes: object) -> None:
+        return None
+
 
 def _request(parent: QWidget, text: str, path: str) -> TabSurfaceRequest:
     from app.qt.QtWidgets import QApplication

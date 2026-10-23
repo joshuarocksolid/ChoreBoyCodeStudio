@@ -94,8 +94,12 @@ def _request(parent: QWidget, text: str, path: str, project_root: str | None = N
     assert app is not None
     created: list[QPlainTextEdit] = []
 
+    class _SourceEditor(QPlainTextEdit):
+        def set_line_notes(self, _notes: object) -> None:
+            return None
+
     def create_source_editor() -> QPlainTextEdit:
-        editor = QPlainTextEdit(parent)
+        editor = _SourceEditor(parent)
         editor.setObjectName("shell.editorTabs.textEditor")
         created.append(editor)
         return editor
