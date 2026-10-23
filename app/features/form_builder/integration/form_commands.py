@@ -1,9 +1,3 @@
-"""The form designer's commands as data. No Qt.
-
-``FORM_COMMANDS`` is the only list of form commands. Every other view of them, such as
-the shortcut rows from ``form_command_set``, derives from it.
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,8 +10,6 @@ FORM_CATEGORY = "Form designer"
 
 @dataclass(frozen=True)
 class OwnKey:
-    """A form-only key, rebindable in Settings once its command is ready."""
-
     default: str
     scopes: tuple[ShortcutScope, ...]
     shadows: tuple[str, ...] = ()
@@ -25,16 +17,12 @@ class OwnKey:
 
 @dataclass(frozen=True)
 class SharedKey:
-    """The shell action's own key. The form claims that action and adds no binding."""
-
     shell_action_id: str
     scopes: tuple[ShortcutScope, ...] = ("form_tab",)
 
 
 @dataclass(frozen=True)
 class InertKeys:
-    """Shell keys that do nothing in a form tab. The form claims them while it has focus."""
-
     shell_action_ids: tuple[str, ...]
 
 
@@ -292,12 +280,6 @@ FORM_COMMANDS: tuple[FormCommand, ...] = (
 
 
 def form_command_set() -> tuple[ShortcutCommand, ...]:
-    """Shortcut catalog rows derived from ``FORM_COMMANDS``.
-
-    An own key is one row, reserved until its command is ready. Each inert key is a
-    form-tab row on the shell key that shadows the shell action. It is reserved because
-    the key keeps its shell binding. A shared key adds no row.
-    """
     shell_keys = default_shortcut_map()
     rows: list[ShortcutCommand] = []
     for command in FORM_COMMANDS:
@@ -327,6 +309,10 @@ def form_command_set() -> tuple[ShortcutCommand, ...]:
                 )
                 for shell_action_id in key.shell_action_ids
             )
+        elif isinstance(key, SharedKey) or key is None:
+            continue
+        else:
+            raise TypeError(f"Unknown form key: {type(key).__name__}")
     return tuple(rows)
 
 

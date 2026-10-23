@@ -1,5 +1,3 @@
-"""The shell and form shortcut tables under the catalog collision rule."""
-
 from __future__ import annotations
 
 import pytest

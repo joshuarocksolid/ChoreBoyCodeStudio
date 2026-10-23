@@ -50,13 +50,6 @@ _SHORTCUT_ID_PROJECT_TREE_DELETE = "shell.shortcut.projectTree.delete"
 
 @dataclass(frozen=True)
 class ShortcutCommand:
-    """Represents one user-configurable command shortcut.
-
-    ``shadows`` names wider-scope rows on the same key that this row overrides inside
-    its own scopes. A ``reserved`` row holds its key for the collision check only. It
-    is hidden from Settings and has no binding of its own.
-    """
-
     action_id: str
     label: str
     default_shortcut: str
@@ -247,12 +240,6 @@ def build_effective_shortcut_map(overrides: Mapping[str, str] | None = None) -> 
 
 
 def find_shortcut_conflicts(shortcuts_by_action: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Return shortcut -> action ids that share a key within one category.
-
-    Settings > Keyboard still groups conflicts by category. The collision rule with
-    scopes and shadows is ``ShortcutCatalog.conflicts``, which the form shortcut table
-    test uses.
-    """
     grouped: dict[tuple[str, str], list[str]] = {}
     for action_id, shortcut in shortcuts_by_action.items():
         normalized = normalize_shortcut(shortcut)
@@ -276,8 +263,6 @@ class ShortcutConflict:
 
 @dataclass(frozen=True)
 class ShortcutCatalog:
-    """Every shortcut row the window composes, and the collision rule over them."""
-
     rows: tuple[ShortcutCommand, ...]
 
     @classmethod
@@ -306,11 +291,6 @@ class ShortcutCatalog:
         *,
         include_reserved: bool = False,
     ) -> tuple[ShortcutConflict, ...]:
-        """Two rows collide when one key equals or chord-prefixes the other, a scope of
-        one equals or encloses a scope of the other, and the narrower row does not
-        shadow the wider. Rows in the same scope never shadow each other. A key the
-        window manager takes collides on its own.
-        """
         bound = [
             (row, _chords(shortcuts.get(row.action_id, "")))
             for row in self.rows
@@ -322,13 +302,12 @@ class ShortcutCatalog:
             if any(chord in WINDOW_MANAGER_KEYS for chord in chords)
         ]
         for (first, first_chords), (second, second_chords) in combinations(bound, 2):
-            prefix = _shared_prefix(first_chords, second_chords)
+            prefix = _chord_prefix(first_chords, second_chords)
             if prefix and _scopes_collide(first, second):
                 found.append(ShortcutConflict(", ".join(prefix), (first.action_id, second.action_id), "overlap"))
         return tuple(found)
 
     def stale_shadows(self) -> tuple[tuple[str, str], ...]:
-        """``(narrower, wider)`` shadows that excuse no collision at default keys."""
         by_id = {row.action_id: row for row in self.rows}
         return tuple(
             (row.action_id, wider_id)
@@ -343,8 +322,7 @@ def _chords(shortcut: str) -> tuple[str, ...]:
     return tuple(normalized.split(", ")) if normalized else ()
 
 
-def _shared_prefix(first: tuple[str, ...], second: tuple[str, ...]) -> tuple[str, ...]:
-    """The shorter chord sequence when it starts the longer one, else ``()``."""
+def _chord_prefix(first: tuple[str, ...], second: tuple[str, ...]) -> tuple[str, ...]:
     shorter, longer = (first, second) if len(first) <= len(second) else (second, first)
     return shorter if longer[: len(shorter)] == shorter else ()
 
@@ -371,6 +349,6 @@ def _scopes_collide(first: ShortcutCommand, second: ShortcutCommand) -> bool:
 
 
 def _shadow_is_live(narrower: ShortcutCommand, wider: ShortcutCommand) -> bool:
-    if not _shared_prefix(_chords(narrower.default_shortcut), _chords(wider.default_shortcut)):
+    if not _chord_prefix(_chords(narrower.default_shortcut), _chords(wider.default_shortcut)):
         return False
     return any(_encloses(outer, inner) for outer in wider.scopes for inner in narrower.scopes)
