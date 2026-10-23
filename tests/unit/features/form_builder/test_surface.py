@@ -87,6 +87,8 @@ def _request(parent: QWidget, text: str, path: str) -> TabSurfaceRequest:
         project_root=None,
         publish_problems=lambda _path, _rows: None,
         show_problems=lambda: None,
+        save_file=lambda _path: True,
+        unsaved_text=lambda _path: None,
     )
 
 

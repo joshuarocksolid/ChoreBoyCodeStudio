@@ -303,14 +303,22 @@ class SaveWorkflow:
     def _editor_manager(self) -> EditorManager:
         return self._host.editor_manager()
 
-    def _confirm_close_blockers(self, file_paths: Sequence[str]) -> bool:
+    def _tab_content_registry(self) -> Any:
         registry_getter = getattr(self._host, "tab_content_registry", None)
         if not callable(registry_getter):
-            return True
-        registry = registry_getter()
+            return None
+        return registry_getter()
+
+    def _confirm_close_blockers(self, file_paths: Sequence[str]) -> bool:
+        registry = self._tab_content_registry()
         if registry is None:
             return True
         return confirm_tab_close_blockers(self._host.dialog_parent(), registry, file_paths)
+
+    def _surface_ready_to_save(self, file_path: str) -> bool:
+        registry = self._tab_content_registry()
+        surface = None if registry is None else registry.surface_for_path(file_path)
+        return surface is None or bool(surface.ready_to_save())
 
     def confirm_proceed_with_unsaved_changes(self, action_description: str) -> bool:
         open_paths = [tab.file_path for tab in self._editor_manager().all_tabs()]
@@ -505,6 +513,8 @@ class SaveWorkflow:
             return False
         if stale_decision == "already_synced":
             return True
+        if not self._surface_ready_to_save(file_path):
+            return False
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
         if apply_transforms:
             self.apply_save_transforms(file_path, show_style_warnings=show_style_warnings)

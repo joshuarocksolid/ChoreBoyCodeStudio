@@ -31,12 +31,14 @@ _LOGGER = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class SaveNotice:
-    """Toolbar text after a save. ``error`` uses the error color."""
+    """Toolbar text after a save. ``error`` uses the error color. ``files`` lists
+    the paths generation created or replaced."""
 
     kind: str
     text: str
     error: bool
     diagnostics: Tuple[FormDiagnostic, ...] = ()
+    files: Tuple[str, ...] = ()
 
 
 def finish_save(
@@ -83,6 +85,7 @@ def finish_save(
             "Saved · %s updated" % generated_name,
             False,
             result.diagnostics,
+            result.files,
         )
     return SaveNotice(
         "failed",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 
@@ -14,6 +15,14 @@ from app.shell.debug_shell_host import DebugShellHost
 from app.shell.lint_workflow import LintWorkflow, LintWorkflowHost
 from app.shell.run_debug_presenter import RunDebugPresenter
 from app.shell.run_launch_workflow import RunLaunchWorkflow
+from app.shell.save_workflow import (
+    SaveDocumentHost,
+    SaveDocumentIntelligenceCachePort,
+    SaveDocumentLocalHistoryPort,
+    SaveDocumentSettingsPort,
+    SaveWorkflow,
+)
+from app.shell.tab_content_providers import TabContentProviderRegistry
 
 
 @dataclass
@@ -183,6 +192,106 @@ class LintHostStub:
 def lint_workflow_stub() -> tuple[LintWorkflow, LintHostStub]:
     host = LintHostStub()
     return LintWorkflow(cast(LintWorkflowHost, host)), host
+
+
+class SaveHostStub:
+    """Minimal :class:`SaveDocumentHost` over a real :class:`EditorManager`."""
+
+    def __init__(
+        self,
+        editor_manager: EditorManager,
+        *,
+        python_style_on_save: bool,
+        registry: TabContentProviderRegistry | None,
+    ) -> None:
+        self._editor_manager = editor_manager
+        self._python_style_on_save = python_style_on_save
+        self._registry = registry
+
+    def editor_manager(self) -> EditorManager:
+        return self._editor_manager
+
+    def tab_content_registry(self) -> TabContentProviderRegistry | None:
+        return self._registry
+
+    def dialog_parent(self) -> SimpleNamespace:
+        return SimpleNamespace()
+
+    def editor_trim_trailing_whitespace_on_save(self) -> bool:
+        return True
+
+    def editor_insert_final_newline_on_save(self) -> bool:
+        return True
+
+    def editor_organize_imports_on_save(self) -> bool:
+        return self._python_style_on_save
+
+    def editor_format_on_save(self) -> bool:
+        return self._python_style_on_save
+
+    def resolve_python_tooling_project_root(self, file_path: str) -> str:
+        return str(Path(file_path).parent)
+
+    def apply_text_to_open_tab(self, file_path: str, transformed_text: str) -> None:
+        self._editor_manager.replace_tab_content(file_path, transformed_text)
+
+    def workflow_broker(self) -> object:
+        return object()
+
+    def has_editor_tabs_widget(self) -> bool:
+        return False
+
+    def logger(self) -> SimpleNamespace:
+        return SimpleNamespace(info=lambda *_a, **_k: None, warning=lambda *_a, **_k: None)
+
+    def refresh_save_action_states(self) -> None:
+        return None
+
+    def update_editor_status_for_path(self, file_path: str) -> None:
+        return None
+
+    def loaded_project(self) -> None:
+        return None
+
+    def intelligence_runtime_settings(self) -> SimpleNamespace:
+        return SimpleNamespace()
+
+    def render_lint_for_file(self, file_path: str, *, trigger: str) -> None:
+        return None
+
+    def refresh_test_discovery(self) -> None:
+        return None
+
+
+def save_workflow_stub(
+    editor_manager: EditorManager,
+    *,
+    python_style_on_save: bool = False,
+    registry: TabContentProviderRegistry | None = None,
+) -> SaveWorkflow:
+    return SaveWorkflow(
+        local_history=cast(
+            SaveDocumentLocalHistoryPort,
+            SimpleNamespace(
+                discard_pending_autosave=lambda *_a, **_k: None,
+                record_checkpoint=lambda *_a, **_k: None,
+                delete_draft=lambda *_a, **_k: None,
+                local_history_context_for_path=lambda *_a, **_k: (None, None),
+            ),
+        ),
+        intelligence_cache=cast(
+            SaveDocumentIntelligenceCachePort,
+            SimpleNamespace(start_symbol_indexing=lambda *_a, **_k: None),
+        ),
+        host=cast(
+            SaveDocumentHost,
+            SaveHostStub(editor_manager, python_style_on_save=python_style_on_save, registry=registry),
+        ),
+        settings_service=cast(
+            SaveDocumentSettingsPort,
+            SimpleNamespace(update_global=lambda updater: updater({})),
+        ),
+    )
 
 
 @dataclass

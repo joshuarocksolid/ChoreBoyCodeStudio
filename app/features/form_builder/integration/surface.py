@@ -29,12 +29,14 @@ from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.diagnostics import parse_problem_detail
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.project.save import HandEdit
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.integration.adopt_flow import adopt_from_tree
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
+    hand_edit_sentence,
     problem_property_sentence,
     problem_summary,
     recovered_draft_sentence,
@@ -291,6 +293,14 @@ class FormSurface(QWidget):
     def close_blockers(self) -> tuple[str, ...]:
         return ()
 
+    def ready_to_save(self) -> bool:
+        """False, with Replace / Open / Cancel save, while the save would overwrite a hand edit."""
+        held = self._source.save_hold(self._request.unsaved_text)
+        if not held:
+            return True
+        self._offer_hand_edit_replace(held)
+        return False
+
     def file_path_changed(self, new_path: str) -> None:
         self._path = new_path
         self._apply_scope()
@@ -429,6 +439,24 @@ class FormSurface(QWidget):
         self._notice.show_choices(
             recovered_draft_sentence(saved_at),
             (("Keep recovered", keep), ("Discard", discard)),
+        )
+
+    def _offer_hand_edit_replace(self, held: Sequence[HandEdit]) -> None:
+        first = held[0].path
+
+        def replace() -> None:
+            self._notice.dismiss()
+            self._source.replace_hand_edits(held)
+            self._request.save_file(self._path)
+
+        names = list(dict.fromkeys(Path(edit.path).name for edit in held))
+        self._notice.show_choices(
+            hand_edit_sentence(names),
+            (
+                ("Replace", replace),
+                ("Open %s" % Path(first).name, partial(self._request.open_linked_file, first)),
+                ("Cancel save", self._notice.dismiss),
+            ),
         )
 
     def showEvent(self, event: object) -> None:  # noqa: N802

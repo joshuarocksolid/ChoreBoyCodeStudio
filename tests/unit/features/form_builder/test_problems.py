@@ -152,6 +152,8 @@ def _open(
         project_root=project_root,
         publish_problems=shell.publish,
         show_problems=shell.show,
+        save_file=lambda _path: True,
+        unsaved_text=lambda _path: None,
     )
     surface = FormTabProvider().create_surface(request)
     qapp.processEvents()

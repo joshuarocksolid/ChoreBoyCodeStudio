@@ -44,6 +44,8 @@ class TabSurfaceRequest:
     ``open_linked_file``: opens another path in the editor.
     ``publish_problems``: replaces the Problems rows for a path the shell does
     not lint. ``show_problems``: brings the Problems tab forward.
+    ``save_file``: runs the shell's save for a path, ``ready_to_save`` included.
+    ``unsaved_text``: an open buffer's text when it has unsaved changes, else None.
     """
 
     file_path: str
@@ -55,6 +57,8 @@ class TabSurfaceRequest:
     project_root: Optional[str]
     publish_problems: Callable[[str, List["CodeDiagnostic"]], None]
     show_problems: Callable[[], None]
+    save_file: Callable[[str], bool]
+    unsaved_text: Callable[[str], Optional[str]]
 
 
 @dataclass(frozen=True)
@@ -139,6 +143,11 @@ class TabSurface(Protocol):
     def close_blockers(self) -> Tuple[str, ...]:
         """Plain-word reasons closing needs extra confirmation beyond the shell's
         standard unsaved-changes prompt. Empty = none."""
+        ...
+
+    def ready_to_save(self) -> bool:
+        """Asked before the shell writes anything. False: the surface has already told
+        the user why, and the save stops with the tab still dirty."""
         ...
 
     def file_path_changed(self, new_path: str) -> None:

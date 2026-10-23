@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import os
 from dataclasses import dataclass
-from typing import List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
@@ -42,6 +42,32 @@ class WriteResult:
     diagnostics: Tuple[FormDiagnostic, ...]
     files: Tuple[str, ...]
     text_written: bool
+
+
+@dataclass(frozen=True)
+class HandEdit:
+    """A file a form save would overwrite that is not what Code Studio wrote.
+
+    ``body8`` is the digest in the name of the copy the save keeps.
+    """
+
+    path: str
+    body8: str
+
+
+@dataclass(frozen=True)
+class _Plan:
+    """``replaces`` may overwrite existing files. ``creates`` only fills missing ones."""
+
+    project_root: str
+    replaces: Tuple[Tuple[str, bytes], ...]
+    creates: Tuple[Tuple[str, bytes], ...]
+    diagnostics: Tuple[FormDiagnostic, ...]
+
+
+@dataclass(frozen=True)
+class _Refused:
+    diagnostics: Tuple[FormDiagnostic, ...]
 
 
 def opening_diagnostics(
@@ -79,52 +105,17 @@ def write_generated(
 
     Does not write the ``.ui`` file. That is step 1 of the save pipeline.
     """
-    if not scope.generates or not scope.generated_path or not scope.project_root:
-        return WriteResult(
-            diagnostics=(
-                _diagnostic(
-                    "FB506",
-                    "This form is outside the project, so no Python file is written.",
-                ),
-            ),
-            files=(),
-            text_written=False,
-        )
-    result = generate_form_module(doc, scope=scope, source_bytes=ui_bytes, options=options)
-    if result.text is None:
-        return WriteResult(diagnostics=result.diagnostics, files=(), text_written=False)
-    window_text = _window_text(scope, doc, fs)
-    if isinstance(window_text, FormDiagnostic):
-        return WriteResult(
-            diagnostics=result.diagnostics + (window_text,),
-            files=(),
-            text_written=False,
-        )
-    diagnostics = list(result.diagnostics)  # type: List[FormDiagnostic]
+    plan = _plan(scope, doc, ui_bytes, fs, options)
+    if isinstance(plan, _Refused):
+        return WriteResult(diagnostics=plan.diagnostics, files=(), text_written=False)
+    diagnostics = list(plan.diagnostics)  # type: List[FormDiagnostic]
     planned = []  # type: List[Tuple[str, bytes]]
-    backup = _hand_edit_backup(scope.project_root, scope.generated_path, fs, diagnostics)
-    if backup is not None:
-        planned.append(backup)
-    planned.append((scope.generated_path, result.text.encode("utf-8")))
-    planned.extend(_resource_writes(scope, doc, result.resource_modules, fs, diagnostics))
-    init_path = _forms_init(scope, fs)
-    if init_path is not None:
-        planned.append((init_path, b"\n"))
-    if window_text is not None and scope.window_path:
-        planned.append((scope.window_path, window_text.encode("utf-8")))
-    outside = [path for path, _data in planned if not inside_project(path, scope.project_root)]
-    if outside:
-        return WriteResult(
-            diagnostics=tuple(result.diagnostics)
-            + (
-                _diagnostic(
-                    "FB506",
-                    "This form would be written outside the project, so nothing was written.",
-                ),
-            ),
-            files=(),
-            text_written=False,
-        )
+    for path, data in plan.replaces:
+        backup = _hand_edit_backup(plan.project_root, path, fs, diagnostics)
+        if backup is not None:
+            planned.append(backup)
+        planned.append((path, data))
+    planned.extend(plan.creates)
     journal = Journal(fs)
     failed_name = "the generated file"
     try:
@@ -150,6 +141,84 @@ def write_generated(
         diagnostics=tuple(diagnostics),
         files=tuple(path for path, _data in planned),
         text_written=True,
+    )
+
+
+def find_hand_edits(
+    scope: FormScope,
+    doc: UiDocument,
+    fs: OsFileSystem,
+    unsaved_text: Callable[[str], Optional[str]],
+    *,
+    options: CodegenOptions = CodegenOptions(),
+) -> Tuple[HandEdit, ...]:
+    """Hand edits among the files ``write_generated`` would overwrite now, in write order.
+
+    ``unsaved_text`` returns the text of an open buffer with unsaved changes, else None.
+    A hand-edited buffer is reported before the file on disk.
+    """
+    plan = _plan(scope, doc, None, fs, options)
+    if isinstance(plan, _Refused):
+        return ()
+    edits = []  # type: List[HandEdit]
+    for path, _data in plan.replaces:
+        buffer = unsaved_text(path)
+        if buffer is not None and is_hand_edited(buffer):
+            edits.append(HandEdit(path, _hand_edit_digest(buffer.encode("utf-8"), buffer)))
+            continue
+        found = _hand_edited_file(path, fs)
+        if found is not None:
+            edits.append(HandEdit(path, _hand_edit_digest(*found)))
+    return tuple(edits)
+
+
+def _plan(
+    scope: FormScope,
+    doc: UiDocument,
+    ui_bytes: Optional[bytes],
+    fs: OsFileSystem,
+    options: CodegenOptions,
+) -> Union[_Plan, _Refused]:
+    if not scope.generates or not scope.generated_path or not scope.project_root:
+        return _Refused(
+            (
+                _diagnostic(
+                    "FB506",
+                    "This form is outside the project, so no Python file is written.",
+                ),
+            )
+        )
+    result = generate_form_module(doc, scope=scope, source_bytes=ui_bytes, options=options)
+    if result.text is None:
+        return _Refused(result.diagnostics)
+    window_text = _window_text(scope, doc, fs)
+    if isinstance(window_text, FormDiagnostic):
+        return _Refused(result.diagnostics + (window_text,))
+    diagnostics = list(result.diagnostics)  # type: List[FormDiagnostic]
+    replaces = [(scope.generated_path, result.text.encode("utf-8"))]
+    replaces.extend(_resource_writes(scope, doc, result.resource_modules, fs, diagnostics))
+    creates = []  # type: List[Tuple[str, bytes]]
+    init_path = _forms_init(scope, fs)
+    if init_path is not None:
+        creates.append((init_path, b"\n"))
+    if window_text is not None and scope.window_path:
+        creates.append((scope.window_path, window_text.encode("utf-8")))
+    outside = [path for path, _data in replaces + creates if not inside_project(path, scope.project_root)]
+    if outside:
+        return _Refused(
+            tuple(result.diagnostics)
+            + (
+                _diagnostic(
+                    "FB506",
+                    "This form would be written outside the project, so nothing was written.",
+                ),
+            )
+        )
+    return _Plan(
+        project_root=scope.project_root,
+        replaces=tuple(replaces),
+        creates=tuple(creates),
+        diagnostics=tuple(diagnostics),
     )
 
 
@@ -180,15 +249,10 @@ def _hand_edit_backup(
     fs: OsFileSystem,
     diagnostics: List[FormDiagnostic],
 ) -> Optional[Tuple[str, bytes]]:
-    if not fs.is_file(path):
+    found = _hand_edited_file(path, fs)
+    if found is None:
         return None
-    data = fs.read_bytes(path)
-    try:
-        text = data.decode("utf-8")
-    except UnicodeError:
-        text = None
-    if text is not None and not is_hand_edited(text):
-        return None
+    data, text = found
     backup = os.path.join(
         project_root,
         "cbcs",
@@ -217,18 +281,34 @@ def _hand_edit_backup(
     return backup, data
 
 
+def _hand_edited_file(path: str, fs: OsFileSystem) -> Optional[Tuple[bytes, Optional[str]]]:
+    """Bytes and text of ``path`` when it exists and is not what Code Studio wrote.
+    Text is None when the file is not UTF-8."""
+    if not fs.is_file(path):
+        return None
+    data = fs.read_bytes(path)
+    try:
+        text = data.decode("utf-8")
+    except UnicodeError:
+        text = None
+    if text is not None and not is_hand_edited(text):
+        return None
+    return data, text
+
+
 def _backup_name(path: str, data: bytes, text: Optional[str]) -> str:
     base = os.path.basename(path)
     if base.endswith(".py"):
         base = base[:-3]
+    return "%s.%s.py.txt" % (base, _hand_edit_digest(data, text))
+
+
+def _hand_edit_digest(data: bytes, text: Optional[str]) -> str:
     if text is None:
-        payload = data
-        digest = hashlib.sha256(payload).hexdigest()[:8]
-    else:
-        parts = split_generated(text)
-        body = parts[1] if parts is not None else text
-        digest = hashlib.sha256(body.encode("utf-8")).hexdigest()[:8]
-    return "%s.%s.py.txt" % (base, digest)
+        return hashlib.sha256(data).hexdigest()[:8]
+    parts = split_generated(text)
+    body = parts[1] if parts is not None else text
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()[:8]
 
 
 def _resource_writes(
@@ -281,9 +361,6 @@ def _resource_writes(
         data = text.encode("utf-8")
         if fs.is_file(dest) and fs.read_bytes(dest) == data:
             continue
-        backup = _hand_edit_backup(scope.project_root, dest, fs, diagnostics)
-        if backup is not None:
-            planned.append(backup)
         planned.append((dest, data))
     return planned
 

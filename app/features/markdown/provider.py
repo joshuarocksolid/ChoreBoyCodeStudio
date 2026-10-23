@@ -78,6 +78,9 @@ class MarkdownTabSurface:
     def close_blockers(self) -> tuple[str, ...]:
         return ()
 
+    def ready_to_save(self) -> bool:
+        return True
+
     def file_path_changed(self, new_path: str) -> None:
         self._panes_by_path.pop(self._path, None)
         self._path = new_path

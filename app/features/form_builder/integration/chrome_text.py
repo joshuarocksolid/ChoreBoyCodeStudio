@@ -82,6 +82,15 @@ def external_change_sentence(file_name: str) -> str:
     return "%s changed on disk." % file_name
 
 
+def hand_edit_sentence(file_names: Sequence[str]) -> str:
+    """``ui_invoice.py has edits made by hand. Saving the form will replace them.``"""
+    if len(file_names) == 1:
+        subject = "%s has" % file_names[0]
+    else:
+        subject = "%s and %s have" % (", ".join(file_names[:-1]), file_names[-1])
+    return "%s edits made by hand. Saving the form will replace them." % subject
+
+
 def problem_summary(rows: Sequence[CodeDiagnostic]) -> str:
     """``2 problems: 1 error, 1 warning``. Empty when there are none."""
     if not rows:
@@ -168,6 +177,7 @@ def _place(document: UiDocument, node: Node) -> str:
 __all__ = [
     "draft_clock",
     "external_change_sentence",
+    "hand_edit_sentence",
     "page_chip_label",
     "page_chip_text",
     "page_size_text",

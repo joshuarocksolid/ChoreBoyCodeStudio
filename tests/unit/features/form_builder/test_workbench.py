@@ -110,6 +110,8 @@ def _request(parent: QWidget, text: str, path: str, project_root: str | None = N
         project_root=project_root,
         publish_problems=lambda _path, _rows: None,
         show_problems=lambda: None,
+        save_file=lambda _path: True,
+        unsaved_text=lambda _path: None,
     )
 
 

@@ -8,7 +8,7 @@ the text the user typed.
 
 from __future__ import annotations
 
-from typing import Callable, List, Literal, Optional
+from typing import Callable, Iterable, List, Literal, Optional, Set, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
@@ -19,6 +19,7 @@ from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.forms import FormScope, classify_form
 from app.features.form_builder.engine.project.fs import OsFileSystem
+from app.features.form_builder.engine.project.save import HandEdit, find_hand_edits
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import SerializationCache
 from app.features.form_builder.integration.save_pipeline import SaveNotice, finish_save
@@ -67,7 +68,8 @@ class FormContentSource:
     ``_saved_text`` is the last text written to disk. ``_applied_text`` is the
     last text the document actually parsed. A rejected XML save updates only
     the first, so Design still has to parse and an unchanged save does not
-    push an undo step.
+    push an undo step. ``_consent`` holds the hand edits the user agreed a save
+    may overwrite, until a save overwrites their file.
     """
 
     def __init__(
@@ -92,6 +94,7 @@ class FormContentSource:
         self._typed = ""
         self._stamp = log.document.revision
         self._listeners: List[Callable[[], None]] = []
+        self._consent: Set[HandEdit] = set()
         self._subscription: Subscription = log.subscribe(self._on_log, priority=0)
 
     @property
@@ -140,9 +143,30 @@ class FormContentSource:
     def after_save(self) -> None:
         """Step 3 of save. Reload and sync call ``mark_saved`` and stop there."""
         self._notice = finish_save(self._scope, self._log.document, self._saved_text)
+        replaced = set(self._notice.files)
+        self._consent = {edit for edit in self._consent if edit.path not in replaced}
         if self._diagnostics is not None:
             self._diagnostics.publish("codegen", self._notice.diagnostics)
         self._notify()
+
+    def save_hold(self, unsaved_text: Callable[[str], Optional[str]]) -> Tuple[HandEdit, ...]:
+        """Hand edits the next save would overwrite that the user has not agreed to replace.
+
+        ``unsaved_text`` returns an open buffer's text when it has unsaved changes, else None.
+        """
+        scope = self._scope
+        if scope is None or not scope.generates:
+            return ()
+        try:
+            edits = find_hand_edits(scope, self._log.document, OsFileSystem(), unsaved_text)
+        except OSError:
+            # The save's own write then reports FB509 and replaces nothing.
+            return ()
+        return tuple(edit for edit in edits if edit not in self._consent)
+
+    def replace_hand_edits(self, edits: Iterable[HandEdit]) -> None:
+        """Let the next save overwrite exactly these edits."""
+        self._consent.update(edits)
 
     def saved_text(self) -> str:
         """The text last marked as what is on disk."""

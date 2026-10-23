@@ -170,6 +170,12 @@ class EditorTabFactory:
             def open_linked_file(linked_path: str) -> None:
                 self.open_file_in_editor(linked_path, preview=False)
 
+            def unsaved_text(path: str) -> Optional[str]:
+                open_tab = window._editor_manager.get_tab(path)
+                if open_tab is None or not open_tab.is_dirty:
+                    return None
+                return open_tab.current_content
+
             request = TabSurfaceRequest(
                 file_path=tab_file_path,
                 initial_text=opened_result.tab.current_content,
@@ -182,6 +188,8 @@ class EditorTabFactory:
                     path, rows
                 ),
                 show_problems=lambda: window._run_event_workflow.focus_problems_tab(),
+                save_file=lambda path: window._save_workflow.save_tab(path),
+                unsaved_text=unsaved_text,
             )
             try:
                 surface = provider.create_surface(request)
