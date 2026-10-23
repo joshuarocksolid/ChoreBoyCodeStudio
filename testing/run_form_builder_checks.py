@@ -404,7 +404,7 @@ def _pytest_counts(text: str) -> tuple[str, dict[str, int]]:
     return last, counts
 
 
-def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
+def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool, pin_vendor: bool = False) -> str:
     # os._exit skips the Shiboken destructor, which segfaults if Python
     # wrappers outlive Qt. Flush first so a captured pipe keeps the summary.
     args = ["-q", "--tb=line", "tests/form_builder", "-m", marker]
@@ -414,6 +414,21 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
         # A mismatched vendor tree stays behind the interpreter's site-packages
         # so a py39 extension does not shadow PySide6.
         path_setup = "sys.path.insert(0, {repo!r});sys.path.append({vendor!r});"
+    # The repo vendor symlink follows the last AppRun. A PySide6 run points it
+    # at vendor_py311, whose jedi uses ``str | None`` and cannot import on 3.9.
+    # Pin the selected tree before pytest imports the intelligence stack.
+    pin = ""
+    if pin_vendor:
+        pin = (
+            "from pathlib import Path as _PinPath\n"
+            "import app.bootstrap.vendor_paths as _vp\n"
+            "def _pin_vendor(app_root=None):\n"
+            " t={vendor!r}\n"
+            " if t not in sys.path:\n"
+            "  sys.path.insert(0, t)\n"
+            " return _PinPath(t)\n"
+            "_vp.ensure_vendor_path_on_sys_path=_pin_vendor\n"
+        )
     # FreeCAD 1.0 installs a meta-path finder without find_spec. Pytest's
     # importlib mode calls find_spec directly, so give those finders the
     # legacy find_module wrapper before collection starts.
@@ -426,6 +441,7 @@ def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool) -> str:
         " if not hasattr(_finder, 'find_spec'):\n"
         "  _finder.find_spec=_legacy_find_spec.__get__(_finder)\n"
         + path_setup
+        + pin
         + "os.chdir({repo!r})\n"
         "code=int(__import__('pytest').main({args!r}))\n"
         "sys.stdout.flush();sys.stderr.flush()\n"
@@ -472,6 +488,7 @@ def _pytest_in_runtime(
     profile: str,
     marker: str,
     timeout: float = PYTEST_TIMEOUT_SECONDS,
+    pin_vendor: bool = False,
 ) -> CommandResult:
     if not _is_runtime(runtime):
         return CommandResult(code=127, seconds=0.0, stdout="", stderr="runtime missing: %s" % runtime)
@@ -491,7 +508,16 @@ def _pytest_in_runtime(
     )
     env = _child_env({"PYTHONPATH": pythonpath})
     return _run_command(
-        [str(runtime), "-c", _pytest_payload(vendor, marker, vendor_first=vendor_first)],
+        [
+            str(runtime),
+            "-c",
+            _pytest_payload(
+                vendor,
+                marker,
+                vendor_first=vendor_first,
+                pin_vendor=pin_vendor and vendor_first,
+            ),
+        ],
         env=env,
         timeout=timeout,
     )
@@ -507,7 +533,12 @@ def _py311_pytest(marker: str, timeout: float | None = None) -> CommandResult:
 
 
 def _py39_pytest(marker: str) -> CommandResult:
-    return _pytest_in_runtime(_runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT), "py39", marker)
+    return _pytest_in_runtime(
+        _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT),
+        "py39",
+        marker,
+        pin_vendor=True,
+    )
 
 
 def _judge_pytest(name: str, result: CommandResult, *, require_pass: bool) -> GateResult:
@@ -563,7 +594,28 @@ def _note_vendor_fallback(result: GateResult, profile: str) -> GateResult:
     )
 
 
+def _py39_skip_reason(runtime: Path) -> str | None:
+    """Why the 3.9 lane cannot run, or None when the interpreter can import PySide6.
+
+    The interpreter is probed, not its launcher text: a hybrid AppRun script may
+    mention ``freecadcmd`` and still run ``-c`` fine. Tests that need a real
+    ``python`` executable (for ``--json`` tools) skip themselves.
+    """
+    if not _is_runtime(runtime):
+        return "skipped: no Python 3.9 runtime at %s" % runtime
+    probe = _run_command([str(runtime), "-c", "import PySide6"], timeout=60)
+    if probe.code != 0:
+        tail = (probe.stderr or probe.stdout or "import failed").strip().splitlines()
+        detail = tail[-1] if tail else "import failed"
+        return "skipped: %s has no PySide6 (%s)" % (runtime, detail[:200])
+    return None
+
+
 def gate_unit_py39() -> GateResult:
+    runtime = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
+    reason = _py39_skip_reason(runtime)
+    if reason is not None:
+        return _skip("unit-py39-pyside6", reason)
     return _judge_pytest("unit-py39-pyside6", _py39_pytest(UNIT_MARKER), require_pass=True)
 
 
@@ -572,8 +624,9 @@ def gate_syntax_py39() -> GateResult:
     if not _package_ready():
         return _skip(name, "skipped: no package")
     apprun = _runtime("CBCS_FORM_BUILDER_PY39", PY39_DEFAULT)
-    if not _is_runtime(apprun):
-        return _skip(name, "skipped: no Python 3.9 runtime at %s" % apprun)
+    reason = _py39_skip_reason(apprun)
+    if reason is not None:
+        return _skip(name, reason)
     program = _syntax_program(FEATURE_DIR, TESTS_DIR / "corpus")
     script = tempfile.NamedTemporaryFile("w", suffix=".py", delete=False)
     script.write(program)

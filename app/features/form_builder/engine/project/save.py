@@ -285,6 +285,12 @@ def _resource_writes(
     return planned
 
 
+def resource_destination(project_root: str, ui_path: str, location: str, module: str) -> str:
+    """Absolute path of the ``*_rc.py`` written for one ``.qrc`` include."""
+    _qrc, dest = _rc_paths(project_root, ui_path, location, module)
+    return dest
+
+
 def _rc_paths(project_root: str, ui_path: str, location: str, module: str) -> Tuple[str, str]:
     qrc = os.path.normpath(os.path.join(os.path.dirname(ui_path), location.replace("\\", "/")))
     parts = [part for part in module.split(".") if part]

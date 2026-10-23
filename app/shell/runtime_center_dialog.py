@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from html import escape
 import re
-from typing import Callable
+from typing import Callable, Optional
 
 from app.qt.QtCore import QPoint, Qt, QTimer
 from app.qt.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
@@ -157,6 +157,14 @@ class RuntimeCenterDialog(QDialog):
         self._goto_button.setVisible(presentation == "packaging")
         footer_layout.addWidget(self._goto_button, 0, Qt.AlignLeft)
 
+        self._save_form_button = QPushButton("Save the form now", footer)
+        self._save_form_button.setObjectName("shell.runtimeCenterDialog.saveFormButton")
+        self._save_form_button.clicked.connect(self._save_form_now)
+        self._save_form_button.setVisible(False)
+        self._save_note = ""
+        self._save_note_path = ""
+        footer_layout.addWidget(self._save_form_button, 0, Qt.AlignLeft)
+
         self._help_button = QPushButton(
             "Packaging Help" if presentation == "packaging" else "Open Related Help",
             footer,
@@ -197,6 +205,7 @@ class RuntimeCenterDialog(QDialog):
         if not report.issues:
             self._detail_browser.setHtml(_render_clear_html(self._tokens))
             self._help_button.setEnabled(False)
+            self._sync_save_form_button()
             return
 
         for issue in report.issues:
@@ -212,6 +221,7 @@ class RuntimeCenterDialog(QDialog):
                 item.setToolTip(issue.summary)
             self._issue_list.addItem(item)
         self._issue_list.setCurrentRow(0)
+        self._sync_save_form_button()
 
     @property
     def help_button(self) -> QPushButton:
@@ -229,12 +239,14 @@ class RuntimeCenterDialog(QDialog):
         if row < 0 or row >= len(self._issues_by_row):
             self._detail_browser.setHtml(_render_clear_html(self._tokens))
             self._help_button.setEnabled(False)
+            self._sync_save_form_button()
             return
         issue = self._issues_by_row[row]
         if self._presentation == "packaging":
-            self._detail_browser.setHtml(_render_packaging_issue_html(issue, self._tokens))
+            self._detail_browser.setHtml(self._issue_html(issue))
             source = issue.evidence.get("source_file")
             self._goto_button.setEnabled(bool(source))
+            self._sync_save_form_button()
             if source:
                 line = issue.evidence.get("line_number", 1)
                 self._goto_button.setText(f"Go to {source}:{line}")
@@ -242,7 +254,75 @@ class RuntimeCenterDialog(QDialog):
                 self._goto_button.setText("Go to file")
         else:
             self._detail_browser.setHtml(_render_issue_html(issue, self._tokens))
+            self._sync_save_form_button()
         self._help_button.setEnabled(bool(issue.help_topic and self._open_help_topic))
+
+    def _sync_save_form_button(self) -> None:
+        button = getattr(self, "_save_form_button", None)
+        if button is None:
+            return
+        row = self._issue_list.currentRow()
+        issue = self._issues_by_row[row] if 0 <= row < len(self._issues_by_row) else None
+        fix = ""
+        if issue is not None and self._presentation == "packaging":
+            fix = str(issue.evidence.get("fix_action") or "")
+        visible = fix == "save_form" and self._save_form_callback() is not None
+        button.setVisible(visible)
+        if visible and issue is not None:
+            button.setText(str(issue.evidence.get("fix_label") or "Save the form now"))
+
+    def _save_form_callback(self) -> Optional[Callable[..., object]]:
+        widget: QWidget | None = self.parentWidget()
+        while widget is not None:
+            callback = getattr(widget, "_form_builder_save_form", None)
+            if callable(callback):
+                return callback
+            widget = widget.parentWidget()
+        return None
+
+    def _save_form_now(self) -> None:
+        row = self._issue_list.currentRow()
+        if row < 0 or row >= len(self._issues_by_row):
+            return
+        issue = self._issues_by_row[row]
+        ui_path = str(issue.evidence.get("ui_path") or "")
+        saver = self._save_form_callback()
+        if saver is None or not ui_path:
+            return
+        message = saver(ui_path)
+        if isinstance(message, str) and message:
+            self._save_note = message
+            self._save_note_path = ui_path
+            self._detail_browser.setHtml(self._issue_html(issue))
+            return
+        self._save_note = ""
+        self._save_note_path = ""
+        remaining = [
+            item
+            for item in self._report.issues
+            if not (
+                item.evidence.get("fix_action") == "save_form"
+                and str(item.evidence.get("ui_path") or "") == ui_path
+            )
+        ]
+        report = RuntimeIssueReport(workflow=self._report.workflow, issues=remaining)
+        self._store_package_report(report)
+        self.set_report(report)
+
+    def _issue_html(self, issue: RuntimeIssue) -> str:
+        html = _render_packaging_issue_html(issue, self._tokens)
+        ui_path = str(issue.evidence.get("ui_path") or "")
+        if self._save_note and ui_path == self._save_note_path:
+            html += _render_save_failure_html(self._save_note, self._tokens)
+        return html
+
+    def _store_package_report(self, report: RuntimeIssueReport) -> None:
+        widget: QWidget | None = self.parentWidget()
+        while widget is not None:
+            if hasattr(widget, "_latest_package_issue_report"):
+                setattr(widget, "_latest_package_issue_report", report)
+                return
+            widget = widget.parentWidget()
 
     def _handle_open_help(self) -> None:
         row = self._issue_list.currentRow()
@@ -283,6 +363,16 @@ class RuntimeCenterDialog(QDialog):
         except (TypeError, ValueError):
             line = 1
         self._open_location(source, line)
+
+
+def _render_save_failure_html(message: str, tokens: ShellThemeTokens) -> str:
+    color = tokens.diag_warning_color or tokens.accent
+    return (
+        f'<div style="font-family:sans-serif;color:{tokens.text_primary};font-size:13px;">'
+        f'<h3 style="margin:12px 0 4px 0;color:{color};">The form was not saved</h3>'
+        f'<p style="margin:0;line-height:1.45;">{escape(message)}</p>'
+        "</div>"
+    )
 
 
 def _plural(count: int, one: str, many: str) -> str:

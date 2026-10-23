@@ -11,10 +11,30 @@ from dataclasses import dataclass
 from typing import Optional, Tuple
 
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.codegen.literals import py_string
 from app.features.form_builder.engine.codegen.names import check_cpp_name, python_class_stem
 from app.features.form_builder.engine.codegen.qtmap import base_qt_class, class_module
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode
+from app.features.form_builder.engine.ui4.nodes import ConnectionNode, CustomWidgetNode, WidgetNode
+from app.features.form_builder.engine.ui4.values import StringValue
+
+_INHERITED_SLOTS = frozenset(
+    {
+        "close",
+        "deleteLater",
+        "hide",
+        "lower",
+        "raise_",
+        "repaint",
+        "setDisabled",
+        "setEnabled",
+        "setFocus",
+        "setVisible",
+        "setWindowTitle",
+        "show",
+        "update",
+    }
+)
 
 
 def _custom_by_class(doc: UiDocument) -> dict:
@@ -53,18 +73,49 @@ def render_window_class(doc: UiDocument, *, scope: FormScope) -> str:
             stem = stem[:-3]
         ui_module = "forms.ui_%s" % stem
     window_class = "%sWindow" % class_name
-    return (
-        "from %s import %s\n"
-        "\n"
-        "from %s import %s\n"
-        "\n"
-        "\n"
-        "class %s(%s):\n"
-        "    def __init__(self, parent=None):\n"
-        "        super().__init__(parent)\n"
-        "        self.ui = %s()\n"
-        "        self.ui.setupUi(self)\n"
-    ) % (module, base, ui_module, ui_class, window_class, base, ui_class)
+    lines = [
+        "from %s import %s" % (module, base),
+        "",
+        "from %s import %s" % (ui_module, ui_class),
+        "",
+        "",
+        "class %s(%s):" % (window_class, base),
+        "    def __init__(self, parent=None):",
+        "        super().__init__(parent)",
+        "        self.ui = %s()" % ui_class,
+        "        self.ui.setupUi(self)",
+    ]
+    status = _startup_status(doc)
+    if status:
+        lines.append("        self.statusBar().showMessage(%s)" % py_string(status))
+    for name in _handler_names(doc):
+        lines.extend(["", "    def %s(self):" % name, "        pass"])
+    return "\n".join(lines) + "\n"
+
+
+def _startup_status(doc: UiDocument) -> str:
+    """Initial status-bar text stored as a dynamic ``currentMessage`` property."""
+    for child in doc.root.child_widgets:
+        if not isinstance(child, WidgetNode) or child.class_name != "QStatusBar":
+            continue
+        value = child.value("currentMessage")
+        if isinstance(value, StringValue) and value.text:
+            return value.text
+    return ""
+
+
+def _handler_names(doc: UiDocument) -> Tuple[str, ...]:
+    """Slots the form connects to itself, skipping methods the base class already has."""
+    receiver = doc.root.object_name or ""
+    names: list[str] = []
+    for node in doc.connections():
+        if not isinstance(node, ConnectionNode) or node.receiver != receiver:
+            continue
+        slot = node.slot.split("(", 1)[0].strip()
+        if not slot.isidentifier() or slot in _INHERITED_SLOTS or slot in names:
+            continue
+        names.append(slot)
+    return tuple(names)
 
 
 @dataclass(frozen=True)

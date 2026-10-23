@@ -1,0 +1,8 @@
+{
+  "template_id": "qt_app_with_form",
+  "display_name": "Qt app with a form",
+  "description": "A PySide6 window. The layout comes from forms/main_window.ui and setupUi.",
+  "template_version": 1,
+  "default_entry": "main.py",
+  "requires_pyside6": true
+}

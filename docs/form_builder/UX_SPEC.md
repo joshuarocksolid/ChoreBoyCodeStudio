@@ -247,7 +247,7 @@ The neutral-gray dark chrome palette substitutes its own surfaces through the sa
 
 ### 3.5 Run and Preview
 
-**UX-RUN-001** `M2.4` `[T]` F5 (Run Active File) with a form tab active: if the form belongs to a project, save the form (which generates `ui_*.py`), then run the project entry point; the status bar says "Saved invoice.ui · Running main.py". If the project has no entry point, or the form is outside a project, F5 opens Preview instead and the status bar says why ("This form isn't part of a project, so F5 previews it."). Shift+F5 and Ctrl+F5 keep their shell meanings (run and debug the project).
+**UX-RUN-001** `M2.4` `[T]` F5 (Run Active File) with a form tab active: if the form belongs to a project, save the form (which generates `ui_*.py`), then run the project entry point; the status bar says "Saved invoice.ui · Running main.py". If the project has no entry point, or the form is outside a project, F5 opens Preview instead and the status bar says why ("This form isn't part of a project, so F5 previews it."). A form inside the project that is not in `forms/` and is not adopted previews too, and the status bar says "This form isn't in forms/ or adopted, so F5 previews it." Shift+F5, Ctrl+F5 and Ctrl+Shift+F5 keep their shell meanings.
 
 **UX-RUN-002** `M2.5` `[S T]` Preview (Ctrl+Shift+R, the Preview button) shows the form from the generated module in the separate preview process. The window title is "Preview · invoice.ui". While the child starts the button shows a spinner and the label "Starting…"; warm starts must not show it. Closing the preview window or pressing Esc in it closes it.
 
@@ -309,7 +309,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | Ctrl+Shift+V | form tab | Design / XML | shell (toggle source view) |
 | Ctrl+Shift+R | form tab | Preview | new |
 | F5 | form tab | Run (UX-RUN-001) | shell |
-| Shift+F5 / Ctrl+F5 | any | Run / debug project | shell |
+| Shift+F5 / Ctrl+F5 / Ctrl+Shift+F5 | any | Run project / debug the active file / debug the project | shell |
 | F3 | form tab | Leave overlay (same as Esc; Designer's "Edit widgets") | new |
 | F7 | form tab | Buddies overlay (toggle) | new |
 | F8 | form tab | Tab order overlay (toggle) | new |
