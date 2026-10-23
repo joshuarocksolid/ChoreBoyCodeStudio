@@ -20,6 +20,9 @@ def _live() -> dict:
     A long test session leaves PySide wrappers for deleted meta-objects, so the
     live walk does not run in this process.
     """
+    if "freecadcmd" in os.path.basename(sys.executable):
+        # Cloud conda AppRun: sys.executable is freecadcmd, which rejects --json.
+        pytest.skip("sys.executable is %s, not a Python that runs scripts" % sys.executable)
     env = os.environ.copy()
     env["QT_QPA_PLATFORM"] = "offscreen"
     proc = subprocess.run(
