@@ -91,9 +91,11 @@ def test_reveal_focuses_the_inspector_body(qapp: QApplication, tmp_path: Path) -
 def test_reveal_scrolls_the_widget_into_the_viewport(qapp: QApplication, tmp_path: Path) -> None:
     parent = QWidget()
     surface = _open(parent, _FORM, tmp_path / "invoice.ui")
+    window = QWidget()
+    surface.setParent(window)
     try:
-        surface.resize(420, 220)
-        surface.show()
+        window.resize(900, 640)
+        window.show()
         qapp.processEvents()
         assert surface.reveal(1, {"fb_object": "okButton"})
         qapp.processEvents()
@@ -110,4 +112,5 @@ def test_reveal_scrolls_the_widget_into_the_viewport(qapp: QApplication, tmp_pat
         assert top.x() <= center.x() <= bottom.x()
     finally:
         surface.release()
+        window.deleteLater()
         parent.deleteLater()

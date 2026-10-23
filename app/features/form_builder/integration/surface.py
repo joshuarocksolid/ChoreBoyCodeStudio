@@ -32,9 +32,14 @@ from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.engine.shell_commands import INERT_SHORTCUTS, INERT_STATUS
+from app.features.form_builder.engine.shell_commands import (
+    FORM_COMMANDS,
+    INERT_SHORTCUTS,
+    INERT_STATUS,
+    is_widget_shortcut,
+)
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
-from app.features.form_builder.engine.ui4.writer import kept_as_is_line_spans, write_ui
+from app.features.form_builder.engine.ui4.writer import kept_as_is_spans_for_text
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
     recovered_draft_sentence,
@@ -189,6 +194,7 @@ class FormSurface(QWidget):
         self._diagnostics_unsub = session.diagnostics.subscribe(self._schedule_problems)
         source.set_open_buffer_probe(self._open_buffer_state)
         self._install_inert_shortcuts()
+        self._install_widget_shortcuts()
         self._schedule_problems(())
         self._saved_timer = QTimer(self)
         self._saved_timer.setSingleShot(True)
@@ -273,16 +279,17 @@ class FormSurface(QWidget):
         return selection_sentence(self._session.document, state.current, len(state.ids))
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
-        name = "" if not detail else (detail.get("fb_object") or "")
-        if name:
-            ids = self._session.document.by_name(name)
-            if ids:
-                if self._toolbar.xml.isChecked():
-                    self._on_design()
-                self._session.selection.set((ids[0],), source=SelectionSource.PROGRAM)
-                self._workbench.inspector.tabs.setFocus()
-                self._refresh_shell_status()
-                return True
+        node_id = self._node_for_detail(detail)
+        if node_id is not None:
+            if self._toolbar.xml.isChecked():
+                self._on_design()
+            self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
+            name = self._object_name(node_id)
+            if name:
+                self._workbench.canvas.ensure_widget_visible(name)
+            QTimer.singleShot(0, self._focus_inspector)
+            self._refresh_shell_status()
+            return True
         editor = self._editor
         if editor is None or line < 1:
             return False
@@ -639,6 +646,53 @@ class FormSurface(QWidget):
         self._saved_timer.stop()
         self._toolbar.set_save("", error=False, tokens=self._tokens)
 
+    def _node_for_detail(self, detail: Optional[Mapping[str, str]]) -> Optional[NodeId]:
+        if not detail:
+            return None
+        key = detail.get("fb_key") or ""
+        if key:
+            for diagnostic in self._session.diagnostics.all():
+                node_id = diagnostic.location.node_id
+                if diagnostic.key == key and node_id is not None:
+                    return node_id
+        name = detail.get("fb_object") or ""
+        if not name:
+            return None
+        ids = self._session.document.by_name(name)
+        if not ids:
+            return None
+        return ids[0]
+
+    def _object_name(self, node_id: NodeId) -> str:
+        node = self._session.document.get(node_id)
+        name = getattr(node, "object_name", "")
+        return name if isinstance(name, str) else ""
+
+    def _focus_inspector(self) -> None:
+        if self._released:
+            return
+        self._workbench.inspector.properties.setFocus()
+
+    def _install_widget_shortcuts(self) -> None:
+        hosts = {
+            "canvas": self._workbench.canvas,
+            "outline": self._workbench.outline.tree,
+            "inspector": self._workbench.inspector,
+        }
+        context = getattr(Qt, "WidgetWithChildrenShortcut")
+        self._widget_shortcuts: list[QShortcut] = []
+        for command in FORM_COMMANDS:
+            if not is_widget_shortcut(command):
+                continue
+            for name in command.contexts:
+                host = hosts.get(name)
+                if host is None:
+                    continue
+                shortcut = QShortcut(QKeySequence(command.shortcut), host)
+                shortcut.setContext(context)
+                shortcut.setObjectName(command.command_id)
+                self._widget_shortcuts.append(shortcut)
+
     def _install_inert_shortcuts(self) -> None:
         context = getattr(Qt, "WidgetWithChildrenShortcut")
         for sequence in INERT_SHORTCUTS:
@@ -698,8 +752,12 @@ class FormSurface(QWidget):
         setter = getattr(editor, "set_gutter_notes", None)
         if not callable(setter):
             return
-        result = write_ui(self._session.document)
-        notes = {start: "Kept as is" for start, _end in kept_as_is_line_spans(result)}
+        reader = getattr(editor, "toPlainText", None)
+        text = reader() if callable(reader) else ""
+        notes = {
+            start: "Kept as is"
+            for start, _end in kept_as_is_spans_for_text(text if isinstance(text, str) else "", self._session.document)
+        }
         setter(notes)
 
     def _show_hold(self, text: str) -> None:

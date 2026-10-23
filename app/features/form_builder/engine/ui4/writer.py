@@ -125,6 +125,81 @@ def kept_as_is_line_spans(result: WriteResult) -> Tuple[Tuple[int, int], ...]:
     return result.opaque_spans
 
 
+def kept_as_is_spans_for_text(text: str, document: UiDocument) -> Tuple[Tuple[int, int], ...]:
+    """Line spans of opaque elements in the text the XML view is showing.
+
+    ``write_ui`` renumbers a non-canonical file. The gutter has to mark the
+    lines the user can see.
+    """
+    lines = text.splitlines()
+    spans: List[Tuple[int, int]] = []
+    search_from = 0
+    for element in _opaque_elements(document):
+        tag = element.tag
+        if not tag:
+            continue
+        start = _open_tag_line(lines, tag, search_from)
+        if start is None:
+            continue
+        spans.append((start, _close_tag_line(lines, tag, start)))
+        search_from = start
+    return tuple(spans)
+
+
+def _opaque_elements(document: UiDocument) -> List[OpaqueElement]:
+    found: List[OpaqueElement] = []
+    for node in document.iter_preorder():
+        if isinstance(node, OpaqueNode):
+            _collect_opaque_element(node.element, found)
+        for reader in (getattr(node, "properties", None), getattr(node, "attributes", None)):
+            if not callable(reader):
+                continue
+            for entry in reader():
+                value = entry.value
+                if isinstance(value, OpaqueValue):
+                    _collect_opaque_element(value.element, found)
+    return found
+
+
+def _collect_opaque_element(element: OpaqueElement, found: List[OpaqueElement]) -> None:
+    if element.tag:
+        found.append(element)
+    for child in element.children:
+        if isinstance(child, OpaqueElement):
+            _collect_opaque_element(child, found)
+
+
+def _open_tag_line(lines: List[str], tag: str, start_index: int) -> Optional[int]:
+    needle = "<" + tag
+    for index in range(start_index, len(lines)):
+        if _tag_at(lines[index], needle):
+            return index + 1
+    return None
+
+
+def _close_tag_line(lines: List[str], tag: str, start_line: int) -> int:
+    start_index = start_line - 1
+    if "/>" in lines[start_index]:
+        return start_line
+    close = "</" + tag
+    for index in range(start_index, len(lines)):
+        if _tag_at(lines[index], close):
+            return index + 1
+    return start_line
+
+
+def _tag_at(line: str, needle: str) -> bool:
+    start = 0
+    while True:
+        found = line.find(needle, start)
+        if found < 0:
+            return False
+        after = found + len(needle)
+        if after >= len(line) or not (line[after].isalnum() or line[after] in "._:-"):
+            return True
+        start = after
+
+
 def write_fragment(fragment: Fragment) -> str:
     """Clipboard text for ``fragment`` (same byte rules as ``write_ui``)."""
     allocator = IdAllocator()
