@@ -3,9 +3,41 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping
+from itertools import combinations
+from typing import Any, Literal, Mapping, Sequence
 
 from app.core import constants
+
+ShortcutScope = Literal["window", "explorer", "form_tab", "canvas", "outline", "inspector"]
+
+_SCOPE_PARENTS: dict[ShortcutScope, ShortcutScope | None] = {
+    "window": None,
+    "explorer": "window",
+    "form_tab": "window",
+    "canvas": "form_tab",
+    "outline": "form_tab",
+    "inspector": "form_tab",
+}
+
+WINDOW_MANAGER_KEYS: frozenset[str] = frozenset(
+    {
+        "Ctrl+Alt+Left",
+        "Ctrl+Alt+Right",
+        "Ctrl+Alt+Up",
+        "Ctrl+Alt+Down",
+        "Alt+F1",
+        "Alt+F2",
+        "Alt+F3",
+        "Alt+F4",
+        "Alt+F5",
+        "Alt+F6",
+        "Alt+F7",
+        "Alt+F8",
+        "Alt+F9",
+        "Alt+F10",
+        "Ctrl+Shift+U",
+    }
+)
 
 _SHORTCUT_ID_CLOSE_TAB = "shell.shortcut.closeTab"
 _SHORTCUT_ID_KEEP_PREVIEW_OPEN = "shell.shortcut.keepPreviewOpen"
@@ -18,12 +50,20 @@ _SHORTCUT_ID_PROJECT_TREE_DELETE = "shell.shortcut.projectTree.delete"
 
 @dataclass(frozen=True)
 class ShortcutCommand:
-    """Represents one user-configurable command shortcut."""
+    """Represents one user-configurable command shortcut.
+
+    ``shadows`` names wider-scope rows on the same key that this row overrides inside
+    its own scopes. A ``reserved`` row holds its key for the collision check only. It
+    is hidden from Settings and has no binding of its own.
+    """
 
     action_id: str
     label: str
     default_shortcut: str
     category: str
+    scopes: tuple[ShortcutScope, ...] = ("window",)
+    shadows: tuple[str, ...] = ()
+    reserved: bool = False
 
 
 SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
@@ -88,11 +128,30 @@ SHORTCUT_COMMANDS: tuple[ShortcutCommand, ...] = (
     ShortcutCommand("shell.action.view.markdownShowSource", "Markdown: Show Source", "", "View"),
     ShortcutCommand("shell.action.view.markdownShowPreview", "Markdown: Show Preview", "", "View"),
     ShortcutCommand("shell.action.view.markdownShowSplit", "Markdown: Show Split View", "Ctrl+K, V", "View"),
-    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_RENAME, "Rename Project Item", "F2", "Explorer"),
-    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_COPY, "Copy Project Item", "Ctrl+C", "Explorer"),
-    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_CUT, "Cut Project Item", "Ctrl+X", "Explorer"),
-    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_PASTE, "Paste Project Item", "Ctrl+V", "Explorer"),
-    ShortcutCommand(_SHORTCUT_ID_PROJECT_TREE_DELETE, "Move Project Item to Trash", "Delete", "Explorer"),
+    ShortcutCommand(
+        _SHORTCUT_ID_PROJECT_TREE_RENAME,
+        "Rename Project Item",
+        "F2",
+        "Explorer",
+        scopes=("explorer",),
+        shadows=("shell.action.edit.renameSymbol",),
+    ),
+    ShortcutCommand(
+        _SHORTCUT_ID_PROJECT_TREE_COPY, "Copy Project Item", "Ctrl+C", "Explorer", scopes=("explorer",)
+    ),
+    ShortcutCommand(
+        _SHORTCUT_ID_PROJECT_TREE_CUT, "Cut Project Item", "Ctrl+X", "Explorer", scopes=("explorer",)
+    ),
+    ShortcutCommand(
+        _SHORTCUT_ID_PROJECT_TREE_PASTE, "Paste Project Item", "Ctrl+V", "Explorer", scopes=("explorer",)
+    ),
+    ShortcutCommand(
+        _SHORTCUT_ID_PROJECT_TREE_DELETE,
+        "Move Project Item to Trash",
+        "Delete",
+        "Explorer",
+        scopes=("explorer",),
+    ),
     ShortcutCommand(_SHORTCUT_ID_CLOSE_TAB, "Close Tab", "Ctrl+W", "Editor"),
     ShortcutCommand(_SHORTCUT_ID_KEEP_PREVIEW_OPEN, "Keep Preview Tab Open", "Ctrl+K, Enter", "Editor"),
 )
@@ -188,7 +247,12 @@ def build_effective_shortcut_map(overrides: Mapping[str, str] | None = None) -> 
 
 
 def find_shortcut_conflicts(shortcuts_by_action: Mapping[str, str]) -> dict[str, tuple[str, ...]]:
-    """Return shortcut -> action-id conflicts for duplicate assignments within one category."""
+    """Return shortcut -> action ids that share a key within one category.
+
+    Settings > Keyboard still groups conflicts by category. The collision rule with
+    scopes and shadows is ``ShortcutCatalog.conflicts``, which the form shortcut table
+    test uses.
+    """
     grouped: dict[tuple[str, str], list[str]] = {}
     for action_id, shortcut in shortcuts_by_action.items():
         normalized = normalize_shortcut(shortcut)
@@ -201,3 +265,112 @@ def find_shortcut_conflicts(shortcuts_by_action: Mapping[str, str]) -> dict[str,
         if len(action_ids) > 1:
             conflicts[shortcut] = tuple(sorted(action_ids))
     return conflicts
+
+
+@dataclass(frozen=True)
+class ShortcutConflict:
+    key: str
+    action_ids: tuple[str, ...]
+    kind: Literal["overlap", "window_manager"]
+
+
+@dataclass(frozen=True)
+class ShortcutCatalog:
+    """Every shortcut row the window composes, and the collision rule over them."""
+
+    rows: tuple[ShortcutCommand, ...]
+
+    @classmethod
+    def build(
+        cls,
+        shell_rows: tuple[ShortcutCommand, ...],
+        command_sets: Sequence[tuple[ShortcutCommand, ...]] = (),
+    ) -> ShortcutCatalog:
+        rows = shell_rows + tuple(row for command_set in command_sets for row in command_set)
+        seen: set[str] = set()
+        for row in rows:
+            if row.action_id in seen:
+                raise ValueError(f"Duplicate shortcut action id: {row.action_id}")
+            seen.add(row.action_id)
+        return cls(rows)
+
+    def visible_rows(self) -> tuple[ShortcutCommand, ...]:
+        return tuple(row for row in self.rows if not row.reserved)
+
+    def defaults(self) -> dict[str, str]:
+        return {row.action_id: row.default_shortcut for row in self.rows}
+
+    def conflicts(
+        self,
+        shortcuts: Mapping[str, str],
+        *,
+        include_reserved: bool = False,
+    ) -> tuple[ShortcutConflict, ...]:
+        """Two rows collide when one key equals or chord-prefixes the other, a scope of
+        one equals or encloses a scope of the other, and the narrower row does not
+        shadow the wider. Rows in the same scope never shadow each other. A key the
+        window manager takes collides on its own.
+        """
+        bound = [
+            (row, _chords(shortcuts.get(row.action_id, "")))
+            for row in self.rows
+            if include_reserved or not row.reserved
+        ]
+        found = [
+            ShortcutConflict(", ".join(chords), (row.action_id,), "window_manager")
+            for row, chords in bound
+            if any(chord in WINDOW_MANAGER_KEYS for chord in chords)
+        ]
+        for (first, first_chords), (second, second_chords) in combinations(bound, 2):
+            prefix = _shared_prefix(first_chords, second_chords)
+            if prefix and _scopes_collide(first, second):
+                found.append(ShortcutConflict(", ".join(prefix), (first.action_id, second.action_id), "overlap"))
+        return tuple(found)
+
+    def stale_shadows(self) -> tuple[tuple[str, str], ...]:
+        """``(narrower, wider)`` shadows that excuse no collision at default keys."""
+        by_id = {row.action_id: row for row in self.rows}
+        return tuple(
+            (row.action_id, wider_id)
+            for row in self.rows
+            for wider_id in row.shadows
+            if wider_id not in by_id or not _shadow_is_live(row, by_id[wider_id])
+        )
+
+
+def _chords(shortcut: str) -> tuple[str, ...]:
+    normalized = normalize_shortcut(shortcut)
+    return tuple(normalized.split(", ")) if normalized else ()
+
+
+def _shared_prefix(first: tuple[str, ...], second: tuple[str, ...]) -> tuple[str, ...]:
+    """The shorter chord sequence when it starts the longer one, else ``()``."""
+    shorter, longer = (first, second) if len(first) <= len(second) else (second, first)
+    return shorter if longer[: len(shorter)] == shorter else ()
+
+
+def _encloses(outer: ShortcutScope, inner: ShortcutScope) -> bool:
+    parent = _SCOPE_PARENTS[inner]
+    while parent is not None:
+        if parent == outer:
+            return True
+        parent = _SCOPE_PARENTS[parent]
+    return False
+
+
+def _scopes_collide(first: ShortcutCommand, second: ShortcutCommand) -> bool:
+    for first_scope in first.scopes:
+        for second_scope in second.scopes:
+            if first_scope == second_scope:
+                return True
+            if _encloses(first_scope, second_scope) and first.action_id not in second.shadows:
+                return True
+            if _encloses(second_scope, first_scope) and second.action_id not in first.shadows:
+                return True
+    return False
+
+
+def _shadow_is_live(narrower: ShortcutCommand, wider: ShortcutCommand) -> bool:
+    if not _shared_prefix(_chords(narrower.default_shortcut), _chords(wider.default_shortcut)):
+        return False
+    return any(_encloses(outer, inner) for outer in wider.scopes for inner in narrower.scopes)
