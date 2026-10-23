@@ -151,13 +151,9 @@ def _opaque_elements(document: UiDocument) -> List[OpaqueElement]:
     for node in document.iter_preorder():
         if isinstance(node, OpaqueNode):
             _collect_opaque_element(node.element, found)
-        for reader in (getattr(node, "properties", None), getattr(node, "attributes", None)):
-            if not callable(reader):
-                continue
-            for entry in reader():
-                value = entry.value
-                if isinstance(value, OpaqueValue):
-                    _collect_opaque_element(value.element, found)
+        for entry in (*node.properties(), *node.attributes()):
+            if isinstance(entry.value, OpaqueValue):
+                _collect_opaque_element(entry.value.element, found)
     return found
 
 
