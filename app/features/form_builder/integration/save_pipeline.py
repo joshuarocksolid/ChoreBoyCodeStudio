@@ -6,11 +6,18 @@ A codegen failure is a notice and diagnostics. It does not undo the save.
 
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from app.features.form_builder.engine.diagnostics import FormDiagnostic
+from app.features.form_builder.engine.diagnostic_codes import fb5xx as _fb5xx
+from app.features.form_builder.engine.diagnostics import (
+    CODES,
+    DiagnosticLocation,
+    FormDiagnostic,
+    Severity,
+)
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.fs import OsFileSystem
@@ -18,6 +25,8 @@ from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import write_ui
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -52,10 +61,21 @@ def finish_save(
     try:
         result = write_generated(scope, document, ui_bytes, files)
     except Exception:
+        _LOGGER.exception("could not write %s", generated_name)
+        info = CODES.get("FB509")
+        severity = info.severity if info is not None else Severity.ERROR
+        diagnostic = FormDiagnostic(
+            code="FB509",
+            severity=severity,
+            message="could not write %s." % generated_name,
+            location=DiagnosticLocation(),
+            source="codegen",
+        )
         return SaveNotice(
             "failed",
             "Saved %s · %s not written" % (ui_name, generated_name),
             True,
+            (diagnostic,),
         )
     if result.text_written:
         return SaveNotice(

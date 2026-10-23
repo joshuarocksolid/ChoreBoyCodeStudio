@@ -134,10 +134,19 @@ class FormContentSource:
             self._log.mark_saved()
             self._saved_applied = True
             self._remember_saved_text(saved_text)
-        self._notice = finish_save(self._scope, self._log.document, saved_text)
+        self._notice = SaveNotice("idle", "", False)
+        self._notify()
+
+    def after_save(self) -> None:
+        """Step 3 of save. Reload and sync call ``mark_saved`` and stop there."""
+        self._notice = finish_save(self._scope, self._log.document, self._saved_text)
         if self._diagnostics is not None:
             self._diagnostics.publish("codegen", self._notice.diagnostics)
         self._notify()
+
+    def saved_text(self) -> str:
+        """The text last marked as what is on disk."""
+        return self._saved_text
 
     @property
     def save_notice(self) -> SaveNotice:
