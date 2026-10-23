@@ -28,6 +28,26 @@ class GroupId(str, Enum):
     def title(self) -> str:
         return "All properties" if self is GroupId.ALL else self.value.capitalize()
 
+
+def _cover(order: Tuple["GroupId", ...]) -> Tuple["GroupId", ...]:
+    if set(order) != set(GroupId) or len(order) != len(set(order)):
+        raise RuntimeError("GROUP_ORDER must list each GroupId once")
+    return order
+
+
+GROUP_ORDER: Tuple["GroupId", ...] = _cover(
+    (
+        GroupId.CONTENT,
+        GroupId.INPUT,
+        GroupId.APPEARANCE,
+        GroupId.SIZE,
+        GroupId.PLACEMENT,
+        GroupId.LAYOUT,
+        GroupId.ACCESSIBILITY,
+        GroupId.ALL,
+    )
+)
+
 EditorKey = NewType("EditorKey", str)
 
 KEY_SEQUENCE = EditorKey("keysequence")

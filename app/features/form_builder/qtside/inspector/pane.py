@@ -43,6 +43,15 @@ class TabId(str, Enum):
     BEHAVIOR = "behavior"
     DATA = "data"
 
+
+def _cover_tabs(order: Tuple[TabId, ...]) -> Tuple[TabId, ...]:
+    if set(order) != set(TabId) or len(order) != len(set(order)):
+        raise RuntimeError("TAB_ORDER must list each TabId once")
+    return order
+
+
+TAB_ORDER: Tuple[TabId, ...] = _cover_tabs((TabId.PROPERTIES, TabId.BEHAVIOR, TabId.DATA))
+
 class InspectorPane(QWidget):
 
     header: Header
@@ -77,7 +86,7 @@ class InspectorPane(QWidget):
         self.properties = PropertiesPage(self._services, self._schedule, self.tabs)
         self.behavior = BehaviorPage(self._services, realizer, self.tabs)
         self._tab_index: Dict[TabId, int] = {}
-        for tab in TabId:
+        for tab in TAB_ORDER:
             if tab is TabId.DATA and not data_tab:
                 continue
             if tab is TabId.PROPERTIES:

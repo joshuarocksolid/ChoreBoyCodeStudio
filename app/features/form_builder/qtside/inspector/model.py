@@ -53,6 +53,7 @@ from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
     EditorKey,
     EnumSpec,
+    GROUP_ORDER,
     GroupId,
     LayoutProp,
     LockedRow,
@@ -384,8 +385,11 @@ def esc_action(search: str, field_invalid: bool) -> EscAction:
         return EscAction.REVERT_FIELD
     return EscAction.LEAVE
 
+_LEAVES_TAB_ORDER = (PropertyChanged,)
+
+
 def tab_order_stale(changeset: ChangeSet) -> bool:
-    return not all(isinstance(change, PropertyChanged) for change in changeset.changes)
+    return any(not isinstance(change, _LEAVES_TAB_ORDER) for change in changeset.changes)
 
 def files_line(scope: FormScope) -> str:
     ui_name = os.path.basename(scope.ui_path)
@@ -411,7 +415,7 @@ def _node_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...], searc
         if row is not None:
             curated.setdefault(spec.group, []).append(row)
     groups: List[GroupView] = []
-    for group in GroupId:
+    for group in GROUP_ORDER:
         if group is GroupId.ALL:
             blocks = _all_blocks(facts, owners)
         else:

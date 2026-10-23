@@ -14,6 +14,7 @@ from app.features.form_builder.qtside.inspector.api import (
     EnumSpec,
     GroupBody,
     GroupBodyFactory,
+    GROUP_ORDER,
     GroupId,
     LockedRow,
     Match,
@@ -53,7 +54,7 @@ class PropertiesPage(QWidget):
         self._services = services
         self._on_search = on_search
         self._match_color = ""
-        self._expanded: Dict[GroupId, bool] = {group: group is not GroupId.ALL for group in GroupId}
+        self._expanded: Dict[GroupId, bool] = {group: group is not GroupId.ALL for group in GROUP_ORDER}
         self._search = QLineEdit(self)
         self._search.setObjectName("formBuilder.inspectorSearch")
         self._search.setPlaceholderText("Find a property")
@@ -78,7 +79,7 @@ class PropertiesPage(QWidget):
         self._form = _FormSection(services, self._content)
         self._content_layout.addWidget(self._form)
         self._groups: Dict[GroupId, _Group] = {}
-        for group in GroupId:
+        for group in GROUP_ORDER:
             widget = _Group(services, group, self, self._content)
             self._groups[group] = widget
             self._content_layout.addWidget(widget)
@@ -132,7 +133,7 @@ class PropertiesPage(QWidget):
             return
         self._form.hide()
         present = {view.group: view for view in body.groups}
-        for group_id in GroupId:
+        for group_id in GROUP_ORDER:
             group = self._groups[group_id]
             view = present.get(group_id)
             if view is None:
