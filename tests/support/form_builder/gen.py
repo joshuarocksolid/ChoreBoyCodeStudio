@@ -15,6 +15,7 @@ from app.features.form_builder.engine.commands.base import Command, CommandRejec
 from app.features.form_builder.engine.commands.catalog import (
     AddConnection,
     AdjustSize,
+    ApplyLayout,
     BreakLayout,
     CreateAction,
     DeleteNodes,
@@ -42,6 +43,7 @@ from app.features.form_builder.engine.commands.log import replay
 from app.features.form_builder.engine.commands.placement import (
     InBoxLayout,
     InContainer,
+    InFormRow,
     InGridCell,
 )
 from app.features.form_builder.engine.events import (
@@ -109,7 +111,47 @@ NESTED = """<?xml version="1.0" encoding="UTF-8"?>
 </ui>
 """
 
-FORMS = (BOX, GRID, FREE, STACK, SHARED, NESTED)
+FORM_ROWS = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QGridLayout" name="outer">
+   <item row="0" column="0"><widget class="QLabel" name="g0"/></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="g1"/></item>
+   <item row="0" column="2"><widget class="QPushButton" name="g2"/></item>
+   <item row="1" column="0" colspan="3">
+    <widget class="QGroupBox" name="box">
+     <layout class="QFormLayout" name="form">
+      <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="buddy"><cstring>nameEdit</cstring></property></widget></item>
+      <item row="0" column="1"><widget class="QLineEdit" name="nameEdit"/></item>
+      <item row="1" column="0" colspan="2"><widget class="QCheckBox" name="wideCheck"/></item>
+      <item row="3" column="0"><widget class="QLabel" name="countLabel"/></item>
+      <item row="3" column="1">
+       <layout class="QHBoxLayout" name="countRow">
+        <item><widget class="QSpinBox" name="countSpin"/></item>
+        <item><widget class="QPushButton" name="countButton"/></item>
+       </layout>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item row="2" column="0" colspan="3">
+    <widget class="QFrame" name="bare">
+     <widget class="QPushButton" name="loose">
+      <property name="geometry"><rect><x>0</x><y>0</y><width>80</width><height>24</height></rect></property>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+FORMS = (BOX, GRID, FREE, STACK, SHARED, NESTED, FORM_ROWS)
+
+_FORM_ROLES = ("label", "field", "spanning")
 
 
 class _Boom(Exception):
@@ -143,7 +185,8 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
     widget = rng.choice(widgets) if widgets else None
     layout = rng.choice(layouts) if layouts else None
     names = [item.object_name for item in widgets if item.object_name]
-    roll = rng.randrange(27)
+    forms = [item for item in layouts if item.class_name == "QFormLayout"]
+    roll = rng.randrange(36)
     if roll == 0 and widget is not None:
         value = None if rng.randrange(5) == 0 else StringValue("t%d" % step)
         return SetProperty(widget.id, "text", value, merge_token=rng.choice([None, "tok"]))
@@ -253,8 +296,76 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
         return CreateAction(NodeSpec("action", None, (("name", "act%d" % (step % 7)),)))
     if roll == 26 and widget is not None:
         return SetProperty(widget.id, "text", None, merge_token="tok")
+    if roll == 27 and widget is not None and forms:
+        row = InFormRow(rng.choice(forms).id, rng.randrange(5), rng.choice(_FORM_ROLES), rng.randrange(2) == 0)
+        return MoveNodes((widget.id,), row)
+    if roll == 28 and forms:
+        row = InFormRow(rng.choice(forms).id, rng.randrange(5), rng.choice(_FORM_ROLES), rng.randrange(2) == 0)
+        buttons = tuple(button_spec("formButton") for _ in range(rng.randrange(1, 3)))
+        return InsertFragment(row, Fragment(nodes=buttons))
+    if roll == 29 and forms:
+        form = rng.choice(forms)
+        at = InBoxLayout(form.id, rng.randrange(len(form.items) + 1))
+        if widget is not None and rng.randrange(2) == 0:
+            return MoveNodes((widget.id,), at)
+        return InsertFragment(at, Fragment(nodes=(button_spec("formButton"),)))
+    if roll == 30 and widget is not None:
+        siblings = [item for item in widgets if _sibling_key(doc, item) == _sibling_key(doc, widget)]
+        chosen = rng.sample(siblings, min(len(siblings), rng.randrange(1, 4)))
+        return Wrap(
+            tuple(item.id for item in chosen),
+            rng.choice([None, "QWidget"]),
+            rng.choice(["QFormLayout", "QVBoxLayout"]),
+        )
+    if roll == 31:
+        others = [item for item in layouts if item.class_name != "QFormLayout"]
+        if others:
+            return MorphLayout(rng.choice(others).id, "QFormLayout")
+    if roll == 32 and forms:
+        form = rng.choice(forms)
+        if form.items:
+            return SetLayoutCell(
+                rng.choice(form.items).id,
+                rng.randrange(5),
+                rng.randrange(2),
+                None,
+                rng.choice([None, 2]),
+            )
+    if roll == 33:
+        nested = [item for item in layouts if item.parent_slot == "content"]
+        holders = [item for item in widgets if item.layout is not None]
+        targets = nested + holders
+        if targets:
+            return Unwrap(rng.choice(targets).id)
+    if roll == 34 and forms:
+        cell = InGridCell(rng.choice(forms).id, rng.randrange(3), rng.randrange(2))
+        return InsertFragment(cell, Fragment(nodes=(button_spec("cellButton"),)))
+    if roll == 35:
+        bare = [
+            item
+            for item in [doc.root] + widgets
+            if item.class_name in ("QWidget", "QFrame", "QGroupBox") and item.layout is None and item.child_widgets
+        ]
+        if bare:
+            return ApplyLayout(rng.choice(bare).id, "QFormLayout")
     return None
 
+
+def _sibling_key(doc: UiDocument, widget: WidgetNode) -> Optional[NodeId]:
+    parent = doc.parent(widget.id)
+    if parent is not None and parent.kind == "layoutitem":
+        return parent.parent_id
+    return widget.parent_id
+
+
+
+def _fail_on_validation(seed: object, exc: CommandRejected) -> None:
+    """FB999 is a broken invariant or a crash inside apply, not a refusal.
+
+    The one expected FB999 is the generator's own injected ``_Boom``.
+    """
+    if exc.code == "FB999" and not isinstance(exc.error, _Boom):
+        raise AssertionError("seed %s entry failed validation: %s" % (seed, exc.error or exc))
 
 def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
     """One sequence. Failures name the seed."""
@@ -339,11 +450,12 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
                         for item in commands:
                             try:
                                 tx.execute(cast(Command, item))
-                            except CommandRejected:
-                                pass
+                            except CommandRejected as exc:
+                                _fail_on_validation(seed, exc)
                         if roll == 5 and commands:
                             tx.execute(cast(Command, _FailAfter(commands[0])))
-                except CommandRejected:
+                except CommandRejected as exc:
+                    _fail_on_validation(seed, exc)
                     if doc.fingerprint() != before_fp or len(seen) != event_count:
                         raise AssertionError("transaction rollback diverged seed %s" % (seed,))
                     continue
@@ -356,7 +468,8 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
             if command is None:
                 continue
             outcome = log.execute(cast(Command, command), continue_gesture=rng.randrange(8) == 0)
-        except CommandRejected:
+        except CommandRejected as exc:
+            _fail_on_validation(seed, exc)
             if doc.fingerprint() != before_fp or len(seen) != event_count:
                 raise AssertionError("rejected command changed the form seed %s" % (seed,))
             continue

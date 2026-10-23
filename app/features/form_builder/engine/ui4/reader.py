@@ -23,8 +23,16 @@ from app.features.form_builder.engine.diagnostics import (
     Severity,
 )
 from app.features.form_builder.engine.ids import DOCUMENT_ID, IdAllocator, NodeId
+from app.features.form_builder.engine.query.tree import form_item_role, form_occupied_cells
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import Node, build_node
+from app.features.form_builder.engine.ui4.nodes import (
+    LayoutItemNode,
+    LayoutNode,
+    Node,
+    SpacerNode,
+    WidgetNode,
+    build_node,
+)
 from app.features.form_builder.engine.ui4.numfmt import parse_real, real_round_trips
 from app.features.form_builder.engine.ui4.opaque import OpaqueComment, OpaqueElement, OpaquePI
 from app.features.form_builder.engine.ui4.schema import (
@@ -562,6 +570,7 @@ def read_ui(text: str, *, allocator: IdAllocator, source_path: Optional[str] = N
         document = UiDocument(ui)
         document.newline = _newline_of(text)
         document._check_validate()
+        diagnostics.extend(_form_cell_warnings(document, line_map))
     except UiReadError:
         raise
     except (KeyboardInterrupt, SystemExit):
@@ -2303,6 +2312,49 @@ def _to_node(
         slots=slot_tuple,
         extra_attrs=tuple(built.extra_attrs) if built.extra_attrs else _NO_ATTRS,
     )
+
+
+def _form_cell_warnings(document: UiDocument, line_map: Dict[NodeId, int]) -> List[FormDiagnostic]:
+    found: List[FormDiagnostic] = []
+    for node in document.iter_preorder():
+        if not isinstance(node, LayoutNode) or node.class_name != "QFormLayout":
+            continue
+        owners: Dict[Tuple[int, str], LayoutItemNode] = {}
+        for item in node.items:
+            cells = form_occupied_cells(item.row, item.column, item.colspan)
+            taken = sorted((cell for cell in cells if cell in owners), key=lambda cell: cell[1] != "label")
+            for cell in cells:
+                owners.setdefault(cell, item)
+            if not taken:
+                continue
+            row, word = taken[0]
+            earlier = owners[taken[0]]
+            spans = form_item_role(item.column, item.colspan) == "spanning"
+            if spans and form_item_role(earlier.column, earlier.colspan) == "spanning":
+                word = "spanning"
+            found.append(
+                FormDiagnostic(
+                    code="FB023",
+                    severity=Severity.WARNING,
+                    message="Two widgets share the %s cell of row %s in %s." % (word, row, node.object_name),
+                    location=DiagnosticLocation(
+                        node_id=item.id,
+                        object_name=_content_name(item),
+                        line=line_map.get(item.id, 0),
+                    ),
+                    source="reader",
+                )
+            )
+    return found
+
+
+def _content_name(item: LayoutItemNode) -> Optional[str]:
+    content = item.content
+    if isinstance(content, (WidgetNode, LayoutNode)):
+        return content.object_name or None
+    if isinstance(content, SpacerNode):
+        return content.name or None
+    return None
 
 
 def _built_name(built: _Built) -> Optional[str]:

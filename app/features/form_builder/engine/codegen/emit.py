@@ -51,6 +51,7 @@ from app.features.form_builder.engine.diagnostics import (
     Severity,
 )
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.tree import form_item_role
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
     ActionGroupNode,
@@ -162,6 +163,11 @@ def _cbcs_widget(class_name, parent, object_name, fallback):
         widget.setObjectName(object_name)
     return widget
 """.strip()
+_FORM_ROLE = {
+    "label": "QFormLayout.ItemRole.LabelRole",
+    "field": "QFormLayout.ItemRole.FieldRole",
+    "spanning": "QFormLayout.ItemRole.SpanningRole",
+}
 _MODULE_RANK = {
     "PySide6.QtCore": 0,
     "PySide6.QtGui": 1,
@@ -862,11 +868,7 @@ class _Emitter:
         alignment = item.alignment if isinstance(getattr(item, "alignment", None), str) else ""
         align = set_expr(alignment) if alignment else ""
         if is_form(cls):
-            role = "QFormLayout.ItemRole.LabelRole"
-            if colspan > 1:
-                role = "QFormLayout.ItemRole.SpanningRole"
-            elif column == 1:
-                role = "QFormLayout.ItemRole.FieldRole"
+            role = _FORM_ROLE[form_item_role(column, colspan)]
             if kind == "layout":
                 self.add("%s.setLayout(%s, %s, %s)" % (layout_ref, row, role, target))
             else:

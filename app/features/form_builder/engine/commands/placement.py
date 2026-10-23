@@ -17,7 +17,7 @@ from app.features.form_builder.engine.ui4.values import RectValue
 
 @dataclass(frozen=True)
 class InBoxLayout:
-    """Item position in a QVBoxLayout/QHBoxLayout (0..count)."""
+    """Item position in a box layout (0..count). A form layout treats the index as an insert of one row per item."""
 
     layout: NodeId
     index: int
@@ -43,8 +43,9 @@ class InGridCell:
 @dataclass(frozen=True)
 class InFormRow:
     """A QFormLayout row. ``role``: ``label`` (column 0), ``field`` (column 1),
-    ``spanning`` (column 0, colspan 2). ``insert_row`` shifts rows >= ``row`` down
-    first."""
+    ``spanning`` (column 0, colspan 2). ``insert_row`` shifts every row at or
+    below ``row`` down by one per placed item. Without it, an occupied cell is
+    refused."""
 
     layout: NodeId
     row: int

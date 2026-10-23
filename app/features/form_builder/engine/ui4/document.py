@@ -306,7 +306,8 @@ class UiDocument:
     def validate(self) -> None:
         """Check every integrity invariant (CONTRACTS.md section 2.7); raise
         InvariantError naming the first violation. O(form). Called after every
-        log entry when ``CBCS_FB_VALIDATE=1`` (always on in tests)."""
+        log entry when ``CBCS_FB_VALIDATE=1`` (always on in tests).
+        """
         if self._revision < self._peak:
             raise InvariantError("revision went backwards")
         reachable: Dict[NodeId, Node] = {}
