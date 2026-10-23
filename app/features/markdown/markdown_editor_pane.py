@@ -19,6 +19,7 @@ from app.editors.markdown_rendering import MAX_LIVE_MARKDOWN_PREVIEW_CHARS
 from app.features.markdown.markdown_preview_widget import ExternalLinkCallback, LocalLinkCallback, MarkdownPreviewWidget
 from app.shell import icon_provider
 from app.shell.theme_tokens import ShellThemeTokens
+from app.shell.toolbar_style import flat_tool_button_qss
 
 
 class MarkdownPreviewMode:
@@ -217,8 +218,6 @@ class MarkdownEditorPane(QWidget):
         border = tokens.border
         text_primary = tokens.text_primary
         text_muted = tokens.text_muted
-        hover_bg = tokens.tree_hover_bg
-        selected_bg = tokens.tree_selected_bg
         toolbar = self.findChild(QWidget, "shell.markdownEditorPane.toolbar")
         if toolbar is not None:
             toolbar.setStyleSheet(
@@ -233,27 +232,16 @@ class MarkdownEditorPane(QWidget):
                 QLabel#shell.markdownEditorPane.status {{
                     color: {text_muted};
                 }}
-                QToolButton#shell.markdownEditorPane.modeButton.source,
-                QToolButton#shell.markdownEditorPane.modeButton.preview,
-                QToolButton#shell.markdownEditorPane.modeButton.split,
-                QToolButton#shell.markdownEditorPane.refreshButton {{
-                    color: {text_primary};
-                    border: 1px solid transparent;
-                    padding: 2px 8px;
-                }}
-                QToolButton#shell.markdownEditorPane.modeButton.source:checked,
-                QToolButton#shell.markdownEditorPane.modeButton.preview:checked,
-                QToolButton#shell.markdownEditorPane.modeButton.split:checked {{
-                    background-color: {selected_bg};
-                    border-color: {border};
-                }}
-                QToolButton#shell.markdownEditorPane.modeButton.source:hover,
-                QToolButton#shell.markdownEditorPane.modeButton.preview:hover,
-                QToolButton#shell.markdownEditorPane.modeButton.split:hover,
-                QToolButton#shell.markdownEditorPane.refreshButton:hover {{
-                    background-color: {hover_bg};
-                }}
                 """
+                + flat_tool_button_qss(
+                    tokens,
+                    (
+                        "QToolButton#shell.markdownEditorPane.modeButton.source",
+                        "QToolButton#shell.markdownEditorPane.modeButton.preview",
+                        "QToolButton#shell.markdownEditorPane.modeButton.split",
+                        "QToolButton#shell.markdownEditorPane.refreshButton",
+                    ),
+                )
             )
 
     def _make_mode_button(

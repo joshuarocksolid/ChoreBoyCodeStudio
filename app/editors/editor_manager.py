@@ -155,6 +155,10 @@ class EditorManager:
         text = tab.current_content
         atomic_write_text(path, text)
         tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)
+        source = tab.content_source
+        after_save = getattr(source, "after_save", None)
+        if callable(after_save):
+            after_save()
         return tab
 
     def current_disk_mtime(self, file_path: str) -> float | None:

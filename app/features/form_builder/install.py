@@ -43,6 +43,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     Qt and shell imports stay inside this function so importing the module
     on PySide2 does not load a binding. ``form_builder_enabled`` is the gate.
     ``RememberingFormTabProvider`` owns ``.ui`` files and records recent forms.
+    Sessions start when a tab opens.
     """
     from app.features.form_builder.integration.adopt_flow import (
         START_ENTRIES,
@@ -80,6 +81,22 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
             "_form_builder_start_entries": START_ENTRIES,
         },
     )
+    _reset_preview_on_quit()
+
+
+def _reset_preview_on_quit() -> None:
+    """The shell cannot import this feature. The quit hook lives here."""
+    if getattr(_reset_preview_on_quit, "done", False):
+        return
+    from app.qt.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        return
+    from app.features.form_builder.qtside.preview.pool import PreviewPool
+
+    app.aboutToQuit.connect(PreviewPool.reset_shared)
+    _reset_preview_on_quit.done = True  # type: ignore[attr-defined]
 
 
 __all__ = ["KILL_SWITCH_ENV", "PROVIDER_ID", "form_builder_enabled", "install_form_builder"]

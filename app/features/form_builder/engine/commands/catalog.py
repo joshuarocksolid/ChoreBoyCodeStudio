@@ -585,7 +585,7 @@ class ReplaceDocument(_CommandBase):
         return _REPLACE_LABELS[self.reason]
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
-        planning.replace_document_text(doc, ctx, self.text)
+        planning.replace_document_text(doc, ctx, self.text, reason=self.reason)
 
 
 @dataclass(frozen=True)

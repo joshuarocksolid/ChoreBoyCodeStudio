@@ -34,6 +34,7 @@ from app.features.form_builder.engine.events import (
     ChangeSet,
     DocumentReplaced,
     NodeInserted,
+    NodeMoved,
     NodeRemoved,
     assemble,
     change_from_op,
@@ -263,6 +264,10 @@ class CommandLog:
         key = self._listener_seq
         self._listeners.append((priority, key, listener))
         return Subscription(self, key)
+
+    def close(self) -> None:
+        """Drop every listener. Idempotent."""
+        self._listeners = []
 
     def _execute_open(self, command: Command) -> Any:
         txn = self._txn
@@ -539,7 +544,10 @@ def _selection_after(
     ctx: ApplyContext,
 ) -> SelectionSnapshot:
     if ctx.chose_selection and ctx.selection_ids is not None:
-        return _present(doc, SelectionSnapshot(ctx.selection_ids, ctx.selection_current))
+        chosen = _present(doc, SelectionSnapshot(ctx.selection_ids, ctx.selection_current))
+        if chosen.current is None and chosen.ids:
+            return SelectionSnapshot(chosen.ids, chosen.ids[-1])
+        return chosen
     removed = set()
     added = set()
     for change in ctx.changes:
@@ -552,7 +560,64 @@ def _selection_after(
     gone = removed - added
     ids = tuple(node_id for node_id in before.ids if node_id not in gone and doc.contains(node_id))
     current = before.current if before.current in ids else None
+    if current is None and before.current is not None:
+        # The selection model moves a deleted current onto the nearest
+        # surviving ancestor. The snapshot has to name that id, or redo
+        # restores current=None and the model then picks a different one.
+        structure = _structure_dirty(ctx.changes, gone)
+        ancestor = _surviving_ancestor(doc, before.current, ctx.changes, gone, structure)
+        if ancestor is not None:
+            if ancestor not in ids:
+                ids = ids + (ancestor,)
+            current = ancestor
+    if current is None and ids:
+        current = ids[-1]
     return SelectionSnapshot(ids, current)
+
+
+def _structure_dirty(changes: Tuple[Change, ...], gone: set) -> set:
+    structure = set()
+    for change in changes:
+        if isinstance(change, (NodeInserted, NodeRemoved)):
+            structure.add(change.parent)
+        elif isinstance(change, NodeMoved):
+            structure.add(change.old_parent)
+            structure.add(change.new_parent)
+    return structure - gone
+
+
+def _surviving_ancestor(
+    doc: UiDocument,
+    removed_id: NodeId,
+    changes: Tuple[Change, ...],
+    gone: set,
+    structure: set,
+) -> Optional[NodeId]:
+    """Same walk as SelectionModel: nearest remaining structure-dirty parent."""
+    parent = _removed_parent(changes, removed_id)
+    seen = set()
+    while parent is not None and parent not in seen:
+        seen.add(parent)
+        if parent not in gone and doc.contains(parent):
+            if parent in structure:
+                return parent
+            node = doc.get(parent)
+            parent = None if node is None else node.parent_id
+            continue
+        parent = _removed_parent(changes, parent)
+    return None
+
+
+def _removed_parent(changes: Tuple[Change, ...], node_id: NodeId) -> Optional[NodeId]:
+    fallback: Optional[NodeId] = None
+    for change in changes:
+        if not isinstance(change, NodeRemoved) or node_id not in change.subtree:
+            continue
+        if change.node == node_id:
+            return change.parent
+        if fallback is None:
+            fallback = change.parent
+    return fallback
 
 
 def _present(doc: UiDocument, snapshot: SelectionSnapshot) -> SelectionSnapshot:
