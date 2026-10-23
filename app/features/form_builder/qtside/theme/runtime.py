@@ -73,6 +73,9 @@ def isolate_scene(scene: QGraphicsScene) -> None:
     owned = QStyleFactory.create(RUNTIME_STYLE_KEY)
     if owned is None:
         raise RuntimeError("Qt did not provide the Fusion style")
+    # Shiboken deletes an unparented style when this name dies. setStyle keeps
+    # only the C++ pointer, so the next style() call reads freed memory.
+    owned.setParent(scene)
     scene.setStyle(owned)
     scene.setPalette(QPalette(runtime_palette()))
     scene.setFont(startup_font())
@@ -81,12 +84,40 @@ def isolate_scene(scene: QGraphicsScene) -> None:
 def isolate_widget(widget: QWidget) -> None:
     """Pin one realized root to the runtime look.
 
-    Child widgets inherit this palette, font and style. A later shell theme
-    change updates the application, not widgets that already have their own.
+    Child widgets inherit this palette and font. A later shell theme change
+    updates the application, not widgets that already have their own style.
     """
-    widget.setStyle(runtime_style())
+    style = runtime_style()
+    widget.setStyle(style)
     widget.setPalette(QPalette(runtime_palette()))
     widget.setFont(startup_font())
+    # A style that is only inherited is replaced by QStyleSheetStyle when the
+    # application sheet is set. A style object set on the widget stays Fusion.
+    # Widgets already drawing an authored style sheet must keep that style.
+    for child in widget.findChildren(QWidget):
+        current = child.style()
+        if current is not None and _style_class_name(current) == "QStyleSheetStyle":
+            continue
+        child.setStyle(style)
+
+
+def restore_authored_fonts(root: QWidget) -> None:
+    """Put back fonts an application style sheet polish replaced.
+
+    Qt saves the previous font on ``_q_styleSheetWidgetFont`` and then
+    reports the application font. Passing that saved object to ``setFont``
+    does not stick. A font built from its fields does.
+    """
+    widgets = [root]
+    widgets.extend(root.findChildren(QWidget))
+    for widget in widgets:
+        saved = widget.property("_q_styleSheetWidgetFont")
+        if not isinstance(saved, QFont):
+            continue
+        current = widget.font()
+        if _same_font(current, saved):
+            continue
+        widget.setFont(_copy_font(saved))
 
 
 def host_form(root: QWidget) -> QGraphicsView:
@@ -131,6 +162,40 @@ def selectors_are_tooltip_only(style_sheet: str) -> bool:
 def _is_tooltip(selector: str) -> bool:
     head = selector.split()[0]
     return head == "QToolTip" or head.startswith("QToolTip:") or head.startswith("QToolTip[")
+
+
+def _style_class_name(style: QStyle) -> str:
+    name = style.metaObject().className()
+    if isinstance(name, bytes):
+        return name.decode("ascii", "replace")
+    return str(name)
+
+
+def _same_font(left: QFont, right: QFont) -> bool:
+    return (
+        left.family() == right.family()
+        and left.pointSize() == right.pointSize()
+        and left.pixelSize() == right.pixelSize()
+        and left.bold() == right.bold()
+        and left.italic() == right.italic()
+        and left.underline() == right.underline()
+        and left.strikeOut() == right.strikeOut()
+    )
+
+
+def _copy_font(font: QFont) -> QFont:
+    copied = QFont()
+    copied.setFamily(font.family())
+    if font.pointSize() > 0:
+        copied.setPointSize(font.pointSize())
+    elif font.pixelSize() > 0:
+        copied.setPixelSize(font.pixelSize())
+    copied.setBold(font.bold())
+    copied.setItalic(font.italic())
+    copied.setUnderline(font.underline())
+    copied.setStrikeOut(font.strikeOut())
+    copied.setKerning(font.kerning())
+    return copied
 
 
 def _ensure_app() -> QApplication:

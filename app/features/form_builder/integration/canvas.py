@@ -43,7 +43,11 @@ from app.features.form_builder.qtside.theme.chrome import (
     elevation,
     font_css,
 )
-from app.features.form_builder.qtside.theme.runtime import isolate_scene, startup_font
+from app.features.form_builder.qtside.theme.runtime import (
+    isolate_scene,
+    restore_authored_fonts,
+    startup_font,
+)
 from app.shell.theme_tokens import ShellThemeTokens
 
 _DETACH_BEFORE_REALIZE = 9
@@ -178,6 +182,11 @@ class FormCanvas(QGraphicsView):
         )
         self.viewport().update()
         self._position_chrome()
+        # The shell sets the tooltip sheet, then this theme. That polish
+        # drops authored fonts on stylesheet widgets. Put them back.
+        page = self.page_widget()
+        if page is not None:
+            restore_authored_fonts(page)
 
     def refresh_chip(self) -> None:
         self._refresh_chip()

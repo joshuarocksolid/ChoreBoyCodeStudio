@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 
 import logging
 from pathlib import Path
@@ -13,6 +14,14 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
 from app.features.form_builder.engine.codegen.api import generate_form_module  # noqa: E402
+from app.features.form_builder.engine.ids import NodeId  # noqa: E402
+from app.features.form_builder.engine.ui4.nodes import WidgetNode  # noqa: E402
+from app.features.form_builder.engine.ui4.values import CStringValue, StringValue  # noqa: E402
+from app.features.form_builder.qtside.realize import NODE_ID_PROPERTY  # noqa: E402
+from app.features.form_builder.qtside.theme.runtime import (  # noqa: E402
+    runtime_palette,
+    selectors_are_tooltip_only,
+)
 from app.features.form_builder.engine.project.create import create_form  # noqa: E402
 from app.features.form_builder.engine.project.forms import classify_form  # noqa: E402
 from app.features.form_builder.engine.project.fs import OsFileSystem  # noqa: E402
@@ -37,6 +46,8 @@ from app.qt.QtWidgets import (  # noqa: E402
 )
 from app.shell.document_safety import dirty_buffer_snapshots  # noqa: E402
 from app.shell.local_history_workflow import LocalHistoryWorkflow  # noqa: E402
+from app.shell.shell_theme_surface_appliers import set_app_tooltip_style_sheet  # noqa: E402
+from app.shell.style_sheet import build_app_tooltip_style_sheet  # noqa: E402
 from app.shell.tab_content_providers import TabSurfaceRequest  # noqa: E402
 from app.shell.theme_tokens import tokens_from_palette  # noqa: E402
 from tests.support.local_history_editor_host_stub import LocalHistoryEditorHostStub  # noqa: E402
@@ -124,10 +135,79 @@ def _open(parent: QWidget, text: str, path: Path, project_root: str | None = Non
     return FormTabProvider().create_surface(_request(parent, text, str(path), project_root))
 
 
+def _window_role() -> object:
+    return getattr(getattr(QPalette, "ColorRole", QPalette), "Window")
+
+
 def _window_color(widget: QWidget) -> tuple[int, int, int, int]:
-    role = getattr(getattr(QPalette, "ColorRole", QPalette), "Window")
-    color = widget.palette().color(role)
-    return color.getRgb()
+    return widget.palette().color(_window_role()).getRgb()
+
+
+def _schema_dir() -> Path:
+    return Path(__file__).resolve().parents[4] / "tests/form_builder/corpus/synthetic/schema"
+
+
+def _stage_kitchen(tmp_path: Path) -> Path:
+    dest = tmp_path / "schema"
+    shutil.copytree(_schema_dir(), dest)
+    return dest / "kitchen_sink.ui"
+
+
+def _authored_style_sheet(node: WidgetNode) -> str:
+    entry = node.prop("styleSheet")
+    if entry is None:
+        return ""
+    value = entry.value
+    if isinstance(value, (StringValue, CStringValue)):
+        return value.text
+    return ""
+
+
+def _realized_widgets(root: QWidget) -> dict[NodeId, QWidget]:
+    found: dict[NodeId, QWidget] = {}
+    widgets = [root]
+    widgets.extend(root.findChildren(QWidget))
+    for widget in widgets:
+        raw = widget.property(NODE_ID_PROPERTY)
+        if raw is None or raw == "":
+            continue
+        try:
+            found[NodeId(int(raw))] = widget
+        except (TypeError, ValueError):
+            continue
+    return found
+
+
+def _assert_page_isolated(surface: FormSurface, page: QWidget) -> None:
+    # Qt stores the factory key in lower case on the style object.
+    assert page.parentWidget() is None
+    proxy = page.graphicsProxyWidget()
+    assert proxy is not None
+    scene = proxy.scene()
+    assert scene is not None
+    style = scene.style()
+    assert style is not None
+    assert style.objectName().lower() == "fusion"
+    assert scene.palette() == runtime_palette()
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    assert selectors_are_tooltip_only(app.styleSheet())
+    document = surface.content_source().log.document
+    realized = _realized_widgets(page)
+    assert document.root.id in realized
+    by_id = {node.id: node for node in document.iter_widgets()}
+    for node_id, widget in realized.items():
+        node = by_id[node_id]
+        assert widget.styleSheet() == _authored_style_sheet(node), node.object_name
+
+
+def _apply_shell_theme(surface: FormSurface, mode: str) -> None:
+    # The shell installs the tooltip sheet, then the form tab paints its chrome.
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    tokens = tokens_from_palette(app.palette(), force_mode=mode)
+    set_app_tooltip_style_sheet(build_app_tooltip_style_sheet(tokens))
+    surface.apply_theme(tokens)
 
 
 def _toolbar_problems(toolbar: QWidget) -> list[str]:
@@ -425,21 +505,33 @@ def test_breakpoint_layouts_do_not_clip_the_toolbar(qapp, tmp_path: Path) -> Non
     surface.release()
 
 
-def test_theme_changes_chrome_and_not_the_page(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
-    canonical = write_ui(open_document_log(_FORM).document).text
+def test_theme_switch_keeps_the_page_in_the_runtime_palette(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    ui_path = _stage_kitchen(tmp_path)
     parent = QWidget()
-    surface = _open(parent, canonical, tmp_path / "invoice.ui")
+    surface = _open(parent, ui_path.read_text(encoding="utf-8"), ui_path)
     page = surface.page_widget()
     assert page is not None
-    light = tokens_from_palette(qapp.palette(), force_mode="light")
-    dark = tokens_from_palette(qapp.palette(), force_mode="dark")
-    surface.apply_theme(light)
-    before = _window_color(page)
-    light_sheet = surface.findChild(QWidget, "formBuilder.toolbar").styleSheet()  # type: ignore[union-attr]
-    surface.apply_theme(dark)
-    assert _window_color(page) == before
-    assert surface.findChild(QWidget, "formBuilder.toolbar").styleSheet() != light_sheet  # type: ignore[union-attr]
-    surface.release()
+    saved_sheet = qapp.styleSheet()
+    runtime_window = runtime_palette().color(_window_role()).getRgb()
+    toolbar_sheets: dict[str, str] = {}
+    try:
+        baseline = None
+        for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark", "light"):
+            _apply_shell_theme(surface, mode)
+            qapp.processEvents()
+            _assert_page_isolated(surface, page)
+            color = _window_color(page)
+            if baseline is None:
+                baseline = color
+            assert color == baseline
+            assert color == runtime_window
+            toolbar = surface.findChild(QWidget, "formBuilder.toolbar")
+            assert toolbar is not None
+            toolbar_sheets.setdefault(mode, toolbar.styleSheet())
+        assert toolbar_sheets["light"] != toolbar_sheets["dark"]
+    finally:
+        qapp.setStyleSheet(saved_sheet)
+        surface.release()
 
 
 def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
