@@ -9,9 +9,11 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
-from app.qt.QtWidgets import QMenuBar, QTreeWidget, QTreeWidgetItem, QWidget  # noqa: E402
+from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtWidgets import QMenuBar, QShortcut, QTreeWidget, QTreeWidgetItem, QWidget  # noqa: E402
 from app.shell.menus import build_menu_stubs, clear_menu_contributors  # noqa: E402
 from app.shell.shortcut_preferences import (  # noqa: E402
+    SHORTCUT_COMMANDS,
     ShortcutCommand,
     clear_extra_shortcut_commands,
     default_shortcut_map,
@@ -67,6 +69,66 @@ def test_form_menu_sits_after_view_and_stays_hidden(qapp) -> None:  # type: igno
     finally:
         clear_menu_contributors()
         window.deleteLater()
+
+
+def test_widget_keys_are_menu_hints_and_not_window_shortcuts(qapp) -> None:  # type: ignore[no-untyped-def]
+    """A window-scope form action must not share a key with a shell action."""
+    del qapp
+    shell_keys = {command.default_shortcut for command in SHORTCUT_COMMANDS if command.default_shortcut}
+    window = QWidget()
+    register_form_menu(window)
+    bar = QMenuBar(window)
+    try:
+        registry = build_menu_stubs(bar)
+        shortcut_context = getattr(Qt, "ShortcutContext", Qt)
+        window_scope = {
+            getattr(shortcut_context, "WindowShortcut"),
+            getattr(shortcut_context, "ApplicationShortcut"),
+        }
+        shared = []
+        for action_id, action in registry.actions.items():
+            if not str(action_id).startswith("form.action."):
+                continue
+            key = action.shortcut().toString()
+            if key and action.shortcutContext() in window_scope and key in shell_keys:
+                shared.append("%s %s" % (action_id, key))
+        assert shared == []
+        horizontal = registry.actions["form.action.layoutHorizontal"]
+        assert horizontal.shortcut().isEmpty()
+        assert "Ctrl+1" in horizontal.text()
+        insert = registry.actions["form.action.insert"]
+        assert insert.shortcut().isEmpty()
+        assert "/" in insert.text()
+        goto = registry.actions["form.action.goToWidget"]
+        assert goto.shortcut().isEmpty()
+        assert "Ctrl+R" in goto.text()
+        view_xml = registry.actions["form.action.viewXml"]
+        assert view_xml.shortcut().isEmpty()
+        assert "Ctrl+Shift+V" in view_xml.text()
+    finally:
+        clear_menu_contributors()
+        window.deleteLater()
+
+
+def test_layout_horizontal_is_a_canvas_shortcut(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    """Ctrl+1 is bound on the canvas, not as a window action."""
+    del qapp
+    parent = QWidget()
+    surface = _open(parent, _FORM, tmp_path / "invoice.ui")
+    try:
+        canvas = surface.findChild(QWidget, "formBuilder.canvas")
+        assert canvas is not None
+        matches = [
+            shortcut
+            for shortcut in canvas.findChildren(QShortcut)
+            if shortcut.key().toString() == "Ctrl+1"
+        ]
+        assert matches
+        context = getattr(Qt, "WidgetWithChildrenShortcut")
+        assert all(shortcut.context() == context for shortcut in matches)
+    finally:
+        surface.release()
+        parent.deleteLater()
 
 
 def test_form_menu_enables_only_commands_that_exist(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]

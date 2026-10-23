@@ -27,6 +27,15 @@ def test_resource_module_banner_names_the_qrc() -> None:
     assert banner.logic_path == ""
 
 
+def test_ui_helpers_without_a_form_or_header_is_ordinary_source(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    path = tmp_path / "ui_helpers.py"
+    path.write_text("def label(text):\n    return text\n", encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
+    assert generated_banner(str(path), text) is None
+    assert not excluded_from_lint(str(path), text)
+    assert not is_generated_module(str(path), text)
+
+
 def test_generated_and_metadata_paths_are_left_out_of_lint() -> None:
     assert excluded_from_lint("/work/ui_invoice.py")
     assert excluded_from_lint("/work/icons_rc.py")

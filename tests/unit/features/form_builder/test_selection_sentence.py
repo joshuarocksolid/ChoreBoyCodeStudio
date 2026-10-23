@@ -50,3 +50,8 @@ def test_several_widgets_read_as_a_count() -> None:
 def test_nothing_selected_names_the_page() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
     assert selection_sentence(document, None, 0) == "Invoice · Form layout"
+
+
+def test_the_root_widget_names_the_page() -> None:
+    document = read_ui(_FORM, allocator=IdAllocator()).document
+    assert selection_sentence(document, document.root.id, 1) == "Invoice · Form layout"

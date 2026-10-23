@@ -33,12 +33,16 @@ pytestmark = pytest.mark.unit
 class _FakeEditorWidget:
     def __init__(self, text: str) -> None:
         self.text = text
+        self.read_only = False
 
     def blockSignals(self, blocked: bool) -> bool:  # noqa: N802
         return False
 
     def setPlainText(self, text: str) -> None:
         self.text = text
+
+    def isReadOnly(self) -> bool:  # noqa: N803
+        return self.read_only
 
 
 @dataclass
@@ -351,6 +355,40 @@ def test_check_and_handle_reloads_clean_tab_when_confirmed(tmp_path: Path) -> No
     ]
     assert local_history.discarded == [[tab.file_path]]
     assert external_host.status_updates == [tab.file_path]
+
+
+def test_clean_read_only_generated_tab_reloads_without_asking(tmp_path: Path) -> None:
+    """A clean generated buffer still showing the banner reloads on disk change."""
+    (tmp_path / "invoice.ui").write_text("<ui/>\n", encoding="utf-8")
+    file_path = tmp_path / "ui_invoice.py"
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost(confirm_reload=False)
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content="label = 'old'\n",
+        mtime=1.0,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    external_host.widgets[tab.file_path].read_only = True
+    file_path.write_text("label = 'new'\n", encoding="utf-8")
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+
+    outcome = workflow.check_and_handle(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.RELOADED
+    assert external_host.confirm_calls == 0
+    assert tab.current_content == "label = 'new'\n"
 
 
 def test_check_and_handle_declines_clean_tab_and_keeps_the_conflict(tmp_path: Path) -> None:
