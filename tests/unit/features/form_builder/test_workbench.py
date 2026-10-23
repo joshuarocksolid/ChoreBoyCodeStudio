@@ -29,6 +29,7 @@ from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
     QFrame,
     QLabel,
+    QLineEdit,
     QPushButton,
     QShortcut,
     QToolButton,
@@ -195,10 +196,11 @@ def test_outline_selection_shows_on_the_inspector(qapp, tmp_path: Path) -> None:
             break
     assert chosen is not None
     tree.setCurrentItem(chosen)
-    header = surface.findChild(QLabel, "formBuilder.inspectorHeader")
-    assert header is not None
-    assert "okButton" in header.text()
-    assert "QPushButton" in header.text()
+    name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
+    kind = surface.findChild(QLabel, "formBuilder.inspectorClass")
+    assert name is not None and kind is not None
+    assert name.text() == "okButton"
+    assert "QPushButton" in kind.text()
     surface.release()
 
 
@@ -835,9 +837,9 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
     assert right.accessibleName() == "Properties"
     right.click()
     qapp.processEvents()
-    page = surface.findChild(QLabel, "formBuilder.inspectorBody")
-    assert page is not None and page.isVisibleTo(surface)
-    assert qapp.focusWidget() is page
+    search = surface.findChild(QLineEdit, "formBuilder.inspectorSearch")
+    assert search is not None and search.isVisibleTo(surface)
+    assert qapp.focusWidget() is search
     tree = surface.findChild(QTreeWidget, "formBuilder.structure")
     assert tree is not None
 
@@ -857,10 +859,11 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
             break
     assert chosen is not None
     tree.setCurrentItem(chosen)
-    header = surface.findChild(QLabel, "formBuilder.inspectorHeader")
-    assert header is not None
-    assert "\n" not in header.text()
-    assert "okButton" in header.text()
-    assert "QPushButton" in header.text()
+    kind = surface.findChild(QLabel, "formBuilder.inspectorClass")
+    name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
+    assert kind is not None and name is not None
+    assert "\n" not in kind.text()
+    assert name.text() == "okButton"
+    assert "QPushButton" in kind.text()
     surface.release()
     host.close()

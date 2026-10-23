@@ -92,6 +92,7 @@ OVERLAY_BUDGET_MS = 4.0
 OUTLINE_PATCH_BUDGET_MS = 2.0
 EDIT_BUDGET_MS = 16.0
 SELECTION_BUDGET_MS = 8.0
+INSPECTOR_REPOPULATE_BUDGET_MS = 16.0
 DIAGNOSTICS_BUDGET_MS = 2.0
 CODEGEN_BUDGET_MS = 30.0
 SAVE_BUDGET_MS = 50.0
@@ -124,6 +125,7 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "outline patch",
     "edit total",
     "selection change",
+    "inspector repopulate",
     "is_dirty",
     "revision",
     "cheap diagnostics",
@@ -422,8 +424,11 @@ def _collect(
             "selection change",
             300,
             _ms_budget(SELECTION_BUDGET_MS),
-            "no canvas selection yet. Inspector repopulate budget is 16 ms",
+            "no canvas selection yet",
         )
+    )
+    rows.append(
+        _inspector_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
 
     probe = documents[sizes[0]]
@@ -1371,6 +1376,89 @@ def _repaint(realizer: Any) -> None:
     app = QApplication.instance()
     if app is not None:
         app.processEvents()
+
+
+def _inspector_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    """One body repopulate after a selection flip. The clock is InspectorPane.flush."""
+    if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
+        return _missing(
+            "inspector repopulate",
+            300,
+            _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+            "no qtside inspector yet",
+        )
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return Row(
+            "inspector repopulate",
+            300,
+            None,
+            None,
+            None,
+            _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+            "skip",
+            str(exc),
+        )
+    pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+    pane.resize(288, 600)
+    pane.show()
+    line = _first_widget(session.document, "QLineEdit")
+    button = _first_widget(session.document, "QPushButton")
+    if line is None or button is None:
+        pane.dispose()
+        _dispose_held([realizer, session])
+        return Row(
+            "inspector repopulate",
+            300,
+            None,
+            None,
+            None,
+            _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+            "skip",
+            "reference form has no line edit and push button",
+        )
+    current = {"id": line}
+
+    def flip() -> None:
+        nxt = button if current["id"] == line else line
+        current["id"] = nxt
+        session.selection.set((nxt,), source=selection.SelectionSource.PROGRAM)
+
+    try:
+        row, _distribution = _timed(
+            "inspector repopulate",
+            300,
+            pane.flush,
+            INSPECTOR_REPOPULATE_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=flip,
+        )
+        return row
+    finally:
+        pane.dispose()
+        _dispose_held([realizer, session])
+
+
+def _first_widget(document: UiDocument, class_name: str) -> Optional[NodeId]:
+    for widget in document.iter_widgets():
+        if widget.class_name == class_name:
+            return widget.id
+    return None
 
 
 def _open_realized(xml: str, session_mod: Any, forms: Any, realize: Any) -> Tuple[Any, Any]:

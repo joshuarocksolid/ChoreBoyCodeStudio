@@ -5,6 +5,7 @@ Widths come from a ``LayoutPlan``. This module does not decide breakpoints.
 
 from __future__ import annotations
 
+import os
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QSize, Qt
@@ -29,7 +30,6 @@ from app.qt.qt_compat import event_pos
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.layout import (
     INSPECTOR_MAX,
@@ -40,6 +40,7 @@ from app.features.form_builder.integration.layout import (
     RAIL_WIDTH,
 )
 from app.features.form_builder.integration.structure import structure_entries
+from app.features.form_builder.qtside.inspector import InspectorPane, TabId
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_style import flat_tool_button_qss, mode_group_qss
@@ -454,77 +455,6 @@ class InsertPane(QWidget):
         self._on_collapsed(self._collapsed)
 
 
-class InspectorPane(QWidget):
-    def __init__(self, parent: QWidget) -> None:
-        super().__init__(parent)
-        self.setObjectName("formBuilder.inspector")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        self._short = False
-        self._title = ""
-        self._kind = ""
-        self._has_node = False
-        self.header = QLabel("Inspector", self)
-        self.header.setObjectName("formBuilder.inspectorHeader")
-        self.header.setAccessibleName("Inspector")
-        self.header.setFocusPolicy(_strong())
-        layout.addWidget(self.header)
-        self.tabs = QTabWidget(self)
-        self.tabs.setObjectName("formBuilder.inspectorTabs")
-        self.tabs.setFocusPolicy(_strong())
-        self.properties = QLabel("Select a widget to see its properties.", self.tabs)
-        self.properties.setObjectName("formBuilder.inspectorBody")
-        self.properties.setWordWrap(True)
-        self.properties.setAccessibleName("Properties")
-        self.properties.setFocusPolicy(_strong())
-        self.behavior = QLabel("Select a widget to see what you can configure.", self.tabs)
-        self.behavior.setObjectName("formBuilder.behaviorBody")
-        self.behavior.setWordWrap(True)
-        self.behavior.setAccessibleName("Behavior")
-        self.behavior.setFocusPolicy(_strong())
-        self.tabs.addTab(self.properties, "Properties")
-        self.tabs.addTab(self.behavior, "Behavior")
-        layout.addWidget(self.tabs, 1)
-
-    def set_short(self, short: bool) -> None:
-        self._short = short
-        self._paint_header()
-
-    def show_selection(self, document: UiDocument, selected: Optional[NodeId]) -> None:
-        node = None if selected is None else document.get(selected)
-        self._has_node = node is not None
-        if node is None:
-            self._title = ""
-            self._kind = ""
-            self.properties.setText("Select a widget to see its properties.")
-            self.behavior.setText("Select a widget to see what you can configure.")
-        else:
-            self._title, self._kind = _node_title(node)
-            self.properties.setText("Properties are not available yet.")
-            self.behavior.setText("Nothing to configure on this widget yet.")
-        self._paint_header()
-
-    def _paint_header(self) -> None:
-        if not self._has_node:
-            self.header.setText("Inspector")
-            return
-        if self._short:
-            text = "%s · %s" % (self._title, self._kind) if self._title else self._kind
-        else:
-            text = "%s\n%s" % (self._title, self._kind) if self._title else self._kind
-        self.header.setText(text)
-
-
-def _node_title(node: object) -> Tuple[str, str]:
-    if isinstance(node, WidgetNode):
-        return node.object_name, node.class_name or "Widget"
-    if isinstance(node, LayoutNode):
-        return node.object_name, node.class_name or "Layout"
-    if isinstance(node, SpacerNode):
-        return node.name, "Spacer"
-    return "", "Item"
-
-
 class _RailButton(QToolButton):
     """Keeps a 36 px rail from growing to the width of the button's words."""
 
@@ -632,17 +562,23 @@ class FormWorkbench(QWidget):
         self.canvas.set_drawer_closer(self.close_drawers)
 
         self._right_stack = QStackedWidget(self._splitter)
-        self.inspector = InspectorPane(self._right_stack)
+        self.inspector = InspectorPane(
+            session,
+            realizer,
+            data_tab=os.environ.get("CBCS_FB_DEV") == "1",
+            on_leave=self.canvas.setFocus,
+            parent=self._right_stack,
+        )
         self._right_rail = _Rail("formBuilder.rightRail", self._right_stack)
         self._right_rail.add_button(
             "formBuilder.rightRail.properties",
             "Properties",
-            lambda: self._focus_inspector_tab(0),
+            lambda: self._focus_inspector_tab(TabId.PROPERTIES),
         )
         self._right_rail.add_button(
             "formBuilder.rightRail.behavior",
             "Behavior",
-            lambda: self._focus_inspector_tab(1),
+            lambda: self._focus_inspector_tab(TabId.BEHAVIOR),
         )
         self._right_stack.addWidget(self.inspector)
         self._right_stack.addWidget(self._right_rail)
@@ -673,7 +609,6 @@ class FormWorkbench(QWidget):
     def refresh(self, selected: Optional[NodeId]) -> None:
         document = self._session.document
         self.outline.rebuild(document, selected)
-        self.inspector.show_selection(document, selected)
         self.canvas.refresh_chip()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
@@ -705,9 +640,7 @@ class FormWorkbench(QWidget):
             "QTreeWidget#formBuilder\\.structure { background: %s; color: %s; border: 1px solid %s; }"
             "QTreeWidget#formBuilder\\.structure::item:selected { background: %s; color: %s; }"
             "QTreeWidget#formBuilder\\.structure:focus { border: %dpx solid %s; }"
-            "QLabel#formBuilder\\.inspectorHeader,"
-            " QLabel#formBuilder\\.inspectorBody, QLabel#formBuilder\\.behaviorBody,"
-            " QLabel#formBuilder\\.noticeText { color: %s; background: transparent; }"
+            "QLabel#formBuilder\\.noticeText { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.insertBody { color: %s; background: transparent; border: none; }"
             "QWidget#formBuilder\\.sectionHeader { background: transparent; color: %s; border: none; }"
             "QWidget#formBuilder\\.sectionHeader:focus { border: %dpx solid %s; }"
@@ -770,6 +703,10 @@ class FormWorkbench(QWidget):
             )
         )
         self.canvas.apply_theme(tokens)
+        # new_form imports the tab provider, which imports this module.
+        from app.features.form_builder.integration.new_form import chrome_for
+
+        self.inspector.apply_chrome(chrome_for(tokens))
 
     def open_left(self) -> None:
         self._open_drawer("left")
@@ -806,13 +743,10 @@ class FormWorkbench(QWidget):
             self._left_tabs.setCurrentWidget(self.insert)
         self.insert.body.setFocus()
 
-    def _focus_inspector_tab(self, index: int) -> None:
+    def _focus_inspector_tab(self, tab: TabId) -> None:
         if self._plan is not None and not self._plan.inspector_docked:
             self.open_right()
-        self.inspector.tabs.setCurrentIndex(index)
-        page = self.inspector.tabs.widget(index)
-        if page is not None:
-            page.setFocus()
+        self.inspector.focus_tab(tab)
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]

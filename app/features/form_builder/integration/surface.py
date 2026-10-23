@@ -312,6 +312,7 @@ class FormSurface(QWidget):
         self._source_unsub()
         self._changes.close()
         self._workbench.canvas_view().dispose()
+        self._workbench.inspector.dispose()
         self._realizer.dispose()
         self._session.dispose()
         self._source.close()
@@ -538,7 +539,6 @@ class FormSurface(QWidget):
 
     def _on_selection(self, change: object) -> None:
         current = getattr(getattr(change, "after", None), "current", None)
-        self._workbench.inspector.show_selection(self._session.document, current)
         self._workbench.outline.rebuild(self._session.document, current)
 
     def _on_outline_pick(self, node_id: NodeId) -> None:
