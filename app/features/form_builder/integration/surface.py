@@ -7,7 +7,7 @@ commits View XML through ``ReplaceDocument``.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Mapping, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence
 
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
@@ -28,6 +28,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import CommandLog, Subscription
 from app.features.form_builder.integration.content_source import FormContentSource
+from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.structure import structure_rows
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
@@ -78,6 +79,8 @@ class FormSurface(QWidget):
         self._path = request.file_path
         self._editor: Optional[CodeEditorWidget] = None
         self._released = False
+        self._preview_request: Optional[str] = None
+        self._preview_listener: Optional[Callable[[str], None]] = None
         self.setObjectName("formBuilder.surface")
 
         layout = QVBoxLayout(self)
@@ -135,6 +138,25 @@ class FormSurface(QWidget):
 
     def widget(self) -> QWidget:
         return self
+
+    def form_path(self) -> str:
+        return self._path
+
+    def current_text(self) -> str:
+        return self._source.current_text()
+
+    def mark_saved(self, saved_text: str) -> None:
+        self._source.mark_saved(saved_text)
+
+    def run_active_file(self, workflow: object) -> bool:
+        return run_open_form(self, workflow)
+
+    def request_preview(self, path: str) -> None:
+        # The preview window is a later slice. F5 records the request here.
+        self._preview_request = path
+        listener = self._preview_listener
+        if callable(listener):
+            listener(path)
 
     def content_source(self) -> FormContentSource:
         return self._source
