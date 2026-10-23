@@ -62,6 +62,7 @@ class DiagnosticLocation:
     or a connection index ``("connections", 3)``.
     ``span``: (start, end) character offsets inside a formula string.
     ``line``: 1-based XML line from the reader or the last serialization; 0 = unknown.
+    ``end_line``: last line of a kept range. 0 means the note is that one line.
     """
 
     node_id: Optional[NodeId] = None
@@ -70,6 +71,7 @@ class DiagnosticLocation:
     rule_path: Tuple[RulePathPart, ...] = ()
     span: Optional[Tuple[int, int]] = None
     line: int = 0
+    end_line: int = 0
 
 
 @dataclass(frozen=True)
