@@ -19,6 +19,7 @@ from app.qt.QtWidgets import (
     QListWidget,
     QMenu,
     QMenuBar,
+    QSpacerItem,
     QSplitter,
     QStackedWidget,
     QTableWidget,
@@ -41,6 +42,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
     CustomWidgetNode,
     LayoutItemNode,
@@ -222,6 +224,10 @@ class Realizer(_Structure):
         return self._root
 
     @property
+    def document(self) -> UiDocument:
+        return self._session.document
+
+    @property
     def last_stats(self) -> PatchStats:
         return self._last_stats
 
@@ -246,6 +252,12 @@ class Realizer(_Structure):
         if obj is None or not wrapper_is_valid(obj):
             return None
         return obj
+
+    def spacer_for(self, node_id: NodeId) -> Optional[QSpacerItem]:
+        spacer = self._spacers.get(node_id)
+        if not isinstance(spacer, QSpacerItem) or not wrapper_is_valid(spacer):
+            return None
+        return spacer
 
     def node_for(self, obj: object) -> Optional[NodeId]:
         current = obj

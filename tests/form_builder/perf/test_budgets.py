@@ -69,6 +69,14 @@ def test_structural_realize_patches_meet_section_12(mac_report: SpeedReport) -> 
 
 @pytest.mark.perf
 @pytest.mark.timeout(60)
+@pytest.mark.parametrize(("point", "widgets"), [("hit index refresh", 300), ("hit index refresh", 1000), ("hit query", 300)])
+def test_hit_index_meets_section_12(mac_report: SpeedReport, point: str, widgets: int) -> None:
+    row = _row(mac_report, point, widgets)
+    assert row.verdict == "pass", _explain(row)
+
+
+@pytest.mark.perf
+@pytest.mark.timeout(60)
 def test_missing_section_12_points_are_listed(mac_report: SpeedReport) -> None:
     present = {row.point for row in mac_report.rows}
     missing = [name for name in SECTION_12_POINTS if name not in present]

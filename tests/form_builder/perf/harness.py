@@ -403,10 +403,7 @@ def _collect(
         _realize_patch_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
     rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
-    rows.append(_missing("hit index invalidate", None, "-", "no hit index yet"))
-    for count, budget in HIT_REFRESH_BUDGET_MS.items():
-        rows.append(_missing("hit index refresh", count, _ms_budget(budget), "no hit index yet"))
-    rows.append(_missing("hit query", 300, _ms_budget(HIT_QUERY_BUDGET_MS), "no hit index yet"))
+    rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), "no canvas overlay yet"))
     rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no outline yet"))
     rows.append(
@@ -788,6 +785,111 @@ def _time_realizer_build(
         )
     except (AttributeError, TypeError, RuntimeError) as exc:
         return "Realizer.build could not be called (%s)" % exc
+
+
+def _hit_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """LiveGeometrySource over the realized reference form, shown offscreen.
+
+    A hidden root would make every child invisible to the walk, which then
+    skips them and times almost nothing.
+    """
+    if not _module_exists("app.features.form_builder.qtside.canvas.geometry"):
+        reason = "no live geometry source in this tree"
+        missing = [_missing("hit index invalidate", None, "-", reason)]
+        missing.extend(
+            _missing("hit index refresh", count, _ms_budget(budget), reason)
+            for count, budget in HIT_REFRESH_BUDGET_MS.items()
+        )
+        missing.append(_missing("hit query", 300, _ms_budget(HIT_QUERY_BUDGET_MS), reason))
+        return tuple(missing)
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    geometry = importlib.import_module("app.features.form_builder.qtside.canvas.geometry")
+    hit_index = importlib.import_module("app.features.form_builder.engine.query.hit_index")
+    invalidate_rows: List[Row] = []
+    refresh_rows: List[Row] = []
+    query_rows: List[Row] = []
+    for count, budget in HIT_REFRESH_BUDGET_MS.items():
+        form = forms.get(count)
+        if form is None:
+            refresh_rows.append(_missing("hit index refresh", count, _ms_budget(budget), "no %d-widget form in this run" % count))
+            continue
+        session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+        root = realizer.root_widget
+        root.show()
+        try:
+            source = geometry.LiveGeometrySource(realizer)
+            index = hit_index.HitIndex(source)
+            index.ensure_fresh()
+            entries = source.entries()
+            visible = sum(1 for entry in entries if entry.visible)
+            if count == 300:
+                invalidate_rows.append(
+                    _timed(
+                        "hit index invalidate",
+                        None,
+                        lambda index=index: index.invalidate("changeset"),
+                        None,
+                        samples=samples,
+                        warmup=warmup,
+                        enforce_absolute=False,
+                        wall_on=False,
+                    )[0]
+                )
+            row = _timed(
+                "hit index refresh",
+                count,
+                index.ensure_fresh,
+                budget,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=lambda index=index: index.invalidate("changeset"),
+            )[0]
+            refresh_rows.append(
+                _with_detail(row, "settle plus walk after an invalidate. %d entries, %d visible" % (len(entries), visible))
+            )
+            if count == 300:
+                x, y, depth = _deepest_point(index, root.width(), root.height())
+                row = _timed(
+                    "hit query",
+                    300,
+                    lambda index=index, x=x, y=y: index.query(x, y),
+                    HIT_QUERY_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                )[0]
+                query_rows.append(_with_detail(row, "one query at the deepest point, path length %d" % depth))
+        finally:
+            root.hide()
+            _dispose_held([realizer, session])
+    return tuple(invalidate_rows + refresh_rows + query_rows)
+
+
+def _deepest_point(index: Any, width: int, height: int) -> Tuple[int, int, int]:
+    best = (0, 0, 0)
+    for x in range(0, width, 16):
+        for y in range(0, height, 16):
+            hit = index.query(x, y)
+            if hit is not None and len(hit.path) > best[2]:
+                best = (x, y, len(hit.path))
+    return best
+
+
+def _with_detail(row: Row, detail: str) -> Row:
+    if row.detail:
+        detail = "%s. %s" % (detail, row.detail)
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, detail, row.total_p95)
 
 
 def _codegen_and_save(
