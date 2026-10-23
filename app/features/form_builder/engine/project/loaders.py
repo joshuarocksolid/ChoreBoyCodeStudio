@@ -17,7 +17,18 @@ from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.fs import ProjectOpError, relative_posix
 from app.features.form_builder.engine.ui4.reader import read_ui
 
-_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git"})
+_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git", "vendor", "node_modules"})
+
+LOADER_KIND_LABEL = {
+    "qui_loader": "QUiLoader.load",
+    "load_ui": "loadUi",
+    "pyside_uic": "PySideUic.loadUi",
+}
+
+
+def loader_kind_label(kind: str) -> str:
+    """User-facing name for one loader kind. Unknown kinds stay as stored."""
+    return LOADER_KIND_LABEL.get(kind, kind)
 LoadKind = str
 
 
@@ -59,11 +70,14 @@ def suggestion_text(
     sites = _sites_for_form(root, ui_path)
     class_name = _ui_class_name(ui_path)
     module = scope.module_name or ""
-    after = "from %s import %s\nself.ui = %s()\nself.ui.setupUi(self)\n" % (
-        module,
-        class_name,
-        class_name,
-    )
+    after = (
+        "# At the top of the file\n"
+        "from %s import %s\n"
+        "\n"
+        "# In __init__\n"
+        "self.ui = %s()\n"
+        "self.ui.setupUi(self)\n"
+    ) % (module, class_name, class_name)
     if not sites:
         before = "No QUiLoader, loadUi, or PySideUic.loadUi call was found.\n"
         return before, after
@@ -71,7 +85,9 @@ def suggestion_text(
     for site in sites:
         rel = relative_posix(site.path, root)
         literal = site.ui_literal if site.ui_literal else "a path that is not a literal"
-        chunks.append("# %s:%s (%s, %s)\n%s" % (rel, site.line, site.kind, literal, site.before))
+        chunks.append(
+            "# %s:%s (%s, %s)\n%s" % (rel, site.line, loader_kind_label(site.kind), literal, site.before)
+        )
     return "\n\n".join(chunks) + "\n", after
 
 

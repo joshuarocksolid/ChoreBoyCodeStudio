@@ -77,15 +77,37 @@ def test_f5_on_a_project_form_saves_and_runs_the_entry(tmp_path: Path) -> None:
     assert (root / "forms" / "ui_invoice.py").is_file()
 
 
-def test_f5_outside_a_project_previews_the_form(tmp_path: Path) -> None:
+def test_f5_on_a_form_outside_forms_previews_without_calling_it_projectless(tmp_path: Path) -> None:
     root, _ui_path = _project(tmp_path, "main.py")
     loose = root / "loose.ui"
     loose.write_text((root / "forms" / "invoice.ui").read_text(encoding="utf-8"), encoding="utf-8")
     surface, bar, ran = _run(root, str(loose), "main.py")
     assert ran == []
     assert surface.preview == str(loose)
-    assert bar.messages == ["This form isn't part of a project, so F5 previews it."]
+    assert bar.messages == ["This form isn't in forms/ or adopted, so F5 previews it."]
     assert not (root / "ui_loose.py").exists()
+
+
+def test_f5_with_no_open_project_previews(tmp_path: Path) -> None:
+    ui = tmp_path / "loose.ui"
+    ui.write_text("unused\n", encoding="utf-8")
+    surface = _Surface(str(ui), "unused\n")
+    bar = _Messages()
+    host = SimpleNamespace(loaded_project=lambda: None, status_bar=lambda: bar, _window=None)
+    workflow = SimpleNamespace(_host=host, handle_run_project_action=lambda: False)
+    assert run_open_form(surface, workflow) is True
+    assert surface.preview == str(ui)
+    assert bar.messages == ["This form isn't part of a project, so F5 previews it."]
+
+
+def test_f5_for_a_file_outside_the_project_tree_previews(tmp_path: Path) -> None:
+    root, _ui_path = _project(tmp_path, "main.py")
+    outside = tmp_path / "outside.ui"
+    outside.write_text("unused\n", encoding="utf-8")
+    surface, bar, ran = _run(root, str(outside), "main.py")
+    assert ran == []
+    assert surface.preview == str(outside)
+    assert bar.messages == ["This form isn't part of a project, so F5 previews it."]
 
 
 def test_f5_without_an_entry_point_previews_after_save(tmp_path: Path) -> None:
@@ -110,10 +132,46 @@ def test_adopt_scan_finds_the_example_loaders() -> None:
 def test_prepare_adoption_suggests_setupui_and_leaves_user_python(tmp_path: Path) -> None:
     root, ui_path = _project(tmp_path, "main.py")
     caller = root / "main.py"
-    caller.write_text('def open_form():\n    return loadUi("invoice.ui")\n', encoding="utf-8")
+    caller.write_text(
+        "from PySide6.QtUiTools import QUiLoader\n"
+        "def open_form():\n"
+        "    return QUiLoader().load('invoice.ui')\n",
+        encoding="utf-8",
+    )
     original = caller.read_bytes()
     before, after = prepare_adoption(str(root), ui_path)
-    assert 'loadUi("invoice.ui")' in before
+    assert "QUiLoader().load('invoice.ui')" in before
+    assert "QUiLoader.load" in before
+    assert "qui_loader" not in before
+    assert "# At the top of the file" in after
+    assert "# In __init__" in after
     assert "self.ui.setupUi(self)" in after
     assert "Ui_Invoice" in after
     assert caller.read_bytes() == original
+    assert not (root / "cbcs" / "project.json").exists()
+
+
+def test_prepare_adoption_records_a_form_that_is_not_in_forms(tmp_path: Path) -> None:
+    root, ui_path = _project(tmp_path, "main.py")
+    views = root / "views"
+    views.mkdir()
+    target = views / "invoice.ui"
+    target.write_text(Path(ui_path).read_text(encoding="utf-8"), encoding="utf-8")
+    _before, after = prepare_adoption(str(root), str(target))
+    manifest = (root / "cbcs" / "project.json").read_text(encoding="utf-8")
+    assert "views/invoice.ui" in manifest
+    assert (views / "ui_invoice.py").is_file()
+    assert (views / "invoice_window.py").is_file()
+    assert "views.ui_invoice" in after
+
+
+def test_loader_scan_skips_vendor_and_node_modules(tmp_path: Path) -> None:
+    root = tmp_path / "proj"
+    for name in ("vendor", "node_modules"):
+        folder = root / name
+        folder.mkdir(parents=True)
+        (folder / "load.py").write_text("QUiLoader().load('widget.ui')\n", encoding="utf-8")
+    (root / "app").mkdir()
+    (root / "app" / "open.py").write_text("loadUi('invoice.ui')\n", encoding="utf-8")
+    sites = scan_ui_loaders(str(root))
+    assert [Path(site.path).name for site in sites] == ["open.py"]

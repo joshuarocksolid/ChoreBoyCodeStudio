@@ -22,11 +22,9 @@ def prepare_adoption(
     """
     files = fs if fs is not None else OsFileSystem()
     root = os.path.abspath(project_root)
-    try:
+    scope = scope_for(ui_path, root, files)
+    if not scope.generates:
         adopt_form(root, ui_path, files)
-    except ProjectOpError as exc:
-        if "already in forms" not in str(exc):
-            raise
     written = save_form_now(root, ui_path, files)
     if not written.text_written:
         detail = written.diagnostics[0].message if written.diagnostics else "The form could not be generated."

@@ -8,7 +8,7 @@ from typing import Any, Optional
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.adoption import scope_for
 from app.features.form_builder.engine.project.forms import classify_form
-from app.features.form_builder.engine.project.fs import OsFileSystem
+from app.features.form_builder.engine.project.fs import OsFileSystem, inside_project
 from app.features.form_builder.engine.project.run_route import decide_form_run
 from app.features.form_builder.engine.project.save import write_generated
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
@@ -28,6 +28,7 @@ def run_open_form(surface: Any, workflow: Any) -> bool:
         scope = classify_form(path, project_root=None)
     plan = decide_form_run(
         generates=scope.generates,
+        in_project=bool(root) and inside_project(path, root),
         entry=entry,
         ui_name=os.path.basename(path),
     )
