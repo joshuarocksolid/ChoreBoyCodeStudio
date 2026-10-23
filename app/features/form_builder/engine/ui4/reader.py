@@ -274,7 +274,7 @@ class ReadResult:
 class _XNode:
     """One element. Children stay a list when expat already coalesced text."""
 
-    __slots__ = ("tag", "attrs", "children", "line")
+    __slots__ = ("tag", "attrs", "children", "line", "end_line")
 
     def __init__(
         self,
@@ -282,11 +282,13 @@ class _XNode:
         attrs: Tuple[Tuple[str, str], ...],
         children: Sequence[object],
         line: int,
+        end_line: int = 0,
     ) -> None:
         self.tag = tag
         self.attrs = attrs
         self.children = children
         self.line = line
+        self.end_line = end_line
 
 
 @dataclass
@@ -295,6 +297,19 @@ class _Note:
     message: str
     line: int
     prop: Optional[str] = None
+    end_line: int = 0
+
+
+def _note(
+    code: str,
+    message: str,
+    node: _XNode,
+    prop: Optional[str] = None,
+    *,
+    start_only: bool = False,
+) -> _Note:
+    end_line = 0 if start_only or node.end_line <= node.line else node.end_line
+    return _Note(code, message, node.line, prop, end_line)
 
 
 class _Built:
@@ -666,14 +681,16 @@ def _parse_tree(arena: _ReadArena, text: str) -> _XNode:
         frame[3] = take_list()
         if len(frame_pool) < 128:
             frame_pool.append(frame)
+        end_line = parser.CurrentLineNumber
         if xnode_pool:
             node = xnode_pool.pop()
             node.tag = tag
             node.attrs = attrs
             node.children = children
             node.line = line
+            node.end_line = end_line
         else:
-            node = _XNode(tag, attrs, children, line)
+            node = _XNode(tag, attrs, children, line, end_line)
         xnode_live.append(node)
         if stack:
             stack[-1][3].append(node)
@@ -794,7 +811,7 @@ def _lower_ui(arena: "_ReadArena", node: _XNode) -> _Built:
         group = _ui_group(child.tag)
         if group is None:
             built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
-            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
+            built.notes.append(_note("FB006", "Kept the unknown element <%s>." % child.tag, child))
             continue
         _place_ui_child(arena, built, child, wrappers, cursor, group, suppressed)
     if "root" not in built.slots:
@@ -838,7 +855,7 @@ def _place_ui_child(
     if tag == "widget":
         if "root" in built.slots:
             built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
-            built.notes.append(_Note("FB006", "Kept an extra root widget.", child.line))
+            built.notes.append(_note("FB006", "Kept an extra root widget.", child))
             return
         built.add_slot("root", _lower_widget(arena, child))
         cursor.advance("root")
@@ -891,7 +908,7 @@ def _lower_wrapper(
         suppressed.add(tag)
         wrappers.discard(tag)
         built.add_slot("opaque", _opaque_built(arena, node, (slot, 0)))
-        built.notes.append(_Note("FB006", "Kept attributes on <%s>." % tag, node.line))
+        built.notes.append(_note("FB006", "Kept attributes on <%s>." % tag, node, start_only=True))
         return 0
     wrappers.add(tag)
     typed = 0
@@ -899,7 +916,7 @@ def _lower_wrapper(
         lowered = _lower_known(arena, child, tag)
         if lowered is None:
             built.add_slot("opaque", _opaque_built(arena, child, ("%s:inner" % slot, typed)))
-            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
+            built.notes.append(_note("FB006", "Kept the unknown element <%s>." % child.tag, child))
         else:
             built.add_slot(slot, lowered)
             typed += 1
@@ -955,7 +972,7 @@ def _lower_box(arena: "_ReadArena", node: _XNode, kind: str) -> _Built:
         group = _box_group(kind, child.tag, built)
         if group == "layout" and "layout" in built.slots:
             built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
-            built.notes.append(_Note("FB006", "Kept an extra layout.", child.line))
+            built.notes.append(_note("FB006", "Kept an extra layout.", child))
             continue
         if group == "properties":
             entry, notes = _parse_property(child, "property")
@@ -1098,7 +1115,7 @@ def _place_box_child(arena: "_ReadArena", built: _Built, child: _XNode, group: s
         names = list(current) if isinstance(current, tuple) else []
         if text is None:
             built.add_slot("opaque", _opaque_built(arena, child, ("child:zorder", len(names))))
-            built.notes.append(_Note("FB006", "Kept <zorder> as written.", child.line))
+            built.notes.append(_note("FB006", "Kept <zorder> as written.", child))
             return
         names.append(text)
         built.set_field("zorder", tuple(names))
@@ -1150,7 +1167,7 @@ def _lower_custom(arena: "_ReadArena", node: _XNode) -> _Built:
     built = arena.take_built("customwidget", node.line)
     _apply_attrs(built, node.attrs)
     if built.extra_attrs:
-        built.notes.append(_Note("FB006", "Kept attributes on <customwidget>.", node.line))
+        built.notes.append(_note("FB006", "Kept attributes on <customwidget>.", node, start_only=True))
     cursor = _Cursor()
     for child in _elements(node):
         tag = child.tag
@@ -1185,7 +1202,7 @@ def _lower_custom(arena: "_ReadArena", node: _XNode) -> _Built:
             cursor.advance("child:propertyspecifications")
         else:
             built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
-            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % tag, child.line))
+            built.notes.append(_note("FB006", "Kept the unknown element <%s>." % tag, child))
     if "class_name" not in built.field_map():
         built.set_field("class_name", "")
     if "extends" not in built.field_map():
@@ -1217,7 +1234,7 @@ def _lower_connection(arena: "_ReadArena", node: _XNode) -> _Built:
     built = arena.take_built("connection", node.line)
     _apply_attrs(built, node.attrs)
     if built.extra_attrs:
-        built.notes.append(_Note("FB006", "Kept attributes on <connection>.", node.line))
+        built.notes.append(_note("FB006", "Kept attributes on <connection>.", node, start_only=True))
     cursor = _Cursor()
     for child in _elements(node):
         if child.tag in ("sender", "signal", "receiver", "slot"):
@@ -1228,7 +1245,7 @@ def _lower_connection(arena: "_ReadArena", node: _XNode) -> _Built:
             cursor.advance("child:hints")
         else:
             built.add_slot("opaque", _opaque_built(arena, child, cursor.here()))
-            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % child.tag, child.line))
+            built.notes.append(_note("FB006", "Kept the unknown element <%s>." % child.tag, child))
     for name in ("sender", "signal", "receiver", "slot"):
         if name not in built.field_map():
             built.set_field(name, "")
@@ -1285,12 +1302,12 @@ def _parse_property(node: _XNode, kind: str) -> Tuple[PropertyEntry, List[_Note]
     elements = _elements(node)
     if len(elements) != 1 or _has_significant_text(node) or _has_comment(node):
         value = OpaqueValue(_property_content(node))
-        notes.append(_Note("FB005", "Kept this property value as written.", node.line, name or None))
+        notes.append(_note("FB005", "Kept this property value as written.", node, name or None))
     else:
         parsed = _parse_value(elements[0])
         if parsed is None:
             value = OpaqueValue(_to_opaque(elements[0]))
-            notes.append(_Note("FB005", "Kept this <%s> value as written." % elements[0].tag, elements[0].line, name or None))
+            notes.append(_note("FB005", "Kept this <%s> value as written." % elements[0].tag, elements[0], name or None))
         else:
             value = parsed
     return _share(PropertyEntry(kind=kind, name=name, value=_share(value), stdset=stdset, extra_attrs=tuple(extra))), notes
@@ -1319,7 +1336,7 @@ def _hold_gap(
         return
     if isinstance(payload, _XNode):
         built.add_slot("opaque", _opaque_built(arena, payload, cursor.here()))
-        built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
+        built.notes.append(_note("FB006", "Kept the unknown element <%s>." % payload.tag, payload))
 
 
 def _realize_entries(
@@ -1347,10 +1364,10 @@ def _realize_entries(
             if last_index[entry.name] != payload:
                 built.add_slot("opaque", _opaque_built(arena, source, (group, typed_so_far)))
                 built.notes.append(
-                    _Note(
+                    _note(
                         "FB007",
                         'Property "%s" is set more than once. The last value is the one that is used.' % entry.name,
-                        source.line,
+                        source,
                         entry.name,
                     )
                 )
@@ -1366,7 +1383,7 @@ def _realize_entries(
             continue
         if kind == "gap-node" and isinstance(payload, _XNode):
             built.add_slot("opaque", _opaque_built(arena, payload, (group, typed_so_far)))
-            built.notes.append(_Note("FB006", "Kept the unknown element <%s>." % payload.tag, payload.line))
+            built.notes.append(_note("FB006", "Kept the unknown element <%s>." % payload.tag, payload))
     if group == "properties":
         built.properties = typed
     else:
@@ -2196,7 +2213,7 @@ def _set_parsed_field(built: _Built, field: str, node: _XNode, parsed: object) -
 
 def _keep_element(built: _Built, field: str, node: _XNode) -> None:
     built.set_field(field, _to_opaque(node))
-    built.notes.append(_Note("FB006", "Kept <%s> as written." % node.tag, node.line))
+    built.notes.append(_note("FB006", "Kept <%s> as written." % node.tag, node))
 
 
 def _apply_attrs(built: _Built, attrs: Tuple[Tuple[str, str], ...]) -> None:
@@ -2261,6 +2278,7 @@ def _to_node(
                         object_name=object_name,
                         property=note.prop,
                         line=note.line,
+                        end_line=note.end_line,
                     ),
                     source="reader",
                 )

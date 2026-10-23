@@ -50,6 +50,7 @@ class CodeInfo:
     #: True when the code can block opening the visual editor (FB001/FB002/FB004/FB008).
     #: No code may block saving (LOGIC_DESIGN 2.9; checked by test).
     blocks_visual_open: bool = False
+    kept_as_written: bool = False
 
 
 RulePathPart = Union[str, int]
@@ -67,6 +68,8 @@ class DiagnosticLocation:
     or a connection index ``("connections", 3)``.
     ``span``: (start, end) character offsets inside a formula string.
     ``line``: 1-based XML line from the reader or the last serialization; 0 = unknown.
+    ``end_line``: 1-based last line of a kept range. 0 means the note is one line
+    (the start line).
     """
 
     node_id: Optional[NodeId] = None
@@ -75,6 +78,7 @@ class DiagnosticLocation:
     rule_path: Tuple[RulePathPart, ...] = ()
     span: Optional[Tuple[int, int]] = None
     line: int = 0
+    end_line: int = 0
 
 
 @dataclass(frozen=True)
@@ -139,7 +143,14 @@ class FormDiagnostic:
 CODES: Dict[str, CodeInfo] = {}
 
 
-def declare(code: str, severity: Severity, title: str, *, blocks_visual_open: bool = False) -> None:
+def declare(
+    code: str,
+    severity: Severity,
+    title: str,
+    *,
+    blocks_visual_open: bool = False,
+    kept_as_written: bool = False,
+) -> None:
     """Register a code. ValueError on a duplicate or a malformed code."""
     if _CODE_RE.match(code) is None:
         raise ValueError("malformed diagnostic code %r" % (code,))
@@ -152,6 +163,7 @@ def declare(code: str, severity: Severity, title: str, *, blocks_visual_open: bo
         severity=severity,
         title=title,
         blocks_visual_open=blocks_visual_open,
+        kept_as_written=kept_as_written,
     )
 
 
