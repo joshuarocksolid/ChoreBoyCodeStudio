@@ -41,6 +41,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OnHandle,
     OnPageEdge,
     OnSpace,
+    OnWidget,
     OpenLayoutPopover,
     OpenProblem,
     OverlayFrame,
@@ -71,6 +72,7 @@ from app.features.form_builder.qtside.canvas.core.structure import (
     LaidOut,
     Positioning,
     ancestors,
+    effective_class,
     effective_selection,
     managed_container,
     positioning_of,
@@ -81,6 +83,9 @@ from app.features.form_builder.qtside.canvas.core.words import SizingWord, chip_
 EMPTY_MIN_WIDTH = 48
 EMPTY_MIN_HEIGHT = 32
 EMPTY_CAPTION_MIN_WIDTH = 120
+
+# A childless one of these is an empty container. A button or a label is not.
+_EMPTY_CONTAINER = frozenset({"QWidget", "QFrame", "QGroupBox", "QDialog", "QScrollArea"})
 
 LABEL_HEIGHT = 18
 LABEL_PADDING = 6
@@ -174,7 +179,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 empties.append(Caption(canvas, _EMPTY_FORM))
                 targets.append((canvas, OnSpace(node.id, node.id)))
             else:
-                _empty_mark(empties, targets, canvas, node.id)
+                _empty_mark(empties, targets, canvas, OnSpace(node.id, node.id))
             continue
         if isinstance(node, SpacerNode):
             placed.append(Obstacle(node.id, canvas))
@@ -193,8 +198,14 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         if node.child_widgets:
             unlaid.append(node.id)
             bare.append(Stroke(canvas, "tab", 1, "dashed"))
-        else:
-            _empty_mark(empties, targets, canvas, node.id)
+        elif effective_class(document, node) in _EMPTY_CONTAINER:
+            # The body stays a widget hit so a drag moves the container.
+            _empty_mark(
+                empties,
+                targets,
+                canvas,
+                OnWidget(node.id, positioning_of(document, node.id), "widget"),
+            )
 
     for obstacle in placed:
         found = document.get(obstacle.node)
@@ -312,7 +323,7 @@ def _empty_mark(
     items: List[Item],
     targets: List[Tuple[CanvasRect, Target]],
     canvas: CanvasRect,
-    node: NodeId,
+    target: Target,
 ) -> None:
     mark = _at_least(canvas, EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT)
     items.append(Stroke(mark, "layout_faint", 1, "dashed"))
@@ -320,7 +331,7 @@ def _empty_mark(
         items.append(Caption(mark, (_EMPTY_NESTED,)))
     else:
         items.append(Glyph(_centred(mark, _PLUS, _PLUS), "plus", "layout_faint"))
-    targets.append((mark, OnSpace(node, node)))
+    targets.append((mark, target))
 
 
 def _hover(
