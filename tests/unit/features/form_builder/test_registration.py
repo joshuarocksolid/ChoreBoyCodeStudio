@@ -74,6 +74,16 @@ if forced is not None:
     raise SystemExit("forced text still matched")
 if registry.provider_for("main.py", TabMatchContext(project_root=None)) is not None:
     raise SystemExit("non-ui matched")
+new_form = registry.provider_for(
+    "/tmp/proj/cbcs/new-form.cbcs-tab",
+    TabMatchContext(project_root="/tmp/proj"),
+)
+if new_form is None or new_form.provider_id != "form-builder.new-form":
+    raise SystemExit("missing new form provider")
+if registry.provider_for("invoice.ui", TabMatchContext(project_root=None)).provider_id != "form-builder.ui":
+    raise SystemExit("new form provider stole a .ui file")
+if not callable(getattr(window, "_open_new_form", None)):
+    raise SystemExit("missing new form callback")
 """
 
 

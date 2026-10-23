@@ -130,6 +130,7 @@ class MenuCallbacks:
     on_help_getting_started: Callable[[], object] | None = None
     on_help_shortcuts: Callable[[], object] | None = None
     on_help_about: Callable[[], object] | None = None
+    on_new_form: Callable[[], object] | None = None
 
 
 @dataclass(frozen=True)

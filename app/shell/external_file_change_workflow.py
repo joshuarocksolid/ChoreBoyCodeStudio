@@ -292,6 +292,10 @@ class ExternalFileChangeWorkflow:
         surface = getattr(self._host, "surface_for_path", lambda _p: None)(file_path)
         if tab_state is None or (editor_widget is None and surface is None):
             return ExternalFileChangeOutcome.SKIPPED
+        # The New form tab is not a file. A missing-file prompt would offer to
+        # save the sentinel path under cbcs/.
+        if tab_state.virtual_tab:
+            return ExternalFileChangeOutcome.SKIPPED
 
         current_mtime = self._editor_manager.current_disk_mtime(file_path)
         if current_mtime is None:
@@ -469,6 +473,8 @@ class ExternalFileChangeWorkflow:
         tab_state = self._editor_manager.get_tab(file_path)
         if tab_state is None:
             return "proceed"
+        if tab_state.virtual_tab:
+            return "abort"
         current_mtime = self._editor_manager.current_disk_mtime(file_path)
         if current_mtime is None:
             conflict = tab_state.disk_conflict

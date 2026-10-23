@@ -41,6 +41,7 @@ class EditorTabState:
     content_source: Optional[TabContentSource]
     content_source_unsubscribe: Optional[Callable[[], None]] = field(compare=False)
     _current_content: str = field(repr=False)
+    virtual_tab: bool = False
 
     def __init__(
         self,
@@ -65,6 +66,7 @@ class EditorTabState:
         self.disk_conflict = disk_conflict
         self.content_source = content_source
         self.content_source_unsubscribe = content_source_unsubscribe
+        self.virtual_tab = False
 
     @classmethod
     def from_file(

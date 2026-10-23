@@ -37,10 +37,19 @@ def form_builder_enabled() -> bool:
 
 
 def install_form_builder(ctx: "ShellCompositionContext") -> None:
-    """Register the ``.ui`` provider. Sessions start when a tab opens."""
-    from app.features.form_builder.integration.provider import FormTabProvider
+    """Register the ``.ui`` provider and the New form tab.
 
-    ctx.w._tab_content_registry.register(FormTabProvider())
+    One provider id owns ``.ui`` files. ``RememberingFormTabProvider`` is that
+    provider and records recent forms. ``attach_new_form`` adds the virtual tab
+    and the callback menus read after this install.
+    """
+    from app.features.form_builder.integration.new_form import (
+        RememberingFormTabProvider,
+        attach_new_form,
+    )
+
+    ctx.w._tab_content_registry.register(RememberingFormTabProvider())
+    attach_new_form(ctx.w)
 
 
 __all__ = ["KILL_SWITCH_ENV", "PROVIDER_ID", "form_builder_enabled", "install_form_builder"]
