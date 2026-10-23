@@ -846,11 +846,14 @@ class _Structure(_LayoutSlots):
         self._pool.pop(node.id, None)
         if was_root:
             self._root = None
-        created = self._construct(node, None if was_root else self._nursery())
-        swapped = not was_root and self._swap_in_layout(node.id, old, created)
+        host = None if was_root else self._swap_host(node.id, old)
+        created = self._construct(node, None if was_root else host or self._nursery())
+        swapped = host is not None and self._swap_in_layout(node.id, old, created)
         if not swapped:
             self._detach_widget(old)
         if wrapper_is_valid(old):
+            # A swapped-out widget is already out of its layout. Deleting it
+            # under its host skips the focus-chain walk of leaving the window.
             delete_now(old)
         if swapped:
             self._pending_containers.add(node.id)
@@ -872,6 +875,18 @@ class _Structure(_LayoutSlots):
             self._nursery_widget = nursery
         return nursery
 
+    def _swap_host(self, node_id: NodeId, old: QWidget) -> Optional[QWidget]:
+        """The host widget when ``old`` sits in a realized layout, else None."""
+        layout_id = self._slot_of.get(node_id)
+        qlayout = None if layout_id is None else self._layouts.get(layout_id)
+        mirror = None if qlayout is None or layout_id is None else self._mirror(layout_id, qlayout)
+        if mirror is None or qlayout is None:
+            return None
+        index = mirror.find(node_id)
+        if index < 0 or mirror.objects[index] is not old:
+            return None
+        return qlayout.parentWidget()
+
     def _swap_in_layout(self, node_id: NodeId, old: QWidget, created: QWidget) -> bool:
         layout_id = self._slot_of.get(node_id)
         qlayout = None if layout_id is None else self._layouts.get(layout_id)
@@ -879,15 +894,11 @@ class _Structure(_LayoutSlots):
         if mirror is None or qlayout is None:
             return False
         index = mirror.find(node_id)
-        host = qlayout.parentWidget()
-        if index < 0 or mirror.objects[index] is not old or host is None:
+        if index < 0 or mirror.objects[index] is not old:
             return False
-        created.setParent(host)
         if qlayout.replaceWidget(old, created, _DIRECT) is None:
-            created.setParent(None)
             return False
         mirror.objects[index] = created
-        old.setParent(None)
         return True
 
     def _adopt_morphed(self, node: WidgetNode, created: QWidget, *, was_root: bool) -> None:
