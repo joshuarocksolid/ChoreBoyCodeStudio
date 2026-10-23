@@ -1,13 +1,13 @@
 """Design canvas (UX-WB-004).
 
-The realized form sits in a proxy on the runtime scene. Chip, size, grabbers
-and the toast are chrome on the view, so a theme change does not restyle the
-page. Nothing on the canvas selects or drags in this slice.
+The realized form sits in a proxy on the runtime scene. The controller owns
+selection, hover and gestures. Grabbers and the toast stay view chrome until
+the overlay paints them.
 """
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Optional
 
 from app.qt.QtCore import QEvent, QRectF, Qt
 from app.qt.QtGui import QColor, QPainter
@@ -20,9 +20,12 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import wrapper_is_valid
 
-from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS, ChangeSet
+from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
+from app.features.form_builder.qtside.canvas.core.frame import OverlayFrame
+from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.stage import Stage
 from app.features.form_builder.qtside.realize.api import Realizer
@@ -30,7 +33,6 @@ from app.features.form_builder.qtside.theme.overlay import backdrop_fill
 from app.features.form_builder.qtside.theme.runtime import isolate_scene
 from app.shell.theme_tokens import ShellThemeTokens
 
-_DETACH_BEFORE_REALIZE = 9
 _DOT = 16
 
 
@@ -52,14 +54,19 @@ def _transparent() -> Qt.WidgetAttribute:
 class FormCanvas(QGraphicsView):
     """Dot grid, centred page, and the chrome around it."""
 
-    def __init__(self, session: FormSession, realizer: Realizer, parent: QWidget) -> None:
+    def __init__(
+        self,
+        session: FormSession,
+        realizer: Realizer,
+        host: CanvasHost,
+        parent: QWidget,
+    ) -> None:
         super().__init__(parent)
         self._session = session
         self._realizer = realizer
         self._tokens: Optional[ShellThemeTokens] = None
         self._canvas_bg = "#E9EBEF"
         self._dot = "#D3D8DF"
-        self._closer: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.canvas")
         self.setAccessibleName("Form canvas")
         self.setFocusPolicy(_focus_policy())
@@ -71,18 +78,18 @@ class FormCanvas(QGraphicsView):
         scene = QGraphicsScene(self)
         isolate_scene(scene)
         self.setScene(scene)
+        self.viewport().setMouseTracking(True)
         self._index = HitIndex(LiveGeometrySource(realizer))
         self._hit_sub = session.log.subscribe(
             HitIndexInvalidator(self._index).on_changeset, priority=PRIORITY_HIT_INDEX
         )
         self._stage = Stage(self, session, realizer, self._index.invalidate)
-        # setWidget(None) drops the proxy's hold without deleting the widget.
-        # The realizer deletes the old root on a replace. Detach first.
-        self._detach_sub = session.log.subscribe(self._detach_for_replace, priority=_DETACH_BEFORE_REALIZE)
-        self._view_sub = session.log.subscribe(self._sync_root, priority=PRIORITY_VIEWS)
-        realizer.build()
         self._build_chrome()
-        self.viewport().installEventFilter(self)
+        self._controller = CanvasController(self, session, realizer, self._index, self._stage, host)
+        # Same priority as the controller's view listener, subscribed after it,
+        # so grabbers follow the page the controller just placed.
+        self._chrome_sub = session.log.subscribe(self._position_after, priority=PRIORITY_VIEWS)
+        realizer.build()
         self.horizontalScrollBar().valueChanged.connect(self._position_chrome)
         self.verticalScrollBar().valueChanged.connect(self._position_chrome)
         self._stage.place()
@@ -93,9 +100,6 @@ class FormCanvas(QGraphicsView):
         if root is None or not wrapper_is_valid(root):
             return None
         return root
-
-    def set_drawer_closer(self, callback: Callable[[], None]) -> None:
-        self._closer = callback
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         """Chrome only. The page palette stays the runtime palette."""
@@ -123,32 +127,41 @@ class FormCanvas(QGraphicsView):
         self.viewport().update()
         self._position_chrome()
 
-    def refresh_chip(self) -> None:
-        self._stage.place()
-        self._position_chrome()
+    def send(self, event: HostEvent) -> None:
+        self._controller.post(event)
+
+    def overlay(self) -> OverlayFrame:
+        return self._controller.frame
 
     def detach(self) -> None:
         self._stage.detach()
 
     def dispose(self) -> None:
-        self._detach_sub.close()
-        self._view_sub.close()
+        self._controller.dispose()
+        self._chrome_sub.close()
         self._hit_sub.close()
         self.detach()
 
-    def eventFilter(self, watched: object, event: QEvent) -> bool:  # noqa: N802
-        press = getattr(getattr(QEvent, "Type", QEvent), "MouseButtonPress", None)
-        if press is None:
-            press = getattr(QEvent, "MouseButtonPress", None)
-        if watched is self.viewport() and press is not None and event.type() == press:
-            closer = self._closer
-            if closer is not None:
-                closer()
+    def viewportEvent(self, event: QEvent) -> bool:  # noqa: N802
+        controller = getattr(self, "_controller", None)
+        if controller is None:
+            return bool(super().viewportEvent(event))
+        return bool(controller.handle(event) or super().viewportEvent(event))
+
+    def event(self, event: QEvent) -> bool:  # noqa: N802
+        # Qt sends events from inside the QWidget constructor, before the
+        # controller exists.
+        controller = getattr(self, "_controller", None)
+        if controller is None:
+            return bool(super().event(event))
+        return bool(controller.handle(event) or super().event(event))
+
+    def focusNextPrevChild(self, next: bool) -> bool:  # noqa: N802
+        del next
         return False
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
-        self._stage.place()
         self._position_chrome()
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
@@ -187,12 +200,7 @@ class FormCanvas(QGraphicsView):
         self._toast.setAccessibleName("Notice")
         self._toast.hide()
 
-    def _detach_for_replace(self, changeset: ChangeSet) -> None:
-        if changeset.replaced:
-            self.detach()
-
-    def _sync_root(self, _changeset: ChangeSet) -> None:
-        self._stage.place()
+    def _position_after(self, _changeset: object) -> None:
         self._position_chrome()
 
     def _position_chrome(self) -> None:

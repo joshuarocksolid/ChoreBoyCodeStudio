@@ -168,6 +168,7 @@ class FormSurface(QWidget):
             self._pin_inspector,
             self._remember_widths,
             self._remember_collapsed,
+            self,
             self._stack,
         )
         self._stack.addWidget(self._workbench)
@@ -543,6 +544,30 @@ class FormSurface(QWidget):
 
     def _on_outline_pick(self, node_id: NodeId) -> None:
         self._session.selection.set((node_id,), source=SelectionSource.OUTLINE)
+
+    def canvas_pressed(self) -> None:
+        workbench = getattr(self, "_workbench", None)
+        if workbench is not None:
+            workbench.close_drawers()
+
+    def narrate(self, sentence: str) -> None:
+        window = self.window()
+        bar = getattr(window, "status_bar", None)
+        show = getattr(bar, "showMessage", None)
+        if callable(show):
+            show(sentence)
+
+    def hover_changed(self, node: Optional[NodeId]) -> None:
+        del node
+
+    def zoom_changed(self, label: str) -> None:
+        self._toolbar.zoom_label.setText(label)
+
+    def open_problem(self, node: NodeId) -> None:
+        del node
+
+    def open_layout_popover(self, node: NodeId) -> None:
+        del node
 
     def _refresh_design(self) -> None:
         current = self._session.selection.state.current

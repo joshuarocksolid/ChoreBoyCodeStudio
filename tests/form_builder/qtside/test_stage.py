@@ -28,11 +28,31 @@ AUTHORED = form(
 )
 
 
+class _Host:
+    def canvas_pressed(self) -> None:
+        return None
+
+    def narrate(self, sentence: str) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
+
+
 def test_authored_page_stays_640_by_480_and_the_readout_matches() -> None:
     with opened(AUTHORED) as (session, realizer):
-        host = QWidget()
-        host.resize(960, 720)
-        canvas = FormCanvas(session, realizer, host)
+        parent = QWidget()
+        parent.resize(960, 720)
+        canvas = FormCanvas(session, realizer, _Host(), parent)
         canvas.resize(960, 720)
         canvas.show()
         root = canvas.page_widget()
@@ -43,7 +63,7 @@ def test_authored_page_stays_640_by_480_and_the_readout_matches() -> None:
         assert readout.text() == "640 × 480"
         assert canvas.transform().isIdentity()
         canvas.dispose()
-        host.deleteLater()
+        parent.deleteLater()
 
 
 def test_end_preview_invalidates_when_the_page_size_does_not_change() -> None:

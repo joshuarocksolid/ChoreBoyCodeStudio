@@ -90,6 +90,12 @@ FILE_ROLES = (
         ),
     ),
     FileRole(
+        "form_builder.canvas_input",
+        ("app/features/form_builder/**",),
+        ("app.features.form_builder.qtside.canvas._input",),
+        allowed_files=frozenset({"app/features/form_builder/qtside/canvas/controller.py"}),
+    ),
+    FileRole(
         "form_builder.child",
         ("app/features/form_builder/qtside/preview/child/**",),
         (

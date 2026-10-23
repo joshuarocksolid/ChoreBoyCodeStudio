@@ -31,6 +31,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.canvas.controller import CanvasHost
 from app.features.form_builder.integration.layout import (
     INSPECTOR_MAX,
     INSPECTOR_MIN,
@@ -578,6 +579,7 @@ class FormWorkbench(QWidget):
         on_pin_inspector: Callable[[], None],
         on_widths: Callable[[int, int], None],
         on_collapsed: Callable[[str, bool], None],
+        host: CanvasHost,
         parent: QWidget,
     ) -> None:
         super().__init__(parent)
@@ -628,8 +630,7 @@ class FormWorkbench(QWidget):
         self._left_stack.addWidget(self._left_body)
         self._left_stack.addWidget(self._left_rail)
 
-        self.canvas = FormCanvas(session, realizer, self._splitter)
-        self.canvas.set_drawer_closer(self.close_drawers)
+        self.canvas = FormCanvas(session, realizer, host, self._splitter)
 
         self._right_stack = QStackedWidget(self._splitter)
         self.inspector = InspectorPane(self._right_stack)
@@ -674,7 +675,6 @@ class FormWorkbench(QWidget):
         document = self._session.document
         self.outline.rebuild(document, selected)
         self.inspector.show_selection(document, selected)
-        self.canvas.refresh_chip()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
         self._drawer_listener = callback
