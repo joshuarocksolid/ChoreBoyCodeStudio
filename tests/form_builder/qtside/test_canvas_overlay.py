@@ -7,7 +7,8 @@ from typing import List, Tuple
 
 import pytest
 
-from app.qt.QtCore import QPoint, Qt
+from app.qt.QtCore import QEvent, QPoint, Qt
+from app.qt.QtGui import QMouseEvent
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.engine.ids import NodeId
@@ -241,7 +242,20 @@ def _click(canvas: FormCanvas, name: str) -> None:
 
 
 def _move(canvas: FormCanvas, name: str) -> None:
-    QTest.mouseMove(canvas.viewport(), _center(canvas, name))
+    # QTest.mouseMove keeps the buttons from an earlier press in this process.
+    # A hover is a move with nothing held.
+    local = _center(canvas, name)
+    viewport = canvas.viewport()
+    kind = getattr(getattr(QEvent, "Type", QEvent), "MouseMove")
+    event = QMouseEvent(
+        kind,
+        local,
+        viewport.mapToGlobal(local),
+        _mouse("NoButton"),
+        _mouse("NoButton"),
+        _mods("NoModifier"),
+    )
+    QApplication.sendEvent(viewport, event)
     _flush()
 
 
