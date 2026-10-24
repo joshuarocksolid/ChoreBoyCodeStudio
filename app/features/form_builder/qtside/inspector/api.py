@@ -248,11 +248,7 @@ def mark(widget: QWidget, value: RowValue) -> None:
         state = "unset"
     else:
         state = "set"
-    font = widget.font()
-    italic = state == "mixed"
-    if font.italic() != italic:
-        font.setItalic(italic)
-        widget.setFont(font)
+    # The inspector style sheet owns the look of each state, italic included.
     set_style_flag(widget, "fbState", state)
 
 
