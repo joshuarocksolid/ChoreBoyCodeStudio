@@ -430,6 +430,7 @@ class FormSurface(QWidget):
         self._source_unsub()
         self._changes.close()
         self._workbench.canvas_view().dispose()
+        self._workbench.inspector.dispose()
         self._realizer.dispose()
         self._session.dispose()
         self._source.close()
@@ -666,7 +667,6 @@ class FormSurface(QWidget):
     def _on_selection(self, change: object) -> None:
         self._inert_note = ""
         current = getattr(getattr(change, "after", None), "current", None)
-        self._workbench.inspector.show_selection(self._session.document, current)
         self._workbench.outline.rebuild(self._session.document, current)
         self._refresh_shell_status()
 
@@ -953,6 +953,8 @@ class FormSurface(QWidget):
         if workbench is not None:
             workbench.outline.set_collapsed(self._memory.outline_collapsed)
             workbench.insert.set_collapsed(self._memory.insert_collapsed)
+            if self._store is not None:
+                workbench.inspector.bind_settings(self._store)
 
     def _save_memory(self) -> None:
         if self._store is not None:

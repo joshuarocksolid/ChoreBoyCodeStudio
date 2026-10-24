@@ -92,6 +92,7 @@ OVERLAY_BUDGET_MS = 4.0
 OUTLINE_PATCH_BUDGET_MS = 2.0
 EDIT_BUDGET_MS = 16.0
 SELECTION_BUDGET_MS = 8.0
+INSPECTOR_REPOPULATE_BUDGET_MS = 16.0
 DIAGNOSTICS_BUDGET_MS = 2.0
 CODEGEN_BUDGET_MS = 30.0
 SAVE_BUDGET_MS = 50.0
@@ -124,6 +125,9 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "outline patch",
     "edit total",
     "selection change",
+    "inspector repopulate",
+    "inspector select collapsed",
+    "inspector select expanded",
     "is_dirty",
     "revision",
     "cheap diagnostics",
@@ -422,8 +426,17 @@ def _collect(
             "selection change",
             300,
             _ms_budget(SELECTION_BUDGET_MS),
-            "no canvas selection yet. Inspector repopulate budget is 16 ms",
+            "no canvas selection yet",
         )
+    )
+    rows.append(
+        _inspector_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
+    )
+    rows.extend(
+        _inspector_select_rows(forms.get(300), samples, warmup, enforce_absolute, wall_on)
+    )
+    rows.append(
+        _inspector_shell_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
 
     probe = documents[sizes[0]]
@@ -1371,6 +1384,261 @@ def _repaint(realizer: Any) -> None:
     app = QApplication.instance()
     if app is not None:
         app.processEvents()
+
+
+def _inspector_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
+        return _missing(
+            "inspector repopulate",
+            300,
+            _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+            "no qtside inspector yet",
+        )
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return Row(
+            "inspector repopulate",
+            300,
+            None,
+            None,
+            None,
+            _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+            "skip",
+            str(exc),
+        )
+    pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+    pane.resize(288, 600)
+    pane.show()
+    line = _first_widget(session.document, "QLineEdit")
+    button = _first_widget(session.document, "QPushButton")
+    if line is None or button is None:
+        pane.dispose()
+        _dispose_held([realizer, session])
+        return Row(
+            "inspector repopulate",
+            300,
+            None,
+            None,
+            None,
+            _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+            "skip",
+            "reference form has no line edit and push button",
+        )
+    current = {"id": line}
+
+    def flip() -> None:
+        nxt = button if current["id"] == line else line
+        current["id"] = nxt
+        session.selection.set((nxt,), source=selection.SelectionSource.PROGRAM)
+
+    try:
+        row, _distribution = _timed(
+            "inspector repopulate",
+            300,
+            pane.flush,
+            INSPECTOR_REPOPULATE_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=flip,
+        )
+        return row
+    finally:
+        pane.dispose()
+        _dispose_held([realizer, session])
+
+
+def _inspector_select_rows(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """Select, then flush, with All properties collapsed and expanded."""
+    names = ("inspector select collapsed", "inspector select expanded")
+    if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
+        return [
+            _missing(name, 300, _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS), "no qtside inspector yet")
+            for name in names
+        ]
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+        api = importlib.import_module("app.features.form_builder.qtside.inspector.api")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return [
+            Row(name, 300, None, None, None, _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS), "skip", str(exc))
+            for name in names
+        ]
+    pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+    pane.resize(288, 600)
+    pane.show()
+    line = _first_widget(session.document, "QLineEdit")
+    button = _first_widget(session.document, "QPushButton")
+    if line is None or button is None:
+        pane.dispose()
+        _dispose_held([realizer, session])
+        return [
+            Row(
+                name,
+                300,
+                None,
+                None,
+                None,
+                _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+                "skip",
+                "reference form has no line edit and push button",
+            )
+            for name in names
+        ]
+    current = {"id": line}
+
+    def flip() -> None:
+        nxt = button if current["id"] == line else line
+        current["id"] = nxt
+        session.selection.set((nxt,), source=selection.SelectionSource.PROGRAM)
+
+    rows: List[Row] = []
+    try:
+        for name, expanded in ((names[0], False), (names[1], True)):
+            pane.set_group_expanded(api.GroupId.ALL, expanded)
+            row, _distribution = _timed(
+                name,
+                300,
+                pane.flush,
+                INSPECTOR_REPOPULATE_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=flip,
+            )
+            rows.append(row)
+        return rows
+    finally:
+        pane.dispose()
+        _dispose_held([realizer, session])
+
+
+SHELL_SELECT_POINT = "inspector select expanded shell"
+
+
+def _inspector_shell_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    """Select, then flush, with All properties expanded, in a real MainWindow.
+
+    The bare-pane rows miss the shell: its window style sheet and chrome
+    font-weight rule make every setStyleSheet and polish dearer. The timed
+    call is the selection change and the flush. The first build, which makes
+    the row widgets, is one sample and goes in the detail.
+    """
+    point = SHELL_SELECT_POINT
+    budget = _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS)
+    if form is None or not _module_exists("app.shell.main_window"):
+        return _missing(point, 300, budget, "no 300-widget form or no shell")
+    try:
+        install = importlib.import_module("app.features.form_builder.install")
+        if not install.form_builder_enabled():
+            return Row(point, 300, None, None, None, budget, "skip", "form builder is registered on PySide6")
+        main_window = importlib.import_module("app.shell.main_window")
+        shutdown = importlib.import_module("testing.main_window_shutdown")
+        api = importlib.import_module("app.features.form_builder.qtside.inspector.api")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    except (ImportError, AttributeError) as exc:
+        return Row(point, 300, None, None, None, budget, "skip", str(exc))
+    import tempfile
+    import time
+
+    previous = os.environ.get("CBCS_DISABLE_BACKGROUND_RUNTIME")
+    os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
+    app = QApplication.instance() or QApplication([])
+    scratch = tempfile.TemporaryDirectory(prefix="cbcs-shell-speed-")
+    window = None
+    try:
+        root = Path(scratch.name).resolve()
+        path = root / "speed_form.ui"
+        path.write_text(form.xml, encoding="utf-8")
+        window = main_window.MainWindow(state_root=str(root / "state"))
+        if not window._editor_tab_factory.open_file_in_editor(str(path)):
+            return Row(point, 300, None, None, None, budget, "skip", "the shell did not open the form")
+        window._center_stack.setCurrentIndex(1)
+        window.resize(1400, 900)
+        window.show()
+        app.processEvents()
+        if not window.styleSheet() and not app.styleSheet():
+            return Row(point, 300, None, None, None, budget, "skip", "the shell style sheet is not loaded")
+        surface = window._tab_content_registry.surface_for_path(str(path))
+        session = surface._session
+        pane = surface._workbench.inspector
+        line = _first_widget(session.document, "QLineEdit")
+        button = _first_widget(session.document, "QPushButton")
+        if line is None or button is None:
+            return Row(point, 300, None, None, None, budget, "skip", "reference form has no line edit and push button")
+        pane.set_group_expanded(api.GroupId.ALL, True)
+        current = {"id": button}
+
+        def select_and_flush() -> None:
+            nxt = button if current["id"] == line else line
+            current["id"] = nxt
+            session.selection.set((nxt,), source=selection.SelectionSource.PROGRAM)
+            pane.flush()
+
+        started = time.perf_counter()
+        select_and_flush()
+        first_ms = (time.perf_counter() - started) * 1000.0
+        app.processEvents()
+        row, _distribution = _timed(
+            point,
+            300,
+            select_and_flush,
+            INSPECTOR_REPOPULATE_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=app.processEvents,
+        )
+        note = "first build %.1f ms wall (row widgets made once per key)" % first_ms
+        return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, _join(row.detail, note))
+    finally:
+        if window is not None:
+            shutdown.shutdown_main_window_for_test(window, app)
+        app.processEvents()
+        scratch.cleanup()
+        if previous is None:
+            os.environ.pop("CBCS_DISABLE_BACKGROUND_RUNTIME", None)
+        else:
+            os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = previous
+
+
+def _first_widget(document: UiDocument, class_name: str) -> Optional[NodeId]:
+    for widget in document.iter_widgets():
+        if widget.class_name == class_name:
+            return widget.id
+    return None
 
 
 def _open_realized(xml: str, session_mod: Any, forms: Any, realize: Any) -> Tuple[Any, Any]:

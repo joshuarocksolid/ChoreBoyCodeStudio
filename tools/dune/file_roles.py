@@ -105,6 +105,23 @@ FILE_ROLES = (
             }
         ),
     ),
+    FileRole(
+        "form_builder.inspector_host",
+        ("app/features/form_builder/integration/**",),
+        ("app.features.form_builder.qtside.inspector",),
+        allowed_imports=(
+            "app.features.form_builder.qtside.inspector.InspectorPane",
+            "app.features.form_builder.qtside.inspector.TabId",
+            "app.features.form_builder.qtside.inspector.api",
+        ),
+    ),
+    FileRole(
+        "form_builder.inspector_contributions",
+        ("app/features/form_builder/qtside/inspector/editors/**",),
+        ("app.features.form_builder.qtside.inspector",),
+        allowed_files=frozenset({"app/features/form_builder/qtside/inspector/editors/__init__.py"}),
+        allowed_imports=("app.features.form_builder.qtside.inspector.api",),
+    ),
 )
 
 

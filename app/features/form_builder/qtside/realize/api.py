@@ -58,6 +58,7 @@ from app.features.form_builder.qtside.realize.props import (
 )
 from app.features.form_builder.qtside.realize.slots import LayoutHints, _Mirror, collect_layout_hints
 from app.features.form_builder.qtside.realize.tree import (
+    CANVAS_OVERRIDES,
     NODE_ID_PROPERTY,
     _GEOMETRY_PROPS,
     _Structure,
