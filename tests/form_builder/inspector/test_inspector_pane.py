@@ -137,7 +137,7 @@ def test_commit_keeps_focus_in_the_editor(qapp: QApplication) -> None:
     assert row is not None
     bar = row.findChild(QWidget, "formBuilder.rowChanged")
     reset = row.findChild(QWidget, "formBuilder.rowReset")
-    assert bar is not None and bar.isVisible()
+    assert bar is not None and bar.isVisible() and bar.property("fbChanged") == "true"
     assert reset is not None and reset.isVisible()
     _close(window, pane, realizer, session)
 
@@ -205,10 +205,11 @@ def test_changed_marker_and_reset(qapp: QApplication) -> None:
     editor = _text_editor(pane)
     row = pane.findChild(QWidget, "formBuilder.row.text")
     assert row is not None
-    # An unchanged row has no visible bar or reset; both are made on first use.
-    for name in ("formBuilder.rowChanged", "formBuilder.rowReset"):
-        found = row.findChild(QWidget, name)
-        assert found is None or not found.isVisible()
+    # An unchanged row has no changed bar or visible reset; both are made on first use.
+    unchanged_bar = row.findChild(QWidget, "formBuilder.rowChanged")
+    assert unchanged_bar is None or unchanged_bar.property("fbChanged") != "true"
+    unchanged_reset = row.findChild(QWidget, "formBuilder.rowReset")
+    assert unchanged_reset is None or not unchanged_reset.isVisible()
     editor.setFocus()
     QTest.keyClicks(editor, "Hi")
     QTest.keyClick(editor, Qt.Key_Return)
@@ -216,12 +217,13 @@ def test_changed_marker_and_reset(qapp: QApplication) -> None:
     bar = row.findChild(QWidget, "formBuilder.rowChanged")
     reset = row.findChild(QWidget, "formBuilder.rowReset")
     assert bar is not None and reset is not None
-    assert bar.isVisible() and reset.isVisible()
+    assert bar.property("fbChanged") == "true" and reset.isVisible()
     assert session.document.node(phone).prop("text") is not None
     reset.click()
     pane.flush()
     assert session.document.node(phone).prop("text") is None
-    assert not bar.isVisible()
+    # The bar keeps its 2 px slot and turns transparent, so the row does not shift.
+    assert bar.property("fbChanged") == "false"
     _close(window, pane, realizer, session)
 
 @pytest.mark.parity("R3-147")

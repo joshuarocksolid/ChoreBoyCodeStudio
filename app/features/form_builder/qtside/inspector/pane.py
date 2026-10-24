@@ -441,7 +441,8 @@ def _stylesheet(chrome: FormChrome) -> str:
         " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
         "QLabel#formBuilder\\.rowDefault, QLabel#formBuilder\\.rowMixed { color: %s; }"
         "QLabel#formBuilder\\.rowError, QLabel#formBuilder\\.inspectorNameError { color: %s; }"
-        "QFrame#formBuilder\\.rowChanged { background: %s; border: none; }"
+        "QFrame#formBuilder\\.rowChanged { background: transparent; border: none; }"
+        "QFrame#formBuilder\\.rowChanged[fbChanged=\"true\"] { background: %s; }"
         # Strong weight. These outrank the shell's chrome font-weight rule,
         # which a setFont weight does not (UX-INSP-001, UX-INSP-006).
         "QLabel[fbChanged=\"true\"], QLineEdit#formBuilder\\.inspectorName { font-weight: 600; }"

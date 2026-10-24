@@ -10,7 +10,10 @@ from app.features.form_builder.engine.query.selection import SelectionSource  # 
 from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.features.form_builder.integration.surface import FormSurface  # noqa: E402
 from app.features.form_builder.qtside.inspector.api import GroupId  # noqa: E402
+import re  # noqa: E402
+
 from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtGui import QFont  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
@@ -18,7 +21,10 @@ from app.qt.QtWidgets import (  # noqa: E402
     QComboBox,
     QLabel,
     QLineEdit,
+    QPushButton,
     QScrollArea,
+    QTabWidget,
+    QToolButton,
     QSpinBox,
     QWidget,
 )
@@ -36,7 +42,11 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
    <item>
     <widget class="QLineEdit" name="email">
      <property name="text"><string>Pay</string></property>
+     <property name="placeholderText"><string>name@example.com and a long tail</string></property>
     </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="okButtonWithAVeryLongObjectName"/>
    </item>
   </layout>
  </widget>
@@ -172,5 +182,57 @@ def test_changed_labels_and_the_name_are_strong_under_the_shell_style(tmp_path: 
         name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
         assert name is not None and name.text() == "email"
         assert name.fontInfo().weight() >= strong
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def _show(surface: FormSurface, qapp: QApplication, name: str, *, expand_all: bool = False) -> None:
+    session = surface._session  # noqa: SLF001
+    pane = surface._workbench.inspector  # noqa: SLF001
+    node = session.document.by_name(name)[0]
+    session.selection.set((node,), source=SelectionSource.PROGRAM)
+    pane.set_group_expanded(GroupId.ALL, expand_all)
+    pane.flush()
+    qapp.processEvents()
+
+
+def _row(surface: FormSurface, key: str) -> QWidget:
+    row = surface.findChild(QWidget, "formBuilder.row.%s" % key)
+    assert row is not None, key
+    return row
+
+
+def _label_of(row: QWidget) -> QLabel:
+    labels = [item for item in row.findChildren(QLabel) if item.text()]
+    assert labels
+    return labels[0]
+
+
+def _key_into(widget: QWidget, text: str) -> None:
+    widget.setFocus()
+    QTest.keyClicks(widget, text)
+
+
+def test_changed_bar_paints_the_accent_and_rows_stay_aligned(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-INSP-006: the 2 px bar is accent coloured and does not shift its row."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        _show(surface, qapp, "email")
+        pane = surface._workbench.inspector  # noqa: SLF001
+        found = re.search(r'rowChanged\[fbChanged="true"\] \{ background: (#[0-9A-Fa-f]{6})', pane.styleSheet())
+        assert found is not None
+        accent = found.group(1).lower()
+        changed = _row(surface, "text")
+        plain = _row(surface, "maxLength")
+        bar = changed.findChild(QWidget, "formBuilder.rowChanged")
+        assert bar is not None and bar.isVisible() and bar.width() == 2
+        image = changed.grab().toImage()
+        assert image.pixelColor(bar.x(), bar.y() + bar.height() // 2).name() == accent
+        changed_label = _label_of(changed)
+        plain_label = _label_of(plain)
+        assert changed_label.mapTo(pane, changed_label.rect().topLeft()).x() == plain_label.mapTo(
+            pane, plain_label.rect().topLeft()
+        ).x()
     finally:
         shutdown_main_window_for_test(window, qapp)

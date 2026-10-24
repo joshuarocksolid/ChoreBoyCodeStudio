@@ -188,7 +188,10 @@ class PropertiesPage(QWidget):
         )
         viewport = self._scroll.viewport()
         viewport.setAutoFillBackground(False)
-        viewport.setStyleSheet("background: %s;" % panel)
+        # Scoped: a rule with no selector reaches every row and beats the
+        # changed bar's accent.
+        viewport.setObjectName("formBuilder.inspectorViewport")
+        viewport.setStyleSheet("QWidget#formBuilder\\.inspectorViewport { background: %s; }" % panel)
         self._content.setStyleSheet(
             "QWidget#formBuilder\\.inspectorContent { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
@@ -568,6 +571,8 @@ class _Group(QWidget):
         while len(self._spare) > 160:
             delete_now(self._spare.popitem(last=False)[1])
 
+_BAR_SLOT = 8
+
 class _Row(QWidget):
 
     def __init__(self, services: Services, parent: QWidget) -> None:
@@ -604,7 +609,9 @@ class _Row(QWidget):
         self._slot_layout = QVBoxLayout(self._slot)
         self._slot_layout.setContentsMargins(0, 0, 0, 0)
         self._line = QHBoxLayout()
-        self._line.setContentsMargins(0, 0, 0, 0)
+        # Until a row is first changed, the margin holds the bar's 2 px and
+        # the 6 px spacing after it, so every row's columns line up.
+        self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
         self._line.setSpacing(6)
         self._line.addWidget(self._label_col, 0)
         self._line.addWidget(self._slot, 1)
@@ -619,7 +626,9 @@ class _Row(QWidget):
             bar.setObjectName("formBuilder.rowChanged")
             bar.setFixedWidth(2)
             bar.setMinimumHeight(18)
-            bar.hide()
+            # The bar stays shown once made and fbChanged picks its colour,
+            # so the columns do not move when a row is reset.
+            self._line.setContentsMargins(0, 0, 0, 0)
             self._line.insertWidget(0, bar, 0)
             self._bar = bar
         return self._bar
@@ -669,9 +678,9 @@ class _Row(QWidget):
         self._paint_qt(view, match_color)
         changed = view.changed
         if changed:
-            self._bar_widget().show()
+            set_style_flag(self._bar_widget(), "fbChanged", "true")
         elif self._bar is not None:
-            self._bar.hide()
+            set_style_flag(self._bar, "fbChanged", "false")
         if isinstance(view, LockedRow):
             self._show_locked(view, match_color)
             self._sync_reset()
