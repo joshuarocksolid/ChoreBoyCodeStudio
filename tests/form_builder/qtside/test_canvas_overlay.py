@@ -21,7 +21,9 @@ from app.features.form_builder.engine.ui4.reader import UiReadError
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.canvas.core.frame import Chip, Spring, Stroke
 from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
-from app.features.form_builder.qtside.canvas.core.space import CanvasRect, ZoomTo
+from app.features.form_builder.qtside.canvas.core.chips import CHIP_GAP
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect, ZoomFit, ZoomTo
+from app.features.form_builder.qtside.canvas.core.words import no_layout_text
 from app.features.form_builder.qtside.theme.chrome import on_accent_for
 from app.shell.theme_tokens import tokens_from_palette
 from app.features.form_builder.qtside.realize import Realizer
@@ -76,6 +78,69 @@ BARE = form(
   </widget>
 """,
 )
+
+
+INVOICE = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QWidget" name="Invoice">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>620</width><height>520</height></rect></property>
+  <property name="windowTitle"><string>Invoice</string></property>
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QGroupBox" name="customerGroup">
+     <property name="title"><string>Customer</string></property>
+     <layout class="QFormLayout" name="customerForm">
+      <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>Name</string></property></widget></item>
+      <item row="0" column="1"><widget class="QLineEdit" name="nameEdit"/></item>
+      <item row="1" column="0"><widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property></widget></item>
+      <item row="1" column="1"><widget class="QLineEdit" name="emailEdit"><property name="placeholderText"><string>name@example.com</string></property></widget></item>
+      <item row="2" column="0"><widget class="QLabel" name="addressLabel"><property name="text"><string>Address</string></property></widget></item>
+      <item row="2" column="1"><widget class="QPlainTextEdit" name="addressEdit"><property name="maximumSize"><size><width>16777215</width><height>48</height></size></property></widget></item>
+      <item row="3" column="0"><widget class="QLabel" name="dateLabel"><property name="text"><string>Date</string></property></widget></item>
+      <item row="3" column="1"><widget class="QDateEdit" name="dateEdit"/></item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="optionsGroup">
+     <property name="title"><string>Options</string></property>
+     <property name="minimumSize"><size><width>0</width><height>90</height></size></property>
+     <widget class="QCheckBox" name="taxCheck"><property name="geometry"><rect><x>16</x><y>28</y><width>120</width><height>22</height></rect></property><property name="text"><string>Charge tax</string></property></widget>
+     <widget class="QCheckBox" name="paidCheck"><property name="geometry"><rect><x>16</x><y>56</y><width>120</width><height>22</height></rect></property><property name="text"><string>Paid</string></property></widget>
+     <widget class="QComboBox" name="termsCombo"><property name="geometry"><rect><x>200</x><y>28</y><width>140</width><height>24</height></rect></property></widget>
+     <widget class="QSpinBox" name="discountSpin"><property name="geometry"><rect><x>200</x><y>58</y><width>80</width><height>24</height></rect></property></widget>
+     <widget class="QRadioButton" name="netRadio"><property name="geometry"><rect><x>380</x><y>28</y><width>100</width><height>22</height></rect></property><property name="text"><string>Net 30</string></property></widget>
+     <widget class="QRadioButton" name="codRadio"><property name="geometry"><rect><x>380</x><y>56</y><width>100</width><height>22</height></rect></property><property name="text"><string>COD</string></property></widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTableWidget" name="linesTable"/>
+   </item>
+   <item>
+    <layout class="QGridLayout" name="totalsGrid">
+     <item row="0" column="0"><widget class="QLabel" name="subtotalLabel"><property name="text"><string>Subtotal</string></property></widget></item>
+     <item row="0" column="1"><widget class="QLineEdit" name="subtotalEdit"><property name="readOnly"><bool>true</bool></property></widget></item>
+     <item row="1" column="0"><widget class="QLabel" name="taxLabel"><property name="text"><string>Tax</string></property></widget></item>
+     <item row="1" column="1"><widget class="QLineEdit" name="taxEdit"/></item>
+     <item row="2" column="0"><widget class="QLabel" name="totalLabel"><property name="text"><string>Total</string></property></widget></item>
+     <item row="2" column="1"><widget class="QLineEdit" name="totalEdit"/></item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="buttonRow">
+     <item><widget class="QPushButton" name="printButton"><property name="text"><string>Print</string></property></widget></item>
+     <item><spacer name="buttonSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+     <item><widget class="QPushButton" name="cancelButton"><property name="text"><string>Cancel</string></property></widget></item>
+     <item><widget class="QPushButton" name="saveButton"><property name="text"><string>Save invoice</string></property></widget></item>
+    </layout>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
 
 
 class _Host:
@@ -173,6 +238,64 @@ def test_chips_do_not_cover_content_on_loadable_corpus_forms() -> None:
     assert checked >= 100
 
 
+@pytest.mark.timeout(120)
+def test_the_selection_chip_stays_with_its_widget_on_the_choreboy_canvas() -> None:
+    """UX-CHIP-002 on the ChoreBoy canvas (1080 x 600 window) at Fit, 100% and 200%.
+
+    Every widget's chip exists. It touches its widget, or a leader reaches the
+    widget, or it is docked on the caption strip right above the widget's x.
+    """
+    with opened(INVOICE) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, _Host(), 440, 270)
+        root_id = session.document.root.id
+        nodes = [
+            node.id
+            for node in session.document.iter_preorder()
+            if isinstance(node, WidgetNode) and node.id != root_id and realizer.widget_for(node.id) is not None
+        ]
+        assert len(nodes) >= 20
+        try:
+            for zoom in (ZoomFit(), ZoomTo(1.0), ZoomTo(2.0)):
+                canvas.send(ZoomAsked(zoom))
+                _flush()
+                for node_id in nodes:
+                    session.selection.set((node_id,), current=node_id, source=SelectionSource.OUTLINE)
+                    _flush()
+                    _assert_chip_attached(canvas, session.document, node_id, zoom)
+        finally:
+            canvas.dispose()
+            parent.deleteLater()
+
+
+def _assert_chip_attached(canvas: FormCanvas, document: UiDocument, node_id: NodeId, zoom: object) -> None:
+    frame = canvas.overlay()
+    where = "%s at %r" % (_name(document, node_id), zoom)
+    chips = [item for item in frame.items if isinstance(item, Chip) and item.role in ("select", "layout")]
+    assert len(chips) == 1, "no selection chip for " + where
+    chip = chips[0]
+    outline = next(
+        item for item in frame.items if isinstance(item, Stroke) and item.role == "select" and item.width == 2
+    )
+    target = outline.rect.grown(-1)
+    if chip.docked:
+        assert frame.dock is not None and _fully_inside(chip.rect, frame.dock), where
+        assert chip.rect.x < target.x + target.width and target.x < chip.rect.x + chip.rect.width, where
+        return
+    if _gap(chip.rect, target) <= CHIP_GAP + 1:
+        return
+    leader = chip.leader
+    assert leader is not None, "detached chip for " + where
+    assert leader.start.y == leader.end.y, where
+    assert leader.end.x in (target.x, target.x + target.width), where
+    assert target.y <= leader.end.y <= target.y + target.height, where
+
+
+def _gap(a: CanvasRect, b: CanvasRect) -> int:
+    dx = max(b.x - (a.x + a.width), a.x - (b.x + b.width), 0)
+    dy = max(b.y - (a.y + a.height), a.y - (b.y + b.height), 0)
+    return max(dx, dy)
+
+
 def _forms() -> List[Path]:
     found = []
     for folder in _LOADABLE:
@@ -196,12 +319,22 @@ def _assert_clear(canvas: FormCanvas, session: FormSession, realizer: Realizer, 
             continue
         widgets.append((node.id, _mapped(proxy, root, widget)))
     view = canvas.visible_canvas_rect()
-    for chip_rect, node_id in canvas.overlay().chips:
+    frame = canvas.overlay()
+    docked = {item.rect for item in frame.items if isinstance(item, Chip) and item.docked}
+    # A "No layout" chip marks its own container's frame and may sit on its empty inside.
+    bare = {item.rect for item in frame.items if isinstance(item, Chip) and item.text == no_layout_text()}
+    for chip_rect, node_id in frame.chips:
         assert _fully_inside(chip_rect, view), "%s chip on %s leaves the viewport" % (
             path.name,
             _name(document, node_id),
         )
-        allowed = document.ancestors(node_id)
+        if chip_rect in docked:
+            # The dock is view chrome (the page caption). It covers no content.
+            assert frame.dock is not None and _fully_inside(chip_rect, frame.dock)
+            continue
+        allowed = set(document.ancestors(node_id))
+        if chip_rect in bare:
+            allowed.add(node_id)
         for other_id, other in widgets:
             if other_id in allowed:
                 continue
@@ -298,11 +431,13 @@ def _mapped(proxy: object, root: QWidget, widget: QWidget) -> CanvasRect:
     )
 
 
-def _canvas(session: object, realizer: object, host: _Host) -> Tuple[FormCanvas, QWidget]:
+def _canvas(
+    session: object, realizer: object, host: _Host, width: int = 960, height: int = 720
+) -> Tuple[FormCanvas, QWidget]:
     parent = QWidget()
-    parent.resize(960, 720)
+    parent.resize(width, height)
     canvas = FormCanvas(session, realizer, host, parent)  # type: ignore[arg-type]
-    canvas.resize(960, 720)
+    canvas.resize(width, height)
     parent.show()
     _flush()
     return canvas, parent

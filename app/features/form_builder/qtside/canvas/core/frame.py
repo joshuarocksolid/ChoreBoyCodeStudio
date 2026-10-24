@@ -66,6 +66,8 @@ class Chip:
     text: str
     role: Role
     leader: Optional[Leader]
+    #: In the dock strip. The view paints it as chrome above the page caption.
+    docked: bool = False
 
 
 @dataclass(frozen=True)
@@ -153,3 +155,6 @@ class OverlayFrame:
     items: Tuple[Item, ...]
     targets: Tuple[Tuple[CanvasRect, Target], ...]
     chips: Tuple[Tuple[CanvasRect, NodeId], ...]
+    #: The dock strip this frame was solved against. Docked chips sit at a
+    #: fixed offset inside it while the view scrolls.
+    dock: Optional[CanvasRect] = None

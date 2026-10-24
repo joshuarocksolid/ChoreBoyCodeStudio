@@ -18,9 +18,12 @@ from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.qtside.canvas.core.chips import (
+    CHIP_GAP,
     LABEL_CORNERS,
+    BesideSeat,
     ChipRequest,
     CornerSeat,
+    DockSeat,
     GutterSeat,
     Obstacle,
     corner_rect,
@@ -284,7 +287,7 @@ def test_layout_page_centres_inside_the_gutters() -> None:
     assert parked.page_origin == CanvasPoint(GUTTERS.left, GUTTERS.top)
 
 
-def test_a_blocked_chip_sits_in_the_gutter_and_still_gets_a_seat() -> None:
+def test_blocked_corners_seat_the_chip_beside_its_target() -> None:
     page = CanvasRect(0, 0, 200, 100)
     target = CanvasRect(80, 40, 40, 20)
     size = CanvasSize(30, 18)
@@ -296,12 +299,19 @@ def test_a_blocked_chip_sits_in_the_gutter_and_still_gets_a_seat() -> None:
         ChipRequest(index, target, size, LABEL_CORNERS, frozenset()) for index in range(8)
     )
     seats = place_chips(requests, blockers, (), page, page.grown(400))
-    assert len(seats) == 2
+    first = seats[0]
+    assert isinstance(first, BesideSeat) and first.leader is None
+    assert first.rect.x == target.x + target.width + CHIP_GAP
     for seat in seats:
-        assert isinstance(seat, GutterSeat)
-        assert seat.leader.start.y == seat.leader.end.y
-        assert seat.rect.x + seat.rect.width <= page.x or seat.rect.x >= page.x + page.width
-        assert not seat.rect.intersects(page)
+        assert not seat.rect.intersects(target)
+        assert all(not seat.rect.intersects(blocker.rect) for blocker in blockers)
+        leader = getattr(seat, "leader", None)
+        if leader is None:
+            continue
+        assert leader.start.y == leader.end.y
+        for other in seats:
+            if other is not seat:
+                assert not _segment_hits(leader.start.x, leader.end.x, leader.start.y, other.rect)
 
 
 def test_a_chip_outside_the_viewport_is_not_pulled_onto_the_page() -> None:
@@ -700,10 +710,11 @@ def test_the_primary_chip_is_seated_and_its_leader_stays_horizontal() -> None:
         assert not _segment_hits(seat.leader.start.x, seat.leader.end.x, seat.leader.start.y, sibling.rect)
 
 
-def test_a_packed_row_keeps_the_chip_off_its_neighbours() -> None:
-    """The leader cannot cross the row, so the chip stays in the gutter."""
+def test_a_packed_row_docks_the_chip_at_the_targets_x() -> None:
+    """No clear seat and no clear leader: the chip goes to the dock, never away."""
     page = CanvasRect(200, 0, 400, 300)
     viewport = CanvasRect(0, 0, 900, 400)
+    dock = CanvasRect(200, 0, 400, 22)
     target = CanvasRect(260, 80, 16, 14)
     neighbours = (
         Obstacle(NodeId(1), CanvasRect(260, 60, 16, 16)),
@@ -713,15 +724,12 @@ def test_a_packed_row_keeps_the_chip_off_its_neighbours() -> None:
         Obstacle(NodeId(5), target),
     )
     request = ChipRequest("primary", target, CanvasSize(40, 18), LABEL_CORNERS, frozenset(), required=True)
-    seats = place_chips((request,), neighbours, (), page, viewport)
-    assert len(seats) == 1
-    seat = seats[0]
-    for obstacle in neighbours:
-        assert not seat.rect.intersects(obstacle.rect)
-    assert isinstance(seat, GutterSeat)
-    assert seat.leader.start.y == seat.leader.end.y
-    for obstacle in neighbours:
-        assert not _segment_hits(seat.leader.start.x, seat.leader.end.x, seat.leader.start.y, obstacle.rect)
+    (seat,) = place_chips((request,), neighbours, (dock,), page, viewport, dock)
+    assert isinstance(seat, DockSeat)
+    assert seat.rect.x == target.x
+    assert seat.rect.y >= dock.y and seat.rect.y + seat.rect.height <= dock.y + dock.height
+    # The leader would cross the neighbour above, so there is none.
+    assert seat.leader is None
 
 
 def test_arrow_keys_skip_ancestors_and_widgets_that_are_not_past_the_edge() -> None:

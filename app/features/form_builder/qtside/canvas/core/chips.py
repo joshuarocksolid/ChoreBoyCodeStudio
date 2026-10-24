@@ -1,9 +1,11 @@
 """Chip and badge placement. A pure function of rectangles.
 
-A seat is a corner inside the viewport, or a gutter outside the page.
-A corner outside the viewport is skipped. A gutter leader is horizontal
-and stops before other content. A required chip that fits the viewport
-still gets a clear seat when the leader cannot reach its widget.
+Seats, in order: a corner above or below the target; a seat beside it on its
+row (adjacent, or further along with a horizontal leader that stops at the
+target); the page gutter with a horizontal leader. Every seat is inside the
+viewport and clear of non-ancestor content and of earlier seats. The selection
+chip never goes unseated: its last resort is the dock, a strip of view chrome
+along the top of the canvas, with the chip at the target's x.
 """
 
 from __future__ import annotations
@@ -14,14 +16,20 @@ from typing import Dict, FrozenSet, Hashable, List, Literal, Optional, Sequence,
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, CanvasSize
 
-Corner = Literal["above_left", "below_left", "above_right", "below_right"]
+Corner = Literal[
+    "above_left", "below_left", "above_right", "below_right", "inside_top_right", "inside_bottom_right"
+]
 Side = Literal["left", "right"]
 
 LABEL_CORNERS: Tuple[Corner, ...] = ("above_left", "below_left", "above_right", "below_right")
 BADGE_CORNERS: Tuple[Corner, ...] = ("above_right", "above_left")
+#: "No layout" marks its own frame. Inside seats need the container in ``exempt``.
+BARE_CORNERS: Tuple[Corner, ...] = LABEL_CORNERS + ("inside_top_right", "inside_bottom_right")
 
 CHIP_GAP = 7
 GUTTER_INSET = 4
+#: Step of the scan along the target's row, in canvas pixels.
+ROW_STEP = 8
 _CELL = 64
 
 
@@ -33,7 +41,7 @@ class ChipRequest:
     corners: Tuple[Corner, ...]
     #: Ancestors the chip may overlap. The target itself is never exempt.
     exempt: FrozenSet[NodeId]
-    #: The selection chip. It is seated even when the only room overlaps content.
+    #: The selection chip. When nothing else is clear it goes in the dock.
     required: bool = False
 
 
@@ -57,6 +65,16 @@ class CornerSeat:
 
 
 @dataclass(frozen=True)
+class BesideSeat:
+    """On the target's row. ``leader`` is None when the chip touches the target gap."""
+
+    key: Hashable
+    rect: CanvasRect
+    side: Side
+    leader: Optional[Leader]
+
+
+@dataclass(frozen=True)
 class GutterSeat:
     key: Hashable
     rect: CanvasRect
@@ -64,7 +82,16 @@ class GutterSeat:
     side: Side
 
 
-ChipSeat = Union[CornerSeat, GutterSeat]
+@dataclass(frozen=True)
+class DockSeat:
+    """In the dock strip, which is view chrome and covers no content."""
+
+    key: Hashable
+    rect: CanvasRect
+    leader: Optional[Leader]
+
+
+ChipSeat = Union[CornerSeat, BesideSeat, GutterSeat, DockSeat]
 
 
 def place_chips(
@@ -73,19 +100,24 @@ def place_chips(
     fixed: Sequence[CanvasRect],
     page: CanvasRect,
     viewport: CanvasRect,
+    dock: Optional[CanvasRect] = None,
 ) -> Tuple[ChipSeat, ...]:
-    """Seats that fit. Earlier requests keep the corners they take."""
+    """Seats that fit. Earlier requests keep the seats they take.
+
+    ``dock`` is the chrome strip for a required chip with no other seat. None
+    uses a strip along the top of ``viewport``.
+    """
     buckets = _Buckets(content)
     taken: List[CanvasRect] = list(fixed)
     seats: List[ChipSeat] = []
     for request in requests:
-        seat = _corner_seat(request, buckets, taken, viewport)
+        seat: Optional[ChipSeat] = _corner_seat(request, buckets, taken, viewport)
         if seat is None:
-            seat = _gutter_seat(request, buckets, taken, page, viewport, True)
+            seat = _beside_seat(request, buckets, taken, len(fixed), viewport)
+        if seat is None:
+            seat = _gutter_seat(request, buckets, taken, len(fixed), page, viewport)
         if seat is None and request.required:
-            seat = _gutter_seat(request, buckets, taken, page, viewport, False)
-        if seat is None and request.required:
-            seat = _clear_viewport_corner(request, buckets, taken, viewport)
+            seat = _dock_seat(request, buckets, taken, len(fixed), viewport, dock)
         if seat is None:
             continue
         taken.append(seat.rect)
@@ -99,21 +131,100 @@ def _corner_seat(
     taken: Sequence[CanvasRect],
     viewport: CanvasRect,
 ) -> Optional[CornerSeat]:
+    """A corner, slid along the target's edge into the viewport when needed."""
+    target = request.target
     for corner in request.corners:
-        rect = corner_rect(request.target, request.size, corner)
+        rect = corner_rect(target, request.size, corner)
+        if not _inside(rect, viewport):
+            x = _clamp(rect.x, viewport.x, viewport.x + viewport.width - rect.width)
+            if x >= target.x + target.width or x + rect.width <= target.x:
+                continue
+            rect = CanvasRect(x, rect.y, rect.width, rect.height)
         if not _clear(rect, viewport, buckets, request.exempt, taken):
             continue
         return CornerSeat(request.key, rect, corner)
     return None
 
 
+def _beside_seat(
+    request: ChipRequest,
+    buckets: "_Buckets",
+    taken: Sequence[CanvasRect],
+    fixed_count: int,
+    viewport: CanvasRect,
+) -> Optional[BesideSeat]:
+    """Right then left of the target, nearest first, while the leader stays clear."""
+    target = request.target
+    size = request.size
+    if size.width > viewport.width or size.height > viewport.height:
+        return None
+    for y in _row_ys(target, size.height, viewport):
+        leader_y = _clamp(y + size.height // 2, target.y, target.y + target.height - 1)
+        for side in ("right", "left"):
+            found = _scan_row(request, buckets, taken, fixed_count, viewport, side, y, leader_y)
+            if found is not None:
+                return found
+    return None
+
+
+def _scan_row(
+    request: ChipRequest,
+    buckets: "_Buckets",
+    taken: Sequence[CanvasRect],
+    fixed_count: int,
+    viewport: CanvasRect,
+    side: Side,
+    y: int,
+    leader_y: int,
+) -> Optional[BesideSeat]:
+    target = request.target
+    width = request.size.width
+    if side == "right":
+        edge = target.x + target.width
+        x = edge + CHIP_GAP
+        limit = viewport.x + viewport.width - width
+        step = ROW_STEP
+    else:
+        edge = target.x
+        x = edge - CHIP_GAP - width
+        limit = viewport.x
+        step = -ROW_STEP
+    near = x
+    while (x <= limit) if side == "right" else (x >= limit):
+        rect = CanvasRect(x, y, width, request.size.height)
+        leader: Optional[Leader] = None
+        if x != near:
+            start = x if side == "right" else x + width
+            leader = Leader(CanvasPoint(start, leader_y), CanvasPoint(edge, leader_y))
+            if not _leader_clear(leader, buckets, request.exempt, taken[fixed_count:]):
+                return None
+        if _clear(rect, viewport, buckets, request.exempt, taken):
+            return BesideSeat(request.key, rect, side, leader)
+        x += step
+    return None
+
+
+def _row_ys(target: CanvasRect, height: int, viewport: CanvasRect) -> Tuple[int, ...]:
+    """Centred on the target, then centred on its visible part."""
+    centred = _centred_y(target, height)
+    top = max(target.y, viewport.y)
+    bottom = min(target.y + target.height, viewport.y + viewport.height)
+    ys = [centred]
+    if bottom > top:
+        visible = top + (bottom - top - height) // 2
+        visible = _clamp(visible, viewport.y, viewport.y + viewport.height - height)
+        if visible not in ys:
+            ys.append(visible)
+    return tuple(ys)
+
+
 def _gutter_seat(
     request: ChipRequest,
     buckets: "_Buckets",
     taken: Sequence[CanvasRect],
+    fixed_count: int,
     page: CanvasRect,
     viewport: CanvasRect,
-    require_leader: bool,
 ) -> Optional[GutterSeat]:
     size = request.size
     if size.width > viewport.width or size.height > viewport.height:
@@ -122,14 +233,14 @@ def _gutter_seat(
     other: Side = "left" if preferred == "right" else "right"
     centred = _centred_y(request.target, size.height)
     for side in (preferred, other):
-        found = _gutter_at(request, buckets, taken, page, viewport, side, centred, require_leader)
+        found = _gutter_at(request, buckets, taken, fixed_count, page, viewport, side, centred)
         if found is not None:
             return found
     for side in (preferred, other):
         for y in _span_ys(request.target, size.height):
             if y == centred:
                 continue
-            found = _gutter_at(request, buckets, taken, page, viewport, side, y, require_leader)
+            found = _gutter_at(request, buckets, taken, fixed_count, page, viewport, side, y)
             if found is not None:
                 return found
     return None
@@ -139,44 +250,85 @@ def _gutter_at(
     request: ChipRequest,
     buckets: "_Buckets",
     taken: Sequence[CanvasRect],
+    fixed_count: int,
     page: CanvasRect,
     viewport: CanvasRect,
     side: Side,
     y: int,
-    require_leader: bool,
 ) -> Optional[GutterSeat]:
     rect = CanvasRect(_natural_x(page, request.size, side), y, request.size.width, request.size.height)
     if not _clear(rect, viewport, buckets, request.exempt, taken):
         return None
-    leader = _safe_leader(rect, request.target, side, buckets, request.exempt)
-    if require_leader and not _reaches(leader, request.target, side):
+    leader = _leader(rect, request.target, side)
+    if not _leader_clear(leader, buckets, request.exempt, taken[fixed_count:]):
         return None
     return GutterSeat(request.key, rect, leader, side)
 
 
-def _clear_viewport_corner(
+def _dock_seat(
     request: ChipRequest,
     buckets: "_Buckets",
     taken: Sequence[CanvasRect],
+    fixed_count: int,
     viewport: CanvasRect,
-) -> Optional[CornerSeat]:
-    """A clear corner of the viewport. Used when both gutters are off screen."""
+    dock: Optional[CanvasRect],
+) -> DockSeat:
+    """Cannot fail. At the target's x, slid off earlier chips when there is room."""
     size = request.size
-    if size.width > viewport.width or size.height > viewport.height:
+    target = request.target
+    strip = dock
+    if strip is None or strip.width <= 0 or strip.height <= 0:
+        strip = CanvasRect(viewport.x, viewport.y, viewport.width, size.height + 4)
+    low = max(strip.x, viewport.x)
+    high = min(strip.x + strip.width, viewport.x + viewport.width) - size.width
+    if high < low:
+        high = low
+    y = strip.y + (strip.height - size.height) // 2
+    y = _clamp(y, viewport.y, viewport.y + viewport.height - size.height)
+    wanted = _clamp(target.x, low, high)
+    # The dock paints over the chrome under it (the pinned page name), so only
+    # chips placed earlier push it along.
+    others = list(taken[fixed_count:])
+    spots = [wanted]
+    for rect in others:
+        spots.append(_clamp(rect.x + rect.width + GUTTER_INSET, low, high))
+        spots.append(_clamp(rect.x - GUTTER_INSET - size.width, low, high))
+    spots.sort(key=lambda x: abs(x - wanted))
+    chosen = wanted
+    for x in spots:
+        if not _hits_any(CanvasRect(x, y, size.width, size.height), others):
+            chosen = x
+            break
+    rect = CanvasRect(chosen, y, size.width, size.height)
+    leader = _dock_leader(rect, target, buckets, request.exempt, taken[fixed_count:])
+    return DockSeat(request.key, rect, leader)
+
+
+def _dock_leader(
+    rect: CanvasRect,
+    target: CanvasRect,
+    buckets: "_Buckets",
+    exempt: FrozenSet[NodeId],
+    chips: Sequence[CanvasRect],
+) -> Optional[Leader]:
+    """A vertical leader to the target's top, only when nothing is in the way."""
+    left = max(rect.x, target.x) + 1
+    right = min(rect.x + rect.width, target.x + target.width) - 1
+    top = rect.y + rect.height
+    if right < left or target.y <= top:
         return None
-    right = viewport.x + viewport.width - size.width
-    bottom = viewport.y + viewport.height - size.height
-    spots: Tuple[Tuple[int, int, Corner], ...] = (
-        (viewport.x, viewport.y, "above_left"),
-        (viewport.x, bottom, "below_left"),
-        (right, viewport.y, "above_right"),
-        (right, bottom, "below_right"),
-    )
-    for x, y, corner in spots:
-        rect = CanvasRect(x, y, size.width, size.height)
-        if _clear(rect, viewport, buckets, request.exempt, taken):
-            return CornerSeat(request.key, rect, corner)
-    return None
+    x = (left + right) // 2
+    if target.y - top > 2:
+        probe = CanvasRect(x, top + 1, 1, target.y - top - 2)
+        if buckets.blocked(probe, exempt) or _hits_any(probe, chips):
+            return None
+    return Leader(CanvasPoint(x, top), CanvasPoint(x, target.y))
+
+
+def _clamp(value: int, low: int, high: int) -> int:
+    if high < low:
+        return low
+    return max(low, min(value, high))
 
 
 def _preferred_side(target: CanvasRect, page: CanvasRect) -> Side:
@@ -225,44 +377,19 @@ def _span_ys(target: CanvasRect, height: int) -> Tuple[int, ...]:
     return tuple(values)
 
 
-def _safe_leader(
-    rect: CanvasRect,
-    target: CanvasRect,
-    side: Side,
-    buckets: "_Buckets",
-    exempt: FrozenSet[NodeId],
-) -> Leader:
-    """Horizontal leader, shortened so it does not enter another widget."""
-    full = _leader(rect, target, side)
-    if _segment_clear(full, buckets, exempt):
-        return full
-    start = full.start.x
-    end = full.end.x
-    step = 1 if end >= start else -1
-    y = full.start.y
-    best = start
-    reached = start
-    while reached != end:
-        reached += step
-        if not _segment_clear(Leader(CanvasPoint(start, y), CanvasPoint(reached, y)), buckets, exempt):
-            break
-        best = reached
-    return Leader(CanvasPoint(start, y), CanvasPoint(best, y))
+def _leader_clear(
+    leader: Leader, buckets: "_Buckets", exempt: FrozenSet[NodeId], taken: Sequence[CanvasRect]
+) -> bool:
+    """A horizontal leader crosses no other content and no other chip.
 
-
-def _reaches(leader: Leader, target: CanvasRect, side: Side) -> bool:
-    if side == "right":
-        return leader.end.x >= target.x + target.width
-    return leader.end.x <= target.x
-
-
-def _segment_clear(leader: Leader, buckets: "_Buckets", exempt: FrozenSet[NodeId]) -> bool:
+    Handles and chrome (the fixed rects) may sit on a leader.
+    """
     left = min(leader.start.x, leader.end.x) + 1
     right = max(leader.start.x, leader.end.x) - 1
     if right <= left:
         return True
     probe = CanvasRect(left, leader.start.y, right - left, 1)
-    return not buckets.blocked(probe, exempt)
+    return not buckets.blocked(probe, exempt) and not _hits_any(probe, taken)
 
 
 def _inside(rect: CanvasRect, viewport: CanvasRect) -> bool:
@@ -289,6 +416,20 @@ def _clear(
 
 
 def corner_rect(target: CanvasRect, size: CanvasSize, corner: Corner) -> CanvasRect:
+    if corner == "inside_top_right":
+        return CanvasRect(
+            target.x + target.width - GUTTER_INSET - size.width,
+            target.y + GUTTER_INSET,
+            size.width,
+            size.height,
+        )
+    if corner == "inside_bottom_right":
+        return CanvasRect(
+            target.x + target.width - GUTTER_INSET - size.width,
+            target.y + target.height - GUTTER_INSET - size.height,
+            size.width,
+            size.height,
+        )
     if corner == "above_left":
         return CanvasRect(target.x, target.y - CHIP_GAP - size.height, size.width, size.height)
     if corner == "below_left":
@@ -306,19 +447,6 @@ def corner_rect(target: CanvasRect, size: CanvasSize, corner: Corner) -> CanvasR
         size.width,
         size.height,
     )
-
-
-def gutter_spot(
-    target: CanvasRect,
-    size: CanvasSize,
-    page: CanvasRect,
-    taken: Sequence[CanvasRect],
-) -> Tuple[CanvasRect, Leader, Side]:
-    """The centred gutter outside ``page``. ``taken`` does not pull it onto the page."""
-    del taken
-    side = _preferred_side(target, page)
-    rect = CanvasRect(_natural_x(page, size, side), _centred_y(target, size.height), size.width, size.height)
-    return rect, _leader(rect, target, side), side
 
 
 class _Buckets:

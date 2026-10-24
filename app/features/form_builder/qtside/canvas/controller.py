@@ -331,6 +331,7 @@ class CanvasController:
                 self._stage.chrome_rects(),
                 self._measure,
                 visible_scene_rect(self._view),
+                self._stage.dock_rect(),
             ),
         )
 

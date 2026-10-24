@@ -97,6 +97,7 @@ class Stage:
         self._selected_page_style = ""
         self._backdrop: Optional[BackdropPalette] = None
         self._extra: Tuple[QWidget, ...] = ()
+        self._dock: Optional[QWidget] = None
         self._proxy = QGraphicsProxyWidget()
         scene = view.scene()
         if scene is None:
@@ -176,6 +177,19 @@ class Stage:
                 CanvasRect(widget.x() + scroll_x, widget.y() + scroll_y, widget.width(), widget.height())
             )
         return tuple(rects)
+
+    def dock_rect(self) -> Optional[CanvasRect]:
+        """The chrome strip a selection chip falls back to, in canvas pixels."""
+        widget = self._dock
+        if widget is None or widget.isHidden() or widget.width() <= 0:
+            return None
+        scroll_x = self._view.horizontalScrollBar().value()
+        scroll_y = self._view.verticalScrollBar().value()
+        return CanvasRect(widget.x() + scroll_x, widget.y() + scroll_y, widget.width(), widget.height())
+
+    def dock_on(self, widget: QWidget) -> None:
+        """A view widget that sticks to the top of the view: the page caption."""
+        self._dock = widget
 
     def set_banner_push(self, pixels: int) -> None:
         """Lift the name chip above the caption. The page stays in the gutter."""

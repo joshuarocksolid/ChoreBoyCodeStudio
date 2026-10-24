@@ -19,11 +19,13 @@ from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, W
 from app.features.form_builder.engine.ui4.values import EnumValue
 from app.features.form_builder.qtside.canvas.core.chips import (
     BADGE_CORNERS,
+    BARE_CORNERS,
     LABEL_CORNERS,
     ChipRequest,
     ChipSeat,
     Corner,
-    GutterSeat,
+    CornerSeat,
+    DockSeat,
     Obstacle,
     place_chips,
 )
@@ -141,6 +143,8 @@ class FrameInputs:
     #: Visible canvas. None keeps a loose gutter around the page for callers
     #: that have not measured the viewport yet.
     viewport: Optional[CanvasRect] = None
+    #: Chrome strip for a selection chip with no clear seat (the page caption).
+    dock: Optional[CanvasRect] = None
 
 
 @dataclass(frozen=True)
@@ -273,8 +277,8 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     faces, requests = _requests(static, inputs, shown, rects)
     fixed = tuple(hit for hit, _target in handle_hits) + inputs.chrome
     viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
-    seats = place_chips(requests, static.content, fixed, page, viewport)
-    chip_hits, chip_rows = _seat_items(items, seats, faces)
+    seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
+    chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None)
     targets: List[Tuple[CanvasRect, Target]] = []
     targets.extend(reversed(chip_hits))
     targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
@@ -286,6 +290,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         tuple(items),
         tuple(targets),
         tuple(chip_rows),
+        inputs.dock,
     )
 
 
@@ -467,9 +472,10 @@ def _requests(
             ("bare", node_id),
             rect,
             _label_size(text, inputs.measure),
-            LABEL_CORNERS,
+            BARE_CORNERS,
             document,
             _Face("chip", node_id, "tab", text, OpenLayoutPopover(node_id)),
+            own_frame=True,
         )
     return faces, requests
 
@@ -484,27 +490,30 @@ def _ask(
     document: UiDocument,
     face: _Face,
     required: bool = False,
+    own_frame: bool = False,
 ) -> None:
     faces[key] = face
-    requests.append(
-        ChipRequest(key, target, size, corners, ancestors(document, face.node), required=required)
-    )
+    exempt = ancestors(document, face.node)
+    if own_frame:
+        exempt = exempt | {face.node}
+    requests.append(ChipRequest(key, target, size, corners, exempt, required=required))
 
 
 def _seat_items(
     items: List[Item],
     seats: Sequence[ChipSeat],
     faces: Mapping[Hashable, _Face],
+    chrome_dock: bool,
 ) -> Tuple[List[Tuple[CanvasRect, Target]], List[Tuple[CanvasRect, NodeId]]]:
     hits: List[Tuple[CanvasRect, Target]] = []
     rows: List[Tuple[CanvasRect, NodeId]] = []
     for seat in seats:
         face = faces[seat.key]
-        leader = seat.leader if isinstance(seat, GutterSeat) else None
+        leader = None if isinstance(seat, CornerSeat) else seat.leader
         if face.kind == "badge":
             items.append(Badge(seat.rect, "error", face.role, leader))
         else:
-            items.append(Chip(seat.rect, face.text, face.role, leader))
+            items.append(Chip(seat.rect, face.text, face.role, leader, chrome_dock and isinstance(seat, DockSeat)))
         rows.append((seat.rect, face.node))
         if face.action is not None:
             hits.append((seat.rect, OnChip(face.action)))

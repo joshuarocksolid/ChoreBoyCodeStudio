@@ -7,7 +7,7 @@ The page caption, shadow and toast stay view chrome.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.qt.QtCore import QEvent, QPoint, QRectF, Qt
 from app.qt.QtGui import QColor, QFont, QPainter, QPen
@@ -26,11 +26,11 @@ from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
-from app.features.form_builder.qtside.canvas.core.frame import OverlayFrame
+from app.features.form_builder.qtside.canvas.core.frame import Chip, OverlayFrame
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
-from app.features.form_builder.qtside.canvas.paint import paint_frame
+from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
 from app.features.form_builder.qtside.canvas.stage import REVEAL_PAD, Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
@@ -242,7 +242,9 @@ class FormCanvas(QGraphicsView):
         controller = getattr(self, "_controller", None)
         if controller is None:
             return
-        paint_frame(painter, controller.frame, self._palette, rect)
+        frame = controller.frame
+        paint_frame(painter, frame, self._palette, rect)
+        self._title.set_docked(_docked(frame), self._palette)
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         painter.fillRect(rect, QColor(self._canvas_bg))
@@ -275,6 +277,7 @@ class FormCanvas(QGraphicsView):
         self._frame.setFocusPolicy(_no_focus())
         self._frame.setAttribute(_transparent(), True)
         self._stage.track_chrome(self._title)
+        self._stage.dock_on(self._title)
 
     def _sync_title(self) -> None:
         self._title.setText(page_title_text(self._session.document))
@@ -375,6 +378,16 @@ def _apply_page_chrome_style(title: QWidget, frame: QWidget, tokens: Optional[Sh
     )
 
 
+def _docked(frame: OverlayFrame) -> Tuple[Tuple[Chip, int, int], ...]:
+    """Docked chips with the dock origin they were solved against."""
+    dock = frame.dock
+    if dock is None:
+        return ()
+    return tuple(
+        (item, dock.x, dock.y) for item in frame.items if isinstance(item, Chip) and item.docked
+    )
+
+
 def _title_font() -> QFont:
     font = QFont(startup_font())
     font.setPixelSize(11)
@@ -394,6 +407,8 @@ class _PageTitle(QWidget):
         self.setFont(_title_font())
         self._text = ""
         self._border = ""
+        self._docked: Tuple[Tuple[Chip, int, int], ...] = ()
+        self._palette: Optional[CanvasPalette] = None
 
     def text(self) -> str:
         return self._text
@@ -405,6 +420,17 @@ class _PageTitle(QWidget):
     def set_border(self, color: str) -> None:
         self._border = color
         self.update()
+
+    def set_docked(self, docked: Tuple[Tuple[Chip, int, int], ...], palette: CanvasPalette) -> None:
+        """Selection chips that had no clear seat on the canvas sit on this strip."""
+        if docked == self._docked and palette is self._palette:
+            return
+        self._docked = docked
+        self._palette = palette
+        self.update()
+
+    def docked(self) -> Tuple[Chip, ...]:
+        return tuple(item for item, _x, _y in self._docked)
 
     def paintEvent(self, _event: object) -> None:  # noqa: N802 - Qt override
         painter = QPainter(self)
@@ -422,6 +448,12 @@ class _PageTitle(QWidget):
         baseline = (self.height() + metrics.ascent() - metrics.descent()) // 2
         painter.drawText(8, baseline, shown)
         _paint_caption_glyphs(painter, self.width())
+        if self._palette is not None:
+            for item, dock_x, dock_y in self._docked:
+                painter.save()
+                painter.translate(-dock_x, -dock_y)
+                paint_docked_chip(painter, item, self._palette)
+                painter.restore()
         painter.end()
 
 

@@ -142,6 +142,22 @@ def _chip(painter: QPainter, item: Chip, palette: CanvasPalette) -> None:
             QPointF(item.leader.start.x, item.leader.start.y),
             QPointF(item.leader.end.x, item.leader.end.y),
         )
+    if item.docked:
+        # The view paints the body above its caption chrome (paint_docked_chip).
+        return
+    _chip_body(painter, item, fill, palette)
+
+
+def paint_docked_chip(painter: QPainter, item: Chip, palette: CanvasPalette) -> None:
+    """The body of a docked chip. The painter is in canvas pixels."""
+    painter.save()
+    hints = getattr(QPainter, "RenderHint", QPainter)
+    painter.setRenderHint(getattr(hints, "Antialiasing"), True)
+    _chip_body(painter, item, _ink(palette, item.role, 1.0), palette)
+    painter.restore()
+
+
+def _chip_body(painter: QPainter, item: Chip, fill: QColor, palette: CanvasPalette) -> None:
     painter.setPen(_no_pen())
     painter.setBrush(fill)
     painter.drawRoundedRect(_box(item.rect), _CHIP_RADIUS, _CHIP_RADIUS)
