@@ -425,6 +425,7 @@ class OutlinePane(QWidget):
         self.tree.currentItemChanged.connect(self._current_changed)
         layout.addWidget(self.tree, 1)
         self._collapsed = False
+        self._hover: Optional[NodeId] = None
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
@@ -453,6 +454,12 @@ class OutlinePane(QWidget):
         if current is not None:
             self.tree.setCurrentItem(current)
         self._blocked = False
+
+    def set_hover(self, node: Optional[NodeId]) -> None:
+        self._hover = node
+
+    def hover_node(self) -> Optional[NodeId]:
+        return self._hover
 
     def show_for_design(self) -> None:
         self.tree.setVisible(not self._collapsed)

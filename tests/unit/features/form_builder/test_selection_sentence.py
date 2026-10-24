@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.ui4.reader import read_ui
-from app.features.form_builder.integration.chrome_text import selection_sentence
+from app.features.form_builder.integration.chrome_text import selection_sentence, status_sentence
 
 import pytest
 
@@ -65,6 +65,14 @@ _GROUP = """<?xml version="1.0" encoding="UTF-8"?>
  <connections/>
 </ui>
 """
+
+
+def test_gesture_text_wins_over_hover_and_the_selection() -> None:
+    assert status_sentence("Dragging", "Place it", "Not used", "email · hover", "3 selected") == "Dragging"
+    assert status_sentence("", "Place it", "Not used", "email · hover", "3 selected") == "Place it"
+    assert status_sentence("", "", "Not used", "email · hover", "3 selected") == "Not used"
+    assert status_sentence("", "", "", "email · hover", "3 selected") == "email · hover"
+    assert status_sentence("", "", "", "", "3 selected") == "3 selected"
 
 
 def test_line_edit_in_a_form_layout_names_the_row() -> None:

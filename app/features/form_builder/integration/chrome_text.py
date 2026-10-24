@@ -82,6 +82,19 @@ def widget_class_phrase(class_name: str) -> str:
     return parts[0] + "".join(" " + part.lower() for part in parts[1:])
 
 
+def status_sentence(gesture: str, overlay: str, inert: str, hover: str, selection: str) -> str:
+    """Gesture, then overlay instruction, then a key note, then hover, then the selection."""
+    if gesture:
+        return gesture
+    if overlay:
+        return overlay
+    if inert:
+        return inert
+    if hover:
+        return hover
+    return selection
+
+
 def selection_sentence(document: UiDocument, current: Optional[NodeId], count: int) -> str:
     """Status-bar sentence. Object names only. Never a session id."""
     if count > 1:
@@ -192,6 +205,7 @@ __all__ = [
     "page_title_text",
     "recovered_draft_sentence",
     "selection_sentence",
+    "status_sentence",
     "undo_menu_text",
     "widget_class_phrase",
 ]

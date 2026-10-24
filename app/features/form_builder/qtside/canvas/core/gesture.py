@@ -598,7 +598,8 @@ def _idle_move(gesture: Idle, event: Move, world: World) -> Step:
     if gesture.hover == node:
         return Step(gesture, (Cursor(cursor),))
     effects: Tuple[Effect, ...] = (HoverChanged(node), Cursor(cursor))
-    if sentence:
+    # A widget hover is the status hover sentence. Narrating it would stick as a gesture.
+    if sentence and node is None:
         effects = effects + (Narrate(sentence),)
     return Step(Idle(node), effects)
 

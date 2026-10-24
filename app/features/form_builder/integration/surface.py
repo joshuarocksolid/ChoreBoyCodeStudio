@@ -45,6 +45,7 @@ from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
     recovered_draft_sentence,
     selection_sentence,
+    status_sentence,
     undo_menu_text,
 )
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
@@ -69,6 +70,8 @@ from app.features.form_builder.integration.toast import (
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
+from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
+from app.features.form_builder.qtside.canvas.core.words import FIRST_FOCUS_HINT, hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
@@ -272,6 +275,9 @@ class FormSurface(QWidget):
         self._selection_unsub = session.selection.subscribe(self._on_selection)
         self._source_unsub = source.subscribe_changed(self._on_source_changed)
         self._inert_note = ""
+        self._gesture_sentence = ""
+        self._overlay_sentence = ""
+        self._hover_sentence = ""
         self._problem_timer = QTimer(self)
         self._problem_timer.setSingleShot(True)
         self._problem_timer.timeout.connect(self._flush_problems)
@@ -362,10 +368,15 @@ class FormSurface(QWidget):
         del diagnostics
 
     def editor_status_sentence(self) -> str:
-        if self._inert_note:
-            return self._inert_note
         state = self._session.selection.state
-        return selection_sentence(self._session.document, state.current, len(state.ids))
+        selection = selection_sentence(self._session.document, state.current, len(state.ids))
+        return status_sentence(
+            self._gesture_sentence,
+            self._overlay_sentence,
+            self._inert_note,
+            self._hover_sentence,
+            selection,
+        )
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
         if detail and self._toolbar.xml.isChecked():
@@ -703,6 +714,7 @@ class FormSurface(QWidget):
 
     def _on_selection(self, change: object) -> None:
         self._inert_note = ""
+        self._gesture_sentence = ""
         current = getattr(getattr(change, "after", None), "current", None)
         self._workbench.inspector.show_selection(self._session.document, current)
         self._workbench.outline.rebuild(self._session.document, current)
@@ -717,14 +729,19 @@ class FormSurface(QWidget):
             workbench.close_drawers()
 
     def narrate(self, sentence: str) -> None:
-        window = self.window()
-        bar = getattr(window, "status_bar", None)
-        show = getattr(bar, "showMessage", None)
-        if callable(show):
-            show(sentence)
+        if sentence == FIRST_FOCUS_HINT:
+            return
+        self._gesture_sentence = sentence
+        self._refresh_shell_status()
 
     def hover_changed(self, node: Optional[NodeId]) -> None:
-        del node
+        self._workbench.outline.set_hover(node)
+        if node is None:
+            self._hover_sentence = ""
+        else:
+            edits = enter_opens_editor(self._session.document, node)
+            self._hover_sentence = hover_sentence(self._session.document, node, edits)
+        self._refresh_shell_status()
 
     def zoom_changed(self, label: str) -> None:
         self._toolbar.zoom_label.setText(label)
