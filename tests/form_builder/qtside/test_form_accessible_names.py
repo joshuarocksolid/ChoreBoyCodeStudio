@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from app.features.form_builder.install import form_builder_enabled
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QApplication, QWidget
 from app.shell.main_window import MainWindow
 from testing.main_window_shutdown import shutdown_main_window_for_test
@@ -43,7 +43,9 @@ def test_every_focusable_builder_control_has_an_accessible_name(
     try:
         assert window._editor_tab_factory.open_file_in_editor(str(path))  # noqa: SLF001
         # Without a project the center shows the welcome page. Show the editors.
-        window._center_stack.setCurrentIndex(1)  # noqa: SLF001
+        stack = window._center_stack  # noqa: SLF001
+        assert stack is not None
+        stack.setCurrentIndex(1)
         window.resize(1400, 900)
         window.show()
         qapp.processEvents()

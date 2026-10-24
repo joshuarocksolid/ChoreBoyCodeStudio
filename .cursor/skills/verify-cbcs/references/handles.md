@@ -105,6 +105,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.projectStatusLabel` | Project name + `(project overrides)` |
 | `#shell.indentStatusLabel` | Spaces / Tabs |
 | `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
+| `#shell.formTimingsLabel` | Developer form timings. Hidden unless `CBCS_FB_TIMINGS=1` or QSettings `form_builder/dev/show_timings` is on, and a caller passed a line. |
 | `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
 

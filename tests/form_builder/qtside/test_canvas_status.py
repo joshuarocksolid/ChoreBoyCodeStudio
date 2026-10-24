@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtCore import QEvent, QPoint, Qt
-from app.qt.QtGui import QMouseEvent
+from app.qt.QtCore import QEvent, QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QMouseEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QApplication, QTreeWidget, QTreeWidgetItem, QWidget
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.canvas.core.frame import Stroke

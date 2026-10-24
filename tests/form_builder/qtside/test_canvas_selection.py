@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QMenuBar, QTreeWidget, QWidget
 from app.features.form_builder.engine.shell_commands import menu_commands

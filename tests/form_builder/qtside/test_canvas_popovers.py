@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QApplication, QFrame, QMenu, QTabWidget, QWidget
 from app.features.form_builder.engine.diagnostics import DiagnosticLocation, FormDiagnostic, Severity
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form

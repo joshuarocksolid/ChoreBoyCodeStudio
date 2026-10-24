@@ -10,7 +10,8 @@ import pytest
 from app.qt.QtCore import QPoint, QPointF, QRectF, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtGui import QImage, QPainter, QWheelEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QMenuBar, QShortcut, QToolButton, QWidget
+from app.qt.QtGui import QAction  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtWidgets import QApplication, QMenu, QMenuBar, QShortcut, QToolButton, QWidget
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.form_menu import register_form_menu
 from app.features.form_builder.qtside.canvas.core.frame import Handle, Stroke
@@ -254,9 +255,8 @@ def _canvas(
     return canvas, parent
 
 
-def _menu_action(menu: object, label: str) -> object:
-    found = next(action for action in menu.actions() if action.text() == label)  # type: ignore[attr-defined]
-    return found
+def _menu_action(menu: QMenu, label: str) -> QAction:
+    return next(action for action in menu.actions() if action.text() == label)
 
 
 def _wheel(canvas: FormCanvas, dy: int) -> None:

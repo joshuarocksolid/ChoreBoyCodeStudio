@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QIcon
+from app.qt.QtCore import QSize, Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QIcon  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QApplication, QLabel, QToolButton, QWidget
 from app.features.form_builder.integration.workbench import FormToolbar
 from tests.form_builder.qtside.support import form

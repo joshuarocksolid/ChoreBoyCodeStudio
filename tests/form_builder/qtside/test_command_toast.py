@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtCore import QEvent, QPointF, Qt, QTimer
-from app.qt.QtGui import QEnterEvent
+from app.qt.QtCore import QEvent, QPointF, Qt, QTimer  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QEnterEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QFrame, QLabel, QPushButton, QWidget
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, SetProperty
