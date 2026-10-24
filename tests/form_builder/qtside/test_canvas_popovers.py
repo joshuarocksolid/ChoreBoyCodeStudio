@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Problem text and the layout choices open as popovers, not dialogs."""
 
 from __future__ import annotations

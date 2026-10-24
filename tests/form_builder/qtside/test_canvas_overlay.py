@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Hover, frames, spacers, and chips on the realized canvas."""
 
 from __future__ import annotations

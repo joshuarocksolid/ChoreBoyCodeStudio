@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """A press on the viewport selects the widget under the pointer."""
 
 from __future__ import annotations

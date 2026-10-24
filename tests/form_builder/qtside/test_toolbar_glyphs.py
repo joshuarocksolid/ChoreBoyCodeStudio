@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Toolbar and rail controls show painted glyphs and keep their tooltips."""
 
 from __future__ import annotations

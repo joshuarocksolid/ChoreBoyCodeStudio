@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """In-place text. One undo step, Esc cancels, and typing does not reflow."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Hover text and a gesture sentence share one status line."""
 
 from __future__ import annotations

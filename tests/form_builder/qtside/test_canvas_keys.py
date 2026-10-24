@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Keys, the rubber band, and reveal go through the viewport."""
 
 from __future__ import annotations

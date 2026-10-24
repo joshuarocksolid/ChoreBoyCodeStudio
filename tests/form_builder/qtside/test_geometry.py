@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """LiveGeometrySource and HitIndexInvalidator on realized forms (CONTRACTS.md section 5.5)."""
 from __future__ import annotations
 

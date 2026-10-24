@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Every focusable builder control has an accessible name."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Zoom steps, page gutters, and screen-size overlay strokes."""
 
 from __future__ import annotations

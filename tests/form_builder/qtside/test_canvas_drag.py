@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Free move, free resize, and page grabbers. The document changes on release."""
 
 from __future__ import annotations

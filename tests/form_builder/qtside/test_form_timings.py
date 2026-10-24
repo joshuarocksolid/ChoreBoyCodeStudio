@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """The form timings meter stays hidden unless a developer asks for it."""
 
 from __future__ import annotations

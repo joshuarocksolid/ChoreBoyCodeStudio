@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """One toast for delete, cut, wrap, unwrap, morph, and remove layout."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Canvas and outline share one selection. Mixed parents cannot wrap."""
 
 from __future__ import annotations

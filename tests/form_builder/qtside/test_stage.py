@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Stage keeps an authored page size and owns the readout."""
 
 from __future__ import annotations
