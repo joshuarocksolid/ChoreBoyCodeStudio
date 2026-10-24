@@ -12,12 +12,7 @@ from typing import Dict, FrozenSet, List, Literal, Optional, Sequence, Tuple, Un
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import Rect
-from app.features.form_builder.engine.query.tree import (
-    PAGE_CONTAINERS,
-    GridShape,
-    form_rows,
-    grid_shape,
-)
+from app.features.form_builder.engine.query.tree import PAGE_CONTAINERS, form_rows
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
     LayoutItemNode,
@@ -1028,15 +1023,29 @@ def _grid_slots(
     layout: LayoutNode,
     layout_rect: Rect,
 ) -> Tuple[Tuple[SlotGeom, ...], Tuple[DropHost, ...]]:
-    shape = grid_shape(doc, layout.id)
-    rows = max(shape.rows, 1)
-    cols = max(shape.columns, 1)
+    # grid_shape also records empty cells and overlap pairs. A drop only needs
+    # the origin of each item and the cells a span already covers.
     origins: Dict[Tuple[int, int], Tuple[LayoutItemNode, Optional[Node]]] = {}
-    for cell in shape.cells:
-        item = doc.get(cell.item)
-        if not isinstance(item, LayoutItemNode):
+    covered = set()
+    rows = 0
+    cols = 0
+    for item in layout.items:
+        row = 0 if item.row is None else item.row
+        column = 0 if item.column is None else item.column
+        raw_r = 1 if item.rowspan is None else item.rowspan
+        raw_c = 1 if item.colspan is None else item.colspan
+        rows = max(rows, row + raw_r)
+        cols = max(cols, column + raw_c)
+        origins[(row, column)] = (item, item.content)
+        if raw_r <= 1 and raw_c <= 1:
             continue
-        origins[(cell.row, cell.column)] = (item, item.content)
+        for covered_row in range(row, row + raw_r):
+            for covered_column in range(column, column + raw_c):
+                if covered_row == row and covered_column == column:
+                    continue
+                covered.add((covered_row, covered_column))
+    rows = max(rows, 1)
+    cols = max(cols, 1)
     xs, ys = _grid_edges(layout_rect, rows, cols, origins, rect_of)
     slots: List[SlotGeom] = []
     children: List[DropHost] = []
@@ -1045,7 +1054,7 @@ def _grid_slots(
         for column in range(cols):
             origin = origins.get((row, column))
             if origin is None:
-                if _covered_by_span(shape, row, column):
+                if (row, column) in covered:
                     continue
                 slots.append(
                     SlotGeom(_cell_rect(xs, ys, row, column, 1, 1), 0, None, "", row, column, 1, 1)
@@ -1235,16 +1244,6 @@ def _content_rect_or_cell(
     if content is not None and content.id in rect_of:
         return rect_of[content.id]
     return _cell_rect(xs, ys, row, column, rowspan, colspan)
-
-
-def _covered_by_span(shape: GridShape, row: int, column: int) -> bool:
-    cells = getattr(shape, "cells", ())
-    for cell in cells:
-        if cell.row == row and cell.column == column:
-            return False
-        if cell.row <= row < cell.row + cell.rowspan and cell.column <= column < cell.column + cell.colspan:
-            return True
-    return False
 
 
 def _cell_span(value: Optional[int]) -> int:
