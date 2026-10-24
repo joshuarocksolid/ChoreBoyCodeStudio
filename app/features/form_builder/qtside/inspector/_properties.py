@@ -24,6 +24,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Row,
     RowValue,
     Unset,
+    set_style_flag,
 )
 from app.features.form_builder.qtside.inspector.model import (
     BodyView,
@@ -761,9 +762,9 @@ class _Row(QWidget):
         self._set_caption(view.reason, error=False)
 
     def _paint_label(self, view: Row, match_color: str) -> None:
-        font = self._label.font()
-        font.setWeight(_weight("DemiBold" if view.changed else "Normal"))
-        self._label.setFont(font)
+        # The weight is a style sheet rule on ``fbChanged``. A setFont weight
+        # loses to the shell's chrome font-weight rule.
+        set_style_flag(self._label, "fbChanged", "true" if view.changed else "false")
         if view.match is not None and view.match.where == "label":
             self._label.setTextFormat(Qt.RichText)
             self._label.setText(_marked(view.label, view.match, "label", match_color))

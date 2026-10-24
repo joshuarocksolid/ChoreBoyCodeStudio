@@ -23,6 +23,7 @@ from app.features.form_builder.qtside.inspector.api import GroupId, Unset, Writt
 from app.features.form_builder.qtside.inspector.editors import default_catalog
 from app.features.form_builder.qtside.inspector.model import NodeBody, project
 from app.features.form_builder.qtside.inspector.pane import TabId
+from app.features.form_builder.qtside.theme.chrome import chrome_from_values
 from app.qt.QtCore import QPointF, Qt
 from app.qt.QtGui import QEnterEvent, QFont
 from app.qt.QtTest import QTest
@@ -67,10 +68,28 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
+_CHROME = chrome_from_values(
+    window="#f3f3f3",
+    panel="#ffffff",
+    text="#1f1f1f",
+    muted="#5c5c5c",
+    faint="#6b6b6b",
+    border="#c8c8c8",
+    accent="#0060c0",
+    row_hover="#eef3fb",
+    input_bg="#ffffff",
+    error="#b00020",
+    focus_width=1,
+)
+
+
 def _pane(qapp: QApplication):
     session, realizer = realize(_FORM)
     window = QWidget()
     pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None, parent=window)
+    # The workbench always applies chrome. Its style sheet owns the mixed
+    # italic and the changed weight, as it does in the shell.
+    pane.apply_chrome(_CHROME)
     layout = QVBoxLayout(window)
     layout.addWidget(pane)
     window.resize(1400, 900)

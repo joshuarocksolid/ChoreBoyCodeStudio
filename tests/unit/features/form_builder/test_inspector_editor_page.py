@@ -11,6 +11,7 @@ from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.features.form_builder.integration.surface import FormSurface  # noqa: E402
 from app.features.form_builder.qtside.inspector.api import GroupId  # noqa: E402
 from app.qt.QtCore import Qt  # noqa: E402
+from app.qt.QtGui import QFont  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
     QCheckBox,
@@ -147,3 +148,29 @@ def test_all_properties_show_the_class_value_not_the_canvas_override(tmp_path: P
     finally:
         shutdown_main_window_for_test(window, qapp)
 
+
+def test_changed_labels_and_the_name_are_strong_under_the_shell_style(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-INSP-001 and UX-INSP-006 under the shell's chrome font-weight rule."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        session = surface._session  # noqa: SLF001
+        pane = surface._workbench.inspector  # noqa: SLF001
+        email = session.document.by_name("email")[0]
+        session.selection.set((email,), source=SelectionSource.PROGRAM)
+        pane.flush()
+        qapp.processEvents()
+        strong = enum_value(getattr(getattr(QFont, "Weight", QFont), "DemiBold"))
+        changed = surface.findChild(QWidget, "formBuilder.row.text")
+        plain = surface.findChild(QWidget, "formBuilder.row.maxLength")
+        assert changed is not None
+        label = next(item for item in changed.findChildren(QLabel) if item.text() == "Text")
+        assert label.fontInfo().weight() >= strong
+        if plain is not None:
+            other = next(item for item in plain.findChildren(QLabel) if item.text())
+            assert other.fontInfo().weight() < strong
+        name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
+        assert name is not None and name.text() == "email"
+        assert name.fontInfo().weight() >= strong
+    finally:
+        shutdown_main_window_for_test(window, qapp)

@@ -253,9 +253,14 @@ def mark(widget: QWidget, value: RowValue) -> None:
     if font.italic() != italic:
         font.setItalic(italic)
         widget.setFont(font)
-    if widget.property("fbState") == state:
+    set_style_flag(widget, "fbState", state)
+
+
+def set_style_flag(widget: QWidget, name: str, value: str) -> None:
+    """Set a dynamic property that a style sheet rule reads, repolishing on change."""
+    if widget.property(name) == value:
         return
-    widget.setProperty("fbState", state)
+    widget.setProperty(name, value)
     style = widget.style()
     style.unpolish(widget)
     style.polish(widget)
