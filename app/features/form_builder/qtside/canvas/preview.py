@@ -33,6 +33,7 @@ from app.features.form_builder.engine.sizing import (
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import FontValue, SizeValue
+from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.stage import Stage
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.realize.props import apply_entry
@@ -288,6 +289,32 @@ class FormPreview:
             origin = widget.mapTo(root, QPoint(0, 0))
             rect = QRectF(float(origin.x()), float(origin.y()), float(widget.width()), float(widget.height()))
             painter.drawRect(self._stage.proxy.mapRectToScene(rect))
+
+    def paint_wide_selection(self, painter: QPainter) -> None:
+        """The design overlay only knows the narrow page. The wide copy gets the same stroke."""
+        proxy = self._mirror_proxy
+        mirror = self._mirror
+        if not self._widths or proxy is None or mirror is None or not proxy.isVisible():
+            return
+        root = proxy.widget()
+        if root is None or not wrapper_is_valid(root):
+            return
+        current = effective_selection(self._session.document, self._session.selection.state).current
+        if current is None:
+            return
+        widget = mirror.widget_for(current)
+        if widget is None or not widget.isVisible():
+            return
+        if widget is not root and not root.isAncestorOf(widget):
+            return
+        origin = widget.mapTo(root, QPoint(0, 0))
+        rect = QRectF(float(origin.x()), float(origin.y()), float(widget.width()), float(widget.height()))
+        pen = QPen(_overlay_color(self._view, "select"))
+        pen.setCosmetic(True)
+        pen.setWidth(2)
+        painter.setPen(pen)
+        painter.setBrush(getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush"))
+        painter.drawRect(proxy.mapRectToScene(rect))
 
     def dispose(self) -> None:
         self._cut_timer.stop()
@@ -635,9 +662,20 @@ def _stored_size(node: WidgetNode, name: str, empty: int) -> Tuple[int, int]:
 
 
 def _tab_color(view: QGraphicsView) -> QColor:
+    return _overlay_color(view, "tab")
+
+
+def _overlay_color(view: QGraphicsView, name: str) -> QColor:
+    """Palette strings are ``#RRGGBBAA``. ``QColor`` reads eight digits as ``#AARRGGBB``."""
     viewport = view.viewport()
     contrast = bool(viewport.property("formBuilderHighContrast")) if viewport is not None else False
-    return QColor(overlay_palette(contrast).tab)
+    raw = getattr(overlay_palette(contrast), name)
+    text = raw[1:] if raw.startswith("#") else raw
+    red = int(text[0:2], 16)
+    green = int(text[2:4], 16)
+    blue = int(text[4:6], 16)
+    alpha = int(text[6:8], 16) if len(text) >= 8 else 255
+    return QColor(red, green, blue, alpha)
 
 
 def _cutoff_widgets(

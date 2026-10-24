@@ -275,6 +275,7 @@ class FormCanvas(QGraphicsView):
         preview = getattr(self, "_preview", None)
         if preview is not None:
             preview.paint_cutoff(painter)
+            preview.paint_wide_selection(painter)
         frame = controller.frame
         paint_frame(painter, frame, self._palette, rect)
         self._title.set_docked(_docked(frame), self._palette)

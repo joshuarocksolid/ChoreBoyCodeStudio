@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import Tuple
+from typing import List, Tuple
 
 import pytest
 
@@ -27,6 +27,7 @@ from app.qt.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QWidget,
 )
@@ -551,24 +552,41 @@ def test_a_saved_point_size_stays_larger_than_the_preview() -> None:
         parent.deleteLater()
 
 
-def _click_wide(canvas: FormCanvas, name: str) -> QWidget:
+def _proxies(canvas: FormCanvas) -> List[QGraphicsProxyWidget]:
     scene = canvas.scene()
     assert scene is not None
-    proxies = [
+    return [
         item
         for item in scene.items()
         if isinstance(item, QGraphicsProxyWidget) and item.isVisible() and item.widget() is not None
     ]
-    assert proxies
-    wide = max(proxies, key=lambda item: item.sceneBoundingRect().left())
+
+
+def _click_wide(canvas: FormCanvas, name: str) -> QWidget:
+    proxies = _proxies(canvas)
+    assert len(proxies) >= 2
+    wide = max(proxies, key=lambda item: item.sceneBoundingRect().width())
+    narrow = min(proxies, key=lambda item: item.sceneBoundingRect().width())
     root = wide.widget()
     assert root is not None
     target = root.findChild(QWidget, name)
     assert isinstance(target, QWidget)
     center = target.mapTo(root, QPoint(max(1, target.width() // 2), max(1, target.height() // 2)))
-    view_pos = canvas.mapFromScene(wide.mapToScene(QPointF(float(center.x()), float(center.y()))))
+    scene_pos = wide.mapToScene(QPointF(float(center.x()), float(center.y())))
+    assert wide.sceneBoundingRect().contains(scene_pos)
+    assert not narrow.sceneBoundingRect().contains(scene_pos)
+    canvas.centerOn(scene_pos)
+    _events()
+    view_pos = canvas.mapFromScene(scene_pos)
     QTest.mouseClick(canvas.viewport(), Qt.LeftButton, Qt.NoModifier, view_pos)
     return root
+
+
+def _show_why(pane: InspectorPane) -> None:
+    why = pane.findChild(QLabel, "formBuilder.sizeWhy")
+    area = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+    if isinstance(area, QScrollArea) and isinstance(why, QLabel):
+        area.ensureWidgetVisible(why, 0, 12)
 
 
 def test_sizing_screenshots(qapp) -> None:  # type: ignore[no-untyped-def]
@@ -585,15 +603,16 @@ def test_sizing_screenshots(qapp) -> None:  # type: ignore[no-untyped-def]
         layout.addWidget(canvas, 1)
         layout.addWidget(pane)
         host.show()
+        _select(session, pane, "stay")
+        _button(pane, "formBuilder.size.height.Fill").click()
+        _events()
+        _grab(qapp, host, canvas, pane, folder, "button-height-fill")
         _select(session, pane, "grow")
         _button(pane, "formBuilder.size.width.Fill").click()
         _events()
         _grab(qapp, host, canvas, pane, folder, "size-fill")
-        _button(pane, "formBuilder.size.height.Fill").click()
-        _events()
-        _grab(qapp, host, canvas, pane, folder, "button-height-fill")
         _select(session, pane, "stay")
-        _button(pane, "formBuilder.size.width.Hug").click()
+        _button(pane, "formBuilder.size.reset").click()
         _events()
         _grab(qapp, host, canvas, pane, folder, "size-hug")
         canvas.preview.set_points(10)
@@ -637,5 +656,20 @@ def _grab(qapp, host: QWidget, canvas: FormCanvas, pane: InspectorPane, folder: 
                 continue
             host.resize(width, height)
             qapp.processEvents()
+            if stem == "size-fill":
+                _show_why(pane)
+                qapp.processEvents()
+            if stem == "widths":
+                proxies = _proxies(canvas)
+                if proxies:
+                    wide = max(proxies, key=lambda item: item.sceneBoundingRect().width())
+                    root = wide.widget()
+                    target = root.findChild(QWidget, "grow") if root is not None else None
+                    if isinstance(target, QWidget) and root is not None:
+                        point = target.mapTo(root, QPoint(max(1, target.width() // 2), max(1, target.height() // 2)))
+                        canvas.centerOn(wide.mapToScene(QPointF(float(point.x()), float(point.y()))))
+                    else:
+                        canvas.centerOn(wide)
+                    qapp.processEvents()
             image = host.grab()
             image.save(str(folder / ("%s-%s-%dx%d.png" % (stem, mode, width, height))))
