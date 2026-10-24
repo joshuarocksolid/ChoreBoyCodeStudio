@@ -7,6 +7,7 @@ from typing import Optional, Tuple
 
 import pytest
 
+from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.sizing import chip_words, project
@@ -359,7 +360,7 @@ def _reveal(pane: QWidget, widget: QWidget) -> None:
     _pump()
 
 
-def _id(session: FormSession, name: str) -> object:
+def _id(session: FormSession, name: str) -> NodeId:
     found = session.document.by_name(name)
     assert len(found) == 1
     return found[0]
