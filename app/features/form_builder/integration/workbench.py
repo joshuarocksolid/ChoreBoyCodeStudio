@@ -750,7 +750,6 @@ class OutlinePane(QWidget):
         return target
 
     def hit_global(self, global_pos: QPoint) -> Optional[object]:
-        """The drop target when a canvas drag is over this outline. None when it is not."""
         viewport = self.tree.viewport()
         if not viewport.isVisible():
             return None
@@ -895,8 +894,6 @@ class InsertPane(QWidget):
 
 
 class _TileList(QListWidget):
-    """Drag a tile. Enter and double-click ask the canvas to place it."""
-
     def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
         buttons = getattr(event, "buttons", lambda: 0)()
         left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")

@@ -877,7 +877,6 @@ def _drop_target_rows(
     enforce_absolute: bool,
     wall_on: bool,
 ) -> Tuple[Row, ...]:
-    """hosts_from plus resolve_drop. One pointer move at 300 and 1000 widgets."""
     rows: List[Row] = []
     payload = DropPayload("widget")
     for count in (300, 1000):

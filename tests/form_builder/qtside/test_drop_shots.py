@@ -1,6 +1,4 @@
 # pyright: reportAttributeAccessIssue=false
-"""Grab a drag in progress. The status line is the sentence the canvas narrated."""
-
 from __future__ import annotations
 
 import os

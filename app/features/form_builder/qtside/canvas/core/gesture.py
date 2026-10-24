@@ -189,8 +189,6 @@ class EditTextAsked:
 
 @dataclass(frozen=True)
 class PlaceAsked:
-    """An Insert tile or an outline row started a drag."""
-
     at: CanvasPoint
     payload: DropPayload
     insert_key: str = ""

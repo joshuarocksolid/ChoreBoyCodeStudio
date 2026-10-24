@@ -1,6 +1,4 @@
 # pyright: reportAttributeAccessIssue=false
-"""Drop and move on the canvas. One QTest drag per layout kind."""
-
 from __future__ import annotations
 
 from contextlib import contextmanager

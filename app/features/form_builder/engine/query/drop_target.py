@@ -75,8 +75,6 @@ class SlotGeom:
 
 @dataclass(frozen=True)
 class DropHost:
-    """A layout or container the pointer can land in, plus the hosts inside it."""
-
     node: NodeId
     kind: HostKind
     name: str
@@ -106,8 +104,6 @@ class DropIndicator:
 
 @dataclass(frozen=True)
 class AcceptedDrop:
-    """One legal target. The painter draws ``frame`` plus ``indicator``."""
-
     sentence: str
     chip: str
     host: NodeId
@@ -133,8 +129,6 @@ class AcceptedDrop:
 
 @dataclass(frozen=True)
 class RefusedDrop:
-    """The pointer is on a slot that cannot take this drag."""
-
     sentence: str
     chip: str
     host: Optional[NodeId]
@@ -159,8 +153,6 @@ def resolve_drop(
     payload: DropPayload,
     blocked: FrozenSet[NodeId] = frozenset(),
 ) -> DropTarget:
-    """The one target at ``pointer``. Nearest visual rect wins. Smaller area breaks ties."""
-
     found: List[Tuple[int, DropHost]] = []
     _gather(root, pointer, 0, found)
     found.sort(
@@ -196,8 +188,6 @@ def blocked_ids(doc: UiDocument, source_ids: Sequence[NodeId]) -> FrozenSet[Node
 
 
 def hosts_from(doc: UiDocument, rect_of: Dict[NodeId, Rect]) -> DropHost:
-    """Build the host tree from a document and form-pixel rects."""
-
     root = doc.root
     built = _widget_host(doc, rect_of, root.id, root.object_name or "form")
     if built is not None:

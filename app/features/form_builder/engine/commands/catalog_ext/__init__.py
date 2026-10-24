@@ -1,10 +1,3 @@
-"""Extra commands (CONTRACTS.md section 1.4).
-
-Modules in this package are discovered in sorted module-name order. Each
-defines ``register(registry)``. A later work package adds its own module and
-does not edit this file.
-"""
-
 from __future__ import annotations
 
 import importlib
@@ -27,7 +20,6 @@ class CommandRegistry:
 
 
 def load_commands(registry: CommandRegistry) -> None:
-    """Import ``register`` from each sibling module, in module-name order."""
     package = __name__
     prefix = package + "."
     discovered = sorted(pkgutil.iter_modules(__path__), key=lambda item: item.name)
@@ -44,7 +36,6 @@ _DEFAULT: Optional[CommandRegistry] = None
 
 
 def default_registry() -> CommandRegistry:
-    """The process-wide registry. Built on first use."""
     global _DEFAULT
     if _DEFAULT is None:
         registry = CommandRegistry()

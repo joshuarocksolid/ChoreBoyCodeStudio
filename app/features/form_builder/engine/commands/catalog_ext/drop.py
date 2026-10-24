@@ -36,8 +36,6 @@ def register(registry: object) -> None:
 
 @dataclass(frozen=True)
 class InsertFormRow(_CommandBase):
-    """A new form row: a "New field:" buddy label plus the field widget."""
-
     command_type: ClassVar[str] = "insert_form_row"
     _label_text: ClassVar[str] = "Insert row"
     layout: NodeId
@@ -87,8 +85,6 @@ class InsertFormRow(_CommandBase):
 
 @dataclass(frozen=True)
 class WrapWithNew(_CommandBase):
-    """Place a widget beside a neighbour, then wrap the pair in a new layout."""
-
     command_type: ClassVar[str] = "wrap_with_new"
     _label_text: ClassVar[str] = "Wrap"
     neighbour: NodeId
@@ -129,8 +125,6 @@ class WrapWithNew(_CommandBase):
 
 @dataclass(frozen=True)
 class AdoptIntoBox(_CommandBase):
-    """Give an empty container a vertical layout and put the drop in it."""
-
     command_type: ClassVar[str] = "adopt_into_box"
     _label_text: ClassVar[str] = "Insert"
     container: NodeId
@@ -157,8 +151,6 @@ class AdoptIntoBox(_CommandBase):
 
 @dataclass(frozen=True)
 class SwapFormRows(_CommandBase):
-    """Exchange two form rows. Other rows stay put."""
-
     command_type: ClassVar[str] = "swap_form_rows"
     _label_text: ClassVar[str] = "Nudge"
     layout: NodeId
@@ -188,8 +180,6 @@ class SwapFormRows(_CommandBase):
 
 @dataclass(frozen=True)
 class InsertPage(_CommandBase):
-    """A new page with a vertical layout, and the dropped widget inside it."""
-
     command_type: ClassVar[str] = "insert_page"
     _label_text: ClassVar[str] = "Insert page"
     container: NodeId

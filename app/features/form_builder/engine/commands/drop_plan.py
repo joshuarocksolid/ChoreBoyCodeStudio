@@ -1,9 +1,3 @@
-"""Turn one drop target into the commands for one undo step.
-
-Qt-free. The gesture calls this on release. A refused or empty target
-produces no commands, so release changes nothing.
-"""
-
 from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple, Union
@@ -51,7 +45,6 @@ def commands_for(
     payload: DropPayload,
     fragment: Optional[Fragment],
 ) -> Tuple[Command, ...]:
-    """Commands for ``target``. Empty when the drop must do nothing."""
     if not isinstance(target, AcceptedDrop):
         return ()
     if payload.kind == "spacer" and target.action in ("form_cell", "form_row"):
@@ -92,7 +85,6 @@ def auto_commands(
     payload: DropPayload,
     fragment: Optional[Fragment],
 ) -> Tuple[Command, ...]:
-    """Insert with no pointer. Fills the next cell from ``anchor`` or the form."""
     target = auto_target(doc, anchor, payload)
     if target is None:
         return ()
@@ -395,7 +387,6 @@ def _plain(fragment: Fragment) -> Fragment:
 
 
 def nudge_commands(doc: UiDocument, ids: Tuple[NodeId, ...], direction: str) -> Tuple[Command, ...]:
-    """One slot along the layout axis. Empty when the selection is already at the end."""
     if direction not in ("left", "right", "up", "down") or not ids:
         return ()
     placed = []

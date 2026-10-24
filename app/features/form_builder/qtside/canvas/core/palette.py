@@ -63,7 +63,6 @@ def matching_tiles(query: str) -> Tuple[Tile, ...]:
 
 
 def fragment_for(key: str) -> Optional[Fragment]:
-    """A palette fragment with no geometry."""
     tile = tile_for(key)
     if tile is None:
         return None

@@ -1,8 +1,3 @@
-"""Qt-free drop resolution for one pointer move.
-
-The gesture asks this. It does not paint and it does not import Qt.
-"""
-
 from __future__ import annotations
 
 from typing import Dict, Optional, Tuple
@@ -44,7 +39,6 @@ def resolve_at(
     payload: DropPayload,
     rects: Optional[Dict[NodeId, Rect]] = None,
 ) -> DropTarget:
-    """One target at a form-pixel point. ``rects`` overrides the hit index."""
     geometry = rects if rects is not None else _rects(doc, index)
     host = hosts_from(doc, geometry)
     return resolve_drop(
