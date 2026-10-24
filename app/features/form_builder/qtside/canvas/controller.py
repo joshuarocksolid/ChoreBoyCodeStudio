@@ -6,18 +6,20 @@ decides lives in ``core.gesture.step`` and ``core.overlay.build_frame``.
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 from typing import Dict, FrozenSet, Optional, Protocol, Tuple
 
-from app.qt.QtCore import QEvent
-from app.qt.QtGui import QFont, QFontMetrics
-from app.qt.QtWidgets import QApplication, QGraphicsView, QWidget
+from app.qt.QtCore import QEvent, QPoint, QRect, QTimer
+from app.qt.QtGui import QFont, QFontMetrics, QPixmap
+from app.qt.QtWidgets import QApplication, QGraphicsOpacityEffect, QGraphicsView, QWidget
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.hit_index import HitIndex
+from app.features.form_builder.engine.query.drop_target import DropPayload, NoDrop, RefusedDrop
+from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.canvas import _input
@@ -43,6 +45,9 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     HostEvent,
     Idle,
     Key,
+    Move,
+    PlaceAsked,
+    Placing,
     Narrate,
     OpenEditor,
     Press,
@@ -68,6 +73,7 @@ from app.features.form_builder.qtside.canvas.core.overlay import (
     frame_basis,
 )
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
+from app.features.form_builder.qtside.canvas.core.text import text_target
 from app.features.form_builder.qtside.canvas.core.words import (
     SizingWord,
     describe_selection,
@@ -147,6 +153,13 @@ class CanvasController:
         self._problems_revision = 0
         self._closed = False
         self._editor = InPlaceEditor(view.viewport(), realizer, self._on_editor_done)
+        self._ghost: Optional[QPixmap] = None
+        self._spring_id: Optional[NodeId] = None
+        self._refused: Optional[str] = None
+        self._refused_at = 0.0
+        self._spring = QTimer()
+        self._spring.setSingleShot(True)
+        self._spring.timeout.connect(self._spring_fire)
         self._detach_sub = session.log.subscribe(self._before_realize, priority=PRIORITY_DETACH)
         self._view_sub = session.log.subscribe(self._after_realize, priority=PRIORITY_VIEWS)
         self._selection_unsub = session.selection.subscribe(self._on_selection)
@@ -189,6 +202,10 @@ class CanvasController:
         if self._closed:
             return
         self._closed = True
+        self._spring.stop()
+        if isinstance(self._gesture, Placing):
+            self._fade(self._gesture.payload.source_ids, 1.0)
+        self._ghost = None
         if previewing(self._gesture):
             self._stage.run(EndPreview())
         self._editor.close(False)
@@ -206,9 +223,15 @@ class CanvasController:
             self._rebuild(static=self._static_stale())
         if _mints_token(self._gesture, event):
             self._serial += 1
+        previous = self._gesture
         result = step(self._gesture, event, self._world())
         self._gesture = result.gesture
-        for effect in result.effects:
+        steered = self._steer_outline(event)
+        effects = result.effects
+        if steered is not None:
+            effects = tuple(effect for effect in effects if not isinstance(effect, Narrate)) + (Narrate(steered),)
+        self._sync_drag(previous, self._gesture)
+        for effect in effects:
             self._run(effect)
         self._request_frame()
         return result.consumed
@@ -268,20 +291,165 @@ class CanvasController:
                 return
         raise AssertionError(type(effect))
 
+    def placing(self) -> bool:
+        return isinstance(self._gesture, Placing)
+
+    def place_payload(self) -> Optional[DropPayload]:
+        gesture = self._gesture
+        if isinstance(gesture, Placing):
+            return gesture.payload
+        return None
+
+    def paint_ghost(self, painter: object) -> None:
+        gesture = self._gesture
+        pixmap = self._ghost
+        if pixmap is None or not isinstance(gesture, Placing) or gesture.outside:
+            return
+        view = self._stage.view_map()
+        origin = view.to_canvas(
+            Rect(
+                int(gesture.pointer.x - gesture.grab.x),
+                int(gesture.pointer.y - gesture.grab.y),
+                1,
+                1,
+            )
+        )
+        width = max(1, int(pixmap.width() * view.factor))
+        height = max(1, int(pixmap.height() * view.factor))
+        painter.save()  # type: ignore[attr-defined]
+        painter.setOpacity(0.6)  # type: ignore[attr-defined]
+        painter.drawPixmap(QRect(origin.x, origin.y, width, height), pixmap)  # type: ignore[attr-defined]
+        painter.restore()  # type: ignore[attr-defined]
+
     def _commit(self, effect: Commit) -> None:
         try:
             merge_token = None
             merge_within_s = 0.0
             if effect.label == "Nudge":
-                merge_token = "nudge:" + ",".join(str(command.id) for command in effect.commands)
+                merge_token = _nudge_token(effect.commands)
                 merge_within_s = 1.0
+            elif effect.label in ("Drop", "Move", "Edit text"):
+                merge_token = effect.token
+                merge_within_s = 30.0
             with self._session.log.transaction(
                 effect.label, merge_token=merge_token, merge_within_s=merge_within_s
             ) as txn:
                 for command in effect.commands:
-                    txn.execute(replace(command, merge_token=effect.token))
+                    fields = getattr(command, "__dataclass_fields__", {})
+                    stamped = replace(command, merge_token=effect.token) if "merge_token" in fields else command
+                    txn.execute(stamped)
         except CommandRejected as exc:
             self._host.narrate(str(exc))
+            return
+        if effect.label in ("Drop", "Move"):
+            self._view.setFocus()
+        if effect.edit:
+            self._open_edit(effect)
+
+    def _open_edit(self, effect: Commit) -> None:
+        current = self._session.selection.state.current
+        if current is None or effect.edit != "widget":
+            return
+        target = text_target(self._session.document, current, "widget")
+        if target is None:
+            return
+        self._gesture = Editing(target, effect.token)
+        self._editor.open(target, self._stage.view_map())
+
+    def _steer_outline(self, event: Event) -> Optional[str]:
+        """While the canvas holds the mouse, a drag over the outline uses its rows.
+
+        Returns the sentence to narrate when the outline took the target.
+        """
+        if not isinstance(event, Move) or not isinstance(self._gesture, Placing):
+            return None
+        finder = getattr(self._host, "outline_target", None)
+        if finder is None:
+            return None
+        global_pos = self._view.viewport().mapToGlobal(QPoint(event.port.x, event.port.y))
+        target = finder(global_pos)
+        if target is None:
+            return None
+        self._gesture = replace(self._gesture, target=target, outside=False, draw=False)
+        if isinstance(target, NoDrop):
+            return ""
+        return str(getattr(target, "sentence", ""))
+
+    def _sync_drag(self, previous: Gesture, current: Gesture) -> None:
+        if isinstance(current, Placing) and not isinstance(previous, Placing):
+            self._grab(current)
+            self._fade(current.payload.source_ids, 0.35)
+            self._remember_refusal(previous, current)
+        elif isinstance(previous, Placing) and not isinstance(current, Placing):
+            self._fade(previous.payload.source_ids, 1.0)
+            self._ghost = None
+            self._spring.stop()
+            self._spring_id = None
+            self._remember_refusal(previous, current)
+        elif isinstance(current, Placing):
+            self._arm_spring(current)
+
+    def _grab(self, state: Placing) -> None:
+        self._ghost = None
+        if not state.payload.source_ids:
+            return
+        widget = self._realizer.widget_for(state.payload.source_ids[0])
+        if widget is None:
+            return
+        self._ghost = widget.grab()
+
+    def _fade(self, ids: Tuple[NodeId, ...], amount: float) -> None:
+        for node_id in ids:
+            widget = self._realizer.widget_for(node_id)
+            if widget is None:
+                continue
+            if amount >= 1.0:
+                widget.setGraphicsEffect(None)
+                continue
+            effect = QGraphicsOpacityEffect(widget)
+            effect.setOpacity(amount)
+            widget.setGraphicsEffect(effect)
+
+    def _arm_spring(self, state: Placing) -> None:
+        spring = None if state.outside else getattr(state.target, "spring_id", None)
+        if spring == self._spring_id:
+            return
+        self._spring_id = spring
+        self._spring.stop()
+        if spring is not None:
+            self._spring.start(600)
+
+    def _spring_fire(self) -> None:
+        page_id = self._spring_id
+        if page_id is None or not isinstance(self._gesture, Placing):
+            return
+        page = self._realizer.widget_for(page_id)
+        if page is None:
+            return
+        parent = page.parentWidget()
+        setter = getattr(parent, "setCurrentWidget", None)
+        if setter is None:
+            return
+        setter(page)
+        self._index.invalidate("page_switch")
+        self._index.ensure_fresh()
+        self._request_frame()
+
+    def _remember_refusal(self, previous: Gesture, current: Gesture) -> None:
+        source = previous if isinstance(previous, Placing) else current
+        if not isinstance(source, Placing) or not isinstance(source.target, RefusedDrop):
+            return
+        sentence = source.target.sentence
+        now = time.monotonic()
+        if isinstance(current, Placing) and not isinstance(previous, Placing):
+            if self._refused == sentence and now - self._refused_at <= 5.0:
+                toast = getattr(self._host, "show_plain", None)
+                if toast is not None:
+                    toast(sentence)
+            return
+        if isinstance(previous, Placing) and not isinstance(current, Placing):
+            self._refused = sentence
+            self._refused_at = now
 
     def _place_and_report(self) -> None:
         self._stage.place()
@@ -406,8 +574,25 @@ class CanvasController:
         return int(advance(text))
 
 
+def _nudge_token(commands: Tuple[object, ...]) -> str:
+    parts = []
+    for command in commands:
+        node = getattr(command, "id", None)
+        if node is not None:
+            parts.append(str(node))
+            continue
+        ids = getattr(command, "ids", None)
+        if ids:
+            parts.extend(str(item) for item in ids)
+            continue
+        layout = getattr(command, "layout", None)
+        if layout is not None:
+            parts.append("%s:%s" % (type(command).__name__, layout))
+    return "nudge:" + ",".join(parts)
+
+
 def _mints_token(gesture: Gesture, event: Event) -> bool:
-    if isinstance(event, Press):
+    if isinstance(event, (Press, PlaceAsked)):
         return True
     if isinstance(event, Key) and isinstance(gesture, Idle):
         return True

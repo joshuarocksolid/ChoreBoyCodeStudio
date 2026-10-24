@@ -19,16 +19,26 @@ from app.qt.QtWidgets import (
     QLabel,
     QWidget,
 )
-from app.qt.qt_compat import wrapper_is_valid
+from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.drop_target import DropPayload
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
 from app.features.form_builder.qtside.canvas.core.frame import Chip, OverlayFrame
-from app.features.form_builder.qtside.canvas.core.space import CanvasRect
-from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect
+from app.features.form_builder.qtside.canvas.core.gesture import (
+    HostEvent,
+    PlaceAsked,
+    PlaceDrop,
+    PlaceHover,
+)
+from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT, MIME_NODE, tile_for
+from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
 from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
@@ -71,6 +81,32 @@ def _no_focus() -> Qt.FocusPolicy:
     return getattr(policy, "NoFocus")
 
 
+def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload, str]]:
+    mime = event.mimeData()  # type: ignore[attr-defined]
+    if mime.hasFormat(MIME_INSERT):
+        key = bytes(mime.data(MIME_INSERT)).decode("utf-8")
+        tile = tile_for(key)
+        kind = tile[1] if tile is not None else "widget"
+        return DropPayload(kind), key
+    if mime.hasFormat(MIME_NODE):
+        raw = bytes(mime.data(MIME_NODE)).decode("utf-8")
+        ids = tuple(NodeId(int(part)) for part in raw.split(",") if part)
+        return payload_for(doc, ids), ""
+    return None
+
+
+def _drop_point(event: object, view: QGraphicsView) -> CanvasPoint:
+    pos = event_pos(event)
+    scene = view.mapToScene(pos)
+    return CanvasPoint(int(scene.x()), int(scene.y()))
+
+
+def _drop_snap(event: object) -> bool:
+    value = enum_value(event.modifiers())  # type: ignore[attr-defined]
+    shift = enum_value(getattr(getattr(Qt, "KeyboardModifier", Qt), "ShiftModifier"))
+    return not bool(value & shift)
+
+
 def _transparent() -> Qt.WidgetAttribute:
     attrs = getattr(Qt, "WidgetAttribute", Qt)
     return getattr(attrs, "WA_TransparentForMouseEvents")
@@ -103,6 +139,7 @@ class FormCanvas(QGraphicsView):
         drag = getattr(QGraphicsView, "DragMode", QGraphicsView)
         self.setDragMode(getattr(drag, "NoDrag"))
         self.setInteractive(False)
+        self.setAcceptDrops(True)
         scene = QGraphicsScene(self)
         isolate_scene(scene)
         self.setScene(scene)
@@ -135,6 +172,38 @@ class FormCanvas(QGraphicsView):
         self._stage.place()
         self._sync_title()
         self._position_chrome()
+
+    def dragEnterEvent(self, event: object) -> None:  # noqa: N802
+        payload = _drop_payload(event, self._session.document)
+        if payload is None:
+            event.ignore()  # type: ignore[attr-defined]
+            return
+        event.acceptProposedAction()  # type: ignore[attr-defined]
+        body, key = payload
+        at = _drop_point(event, self)
+        if self._controller.placing():
+            self._controller.post(PlaceHover(at, True))
+            return
+        self._controller.post(PlaceAsked(at, body, key))
+
+    def dragMoveEvent(self, event: object) -> None:  # noqa: N802
+        if _drop_payload(event, self._session.document) is None:
+            event.ignore()  # type: ignore[attr-defined]
+            return
+        event.acceptProposedAction()  # type: ignore[attr-defined]
+        self._controller.post(PlaceHover(_drop_point(event, self), _drop_snap(event)))
+
+    def dropEvent(self, event: object) -> None:  # noqa: N802
+        if _drop_payload(event, self._session.document) is None:
+            event.ignore()  # type: ignore[attr-defined]
+            return
+        event.acceptProposedAction()  # type: ignore[attr-defined]
+        self._controller.post(PlaceDrop(_drop_point(event, self), _drop_snap(event)))
+
+    def dragLeaveEvent(self, event: object) -> None:  # noqa: N802
+        del event
+        if self._controller.placing():
+            self._controller.post(PlaceHover(CanvasPoint(0, 0), True, None, True))
 
     def page_widget(self) -> Optional[QWidget]:
         root = self._realizer.root_widget
@@ -179,6 +248,9 @@ class FormCanvas(QGraphicsView):
 
     def send(self, event: HostEvent) -> None:
         self._controller.post(event)
+
+    def place_payload(self) -> Optional[DropPayload]:
+        return self._controller.place_payload()
 
     def overlay(self) -> OverlayFrame:
         return self._controller.frame
@@ -256,6 +328,7 @@ class FormCanvas(QGraphicsView):
             return
         frame = controller.frame
         paint_frame(painter, frame, self._palette, rect)
+        controller.paint_ghost(painter)
         self._title.set_docked(_docked(frame), self._palette)
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802

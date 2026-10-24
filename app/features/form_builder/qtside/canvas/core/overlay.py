@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.drop_target import AcceptedDrop, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -58,6 +59,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Gesture,
     Idle,
     Moving,
+    Placing,
     PageResizing,
     Resizing,
     band_hits,
@@ -103,6 +105,8 @@ _EMPTY_FORM = (
     "/ insert · Ctrl+Shift+G wrap · F2 rename",
 )
 _EMPTY_NESTED = "Drop widgets here"
+_EMPTY_PAGE = "Drop widgets on this page"
+_PAGE_PARENTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 _PLUS = 12
 _TITLES = frozenset({"page_tab", "menu_title"})
 _DESCENDS = frozenset({"widget", "layout"})
@@ -186,7 +190,13 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 empties.append(Caption(canvas, _EMPTY_FORM))
                 targets.append((canvas, OnSpace(node.id, node.id)))
             else:
-                _empty_mark(empties, targets, canvas, OnSpace(node.id, node.id))
+                _empty_mark(
+                    empties,
+                    targets,
+                    canvas,
+                    OnSpace(node.id, node.id),
+                    _drop_caption(document, node),
+                )
             continue
         if isinstance(node, SpacerNode):
             placed.append(Obstacle(node.id, canvas))
@@ -212,6 +222,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 targets,
                 canvas,
                 OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                _drop_caption(document, node),
             )
 
     for obstacle in placed:
@@ -273,6 +284,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
             items.append(Stroke(primary_rect.grown(3), "select", 1, "dotted"))
     if isinstance(gesture, Banding):
         _band(items, view, gesture)
+    _drop_marks(items, view, gesture)
 
     faces, requests = _requests(static, inputs, shown, rects)
     fixed = tuple(hit for hit, _target in handle_hits) + inputs.chrome
@@ -328,16 +340,30 @@ def _spacer_axis(node: SpacerNode) -> Literal["horizontal", "vertical"]:
     return "horizontal"
 
 
+def _drop_caption(document: UiDocument, node: object) -> str:
+    owner = getattr(node, "id", None)
+    if isinstance(node, LayoutNode):
+        found = node.owner_widget_id()
+        if found is not None:
+            owner = found
+    parent = document.parent(owner) if owner is not None else None
+    parent_node = document.get(parent) if parent is not None else None
+    if isinstance(parent_node, WidgetNode) and parent_node.class_name in _PAGE_PARENTS:
+        return _EMPTY_PAGE
+    return _EMPTY_NESTED
+
+
 def _empty_mark(
     items: List[Item],
     targets: List[Tuple[CanvasRect, Target]],
     canvas: CanvasRect,
     target: Target,
+    caption: str = _EMPTY_NESTED,
 ) -> None:
     mark = _at_least(canvas, EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT)
     items.append(Stroke(mark, "layout_faint", 1, "dashed"))
     if mark.width >= EMPTY_CAPTION_MIN_WIDTH:
-        items.append(Caption(mark, (_EMPTY_NESTED,)))
+        items.append(Caption(mark, (caption,)))
     else:
         items.append(Glyph(_centred(mark, _PLUS, _PLUS), "plus", "layout_faint"))
     targets.append((mark, target))
@@ -409,6 +435,50 @@ def _grabbers(page: CanvasRect, hot: bool) -> Tuple[Pill, ...]:
     return (east, south)
 
 
+def _drop_chip(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+) -> None:
+    gesture = inputs.gesture
+    if not isinstance(gesture, Placing) or gesture.outside or not gesture.draw:
+        return
+    target = gesture.target
+    if isinstance(target, NoDrop):
+        return
+    text = target.chip or target.sentence
+    if not text:
+        return
+    host = target.host if isinstance(target, (AcceptedDrop, RefusedDrop)) and target.host is not None else inputs.document.root.id
+    role: Role = "problem" if isinstance(target, RefusedDrop) or target.indicator.role == "problem" else "select"
+    _ask(
+        faces,
+        requests,
+        ("drop", gesture.token),
+        inputs.view.to_canvas(target.indicator.rect),
+        _label_size(text, inputs.measure),
+        LABEL_CORNERS,
+        inputs.document,
+        _Face("chip", host, role, text, None),
+    )
+
+
+def _drop_marks(items: List[Item], view: ViewMap, gesture: Gesture) -> None:
+    if not isinstance(gesture, Placing) or gesture.outside or not gesture.draw:
+        return
+    target = gesture.target
+    if isinstance(target, NoDrop):
+        return
+    role: Role = "problem" if isinstance(target, RefusedDrop) else "layout"
+    items.append(Stroke(view.to_canvas(target.frame), role, 1.5, "solid"))
+    indicator = target.indicator
+    paint: Role = "problem" if indicator.role == "problem" else "select"
+    rect = view.to_canvas(indicator.rect)
+    if indicator.dashed:
+        items.append(Fill(rect, "drop_fill"))
+    items.append(Stroke(rect, paint, 1.5 if indicator.dashed else 2, "dashed" if indicator.dashed else "solid"))
+
+
 def _band(items: List[Item], view: ViewMap, gesture: Banding) -> None:
     area = view.to_canvas(band_rect(gesture))
     items.append(Fill(area, "drop_fill"))
@@ -429,6 +499,7 @@ def _requests(
     document = inputs.document
     faces: Dict[Hashable, _Face] = {}
     requests: List[ChipRequest] = []
+    _drop_chip(faces, requests, inputs)
     primary = shown.current
     if primary is not None and primary in rects and primary != document.root.id:
         text = chip_text(document, inputs.selection, inputs.sizing)
