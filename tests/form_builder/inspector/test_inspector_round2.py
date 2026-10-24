@@ -249,6 +249,8 @@ def test_leaving_the_page_discards_a_connection_draft(qapp: QApplication) -> Non
         signal = pane.findChild(QComboBox, "formBuilder.draftSignal")
         assert signal is not None
         signal.hidePopup()
+        # Offscreen leaves no active window after a popup closes; xcb restores it.
+        qapp.setActiveWindow(window)
         qapp.processEvents()
         outside = QLineEdit(window)
         outside.setGeometry(0, 0, 80, 24)
