@@ -114,8 +114,11 @@ ZOOM_STEPS: Tuple[float, ...] = (
 FIT_CAP = 1.0
 # A new tab opens at Fit and never below 75%. A tighter page scrolls.
 FIT_FLOOR = 0.75
-# Widest elided chip (24 characters) plus padding and the gutter inset.
-SIDE_GUTTER = 24 * 8 + 12 + 4
+# UX-ZOOM-004: 96 px beside the page. A wider chip sits beside its widget or
+# in the dock strip instead (chips.py), so the gutter does not grow with it.
+SIDE_GUTTER = 96
+# A page wider than the view opens with its left edge this far from the view edge.
+HOME_MARGIN = 20
 
 
 @dataclass(frozen=True)
@@ -180,6 +183,9 @@ def zoom_factor(setting: ZoomSetting, page: Size, viewport: CanvasSize) -> float
 class PagePlacement:
     scene: CanvasSize
     page_origin: CanvasPoint
+    #: Scroll that shows the page on open: centred when it fits with
+    #: ``HOME_MARGIN`` on both sides, else its left edge ``HOME_MARGIN`` in.
+    home: CanvasPoint = CanvasPoint(0, 0)
 
 
 def layout_page(
@@ -202,7 +208,17 @@ def layout_page(
         max(viewport.width, x + scaled_w + GUTTERS.right),
         max(viewport.height, y + scaled_h + GUTTERS.bottom),
     )
-    return PagePlacement(scene, CanvasPoint(x, y))
+    return PagePlacement(scene, CanvasPoint(x, y), CanvasPoint(_home_x(x, scaled_w, viewport.width, scene.width), 0))
+
+
+def _home_x(page_x: int, page_w: int, view_w: int, scene_w: int) -> int:
+    if scene_w <= view_w:
+        return 0
+    if page_w + 2 * HOME_MARGIN <= view_w:
+        wanted = page_x - (view_w - page_w) // 2
+    else:
+        wanted = page_x - HOME_MARGIN
+    return max(0, min(wanted, scene_w - view_w))
 
 
 def anchored_scroll(

@@ -35,8 +35,10 @@ from app.features.form_builder.qtside.canvas.core.space import (
     CanvasRect,
     CanvasSize,
     Fit,
+    PagePlacement,
     Size,
     ViewMap,
+    ZoomFit,
     ZoomSetting,
     anchored_scroll,
     apply_zoom,
@@ -49,7 +51,7 @@ from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.overlay import BackdropPalette
 
 # Handle hit, chip height, and the gap, in screen pixels. The page scale lives on the proxy.
-_REVEAL_PAD = 32
+REVEAL_PAD = 32
 _CURSORS = {
     "arrow": "ArrowCursor",
     "move": "SizeAllCursor",
@@ -102,6 +104,11 @@ class Stage:
         scene.addItem(self._proxy)
         self._name = _label(view, "formBuilder.name", "Form name")
         self._size = _label(view, "formBuilder.sizeReadout", "Page size")
+        # The view follows the page's home scroll until the user or a reveal
+        # scrolls it. Programmatic setValue does not emit actionTriggered.
+        self._homed = True
+        view.horizontalScrollBar().actionTriggered.connect(self._scrolled)
+        view.verticalScrollBar().actionTriggered.connect(self._scrolled)
 
     @property
     def proxy(self) -> QGraphicsProxyWidget:
@@ -132,6 +139,8 @@ class Stage:
             self._proxy.setPos(placed.page_origin.x, placed.page_origin.y)
             scene = self._view.scene()
             scene.setSceneRect(0, 0, placed.scene.width, placed.scene.height)
+            if self._homed:
+                self._go_home(placed)
         self._refresh_labels(root)
         self.position_labels()
 
@@ -234,6 +243,7 @@ class Stage:
         elif isinstance(effect, EndPreview):
             self._run_end_preview()
         elif isinstance(effect, ScrollBy):
+            self._homed = False
             horizontal = self._view.horizontalScrollBar()
             vertical = self._view.verticalScrollBar()
             horizontal.setValue(horizontal.value() + effect.dx)
@@ -299,12 +309,31 @@ class Stage:
         self._name.setAccessibleName(label)
         self._size.setText("%d × %d" % (root.width(), root.height()))
 
+    def _scrolled(self, _action: int) -> None:
+        self._homed = False
+
+    def _go_home(self, placed: PagePlacement) -> None:
+        # centerOn, not setValue: a resize re-centres the view on its last
+        # centre point, which setValue does not move.
+        viewport = _viewport(self._view)
+        self._view.centerOn(
+            placed.home.x + viewport.width / 2.0,
+            placed.home.y + viewport.height / 2.0,
+        )
+
+    def release_home(self) -> None:
+        """Something outside the stage scrolled the view. Keep its scroll."""
+        self._homed = False
+
     def _run_zoom(self, effect: Zoom) -> None:
         before = self.view_map()
         self._zoom = apply_zoom(self._zoom, effect.change, self._factor or 1.0)
+        if isinstance(effect.change, ZoomFit):
+            self._homed = True
         self.place()
-        if effect.anchor is None:
+        if effect.anchor is None or isinstance(effect.change, ZoomFit):
             return
+        self._homed = False
         scroll = CanvasPoint(
             self._view.horizontalScrollBar().value(),
             self._view.verticalScrollBar().value(),
@@ -345,7 +374,7 @@ class Stage:
         self._invalidate("root_resize")
 
     def _reveal(self, rect: Rect) -> None:
-        canvas = self.view_map().to_canvas(rect).grown(_REVEAL_PAD)
+        canvas = self.view_map().to_canvas(rect).grown(REVEAL_PAD)
         horizontal = self._view.horizontalScrollBar()
         vertical = self._view.verticalScrollBar()
         left = horizontal.value()
@@ -362,6 +391,8 @@ class Stage:
             dy = canvas.y - top
         elif canvas.y + canvas.height > bottom:
             dy = canvas.y + canvas.height - bottom
+        if dx or dy:
+            self._homed = False
         horizontal.setValue(left + dx)
         vertical.setValue(top + dy)
 

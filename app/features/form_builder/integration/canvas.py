@@ -31,7 +31,7 @@ from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_frame
-from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
+from app.features.form_builder.qtside.canvas.stage import REVEAL_PAD, Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
     PAGE_TITLE_FILL,
@@ -193,7 +193,8 @@ class FormCanvas(QGraphicsView):
             float(max(target.width(), 1)),
             float(max(target.height(), 1)),
         )
-        self.ensureVisible(self._stage.proxy.mapRectToScene(rect), 0, 0)
+        self._stage.release_home()
+        self.ensureVisible(self._stage.proxy.mapRectToScene(rect), REVEAL_PAD, REVEAL_PAD)
 
     def refresh_chip(self) -> None:
         self._sync_title()

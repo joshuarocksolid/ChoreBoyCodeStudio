@@ -46,6 +46,18 @@ WIDE = form(
 """,
 )
 
+# The invoice page on ChoreBoy: 620 x 520 at the 75% floor in a 440 x 270 canvas.
+CHOREBOY_PAGE = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>620</width><height>520</height></rect></property>
+  <widget class="QPushButton" name="ok">
+   <property name="geometry"><rect><x>40</x><y>40</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>OK</string></property>
+  </widget>
+""",
+)
+
 
 class _Host:
     def __init__(self) -> None:
@@ -217,6 +229,21 @@ def test_a_page_larger_than_the_view_keeps_both_gutters() -> None:
         scaled_h = proxy.boundingRect().height() * proxy.scale()
         assert scene.width() >= proxy.pos().x() + scaled_w + GUTTERS.right - 1
         assert scene.height() >= proxy.pos().y() + scaled_h + GUTTERS.bottom - 1
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_a_page_wider_than_the_view_opens_with_its_left_edge_in_view() -> None:
+    with opened(CHOREBOY_PAGE) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, _Host(), 440, 270)
+        assert abs(_scale(canvas) - 0.75) < 1e-6
+        root = canvas.page_widget()
+        assert root is not None
+        proxy = root.graphicsProxyWidget()
+        assert proxy is not None
+        left = canvas.mapFromScene(proxy.pos()).x()
+        assert 16 <= left <= 24
+        assert canvas.verticalScrollBar().value() == 0
         canvas.dispose()
         parent.deleteLater()
 
