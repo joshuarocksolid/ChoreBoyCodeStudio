@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from typing import Callable, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QSize, Qt
+from app.qt.QtCore import QEvent, QObject, QSize, Qt
+from app.qt.QtGui import QBrush, QColor
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -32,6 +33,7 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.canvas.controller import CanvasHost
+from app.features.form_builder.qtside.canvas.core.gesture import HoverFrom
 from app.features.form_builder.integration.layout import (
     INSPECTOR_MAX,
     INSPECTOR_MIN,
@@ -46,6 +48,10 @@ from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_style import flat_tool_button_qss, mode_group_qss
 
 Choice = Tuple[str, Callable[[], None]]
+
+
+def _is_leave(event: QEvent) -> bool:
+    return event.type() == getattr(getattr(QEvent, "Type", QEvent), "Leave")
 
 
 def _strong() -> Qt.FocusPolicy:
@@ -423,9 +429,15 @@ class OutlinePane(QWidget):
         mode = getattr(self.tree, "SelectionMode", type(self.tree))
         self.tree.setSelectionMode(getattr(mode, "SingleSelection"))
         self.tree.currentItemChanged.connect(self._current_changed)
+        self.tree.setMouseTracking(True)
+        self.tree.viewport().setMouseTracking(True)
+        self.tree.itemEntered.connect(self._item_entered)
+        self.tree.viewport().installEventFilter(self)
         layout.addWidget(self.tree, 1)
         self._collapsed = False
         self._hover: Optional[NodeId] = None
+        self._hover_fill = ""
+        self._send_hover: Optional[Callable[[HoverFrom], None]] = None
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
@@ -454,12 +466,26 @@ class OutlinePane(QWidget):
         if current is not None:
             self.tree.setCurrentItem(current)
         self._blocked = False
+        self._paint_hover()
+
+    def set_hover_target(self, send: Callable[[HoverFrom], None]) -> None:
+        self._send_hover = send
+
+    def set_hover_fill(self, color: str) -> None:
+        self._hover_fill = color
+        self._paint_hover()
 
     def set_hover(self, node: Optional[NodeId]) -> None:
         self._hover = node
+        self._paint_hover()
 
     def hover_node(self) -> Optional[NodeId]:
         return self._hover
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self.tree.viewport() and _is_leave(event):
+            self._announce_hover(None)
+        return super().eventFilter(watched, event)
 
     def show_for_design(self) -> None:
         self.tree.setVisible(not self._collapsed)
@@ -467,6 +493,37 @@ class OutlinePane(QWidget):
     def _toggle(self) -> None:
         self.set_collapsed(not self._collapsed)
         self._on_collapsed(self._collapsed)
+
+    def _item_entered(self, item: QTreeWidgetItem, _column: int) -> None:
+        raw = item.data(0, getattr(Qt, "UserRole"))
+        if raw is None:
+            return
+        self._announce_hover(NodeId(int(raw)))
+
+    def _announce_hover(self, node: Optional[NodeId]) -> None:
+        send = self._send_hover
+        if send is None:
+            return
+        send(HoverFrom(node))
+
+    def _paint_hover(self) -> None:
+        role = getattr(Qt, "UserRole")
+        fill = QBrush(QColor(self._hover_fill)) if self._hover_fill else QBrush()
+        blank = QBrush()
+
+        def walk(item: QTreeWidgetItem) -> None:
+            raw = item.data(0, role)
+            hovered = self._hover is not None and raw is not None and int(raw) == int(self._hover)
+            item.setBackground(0, fill if hovered else blank)
+            for index in range(item.childCount()):
+                child = item.child(index)
+                if child is not None:
+                    walk(child)
+
+        for index in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(index)
+            if top is not None:
+                walk(top)
 
     def _current_changed(self, current: Optional[QTreeWidgetItem], _previous: object) -> None:
         if self._blocked or current is None:
@@ -724,6 +781,7 @@ class FormWorkbench(QWidget):
         self._left_stack.addWidget(self._left_rail)
 
         self.canvas = FormCanvas(session, realizer, host, self._splitter)
+        self.outline.set_hover_target(self.canvas.send)
 
         self._right_stack = QStackedWidget(self._splitter)
         self.inspector = InspectorPane(self._right_stack)
@@ -790,6 +848,7 @@ class FormWorkbench(QWidget):
         self._place_drawer()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        self.outline.set_hover_fill(tokens.tree_hover_bg)
         width = tokens.focus_border_width
         self.setStyleSheet(
             "QWidget#formBuilder\\.workbench, QWidget#formBuilder\\.outline,"

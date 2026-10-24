@@ -809,7 +809,9 @@ def _on_leave(gesture: Idle, event: Leave, world: World) -> Step:
 
 
 def _on_hover_from(gesture: Idle, event: HoverFrom, world: World) -> Step:
-    return Step(Idle(event.node), ())
+    if gesture.hover == event.node:
+        return Step(gesture, (), False)
+    return Step(Idle(event.node), (HoverChanged(event.node),))
 
 
 def _toggle(world: World, node: NodeId) -> Union[Select, Toggle]:
