@@ -132,6 +132,8 @@ class Header(QWidget):
         if not self._invalid:
             self._name.blockSignals(True)
             self._name.setText(view.name)
+            if not self._name.hasFocus():
+                self._name.setCursorPosition(0)
             self._name.blockSignals(False)
             self._error.hide()
         self._crumbs_data = view.crumbs

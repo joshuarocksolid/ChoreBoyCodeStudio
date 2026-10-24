@@ -354,3 +354,20 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         assert session.selection.state.ids == (sender,)
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def test_line_edits_show_the_start_of_their_text(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-INSP-003: a long value shows its head, not its tail."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        _show(surface, qapp, "email")
+        placeholder = _row(surface, "placeholderText").findChild(QLineEdit)
+        assert placeholder is not None and placeholder.text().startswith("name@")
+        assert placeholder.cursorPosition() == 0
+        _show(surface, qapp, "okButtonWithAVeryLongObjectName")
+        name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
+        assert name is not None and name.text() == "okButtonWithAVeryLongObjectName"
+        assert name.cursorPosition() == 0
+    finally:
+        shutdown_main_window_for_test(window, qapp)

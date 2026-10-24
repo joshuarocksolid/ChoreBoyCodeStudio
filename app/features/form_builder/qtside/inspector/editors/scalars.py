@@ -63,6 +63,10 @@ class TextEditor:
         self._shown = _text_of(value)
         self._edit.blockSignals(True)
         self._edit.setText(self._shown)
+        if not self._edit.hasFocus():
+            # setText leaves the cursor at the end, which scrolls a long
+            # value to its tail ("ame@example.com").
+            self._edit.setCursorPosition(0)
         self._edit.setPlaceholderText(_placeholder(value))
         self._edit.blockSignals(False)
 
