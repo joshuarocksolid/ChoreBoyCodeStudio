@@ -20,6 +20,7 @@ from app.qt.QtWidgets import (
     QWidget,
 )
 
+from app.features.form_builder.engine.ui4.spec import NodeSpec
 from app.shell.theme_tokens import ShellThemeTokens
 
 _WITH_ACTION_MS = 8000
@@ -73,17 +74,13 @@ def names_from_entry(entry: object) -> Tuple[str, ...]:
 
 
 def _spec_name(spec: object) -> Optional[str]:
-    field = getattr(spec, "field", None)
-    if not callable(field):
+    if not isinstance(spec, NodeSpec):
         return None
-    name = field("object_name") or field("name")
+    name = spec.field("object_name") or spec.field("name")
     if isinstance(name, str) and name:
         return name
-    children = getattr(spec, "children", None)
-    if not callable(children):
-        return None
-    for slot, _kids in getattr(spec, "slots", ()):
-        for child in children(slot):
+    for slot, _kids in spec.slots:
+        for child in spec.children(slot):
             found = _spec_name(child)
             if found:
                 return found

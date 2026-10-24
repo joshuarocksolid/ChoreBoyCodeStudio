@@ -87,6 +87,8 @@ class InspectorPane(QWidget):
         self.header = Header(self._services, self)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("formBuilder.inspectorTabs")
+        self.tabs.setAccessibleName("Inspector")
+        self.tabs.tabBar().setAccessibleName("Inspector")
         self.properties = PropertiesPage(self._services, self._schedule, self.tabs)
         self.behavior = BehaviorPage(self._services, realizer, self.tabs)
         self._tab_index: Dict[TabId, int] = {}

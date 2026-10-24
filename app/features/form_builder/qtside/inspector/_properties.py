@@ -91,6 +91,7 @@ class PropertiesPage(QWidget):
         self._more.setMenu(menu)
         self._scroll = QScrollArea(self)
         self._scroll.setObjectName("formBuilder.inspectorScroll")
+        self._scroll.setAccessibleName("Properties")
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(_no_frame())
         self._scroll.setHorizontalScrollBarPolicy(_scroll_off())
@@ -311,6 +312,7 @@ class _FormSection(QWidget):
         self._order.setWordWrap(True)
         self._problems = QLabel(self)
         self._problems.setObjectName("formBuilder.inspectorProblems")
+        self._problems.setAccessibleName("Problems")
         flags = getattr(Qt, "TextInteractionFlag", Qt)
         self._problems.setTextInteractionFlags(
             flags.LinksAccessibleByMouse | flags.LinksAccessibleByKeyboard
@@ -801,6 +803,7 @@ class _Row(QWidget):
             return
         self._editor = factory(view.spec, self, self._slot)
         _shrink(self._editor.widget)
+        self._editor.widget.setAccessibleName(view.label)
         self._slot_layout.addWidget(self._editor.widget)
         self._editor.widget.show()
 
