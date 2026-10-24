@@ -105,6 +105,9 @@ def test_widget_keys_are_menu_hints_and_not_window_shortcuts(qapp) -> None:  # t
         view_xml = registry.actions["form.action.viewXml"]
         assert view_xml.shortcut().isEmpty()
         assert "Ctrl+Shift+V" in view_xml.text()
+        zoom_fit = registry.actions["form.action.zoomToFit"]
+        assert zoom_fit.shortcut().isEmpty()
+        assert "Ctrl+9" in zoom_fit.text()
     finally:
         clear_menu_contributors()
         window.deleteLater()

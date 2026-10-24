@@ -66,6 +66,26 @@ def test_page_title_shows_the_window_title_in_the_runtime_font(qapp: QApplicatio
         parent.deleteLater()
 
 
+class _Host:
+    def canvas_pressed(self) -> None:
+        return None
+
+    def narrate(self, sentence: str) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
+
+
 def test_canvas_backdrop_starts_from_backdrop_colors(monkeypatch: pytest.MonkeyPatch, qapp: QApplication, tmp_path: Path) -> None:
     del tmp_path
 
@@ -78,7 +98,7 @@ def test_canvas_backdrop_starts_from_backdrop_colors(monkeypatch: pytest.MonkeyP
     )
     session = FormSession.open(_FORM, path="/tmp/invoice.ui", scope=form_scope("/tmp/invoice.ui", None))
     parent = QWidget()
-    canvas = FormCanvas(session, Realizer(session), parent)
+    canvas = FormCanvas(session, Realizer(session), _Host(), parent)
     try:
         canvas.resize(320, 240)
         canvas.show()

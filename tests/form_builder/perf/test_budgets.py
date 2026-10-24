@@ -52,7 +52,10 @@ def test_one_command_at_1000_stays_within_1_6x_of_300(mac_report: SpeedReport) -
     ratio = _row(mac_report, "one command O(changed)", None)
     assert ratio.verdict == "pass", _explain(ratio)
     assert ratio.p95 is not None
-    assert ratio.p95 <= 1.6
+    if str(ratio.budget).endswith("x"):
+        assert ratio.p95 <= 1.6
+    else:
+        assert ratio.p95 <= 0.5
 
 
 @pytest.mark.perf
@@ -66,6 +69,22 @@ def test_structural_realize_patches_meet_section_12(mac_report: SpeedReport) -> 
     for point in STRUCTURAL_RATIO_POINTS:
         ratio = _row(mac_report, "%s O(changed)" % point, None)
         assert ratio.verdict == "pass", _explain(ratio)
+
+
+@pytest.mark.perf
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize(("point", "widgets"), [("hit index refresh", 300), ("hit index refresh", 1000), ("hit query", 300)])
+def test_hit_index_meets_section_12(mac_report: SpeedReport, point: str, widgets: int) -> None:
+    row = _row(mac_report, point, widgets)
+    assert row.verdict == "pass", _explain(row)
+
+
+@pytest.mark.perf
+@pytest.mark.timeout(60)
+@pytest.mark.parametrize("point", ["overlay paint", "selection change", "edit total"])
+def test_canvas_paths_meet_section_12(mac_report: SpeedReport, point: str) -> None:
+    row = _row(mac_report, point, 300)
+    assert row.verdict == "pass", _explain(row)
 
 
 @pytest.mark.perf

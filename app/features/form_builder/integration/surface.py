@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Callable, Mapping, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QObject, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
     QApplication,
@@ -17,6 +17,7 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QTreeWidget,
     QShortcut,
     QStackedWidget,
     QTabWidget,
@@ -43,10 +44,13 @@ from app.features.form_builder.engine.shell_commands import (
 from app.features.form_builder.engine.ui4.reader import UiReadError, kept_as_is_spans, read_ui
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
+    mixed_parent_sentence,
     recovered_draft_sentence,
     selection_sentence,
+    status_sentence,
     undo_menu_text,
 )
+from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
     FormContentSource,
@@ -61,7 +65,19 @@ from app.features.form_builder.integration.layout import (
 )
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
 from app.features.form_builder.integration.run_action import run_open_form
+from app.features.form_builder.integration.toast import (
+    CommandToast,
+    ToastNote,
+    names_from_entry,
+    notice_sentence,
+    undo_matches,
+)
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
+from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
+from app.features.form_builder.qtside.canvas.core.structure import effective_selection
+from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
+from app.features.form_builder.qtside.canvas.core.words import hover_sentence
+from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.shortcut_preferences import default_shortcut_map
@@ -98,6 +114,31 @@ def plain_banner_error(error: str) -> str:
     if not message:
         return error
     return message[0].upper() + message[1:] + "."
+
+
+_RENAME_ACTION = "shell.action.edit.renameSymbol"
+
+
+def _shell_registry(window: QWidget) -> object:
+    """``menu_registry`` is a property on MainWindow and a method on test doubles."""
+    registry_fn = getattr(window, "menu_registry", None)
+    if registry_fn is None:
+        return None
+    return registry_fn() if callable(registry_fn) else registry_fn
+
+
+def _outline_mode(change_set: object) -> str:
+    if getattr(change_set, "replaced", False):
+        return "rebuild"
+    if (
+        getattr(change_set, "structure_dirty", ())
+        or getattr(change_set, "added", ())
+        or getattr(change_set, "removed", ())
+    ):
+        return "rebuild"
+    if getattr(change_set, "renamed", ()):
+        return "patch"
+    return "keep"
 
 
 def _shell_history(window: QWidget, redo: bool) -> None:
@@ -216,6 +257,10 @@ class FormSurface(QWidget):
             on_xml=self._on_xml_toggled,
             on_undo=self._toolbar_undo,
             on_redo=self._toolbar_redo,
+            on_zoom_out=self.zoom_out,
+            on_zoom_in=self.zoom_in,
+            on_zoom_to=self.zoom_to,
+            on_zoom_fit=self.zoom_fit,
         )
         self._toolbar.setFixedHeight(TOOLBAR_HEIGHT)
         layout.addWidget(self._toolbar)
@@ -248,16 +293,23 @@ class FormSurface(QWidget):
             self._pin_inspector,
             self._remember_widths,
             self._remember_collapsed,
+            self,
             self._stack,
         )
         self._stack.addWidget(self._workbench)
         layout.addWidget(self._stack, 1)
+        self._command_toast = CommandToast(self)
+        self._problem_popover = ProblemPopover(self)
+        self._layout_popover: Optional[QWidget] = None
 
         self._load_memory()
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
         self._selection_unsub = session.selection.subscribe(self._on_selection)
         self._source_unsub = source.subscribe_changed(self._on_source_changed)
         self._inert_note = ""
+        self._gesture_sentence = ""
+        self._overlay_sentence = ""
+        self._hover_sentence = ""
         self._problem_timer = QTimer(self)
         self._problem_timer.setSingleShot(True)
         self._problem_timer.timeout.connect(self._flush_problems)
@@ -279,6 +331,15 @@ class FormSurface(QWidget):
         self._alt_insert = QShortcut(QKeySequence("Alt+2"), self)
         self._alt_insert.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._alt_insert.activated.connect(self._focus_insert)
+        self._alt_canvas = QShortcut(QKeySequence("Alt+3"), self)
+        self._alt_canvas.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+        self._alt_canvas.activated.connect(self._focus_canvas)
+        self._alt_inspector_key = QShortcut(QKeySequence("Alt+4"), self)
+        self._alt_inspector_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+        self._alt_inspector_key.activated.connect(self._focus_inspector_pane)
+        self._rename_key = QShortcut(QKeySequence("F2"), self)
+        self._rename_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+        self._rename_key.activated.connect(self._rename_inert)
         self._esc = QShortcut(QKeySequence("Esc"), self)
         self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._esc.setEnabled(False)
@@ -342,15 +403,26 @@ class FormSurface(QWidget):
         editor = self._editor
         if editor is not None:
             editor.apply_theme(tokens)
+        self._command_toast.apply_theme(tokens)
 
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
 
-    def editor_status_sentence(self) -> str:
-        if self._inert_note:
-            return self._inert_note
+    def mixed_layout_blocked(self) -> bool:
         state = self._session.selection.state
-        return selection_sentence(self._session.document, state.current, len(state.ids))
+        return bool(mixed_parent_sentence(self._session.document, state.ids))
+
+    def editor_status_sentence(self) -> str:
+        state = self._session.selection.state
+        mixed = mixed_parent_sentence(self._session.document, state.ids)
+        selection = mixed or selection_sentence(self._session.document, state.current, len(state.ids))
+        return status_sentence(
+            self._gesture_sentence,
+            self._overlay_sentence,
+            self._inert_note,
+            self._hover_sentence,
+            selection,
+        )
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
         if detail and self._toolbar.xml.isChecked():
@@ -531,6 +603,8 @@ class FormSurface(QWidget):
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
+        self._command_toast.place()
+        self._problem_popover.place()
 
     def _on_design(self) -> None:
         if self._toolbar.xml.isChecked():
@@ -652,11 +726,42 @@ class FormSurface(QWidget):
         if _parses(editor.toPlainText()):
             self._mark_kept_lines(editor)
 
-    def _on_log(self, _change_set: object) -> None:
+    def _on_log(self, change_set: object) -> None:
+        self._sync_toast(change_set)
         if self._source.mode != "visual":
             self._refresh_undo_buttons()
             return
-        self._refresh_design()
+        current = self._session.selection.state.current
+        self._workbench.refresh(current, outline=_outline_mode(change_set))
+        self._workbench.outline.show_for_design()
+        self._refresh_undo_buttons()
+        self._sync_shell_undo()
+        self._refresh_save_state()
+        self._command_toast.place()
+
+    def _sync_toast(self, change_set: object) -> None:
+        origin = getattr(change_set, "origin", "")
+        label = str(getattr(change_set, "label", "") or "")
+        if origin != "do":
+            self._command_toast.dismiss()
+            return
+        entries = self._session.log.entries()
+        entry = entries[-1] if entries else None
+        text = notice_sentence(label, names_from_entry(entry) if entry is not None else ())
+        if text is None:
+            self._command_toast.dismiss()
+            return
+        note = ToastNote(text, "Undo", label, len(entries), entry)
+        self._command_toast.show_note(note, self._undo_announced)
+
+    def _undo_announced(self, note: ToastNote) -> None:
+        log = self._session.log
+        entries = log.entries()
+        top = entries[-1] if entries else None
+        if not undo_matches(note, top):
+            self._command_toast.dismiss()
+            return
+        self.undo()
 
     def _on_source_changed(self) -> None:
         self._save_faded = False
@@ -666,12 +771,110 @@ class FormSurface(QWidget):
 
     def _on_selection(self, change: object) -> None:
         self._inert_note = ""
+        self._gesture_sentence = ""
         current = getattr(getattr(change, "after", None), "current", None)
-        self._workbench.outline.rebuild(self._session.document, current)
+        self._workbench.outline.show_current(current)
         self._refresh_shell_status()
 
     def _on_outline_pick(self, node_id: NodeId) -> None:
         self._session.selection.set((node_id,), source=SelectionSource.OUTLINE)
+
+    def canvas_pressed(self) -> None:
+        workbench = getattr(self, "_workbench", None)
+        if workbench is not None:
+            workbench.close_drawers()
+
+    def narrate(self, sentence: str) -> None:
+        self._gesture_sentence = sentence
+        self._refresh_shell_status()
+
+    def hover_changed(self, node: Optional[NodeId]) -> None:
+        self._workbench.outline.set_hover(node)
+        if node is None:
+            self._hover_sentence = ""
+        else:
+            edits = enter_opens_editor(self._session.document, node)
+            self._hover_sentence = hover_sentence(self._session.document, node, edits)
+        self._refresh_shell_status()
+
+    def zoom_changed(self, label: str) -> None:
+        self._toolbar.zoom_label.setText(label)
+
+    def zoom_out(self) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomStep(-1)))
+
+    def zoom_in(self) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomStep(1)))
+
+    def zoom_to(self, factor: float) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomTo(factor)))
+
+    def zoom_fit(self) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomFit()))
+
+    def edit_text(self) -> None:
+        self._workbench.canvas.send(EditTextAsked())
+
+    def can_edit_text(self) -> bool:
+        shown = effective_selection(self._session.document, self._session.selection.state)
+        current = shown.current
+        if current is None:
+            return False
+        return enter_opens_editor(self._session.document, current)
+
+    def open_problem(self, node: NodeId) -> None:
+        items = self._session.diagnostics.for_node(node)
+        text = items[0].message if items else ""
+        if not text:
+            return
+        if self._reveal_problem(text):
+            self._problem_popover.hide()
+            return
+        self._problem_popover.show_message(text)
+
+    def open_layout_popover(self, node: NodeId) -> None:
+        self._layout_popover = open_layout_menu(self, FORM_COMMANDS, self._chip_anchor(node))
+
+    def _chip_anchor(self, node: NodeId) -> QPoint:
+        canvas = self._workbench.canvas
+        for rect, chip_node in canvas.overlay().chips:
+            if chip_node != node:
+                continue
+            local = canvas.mapFromScene(float(rect.x), float(rect.y + rect.height))
+            return canvas.mapToGlobal(local)
+        return self.mapToGlobal(self.rect().center())
+
+    def _focus_canvas(self) -> None:
+        if self._source.mode != "visual":
+            return
+        self._workbench.canvas.setFocus()
+
+    def _focus_inspector_pane(self) -> None:
+        if self._source.mode != "visual":
+            return
+        inspector = self._workbench.inspector
+        inspector.setFocus()
+        inspector.properties.setFocus()
+
+    def _rename_inert(self) -> None:
+        self._inert_note = "Rename on the form arrives in a later release."
+        self._refresh_shell_status()
+
+    def _reveal_problem(self, text: str) -> bool:
+        window = self.window()
+        panel = getattr(window, "_problems_panel", None)
+        tabs = getattr(window, "_bottom_tabs_widget", None) or getattr(window, "_problems_tab_widget", None)
+        reader = getattr(panel, "tree_widget", None)
+        if panel is None or tabs is None or not callable(reader):
+            return False
+        tree = reader()
+        if not isinstance(tree, QTreeWidget) or not tree_contains(tree, text):
+            return False
+        index = tabs.indexOf(panel)
+        if index < 0:
+            return False
+        tabs.setCurrentIndex(index)
+        return True
 
     def _refresh_design(self) -> None:
         current = self._session.selection.state.current
@@ -1055,14 +1258,11 @@ class FormSurface(QWidget):
 
     def _bind_shell_undo(self) -> None:
         window = self.window()
-        registry_fn = getattr(window, "menu_registry", None)
-        if not callable(registry_fn):
-            return
-        registry = registry_fn()
+        registry = _shell_registry(window)
         if registry is None:
             return
-        undo = registry.action("shell.action.edit.undo")
-        redo = registry.action("shell.action.edit.redo")
+        undo = registry.action("shell.action.edit.undo")  # type: ignore[attr-defined]
+        redo = registry.action("shell.action.edit.redo")  # type: ignore[attr-defined]
         if undo is None or redo is None:
             return
         if not getattr(window, "_form_undo_wired", False):
@@ -1070,12 +1270,34 @@ class FormSurface(QWidget):
             redo.triggered.connect(lambda _checked=False, host=window: _shell_history(host, True))
             window._form_undo_wired = True  # type: ignore[attr-defined]
         window._form_undo_surface = self  # type: ignore[attr-defined]
+        self._silence_rename(registry)
         self._sync_shell_undo()
+
+    def _silence_rename(self, registry: object) -> None:
+        action = registry.action(_RENAME_ACTION)  # type: ignore[attr-defined]
+        if action is None:
+            return
+        window = self.window()
+        if not getattr(window, "_form_rename_silenced", False):
+            window._form_rename_prior = action.isEnabled()  # type: ignore[attr-defined]
+            window._form_rename_silenced = True  # type: ignore[attr-defined]
+        action.setEnabled(False)
+
+    def _restore_rename(self) -> None:
+        window = self.window()
+        if not getattr(window, "_form_rename_silenced", False):
+            return
+        registry = _shell_registry(window)
+        action = None if registry is None else registry.action(_RENAME_ACTION)  # type: ignore[attr-defined]
+        if action is not None:
+            action.setEnabled(bool(getattr(window, "_form_rename_prior", True)))
+        window._form_rename_silenced = False  # type: ignore[attr-defined]
 
     def _clear_shell_undo(self) -> None:
         window = self.window()
         if getattr(window, "_form_undo_surface", None) is not self:
             return
+        self._restore_rename()
         window._form_undo_surface = None  # type: ignore[attr-defined]
         self._set_shell_actions("Undo", False, "Redo", False)
 
@@ -1097,10 +1319,7 @@ class FormSurface(QWidget):
 
     def _set_shell_actions(self, undo_text: str, undo_on: bool, redo_text: str, redo_on: bool) -> None:
         window = self.window()
-        registry_fn = getattr(window, "menu_registry", None)
-        if not callable(registry_fn):
-            return
-        registry = registry_fn()
+        registry = _shell_registry(window)
         if registry is None:
             return
         undo = registry.action("shell.action.edit.undo")

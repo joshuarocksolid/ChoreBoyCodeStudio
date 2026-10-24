@@ -6,9 +6,10 @@ Widths come from a ``LayoutPlan``. This module does not decide breakpoints.
 from __future__ import annotations
 
 import os
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QSize, Qt
+from app.qt.QtCore import QEvent, QObject, QSize, Qt
+from app.qt.QtGui import QBrush, QColor, QIcon
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -28,10 +29,13 @@ from app.qt.QtWidgets import (
 from app.qt.qt_compat import event_pos
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.qtside.canvas.controller import CanvasHost
+from app.features.form_builder.qtside.canvas.core.gesture import HoverFrom
 from app.features.form_builder.integration.layout import (
     INSPECTOR_MAX,
     INSPECTOR_MIN,
@@ -47,6 +51,10 @@ from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_style import flat_tool_button_qss, mode_group_qss
 
 Choice = Tuple[str, Callable[[], None]]
+
+
+def _is_leave(event: QEvent) -> bool:
+    return event.type() == getattr(getattr(QEvent, "Type", QEvent), "Leave")
 
 
 def _strong() -> Qt.FocusPolicy:
@@ -77,11 +85,75 @@ def _policy(name: str) -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
 
 
+def _without_shortcut(tip: str) -> str:
+    cut = tip.rfind(" (")
+    if cut > 0 and tip.endswith(")"):
+        return tip[:cut]
+    return tip
+
+
+def _control_name(text: str, tip: str) -> str:
+    # A glyph has no letters. Its name is the tooltip, and the shortcut parenthesis is not part of that name.
+    if any(ch.isalnum() for ch in text):
+        return text
+    return _without_shortcut(tip or text)
+
+
+def _name_tabs(tabs: QTabWidget, name: str) -> None:
+    tabs.setAccessibleName(name)
+    tabs.tabBar().setAccessibleName(name)
+
+
+def _button_style(name: str) -> Qt.ToolButtonStyle:
+    return getattr(getattr(Qt, "ToolButtonStyle", Qt), name)
+
+
+def _dpr(widget: QWidget) -> float:
+    reader = getattr(widget, "devicePixelRatioF", None)
+    if callable(reader):
+        return float(reader())
+    return float(widget.devicePixelRatio())
+
+
+def _glyph_icon(glyph: str, color: str, faint: str, logical: int, dpr: float) -> QIcon:
+    icon = QIcon()
+    mode = getattr(QIcon, "Mode", QIcon)
+    icon.addPixmap(paint_glyph(glyph, color, logical, dpr), getattr(mode, "Normal"))
+    icon.addPixmap(paint_glyph(glyph, faint, logical, dpr), getattr(mode, "Disabled"))
+    return icon
+
+
+def _paint_glyph(button: QToolButton, glyph: str, tokens: ShellThemeTokens, logical: int) -> None:
+    color = tokens.icon_primary or tokens.text_primary
+    faint = tokens.gutter_text or color
+    button.setIcon(_glyph_icon(glyph, color, faint, logical, _dpr(button)))
+    button.setIconSize(QSize(logical, logical))
+
+
+_TOOL_GLYPHS = (
+    ("undo", "undo"),
+    ("redo", "redo"),
+    ("zoom_out", "minus"),
+    ("zoom_in", "plus"),
+    ("preview", "play"),
+    ("overflow", "more"),
+    ("tab_order", "tab_order"),
+    ("buddies", "buddy"),
+)
+_RAIL_GLYPHS = {
+    "formBuilder.leftRail.outline": "outline",
+    "formBuilder.leftRail.insert": "insert",
+    "formBuilder.rightRail.properties": "properties",
+    "formBuilder.rightRail.behavior": "behavior",
+    "formBuilder.pin": "pin",
+}
+
+
 def _button(text: str, name: str, tip: str, parent: QWidget) -> QPushButton:
     button = QPushButton(text, parent)
     button.setObjectName(name)
     button.setToolTip(tip)
-    button.setAccessibleName(text or tip)
+    button.setAccessibleName(_control_name(text, tip))
     button.setFocusPolicy(_strong())
     return button
 
@@ -91,7 +163,7 @@ def _tool(text: str, name: str, tip: str, parent: QWidget) -> QToolButton:
     button.setObjectName(name)
     button.setText(text)
     button.setToolTip(tip)
-    button.setAccessibleName(text or tip)
+    button.setAccessibleName(_control_name(text, tip))
     button.setFocusPolicy(_strong())
     button.setAutoRaise(True)
     button.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
@@ -148,6 +220,10 @@ class FormToolbar(QWidget):
         on_xml: Callable[[bool], None],
         on_undo: Callable[[], None],
         on_redo: Callable[[], None],
+        on_zoom_out: Optional[Callable[[], None]] = None,
+        on_zoom_in: Optional[Callable[[], None]] = None,
+        on_zoom_to: Optional[Callable[[float], None]] = None,
+        on_zoom_fit: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.toolbar")
@@ -190,18 +266,49 @@ class FormToolbar(QWidget):
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
 
-        self.undo = _tool("Undo", "formBuilder.undo", "Undo (Ctrl+Z)", self)
-        self.redo = _tool("Redo", "formBuilder.redo", "Redo (Ctrl+Shift+Z)", self)
+        self.undo = _tool("", "formBuilder.undo", "Undo (Ctrl+Z)", self)
+        self.redo = _tool("", "formBuilder.redo", "Redo (Ctrl+Shift+Z)", self)
         self.undo.clicked.connect(on_undo)
         self.redo.clicked.connect(on_redo)
         row.addWidget(self.undo)
         row.addWidget(self.redo)
 
-        self.zoom_out = _tool("−", "formBuilder.zoomOut", "Zoom is not available yet", self)
-        self.zoom_label = _tool("100%", "formBuilder.zoomLabel", "Zoom is not available yet", self)
-        self.zoom_in = _tool("+", "formBuilder.zoomIn", "Zoom is not available yet", self)
+        zoom_ready = None not in (on_zoom_out, on_zoom_in, on_zoom_to, on_zoom_fit)
+        self.zoom_out = _tool(
+            "",
+            "formBuilder.zoomOut",
+            "Zoom out" if zoom_ready else "Zoom is not available yet",
+            self,
+        )
+        self.zoom_label = _tool(
+            "100%",
+            "formBuilder.zoomLabel",
+            "Choose a zoom" if zoom_ready else "Zoom is not available yet",
+            self,
+        )
+        self.zoom_in = _tool(
+            "",
+            "formBuilder.zoomIn",
+            "Zoom in" if zoom_ready else "Zoom is not available yet",
+            self,
+        )
+        if zoom_ready:
+            assert on_zoom_out is not None and on_zoom_in is not None
+            assert on_zoom_to is not None and on_zoom_fit is not None
+            self.zoom_out.clicked.connect(on_zoom_out)
+            self.zoom_in.clicked.connect(on_zoom_in)
+            self.zoom_label.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
+            zoom_menu = QMenu(self.zoom_label)
+            zoom_menu.setObjectName("formBuilder.zoomMenu")
+            zoom_menu.addAction("Fit").triggered.connect(on_zoom_fit)
+            for percent in (50, 75, 100, 150, 200):
+                action = zoom_menu.addAction("%d%%" % percent)
+                action.triggered.connect(lambda _checked=False, value=percent: on_zoom_to(value / 100.0))
+            self.zoom_label.setMenu(zoom_menu)
+        else:
+            for button in (self.zoom_out, self.zoom_label, self.zoom_in):
+                button.setEnabled(False)
         for button in (self.zoom_out, self.zoom_label, self.zoom_in):
-            button.setEnabled(False)
             row.addWidget(button)
         self.text_size = _tool("Aa", "formBuilder.textSize", "Text size is not available yet", self)
         self.two_widths = _tool("Widths", "formBuilder.twoWidths", "Two widths is not available yet", self)
@@ -210,17 +317,17 @@ class FormToolbar(QWidget):
         row.addWidget(self.text_size)
         row.addWidget(self.two_widths)
 
-        self.preview = _tool("Preview", "formBuilder.preview", "Preview is not available yet", self)
+        self.preview = _tool("", "formBuilder.preview", "Preview is not available yet", self)
         self.preview.setEnabled(False)
         row.addWidget(self.preview)
 
         self.overflow = QToolButton(self)
         self.overflow.setObjectName("formBuilder.overflow")
-        self.overflow.setText("⋯")
+        self.overflow.setText("")
         self.overflow.setToolTip("More")
         self.overflow.setAccessibleName("More")
         self.overflow.setAutoRaise(True)
-        self.overflow.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
+        self.overflow.setToolButtonStyle(_button_style("ToolButtonIconOnly"))
         self.overflow.setFocusPolicy(_strong())
         self.overflow.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
         self._menu = QMenu(self.overflow)
@@ -235,10 +342,22 @@ class FormToolbar(QWidget):
         self.save_state.setObjectName("formBuilder.saveState")
         self.save_state.setAccessibleName("Save state")
         row.addWidget(self.save_state, 0)
+        self._tokens: Optional[ShellThemeTokens] = None
+        icon_only = _button_style("ToolButtonIconOnly")
+        for button in (self.undo, self.redo, self.zoom_out, self.zoom_in, self.preview):
+            button.setToolButtonStyle(icon_only)
+        beside = _button_style("ToolButtonTextBesideIcon")
+        self.tab_order.setToolButtonStyle(beside)
+        self.buddies.setToolButtonStyle(beside)
 
     def set_compact(self, compact: bool) -> None:
-        self.tab_order.setText("⇥" if compact else "Tab order")
-        self.buddies.setText("↔" if compact else "Buddies")
+        self.tab_order.setText("" if compact else "Tab order")
+        self.buddies.setText("" if compact else "Buddies")
+        style = _button_style("ToolButtonIconOnly" if compact else "ToolButtonTextBesideIcon")
+        self.tab_order.setToolButtonStyle(style)
+        self.buddies.setToolButtonStyle(style)
+        self.tab_order.setAccessibleName(_control_name(self.tab_order.text(), self.tab_order.toolTip()))
+        self.buddies.setAccessibleName(_control_name(self.buddies.text(), self.buddies.toolTip()))
         self.text_size.setVisible(not compact)
         self.two_widths.setVisible(not compact)
         self.overflow.setVisible(compact)
@@ -246,10 +365,14 @@ class FormToolbar(QWidget):
     def set_undo(self, enabled: bool, tip: str) -> None:
         self.undo.setEnabled(enabled)
         self.undo.setToolTip(tip)
+        self.undo.setAccessibleName(_control_name(self.undo.text(), tip))
+        self._paint_glyphs()
 
     def set_redo(self, enabled: bool, tip: str) -> None:
         self.redo.setEnabled(enabled)
         self.redo.setToolTip(tip)
+        self.redo.setAccessibleName(_control_name(self.redo.text(), tip))
+        self._paint_glyphs()
 
     def set_save(self, text: str, *, error: bool, tokens: Optional[ShellThemeTokens]) -> None:
         self.save_state.setText(text)
@@ -261,7 +384,17 @@ class FormToolbar(QWidget):
         )
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        self._tokens = tokens
         self.setStyleSheet(_toolbar_qss(tokens))
+        self._paint_glyphs()
+
+    def _paint_glyphs(self) -> None:
+        tokens = self._tokens
+        if tokens is None:
+            return
+        for attr, glyph in _TOOL_GLYPHS:
+            button = getattr(self, attr)
+            _paint_glyph(button, glyph, tokens, 16)
 
 
 def _splitter_qss(tokens: ShellThemeTokens) -> str:
@@ -389,8 +522,16 @@ class OutlinePane(QWidget):
         mode = getattr(self.tree, "SelectionMode", type(self.tree))
         self.tree.setSelectionMode(getattr(mode, "SingleSelection"))
         self.tree.currentItemChanged.connect(self._current_changed)
+        self.tree.setMouseTracking(True)
+        self.tree.viewport().setMouseTracking(True)
+        self.tree.itemEntered.connect(self._item_entered)
+        self.tree.viewport().installEventFilter(self)
         layout.addWidget(self.tree, 1)
         self._collapsed = False
+        self._hover: Optional[NodeId] = None
+        self._hover_fill = ""
+        self._rows: Dict[int, QTreeWidgetItem] = {}
+        self._send_hover: Optional[Callable[[HoverFrom], None]] = None
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
@@ -399,9 +540,9 @@ class OutlinePane(QWidget):
     def rebuild(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         self._blocked = True
         self.tree.clear()
+        self._rows = {}
         parents: dict[int, QTreeWidgetItem] = {}
         role = getattr(Qt, "UserRole")
-        current: Optional[QTreeWidgetItem] = None
         for entry in structure_entries(document):
             item = QTreeWidgetItem([entry.label])
             item.setData(0, role, int(entry.node_id))
@@ -413,12 +554,60 @@ class OutlinePane(QWidget):
             parents[entry.depth] = item
             for deeper in [key for key in parents if key > entry.depth]:
                 del parents[deeper]
-            if selected is not None and entry.node_id == selected:
-                current = item
+            self._rows[int(entry.node_id)] = item
         self.tree.expandAll()
-        if current is not None:
-            self.tree.setCurrentItem(current)
         self._blocked = False
+        self.show_current(selected)
+        self._paint_row(self._hover)
+
+    def show_current(self, selected: Optional[NodeId]) -> None:
+        """Move the current row. Does not rebuild the tree."""
+        if selected is None:
+            item = None
+        else:
+            item = self._rows.get(int(selected))
+            if item is None:
+                return
+        self._blocked = True
+        self.tree.setCurrentItem(item)
+        if item is not None:
+            self.tree.scrollToItem(item)
+        self._blocked = False
+
+    def patch_labels(self, document: UiDocument, selected: Optional[NodeId]) -> None:
+        entries = tuple(structure_entries(document))
+        if len(entries) != len(self._rows):
+            self.rebuild(document, selected)
+            return
+        for entry in entries:
+            item = self._rows.get(int(entry.node_id))
+            if item is None:
+                self.rebuild(document, selected)
+                return
+            item.setText(0, entry.label)
+        self.show_current(selected)
+
+    def set_hover_target(self, send: Callable[[HoverFrom], None]) -> None:
+        self._send_hover = send
+
+    def set_hover_fill(self, color: str) -> None:
+        self._hover_fill = color
+        self._paint_row(self._hover)
+
+    def set_hover(self, node: Optional[NodeId]) -> None:
+        previous = self._hover
+        self._hover = node
+        if previous != node:
+            self._paint_row(previous)
+            self._paint_row(node)
+
+    def hover_node(self) -> Optional[NodeId]:
+        return self._hover
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self.tree.viewport() and _is_leave(event):
+            self._announce_hover(None)
+        return super().eventFilter(watched, event)
 
     def show_for_design(self) -> None:
         self.tree.setVisible(not self._collapsed)
@@ -426,6 +615,27 @@ class OutlinePane(QWidget):
     def _toggle(self) -> None:
         self.set_collapsed(not self._collapsed)
         self._on_collapsed(self._collapsed)
+
+    def _item_entered(self, item: QTreeWidgetItem, _column: int) -> None:
+        raw = item.data(0, getattr(Qt, "UserRole"))
+        if raw is None:
+            return
+        self._announce_hover(NodeId(int(raw)))
+
+    def _announce_hover(self, node: Optional[NodeId]) -> None:
+        send = self._send_hover
+        if send is None:
+            return
+        send(HoverFrom(node))
+
+    def _paint_row(self, node: Optional[NodeId]) -> None:
+        if node is None:
+            return
+        item = self._rows.get(int(node))
+        if item is None:
+            return
+        hovered = self._hover is not None and int(node) == int(self._hover) and bool(self._hover_fill)
+        item.setBackground(0, QBrush(QColor(self._hover_fill)) if hovered else QBrush())
 
     def _current_changed(self, current: Optional[QTreeWidgetItem], _previous: object) -> None:
         if self._blocked or current is None:
@@ -491,11 +701,13 @@ class _Rail(QWidget):
         button.setAccessibleName(label)
         button.setFocusPolicy(_strong())
         button.setAutoRaise(True)
-        button.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
+        button.setToolButtonStyle(_button_style("ToolButtonIconOnly"))
+        button.setIconSize(QSize(20, 20))
         button.setSizePolicy(_policy("Ignored"), _policy("Fixed"))
         button.setFixedSize(32, 40)
         caption = QLabel(label, button)
         caption.setObjectName("formBuilder.railLabel")
+        caption.hide()
         caption.setWordWrap(True)
         caption.setAlignment(_center())
         caption.setAttribute(_transparent(), True)
@@ -517,6 +729,7 @@ class FormWorkbench(QWidget):
         on_pin_inspector: Callable[[], None],
         on_widths: Callable[[int, int], None],
         on_collapsed: Callable[[str, bool], None],
+        host: CanvasHost,
         parent: QWidget,
     ) -> None:
         super().__init__(parent)
@@ -557,6 +770,7 @@ class FormWorkbench(QWidget):
         left_layout.addWidget(self._left_split)
         self._left_tabs = QTabWidget(self._left_body)
         self._left_tabs.setObjectName("formBuilder.leftTabs")
+        _name_tabs(self._left_tabs, "Outline and insert")
         self._left_tabs.hide()
         left_layout.addWidget(self._left_tabs)
         self._left_split.addWidget(self.outline)
@@ -567,8 +781,8 @@ class FormWorkbench(QWidget):
         self._left_stack.addWidget(self._left_body)
         self._left_stack.addWidget(self._left_rail)
 
-        self.canvas = FormCanvas(session, realizer, self._splitter)
-        self.canvas.set_drawer_closer(self.close_drawers)
+        self.canvas = FormCanvas(session, realizer, host, self._splitter)
+        self.outline.set_hover_target(self.canvas.send)
 
         self._right_stack = QStackedWidget(self._splitter)
         self.inspector = InspectorPane(
@@ -600,7 +814,8 @@ class FormWorkbench(QWidget):
         drawer_layout = QVBoxLayout(self._drawer)
         drawer_layout.setContentsMargins(0, 0, 0, 0)
         pin_row = QHBoxLayout()
-        self._pin = _tool("Pin", "formBuilder.pin", "Keep this pane open", self._drawer)
+        self._pin = _tool("", "formBuilder.pin", "Keep this pane open", self._drawer)
+        self._pin.setToolButtonStyle(_button_style("ToolButtonIconOnly"))
         self._pin.clicked.connect(self._pin_clicked)
         pin_row.addStretch(1)
         pin_row.addWidget(self._pin)
@@ -615,9 +830,14 @@ class FormWorkbench(QWidget):
     def canvas_view(self) -> FormCanvas:
         return self.canvas
 
-    def refresh(self, selected: Optional[NodeId]) -> None:
+    def refresh(self, selected: Optional[NodeId], outline: str = "rebuild") -> None:
         document = self._session.document
-        self.outline.rebuild(document, selected)
+        if outline == "patch":
+            self.outline.patch_labels(document, selected)
+        elif outline == "keep":
+            self.outline.show_current(selected)
+        else:
+            self.outline.rebuild(document, selected)
         self.canvas.refresh_chip()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
@@ -641,6 +861,11 @@ class FormWorkbench(QWidget):
         self._place_drawer()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        self.outline.set_hover_fill(tokens.tree_hover_bg)
+        for name, glyph in _RAIL_GLYPHS.items():
+            button = self.findChild(QToolButton, name)
+            if isinstance(button, QToolButton):
+                _paint_glyph(button, glyph, tokens, 16 if name == "formBuilder.pin" else 20)
         width = tokens.focus_border_width
         self.setStyleSheet(
             "QWidget#formBuilder\\.workbench, QWidget#formBuilder\\.outline,"

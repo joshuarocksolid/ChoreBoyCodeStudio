@@ -42,7 +42,9 @@ from app.features.form_builder.engine.commands.catalog import (
 from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InContainer, InGridCell
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
-from app.qt.QtWidgets import QApplication
+from app.qt.QtCore import QRectF
+from app.qt.QtGui import QImage, QPainter
+from app.qt.QtWidgets import QApplication, QWidget
 from tests.form_builder.engine.commands._support import button_spec
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS, ChangeSet
@@ -66,7 +68,9 @@ from tests.form_builder.perf.stats import (
     Attempt,
     Distribution,
     Sample,
+    ScaleJudgment,
     cpu_within_budget,
+    judge_changed_scale,
     judge_timed,
     measure,
     sample_until_budget,
@@ -407,28 +411,10 @@ def _collect(
         _realize_patch_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
     rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
-    rows.append(_missing("hit index invalidate", None, "-", "no hit index yet"))
-    for count, budget in HIT_REFRESH_BUDGET_MS.items():
-        rows.append(_missing("hit index refresh", count, _ms_budget(budget), "no hit index yet"))
-    rows.append(_missing("hit query", 300, _ms_budget(HIT_QUERY_BUDGET_MS), "no hit index yet"))
-    rows.append(_missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), "no canvas overlay yet"))
-    rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no outline yet"))
-    rows.append(
-        _missing(
-            "edit total",
-            300,
-            _ms_budget(EDIT_BUDGET_MS),
-            "needs the command, the property patch, the outline and the inspector",
-        )
-    )
-    rows.append(
-        _missing(
-            "selection change",
-            300,
-            _ms_budget(SELECTION_BUDGET_MS),
-            "no canvas selection yet",
-        )
-    )
+    rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no separate patch timing"))
     rows.append(
         _inspector_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
@@ -615,49 +601,37 @@ def _changed_ratio(
             "skip",
             "needs the one-command samples at 300 and 1000 widgets",
         )
-    ratio, used, tries = _ratio_with_retry(dists[300], dists[1000], forms, samples, warmup)
-    detail = "1000-widget cpu p95 / 300-widget cpu p95"
+    judgment, tries = _judge_pair_with_retry(dists[300], dists[1000], forms, samples, warmup)
+    detail = judgment.detail
     if tries > 1:
         detail += ". retried the pair once"
-    verdict = "pass" if ratio <= CHANGED_RATIO_LIMIT else "fail"
-    if verdict == "fail":
-        detail += ". cpu p95 at 1000 widgets was %.3f ms and at 300 was %.3f ms" % (
-            used[1000].cpu_p95 * 1000.0,
-            used[300].cpu_p95 * 1000.0,
-        )
     return Row(
         "one command O(changed)",
         None,
         samples,
         None,
-        ratio,
-        "%.1fx" % CHANGED_RATIO_LIMIT,
-        verdict,
+        judgment.measured,
+        judgment.budget,
+        "pass" if judgment.passed else "fail",
         detail,
     )
 
 
-def _ratio_with_retry(
+def _judge_pair_with_retry(
     small: Distribution,
     large: Distribution,
     forms: Dict[int, ReferenceForm],
     samples: int,
     warmup: int,
-) -> Tuple[float, Dict[int, Distribution], int]:
-    ratio = _safe_ratio(large.cpu_p95, small.cpu_p95)
-    if ratio <= CHANGED_RATIO_LIMIT:
-        return ratio, {300: small, 1000: large}, 1
+) -> Tuple[ScaleJudgment, int]:
+    judgment = judge_changed_scale(small.cpu_p95, large.cpu_p95)
+    if judgment.passed:
+        return judgment, 1
     again = {
         300: _command_row(300, forms[300], samples=samples, warmup=warmup, enforce_absolute=False, wall_on=False)[1],
         1000: _command_row(1000, forms[1000], samples=samples, warmup=warmup, enforce_absolute=False, wall_on=False)[1],
     }
-    return _safe_ratio(again[1000].cpu_p95, again[300].cpu_p95), again, 2
-
-
-def _safe_ratio(numerator: float, denominator: float) -> float:
-    if denominator <= 0.0:
-        return float("inf")
-    return numerator / denominator
+    return judge_changed_scale(again[300].cpu_p95, again[1000].cpu_p95), 2
 
 
 def _undo_row(
@@ -801,6 +775,382 @@ def _time_realizer_build(
         )
     except (AttributeError, TypeError, RuntimeError) as exc:
         return "Realizer.build could not be called (%s)" % exc
+
+
+def _hit_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """LiveGeometrySource over the realized reference form, shown offscreen.
+
+    A hidden root would make every child invisible to the walk, which then
+    skips them and times almost nothing.
+    """
+    if not _module_exists("app.features.form_builder.qtside.canvas.geometry"):
+        reason = "no live geometry source in this tree"
+        missing = [_missing("hit index invalidate", None, "-", reason)]
+        missing.extend(
+            _missing("hit index refresh", count, _ms_budget(budget), reason)
+            for count, budget in HIT_REFRESH_BUDGET_MS.items()
+        )
+        missing.append(_missing("hit query", 300, _ms_budget(HIT_QUERY_BUDGET_MS), reason))
+        return tuple(missing)
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    geometry = importlib.import_module("app.features.form_builder.qtside.canvas.geometry")
+    hit_index = importlib.import_module("app.features.form_builder.engine.query.hit_index")
+    invalidate_rows: List[Row] = []
+    refresh_rows: List[Row] = []
+    query_rows: List[Row] = []
+    for count, budget in HIT_REFRESH_BUDGET_MS.items():
+        form = forms.get(count)
+        if form is None:
+            refresh_rows.append(_missing("hit index refresh", count, _ms_budget(budget), "no %d-widget form in this run" % count))
+            continue
+        session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+        root = realizer.root_widget
+        root.show()
+        try:
+            source = geometry.LiveGeometrySource(realizer)
+            index = hit_index.HitIndex(source)
+            index.ensure_fresh()
+            entries = source.entries()
+            visible = sum(1 for entry in entries if entry.visible)
+            if count == 300:
+                invalidate_rows.append(
+                    _timed(
+                        "hit index invalidate",
+                        None,
+                        lambda index=index: index.invalidate("changeset"),
+                        None,
+                        samples=samples,
+                        warmup=warmup,
+                        enforce_absolute=False,
+                        wall_on=False,
+                    )[0]
+                )
+            row = _timed(
+                "hit index refresh",
+                count,
+                index.ensure_fresh,
+                budget,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=lambda index=index: index.invalidate("changeset"),
+            )[0]
+            refresh_rows.append(
+                _with_detail(row, "settle plus walk after an invalidate. %d entries, %d visible" % (len(entries), visible))
+            )
+            if count == 300:
+                x, y, depth = _deepest_point(index, root.width(), root.height())
+                row = _timed(
+                    "hit query",
+                    300,
+                    lambda index=index, x=x, y=y: index.query(x, y),
+                    HIT_QUERY_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                )[0]
+                query_rows.append(_with_detail(row, "one query at the deepest point, path length %d" % depth))
+        finally:
+            root.hide()
+            _dispose_held([realizer, session])
+    return tuple(invalidate_rows + refresh_rows + query_rows)
+
+
+def _canvas_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Overlay paint, selection to the canvas frame, and one property edit.
+
+    Outline and the inspector are not in this fixture. Those rows stay open.
+    """
+    if not _module_exists("app.features.form_builder.qtside.canvas.paint"):
+        reason = "no canvas paint in this tree"
+        return (
+            _missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), reason),
+            _missing("edit total", 300, _ms_budget(EDIT_BUDGET_MS), reason),
+            _missing("selection change", 300, _ms_budget(SELECTION_BUDGET_MS), reason),
+        )
+    form = forms.get(300)
+    if form is None:
+        reason = "no 300-widget form in this run"
+        return (
+            _missing("overlay paint", 300, _ms_budget(OVERLAY_BUDGET_MS), reason),
+            _missing("edit total", 300, _ms_budget(EDIT_BUDGET_MS), reason),
+            _missing("selection change", 300, _ms_budget(SELECTION_BUDGET_MS), reason),
+        )
+    if QApplication.instance() is None:
+        QApplication([])
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    paint_mod = importlib.import_module("app.features.form_builder.qtside.canvas.paint")
+    theme = importlib.import_module("app.features.form_builder.qtside.theme.overlay")
+    selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    nodes = importlib.import_module("app.features.form_builder.engine.ui4.nodes")
+    session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    parent.show()
+    app = QApplication.instance()
+    assert app is not None
+    # Show posts a resize after the first frame. Drain until the overlay matches the placed page.
+    for _ in range(4):
+        app.processEvents()
+    painted_items = len(canvas.overlay().items)
+    if painted_items == 0:
+        raise RuntimeError("overlay frame is empty, so paint would time nothing")
+    try:
+        fill, dot = theme.backdrop_fill(False, False)
+        palette = theme.CanvasPalette(
+            overlay=theme.overlay_palette(False),
+            backdrop=theme.BackdropPalette(
+                fill=fill,
+                dot=dot,
+                faint="#666F76",
+                accent="#3366FF",
+                muted="#5A6168",
+                panel="#FFFFFF",
+                border="#DEE2E6",
+                text="#212529",
+            ),
+        )
+        scene = canvas.sceneRect()
+        image = QImage(
+            max(1, int(scene.width())),
+            max(1, int(scene.height())),
+            getattr(getattr(QImage, "Format", QImage), "Format_ARGB32"),
+        )
+        image.fill(0)
+        painter = QPainter(image)
+        exposed = QRectF(scene)
+        try:
+            paint = _timed(
+                "overlay paint",
+                300,
+                lambda: paint_mod.paint_frame(painter, canvas.overlay(), palette, exposed),
+                OVERLAY_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        finally:
+            painter.end()
+        ids = [
+            node.id
+            for node in session.document.iter_preorder()
+            if isinstance(node, nodes.WidgetNode) and node.id != session.document.root.id
+        ]
+        if not ids:
+            ids = [session.document.root.id]
+        cursor = {"n": 0}
+
+        def choose() -> None:
+            cursor["n"] = (cursor["n"] + 1) % len(ids)
+            node_id = ids[cursor["n"]]
+            session.selection.set((node_id,), current=node_id, source=selection.SelectionSource.CANVAS)
+            app.processEvents()
+
+        chosen = _timed(
+            "selection change",
+            300,
+            choose,
+            SELECTION_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        owner = ids[0]
+        step = {"n": 0}
+        expected = {"n": canvas._index.refresh_count}
+
+        def edit() -> None:
+            step["n"] += 1
+            outcome = session.log.execute(SetProperty(owner, "toolTip", StringValue("e%d" % step["n"])))
+            if outcome.noop:
+                raise RuntimeError("text edit was a no-op")
+            app.processEvents()
+            expected["n"] += 1
+            if canvas._index.refresh_count != expected["n"]:
+                raise RuntimeError(
+                    "hit index refreshed %s times, wanted %s" % (canvas._index.refresh_count, expected["n"])
+                )
+
+        edited = _timed(
+            "edit total",
+            300,
+            edit,
+            EDIT_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        return (
+            _with_detail(
+                paint,
+                "paint_frame of %d overlay items into a %dx%d image"
+                % (painted_items, image.width(), image.height()),
+            ),
+            _with_detail(chosen, "selection.set plus one frame. Outline is not attached"),
+            _with_detail(edited, "SetProperty plus one frame. The hit index refreshes once. Inspector is not attached"),
+        )
+    finally:
+        canvas.dispose()
+        parent.deleteLater()
+        app.processEvents()
+        _dispose_held([realizer, session])
+
+
+def _outline_attached_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Selection with the outline listening. The unattached row stays separate."""
+    rows: List[Row] = []
+    for count in (300, 1000):
+        form = forms.get(count)
+        if form is None:
+            rows.append(
+                _missing(
+                    "selection change outline",
+                    count,
+                    _ms_budget(SELECTION_BUDGET_MS),
+                    "no %d-widget form in this run" % count,
+                )
+            )
+            continue
+        rows.append(
+            _outline_selection_row(form, count, samples, warmup, enforce_absolute, wall_on)
+        )
+    return tuple(rows)
+
+
+def _outline_selection_row(
+    form: ReferenceForm,
+    count: int,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    if QApplication.instance() is None:
+        QApplication([])
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    outline_mod = importlib.import_module("app.features.form_builder.integration.workbench")
+    nodes = importlib.import_module("app.features.form_builder.engine.ui4.nodes")
+    selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    outline = outline_mod.OutlinePane(lambda _node: None, lambda _collapsed: None, parent)
+    outline.rebuild(session.document, session.selection.state.current)
+    app = QApplication.instance()
+    assert app is not None
+
+    def on_selection(change: object) -> None:
+        after = getattr(change, "after", None)
+        outline.show_current(None if after is None else getattr(after, "current", None))
+
+    unsubscribe = session.selection.subscribe(on_selection)
+    parent.show()
+    for _ in range(4):
+        app.processEvents()
+    ids = [
+        node.id
+        for node in session.document.iter_preorder()
+        if isinstance(node, nodes.WidgetNode) and node.id != session.document.root.id
+    ]
+    if not ids:
+        ids = [session.document.root.id]
+    cursor = {"n": 0}
+
+    def choose() -> None:
+        cursor["n"] = (cursor["n"] + 1) % len(ids)
+        node_id = ids[cursor["n"]]
+        session.selection.set((node_id,), current=node_id, source=selection.SelectionSource.CANVAS)
+        app.processEvents()
+
+    try:
+        chosen = _timed(
+            "selection change outline",
+            count,
+            choose,
+            SELECTION_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        return _with_detail(chosen, "selection.set plus one frame. Outline show_current is attached")
+    finally:
+        unsubscribe()
+        canvas.dispose()
+        parent.deleteLater()
+        app.processEvents()
+        _dispose_held([realizer, session])
+
+
+class _SpeedHost:
+    def canvas_pressed(self) -> None:
+        return None
+
+    def narrate(self, sentence: str) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
+
+
+def _deepest_point(index: Any, width: int, height: int) -> Tuple[int, int, int]:
+    best = (0, 0, 0)
+    for x in range(0, width, 16):
+        for y in range(0, height, 16):
+            hit = index.query(x, y)
+            if hit is not None and len(hit.path) > best[2]:
+                best = (x, y, len(hit.path))
+    return best
+
+
+def _with_detail(row: Row, detail: str) -> Row:
+    if row.detail:
+        detail = "%s. %s" % (detail, row.detail)
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, row.verdict, detail, row.total_p95)
 
 
 def _codegen_and_save(
@@ -1184,21 +1534,16 @@ def _structural_ratio_row(
     samples: int,
     warmup: int,
 ) -> Row:
-    ratio = _safe_ratio(large[point][0].cpu_p95, small[point][0].cpu_p95)
-    used = (small[point][0], large[point][0])
+    used_small, used_large = small[point][0], large[point][0]
+    judgment = judge_changed_scale(used_small.cpu_p95, used_large.cpu_p95)
     tries = 1
-    if ratio > CHANGED_RATIO_LIMIT:
+    if not judgment.passed:
         tries = 2
         again_small = _structural_dists(forms[300], samples, warmup, only=point)
         again_large = _structural_dists(forms[1000], samples, warmup, only=point)
         if not isinstance(again_small, str) and not isinstance(again_large, str):
-            used = (again_small[point][0], again_large[point][0])
-            ratio = _safe_ratio(used[1].cpu_p95, used[0].cpu_p95)
-    verdict = "pass" if ratio <= CHANGED_RATIO_LIMIT else "fail"
-    detail = "1000-widget realize p95 / 300-widget realize p95 (%.3f / %.3f ms)" % (
-        used[1].cpu_p95 * 1000.0,
-        used[0].cpu_p95 * 1000.0,
-    )
+            judgment = judge_changed_scale(again_small[point][0].cpu_p95, again_large[point][0].cpu_p95)
+    detail = judgment.detail
     if tries > 1:
         detail += ". retried the pair once"
     return Row(
@@ -1206,9 +1551,9 @@ def _structural_ratio_row(
         None,
         samples,
         None,
-        ratio,
-        "%.1fx" % CHANGED_RATIO_LIMIT,
-        verdict,
+        judgment.measured,
+        judgment.budget,
+        "pass" if judgment.passed else "fail",
         detail,
     )
 

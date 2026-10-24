@@ -81,6 +81,21 @@ FILE_ROLES = (
         ),
     ),
     FileRole(
+        "form_builder.canvas_core",
+        ("app/features/form_builder/qtside/canvas/core/**",),
+        ("app", "PySide2", "PySide6", "shiboken2", "shiboken6"),
+        allowed_imports=(
+            "app.features.form_builder.engine",
+            "app.features.form_builder.qtside.canvas.core",
+        ),
+    ),
+    FileRole(
+        "form_builder.canvas_input",
+        ("app/features/form_builder/**",),
+        ("app.features.form_builder.qtside.canvas._input",),
+        allowed_files=frozenset({"app/features/form_builder/qtside/canvas/controller.py"}),
+    ),
+    FileRole(
         "form_builder.child",
         ("app/features/form_builder/qtside/preview/child/**",),
         (
