@@ -8,7 +8,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QSize, Qt
-from app.qt.QtGui import QBrush, QColor
+from app.qt.QtGui import QBrush, QColor, QIcon
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -28,6 +28,7 @@ from app.qt.QtWidgets import (
 from app.qt.qt_compat import event_pos
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
@@ -99,6 +100,51 @@ def _control_name(text: str, tip: str) -> str:
 def _name_tabs(tabs: QTabWidget, name: str) -> None:
     tabs.setAccessibleName(name)
     tabs.tabBar().setAccessibleName(name)
+
+
+def _button_style(name: str) -> Qt.ToolButtonStyle:
+    return getattr(getattr(Qt, "ToolButtonStyle", Qt), name)
+
+
+def _dpr(widget: QWidget) -> float:
+    reader = getattr(widget, "devicePixelRatioF", None)
+    if callable(reader):
+        return float(reader())
+    return float(widget.devicePixelRatio())
+
+
+def _glyph_icon(glyph: str, color: str, faint: str, logical: int, dpr: float) -> QIcon:
+    icon = QIcon()
+    mode = getattr(QIcon, "Mode", QIcon)
+    icon.addPixmap(paint_glyph(glyph, color, logical, dpr), getattr(mode, "Normal"))
+    icon.addPixmap(paint_glyph(glyph, faint, logical, dpr), getattr(mode, "Disabled"))
+    return icon
+
+
+def _paint_glyph(button: QToolButton, glyph: str, tokens: ShellThemeTokens, logical: int) -> None:
+    color = tokens.icon_primary or tokens.text_primary
+    faint = tokens.gutter_text or color
+    button.setIcon(_glyph_icon(glyph, color, faint, logical, _dpr(button)))
+    button.setIconSize(QSize(logical, logical))
+
+
+_TOOL_GLYPHS = (
+    ("undo", "undo"),
+    ("redo", "redo"),
+    ("zoom_out", "minus"),
+    ("zoom_in", "plus"),
+    ("preview", "play"),
+    ("overflow", "more"),
+    ("tab_order", "tab_order"),
+    ("buddies", "buddy"),
+)
+_RAIL_GLYPHS = {
+    "formBuilder.leftRail.outline": "outline",
+    "formBuilder.leftRail.insert": "insert",
+    "formBuilder.rightRail.properties": "properties",
+    "formBuilder.rightRail.behavior": "behavior",
+    "formBuilder.pin": "pin",
+}
 
 
 def _button(text: str, name: str, tip: str, parent: QWidget) -> QPushButton:
@@ -218,8 +264,8 @@ class FormToolbar(QWidget):
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
 
-        self.undo = _tool("Undo", "formBuilder.undo", "Undo (Ctrl+Z)", self)
-        self.redo = _tool("Redo", "formBuilder.redo", "Redo (Ctrl+Shift+Z)", self)
+        self.undo = _tool("", "formBuilder.undo", "Undo (Ctrl+Z)", self)
+        self.redo = _tool("", "formBuilder.redo", "Redo (Ctrl+Shift+Z)", self)
         self.undo.clicked.connect(on_undo)
         self.redo.clicked.connect(on_redo)
         row.addWidget(self.undo)
@@ -227,7 +273,7 @@ class FormToolbar(QWidget):
 
         zoom_ready = None not in (on_zoom_out, on_zoom_in, on_zoom_to, on_zoom_fit)
         self.zoom_out = _tool(
-            "−",
+            "",
             "formBuilder.zoomOut",
             "Zoom out" if zoom_ready else "Zoom is not available yet",
             self,
@@ -239,7 +285,7 @@ class FormToolbar(QWidget):
             self,
         )
         self.zoom_in = _tool(
-            "+",
+            "",
             "formBuilder.zoomIn",
             "Zoom in" if zoom_ready else "Zoom is not available yet",
             self,
@@ -269,17 +315,17 @@ class FormToolbar(QWidget):
         row.addWidget(self.text_size)
         row.addWidget(self.two_widths)
 
-        self.preview = _tool("Preview", "formBuilder.preview", "Preview is not available yet", self)
+        self.preview = _tool("", "formBuilder.preview", "Preview is not available yet", self)
         self.preview.setEnabled(False)
         row.addWidget(self.preview)
 
         self.overflow = QToolButton(self)
         self.overflow.setObjectName("formBuilder.overflow")
-        self.overflow.setText("⋯")
+        self.overflow.setText("")
         self.overflow.setToolTip("More")
         self.overflow.setAccessibleName("More")
         self.overflow.setAutoRaise(True)
-        self.overflow.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
+        self.overflow.setToolButtonStyle(_button_style("ToolButtonIconOnly"))
         self.overflow.setFocusPolicy(_strong())
         self.overflow.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
         self._menu = QMenu(self.overflow)
@@ -294,10 +340,22 @@ class FormToolbar(QWidget):
         self.save_state.setObjectName("formBuilder.saveState")
         self.save_state.setAccessibleName("Save state")
         row.addWidget(self.save_state, 0)
+        self._tokens: Optional[ShellThemeTokens] = None
+        icon_only = _button_style("ToolButtonIconOnly")
+        for button in (self.undo, self.redo, self.zoom_out, self.zoom_in, self.preview):
+            button.setToolButtonStyle(icon_only)
+        beside = _button_style("ToolButtonTextBesideIcon")
+        self.tab_order.setToolButtonStyle(beside)
+        self.buddies.setToolButtonStyle(beside)
 
     def set_compact(self, compact: bool) -> None:
-        self.tab_order.setText("⇥" if compact else "Tab order")
-        self.buddies.setText("↔" if compact else "Buddies")
+        self.tab_order.setText("" if compact else "Tab order")
+        self.buddies.setText("" if compact else "Buddies")
+        style = _button_style("ToolButtonIconOnly" if compact else "ToolButtonTextBesideIcon")
+        self.tab_order.setToolButtonStyle(style)
+        self.buddies.setToolButtonStyle(style)
+        self.tab_order.setAccessibleName(_control_name(self.tab_order.text(), self.tab_order.toolTip()))
+        self.buddies.setAccessibleName(_control_name(self.buddies.text(), self.buddies.toolTip()))
         self.text_size.setVisible(not compact)
         self.two_widths.setVisible(not compact)
         self.overflow.setVisible(compact)
@@ -306,11 +364,13 @@ class FormToolbar(QWidget):
         self.undo.setEnabled(enabled)
         self.undo.setToolTip(tip)
         self.undo.setAccessibleName(_control_name(self.undo.text(), tip))
+        self._paint_glyphs()
 
     def set_redo(self, enabled: bool, tip: str) -> None:
         self.redo.setEnabled(enabled)
         self.redo.setToolTip(tip)
         self.redo.setAccessibleName(_control_name(self.redo.text(), tip))
+        self._paint_glyphs()
 
     def set_save(self, text: str, *, error: bool, tokens: Optional[ShellThemeTokens]) -> None:
         self.save_state.setText(text)
@@ -322,7 +382,17 @@ class FormToolbar(QWidget):
         )
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        self._tokens = tokens
         self.setStyleSheet(_toolbar_qss(tokens))
+        self._paint_glyphs()
+
+    def _paint_glyphs(self) -> None:
+        tokens = self._tokens
+        if tokens is None:
+            return
+        for attr, glyph in _TOOL_GLYPHS:
+            button = getattr(self, attr)
+            _paint_glyph(button, glyph, tokens, 16)
 
 
 def _splitter_qss(tokens: ShellThemeTokens) -> str:
@@ -725,11 +795,13 @@ class _Rail(QWidget):
         button.setAccessibleName(label)
         button.setFocusPolicy(_strong())
         button.setAutoRaise(True)
-        button.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
+        button.setToolButtonStyle(_button_style("ToolButtonIconOnly"))
+        button.setIconSize(QSize(20, 20))
         button.setSizePolicy(_policy("Ignored"), _policy("Fixed"))
         button.setFixedSize(32, 40)
         caption = QLabel(label, button)
         caption.setObjectName("formBuilder.railLabel")
+        caption.hide()
         caption.setWordWrap(True)
         caption.setAlignment(_center())
         caption.setAttribute(_transparent(), True)
@@ -830,7 +902,8 @@ class FormWorkbench(QWidget):
         drawer_layout = QVBoxLayout(self._drawer)
         drawer_layout.setContentsMargins(0, 0, 0, 0)
         pin_row = QHBoxLayout()
-        self._pin = _tool("Pin", "formBuilder.pin", "Keep this pane open", self._drawer)
+        self._pin = _tool("", "formBuilder.pin", "Keep this pane open", self._drawer)
+        self._pin.setToolButtonStyle(_button_style("ToolButtonIconOnly"))
         self._pin.clicked.connect(self._pin_clicked)
         pin_row.addStretch(1)
         pin_row.addWidget(self._pin)
@@ -872,6 +945,10 @@ class FormWorkbench(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self.outline.set_hover_fill(tokens.tree_hover_bg)
+        for name, glyph in _RAIL_GLYPHS.items():
+            button = self.findChild(QToolButton, name)
+            if isinstance(button, QToolButton):
+                _paint_glyph(button, glyph, tokens, 16 if name == "formBuilder.pin" else 20)
         width = tokens.focus_border_width
         self.setStyleSheet(
             "QWidget#formBuilder\\.workbench, QWidget#formBuilder\\.outline,"
