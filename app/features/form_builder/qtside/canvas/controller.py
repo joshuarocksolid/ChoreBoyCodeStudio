@@ -7,19 +7,22 @@ decides lives in ``core.gesture.step`` and ``core.overlay.build_frame``.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict, FrozenSet, Optional, Protocol, Tuple
+from typing import Dict, FrozenSet, Optional, Protocol, Tuple, cast
 
 from app.qt.QtCore import QEvent
 from app.qt.QtGui import QFont, QFontMetrics
 from app.qt.QtWidgets import QApplication, QGraphicsView, QWidget
 
 from app.features.form_builder.engine.commands.base import CommandRejected
+from app.features.form_builder.engine.sizing import outlined_word
 from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
 from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.engine.ui4.values import SizePolicyValue
 from app.features.form_builder.qtside.canvas import _input
 from app.features.form_builder.qtside.canvas.core.frame import (
     OpenLayoutPopover,
@@ -389,10 +392,17 @@ class CanvasController:
         widget = self._realizer.widget_for(current)
         if widget is None:
             return None
-        policy = widget.sizePolicy()
+        node = self._session.document.get(current)
+        stored = _stored_policy(node)
+        if stored is None:
+            policy = widget.sizePolicy()
+            return (
+                cast(SizingWord, outlined_word(_policy_name(policy.horizontalPolicy()))),
+                cast(SizingWord, outlined_word(_policy_name(policy.verticalPolicy()))),
+            )
         return (
-            sizing_word(_policy_name(policy.horizontalPolicy()), _axis_fixed(widget, True)),
-            sizing_word(_policy_name(policy.verticalPolicy()), _axis_fixed(widget, False)),
+            sizing_word(stored.hsizetype, _axis_fixed(widget, True)),
+            sizing_word(stored.vsizetype, _axis_fixed(widget, False)),
         )
 
     def _measure(self, text: str) -> int:
@@ -412,6 +422,15 @@ def _mints_token(gesture: Gesture, event: Event) -> bool:
     if isinstance(event, Key) and isinstance(gesture, Idle):
         return True
     return isinstance(event, EditorDone) and event.how in ("tab", "backtab")
+
+
+def _stored_policy(node: object) -> Optional[SizePolicyValue]:
+    if not isinstance(node, WidgetNode):
+        return None
+    entry = node.prop("sizePolicy")
+    if entry is None or not isinstance(entry.value, SizePolicyValue):
+        return None
+    return entry.value
 
 
 def _policy_name(value: object) -> str:

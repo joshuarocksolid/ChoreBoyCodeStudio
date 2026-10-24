@@ -6,8 +6,10 @@ from dataclasses import dataclass
 from typing import Iterator, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command, CommandOutcome, CommandRejected
+from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.inspector.catalog import Catalog
+from app.qt.QtWidgets import QWidget
 
 @dataclass(frozen=True)
 class Rejected:
@@ -25,9 +27,10 @@ def rejection_text(result: Rejected) -> str:
     return result.message
 
 class Services:
-    def __init__(self, session: FormSession, catalog: Catalog) -> None:
+    def __init__(self, session: FormSession, catalog: Catalog, realizer: object = None) -> None:
         self._session = session
         self._catalog = catalog
+        self._realizer = realizer
         self._depth = 0
         self._token_key = ""
         self._token = ""
@@ -40,6 +43,15 @@ class Services:
     @property
     def catalog(self) -> Catalog:
         return self._catalog
+
+    def live(self, node_id: NodeId) -> Optional[QWidget]:
+        realizer = self._realizer
+        if realizer is None:
+            return None
+        widget = realizer.widget_for(node_id)
+        if isinstance(widget, QWidget):
+            return widget
+        return None
 
     @contextmanager
     def painting(self) -> Iterator[None]:
