@@ -140,7 +140,19 @@ class EditorGroupsController:
         app = QApplication.instance()
         if isinstance(app, QApplication):
             app.focusChanged.connect(self._handle_focus_changed)
+            # The application outlives the window. Without this, a focus change
+            # after the window is destroyed reaches deleted groups.
+            host.destroyed.connect(self._stop_following_focus)
         return host
+
+    def _stop_following_focus(self, *_args: object) -> None:
+        app = QApplication.instance()
+        if not isinstance(app, QApplication):
+            return
+        try:
+            app.focusChanged.disconnect(self._handle_focus_changed)
+        except (RuntimeError, TypeError):
+            pass
 
     def apply_theme_colors(self, *, accent: str) -> None:
         self._accent_color = accent or "#3366FF"
