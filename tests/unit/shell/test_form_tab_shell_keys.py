@@ -8,11 +8,12 @@ import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
+from app.features.form_builder.engine.query.selection import SelectionSource  # noqa: E402
 from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form  # noqa: E402
 from app.qt.QtCore import QEvent, QObject, Qt  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
-from app.qt.QtWidgets import QApplication, QTreeWidget, QWidget  # noqa: E402
+from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QTreeWidget, QWidget  # noqa: E402
 from app.shell.main_window import MainWindow  # noqa: E402
 from testing.main_window_shutdown import shutdown_main_window_for_test  # noqa: E402
 
@@ -332,18 +333,27 @@ def test_tab_leaves_the_inspector(tmp_path: Path, qapp: QApplication) -> None:
     window = MainWindow(state_root=str((tmp_path / "state").resolve()))
     try:
         surface = _open_form(window, qapp, tmp_path / "invoice.ui")
-        body = surface.findChild(QWidget, "formBuilder.inspectorBody")  # type: ignore[attr-defined]
-        assert body is not None and body.isVisible()
-        body.setFocus()
+        surface._session.selection.clear(source=SelectionSource.PROGRAM)  # type: ignore[attr-defined]  # noqa: SLF001
+        surface._workbench.inspector.flush()  # type: ignore[attr-defined]  # noqa: SLF001
         qapp.processEvents()
-        assert qapp.focusWidget() is body
-        # With "Show in Problems" showing, the first Tab lands on the link.
-        for _ in range(2):
-            if qapp.focusWidget() is not body:
+        search = surface.findChild(QLineEdit, "formBuilder.inspectorSearch")  # type: ignore[attr-defined]
+        inspector = surface.findChild(QWidget, "formBuilder.inspector")  # type: ignore[attr-defined]
+        assert search is not None and inspector is not None
+        search.setFocus()
+        qapp.processEvents()
+        visited = False
+        focus = qapp.focusWidget()
+        for _ in range(60):
+            focus = qapp.focusWidget()
+            if focus is not None and focus.objectName() == "formBuilder.inspectorProblems":
+                visited = True
+            if focus is None or not (focus is inspector or inspector.isAncestorOf(focus)):
                 break
-            QTest.keyClick(body, Qt.Key_Tab)
+            QTest.keyClick(focus, Qt.Key_Tab)
             qapp.processEvents()
-        assert qapp.focusWidget() is not body
+        assert visited
+        focus = qapp.focusWidget()
+        assert focus is None or not (focus is inspector or inspector.isAncestorOf(focus))
     finally:
         shutdown_main_window_for_test(window, qapp)
 
@@ -375,11 +385,12 @@ def test_show_in_problems_link_uses_a_token_colour_and_takes_the_keyboard(
     try:
         surface = _open_form(window, qapp, tmp_path / "invoice.ui")
         qapp.processEvents()
-        body = surface.findChild(QWidget, "formBuilder.inspectorBody")  # type: ignore[attr-defined]
-        assert "Show in Problems" in body.text()  # type: ignore[attr-defined]
+        link = surface.findChild(QLabel, "formBuilder.inspectorProblems")  # type: ignore[attr-defined]
+        assert link is not None
+        assert "Show in Problems" in link.text()
         tokens = window._shell_theme_workflow.resolve_theme_tokens()  # noqa: SLF001
-        assert ("color:%s" % tokens.text_primary).lower() in body.text().replace(" ", "").lower()  # type: ignore[attr-defined]
-        flags = body.textInteractionFlags()  # type: ignore[attr-defined]
+        assert ("color:%s" % tokens.text_primary).lower() in link.text().replace(" ", "").lower()
+        flags = link.textInteractionFlags()
         keyboard = getattr(Qt, "TextInteractionFlag", Qt).LinksAccessibleByKeyboard
         assert flags & keyboard
     finally:
@@ -505,14 +516,18 @@ def test_first_canvas_focus_states_how_to_leave_and_alt_keys_claim_their_targets
         surface._session.selection.set((button,), current=button, source=SelectionSource.CANVAS)  # type: ignore[attr-defined]  # noqa: SLF001
         qapp.processEvents()
         assert _status_label(window).text() != FIRST_FOCUS_HINT  # type: ignore[attr-defined]
-        QTest.keyClick(canvas, Qt.Key_4, Qt.AltModifier)
-        qapp.processEvents()
-        assert "inspector" in _status_label(window).text().lower()  # type: ignore[attr-defined]
         rename = window.menu_registry.action("shell.action.edit.renameSymbol")
         assert rename is not None and not rename.isEnabled()
+        canvas.setFocus()
         QTest.keyClick(canvas, Qt.Key_F2)
         qapp.processEvents()
         assert "rename" in _status_label(window).text().lower()  # type: ignore[attr-defined]
+        QTest.keyClick(canvas, Qt.Key_4, Qt.AltModifier)
+        qapp.processEvents()
+        inspector = surface.findChild(QWidget, "formBuilder.inspector")  # type: ignore[attr-defined]
+        focused = qapp.focusWidget()
+        assert inspector is not None
+        assert focused is inspector or inspector.isAncestorOf(focused)
         from app.qt.QtWidgets import QMessageBox
 
         for box in window.findChildren(QMessageBox):

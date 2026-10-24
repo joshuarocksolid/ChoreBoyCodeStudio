@@ -50,6 +50,15 @@ class FormChrome:
     error: str
     focus_width: int
     on_accent: str = "#FFFFFF"
+    search_match_bg: str = ""
+    # Background of a chosen item (a checked segment), under ``text``.
+    selected: str = ""
+
+    def __post_init__(self) -> None:
+        if not self.search_match_bg:
+            object.__setattr__(self, "search_match_bg", self.row_hover)
+        if not self.selected:
+            object.__setattr__(self, "selected", self.row_hover)
 
 
 def on_accent_for(accent: str) -> str:
@@ -89,6 +98,8 @@ def chrome_from_values(
     input_bg: str,
     error: str,
     focus_width: int,
+    search_match_bg: str = "",
+    selected: str = "",
 ) -> FormChrome:
     return FormChrome(
         window=window,
@@ -103,4 +114,6 @@ def chrome_from_values(
         error=error or accent,
         focus_width=focus_width if focus_width > 0 else 1,
         on_accent=on_accent_for(accent),
+        search_match_bg=search_match_bg,
+        selected=selected,
     )

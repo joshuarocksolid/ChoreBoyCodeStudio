@@ -502,6 +502,7 @@ class FormSurface(QWidget):
         self._source_unsub()
         self._changes.close()
         self._workbench.canvas_view().dispose()
+        self._workbench.inspector.dispose()
         self._realizer.dispose()
         self._session.dispose()
         self._source.close()
@@ -772,7 +773,6 @@ class FormSurface(QWidget):
         self._inert_note = ""
         self._gesture_sentence = ""
         current = getattr(getattr(change, "after", None), "current", None)
-        self._workbench.inspector.show_selection(self._session.document, current)
         self._workbench.outline.show_current(current)
         self._refresh_shell_status()
 
@@ -850,9 +850,11 @@ class FormSurface(QWidget):
         self._workbench.canvas.setFocus()
 
     def _focus_inspector_pane(self) -> None:
-        """Alt+4. The inspector replaces this sentence once that pane exists."""
-        self._inert_note = "The inspector opens from here once it is available."
-        self._refresh_shell_status()
+        if self._source.mode != "visual":
+            return
+        inspector = self._workbench.inspector
+        inspector.setFocus()
+        inspector.properties.setFocus()
 
     def _rename_inert(self) -> None:
         self._inert_note = "Rename on the form arrives in a later release."
@@ -1154,6 +1156,8 @@ class FormSurface(QWidget):
         if workbench is not None:
             workbench.outline.set_collapsed(self._memory.outline_collapsed)
             workbench.insert.set_collapsed(self._memory.insert_collapsed)
+            if self._store is not None:
+                workbench.inspector.bind_settings(self._store)
 
     def _save_memory(self) -> None:
         if self._store is not None:

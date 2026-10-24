@@ -1,0 +1,194 @@
+
+from __future__ import annotations
+
+from typing import List, Optional, Tuple
+
+from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue
+from app.features.form_builder.qtside.inspector.api import (
+    EditorHost,
+    EditorKey,
+    Registrar,
+    RowValue,
+    Unset,
+    ValueSpec,
+    Written,
+    mark,
+)
+from app.qt.QtWidgets import (
+    QComboBox,
+    QHBoxLayout,
+    QLabel,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
+)
+
+_POLICIES = (
+    "Fixed",
+    "Minimum",
+    "Maximum",
+    "Preferred",
+    "Expanding",
+    "MinimumExpanding",
+    "Ignored",
+)
+
+class SizeEditor:
+    def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
+        del spec
+        self._host = host
+        self._root = QWidget(parent)
+        layout = QVBoxLayout(self._root)
+        layout.setContentsMargins(0, 0, 0, 0)
+        row, self._width, self._height = _pair(self._root, ("W", "H"), self._commit)
+        layout.addWidget(row)
+
+    @property
+    def widget(self) -> QWidget:
+        return self._root
+
+    def show(self, value: RowValue) -> None:
+        mark(self._root, value)
+        size = _size(value)
+        _set_pair(self._width, self._height, 0 if size is None else size.width, 0 if size is None else size.height)
+
+    def _commit(self, _number: int) -> None:
+        self._host.commit(SizeValue(self._width.value(), self._height.value()))
+
+class RectEditor:
+    def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
+        del spec
+        self._host = host
+        self._root = QWidget(parent)
+        layout = QVBoxLayout(self._root)
+        layout.setContentsMargins(0, 0, 0, 0)
+        origin, self._x, self._y = _pair(self._root, ("X", "Y"), self._commit)
+        size, self._width, self._height = _pair(self._root, ("W", "H"), self._commit)
+        layout.addWidget(origin)
+        layout.addWidget(size)
+
+    @property
+    def widget(self) -> QWidget:
+        return self._root
+
+    def show(self, value: RowValue) -> None:
+        mark(self._root, value)
+        rect = _rect(value)
+        _set_pair(self._x, self._y, 0 if rect is None else rect.x, 0 if rect is None else rect.y)
+        _set_pair(
+            self._width,
+            self._height,
+            0 if rect is None else rect.width,
+            0 if rect is None else rect.height,
+        )
+
+    def _commit(self, _number: int) -> None:
+        self._host.commit(RectValue(self._x.value(), self._y.value(), self._width.value(), self._height.value()))
+
+class SizePolicyEditor:
+
+    def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
+        del spec
+        self._host = host
+        self._root = QWidget(parent)
+        layout = QVBoxLayout(self._root)
+        layout.setContentsMargins(0, 0, 0, 0)
+        policies = QWidget(self._root)
+        row = QHBoxLayout(policies)
+        row.setContentsMargins(0, 0, 0, 0)
+        self._horizontal = _policy_combo(policies)
+        self._vertical = _policy_combo(policies)
+        row.addWidget(self._horizontal)
+        row.addWidget(self._vertical)
+        layout.addWidget(policies)
+        stretch, self._horstretch, self._verstretch = _pair(self._root, ("H stretch", "V stretch"), self._commit)
+        layout.addWidget(stretch)
+        self._horizontal.currentIndexChanged.connect(self._commit)
+        self._vertical.currentIndexChanged.connect(self._commit)
+
+    @property
+    def widget(self) -> QWidget:
+        return self._root
+
+    def show(self, value: RowValue) -> None:
+        mark(self._root, value)
+        policy = _policy(value)
+        horizontal = "Preferred" if policy is None else policy.hsizetype
+        vertical = "Preferred" if policy is None else policy.vsizetype
+        _select(self._horizontal, horizontal)
+        _select(self._vertical, vertical)
+        _set_pair(
+            self._horstretch,
+            self._verstretch,
+            0 if policy is None else policy.horstretch,
+            0 if policy is None else policy.verstretch,
+        )
+
+    def _commit(self, _value: object) -> None:
+        self._host.commit(
+            SizePolicyValue(
+                self._horizontal.currentText() or "Preferred",
+                self._vertical.currentText() or "Preferred",
+                self._horstretch.value(),
+                self._verstretch.value(),
+            )
+        )
+
+def register(registrar: Registrar) -> None:
+    registrar.editor(EditorKey(SizeValue.ELEMENT), SizeEditor, baseline=True)
+    registrar.editor(EditorKey(RectValue.ELEMENT), RectEditor, baseline=True)
+    registrar.editor(EditorKey(SizePolicyValue.ELEMENT), SizePolicyEditor, baseline=True)
+
+def _pair(
+    parent: QWidget, captions: Tuple[str, str], on_change: object
+) -> Tuple[QWidget, QSpinBox, QSpinBox]:
+    row = QWidget(parent)
+    layout = QHBoxLayout(row)
+    layout.setContentsMargins(0, 0, 0, 0)
+    boxes: List[QSpinBox] = []
+    for caption in captions:
+        layout.addWidget(QLabel(caption, row))
+        box = QSpinBox(row)
+        box.setRange(-1000000, 1000000)
+        box.valueChanged.connect(on_change)
+        layout.addWidget(box)
+        boxes.append(box)
+    return row, boxes[0], boxes[1]
+
+def _set_pair(first: QSpinBox, second: QSpinBox, left: int, right: int) -> None:
+    first.blockSignals(True)
+    second.blockSignals(True)
+    first.setValue(int(left))
+    second.setValue(int(right))
+    first.blockSignals(False)
+    second.blockSignals(False)
+
+def _policy_combo(parent: QWidget) -> QComboBox:
+    combo = QComboBox(parent)
+    combo.addItems(_POLICIES)
+    return combo
+
+def _select(combo: QComboBox, name: str) -> None:
+    combo.blockSignals(True)
+    index = combo.findText(name)
+    combo.setCurrentIndex(index if index >= 0 else 0)
+    combo.blockSignals(False)
+
+def _size(value: RowValue) -> Optional[SizeValue]:
+    found = _payload(value)
+    return found if isinstance(found, SizeValue) else None
+
+def _rect(value: RowValue) -> Optional[RectValue]:
+    found = _payload(value)
+    return found if isinstance(found, RectValue) else None
+
+def _policy(value: RowValue) -> Optional[SizePolicyValue]:
+    found = _payload(value)
+    return found if isinstance(found, SizePolicyValue) else None
+
+def _payload(value: RowValue) -> object:
+    if isinstance(value, Written):
+        return value.value
+    if isinstance(value, Unset):
+        return value.default
+    return None

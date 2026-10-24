@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.qt.qt_compat import delete_now
 from app.shell.main_window import MainWindow
 from app.shell.main_window_lifecycle import MainWindowLifecycle
 from testing.runtime_child_reaper import reap_leaked_runtime_children
@@ -22,6 +23,7 @@ def shutdown_main_window_for_test(window: MainWindow, app: Any | None = None) ->
     if app is not None:
         app.processEvents()
     reap_leaked_runtime_children()
-    if app is not None:
-        window.deleteLater()
-        app.processEvents()
+    # deleteLater leaves the C++ window alive while a Python cycle holds the
+    # wrapper, so the next test's application stylesheet restyles every previous
+    # window. Destroy it now.
+    delete_now(window)
