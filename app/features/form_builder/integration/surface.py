@@ -788,6 +788,18 @@ class FormSurface(QWidget):
         self._gesture_sentence = sentence
         self._refresh_shell_status()
 
+    def show_plain(self, sentence: str) -> None:
+        if not sentence:
+            return
+        note = ToastNote(sentence, None, "", 0)
+        self._command_toast.show_note(note, lambda _note: None)
+
+    def outline_target(self, global_pos: QPoint) -> object:
+        workbench = getattr(self, "_workbench", None)
+        if workbench is None:
+            return None
+        return workbench.outline.hit_global(global_pos)
+
     def hover_changed(self, node: Optional[NodeId]) -> None:
         self._workbench.outline.set_hover(node)
         if node is None:
@@ -1350,6 +1362,7 @@ class FormSurface(QWidget):
             self._workbench.outline.tree,
             self._workbench.insert.header,
             *self._workbench.insert.header.extra,
+            self._workbench.insert.filter,
             self._workbench.insert.body,
             self._workbench.canvas_view(),
             self._workbench.inspector.header,

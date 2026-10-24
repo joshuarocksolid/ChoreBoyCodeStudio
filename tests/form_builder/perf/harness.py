@@ -49,6 +49,8 @@ from tests.form_builder.engine.commands._support import button_spec
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS, ChangeSet
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.query.drop_target import DropPayload, hosts_from, resolve_drop
+from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.ui4 import defaults as class_defaults
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
@@ -93,6 +95,7 @@ OPEN_BUDGET_MS = 150.0
 HIT_REFRESH_BUDGET_MS = {300: 4.0, 1000: 12.0}
 HIT_QUERY_BUDGET_MS = 0.2
 OVERLAY_BUDGET_MS = 4.0
+DROP_TARGET_BUDGET_MS = 2.0
 OUTLINE_PATCH_BUDGET_MS = 2.0
 EDIT_BUDGET_MS = 16.0
 SELECTION_BUDGET_MS = 8.0
@@ -412,6 +415,7 @@ def _collect(
     )
     rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
     rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_drop_target_rows(documents, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no separate patch timing"))
@@ -864,6 +868,47 @@ def _hit_rows(
             root.hide()
             _dispose_held([realizer, session])
     return tuple(invalidate_rows + refresh_rows + query_rows)
+
+
+def _drop_target_rows(
+    documents: Dict[int, UiDocument],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """hosts_from plus resolve_drop. One pointer move at 300 and 1000 widgets."""
+    rows: List[Row] = []
+    payload = DropPayload("widget")
+    for count in (300, 1000):
+        label = "drop target @%d" % count
+        document = documents.get(count)
+        if document is None:
+            rows.append(_missing(label, count, _ms_budget(DROP_TARGET_BUDGET_MS), "no %d-widget form in this run" % count))
+            continue
+        rects = {}
+        y = 0
+        for node in document.iter_preorder():
+            rects[node.id] = Rect(0, y, 240, 24)
+            y += 28
+        pointer = (12, 40)
+
+        def run(document: UiDocument = document, rects: dict = rects, pointer: Tuple[int, int] = pointer) -> None:
+            resolve_drop(hosts_from(document, rects), pointer, payload)
+
+        rows.append(
+            _timed(
+                label,
+                count,
+                run,
+                DROP_TARGET_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        )
+    return tuple(rows)
 
 
 def _canvas_rows(
