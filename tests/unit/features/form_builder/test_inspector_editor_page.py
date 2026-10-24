@@ -308,6 +308,23 @@ def test_escape_cancels_a_rename_and_a_text_edit(tmp_path: Path, qapp: QApplicat
             qapp.processEvents()
             assert session.document.node(email).prop("toolTip") is None
             search.setText("")
+
+        # A spin box: typed digits are not committed until Enter, and Esc drops them.
+        _show(surface, qapp, "email", expand_all=True)
+        spin = _row(surface, "maxLength").findChild(QSpinBox)
+        assert spin is not None
+        shown = spin.text()
+        spin.setFocus()
+        spin.selectAll()
+        QTest.keyClicks(spin, "12")
+        assert spin.text() != shown
+        QTest.keyClick(spin, Qt.Key_Escape)
+        qapp.processEvents()
+        assert spin.text() == shown
+        assert qapp.focusWidget() is spin
+        QTest.keyClick(spin, Qt.Key_Escape)
+        qapp.processEvents()
+        assert session.document.node(email).prop("maxLength") is None
     finally:
         shutdown_main_window_for_test(window, qapp)
 

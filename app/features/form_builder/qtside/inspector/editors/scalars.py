@@ -118,6 +118,7 @@ class IntEditor:
         self._cls = _INT_CLASS[spec.element]
         low, high = _INT_RANGE[spec.element]
         self._spin = QSpinBox(parent)
+        self._shown_text = ""
         self._spin.setRange(low, high)
         # Commit on Enter, focus-out or a step, not on every typed digit.
         self._spin.setKeyboardTracking(False)
@@ -138,6 +139,11 @@ class IntEditor:
             self._spin.setSpecialValueText("")
             self._spin.setValue(_clamp(number, self._spin.minimum(), self._spin.maximum()))
         self._spin.blockSignals(False)
+        self._shown_text = self._spin.text()
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return self._spin.text() != self._shown_text
 
     def _commit(self, number: int) -> None:
         self._host.commit(self._cls(int(number)))
@@ -151,6 +157,7 @@ class DoubleEditor:
             FloatValue if spec.element == FloatValue.ELEMENT else DoubleValue
         )
         self._spin = QDoubleSpinBox(parent)
+        self._shown_text = ""
         self._spin.setDecimals(6)
         self._spin.setRange(-1e12, 1e12)
         # Commit on Enter, focus-out or a step, not on every typed digit.
@@ -172,6 +179,11 @@ class DoubleEditor:
             self._spin.setSpecialValueText("")
             self._spin.setValue(float(number))
         self._spin.blockSignals(False)
+        self._shown_text = self._spin.text()
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return self._spin.text() != self._shown_text
 
     def _commit(self, number: float) -> None:
         self._host.commit(self._cls(float(number)))
