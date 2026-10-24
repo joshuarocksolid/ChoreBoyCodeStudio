@@ -68,7 +68,9 @@ from tests.form_builder.perf.stats import (
     Attempt,
     Distribution,
     Sample,
+    ScaleJudgment,
     cpu_within_budget,
+    judge_changed_scale,
     judge_timed,
     measure,
     sample_until_budget,
@@ -585,49 +587,37 @@ def _changed_ratio(
             "skip",
             "needs the one-command samples at 300 and 1000 widgets",
         )
-    ratio, used, tries = _ratio_with_retry(dists[300], dists[1000], forms, samples, warmup)
-    detail = "1000-widget cpu p95 / 300-widget cpu p95"
+    judgment, tries = _judge_pair_with_retry(dists[300], dists[1000], forms, samples, warmup)
+    detail = judgment.detail
     if tries > 1:
         detail += ". retried the pair once"
-    verdict = "pass" if ratio <= CHANGED_RATIO_LIMIT else "fail"
-    if verdict == "fail":
-        detail += ". cpu p95 at 1000 widgets was %.3f ms and at 300 was %.3f ms" % (
-            used[1000].cpu_p95 * 1000.0,
-            used[300].cpu_p95 * 1000.0,
-        )
     return Row(
         "one command O(changed)",
         None,
         samples,
         None,
-        ratio,
-        "%.1fx" % CHANGED_RATIO_LIMIT,
-        verdict,
+        judgment.measured,
+        judgment.budget,
+        "pass" if judgment.passed else "fail",
         detail,
     )
 
 
-def _ratio_with_retry(
+def _judge_pair_with_retry(
     small: Distribution,
     large: Distribution,
     forms: Dict[int, ReferenceForm],
     samples: int,
     warmup: int,
-) -> Tuple[float, Dict[int, Distribution], int]:
-    ratio = _safe_ratio(large.cpu_p95, small.cpu_p95)
-    if ratio <= CHANGED_RATIO_LIMIT:
-        return ratio, {300: small, 1000: large}, 1
+) -> Tuple[ScaleJudgment, int]:
+    judgment = judge_changed_scale(small.cpu_p95, large.cpu_p95)
+    if judgment.passed:
+        return judgment, 1
     again = {
         300: _command_row(300, forms[300], samples=samples, warmup=warmup, enforce_absolute=False, wall_on=False)[1],
         1000: _command_row(1000, forms[1000], samples=samples, warmup=warmup, enforce_absolute=False, wall_on=False)[1],
     }
-    return _safe_ratio(again[1000].cpu_p95, again[300].cpu_p95), again, 2
-
-
-def _safe_ratio(numerator: float, denominator: float) -> float:
-    if denominator <= 0.0:
-        return float("inf")
-    return numerator / denominator
+    return judge_changed_scale(again[300].cpu_p95, again[1000].cpu_p95), 2
 
 
 def _undo_row(
@@ -1433,21 +1423,16 @@ def _structural_ratio_row(
     samples: int,
     warmup: int,
 ) -> Row:
-    ratio = _safe_ratio(large[point][0].cpu_p95, small[point][0].cpu_p95)
-    used = (small[point][0], large[point][0])
+    used_small, used_large = small[point][0], large[point][0]
+    judgment = judge_changed_scale(used_small.cpu_p95, used_large.cpu_p95)
     tries = 1
-    if ratio > CHANGED_RATIO_LIMIT:
+    if not judgment.passed:
         tries = 2
         again_small = _structural_dists(forms[300], samples, warmup, only=point)
         again_large = _structural_dists(forms[1000], samples, warmup, only=point)
         if not isinstance(again_small, str) and not isinstance(again_large, str):
-            used = (again_small[point][0], again_large[point][0])
-            ratio = _safe_ratio(used[1].cpu_p95, used[0].cpu_p95)
-    verdict = "pass" if ratio <= CHANGED_RATIO_LIMIT else "fail"
-    detail = "1000-widget realize p95 / 300-widget realize p95 (%.3f / %.3f ms)" % (
-        used[1].cpu_p95 * 1000.0,
-        used[0].cpu_p95 * 1000.0,
-    )
+            judgment = judge_changed_scale(again_small[point][0].cpu_p95, again_large[point][0].cpu_p95)
+    detail = judgment.detail
     if tries > 1:
         detail += ". retried the pair once"
     return Row(
@@ -1455,9 +1440,9 @@ def _structural_ratio_row(
         None,
         samples,
         None,
-        ratio,
-        "%.1fx" % CHANGED_RATIO_LIMIT,
-        verdict,
+        judgment.measured,
+        judgment.budget,
+        "pass" if judgment.passed else "fail",
         detail,
     )
 

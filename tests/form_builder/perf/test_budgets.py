@@ -51,7 +51,10 @@ def test_one_command_at_1000_stays_within_1_6x_of_300(mac_report: SpeedReport) -
     ratio = _row(mac_report, "one command O(changed)", None)
     assert ratio.verdict == "pass", _explain(ratio)
     assert ratio.p95 is not None
-    assert ratio.p95 <= 1.6
+    if str(ratio.budget).endswith("x"):
+        assert ratio.p95 <= 1.6
+    else:
+        assert ratio.p95 <= 0.5
 
 
 @pytest.mark.perf

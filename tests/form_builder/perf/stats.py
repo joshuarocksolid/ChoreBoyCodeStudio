@@ -26,8 +26,52 @@ CPU_TOLERANCE = 1.25
 WALL_LOAD_LIMIT = 2.0
 # One command at 1000 widgets, divided by the same command at 300 widgets.
 CHANGED_RATIO_LIMIT = 1.6
+# A 300-widget p95 under this is timer noise. The ratio is not evidence.
+RATIO_NOISE_FLOOR_MS = 0.3
+# When the 300-widget sample is noise, the 1000-widget p95 must stay under this.
+QUIET_PAIR_CEILING_MS = 0.5
 # ChoreBoy open and edit, divided by the raw Qt cost of the same work.
 OVERHEAD_RATIO_LIMIT = 1.5
+
+
+@dataclass(frozen=True)
+class ScaleJudgment:
+    """A 1000-vs-300 pair. ``measured`` is a ratio, or milliseconds when the small sample is noise."""
+
+    measured: float
+    budget: str
+    passed: bool
+    detail: str
+
+
+def judge_changed_scale(small_seconds: float, large_seconds: float) -> ScaleJudgment:
+    """Judge growth only when the 300-widget p95 is large enough to be a ratio.
+
+    Below ``RATIO_NOISE_FLOOR_MS`` the row checks the 1000-widget p95 against
+    ``QUIET_PAIR_CEILING_MS``. Raising ``CHANGED_RATIO_LIMIT`` would hide a
+    real doubling of a sample that is already big enough to measure.
+    """
+    small_ms = small_seconds * 1000.0
+    large_ms = large_seconds * 1000.0
+    if small_ms < RATIO_NOISE_FLOOR_MS:
+        passed = large_ms <= QUIET_PAIR_CEILING_MS
+        return ScaleJudgment(
+            large_ms,
+            "%.1f ms" % QUIET_PAIR_CEILING_MS,
+            passed,
+            "300-widget p95 is %.3f ms, under %.1f ms, so the row judges the 1000-widget p95 %.3f ms against %.1f ms"
+            % (small_ms, RATIO_NOISE_FLOOR_MS, large_ms, QUIET_PAIR_CEILING_MS),
+        )
+    if small_seconds <= 0.0:
+        ratio = float("inf")
+    else:
+        ratio = large_seconds / small_seconds
+    return ScaleJudgment(
+        ratio,
+        "%.1fx" % CHANGED_RATIO_LIMIT,
+        ratio <= CHANGED_RATIO_LIMIT,
+        "1000-widget p95 / 300-widget p95 (%.3f / %.3f ms)" % (large_ms, small_ms),
+    )
 
 
 @dataclass(frozen=True)
