@@ -57,8 +57,8 @@ class _Host:
 
 
 @contextmanager
-def _shown() -> Iterator[Tuple[FormSession, FormCanvas]]:
-    with opened(PAGE) as (session, realizer):
+def _shown(text: str = PAGE) -> Iterator[Tuple[FormSession, FormCanvas]]:
+    with opened(text) as (session, realizer):
         parent = QWidget()
         parent.resize(640, 480)
         canvas = FormCanvas(session, realizer, _Host(), parent)
@@ -133,6 +133,55 @@ def test_arrow_selects_the_neighbor() -> None:
         assert session.selection.state.current == _id(session.document, "east")
 
 
+def test_alt_arrow_nudges_a_free_widget() -> None:
+    with _shown() as (session, canvas):
+        _click(canvas, "north")
+        north = _widget(canvas, "north")
+        assert north.x() == 40
+        _key(canvas, "Key_Right", "AltModifier")
+        assert north.x() == 48
+        assert north.y() == 40
+        assert session.selection.state.current == _id(session.document, "north")
+        assert session.log.undo_label() == "Nudge"
+        _key(canvas, "Key_Down", "AltModifier", "ShiftModifier")
+        assert north.y() == 41
+        assert session.log.undo()
+        _flush()
+        assert north.y() == 40
+        assert north.x() == 48
+
+
+LAID = form(
+    'class="QWidget" name="Form"',
+    """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QPushButton" name="first">
+     <property name="text"><string>First</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="second">
+     <property name="text"><string>Second</string></property>
+    </widget>
+   </item>
+  </layout>
+""",
+)
+
+
+def test_alt_arrow_on_a_laid_out_widget_does_not_move_the_selection() -> None:
+    with _shown(LAID) as (session, canvas):
+        _click(canvas, "first")
+        first = _widget(canvas, "first")
+        origin = (first.x(), first.y())
+        selected = session.selection.state.current
+        _key(canvas, "Key_Down", "AltModifier")
+        assert session.selection.state.current == selected
+        assert (first.x(), first.y()) == origin
+        assert session.log.undo_label() != "Nudge"
+
+
 def test_a_canvas_press_does_not_scroll_and_an_outline_selection_does() -> None:
     with _shown() as (session, canvas):
         before = _scroll(canvas)
@@ -175,8 +224,19 @@ def _press_release(canvas: FormCanvas, port: QPoint, modifier: str) -> None:
     _flush()
 
 
-def _key(canvas: FormCanvas, name: str) -> None:
-    QTest.keyClick(canvas, _qt_key(name))
+def _widget(canvas: FormCanvas, name: str) -> QWidget:
+    root = canvas.page_widget()
+    assert root is not None
+    widget = root.findChild(QWidget, name)
+    assert widget is not None
+    return widget
+
+
+def _key(canvas: FormCanvas, name: str, *modifiers: str) -> None:
+    mods = _mods("NoModifier")
+    for modifier in modifiers:
+        mods = mods | _mods(modifier)
+    QTest.keyClick(canvas, _qt_key(name), mods)
     _flush()
 
 

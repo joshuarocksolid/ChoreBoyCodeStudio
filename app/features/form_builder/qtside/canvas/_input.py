@@ -96,6 +96,7 @@ def _mods(flags: object) -> Mods:
     return Mods(
         shift=bool(value & _flag("KeyboardModifier", "ShiftModifier")),
         ctrl=bool(value & _flag("KeyboardModifier", "ControlModifier")),
+        alt=bool(value & _flag("KeyboardModifier", "AltModifier")),
     )
 
 

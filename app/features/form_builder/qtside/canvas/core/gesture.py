@@ -22,7 +22,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OverlayFrame,
     Target,
 )
-from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page, snap_resize
+from app.features.form_builder.qtside.canvas.core.snap import GRID, snap_move, snap_page, snap_resize
 from app.features.form_builder.qtside.canvas.core.space import (
     CanvasPoint,
     Compass,
@@ -77,6 +77,7 @@ KeyName = Literal[
     "other",
 ]
 _ARROWS = frozenset({"left", "right", "up", "down"})
+_NUDGE = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
 _ZOOM_KEYS = frozenset({"zoom_in", "zoom_out", "zoom_reset", "zoom_fit"})
 _CLAIMED = frozenset(
     {"tab", "backtab", "left", "right", "up", "down", "enter", "space", "zoom_in", "zoom_out", "zoom_reset", "zoom_fit"}
@@ -89,6 +90,7 @@ _LAID_HANDLES: Tuple[Compass, ...] = ("e", "s", "se")
 class Mods:
     shift: bool = False
     ctrl: bool = False
+    alt: bool = False
 
 
 @dataclass(frozen=True)
@@ -628,6 +630,8 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         if nxt is None:
             return Step(gesture, (), True)
         return Step(gesture, _select_and_reveal(world, (nxt,), nxt))
+    if event.key in _ARROWS and event.mods.alt:
+        return _nudge(gesture, event, world)
     if event.key in _ARROWS:
         nxt = nearest_in_direction(world.document, world.index, current, event.key)  # type: ignore[arg-type]
         if nxt is None:
@@ -643,6 +647,28 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
     if event.key in _ZOOM_KEYS:
         return Step(gesture, (_zoom_effect(event.key),))
     return Step(gesture, (), False)
+
+
+def _nudge(gesture: Idle, event: Key, world: World) -> Step:
+    shown = effective_selection(world.document, world.selection)
+    nodes = shown.ids
+    if not nodes or any(not isinstance(positioning_of(world.document, node), Free) for node in nodes):
+        return Step(gesture, (), True)
+    delta = _NUDGE.get(event.key)
+    if delta is None:
+        return Step(gesture, (), True)
+    step_px = 1 if event.mods.shift else GRID
+    dx, dy = delta
+    commands = []
+    for node in nodes:
+        origin = free_origin(world.document, world.index, node)
+        commands.append(
+            SetGeometry(
+                node,
+                RectValue(origin.x + dx * step_px, origin.y + dy * step_px, origin.width, origin.height),
+            )
+        )
+    return Step(gesture, (Commit("Nudge", tuple(commands), world.fresh_token),))
 
 
 def _idle_probe(gesture: Idle, event: Probe, world: World) -> Step:
