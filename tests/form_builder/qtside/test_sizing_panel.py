@@ -11,8 +11,10 @@ from typing import Tuple
 import pytest
 
 from app.features.form_builder.engine.query.selection import SelectionSource
+from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
 from app.qt.QtCore import QPoint, QPointF, Qt
@@ -375,7 +377,7 @@ _HEADING = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _canvas(session: object, realizer: object, width: int = 1100, height: int = 480) -> Tuple[QWidget, FormCanvas]:
+def _canvas(session: FormSession, realizer: Realizer, width: int = 1100, height: int = 480) -> Tuple[QWidget, FormCanvas]:
     parent = QWidget()
     canvas = FormCanvas(session, realizer, _Host(), parent)
     parent.resize(width, height)
@@ -570,7 +572,7 @@ def _click_wide(canvas: FormCanvas, name: str) -> QWidget:
 
 
 def test_sizing_screenshots(qapp) -> None:  # type: ignore[no-untyped-def]
-    out = os.environ.get("CBCS_FB_SCREENSHOT_DIR")
+    out = os.environ.get("CBCS_FB_SCREENSHOT_DIR") or ""
     if not out:
         pytest.skip("CBCS_FB_SCREENSHOT_DIR is not set")
     folder = Path(out)
