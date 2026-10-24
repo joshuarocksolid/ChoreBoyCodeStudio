@@ -181,12 +181,14 @@ def _is(event: QEvent, name: str) -> bool:
 
 
 def _scale(widget: QWidget) -> float:
-    proxy = widget.graphicsProxyWidget()
-    if proxy is None and widget.parentWidget() is not None:
-        proxy = widget.parentWidget().graphicsProxyWidget()
-    if proxy is None:
-        return 1.0
-    return float(proxy.scale()) or 1.0
+    """Stage zoom. Only the page root is proxied, so walk up to it."""
+    current: Optional[QWidget] = widget
+    while current is not None:
+        proxy = current.graphicsProxyWidget()
+        if proxy is not None:
+            return float(proxy.scale()) or 1.0
+        current = current.parentWidget()
+    return 1.0
 
 
 def _zoomed_font(font: QFont, scale: float) -> QFont:

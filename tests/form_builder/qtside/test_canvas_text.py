@@ -16,6 +16,8 @@ from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.form_menu import register_form_menu
+from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
+from app.features.form_builder.qtside.canvas.core.space import ZoomTo
 from app.shell.menus import build_menu_stubs, clear_menu_contributors
 from tests.form_builder.qtside.support import form, opened
 from tests.unit.features.form_builder.test_workbench import _open as _open_surface
@@ -29,6 +31,20 @@ BUTTON = form(
   <widget class="QPushButton" name="ok">
    <property name="geometry"><rect><x>40</x><y>40</y><width>80</width><height>28</height></rect></property>
    <property name="text"><string>OK</string></property>
+  </widget>
+""",
+)
+
+NESTED = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <widget class="QGroupBox" name="box">
+   <property name="geometry"><rect><x>20</x><y>20</y><width>300</width><height>200</height></rect></property>
+   <widget class="QPushButton" name="ok">
+    <property name="geometry"><rect><x>20</x><y>40</y><width>120</width><height>28</height></rect></property>
+    <property name="text"><string>OK</string></property>
+   </widget>
   </widget>
 """,
 )
@@ -175,6 +191,20 @@ def test_typing_does_not_reflow_the_form() -> None:
         assert (root.width(), root.height()) == size
         assert session.document.revision == revision
         assert button.text() == "OK"
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_the_editor_text_matches_a_nested_widget_at_half_zoom() -> None:
+    """Only the page root is proxied. A child's editor still takes the stage zoom."""
+    with opened(NESTED) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        canvas.send(ZoomAsked(ZoomTo(0.5)))
+        _flush()
+        _click(canvas, "ok")
+        edit = _open(canvas)
+        shown = _button(canvas).fontInfo().pixelSize() * 0.5
+        assert abs(edit.fontInfo().pixelSize() - shown) <= 1
         canvas.dispose()
         parent.deleteLater()
 
