@@ -97,6 +97,11 @@ def _tool(text: str, name: str, tip: str, parent: QWidget) -> QToolButton:
     return button
 
 
+def problems_link_color(tokens: ShellThemeTokens) -> str:
+    """Body text colour: it clears 4.5:1 (7:1 in high contrast) on the panel in every theme."""
+    return tokens.text_primary
+
+
 class NoticeBar(QFrame):
     """One info bar for a recovered draft or a file that changed on disk."""
 
@@ -259,13 +264,15 @@ class FormToolbar(QWidget):
 
 
 def _splitter_qss(tokens: ShellThemeTokens) -> str:
-    """A 1 px line inside the 6 px handle. The handle stays the hit area."""
+    """A 1 px line. The 6 px handle is only the hit area."""
     return (
         "QSplitter#formBuilder\\.splitter::handle, QSplitter#formBuilder\\.leftSplitter::handle {"
-        " background: %s; border: none; image: none; }"
-        "QSplitter#formBuilder\\.splitter::handle:horizontal { margin: 0px 2px 0px 3px; }"
-        "QSplitter#formBuilder\\.leftSplitter::handle:vertical { margin: 2px 0px 3px 0px; }"
-        % tokens.border
+        " background: transparent; image: none; }"
+        "QSplitter#formBuilder\\.splitter::handle:horizontal {"
+        " width: 6px; margin: 0; border: none; border-left: 1px solid %s; }"
+        "QSplitter#formBuilder\\.leftSplitter::handle:vertical {"
+        " height: 6px; margin: 0; border: none; border-top: 1px solid %s; }"
+        % (tokens.border, tokens.border)
     )
 
 
@@ -308,7 +315,7 @@ class _Header(QWidget):
         self.setFocusPolicy(_strong())
         self._on_toggle = on_toggle
         row = QHBoxLayout(self)
-        row.setContentsMargins(0, 0, 0, 0)
+        row.setContentsMargins(12, 8, 12, 8)
         row.setSpacing(4)
         self.title = QLabel(title.upper(), self)
         self.title.setObjectName("formBuilder.sectionTitle")
@@ -320,6 +327,7 @@ class _Header(QWidget):
         button = _tool(text, "formBuilder.sectionExtra", tip, self)
         button.setEnabled(False)
         button.setAccessibleName(tip)
+        button.setMinimumSize(24, 24)
         layout = self.layout()
         assert layout is not None
         layout.addWidget(button)
@@ -478,6 +486,14 @@ class InspectorPane(QWidget):
         self.properties.setWordWrap(True)
         self.properties.setAccessibleName("Properties")
         self.properties.setFocusPolicy(_strong())
+        self._problem_count = 0
+        self._on_show_problems: Optional[Callable[[], None]] = None
+        self.properties.linkActivated.connect(self._follow_problem_link)
+        self.properties.setTextInteractionFlags(
+            getattr(Qt, "TextInteractionFlag", Qt).LinksAccessibleByMouse
+            | getattr(Qt, "TextInteractionFlag", Qt).LinksAccessibleByKeyboard
+        )
+        self._link_color = ""
         self.behavior = QLabel("Select a widget to see what you can configure.", self.tabs)
         self.behavior.setObjectName("formBuilder.behaviorBody")
         self.behavior.setWordWrap(True)
@@ -497,13 +513,48 @@ class InspectorPane(QWidget):
         if node is None:
             self._title = ""
             self._kind = ""
-            self.properties.setText("Select a widget to see its properties.")
+            self._paint_empty_properties()
             self.behavior.setText("Select a widget to see what you can configure.")
         else:
             self._title, self._kind = _node_title(node)
+            self.properties.setTextFormat(getattr(Qt, "PlainText"))
             self.properties.setText("Properties are not available yet.")
             self.behavior.setText("Nothing to configure on this widget yet.")
         self._paint_header()
+
+    def set_problem_summary(self, count: int, on_show: Callable[[], None]) -> None:
+        self._problem_count = count
+        self._on_show_problems = on_show
+        if not self._has_node:
+            self._paint_empty_properties()
+
+    def _paint_empty_properties(self) -> None:
+        count = self._problem_count
+        if count <= 0:
+            self.properties.setTextFormat(getattr(Qt, "PlainText"))
+            self.properties.setText("Select a widget to see its properties.")
+            return
+        noun = "problem" if count == 1 else "problems"
+        self.properties.setTextFormat(getattr(Qt, "RichText"))
+        style = ""
+        if self._link_color:
+            style = ' style="color:%s; text-decoration: underline;"' % self._link_color
+        self.properties.setText(
+            '%d %s. <a href="problems"%s>Show in Problems</a>' % (count, noun, style)
+        )
+
+    def set_link_color(self, color: str) -> None:
+        """The palette link colour fails contrast on dark panels. Use a token."""
+        self._link_color = color
+        if not self._has_node:
+            self._paint_empty_properties()
+
+    def _follow_problem_link(self, href: str) -> None:
+        if href != "problems":
+            return
+        callback = self._on_show_problems
+        if callback is not None:
+            callback()
 
     def _paint_header(self) -> None:
         if not self._has_node:
@@ -656,7 +707,7 @@ class FormWorkbench(QWidget):
         drawer_layout = QVBoxLayout(self._drawer)
         drawer_layout.setContentsMargins(0, 0, 0, 0)
         pin_row = QHBoxLayout()
-        self._pin = _button("Pin", "formBuilder.pin", "Keep this pane open", self._drawer)
+        self._pin = _tool("Pin", "formBuilder.pin", "Keep this pane open", self._drawer)
         self._pin.clicked.connect(self._pin_clicked)
         pin_row.addStretch(1)
         pin_row.addWidget(self._pin)
@@ -675,6 +726,7 @@ class FormWorkbench(QWidget):
         document = self._session.document
         self.outline.rebuild(document, selected)
         self.inspector.show_selection(document, selected)
+        self.canvas.refresh_chip()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
         self._drawer_listener = callback
@@ -714,6 +766,9 @@ class FormWorkbench(QWidget):
             "QLabel#formBuilder\\.sectionTitle {"
             " color: %s; background: transparent; border: none;"
             " font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }"
+            "QToolButton#formBuilder\\.sectionExtra { font-size: 14px; min-width: 24px; min-height: 24px;"
+            " border: none; background: transparent; padding: 0; }"
+            "QToolButton#formBuilder\\.pin { border: none; background: transparent; padding: 2px 8px; }"
             "QLabel#formBuilder\\.railLabel {"
             " color: %s; background: transparent; border: none; font-size: 8px; }"
             "QFrame#formBuilder\\.notice, QFrame#formBuilder\\.drawer {"
@@ -770,6 +825,7 @@ class FormWorkbench(QWidget):
             )
         )
         self.canvas.apply_theme(tokens)
+        self.inspector.set_link_color(problems_link_color(tokens))
 
     def open_left(self) -> None:
         self._open_drawer("left")
@@ -950,4 +1006,4 @@ class FormWorkbench(QWidget):
             self._applying = False
 
 
-__all__ = ["FormToolbar", "FormWorkbench", "NoticeBar"]
+__all__ = ["FormToolbar", "FormWorkbench", "NoticeBar", "problems_link_color"]

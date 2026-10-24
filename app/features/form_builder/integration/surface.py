@@ -5,10 +5,11 @@ One tab owns one ``FormSession``. Closing the tab disposes that session.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence
+from typing import Callable, Mapping, Optional, Sequence, Tuple
 
-from app.qt.QtCore import Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, Qt, QTimer
 from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
     QApplication,
@@ -31,12 +32,22 @@ from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+from app.features.form_builder.engine.shell_commands import (
+    FORM_COMMANDS,
+    INERT_SHORTCUTS,
+    INERT_STATUS,
+    editor_only_shell_actions,
+    is_widget_shortcut,
+    normalize_form_shortcut,
+)
+from app.features.form_builder.engine.ui4.reader import UiReadError, kept_as_is_spans, read_ui
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
     recovered_draft_sentence,
+    selection_sentence,
     undo_menu_text,
 )
+from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
     FormContentSource,
     form_scope,
@@ -53,6 +64,7 @@ from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
+from app.shell.shortcut_preferences import default_shortcut_map
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -66,6 +78,7 @@ _RESTORE_REASON = {
     "external_reload": "reload",
 }
 _SAVED_FADE_MS = 4000
+_KEPT_REFRESH_MS = 300
 
 
 def plain_banner_error(error: str) -> str:
@@ -95,6 +108,73 @@ def _shell_history(window: QWidget, redo: bool) -> None:
         surface.redo()
     else:
         surface.undo()
+
+
+def _key_text(event: object) -> str:
+    """Portable text of a key event, with Backtab spelled Shift+Tab."""
+    key = int(getattr(event, "key")())
+    mods = getattr(event, "modifiers")()
+    shift = getattr(Qt, "ShiftModifier")
+    if key == int(getattr(Qt, "Key_Backtab")):
+        key = int(getattr(Qt, "Key_Tab"))
+        mods = mods | shift
+    flags = getattr(mods, "value", mods)
+    try:
+        sequence = QKeySequence(int(flags) | key)
+    except TypeError:
+        return ""
+    return normalize_form_shortcut(sequence.toString(QKeySequence.SequenceFormat.PortableText))
+
+
+class _ShellKeyGuard(QObject):
+    """Keeps shell window keys that mean nothing here off the builder chrome.
+
+    Installed on the workbench and toolbar widgets, never on the XML editor.
+    Accepting ``ShortcutOverride`` sends the key to the focused widget instead
+    of a window action:
+
+    * code-editor keys (Tab, Shift+Tab) then move focus (UX-A11Y-009);
+    * inert keys (Ctrl+H, Ctrl+G, ...) are swallowed on their key press and
+      the status bar says they are not used (UX-KEY-004).
+
+    The shell also binds the inert keys, so a QShortcut of the same key would
+    be ambiguous and fire nothing.
+    """
+
+    def __init__(
+        self,
+        editor_keys: Callable[[], frozenset],
+        inert_keys: frozenset,
+        on_inert: Callable[[], None],
+        parent: QObject,
+    ) -> None:
+        super().__init__(parent)
+        self._editor_keys = editor_keys
+        self._inert_keys = inert_keys
+        self._on_inert = on_inert
+        self._pending = ""
+
+    def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
+        del watched
+        kind = getattr(event, "type")()
+        if kind == QEvent.Type.ShortcutOverride:
+            text = _key_text(event)
+            if text in self._inert_keys:
+                self._pending = text
+                getattr(event, "accept")()
+                return True
+            if text in self._editor_keys():
+                getattr(event, "accept")()
+                return True
+            return False
+        if kind == QEvent.Type.KeyPress and self._pending:
+            text = _key_text(event)
+            if text == self._pending:
+                self._pending = ""
+                getattr(event, "accept")()
+                self._on_inert()
+                return True
+        return False
 
 
 class FormSurface(QWidget):
@@ -178,9 +258,22 @@ class FormSurface(QWidget):
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
         self._selection_unsub = session.selection.subscribe(self._on_selection)
         self._source_unsub = source.subscribe_changed(self._on_source_changed)
+        self._inert_note = ""
+        self._problem_timer = QTimer(self)
+        self._problem_timer.setSingleShot(True)
+        self._problem_timer.timeout.connect(self._flush_problems)
+        self._diagnostics_unsub = session.diagnostics.subscribe(self._schedule_problems)
+        source.set_open_buffer_probe(self._open_buffer_state)
+        self._install_widget_shortcuts()
+        self._schedule_problems(())
         self._saved_timer = QTimer(self)
         self._saved_timer.setSingleShot(True)
         self._saved_timer.timeout.connect(self._fade_saved)
+        # XML edits move lines. Read the shown text again once typing pauses.
+        self._kept_timer = QTimer(self)
+        self._kept_timer.setSingleShot(True)
+        self._kept_timer.setInterval(_KEPT_REFRESH_MS)
+        self._kept_timer.timeout.connect(self._refresh_kept_lines)
         self._alt_outline = QShortcut(QKeySequence("Alt+1"), self)
         self._alt_outline.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._alt_outline.activated.connect(self._focus_outline)
@@ -254,8 +347,29 @@ class FormSurface(QWidget):
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
 
+    def editor_status_sentence(self) -> str:
+        if self._inert_note:
+            return self._inert_note
+        state = self._session.selection.state
+        return selection_sentence(self._session.document, state.current, len(state.ids))
+
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
-        del detail
+        if detail and self._toolbar.xml.isChecked():
+            # Apply the XML first: it replaces the document and every id.
+            self._on_design()
+            if self._toolbar.xml.isChecked():
+                return False
+        node_id = self._node_for_detail(detail)
+        if node_id is not None:
+            self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
+            if self._session.selection.state.current != node_id:
+                return False
+            name = self._object_name(node_id)
+            if name:
+                self._workbench.canvas.ensure_widget_visible(name)
+            QTimer.singleShot(0, self._focus_inspector)
+            self._refresh_shell_status()
+            return True
         editor = self._editor
         if editor is None or line < 1:
             return False
@@ -302,6 +416,10 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        self._problem_timer.stop()
+        self._kept_timer.stop()
+        self._saved_timer.stop()
+        self._diagnostics_unsub()
         app = QApplication.instance()
         if app is not None:
             try:
@@ -434,6 +552,7 @@ class FormSurface(QWidget):
             shown = editor.toPlainText()
             editor.blockSignals(False)
             self._source.enter_xml_mode(shown)
+            self._mark_kept_lines(editor)
             self._show_banner(XML_APPLY_HINT, error=False)
         self._stack.setCurrentWidget(editor)
         self._workbench.outline.tree.hide()
@@ -524,6 +643,14 @@ class FormSurface(QWidget):
         if editor is None:
             return
         self._source.xml_text_changed(editor.toPlainText())
+        self._kept_timer.start()
+
+    def _refresh_kept_lines(self) -> None:
+        editor = self._editor
+        if self._released or editor is None or self._source.mode != "xml":
+            return
+        if _parses(editor.toPlainText()):
+            self._mark_kept_lines(editor)
 
     def _on_log(self, _change_set: object) -> None:
         if self._source.mode != "visual":
@@ -538,9 +665,11 @@ class FormSurface(QWidget):
         self._sync_shell_undo()
 
     def _on_selection(self, change: object) -> None:
+        self._inert_note = ""
         current = getattr(getattr(change, "after", None), "current", None)
         self._workbench.inspector.show_selection(self._session.document, current)
         self._workbench.outline.rebuild(self._session.document, current)
+        self._refresh_shell_status()
 
     def _on_outline_pick(self, node_id: NodeId) -> None:
         self._session.selection.set((node_id,), source=SelectionSource.OUTLINE)
@@ -584,6 +713,7 @@ class FormSurface(QWidget):
         editor.blockSignals(True)
         editor.setPlainText(text)
         editor.blockSignals(False)
+        self._mark_kept_lines(editor)
         self._source.xml_text_changed(text)
         self._set_xml_checked(True)
         self._stack.setCurrentWidget(editor)
@@ -606,6 +736,9 @@ class FormSurface(QWidget):
 
     def _refresh_save_state(self) -> None:
         notice = self._source.save_notice
+        if notice.kind == "hold":
+            self._show_hold(notice.text)
+            return
         timer = self._saved_timer
         if self._source.is_dirty():
             self._saved_timer.stop()
@@ -626,6 +759,179 @@ class FormSurface(QWidget):
             return
         self._saved_timer.stop()
         self._toolbar.set_save("", error=False, tokens=self._tokens)
+
+    def _node_for_detail(self, detail: Optional[Mapping[str, str]]) -> Optional[NodeId]:
+        if not detail:
+            return None
+        document = self._session.document
+        key = detail.get("fb_key") or ""
+        if key:
+            for diagnostic in self._session.diagnostics.all():
+                node_id = diagnostic.location.node_id
+                # A row made before an XML apply can hold an id that is gone.
+                if diagnostic.key == key and node_id is not None and document.get(node_id) is not None:
+                    return node_id
+        name = detail.get("fb_object") or ""
+        if not name:
+            return None
+        ids = document.by_name(name)
+        if not ids:
+            return None
+        return ids[0]
+
+    def _object_name(self, node_id: NodeId) -> str:
+        node = self._session.document.get(node_id)
+        name = getattr(node, "object_name", "")
+        return name if isinstance(name, str) else ""
+
+    def _focus_inspector(self) -> None:
+        if self._released:
+            return
+        self._workbench.inspector.properties.setFocus()
+
+    def _install_widget_shortcuts(self) -> None:
+        hosts = {
+            "canvas": self._workbench.canvas,
+            "outline": self._workbench.outline.tree,
+            "inspector": self._workbench.inspector,
+        }
+        context = getattr(Qt, "WidgetWithChildrenShortcut")
+        effective = getattr(self.window(), "_effective_shortcuts", None)
+        keys: Mapping[str, str] = effective if isinstance(effective, Mapping) else {}
+        handlers = self._widget_handlers()
+        self._widget_shortcuts: list[QShortcut] = []
+        for command in FORM_COMMANDS:
+            if not is_widget_shortcut(command):
+                continue
+            # Settings may rebind the key. A command with no gesture yet keeps
+            # its QShortcut disabled, so the key reaches the focused widget.
+            key = keys.get(command.command_id, command.shortcut)
+            handler = handlers.get(command.command_id)
+            live = command.available and handler is not None
+            for name in command.contexts:
+                host = hosts.get(name)
+                if host is None:
+                    continue
+                shortcut = QShortcut(QKeySequence(key), host)
+                shortcut.setContext(context)
+                shortcut.setObjectName(command.command_id)
+                shortcut.setEnabled(live)
+                if live and handler is not None:
+                    shortcut.activated.connect(handler)
+                self._widget_shortcuts.append(shortcut)
+        self._key_guard = _ShellKeyGuard(
+            self._editor_only_keys,
+            frozenset(normalize_form_shortcut(key) for key in INERT_SHORTCUTS),
+            self._note_inert,
+            self,
+        )
+        # Every focusable builder widget, so the guard sees a key press before
+        # the widget does. Widgets made later are covered by their ancestors.
+        for root in (self._workbench, self._toolbar, self._notice, self._banner_frame):
+            root.installEventFilter(self._key_guard)
+            for child in root.findChildren(QWidget):
+                child.installEventFilter(self._key_guard)
+
+    def _editor_only_keys(self) -> frozenset:
+        effective = getattr(self.window(), "_effective_shortcuts", None)
+        keys = effective if isinstance(effective, Mapping) else default_shortcut_map()
+        found = set()
+        for action_id in editor_only_shell_actions():
+            text = normalize_form_shortcut(str(keys.get(action_id, "") or ""))
+            if text:
+                found.add(text)
+        return frozenset(found)
+
+    def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
+        """Gestures behind canvas, outline, and inspector keys. None exist yet."""
+        return {}
+
+    def _note_inert(self) -> None:
+        self._inert_note = INERT_STATUS
+        self._refresh_shell_status()
+
+    def _schedule_problems(self, _diagnostics: object) -> None:
+        if self._released:
+            return
+        self._problem_timer.start(0)
+
+    def _flush_problems(self) -> None:
+        if self._released:
+            return
+        rows = code_diagnostics_for_form(self._path, self._session.diagnostics.all())
+        window = self.window()
+        controller = getattr(window, "_problems_controller", None)
+        apply = getattr(controller, "apply_lint_diagnostics_result", None)
+        if callable(apply):
+            apply(self._path, rows)
+        self._workbench.inspector.set_problem_summary(len(rows), self._show_in_problems)
+
+    def _show_in_problems(self) -> None:
+        window = self.window()
+        tabs = getattr(window, "_bottom_tabs_widget", None) or getattr(window, "_problems_tab_widget", None)
+        panel = getattr(window, "_problems_panel", None)
+        if tabs is None or panel is None:
+            return
+        index = tabs.indexOf(panel)
+        if index >= 0:
+            tabs.setCurrentIndex(index)
+
+    def _open_buffer_state(self, path: str) -> Optional[Tuple[str, bool]]:
+        window = self.window()
+        manager = getattr(window, "_editor_manager", None)
+        get_tab = getattr(manager, "get_tab", None)
+        if not callable(get_tab):
+            return None
+        tab = get_tab(path)
+        if tab is None:
+            return None
+        return (str(getattr(tab, "current_content", "")), bool(getattr(tab, "is_dirty", False)))
+
+    def _refresh_shell_status(self) -> None:
+        window = self.window()
+        workflow = getattr(window, "_editor_tab_workflow", None)
+        update = getattr(workflow, "update_editor_status_for_path", None)
+        if callable(update):
+            update(self._path)
+
+    def _mark_kept_lines(self, editor: object) -> None:
+        setter = getattr(editor, "set_gutter_notes", None)
+        if not callable(setter):
+            return
+        reader = getattr(editor, "toPlainText", None)
+        text = reader() if callable(reader) else ""
+        notes = {start: "Kept as is" for start, _end in kept_as_is_spans(text if isinstance(text, str) else "")}
+        setter(notes)
+
+    def _show_hold(self, text: str) -> None:
+        held = self._source.hold_path()
+        name = os.path.basename(held) if held else "the generated file"
+
+        def replace() -> None:
+            self._notice.dismiss()
+            self._source.allow_next_replace()
+            window = self.window()
+            workflow = getattr(window, "_save_workflow", None)
+            save = getattr(workflow, "save_tab", None)
+            if callable(save):
+                save(self._path)
+
+        def open_held() -> None:
+            self._notice.dismiss()
+            if held:
+                self._request.open_linked_file(held)
+
+        def cancel() -> None:
+            self._notice.dismiss()
+
+        self._notice.show_choices(
+            text,
+            (
+                ("Replace", replace),
+                ("Open %s" % name, open_held),
+                ("Cancel save", cancel),
+            ),
+        )
 
     def _fade_saved(self) -> None:
         self._save_faded = True

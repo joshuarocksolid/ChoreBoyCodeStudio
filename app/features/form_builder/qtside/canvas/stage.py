@@ -91,6 +91,7 @@ class Stage:
         self._page_preview = False
         self._form_selected = False
         self._backdrop: Optional[BackdropPalette] = None
+        self._extra: Tuple[QWidget, ...] = ()
         self._proxy = QGraphicsProxyWidget()
         scene = view.scene()
         if scene is None:
@@ -156,13 +157,29 @@ class Stage:
         scroll_x = self._view.horizontalScrollBar().value()
         scroll_y = self._view.verticalScrollBar().value()
         rects = []
-        for label in (self._name, self._size):
-            if label.isHidden():
+        for widget in (self._name, self._size, *self._extra):
+            if widget.isHidden():
                 continue
             rects.append(
-                CanvasRect(label.x() + scroll_x, label.y() + scroll_y, label.width(), label.height())
+                CanvasRect(widget.x() + scroll_x, widget.y() + scroll_y, widget.width(), widget.height())
             )
         return tuple(rects)
+
+    def set_banner_push(self, pixels: int) -> None:
+        """Reserve view pixels above the page for the caption bar."""
+        self._banner_push = max(0, pixels)
+
+    def track_chrome(self, *widgets: QWidget) -> None:
+        """View widgets the chip solver must not cover. The stage does not move them."""
+        self._extra = widgets
+
+    def refresh_chrome(self) -> None:
+        """Rewrite the page chip and size readout without moving the page."""
+        root = self._realizer.root_widget
+        if root is None or not wrapper_is_valid(root):
+            return
+        self._refresh_labels(root)
+        self.position_labels()
 
     def set_form_selected(self, selected: bool) -> None:
         self._form_selected = selected
@@ -178,7 +195,10 @@ class Stage:
         bottom_right = self._view.mapFromScene(rect.bottomRight())
         _fit_label(self._name)
         _fit_label(self._size)
-        self._name.move(top_left.x(), max(0, top_left.y() - self._name.height() - 4))
+        self._name.move(
+            top_left.x(),
+            max(0, top_left.y() - self._banner_push - self._name.height() - 4),
+        )
         self._name.raise_()
         size_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - self._size.width()) // 2)
         self._size.move(size_x, bottom_right.y() + 6)

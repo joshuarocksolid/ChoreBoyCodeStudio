@@ -33,6 +33,7 @@ from app.qt.QtWidgets import (  # noqa: E402
     QShortcut,
     QToolButton,
     QTreeWidget,
+    QTreeWidgetItem,
     QWidget,
 )
 from app.shell.document_safety import dirty_buffer_snapshots  # noqa: E402
@@ -475,12 +476,17 @@ def test_theme_changes_chrome_and_not_the_page(qapp, tmp_path: Path) -> None:  #
     page = surface.page_widget()
     assert page is not None
     light = tokens_from_palette(qapp.palette(), force_mode="light")
-    dark = tokens_from_palette(qapp.palette(), force_mode="dark")
     surface.apply_theme(light)
-    before = _window_color(page)
+    runtime = _window_color(page)
     light_sheet = surface.findChild(QWidget, "formBuilder.toolbar").styleSheet()  # type: ignore[union-attr]
-    surface.apply_theme(dark)
-    assert _window_color(page) == before
+    chrome_marks = ("formBuilder", "#E9EBEF", "#16191D", "#D3D8DF", "#262B31")
+    for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
+        surface.apply_theme(tokens_from_palette(qapp.palette(), force_mode=mode))
+        qapp.processEvents()
+        assert _window_color(page) == runtime
+        blob = _widget_stylesheets(page).lower()
+        for mark in chrome_marks:
+            assert mark.lower() not in blob
     assert surface.findChild(QWidget, "formBuilder.toolbar").styleSheet() != light_sheet  # type: ignore[union-attr]
     surface.release()
 
@@ -497,6 +503,8 @@ def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-unt
     surface = _open(host, text, tmp_path / "connection.ui")
     host.show()
     surface.show()
+    _select_outline_child(surface)
+    qapp.processEvents()
     for mode in ("light", "dark", "high_contrast_light", "high_contrast_dark"):
         surface.apply_theme(tokens_from_palette(qapp.palette(), force_mode=mode))
         for width, height in ((1280, 800), (1080, 600), (800, 600)):
@@ -512,11 +520,66 @@ def test_theme_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-unt
                 assert drawer is not None and drawer.width() >= 200, drawer.geometry()
             tree = surface.findChild(QTreeWidget, "formBuilder.structure")
             assert tree is not None and tree.isVisibleTo(surface)
+            _select_outline_child(surface)
+            qapp.processEvents()
+            assert "·" in surface.editor_status_sentence()
             image = surface.grab()
             assert (image.width(), image.height()) == (width, height)
             image.save(str(out / ("form-tab-%s-%dx%d.png" % (mode, width, height))))
     surface.release()
     host.close()
+
+
+def _widget_stylesheets(widget: QWidget) -> str:
+    sheets = [widget.styleSheet()]
+    for child in widget.findChildren(QWidget):
+        sheets.append(child.styleSheet())
+    return "\n".join(sheets)
+
+
+def _select_outline_child(surface: QWidget) -> None:
+    tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+    if tree is None:
+        return
+
+    def walk(item: QTreeWidgetItem) -> QTreeWidgetItem | None:
+        label = item.text(0)
+        if item.parent() is not None and "Layout" not in label and "Spacer" not in label:
+            return item
+        for index in range(item.childCount()):
+            child = item.child(index)
+            if child is None:
+                continue
+            found = walk(child)
+            if found is not None:
+                return found
+        return None
+
+    top = tree.topLevelItem(0)
+    target = None if top is None else walk(top)
+    if target is not None:
+        tree.setCurrentItem(target)
+
+
+def test_unknown_xml_offers_the_problems_link(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    text = _FORM.replace("</widget>", "<zzunk n=\"kept\"/></widget>", 1)
+    parent = QWidget()
+    surface = _open(parent, text, tmp_path / "invoice.ui")
+    qapp.processEvents()
+    body = surface.findChild(QLabel, "formBuilder.inspectorBody")
+    assert body is not None
+    assert "Show in Problems" in body.text()
+    assert "problem" in body.text()
+    surface.release()
+
+
+def test_reveal_selects_the_named_widget(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    parent = QWidget()
+    surface = _open(parent, _FORM, tmp_path / "invoice.ui")
+    assert surface.reveal(1, {"fb_object": "okButton"})
+    sentence = surface.editor_status_sentence()
+    assert sentence.startswith("okButton · Push button")
+    surface.release()
 
 
 def _esc_enabled(surface: QWidget) -> bool:

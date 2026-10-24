@@ -9,6 +9,7 @@ from app.qt.QtWidgets import QMessageBox, QWidget
 
 from app.core import constants
 from app.editors.editor_manager import EditorManager
+from app.editors.generated_file import is_generated_module
 from app.editors.editor_tab import DiskConflict
 from app.intelligence.cache_controls import should_refresh_index_after_save
 from app.editors.formatting_service import format_text_basic
@@ -506,6 +507,11 @@ class SaveWorkflow:
         if stale_decision == "already_synced":
             return True
         path_existed_before_save = Path(file_path).expanduser().resolve().exists()
+        tab_state = self._editor_manager().get_tab(file_path)
+        source = None if tab_state is None else tab_state.content_source
+        prepare_save = getattr(source, "prepare_save", None)
+        if callable(prepare_save) and prepare_save() is False:
+            return False
         if apply_transforms:
             self.apply_save_transforms(file_path, show_style_warnings=show_style_warnings)
         try:
@@ -585,6 +591,8 @@ class SaveWorkflow:
             return
 
         original_text = tab_state.current_content
+        if is_generated_module(file_path, original_text):
+            return
         transformed_text = format_text_basic(
             original_text,
             trim_trailing_whitespace=host.editor_trim_trailing_whitespace_on_save(),

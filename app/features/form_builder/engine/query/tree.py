@@ -6,7 +6,7 @@ Pure functions of a document. None of them mutates.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
@@ -170,16 +170,57 @@ def form_rows(
         field = None
         spanning = None
         for item in by_row.get(row, ()):
-            column = item.column if item.column is not None else 0
-            colspan = item.colspan if item.colspan is not None else 1
-            if colspan >= 2 or (column == 0 and colspan == 2):
+            role = form_item_role(item.column, item.colspan)
+            if role == "spanning":
                 spanning = item.id
-            elif column <= 0:
+            elif role == "label":
                 label = item.id
             else:
                 field = item.id
         found.append((label, field, spanning))
     return tuple(found)
+
+
+def form_item_role(
+    column: Optional[int], colspan: Optional[int]
+) -> Literal["label", "field", "spanning"]:
+    """Role of one QFormLayout item. O(1)."""
+    span = 1 if colspan is None or colspan == 0 else colspan
+    col = 0 if column is None else column
+    if span > 1:
+        return "spanning"
+    if col == 0:
+        return "label"
+    return "field"
+
+
+def form_occupied_cells(
+    row: Optional[int],
+    column: Optional[int],
+    colspan: Optional[int],
+) -> FrozenSet[Tuple[int, str]]:
+    """The (row, role) cells a QFormLayout item takes. Spanning takes both. O(1)."""
+    r = 0 if row is None else row
+    role = form_item_role(column, colspan)
+    if role == "spanning":
+        return frozenset(((r, "label"), (r, "field")))
+    return frozenset(((r, role),))
+
+
+def form_collision_groups(doc: UiDocument) -> FrozenSet[FrozenSet[NodeId]]:
+    """Ids of items that share a QFormLayout cell. O(form)."""
+    groups = set()
+    for node in doc.iter_preorder():
+        if not isinstance(node, LayoutNode) or node.class_name != "QFormLayout":
+            continue
+        buckets: Dict[Tuple[int, str], List[NodeId]] = {}
+        for item in node.items:
+            for cell in form_occupied_cells(item.row, item.column, item.colspan):
+                buckets.setdefault(cell, []).append(item.id)
+        for ids in buckets.values():
+            if len(ids) > 1:
+                groups.add(frozenset(ids))
+    return frozenset(groups)
 
 
 def visual_children(doc: UiDocument, widget_id: NodeId) -> Tuple[NodeId, ...]:

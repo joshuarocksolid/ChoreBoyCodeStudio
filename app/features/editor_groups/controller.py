@@ -427,6 +427,11 @@ class EditorGroupsController:
         )
         content: QWidget = view if pane is None else pane
         page = window._editor_tab_factory.build_tab_page(content, buffer_id)
+        window._editor_tab_factory.attach_generated_banner(
+            page,
+            tab_state.file_path,
+            tab_state.current_content,
+        )
         index = target.tabs.addTab(page, tab_state.display_name)
         window._editor_tabs_coordinator.present_tab_at(index, tab_state, tabs=target.tabs)
         return index

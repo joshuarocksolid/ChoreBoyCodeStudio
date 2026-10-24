@@ -306,7 +306,8 @@ class UiDocument:
     def validate(self) -> None:
         """Check every integrity invariant (CONTRACTS.md section 2.7); raise
         InvariantError naming the first violation. O(form). Called after every
-        log entry when ``CBCS_FB_VALIDATE=1`` (always on in tests)."""
+        log entry when ``CBCS_FB_VALIDATE=1`` (always on in tests).
+        """
         if self._revision < self._peak:
             raise InvariantError("revision went backwards")
         reachable: Dict[NodeId, Node] = {}
@@ -679,8 +680,14 @@ def _canon_jobs(value: object) -> Optional[List[object]]:
     if value is None or isinstance(value, (str, int, bool, float)):
         return None
     if hasattr(value, "__dataclass_fields__"):
-        return [getattr(value, key) for key in getattr(value, "__dataclass_fields__")]
+        return [getattr(value, key) for key in _content_keys(value)]
     return None
+
+
+def _content_keys(value: object) -> List[str]:
+    """Dataclass fields that are content. ``compare=False`` marks bookkeeping (a source line)."""
+    found = getattr(value, "__dataclass_fields__")
+    return [key for key, spec in found.items() if getattr(spec, "compare", True)]
 
 
 def _canon_leaf(value: object) -> object:
@@ -725,7 +732,7 @@ def _canon_assemble(value: object, parts: List[object], include_ids: bool) -> ob
     if isinstance(value, tuple):
         return list(parts)
     encoded: Dict[str, object] = {"$": type(value).__name__}
-    keys = list(getattr(value, "__dataclass_fields__"))
+    keys = _content_keys(value)
     for key, part in zip(keys, parts):
         encoded[key] = part
     return encoded

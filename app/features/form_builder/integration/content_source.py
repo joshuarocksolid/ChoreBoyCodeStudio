@@ -8,7 +8,8 @@ the text the user typed.
 
 from __future__ import annotations
 
-from typing import Callable, List, Literal, Optional
+import os
+from typing import Callable, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
@@ -21,6 +22,10 @@ from app.features.form_builder.engine.project.forms import FormScope, classify_f
 from app.features.form_builder.engine.project.fs import OsFileSystem
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.writer import SerializationCache
+from app.features.form_builder.integration.generated_hold import (
+    first_hand_edited_output,
+    watched_generated_paths,
+)
 from app.features.form_builder.integration.save_pipeline import SaveNotice, finish_save
 
 Mode = Literal["visual", "xml"]
@@ -93,6 +98,9 @@ class FormContentSource:
         self._stamp = log.document.revision
         self._listeners: List[Callable[[], None]] = []
         self._subscription: Subscription = log.subscribe(self._on_log, priority=0)
+        self._open_buffer_probe: Optional[Callable[[str], Optional[Tuple[str, bool]]]] = None
+        self._allow_replace = False
+        self._hold_path = ""
 
     @property
     def log(self) -> CommandLog:
@@ -136,6 +144,40 @@ class FormContentSource:
             self._remember_saved_text(saved_text)
         self._notice = SaveNotice("idle", "", False)
         self._notify()
+
+    def set_open_buffer_probe(self, probe: Callable[[str], Optional[Tuple[str, bool]]]) -> None:
+        """``(text, dirty)`` when that path is open, else None."""
+        self._open_buffer_probe = probe
+
+    def allow_next_replace(self) -> None:
+        """The user chose Replace on the hand-edit bar. The next save proceeds."""
+        self._allow_replace = True
+
+    def hold_path(self) -> str:
+        return self._hold_path
+
+    def prepare_save(self) -> bool:
+        """False when a generated file has hand edits. The ``.ui`` is not written."""
+        if self._allow_replace:
+            self._allow_replace = False
+            return True
+        probe = self._open_buffer_probe or (lambda _path: None)
+        held = first_hand_edited_output(
+            watched_generated_paths(self._scope, self._log.document),
+            open_buffer=probe,
+            read_disk=_read_disk,
+        )
+        if held is None:
+            return True
+        name = os.path.basename(held)
+        self._hold_path = held
+        self._notice = SaveNotice(
+            "hold",
+            "%s has edits made by hand. Saving the form will replace them." % name,
+            False,
+        )
+        self._notify()
+        return False
 
     def after_save(self) -> None:
         """Step 3 of save. Reload and sync call ``mark_saved`` and stop there."""
@@ -232,6 +274,16 @@ class FormContentSource:
     def _notify(self) -> None:
         for listener in tuple(self._listeners):
             listener()
+
+
+def _read_disk(path: str) -> Optional[str]:
+    if not os.path.isfile(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as handle:
+            return handle.read()
+    except OSError:
+        return None
 
 
 __all__ = [
