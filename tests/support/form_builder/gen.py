@@ -59,7 +59,8 @@ from app.features.form_builder.engine.ui4 import mutate
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
-from app.features.form_builder.engine.ui4.values import RectValue, SizeValue, StringValue
+from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing
+from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue, StringValue
 from tests.form_builder.engine.commands._support import (
     BOX,
     FREE,
@@ -186,7 +187,7 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
     layout = rng.choice(layouts) if layouts else None
     names = [item.object_name for item in widgets if item.object_name]
     forms = [item for item in layouts if item.class_name == "QFormLayout"]
-    roll = rng.randrange(36)
+    roll = rng.randrange(37)
     if roll == 0 and widget is not None:
         value = None if rng.randrange(5) == 0 else StringValue("t%d" % step)
         return SetProperty(widget.id, "text", value, merge_token=rng.choice([None, "tok"]))
@@ -340,6 +341,16 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
     if roll == 34 and forms:
         cell = InGridCell(rng.choice(forms).id, rng.randrange(3), rng.randrange(2))
         return InsertFragment(cell, Fragment(nodes=(button_spec("cellButton"),)))
+    if roll == 36 and widget is not None:
+        policy = "Expanding" if step % 2 == 0 else "Fixed"
+        minimum = SizeValue(40, 10) if policy == "Fixed" else None
+        return ApplySizing(
+            widget.id,
+            policy=SizePolicyValue(policy, "Preferred"),
+            minimum=minimum,
+            touch_policy=True,
+            touch_minimum=minimum is not None,
+        )
     if roll == 35:
         bare = [
             item
