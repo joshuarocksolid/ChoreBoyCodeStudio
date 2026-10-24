@@ -400,7 +400,9 @@ class FormCanvas(QGraphicsView):
         self._position_chrome()
 
     def _on_selection(self, change: SelectionChange) -> None:
-        self._stage.sync_selection(describe_selection(self._session.document, change.after))
+        # The wide copy is the only reader. Building the sentence walks the layout.
+        if self._stage.widths_on:
+            self._stage.sync_selection(describe_selection(self._session.document, change.after))
 
     def _commit_preview(self, state: PreviewState) -> None:
         self._stage.set_preview(state)
