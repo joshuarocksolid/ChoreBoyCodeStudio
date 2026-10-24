@@ -18,4 +18,5 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         error=tokens.diag_error_color,
         focus_width=tokens.focus_border_width,
         search_match_bg=tokens.search_match_bg,
+        selected=tokens.tree_selected_bg,
     )

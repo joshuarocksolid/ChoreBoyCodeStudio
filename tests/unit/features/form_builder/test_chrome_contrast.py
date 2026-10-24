@@ -89,6 +89,9 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
             ("show in problems link", problems_link_color(tokens), tokens.panel_bg, text_floor),
             ("checkbox text", chrome_for(tokens).text, chrome_for(tokens).panel, text_floor),
             ("inspector link", problems_link_color(tokens), chrome_for(tokens).panel, text_floor),
+            ("alignment segment", chrome_for(tokens).text, chrome_for(tokens).input, text_floor),
+            ("checked alignment segment", chrome_for(tokens).text, chrome_for(tokens).selected, text_floor),
+            ("checked segment border", chrome_for(tokens).accent, chrome_for(tokens).selected, 3.0),
         )
         for name, foreground, background, floor in pairs:
             ratio = _contrast(foreground, background)
