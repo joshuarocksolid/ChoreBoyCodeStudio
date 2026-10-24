@@ -493,6 +493,7 @@ def _drop_paint(
             _label_size(text, inputs.measure),
             LABEL_CORNERS,
             frozenset(),
+            required=True,
         )
     )
 
