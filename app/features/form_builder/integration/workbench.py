@@ -538,11 +538,9 @@ class _DropLine(QWidget):
 
     def set_span(self, span: Optional[Tuple[int, int, int]]) -> None:
         self._span = span
-        parent = self.parentWidget()
-        if span is None or parent is None:
+        if span is None:
             self.hide()
             return
-        self.setGeometry(parent.rect())
         self.show()
         self.raise_()
         self.update()
@@ -593,7 +591,8 @@ class OutlinePane(QWidget):
         self.tree.viewport().setMouseTracking(True)
         self.tree.itemEntered.connect(self._item_entered)
         self.tree.viewport().installEventFilter(self)
-        self._line = _DropLine(self.tree.viewport())
+        # A child of the viewport turns item-view scrolling into a full repaint.
+        self._line = _DropLine(self)
         layout.addWidget(self.tree, 1)
         self._collapsed = False
         self._hover: Optional[NodeId] = None
@@ -691,7 +690,13 @@ class OutlinePane(QWidget):
             return
         rect = paint.mark.rect
         y = rect.y if rect.height <= 4 else rect.y + rect.height // 2
+        self._place_line()
         self._line.set_span((rect.x, y, rect.width))
+
+    def _place_line(self) -> None:
+        viewport = self.tree.viewport()
+        origin = viewport.mapTo(self, QPoint(0, 0))
+        self._line.setGeometry(origin.x(), origin.y(), viewport.width(), viewport.height())
 
     def row_entries(self) -> Tuple[GeoEntry, ...]:
         document = self._document
@@ -781,8 +786,8 @@ class OutlinePane(QWidget):
                 self._delivering = False
             self._arm_after_press()
             return True
-        if watched is self.tree.viewport() and _is_type(event, "Resize"):
-            self._line.setGeometry(self.tree.viewport().rect())
+        if watched is self.tree.viewport() and _is_type(event, "Resize") and self._line.isVisible():
+            self._place_line()
         return super().eventFilter(watched, event)
 
     def _arm_after_press(self) -> None:
