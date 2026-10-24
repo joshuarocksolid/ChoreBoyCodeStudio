@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Callable, ContextManager, Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
@@ -76,6 +77,8 @@ class Entry:
     #: Set by ``execute(..., continue_gesture=True)``. Later commands with the
     #: same token join this step whatever their merge key is.
     continue_gesture: bool = False
+    #: ``time.monotonic`` when this step was stored or last absorbed.
+    committed_at: float = 0.0
 
 
 class Subscription:
@@ -153,19 +156,35 @@ class CommandLog:
         merged = self._store(ctx, before, command, continue_gesture)
         return CommandOutcome(result, self._doc.revision, merged=merged, noop=False)
 
-    def transaction(self, label: str) -> ContextManager[Transaction]:
-        """Group commands into one undo step. Nested transactions join this one."""
-        return self._transaction(label)
+    def transaction(
+        self,
+        label: str,
+        *,
+        merge_token: Optional[str] = None,
+        merge_within_s: float = 0.0,
+    ) -> ContextManager[Transaction]:
+        """Group commands into one undo step. Nested transactions join this one.
+
+        ``merge_token`` plus ``merge_within_s`` folds this commit into the
+        previous step when that step carries the same token and the gap since
+        it was stored is inside the window. The window is between presses.
+        """
+        return self._transaction(label, merge_token, merge_within_s)
 
     @contextmanager
-    def _transaction(self, label: str) -> Iterator[Transaction]:
+    def _transaction(
+        self,
+        label: str,
+        merge_token: Optional[str] = None,
+        merge_within_s: float = 0.0,
+    ) -> Iterator[Transaction]:
         self._reject_reentry()
         outermost = self._txn is None
         if outermost:
             ctx = self._new_context()
             ctx.selection_before = self._provider()
             self._snapshot_cells()
-            self._txn = _OpenTxn(label, ctx)
+            self._txn = _OpenTxn(label, ctx, merge_token, merge_within_s)
         self._txn_depth += 1
         try:
             yield Transaction(self)
@@ -322,6 +341,7 @@ class CommandLog:
                 merge_key=command.merge_key() if command.merge_key() is not None else top.merge_key,
                 merge_token=top.merge_token,
                 continue_gesture=top.continue_gesture or continue_gesture,
+                committed_at=time.monotonic(),
             )
             self._undo[-1] = entry
         else:
@@ -337,6 +357,7 @@ class CommandLog:
                 merge_key=command.merge_key(),
                 merge_token=command.merge_token,
                 continue_gesture=continue_gesture,
+                committed_at=time.monotonic(),
             )
             token = self._next_token
             self._next_token += 1
@@ -378,6 +399,16 @@ class CommandLog:
         if not isinstance(before, SelectionSnapshot):
             before = self._provider()
         after = _selection_after(self._doc, before, txn.ctx)
+        now = time.monotonic()
+        if self._absorb_txn(txn, after, now):
+            self.selection = after
+            if _is_net_nil(self._undo[-1], self._doc):
+                self._undo.pop()
+                dropped = self._tokens.pop()
+                if dropped == self._save_token:
+                    self._save_token = None
+            self._emit(assemble(txn.ctx.changes, self._doc.revision, "do", txn.label))
+            return
         self._drop_redo()
         entry = Entry(
             label=txn.label,
@@ -388,8 +419,9 @@ class CommandLog:
             selection_before=before,
             selection_after=after,
             merge_key=None,
-            merge_token=None,
+            merge_token=txn.merge_token,
             continue_gesture=False,
+            committed_at=now,
         )
         token = self._next_token
         self._next_token += 1
@@ -403,6 +435,30 @@ class CommandLog:
             if dropped == self._save_token:
                 self._save_token = None
         self._emit(assemble(txn.ctx.changes, self._doc.revision, "do", txn.label))
+
+    def _absorb_txn(self, txn: "_OpenTxn", after: SelectionSnapshot, now: float) -> bool:
+        token = txn.merge_token
+        if not token or txn.merge_within_s <= 0 or self._redo or not self._undo:
+            return False
+        if self._save_token is not None and self._tokens[-1] == self._save_token:
+            return False
+        top = self._undo[-1]
+        if top.merge_token != token or now - top.committed_at > txn.merge_within_s:
+            return False
+        self._undo[-1] = Entry(
+            label=top.label,
+            commands=top.commands + tuple(txn.ctx.commands),
+            ops=top.ops + tuple(txn.ctx.ops),
+            inverse_ops=top.inverse_ops + tuple(txn.ctx.inverses),
+            allocated=top.allocated + tuple(txn.ctx.allocated),
+            selection_before=top.selection_before,
+            selection_after=after,
+            merge_key=top.merge_key,
+            merge_token=top.merge_token,
+            continue_gesture=top.continue_gesture,
+            committed_at=now,
+        )
+        return True
 
     def _abort_txn(self) -> None:
         txn = self._txn
@@ -507,6 +563,8 @@ class CommandLog:
 class _OpenTxn:
     label: str
     ctx: ApplyContext
+    merge_token: Optional[str] = None
+    merge_within_s: float = 0.0
 
 
 def replay(initial_text: str, entries: Tuple[Entry, ...]) -> UiDocument:

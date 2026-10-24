@@ -11,14 +11,14 @@ from app.features.form_builder.engine.commands.base import (
     PlanContext,
     ReentrantCommandError,
 )
-from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, SetProperty
+from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, SetGeometry, SetProperty
 from app.features.form_builder.engine.commands.log import replay
 from app.features.form_builder.engine.commands.ops import SetPropertyOp
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import InvariantError, UiDocument
-from app.features.form_builder.engine.ui4.values import SetValue, StringValue
+from app.features.form_builder.engine.ui4.values import RectValue, SetValue, StringValue
 from app.features.form_builder.engine.ui4.spec import Fragment, PropertyEntry
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid, open_log, prop_text, saved
 
@@ -37,6 +37,34 @@ def test_undo_then_redo_restores_the_edit() -> None:
     assert doc.fingerprint() == fingerprint
     assert log.redo()
     assert prop_text(doc, "okButton") == "Go"
+
+
+def test_nudge_presses_inside_one_second_are_one_undo_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(
+        "app.features.form_builder.engine.commands.log.time.monotonic",
+        lambda: clock["now"],
+    )
+    log = open_log(ORDERED)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    token = "nudge:%s" % owner
+
+    def nudge(x: int) -> None:
+        with log.transaction("Nudge", merge_token=token, merge_within_s=1.0) as txn:
+            txn.execute(SetGeometry(owner, RectValue(x, 0, 10, 10)))
+
+    nudge(8)
+    clock["now"] = 1000.4
+    nudge(16)
+    assert len(log.entries()) == 1
+    assert log.undo()
+    assert doc.get(owner).prop("geometry").value.x == 0  # type: ignore[union-attr]
+    clock["now"] = 1000.0
+    nudge(8)
+    clock["now"] = 1002.0
+    nudge(24)
+    assert len(log.entries()) == 2
 
 
 def test_same_merge_key_is_one_undo_step() -> None:
