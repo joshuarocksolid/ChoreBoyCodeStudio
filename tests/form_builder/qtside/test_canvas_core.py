@@ -317,17 +317,20 @@ def test_blocked_corners_seat_the_chip_beside_its_target() -> None:
 def test_a_chip_outside_the_viewport_is_not_pulled_onto_the_page() -> None:
     page = CanvasRect(0, 0, 500, 400)
     viewport = CanvasRect(40, 40, 200, 150)
+    dock = CanvasRect(40, 40, 200, 22)
     target = CanvasRect(50, 50, 30, 20)
     blocker = Obstacle(NodeId(1), CanvasRect(40, 40, 200, 80))
     request = ChipRequest("chip", target, CanvasSize(40, 16), LABEL_CORNERS, frozenset())
-    assert place_chips((request,), (blocker,), (), page, viewport) == ()
+    assert place_chips((request,), (blocker,), (), page, viewport, dock) == ()
     required = ChipRequest("chip", target, CanvasSize(40, 16), LABEL_CORNERS, frozenset(), required=True)
-    seats = place_chips((required,), (blocker,), (), page, viewport)
-    assert len(seats) == 1
-    rect = seats[0].rect
-    assert rect.x >= viewport.x and rect.y >= viewport.y
-    assert rect.x + rect.width <= viewport.x + viewport.width
-    assert rect.y + rect.height <= viewport.y + viewport.height
+    (seat,) = place_chips((required,), (blocker,), (dock,), page, viewport, dock)
+    assert isinstance(seat, DockSeat)
+    assert seat.rect.y >= dock.y and seat.rect.y + seat.rect.height <= dock.y + dock.height
+    # Without caption chrome the stand-in strip may not cover content.
+    assert place_chips((required,), (blocker,), (), page, viewport) == ()
+    # A widget scrolled fully out of view gets no chip pointing at nothing.
+    gone = ChipRequest("chip", CanvasRect(300, 300, 30, 20), CanvasSize(40, 16), LABEL_CORNERS, frozenset(), required=True)
+    assert place_chips((gone,), (blocker,), (dock,), page, viewport, dock) == ()
 
 
 def test_a_chip_larger_than_the_viewport_is_omitted() -> None:

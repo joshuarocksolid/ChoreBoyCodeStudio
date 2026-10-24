@@ -4,8 +4,9 @@ Seats, in order: a corner above or below the target; a seat beside it on its
 row (adjacent, or further along with a horizontal leader that stops at the
 target); the page gutter with a horizontal leader. Every seat is inside the
 viewport and clear of non-ancestor content and of earlier seats. The selection
-chip never goes unseated: its last resort is the dock, a strip of view chrome
-along the top of the canvas, with the chip at the target's x.
+chip of a widget in view always gets a seat: its last resort is the dock, a
+strip of view chrome along the top of the canvas, with the chip at the
+target's x. A widget scrolled fully out of view has no chip.
 """
 
 from __future__ import annotations
@@ -116,7 +117,7 @@ def place_chips(
             seat = _beside_seat(request, buckets, taken, len(fixed), viewport)
         if seat is None:
             seat = _gutter_seat(request, buckets, taken, len(fixed), page, viewport)
-        if seat is None and request.required:
+        if seat is None and request.required and request.target.intersects(viewport):
             seat = _dock_seat(request, buckets, taken, len(fixed), viewport, dock)
         if seat is None:
             continue
@@ -272,12 +273,17 @@ def _dock_seat(
     fixed_count: int,
     viewport: CanvasRect,
     dock: Optional[CanvasRect],
-) -> DockSeat:
-    """Cannot fail. At the target's x, slid off earlier chips when there is room."""
+) -> Optional[DockSeat]:
+    """At the target's x, slid off earlier chips when there is room.
+
+    It does not fail while the view has its caption strip. Without one the
+    top of the viewport stands in only where no content is under the chip.
+    """
     size = request.size
     target = request.target
     strip = dock
-    if strip is None or strip.width <= 0 or strip.height <= 0:
+    chrome = strip is not None and strip.width > 0 and strip.height > 0
+    if strip is None or not chrome:
         strip = CanvasRect(viewport.x, viewport.y, viewport.width, size.height + 4)
     low = max(strip.x, viewport.x)
     high = min(strip.x + strip.width, viewport.x + viewport.width) - size.width
@@ -300,6 +306,8 @@ def _dock_seat(
             chosen = x
             break
     rect = CanvasRect(chosen, y, size.width, size.height)
+    if not chrome and buckets.blocked(rect, request.exempt):
+        return None
     leader = _dock_leader(rect, target, buckets, request.exempt, taken[fixed_count:])
     return DockSeat(request.key, rect, leader)
 
