@@ -88,6 +88,8 @@ class FormCanvas(QGraphicsView):
         self.setObjectName("formBuilder.canvas")
         self.setAccessibleName("Form canvas")
         self.setFocusPolicy(_focus_policy())
+        # Qt focuses the viewport, not the view.
+        self.viewport().setAccessibleName("Form canvas")
         shape = getattr(getattr(QFrame, "Shape", QFrame), "NoFrame")
         self.setFrameShape(shape)
         drag = getattr(QGraphicsView, "DragMode", QGraphicsView)

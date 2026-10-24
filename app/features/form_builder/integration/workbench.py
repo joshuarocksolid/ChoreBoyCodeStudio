@@ -82,11 +82,30 @@ def _policy(name: str) -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), name)
 
 
+def _without_shortcut(tip: str) -> str:
+    cut = tip.rfind(" (")
+    if cut > 0 and tip.endswith(")"):
+        return tip[:cut]
+    return tip
+
+
+def _control_name(text: str, tip: str) -> str:
+    # A glyph has no letters. Its name is the tooltip, and the shortcut parenthesis is not part of that name.
+    if any(ch.isalnum() for ch in text):
+        return text
+    return _without_shortcut(tip or text)
+
+
+def _name_tabs(tabs: QTabWidget, name: str) -> None:
+    tabs.setAccessibleName(name)
+    tabs.tabBar().setAccessibleName(name)
+
+
 def _button(text: str, name: str, tip: str, parent: QWidget) -> QPushButton:
     button = QPushButton(text, parent)
     button.setObjectName(name)
     button.setToolTip(tip)
-    button.setAccessibleName(text or tip)
+    button.setAccessibleName(_control_name(text, tip))
     button.setFocusPolicy(_strong())
     return button
 
@@ -96,7 +115,7 @@ def _tool(text: str, name: str, tip: str, parent: QWidget) -> QToolButton:
     button.setObjectName(name)
     button.setText(text)
     button.setToolTip(tip)
-    button.setAccessibleName(text or tip)
+    button.setAccessibleName(_control_name(text, tip))
     button.setFocusPolicy(_strong())
     button.setAutoRaise(True)
     button.setToolButtonStyle(getattr(Qt, "ToolButtonTextOnly"))
@@ -286,10 +305,12 @@ class FormToolbar(QWidget):
     def set_undo(self, enabled: bool, tip: str) -> None:
         self.undo.setEnabled(enabled)
         self.undo.setToolTip(tip)
+        self.undo.setAccessibleName(_control_name(self.undo.text(), tip))
 
     def set_redo(self, enabled: bool, tip: str) -> None:
         self.redo.setEnabled(enabled)
         self.redo.setToolTip(tip)
+        self.redo.setAccessibleName(_control_name(self.redo.text(), tip))
 
     def set_save(self, text: str, *, error: bool, tokens: Optional[ShellThemeTokens]) -> None:
         self.save_state.setText(text)
@@ -580,6 +601,7 @@ class InspectorPane(QWidget):
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("formBuilder.inspectorTabs")
         self.tabs.setFocusPolicy(_strong())
+        _name_tabs(self.tabs, "Inspector")
         self.properties = QLabel("Select a widget to see its properties.", self.tabs)
         self.properties.setObjectName("formBuilder.inspectorBody")
         self.properties.setWordWrap(True)
@@ -770,6 +792,7 @@ class FormWorkbench(QWidget):
         left_layout.addWidget(self._left_split)
         self._left_tabs = QTabWidget(self._left_body)
         self._left_tabs.setObjectName("formBuilder.leftTabs")
+        _name_tabs(self._left_tabs, "Outline and insert")
         self._left_tabs.hide()
         left_layout.addWidget(self._left_tabs)
         self._left_split.addWidget(self.outline)
