@@ -43,6 +43,21 @@ _CANNOT_GROW = frozenset({"Fixed", "Maximum"})
 _NODE = "_cbcsNodeId"
 
 
+def _sheet_text(entry: object) -> str:
+    if entry is None:
+        return ""
+    value = getattr(entry, "value", None)
+    text = getattr(value, "text", None)
+    if isinstance(text, str):
+        return text
+    return ""
+
+
+def _preview_sheet(document_sheet: str, points: float) -> str:
+    size = ("%.4f" % points).rstrip("0").rstrip(".")
+    return document_sheet + "\n* { font-size: %spt; }" % size
+
+
 class FormPreview:
     """Preview scale and the second live copy. The command log is never used."""
 
@@ -241,16 +256,21 @@ class FormPreview:
         )
 
     def _apply_font(self, widget: QWidget) -> None:
+        # A shell rule such as "QLabel { font-weight }" replaces setFont.
+        # The point size has to be a stylesheet on the form, or the label
+        # stays at the theme size. The document sheet is kept in front.
+        sheet = _sheet_text(self._session.document.root.prop("styleSheet"))
         if self._identity():
+            widget.setStyleSheet(sheet)
             widget.setFont(QFont(startup_font()))
             entry = self._session.document.root.prop("font")
             if entry is not None:
                 apply_entry(widget, entry, is_root=True, resolve_path=lambda path: path, problems=[])
             return
         font = QFont(startup_font())
-        font.setPixelSize(0)
         font.setPointSizeF(max(1.0, self.points()))
         widget.setFont(font)
+        widget.setStyleSheet(_preview_sheet(sheet, self.points()))
         layout = widget.layout()
         if layout is not None:
             layout.invalidate()
