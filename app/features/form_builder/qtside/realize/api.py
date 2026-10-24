@@ -868,8 +868,9 @@ def _fresh_host() -> QWidget:
     global _FRESH_HOST
     if _FRESH_HOST is None or not wrapper_is_valid(_FRESH_HOST):
         _ensure_app()
-        _FRESH_HOST = QWidget()
-        _FRESH_HOST.setObjectName("_cbcsFreshHost")
+        host = QWidget()
+        host.setObjectName("_cbcsFreshHost")
+        _FRESH_HOST = host
     return _FRESH_HOST
 
 
