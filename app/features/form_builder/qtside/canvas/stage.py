@@ -101,6 +101,8 @@ class Stage:
         self._factor = 0.0
         self._banner_push = 0
         self._preview = PreviewState()
+        self._fonts_held = False
+        self._wide_fonts_held = False
         self._widths_on = False
         self._wide_px = WIDE_DEFAULT
         self._wide_realizer: Optional[Realizer] = None
@@ -173,7 +175,7 @@ class Stage:
             self._place_widths(root)
             return
         self.close_widths()
-        apply_preview(root, self._preview, startup_font())
+        self._hold_preview_font(root, wide=False)
         if self._settle_root_size(root):
             self._invalidate("root_resize")
         if not self._page_preview:
@@ -355,6 +357,7 @@ class Stage:
         proxy = self._wide_proxy
         self._wide_realizer = None
         self._wide_proxy = None
+        self._wide_fonts_held = False
         if self._clicks is not None:
             self._clicks.clear()
             self._clicks = None
@@ -403,10 +406,24 @@ class Stage:
             self._proxy.setWidget(root)
         return root
 
+    def _hold_preview_font(self, root: QWidget, wide: bool) -> None:
+        """Skip the walk while the page is already on the startup font.
+
+        ``place`` runs on every property edit. Applying the startup font again
+        sets a font on every child and reflows the form.
+        """
+        held = self._wide_fonts_held if wide else self._fonts_held
+        if self._preview.is_plain() and not held:
+            return
+        apply_preview(root, self._preview, startup_font())
+        if wide:
+            self._wide_fonts_held = not self._preview.is_plain()
+        else:
+            self._fonts_held = not self._preview.is_plain()
+
     def _place_widths(self, root: QWidget) -> None:
         """Two live copies at one zoom. resize only. The file keeps its design size."""
-        startup = startup_font()
-        apply_preview(root, self._preview, startup)
+        self._hold_preview_font(root, wide=False)
         page = self._page_size_for_zoom(root)
         if not self._page_preview:
             factor = zoom_factor(self._zoom, page, _viewport(self._view))
@@ -417,7 +434,7 @@ class Stage:
         proxy = self._wide_proxy
         if wide_root is None or proxy is None:
             return
-        apply_preview(wide_root, self._preview, startup)
+        self._hold_preview_font(wide_root, wide=True)
         _resize_live(root, max(root.minimumSizeHint().width(), 1), page.height)
         _resize_live(wide_root, self._wide_px, page.height)
         self._invalidate("root_resize")
