@@ -10,7 +10,7 @@ import os
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Callable, ContextManager, Dict, FrozenSet, Iterable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, ContextManager, Dict, FrozenSet, Iterable, Iterator, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import (
     Command,
@@ -103,6 +103,13 @@ class Transaction:
         """Apply ``command`` inside the open transaction. Returns its result."""
         return self._log._execute_open(command)
 
+    def select(self, ids: Sequence[NodeId], current: Optional[NodeId] = None) -> None:
+        """Overwrite the entry's selection. The last command's ``ctx.select`` is not the drop."""
+        txn = self._log._txn
+        if txn is None:
+            raise CommandRejected("There is no open transaction.")
+        txn.ctx.select(ids, current)
+
 
 class CommandLog:
     def __init__(
@@ -162,14 +169,17 @@ class CommandLog:
         *,
         merge_token: Optional[str] = None,
         merge_within_s: float = 0.0,
+        continue_gesture: bool = False,
     ) -> ContextManager[Transaction]:
         """Group commands into one undo step. Nested transactions join this one.
 
         ``merge_token`` plus ``merge_within_s`` folds this commit into the
         previous step when that step carries the same token and the gap since
         it was stored is inside the window. The window is between presses.
+        ``continue_gesture`` folds a later transaction with the same token
+        into this step with no time window.
         """
-        return self._transaction(label, merge_token, merge_within_s)
+        return self._transaction(label, merge_token, merge_within_s, continue_gesture)
 
     @contextmanager
     def _transaction(
@@ -177,6 +187,7 @@ class CommandLog:
         label: str,
         merge_token: Optional[str] = None,
         merge_within_s: float = 0.0,
+        continue_gesture: bool = False,
     ) -> Iterator[Transaction]:
         self._reject_reentry()
         outermost = self._txn is None
@@ -184,7 +195,7 @@ class CommandLog:
             ctx = self._new_context()
             ctx.selection_before = self._provider()
             self._snapshot_cells()
-            self._txn = _OpenTxn(label, ctx, merge_token, merge_within_s)
+            self._txn = _OpenTxn(label, ctx, merge_token, merge_within_s, continue_gesture)
         self._txn_depth += 1
         try:
             yield Transaction(self)
@@ -420,7 +431,7 @@ class CommandLog:
             selection_after=after,
             merge_key=None,
             merge_token=txn.merge_token,
-            continue_gesture=False,
+            continue_gesture=txn.continue_gesture,
             committed_at=now,
         )
         token = self._next_token
@@ -438,12 +449,16 @@ class CommandLog:
 
     def _absorb_txn(self, txn: "_OpenTxn", after: SelectionSnapshot, now: float) -> bool:
         token = txn.merge_token
-        if not token or txn.merge_within_s <= 0 or self._redo or not self._undo:
+        if not token or self._redo or not self._undo:
             return False
         if self._save_token is not None and self._tokens[-1] == self._save_token:
             return False
         top = self._undo[-1]
-        if top.merge_token != token or now - top.committed_at > txn.merge_within_s:
+        if top.merge_token != token:
+            return False
+        if not top.continue_gesture and (
+            txn.merge_within_s <= 0 or now - top.committed_at > txn.merge_within_s
+        ):
             return False
         self._undo[-1] = Entry(
             label=top.label,
@@ -565,6 +580,7 @@ class _OpenTxn:
     ctx: ApplyContext
     merge_token: Optional[str] = None
     merge_within_s: float = 0.0
+    continue_gesture: bool = False
 
 
 def replay(initial_text: str, entries: Tuple[Entry, ...]) -> UiDocument:

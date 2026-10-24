@@ -12,7 +12,7 @@ from app.features.form_builder.engine.commands.base import (
     ReentrantCommandError,
 )
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, SetGeometry, SetProperty
-from app.features.form_builder.engine.commands.log import replay
+from app.features.form_builder.engine.commands.log import SelectionSnapshot, replay
 from app.features.form_builder.engine.commands.ops import SetPropertyOp
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.events import ChangeSet
@@ -181,6 +181,25 @@ def test_continue_gesture_absorbs_a_different_merge_key() -> None:
         continue_gesture=True,
     )
     log.execute(SetProperty(label, "text", StringValue("B"), merge_token="drop"))
+    assert len(log.entries()) == 1
+    assert log.undo()
+    assert prop_text(doc, "okButton") == "OK"
+    assert prop_text(doc, "label") == "Hi"
+
+
+def test_gesture_transaction_absorbs_a_later_edit_with_the_same_token() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    button = nid(doc, "okButton")
+    label = nid(doc, "label")
+    with log.transaction("Drop", merge_token="drop:1", continue_gesture=True) as txn:
+        txn.execute(SetProperty(button, "text", StringValue("Go")))
+        txn.select((label,), label)
+    entry = log.entries()[0]
+    assert entry.continue_gesture is True
+    assert entry.selection_after == SelectionSnapshot((label,), label)
+    with log.transaction("Edit text", merge_token="drop:1") as txn:
+        txn.execute(SetProperty(label, "text", StringValue("Hello")))
     assert len(log.entries()) == 1
     assert log.undo()
     assert prop_text(doc, "okButton") == "OK"
