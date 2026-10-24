@@ -61,6 +61,12 @@ from app.features.form_builder.integration.layout import (
 )
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
 from app.features.form_builder.integration.run_action import run_open_form
+from app.features.form_builder.integration.toast import (
+    CommandToast,
+    ToastNote,
+    notice_for,
+    undo_matches,
+)
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
@@ -259,6 +265,7 @@ class FormSurface(QWidget):
         )
         self._stack.addWidget(self._workbench)
         layout.addWidget(self._stack, 1)
+        self._command_toast = CommandToast(self)
 
         self._load_memory()
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
@@ -349,6 +356,7 @@ class FormSurface(QWidget):
         editor = self._editor
         if editor is not None:
             editor.apply_theme(tokens)
+        self._command_toast.apply_theme(tokens)
 
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
@@ -537,6 +545,7 @@ class FormSurface(QWidget):
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
+        self._command_toast.place()
 
     def _on_design(self) -> None:
         if self._toolbar.xml.isChecked():
@@ -658,11 +667,33 @@ class FormSurface(QWidget):
         if _parses(editor.toPlainText()):
             self._mark_kept_lines(editor)
 
-    def _on_log(self, _change_set: object) -> None:
+    def _on_log(self, change_set: object) -> None:
+        self._sync_toast(change_set)
         if self._source.mode != "visual":
             self._refresh_undo_buttons()
             return
         self._refresh_design()
+        self._command_toast.place()
+
+    def _sync_toast(self, change_set: object) -> None:
+        origin = getattr(change_set, "origin", "")
+        label = str(getattr(change_set, "label", "") or "")
+        if origin != "do":
+            self._command_toast.dismiss()
+            return
+        text = notice_for(label)
+        if text is None:
+            self._command_toast.dismiss()
+            return
+        note = ToastNote(text, "Undo", label, len(self._session.log.entries()))
+        self._command_toast.show_note(note, self._undo_announced)
+
+    def _undo_announced(self, note: ToastNote) -> None:
+        log = self._session.log
+        if not undo_matches(note, log.undo_label(), len(log.entries())):
+            self._command_toast.dismiss()
+            return
+        self.undo()
 
     def _on_source_changed(self) -> None:
         self._save_faded = False
