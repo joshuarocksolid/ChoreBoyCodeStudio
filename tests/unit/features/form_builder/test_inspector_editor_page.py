@@ -338,8 +338,8 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         slot.activated.emit(0)
         pane.flush()
         qapp.processEvents()
-        for popup in pane.findChildren(QComboBox):
-            popup.hidePopup()
+        # The committed row takes focus but does not reopen its "When" popup.
+        assert not any(combo.view().isVisible() for combo in pane.findChildren(QComboBox))
         assert len(session.document.connections()) == 1
         assert session.selection.state.ids == (sender,)
         assert tabs.tabText(behavior) == "Behavior (1)"

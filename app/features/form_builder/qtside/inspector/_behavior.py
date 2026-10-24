@@ -90,7 +90,7 @@ class BehaviorPage(QWidget):
         if pending is not None:
             row = self._rows.get(pending)
             if row is not None:
-                row.open_signal()
+                row.focus_signal()
 
     def has_draft(self) -> bool:
         return self._draft is not None
@@ -174,8 +174,8 @@ class BehaviorPage(QWidget):
         result = self._services.execute(AddConnection(view.sender_name, signal, receiver, chosen, index))
         if not isinstance(result, CommandOutcome):
             return
-        # AddConnection selects the new connection, which would swap the
-        # inspector to it. Keep the sender and open the new row (UX-INSP-013).
+        # AddConnection selects the new connection. Keep the sender selected
+        # and focus the new row (UX-INSP-013); its popup stays closed.
         # Undo still restores the sender, the selection before the command.
         added = result.result
         if isinstance(added, int):
@@ -301,9 +301,8 @@ class _ConnectionRow(QWidget):
         _fill(self._receiver, receivers, view.receiver)
         _fill(self._slot, slots, view.slot)
 
-    def open_signal(self) -> None:
+    def focus_signal(self) -> None:
         self._signal.setFocus()
-        self._signal.showPopup()
 
     def _picked(self, field: Literal["signal", "receiver", "slot"], box: QComboBox) -> None:
         text = box.currentText()
