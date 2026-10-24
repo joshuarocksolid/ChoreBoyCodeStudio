@@ -72,7 +72,8 @@ from app.features.form_builder.integration.toast import (
     undo_matches,
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
-from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
+from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
+from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
 from app.features.form_builder.qtside.canvas.core.words import FIRST_FOCUS_HINT, hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
@@ -768,6 +769,16 @@ class FormSurface(QWidget):
 
     def zoom_fit(self) -> None:
         self._workbench.canvas.send(ZoomAsked(ZoomFit()))
+
+    def edit_text(self) -> None:
+        self._workbench.canvas.send(EditTextAsked())
+
+    def can_edit_text(self) -> bool:
+        shown = effective_selection(self._session.document, self._session.selection.state)
+        current = shown.current
+        if current is None:
+            return False
+        return enter_opens_editor(self._session.document, current)
 
     def open_problem(self, node: NodeId) -> None:
         items = self._session.diagnostics.for_node(node)

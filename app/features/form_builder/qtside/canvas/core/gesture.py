@@ -176,7 +176,12 @@ class HoverFrom:
     node: Optional[NodeId]
 
 
-HostEvent = Union[ZoomAsked, HoverFrom]
+@dataclass(frozen=True)
+class EditTextAsked:
+    pass
+
+
+HostEvent = Union[ZoomAsked, HoverFrom, EditTextAsked]
 Event = Union[
     Press,
     Move,
@@ -191,6 +196,7 @@ Event = Union[
     DocumentChanged,
     ZoomAsked,
     HoverFrom,
+    EditTextAsked,
 ]
 
 
@@ -671,6 +677,18 @@ def _nudge(gesture: Idle, event: Key, world: World) -> Step:
     return Step(gesture, (Commit("Nudge", tuple(commands), world.fresh_token),))
 
 
+def _edit_text(gesture: Idle, event: EditTextAsked, world: World) -> Step:
+    del event
+    shown = effective_selection(world.document, world.selection)
+    current = shown.current
+    if current is None or not enter_opens_editor(world.document, current):
+        return Step(gesture, (), True)
+    target = text_target(world.document, current, "widget")
+    if target is None:
+        return Step(gesture, (), True)
+    return Step(Editing(target, world.fresh_token), (OpenEditor(target),))
+
+
 def _idle_probe(gesture: Idle, event: Probe, world: World) -> Step:
     return Step(gesture, (), event.key in _CLAIMED)
 
@@ -1015,6 +1033,7 @@ TABLE: Dict[Tuple[type, type], Handler] = {
     (Idle, Press): _idle_press,
     (Idle, Move): _idle_move,
     (Idle, Key): _idle_key,
+    (Idle, EditTextAsked): _edit_text,
     (Idle, Probe): _idle_probe,
     (Idle, Leave): _on_leave,
     (Idle, HoverFrom): _on_hover_from,

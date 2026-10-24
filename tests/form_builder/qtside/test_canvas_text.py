@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional, Tuple
 
 import pytest
 
 from app.qt.QtCore import QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QLineEdit, QWidget
+from app.qt.QtWidgets import QApplication, QLineEdit, QMenuBar, QWidget
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.integration.form_menu import register_form_menu
+from app.shell.menus import build_menu_stubs, clear_menu_contributors
 from tests.form_builder.qtside.support import form, opened
+from tests.unit.features.form_builder.test_workbench import _open as _open_surface
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -67,6 +71,59 @@ def test_enter_writes_one_undo_step() -> None:
         assert not session.log.can_undo()
         canvas.dispose()
         parent.deleteLater()
+
+
+def test_change_text_opens_the_in_place_editor(tmp_path: Path) -> None:
+    parent = QWidget()
+    parent.resize(960, 720)
+    surface = _open_surface(parent, BUTTON, tmp_path / "button.ui")
+    surface.resize(960, 720)
+    parent.show()
+    surface.show()
+    _flush()
+    window = QWidget()
+    register_form_menu(window)
+
+    class _Tab:
+        def __init__(self, path: str) -> None:
+            self.file_path = path
+
+    class _Manager:
+        def active_tab(self) -> _Tab:
+            return _Tab(surface.form_path())
+
+    class _Registry:
+        def surface_for_path(self, path: str) -> object:
+            del path
+            return surface
+
+    window._editor_manager = _Manager()  # type: ignore[attr-defined]
+    window._tab_content_registry = _Registry()  # type: ignore[attr-defined]
+    bar = QMenuBar(window)
+    try:
+        canvas = surface.findChild(QWidget, "formBuilder.canvas")
+        assert isinstance(canvas, FormCanvas)
+        registry = build_menu_stubs(bar)
+        menu = registry.menus["formBuilder.menu"]
+        change = registry.actions["form.action.editText"]
+        assert "Change text" in change.text()
+        menu.aboutToShow.emit()
+        assert not change.isEnabled()
+        _click(canvas, "ok")
+        menu.aboutToShow.emit()
+        assert change.isEnabled()
+        change.trigger()
+        _flush()
+        edit = _visible_edit(canvas)
+        assert edit is not None
+        assert edit.text() == "OK"
+        assert edit.isVisible()
+    finally:
+        clear_menu_contributors()
+        surface.release()
+        window.deleteLater()
+        parent.deleteLater()
+        _flush()
 
 
 def test_escape_cancels_without_a_write() -> None:

@@ -148,6 +148,9 @@ def _trigger(window: Any, command_id: str) -> None:
         return
     if command_id == "form.action.zoomToFit":
         surface.zoom_fit()
+        return
+    if command_id == "form.action.editText":
+        surface.edit_text()
 
 
 def _active_form(window: Any) -> Any:
@@ -185,6 +188,7 @@ def _sync(window: Any, menu: Any, actions: Dict[str, Any]) -> None:
     surface = _active_form(window)
     visible = surface is not None
     blocked = bool(surface.mixed_layout_blocked()) if surface is not None else False
+    editable = bool(surface.can_edit_text()) if surface is not None else False
     menu_action = menu.menuAction()
     menu_action.setVisible(visible)
     by_id = {command.command_id: command for command in menu_commands()}
@@ -192,5 +196,6 @@ def _sync(window: Any, menu: Any, actions: Dict[str, Any]) -> None:
         command = by_id.get(command_id)
         available = command.available if command is not None else False
         sibling_block = blocked and command_id in _SIBLING_COMMANDS
-        action.setEnabled(visible and available and not sibling_block)
+        text_block = command_id == "form.action.editText" and not editable
+        action.setEnabled(visible and available and not sibling_block and not text_block)
         action.setToolTip(MIXED_LAYOUT if sibling_block else "")
