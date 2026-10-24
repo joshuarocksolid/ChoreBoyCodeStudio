@@ -53,13 +53,53 @@ def test_underscore_modules_are_never_imported(tmp_path: Path, monkeypatch: pyte
 
     assert [spec.key for spec in load_catalog(package).rows()] == ["a"]
 
-def test_a_public_module_without_register_fails_to_load(
+def test_a_public_module_without_register_is_skipped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     package = _package(tmp_path, monkeypatch, {"forgot": "VALUE = 1\n"})
+    monkeypatch.delenv("CBCS_FB_DEV", raising=False)
 
-    with pytest.raises(TypeError, match="forgot"):
-        load_catalog(package)
+    assert load_catalog(package).rows() == ()
+
+
+def test_a_public_module_without_register_warns_in_a_dev_build(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package(tmp_path, monkeypatch, {"forgot": "VALUE = 1\n"})
+    monkeypatch.setenv("CBCS_FB_DEV", "1")
+
+    with pytest.warns(UserWarning, match="forgot"):
+        assert load_catalog(package).rows() == ()
+
+
+def test_order_and_after_place_a_later_row_inside_the_group(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    package = _package(
+        tmp_path,
+        monkeypatch,
+        {
+            "a_tail": """
+                from app.features.form_builder.qtside.inspector.api import GroupId, Prop, RowSpec
+
+                def register(registrar):
+                    registrar.row(RowSpec(
+                        "tail", GroupId.CONTENT, "Tail", "", Prop("tail"), order=-1,
+                    ))
+            """,
+            "m_anchor": """
+                from app.features.form_builder.qtside.inspector.api import GroupId, Prop, RowSpec
+
+                def register(registrar):
+                    registrar.row(RowSpec("anchor", GroupId.CONTENT, "Anchor", "", Prop("anchor")))
+                    registrar.row(RowSpec(
+                        "after", GroupId.CONTENT, "After", "", Prop("after"), after="anchor",
+                    ))
+            """,
+        },
+    )
+
+    assert [spec.key for spec in load_catalog(package).rows()] == ["tail", "anchor", "after"]
 
 def test_a_later_package_overrides_baselines_without_editing_shared_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch

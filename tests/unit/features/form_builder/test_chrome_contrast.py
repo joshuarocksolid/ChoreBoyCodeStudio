@@ -13,7 +13,9 @@ from app.features.form_builder.qtside.theme.chrome import (  # noqa: E402
     PAGE_TITLE_GLYPH,
     on_accent_for,
 )
+from app.features.form_builder.integration.chrome import chrome_for  # noqa: E402
 from app.features.form_builder.integration.workbench import problems_link_color  # noqa: E402
+from app.features.form_builder.qtside.inspector.pane import _stylesheet  # noqa: E402
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette  # noqa: E402
 
 pytestmark = pytest.mark.unit
@@ -85,6 +87,8 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
             ("on accent", on_accent_for(tokens.accent), tokens.accent, text_floor),
             ("chip", tokens.text_primary, tokens.panel_bg, text_floor),
             ("show in problems link", problems_link_color(tokens), tokens.panel_bg, text_floor),
+            ("checkbox text", chrome_for(tokens).text, chrome_for(tokens).panel, text_floor),
+            ("inspector link", problems_link_color(tokens), chrome_for(tokens).panel, text_floor),
         )
         for name, foreground, background, floor in pairs:
             ratio = _contrast(foreground, background)
@@ -92,3 +96,6 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
     title_text = chrome.PAGE_TITLE_TEXT
     assert _contrast(title_text, PAGE_TITLE_FILL) >= 4.5
     assert _contrast(PAGE_TITLE_GLYPH, PAGE_TITLE_FILL) >= 3.0
+    sheet = _stylesheet(chrome_for(tokens))
+    assert "QCheckBox { color:" in sheet
+    assert chrome_for(tokens).text in sheet

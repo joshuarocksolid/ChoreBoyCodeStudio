@@ -273,12 +273,30 @@ def test_empty_selection_shows_the_form_section() -> None:
     assert isinstance(body.window, OpenRow)
     assert body.window.value == Written(StringValue("Invoice form"))
     assert (body.design_size, body.root_layout, body.tab_order, body.problems, body.files) == (
-        "640 \u00d7 480",
+        "640 \u00d7 480 px",
         "Vertical layout",
         ("email", "phone", "okButton"),
         "No problems.",
         "Saves invoice.ui and ui_invoice.py in forms/.",
     )
+
+
+def test_form_view_uses_the_live_size_when_geometry_is_unset() -> None:
+    session = _open(_FREE_FORM)
+
+    body = project(session, default_catalog(), live_size=(130, 140)).body
+
+    assert isinstance(body, FormBody)
+    assert body.design_size == "130 \u00d7 140 px"
+
+
+def test_documented_geometry_keeps_its_unit() -> None:
+    session = _open(_FORM)
+
+    body = project(session, default_catalog(), live_size=(1, 1)).body
+
+    assert isinstance(body, FormBody)
+    assert body.design_size == "640 \u00d7 480 px"
 
 def test_layout_child_geometry_is_set_by_the_layout() -> None:
     session = _open(_FORM)

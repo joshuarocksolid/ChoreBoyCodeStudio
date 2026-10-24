@@ -126,6 +126,8 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "edit total",
     "selection change",
     "inspector repopulate",
+    "inspector select collapsed",
+    "inspector select expanded",
     "is_dirty",
     "revision",
     "cheap diagnostics",
@@ -429,6 +431,9 @@ def _collect(
     )
     rows.append(
         _inspector_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
+    )
+    rows.extend(
+        _inspector_select_rows(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
 
     probe = documents[sizes[0]]
@@ -1448,6 +1453,83 @@ def _inspector_row(
             prepare=flip,
         )
         return row
+    finally:
+        pane.dispose()
+        _dispose_held([realizer, session])
+
+
+def _inspector_select_rows(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """Select, then flush, with All properties collapsed and expanded."""
+    names = ("inspector select collapsed", "inspector select expanded")
+    if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
+        return [
+            _missing(name, 300, _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS), "no qtside inspector yet")
+            for name in names
+        ]
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+        api = importlib.import_module("app.features.form_builder.qtside.inspector.api")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return [
+            Row(name, 300, None, None, None, _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS), "skip", str(exc))
+            for name in names
+        ]
+    pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+    pane.resize(288, 600)
+    pane.show()
+    line = _first_widget(session.document, "QLineEdit")
+    button = _first_widget(session.document, "QPushButton")
+    if line is None or button is None:
+        pane.dispose()
+        _dispose_held([realizer, session])
+        return [
+            Row(
+                name,
+                300,
+                None,
+                None,
+                None,
+                _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS),
+                "skip",
+                "reference form has no line edit and push button",
+            )
+            for name in names
+        ]
+    current = {"id": line}
+
+    def flip() -> None:
+        nxt = button if current["id"] == line else line
+        current["id"] = nxt
+        session.selection.set((nxt,), source=selection.SelectionSource.PROGRAM)
+
+    rows: List[Row] = []
+    try:
+        for name, expanded in ((names[0], False), (names[1], True)):
+            pane.set_group_expanded(api.GroupId.ALL, expanded)
+            row, _distribution = _timed(
+                name,
+                300,
+                pane.flush,
+                INSPECTOR_REPOPULATE_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=flip,
+            )
+            rows.append(row)
+        return rows
     finally:
         pane.dispose()
         _dispose_held([realizer, session])

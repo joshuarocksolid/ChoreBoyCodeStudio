@@ -568,7 +568,7 @@ def test_unknown_xml_offers_the_problems_link(qapp, tmp_path: Path) -> None:  # 
     parent = QWidget()
     surface = _open(parent, text, tmp_path / "invoice.ui")
     qapp.processEvents()
-    body = surface.findChild(QLabel, "formBuilder.inspectorBody")
+    body = surface.findChild(QLabel, "formBuilder.inspectorProblems")
     assert body is not None
     assert "Show in Problems" in body.text()
     assert "problem" in body.text()
