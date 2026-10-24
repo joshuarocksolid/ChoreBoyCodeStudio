@@ -132,10 +132,13 @@ def next_in_outline(document: UiDocument, node: NodeId, backwards: bool) -> Opti
         return None
     if node in widgets:
         index = widgets.index(node)
-    else:
-        index = _outline_index(document, node, widgets)
-    step = -1 if backwards else 1
-    return widgets[(index + step) % len(widgets)]
+        step = -1 if backwards else 1
+        return widgets[(index + step) % len(widgets)]
+    # A layout is not in the widget list. The anchor is already the next widget.
+    anchor = _outline_index(document, node, widgets)
+    if backwards:
+        return widgets[(anchor - 1) % len(widgets)]
+    return widgets[anchor % len(widgets)]
 
 
 def nearest_in_direction(

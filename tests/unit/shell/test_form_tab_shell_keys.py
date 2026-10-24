@@ -107,7 +107,7 @@ def test_down_in_the_outline_moves_the_current_item(tmp_path: Path, qapp: QAppli
         shutdown_main_window_for_test(window, qapp)
 
 
-def test_tab_from_the_canvas_moves_focus_off_the_canvas(tmp_path: Path, qapp: QApplication) -> None:
+def test_tab_on_the_canvas_selects_the_next_widget(tmp_path: Path, qapp: QApplication) -> None:
     _require_feature()
     window = MainWindow(state_root=str((tmp_path / "state").resolve()))
     try:
@@ -129,8 +129,12 @@ def test_tab_from_the_canvas_moves_focus_off_the_canvas(tmp_path: Path, qapp: QA
         QTest.keyClick(focused, Qt.Key_Tab)
         qapp.processEvents()
         after = qapp.focusWidget()
-        assert after is not None
-        assert after is not canvas and not canvas.isAncestorOf(after)
+        assert after is canvas or canvas.isAncestorOf(after)
+        tree = surface.findChild(QTreeWidget, "formBuilder.structure")  # type: ignore[attr-defined]
+        assert tree is not None
+        current = tree.currentItem()
+        assert current is not None
+        assert current.text(0) == "QLabel  title"
     finally:
         shutdown_main_window_for_test(window, qapp)
 

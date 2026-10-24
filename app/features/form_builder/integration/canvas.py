@@ -53,6 +53,14 @@ from app.shell.theme_tokens import ShellThemeTokens
 _DOT = 16
 
 
+def _keep_claimed_shortcut(event: QEvent) -> None:
+    """A claimed ShortcutOverride stays accepted, so the shell key does not fire."""
+    override = getattr(getattr(QEvent, "Type", QEvent), "ShortcutOverride")
+    if event.type() != override:
+        return
+    event.accept()
+
+
 def _focus_policy() -> Qt.FocusPolicy:
     policy = getattr(Qt, "FocusPolicy", Qt)
     return getattr(policy, "StrongFocus")
@@ -205,7 +213,10 @@ class FormCanvas(QGraphicsView):
         controller = getattr(self, "_controller", None)
         if controller is None:
             return bool(super().viewportEvent(event))
-        return bool(controller.handle(event) or super().viewportEvent(event))
+        if controller.handle(event):
+            _keep_claimed_shortcut(event)
+            return True
+        return bool(super().viewportEvent(event))
 
     def event(self, event: QEvent) -> bool:  # noqa: N802
         # Qt sends events from inside the QWidget constructor, before the
@@ -213,7 +224,10 @@ class FormCanvas(QGraphicsView):
         controller = getattr(self, "_controller", None)
         if controller is None:
             return bool(super().event(event))
-        return bool(controller.handle(event) or super().event(event))
+        if controller.handle(event):
+            _keep_claimed_shortcut(event)
+            return True
+        return bool(super().event(event))
 
     def focusNextPrevChild(self, next: bool) -> bool:  # noqa: N802
         del next
