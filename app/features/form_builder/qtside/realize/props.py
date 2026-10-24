@@ -13,7 +13,7 @@ from typing import Any, Callable, List, Optional, Tuple
 from app.qt import QtCore, QtGui, QtWidgets
 from app.qt.QtCore import QDate, QDateTime, QPoint, QRect, QSize, QTime, Qt, QUrl
 from app.qt.QtGui import QBrush, QColor, QFont, QIcon, QPalette, QPixmap
-from app.qt.QtWidgets import QSizePolicy
+from app.qt.QtWidgets import QSizePolicy, QSplitter
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.ui4.spec import PropertyEntry
@@ -233,6 +233,39 @@ def _apply_size_policy(obj: object, value: SizePolicyValue) -> None:
     if hasattr(obj, "sizePolicy"):
         policy.setHeightForWidth(obj.sizePolicy().hasHeightForWidth())  # type: ignore[attr-defined]
     obj.setSizePolicy(policy)  # type: ignore[attr-defined]
+    parent_of = getattr(obj, "parentWidget", None)
+    parent = parent_of() if callable(parent_of) else None
+    if isinstance(parent, QSplitter):
+        mirror_splitter_stretch(parent)
+
+
+def mirror_splitter_stretch(splitter: QSplitter) -> None:
+    """``setStretchFactor`` writes the factor onto both axes, so the file policy is put back."""
+    vertical = _splitter_vertical(splitter)
+    for index in range(splitter.count()):
+        child = splitter.widget(index)
+        if child is None:
+            continue
+        current = child.sizePolicy()
+        factor = current.verticalStretch() if vertical else current.horizontalStretch()
+        kept_h = current.horizontalPolicy()
+        kept_v = current.verticalPolicy()
+        kept_hs = current.horizontalStretch()
+        kept_vs = current.verticalStretch()
+        height_for_width = current.hasHeightForWidth()
+        splitter.setStretchFactor(index, int(factor))
+        restored = QSizePolicy(kept_h, kept_v)
+        restored.setHorizontalStretch(kept_hs)
+        restored.setVerticalStretch(kept_vs)
+        restored.setHeightForWidth(height_for_width)
+        child.setSizePolicy(restored)
+
+
+def _splitter_vertical(splitter: QSplitter) -> bool:
+    value = splitter.orientation()
+    name = getattr(value, "name", None)
+    text = name if isinstance(name, str) and name else str(value)
+    return text.endswith("Vertical")
 
 
 def _setter(obj: object, name: str) -> Optional[Callable[..., object]]:

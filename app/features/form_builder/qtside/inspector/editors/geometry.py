@@ -150,6 +150,10 @@ def _pair(
         layout.addWidget(QLabel(caption, row))
         box = QSpinBox(row)
         box.setRange(-1000000, 1000000)
+        box.setAccessibleName(caption)
+        edit = box.lineEdit()
+        if edit is not None:
+            edit.setAccessibleName(caption)
         box.valueChanged.connect(on_change)
         layout.addWidget(box)
         boxes.append(box)

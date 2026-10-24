@@ -250,7 +250,11 @@ class PropertiesPage(QWidget):
         if focus is None:
             return False
         row = self._row_holding(focus)
-        return row is not None and row.is_dirty()
+        if row is not None:
+            return row.is_dirty()
+        custom = self._custom_holding(focus)
+        dirty = getattr(custom, "is_dirty", None)
+        return bool(dirty()) if callable(dirty) else False
 
     def revert_focused_row(self) -> None:
         focus = QApplication.focusWidget()
@@ -259,6 +263,18 @@ class PropertiesPage(QWidget):
         row = self._row_holding(focus)
         if row is not None:
             row.revert()
+            return
+        custom = self._custom_holding(focus)
+        revert = getattr(custom, "revert", None)
+        if callable(revert):
+            revert()
+
+    def _custom_holding(self, focus: QWidget) -> Optional[GroupBody]:
+        for group in self._groups.values():
+            found = group.custom_holding(focus)
+            if found is not None:
+                return found
+        return None
 
     def _search_changed(self, text: str) -> None:
         if text.strip():
@@ -490,6 +506,19 @@ class _Group(QWidget):
         self._qt_names = show_qt
         for row in self._rows.values():
             row.retint(show_qt)
+        custom = self._custom
+        retint = getattr(custom, "retint", None)
+        if callable(retint):
+            retint(show_qt)
+
+    def custom_holding(self, focus: QWidget) -> Optional[GroupBody]:
+        custom = self._custom
+        if custom is None:
+            return None
+        widget = custom.widget
+        if focus is widget or widget.isAncestorOf(focus):
+            return custom
+        return None
 
     def row_holding(self, focus: QWidget) -> Optional["_Row"]:
         for row in self._rows.values():
@@ -520,7 +549,11 @@ class _Group(QWidget):
             self._host = _GroupHost(self._services, self._owners)
             self._custom = factory(self._host, self._body)
             self._body_layout.addWidget(self._custom.widget)
+        self._custom.widget.show()
         self._custom.show(view.rows())
+        retint = getattr(self._custom, "retint", None)
+        if callable(retint):
+            retint(self._qt_names)
 
     def _hide_custom(self) -> None:
         custom = self._custom

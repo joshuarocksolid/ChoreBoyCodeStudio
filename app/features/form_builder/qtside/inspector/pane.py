@@ -455,6 +455,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         # Segments are drawn by the sheet in every state: a native button is
         # bright on a dark panel, and the shell's checked text is unreadable.
         "QToolButton[fbSegment=\"true\"] { background: %s; color: %s; border: 1px solid %s; }"
+        "QToolButton[fbSegment=\"true\"][fbOutlined=\"true\"] { border: %dpx solid %s; }"
         "QToolButton[fbSegment=\"true\"]:checked { background: %s; color: %s; border: 1px solid %s; }"
         % (
             chrome.panel,
@@ -475,6 +476,8 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.input,
             chrome.text,
             chrome.border,
+            width,
+            chrome.accent,
             chrome.selected,
             chrome.text,
             chrome.accent,

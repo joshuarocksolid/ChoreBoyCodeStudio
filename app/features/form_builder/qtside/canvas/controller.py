@@ -11,7 +11,7 @@ from typing import Dict, FrozenSet, Optional, Protocol, Tuple
 
 from app.qt.QtCore import QEvent
 from app.qt.QtGui import QFont, QFontMetrics
-from app.qt.QtWidgets import QApplication, QGraphicsView, QWidget
+from app.qt.QtWidgets import QApplication, QGraphicsView
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.diagnostics import Severity
@@ -20,6 +20,8 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
 from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.sizing import chip_words, project
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.qtside.canvas import _input
 from app.features.form_builder.qtside.canvas.core.frame import (
     OpenLayoutPopover,
@@ -71,12 +73,12 @@ from app.features.form_builder.qtside.canvas.core.structure import effective_sel
 from app.features.form_builder.qtside.canvas.core.words import (
     SizingWord,
     describe_selection,
-    sizing_word,
     zoom_label,
 )
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
 from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
+from app.features.form_builder.qtside.sizing_live import selection_facts
 
 # The canvas scrolls to reveal only for these sources. Its own CANVAS changes
 # never re-scroll it. Keyboard navigation reveals through a Reveal effect.
@@ -86,8 +88,6 @@ REVEAL_SOURCES: FrozenSet[SelectionSource] = frozenset(
 
 # Detach must run before the realizer deletes a replaced root (priority 10).
 PRIORITY_DETACH = 9
-
-_QT_MAX = 16777215
 
 
 class CanvasHost(Protocol):
@@ -386,14 +386,15 @@ class CanvasController:
         current = effective_selection(self._session.document, selection).current
         if current is None:
             return None
-        widget = self._realizer.widget_for(current)
-        if widget is None:
+        if not isinstance(self._session.document.get(current), WidgetNode):
             return None
-        policy = widget.sizePolicy()
-        return (
-            sizing_word(_policy_name(policy.horizontalPolicy()), _axis_fixed(widget, True)),
-            sizing_word(_policy_name(policy.verticalPolicy()), _axis_fixed(widget, False)),
-        )
+        if self._realizer.widget_for(current) is None:
+            return None
+        facts = selection_facts(self._session.document, (current,), self._realizer)
+        if not facts:
+            return None
+        horizontal, vertical = chip_words(project(facts))
+        return (_as_sizing_word(horizontal), _as_sizing_word(vertical))
 
     def _measure(self, text: str) -> int:
         font = QFont(self._view.font())
@@ -414,16 +415,11 @@ def _mints_token(gesture: Gesture, event: Event) -> bool:
     return isinstance(event, EditorDone) and event.how in ("tab", "backtab")
 
 
-def _policy_name(value: object) -> str:
-    name = getattr(value, "name", None)
-    if isinstance(name, str) and name:
-        return name
-    return str(value).rsplit(".", 1)[-1]
-
-
-def _axis_fixed(widget: QWidget, horizontal: bool) -> bool:
-    minimum = widget.minimumSize()
-    maximum = widget.maximumSize()
-    if horizontal:
-        return minimum.width() == maximum.width() and maximum.width() < _QT_MAX
-    return minimum.height() == maximum.height() and maximum.height() < _QT_MAX
+def _as_sizing_word(value: Optional[str]) -> Optional[SizingWord]:
+    if value == "Hug":
+        return "Hug"
+    if value == "Fill":
+        return "Fill"
+    if value == "Fixed":
+        return "Fixed"
+    return None

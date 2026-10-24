@@ -22,8 +22,6 @@ MOVE_IN_LAYOUT_LATER = (
 )
 RESIZE_IN_LAYOUT_LATER = "Size handles on widgets in a layout arrive with Hug, Fill and Fixed."
 
-_FILL = frozenset({"Expanding", "MinimumExpanding", "Ignored"})
-_HUG = frozenset({"Preferred", "Fixed"})
 _LAYOUT = {
     "QHBoxLayout": ("Horizontal", "Horizontal layout"),
     "QVBoxLayout": ("Vertical", "Vertical layout"),
@@ -56,18 +54,6 @@ _CLASS_WORDS = {
     "QSlider": "Slider",
     "QProgressBar": "Progress bar",
 }
-
-
-def sizing_word(policy: str, fixed_size: bool) -> Optional[SizingWord]:
-    """Hug, Fill, or Fixed. None is a custom policy the chip does not name."""
-    name = policy.split("::")[-1]
-    if name == "Fixed" and fixed_size:
-        return "Fixed"
-    if name in _FILL:
-        return "Fill"
-    if name in _HUG:
-        return "Hug"
-    return None
 
 
 def elide_middle(name: str, limit: int = ELIDE_AT) -> str:

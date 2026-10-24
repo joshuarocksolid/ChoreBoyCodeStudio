@@ -123,6 +123,7 @@ class IntEditor:
         # Commit on Enter, focus-out or a step, not on every typed digit.
         self._spin.setKeyboardTracking(False)
         self._spin.valueChanged.connect(self._commit)
+        _name_spin(self._spin, spec.element or "Number")
 
     @property
     def widget(self) -> QWidget:
@@ -140,6 +141,7 @@ class IntEditor:
             self._spin.setValue(_clamp(number, self._spin.minimum(), self._spin.maximum()))
         self._spin.blockSignals(False)
         self._shown_text = self._spin.text()
+        _name_spin(self._spin, self._spin.accessibleName() or self._spec.element or "Number")
 
     def is_dirty(self) -> bool:
         """Digits typed but not committed. Esc reverts them by re-showing the value."""
@@ -163,6 +165,7 @@ class DoubleEditor:
         # Commit on Enter, focus-out or a step, not on every typed digit.
         self._spin.setKeyboardTracking(False)
         self._spin.valueChanged.connect(self._commit)
+        _name_spin(self._spin, spec.element or "Number")
 
     @property
     def widget(self) -> QWidget:
@@ -180,6 +183,7 @@ class DoubleEditor:
             self._spin.setValue(float(number))
         self._spin.blockSignals(False)
         self._shown_text = self._spin.text()
+        _name_spin(self._spin, self._spin.accessibleName() or self._spec.element or "Number")
 
     def is_dirty(self) -> bool:
         """Digits typed but not committed. Esc reverts them by re-showing the value."""
@@ -256,6 +260,14 @@ def _number_of(value: RowValue) -> Optional[float]:
     if isinstance(found, (NumberValue, UIntValue, LongLongValue, ULongLongValue, DoubleValue, FloatValue)):
         return float(found.value)
     return None
+
+def _name_spin(box: QWidget, name: str) -> None:
+    box.setAccessibleName(name)
+    line = getattr(box, "lineEdit", None)
+    edit = line() if callable(line) else None
+    if edit is not None:
+        edit.setAccessibleName(name)
+
 
 def _clamp(number: float, low: int, high: int) -> int:
     value = int(number)

@@ -61,6 +61,7 @@ from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
+    mirror_splitter_stretch,
     splitter_sizes,
     text_of,
     to_qt,
@@ -289,6 +290,8 @@ class _Structure(_LayoutSlots):
                     widget.setItemToolTip(index, tip)
             else:
                 widget.addWidget(page)
+        if isinstance(widget, QSplitter):
+            mirror_splitter_stretch(widget)
 
     def _sync_stack_pages(self, node: WidgetNode, widget: QWidget) -> None:
         """Insert and remove only the pages that differ.
