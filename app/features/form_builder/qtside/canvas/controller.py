@@ -390,7 +390,9 @@ class CanvasController:
             return None
         if self._realizer.widget_for(current) is None:
             return None
-        facts = selection_facts(self._session.document, (current,), self._realizer)
+        facts = selection_facts(
+            self._session.document, (current,), self._realizer, class_defaults=False
+        )
         if not facts:
             return None
         horizontal, vertical = chip_words(project(facts))

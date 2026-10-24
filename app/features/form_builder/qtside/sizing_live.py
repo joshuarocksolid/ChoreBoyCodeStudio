@@ -21,9 +21,16 @@ _HOLDER: Optional[QWidget] = None
 
 
 def selection_facts(
-    document: UiDocument, owners: Tuple[NodeId, ...], realizer: Realizer
+    document: UiDocument,
+    owners: Tuple[NodeId, ...],
+    realizer: Realizer,
+    class_defaults: bool = True,
 ) -> Tuple[SizeFacts, ...]:
-    """File facts for these owners, with class defaults from one widget each."""
+    """File facts for these owners.
+
+    Class defaults come from one hidden widget per class. The canvas chip
+    passes ``class_defaults=False`` so a selection does not construct one.
+    """
     found: List[SizeFacts] = []
     for owner in owners:
         node = document.get(owner)
@@ -33,8 +40,10 @@ def selection_facts(
         stored = isinstance(node.value("sizePolicy"), SizePolicyValue)
         if not stored and live is not None:
             class_h, class_v = _policy_axes(live)
-        else:
+        elif class_defaults:
             class_h, class_v = _pristine_axes(realizer, node.class_name)
+        else:
+            class_h, class_v = "Preferred", "Preferred"
         short = realizer._qt_class_name(node.class_name)
         found.append(
             facts_from_document(
