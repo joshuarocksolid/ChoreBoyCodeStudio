@@ -37,8 +37,9 @@ class InPlaceEditor:
             return
         self._target = target
         edit: _Edit = QPlainTextEdit(self._viewport) if target.multiline else QLineEdit(self._viewport)
-        edit.setFont(_zoomed_font(widget.font(), _scale(widget)))
-        edit.setStyleSheet(_sheet(self._viewport))
+        zoomed = _zoomed_font(widget.font(), _scale(widget))
+        edit.setFont(zoomed)
+        edit.setStyleSheet(_sheet(self._viewport, zoomed))
         _copy_alignment(widget, edit)
         text = "" if target.original is None else target.original.text
         edit.setPlainText(text) if isinstance(edit, QPlainTextEdit) else edit.setText(text)
@@ -197,12 +198,20 @@ def _zoomed_font(font: QFont, scale: float) -> QFont:
     return zoomed
 
 
-def _sheet(viewport: QWidget) -> str:
+def _sheet(viewport: QWidget, font: QFont) -> str:
     contrast = bool(viewport.property("formBuilderHighContrast"))
     color = overlay_palette(contrast).select
     if len(color) == 9:
         color = color[:7]
-    return "background: #FFFFFF; color: #212529; border: 1px solid %s; padding: 0px;" % color
+    family = font.family().replace("\\", "").replace("'", "")
+    if font.pixelSize() > 0:
+        size = "%dpx" % font.pixelSize()
+    else:
+        size = "%gpt" % font.pointSizeF()
+    return (
+        "background: #FFFFFF; color: #212529; border: 1px solid %s; padding: 0px;"
+        " font-family: '%s'; font-size: %s;"
+    ) % (color, family, size)
 
 
 def _copy_alignment(widget: QWidget, edit: _Edit) -> None:

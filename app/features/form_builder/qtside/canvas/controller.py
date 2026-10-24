@@ -142,6 +142,7 @@ class CanvasController:
         self._frame_requested = False
         self._pending_reveal: Optional[NodeId] = None
         self._greeted = False
+        self._reported_factor: Optional[float] = None
         self._serial = 0
         self._problems_revision = 0
         self._closed = False
@@ -167,7 +168,7 @@ class CanvasController:
             self._pre_paint()
             return True
         if _input.is_resize(event):
-            self._stage.place()
+            self._place_and_report()
             self._request_frame()
             return False
         first = not self._greeted
@@ -238,7 +239,9 @@ class CanvasController:
             if isinstance(effect, (Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal)):
                 self._editor.follow(self._stage.view_map())
             if isinstance(effect, Zoom):
-                self._host.zoom_changed(zoom_label(self._stage.view_map().factor))
+                factor = self._stage.view_map().factor
+                self._reported_factor = factor
+                self._host.zoom_changed(zoom_label(factor))
             return
         if isinstance(effect, OpenEditor):
             self._editor.open(effect.target, self._stage.view_map())
@@ -267,11 +270,25 @@ class CanvasController:
 
     def _commit(self, effect: Commit) -> None:
         try:
-            with self._session.log.transaction(effect.label) as txn:
+            merge_token = None
+            merge_within_s = 0.0
+            if effect.label == "Nudge":
+                merge_token = "nudge:" + ",".join(str(command.id) for command in effect.commands)
+                merge_within_s = 1.0
+            with self._session.log.transaction(
+                effect.label, merge_token=merge_token, merge_within_s=merge_within_s
+            ) as txn:
                 for command in effect.commands:
                     txn.execute(replace(command, merge_token=effect.token))
         except CommandRejected as exc:
             self._host.narrate(str(exc))
+
+    def _place_and_report(self) -> None:
+        self._stage.place()
+        factor = self._stage.view_map().factor
+        if self._reported_factor is None or abs(factor - self._reported_factor) > 1e-4:
+            self._reported_factor = factor
+            self._host.zoom_changed(zoom_label(factor))
 
     def _request_frame(self) -> None:
         if self._closed or self._frame_requested:
@@ -330,7 +347,7 @@ class CanvasController:
         self._gesture = Idle()
 
     def _after_realize(self, changeset: ChangeSet) -> None:
-        self._stage.place()
+        self._place_and_report()
         self._feed(DocumentChanged(changeset.removed, changeset.replaced))
 
     def _on_selection(self, change: SelectionChange) -> None:

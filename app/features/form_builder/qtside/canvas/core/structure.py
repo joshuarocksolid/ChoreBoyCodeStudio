@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import weakref
 from dataclasses import dataclass
-from typing import FrozenSet, List, Literal, Optional, Tuple, Union
+from typing import FrozenSet, List, Literal, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
@@ -55,6 +56,11 @@ class Root:
 
 Positioning = Union[Free, LaidOut, Managed, Root]
 Direction = Literal["left", "right", "up", "down"]
+
+_WIDGETS: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Tuple[NodeId, ...]]]" = weakref.WeakKeyDictionary()
+_VISIBLE: "weakref.WeakKeyDictionary[HitIndex, Tuple[int, UiDocument, int, Tuple[Tuple[NodeId, Rect], ...]]]" = (
+    weakref.WeakKeyDictionary()
+)
 
 
 def positioning_of(document: UiDocument, node: NodeId) -> Positioning:
@@ -147,29 +153,52 @@ def nearest_in_direction(
     origin = index.rect_of(node)
     if origin is None:
         return None
-    cx = origin.x + origin.width / 2.0
-    cy = origin.y + origin.height / 2.0
     order = {widget_id: position for position, widget_id in enumerate(_widgets(document))}
     best: Optional[NodeId] = None
     best_key: Optional[Tuple[float, int]] = None
     for widget_id, rect in _visible_widgets(index, document):
         if widget_id == node:
             continue
-        other_x = rect.x + rect.width / 2.0
-        other_y = rect.y + rect.height / 2.0
-        if direction == "right" and other_x <= cx:
+        if document.is_ancestor(widget_id, node) or document.is_ancestor(node, widget_id):
             continue
-        if direction == "left" and other_x >= cx:
+        gap = _past_edge(origin, rect, direction)
+        if gap is None:
             continue
-        if direction == "down" and other_y <= cy:
-            continue
-        if direction == "up" and other_y >= cy:
-            continue
-        key = ((other_x - cx) ** 2 + (other_y - cy) ** 2, order.get(widget_id, 0))
+        along, across = gap
+        key = (along + 2.0 * across, order.get(widget_id, 0))
         if best_key is None or key < best_key:
             best_key = key
             best = widget_id
     return best
+
+
+def _past_edge(origin: Rect, rect: Rect, direction: Direction) -> Optional[Tuple[float, float]]:
+    """Distance past the facing edge, and the distance across that axis."""
+    if direction == "right":
+        edge = origin.x + origin.width
+        if rect.x < edge:
+            return None
+        return (float(rect.x - edge), abs(_mid_y(rect) - _mid_y(origin)))
+    if direction == "left":
+        if rect.x + rect.width > origin.x:
+            return None
+        return (float(origin.x - (rect.x + rect.width)), abs(_mid_y(rect) - _mid_y(origin)))
+    if direction == "down":
+        edge = origin.y + origin.height
+        if rect.y < edge:
+            return None
+        return (float(rect.y - edge), abs(_mid_x(rect) - _mid_x(origin)))
+    if rect.y + rect.height > origin.y:
+        return None
+    return (float(origin.y - (rect.y + rect.height)), abs(_mid_x(rect) - _mid_x(origin)))
+
+
+def _mid_x(rect: Rect) -> float:
+    return rect.x + rect.width / 2.0
+
+
+def _mid_y(rect: Rect) -> float:
+    return rect.y + rect.height / 2.0
 
 
 def band_candidates(
@@ -221,11 +250,16 @@ def _layout_of_item(document: UiDocument, item_id: Optional[NodeId]) -> Optional
     return None
 
 
-def _widgets(document: UiDocument) -> List[NodeId]:
-    return [node.id for node in document.iter_preorder() if isinstance(node, WidgetNode)]
+def _widgets(document: UiDocument) -> Tuple[NodeId, ...]:
+    cached = _WIDGETS.get(document)
+    if cached is not None and cached[0] == document.revision:
+        return cached[1]
+    found = tuple(node.id for node in document.iter_preorder() if isinstance(node, WidgetNode))
+    _WIDGETS[document] = (document.revision, found)
+    return found
 
 
-def _outline_index(document: UiDocument, node: NodeId, widgets: List[NodeId]) -> int:
+def _outline_index(document: UiDocument, node: NodeId, widgets: Sequence[NodeId]) -> int:
     seen = False
     for current in document.iter_preorder():
         if current.id == node:
@@ -235,7 +269,15 @@ def _outline_index(document: UiDocument, node: NodeId, widgets: List[NodeId]) ->
     return 0
 
 
-def _visible_widgets(index: HitIndex, document: UiDocument) -> List[Tuple[NodeId, Rect]]:
+def _visible_widgets(index: HitIndex, document: UiDocument) -> Tuple[Tuple[NodeId, Rect], ...]:
+    cached = _VISIBLE.get(index)
+    if (
+        cached is not None
+        and cached[0] == index.epoch
+        and cached[1] is document
+        and cached[2] == document.revision
+    ):
+        return cached[3]
     found: List[Tuple[NodeId, Rect]] = []
     stack = [document.root.id]
     while stack:
@@ -247,7 +289,9 @@ def _visible_widgets(index: HitIndex, document: UiDocument) -> List[Tuple[NodeId
                 found.append((entry.node, entry.rect))
             if entry.kind in ("widget", "layout"):
                 stack.append(entry.node)
-    return found
+    rows = tuple(found)
+    _VISIBLE[index] = (index.epoch, document, document.revision, rows)
+    return rows
 
 
 def _layout_children(layout: LayoutNode) -> List[NodeId]:

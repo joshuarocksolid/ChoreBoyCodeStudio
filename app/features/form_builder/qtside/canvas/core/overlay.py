@@ -425,10 +425,20 @@ def _requests(
     faces: Dict[Hashable, _Face] = {}
     requests: List[ChipRequest] = []
     primary = shown.current
-    if primary is not None and primary in rects:
+    if primary is not None and primary in rects and primary != document.root.id:
         text = chip_text(document, inputs.selection, inputs.sizing)
         role: Role = "layout" if isinstance(document.get(primary), LayoutNode) else "select"
-        _ask(faces, requests, ("chip", primary), rects[primary], _label_size(text, inputs.measure), LABEL_CORNERS, document, _Face("chip", primary, role, text, None))
+        _ask(
+            faces,
+            requests,
+            ("chip", primary),
+            rects[primary],
+            _label_size(text, inputs.measure),
+            LABEL_CORNERS,
+            document,
+            _Face("chip", primary, role, text, None),
+            required=True,
+        )
     for node in document.iter_preorder():
         message = inputs.problems.get(node.id)
         if not message:
@@ -473,9 +483,12 @@ def _ask(
     corners: Tuple[Corner, ...],
     document: UiDocument,
     face: _Face,
+    required: bool = False,
 ) -> None:
     faces[key] = face
-    requests.append(ChipRequest(key, target, size, corners, ancestors(document, face.node)))
+    requests.append(
+        ChipRequest(key, target, size, corners, ancestors(document, face.node), required=required)
+    )
 
 
 def _seat_items(

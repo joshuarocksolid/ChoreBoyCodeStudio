@@ -146,10 +146,11 @@ def test_alt_arrow_nudges_a_free_widget() -> None:
         assert session.log.undo_label() == "Nudge"
         _key(canvas, "Key_Down", "AltModifier", "ShiftModifier")
         assert north.y() == 41
+        assert len(session.log.entries()) == 1
         assert session.log.undo()
         _flush()
         assert north.y() == 40
-        assert north.x() == 48
+        assert north.x() == 40
 
 
 LAID = form(

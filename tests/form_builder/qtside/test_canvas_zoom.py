@@ -17,6 +17,7 @@ from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.form_menu import register_form_menu
 from app.features.form_builder.qtside.canvas.core.frame import Handle, Stroke
 from app.features.form_builder.qtside.canvas.core.space import GUTTERS
+from app.features.form_builder.qtside.canvas.core.words import zoom_label as zoom_percent
 from app.shell.menus import build_menu_stubs, clear_menu_contributors
 from tests.form_builder.qtside.support import form, opened
 from tests.unit.features.form_builder.test_workbench import _FORM, _open
@@ -67,6 +68,24 @@ class _Host:
 
     def open_layout_popover(self, node: object) -> None:
         return None
+
+
+def test_the_zoom_label_matches_fit_and_follows_a_resize(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    parent = QWidget()
+    parent.resize(1100, 720)
+    surface = _open(parent, _FORM, tmp_path / "fit.ui")
+    parent.show()
+    _flush()
+    canvas = surface.findChild(QWidget, "formBuilder.canvas")
+    label = surface.findChild(QToolButton, "formBuilder.zoomLabel")
+    assert isinstance(canvas, FormCanvas)
+    assert label is not None
+    assert label.text() == zoom_percent(_scale(canvas))
+    parent.resize(700, 420)
+    _flush()
+    assert label.text() == zoom_percent(_scale(canvas))
+    parent.deleteLater()
+    _flush()
 
 
 def test_toolbar_and_form_menu_zoom_the_canvas(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
@@ -145,7 +164,9 @@ def test_toolbar_and_form_menu_zoom_the_canvas(qapp, tmp_path: Path) -> None:  #
         assert abs(_scale(canvas) - 1.0) < 1e-6
         registry.actions["form.action.zoomToFit"].trigger()
         _flush()
-        assert abs(_scale(canvas) - 1.0) < 1e-6
+        fitted = _scale(canvas)
+        assert fitted + 1e-9 >= 0.75
+        assert zoom_label.text() == zoom_percent(fitted)
     finally:
         clear_menu_contributors()
         surface.release()

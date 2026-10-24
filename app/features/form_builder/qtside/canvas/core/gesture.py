@@ -453,6 +453,9 @@ def aim(
         return OnSpace(hit.node, hit.node)
     if hit.node == root:
         return OnSpace(root, root)
+    found = document.get(hit.node)
+    if isinstance(found, WidgetNode) and found.layout is None and found.child_widgets:
+        return OnSpace(hit.node, hit.node)
     site: Literal["widget", "page_tab", "menu_title"] = "widget"
     if hit.kind in ("page_tab", "menu_title"):
         site = hit.kind  # type: ignore[assignment]

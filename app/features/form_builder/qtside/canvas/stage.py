@@ -48,7 +48,8 @@ from app.features.form_builder.qtside.canvas.core.words import page_chip_label
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.overlay import BackdropPalette
 
-_REVEAL_PAD = 16
+# Handle hit, chip height, and the gap, in screen pixels. The page scale lives on the proxy.
+_REVEAL_PAD = 32
 _CURSORS = {
     "arrow": "ArrowCursor",
     "move": "SizeAllCursor",

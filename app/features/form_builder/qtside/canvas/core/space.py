@@ -112,7 +112,10 @@ ZOOM_STEPS: Tuple[float, ...] = (
     0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1.0, 1.1, 1.25, 1.5, 1.75, 2.0, 2.5, 3.0, 4.0,
 )
 FIT_CAP = 1.0
-FIT_FLOOR = 0.5
+# A new tab opens at Fit and never below 75%. A tighter page scrolls.
+FIT_FLOOR = 0.75
+# Widest elided chip (24 characters) plus padding and the gutter inset.
+SIDE_GUTTER = 24 * 8 + 12 + 4
 
 
 @dataclass(frozen=True)
@@ -148,8 +151,8 @@ ZoomChange = Union[ZoomStep, ZoomTo, ZoomFit]
 
 @dataclass(frozen=True)
 class Gutters:
-    left: int = 96
-    right: int = 96
+    left: int = SIDE_GUTTER
+    right: int = SIDE_GUTTER
     top: int = 64
     bottom: int = 64
 

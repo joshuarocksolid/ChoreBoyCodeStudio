@@ -23,6 +23,7 @@ from app.features.form_builder.qtside.canvas.core.chips import (
     CornerSeat,
     GutterSeat,
     Obstacle,
+    corner_rect,
     place_chips,
 )
 from app.features.form_builder.qtside.canvas.core.frame import (
@@ -46,8 +47,8 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Inert,
     Key,
     Mods,
-    MovedItem,
     Move,
+    MovedItem,
     Moving,
     PageResizing,
     Press,
@@ -59,9 +60,11 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Toggle,
     World,
     aim,
+    band_hits,
     previewing,
     step,
 )
+from app.features.form_builder.qtside.canvas.core.structure import nearest_in_direction
 from app.features.form_builder.qtside.canvas.core.overlay import FrameInputs, build_frame, build_static
 from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
 from app.features.form_builder.qtside.canvas.core.space import (
@@ -78,6 +81,7 @@ from app.features.form_builder.qtside.canvas.core.space import (
     ZoomStep,
     ZoomTo,
     apply_zoom,
+    GUTTERS,
     layout_page,
     page_request,
     zoom_factor,
@@ -270,45 +274,50 @@ def test_zoom_steps_stay_on_the_table_and_fit_is_capped() -> None:
     assert apply_zoom(Fixed(1.0), ZoomTo(2.0), 1.0) == Fixed(2.0)
     assert isinstance(apply_zoom(Fixed(1.0), ZoomFit(), 1.0), Fit)
     assert zoom_factor(Fit(), Size(100, 100), CanvasSize(2000, 2000)) == 1.0
-    assert zoom_factor(Fit(), Size(1000, 1000), CanvasSize(300, 300)) == 0.5
+    assert zoom_factor(Fit(), Size(1000, 1000), CanvasSize(300, 300)) == 0.75
 
 
 def test_layout_page_centres_inside_the_gutters() -> None:
-    centred = layout_page(Size(100, 80), 1.0, CanvasSize(400, 400), 0)
-    assert centred.page_origin == CanvasPoint(150, 160)
+    centred = layout_page(Size(100, 80), 1.0, CanvasSize(800, 800), 0)
+    assert centred.page_origin == CanvasPoint(350, 360)
     parked = layout_page(Size(400, 300), 1.0, CanvasSize(200, 200), 0)
-    assert parked.page_origin == CanvasPoint(96, 64)
+    assert parked.page_origin == CanvasPoint(GUTTERS.left, GUTTERS.top)
 
 
 def test_a_blocked_chip_sits_in_the_gutter_and_still_gets_a_seat() -> None:
     page = CanvasRect(0, 0, 200, 100)
-    target = CanvasRect(10, 10, 40, 20)
-    blocker = Obstacle(NodeId(1), page)
-    requests = tuple(
-        ChipRequest(index, target, CanvasSize(30, 18), LABEL_CORNERS, frozenset())
-        for index in range(8)
+    target = CanvasRect(80, 40, 40, 20)
+    size = CanvasSize(30, 18)
+    blockers = tuple(
+        Obstacle(NodeId(index + 1), corner_rect(target, size, corner))
+        for index, corner in enumerate(LABEL_CORNERS)
     )
-    seats = place_chips(requests, (blocker,), (), page, page.grown(400))
-    assert len(seats) == 8
+    requests = tuple(
+        ChipRequest(index, target, size, LABEL_CORNERS, frozenset()) for index in range(8)
+    )
+    seats = place_chips(requests, blockers, (), page, page.grown(400))
+    assert len(seats) == 2
     for seat in seats:
         assert isinstance(seat, GutterSeat)
+        assert seat.leader.start.y == seat.leader.end.y
         assert seat.rect.x + seat.rect.width <= page.x or seat.rect.x >= page.x + page.width
         assert not seat.rect.intersects(page)
 
 
-def test_a_chip_stays_inside_the_viewport_and_off_content() -> None:
+def test_a_chip_outside_the_viewport_is_not_pulled_onto_the_page() -> None:
     page = CanvasRect(0, 0, 500, 400)
     viewport = CanvasRect(40, 40, 200, 150)
     target = CanvasRect(50, 50, 30, 20)
     blocker = Obstacle(NodeId(1), CanvasRect(40, 40, 200, 80))
     request = ChipRequest("chip", target, CanvasSize(40, 16), LABEL_CORNERS, frozenset())
-    seats = place_chips((request,), (blocker,), (), page, viewport)
+    assert place_chips((request,), (blocker,), (), page, viewport) == ()
+    required = ChipRequest("chip", target, CanvasSize(40, 16), LABEL_CORNERS, frozenset(), required=True)
+    seats = place_chips((required,), (blocker,), (), page, viewport)
     assert len(seats) == 1
     rect = seats[0].rect
     assert rect.x >= viewport.x and rect.y >= viewport.y
     assert rect.x + rect.width <= viewport.x + viewport.width
     assert rect.y + rect.height <= viewport.y + viewport.height
-    assert not rect.intersects(blocker.rect)
 
 
 def test_a_chip_larger_than_the_viewport_is_omitted() -> None:
@@ -486,7 +495,7 @@ def test_aim_returns_the_deepest_widget() -> None:
         parent = aim(_canvas(view, 25, 35), frame, index, document, view)
         margin = aim(_canvas(view, 3, 3), frame, index, document, view)
         assert isinstance(deepest, OnWidget) and deepest.node == ok
-        assert isinstance(parent, OnWidget) and parent.node == box
+        assert isinstance(parent, OnSpace) and parent.band_owner == box
         assert isinstance(margin, OnSpace) and margin.select == form
 
 
@@ -662,6 +671,127 @@ def test_page_grabber_is_a_target_on_the_page_edge() -> None:
             view,
         )
         assert isinstance(hit, OnPageEdge) and hit.at == "e"
+
+
+def _segment_hits(x0: int, x1: int, y: int, rect: CanvasRect) -> bool:
+    left = min(x0, x1) + 1
+    right = max(x0, x1) - 1
+    if right <= left:
+        return False
+    return left <= rect.x + rect.width and rect.x <= right and rect.y <= y <= rect.y + rect.height
+
+
+def test_the_primary_chip_is_seated_and_its_leader_stays_horizontal() -> None:
+    page = CanvasRect(0, 0, 400, 300)
+    viewport = page.grown(240)
+    target = CanvasRect(40, 80, 50, 24)
+    sibling = Obstacle(NodeId(2), CanvasRect(120, 70, 80, 40))
+    content = (
+        Obstacle(NodeId(1), CanvasRect(10, 10, 60, 30)),
+        sibling,
+        Obstacle(NodeId(3), target),
+    )
+    request = ChipRequest("primary", target, CanvasSize(72, 18), LABEL_CORNERS, frozenset(), required=True)
+    seats = place_chips((request,), content, (), page, viewport)
+    assert len(seats) == 1
+    seat = seats[0]
+    if isinstance(seat, GutterSeat):
+        assert seat.leader.start.y == seat.leader.end.y
+        assert not _segment_hits(seat.leader.start.x, seat.leader.end.x, seat.leader.start.y, sibling.rect)
+
+
+def test_a_packed_row_keeps_the_chip_off_its_neighbours() -> None:
+    """The leader cannot cross the row, so the chip stays in the gutter."""
+    page = CanvasRect(200, 0, 400, 300)
+    viewport = CanvasRect(0, 0, 900, 400)
+    target = CanvasRect(260, 80, 16, 14)
+    neighbours = (
+        Obstacle(NodeId(1), CanvasRect(260, 60, 16, 16)),
+        Obstacle(NodeId(2), CanvasRect(230, 80, 20, 14)),
+        Obstacle(NodeId(3), CanvasRect(260, 100, 16, 16)),
+        Obstacle(NodeId(4), CanvasRect(290, 80, 20, 14)),
+        Obstacle(NodeId(5), target),
+    )
+    request = ChipRequest("primary", target, CanvasSize(40, 18), LABEL_CORNERS, frozenset(), required=True)
+    seats = place_chips((request,), neighbours, (), page, viewport)
+    assert len(seats) == 1
+    seat = seats[0]
+    for obstacle in neighbours:
+        assert not seat.rect.intersects(obstacle.rect)
+    assert isinstance(seat, GutterSeat)
+    assert seat.leader.start.y == seat.leader.end.y
+    for obstacle in neighbours:
+        assert not _segment_hits(seat.leader.start.x, seat.leader.end.x, seat.leader.start.y, obstacle.rect)
+
+
+def test_arrow_keys_skip_ancestors_and_widgets_that_are_not_past_the_edge() -> None:
+    text = _ui(
+        """
+ <widget class="QWidget" name="Form">
+  <widget class="QGroupBox" name="customer">
+   <widget class="QLineEdit" name="emailEdit"/>
+   <widget class="QLineEdit" name="addressEdit"/>
+  </widget>
+  <widget class="QGroupBox" name="side"/>
+  <widget class="QPushButton" name="saveButton"/>
+ </widget>
+"""
+    )
+    with _opened(text) as session:
+        form = _nid(session, "Form")
+        customer = _nid(session, "customer")
+        email = _nid(session, "emailEdit")
+        address = _nid(session, "addressEdit")
+        side = _nid(session, "side")
+        save = _nid(session, "saveButton")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 300), None),
+                _entry(customer, "widget", (0, 0, 300, 200), form),
+                _entry(email, "widget", (20, 20, 80, 24), customer),
+                _entry(address, "widget", (20, 60, 80, 24), customer),
+                _entry(side, "widget", (50, 0, 200, 40), form),
+                _entry(save, "widget", (120, 60, 40, 24), form),
+            )
+        )
+        assert nearest_in_direction(session.document, index, email, "down") == address
+        assert nearest_in_direction(session.document, index, address, "right") == save
+
+
+def test_empty_space_in_a_bare_group_starts_a_band() -> None:
+    with _opened(BARE) as session:
+        view = _view()
+        index = _bare_index(session)
+        box = _nid(session, "box")
+        ok = _nid(session, "ok")
+        email = _nid(session, "email")
+        at = _canvas(view, 180, 50)
+        hit = aim(at, _blank_frame(index, view, SelectionState()), index, session.document, view)
+        assert isinstance(hit, OnSpace)
+        assert hit.band_owner == box
+        world = _world(session, index, view)
+        pressed = step(Idle(), Press(at, PortPoint(0, 0), "left", Mods(), False), world)
+        assert isinstance(pressed.gesture, Pressed)
+        assert isinstance(pressed.gesture.on_drag, Banding)
+        moved = step(
+            pressed.gesture,
+            Move(_canvas(view, 30, 100), PortPoint(80, 80), frozenset(("left",)), Mods()),
+            world,
+        )
+        assert isinstance(moved.gesture, Banding)
+        assert set(band_hits(moved.gesture)) == {ok, email}
+
+
+def test_the_selected_form_does_not_add_an_overlay_chip() -> None:
+    with _opened(BARE) as session:
+        view = _view()
+        index = _bare_index(session)
+        form = _nid(session, "Form")
+        frame = build_frame(
+            build_static(session.document, index, view),
+            _inputs(session, view, SelectionState((form,), form), Idle()),
+        )
+        assert not any(isinstance(item, Chip) and item.role == "select" for item in frame.items)
 
 
 def test_importing_canvas_core_does_not_import_qt() -> None:
