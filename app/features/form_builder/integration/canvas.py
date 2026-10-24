@@ -27,10 +27,11 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
 from app.features.form_builder.qtside.canvas.core.frame import OverlayFrame
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_frame
-from app.features.form_builder.qtside.canvas.stage import Stage
+from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
     PAGE_TITLE_FILL,
@@ -38,6 +39,7 @@ from app.features.form_builder.qtside.theme.chrome import (
     PAGE_TITLE_HEIGHT,
     PAGE_TITLE_TEXT,
     backdrop_colors,
+    on_accent_for,
     page_shadow_rgba,
 )
 from app.features.form_builder.qtside.theme.overlay import (
@@ -107,8 +109,11 @@ class FormCanvas(QGraphicsView):
         # so the caption follows the page the controller just placed.
         self._chrome_sub = session.log.subscribe(self._position_after, priority=PRIORITY_VIEWS)
         realizer.build()
+        self._chip_viewport = visible_scene_rect(self)
         self.horizontalScrollBar().valueChanged.connect(self._position_chrome)
         self.verticalScrollBar().valueChanged.connect(self._position_chrome)
+        self.horizontalScrollBar().sliderReleased.connect(self._refresh_chips_after_scroll)
+        self.verticalScrollBar().sliderReleased.connect(self._refresh_chips_after_scroll)
         self._stage.place()
         self._sync_title()
         self._position_chrome()
@@ -144,6 +149,13 @@ class FormCanvas(QGraphicsView):
             f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
         )
         self._stage.apply_palette(self._palette.backdrop)
+        fill = tokens.tree_selected_bg
+        text = on_accent_for(fill)
+        self._stage.set_page_chip_selected_style(
+            "QLabel { color: %s; background: %s; border: 1px solid %s;"
+            " border-radius: 4px; padding: 1px 6px; font-size: 11px; font-weight: 600; }"
+            % (text, fill, fill)
+        )
         self.viewport().update()
         self._position_chrome()
 
@@ -152,6 +164,9 @@ class FormCanvas(QGraphicsView):
 
     def overlay(self) -> OverlayFrame:
         return self._controller.frame
+
+    def visible_canvas_rect(self) -> CanvasRect:
+        return visible_scene_rect(self)
 
     def ensure_widget_visible(self, object_name: str) -> None:
         """Scroll so the named widget on the page is inside the viewport."""
@@ -250,6 +265,15 @@ class FormCanvas(QGraphicsView):
     def _position_after(self, _changeset: object) -> None:
         self._sync_title()
         self._position_chrome()
+
+    def _refresh_chips_after_scroll(self) -> None:
+        rect = visible_scene_rect(self)
+        if rect == self._chip_viewport:
+            return
+        self._chip_viewport = rect
+        controller = getattr(self, "_controller", None)
+        if controller is not None:
+            controller.refresh_overlay()
 
     def _position_chrome(self) -> None:
         proxy = self._stage.proxy

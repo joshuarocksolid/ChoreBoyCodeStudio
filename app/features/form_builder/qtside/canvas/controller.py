@@ -75,7 +75,7 @@ from app.features.form_builder.qtside.canvas.core.words import (
     zoom_label,
 )
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
-from app.features.form_builder.qtside.canvas.stage import Stage
+from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
 
 # The canvas scrolls to reveal only for these sources. Its own CANVAS changes
@@ -313,8 +313,14 @@ class CanvasController:
                 self._sizing(selection),
                 self._stage.chrome_rects(),
                 self._measure,
+                visible_scene_rect(self._view),
             ),
         )
+
+    def refresh_overlay(self) -> None:
+        if self._closed:
+            return
+        self._request_frame()
 
     def _before_realize(self, changeset: ChangeSet) -> None:
         if not changeset.replaced:

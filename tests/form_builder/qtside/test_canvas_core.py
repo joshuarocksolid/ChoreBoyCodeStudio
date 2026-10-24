@@ -20,6 +20,7 @@ from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.qtside.canvas.core.chips import (
     LABEL_CORNERS,
     ChipRequest,
+    CornerSeat,
     GutterSeat,
     Obstacle,
     place_chips,
@@ -287,12 +288,45 @@ def test_a_blocked_chip_sits_in_the_gutter_and_still_gets_a_seat() -> None:
         ChipRequest(index, target, CanvasSize(30, 18), LABEL_CORNERS, frozenset())
         for index in range(8)
     )
-    seats = place_chips(requests, (blocker,), (), page)
+    seats = place_chips(requests, (blocker,), (), page, page.grown(400))
     assert len(seats) == 8
     for seat in seats:
         assert isinstance(seat, GutterSeat)
         assert seat.rect.x + seat.rect.width <= page.x or seat.rect.x >= page.x + page.width
         assert not seat.rect.intersects(page)
+
+
+def test_a_chip_stays_inside_the_viewport_and_off_content() -> None:
+    page = CanvasRect(0, 0, 500, 400)
+    viewport = CanvasRect(40, 40, 200, 150)
+    target = CanvasRect(50, 50, 30, 20)
+    blocker = Obstacle(NodeId(1), CanvasRect(40, 40, 200, 80))
+    request = ChipRequest("chip", target, CanvasSize(40, 16), LABEL_CORNERS, frozenset())
+    seats = place_chips((request,), (blocker,), (), page, viewport)
+    assert len(seats) == 1
+    rect = seats[0].rect
+    assert rect.x >= viewport.x and rect.y >= viewport.y
+    assert rect.x + rect.width <= viewport.x + viewport.width
+    assert rect.y + rect.height <= viewport.y + viewport.height
+    assert not rect.intersects(blocker.rect)
+
+
+def test_a_chip_larger_than_the_viewport_is_omitted() -> None:
+    page = CanvasRect(0, 0, 400, 300)
+    viewport = CanvasRect(0, 0, 40, 40)
+    target = CanvasRect(0, 0, 20, 20)
+    request = ChipRequest("chip", target, CanvasSize(80, 20), LABEL_CORNERS, frozenset())
+    assert place_chips((request,), (), (), page, viewport) == ()
+
+
+def test_an_open_corner_inside_the_viewport_stays_there() -> None:
+    page = CanvasRect(0, 0, 400, 300)
+    target = CanvasRect(80, 80, 40, 20)
+    request = ChipRequest("chip", target, CanvasSize(30, 14), ("above_left",), frozenset())
+    seats = place_chips((request,), (), (), page, page.grown(80))
+    assert len(seats) == 1
+    assert isinstance(seats[0], CornerSeat)
+    assert seats[0].rect.y < target.y
 
 
 def test_shift_click_on_the_only_selected_widget_selects_the_form() -> None:

@@ -1,7 +1,8 @@
 """Chip and badge placement. A pure function of rectangles.
 
-A seat is a corner or a gutter. The gutter sits outside the page, so it
-cannot cover content and it cannot fail.
+A seat is a corner inside the viewport, or a gutter clamped into it.
+A corner outside the viewport is skipped. A seat that would cover content
+is skipped rather than drawn on top of a widget.
 """
 
 from __future__ import annotations
@@ -68,27 +69,143 @@ def place_chips(
     content: Sequence[Obstacle],
     fixed: Sequence[CanvasRect],
     page: CanvasRect,
+    viewport: CanvasRect,
 ) -> Tuple[ChipSeat, ...]:
-    """One seat per request. Earlier requests keep the corners they take."""
+    """Seats that fit. Earlier requests keep the corners they take."""
     buckets = _Buckets(content)
     taken: List[CanvasRect] = list(fixed)
     seats: List[ChipSeat] = []
     for request in requests:
-        seat: Optional[ChipSeat] = None
-        for corner in request.corners:
-            rect = corner_rect(request.target, request.size, corner)
-            if buckets.blocked(rect, request.exempt):
-                continue
-            if _hits_any(rect, taken):
-                continue
-            seat = CornerSeat(request.key, rect, corner)
-            break
+        seat = _corner_seat(request, buckets, taken, viewport)
         if seat is None:
-            rect, leader, side = gutter_spot(request.target, request.size, page, taken)
-            seat = GutterSeat(request.key, rect, leader, side)
+            seat = _gutter_seat(request, buckets, taken, page, viewport)
+        if seat is None:
+            continue
         taken.append(seat.rect)
         seats.append(seat)
     return tuple(seats)
+
+
+def _corner_seat(
+    request: ChipRequest,
+    buckets: "_Buckets",
+    taken: Sequence[CanvasRect],
+    viewport: CanvasRect,
+) -> Optional[CornerSeat]:
+    for corner in request.corners:
+        rect = corner_rect(request.target, request.size, corner)
+        if not _clear(rect, viewport, buckets, request.exempt, taken):
+            continue
+        return CornerSeat(request.key, rect, corner)
+    return None
+
+
+def _gutter_seat(
+    request: ChipRequest,
+    buckets: "_Buckets",
+    taken: Sequence[CanvasRect],
+    page: CanvasRect,
+    viewport: CanvasRect,
+) -> Optional[GutterSeat]:
+    rect, _, side = gutter_spot(request.target, request.size, page, taken)
+    if _clear(rect, viewport, buckets, request.exempt, taken):
+        return _as_gutter(request, rect, side)
+    clamped = _clamp(rect, viewport)
+    if clamped is not None and _clear(clamped, viewport, buckets, request.exempt, taken):
+        return _as_gutter(request, clamped, side)
+    other: Side = "left" if side == "right" else "right"
+    for candidate in (side, other):
+        found = _scan_gutter(request, buckets, taken, page, viewport, candidate)
+        if found is not None:
+            return found
+    return None
+
+
+def _as_gutter(request: ChipRequest, rect: CanvasRect, side: Side) -> GutterSeat:
+    return GutterSeat(request.key, rect, _leader(rect, request.target, side), side)
+
+
+def _scan_gutter(
+    request: ChipRequest,
+    buckets: "_Buckets",
+    taken: Sequence[CanvasRect],
+    page: CanvasRect,
+    viewport: CanvasRect,
+    side: Side,
+) -> Optional[GutterSeat]:
+    x = _gutter_x(page, request.size, viewport, side)
+    if x is None:
+        return None
+    height = request.size.height
+    top = viewport.y
+    bottom = viewport.y + viewport.height - height
+    origin = request.target.y + (request.target.height - height) // 2
+    if origin < top:
+        origin = top
+    if origin > bottom:
+        origin = bottom
+    step = max(1, height + 2)
+    y_values = [origin]
+    down = origin + step
+    up = origin - step
+    while down <= bottom or up >= top:
+        if down <= bottom:
+            y_values.append(down)
+            down += step
+        if up >= top:
+            y_values.append(up)
+            up -= step
+    for y in y_values:
+        rect = CanvasRect(x, y, request.size.width, height)
+        if _clear(rect, viewport, buckets, request.exempt, taken):
+            return _as_gutter(request, rect, side)
+    return None
+
+
+def _gutter_x(page: CanvasRect, size: CanvasSize, viewport: CanvasRect, side: Side) -> Optional[int]:
+    if size.width > viewport.width or size.height > viewport.height:
+        return None
+    if side == "right":
+        x = page.x + page.width + GUTTER_INSET
+    else:
+        x = page.x - GUTTER_INSET - size.width
+    if x < viewport.x:
+        x = viewport.x
+    limit = viewport.x + viewport.width - size.width
+    if x > limit:
+        x = limit
+    return x
+
+
+def _clamp(rect: CanvasRect, viewport: CanvasRect) -> Optional[CanvasRect]:
+    if rect.width > viewport.width or rect.height > viewport.height:
+        return None
+    x = min(max(rect.x, viewport.x), viewport.x + viewport.width - rect.width)
+    y = min(max(rect.y, viewport.y), viewport.y + viewport.height - rect.height)
+    return CanvasRect(x, y, rect.width, rect.height)
+
+
+def _inside(rect: CanvasRect, viewport: CanvasRect) -> bool:
+    return (
+        rect.x >= viewport.x
+        and rect.y >= viewport.y
+        and rect.x + rect.width <= viewport.x + viewport.width
+        and rect.y + rect.height <= viewport.y + viewport.height
+    )
+
+
+def _clear(
+    rect: CanvasRect,
+    viewport: CanvasRect,
+    buckets: "_Buckets",
+    exempt: FrozenSet[NodeId],
+    taken: Sequence[CanvasRect],
+) -> bool:
+    if not _inside(rect, viewport):
+        return False
+    if buckets.blocked(rect, exempt):
+        return False
+    return not _hits_any(rect, taken)
 
 
 def corner_rect(target: CanvasRect, size: CanvasSize, corner: Corner) -> CanvasRect:

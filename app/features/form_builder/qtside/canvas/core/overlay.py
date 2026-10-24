@@ -138,6 +138,9 @@ class FrameInputs:
     chrome: Tuple[CanvasRect, ...]
     #: Advance of chip text at 11 px semibold. The only font fact needed.
     measure: Callable[[str], int]
+    #: Visible canvas. None keeps a loose gutter around the page for callers
+    #: that have not measured the viewport yet.
+    viewport: Optional[CanvasRect] = None
 
 
 @dataclass(frozen=True)
@@ -269,7 +272,8 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
 
     faces, requests = _requests(static, inputs, shown, rects)
     fixed = tuple(hit for hit, _target in handle_hits) + inputs.chrome
-    seats = place_chips(requests, static.content, fixed, page)
+    viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
+    seats = place_chips(requests, static.content, fixed, page, viewport)
     chip_hits, chip_rows = _seat_items(items, seats, faces)
     targets: List[Tuple[CanvasRect, Target]] = []
     targets.extend(reversed(chip_hits))

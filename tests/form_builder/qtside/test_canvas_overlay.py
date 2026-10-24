@@ -8,9 +8,9 @@ from typing import List, Tuple
 import pytest
 
 from app.qt.QtCore import QEvent, QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
-from app.qt.QtGui import QMouseEvent  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QMouseEvent, QPalette  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QWidget
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -19,7 +19,10 @@ from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.reader import UiReadError
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.canvas.core.frame import Chip, Spring, Stroke
-from app.features.form_builder.qtside.canvas.core.space import CanvasRect
+from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect, ZoomTo
+from app.features.form_builder.qtside.theme.chrome import on_accent_for
+from app.shell.theme_tokens import tokens_from_palette
 from app.features.form_builder.qtside.realize import Realizer
 from tests.form_builder.qtside.support import form, opened
 
@@ -158,6 +161,7 @@ def test_chips_do_not_cover_content_on_loadable_corpus_forms() -> None:
                         session.selection.set((node.id,), current=node.id, source=SelectionSource.CANVAS)
                         _flush()
                         _assert_clear(canvas, session, realizer, path)
+                    _assert_zoom_widths(canvas, session, realizer, path)
                     checked += 1
                 finally:
                     canvas.dispose()
@@ -190,7 +194,12 @@ def _assert_clear(canvas: FormCanvas, session: FormSession, realizer: Realizer, 
         if widget is None or not widget.isVisible() or widget.width() <= 0 or widget.height() <= 0:
             continue
         widgets.append((node.id, _mapped(proxy, root, widget)))
+    view = canvas.visible_canvas_rect()
     for chip_rect, node_id in canvas.overlay().chips:
+        assert _fully_inside(chip_rect, view), "%s chip on %s leaves the viewport" % (
+            path.name,
+            _name(document, node_id),
+        )
         allowed = document.ancestors(node_id)
         for other_id, other in widgets:
             if other_id in allowed:
@@ -200,6 +209,68 @@ def _assert_clear(canvas: FormCanvas, session: FormSession, realizer: Realizer, 
                 _name(document, node_id),
                 _name(document, other_id),
             )
+
+
+def _assert_zoom_widths(
+    canvas: FormCanvas, session: FormSession, realizer: Realizer, path: Path
+) -> None:
+    """50/100/200 percent, down to a 700 px wide viewport. Root and one child."""
+    child = None
+    root_id = session.document.root.id
+    for node in session.document.iter_preorder():
+        if not isinstance(node, WidgetNode) or node.id == root_id:
+            continue
+        if realizer.widget_for(node.id) is None:
+            continue
+        child = node.id
+        break
+    parent = canvas.parentWidget()
+    for width in (960, 700):
+        if parent is not None:
+            parent.resize(width, 720)
+        canvas.resize(width, 720)
+        for factor in (0.5, 1.0, 2.0):
+            canvas.send(ZoomAsked(ZoomTo(factor)))
+            _flush()
+            session.selection.set((), source=SelectionSource.CANVAS)
+            _flush()
+            _assert_clear(canvas, session, realizer, path)
+            if child is None:
+                continue
+            session.selection.set((child,), current=child, source=SelectionSource.CANVAS)
+            _flush()
+            _assert_clear(canvas, session, realizer, path)
+
+
+def _fully_inside(inner: CanvasRect, outer: CanvasRect) -> bool:
+    return (
+        inner.x >= outer.x
+        and inner.y >= outer.y
+        and inner.x + inner.width <= outer.x + outer.width
+        and inner.y + inner.height <= outer.y + outer.height
+    )
+
+
+def test_the_page_name_uses_the_selection_fill_when_the_form_is_selected() -> None:
+    tokens = tokens_from_palette(QPalette(), force_mode="light")
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, _Host())
+        canvas.apply_theme(tokens)
+        _flush()
+        name = canvas.findChild(QLabel, "formBuilder.name")
+        assert name is not None
+        assert tokens.tree_selected_bg in name.styleSheet()
+        assert on_accent_for(tokens.tree_selected_bg) in name.styleSheet()
+        ok = _id(session.document, "ok")
+        session.selection.set((ok,), current=ok, source=SelectionSource.CANVAS)
+        _flush()
+        assert name.styleSheet() == ""
+        assert tokens.panel_bg in canvas.styleSheet()
+        session.selection.set((), source=SelectionSource.CANVAS)
+        _flush()
+        assert tokens.tree_selected_bg in name.styleSheet()
+        canvas.dispose()
+        parent.deleteLater()
 
 
 def _name(document: UiDocument, node_id: NodeId) -> str:

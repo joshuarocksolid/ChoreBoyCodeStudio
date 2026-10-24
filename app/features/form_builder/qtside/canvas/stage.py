@@ -7,6 +7,7 @@ minimum, and that size is not saved.
 
 from __future__ import annotations
 
+import math
 from typing import Callable, Optional, Tuple
 
 from app.qt.QtCore import Qt
@@ -90,6 +91,7 @@ class Stage:
         self._preview_ids: Tuple[NodeId, ...] = ()
         self._page_preview = False
         self._form_selected = False
+        self._selected_page_style = ""
         self._backdrop: Optional[BackdropPalette] = None
         self._extra: Tuple[QWidget, ...] = ()
         self._proxy = QGraphicsProxyWidget()
@@ -183,6 +185,23 @@ class Stage:
 
     def set_form_selected(self, selected: bool) -> None:
         self._form_selected = selected
+        self._apply_page_chip_style()
+
+    def set_page_chip_selected_style(self, stylesheet: str) -> None:
+        """Selection fill for the page name. Idle clears back to the view sheet."""
+        self._selected_page_style = stylesheet
+        self._apply_page_chip_style()
+
+    def _apply_page_chip_style(self) -> None:
+        # setStyleSheet sends a polish through the view. Repeating the same
+        # sheet re-enters selection on some realized forms.
+        if self._form_selected and self._selected_page_style:
+            sheet = self._selected_page_style
+        else:
+            sheet = ""
+        if self._name.styleSheet() == sheet:
+            return
+        self._name.setStyleSheet(sheet)
 
     def apply_palette(self, backdrop: BackdropPalette) -> None:
         self._backdrop = backdrop
@@ -346,6 +365,16 @@ class Stage:
 def _viewport(view: QGraphicsView) -> CanvasSize:
     viewport = view.viewport()
     return CanvasSize(max(viewport.width(), 1), max(viewport.height(), 1))
+
+
+def visible_scene_rect(view: QGraphicsView) -> CanvasRect:
+    """Scene rectangle currently inside the view, in canvas pixels."""
+    mapped = view.mapToScene(view.viewport().rect()).boundingRect()
+    left = math.floor(mapped.left())
+    top = math.floor(mapped.top())
+    right = math.ceil(mapped.right())
+    bottom = math.ceil(mapped.bottom())
+    return CanvasRect(left, top, max(1, right - left), max(1, bottom - top))
 
 
 def _label(parent: QGraphicsView, name: str, accessible: str) -> QLabel:
