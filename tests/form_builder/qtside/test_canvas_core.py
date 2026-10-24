@@ -758,6 +758,33 @@ def test_arrow_keys_skip_ancestors_and_widgets_that_are_not_past_the_edge() -> N
         assert nearest_in_direction(session.document, index, address, "right") == save
 
 
+def test_down_prefers_the_wide_widget_straight_below() -> None:
+    """Cross-axis distance is the edge gap, so a full-width table below wins."""
+    text = _ui(
+        """
+ <widget class="QWidget" name="Form">
+  <widget class="QCheckBox" name="paidCheck"/>
+  <widget class="QTableWidget" name="linesTable"/>
+  <widget class="QLabel" name="subtotalLabel"/>
+ </widget>
+"""
+    )
+    with _opened(text) as session:
+        form = _nid(session, "Form")
+        paid = _nid(session, "paidCheck")
+        table = _nid(session, "linesTable")
+        subtotal = _nid(session, "subtotalLabel")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 600, 300), None),
+                _entry(paid, "widget", (16, 56, 120, 22), form),
+                _entry(table, "widget", (0, 100, 600, 100), form),
+                _entry(subtotal, "widget", (0, 210, 60, 20), form),
+            )
+        )
+        assert nearest_in_direction(session.document, index, paid, "down") == table
+
+
 def test_empty_space_in_a_bare_group_starts_a_band() -> None:
     with _opened(BARE) as session:
         view = _view()

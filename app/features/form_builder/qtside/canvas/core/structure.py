@@ -155,7 +155,7 @@ def nearest_in_direction(
         return None
     order = {widget_id: position for position, widget_id in enumerate(_widgets(document))}
     best: Optional[NodeId] = None
-    best_key: Optional[Tuple[float, int]] = None
+    best_key: Optional[Tuple[float, float, int]] = None
     for widget_id, rect in _visible_widgets(index, document):
         if widget_id == node:
             continue
@@ -164,33 +164,47 @@ def nearest_in_direction(
         gap = _past_edge(origin, rect, direction)
         if gap is None:
             continue
-        along, across = gap
-        key = (along + 2.0 * across, order.get(widget_id, 0))
+        along, across, centres = gap
+        key = (along + 2.0 * across, centres, order.get(widget_id, 0))
         if best_key is None or key < best_key:
             best_key = key
             best = widget_id
     return best
 
 
-def _past_edge(origin: Rect, rect: Rect, direction: Direction) -> Optional[Tuple[float, float]]:
-    """Distance past the facing edge, and the distance across that axis."""
-    if direction == "right":
-        edge = origin.x + origin.width
-        if rect.x < edge:
-            return None
-        return (float(rect.x - edge), abs(_mid_y(rect) - _mid_y(origin)))
-    if direction == "left":
-        if rect.x + rect.width > origin.x:
-            return None
-        return (float(origin.x - (rect.x + rect.width)), abs(_mid_y(rect) - _mid_y(origin)))
+def _past_edge(
+    origin: Rect, rect: Rect, direction: Direction
+) -> Optional[Tuple[float, float, float]]:
+    """Gap past the facing edge, edge gap across the axis, and centre offset across it.
+
+    The cross-axis gap is zero when the two overlap on that axis, so a wide
+    widget straight below is nearer than a small one off to the side.
+    """
+    if direction in ("right", "left"):
+        if direction == "right":
+            if rect.x < origin.x + origin.width:
+                return None
+            along = float(rect.x - (origin.x + origin.width))
+        else:
+            if rect.x + rect.width > origin.x:
+                return None
+            along = float(origin.x - (rect.x + rect.width))
+        across = _span_gap(origin.y, origin.height, rect.y, rect.height)
+        return (along, across, abs(_mid_y(rect) - _mid_y(origin)))
     if direction == "down":
-        edge = origin.y + origin.height
-        if rect.y < edge:
+        if rect.y < origin.y + origin.height:
             return None
-        return (float(rect.y - edge), abs(_mid_x(rect) - _mid_x(origin)))
-    if rect.y + rect.height > origin.y:
-        return None
-    return (float(origin.y - (rect.y + rect.height)), abs(_mid_x(rect) - _mid_x(origin)))
+        along = float(rect.y - (origin.y + origin.height))
+    else:
+        if rect.y + rect.height > origin.y:
+            return None
+        along = float(origin.y - (rect.y + rect.height))
+    across = _span_gap(origin.x, origin.width, rect.x, rect.width)
+    return (along, across, abs(_mid_x(rect) - _mid_x(origin)))
+
+
+def _span_gap(start_a: float, size_a: float, start_b: float, size_b: float) -> float:
+    return float(max(0.0, start_b - (start_a + size_a), start_a - (start_b + size_b)))
 
 
 def _mid_x(rect: Rect) -> float:
