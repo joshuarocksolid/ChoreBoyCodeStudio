@@ -62,6 +62,8 @@ from app.features.form_builder.integration.layout import (
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
 from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
+from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
+from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.shortcut_preferences import default_shortcut_map
@@ -216,6 +218,10 @@ class FormSurface(QWidget):
             on_xml=self._on_xml_toggled,
             on_undo=self._toolbar_undo,
             on_redo=self._toolbar_redo,
+            on_zoom_out=self.zoom_out,
+            on_zoom_in=self.zoom_in,
+            on_zoom_to=self.zoom_to,
+            on_zoom_fit=self.zoom_fit,
         )
         self._toolbar.setFixedHeight(TOOLBAR_HEIGHT)
         layout.addWidget(self._toolbar)
@@ -691,6 +697,18 @@ class FormSurface(QWidget):
 
     def zoom_changed(self, label: str) -> None:
         self._toolbar.zoom_label.setText(label)
+
+    def zoom_out(self) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomStep(-1)))
+
+    def zoom_in(self) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomStep(1)))
+
+    def zoom_to(self, factor: float) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomTo(factor)))
+
+    def zoom_fit(self) -> None:
+        self._workbench.canvas.send(ZoomAsked(ZoomFit()))
 
     def open_problem(self, node: NodeId) -> None:
         del node

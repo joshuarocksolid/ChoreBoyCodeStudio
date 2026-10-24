@@ -154,7 +154,14 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
     _row("form.action.escape", "Close or select parent", "Esc", ("canvas", "outline", "inspector", "form_tab")),
     _row("form.action.selectNext", "Select next widget", "Tab", _CANVAS),
     _row("form.action.selectPrevious", "Select previous widget", "Shift+Tab", _CANVAS),
-    _row("form.action.zoomToFit", "Zoom to fit", "Ctrl+9", _FORM),
+    _row(
+        "form.action.zoomToFit",
+        "Zoom to fit",
+        "Ctrl+9",
+        _FORM,
+        menu=("Zoom to fit",),
+        available=True,
+    ),
     _row("form.action.leaveOverlay", "Leave overlay", "F3", _FORM),
     _row("form.action.focusOutline", "Focus outline", "Alt+1", _FORM),
     _row("form.action.focusInsert", "Focus insert", "Alt+2", _FORM),
@@ -257,6 +264,7 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         "Zoom in",
         "Ctrl+=",
         _FORM,
+        menu=("Zoom in",),
         kind="shell",
         available=True,
         shell_action_id="shell.action.view.zoomIn",
@@ -266,6 +274,7 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         "Zoom out",
         "Ctrl+-",
         _FORM,
+        menu=("Zoom out",),
         kind="shell",
         available=True,
         shell_action_id="shell.action.view.zoomOut",
@@ -275,6 +284,7 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         "Zoom 100%",
         "Ctrl+0",
         _FORM,
+        menu=("Zoom 100%",),
         kind="shell",
         available=True,
         shell_action_id="shell.action.view.zoomReset",
@@ -397,11 +407,16 @@ def is_widget_shortcut(command: FormCommand) -> bool:
     return frozenset(command.contexts) <= _WIDGET
 
 
+# The canvas input translator already claims Ctrl+9. A window shortcut would
+# fire a second time beside that handler.
+_CANVAS_OWNED_KEYS = frozenset({"form.action.zoomToFit"})
+
+
 def menu_hint(command: FormCommand) -> str:
     """Key text for the menu. These keys are not window shortcuts."""
     if not command.shortcut or not command.menu_path:
         return ""
-    if command.kind == "shell" or is_widget_shortcut(command):
+    if command.kind == "shell" or is_widget_shortcut(command) or command.command_id in _CANVAS_OWNED_KEYS:
         return command.shortcut
     return ""
 

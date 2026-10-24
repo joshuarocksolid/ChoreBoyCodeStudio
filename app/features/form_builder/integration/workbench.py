@@ -147,6 +147,10 @@ class FormToolbar(QWidget):
         on_xml: Callable[[bool], None],
         on_undo: Callable[[], None],
         on_redo: Callable[[], None],
+        on_zoom_out: Optional[Callable[[], None]] = None,
+        on_zoom_in: Optional[Callable[[], None]] = None,
+        on_zoom_to: Optional[Callable[[float], None]] = None,
+        on_zoom_fit: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.toolbar")
@@ -196,11 +200,42 @@ class FormToolbar(QWidget):
         row.addWidget(self.undo)
         row.addWidget(self.redo)
 
-        self.zoom_out = _tool("−", "formBuilder.zoomOut", "Zoom is not available yet", self)
-        self.zoom_label = _tool("100%", "formBuilder.zoomLabel", "Zoom is not available yet", self)
-        self.zoom_in = _tool("+", "formBuilder.zoomIn", "Zoom is not available yet", self)
+        zoom_ready = None not in (on_zoom_out, on_zoom_in, on_zoom_to, on_zoom_fit)
+        self.zoom_out = _tool(
+            "−",
+            "formBuilder.zoomOut",
+            "Zoom out" if zoom_ready else "Zoom is not available yet",
+            self,
+        )
+        self.zoom_label = _tool(
+            "100%",
+            "formBuilder.zoomLabel",
+            "Choose a zoom" if zoom_ready else "Zoom is not available yet",
+            self,
+        )
+        self.zoom_in = _tool(
+            "+",
+            "formBuilder.zoomIn",
+            "Zoom in" if zoom_ready else "Zoom is not available yet",
+            self,
+        )
+        if zoom_ready:
+            assert on_zoom_out is not None and on_zoom_in is not None
+            assert on_zoom_to is not None and on_zoom_fit is not None
+            self.zoom_out.clicked.connect(on_zoom_out)
+            self.zoom_in.clicked.connect(on_zoom_in)
+            self.zoom_label.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
+            zoom_menu = QMenu(self.zoom_label)
+            zoom_menu.setObjectName("formBuilder.zoomMenu")
+            zoom_menu.addAction("Fit").triggered.connect(on_zoom_fit)
+            for percent in (50, 75, 100, 150, 200):
+                action = zoom_menu.addAction("%d%%" % percent)
+                action.triggered.connect(lambda _checked=False, value=percent: on_zoom_to(value / 100.0))
+            self.zoom_label.setMenu(zoom_menu)
+        else:
+            for button in (self.zoom_out, self.zoom_label, self.zoom_in):
+                button.setEnabled(False)
         for button in (self.zoom_out, self.zoom_label, self.zoom_in):
-            button.setEnabled(False)
             row.addWidget(button)
         self.text_size = _tool("Aa", "formBuilder.textSize", "Text size is not available yet", self)
         self.two_widths = _tool("Widths", "formBuilder.twoWidths", "Two widths is not available yet", self)

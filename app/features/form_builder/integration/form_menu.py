@@ -135,6 +135,18 @@ def _trigger(window: Any, command_id: str) -> None:
         workflow = getattr(window, "_save_workflow", None)
         if workflow is not None:
             workflow.handle_save_action()
+        return
+    if command_id == "form.action.zoomIn":
+        surface.zoom_in()
+        return
+    if command_id == "form.action.zoomOut":
+        surface.zoom_out()
+        return
+    if command_id == "form.action.zoomReset":
+        surface.zoom_to(1.0)
+        return
+    if command_id == "form.action.zoomToFit":
+        surface.zoom_fit()
 
 
 def _active_form(window: Any) -> Any:

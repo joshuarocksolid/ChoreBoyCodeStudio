@@ -2,18 +2,22 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List, Tuple
 
 import pytest
 
-from app.qt.QtCore import QRectF, Qt  # type: ignore[reportAttributeAccessIssue]
-from app.qt.QtGui import QImage, QPainter  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtCore import QPoint, QPointF, QRectF, Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtGui import QImage, QPainter, QWheelEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtWidgets import QApplication, QMenuBar, QShortcut, QToolButton, QWidget
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.integration.form_menu import register_form_menu
 from app.features.form_builder.qtside.canvas.core.frame import Handle, Stroke
 from app.features.form_builder.qtside.canvas.core.space import GUTTERS
+from app.shell.menus import build_menu_stubs, clear_menu_contributors
 from tests.form_builder.qtside.support import form, opened
+from tests.unit.features.form_builder.test_workbench import _FORM, _open
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -61,6 +65,103 @@ class _Host:
 
     def open_layout_popover(self, node: object) -> None:
         return None
+
+
+def test_toolbar_and_form_menu_zoom_the_canvas(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    parent = QWidget()
+    parent.resize(1100, 720)
+    surface = _open(parent, _FORM, tmp_path / "invoice.ui")
+    parent.show()
+    _flush()
+    canvas = surface.findChild(QWidget, "formBuilder.canvas")
+    assert isinstance(canvas, FormCanvas)
+    zoom_out = surface.findChild(QToolButton, "formBuilder.zoomOut")
+    zoom_label = surface.findChild(QToolButton, "formBuilder.zoomLabel")
+    zoom_in = surface.findChild(QToolButton, "formBuilder.zoomIn")
+    assert zoom_out is not None and zoom_label is not None and zoom_in is not None
+    assert zoom_out.isEnabled() and zoom_label.isEnabled() and zoom_in.isEnabled()
+    assert zoom_out.toolTip() == "Zoom out"
+    assert zoom_in.toolTip() == "Zoom in"
+    before = _scale(canvas)
+    QTest.mouseClick(zoom_in, _mouse("LeftButton"))
+    _flush()
+    assert _scale(canvas) > before + 0.05
+    menu = zoom_label.menu()
+    assert menu is not None
+    assert menu.objectName() == "formBuilder.zoomMenu"
+    labels = [action.text() for action in menu.actions()]
+    assert labels == ["Fit", "50%", "75%", "100%", "150%", "200%"]
+    _menu_action(menu, "50%").trigger()
+    _flush()
+    assert abs(_scale(canvas) - 0.5) < 1e-6
+    assert zoom_label.text() == "50%"
+    _menu_action(menu, "Fit").trigger()
+    _flush()
+    assert abs(_scale(canvas) - 0.5) > 0.05
+
+    class _Tab:
+        def __init__(self, path: str) -> None:
+            self.file_path = path
+
+    class _Manager:
+        def active_tab(self) -> _Tab:
+            return _Tab(surface.form_path())
+
+    class _Registry:
+        def surface_for_path(self, path: str) -> object:
+            del path
+            return surface
+
+    window = QWidget()
+    window._editor_manager = _Manager()  # type: ignore[attr-defined]
+    window._tab_content_registry = _Registry()  # type: ignore[attr-defined]
+    register_form_menu(window)
+    bar = QMenuBar(window)
+    try:
+        registry = build_menu_stubs(bar)
+        for command_id in (
+            "form.action.zoomIn",
+            "form.action.zoomOut",
+            "form.action.zoomReset",
+            "form.action.zoomToFit",
+        ):
+            assert registry.actions[command_id].isEnabled()
+        fit = registry.actions["form.action.zoomToFit"]
+        assert fit.shortcut().isEmpty()
+        assert "Ctrl+9" in fit.text()
+        _menu_action(menu, "200%").trigger()
+        _flush()
+        assert abs(_scale(canvas) - 2.0) < 1e-6
+        registry.actions["form.action.zoomReset"].trigger()
+        _flush()
+        assert abs(_scale(canvas) - 1.0) < 1e-6
+        registry.actions["form.action.zoomOut"].trigger()
+        _flush()
+        assert abs(_scale(canvas) - 0.9) < 1e-6
+        registry.actions["form.action.zoomIn"].trigger()
+        _flush()
+        assert abs(_scale(canvas) - 1.0) < 1e-6
+        registry.actions["form.action.zoomToFit"].trigger()
+        _flush()
+        assert abs(_scale(canvas) - 1.0) < 1e-6
+    finally:
+        clear_menu_contributors()
+        surface.release()
+        window.deleteLater()
+        parent.deleteLater()
+        qapp.processEvents()
+
+
+def test_ctrl_wheel_zooms_inside_the_canvas() -> None:
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, _Host(), 960, 720)
+        before = _scale(canvas)
+        _wheel(canvas, 120)
+        assert _scale(canvas) > before + 0.05
+        keys = [shortcut.key().toString() for shortcut in canvas.findChildren(QShortcut)]
+        assert all("Wheel" not in key for key in keys)
+        canvas.dispose()
+        parent.deleteLater()
 
 
 def test_ctrl_plus_steps_through_the_zoom_table() -> None:
@@ -151,6 +252,20 @@ def _canvas(
     parent.show()
     _flush()
     return canvas, parent
+
+
+def _menu_action(menu: object, label: str) -> object:
+    found = next(action for action in menu.actions() if action.text() == label)  # type: ignore[attr-defined]
+    return found
+
+
+def _wheel(canvas: FormCanvas, dy: int) -> None:
+    pos = QPointF(24, 24)
+    buttons = getattr(getattr(Qt, "MouseButton", Qt), "NoButton")
+    phase = getattr(getattr(Qt, "ScrollPhase", Qt), "NoScrollPhase")
+    event = QWheelEvent(pos, pos, QPoint(0, 0), QPoint(0, dy), buttons, _mods("ControlModifier"), phase, False)
+    QApplication.sendEvent(canvas.viewport(), event)
+    _flush()
 
 
 def _zoom_in(canvas: FormCanvas) -> None:
