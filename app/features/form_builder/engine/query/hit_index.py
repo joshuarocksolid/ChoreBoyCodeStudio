@@ -157,6 +157,11 @@ class HitIndex:
         self._require_fresh()
         return self._children.get(container, ())
 
+    def geometry(self) -> Tuple[GeoEntry, ...]:
+        """The fresh entry tuple, parents before children. Titles included."""
+        self._require_fresh()
+        return self._entries
+
     @property
     def refresh_count(self) -> int:
         return self._refreshes
