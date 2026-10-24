@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from typing import Dict, List, Literal, Optional, Tuple
 
-from app.features.form_builder.engine.commands.base import CommandOutcome
 from app.features.form_builder.engine.commands.catalog import AddConnection, DeleteNodes, EditConnection
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.nodes import ConnectionNode, WidgetNode
@@ -32,6 +31,8 @@ class BehaviorPage(QWidget):
         self._pending_open: Optional[NodeId] = None
         self._add_signal = ""
         self._view: Optional[OneBehavior] = None
+        self._draft: Optional[_Draft] = None
+        self._draft_row: Optional[_DraftRow] = None
         self._message = QLabel(self)
         self._message.setWordWrap(True)
         self._add = QPushButton("+ Add connection", self)
@@ -57,6 +58,7 @@ class BehaviorPage(QWidget):
 
     def paint(self, view: BehaviorView) -> None:
         if isinstance(view, ManyBehavior):
+            self._clear_draft()
             self._view = None
             self._message.setText("Select one widget to see its connections.")
             self._message.show()
@@ -68,7 +70,7 @@ class BehaviorPage(QWidget):
         signal = view.add_signal or self._first_signal(view.sender)
         self._add_signal = signal or ""
         self._add.setEnabled(bool(self._add_signal))
-        if view.connections:
+        if view.connections or self._draft is not None:
             self._message.hide()
             self._list.show()
         else:
@@ -76,6 +78,11 @@ class BehaviorPage(QWidget):
             self._message.show()
             self._list.show()
         self._reconcile(view)
+        if self._draft_row is not None:
+            self._message.hide()
+            self._list.show()
+            self._list_layout.insertWidget(0, self._draft_row)
+            self._draft_row.show()
         pending = self._pending_open
         self._pending_open = None
         if pending is not None:
@@ -83,13 +90,74 @@ class BehaviorPage(QWidget):
             if row is not None:
                 row.open_signal()
 
+    def has_draft(self) -> bool:
+        return self._draft is not None
+
+    def discard_draft(self) -> bool:
+        if self._draft is None and self._draft_row is None:
+            return False
+        view = self._view
+        self._clear_draft()
+        if view is not None and not view.connections:
+            self._message.setText(view.empty)
+            self._message.show()
+        return True
+
+    def note_focus(self, focus: object) -> None:
+        if self._draft is None or focus is None:
+            return
+        widget = focus
+        while isinstance(widget, QWidget):
+            if widget is self:
+                return
+            parent = widget.parentWidget()
+            widget = parent
+        self.discard_draft()
+
     def _add_clicked(self) -> None:
         view = self._view
         if view is None or not self._add_signal:
             return
-        self._add_connection(view, self._add_signal)
+        if self._draft_row is not None:
+            self._draft_row.open_signal()
+            return
+        receiver = self._services.session.document.root.object_name
+        self._draft = _Draft(self._add_signal, receiver)
+        row = _DraftRow(self, self._list)
+        self._draft_row = row
+        self._list_layout.insertWidget(0, row)
+        self._list.show()
+        self._message.hide()
+        row.show()
+        row.fill(
+            self._choices(view.sender, "signals"),
+            self._receiver_names(),
+            self._slots_for(receiver),
+            self._add_signal,
+            receiver,
+        )
+        row.open_signal()
 
-    def _add_connection(self, view: OneBehavior, signal: str) -> None:
+    def _draft_signal(self, text: str) -> None:
+        draft = self._draft
+        if draft is None or not text:
+            return
+        draft.signal = text
+
+    def _draft_receiver(self, text: str) -> None:
+        draft = self._draft
+        row = self._draft_row
+        if draft is None or row is None or not text:
+            return
+        draft.receiver = text
+        row.set_slots(self._slots_for(text))
+
+    def _commit_draft(self, slot: str) -> None:
+        view = self._view
+        draft = self._draft
+        chosen = slot.strip()
+        if view is None or draft is None or not chosen:
+            return
         document = self._services.session.document
         connections = document.connections()
         index = len(connections)
@@ -97,11 +165,31 @@ class BehaviorPage(QWidget):
             if isinstance(connection, ConnectionNode) and connection.sender == view.sender_name:
                 index = position
                 break
-        result = self._services.execute(
-            AddConnection(view.sender_name, signal, document.root.object_name, "close()", index)
-        )
-        if isinstance(result, CommandOutcome) and isinstance(result.result, int):
-            self._pending_open = NodeId(result.result)
+        signal = draft.signal or self._add_signal
+        receiver = draft.receiver or document.root.object_name
+        self._clear_draft()
+        self._services.execute(AddConnection(view.sender_name, signal, receiver, chosen, index))
+
+    def _clear_draft(self) -> None:
+        self._draft = None
+        row = self._draft_row
+        self._draft_row = None
+        if row is None:
+            return
+        self._list_layout.removeWidget(row)
+        row.hide()
+        row.setParent(None)
+        row.deleteLater()
+
+    def _slots_for(self, name: str) -> Tuple[str, ...]:
+        document = self._services.session.document
+        found = document.by_name(name)
+        if not found:
+            return ()
+        node = document.node(found[0])
+        if not isinstance(node, WidgetNode):
+            return ()
+        return self._choices(node.id, "slots")
 
     def _on_picked(
         self, connection: NodeId, field: Literal["signal", "receiver", "slot"], text: str
@@ -225,3 +313,60 @@ def _with_current(choices: Tuple[str, ...], current: str) -> Tuple[str, ...]:
     if current and current not in found:
         found.insert(0, current)
     return tuple(found)
+
+
+class _Draft:
+    def __init__(self, signal: str, receiver: str) -> None:
+        self.signal = signal
+        self.receiver = receiver
+
+
+class _DraftRow(QWidget):
+
+    def __init__(self, page: BehaviorPage, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._page = page
+        self.setObjectName("formBuilder.connectionDraft")
+        self._signal = QComboBox(self)
+        self._receiver = QComboBox(self)
+        self._slot = QComboBox(self)
+        self._signal.setObjectName("formBuilder.draftSignal")
+        self._receiver.setObjectName("formBuilder.draftReceiver")
+        self._slot.setObjectName("formBuilder.draftSlot")
+        self._signal.activated.connect(lambda _index: page._draft_signal(self._signal.currentText()))
+        self._receiver.activated.connect(lambda _index: page._draft_receiver(self._receiver.currentText()))
+        self._slot.activated.connect(lambda _index: page._commit_draft(self._slot.currentText()))
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        words = QLabel("New connection", self)
+        layout.addWidget(words)
+        row = QHBoxLayout()
+        row.addWidget(self._signal, 1)
+        row.addWidget(self._receiver, 1)
+        row.addWidget(self._slot, 1)
+        layout.addLayout(row)
+
+    def fill(
+        self,
+        signals: Tuple[str, ...],
+        receivers: Tuple[str, ...],
+        slots: Tuple[str, ...],
+        signal: str,
+        receiver: str,
+    ) -> None:
+        _fill(self._signal, signals, signal)
+        _fill(self._receiver, receivers, receiver)
+        self.set_slots(slots)
+
+    def set_slots(self, slots: Tuple[str, ...]) -> None:
+        box = self._slot
+        box.blockSignals(True)
+        box.clear()
+        box.addItems(list(slots))
+        box.setCurrentIndex(-1)
+        box.setPlaceholderText("Choose a slot")
+        box.blockSignals(False)
+
+    def open_signal(self) -> None:
+        self._signal.setFocus()
+        self._signal.showPopup()

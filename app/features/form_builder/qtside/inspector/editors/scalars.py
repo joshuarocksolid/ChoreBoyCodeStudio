@@ -27,6 +27,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Unset,
     ValueSpec,
     Written,
+    mark,
 )
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QKeySequence
@@ -58,6 +59,7 @@ class TextEditor:
         return self._edit
 
     def show(self, value: RowValue) -> None:
+        mark(self._edit, value)
         self._shown = _text_of(value)
         self._edit.blockSignals(True)
         self._edit.setText(self._shown)
@@ -86,6 +88,7 @@ class BoolEditor:
         return self._box
 
     def show(self, value: RowValue) -> None:
+        mark(self._box, value)
         self._box.blockSignals(True)
         flag = _written_bool(value)
         if isinstance(value, Mixed):
@@ -116,13 +119,15 @@ class IntEditor:
         return self._spin
 
     def show(self, value: RowValue) -> None:
+        mark(self._spin, value)
         self._spin.blockSignals(True)
-        if isinstance(value, Mixed):
-            self._spin.setSpecialValueText(MIXED_TEXT)
+        number = _number_of(value)
+        if isinstance(value, Mixed) or number is None:
+            self._spin.setSpecialValueText(MIXED_TEXT if isinstance(value, Mixed) else NOT_SET_TEXT)
             self._spin.setValue(self._spin.minimum())
         else:
             self._spin.setSpecialValueText("")
-            self._spin.setValue(_clamp(_number_of(value), self._spin.minimum(), self._spin.maximum()))
+            self._spin.setValue(_clamp(number, self._spin.minimum(), self._spin.maximum()))
         self._spin.blockSignals(False)
 
     def _commit(self, number: int) -> None:
@@ -146,13 +151,15 @@ class DoubleEditor:
         return self._spin
 
     def show(self, value: RowValue) -> None:
+        mark(self._spin, value)
         self._spin.blockSignals(True)
-        if isinstance(value, Mixed):
-            self._spin.setSpecialValueText(MIXED_TEXT)
+        number = _number_of(value)
+        if isinstance(value, Mixed) or number is None:
+            self._spin.setSpecialValueText(MIXED_TEXT if isinstance(value, Mixed) else NOT_SET_TEXT)
             self._spin.setValue(self._spin.minimum())
         else:
             self._spin.setSpecialValueText("")
-            self._spin.setValue(float(_number_of(value)))
+            self._spin.setValue(float(number))
         self._spin.blockSignals(False)
 
     def _commit(self, number: float) -> None:
@@ -171,6 +178,7 @@ class KeySequenceEditor:
         return self._edit
 
     def show(self, value: RowValue) -> None:
+        mark(self._edit, value)
         self._edit.blockSignals(True)
         self._edit.setKeySequence(QKeySequence(_text_of(value)))
         self._edit.blockSignals(False)
@@ -220,11 +228,11 @@ def _written_bool(value: RowValue) -> Optional[bool]:
         return found.value
     return None
 
-def _number_of(value: RowValue) -> float:
+def _number_of(value: RowValue) -> Optional[float]:
     found = _written(value)
     if isinstance(found, (NumberValue, UIntValue, LongLongValue, ULongLongValue, DoubleValue, FloatValue)):
         return float(found.value)
-    return 0.0
+    return None
 
 def _clamp(number: float, low: int, high: int) -> int:
     value = int(number)

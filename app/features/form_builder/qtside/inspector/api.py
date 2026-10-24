@@ -169,7 +169,11 @@ RowSource = Union[Prop, LayoutProp, CellAlignment]
 
 @dataclass(frozen=True)
 class RowSpec:
-    """A curated row. With ``classes`` set, every owner's chain must include one of them."""
+    """A curated row. With ``classes`` set, every owner's chain must include one of them.
+
+    ``order`` is a sort key inside the group. ``after`` names the row key this
+    one sits immediately after. ``after`` is applied after ``order``.
+    """
 
     key: str
     group: GroupId
@@ -177,6 +181,8 @@ class RowSpec:
     help: str
     source: RowSource
     classes: Tuple[str, ...] = ()
+    order: Optional[int] = None
+    after: str = ""
 
 class EditorHost(Protocol):
     def commit(self, value: Value) -> None:
@@ -235,6 +241,25 @@ class Registrar(Protocol):
 
     def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None: ...
 
+def mark(widget: QWidget, value: RowValue) -> None:
+    if isinstance(value, Mixed):
+        state = "mixed"
+    elif isinstance(value, Unset):
+        state = "unset"
+    else:
+        state = "set"
+    font = widget.font()
+    italic = state == "mixed"
+    if font.italic() != italic:
+        font.setItalic(italic)
+        widget.setFont(font)
+    if widget.property("fbState") == state:
+        return
+    widget.setProperty("fbState", state)
+    style = widget.style()
+    style.unpolish(widget)
+    style.polish(widget)
+
 __all__ = [
     "ALIGNMENT",
     "CellAlignment",
@@ -266,4 +291,5 @@ __all__ = [
     "ValueSpec",
     "Written",
     "editor_key",
+    "mark",
 ]

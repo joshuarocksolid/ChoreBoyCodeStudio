@@ -108,10 +108,11 @@ class InspectorPane(QWidget):
         self._timer = QTimer(self)
         self._timer.setSingleShot(True)
         self._timer.timeout.connect(self.flush)
+        self._app: Optional[QApplication] = None
         app = QApplication.instance()
         if isinstance(app, QApplication):
-            app.installEventFilter(self)
-            self._filtered_app = app
+            self._app = app
+            app.focusChanged.connect(self._on_app_focus)
         self._log_sub = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
         self._selection_unsub = session.selection.subscribe(self._on_selection)
         self._diag_unsub = session.diagnostics.subscribe(self._on_diagnostics)
@@ -131,7 +132,18 @@ class InspectorPane(QWidget):
     def set_link_color(self, color: str) -> None:
         """The palette link colour fails contrast on dark panels; a token is passed in."""
         self._link_color = color
+        self.header.set_link_color(color)
+        self.properties.set_link_color(color)
         self.properties.set_problem_link(self._problem_count, self._on_show_problems, color)
+
+    def set_compact(self, compact: bool) -> None:
+        self.properties.set_compact(compact)
+
+    def bind_settings(self, store: object) -> None:
+        self.properties.bind_qt_names(store)
+
+    def set_group_expanded(self, group: object, expanded: bool) -> None:
+        self.properties.set_group_expanded(group, expanded)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self.setStyleSheet(_stylesheet(chrome))
@@ -175,13 +187,23 @@ class InspectorPane(QWidget):
         self._timer.stop()
         session = self._services.session
         ids = session.selection.state.ids or (session.document.root.id,)
-        live = live_classes(self._realizer, session.document, ids)
+        include_all = self.properties.builds_all_properties()
+        live = live_classes(
+            self._realizer,
+            session.document,
+            ids,
+            with_values=True,
+        )
+        root = self._realizer.root_widget
+        live_size = None if root is None else (root.width(), root.height())
         pages = project(
             session,
             self._services.catalog,
             search=self.properties.search,
             live=live,
             tab_order=self._memo.get,
+            include_all=include_all,
+            live_size=live_size,
         )
         with self._services.painting():
             self.properties.paint(pages.body)
@@ -196,10 +218,14 @@ class InspectorPane(QWidget):
 
     def dispose(self) -> None:
         self._timer.stop()
-        app = self._filtered_app
+        app = self._app
         if app is not None:
-            app.removeEventFilter(self)
-            self._filtered_app = None
+            try:
+                app.focusChanged.disconnect(self._on_app_focus)
+            except (RuntimeError, TypeError):
+                pass
+            self._app = None
+        self._remove_filter()
         subscription = self._log_sub
         close = getattr(subscription, "close", None)
         if callable(close):
@@ -230,9 +256,14 @@ class InspectorPane(QWidget):
         super().keyPressEvent(event)
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if not self._owns(watched) or not isinstance(event, QKeyEvent):
+        if not isinstance(event, QKeyEvent):
             return False
-        if event.type() == QEvent.ShortcutOverride and self._override(event):
+        kind = event.type()
+        if kind != QEvent.ShortcutOverride and kind != QEvent.KeyPress:
+            return False
+        if not self._owns(watched):
+            return False
+        if kind == QEvent.ShortcutOverride and self._override(event):
             event.accept()
             self._dispatch_claimed(event)
             return True
@@ -271,6 +302,29 @@ class InspectorPane(QWidget):
             return
         self._timer.start(0)
 
+    def _on_app_focus(self, _old: object, new: object) -> None:
+        self._sync_filter(new)
+        self.properties.note_focus(new)
+        self.behavior.note_focus(new)
+
+    def _sync_filter(self, focus: object) -> None:
+        app = self._app
+        if app is None:
+            return
+        if _inside(self, focus):
+            if self._filtered_app is None:
+                app.installEventFilter(self)
+                self._filtered_app = app
+            return
+        self._remove_filter()
+
+    def _remove_filter(self) -> None:
+        app = self._filtered_app
+        if app is None:
+            return
+        app.removeEventFilter(self)
+        self._filtered_app = None
+
     def _owns(self, watched: object) -> bool:
         if watched is self:
             return True
@@ -288,7 +342,9 @@ class InspectorPane(QWidget):
             return True
         if _is_find(event):
             return True
-        if key == _code(Qt.Key_Escape) and mods == 0 and self._esc() is not EscAction.LEAVE:
+        if key == _code(Qt.Key_Escape) and mods == 0 and (
+            self.behavior.has_draft() or self._esc() is not EscAction.LEAVE
+        ):
             return True
         return False
 
@@ -316,6 +372,8 @@ class InspectorPane(QWidget):
             self.header.begin_rename()
             return
         if key == _code(Qt.Key_Escape):
+            if self.behavior.discard_draft():
+                return
             action = self._esc()
             if action is EscAction.CLEAR_SEARCH:
                 self.properties.clear_search()
@@ -372,8 +430,15 @@ def _stylesheet(chrome: FormChrome) -> str:
         " QPlainTextEdit:focus, QKeySequenceEdit:focus, QListWidget:focus, QFontComboBox:focus {"
         " border: %dpx solid %s; }"
         "QLabel { color: %s; background: transparent; }"
+        "QCheckBox { color: %s; background: transparent; }"
         "QLabel#formBuilder\\.inspectorClass, QLabel#formBuilder\\.rowQtName,"
-        " QLabel#formBuilder\\.inspectorGlyph { color: %s; }"
+        " QWidget#formBuilder\\.inspectorGlyph { color: %s; }"
+        "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
+        " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"]"
+        " { color: %s; }"
+        "QSpinBox[fbState=\"mixed\"], QDoubleSpinBox[fbState=\"mixed\"], QComboBox[fbState=\"mixed\"],"
+        " QLineEdit[fbState=\"mixed\"], QFontComboBox[fbState=\"mixed\"], QCheckBox[fbState=\"mixed\"],"
+        " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
         "QLabel#formBuilder\\.rowDefault, QLabel#formBuilder\\.rowMixed { color: %s; }"
         "QLabel#formBuilder\\.rowError, QLabel#formBuilder\\.inspectorNameError { color: %s; }"
         "QFrame#formBuilder\\.rowChanged { background: %s; border: none; }"
@@ -386,12 +451,19 @@ def _stylesheet(chrome: FormChrome) -> str:
             width,
             chrome.accent,
             chrome.text,
+            chrome.text,
             chrome.muted,
+            chrome.faint,
+            chrome.faint,
             chrome.faint,
             chrome.error,
             chrome.accent,
         )
     )
+
+def _inside(pane: QWidget, focus: object) -> bool:
+    return isinstance(focus, QWidget) and (focus is pane or pane.isAncestorOf(focus))
+
 
 def _key(event: QKeyEvent) -> int:
     return int(enum_value(event.key()))

@@ -12,6 +12,7 @@ from app.features.form_builder.engine.ui4.values import (
 from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
     MIXED_TEXT,
+    NOT_SET_TEXT,
     EditorHost,
     EditorKey,
     Mixed,
@@ -20,6 +21,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Unset,
     ValueSpec,
     Written,
+    mark,
 )
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
@@ -87,17 +89,32 @@ class EnumEditor:
         if self._enum is None:
             label = self._box
             assert isinstance(label, QLabel)
-            label.setText(text or (MIXED_TEXT if isinstance(value, Mixed) else ""))
+            mark(label, value)
+            if isinstance(value, Mixed):
+                label.setText(MIXED_TEXT)
+            elif text:
+                label.setText(text)
+            else:
+                label.setText(NOT_SET_TEXT)
             return
         combo = self._box
         assert isinstance(combo, QComboBox)
+        mark(combo, value)
         combo.blockSignals(True)
         names = self._enum.names
         tail = text.split("::")[-1] if text else ""
         index = names.index(tail) if tail in names else -1
         combo.setCurrentIndex(index)
         if index < 0:
-            combo.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else text)
+            if isinstance(value, Mixed):
+                placeholder = MIXED_TEXT
+            elif text:
+                placeholder = text
+            else:
+                placeholder = NOT_SET_TEXT
+            combo.setPlaceholderText(placeholder)
+        else:
+            combo.setPlaceholderText("")
         combo.blockSignals(False)
 
     def _commit(self, index: int) -> None:
@@ -122,6 +139,7 @@ class SetEditor:
         return self._list
 
     def show(self, value: RowValue) -> None:
+        mark(self._list, value)
         chosen = set(_flag_tails(_set_text(value)))
         self._list.blockSignals(True)
         for index in range(self._list.count()):
@@ -157,6 +175,7 @@ class AlignmentEditor:
         return self._root
 
     def show(self, value: RowValue) -> None:
+        mark(self._root, value)
         chosen = set(_flag_tails(_set_text(value)))
         for name, button in self._buttons:
             button.blockSignals(True)
@@ -201,6 +220,7 @@ class CursorEditor:
         return self._combo
 
     def show(self, value: RowValue) -> None:
+        mark(self._combo, value)
         name = _cursor_name(value)
         self._combo.blockSignals(True)
         index = self._combo.findText(name)

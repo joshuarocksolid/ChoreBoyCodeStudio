@@ -12,6 +12,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Unset,
     ValueSpec,
     Written,
+    mark,
 )
 from app.qt.QtWidgets import (
     QComboBox,
@@ -47,6 +48,7 @@ class SizeEditor:
         return self._root
 
     def show(self, value: RowValue) -> None:
+        mark(self._root, value)
         size = _size(value)
         _set_pair(self._width, self._height, 0 if size is None else size.width, 0 if size is None else size.height)
 
@@ -70,6 +72,7 @@ class RectEditor:
         return self._root
 
     def show(self, value: RowValue) -> None:
+        mark(self._root, value)
         rect = _rect(value)
         _set_pair(self._x, self._y, 0 if rect is None else rect.x, 0 if rect is None else rect.y)
         _set_pair(
@@ -108,6 +111,7 @@ class SizePolicyEditor:
         return self._root
 
     def show(self, value: RowValue) -> None:
+        mark(self._root, value)
         policy = _policy(value)
         horizontal = "Preferred" if policy is None else policy.hsizetype
         vertical = "Preferred" if policy is None else policy.vsizetype

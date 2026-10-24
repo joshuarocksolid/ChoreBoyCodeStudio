@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
@@ -39,6 +40,7 @@ from app.features.form_builder.engine.ui4.values import (
     UIntValue,
     ULongLongValue,
     UrlValue,
+    Value,
 )
 from app.features.form_builder.qtside.inspector.api import EnumSpec
 from app.features.form_builder.qtside.inspector.model import LiveClass, LiveProperty
@@ -83,7 +85,11 @@ _ELEMENT_FOR_TYPE: Mapping[str, str] = {
 _CACHE: Dict[str, LiveClass] = {}
 
 def live_classes(
-    realizer: Realizer, document: UiDocument, ids: Sequence[NodeId]
+    realizer: Realizer,
+    document: UiDocument,
+    ids: Sequence[NodeId],
+    *,
+    with_values: bool = False,
 ) -> Dict[NodeId, LiveClass]:
     found: Dict[NodeId, LiveClass] = {}
     for node_id in ids:
@@ -102,7 +108,7 @@ def live_classes(
             cached = parse_meta_object(meta)
             if key:
                 _CACHE[key] = cached
-        found[node_id] = cached
+        found[node_id] = _stamp_values(obj, cached) if with_values else cached
     return found
 
 def parse_meta_object(meta: QMetaObject) -> LiveClass:
@@ -196,6 +202,165 @@ def _methods(meta: QMetaObject) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
                 slots.append(signature)
         current = current.superClass()
     return tuple(signals), tuple(slots)
+
+def _stamp_values(obj: object, shape: LiveClass) -> LiveClass:
+    stamped = []
+    for prop in shape.properties:
+        stamped.append(dataclasses.replace(prop, value=_read_value(obj, prop)))
+    return LiveClass(shape.chain, tuple(stamped), shape.signals, shape.slots)
+
+
+def _read_value(obj: object, prop: LiveProperty) -> Optional[Value]:
+    meta = getattr(obj, "metaObject", None)
+    if not callable(meta):
+        return None
+    meta_object = meta()
+    index = meta_object.indexOfProperty(prop.name)
+    if index < 0:
+        return None
+    qt_prop = meta_object.property(index)
+    try:
+        raw = qt_prop.read(obj)
+    except (TypeError, RuntimeError, AttributeError):
+        return None
+    try:
+        return _coerce(prop, qt_prop, raw)
+    except (TypeError, ValueError, OverflowError, AttributeError):
+        return None
+
+
+def _coerce(prop: LiveProperty, qt_prop: QMetaProperty, raw: object) -> Optional[Value]:
+    if prop.enum is not None or _flag(qt_prop, "isEnumType"):
+        return _coerce_enum(qt_prop, raw, flag=bool(prop.enum and prop.enum.is_flag))
+    element = prop.element
+    if element == BoolValue.ELEMENT:
+        return BoolValue(bool(raw))
+    if element in (
+        NumberValue.ELEMENT,
+        UIntValue.ELEMENT,
+        LongLongValue.ELEMENT,
+        ULongLongValue.ELEMENT,
+    ):
+        return _number(element, raw)
+    if element in (DoubleValue.ELEMENT, FloatValue.ELEMENT):
+        cls = FloatValue if element == FloatValue.ELEMENT else DoubleValue
+        if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+            return None
+        return cls(float(raw))
+    if element == StringValue.ELEMENT:
+        return StringValue("" if raw is None else _text(raw))
+    if element == CStringValue.ELEMENT:
+        return CStringValue("" if raw is None else _text(raw))
+    if element == StringListValue.ELEMENT and isinstance(raw, (list, tuple)):
+        return StringListValue(tuple(_text(item) for item in raw))
+    if element == FontValue.ELEMENT:
+        return _font_value(raw)
+    if element == RectValue.ELEMENT:
+        return _rect_value(raw)
+    if element == SizeValue.ELEMENT:
+        return _size_value(raw)
+    if element == PointValue.ELEMENT:
+        return _point_value(raw)
+    if element == ColorValue.ELEMENT:
+        return _color_value(raw)
+    return None
+
+
+def _number(element: str, raw: object) -> Optional[Value]:
+    number = _as_int(raw)
+    if number is None:
+        return None
+    if element == UIntValue.ELEMENT:
+        return UIntValue(number)
+    if element == LongLongValue.ELEMENT:
+        return LongLongValue(number)
+    if element == ULongLongValue.ELEMENT:
+        return ULongLongValue(number)
+    return NumberValue(number)
+
+
+def _as_int(raw: object) -> Optional[int]:
+    if isinstance(raw, bool):
+        return int(raw)
+    if isinstance(raw, int):
+        return raw
+    if isinstance(raw, float):
+        return int(raw)
+    try:
+        return int(enum_value(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _call_int(raw: object, name: str) -> Optional[int]:
+    method = getattr(raw, name, None)
+    if not callable(method):
+        return None
+    found = method()
+    return _as_int(found)
+
+
+def _rect_value(raw: object) -> Optional[RectValue]:
+    x = _call_int(raw, "x")
+    y = _call_int(raw, "y")
+    width = _call_int(raw, "width")
+    height = _call_int(raw, "height")
+    if x is None or y is None or width is None or height is None:
+        return None
+    return RectValue(x, y, width, height)
+
+
+def _size_value(raw: object) -> Optional[SizeValue]:
+    width = _call_int(raw, "width")
+    height = _call_int(raw, "height")
+    if width is None or height is None:
+        return None
+    return SizeValue(width, height)
+
+
+def _point_value(raw: object) -> Optional[PointValue]:
+    x = _call_int(raw, "x")
+    y = _call_int(raw, "y")
+    if x is None or y is None:
+        return None
+    return PointValue(x, y)
+
+
+def _color_value(raw: object) -> Optional[ColorValue]:
+    red = _call_int(raw, "red")
+    green = _call_int(raw, "green")
+    blue = _call_int(raw, "blue")
+    alpha = _call_int(raw, "alpha")
+    if red is None or green is None or blue is None or alpha is None:
+        return None
+    return ColorValue(red, green, blue, None if alpha == 255 else alpha)
+
+
+def _coerce_enum(qt_prop: QMetaProperty, raw: object, *, flag: bool) -> Optional[Value]:
+    enumerator = qt_prop.enumerator()
+    number = int(enum_value(raw))
+    if flag or bool(enumerator.isFlag()):
+        keys = _text(enumerator.valueToKeys(number))
+        return SetValue(keys) if keys else None
+    key = _text(enumerator.valueToKey(number))
+    return EnumValue(key) if key else None
+
+
+def _font_value(raw: object) -> Optional[FontValue]:
+    family = getattr(raw, "family", None)
+    point = getattr(raw, "pointSize", None)
+    bold = getattr(raw, "bold", None)
+    italic = getattr(raw, "italic", None)
+    if not callable(family):
+        return None
+    size = point() if callable(point) else -1
+    return FontValue(
+        family=_text(family()) or None,
+        pointsize=int(size) if isinstance(size, int) and size > 0 else None,
+        bold=bool(bold()) if callable(bold) else None,
+        italic=bool(italic()) if callable(italic) else None,
+    )
+
 
 def _flag(prop: QMetaProperty, name: str) -> bool:
     method = getattr(prop, name)

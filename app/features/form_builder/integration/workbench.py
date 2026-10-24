@@ -626,6 +626,7 @@ class FormWorkbench(QWidget):
     def apply_plan(self, plan: LayoutPlan) -> None:
         self._plan = plan
         self.inspector.set_short(plan.short)
+        self.inspector.set_compact(plan.density == "compact")
         self._apply_padding(plan.padding)
         self._apply_short(plan.stack_left)
         if plan.left_docked:

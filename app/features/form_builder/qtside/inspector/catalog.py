@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, FrozenSet, Generic, Hashable, Mapping, Optional, Tuple, TypeVar
+from typing import Dict, FrozenSet, Generic, Hashable, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
 from app.features.form_builder.qtside.inspector.api import (
     EditorFactory,
@@ -53,7 +53,11 @@ class Registrations:
         return _Scope(self, module)
 
     def freeze(self) -> Catalog:
-        return Catalog(tuple(self.rows.resolve().values()), self.editors.resolve(), self.bodies.resolve())
+        return Catalog(
+            _place_rows(tuple(self.rows.resolve().values())),
+            self.editors.resolve(),
+            self.bodies.resolve(),
+        )
 
 class _Scope:
     def __init__(self, found: Registrations, module: str) -> None:
@@ -68,6 +72,40 @@ class _Scope:
 
     def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None:
         self._found.bodies.add(group, factory, self._module, baseline)
+
+def _place_rows(rows: Sequence[RowSpec]) -> Tuple[RowSpec, ...]:
+    groups: Dict[GroupId, List[RowSpec]] = {}
+    order: List[GroupId] = []
+    for spec in rows:
+        bucket = groups.get(spec.group)
+        if bucket is None:
+            order.append(spec.group)
+            bucket = []
+            groups[spec.group] = bucket
+        bucket.append(spec)
+    placed: List[RowSpec] = []
+    for group in order:
+        placed.extend(_place_group(groups[group]))
+    return tuple(placed)
+
+
+def _place_group(specs: Sequence[RowSpec]) -> List[RowSpec]:
+    indexed = list(enumerate(specs))
+    indexed.sort(key=lambda item: (item[0] if item[1].order is None else item[1].order, item[0]))
+    result = [spec for _index, spec in indexed]
+    for spec in list(result):
+        anchor = spec.after
+        if not anchor or anchor == spec.key:
+            continue
+        result.remove(spec)
+        try:
+            at = next(index for index, item in enumerate(result) if item.key == anchor)
+        except StopIteration:
+            result.append(spec)
+            continue
+        result.insert(at + 1, spec)
+    return result
+
 
 class Catalog:
 

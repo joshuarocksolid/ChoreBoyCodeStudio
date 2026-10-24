@@ -17,6 +17,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Unset,
     ValueSpec,
     Written,
+    mark,
 )
 from app.qt.QtWidgets import QLabel, QPlainTextEdit, QPushButton, QVBoxLayout, QWidget
 
@@ -96,6 +97,7 @@ class RawXmlEditor:
         return self._root
 
     def show(self, value: RowValue) -> None:
+        mark(self._box, value)
         self._box.blockSignals(True)
         self._box.setPlainText(_shown_xml(value))
         self._box.blockSignals(False)

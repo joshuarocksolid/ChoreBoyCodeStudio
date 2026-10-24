@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import Command, CommandOutcome
@@ -30,21 +31,26 @@ from app.features.form_builder.qtside.inspector.model import (
     GroupView,
     value_text,
 )
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QEvent, Qt
+from app.qt.qt_compat import delete_now
+from app.qt.QtGui import QFont
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QScrollArea,
+    QSizePolicy,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 _DRAG = "Drag the page's right or bottom edge to try other sizes."
-_LABEL_WIDTH = 104
+_LABEL_WIDE = 104
+_LABEL_COMPACT = 96
 
 class PropertiesPage(QWidget):
 
@@ -55,6 +61,10 @@ class PropertiesPage(QWidget):
         self._on_search = on_search
         self._match_color = ""
         self._expanded: Dict[GroupId, bool] = {group: group is not GroupId.ALL for group in GROUP_ORDER}
+        self._label_width = _LABEL_WIDE
+        self._show_qt = False
+        self._qt_store: object = None
+        self._link_color = ""
         self._search = QLineEdit(self)
         self._search.setObjectName("formBuilder.inspectorSearch")
         self._search.setPlaceholderText("Find a property")
@@ -67,10 +77,22 @@ class PropertiesPage(QWidget):
         self._pill.setOpenExternalLinks(False)
         self._pill.linkActivated.connect(lambda _link: self.clear_search())
         self._pill.hide()
+        self._more = QToolButton(self)
+        self._more.setObjectName("formBuilder.inspectorMenu")
+        self._more.setText("\u22ef")
+        self._more.setAccessibleName("Inspector menu")
+        self._more.setAutoRaise(True)
+        self._more.setPopupMode(_popup_mode())
+        menu = QMenu(self._more)
+        self._qt_names_action = menu.addAction("Qt names")
+        self._qt_names_action.setCheckable(True)
+        self._qt_names_action.toggled.connect(self._on_qt_names)
+        self._more.setMenu(menu)
         self._scroll = QScrollArea(self)
         self._scroll.setObjectName("formBuilder.inspectorScroll")
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(_no_frame())
+        self._scroll.setHorizontalScrollBarPolicy(_scroll_off())
         self._content = QWidget(self._scroll)
         self._content.setObjectName("formBuilder.inspectorContent")
         self._content_layout = QVBoxLayout(self._content)
@@ -86,10 +108,15 @@ class PropertiesPage(QWidget):
             widget.hide()
         self._content_layout.addStretch(1)
         self._scroll.setWidget(self._content)
+        tools = QHBoxLayout()
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(0)
+        tools.addWidget(self._search, 1)
+        tools.addWidget(self._more, 0)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        layout.addWidget(self._search)
+        layout.addLayout(tools)
         layout.addWidget(self._pill)
         layout.addWidget(self._scroll, 1)
         self.setFocusProxy(self._search)
@@ -106,12 +133,54 @@ class PropertiesPage(QWidget):
     def set_match_color(self, color: str) -> None:
         self._match_color = color
 
+    def set_link_color(self, color: str) -> None:
+        self._link_color = color
+        self._search_changed(self._search.text())
+
+    def set_compact(self, compact: bool) -> None:
+        width = _LABEL_COMPACT if compact else _LABEL_WIDE
+        if width == self._label_width:
+            return
+        self._label_width = width
+        self._form.set_label_width(width)
+        for group in self._groups.values():
+            group.set_label_width(width)
+
+    def set_group_expanded(self, group: object, expanded: bool) -> None:
+        if not isinstance(group, GroupId):
+            return
+        self._expanded[group] = expanded
+        widget = self._groups.get(group)
+        if widget is not None:
+            widget.set_checked(expanded)
+
+    def builds_all_properties(self) -> bool:
+        return bool(self.search.strip()) or self._expanded.get(GroupId.ALL, False)
+
+    def note_focus(self, focus: object) -> None:
+        self._form.note_focus(focus)
+        for group in self._groups.values():
+            group.note_focus(focus)
+
+    def bind_qt_names(self, store: object) -> None:
+        self._qt_store = store
+        reader = getattr(store, "qt_names", None)
+        shown = bool(reader()) if callable(reader) else False
+        self._qt_names_action.setChecked(shown)
+
+    def qt_names_visible(self) -> bool:
+        return self._show_qt
+
+    def request_rebuild(self) -> None:
+        self._on_search()
+
     def apply_colors(self, panel: str, text: str, faint: str) -> None:
         """The scroll viewport does not inherit the inspector stylesheet."""
         self.setStyleSheet(
             "QWidget#formBuilder\\.inspectorBody { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
-            % (panel, text, text)
+            "QCheckBox { color: %s; background: transparent; }"
+            % (panel, text, text, text)
         )
         self._scroll.setStyleSheet(
             "QScrollArea#formBuilder\\.inspectorScroll { background: %s; border: none; }" % panel
@@ -123,9 +192,16 @@ class PropertiesPage(QWidget):
             "QWidget#formBuilder\\.inspectorContent { background: %s; color: %s; }"
             "QLabel { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.rowQtName, QLabel#formBuilder\\.rowDefault,"
-            " QLabel#formBuilder\\.rowMixed { color: %s; }"
+            " QLabel#formBuilder\\.rowMixed, QLabel#formBuilder\\.formCaption { color: %s; }"
+            "QCheckBox { color: %s; background: transparent; }"
             "QToolButton { color: %s; background: transparent; border: none; }"
-            % (panel, text, text, faint, text)
+            "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
+            " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"]"
+            " { color: %s; }"
+            "QSpinBox[fbState=\"mixed\"], QDoubleSpinBox[fbState=\"mixed\"], QComboBox[fbState=\"mixed\"],"
+            " QLineEdit[fbState=\"mixed\"], QFontComboBox[fbState=\"mixed\"], QCheckBox[fbState=\"mixed\"],"
+            " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
+            % (panel, text, text, faint, text, text, faint, faint)
         )
 
     def paint(self, body: BodyView) -> None:
@@ -146,7 +222,7 @@ class PropertiesPage(QWidget):
                 continue
             group.show()
             expanded = True if searching else self._expanded[group_id]
-            group.paint(view, expanded, searching, self._match_color, body.owners)
+            group.paint(view, expanded, searching, self._match_color, body.owners, self._show_qt)
 
     def focus_search(self) -> None:
         self._search.setFocus()
@@ -172,11 +248,25 @@ class PropertiesPage(QWidget):
 
     def _search_changed(self, text: str) -> None:
         if text.strip():
-            self._pill.setText("Filtered: %s \u00b7 <a href=\"clear\">Clear</a>" % _escape(text.strip()))
+            style = ""
+            if self._link_color:
+                style = ' style="color:%s"' % self._link_color
+            self._pill.setText(
+                "Filtered: %s \u00b7 <a href=\"clear\"%s>Clear</a>" % (_escape(text.strip()), style)
+            )
             self._pill.show()
         else:
             self._pill.hide()
         self._on_search()
+
+    def _on_qt_names(self, checked: bool) -> None:
+        self._show_qt = bool(checked)
+        writer = getattr(self._qt_store, "set_qt_names", None)
+        if callable(writer):
+            writer(self._show_qt)
+        for group in self._groups.values():
+            group.retint(self._show_qt)
+        self._form.retint(self._show_qt)
 
     def _row_holding(self, focus: QWidget) -> Optional["_Row"]:
         found = self._form.row_holding(focus)
@@ -195,8 +285,12 @@ class _FormSection(QWidget):
     def __init__(self, services: Services, parent: QWidget) -> None:
         super().__init__(parent)
         self._services = services
-        self._window: Optional[_Row] = None
+        self._show_qt = False
+        self._match_color = ""
+        self._window = _Row(services, self)
+        self._window.hide()
         self._size = QLabel(self)
+        self._size.setObjectName("formBuilder.formDesignSize")
         self._drag = QLabel(_DRAG, self)
         self._drag.setWordWrap(True)
         self._layout_name = QLabel(self)
@@ -219,30 +313,49 @@ class _FormSection(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         self._layout = layout
+        layout.addWidget(_caption(self, "window", "Window"))
+        layout.addWidget(self._window)
         layout.addWidget(self._size)
         layout.addWidget(self._drag)
+        layout.addWidget(_caption(self, "layout", "Layout"))
         layout.addWidget(self._layout_name)
+        layout.addWidget(_caption(self, "tabOrder", "Tab order"))
         layout.addWidget(self._order)
+        layout.addWidget(_caption(self, "problems", "Problems"))
         layout.addWidget(self._problems)
+        layout.addWidget(_caption(self, "files", "Files"))
         layout.addWidget(self._files)
 
     def paint(self, body: FormBody, match_color: str) -> None:
+        self._match_color = match_color
         window = body.window
         if window is None:
-            if self._window is not None:
-                self._window.hide()
+            self._window.hide()
         else:
-            if self._window is None:
-                self._window = _Row(self._services, self)
-                self._layout.insertWidget(0, self._window)
             self._window.show()
-            self._window.paint(window, match_color)
+            self._window.paint(window, match_color, self._show_qt)
+            self._order_title()
         self._size.setText(body.design_size)
         self._layout_name.setText(body.root_layout)
         self._order.setText("\n".join(body.tab_order))
         self._last_problems = body.problems
         self._paint_problems()
         self._files.setText(body.files)
+
+    def set_label_width(self, width: int) -> None:
+        self._window.set_label_width(width)
+
+    def note_focus(self, focus: object) -> None:
+        self._window.note_focus(focus)
+
+    def retint(self, show_qt: bool) -> None:
+        self._show_qt = show_qt
+        self._window.retint(show_qt)
+
+    def _order_title(self) -> None:
+        edit = self._window.findChild(QLineEdit)
+        if edit is not None:
+            QWidget.setTabOrder(edit, self._problems)
 
     def set_problem_link(
         self, count: int, on_show: Optional[Callable[[], None]], color: str
@@ -291,13 +404,19 @@ class _Group(QWidget):
         self._searching = False
         self._match_color = ""
         self._rows: Dict[str, _Row] = {}
+        self._spare: "OrderedDict[str, _Row]" = OrderedDict()
         self._titles: List[QLabel] = []
+        self._qt_names = False
         self._custom: Optional[GroupBody] = None
         self._host: Optional[_GroupHost] = None
         self._toggle = QToolButton(self)
-        self._toggle.setText(group.title)
+        self._toggle.setObjectName("formBuilder.group.%s" % group.value)
+        self._toggle.setText(group.title.upper())
+        self._toggle.setFont(_overline_font())
         self._toggle.setCheckable(True)
         self._toggle.setChecked(page._expanded[group])
+        self._toggle.setToolButtonStyle(_beside())
+        self._toggle.setArrowType(_arrow(page._expanded[group]))
         self._toggle.clicked.connect(lambda: self._toggled(self._toggle.isChecked()))
         self._body = QWidget(self)
         self._body_layout = QVBoxLayout(self._body)
@@ -316,13 +435,16 @@ class _Group(QWidget):
         searching: bool,
         match_color: str,
         owners: Tuple[NodeId, ...],
+        qt_names: bool = False,
     ) -> None:
         self._view = view
         self._owners = owners
         self._searching = searching
         self._match_color = match_color
-        self._toggle.setText(view.group.title)
+        self._qt_names = qt_names
+        self._toggle.setText(view.group.title.upper())
         self._toggle.setChecked(expanded)
+        self._toggle.setArrowType(_arrow(expanded))
         if not expanded:
             self._body.hide()
             self._drop_rows()
@@ -336,6 +458,23 @@ class _Group(QWidget):
         self._hide_custom()
         self._paint_rows(view, match_color)
 
+    def set_label_width(self, width: int) -> None:
+        for row in self._rows.values():
+            row.set_label_width(width)
+
+    def set_checked(self, expanded: bool) -> None:
+        self._toggle.setChecked(expanded)
+        self._toggle.setArrowType(_arrow(expanded))
+
+    def note_focus(self, focus: object) -> None:
+        for row in self._rows.values():
+            row.note_focus(focus)
+
+    def retint(self, show_qt: bool) -> None:
+        self._qt_names = show_qt
+        for row in self._rows.values():
+            row.retint(show_qt)
+
     def row_holding(self, focus: QWidget) -> Optional["_Row"]:
         for row in self._rows.values():
             if focus is row or row.isAncestorOf(focus):
@@ -345,11 +484,20 @@ class _Group(QWidget):
     def _toggled(self, checked: bool) -> None:
         if self._searching:
             self._toggle.setChecked(True)
+            self._toggle.setArrowType(_arrow(True))
             return
-        self._page._set_expanded(self._group, bool(checked))
+        expanded = bool(checked)
+        self._toggle.setArrowType(_arrow(expanded))
+        self._page._set_expanded(self._group, expanded)
+        if self._group is GroupId.ALL:
+            if not expanded:
+                self._body.hide()
+                self._drop_rows()
+            self._page.request_rebuild()
+            return
         view = self._view
         if view is not None:
-            self.paint(view, bool(checked), False, self._match_color, self._owners)
+            self.paint(view, expanded, False, self._match_color, self._owners, self._qt_names)
 
     def _paint_custom(self, view: GroupView, factory: GroupBodyFactory) -> None:
         if self._custom is None:
@@ -366,49 +514,56 @@ class _Group(QWidget):
     def _paint_rows(self, view: GroupView, match_color: str) -> None:
         wanted = [row.key for block in view.blocks for row in block.rows]
         for key in [key for key in self._rows if key not in wanted]:
-            widget = self._rows.pop(key)
-            self._release(widget)
-            self._body_layout.removeWidget(widget)
-            widget.hide()
-            widget.deleteLater()
-        for title in self._titles:
-            self._body_layout.removeWidget(title)
-            title.hide()
-            title.deleteLater()
-        self._titles = []
+            self._park(key, self._rows.pop(key))
+        title_at = 0
         for block in view.blocks:
             if block.title:
-                label = QLabel(block.title, self._body)
-                label.setObjectName("formBuilder.blockTitle")
+                label = self._title_label(title_at)
+                title_at += 1
+                label.setText(block.title)
                 label.show()
-                self._titles.append(label)
                 self._body_layout.addWidget(label)
             for row in block.rows:
                 widget = self._rows.get(row.key)
                 if widget is None:
-                    widget = _Row(self._services, self._body)
+                    widget = self._spare.pop(row.key, None)
+                    if widget is None:
+                        widget = _Row(self._services, self._body)
+                        widget.set_label_width(self._page._label_width)
                     self._rows[row.key] = widget
                 widget.show()
-                widget.paint(row, match_color)
+                widget.paint(row, match_color, self._qt_names)
                 self._body_layout.addWidget(widget)
+        for extra in self._titles[title_at:]:
+            extra.hide()
+            self._body_layout.removeWidget(extra)
 
     def _drop_rows(self) -> None:
         for key in list(self._rows):
-            widget = self._rows.pop(key)
-            self._release(widget)
-            self._body_layout.removeWidget(widget)
-            widget.hide()
-            widget.deleteLater()
+            self._park(key, self._rows.pop(key))
         for title in self._titles:
-            self._body_layout.removeWidget(title)
             title.hide()
-            title.deleteLater()
-        self._titles = []
 
-    def _release(self, widget: QWidget) -> None:
+    def _title_label(self, index: int) -> QLabel:
+        while len(self._titles) <= index:
+            label = QLabel(self._body)
+            label.setObjectName("formBuilder.blockTitle")
+            label.setFont(_overline_font())
+            self._titles.append(label)
+        return self._titles[index]
+
+    def _park(self, key: str, widget: _Row) -> None:
         focus = QApplication.focusWidget()
         if focus is not None and (focus is widget or widget.isAncestorOf(focus)):
             self._page.setFocus()
+        self._body_layout.removeWidget(widget)
+        widget.hide()
+        previous = self._spare.pop(key, None)
+        if previous is not None:
+            delete_now(previous)
+        self._spare[key] = widget
+        while len(self._spare) > 160:
+            delete_now(self._spare.popitem(last=False)[1])
 
 class _Row(QWidget):
 
@@ -422,23 +577,34 @@ class _Row(QWidget):
         self._enum: Optional[EnumSpec] = None
         self._invalid = False
         self._fallback: Optional[QLabel] = None
+        self._hovered = False
+        self._qt_names = False
+        self._match_color = ""
         self._bar = QFrame(self)
         self._bar.setObjectName("formBuilder.rowChanged")
         self._bar.setFixedWidth(2)
         self._bar.setMinimumHeight(18)
         self._bar.hide()
         self._label = QLabel(self)
-        self._label.setFixedWidth(_LABEL_WIDTH)
         self._label.setWordWrap(True)
         self._qt = QLabel(self)
         self._qt.setObjectName("formBuilder.rowQtName")
         self._qt.hide()
+        self._label_col = QWidget(self)
+        self._label_col.setFixedWidth(_LABEL_WIDE)
+        column = QVBoxLayout(self._label_col)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        column.addWidget(self._label)
+        column.addWidget(self._qt)
         self._slot = QWidget(self)
         self._slot_layout = QVBoxLayout(self._slot)
         self._slot_layout.setContentsMargins(0, 0, 0, 0)
         self._reset = QToolButton(self)
         self._reset.setObjectName("formBuilder.rowReset")
-        self._reset.setText("Reset")
+        self._reset.setText("\u21ba")
+        self._reset.setFixedSize(16, 16)
+        self._reset.setAccessibleName("Reset")
         self._reset.clicked.connect(self._reset_clicked)
         self._reset.hide()
         self._caption = QLabel(self)
@@ -448,8 +614,7 @@ class _Row(QWidget):
         line.setContentsMargins(0, 0, 0, 0)
         line.setSpacing(6)
         line.addWidget(self._bar, 0)
-        line.addWidget(self._label, 0)
-        line.addWidget(self._qt, 0)
+        line.addWidget(self._label_col, 0)
         line.addWidget(self._slot, 1)
         line.addWidget(self._reset, 0)
         layout = QVBoxLayout(self)
@@ -461,28 +626,52 @@ class _Row(QWidget):
     def is_invalid(self) -> bool:
         return self._invalid
 
-    def paint(self, view: Row, match_color: str) -> None:
+    def paint(self, view: Row, match_color: str, qt_names: bool = False) -> None:
         self.setObjectName("formBuilder.row.%s" % view.key)
         previous = self._view
         self._view = view
-        self._label.setToolTip(view.help)
+        self._qt_names = qt_names
+        self._match_color = match_color
+        self._label.setToolTip(_tip(view))
         self._paint_label(view, match_color)
         self._paint_qt(view, match_color)
         changed = view.changed
         self._bar.setVisible(changed)
-        open_row = isinstance(view, OpenRow)
-        self._reset.setVisible(open_row and changed)
         if isinstance(view, LockedRow):
             self._show_locked(view, match_color)
+            self._sync_reset()
             return
         if self._needs_new_editor(previous, view):
             self._invalid = False
             self._build_editor(view)
         self._paint_value_match(view, match_color)
-        if self._invalid:
-            return
-        if self._editor is not None:
+        if not self._invalid and self._editor is not None:
             self._editor.show(view.value)
+        self._sync_reset()
+
+    def set_label_width(self, width: int) -> None:
+        self._label_col.setFixedWidth(width)
+
+    def note_focus(self, focus: object) -> None:
+        del focus
+        self._sync_reset()
+
+    def retint(self, show_qt: bool) -> None:
+        view = self._view
+        if view is None:
+            return
+        self._qt_names = show_qt
+        self._paint_qt(view, self._match_color)
+
+    def enterEvent(self, event: QEvent) -> None:  # noqa: N802
+        self._hovered = True
+        self._sync_reset()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: QEvent) -> None:  # noqa: N802
+        self._hovered = False
+        self._sync_reset()
+        super().leaveEvent(event)
 
     def commit(self, value: Value) -> None:
         view = self._view
@@ -550,6 +739,7 @@ class _Row(QWidget):
             self._editor = None
             return
         self._editor = factory(view.spec, self, self._slot)
+        _shrink(self._editor.widget)
         self._slot_layout.addWidget(self._editor.widget)
         self._editor.widget.show()
 
@@ -558,6 +748,7 @@ class _Row(QWidget):
         self._editor = None
         text = value_text(view.value) or NOT_SET_TEXT
         label = QLabel(self._slot)
+        _shrink(label)
         label.setObjectName(_value_name(view.value))
         if view.match is not None and view.match.where == "value":
             label.setTextFormat(Qt.RichText)
@@ -570,6 +761,9 @@ class _Row(QWidget):
         self._set_caption(view.reason, error=False)
 
     def _paint_label(self, view: Row, match_color: str) -> None:
+        font = self._label.font()
+        font.setWeight(_weight("DemiBold" if view.changed else "Normal"))
+        self._label.setFont(font)
         if view.match is not None and view.match.where == "label":
             self._label.setTextFormat(Qt.RichText)
             self._label.setText(_marked(view.label, view.match, "label", match_color))
@@ -579,12 +773,29 @@ class _Row(QWidget):
 
     def _paint_qt(self, view: Row, match_color: str) -> None:
         match = view.match
-        if match is None or match.where != "qt_name":
+        matched = match is not None and match.where == "qt_name"
+        if not view.qt_name or not (self._qt_names or matched):
             self._qt.hide()
             return
-        self._qt.setTextFormat(Qt.RichText)
-        self._qt.setText(_marked(view.qt_name, match, "qt_name", match_color))
+        if matched:
+            self._qt.setTextFormat(Qt.RichText)
+            self._qt.setText(_marked(view.qt_name, match, "qt_name", match_color))
+        else:
+            self._qt.setTextFormat(Qt.PlainText)
+            self._qt.setText(view.qt_name)
         self._qt.show()
+
+    def _sync_reset(self) -> None:
+        view = self._view
+        changed = isinstance(view, OpenRow) and view.changed
+        if not changed:
+            self._reset.hide()
+            return
+        focus = QApplication.focusWidget()
+        inside = self._hovered or (
+            focus is not None and (focus is self or self.isAncestorOf(focus))
+        )
+        self._reset.setVisible(inside)
 
     def _paint_value_match(self, view: OpenRow, match_color: str) -> None:
         widget = None if self._editor is None else self._editor.widget
@@ -690,5 +901,45 @@ def _escape(text: str) -> str:
         .replace('"', "&quot;")
     )
 
+def _shrink(widget: QWidget) -> None:
+    policy = getattr(QSizePolicy, "Policy", QSizePolicy)
+    widget.setSizePolicy(getattr(policy, "Ignored"), getattr(policy, "Preferred"))
+    widget.setMinimumWidth(0)
+
 def _no_frame() -> QFrame.Shape:
     return getattr(getattr(QFrame, "Shape", QFrame), "NoFrame")
+
+def _scroll_off() -> Qt.ScrollBarPolicy:
+    return getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+
+def _popup_mode() -> QToolButton.ToolButtonPopupMode:
+    return getattr(getattr(QToolButton, "ToolButtonPopupMode", QToolButton), "InstantPopup")
+
+def _beside() -> Qt.ToolButtonStyle:
+    return getattr(getattr(Qt, "ToolButtonStyle", Qt), "ToolButtonTextBesideIcon")
+
+def _arrow(expanded: bool) -> Qt.ArrowType:
+    name = "DownArrow" if expanded else "RightArrow"
+    arrows = getattr(Qt, "ArrowType", Qt)
+    return getattr(arrows, name, getattr(Qt, name))
+
+def _weight(name: str) -> QFont.Weight:
+    return getattr(getattr(QFont, "Weight", QFont), name)
+
+def _overline_font() -> QFont:
+    font = QFont()
+    font.setPixelSize(10)
+    font.setWeight(_weight("DemiBold"))
+    font.setLetterSpacing(QFont.AbsoluteSpacing, 0.5)
+    return font
+
+def _caption(parent: QWidget, name: str, text: str) -> QLabel:
+    label = QLabel(text, parent)
+    label.setObjectName("formBuilder.formCaption.%s" % name)
+    label.setFont(_overline_font())
+    return label
+
+def _tip(view: Row) -> str:
+    if view.qt_name and view.help:
+        return "%s \u2014 %s" % (view.qt_name, view.help)
+    return view.qt_name or view.help

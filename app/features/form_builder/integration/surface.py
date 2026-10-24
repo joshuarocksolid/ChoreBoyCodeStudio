@@ -953,6 +953,8 @@ class FormSurface(QWidget):
         if workbench is not None:
             workbench.outline.set_collapsed(self._memory.outline_collapsed)
             workbench.insert.set_collapsed(self._memory.insert_collapsed)
+            if self._store is not None:
+                workbench.inspector.bind_settings(self._store)
 
     def _save_memory(self) -> None:
         if self._store is not None:

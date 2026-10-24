@@ -89,6 +89,7 @@ class LiveProperty:
     declared_by: str
     element: str
     enum: Optional[EnumSpec] = None
+    value: Optional[Value] = None
 
 @dataclass(frozen=True)
 class LiveClass:
@@ -278,13 +279,21 @@ def project(
     search: str = "",
     live: Mapping[NodeId, LiveClass] = _NO_LIVE,
     tab_order: Optional[Callable[[], Tuple[str, ...]]] = None,
+    include_all: bool = True,
+    live_size: Optional[Tuple[int, int]] = None,
 ) -> Pages:
     document = session.document
     owners = session.selection.state.ids
     facts = Facts(document, live, QtClassTable.shared(), catalog.editor_keys())
     if not owners:
-        return Pages(_form_body(session, facts, tab_order), _behavior(facts, (document.root.id,)))
-    return Pages(_node_body(facts, catalog, owners, search), _behavior(facts, owners))
+        return Pages(
+            _form_body(session, facts, tab_order, live_size),
+            _behavior(facts, (document.root.id,)),
+        )
+    return Pages(
+        _node_body(facts, catalog, owners, search, include_all=include_all),
+        _behavior(facts, owners),
+    )
 
 def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
     source = spec.source
@@ -313,7 +322,7 @@ def read_property(
     infos = [_table_property(facts, node, name, kind) for node in nodes]
     if any(entry is None and live is None and info is None for entry, live, info in zip(entries, lives, infos)):
         return None
-    value = _row_value(entries, infos)
+    value = _row_value(entries, infos, lives)
     write: RowWrite = PropertyWrite(owners, name, kind)
     if kind == "property" and name in LAYOUT_OWNED:
         if any(facts.document.containing_layout_item(owner) is not None for owner in owners):
@@ -406,7 +415,14 @@ def problems_line(count: int) -> str:
         return "No problems."
     return "1 problem." if count == 1 else "%d problems." % count
 
-def _node_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...], search: str) -> NodeBody:
+def _node_body(
+    facts: Facts,
+    catalog: Catalog,
+    owners: Tuple[NodeId, ...],
+    search: str,
+    *,
+    include_all: bool = True,
+) -> NodeBody:
     curated: Dict[GroupId, List[Row]] = {}
     for spec in catalog.rows():
         if spec.classes and not all(_admits(facts, owner, spec.classes) for owner in owners):
@@ -416,6 +432,9 @@ def _node_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...], searc
             curated.setdefault(spec.group, []).append(row)
     groups: List[GroupView] = []
     for group in GROUP_ORDER:
+        if group is GroupId.ALL and not include_all:
+            groups.append(GroupView(group, ()))
+            continue
         if group is GroupId.ALL:
             blocks = _all_blocks(facts, owners)
         else:
@@ -500,13 +519,33 @@ def _table_property(facts: Facts, node: Node, name: str, kind: PropKind) -> Opti
         return None
     return facts.classes.property_info(node.class_name, name)
 
-def _row_value(entries: Sequence[Optional[PropertyEntry]], infos: Sequence[Optional[PropertyInfo]]) -> RowValue:
+def _row_value(
+    entries: Sequence[Optional[PropertyEntry]],
+    infos: Sequence[Optional[PropertyInfo]],
+    lives: Sequence[Optional[LiveProperty]] = (),
+) -> RowValue:
     present = [entry.value for entry in entries if entry is not None]
     if not present:
+        live_default = _agreed_live(lives)
+        if live_default is not None:
+            return Unset(live_default)
         return Unset(_default(infos))
     if len(present) == len(entries) and all(semantic_equal(present[0], other) for other in present[1:]):
         return Written(present[0])
     return Mixed()
+
+def _agreed_live(lives: Sequence[Optional[LiveProperty]]) -> Optional[Value]:
+    if not lives:
+        return None
+    values: List[Value] = []
+    for live in lives:
+        if live is None or live.value is None:
+            return None
+        values.append(live.value)
+    first = values[0]
+    if all(semantic_equal(first, other) for other in values[1:]):
+        return first
+    return None
 
 def _default(infos: Sequence[Optional[PropertyInfo]]) -> Optional[Value]:
     if not infos or any(info is None or info.volatile for info in infos):
@@ -586,16 +625,21 @@ def _form_body(
     session: FormSession,
     facts: Facts,
     tab_order: Optional[Callable[[], Tuple[str, ...]]],
+    live_size: Optional[Tuple[int, int]] = None,
 ) -> FormBody:
     document = session.document
     root = document.root
     geometry = root.value("geometry")
     layout = root.layout
+    if isinstance(geometry, RectValue):
+        design_size = "%d \u00d7 %d px" % (geometry.width, geometry.height)
+    elif live_size is not None:
+        design_size = "%d \u00d7 %d px" % (live_size[0], live_size[1])
+    else:
+        design_size = NOT_SET
     return FormBody(
         window=bind(facts, _WINDOW_TITLE, (root.id,)),
-        design_size=(
-            "%d \u00d7 %d" % (geometry.width, geometry.height) if isinstance(geometry, RectValue) else NOT_SET
-        ),
+        design_size=design_size,
         root_layout=class_words(layout.class_name).friendly if layout is not None else "No layout",
         tab_order=tab_order() if tab_order is not None else effective_tab_order(document),
         problems=problems_line(len(session.diagnostics.all())),

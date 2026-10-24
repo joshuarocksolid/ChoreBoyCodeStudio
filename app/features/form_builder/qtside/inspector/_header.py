@@ -9,7 +9,7 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.inspector._services import Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.model import Crumb, HeaderView, ManyHeader, OneHeader
 from app.qt.QtCore import Qt
-from app.qt.QtGui import QResizeEvent
+from app.qt.QtGui import QFont, QPainter, QPen, QResizeEvent
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 
 class Header(QWidget):
@@ -23,11 +23,12 @@ class Header(QWidget):
         self._invalid = False
         self._short = False
         self._crumbs_data: Tuple[Crumb, ...] = ()
-        self._glyph = QLabel(self)
-        self._glyph.setObjectName("formBuilder.inspectorGlyph")
+        self._link_color = ""
+        self._glyph = _ClassGlyph(self)
         self._name = QLineEdit(self)
         self._name.setObjectName("formBuilder.inspectorName")
         self._name.setAccessibleName("Name")
+        self._name.setFont(_title_font())
         self._name.editingFinished.connect(self._on_name_entered)
         self._class = QLabel(self)
         self._class.setObjectName("formBuilder.inspectorClass")
@@ -66,6 +67,10 @@ class Header(QWidget):
         self._layout.addWidget(self._error)
         self.setFocusProxy(self._name)
 
+    def set_link_color(self, color: str) -> None:
+        self._link_color = color
+        self._render_crumbs()
+
     def paint(self, view: HeaderView, short: bool) -> None:
         with self._services.painting():
             self._apply_short(short)
@@ -103,7 +108,7 @@ class Header(QWidget):
         self._name.setReadOnly(True)
         self._name.setText("%d selected" % view.count)
         self._name.blockSignals(False)
-        self._glyph.clear()
+        self._glyph.set_kind("")
         self._class.setText(view.kinds)
         self._crumbs_data = ()
         self._crumbs.hide()
@@ -115,7 +120,7 @@ class Header(QWidget):
         self._node = view.node
         self._saved_name = view.name
         self._name.setReadOnly(False)
-        self._glyph.setText(view.glyph)
+        self._glyph.set_kind(view.glyph)
         self._class.setText("%s \u00b7 %s" % (view.friendly, view.qt_class))
         if not self._invalid:
             self._name.blockSignals(True)
@@ -179,7 +184,12 @@ class Header(QWidget):
         if len(shown) < len(crumbs):
             parts.append("\u2026")
         for crumb in shown[:-1]:
-            parts.append('<a href="%d">%s</a>' % (int(crumb.node), _escape(crumb.label)))
+            style = ""
+            if self._link_color:
+                style = ' style="color:%s"' % self._link_color
+            parts.append(
+                '<a href="%d"%s>%s</a>' % (int(crumb.node), style, _escape(crumb.label))
+            )
         parts.append(_escape(shown[-1].label))
         self._crumbs.setText(" \u203a ".join(parts))
         self._crumbs.show()
@@ -205,3 +215,63 @@ def _ignored() -> QSizePolicy.Policy:
 
 def _preferred() -> QSizePolicy.Policy:
     return getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Preferred")
+
+def _title_font() -> QFont:
+    font = QFont()
+    font.setPixelSize(13)
+    font.setWeight(getattr(getattr(QFont, "Weight", QFont), "DemiBold"))
+    return font
+
+class _ClassGlyph(QWidget):
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("formBuilder.inspectorGlyph")
+        self.setFixedSize(16, 16)
+        self._kind = ""
+
+    def set_kind(self, kind: str) -> None:
+        self._kind = kind
+        self.update()
+
+    def paintEvent(self, _event: object) -> None:  # noqa: N802
+        if not self._kind:
+            return
+        painter = QPainter(self)
+        painter.setRenderHint(getattr(getattr(QPainter, "RenderHint", QPainter), "Antialiasing"), True)
+        color = self.palette().color(self.foregroundRole())
+        painter.setPen(QPen(color))
+        painter.setBrush(getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush"))
+        _draw_glyph(painter, self._kind)
+        painter.end()
+
+def _draw_glyph(painter: QPainter, kind: str) -> None:
+    left, top, right, bottom = 2, 2, 13, 13
+    name = kind.lower()
+    if name in ("button", "radio"):
+        if name == "radio":
+            painter.drawEllipse(left, top, 11, 11)
+            return
+        painter.drawRoundedRect(left, top, 12, 12, 2, 2)
+        return
+    if name == "checkbox":
+        painter.drawRect(left + 2, top + 2, 8, 8)
+        painter.drawLine(left + 4, top + 6, left + 6, top + 8)
+        painter.drawLine(left + 6, top + 8, left + 10, top + 4)
+        return
+    if name in ("field", "textbox", "label"):
+        painter.drawRect(left, top, 12, 12)
+        painter.drawLine(left + 2, top + 6, right - 2, top + 6)
+        if name != "field":
+            painter.drawLine(left + 2, top + 9, right - 4, top + 9)
+        return
+    if name == "window":
+        painter.drawRect(left, top, 12, 12)
+        painter.drawLine(left, top + 3, right, top + 3)
+        return
+    if name == "layout":
+        painter.drawRect(left, top, 12, 3)
+        painter.drawRect(left, top + 5, 12, 3)
+        painter.drawRect(left, top + 10, 8, 2)
+        return
+    painter.drawRoundedRect(left, top, 12, 12, 1, 1)
