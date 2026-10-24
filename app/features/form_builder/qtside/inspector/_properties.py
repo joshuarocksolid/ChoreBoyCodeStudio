@@ -532,9 +532,11 @@ class _Group(QWidget):
                         widget = _Row(self._services, self._body)
                         widget.set_label_width(self._page._label_width)
                     self._rows[row.key] = widget
-                widget.show()
+                # Paint first: a hidden row builds its editor without a polish
+                # per child, and the one show below polishes the row at once.
                 widget.paint(row, match_color, self._qt_names)
                 self._body_layout.addWidget(widget)
+                widget.show()
         for extra in self._titles[title_at:]:
             extra.hide()
             self._body_layout.removeWidget(extra)
@@ -581,48 +583,77 @@ class _Row(QWidget):
         self._hovered = False
         self._qt_names = False
         self._match_color = ""
-        self._bar = QFrame(self)
-        self._bar.setObjectName("formBuilder.rowChanged")
-        self._bar.setFixedWidth(2)
-        self._bar.setMinimumHeight(18)
-        self._bar.hide()
+        self._painted_widget: Optional[QWidget] = None
+        self._painted_sheet = ""
+        # The changed bar, the Qt name, the reset button and the caption are
+        # hidden on most rows. They are made on first use: a first build of
+        # All properties shows about 60 rows, and each widget costs a polish.
+        self._bar: Optional[QFrame] = None
+        self._qt: Optional[QLabel] = None
+        self._reset: Optional[QToolButton] = None
+        self._caption: Optional[QLabel] = None
         self._label = QLabel(self)
         self._label.setWordWrap(True)
-        self._qt = QLabel(self)
-        self._qt.setObjectName("formBuilder.rowQtName")
-        self._qt.hide()
         self._label_col = QWidget(self)
         self._label_col.setFixedWidth(_LABEL_WIDE)
-        column = QVBoxLayout(self._label_col)
-        column.setContentsMargins(0, 0, 0, 0)
-        column.setSpacing(0)
-        column.addWidget(self._label)
-        column.addWidget(self._qt)
+        self._column = QVBoxLayout(self._label_col)
+        self._column.setContentsMargins(0, 0, 0, 0)
+        self._column.setSpacing(0)
+        self._column.addWidget(self._label)
         self._slot = QWidget(self)
         self._slot_layout = QVBoxLayout(self._slot)
         self._slot_layout.setContentsMargins(0, 0, 0, 0)
-        self._reset = QToolButton(self)
-        self._reset.setObjectName("formBuilder.rowReset")
-        self._reset.setText("\u21ba")
-        self._reset.setFixedSize(16, 16)
-        self._reset.setAccessibleName("Reset")
-        self._reset.clicked.connect(self._reset_clicked)
-        self._reset.hide()
-        self._caption = QLabel(self)
-        self._caption.setWordWrap(True)
-        self._caption.hide()
-        line = QHBoxLayout()
-        line.setContentsMargins(0, 0, 0, 0)
-        line.setSpacing(6)
-        line.addWidget(self._bar, 0)
-        line.addWidget(self._label_col, 0)
-        line.addWidget(self._slot, 1)
-        line.addWidget(self._reset, 0)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 2, 0, 2)
-        layout.setSpacing(2)
-        layout.addLayout(line)
-        layout.addWidget(self._caption)
+        self._line = QHBoxLayout()
+        self._line.setContentsMargins(0, 0, 0, 0)
+        self._line.setSpacing(6)
+        self._line.addWidget(self._label_col, 0)
+        self._line.addWidget(self._slot, 1)
+        self._outer = QVBoxLayout(self)
+        self._outer.setContentsMargins(0, 2, 0, 2)
+        self._outer.setSpacing(2)
+        self._outer.addLayout(self._line)
+
+    def _bar_widget(self) -> QFrame:
+        if self._bar is None:
+            bar = QFrame(self)
+            bar.setObjectName("formBuilder.rowChanged")
+            bar.setFixedWidth(2)
+            bar.setMinimumHeight(18)
+            bar.hide()
+            self._line.insertWidget(0, bar, 0)
+            self._bar = bar
+        return self._bar
+
+    def _qt_label(self) -> QLabel:
+        if self._qt is None:
+            label = QLabel(self._label_col)
+            label.setObjectName("formBuilder.rowQtName")
+            label.hide()
+            self._column.addWidget(label)
+            self._qt = label
+        return self._qt
+
+    def _reset_button(self) -> QToolButton:
+        if self._reset is None:
+            button = QToolButton(self)
+            button.setObjectName("formBuilder.rowReset")
+            button.setText("\u21ba")
+            button.setFixedSize(16, 16)
+            button.setAccessibleName("Reset")
+            button.clicked.connect(self._reset_clicked)
+            button.hide()
+            self._line.addWidget(button, 0)
+            self._reset = button
+        return self._reset
+
+    def _caption_label(self) -> QLabel:
+        if self._caption is None:
+            label = QLabel(self)
+            label.setWordWrap(True)
+            label.hide()
+            self._outer.addWidget(label)
+            self._caption = label
+        return self._caption
 
     def is_invalid(self) -> bool:
         return self._invalid
@@ -637,7 +668,10 @@ class _Row(QWidget):
         self._paint_label(view, match_color)
         self._paint_qt(view, match_color)
         changed = view.changed
-        self._bar.setVisible(changed)
+        if changed:
+            self._bar_widget().show()
+        elif self._bar is not None:
+            self._bar.hide()
         if isinstance(view, LockedRow):
             self._show_locked(view, match_color)
             self._sync_reset()
@@ -776,37 +810,48 @@ class _Row(QWidget):
         match = view.match
         matched = match is not None and match.where == "qt_name"
         if not view.qt_name or not (self._qt_names or matched):
-            self._qt.hide()
+            if self._qt is not None:
+                self._qt.hide()
             return
+        label = self._qt_label()
         if matched:
-            self._qt.setTextFormat(Qt.RichText)
-            self._qt.setText(_marked(view.qt_name, match, "qt_name", match_color))
+            label.setTextFormat(Qt.RichText)
+            label.setText(_marked(view.qt_name, match, "qt_name", match_color))
         else:
-            self._qt.setTextFormat(Qt.PlainText)
-            self._qt.setText(view.qt_name)
-        self._qt.show()
+            label.setTextFormat(Qt.PlainText)
+            label.setText(view.qt_name)
+        label.show()
 
     def _sync_reset(self) -> None:
         view = self._view
         changed = isinstance(view, OpenRow) and view.changed
         if not changed:
-            self._reset.hide()
+            if self._reset is not None:
+                self._reset.hide()
             return
         focus = QApplication.focusWidget()
         inside = self._hovered or (
             focus is not None and (focus is self or self.isAncestorOf(focus))
         )
-        self._reset.setVisible(inside)
+        self._reset_button().setVisible(inside)
 
     def _paint_value_match(self, view: OpenRow, match_color: str) -> None:
         widget = None if self._editor is None else self._editor.widget
         if widget is None:
             return
         match = view.match
+        sheet = ""
         if match is not None and match.where == "value" and match_color:
-            widget.setStyleSheet("background-color: %s;" % match_color)
+            sheet = "background-color: %s;" % match_color
+        # setStyleSheet repolishes the editor even when the text is the same,
+        # which costs most of a select when All properties is open.
+        if widget is not self._painted_widget:
+            self._painted_widget = widget
+            self._painted_sheet = widget.styleSheet()
+        if sheet == self._painted_sheet:
             return
-        widget.setStyleSheet("")
+        widget.setStyleSheet(sheet)
+        self._painted_sheet = sheet
 
     def _clear_slot(self) -> None:
         editor = self._editor
@@ -823,14 +868,16 @@ class _Row(QWidget):
 
     def _set_caption(self, text: str, *, error: bool) -> None:
         if not text:
-            self._caption.hide()
-            self._caption.clear()
+            if self._caption is not None:
+                self._caption.hide()
+                self._caption.clear()
             return
-        self._caption.setObjectName(
+        caption = self._caption_label()
+        caption.setObjectName(
             "formBuilder.rowError" if error else "formBuilder.rowNote"
         )
-        self._caption.setText(text)
-        self._caption.show()
+        caption.setText(text)
+        caption.show()
 
 class _GroupHost:
 

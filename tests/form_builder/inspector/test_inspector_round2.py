@@ -317,17 +317,19 @@ def test_reset_is_a_hover_icon_and_the_label_is_strong(qapp: QApplication) -> No
         row = pane.findChild(QWidget, "formBuilder.row.text")
         assert row is not None
         editor = row.findChild(QLineEdit)
-        reset = row.findChild(QToolButton, "formBuilder.rowReset")
+        unchanged = row.findChild(QToolButton, "formBuilder.rowReset")
         label = next(item for item in row.findChildren(QLabel) if item.text() == "Text")
-        assert editor is not None and reset is not None
-        assert reset.text() == "\u21ba"
-        assert reset.accessibleName() == "Reset"
-        assert reset.width() == 16 and reset.height() == 16
-        assert not reset.isVisible()
+        assert editor is not None
+        assert unchanged is None or not unchanged.isVisible()
         editor.setFocus()
         QTest.keyClicks(editor, "Hi")
         QTest.keyClick(editor, Qt.Key_Return)
         pane.flush()
+        reset = row.findChild(QToolButton, "formBuilder.rowReset")
+        assert reset is not None
+        assert reset.text() == "\u21ba"
+        assert reset.accessibleName() == "Reset"
+        assert reset.width() == 16 and reset.height() == 16
         assert reset.isVisible()
         assert enum_value(label.font().weight()) == enum_value(
             getattr(getattr(QFont, "Weight", QFont), "DemiBold")

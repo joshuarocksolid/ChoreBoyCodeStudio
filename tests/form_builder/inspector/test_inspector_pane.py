@@ -205,14 +205,17 @@ def test_changed_marker_and_reset(qapp: QApplication) -> None:
     editor = _text_editor(pane)
     row = pane.findChild(QWidget, "formBuilder.row.text")
     assert row is not None
-    bar = row.findChild(QWidget, "formBuilder.rowChanged")
-    reset = row.findChild(QWidget, "formBuilder.rowReset")
-    assert bar is not None and reset is not None
-    assert not bar.isVisible()
+    # An unchanged row has no visible bar or reset; both are made on first use.
+    for name in ("formBuilder.rowChanged", "formBuilder.rowReset"):
+        found = row.findChild(QWidget, name)
+        assert found is None or not found.isVisible()
     editor.setFocus()
     QTest.keyClicks(editor, "Hi")
     QTest.keyClick(editor, Qt.Key_Return)
     pane.flush()
+    bar = row.findChild(QWidget, "formBuilder.rowChanged")
+    reset = row.findChild(QWidget, "formBuilder.rowReset")
+    assert bar is not None and reset is not None
     assert bar.isVisible() and reset.isVisible()
     assert session.document.node(phone).prop("text") is not None
     reset.click()

@@ -18,6 +18,7 @@ from tests.form_builder.perf.harness import (
     SECTION_12_POINTS,
     STRUCTURAL_POINTS,
     STRUCTURAL_RATIO_POINTS,
+    SHELL_SELECT_POINT,
     Row,
     SpeedReport,
     run_speed,
@@ -90,6 +91,17 @@ def test_memory_and_undo_log_meet_section_12(mac_report: SpeedReport) -> None:
     ):
         row = _row(mac_report, point, 300)
         assert row.verdict == "pass", _explain(row)
+
+
+@pytest.mark.perf
+@pytest.mark.timeout(60)
+def test_inspector_select_in_the_shell_meets_section_12(mac_report: SpeedReport) -> None:
+    """Select then flush, All properties open, under the real shell style sheet."""
+    row = _row(mac_report, SHELL_SELECT_POINT, 300)
+    if row.verdict == "skip":
+        pytest.skip(row.detail)
+    assert row.verdict == "pass", _explain(row)
+    assert row.budget == "16 ms"
 
 
 def _row(report: SpeedReport, point: str, widgets: Optional[int]) -> Row:
