@@ -1922,17 +1922,29 @@ def _sizing_rows(
         pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
         pane.resize(288, 600)
         pane.show()
-        target = _first_widget(session.document, "QLineEdit") or _first_widget(session.document, "QPushButton")
-        if target is None:
+        line = _first_widget(session.document, "QLineEdit")
+        button = _first_widget(session.document, "QPushButton")
+        owners = []
+        for owner in (line, button, session.document.root.id):
+            if owner is not None and owner not in owners:
+                owners.append(owner)
+        if len(owners) < 2:
             pane.dispose()
             _dispose_held([realizer, session])
             rows.extend(
-                Row(name, count, None, None, None, budget, "skip", "reference form has no widget")
+                Row(name, count, None, None, None, budget, "skip", "reference form has no second widget")
                 for name in names
             )
             continue
-        session.selection.set((target,), source=selection.SelectionSource.PROGRAM)
+        target = line or button or owners[0]
+        session.selection.set((owners[0],), source=selection.SelectionSource.PROGRAM)
         pane.flush()
+        cursor = {"index": 0}
+
+        def flip(ids: List[Any] = owners, log: Any = session, source: Any = selection.SelectionSource.PROGRAM, pos: Dict[str, int] = cursor) -> None:
+            pos["index"] = 1 - pos["index"]
+            log.selection.set((ids[pos["index"]],), source=source)
+
         state = {"fill": False}
 
         def edit(owner: Any = target, log: Any = session.log, cmd: Any = sizing_cmd, size_values: Any = values, flag: Dict[str, bool] = state) -> None:
@@ -1957,6 +1969,7 @@ def _sizing_rows(
                     warmup=warmup,
                     enforce_absolute=enforce_absolute,
                     wall_on=wall_on,
+                    prepare=flip,
                 )[0]
             )
             rows.append(
