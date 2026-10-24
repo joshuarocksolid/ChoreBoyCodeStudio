@@ -155,7 +155,7 @@ def nearest_in_direction(
         return None
     order = {widget_id: position for position, widget_id in enumerate(_widgets(document))}
     best: Optional[NodeId] = None
-    best_key: Optional[Tuple[float, float, int]] = None
+    best_key: Optional[Tuple[bool, float, float, int]] = None
     for widget_id, rect in _visible_widgets(index, document):
         if widget_id == node:
             continue
@@ -165,7 +165,8 @@ def nearest_in_direction(
         if gap is None:
             continue
         along, across, centres = gap
-        key = (along + 2.0 * across, centres, order.get(widget_id, 0))
+        # A widget sharing the row (or column) beats any that does not.
+        key = (across > 0, along + 2.0 * across, centres, order.get(widget_id, 0))
         if best_key is None or key < best_key:
             best_key = key
             best = widget_id

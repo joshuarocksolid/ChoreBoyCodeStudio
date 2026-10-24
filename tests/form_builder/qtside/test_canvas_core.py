@@ -766,6 +766,33 @@ def test_arrow_keys_skip_ancestors_and_widgets_that_are_not_past_the_edge() -> N
         assert nearest_in_direction(session.document, index, address, "right") == save
 
 
+def test_left_stays_on_the_row_when_the_next_label_is_wider() -> None:
+    text = _ui(
+        """
+ <widget class="QWidget" name="Form">
+  <widget class="QLabel" name="emailLabel"/>
+  <widget class="QLineEdit" name="emailEdit"/>
+  <widget class="QLabel" name="addressLabel"/>
+ </widget>
+"""
+    )
+    with _opened(text) as session:
+        form = _nid(session, "Form")
+        label = _nid(session, "emailLabel")
+        edit = _nid(session, "emailEdit")
+        wider = _nid(session, "addressLabel")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 200), None),
+                _entry(label, "widget", (9, 40, 40, 20), form),
+                _entry(edit, "widget", (80, 40, 200, 20), form),
+                _entry(wider, "widget", (9, 66, 65, 20), form),
+            )
+        )
+        assert nearest_in_direction(session.document, index, edit, "left") == label
+        assert nearest_in_direction(session.document, index, label, "down") == wider
+
+
 def test_down_prefers_the_wide_widget_straight_below() -> None:
     """Cross-axis distance is the edge gap, so a full-width table below wins."""
     text = _ui(
