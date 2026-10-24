@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 from app.qt.QtCore import QEvent, QPoint, QRectF, Qt, QTimer
-from app.qt.QtGui import QColor, QFont, QPainter, QPen
+from app.qt.QtGui import QColor, QFont, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -129,6 +129,7 @@ class FormCanvas(QGraphicsView):
         self._palette = _palette(None)
         self._canvas_bg = self._palette.backdrop.fill
         self._dot = self._palette.backdrop.dot
+        self._dot_tile: Optional[Tuple[str, QPixmap]] = None
         self.setObjectName("formBuilder.canvas")
         self.setAccessibleName("Form canvas")
         self.setFocusPolicy(_focus_policy())
@@ -335,21 +336,26 @@ class FormCanvas(QGraphicsView):
         painter.fillRect(rect, QColor(self._canvas_bg))
         if not self._dot:
             return
-        color = QColor(self._dot)
-        pen = getattr(getattr(Qt, "PenStyle", Qt), "NoPen")
-        painter.setPen(pen)
-        painter.setBrush(color)
-        left = int(rect.left()) - (int(rect.left()) % _DOT)
-        top = int(rect.top()) - (int(rect.top()) % _DOT)
-        right = int(rect.right()) + _DOT
-        bottom = int(rect.bottom()) + _DOT
-        y = top
-        while y < bottom:
-            x = left
-            while x < right:
-                painter.drawEllipse(x, y, 2, 2)
-                x += _DOT
-            y += _DOT
+        # A 16 px tile. An ellipse per dot was most of a selection frame.
+        painter.drawTiledPixmap(
+            rect,
+            self._dot_pixmap(),
+            QPoint(int(rect.left()) % _DOT, int(rect.top()) % _DOT),
+        )
+
+    def _dot_pixmap(self) -> QPixmap:
+        cached = self._dot_tile
+        if cached is not None and cached[0] == self._dot:
+            return cached[1]
+        tile = QPixmap(_DOT, _DOT)
+        tile.fill(QColor(0, 0, 0, 0))
+        painter = QPainter(tile)
+        painter.setPen(getattr(getattr(Qt, "PenStyle", Qt), "NoPen"))
+        painter.setBrush(QColor(self._dot))
+        painter.drawEllipse(0, 0, 2, 2)
+        painter.end()
+        self._dot_tile = (self._dot, tile)
+        return tile
 
     def _build_chrome(self) -> None:
         self._toast = QLabel(self)
