@@ -427,7 +427,6 @@ class FormSurface(QWidget):
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._on_focus_changed)
-            app.installEventFilter(self)
 
     def widget(self) -> QWidget:
         return self
@@ -1000,9 +999,25 @@ class FormSurface(QWidget):
     def _apply(self, event: CarryEvent) -> None:
         sight = self._sight(event)
         result = step(self._carry, event, sight, self._session.document)
-        self._carry = result.state
+        self._set_carry(result.state)
         for effect in result.effects:
             self._perform(effect)
+
+    def _set_carry(self, state: Carry) -> None:
+        # Mouse tracking outside the canvas matters only during a drag.
+        # An application filter on every Qt event runs inside QWidget.show.
+        listening = not isinstance(self._carry, Quiet)
+        self._carry = state
+        needed = not isinstance(state, Quiet)
+        if listening == needed:
+            return
+        app = QApplication.instance()
+        if app is None:
+            return
+        if needed:
+            app.installEventFilter(self)
+        else:
+            app.removeEventFilter(self)
 
     def _sight(self, event: CarryEvent) -> Sight:
         if not isinstance(event, Pointer):
