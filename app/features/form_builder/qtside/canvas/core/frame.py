@@ -7,6 +7,7 @@ from typing import Literal, Optional, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.engine.query.slots import PageControl
 from app.features.form_builder.qtside.canvas.core.chips import Leader
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect, Compass, ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import Positioning
@@ -158,3 +159,5 @@ class OverlayFrame:
     #: The dock strip this frame was solved against. Docked chips sit at a
     #: fixed offset inside it while the view scrolls.
     dock: Optional[CanvasRect] = None
+    #: Stacked-widget arrows seated by ``place_chips``, in form coordinates.
+    controls: Tuple[PageControl, ...] = ()

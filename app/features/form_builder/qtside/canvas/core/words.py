@@ -17,9 +17,6 @@ ELIDE_AT = 24
 FIRST_FOCUS_HINT = (
     "Tab moves between widgets. Alt+4 goes to the inspector, Alt+1 to the outline."
 )
-MOVE_IN_LAYOUT_LATER = (
-    "Widgets in a layout move by drag in a later release. Use the outline to reorder."
-)
 RESIZE_IN_LAYOUT_LATER = "Size handles on widgets in a layout arrive with Hug, Fill and Fixed."
 
 _FILL = frozenset({"Expanding", "MinimumExpanding", "Ignored"})

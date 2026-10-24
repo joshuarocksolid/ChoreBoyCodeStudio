@@ -10,14 +10,16 @@ from dataclasses import replace
 from typing import Dict, FrozenSet, Optional, Protocol, Tuple
 
 from app.qt.QtCore import QEvent
-from app.qt.QtGui import QFont, QFontMetrics
+from app.qt.QtGui import QFont, QFontMetrics, QMouseEvent
 from app.qt.QtWidgets import QApplication, QGraphicsView, QWidget
+from app.qt.qt_compat import event_global_pos
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.hit_index import HitIndex
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex
+from app.features.form_builder.engine.query.slots import DropPaint, Point
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.canvas import _input
@@ -27,6 +29,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OverlayFrame,
 )
 from app.features.form_builder.qtside.canvas.core.gesture import (
+    ArmSlot,
     CanvasPressed,
     CloseEditor,
     Commit,
@@ -44,6 +47,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Idle,
     Key,
     Narrate,
+    NudgeSlots,
     OpenEditor,
     Press,
     Preview,
@@ -52,9 +56,13 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     RunChipAction,
     ScrollBy,
     Select,
+    SlotCancel,
+    SlotPointer,
+    SlotRelease,
     Tip,
     Toggle,
     World,
+    Yielded,
     Zoom,
     needs_fresh_geometry,
     previewing,
@@ -68,6 +76,7 @@ from app.features.form_builder.qtside.canvas.core.overlay import (
     frame_basis,
 )
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
+from app.features.form_builder.qtside.canvas.core.text import text_target
 from app.features.form_builder.qtside.canvas.core.words import (
     SizingWord,
     describe_selection,
@@ -114,6 +123,21 @@ class CanvasHost(Protocol):
     def open_layout_popover(self, node: NodeId) -> None:
         ...
 
+    def arm_slot(self, effect: ArmSlot) -> None:
+        ...
+
+    def slot_pointer(self, effect: SlotPointer) -> None:
+        ...
+
+    def slot_release(self) -> None:
+        ...
+
+    def slot_cancel(self) -> None:
+        ...
+
+    def nudge_slots(self, key: str) -> None:
+        ...
+
 
 class CanvasController:
     def __init__(
@@ -145,6 +169,8 @@ class CanvasController:
         self._reported_factor: Optional[float] = None
         self._serial = 0
         self._problems_revision = 0
+        self._drop_paint: Optional[DropPaint] = None
+        self._pointer_global = Point(0, 0)
         self._closed = False
         self._editor = InPlaceEditor(view.viewport(), realizer, self._on_editor_done)
         self._detach_sub = session.log.subscribe(self._before_realize, priority=PRIORITY_DETACH)
@@ -163,6 +189,9 @@ class CanvasController:
         """Every view and viewport event passes through here first."""
         if self._closed:
             return False
+        if isinstance(event, QMouseEvent):
+            pos = event_global_pos(event)
+            self._pointer_global = Point(int(pos.x()), int(pos.y()))
         if _input.is_frame_request(event):
             self._frame_requested = False
             self._pre_paint()
@@ -266,6 +295,21 @@ class CanvasController:
             if isinstance(action, OpenLayoutPopover):
                 self._host.open_layout_popover(action.node)
                 return
+        if isinstance(effect, ArmSlot):
+            self._host.arm_slot(effect)
+            return
+        if isinstance(effect, SlotPointer):
+            self._host.slot_pointer(replace(effect, global_at=self._pointer_global))
+            return
+        if isinstance(effect, SlotRelease):
+            self._host.slot_release()
+            return
+        if isinstance(effect, SlotCancel):
+            self._host.slot_cancel()
+            return
+        if isinstance(effect, NudgeSlots):
+            self._host.nudge_slots(effect.key)
+            return
         raise AssertionError(type(effect))
 
     def _commit(self, effect: Commit) -> None:
@@ -275,6 +319,8 @@ class CanvasController:
             if effect.label == "Nudge":
                 merge_token = "nudge:" + ",".join(str(command.id) for command in effect.commands)
                 merge_within_s = 1.0
+            elif effect.label == "Edit text":
+                merge_token = effect.token
             with self._session.log.transaction(
                 effect.label, merge_token=merge_token, merge_within_s=merge_within_s
             ) as txn:
@@ -332,8 +378,36 @@ class CanvasController:
                 self._measure,
                 visible_scene_rect(self._view),
                 self._stage.dock_rect(),
+                self._drop_paint,
             ),
         )
+
+    def edit_for_join(self, node: NodeId, token: str) -> None:
+        """Open the in-place editor on ``node`` and enter ``Editing`` with ``token``. Do not mint another."""
+        target = text_target(self._session.document, node, "widget")
+        if target is None:
+            return
+        self._gesture = Editing(target, token)
+        self._editor.open(target, self._stage.view_map())
+        self._request_frame()
+
+    def geometry_entries(self) -> Tuple[GeoEntry, ...]:
+        self._index.ensure_fresh()
+        return self._index.geometry()
+
+    def set_drop_paint(self, paint: Optional[DropPaint]) -> None:
+        self._drop_paint = paint
+        self._request_frame()
+
+    def slot_open(self) -> bool:
+        return isinstance(self._gesture, Yielded)
+
+    def end_slot(self) -> None:
+        if isinstance(self._gesture, Yielded):
+            self._gesture = Idle()
+
+    def pointer_global(self) -> Point:
+        return self._pointer_global
 
     def refresh_overlay(self) -> None:
         if self._closed:
@@ -343,6 +417,8 @@ class CanvasController:
     def _before_realize(self, changeset: ChangeSet) -> None:
         if not changeset.replaced:
             return
+        if isinstance(self._gesture, Yielded):
+            self._run(SlotCancel())
         self._stage.detach()
         self._editor.close(False)
         self._gesture = Idle()

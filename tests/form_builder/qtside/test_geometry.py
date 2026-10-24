@@ -147,24 +147,41 @@ def test_query_agrees_with_child_at_across_the_form(shown: Tuple[FormSession, Re
         widget.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
     index.ensure_fresh()
     mismatches: List[Tuple[int, int, object, object]] = []
+    titles = 0
     for x in range(0, root.width(), 5):
         for y in range(0, root.height(), 5):
             hit = index.query(x, y)
             assert hit is not None
             expected = _child_at(realizer, root, x, y)
             actual = _nearest_widget(session, hit.path)
-            if actual != expected:
-                mismatches.append((x, y, expected, actual))
+            if actual == expected:
+                continue
+            # A tab button is not its own node. childAt lands on the tab widget.
+            if hit.kind == "page_tab" and expected in hit.path[1:]:
+                titles += 1
+                continue
+            mismatches.append((x, y, expected, actual))
     assert mismatches == []
+    assert titles > 0
 
 
 def test_hidden_page_is_indexed_but_never_hit(shown: Tuple[FormSession, Realizer, HitIndex]) -> None:
     session, realizer, index = shown
     second = _id(session, "second")
+    first = _id(session, "first")
     index.ensure_fresh()
     tabs = _id(session, "tabs")
-    pages = {entry.node: entry.visible for entry in index.children_of(tabs)}
-    assert pages == {_id(session, "first"): True, second: False}
+    pages = {
+        entry.node: entry.visible
+        for entry in index.children_of(tabs)
+        if entry.kind == "widget"
+    }
+    assert pages == {first: True, second: False}
+    titles = [entry for entry in index.children_of(tabs) if entry.kind == "page_tab"]
+    assert [entry.node for entry in titles] == [first, second]
+    assert all(entry.visible and entry.rect.width > 0 and entry.rect.height > 0 for entry in titles)
+    hit = index.query(*_centre(realizer, _id(session, "button")))
+    assert hit is not None and hit.node != second
 
 
 def test_a_changeset_invalidates_without_refreshing_in_the_listener(

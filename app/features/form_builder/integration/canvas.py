@@ -22,12 +22,14 @@ from app.qt.QtWidgets import (
 from app.qt.qt_compat import wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
-from app.features.form_builder.engine.query.hit_index import HitIndex
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex
+from app.features.form_builder.engine.query.slots import DropPaint, PageControl, Point
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
 from app.features.form_builder.qtside.canvas.core.frame import Chip, OverlayFrame
-from app.features.form_builder.qtside.canvas.core.space import CanvasRect
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
@@ -148,6 +150,7 @@ class FormCanvas(QGraphicsView):
         self._palette = _palette(tokens)
         self._canvas_bg = self._palette.backdrop.fill
         self._dot = self._palette.backdrop.dot
+        self.setProperty("formBuilderHighContrast", tokens.is_high_contrast)
         self.viewport().setProperty("formBuilderHighContrast", tokens.is_high_contrast)
         self._apply_page_chrome(tokens)
         width = tokens.focus_border_width
@@ -179,6 +182,40 @@ class FormCanvas(QGraphicsView):
 
     def send(self, event: HostEvent) -> None:
         self._controller.post(event)
+
+    def focus_view(self) -> None:
+        self.setFocus()
+
+    def geometry_entries(self) -> Tuple[GeoEntry, ...]:
+        return self._controller.geometry_entries()
+
+    def edit_for_join(self, node: NodeId, token: str) -> None:
+        self._controller.edit_for_join(node, token)
+
+    def set_drag_look(self, paint: Optional[DropPaint]) -> None:
+        self._stage.set_drag_look(paint)
+        self._controller.set_drop_paint(paint)
+
+    def show_page(self, container: NodeId, index: int) -> None:
+        self._stage.show_page(container, index)
+
+    def page_controls(self) -> Tuple[PageControl, ...]:
+        return self._controller.frame.controls
+
+    def slot_open(self) -> bool:
+        return self._controller.slot_open()
+
+    def end_slot(self) -> None:
+        self._controller.end_slot()
+
+    def pointer_global(self) -> Point:
+        return self._controller.pointer_global()
+
+    def form_point(self, global_pos: QPoint) -> Point:
+        port = self.viewport().mapFromGlobal(global_pos)
+        scene = self.mapToScene(port)
+        form = self._stage.view_map().to_form(CanvasPoint(int(scene.x()), int(scene.y())))
+        return Point(int(form.x), int(form.y))
 
     def overlay(self) -> OverlayFrame:
         return self._controller.frame

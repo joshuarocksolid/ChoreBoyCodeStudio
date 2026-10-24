@@ -44,10 +44,14 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     Stroke,
 )
 from app.features.form_builder.qtside.canvas.core.gesture import (
+    ArmSlot,
     Banding,
     Commit,
     Idle,
     Inert,
+    SlotPointer,
+    SlotRelease,
+    Yielded,
     Key,
     Mods,
     Move,
@@ -458,18 +462,24 @@ def test_dragging_a_laid_out_widget_writes_nothing() -> None:
         world = _world(session, index, view)
         start = _canvas(view, 30, 30)
         pressed = step(Idle(), Press(start, PortPoint(0, 0), "left", Mods(), False), world)
+        assert isinstance(pressed.gesture, Yielded)
+        assert any(isinstance(effect, ArmSlot) for effect in pressed.effects)
         dragged = step(
             pressed.gesture,
             Move(_canvas(view, 50, 30), PortPoint(20, 0), frozenset(("left",)), Mods()),
             world,
         )
-        assert isinstance(dragged.gesture, Inert)
+        assert isinstance(dragged.gesture, Yielded)
+        assert any(isinstance(effect, SlotPointer) for effect in dragged.effects)
         released = step(
             dragged.gesture,
             Release(_canvas(view, 50, 30), PortPoint(20, 0), "left", Mods()),
             world,
         )
-        assert not any(isinstance(effect, Commit) for effect in released.effects)
+        assert isinstance(released.gesture, Idle)
+        assert any(isinstance(effect, SlotRelease) for effect in released.effects)
+        assert not any(isinstance(effect, Commit) for effect in pressed.effects + dragged.effects + released.effects)
+        assert not session.log.can_undo()
 
 
 def test_every_drag_state_consumes_release_without_an_empty_commit() -> None:

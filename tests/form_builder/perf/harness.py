@@ -1136,6 +1136,21 @@ class _SpeedHost:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def arm_slot(self, effect: object) -> None:
+        return None
+
+    def slot_pointer(self, effect: object) -> None:
+        return None
+
+    def slot_release(self) -> None:
+        return None
+
+    def slot_cancel(self) -> None:
+        return None
+
+    def nudge_slots(self, key: str) -> None:
+        return None
+
 
 def _deepest_point(index: Any, width: int, height: int) -> Tuple[int, int, int]:
     best = (0, 0, 0)

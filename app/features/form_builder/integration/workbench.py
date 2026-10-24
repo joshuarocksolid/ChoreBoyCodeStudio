@@ -6,11 +6,12 @@ Widths come from a ``LayoutPlan``. This module does not decide breakpoints.
 from __future__ import annotations
 
 import os
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QObject, QSize, Qt
-from app.qt.QtGui import QBrush, QColor, QIcon
+from app.qt.QtCore import QEvent, QObject, QPoint, QSize, Qt
+from app.qt.QtGui import QBrush, QColor, QIcon, QMouseEvent, QPainter, QPen
 from app.qt.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -26,12 +27,16 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import event_pos
+from app.qt.qt_compat import enum_value, event_global_pos, event_pos
 
+from app.features.form_builder.engine.drop import TILES
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.hit_index import GeoEntry, Rect
+from app.features.form_builder.engine.query.slots import DropPaint, NoMark, Point
 from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.canvas.controller import CanvasHost
@@ -54,11 +59,38 @@ Choice = Tuple[str, Callable[[], None]]
 
 
 def _is_leave(event: QEvent) -> bool:
-    return event.type() == getattr(getattr(QEvent, "Type", QEvent), "Leave")
+    return _is_type(event, "Leave")
+
+
+def _is_type(event: QEvent, name: str) -> bool:
+    return event.type() == getattr(getattr(QEvent, "Type", QEvent), name)
+
+
+def _left_button(event: QEvent) -> bool:
+    button = getattr(event, "button", None)
+    if not callable(button):
+        return False
+    left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+    return bool(enum_value(button()) & enum_value(left))
+
+
+def _clone_mouse(event: QEvent) -> QMouseEvent:
+    return QMouseEvent(
+        event.type(),
+        event_pos(event),
+        event_global_pos(event),
+        event.button(),  # type: ignore[attr-defined]
+        event.buttons(),  # type: ignore[attr-defined]
+        event.modifiers(),  # type: ignore[attr-defined]
+    )
 
 
 def _strong() -> Qt.FocusPolicy:
     return getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus")
+
+
+def _no_focus() -> Qt.FocusPolicy:
+    return getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
 
 
 def _transparent() -> Qt.WidgetAttribute:
@@ -491,6 +523,41 @@ class _Header(QWidget):
         super().keyPressEvent(event)  # type: ignore[arg-type]
 
 
+class _DropLine(QWidget):
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._span: Optional[Tuple[int, int, int]] = None
+        self._color = "#2F5BEA"
+        self.setAttribute(_transparent(), True)
+        self.setFocusPolicy(_no_focus())
+        self.hide()
+
+    def set_color(self, color: str) -> None:
+        self._color = color
+        self.update()
+
+    def set_span(self, span: Optional[Tuple[int, int, int]]) -> None:
+        self._span = span
+        parent = self.parentWidget()
+        if span is None or parent is None:
+            self.hide()
+            return
+        self.setGeometry(parent.rect())
+        self.show()
+        self.raise_()
+        self.update()
+
+    def paintEvent(self, _event: object) -> None:  # noqa: N802
+        if self._span is None:
+            return
+        painter = QPainter(self)
+        pen = QPen(QColor(self._color))
+        pen.setWidth(2)
+        painter.setPen(pen)
+        x, y, width = self._span
+        painter.drawLine(x, y, x + max(1, width), y)
+
+
 class OutlinePane(QWidget):
     """Read-only structure tree. Selection is written to the session."""
 
@@ -526,18 +593,25 @@ class OutlinePane(QWidget):
         self.tree.viewport().setMouseTracking(True)
         self.tree.itemEntered.connect(self._item_entered)
         self.tree.viewport().installEventFilter(self)
+        self._line = _DropLine(self.tree.viewport())
         layout.addWidget(self.tree, 1)
         self._collapsed = False
         self._hover: Optional[NodeId] = None
         self._hover_fill = ""
         self._rows: Dict[int, QTreeWidgetItem] = {}
         self._send_hover: Optional[Callable[[HoverFrom], None]] = None
+        self._document: Optional[UiDocument] = None
+        self._arm_row: Optional[Callable[[NodeId, Point, Point], None]] = None
+        self._press_global: Optional[QPoint] = None
+        self._press_local: Optional[QPoint] = None
+        self._delivering = False
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
         self.tree.setVisible(not collapsed)
 
     def rebuild(self, document: UiDocument, selected: Optional[NodeId]) -> None:
+        self._document = document
         self._blocked = True
         self.tree.clear()
         self._rows = {}
@@ -575,6 +649,7 @@ class OutlinePane(QWidget):
         self._blocked = False
 
     def patch_labels(self, document: UiDocument, selected: Optional[NodeId]) -> None:
+        self._document = document
         entries = tuple(structure_entries(document))
         if len(entries) != len(self._rows):
             self.rebuild(document, selected)
@@ -604,10 +679,131 @@ class OutlinePane(QWidget):
     def hover_node(self) -> Optional[NodeId]:
         return self._hover
 
+    def set_row_arm(self, arm: Callable[[NodeId, Point, Point], None]) -> None:
+        self._arm_row = arm
+
+    def set_mark_color(self, color: str) -> None:
+        self._line.set_color(color)
+
+    def set_drop_mark(self, paint: Optional[DropPaint]) -> None:
+        if paint is None or paint.where != "outline" or isinstance(paint.mark, NoMark):
+            self._line.set_span(None)
+            return
+        rect = paint.mark.rect
+        y = rect.y if rect.height <= 4 else rect.y + rect.height // 2
+        self._line.set_span((rect.x, y, rect.width))
+
+    def row_entries(self) -> Tuple[GeoEntry, ...]:
+        document = self._document
+        if document is None:
+            return ()
+        rows: List[GeoEntry] = []
+
+        def walk(item: QTreeWidgetItem, parent: Optional[NodeId]) -> None:
+            node = self._node_of(item)
+            if node is None or item.isHidden():
+                return
+            rect = self.tree.visualItemRect(item)
+            found = document.get(node)
+            if isinstance(found, LayoutNode):
+                kind = "layout"
+            elif isinstance(found, SpacerNode):
+                kind = "spacer"
+            else:
+                kind = "widget"
+            rows.append(
+                GeoEntry(
+                    node,
+                    kind,
+                    Rect(rect.x(), rect.y(), max(1, rect.width()), max(1, rect.height())),
+                    parent,
+                    True,
+                    len(rows),
+                )
+            )
+            if not item.isExpanded():
+                return
+            for index in range(item.childCount()):
+                child = item.child(index)
+                if child is not None:
+                    walk(child, node)
+
+        for index in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(index)
+            if top is not None:
+                walk(top, None)
+        return tuple(rows)
+
+    def collapsed_ids(self) -> FrozenSet[NodeId]:
+        found: List[NodeId] = []
+
+        def walk(item: QTreeWidgetItem) -> None:
+            node = self._node_of(item)
+            if node is None:
+                return
+            if item.childCount() and not item.isExpanded():
+                found.append(node)
+                return
+            for index in range(item.childCount()):
+                child = item.child(index)
+                if child is not None:
+                    walk(child)
+
+        for index in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(index)
+            if top is not None:
+                walk(top)
+        return frozenset(found)
+
+    def expand_row(self, node: NodeId) -> None:
+        item = self._rows.get(int(node))
+        if item is not None:
+            self.tree.expandItem(item)
+
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if watched is self.tree.viewport() and _is_leave(event):
             self._announce_hover(None)
+        if (
+            watched is self.tree.viewport()
+            and _is_type(event, "MouseButtonPress")
+            and _left_button(event)
+            and not self._delivering
+        ):
+            # The tree selects inside the press. Arm after that, still before release.
+            self._delivering = True
+            self._press_global = event_global_pos(event)
+            self._press_local = event_pos(event)
+            try:
+                self.tree.viewport().removeEventFilter(self)
+                QApplication.sendEvent(self.tree.viewport(), _clone_mouse(event))
+            finally:
+                self.tree.viewport().installEventFilter(self)
+                self._delivering = False
+            self._arm_after_press()
+            return True
+        if watched is self.tree.viewport() and _is_type(event, "Resize"):
+            self._line.setGeometry(self.tree.viewport().rect())
         return super().eventFilter(watched, event)
+
+    def _arm_after_press(self) -> None:
+        arm = self._arm_row
+        local = self._press_local
+        global_at = self._press_global
+        if arm is None or local is None or global_at is None:
+            return
+        item = self.tree.itemAt(local)
+        if item is None:
+            return
+        node = self._node_of(item)
+        if node is None:
+            return
+        arm(node, Point(int(global_at.x()), int(global_at.y())), Point(int(local.x()), int(local.y())))
+
+    def _node_of(self, item: QTreeWidgetItem) -> Optional[NodeId]:
+        raw = item.data(0, getattr(Qt, "UserRole"))
+        if raw is None:
+            return None
+        return NodeId(int(raw))
 
     def show_for_design(self) -> None:
         self.tree.setVisible(not self._collapsed)
@@ -650,24 +846,76 @@ class InsertPane(QWidget):
     def __init__(self, on_collapsed: Callable[[bool], None], parent: QWidget) -> None:
         super().__init__(parent)
         self._on_collapsed = on_collapsed
+        self._arm: Optional[Callable[[str, Tuple[int, int], Point, Point], None]] = None
         self.setObjectName("formBuilder.insert")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         self.header = _Header("Insert", self, self._toggle)
         self.header.add_extra("⌕", "Not available yet")
         layout.addWidget(self.header)
-        self.body = QLabel("Widgets you can place will show up here.", self)
-        self.body.setObjectName("formBuilder.insertBody")
-        self.body.setAccessibleName("Insert")
-        self.body.setWordWrap(True)
-        self.body.setAlignment(_top_left())
-        self.body.setFocusPolicy(_strong())
-        layout.addWidget(self.body, 1)
+        self._list = QWidget(self)
+        self._list.setObjectName("formBuilder.insertList")
+        column = QVBoxLayout(self._list)
+        column.setContentsMargins(8, 8, 8, 8)
+        column.setSpacing(4)
+        self._buttons: List[QPushButton] = []
+        self._class_of: Dict[QPushButton, str] = {}
+        for tile in TILES:
+            button = QPushButton(tile.caption, self._list)
+            button.setObjectName("formBuilder.insert.%s" % tile.class_name)
+            button.setProperty("formBuilderTile", True)
+            button.setAccessibleName(tile.caption)
+            button.setFocusPolicy(_strong())
+            button.setSizePolicy(_policy("Expanding"), _policy("Fixed"))
+            button.installEventFilter(self)
+            self._buttons.append(button)
+            self._class_of[button] = tile.class_name
+            column.addWidget(button)
+        column.addStretch(1)
+        layout.addWidget(self._list, 1)
         self._collapsed = False
+
+    def set_tile_arm(self, arm: Callable[[str, Tuple[int, int], Point, Point], None]) -> None:
+        self._arm = arm
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
-        self.body.setVisible(not collapsed)
+        self._list.setVisible(not collapsed)
+
+    def tiles(self) -> Tuple[QPushButton, ...]:
+        return tuple(self._buttons)
+
+    def focus_first(self) -> None:
+        if self._buttons:
+            self._buttons[0].setFocus()
+
+    def clear_press(self) -> None:
+        for button in self._buttons:
+            button.setDown(False)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if (
+            isinstance(watched, QPushButton)
+            and any(watched is button for button in self._buttons)
+            and _is_type(event, "MouseButtonPress")
+            and _left_button(event)
+        ):
+            self._arm_button(watched, event)
+        return super().eventFilter(watched, event)
+
+    def _arm_button(self, button: QPushButton, event: QEvent) -> None:
+        arm = self._arm
+        if arm is None:
+            return
+        hint = button.sizeHint()
+        global_at = event_global_pos(event)
+        local = event_pos(event)
+        arm(
+            self._class_of[button],
+            (max(1, hint.width()), max(1, hint.height())),
+            Point(int(global_at.x()), int(global_at.y())),
+            Point(int(local.x()), int(local.y())),
+        )
 
     def _toggle(self) -> None:
         self.set_collapsed(not self._collapsed)
@@ -830,6 +1078,17 @@ class FormWorkbench(QWidget):
     def canvas_view(self) -> FormCanvas:
         return self.canvas
 
+    def set_drag_cursor(self, shape: str) -> None:
+        targets = (self, self.canvas.viewport(), self.outline.tree.viewport(), self.insert)
+        if shape == "arrow":
+            for widget in targets:
+                widget.unsetCursor()
+            return
+        names = {"move": "SizeAllCursor", "forbidden": "ForbiddenCursor"}
+        cursor = getattr(getattr(Qt, "CursorShape", Qt), names[shape])
+        for widget in targets:
+            widget.setCursor(cursor)
+
     def refresh(self, selected: Optional[NodeId], outline: str = "rebuild") -> None:
         document = self._session.document
         if outline == "patch":
@@ -862,6 +1121,7 @@ class FormWorkbench(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self.outline.set_hover_fill(tokens.tree_hover_bg)
+        self.outline.set_mark_color(tokens.accent)
         for name, glyph in _RAIL_GLYPHS.items():
             button = self.findChild(QToolButton, name)
             if isinstance(button, QToolButton):
@@ -876,7 +1136,9 @@ class FormWorkbench(QWidget):
             "QTreeWidget#formBuilder\\.structure::item:selected { background: %s; color: %s; }"
             "QTreeWidget#formBuilder\\.structure:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.noticeText { color: %s; background: transparent; }"
-            "QLabel#formBuilder\\.insertBody { color: %s; background: transparent; border: none; }"
+            "QPushButton[formBuilderTile=\"true\"] { color: %s; background: %s;"
+            " border: 1px solid %s; padding: 6px 8px; text-align: left; }"
+            "QPushButton[formBuilderTile=\"true\"]:focus { border: %dpx solid %s; }"
             "QWidget#formBuilder\\.sectionHeader { background: transparent; color: %s; border: none; }"
             "QWidget#formBuilder\\.sectionHeader:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.sectionTitle {"
@@ -910,7 +1172,11 @@ class FormWorkbench(QWidget):
                 width,
                 tokens.accent,
                 tokens.text_primary,
-                tokens.text_muted,
+                tokens.text_primary,
+                tokens.panel_bg,
+                tokens.border,
+                width,
+                tokens.accent,
                 tokens.text_primary,
                 width,
                 tokens.accent,
@@ -977,7 +1243,7 @@ class FormWorkbench(QWidget):
             self.open_left()
         if self._plan is not None and self._plan.stack_left:
             self._left_tabs.setCurrentWidget(self.insert)
-        self.insert.body.setFocus()
+        self.insert.focus_first()
 
     def _focus_inspector_tab(self, tab: TabId) -> None:
         if self._plan is not None and not self._plan.inspector_docked:

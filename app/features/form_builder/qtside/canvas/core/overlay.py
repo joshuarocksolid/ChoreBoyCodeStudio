@@ -12,11 +12,20 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.engine.query.slots import (
+    CellMark,
+    DropPaint,
+    FrameMark,
+    GapMark,
+    GhostMark,
+    NoMark,
+    PageControl,
+)
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import EnumValue
+from app.features.form_builder.engine.ui4.values import EnumValue, NumberValue
 from app.features.form_builder.qtside.canvas.core.chips import (
     BADGE_CORNERS,
     BARE_CORNERS,
@@ -68,7 +77,13 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     previewing,
     resized_drawn,
 )
-from app.features.form_builder.qtside.canvas.core.space import CanvasRect, CanvasSize, Compass, ViewMap
+from app.features.form_builder.qtside.canvas.core.space import (
+    CanvasPoint,
+    CanvasRect,
+    CanvasSize,
+    Compass,
+    ViewMap,
+)
 from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
@@ -88,6 +103,7 @@ EMPTY_CAPTION_MIN_WIDTH = 120
 
 # A childless one of these is an empty container. A button or a label is not.
 _EMPTY_CONTAINER = frozenset({"QWidget", "QFrame", "QGroupBox", "QDialog", "QScrollArea"})
+_STACKED = frozenset({"QStackedWidget", "QToolBox"})
 
 LABEL_HEIGHT = 18
 LABEL_PADDING = 6
@@ -145,6 +161,7 @@ class FrameInputs:
     viewport: Optional[CanvasRect] = None
     #: Chrome strip for a selection chip with no clear seat (the page caption).
     dock: Optional[CanvasRect] = None
+    paint: Optional[DropPaint] = None
 
 
 @dataclass(frozen=True)
@@ -275,10 +292,13 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         _band(items, view, gesture)
 
     faces, requests = _requests(static, inputs, shown, rects)
+    _drop_paint(items, faces, requests, inputs)
+    _page_arrows(faces, requests, static, inputs)
     fixed = tuple(hit for hit, _target in handle_hits) + inputs.chrome
     viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
     chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None)
+    controls = _page_controls(seats, view)
     targets: List[Tuple[CanvasRect, Target]] = []
     targets.extend(reversed(chip_hits))
     targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
@@ -291,6 +311,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         tuple(targets),
         tuple(chip_rows),
         inputs.dock,
+        controls,
     )
 
 
@@ -418,6 +439,113 @@ def _band(items: List[Item], view: ViewMap, gesture: Banding) -> None:
         if node not in hit_ids:
             continue
         items.append(Stroke(view.to_canvas(form_rect).grown(1), "hover", 1, "solid"))
+
+
+def _drop_paint(
+    items: List[Item],
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+) -> None:
+    paint = inputs.paint
+    if paint is None or paint.where != "canvas" or isinstance(paint.mark, NoMark):
+        return
+    mark = paint.mark
+    canvas = inputs.view.to_canvas(mark.rect)
+    role: Role = "problem" if paint.trouble else "select"
+    if isinstance(mark, CellMark):
+        items.append(Stroke(canvas, role, 1, "dashed"))
+        items.append(Fill(canvas, "drop_fill"))
+    elif isinstance(mark, (GapMark, FrameMark, GhostMark)):
+        style: Literal["solid", "dashed"] = "solid" if isinstance(mark, GapMark) else "dashed"
+        width = 2.0 if isinstance(mark, GapMark) else 1.0
+        items.append(Stroke(canvas, role, width, style))
+    if paint.trouble or not paint.sentence:
+        return
+    text = paint.sentence
+    faces[("drop",)] = _Face("chip", inputs.document.root.id, role, text, None)
+    requests.append(
+        ChipRequest(
+            ("drop",),
+            canvas,
+            _label_size(text, inputs.measure),
+            LABEL_CORNERS,
+            frozenset(),
+        )
+    )
+
+
+def _page_arrows(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    document = inputs.document
+    for node in document.iter_preorder():
+        if not isinstance(node, WidgetNode) or node.class_name not in _STACKED:
+            continue
+        pages = node.child_widgets
+        if len(pages) < 2:
+            continue
+        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
+        if rect is None:
+            continue
+        current = _stack_index(node)
+        size = CanvasSize(max(16, inputs.measure("◀") + 12), LABEL_HEIGHT)
+        if current > 0:
+            _ask(
+                faces,
+                requests,
+                ("page", node.id, current - 1),
+                rect,
+                size,
+                ("above_left",),
+                document,
+                _Face("chip", node.id, "select", "◀", None),
+            )
+        if current + 1 < len(pages):
+            _ask(
+                faces,
+                requests,
+                ("page", node.id, current + 1),
+                rect,
+                size,
+                ("above_right",),
+                document,
+                _Face("chip", node.id, "select", "▶", None),
+            )
+
+
+def _page_controls(seats: Sequence[ChipSeat], view: ViewMap) -> Tuple[PageControl, ...]:
+    found: List[PageControl] = []
+    for seat in seats:
+        key = seat.key
+        if not isinstance(key, tuple) or len(key) != 3 or key[0] != "page":
+            continue
+        container, index = key[1], key[2]
+        if not isinstance(index, int):
+            continue
+        found.append(PageControl(_form_rect(view, seat.rect), container, index))
+    return tuple(found)
+
+
+def _stack_index(node: WidgetNode) -> int:
+    entry = node.prop("currentIndex")
+    if entry is None or not isinstance(entry.value, NumberValue):
+        return 0
+    return entry.value.value
+
+
+def _form_rect(view: ViewMap, canvas: CanvasRect) -> Rect:
+    origin = view.to_form(CanvasPoint(canvas.x, canvas.y))
+    factor = view.factor if view.factor else 1.0
+    return Rect(
+        int(origin.x),
+        int(origin.y),
+        max(1, int(round(canvas.width / factor))),
+        max(1, int(round(canvas.height / factor))),
+    )
 
 
 def _requests(

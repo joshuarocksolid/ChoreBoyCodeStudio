@@ -6,11 +6,13 @@ One tab owns one ``FormSession``. Closing the tab disposes that session.
 from __future__ import annotations
 
 import os
+import time
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Literal, Mapping, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.QtGui import QKeySequence
+from app.qt.qt_compat import enum_value, event_global_pos
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
@@ -29,6 +31,37 @@ from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
+from app.features.form_builder.engine.drop import (
+    ArmCanvas,
+    ArmRow,
+    ArmTile,
+    Cancel,
+    Carry,
+    CarryEffect,
+    CarryEvent,
+    CommitDrop,
+    DragCursor,
+    NarrowSelection,
+    Pointer,
+    Quiet,
+    Release,
+    Repaint,
+    Say,
+    SpringOpen,
+    commit,
+    nudge,
+    step,
+)
+from app.features.form_builder.engine.query.slots import (
+    Away,
+    CanvasGeom,
+    OpenRow,
+    OutlineGeom,
+    Point,
+    ShowPage,
+    Sight,
+    Spring,
+)
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
@@ -73,7 +106,9 @@ from app.features.form_builder.integration.toast import (
     undo_matches,
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
-from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
+from app.features.form_builder.qtside.canvas.core.gesture import ArmSlot, EditTextAsked, SlotPointer, ZoomAsked
+from app.features.form_builder.qtside.canvas.core.overlay import EMPTY_MIN_HEIGHT, EMPTY_MIN_WIDTH
+from app.features.form_builder.qtside.canvas.core.snap import GRID
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
 from app.features.form_builder.qtside.canvas.core.words import hover_sentence
@@ -149,6 +184,41 @@ def _shell_history(window: QWidget, redo: bool) -> None:
         surface.redo()
     else:
         surface.undo()
+
+
+def _event_type(event: QEvent, name: str) -> bool:
+    return event.type() == getattr(getattr(QEvent, "Type", QEvent), name)
+
+
+def _flag_down(event: QEvent, reader: str, name: str) -> bool:
+    method = getattr(event, reader, None)
+    if not callable(method):
+        return False
+    flag = getattr(getattr(Qt, "MouseButton", Qt), name)
+    return bool(enum_value(method()) & enum_value(flag))
+
+
+def _is_escape(event: QEvent) -> bool:
+    key = getattr(event, "key", None)
+    if not callable(key):
+        return False
+    return int(key()) == int(getattr(getattr(Qt, "Key", Qt), "Key_Escape"))
+
+
+def _shift_down() -> bool:
+    app = QApplication.instance()
+    if app is None:
+        return False
+    flag = getattr(getattr(Qt, "KeyboardModifier", Qt), "ShiftModifier")
+    return bool(enum_value(app.keyboardModifiers()) & enum_value(flag))
+
+
+def _ignore_note(_note: ToastNote) -> None:
+    return None
+
+
+def _now_ms() -> int:
+    return int(time.monotonic() * 1000)
 
 
 def _key_text(event: object) -> str:
@@ -307,6 +377,12 @@ class FormSurface(QWidget):
         self._selection_unsub = session.selection.subscribe(self._on_selection)
         self._source_unsub = source.subscribe_changed(self._on_source_changed)
         self._inert_note = ""
+        self._carry: Carry = Quiet()
+        self._paint = None
+        self._drop_serial = 0
+        self._loud: Optional[Tuple[str, float]] = None
+        self._workbench.outline.set_row_arm(self._arm_row)
+        self._workbench.insert.set_tile_arm(self._arm_tile)
         self._gesture_sentence = ""
         self._overlay_sentence = ""
         self._hover_sentence = ""
@@ -351,6 +427,7 @@ class FormSurface(QWidget):
         app = QApplication.instance()
         if app is not None:
             app.focusChanged.connect(self._on_focus_changed)
+            app.installEventFilter(self)
 
     def widget(self) -> QWidget:
         return self
@@ -493,6 +570,7 @@ class FormSurface(QWidget):
         self._diagnostics_unsub()
         app = QApplication.instance()
         if app is not None:
+            app.removeEventFilter(self)
             try:
                 app.focusChanged.disconnect(self._on_focus_changed)
             except (RuntimeError, TypeError):
@@ -834,6 +912,159 @@ class FormSurface(QWidget):
 
     def open_layout_popover(self, node: NodeId) -> None:
         self._layout_popover = open_layout_menu(self, FORM_COMMANDS, self._chip_anchor(node))
+
+    def arm_slot(self, effect: ArmSlot) -> None:
+        global_at = self._workbench.canvas.pointer_global()
+        self._apply(
+            ArmCanvas(
+                effect.pressed,
+                effect.selected,
+                effect.narrow_on_click,
+                global_at,
+                Point(int(effect.at.x), int(effect.at.y)),
+                self._drop_token(),
+            )
+        )
+
+    def slot_pointer(self, effect: SlotPointer) -> None:
+        where, local = self._locate(QPoint(effect.global_at.x, effect.global_at.y))
+        self._apply(Pointer(where, effect.global_at, local, effect.snap, _now_ms()))
+
+    def slot_release(self) -> None:
+        self._apply(Release())
+
+    def slot_cancel(self) -> None:
+        self._apply(Cancel())
+
+    def nudge_slots(self, key: str) -> None:
+        state = self._session.selection.state
+        nudge(self._session.log, self._session.document, state.ids, state.current, key)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        del watched
+        if isinstance(self._carry, Quiet):
+            return False
+        canvas = self._workbench.canvas
+        if canvas.slot_open():
+            return False
+        if _event_type(event, "KeyPress") and _is_escape(event):
+            self._apply(Cancel())
+            event.accept()
+            return True
+        if _event_type(event, "MouseMove") and _flag_down(event, "buttons", "LeftButton"):
+            # A canvas hover would replace the drag sentence.
+            self._track(event_global_pos(event))
+            return True
+        if _event_type(event, "MouseButtonRelease") and _flag_down(event, "button", "LeftButton"):
+            self._apply(Release())
+            canvas.end_slot()
+            self._workbench.insert.clear_press()
+            return False
+        return False
+
+    def _arm_row(self, node: NodeId, global_at: Point, local_at: Point) -> None:
+        self._apply(ArmRow(node, global_at, local_at, self._drop_token()))
+
+    def _arm_tile(self, class_name: str, size: Tuple[int, int], global_at: Point, local_at: Point) -> None:
+        self._apply(ArmTile(class_name, size, global_at, local_at, self._drop_token()))
+
+    def _drop_token(self) -> str:
+        self._drop_serial += 1
+        return "drop:%d" % self._drop_serial
+
+    def _track(self, global_pos: QPoint) -> None:
+        where, local = self._locate(global_pos)
+        snap = 0 if _shift_down() else GRID
+        self._apply(
+            Pointer(
+                where,
+                Point(int(global_pos.x()), int(global_pos.y())),
+                local,
+                snap,
+                _now_ms(),
+            )
+        )
+
+    def _locate(self, global_pos: QPoint) -> Tuple[Literal["canvas", "outline", "away"], Point]:
+        canvas = self._workbench.canvas
+        viewport = canvas.viewport()
+        port = viewport.mapFromGlobal(global_pos)
+        if viewport.rect().contains(port):
+            return "canvas", canvas.form_point(global_pos)
+        outline = self._workbench.outline.tree.viewport()
+        row = outline.mapFromGlobal(global_pos)
+        if outline.isVisible() and outline.rect().contains(row):
+            return "outline", Point(int(row.x()), int(row.y()))
+        return "away", Point(0, 0)
+
+    def _apply(self, event: CarryEvent) -> None:
+        sight = self._sight(event)
+        result = step(self._carry, event, sight, self._session.document)
+        self._carry = result.state
+        for effect in result.effects:
+            self._perform(effect)
+
+    def _sight(self, event: CarryEvent) -> Sight:
+        if not isinstance(event, Pointer):
+            return Away()
+        if event.where == "canvas":
+            return CanvasGeom(
+                self._workbench.canvas.geometry_entries(),
+                floor=(EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT),
+                controls=self._workbench.canvas.page_controls(),
+            )
+        if event.where == "outline":
+            return OutlineGeom(
+                self._workbench.outline.row_entries(),
+                self._workbench.outline.collapsed_ids(),
+            )
+        return Away()
+
+    def _perform(self, effect: CarryEffect) -> None:
+        if isinstance(effect, Say):
+            self.narrate(effect.sentence)
+            if effect.sentence and isinstance(self._carry, Quiet):
+                self._note_refusal(effect.sentence)
+            return
+        if isinstance(effect, Repaint):
+            self._paint = effect.paint
+            self._workbench.canvas.set_drag_look(effect.paint)
+            self._workbench.outline.set_drop_mark(effect.paint)
+            return
+        if isinstance(effect, DragCursor):
+            self._workbench.set_drag_cursor(effect.shape)
+            return
+        if isinstance(effect, SpringOpen):
+            self._spring(effect.action)
+            return
+        if isinstance(effect, NarrowSelection):
+            self._session.selection.set((effect.node,), current=effect.node, source=SelectionSource.CANVAS)
+            return
+        if isinstance(effect, CommitDrop):
+            done = commit(self._session.log, effect)
+            if not done.moved:
+                return
+            self._workbench.canvas.focus_view()
+            if done.edited is not None:
+                self._workbench.canvas.edit_for_join(done.edited, effect.token)
+            return
+        raise AssertionError(type(effect))
+
+    def _note_refusal(self, sentence: str) -> None:
+        now = time.monotonic()
+        previous = self._loud
+        if previous is not None and previous[0] == sentence and now - previous[1] <= 5.0:
+            self._command_toast.show_note(ToastNote(sentence, None, "", 0), _ignore_note)
+        self._loud = (sentence, now)
+
+    def _spring(self, action: Spring) -> None:
+        if isinstance(action, OpenRow):
+            self._workbench.outline.expand_row(action.node)
+            return
+        if isinstance(action, ShowPage):
+            self._workbench.canvas.show_page(action.container, action.index)
+            return
+        raise AssertionError(type(action))
 
     def _chip_anchor(self, node: NodeId) -> QPoint:
         canvas = self._workbench.canvas
@@ -1350,7 +1581,7 @@ class FormSurface(QWidget):
             self._workbench.outline.tree,
             self._workbench.insert.header,
             *self._workbench.insert.header.extra,
-            self._workbench.insert.body,
+            *self._workbench.insert.tiles(),
             self._workbench.canvas_view(),
             self._workbench.inspector.header,
             self._workbench.inspector.tabs,

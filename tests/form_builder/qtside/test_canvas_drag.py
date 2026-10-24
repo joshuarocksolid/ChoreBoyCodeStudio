@@ -65,6 +65,21 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def arm_slot(self, effect: object) -> None:
+        return None
+
+    def slot_pointer(self, effect: object) -> None:
+        return None
+
+    def slot_release(self) -> None:
+        return None
+
+    def slot_cancel(self) -> None:
+        return None
+
+    def nudge_slots(self, key: str) -> None:
+        return None
+
 
 def test_a_free_drag_is_one_undo_on_release() -> None:
     with opened(FREE) as (session, realizer):

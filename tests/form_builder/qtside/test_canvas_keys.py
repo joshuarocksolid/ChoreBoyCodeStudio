@@ -11,6 +11,7 @@ import pytest
 from app.qt.QtCore import QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
+from app.features.form_builder.engine.drop import nudge
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -38,6 +39,9 @@ PAGE = form(
 
 
 class _Host:
+    def __init__(self, session: FormSession) -> None:
+        self._session = session
+
     def canvas_pressed(self) -> None:
         return None
 
@@ -56,13 +60,29 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def arm_slot(self, effect: object) -> None:
+        return None
+
+    def slot_pointer(self, effect: object) -> None:
+        return None
+
+    def slot_release(self) -> None:
+        return None
+
+    def slot_cancel(self) -> None:
+        return None
+
+    def nudge_slots(self, key: str) -> None:
+        state = self._session.selection.state
+        nudge(self._session.log, self._session.document, state.ids, state.current, key)
+
 
 @contextmanager
 def _shown(text: str = PAGE) -> Iterator[Tuple[FormSession, FormCanvas]]:
     with opened(text) as (session, realizer):
         parent = QWidget()
         parent.resize(640, 480)
-        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas = FormCanvas(session, realizer, _Host(session), parent)
         canvas.resize(640, 480)
         parent.show()
         app = QApplication.instance()
@@ -167,21 +187,25 @@ LAID = form(
      <property name="text"><string>Second</string></property>
     </widget>
    </item>
+   <item>
+    <widget class="QPushButton" name="third">
+     <property name="text"><string>Third</string></property>
+    </widget>
+   </item>
   </layout>
 """,
 )
 
 
-def test_alt_arrow_on_a_laid_out_widget_does_not_move_the_selection() -> None:
+def test_alt_arrow_moves_one_laid_out_slot_and_merges() -> None:
     with _shown(LAID) as (session, canvas):
         _click(canvas, "first")
-        first = _widget(canvas, "first")
-        origin = (first.x(), first.y())
-        selected = session.selection.state.current
         _key(canvas, "Key_Down", "AltModifier")
-        assert session.selection.state.current == selected
-        assert (first.x(), first.y()) == origin
-        assert session.log.undo_label() != "Nudge"
+        _key(canvas, "Key_Down", "AltModifier")
+        assert _box_order(session.document) == ("second", "third", "first")
+        assert len(session.log.entries()) == 1
+        assert session.log.undo()
+        assert _box_order(session.document) == ("first", "second", "third")
 
 
 def test_a_canvas_press_does_not_scroll_and_an_outline_selection_does() -> None:
@@ -250,6 +274,17 @@ def _port(canvas: FormCanvas, root: QWidget, point: QPoint) -> QPoint:
 
 def _scroll(canvas: FormCanvas) -> Tuple[int, int]:
     return (canvas.horizontalScrollBar().value(), canvas.verticalScrollBar().value())
+
+
+def _box_order(document: UiDocument) -> Tuple[str, ...]:
+    layout = document.root.layout
+    assert layout is not None
+    names = []
+    for item in layout.items:
+        content = item.content
+        assert content is not None
+        names.append(str(getattr(content, "object_name")))
+    return tuple(names)
 
 
 def _id(document: UiDocument, name: str) -> NodeId:

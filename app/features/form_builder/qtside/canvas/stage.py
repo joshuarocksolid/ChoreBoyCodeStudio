@@ -8,14 +8,25 @@ minimum, and that size is not saved.
 from __future__ import annotations
 
 import math
-from typing import Callable, Optional, Tuple
+from typing import Callable, Dict, Optional, Tuple
 
-from app.qt.QtCore import Qt
-from app.qt.QtWidgets import QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
+from app.qt.QtCore import QPoint, Qt
+from app.qt.QtGui import QColor, QPixmap
+from app.qt.QtWidgets import (
+    QGraphicsOpacityEffect,
+    QGraphicsProxyWidget,
+    QGraphicsView,
+    QLabel,
+    QStackedWidget,
+    QTabWidget,
+    QToolBox,
+    QWidget,
+)
 from app.qt.qt_compat import wrapper_is_valid
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import InvalidationReason, Rect
+from app.features.form_builder.engine.query.slots import DropPaint
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.qtside.canvas.core.gesture import (
@@ -49,7 +60,7 @@ from app.features.form_builder.qtside.canvas.core.space import (
 )
 from app.features.form_builder.qtside.canvas.core.words import page_chip_label
 from app.features.form_builder.qtside.realize.api import Realizer
-from app.features.form_builder.qtside.theme.overlay import BackdropPalette
+from app.features.form_builder.qtside.theme.overlay import BackdropPalette, overlay_palette
 
 # Handle hit, chip height, and the gap, in screen pixels. The page scale lives on the proxy.
 REVEAL_PAD = 32
@@ -111,6 +122,17 @@ class Stage:
         self._homed = True
         view.horizontalScrollBar().actionTriggered.connect(self._scrolled)
         view.verticalScrollBar().actionTriggered.connect(self._scrolled)
+        self._dimmed: Dict[NodeId, QWidget] = {}
+        self._ghost_ids: Optional[Tuple[NodeId, ...]] = None
+        self._ghost = QLabel(view.viewport())
+        self._ghost.setObjectName("formBuilder.dropGhost")
+        self._ghost.setFocusPolicy(_no_focus())
+        self._ghost.setAttribute(_transparent(), True)
+        self._ghost.setScaledContents(True)
+        ghost_fade = QGraphicsOpacityEffect(self._ghost)
+        ghost_fade.setOpacity(0.6)
+        self._ghost.setGraphicsEffect(ghost_fade)
+        self._ghost.hide()
 
     @property
     def proxy(self) -> QGraphicsProxyWidget:
@@ -247,6 +269,84 @@ class Stage:
         size_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - self._size.width()) // 2)
         self._size.move(size_x, bottom_right.y() + 6)
         self._size.raise_()
+
+    def set_drag_look(self, paint: Optional[DropPaint]) -> None:
+        """Dim ``paint.dim`` to 35% instantly. One ghost at 60% on the canvas. No animation."""
+        if paint is None:
+            self._clear_drag_look()
+            return
+        if paint.where == "canvas" and paint.ghost_size is not None and paint.dim and self._ghost_ids != paint.dim:
+            # Grab before the opacity effect, or the ghost is a picture of the dimmed widget.
+            self._ghost.setPixmap(self._grab(paint.dim, paint.ghost_size))
+            self._ghost_ids = paint.dim
+        self._dim(paint.dim)
+        self._place_ghost(paint)
+
+    def show_page(self, container: NodeId, index: int) -> None:
+        """Set the realized page. Invalidate the hit index with ``page_switch``. Do not write the document."""
+        widget = self._realizer.widget_for(container)
+        if not isinstance(widget, (QStackedWidget, QTabWidget, QToolBox)):
+            return
+        widget.setCurrentIndex(index)
+        self._invalidate("page_switch")
+
+    def _clear_drag_look(self) -> None:
+        for widget in self._dimmed.values():
+            if wrapper_is_valid(widget):
+                widget.setGraphicsEffect(None)
+        self._dimmed = {}
+        self._ghost_ids = None
+        self._ghost.hide()
+        self._ghost.setPixmap(QPixmap())
+
+    def _dim(self, ids: Tuple[NodeId, ...]) -> None:
+        wanted = set(ids)
+        for node_id, widget in list(self._dimmed.items()):
+            if node_id in wanted:
+                continue
+            if wrapper_is_valid(widget):
+                widget.setGraphicsEffect(None)
+            del self._dimmed[node_id]
+        for node_id in ids:
+            if node_id in self._dimmed:
+                continue
+            widget = self._realizer.widget_for(node_id)
+            if widget is None:
+                continue
+            fade = QGraphicsOpacityEffect(widget)
+            fade.setOpacity(0.35)
+            widget.setGraphicsEffect(fade)
+            self._dimmed[node_id] = widget
+
+    def _place_ghost(self, paint: DropPaint) -> None:
+        if paint.where != "canvas" or paint.ghost_size is None:
+            self._ghost.hide()
+            return
+        if not paint.dim and self._ghost_ids != ():
+            self._ghost_ids = ()
+            self._ghost.setPixmap(self._block(paint.ghost_size))
+        width, height = paint.ghost_size
+        factor = self.view_map().factor or 1.0
+        self._ghost.resize(max(1, int(round(width * factor))), max(1, int(round(height * factor))))
+        origin = self.view_map().to_canvas(Rect(paint.ghost_at.x, paint.ghost_at.y, width, height))
+        port = self._view.mapFromScene(QPoint(origin.x, origin.y))
+        self._ghost.move(int(port.x()), int(port.y()))
+        self._ghost.show()
+        self._ghost.raise_()
+
+    def _grab(self, ids: Tuple[NodeId, ...], size: Tuple[int, int]) -> QPixmap:
+        for node_id in ids:
+            widget = self._realizer.widget_for(node_id)
+            if widget is not None:
+                return widget.grab()
+        return self._block(size)
+
+    def _block(self, size: Tuple[int, int]) -> QPixmap:
+        width, height = size
+        pixmap = QPixmap(max(1, width), max(1, height))
+        high = bool(self._view.property("formBuilderHighContrast"))
+        pixmap.fill(QColor(overlay_palette(high).select))
+        return pixmap
 
     def run(self, effect: ViewEffect) -> None:
         if isinstance(effect, Zoom):

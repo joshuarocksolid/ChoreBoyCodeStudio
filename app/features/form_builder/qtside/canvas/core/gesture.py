@@ -6,9 +6,11 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, FrozenSet, Literal, Optional, Tuple, Union, get_args
 
 from app.features.form_builder.engine.commands.catalog import SetGeometry, SetProperty
+from app.features.form_builder.engine.drop import _movable
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.engine.query.slots import Point
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue
@@ -38,6 +40,7 @@ from app.features.form_builder.qtside.canvas.core.space import (
 from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
+    Managed,
     Positioning,
     band_candidates,
     effective_selection,
@@ -51,7 +54,6 @@ from app.features.form_builder.qtside.canvas.core.structure import (
 from app.features.form_builder.qtside.canvas.core.text import TextTarget, enter_opens_editor, next_text_target, text_commit, text_target
 from app.features.form_builder.qtside.canvas.core.words import (
     FIRST_FOCUS_HINT,
-    MOVE_IN_LAYOUT_LATER,
     RESIZE_IN_LAYOUT_LATER,
     hover_sentence,
 )
@@ -272,6 +274,12 @@ class Panning:
 Drag = Union[Moving, Resizing, PageResizing, Banding, Inert]
 _DRAG = get_args(Drag)
 _PREVIEW = (Moving, Resizing, PageResizing)
+_ARROW_NAME: Dict[str, Literal["left", "right", "up", "down"]] = {
+    "left": "left",
+    "right": "right",
+    "up": "up",
+    "down": "down",
+}
 
 
 @dataclass(frozen=True)
@@ -287,7 +295,12 @@ class Editing:
     token: str
 
 
-Gesture = Union[Idle, PanArmed, Pressed, Moving, Resizing, PageResizing, Banding, Inert, Panning, Editing]
+@dataclass(frozen=True)
+class Yielded:
+    """Canvas grab during a slot drag. Stores no target."""
+
+
+Gesture = Union[Idle, PanArmed, Pressed, Moving, Resizing, PageResizing, Banding, Inert, Panning, Editing, Yielded]
 
 
 @dataclass(frozen=True)
@@ -397,10 +410,50 @@ class RunChipAction:
     action: ChipAction
 
 
+@dataclass(frozen=True)
+class ArmSlot:
+    """First effect of a laid-out press, before any Select in the same step."""
+
+    pressed: NodeId
+    selected: Tuple[NodeId, ...]
+    narrow_on_click: bool
+    at: FormPoint
+
+
+@dataclass(frozen=True)
+class SlotPointer:
+    at: FormPoint
+    global_at: Point
+    snap: int
+
+
+class SlotRelease:
+    pass
+
+
+class SlotCancel:
+    pass
+
+
+@dataclass(frozen=True)
+class NudgeSlots:
+    key: Literal["left", "right", "up", "down"]
+
+
 ModelEffect = Union[Select, Toggle, Commit]
 ViewEffect = Union[Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal, Cursor, Tip]
 EditorEffect = Union[OpenEditor, CloseEditor]
-HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction]
+HostEffect = Union[
+    CanvasPressed,
+    Narrate,
+    HoverChanged,
+    RunChipAction,
+    ArmSlot,
+    SlotPointer,
+    SlotRelease,
+    SlotCancel,
+    NudgeSlots,
+]
 Effect = Union[ModelEffect, ViewEffect, EditorEffect, HostEffect]
 
 
@@ -423,7 +476,11 @@ class World:
 
 
 def needs_fresh_geometry(gesture: Gesture, event: Event) -> bool:
-    if isinstance(event, DocumentChanged) or isinstance(gesture, _DRAG) or isinstance(gesture, (Pressed, Panning)):
+    if (
+        isinstance(event, DocumentChanged)
+        or isinstance(gesture, _DRAG)
+        or isinstance(gesture, (Pressed, Panning, Yielded))
+    ):
         return False
     if isinstance(event, EditorDone) and event.how in ("tab", "backtab"):
         return True
@@ -574,7 +631,20 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
                 Pressed(event.port, (), Inert("")),
                 (CanvasPressed(), HoverChanged(None), _toggle(world, target.node)),
             )
-        if target.node not in world.selection.ids:
+        if target.site == "page_tab":
+            return Step(
+                Pressed(event.port, (), Inert("")),
+                (CanvasPressed(), HoverChanged(None), Select((target.node,), target.node)),
+            )
+        already = target.node in world.selection.ids
+        chosen = world.selection.ids if already else (target.node,)
+        if _slot_drag(world, chosen):
+            arm = ArmSlot(target.node, world.selection.ids, already, point)
+            effects: Tuple[Effect, ...] = (CanvasPressed(), HoverChanged(None), arm)
+            if not already:
+                effects = effects + (Select((target.node,), target.node),)
+            return Step(Yielded(), effects)
+        if not already:
             return Step(
                 Pressed(event.port, (), _move_or_inert(world, (target.node,), point, snap)),
                 (CanvasPressed(), HoverChanged(None), Select((target.node,), target.node)),
@@ -661,8 +731,21 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
 def _nudge(gesture: Idle, event: Key, world: World) -> Step:
     shown = effective_selection(world.document, world.selection)
     nodes = shown.ids
-    if not nodes or any(not isinstance(positioning_of(world.document, node), Free) for node in nodes):
+    if not nodes:
         return Step(gesture, (), True)
+    # Free widgets share a parent, so _movable would claim them too.
+    if all(isinstance(positioning_of(world.document, node), Free) for node in nodes):
+        return _nudge_free(gesture, event, world, nodes)
+    arrow = _ARROW_NAME.get(event.key)
+    if arrow is None:
+        return Step(gesture, (), True)
+    pressed = shown.current if shown.current is not None else nodes[0]
+    if not _movable(world.document, pressed, nodes):
+        return Step(gesture, (), True)
+    return Step(gesture, (NudgeSlots(arrow),))
+
+
+def _nudge_free(gesture: Idle, event: Key, world: World, nodes: Tuple[NodeId, ...]) -> Step:
     delta = _NUDGE.get(event.key)
     if delta is None:
         return Step(gesture, (), True)
@@ -808,6 +891,8 @@ def _editing_press(gesture: Editing, event: Press, world: World) -> Step:
 
 
 def _on_document(gesture: Gesture, event: DocumentChanged, world: World) -> Step:
+    if isinstance(gesture, Yielded):
+        return Step(Idle(None), (SlotCancel(),))
     if isinstance(gesture, Editing):
         if event.replaced or gesture.target.owner in event.removed:
             return Step(Idle(None), (CloseEditor(),))
@@ -836,6 +921,8 @@ def _on_wheel(gesture: Gesture, event: Wheel, world: World) -> Step:
 
 
 def _on_focus(gesture: Gesture, event: Focus, world: World) -> Step:
+    if isinstance(gesture, Yielded) and not event.gained:
+        return Step(Idle(None), (SlotCancel(),))
     if not event.gained and (
         isinstance(gesture, _PREVIEW)
         or isinstance(gesture, (Pressed, Banding, Panning, Inert))
@@ -877,14 +964,17 @@ def root_of(world: World) -> NodeId:
     return world.document.root.id
 
 
+def _slot_drag(world: World, nodes: Tuple[NodeId, ...]) -> bool:
+    places = [positioning_of(world.document, node) for node in nodes]
+    return bool(nodes) and all(isinstance(place, (LaidOut, Managed)) for place in places)
+
+
 def _move_or_inert(world: World, nodes: Tuple[NodeId, ...], point: FormPoint, snap: bool) -> Drag:
     places = [positioning_of(world.document, node) for node in nodes]
     if nodes and all(isinstance(place, Free) for place in places):
         primary = world.selection.current if world.selection.current in nodes else nodes[0]
         items = tuple(_moved(world, node) for node in nodes)
         return Moving(world.fresh_token, primary, items, point, point, snap)
-    if any(isinstance(place, LaidOut) for place in places):
-        return Inert(MOVE_IN_LAYOUT_LATER)
     return Inert("")
 
 
@@ -1032,6 +1122,26 @@ def handles_for(place: Positioning) -> Tuple[Compass, ...]:
     return ()
 
 
+def _yielded_move(gesture: Yielded, event: Move, world: World) -> Step:
+    if "left" not in event.held:
+        return Step(gesture, (), True)
+    point = world.view.to_form(event.at)
+    snap = 0 if event.mods.shift else GRID
+    return Step(gesture, (SlotPointer(point, Point(0, 0), snap),))
+
+
+def _yielded_release(gesture: Yielded, event: Release, world: World) -> Step:
+    del gesture, event, world
+    return Step(Idle(None), (SlotRelease(),))
+
+
+def _yielded_key(gesture: Yielded, event: Key, world: World) -> Step:
+    del world
+    if event.key != "escape":
+        return Step(gesture, (), True)
+    return Step(Idle(None), (SlotCancel(),))
+
+
 TABLE: Dict[Tuple[type, type], Handler] = {
     (Idle, Press): _idle_press,
     (Idle, Move): _idle_move,
@@ -1052,6 +1162,10 @@ TABLE: Dict[Tuple[type, type], Handler] = {
     (Panning, Probe): _busy_probe,
     (Editing, EditorDone): _editing_done,
     (Editing, Press): _editing_press,
+    (Yielded, Move): _yielded_move,
+    (Yielded, Release): _yielded_release,
+    (Yielded, Key): _yielded_key,
+    (Yielded, Probe): _busy_probe,
 }
 DRAG_ROWS: Dict[type, Handler] = {
     Move: _drag_move,

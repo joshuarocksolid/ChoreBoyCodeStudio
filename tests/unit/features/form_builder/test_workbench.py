@@ -889,7 +889,7 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
     qapp.setActiveWindow(host)
     insert.click()
     qapp.processEvents()
-    body = surface.findChild(QLabel, "formBuilder.insertBody")
+    body = surface.findChild(QPushButton, "formBuilder.insert.QPushButton")
     assert body is not None
     assert body.isVisibleTo(surface)
     assert body.width() > 20 and body.height() > 20

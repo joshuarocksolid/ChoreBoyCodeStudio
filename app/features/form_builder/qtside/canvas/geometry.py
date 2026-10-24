@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtCore import QEvent, QPoint
+from app.qt.QtWidgets import QAbstractButton, QApplication, QTabWidget, QToolBox, QWidget
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
@@ -48,6 +48,7 @@ class LiveGeometrySource:
         if root is None or not isinstance(root_node, WidgetNode):
             return ()
         out: List[GeoEntry] = [GeoEntry(root_node.id, "widget", Rect(0, 0, root.width(), root.height()), None, True, 0)]
+        self._page_tabs(root, root_node, root, out)
         holder: Dict[NodeId, NodeId] = {}
         if root_node.layout is not None:
             self._layout_tree(root_node.layout, root_node.id, 0, 0, holder, out)
@@ -68,6 +69,7 @@ class LiveGeometrySource:
                     continue
                 rect = Rect(x, y, child.width(), child.height())
                 out.append(GeoEntry(node.id, "widget", rect, holder.get(node.id, owner), visible, z))
+                self._page_tabs(child, node, root, out)
                 if not visible:
                     continue
                 if node.layout is not None:
@@ -108,6 +110,51 @@ class LiveGeometrySource:
                         out.append(GeoEntry(content.id, "spacer", rect, node.id, True, _LAYOUT_Z))
             pending.extend(reversed(nested))
 
+    def _page_tabs(self, widget: QWidget, node: WidgetNode, root: QWidget, out: List[GeoEntry]) -> None:
+        pages = node.child_widgets
+        if isinstance(widget, QTabWidget):
+            bar = widget.tabBar()
+            if bar is None:
+                return
+            for index, page in enumerate(pages):
+                if index >= bar.count():
+                    break
+                tab = bar.tabRect(index)
+                if tab.width() <= 0 or tab.height() <= 0:
+                    continue
+                origin = bar.mapTo(root, tab.topLeft())
+                out.append(
+                    GeoEntry(
+                        page.id,
+                        "page_tab",
+                        Rect(origin.x(), origin.y(), tab.width(), tab.height()),
+                        node.id,
+                        bar.isVisibleTo(root),
+                        index,
+                    )
+                )
+            return
+        if not isinstance(widget, QToolBox) or widget.count() != len(pages):
+            return
+        buttons = _toolbox_buttons(widget)
+        if len(buttons) != len(pages):
+            return
+        for index, page in enumerate(pages):
+            button = buttons[index]
+            if button.width() <= 0 or button.height() <= 0:
+                continue
+            origin = button.mapTo(root, QPoint(0, 0))
+            out.append(
+                GeoEntry(
+                    page.id,
+                    "page_tab",
+                    Rect(origin.x(), origin.y(), button.width(), button.height()),
+                    node.id,
+                    button.isVisibleTo(root),
+                    index,
+                )
+            )
+
 
 class HitIndexInvalidator:
     """Subscribed at PRIORITY_HIT_INDEX. Reads no geometry."""
@@ -117,6 +164,27 @@ class HitIndexInvalidator:
 
     def on_changeset(self, changeset: ChangeSet) -> None:
         self._index.invalidate("changeset")
+
+
+def _toolbox_buttons(box: QToolBox) -> List[QWidget]:
+    pages = []
+    for index in range(box.count()):
+        page = box.widget(index)
+        if page is not None:
+            pages.append(page)
+    buttons: List[QWidget] = []
+    for button in box.findChildren(QAbstractButton):
+        parent = button.parentWidget()
+        inside = False
+        while parent is not None and parent is not box:
+            if parent in pages:
+                inside = True
+                break
+            parent = parent.parentWidget()
+        if not inside:
+            buttons.append(button)
+    buttons.sort(key=lambda item: item.mapTo(box, QPoint(0, 0)).y())
+    return buttons
 
 
 def _tagged_widget(widget: QWidget, document: UiDocument) -> Optional[WidgetNode]:
