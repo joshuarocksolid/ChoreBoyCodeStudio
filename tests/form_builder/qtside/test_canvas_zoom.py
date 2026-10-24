@@ -58,6 +58,19 @@ CHOREBOY_PAGE = form(
 """,
 )
 
+FORM_ROWS = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>620</width><height>300</height></rect></property>
+  <layout class="QFormLayout" name="rows">
+   <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>Name</string></property></widget></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="nameEdit"/></item>
+   <item row="1" column="0"><widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property></widget></item>
+   <item row="1" column="1"><widget class="QLineEdit" name="emailEdit"/></item>
+  </layout>
+""",
+)
+
 
 class _Host:
     def __init__(self) -> None:
@@ -244,6 +257,23 @@ def test_a_page_wider_than_the_view_opens_with_its_left_edge_in_view() -> None:
         left = canvas.mapFromScene(proxy.pos()).x()
         assert 16 <= left <= 24
         assert canvas.verticalScrollBar().value() == 0
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_arrowing_along_a_visible_row_does_not_scroll_sideways() -> None:
+    """UX-SEL-009 at the ChoreBoy canvas width: a field wider than the view is no reason to jump."""
+    with opened(FORM_ROWS) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, _Host(), 440, 270)
+        canvas.setFocus()
+        _click(canvas, "nameLabel")
+        scroll = canvas.horizontalScrollBar()
+        before = scroll.value()
+        for key in ("Key_Right", "Key_Left", "Key_Down", "Key_Right", "Key_Left", "Key_Up"):
+            QTest.keyClick(canvas, _qt_key(key), _mods("NoModifier"))
+            _flush()
+            assert scroll.value() == before, key
+        assert session.selection.state.current is not None
         canvas.dispose()
         parent.deleteLater()
 

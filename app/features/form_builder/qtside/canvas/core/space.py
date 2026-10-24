@@ -221,6 +221,30 @@ def _home_x(page_x: int, page_w: int, view_w: int, scene_w: int) -> int:
     return max(0, min(wanted, scene_w - view_w))
 
 
+def reveal_axis(start: int, size: int, scroll: int, view: int, pad: int, inset: int = 0) -> int:
+    """Scroll on one axis that shows ``start..start+size`` (UX-SEL-009).
+
+    ``inset`` is chrome over the leading edge of the view (the pinned page
+    caption). A span already in view keeps the scroll. Otherwise the view moves
+    the least that shows it with up to ``pad`` around it; a span too big for
+    that shows its leading edge.
+    """
+    first = scroll + inset
+    last = scroll + view
+    if start >= first and start + size <= last:
+        return scroll
+    room = view - inset
+    if size + 2 * pad > room:
+        # Too big to show with its margin. Keep the view while its leading
+        # edge and at least half of what could show are in view.
+        if start >= first and start + min(size, room) // 2 <= last:
+            return scroll
+        return start - inset - max(0, min(pad, room - size))
+    if start < first:
+        return start - inset - pad
+    return start + size + pad - view
+
+
 def anchored_scroll(
     before: ViewMap, after: ViewMap, anchor: CanvasPoint, scroll: CanvasPoint
 ) -> CanvasPoint:

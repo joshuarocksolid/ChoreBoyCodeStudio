@@ -42,6 +42,7 @@ from app.features.form_builder.qtside.canvas.core.space import (
     ZoomSetting,
     anchored_scroll,
     apply_zoom,
+    reveal_axis,
     layout_page,
     page_request,
     zoom_factor,
@@ -335,10 +336,6 @@ class Stage:
             placed.home.y + viewport.height / 2.0,
         )
 
-    def release_home(self) -> None:
-        """Something outside the stage scrolled the view. Keep its scroll."""
-        self._homed = False
-
     def _run_zoom(self, effect: Zoom) -> None:
         before = self.view_map()
         self._zoom = apply_zoom(self._zoom, effect.change, self._factor or 1.0)
@@ -388,27 +385,23 @@ class Stage:
         self._invalidate("root_resize")
 
     def _reveal(self, rect: Rect) -> None:
-        canvas = self.view_map().to_canvas(rect).grown(REVEAL_PAD)
+        self.reveal_canvas(self.view_map().to_canvas(rect))
+
+    def reveal_canvas(self, canvas: CanvasRect) -> None:
+        """Scroll only when ``canvas`` is not already in view (UX-SEL-009)."""
         horizontal = self._view.horizontalScrollBar()
         vertical = self._view.verticalScrollBar()
+        port = _viewport(self._view)
         left = horizontal.value()
         top = vertical.value()
-        right = left + self._view.viewport().width()
-        bottom = top + self._view.viewport().height()
-        dx = 0
-        dy = 0
-        if canvas.x < left:
-            dx = canvas.x - left
-        elif canvas.x + canvas.width > right:
-            dx = canvas.x + canvas.width - right
-        if canvas.y < top:
-            dy = canvas.y - top
-        elif canvas.y + canvas.height > bottom:
-            dy = canvas.y + canvas.height - bottom
-        if dx or dy:
-            self._homed = False
-        horizontal.setValue(left + dx)
-        vertical.setValue(top + dy)
+        x = reveal_axis(canvas.x, canvas.width, left, port.width, REVEAL_PAD)
+        # The page caption pins over the top of the view once the page scrolls up.
+        y = reveal_axis(canvas.y, canvas.height, top, port.height, REVEAL_PAD, self._banner_push)
+        if x == left and y == top:
+            return
+        self._homed = False
+        horizontal.setValue(x)
+        vertical.setValue(y)
 
 
 def _viewport(view: QGraphicsView) -> CanvasSize:
