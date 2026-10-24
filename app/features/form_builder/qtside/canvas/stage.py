@@ -126,7 +126,7 @@ class Stage:
                 Size(root.width(), root.height()),
                 self._factor or 1.0,
                 _viewport(self._view),
-                self._banner_push,
+                0,
             )
             self._proxy.setPos(placed.page_origin.x, placed.page_origin.y)
             scene = self._view.scene()
@@ -168,7 +168,7 @@ class Stage:
         return tuple(rects)
 
     def set_banner_push(self, pixels: int) -> None:
-        """Reserve view pixels above the page for the caption bar."""
+        """Lift the name chip above the caption. The page stays in the gutter."""
         self._banner_push = max(0, pixels)
 
     def track_chrome(self, *widgets: QWidget) -> None:
@@ -269,9 +269,12 @@ class Stage:
             return True
         hint = root.sizeHint()
         minimum = root.minimumSize()
+        # No positive hint still leaves a page the caption can span.
+        hint_w = hint.width() if hint.width() > 0 else max(width, 320)
+        hint_h = hint.height() if hint.height() > 0 else max(height, 240)
         requested = page_request(
             None,
-            Size(max(hint.width(), 1), max(hint.height(), 1)),
+            Size(hint_w, hint_h),
             Size(max(minimum.width(), 1), max(minimum.height(), 1)),
         )
         if requested is None or (width == requested.width and height == requested.height):
