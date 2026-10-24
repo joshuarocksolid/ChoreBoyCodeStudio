@@ -451,6 +451,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QFrame#formBuilder\\.rowChanged[fbChanged=\"true\"] { background: %s; }"
         # Strong weight. These outrank the shell's chrome font-weight rule,
         # which a setFont weight does not (UX-INSP-001, UX-INSP-006).
+        "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; padding: 4px 6px; }"
         "QLabel[fbChanged=\"true\"], QLineEdit#formBuilder\\.inspectorName { font-weight: 600; }"
         # Segments are drawn by the sheet in every state: a native button is
         # bright on a dark panel, and the shell's checked text is unreadable.
@@ -473,6 +474,8 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.faint,
             chrome.error,
             chrome.accent,
+            chrome.text,
+            chrome.row_hover,
             chrome.input,
             chrome.text,
             chrome.border,

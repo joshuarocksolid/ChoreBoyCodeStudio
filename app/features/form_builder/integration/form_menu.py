@@ -149,6 +149,12 @@ def _trigger(window: Any, command_id: str) -> None:
     if command_id == "form.action.zoomToFit":
         surface.zoom_fit()
         return
+    if command_id in ("form.action.textSize", "form.action.screenScale"):
+        surface.show_text_size()
+        return
+    if command_id == "form.action.twoWidths":
+        surface.toggle_two_widths()
+        return
     if command_id == "form.action.editText":
         surface.edit_text()
 

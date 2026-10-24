@@ -8,15 +8,17 @@ from __future__ import annotations
 import os
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QObject, QSize, Qt
+from app.qt.QtCore import QEvent, QObject, QPoint, QSize, Qt
 from app.qt.QtGui import QBrush, QColor, QIcon
 from app.qt.QtWidgets import (
+    QAction,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMenu,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
     QTabWidget,
@@ -25,6 +27,7 @@ from app.qt.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 from app.qt.qt_compat import event_pos
 
@@ -33,6 +36,7 @@ from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.canvas.core.widths import WIDE_DEFAULT
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.canvas.controller import CanvasHost
 from app.features.form_builder.qtside.canvas.core.gesture import HoverFrom
@@ -224,6 +228,10 @@ class FormToolbar(QWidget):
         on_zoom_in: Optional[Callable[[], None]] = None,
         on_zoom_to: Optional[Callable[[float], None]] = None,
         on_zoom_fit: Optional[Callable[[], None]] = None,
+        on_text_preset: Optional[Callable[[str], None]] = None,
+        on_screen: Optional[Callable[[int], None]] = None,
+        on_two_widths: Optional[Callable[[bool], None]] = None,
+        on_wide: Optional[Callable[[int], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.toolbar")
@@ -310,10 +318,41 @@ class FormToolbar(QWidget):
                 button.setEnabled(False)
         for button in (self.zoom_out, self.zoom_label, self.zoom_in):
             row.addWidget(button)
-        self.text_size = _tool("Aa", "formBuilder.textSize", "Text size is not available yet", self)
-        self.two_widths = _tool("Widths", "formBuilder.twoWidths", "Two widths is not available yet", self)
-        self.text_size.setEnabled(False)
-        self.two_widths.setEnabled(False)
+        self._tokens: Optional[ShellThemeTokens] = None
+        self._on_text_preset = on_text_preset
+        self._on_screen = on_screen
+        self._on_two_widths = on_two_widths
+        self._on_wide = on_wide
+        self._preset: Optional[str] = "normal"
+        self._percent = 100
+        self._widths = False
+        self._wide = WIDE_DEFAULT
+        text_ready = on_text_preset is not None and on_screen is not None
+        self.text_size = _tool(
+            "Aa",
+            "formBuilder.textSize",
+            "Text size" if text_ready else "Text size is not available yet",
+            self,
+        )
+        self.two_widths = _tool(
+            "Widths",
+            "formBuilder.twoWidths",
+            "Two widths (Ctrl+K, W)" if on_two_widths is not None else "Two widths is not available yet",
+            self,
+        )
+        self.text_size.setAccessibleName("Text size")
+        self.two_widths.setAccessibleName("Two widths")
+        self._widths_button: Optional[QPushButton] = None
+        self._wide_spin: Optional[QSpinBox] = None
+        self._overflow_widths: Optional[QAction] = None
+        if text_ready:
+            self._build_text_menu()
+        else:
+            self.text_size.setEnabled(False)
+        if on_two_widths is not None:
+            self._build_widths_menu()
+        else:
+            self.two_widths.setEnabled(False)
         row.addWidget(self.text_size)
         row.addWidget(self.two_widths)
 
@@ -331,8 +370,13 @@ class FormToolbar(QWidget):
         self.overflow.setFocusPolicy(_strong())
         self.overflow.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
         self._menu = QMenu(self.overflow)
-        self._menu.addAction("Text size").setEnabled(False)
-        self._menu.addAction("Two widths").setEnabled(False)
+        self._text_overflow = self._menu.addAction("Text size")
+        self._text_overflow.setEnabled(text_ready)
+        self._text_overflow.triggered.connect(self.show_text_menu)
+        self._overflow_widths = self._menu.addAction("Two widths")
+        self._overflow_widths.setCheckable(True)
+        self._overflow_widths.setEnabled(on_two_widths is not None)
+        self._overflow_widths.triggered.connect(self._overflow_widths_clicked)
         self.overflow.setMenu(self._menu)
         self.overflow.hide()
         row.addWidget(self.overflow)
@@ -342,13 +386,184 @@ class FormToolbar(QWidget):
         self.save_state.setObjectName("formBuilder.saveState")
         self.save_state.setAccessibleName("Save state")
         row.addWidget(self.save_state, 0)
-        self._tokens: Optional[ShellThemeTokens] = None
         icon_only = _button_style("ToolButtonIconOnly")
         for button in (self.undo, self.redo, self.zoom_out, self.zoom_in, self.preview):
             button.setToolButtonStyle(icon_only)
         beside = _button_style("ToolButtonTextBesideIcon")
         self.tab_order.setToolButtonStyle(beside)
         self.buddies.setToolButtonStyle(beside)
+
+    def show_text_menu(self) -> None:
+        menu = self.text_size.menu()
+        if menu is None:
+            return
+        anchor = self.text_size if self.text_size.isVisible() else self.overflow
+        menu.popup(anchor.mapToGlobal(QPoint(0, anchor.height())))
+
+    def sync_preview(self, preset: Optional[str], percent: int, widths: bool, wide: int) -> None:
+        self._preset = preset
+        self._percent = percent
+        self._widths = widths
+        self._wide = wide
+        self.two_widths.blockSignals(True)
+        self.two_widths.setChecked(widths)
+        self.two_widths.blockSignals(False)
+        button = self._widths_button
+        if button is not None:
+            button.blockSignals(True)
+            button.setChecked(widths)
+            button.blockSignals(False)
+        action = self._overflow_widths
+        if action is not None:
+            action.blockSignals(True)
+            action.setChecked(widths)
+            action.blockSignals(False)
+        spin = self._wide_spin
+        if spin is not None and spin.value() != wide:
+            spin.blockSignals(True)
+            spin.setValue(wide)
+            spin.blockSignals(False)
+
+    def _build_text_menu(self) -> None:
+        menu = QMenu(self.text_size)
+        menu.setObjectName("formBuilder.textSizeMenu")
+        menu.aboutToShow.connect(self._fill_text_menu)
+        self.text_size.setMenu(menu)
+        popup = getattr(QToolButton, "ToolButtonPopupMode", QToolButton)
+        self.text_size.setPopupMode(getattr(popup, "InstantPopup"))
+        self.text_size.setEnabled(True)
+
+    def _fill_text_menu(self) -> None:
+        menu = self.text_size.menu()
+        if menu is None:
+            return
+        menu.clear()
+        self._add_heading(menu, "Text size")
+        for preset, label in (
+            ("smaller", "Smaller (\u221215%)"),
+            ("normal", "Normal"),
+            ("larger", "Larger (+25%)"),
+            ("largest", "Largest (+50%)"),
+        ):
+            self._add_choice(
+                menu,
+                label,
+                label.split(" (", 1)[0],
+                self._preset == preset,
+                lambda _checked=False, name=preset: self._pick_preset(name),
+            )
+        self._add_heading(menu, "Screen scale")
+        for percent in (100, 125, 150, 200):
+            label = "%d%%" % percent
+            self._add_choice(
+                menu,
+                label,
+                "%d%% screen" % percent,
+                self._percent == percent,
+                lambda _checked=False, value=percent: self._pick_screen(value),
+            )
+        self._apply_menu_sheet(menu)
+
+    def _build_widths_menu(self) -> None:
+        menu = QMenu(self.two_widths)
+        menu.setObjectName("formBuilder.twoWidthsMenu")
+        button = QPushButton("Two widths", menu)
+        button.setObjectName("formBuilder.previewChoice")
+        button.setAccessibleName("Two widths")
+        button.setCheckable(True)
+        button.clicked.connect(self._menu_widths)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(button)
+        menu.addAction(action)
+        self._widths_button = button
+        self._add_heading(menu, "Wide width")
+        spin = QSpinBox(menu)
+        spin.setObjectName("formBuilder.wideWidth")
+        spin.setAccessibleName("Wide width")
+        spin.setRange(200, 4000)
+        spin.setSuffix(" px")
+        spin.setValue(self._wide)
+        spin.valueChanged.connect(self._wide_changed)
+        spin_action = QWidgetAction(menu)
+        spin_action.setDefaultWidget(spin)
+        menu.addAction(spin_action)
+        self._wide_spin = spin
+        self.two_widths.setMenu(menu)
+        popup = getattr(QToolButton, "ToolButtonPopupMode", QToolButton)
+        self.two_widths.setPopupMode(getattr(popup, "MenuButtonPopup"))
+        self.two_widths.setCheckable(True)
+        self.two_widths.clicked.connect(self._toggle_widths)
+        self.two_widths.setEnabled(True)
+        self._apply_menu_sheet(menu)
+
+    def _add_heading(self, menu: QMenu, text: str) -> None:
+        label = QLabel(text, menu)
+        label.setObjectName("formBuilder.previewHeading")
+        label.setAccessibleName(text)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(label)
+        menu.addAction(action)
+
+    def _add_choice(
+        self,
+        menu: QMenu,
+        label: str,
+        accessible: str,
+        checked: bool,
+        callback: Callable[[], None],
+    ) -> None:
+        button = QPushButton(label, menu)
+        button.setObjectName("formBuilder.previewChoice")
+        button.setAccessibleName(accessible)
+        button.setCheckable(True)
+        button.setChecked(checked)
+        button.clicked.connect(callback)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(button)
+        action.setText(accessible)
+        menu.addAction(action)
+
+    def _pick_preset(self, preset: str) -> None:
+        if self._on_text_preset is not None:
+            self._on_text_preset(preset)
+        menu = self.text_size.menu()
+        if menu is not None:
+            menu.close()
+
+    def _pick_screen(self, percent: int) -> None:
+        if self._on_screen is not None:
+            self._on_screen(percent)
+        menu = self.text_size.menu()
+        if menu is not None:
+            menu.close()
+
+    def _toggle_widths(self) -> None:
+        if self._on_two_widths is not None:
+            self._on_two_widths(self.two_widths.isChecked())
+
+    def _menu_widths(self) -> None:
+        button = self._widths_button
+        if button is None:
+            return
+        self.two_widths.setChecked(button.isChecked())
+        self._toggle_widths()
+
+    def _overflow_widths_clicked(self) -> None:
+        action = self._overflow_widths
+        if action is None:
+            return
+        self.two_widths.setChecked(action.isChecked())
+        self._toggle_widths()
+
+    def _wide_changed(self, value: int) -> None:
+        if self._on_wide is not None:
+            self._on_wide(value)
+
+    def _apply_menu_sheet(self, menu: QMenu) -> None:
+        tokens = self._tokens
+        if tokens is None:
+            return
+        menu.setStyleSheet(_preview_menu_qss(tokens))
 
     def set_compact(self, compact: bool) -> None:
         self.tab_order.setText("" if compact else "Tab order")
@@ -386,6 +601,10 @@ class FormToolbar(QWidget):
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self._tokens = tokens
         self.setStyleSheet(_toolbar_qss(tokens))
+        sheet = _preview_menu_qss(tokens)
+        for menu in (self.text_size.menu(), self.two_widths.menu(), self._menu):
+            if menu is not None:
+                menu.setStyleSheet(sheet)
         self._paint_glyphs()
 
     def _paint_glyphs(self) -> None:
@@ -407,6 +626,40 @@ def _splitter_qss(tokens: ShellThemeTokens) -> str:
         "QSplitter#formBuilder\\.leftSplitter::handle:vertical {"
         " height: 6px; margin: 0; border: none; border-top: 1px solid %s; }"
         % (tokens.border, tokens.border)
+    )
+
+
+def _preview_menu_qss(tokens: ShellThemeTokens) -> str:
+    hover = tokens.tree_hover_bg or tokens.panel_bg
+    selected = tokens.tree_selected_bg or hover
+    muted = tokens.text_muted or tokens.text_primary
+    return (
+        "QMenu { background: %s; color: %s; border: 1px solid %s; }"
+        "QPushButton { color: %s; background: %s; border: none; text-align: left; padding: 4px 12px; }"
+        "QPushButton:hover { background: %s; }"
+        "QPushButton:checked { background: %s; color: %s; }"
+        "QPushButton:focus { border: %dpx solid %s; }"
+        "QLabel { color: %s; background: transparent; padding: 6px 12px 2px; }"
+        "QSpinBox { color: %s; background: %s; border: 1px solid %s; }"
+        "QSpinBox:focus { border: %dpx solid %s; }"
+        % (
+            tokens.panel_bg,
+            tokens.text_primary,
+            tokens.border,
+            tokens.text_primary,
+            tokens.panel_bg,
+            hover,
+            selected,
+            tokens.text_primary,
+            tokens.focus_border_width,
+            tokens.accent,
+            muted,
+            tokens.text_primary,
+            tokens.panel_bg,
+            tokens.border,
+            tokens.focus_border_width,
+            tokens.accent,
+        )
     )
 
 

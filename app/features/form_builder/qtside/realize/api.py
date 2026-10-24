@@ -106,8 +106,9 @@ class PatchStats:
 class Realizer(_Structure):
     """One per FormSession. ``build`` once, then patch each ChangeSet."""
 
-    def __init__(self, session: FormSession) -> None:
+    def __init__(self, session: FormSession, *, register_resources: bool = True) -> None:
         self._session = session
+        self._owns_resources = register_resources
         self._widgets: Dict[NodeId, QWidget] = {}
         self._layouts: Dict[NodeId, QLayout] = {}
         self._actions: Dict[NodeId, object] = {}
@@ -158,7 +159,8 @@ class Realizer(_Structure):
         self._pool.clear()
         self._problems.clear()
         self._start_patch()
-        self._register_resources()
+        if self._owns_resources:
+            self._register_resources()
         root_node = self._session.document.root
         widget = self._create_widget(root_node, None)
         self._root = widget
@@ -301,7 +303,8 @@ class Realizer(_Structure):
     def dispose(self) -> None:
         self._subscription.close()
         self._destroy_tree()
-        self._unregister_resources()
+        if self._owns_resources:
+            self._unregister_resources()
         if self._nursery_widget is not None:
             delete_now(self._nursery_widget)
             self._nursery_widget = None

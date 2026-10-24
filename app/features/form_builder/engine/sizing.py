@@ -492,6 +492,11 @@ def _caption(mode: AxisMode, friendly: str) -> str:
             )
         return "Default for a %s" % noun
     if isinstance(mode, Custom):
+        if mode.policy_name == "Minimum":
+            return (
+                "Custom: Minimum \u2014 grows, never smaller than its content. "
+                "Change it in All properties, or pick a word to replace it."
+            )
         clause = _CUSTOM_CLAUSE.get(mode.policy_name)
         if clause is None:
             return "Custom: %s. Change it in All properties, or pick a word to replace it." % (

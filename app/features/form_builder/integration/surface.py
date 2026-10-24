@@ -261,6 +261,10 @@ class FormSurface(QWidget):
             on_zoom_in=self.zoom_in,
             on_zoom_to=self.zoom_to,
             on_zoom_fit=self.zoom_fit,
+            on_text_preset=self._set_text_preset,
+            on_screen=self._set_screen_percent,
+            on_two_widths=self._set_two_widths,
+            on_wide=self._set_wide_px,
         )
         self._toolbar.setFixedHeight(TOOLBAR_HEIGHT)
         layout.addWidget(self._toolbar)
@@ -297,6 +301,8 @@ class FormSurface(QWidget):
             self._stack,
         )
         self._stack.addWidget(self._workbench)
+        self._workbench.canvas.set_preview_listener(self._sync_preview_chrome)
+        self._sync_preview_chrome()
         layout.addWidget(self._stack, 1)
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
@@ -812,6 +818,31 @@ class FormSurface(QWidget):
     def zoom_fit(self) -> None:
         self._workbench.canvas.send(ZoomAsked(ZoomFit()))
 
+    def show_text_size(self) -> None:
+        self._toolbar.show_text_menu()
+
+    def toggle_two_widths(self) -> None:
+        canvas = self._workbench.canvas
+        canvas.set_two_widths(not canvas.widths_on())
+
+    def _set_text_preset(self, preset: str) -> None:
+        self._workbench.canvas.set_text_preset(preset)
+
+    def _set_screen_percent(self, percent: int) -> None:
+        self._workbench.canvas.set_screen_percent(percent)
+
+    def _set_two_widths(self, on: bool) -> None:
+        self._workbench.canvas.set_two_widths(on)
+
+    def _set_wide_px(self, px: int) -> None:
+        self._workbench.canvas.set_wide_px(px)
+
+    def _sync_preview_chrome(self) -> None:
+        if self._released:
+            return
+        preset, percent, widths, wide = self._workbench.canvas.preview_marks()
+        self._toolbar.sync_preview(preset, percent, widths, wide)
+
     def edit_text(self) -> None:
         self._workbench.canvas.send(EditTextAsked())
 
@@ -997,6 +1028,9 @@ class FormSurface(QWidget):
                 if live and handler is not None:
                     shortcut.activated.connect(handler)
                 self._widget_shortcuts.append(shortcut)
+        # Ctrl+K, W is a form-tab chord. A window action would swallow editor
+        # Ctrl+K chords. The canvas owns this key. zoomToFit stays on the translator.
+        self._bind_canvas_key("form.action.twoWidths", handlers, keys, context)
         self._key_guard = _ShellKeyGuard(
             self._editor_only_keys,
             frozenset(normalize_form_shortcut(key) for key in INERT_SHORTCUTS),
@@ -1020,9 +1054,33 @@ class FormSurface(QWidget):
                 found.add(text)
         return frozenset(found)
 
+    def _bind_canvas_key(
+        self,
+        command_id: str,
+        handlers: Mapping[str, Callable[[], None]],
+        keys: Mapping[str, str],
+        context: Qt.ShortcutContext,
+    ) -> None:
+        command = next((item for item in FORM_COMMANDS if item.command_id == command_id), None)
+        handler = handlers.get(command_id)
+        if command is None or not command.available or not command.shortcut or handler is None:
+            return
+        key = keys.get(command_id, command.shortcut)
+        if not key:
+            return
+        shortcut = QShortcut(QKeySequence(key), self._workbench.canvas)
+        shortcut.setContext(context)
+        shortcut.setObjectName(command_id)
+        shortcut.setEnabled(True)
+        shortcut.activated.connect(handler)
+        self._widget_shortcuts.append(shortcut)
+
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
-        """Gestures behind canvas, outline, and inspector keys. None exist yet."""
-        return {}
+        return {
+            "form.action.textSize": self.show_text_size,
+            "form.action.screenScale": self.show_text_size,
+            "form.action.twoWidths": self.toggle_two_widths,
+        }
 
     def _note_inert(self) -> None:
         self._inert_note = INERT_STATUS

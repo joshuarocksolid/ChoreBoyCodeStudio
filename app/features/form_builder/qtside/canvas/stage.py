@@ -8,14 +8,16 @@ minimum, and that size is not saved.
 from __future__ import annotations
 
 import math
-from typing import Callable, Optional, Tuple
+from typing import Callable, List, Optional, Tuple
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QEvent, QObject, QPoint, QRectF, Qt
 from app.qt.QtWidgets import QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
-from app.qt.qt_compat import wrapper_is_valid
+from app.qt.qt_compat import delete_now, enum_value, wrapper_is_valid
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.preview_state import PreviewState
 from app.features.form_builder.engine.query.hit_index import InvalidationReason, Rect
+from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.qtside.canvas.core.gesture import (
@@ -47,9 +49,15 @@ from app.features.form_builder.qtside.canvas.core.space import (
     page_request,
     zoom_factor,
 )
-from app.features.form_builder.qtside.canvas.core.words import page_chip_label
+from app.features.form_builder.qtside.canvas.core.widths import WIDE_DEFAULT, arrange_widths
+from app.features.form_builder.qtside.canvas.core.words import describe_selection, page_chip_label
+from app.features.form_builder.qtside.canvas.preview_apply import apply_preview
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.overlay import BackdropPalette
+from app.features.form_builder.qtside.theme.runtime import startup_font
+
+# Same slot as the primary detach. build() deletes the root the proxy is holding.
+_BEFORE_REALIZE = 9
 
 # Handle hit, chip height, and the gap, in screen pixels. The page scale lives on the proxy.
 REVEAL_PAD = 32
@@ -92,6 +100,12 @@ class Stage:
         self._zoom: ZoomSetting = Fit()
         self._factor = 0.0
         self._banner_push = 0
+        self._preview = PreviewState()
+        self._widths_on = False
+        self._wide_px = WIDE_DEFAULT
+        self._wide_realizer: Optional[Realizer] = None
+        self._wide_proxy: Optional[QGraphicsProxyWidget] = None
+        self._clicks: Optional[_CopyClicks] = None
         self._preview_ids: Tuple[NodeId, ...] = ()
         self._page_preview = False
         self._form_selected = False
@@ -106,6 +120,11 @@ class Stage:
         scene.addItem(self._proxy)
         self._name = _label(view, "formBuilder.name", "Form name")
         self._size = _label(view, "formBuilder.sizeReadout", "Page size")
+        self._narrow_label = _label(view, "formBuilder.narrowLabel", "Narrowest")
+        self._wide_label = _label(view, "formBuilder.wideLabel", "Wide")
+        self._narrow_label.hide()
+        self._wide_label.hide()
+        self._detach_sub = session.log.subscribe(self._before_wide_realize, priority=_BEFORE_REALIZE)
         # The view follows the page's home scroll until the user or a reveal
         # scrolls it. Programmatic setValue does not emit actionTriggered.
         self._homed = True
@@ -116,11 +135,45 @@ class Stage:
     def proxy(self) -> QGraphicsProxyWidget:
         return self._proxy
 
+    @property
+    def preview(self) -> PreviewState:
+        return self._preview
+
+    @property
+    def widths_on(self) -> bool:
+        return self._widths_on
+
+    @property
+    def wide_px(self) -> int:
+        return self._wide_px
+
+    @property
+    def wide_realizer(self) -> Optional[Realizer]:
+        return self._wide_realizer
+
+    @property
+    def wide_proxy(self) -> Optional[QGraphicsProxyWidget]:
+        return self._wide_proxy
+
+    def set_preview(self, state: PreviewState) -> None:
+        self._preview = state
+
+    def set_two_widths(self, on: bool) -> None:
+        self._widths_on = on
+
+    def set_wide_px(self, px: int) -> None:
+        self._wide_px = max(1, px)
+
     def place(self) -> None:
         """Attach the root, keep a positive document size, and lay out the page."""
         root = self._attach()
         if root is None:
             return
+        if self._widths_on:
+            self._place_widths(root)
+            return
+        self.close_widths()
+        apply_preview(root, self._preview, startup_font())
         if self._settle_root_size(root):
             self._invalidate("root_resize")
         if not self._page_preview:
@@ -171,7 +224,7 @@ class Stage:
         scroll_x = self._view.horizontalScrollBar().value()
         scroll_y = self._view.verticalScrollBar().value()
         rects = []
-        for widget in (self._name, self._size, *self._extra):
+        for widget in (self._name, self._size, self._narrow_label, self._wide_label, *self._extra):
             if widget.isHidden():
                 continue
             rects.append(
@@ -239,14 +292,83 @@ class Stage:
         bottom_right = self._view.mapFromScene(rect.bottomRight())
         _fit_label(self._name)
         _fit_label(self._size)
+        lift = 0
+        if self._widths_on:
+            self._place_copy_label(self._narrow_label, self._proxy, above_title=True)
+            self._place_copy_label(self._wide_label, self._wide_proxy, above_title=False)
+            lift = self._narrow_label.height() + 4
+        else:
+            self._narrow_label.hide()
+            self._wide_label.hide()
         self._name.move(
             top_left.x(),
-            max(0, top_left.y() - self._banner_push - self._name.height() - 4),
+            max(0, top_left.y() - self._banner_push - self._name.height() - 4 - lift),
         )
         self._name.raise_()
         size_x = top_left.x() + max(0, (bottom_right.x() - top_left.x() - self._size.width()) // 2)
         self._size.move(size_x, bottom_right.y() + 6)
         self._size.raise_()
+
+    def sync_selection(self, text: str) -> None:
+        """The wide copy reads the same selection sentence as the canvas."""
+        realizer = self._wide_realizer
+        if realizer is None:
+            return
+        root = realizer.root_widget
+        if root is None:
+            return
+        root.setAccessibleDescription(text)
+
+    def wide_canvas_rect(self, node_id: NodeId) -> Optional[CanvasRect]:
+        """Where ``node_id`` sits on the wide copy, in canvas pixels."""
+        realizer = self._wide_realizer
+        proxy = self._wide_proxy
+        if not self._widths_on or realizer is None or proxy is None:
+            return None
+        widget = realizer.widget_for(node_id)
+        root = realizer.root_widget
+        if widget is None or root is None:
+            return None
+        origin = widget.mapTo(root, QPoint(0, 0))
+        local = QRectF(
+            float(origin.x()),
+            float(origin.y()),
+            float(max(widget.width(), 1)),
+            float(max(widget.height(), 1)),
+        )
+        scene = proxy.mapRectToScene(local)
+        left = math.floor(scene.left())
+        top = math.floor(scene.top())
+        right = math.ceil(scene.right())
+        bottom = math.ceil(scene.bottom())
+        return CanvasRect(int(left), int(top), max(1, int(right - left)), max(1, int(bottom - top)))
+
+    def close(self) -> None:
+        self._detach_sub.close()
+        self.close_widths()
+
+    def close_widths(self) -> None:
+        """Drop the second copy. The primary keeps its registered resources."""
+        self._widths_on = False
+        self._release_wide_widget()
+        realizer = self._wide_realizer
+        proxy = self._wide_proxy
+        self._wide_realizer = None
+        self._wide_proxy = None
+        if self._clicks is not None:
+            self._clicks.clear()
+            self._clicks = None
+        if proxy is not None:
+            scene = self._view.scene() if wrapper_is_valid(self._view) else None
+            if scene is not None:
+                scene.removeItem(proxy)
+            delete_now(proxy)
+        if realizer is not None:
+            realizer.dispose()
+        if wrapper_is_valid(self._narrow_label):
+            self._narrow_label.hide()
+        if wrapper_is_valid(self._wide_label):
+            self._wide_label.hide()
 
     def run(self, effect: ViewEffect) -> None:
         if isinstance(effect, Zoom):
@@ -280,6 +402,120 @@ class Stage:
                 self._proxy.setWidget(None)
             self._proxy.setWidget(root)
         return root
+
+    def _place_widths(self, root: QWidget) -> None:
+        """Two live copies at one zoom. resize only. The file keeps its design size."""
+        startup = startup_font()
+        apply_preview(root, self._preview, startup)
+        page = self._page_size_for_zoom(root)
+        if not self._page_preview:
+            factor = zoom_factor(self._zoom, page, _viewport(self._view))
+            if factor != self._factor:
+                self._invalidate("zoom")
+                self._factor = factor
+        wide_root = self._ensure_wide()
+        proxy = self._wide_proxy
+        if wide_root is None or proxy is None:
+            return
+        apply_preview(wide_root, self._preview, startup)
+        _resize_live(root, max(root.minimumSizeHint().width(), 1), page.height)
+        _resize_live(wide_root, self._wide_px, page.height)
+        self._invalidate("root_resize")
+        factor = self._factor or 1.0
+        self._proxy.setScale(factor)
+        proxy.setScale(factor)
+        arranged = arrange_widths(
+            Size(root.width(), root.height()),
+            Size(wide_root.width(), wide_root.height()),
+            factor,
+            _viewport(self._view),
+            self._banner_push,
+        )
+        self._proxy.setPos(arranged.narrow_at.x, arranged.narrow_at.y)
+        proxy.setPos(arranged.wide_at.x, arranged.wide_at.y)
+        self._view.scene().setSceneRect(0, 0, arranged.scene.width, arranged.scene.height)
+        if self._homed:
+            self._view.horizontalScrollBar().setValue(0)
+            self._view.verticalScrollBar().setValue(0)
+        self._narrow_label.setText("Narrowest \u00b7 %d px" % root.width())
+        self._narrow_label.setAccessibleName(self._narrow_label.text())
+        self._wide_label.setText("Wide \u00b7 %d px" % wide_root.width())
+        self._wide_label.setAccessibleName(self._wide_label.text())
+        self.sync_selection(describe_selection(self._session.document, self._session.selection.state))
+        self._refresh_labels(root)
+        self.position_labels()
+
+    def _ensure_wide(self) -> Optional[QWidget]:
+        if self._wide_realizer is None:
+            # The primary realizer owns qrc registration. This copy must not unregister it.
+            self._wide_realizer = Realizer(self._session, register_resources=False)
+            self._wide_realizer.build()
+            proxy = QGraphicsProxyWidget()
+            self._view.scene().addItem(proxy)
+            self._wide_proxy = proxy
+            self._clicks = _CopyClicks(self._session, self._wide_realizer)
+        realizer = self._wide_realizer
+        proxy = self._wide_proxy
+        if realizer is None or proxy is None:
+            return None
+        root = realizer.root_widget
+        if root is None:
+            return None
+        current = proxy.widget()
+        if current is not root:
+            if current is not None and wrapper_is_valid(current):
+                proxy.setWidget(None)
+            proxy.setWidget(root)
+        if self._clicks is not None:
+            self._clicks.arm(root)
+        return root
+
+    def _page_size_for_zoom(self, root: QWidget) -> Size:
+        """The design page, read before either copy is narrowed."""
+        entry = self._session.document.root.prop("geometry")
+        value = entry.value if entry is not None else None
+        if isinstance(value, RectValue) and value.width > 0 and value.height > 0:
+            return Size(value.width, value.height)
+        hint = root.sizeHint()
+        minimum = root.minimumSize()
+        hint_w = hint.width() if hint.width() > 0 else max(root.width(), 320)
+        hint_h = hint.height() if hint.height() > 0 else max(root.height(), 240)
+        requested = page_request(
+            None,
+            Size(hint_w, hint_h),
+            Size(max(minimum.width(), 1), max(minimum.height(), 1)),
+        )
+        if requested is None:
+            return Size(max(root.width(), 1), max(root.height(), 1))
+        return requested
+
+    def _place_copy_label(
+        self, label: QLabel, proxy: Optional[QGraphicsProxyWidget], *, above_title: bool
+    ) -> None:
+        if proxy is None or proxy.widget() is None:
+            label.hide()
+            return
+        rect = proxy.sceneBoundingRect()
+        top_left = self._view.mapFromScene(rect.topLeft())
+        _fit_label(label)
+        gap = self._banner_push if above_title else 0
+        label.move(top_left.x(), max(0, top_left.y() - gap - label.height() - 4))
+        label.show()
+        label.raise_()
+
+    def _before_wide_realize(self, changeset: object) -> None:
+        if not getattr(changeset, "replaced", False):
+            return
+        if not wrapper_is_valid(self._view):
+            return
+        self._release_wide_widget()
+
+    def _release_wide_widget(self) -> None:
+        proxy = self._wide_proxy
+        if proxy is None or not wrapper_is_valid(proxy):
+            return
+        if proxy.widget() is not None:
+            proxy.setWidget(None)
 
     def _settle_root_size(self, root: QWidget) -> bool:
         if self._page_preview:
@@ -433,3 +669,59 @@ def _fit_label(label: QLabel) -> None:
     width = label.fontMetrics().horizontalAdvance(text) + 16
     height = max(22, label.fontMetrics().height() + 8)
     label.setFixedSize(max(width, 8), height)
+
+
+def _resize_live(widget: QWidget, width: int, height: int) -> None:
+    """Preview size on the live widget. This is not a geometry command."""
+    widget.resize(max(width, 1), max(height, 1))
+    layout = widget.layout()
+    if layout is not None:
+        layout.activate()
+
+
+class _CopyClicks(QObject):
+    """Press-to-select on the wide copy.
+
+    ``gesture.step`` hits the primary index. Drops and resizes stay there.
+    """
+
+    def __init__(self, session: FormSession, realizer: Realizer) -> None:
+        super().__init__()
+        self._session = session
+        self._realizer = realizer
+        self._watched: List[QWidget] = []
+
+    def arm(self, root: QWidget) -> None:
+        self.clear()
+        self._watch(root)
+        for child in root.findChildren(QWidget):
+            self._watch(child)
+
+    def clear(self) -> None:
+        for widget in self._watched:
+            if wrapper_is_valid(widget):
+                widget.removeEventFilter(self)
+        self._watched = []
+
+    def _watch(self, widget: QWidget) -> None:
+        widget.installEventFilter(self)
+        self._watched.append(widget)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if not _is_left_press(event):
+            return False
+        node = self._realizer.node_for(watched)
+        if node is None:
+            return False
+        self._session.selection.set((node,), source=SelectionSource.CANVAS)
+        return False
+
+
+def _is_left_press(event: QEvent) -> bool:
+    press = getattr(getattr(QEvent, "Type", QEvent), "MouseButtonPress")
+    if event.type() != press:
+        return False
+    button = getattr(event, "button", None)
+    if not callable(button):
+        return False
+    return enum_value(button()) == enum_value(getattr(Qt, "LeftButton"))

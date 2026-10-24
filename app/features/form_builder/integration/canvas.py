@@ -7,7 +7,8 @@ The page caption, shadow and toast stay view chrome.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from dataclasses import replace
+from typing import Callable, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QPoint, QRectF, Qt, QTimer
 from app.qt.QtGui import QColor, QFont, QPainter, QPen
@@ -19,14 +20,30 @@ from app.qt.QtWidgets import (
     QLabel,
     QWidget,
 )
-from app.qt.qt_compat import wrapper_is_valid
+from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
-from app.features.form_builder.engine.query.hit_index import HitIndex
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.preview_state import (
+    PreviewState,
+    active_preset,
+    pill_sentence,
+    points_for_preset,
+)
+from app.features.form_builder.engine.query.hit_index import HitIndex, StaleHitIndexError
+from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
-from app.features.form_builder.qtside.canvas.core.frame import Chip, OverlayFrame
+from app.features.form_builder.qtside.canvas.core.frame import Chip, OverlayFrame, Stroke
+from app.features.form_builder.qtside.canvas.core.words import describe_selection
+from app.features.form_builder.qtside.canvas.cutoff import (
+    cutoff_among,
+    cutoff_ids,
+    edited_siblings,
+    merge_cutoff,
+)
+from app.features.form_builder.qtside.canvas.preview_apply import font_point_size
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
@@ -135,6 +152,7 @@ class FormCanvas(QGraphicsView):
         self._stage.place()
         self._sync_title()
         self._position_chrome()
+        self._selection_unsub = session.selection.subscribe(self._on_selection)
 
     def page_widget(self) -> Optional[QWidget]:
         root = self._realizer.root_widget
@@ -162,6 +180,10 @@ class FormCanvas(QGraphicsView):
             " font-size: 11px; font-weight: 600; }"
             "QLabel#formBuilder\\.sizeReadout {"
             f" color: {tokens.text_muted}; background: transparent; border: none; padding: 0; }}"
+            "QLabel#formBuilder\\.previewPill, QLabel#formBuilder\\.narrowLabel,"
+            " QLabel#formBuilder\\.wideLabel {"
+            f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
+            f" border: 1px solid {tokens.border}; border-radius: 4px; padding: 1px 8px; }}"
             "QLabel#formBuilder\\.toast {"
             f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
             f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
@@ -216,10 +238,75 @@ class FormCanvas(QGraphicsView):
     def detach(self) -> None:
         self._stage.detach()
 
+    def preview_state(self) -> PreviewState:
+        return self._stage.preview
+
+    def widths_on(self) -> bool:
+        return self._stage.widths_on
+
+    def wide_realizer(self) -> Optional[Realizer]:
+        return self._stage.wide_realizer
+
+    def preview_marks(self) -> Tuple[Optional[str], int, bool, int]:
+        state = self._stage.preview
+        return (
+            active_preset(state, font_point_size(startup_font())),
+            state.screen_percent,
+            self._stage.widths_on,
+            self._stage.wide_px,
+        )
+
+    def set_preview_listener(self, listener: Callable[[], None]) -> None:
+        self._preview_listener = listener
+
+    def set_text_preset(self, preset: str) -> None:
+        points = points_for_preset(font_point_size(startup_font()), preset)
+        self._commit_preview(replace(self._stage.preview, text_point_size=points))
+
+    def set_text_point_size(self, points: Optional[float]) -> None:
+        self._commit_preview(replace(self._stage.preview, text_point_size=points))
+
+    def set_screen_percent(self, percent: int) -> None:
+        self._commit_preview(replace(self._stage.preview, screen_percent=percent))
+
+    def reset_preview(self) -> None:
+        """Normal at 100%. The file is left alone."""
+        self._commit_preview(PreviewState())
+
+    def set_two_widths(self, on: bool) -> None:
+        if self._stage.widths_on == on:
+            self._notify_preview()
+            return
+        self._stage.set_two_widths(on)
+        self._stage.place()
+        self._rescan_cutoff()
+        self._sync_pill()
+        self._controller.refresh_overlay()
+        self._position_chrome()
+        self._notify_preview()
+
+    def set_wide_px(self, px: int) -> None:
+        self._stage.set_wide_px(px)
+        if self._stage.widths_on:
+            self._stage.place()
+            self._rescan_cutoff()
+            self._sync_pill()
+            self._controller.refresh_overlay()
+            self._position_chrome()
+        self._notify_preview()
+
+    def select_cutoff(self) -> None:
+        ids = tuple(dict.fromkeys(self._cutoff + self._wide_cutoff))
+        if not ids:
+            return
+        self._session.selection.set(ids, source=SelectionSource.PROGRAM)
+
     def dispose(self) -> None:
+        self._selection_unsub()
         self._controller.dispose()
         self._chrome_sub.close()
         self._hit_sub.close()
+        self._stage.close()
         self.detach()
 
     def viewportEvent(self, event: QEvent) -> bool:  # noqa: N802
@@ -256,6 +343,9 @@ class FormCanvas(QGraphicsView):
             return
         frame = controller.frame
         paint_frame(painter, frame, self._palette, rect)
+        extra = self._preview_frame(frame)
+        if extra is not None:
+            paint_frame(painter, extra, self._palette, rect)
         self._title.set_docked(_docked(frame), self._palette)
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
@@ -288,15 +378,114 @@ class FormCanvas(QGraphicsView):
         self._frame.setObjectName("formBuilder.pageFrame")
         self._frame.setFocusPolicy(_no_focus())
         self._frame.setAttribute(_transparent(), True)
-        self._stage.track_chrome(self._title)
+        self._pill = _PreviewPill(self, self.reset_preview, self.select_cutoff)
+        self._stage.track_chrome(self._title, self._pill)
         self._stage.dock_on(self._title)
+        self._cutoff: Tuple[NodeId, ...] = ()
+        self._wide_cutoff: Tuple[NodeId, ...] = ()
+        self._preview_listener: Optional[Callable[[], None]] = None
 
     def _sync_title(self) -> None:
         self._title.setText(page_title_text(self._session.document))
 
-    def _position_after(self, _changeset: object) -> None:
+    def _position_after(self, changeset: object) -> None:
         self._sync_title()
+        if self._outlines_cutoff():
+            if getattr(changeset, "replaced", False):
+                self._rescan_cutoff()
+            else:
+                self._rescan_siblings(changeset)
+            self._sync_pill()
+            self._controller.refresh_overlay()
         self._position_chrome()
+
+    def _on_selection(self, change: SelectionChange) -> None:
+        self._stage.sync_selection(describe_selection(self._session.document, change.after))
+
+    def _commit_preview(self, state: PreviewState) -> None:
+        self._stage.set_preview(state)
+        self._stage.place()
+        self._rescan_cutoff()
+        self._sync_pill()
+        self._controller.refresh_overlay()
+        self._position_chrome()
+        self._notify_preview()
+
+    def _notify_preview(self) -> None:
+        listener = self._preview_listener
+        if listener is not None:
+            listener()
+
+    def _outlines_cutoff(self) -> bool:
+        return not self._stage.preview.is_plain() or self._stage.widths_on
+
+    def _rescan_cutoff(self) -> None:
+        """Full walk. Callers are a preview change or a replaced document."""
+        if not self._outlines_cutoff():
+            self._cutoff = ()
+            self._wide_cutoff = ()
+            return
+        document = self._session.document
+        self._cutoff = cutoff_ids(document, self._realizer)
+        wide = self._stage.wide_realizer
+        if wide is None:
+            self._wide_cutoff = ()
+            return
+        self._wide_cutoff = cutoff_ids(document, wide)
+
+    def _rescan_siblings(self, changeset: object) -> None:
+        siblings = edited_siblings(self._session.document, changeset)
+        if siblings is None:
+            return
+        document = self._session.document
+        self._cutoff = merge_cutoff(
+            self._cutoff, siblings, cutoff_among(document, self._realizer, siblings)
+        )
+        wide = self._stage.wide_realizer
+        if wide is None:
+            self._wide_cutoff = merge_cutoff(self._wide_cutoff, siblings, ())
+            return
+        self._wide_cutoff = merge_cutoff(
+            self._wide_cutoff, siblings, cutoff_among(document, wide, siblings)
+        )
+
+    def _sync_pill(self) -> None:
+        sentence = pill_sentence(
+            self._stage.preview,
+            font_point_size(startup_font()),
+            len(dict.fromkeys(self._cutoff + self._wide_cutoff)),
+        )
+        if sentence is None:
+            self._pill.hide()
+            return
+        self._pill.set_sentence(sentence)
+        self._pill.show()
+        self._pill.raise_()
+
+    def _preview_frame(self, frame: OverlayFrame) -> Optional[OverlayFrame]:
+        items = []
+        if self._index.is_fresh():
+            view = self._stage.view_map()
+            for node_id in self._cutoff:
+                try:
+                    found = self._index.rect_of(node_id)
+                except StaleHitIndexError:
+                    found = None
+                if found is None:
+                    continue
+                items.append(Stroke(view.to_canvas(found), "tab", 1.0, "dashed"))
+        for node_id in self._wide_cutoff:
+            rect = self._stage.wide_canvas_rect(node_id)
+            if rect is not None:
+                items.append(Stroke(rect, "tab", 1.0, "dashed"))
+        if self._stage.widths_on:
+            for node_id in self._session.selection.state.ids:
+                rect = self._stage.wide_canvas_rect(node_id)
+                if rect is not None:
+                    items.append(Stroke(rect, "select", 2.0, "solid"))
+        if not items:
+            return None
+        return OverlayFrame(frame.basis, tuple(items), (), ())
 
     def _scroll_moved(self, _value: int) -> None:
         # A drag re-solves once on sliderReleased.
@@ -329,6 +518,18 @@ class FormCanvas(QGraphicsView):
         self._title.raise_()
         self._frame.setGeometry(top_left.x(), title_y, page_width, page_height + PAGE_TITLE_HEIGHT)
         self._frame.lower()
+        if self._pill.isVisible():
+            pages = rect
+            wide = self._stage.wide_proxy
+            if wide is not None and wide.widget() is not None:
+                pages = rect.united(wide.sceneBoundingRect())
+            right = self.mapFromScene(pages.topRight())
+            top = self.mapFromScene(pages.topLeft())
+            self._pill.move(
+                max(0, right.x() - self._pill.width()),
+                max(0, top.y() - PAGE_TITLE_HEIGHT - self._pill.height() - 4),
+            )
+            self._pill.raise_()
         self._place_toast()
 
     def _apply_page_chrome(self, tokens: ShellThemeTokens) -> None:
@@ -473,6 +674,48 @@ class _PageTitle(QWidget):
                 paint_docked_chip(painter, item, self._palette)
                 painter.restore()
         painter.end()
+
+
+class _PreviewPill(QLabel):
+    """The backdrop sentence. Reset and the cutoff count are clicks on that text."""
+
+    def __init__(
+        self, parent: QWidget, on_reset: Callable[[], None], on_count: Callable[[], None]
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("formBuilder.previewPill")
+        self.setFocusPolicy(_no_focus())
+        self._on_reset = on_reset
+        self._on_count = on_count
+        self.hide()
+
+    def set_sentence(self, text: str) -> None:
+        self.setText(text)
+        self.setAccessibleName(text)
+        metrics = self.fontMetrics()
+        self.setFixedSize(metrics.horizontalAdvance(text) + 18, max(22, metrics.height() + 10))
+
+    def mousePressEvent(self, event: object) -> None:  # noqa: N802
+        button = getattr(event, "button", None)
+        if not callable(button) or enum_value(button()) != enum_value(getattr(Qt, "LeftButton")):
+            return
+        text = self.text()
+        reset_at = text.rfind(" \u00b7 Reset")
+        if reset_at < 0:
+            return
+        x = event_pos(event).x() - self.contentsRect().x()
+        metrics = self.fontMetrics()
+        if x >= metrics.horizontalAdvance(text[:reset_at]):
+            self._on_reset()
+            return
+        if "cut off text" not in text:
+            return
+        count_at = text.find("\u00b7")
+        if count_at < 0:
+            return
+        start = metrics.horizontalAdvance(text[:count_at])
+        if start <= x < metrics.horizontalAdvance(text[:reset_at]):
+            self._on_count()
 
 
 def _paint_caption_glyphs(painter: QPainter, width: int) -> None:

@@ -241,7 +241,7 @@ def test_stored_minimum_drops_that_axis_from_the_chip() -> None:
     assert isinstance(mode, Custom)
     assert mode.policy_name == "Minimum"
     assert panel.horizontal.caption == (
-        "Custom: Minimum. Grows, never smaller than its content. "
+        "Custom: Minimum \u2014 grows, never smaller than its content. "
         "Change it in All properties, or pick a word to replace it."
     )
     assert chip_words(panel) == (None, "Fill")

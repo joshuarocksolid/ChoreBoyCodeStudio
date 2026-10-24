@@ -133,9 +133,30 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
     _row("form.action.buddies", "Buddies", "F7", _FORM, menu=("Overlays", "Buddies")),
     _row("form.action.connections", "Connections", "F4", _FORM, menu=("Overlays", "Connections")),
     _row("form.action.preview", "Preview", "Ctrl+Shift+R", _FORM, menu=("Preview",)),
-    _row("form.action.textSize", "Text size", "", _FORM, menu=("Preview options", "Text size")),
-    _row("form.action.screenScale", "Screen scale", "", _FORM, menu=("Preview options", "Screen scale")),
-    _row("form.action.twoWidths", "Two widths", "Ctrl+K, W", _FORM, menu=("Preview options", "Two widths")),
+    _row(
+        "form.action.textSize",
+        "Text size",
+        "",
+        _FORM,
+        menu=("Preview options", "Text size"),
+        available=True,
+    ),
+    _row(
+        "form.action.screenScale",
+        "Screen scale",
+        "",
+        _FORM,
+        menu=("Preview options", "Screen scale"),
+        available=True,
+    ),
+    _row(
+        "form.action.twoWidths",
+        "Two widths",
+        "Ctrl+K, W",
+        _FORM,
+        menu=("Preview options", "Two widths"),
+        available=True,
+    ),
     _row(
         "form.action.viewXml",
         "View XML",
@@ -416,7 +437,9 @@ def is_widget_shortcut(command: FormCommand) -> bool:
 
 # The canvas input translator already claims Ctrl+9. A window shortcut would
 # fire a second time beside that handler.
-_CANVAS_OWNED_KEYS = frozenset({"form.action.zoomToFit"})
+# zoomToFit is claimed by the canvas translator. twoWidths is a canvas
+# QShortcut, not a window action, so Ctrl+K does not start a chord in the editor.
+_CANVAS_OWNED_KEYS = frozenset({"form.action.zoomToFit", "form.action.twoWidths"})
 
 
 def menu_hint(command: FormCommand) -> str:
