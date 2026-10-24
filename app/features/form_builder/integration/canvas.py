@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Optional, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QRectF, Qt
+from app.qt.QtCore import QEvent, QPoint, QRectF, Qt, QTimer
 from app.qt.QtGui import QColor, QFont, QPainter, QPen
 from app.qt.QtWidgets import (
     QFrame,
@@ -124,6 +124,14 @@ class FormCanvas(QGraphicsView):
         self.verticalScrollBar().valueChanged.connect(self._position_chrome)
         self.horizontalScrollBar().sliderReleased.connect(self._refresh_chips_after_scroll)
         self.verticalScrollBar().sliderReleased.connect(self._refresh_chips_after_scroll)
+        # Track clicks, arrow buttons and keys move the bars without a release.
+        # One 0 ms timer folds both bars' changes into one re-solve.
+        self._chip_timer = QTimer(self)
+        self._chip_timer.setSingleShot(True)
+        self._chip_timer.setInterval(0)
+        self._chip_timer.timeout.connect(self._refresh_chips_after_scroll)
+        self.horizontalScrollBar().valueChanged.connect(self._scroll_moved)
+        self.verticalScrollBar().valueChanged.connect(self._scroll_moved)
         self._stage.place()
         self._sync_title()
         self._position_chrome()
@@ -289,6 +297,12 @@ class FormCanvas(QGraphicsView):
     def _position_after(self, _changeset: object) -> None:
         self._sync_title()
         self._position_chrome()
+
+    def _scroll_moved(self, _value: int) -> None:
+        # A drag re-solves once on sliderReleased.
+        if self.horizontalScrollBar().isSliderDown() or self.verticalScrollBar().isSliderDown():
+            return
+        self._chip_timer.start()
 
     def _refresh_chips_after_scroll(self) -> None:
         rect = visible_scene_rect(self)

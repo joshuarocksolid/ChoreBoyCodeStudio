@@ -12,10 +12,10 @@ from app.qt.QtCore import QPoint, QPointF, QRectF, Qt  # type: ignore[reportAttr
 from app.qt.QtGui import QImage, QPainter, QWheelEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtGui import QAction  # type: ignore[reportAttributeAccessIssue]
-from app.qt.QtWidgets import QApplication, QMenu, QMenuBar, QShortcut, QToolButton, QWidget
+from app.qt.QtWidgets import QAbstractSlider, QApplication, QMenu, QMenuBar, QShortcut, QToolButton, QWidget
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.form_menu import register_form_menu
-from app.features.form_builder.qtside.canvas.core.frame import Handle, Stroke
+from app.features.form_builder.qtside.canvas.core.frame import Chip, Handle, Stroke
 from app.features.form_builder.qtside.canvas.core.space import GUTTERS
 from app.features.form_builder.qtside.canvas.core.words import zoom_label as zoom_percent
 from app.shell.menus import build_menu_stubs, clear_menu_contributors
@@ -276,6 +276,25 @@ def test_arrowing_along_a_visible_row_does_not_scroll_sideways() -> None:
         assert session.selection.state.current is not None
         canvas.dispose()
         parent.deleteLater()
+
+
+def test_a_scrollbar_page_step_clears_the_chip_of_a_widget_scrolled_away() -> None:
+    with opened(CHOREBOY_PAGE) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, _Host(), 440, 270)
+        _click(canvas, "ok")
+        assert _select_chips(canvas)
+        bar = canvas.verticalScrollBar()
+        page_add = getattr(getattr(QAbstractSlider, "SliderAction", QAbstractSlider), "SliderPageStepAdd")
+        while bar.value() < bar.maximum():
+            bar.triggerAction(page_add)
+            _flush()
+        assert not _select_chips(canvas)
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def _select_chips(canvas: FormCanvas) -> List[Chip]:
+    return [item for item in canvas.overlay().items if isinstance(item, Chip) and item.role == "select"]
 
 
 def test_handles_stay_seven_pixels_at_two_hundred_percent() -> None:
