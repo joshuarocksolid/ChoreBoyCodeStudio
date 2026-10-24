@@ -36,7 +36,7 @@ from app.features.form_builder.engine.query.slots import (
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import StringValue
+from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 from tests.form_builder.engine.commands._support import cell_of, nid, open_log, prop_text, saved
 
 pytestmark = pytest.mark.unit
@@ -307,6 +307,7 @@ def test_buddy_text_edit_joins_the_drop_undo_step() -> None:
     assert prop_text(doc, "label") == "New field:"
     buddy = doc.node(done.edited).prop("buddy")
     assert buddy is not None
+    assert isinstance(buddy.value, (StringValue, CStringValue))
     assert buddy.value.text == "pushButton"
     assert cell_of(doc, "label") == (1, 0)
     assert cell_of(doc, "pushButton") == (1, 1)

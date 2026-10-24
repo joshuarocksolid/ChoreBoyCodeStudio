@@ -872,6 +872,10 @@ def _hit_rows(
     return tuple(invalidate_rows + refresh_rows + query_rows)
 
 
+def _quiet(value: object) -> None:
+    del value
+
+
 def _drop_target_rows(
     samples: int,
     warmup: int,
@@ -885,8 +889,8 @@ def _drop_target_rows(
         row = _timed(
             "drop target @%d" % count,
             count,
-            lambda document=document, sight=sight, point=point, cargo=cargo: resolve(
-                document, sight, point, cargo, 0
+            lambda document=document, sight=sight, point=point, cargo=cargo: _quiet(
+                resolve(document, sight, point, cargo, 0)
             ),
             DROP_TARGET_BUDGET_MS,
             samples=samples,

@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator, Tuple
+from typing import Iterator, Literal, Tuple, cast
 
 import pytest
 
@@ -74,7 +74,8 @@ class _Host:
 
     def nudge_slots(self, key: str) -> None:
         state = self._session.selection.state
-        nudge(self._session.log, self._session.document, state.ids, state.current, key)
+        arrow = cast(Literal["left", "right", "up", "down"], key)
+        nudge(self._session.log, self._session.document, state.ids, state.current, arrow)
 
 
 @contextmanager

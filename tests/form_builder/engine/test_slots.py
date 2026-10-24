@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Literal, Optional, Tuple
 
 import pytest
 
@@ -237,7 +237,12 @@ def test_occupied_grid_center_refuses_and_would_not_drop() -> None:
     ],
 )
 def test_occupied_grid_edge_inserts_a_row_or_column(
-    at: Point, mode: str, row: int, column: int, sentence: str, axis: str
+    at: Point,
+    mode: Literal["insert_row", "insert_column"],
+    row: int,
+    column: int,
+    sentence: str,
+    axis: str,
 ) -> None:
     document = _document(GRID)
     root = _nid(document, "Form")
