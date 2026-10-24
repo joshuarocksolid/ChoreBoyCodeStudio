@@ -15,6 +15,7 @@ from app.features.form_builder.engine.commands.base import Command, CommandRejec
 from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
+    InsertPage,
     SwapFormRows,
     WrapWithNew,
 )
@@ -192,7 +193,7 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
     layout = rng.choice(layouts) if layouts else None
     names = [item.object_name for item in widgets if item.object_name]
     forms = [item for item in layouts if item.class_name == "QFormLayout"]
-    roll = rng.randrange(40)
+    roll = rng.randrange(43)
     if roll == 0 and widget is not None:
         value = None if rng.randrange(5) == 0 else StringValue("t%d" % step)
         return SetProperty(widget.id, "text", value, merge_token=rng.choice([None, "tok"]))
@@ -388,6 +389,32 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
         rows = form_rows(doc, form.id)
         if len(rows) >= 2:
             return SwapFormRows(form.id, rng.randrange(len(rows) - 1), 1)
+    if roll == 40 and widget is not None and is_page_container(doc, widget.id):
+        return InsertPage(widget.id)
+    if roll == 41:
+        bare = [
+            item
+            for item in [doc.root] + widgets
+            if isinstance(item, WidgetNode)
+            and item.layout is None
+            and item.class_name in ("QWidget", "QFrame", "QGroupBox")
+            and not is_page_container(doc, item.id)
+        ]
+        loose = [item for item in widgets if item.id not in {host.id for host in bare}]
+        if bare and loose:
+            return AdoptIntoBox(rng.choice(bare).id, existing=(rng.choice(loose).id,))
+    if roll == 42:
+        boxes = [item for item in layouts if item.class_name in ("QVBoxLayout", "QHBoxLayout") and item.items]
+        if boxes:
+            box = rng.choice(boxes)
+            content = rng.choice(box.items).content
+            if content is not None:
+                return WrapWithNew(
+                    content.id,
+                    rng.choice(["before", "after"]),
+                    rng.choice(["QHBoxLayout", "QVBoxLayout"]),
+                    fragment=Fragment(nodes=(button_spec("wrapped"),)),
+                )
     return None
 
 

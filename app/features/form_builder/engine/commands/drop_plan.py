@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
@@ -89,6 +90,71 @@ def auto_commands(
     if target is None:
         return ()
     return commands_for(doc, target, payload, fragment)
+
+
+def indicate_preview(doc: UiDocument, index: object, target: AcceptedDrop) -> AcceptedDrop:
+    """Fill the line and the sentence Enter would show. ``index`` has ``rect_of``."""
+
+    sentence = _preview_words(doc, target)
+    frame = _rect_of(index, target.host) or Rect(0, 0, 1, 1)
+    return replace(
+        target,
+        sentence=sentence,
+        chip=sentence,
+        indicator=DropIndicator(_preview_line(doc, index, target, frame), dashed=target.action not in ("box", "form_row")),
+        frame=frame,
+    )
+
+
+def _preview_words(doc: UiDocument, target: AcceptedDrop) -> str:
+    if target.action == "box":
+        layout = doc.get(target.host)
+        if isinstance(layout, LayoutNode) and target.index > 0:
+            for item in layout.items:
+                content = item.content
+                if item.slot_index == target.index - 1 and content is not None:
+                    name = getattr(content, "object_name", "") or ""
+                    if name:
+                        return "Goes right after %s." % name
+        if target.index == 0:
+            return "Goes at the start."
+    if target.action == "form_row":
+        return "Goes on a new row."
+    if target.action == "form_cell":
+        return "Goes in this cell."
+    if target.action in ("grid_cell", "grid_row", "grid_column"):
+        return "Goes in the grid."
+    if target.action == "free":
+        return "Goes at x %d, y %d." % (target.x, target.y)
+    if target.action == "auto_layout":
+        return "Goes inside, in a vertical layout."
+    return "Goes here."
+
+
+def _preview_line(doc: UiDocument, index: object, target: AcceptedDrop, frame: Rect) -> Rect:
+    if target.action == "box":
+        layout = doc.get(target.host)
+        if isinstance(layout, LayoutNode) and target.index > 0:
+            for item in layout.items:
+                content = item.content
+                if item.slot_index == target.index - 1 and content is not None:
+                    rect = _rect_of(index, content.id)
+                    if rect is not None:
+                        return Rect(frame.x + 4, rect.y + rect.height, max(frame.width - 8, 2), 2)
+        return Rect(frame.x + 4, frame.y + 3, max(frame.width - 8, 2), 2)
+    if target.action == "form_row":
+        return Rect(frame.x + 4, frame.y + max(frame.height - 3, 0), max(frame.width - 8, 2), 2)
+    if target.action == "free":
+        return Rect(target.x, target.y, target.width or 80, target.height or 24)
+    return frame
+
+
+def _rect_of(index: object, node: NodeId) -> Optional[Rect]:
+    found = getattr(index, "rect_of", None)
+    if found is None:
+        return None
+    rect = found(node)
+    return rect if isinstance(rect, Rect) else None
 
 
 def auto_target(

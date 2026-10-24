@@ -12,7 +12,7 @@ from typing import Dict, FrozenSet, List, Literal, Optional, Sequence, Tuple, Un
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import Rect
-from app.features.form_builder.engine.query.tree import PAGE_CONTAINERS, form_rows
+from app.features.form_builder.engine.query.tree import PAGE_CONTAINERS, form_rows, is_container
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
     LayoutItemNode,
@@ -81,6 +81,8 @@ class DropHost:
     rect: Rect
     slots: Tuple[SlotGeom, ...] = ()
     children: Tuple["DropHost", ...] = ()
+    #: "tab" or "page". Empty for layouts.
+    noun: str = ""
 
 
 @dataclass(frozen=True)
@@ -157,7 +159,7 @@ def resolve_drop(
     _gather(root, pointer, 0, found)
     found.sort(
         key=lambda item: (
-            _distance(item[1].rect, pointer),
+            _distance(_grow(item[1].rect), pointer),
             item[1].rect.width * max(item[1].rect.height, 1),
             -item[0],
         )
@@ -262,7 +264,7 @@ def _resolve_box(host: DropHost, pointer: Tuple[int, int], payload: DropPayload)
             index=slot.index,
         )
     index = _box_index(host.slots, pointer, vertical)
-    sentence = _between(host.slots, index, "Insert")
+    sentence = _between(host.slots, index, "Insert", host.name or "the layout")
     return _accept(
         host,
         "box",
@@ -328,6 +330,8 @@ def _resolve_form(host: DropHost, pointer: Tuple[int, int], payload: DropPayload
         return _form_new_row(host, 0, payload, "")
     if slot.role == "new_page":
         return None
+    if slot.role == "tail":
+        return _form_new_row(host, slot.row, payload, "New row at the end", slot.rect.y)
     if slot.node is None and slot.role in ("label", "field"):
         role: FormRole = "label" if slot.role == "label" else "field"
         chip = "%s of row %d" % ("Label" if role == "label" else "Field", slot.row + 1)
@@ -348,12 +352,13 @@ def _resolve_pages(host: DropHost, pointer: Tuple[int, int]) -> Optional[DropTar
     for slot in host.slots:
         if not _contains(slot.rect, pointer):
             continue
+        word = host.noun or "tab"
         if slot.role == "new_page":
-            sentence = "New tab"
+            sentence = "New %s" % word
             return _accept(host, "new_page", sentence, sentence, DropIndicator(slot.rect, dashed=True))
         if slot.role == "page" and slot.node is not None:
-            name = slot.text or "the page"
-            sentence = "Into the %s tab" % name
+            name = slot.text or ("the %s" % word)
+            sentence = "Into the %s %s" % (name, word)
             return _accept(
                 host,
                 "page",
@@ -715,22 +720,31 @@ def _mid(rect: Rect, vertical: bool) -> int:
     return rect.x + (rect.width // 2)
 
 
-def _between(slots: Sequence[SlotGeom], index: int, verb: str) -> str:
+def _between(slots: Sequence[SlotGeom], index: int, verb: str, where: str = "") -> str:
     ordered = sorted(slots, key=lambda slot: slot.index)
     previous = ""
     nxt = ""
     for slot in ordered:
         if slot.index < index and slot.text:
-            previous = slot.text
+            previous = _shown(slot.text)
         if slot.index >= index and slot.text and not nxt:
-            nxt = slot.text
+            nxt = _shown(slot.text)
     if previous and nxt:
         return "%s between %s and %s" % (verb, previous, nxt)
     if nxt:
         return "%s before %s" % (verb, nxt)
     if previous:
         return "%s after %s" % (verb, previous)
+    if where:
+        return "%s into %s" % (verb, where)
     return "%s here" % verb
+
+
+def _shown(text: str) -> str:
+    cleaned = text.strip()
+    if cleaned.endswith(":"):
+        cleaned = cleaned[:-1].rstrip()
+    return cleaned
 
 
 def _pane_sentence(slots: Sequence[SlotGeom], index: int) -> str:
@@ -880,7 +894,7 @@ def _row_text(host: DropHost, row: int) -> str:
             label = slot.text
         elif not other:
             other = slot.text
-    return label or other
+    return _shown(label or other)
 
 
 def _splitter_vertical(host: DropHost) -> bool:
@@ -959,6 +973,8 @@ def _widget_host(
         return _layout_host(doc, rect_of, layout, name, rect)
     if widget.class_name in PAGE_CONTAINERS:
         return _pages_host(doc, rect_of, widget, name, rect)
+    if not is_container(doc, widget.id):
+        return None
     children = []
     for child in widget.child_widgets:
         built = _widget_host(doc, rect_of, child.id, name)
@@ -1073,27 +1089,37 @@ def _form_slots(
     layout_rect: Rect,
 ) -> Tuple[Tuple[SlotGeom, ...], Tuple[DropHost, ...]]:
     rows = form_rows(doc, layout.id)
-    count = max(len(rows), 1)
-    height = max(layout_rect.height // count, 1)
+    bands = _form_bands(doc, rect_of, layout_rect, rows)
     slots: List[SlotGeom] = []
     children: List[DropHost] = []
     roles = (("label", 0), ("field", 1), ("spanning", 0))
     for index, triple in enumerate(rows):
-        y = layout_rect.y + index * height
+        y, height = bands[index]
         row_rect = Rect(layout_rect.x, y, layout_rect.width, height)
+        contents = _form_contents(doc, triple)
         item_ids = {"label": triple[0], "field": triple[1], "spanning": triple[2]}
+        placed = {role: _content_rect_of(rect_of, contents[role]) for role in contents}
         for role, column in roles:
             item_id = item_ids[role]
             if item_id is None:
                 if role == "spanning":
                     continue
-                width = layout_rect.width // 2
-                x = layout_rect.x if column == 0 else layout_rect.x + width
-                slots.append(SlotGeom(Rect(x, y, width, height), index, None, "", index, column, 1, 1, role))
+                slots.append(
+                    SlotGeom(
+                        _empty_form_cell(layout_rect, row_rect, role, placed),
+                        index,
+                        None,
+                        "",
+                        index,
+                        column,
+                        1,
+                        1,
+                        role,
+                    )
+                )
                 continue
-            item = doc.get(item_id)
-            content = item.content if isinstance(item, LayoutItemNode) else None
-            rect = rect_of.get(content.id, row_rect) if content is not None else row_rect
+            content = contents.get(role)
+            rect = placed.get(role) or row_rect
             if role == "spanning":
                 rect = Rect(layout_rect.x, y, layout_rect.width, height)
             node_id = content.id if content is not None else None
@@ -1113,6 +1139,23 @@ def _form_slots(
             built = _content_host(doc, rect_of, content)
             if built is not None:
                 children.append(built)
+    if bands:
+        end = bands[-1][0] + bands[-1][1]
+        bottom = layout_rect.y + layout_rect.height
+        if bottom - end > 8:
+            slots.append(
+                SlotGeom(
+                    Rect(layout_rect.x, end, layout_rect.width, bottom - end),
+                    len(rows),
+                    None,
+                    "",
+                    len(rows),
+                    0,
+                    1,
+                    2,
+                    "tail",
+                )
+            )
     return tuple(slots), tuple(children)
 
 
@@ -1124,18 +1167,17 @@ def _pages_host(
     rect: Rect,
 ) -> DropHost:
     kind: HostKind = "splitter" if widget.class_name == "QSplitter" else "pages"
+    noun = "page" if widget.class_name in ("QToolBox", "QStackedWidget") else "tab"
     slots: List[SlotGeom] = []
     children: List[DropHost] = []
     for index, child in enumerate(widget.child_widgets):
         child_rect = rect_of.get(child.id, rect)
         role = "page" if kind == "pages" else "pane"
         slots.append(SlotGeom(child_rect, index, child.id, _visible(child), role=role))
-        if kind == "splitter":
-            continue
         built = _widget_host(doc, rect_of, child.id, child.object_name or name)
         if built is not None:
             children.append(built)
-    return DropHost(widget.id, kind, name, rect, tuple(slots), tuple(children))
+    return DropHost(widget.id, kind, name, rect, tuple(slots), tuple(children), noun)
 
 
 def _content_host(doc: UiDocument, rect_of: Dict[NodeId, Rect], content: Optional[Node]) -> Optional[DropHost]:
@@ -1143,10 +1185,113 @@ def _content_host(doc: UiDocument, rect_of: Dict[NodeId, Rect], content: Optiona
         fallback = rect_of.get(content.id, Rect(0, 0, MIN_HIT, MIN_HIT))
         return _layout_host(doc, rect_of, content, content.object_name or "layout", fallback)
     if isinstance(content, WidgetNode):
-        if content.layout is None and content.class_name not in PAGE_CONTAINERS and not content.child_widgets:
-            return None
         return _widget_host(doc, rect_of, content.id, content.object_name or "widget")
     return None
+
+
+def _form_contents(doc: UiDocument, triple: Tuple[Optional[NodeId], Optional[NodeId], Optional[NodeId]]) -> Dict[str, Optional[Node]]:
+    found: Dict[str, Optional[Node]] = {}
+    for role, item_id in (("label", triple[0]), ("field", triple[1]), ("spanning", triple[2])):
+        item = doc.get(item_id) if item_id is not None else None
+        content = item.content if isinstance(item, LayoutItemNode) else None
+        found[role] = content
+    return found
+
+
+def _content_rect_of(rect_of: Dict[NodeId, Rect], content: Optional[Node]) -> Optional[Rect]:
+    if content is None:
+        return None
+    return rect_of.get(content.id)
+
+
+def _empty_form_cell(
+    layout_rect: Rect,
+    row_rect: Rect,
+    role: str,
+    placed: Dict[str, Optional[Rect]],
+) -> Rect:
+    mid = layout_rect.x + layout_rect.width // 2
+    if role == "field":
+        label = placed.get("label")
+        left = label.x + label.width if label is not None else mid
+        return Rect(left, row_rect.y, max(layout_rect.x + layout_rect.width - left, 1), row_rect.height)
+    field = placed.get("field")
+    right = field.x if field is not None else mid
+    return Rect(layout_rect.x, row_rect.y, max(right - layout_rect.x, 1), row_rect.height)
+
+
+def _form_bands(
+    doc: UiDocument,
+    rect_of: Dict[NodeId, Rect],
+    layout_rect: Rect,
+    rows: Sequence[Tuple[Optional[NodeId], Optional[NodeId], Optional[NodeId]]],
+) -> List[Tuple[int, int]]:
+    raw: List[Optional[Tuple[int, int]]] = []
+    for triple in rows:
+        rects = []
+        for content in _form_contents(doc, triple).values():
+            rect = _content_rect_of(rect_of, content)
+            if rect is not None:
+                rects.append(rect)
+        if not rects:
+            raw.append(None)
+            continue
+        top = min(rect.y for rect in rects)
+        bottom = max(rect.y + rect.height for rect in rects)
+        raw.append((top, max(bottom - top, 1)))
+    if not raw:
+        return []
+    if all(band is None for band in raw):
+        height = max(layout_rect.height // max(len(raw), 1), 1)
+        return [(layout_rect.y + index * height, height) for index in range(len(raw))]
+    known = [band[1] for band in raw if band is not None]
+    default_height = known[0] if known else 24
+    filled: List[Tuple[int, int]] = []
+    cursor = layout_rect.y
+    for index, band in enumerate(raw):
+        if band is not None:
+            filled.append(band)
+            cursor = band[0] + band[1]
+            continue
+        nxt = next((item for item in raw[index + 1 :] if item is not None), None)
+        height = default_height
+        if nxt is not None and nxt[0] > cursor:
+            height = max(min(default_height, nxt[0] - cursor), 1)
+        filled.append((cursor, height))
+        cursor += height
+    return filled
+
+
+@dataclass(frozen=True)
+class OutlineRow:
+    """One visible outline row, in the outline viewport's pixels."""
+
+    node: NodeId
+    top: int
+    height: int
+    width: int = 200
+    left: int = 0
+
+
+def resolve_outline(
+    doc: UiDocument,
+    rows: Sequence[OutlineRow],
+    y: int,
+    payload: DropPayload,
+    blocked: FrozenSet[NodeId] = frozenset(),
+) -> DropTarget:
+    """Before, after, or into an outline row. The indicator uses outline pixels."""
+
+    row = _outline_row_at(rows, y)
+    if row is None or not doc.contains(row.node):
+        return NoDrop()
+    if row.node in blocked:
+        return _itself(_outline_host(row))
+    into = _outline_can_enter(doc, row.node)
+    band = _outline_band(row, y, into)
+    if band == "into":
+        return _outline_into(doc, row, payload)
+    return _outline_beside(doc, row, band == "before", payload)
 
 
 def _content_rect(
@@ -1257,3 +1402,168 @@ def _visible(node: object) -> str:
     if isinstance(node, LayoutNode):
         return node.object_name
     return ""
+
+
+def _outline_row_at(rows: Sequence[OutlineRow], y: int) -> Optional[OutlineRow]:
+    for row in rows:
+        if row.top <= y < row.top + max(row.height, 1):
+            return row
+    return None
+
+
+def _outline_band(row: OutlineRow, y: int, into: bool) -> str:
+    height = max(row.height, 1)
+    local = y - row.top
+    if into and local >= height / 3.0 and local < (2.0 * height) / 3.0:
+        return "into"
+    if y < row.top + height // 2:
+        return "before"
+    return "after"
+
+
+def _outline_can_enter(doc: UiDocument, node_id: NodeId) -> bool:
+    node = doc.get(node_id)
+    if isinstance(node, LayoutNode):
+        return True
+    if not isinstance(node, WidgetNode):
+        return False
+    if node.class_name in PAGE_CONTAINERS or node.layout is not None:
+        return True
+    return is_container(doc, node.id)
+
+
+def _outline_host(row: OutlineRow, node: Optional[NodeId] = None, kind: HostKind = "vbox", noun: str = "") -> DropHost:
+    return DropHost(
+        node or row.node,
+        kind,
+        "",
+        Rect(row.left, row.top, max(row.width, 1), max(row.height, 1)),
+        noun=noun,
+    )
+
+
+def _outline_line(row: OutlineRow, at_end: bool) -> DropIndicator:
+    y = row.top + max(row.height, 1) - 2 if at_end else row.top
+    return DropIndicator(Rect(row.left, max(y, 0), max(row.width, 1), 2))
+
+
+def _outline_body(row: OutlineRow) -> DropIndicator:
+    return DropIndicator(Rect(row.left, row.top, max(row.width, 1), max(row.height, 1)), dashed=True)
+
+
+def _outline_into(doc: UiDocument, row: OutlineRow, payload: DropPayload) -> DropTarget:
+    node = doc.node(row.node)
+    if isinstance(node, LayoutNode):
+        return _outline_layout_end(doc, node, row, payload)
+    if isinstance(node, WidgetNode) and node.class_name in PAGE_CONTAINERS and node.class_name != "QSplitter":
+        return _outline_open_page(doc, node, row, payload)
+    if isinstance(node, WidgetNode) and node.layout is not None:
+        return _outline_layout_end(doc, node.layout, row, payload)
+    if isinstance(node, WidgetNode) and is_container(doc, node.id) and not node.child_widgets:
+        host = _outline_host(row, node.id, "bare_empty")
+        label = node.object_name or "the container"
+        sentence = "Into %s · makes a vertical layout" % label
+        return _accept(host, "auto_layout", sentence, sentence, _outline_body(row))
+    if isinstance(node, WidgetNode) and is_container(doc, node.id):
+        host = _outline_host(row, node.id, "bare_free")
+        return _resolve_free(host, (row.left + 8, row.top + 8), payload)
+    return _outline_beside(doc, row, True, payload)
+
+
+def _outline_open_page(doc: UiDocument, widget: WidgetNode, row: OutlineRow, payload: DropPayload) -> DropTarget:
+    pages = widget.child_widgets
+    noun = "page" if widget.class_name in ("QToolBox", "QStackedWidget") else "tab"
+    if not pages:
+        host = _outline_host(row, widget.id, "pages", noun)
+        sentence = "New %s" % noun
+        return _accept(host, "new_page", sentence, sentence, _outline_body(row))
+    index = 0
+    entry = widget.prop("currentIndex")
+    value = getattr(getattr(entry, "value", None), "value", None)
+    if isinstance(value, int) and 0 <= value < len(pages):
+        index = value
+    page = pages[index]
+    if page.layout is not None:
+        return _outline_layout_end(doc, page.layout, row, payload)
+    nested = OutlineRow(page.id, row.top, row.height, row.width, row.left)
+    return _outline_into(doc, nested, payload)
+
+
+def _outline_beside(doc: UiDocument, row: OutlineRow, before: bool, payload: DropPayload) -> DropTarget:
+    parent = doc.parent(row.node)
+    if isinstance(parent, LayoutItemNode):
+        layout = doc.parent(parent.id)
+        if isinstance(layout, LayoutNode):
+            return _outline_layout_side(layout, parent, row, before, payload)
+    node = doc.get(row.node)
+    if isinstance(parent, WidgetNode) and parent.class_name in PAGE_CONTAINERS and isinstance(node, WidgetNode):
+        index = 0
+        for found, child in enumerate(parent.child_widgets):
+            if child.id == row.node:
+                index = found
+        at = index if before else index + 1
+        kind: HostKind = "splitter" if parent.class_name == "QSplitter" else "pages"
+        host = _outline_host(row, parent.id, kind)
+        name = _shown(_visible(node)) or "the item"
+        sentence = "Insert before %s" % name if before else "Insert after %s" % name
+        return _accept(host, "splitter", sentence, sentence, _outline_line(row, not before), index=at)
+    return NoDrop()
+
+
+def _outline_layout_side(
+    layout: LayoutNode,
+    item: LayoutItemNode,
+    row: OutlineRow,
+    before: bool,
+    payload: DropPayload,
+) -> AcceptedDrop:
+    host = _outline_host(row, layout.id, _LAYOUT_CLASS.get(layout.class_name, "vbox"))
+    name = _shown(_visible(item.content)) or "the item"
+    sentence = "Insert before %s" % name if before else "Insert after %s" % name
+    line = _outline_line(row, not before)
+    if layout.class_name == "QFormLayout":
+        at = (0 if item.row is None else item.row) + (0 if before else 1)
+        role: FormRole = "label" if payload.kind == "label" else "field"
+        return _accept(host, "form_row", sentence, sentence, line, row=at, role=role)
+    if layout.class_name == "QGridLayout":
+        at = (0 if item.row is None else item.row) + (0 if before else (1 if item.rowspan is None else item.rowspan))
+        column = 0 if item.column is None else item.column
+        return _accept(
+            host,
+            "grid_row",
+            sentence,
+            sentence,
+            line,
+            row=at,
+            column=column,
+            rowspan=payload.rowspan,
+            colspan=payload.colspan,
+        )
+    at = item.slot_index if before else item.slot_index + 1
+    return _accept(host, "box", sentence, sentence, line, index=at)
+
+
+def _outline_layout_end(doc: UiDocument, layout: LayoutNode, row: OutlineRow, payload: DropPayload) -> AcceptedDrop:
+    host = _outline_host(row, layout.id, _LAYOUT_CLASS.get(layout.class_name, "vbox"))
+    name = layout.object_name or "the layout"
+    sentence = "Insert into %s" % name
+    body = _outline_body(row)
+    if layout.class_name == "QFormLayout":
+        role: FormRole = "label" if payload.kind == "label" else "field"
+        return _accept(host, "form_row", sentence, sentence, body, row=len(form_rows(doc, layout.id)), role=role)
+    if layout.class_name == "QGridLayout":
+        rows = 0
+        for item in layout.items:
+            span = 1 if item.rowspan is None else item.rowspan
+            rows = max(rows, (0 if item.row is None else item.row) + span)
+        return _accept(
+            host,
+            "grid_cell",
+            sentence,
+            sentence,
+            body,
+            row=rows,
+            rowspan=payload.rowspan,
+            colspan=payload.colspan,
+        )
+    return _accept(host, "box", sentence, sentence, body, index=len(layout.items))

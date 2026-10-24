@@ -1897,6 +1897,10 @@ def _signature(text: str) -> str:
 
 
 def _default_name(class_name: str) -> str:
+    if class_name == "QVBoxLayout":
+        return "verticalLayout"
+    if class_name == "QHBoxLayout":
+        return "horizontalLayout"
     text = class_name[1:] if class_name.startswith("Q") and len(class_name) > 1 else class_name
     if not text:
         return "widget"

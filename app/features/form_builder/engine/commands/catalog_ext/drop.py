@@ -13,7 +13,7 @@ from typing import ClassVar, Optional, Tuple
 from app.features.form_builder.engine.commands import planning
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.catalog import _CommandBase
-from app.features.form_builder.engine.commands.ops import SetFieldOp
+from app.features.form_builder.engine.commands.ops import MoveNodeOp, SetFieldOp
 from app.features.form_builder.engine.commands.placement import InBoxLayout, InContainer, InFormRow
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import form_rows
@@ -176,6 +176,7 @@ class SwapFormRows(_CommandBase):
             ctx.do(SetFieldOp(item_id, "row", self.row))
         for item_id in here:
             ctx.do(SetFieldOp(item_id, "row", other))
+        _order_form_items(doc, ctx, self.layout)
 
 
 @dataclass(frozen=True)
@@ -188,8 +189,6 @@ class InsertPage(_CommandBase):
     merge_token: Optional[str] = None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
-        if self.fragment is None and not self.existing:
-            raise CommandRejected("There is nothing to place.")
         host = doc.node(self.container)
         count = len(host.child_widgets) if isinstance(host, WidgetNode) else 0
         page = NodeSpec(
@@ -204,6 +203,9 @@ class InsertPage(_CommandBase):
         )
         page_id = ids[0]
         layout_id = planning.apply_layout_command(doc, ctx, page_id, "QVBoxLayout", (), None)
+        if self.fragment is None and not self.existing:
+            ctx.select((page_id,), page_id)
+            return page_id
         if self.existing:
             planning.move_nodes(doc, ctx, self.existing, InBoxLayout(layout_id, 0))
             for node_id in self.existing:
@@ -218,6 +220,21 @@ class InsertPage(_CommandBase):
 def _clear_geometry(doc: UiDocument, ctx: PlanContext, node_id: NodeId) -> None:
     if doc.contains(node_id) and doc.node(node_id).prop("geometry") is not None:
         planning.set_property(doc, ctx, node_id, "geometry", None)
+
+
+def _order_form_items(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode):
+        return
+    ordered = sorted(
+        layout.items,
+        key=lambda item: (0 if item.row is None else item.row, 0 if item.column is None else item.column, item.slot_index),
+    )
+    for index, item in enumerate(ordered):
+        current = doc.node(item.id)
+        if not isinstance(current, LayoutItemNode) or current.slot_index == index:
+            continue
+        ctx.do(MoveNodeOp(item.id, layout_id, "layout_items", index))
 
 
 def _row_items(doc: UiDocument, layout_id: NodeId, row: int) -> Tuple[NodeId, ...]:
