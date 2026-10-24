@@ -14,10 +14,12 @@ from app.features.form_builder.engine.query.drop_target import DropPayload
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.integration.workbench import OutlinePane
 from app.features.form_builder.qtside.canvas.core.frame import Chip, Fill, Stroke
-from app.features.form_builder.qtside.canvas.core.gesture import PlaceAsked, PlaceDrop
+from app.features.form_builder.qtside.canvas.core.gesture import PlaceAsked, PlaceDrop, PlaceHover
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from tests.form_builder.qtside.support import form, opened
+from tests.form_builder.qtside.test_drop import _content_names, _layout, _port
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -226,6 +228,65 @@ def test_a_stacked_widget_shows_the_page_chip() -> None:
         parent.deleteLater()
 
 
+VERTICAL = form(
+    'class="QWidget" name="Form"',
+    """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="shop"><property name="text"><string>Shop</string></property></widget></item>
+   <item><widget class="QPushButton" name="receipts"><property name="text"><string>Receipts</string></property></widget></item>
+  </layout>
+""",
+)
+
+
+def test_an_outline_drop_reorders_the_row() -> None:
+    with opened(VERTICAL) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, 720, 520)
+        pane = _outline(canvas, parent, session)
+        receipts = session.document.by_name("receipts")[0]
+        canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget", (receipts,)), ""))
+        _flush()
+        pane._post_target(QPoint(12, 40), True)  # type: ignore[attr-defined]
+        _flush()
+        assert _content_names(_layout(session.document, "verticalLayout")) == ["receipts", "shop"]
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_an_insert_dropped_on_the_outline_lands_in_the_layout() -> None:
+    with opened(VERTICAL) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, 720, 520)
+        pane = _outline(canvas, parent, session)
+        canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget"), "QPushButton"))
+        _flush()
+        pane._post_target(QPoint(12, 40), True)  # type: ignore[attr-defined]
+        _flush()
+        assert _content_names(_layout(session.document, "verticalLayout")) == ["pushButton", "shop", "receipts"]
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_an_outline_drag_dropped_on_the_canvas_moves_the_widget() -> None:
+    with opened(VERTICAL) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, 720, 520)
+        shop = session.document.by_name("shop")[0]
+        canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget", (shop,)), ""))
+        _flush()
+        root = canvas.page_widget()
+        assert root is not None
+        receipts = root.findChild(QWidget, "receipts")
+        assert receipts is not None
+        below = receipts.mapTo(root, QPoint(receipts.width() // 2, receipts.height() - 2))
+        port = _port(canvas, root, below)
+        at = CanvasPoint(port.x(), port.y())
+        canvas.send(PlaceHover(at, True))
+        canvas.send(PlaceDrop(at, True))
+        _flush()
+        assert _content_names(_layout(session.document, "verticalLayout")) == ["receipts", "shop"]
+        canvas.dispose()
+        parent.deleteLater()
+
+
 def test_the_same_refusal_twice_toasts() -> None:
     with opened(FORM) as (session, realizer):
         canvas, parent, host = _canvas_host(session, realizer, 640, 480)
@@ -241,6 +302,16 @@ def test_the_same_refusal_twice_toasts() -> None:
         assert host.toasts
         canvas.dispose()
         parent.deleteLater()
+
+
+def _outline(canvas: FormCanvas, parent: QWidget, session) -> OutlinePane:  # type: ignore[no-untyped-def]
+    pane = OutlinePane(lambda _node: None, lambda _collapsed: None, parent)
+    pane.rebuild(session.document, None)
+    pane.set_drop_bridge(canvas.send, canvas.place_payload)  # type: ignore[arg-type]
+    pane.setGeometry(0, 0, 220, parent.height())
+    pane.show()
+    _flush()
+    return pane
 
 
 def _canvas(session, realizer, width: int, height: int):
