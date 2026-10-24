@@ -661,7 +661,7 @@ class SizeGroup:
 
 
 def register(registrar: Registrar) -> None:
-    registrar.group_body(GroupId.SIZE, SizeGroup)
+    registrar.group_body(GroupId.SIZE, SizeGroup, baseline=True)
 
 
 def _owners(rows: Tuple[Row, ...]) -> Tuple[NodeId, ...]:
