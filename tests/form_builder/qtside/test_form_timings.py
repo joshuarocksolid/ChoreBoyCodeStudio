@@ -65,4 +65,7 @@ def test_qsettings_flag_shows_the_same_meter(monkeypatch: pytest.MonkeyPatch, qa
     qapp.processEvents()
     assert label.isVisible()
     assert label.text() == "open 4 ms"
+    assert label.property("formTimingSeverity") in ("", None)
+    controller.set_form_timings("edit 40 ms", _Settings(True), over_budget=True)
+    assert label.property("formTimingSeverity") == "warning"
     window.deleteLater()

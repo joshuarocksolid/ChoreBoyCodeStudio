@@ -9,6 +9,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.editors.editor_manager import EditorManager  # noqa: E402
+from app.features.form_builder.engine.query.selection import SelectionSource  # noqa: E402
 from app.features.form_builder.engine.ui4.writer import write_ui  # noqa: E402
 from app.features.form_builder.install import PROVIDER_ID  # noqa: E402
 from app.features.form_builder.integration.content_source import open_document_log  # noqa: E402
@@ -122,6 +123,24 @@ def test_open_shows_the_form_name_and_structure(qapp) -> None:  # type: ignore[n
     assert "QPushButton  okButton" in labels
     assert surface.content_source().serialize_count == 0
     assert surface.source_editor() is None
+    surface.release()
+
+
+def test_selecting_a_widget_keeps_the_same_outline_items(qapp) -> None:  # type: ignore[no-untyped-def]
+    parent = QWidget()
+    canonical = write_ui(open_document_log(_FORM).document).text
+    surface = FormTabProvider().create_surface(_request(parent, canonical, "/tmp/invoice-keep.ui"))
+    assert isinstance(surface, FormSurface)
+    tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+    assert tree is not None
+    top = tree.topLevelItem(0)
+    button = surface._session.document.by_name("okButton")[0]  # noqa: SLF001
+    surface._session.selection.set((button,), current=button, source=SelectionSource.CANVAS)  # noqa: SLF001
+    qapp.processEvents()
+    assert tree.topLevelItem(0) is top
+    current = tree.currentItem()
+    assert current is not None
+    assert "okButton" in current.text(0)
     surface.release()
 
 

@@ -409,6 +409,7 @@ def _collect(
     rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
     rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no outline yet"))
 
     probe = documents[sizes[0]]
@@ -1000,6 +1001,103 @@ def _canvas_rows(
             _with_detail(edited, "SetProperty plus one frame. The hit index refreshes once. Inspector is not attached"),
         )
     finally:
+        canvas.dispose()
+        parent.deleteLater()
+        app.processEvents()
+        _dispose_held([realizer, session])
+
+
+def _outline_attached_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Selection with the outline listening. The unattached row stays separate."""
+    rows: List[Row] = []
+    for count in (300, 1000):
+        form = forms.get(count)
+        if form is None:
+            rows.append(
+                _missing(
+                    "selection change outline",
+                    count,
+                    _ms_budget(SELECTION_BUDGET_MS),
+                    "no %d-widget form in this run" % count,
+                )
+            )
+            continue
+        rows.append(
+            _outline_selection_row(form, count, samples, warmup, enforce_absolute, wall_on)
+        )
+    return tuple(rows)
+
+
+def _outline_selection_row(
+    form: ReferenceForm,
+    count: int,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    if QApplication.instance() is None:
+        QApplication([])
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    outline_mod = importlib.import_module("app.features.form_builder.integration.workbench")
+    nodes = importlib.import_module("app.features.form_builder.engine.ui4.nodes")
+    selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    outline = outline_mod.OutlinePane(lambda _node: None, lambda _collapsed: None, parent)
+    outline.rebuild(session.document, session.selection.state.current)
+    app = QApplication.instance()
+    assert app is not None
+
+    def on_selection(change: object) -> None:
+        after = getattr(change, "after", None)
+        outline.show_current(None if after is None else getattr(after, "current", None))
+
+    unsubscribe = session.selection.subscribe(on_selection)
+    parent.show()
+    for _ in range(4):
+        app.processEvents()
+    ids = [
+        node.id
+        for node in session.document.iter_preorder()
+        if isinstance(node, nodes.WidgetNode) and node.id != session.document.root.id
+    ]
+    if not ids:
+        ids = [session.document.root.id]
+    cursor = {"n": 0}
+
+    def choose() -> None:
+        cursor["n"] = (cursor["n"] + 1) % len(ids)
+        node_id = ids[cursor["n"]]
+        session.selection.set((node_id,), current=node_id, source=selection.SelectionSource.CANVAS)
+        app.processEvents()
+
+    try:
+        chosen = _timed(
+            "selection change outline",
+            count,
+            choose,
+            SELECTION_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        return _with_detail(chosen, "selection.set plus one frame. Outline show_current is attached")
+    finally:
+        unsubscribe()
         canvas.dispose()
         parent.deleteLater()
         app.processEvents()

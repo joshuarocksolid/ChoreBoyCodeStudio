@@ -5,7 +5,7 @@ Widths come from a ``LayoutPlan``. This module does not decide breakpoints.
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QSize, Qt
 from app.qt.QtGui import QBrush, QColor, QIcon
@@ -528,6 +528,7 @@ class OutlinePane(QWidget):
         self._collapsed = False
         self._hover: Optional[NodeId] = None
         self._hover_fill = ""
+        self._rows: Dict[int, QTreeWidgetItem] = {}
         self._send_hover: Optional[Callable[[HoverFrom], None]] = None
 
     def set_collapsed(self, collapsed: bool) -> None:
@@ -537,9 +538,9 @@ class OutlinePane(QWidget):
     def rebuild(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         self._blocked = True
         self.tree.clear()
+        self._rows = {}
         parents: dict[int, QTreeWidgetItem] = {}
         role = getattr(Qt, "UserRole")
-        current: Optional[QTreeWidgetItem] = None
         for entry in structure_entries(document):
             item = QTreeWidgetItem([entry.label])
             item.setData(0, role, int(entry.node_id))
@@ -551,24 +552,52 @@ class OutlinePane(QWidget):
             parents[entry.depth] = item
             for deeper in [key for key in parents if key > entry.depth]:
                 del parents[deeper]
-            if selected is not None and entry.node_id == selected:
-                current = item
+            self._rows[int(entry.node_id)] = item
         self.tree.expandAll()
-        if current is not None:
-            self.tree.setCurrentItem(current)
         self._blocked = False
-        self._paint_hover()
+        self.show_current(selected)
+        self._paint_row(self._hover)
+
+    def show_current(self, selected: Optional[NodeId]) -> None:
+        """Move the current row. Does not rebuild the tree."""
+        if selected is None:
+            item = None
+        else:
+            item = self._rows.get(int(selected))
+            if item is None:
+                return
+        self._blocked = True
+        self.tree.setCurrentItem(item)
+        if item is not None:
+            self.tree.scrollToItem(item)
+        self._blocked = False
+
+    def patch_labels(self, document: UiDocument, selected: Optional[NodeId]) -> None:
+        entries = tuple(structure_entries(document))
+        if len(entries) != len(self._rows):
+            self.rebuild(document, selected)
+            return
+        for entry in entries:
+            item = self._rows.get(int(entry.node_id))
+            if item is None:
+                self.rebuild(document, selected)
+                return
+            item.setText(0, entry.label)
+        self.show_current(selected)
 
     def set_hover_target(self, send: Callable[[HoverFrom], None]) -> None:
         self._send_hover = send
 
     def set_hover_fill(self, color: str) -> None:
         self._hover_fill = color
-        self._paint_hover()
+        self._paint_row(self._hover)
 
     def set_hover(self, node: Optional[NodeId]) -> None:
+        previous = self._hover
         self._hover = node
-        self._paint_hover()
+        if previous != node:
+            self._paint_row(previous)
+            self._paint_row(node)
 
     def hover_node(self) -> Optional[NodeId]:
         return self._hover
@@ -597,24 +626,14 @@ class OutlinePane(QWidget):
             return
         send(HoverFrom(node))
 
-    def _paint_hover(self) -> None:
-        role = getattr(Qt, "UserRole")
-        fill = QBrush(QColor(self._hover_fill)) if self._hover_fill else QBrush()
-        blank = QBrush()
-
-        def walk(item: QTreeWidgetItem) -> None:
-            raw = item.data(0, role)
-            hovered = self._hover is not None and raw is not None and int(raw) == int(self._hover)
-            item.setBackground(0, fill if hovered else blank)
-            for index in range(item.childCount()):
-                child = item.child(index)
-                if child is not None:
-                    walk(child)
-
-        for index in range(self.tree.topLevelItemCount()):
-            top = self.tree.topLevelItem(index)
-            if top is not None:
-                walk(top)
+    def _paint_row(self, node: Optional[NodeId]) -> None:
+        if node is None:
+            return
+        item = self._rows.get(int(node))
+        if item is None:
+            return
+        hovered = self._hover is not None and int(node) == int(self._hover) and bool(self._hover_fill)
+        item.setBackground(0, QBrush(QColor(self._hover_fill)) if hovered else QBrush())
 
     def _current_changed(self, current: Optional[QTreeWidgetItem], _previous: object) -> None:
         if self._blocked or current is None:
@@ -918,9 +937,14 @@ class FormWorkbench(QWidget):
     def canvas_view(self) -> FormCanvas:
         return self.canvas
 
-    def refresh(self, selected: Optional[NodeId]) -> None:
+    def refresh(self, selected: Optional[NodeId], outline: str = "rebuild") -> None:
         document = self._session.document
-        self.outline.rebuild(document, selected)
+        if outline == "patch":
+            self.outline.patch_labels(document, selected)
+        elif outline == "keep":
+            self.outline.show_current(selected)
+        else:
+            self.outline.rebuild(document, selected)
         self.inspector.show_selection(document, selected)
         self.canvas.refresh_chip()
 

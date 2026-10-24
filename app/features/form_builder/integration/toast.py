@@ -7,7 +7,7 @@ runs only while that command is still the top of the log.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, Qt, QTimer
 from app.qt.QtGui import QColor
@@ -34,23 +34,80 @@ class ToastNote:
     action: Optional[str]
     command: str
     depth: int
+    #: The log entry this note undoes. Identity, not the label.
+    entry: object = None
 
 
 def notice_for(label: str) -> Optional[str]:
-    """The command label when it is one the toast should confirm."""
+    """A sentence when ``label`` is a command the toast should confirm."""
+    return notice_sentence(label)
+
+
+def notice_sentence(label: str, names: Sequence[str] = ()) -> Optional[str]:
+    """``Deleted printButton``, ``Deleted 3 widgets``, or ``Changed the layout``."""
     folded = " ".join(label.strip().lower().split())
     if not folded:
         return None
+    phrase = _phrase(folded)
+    if phrase is None:
+        return None
+    if phrase[1] is None:
+        return phrase[0]
+    unique = tuple(dict.fromkeys(name for name in names if name))
+    verb = phrase[0]
+    if len(unique) == 1:
+        return "%s %s" % (verb, unique[0])
+    if len(unique) > 1:
+        return "%s %d widgets" % (verb, len(unique))
+    return "%s the selection" % verb
+
+
+def names_from_entry(entry: object) -> Tuple[str, ...]:
+    """Object names of the subtrees an undo would put back."""
+    names = []
+    for op in getattr(entry, "inverse_ops", ()):
+        name = _spec_name(getattr(op, "spec", None))
+        if name and name not in names:
+            names.append(name)
+    return tuple(names)
+
+
+def _spec_name(spec: object) -> Optional[str]:
+    field = getattr(spec, "field", None)
+    if not callable(field):
+        return None
+    name = field("object_name") or field("name")
+    if isinstance(name, str) and name:
+        return name
+    children = getattr(spec, "children", None)
+    if not callable(children):
+        return None
+    for slot, _kids in getattr(spec, "slots", ()):
+        for child in children(slot):
+            found = _spec_name(child)
+            if found:
+                return found
+    return None
+
+
+def _phrase(folded: str) -> Optional[Tuple[str, Optional[str]]]:
+    """``(sentence, None)`` or ``(verb, "named")`` for a regret command."""
+    if "remove layout" in folded:
+        return ("Removed the layout", None)
+    if "break layout" in folded:
+        return ("Broke the layout", None)
+    if "change layout" in folded:
+        return ("Changed the layout", None)
+    if "change widget" in folded or "morph" in folded:
+        return ("Changed the widget", None)
     if "unwrap" in folded:
-        return label.strip()
-    if "remove layout" in folded or "break layout" in folded:
-        return label.strip()
-    if "change layout" in folded or "change widget" in folded or "morph" in folded:
-        return label.strip()
-    if "delete" in folded or folded == "cut" or folded.startswith("cut "):
-        return label.strip()
+        return ("Unwrapped the selection", None)
+    if "delete" in folded:
+        return ("Deleted", "named")
+    if folded == "cut" or folded.startswith("cut "):
+        return ("Cut", "named")
     if "wrap" in folded:
-        return label.strip()
+        return ("Wrapped the selection", None)
     return None
 
 
@@ -58,8 +115,8 @@ def toast_duration_ms(has_action: bool) -> int:
     return _WITH_ACTION_MS if has_action else _PLAIN_MS
 
 
-def undo_matches(note: ToastNote, label: Optional[str], depth: int) -> bool:
-    return label == note.command and depth == note.depth
+def undo_matches(note: ToastNote, entry: object) -> bool:
+    return entry is not None and note.entry is entry
 
 
 class CommandToast(QFrame):

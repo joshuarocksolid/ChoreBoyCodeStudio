@@ -19,29 +19,31 @@ pytestmark = pytest.mark.usefixtures("qapp")
 
 
 @pytest.mark.parametrize(
-    ("label", "shows"),
+    ("label", "shows", "sentence"),
     [
-        ("Delete", True),
-        ("Cut", True),
-        ("Wrap", True),
-        ("Unwrap", True),
-        ("Change layout", True),
-        ("Change widget", True),
-        ("Break layout", True),
-        ("Remove layout", True),
-        ("Edit", False),
-        ("Move", False),
-        ("Rename", False),
+        ("Delete", True, "Deleted the selection"),
+        ("Cut", True, "Cut the selection"),
+        ("Wrap", True, "Wrapped the selection"),
+        ("Unwrap", True, "Unwrapped the selection"),
+        ("Change layout", True, "Changed the layout"),
+        ("Change widget", True, "Changed the widget"),
+        ("Break layout", True, "Broke the layout"),
+        ("Remove layout", True, "Removed the layout"),
+        ("Edit", False, ""),
+        ("Move", False, ""),
+        ("Rename", False, ""),
     ],
 )
-def test_a_toast_appears_only_for_the_regret_commands(tmp_path: Path, label: str, shows: bool) -> None:
+def test_a_toast_appears_only_for_the_regret_commands(
+    tmp_path: Path, label: str, shows: bool, sentence: str
+) -> None:
     parent, surface = _surface(tmp_path, label)
     try:
         _commit(surface, label)
         toast = _toast(surface)
         assert toast.isVisible() is shows
         if shows:
-            assert label in _body(toast)
+            assert _body(toast) == sentence
             assert toast.maximumWidth() == 480
             assert toast.width() <= 480
             assert not toast.isWindow()
@@ -66,6 +68,7 @@ def test_undo_on_the_toast_restores_the_deleted_widget(qapp, tmp_path: Path) -> 
         assert _page_button(surface) is None
         toast = _toast(surface)
         assert toast.isVisible()
+        assert _body(toast) == "Deleted okButton"
         assert qapp.focusWidget() is held
         undo = toast.findChild(QPushButton, "formBuilder.toastUndo")
         assert undo is not None

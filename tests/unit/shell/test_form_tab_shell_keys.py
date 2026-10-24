@@ -64,8 +64,24 @@ def _require_feature() -> None:
         pytest.skip("form builder is registered on PySide6")
 
 
-def _open_form(window: MainWindow, qapp: QApplication, path: Path) -> object:
-    path.write_text(_FORM, encoding="utf-8")
+_FREE = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QWidget" name="Invoice">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>640</width><height>480</height></rect></property>
+  <widget class="QPushButton" name="printButton">
+   <property name="geometry"><rect><x>40</x><y>40</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>Print</string></property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def _open_form(window: MainWindow, qapp: QApplication, path: Path, text: str = _FORM) -> object:
+    path.write_text(text, encoding="utf-8")
     assert window._editor_tab_factory.open_file_in_editor(str(path))  # noqa: SLF001
     # Without a project the center shows the welcome page. Show the editors.
     window._center_stack.setCurrentIndex(1)  # noqa: SLF001
@@ -423,5 +439,83 @@ def test_the_tree_lock_draws_its_shackle_in_the_muted_token(tmp_path: Path, qapp
             image.pixelColor(x, y).alpha() for y in range(1, 6) for x in range(16)
         ]
         assert max(shackle) > 128
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_ctrl_z_undoes_a_free_drag_and_edit_undo_enables(tmp_path: Path, qapp: QApplication) -> None:
+    _require_feature()
+    from app.qt.QtCore import QPoint
+
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "free.ui", _FREE)
+        canvas = surface.findChild(QWidget, "formBuilder.canvas")  # type: ignore[attr-defined]
+        assert canvas is not None
+        canvas.setFocus()
+        qapp.processEvents()
+        root = canvas.page_widget()
+        button = root.findChild(QWidget, "printButton")
+        assert root is not None and button is not None
+        origin = (button.x(), button.y())
+        center = button.mapTo(root, button.rect().center())
+        proxy = root.graphicsProxyWidget()
+        assert proxy is not None
+        start = canvas.mapFromScene(proxy.mapToScene(center))
+        end = canvas.mapFromScene(proxy.mapToScene(QPoint(center.x() + 48, center.y() + 24)))
+        button_mouse = getattr(Qt, "MouseButton", Qt)
+        left = getattr(button_mouse, "LeftButton")
+        mods = getattr(getattr(Qt, "KeyboardModifier", Qt), "NoModifier")
+        QTest.mousePress(canvas.viewport(), left, mods, start)
+        QTest.mouseMove(canvas.viewport(), end)
+        QTest.mouseRelease(canvas.viewport(), left, mods, end)
+        qapp.processEvents()
+        assert (button.x(), button.y()) != origin
+        undo = window.menu_registry.action("shell.action.edit.undo")
+        assert undo is not None and undo.isEnabled()
+        QTest.keyClick(canvas, Qt.Key_Z, Qt.ControlModifier)
+        qapp.processEvents()
+        assert (button.x(), button.y()) == origin
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_first_canvas_focus_states_how_to_leave_and_alt_keys_claim_their_targets(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    _require_feature()
+    from app.features.form_builder.qtside.canvas.core.words import FIRST_FOCUS_HINT
+
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "keys.ui")
+        canvas = surface.findChild(QWidget, "formBuilder.canvas")  # type: ignore[attr-defined]
+        tree = surface.findChild(QTreeWidget, "formBuilder.structure")  # type: ignore[attr-defined]
+        assert canvas is not None and tree is not None
+        tree.setFocus()
+        qapp.processEvents()
+        QTest.keyClick(tree, Qt.Key_3, Qt.AltModifier)
+        qapp.processEvents()
+        focused = qapp.focusWidget()
+        assert focused is canvas or canvas.isAncestorOf(focused)
+        assert _status_label(window).text() == FIRST_FOCUS_HINT  # type: ignore[attr-defined]
+        from app.features.form_builder.engine.query.selection import SelectionSource
+
+        button = surface._session.document.by_name("okButton")[0]  # type: ignore[attr-defined]  # noqa: SLF001
+        surface._session.selection.set((button,), current=button, source=SelectionSource.CANVAS)  # type: ignore[attr-defined]  # noqa: SLF001
+        qapp.processEvents()
+        assert _status_label(window).text() != FIRST_FOCUS_HINT  # type: ignore[attr-defined]
+        QTest.keyClick(canvas, Qt.Key_4, Qt.AltModifier)
+        qapp.processEvents()
+        assert "inspector" in _status_label(window).text().lower()  # type: ignore[attr-defined]
+        rename = window.menu_registry.action("shell.action.edit.renameSymbol")
+        assert rename is not None and not rename.isEnabled()
+        QTest.keyClick(canvas, Qt.Key_F2)
+        qapp.processEvents()
+        assert "rename" in _status_label(window).text().lower()  # type: ignore[attr-defined]
+        from app.qt.QtWidgets import QMessageBox
+
+        for box in window.findChildren(QMessageBox):
+            assert not box.isVisible()
     finally:
         shutdown_main_window_for_test(window, qapp)

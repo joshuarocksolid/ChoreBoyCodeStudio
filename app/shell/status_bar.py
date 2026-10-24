@@ -474,7 +474,7 @@ class ShellStatusBarController:
         self._run_label.setProperty("runSeverity", run_view.severity)  # type: ignore[arg-type]
         self._refresh_widget_style(self._run_label)
 
-    def set_form_timings(self, text: str, settings: object = None) -> None:
+    def set_form_timings(self, text: str, settings: object = None, *, over_budget: bool = False) -> None:
         """Show a developer timing on the right. Hidden unless the switch is on."""
         self._form_timings_text = text.strip()
         label = self._form_timings_label
@@ -483,6 +483,8 @@ class ShellStatusBarController:
         show = bool(self._form_timings_text) and form_timings_enabled(settings)
         label.setVisible(show)
         label.setText(self._form_timings_text if show else "")
+        label.setProperty("formTimingSeverity", "warning" if over_budget and show else "")
+        self._refresh_widget_style(label)
 
     @property
     def status_bar(self) -> "QStatusBar":

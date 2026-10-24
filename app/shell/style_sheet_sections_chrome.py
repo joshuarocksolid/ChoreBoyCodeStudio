@@ -176,6 +176,9 @@ QStatusBar#shell\\.statusBar QLabel {{
 QLabel#shell\\.formTimingsLabel {{
     color: {tokens.gutter_text};
 }}
+QLabel#shell\\.formTimingsLabel[formTimingSeverity="warning"] {{
+    color: {tokens.diag_warning_color};
+}}
 QLabel#shell\\.startupStatusLabel[startupSeverity="warning"],
 QLabel#shell\\.startupStatusLabel[startupSeverity="unknown"] {{
     color: {tokens.diag_warning_color};
