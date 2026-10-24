@@ -17,6 +17,7 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QTreeWidget,
     QShortcut,
     QStackedWidget,
     QTabWidget,
@@ -49,6 +50,7 @@ from app.features.form_builder.integration.chrome_text import (
     status_sentence,
     undo_menu_text,
 )
+from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
     FormContentSource,
@@ -270,6 +272,8 @@ class FormSurface(QWidget):
         self._stack.addWidget(self._workbench)
         layout.addWidget(self._stack, 1)
         self._command_toast = CommandToast(self)
+        self._problem_popover = ProblemPopover(self)
+        self._layout_popover: Optional[QWidget] = None
 
         self._load_memory()
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
@@ -563,6 +567,7 @@ class FormSurface(QWidget):
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._apply_responsive()
         self._command_toast.place()
+        self._problem_popover.place()
 
     def _on_design(self) -> None:
         if self._toolbar.xml.isChecked():
@@ -765,10 +770,38 @@ class FormSurface(QWidget):
         self._workbench.canvas.send(ZoomAsked(ZoomFit()))
 
     def open_problem(self, node: NodeId) -> None:
-        del node
+        items = self._session.diagnostics.for_node(node)
+        text = items[0].message if items else ""
+        if not text:
+            return
+        if self._reveal_problem(text):
+            self._problem_popover.hide()
+            return
+        self._problem_popover.show_message(text)
 
     def open_layout_popover(self, node: NodeId) -> None:
         del node
+        self._layout_popover = open_layout_menu(
+            self,
+            FORM_COMMANDS,
+            self.mapToGlobal(self.rect().center()),
+        )
+
+    def _reveal_problem(self, text: str) -> bool:
+        window = self.window()
+        panel = getattr(window, "_problems_panel", None)
+        tabs = getattr(window, "_bottom_tabs_widget", None) or getattr(window, "_problems_tab_widget", None)
+        reader = getattr(panel, "tree_widget", None)
+        if panel is None or tabs is None or not callable(reader):
+            return False
+        tree = reader()
+        if not isinstance(tree, QTreeWidget) or not tree_contains(tree, text):
+            return False
+        index = tabs.indexOf(panel)
+        if index < 0:
+            return False
+        tabs.setCurrentIndex(index)
+        return True
 
     def _refresh_design(self) -> None:
         current = self._session.selection.state.current
