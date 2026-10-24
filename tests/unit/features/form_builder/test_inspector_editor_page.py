@@ -236,3 +236,30 @@ def test_changed_bar_paints_the_accent_and_rows_stay_aligned(tmp_path: Path, qap
         ).x()
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def test_alignment_segments_show_the_value(tmp_path: Path, qapp: QApplication) -> None:
+    """An unset line edit reads Left; clicking Right checks Right and writes it."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        _show(surface, qapp, "email")
+        row = _row(surface, "alignment")
+        buttons = {button.toolTip(): button for button in row.findChildren(QToolButton) if button.toolTip()}
+        left, right = buttons["AlignLeft"], buttons["AlignRight"]
+        assert left.isChecked() and not right.isChecked()
+        # The checked segment looks different from the unchecked one under the shell style.
+        on = left.grab().toImage()
+        off = right.grab().toImage()
+        assert on.pixelColor(on.width() // 2, 2).name() != off.pixelColor(off.width() // 2, 2).name()
+        right.click()
+        surface._workbench.inspector.flush()  # noqa: SLF001
+        qapp.processEvents()
+        row = _row(surface, "alignment")
+        buttons = {button.toolTip(): button for button in row.findChildren(QToolButton) if button.toolTip()}
+        assert buttons["AlignRight"].isChecked() and not buttons["AlignLeft"].isChecked()
+        session = surface._session  # noqa: SLF001
+        written = session.document.node(session.document.by_name("email")[0]).prop("alignment")
+        assert written is not None and "AlignRight" in str(written)
+    finally:
+        shutdown_main_window_for_test(window, qapp)

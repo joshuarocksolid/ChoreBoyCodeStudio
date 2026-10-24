@@ -40,6 +40,7 @@ from app.qt.qt_compat import enum_value
 
 _HORIZONTAL = ("AlignLeft", "AlignHCenter", "AlignRight", "AlignJustify")
 _VERTICAL = ("AlignTop", "AlignVCenter", "AlignBottom")
+_ALIGN_ALIASES = {"AlignLeading": "AlignLeft", "AlignTrailing": "AlignRight"}
 _SHORT_ALIGN = {
     "AlignHCenter": "Center",
     "AlignVCenter": "Center",
@@ -176,7 +177,9 @@ class AlignmentEditor:
 
     def show(self, value: RowValue) -> None:
         mark(self._root, value)
-        chosen = set(_flag_tails(_set_text(value)))
+        # Qt names 1 AlignLeading and 2 AlignTrailing when it turns a value
+        # into keys, so a live default reads Leading, not Left.
+        chosen = {_ALIGN_ALIASES.get(name, name) for name in _flag_tails(_set_text(value))}
         for name, button in self._buttons:
             button.blockSignals(True)
             button.setChecked(name in chosen)
@@ -195,8 +198,11 @@ class AlignmentEditor:
             button.setText(_SHORT_ALIGN.get(name, name.replace("Align", "")))
             button.setToolTip(name)
             button.setCheckable(True)
+            button.setProperty("fbSegment", "true")
             button.setSizePolicy(_size_policy("Expanding"), _size_policy("Fixed"))
-            button.toggled.connect(self._commit)
+            # clicked, not toggled: the exclusive group also untoggles the old
+            # segment, which would commit a half-made value first.
+            button.clicked.connect(self._commit)
             group.addButton(button)
             layout.addWidget(button, index // 2, index % 2)
             self._buttons.append((name, button))

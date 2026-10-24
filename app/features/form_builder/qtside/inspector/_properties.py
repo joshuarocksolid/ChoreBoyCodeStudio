@@ -198,7 +198,9 @@ class PropertiesPage(QWidget):
             "QLabel#formBuilder\\.rowQtName, QLabel#formBuilder\\.rowDefault,"
             " QLabel#formBuilder\\.rowMixed, QLabel#formBuilder\\.formCaption { color: %s; }"
             "QCheckBox { color: %s; background: transparent; }"
-            "QToolButton { color: %s; background: transparent; border: none; }"
+            # Flat only for the row reset and group headers: an unscoped rule
+            # also hid the checked state of the alignment segments.
+            "QToolButton[fbFlat=\"true\"] { color: %s; background: transparent; border: none; }"
             "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
             " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"]"
             " { color: %s; }"
@@ -415,6 +417,7 @@ class _Group(QWidget):
         self._host: Optional[_GroupHost] = None
         self._toggle = QToolButton(self)
         self._toggle.setObjectName("formBuilder.group.%s" % group.value)
+        self._toggle.setProperty("fbFlat", "true")
         self._toggle.setText(group.title.upper())
         self._toggle.setFont(_overline_font())
         self._toggle.setCheckable(True)
@@ -646,6 +649,7 @@ class _Row(QWidget):
         if self._reset is None:
             button = QToolButton(self)
             button.setObjectName("formBuilder.rowReset")
+            button.setProperty("fbFlat", "true")
             button.setText("\u21ba")
             button.setFixedSize(16, 16)
             button.setAccessibleName("Reset")
