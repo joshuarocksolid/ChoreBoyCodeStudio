@@ -49,6 +49,8 @@ from tests.form_builder.engine.commands._support import button_spec
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS, ChangeSet
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.query.hit_index import GeoEntry, Rect
+from app.features.form_builder.engine.query.slots import CanvasGeom, NewCargo, Point, resolve
 from app.features.form_builder.engine.ui4 import defaults as class_defaults
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
@@ -92,6 +94,7 @@ OUTLINE_BUILD_BUDGET_MS = 15.0
 OPEN_BUDGET_MS = 150.0
 HIT_REFRESH_BUDGET_MS = {300: 4.0, 1000: 12.0}
 HIT_QUERY_BUDGET_MS = 0.2
+DROP_TARGET_BUDGET_MS = 2.0
 OVERLAY_BUDGET_MS = 4.0
 OUTLINE_PATCH_BUDGET_MS = 2.0
 EDIT_BUDGET_MS = 16.0
@@ -125,6 +128,8 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "hit index invalidate",
     "hit index refresh",
     "hit query",
+    "drop target @300",
+    "drop target @1000",
     "overlay paint",
     "outline patch",
     "edit total",
@@ -412,6 +417,7 @@ def _collect(
     )
     rows.extend(_structural_rows(forms, samples, warmup, enforce_absolute))
     rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_drop_target_rows(samples, warmup, enforce_absolute, wall_on))
     rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no separate patch timing"))
@@ -864,6 +870,88 @@ def _hit_rows(
             root.hide()
             _dispose_held([realizer, session])
     return tuple(invalidate_rows + refresh_rows + query_rows)
+
+
+def _drop_target_rows(
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    rows: List[Row] = []
+    for count in (300, 1000):
+        document, sight, point = _drop_sight(count)
+        cargo = NewCargo("QLineEdit", (80, 24))
+        row = _timed(
+            "drop target @%d" % count,
+            count,
+            lambda document=document, sight=sight, point=point, cargo=cargo: resolve(
+                document, sight, point, cargo, 0
+            ),
+            DROP_TARGET_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        rows.append(_with_detail(row, "resolve on synthetic canvas geometry"))
+    return tuple(rows)
+
+
+def _drop_sight(count: int) -> Tuple[UiDocument, CanvasGeom, Point]:
+    parts = ['<layout class="QVBoxLayout" name="verticalLayout">']
+    for index in range(count):
+        parts.append(
+            "<item>"
+            '<widget class="QPushButton" name="pushButton%d">'
+            '<property name="text"><string>Button</string></property>'
+            "</widget>"
+            "</item>" % index
+        )
+    parts.append("</layout>")
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<ui version="4.0">\n'
+        " <class>Form</class>\n"
+        ' <widget class="QWidget" name="Form">\n'
+        "%s\n"
+        " </widget>\n"
+        " <resources/>\n"
+        " <connections/>\n"
+        "</ui>\n"
+    ) % "".join(parts)
+    document = read_ui(text, allocator=IdAllocator()).document
+    root_found = document.by_name("Form")
+    if not root_found:
+        raise RuntimeError("synthetic drop form did not parse")
+    root = document.get(root_found[0])
+    if not isinstance(root, WidgetNode) or root.layout is None:
+        raise RuntimeError("synthetic drop form has no vertical layout")
+    layout = root.layout
+    height = 24
+    span = count * height
+    entries = [
+        GeoEntry(root.id, "widget", Rect(0, 0, 200, span), None, True, 0),
+        GeoEntry(layout.id, "layout", Rect(0, 0, 200, span), root.id, True, -1),
+    ]
+    for index, item in enumerate(layout.items):
+        content = item.content
+        if content is None:
+            raise RuntimeError("synthetic drop form has an empty cell")
+        entries.append(
+            GeoEntry(
+                content.id,
+                "widget",
+                Rect(0, index * height, 200, height),
+                layout.id,
+                True,
+                index,
+            )
+        )
+    # Mid-list, inside a child, so resolve walks the box instead of missing.
+    mid = count // 2
+    point = Point(100, mid * height + height // 2)
+    return document, CanvasGeom(tuple(entries), (48, 32), ()), point
 
 
 def _canvas_rows(
