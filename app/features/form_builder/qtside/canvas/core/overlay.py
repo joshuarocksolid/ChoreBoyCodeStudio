@@ -142,6 +142,8 @@ class StaticLayer:
     targets: Tuple[Tuple[CanvasRect, Target], ...]
     #: Unclipped canvas rect of every visible widget, layout and spacer.
     placed: Tuple[Obstacle, ...]
+    #: Stacked widgets and tool boxes. The page chip walks only these.
+    stacked: Tuple[NodeId, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -189,6 +191,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
     content: List[Obstacle] = []
     placed: List[Obstacle] = []
     unlaid: List[NodeId] = []
+    stacked: List[NodeId] = []
     targets: List[Tuple[CanvasRect, Target]] = []
 
     for node in document.iter_preorder():
@@ -221,6 +224,8 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
             continue
         if not isinstance(node, WidgetNode):
             continue
+        if node.class_name in _STACKED:
+            stacked.append(node.id)
         placed.append(Obstacle(node.id, canvas))
         clipped = _clip(canvas, page)
         if clipped is not None:
@@ -261,6 +266,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(unlaid),
         tuple(targets),
         tuple(placed),
+        tuple(stacked),
     )
 
 
@@ -505,9 +511,11 @@ def _page_arrows(
     inputs: FrameInputs,
 ) -> None:
     document = inputs.document
-    for node in document.iter_preorder():
-        if not isinstance(node, WidgetNode) or node.class_name not in _STACKED:
+    for node_id in static.stacked:
+        found = document.get(node_id)
+        if not isinstance(found, WidgetNode):
             continue
+        node = found
         pages = node.child_widgets
         if len(pages) < 2:
             continue
@@ -602,22 +610,21 @@ def _requests(
             _Face("chip", primary, role, text, None),
             required=True,
         )
-    for node in document.iter_preorder():
-        message = inputs.problems.get(node.id)
+    for node_id, message in inputs.problems.items():
         if not message:
             continue
-        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
+        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
         if rect is None:
             continue
         _ask(
             faces,
             requests,
-            ("badge", node.id),
+            ("badge", node_id),
             rect,
             CanvasSize(BADGE_SLOT, BADGE_SLOT),
             BADGE_CORNERS,
             document,
-            _Face("badge", node.id, "problem", message, OpenProblem(node.id, message)),
+            _Face("badge", node_id, "problem", message, OpenProblem(node_id, message)),
         )
     for node_id in static.unlaid:
         rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
