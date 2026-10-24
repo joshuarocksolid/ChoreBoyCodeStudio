@@ -82,6 +82,32 @@ def widget_class_phrase(class_name: str) -> str:
     return parts[0] + "".join(" " + part.lower() for part in parts[1:])
 
 
+MIXED_LAYOUT = "Select widgets in the same layout to wrap them."
+
+
+def mixed_parent_sentence(document: UiDocument, ids: tuple) -> str:
+    """The wrap explanation when the selection sits in more than one layout."""
+    if len(ids) < 2:
+        return ""
+    parents = {structural_parent(document, node_id) for node_id in ids}
+    if len(parents) <= 1:
+        return ""
+    return MIXED_LAYOUT
+
+
+def structural_parent(document: UiDocument, node_id: NodeId) -> Optional[NodeId]:
+    """The layout that holds the node, or the widget parent when it is free."""
+    parent = document.parent(node_id)
+    if isinstance(parent, LayoutItemNode):
+        layout = document.parent(parent.id)
+        if layout is None:
+            return None
+        return layout.id
+    if parent is None:
+        return None
+    return parent.id
+
+
 def status_sentence(gesture: str, overlay: str, inert: str, hover: str, selection: str) -> str:
     """Gesture, then overlay instruction, then a key note, then hover, then the selection."""
     if gesture:
@@ -199,6 +225,8 @@ def external_change_sentence(file_name: str) -> str:
 __all__ = [
     "draft_clock",
     "external_change_sentence",
+    "MIXED_LAYOUT",
+    "mixed_parent_sentence",
     "page_chip_label",
     "page_chip_text",
     "page_size_text",

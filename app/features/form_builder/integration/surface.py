@@ -43,6 +43,7 @@ from app.features.form_builder.engine.shell_commands import (
 from app.features.form_builder.engine.ui4.reader import UiReadError, kept_as_is_spans, read_ui
 from app.features.form_builder.integration.chrome_text import (
     external_change_sentence,
+    mixed_parent_sentence,
     recovered_draft_sentence,
     selection_sentence,
     status_sentence,
@@ -367,9 +368,14 @@ class FormSurface(QWidget):
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
 
+    def mixed_layout_blocked(self) -> bool:
+        state = self._session.selection.state
+        return bool(mixed_parent_sentence(self._session.document, state.ids))
+
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
-        selection = selection_sentence(self._session.document, state.current, len(state.ids))
+        mixed = mixed_parent_sentence(self._session.document, state.ids)
+        selection = mixed or selection_sentence(self._session.document, state.current, len(state.ids))
         return status_sentence(
             self._gesture_sentence,
             self._overlay_sentence,

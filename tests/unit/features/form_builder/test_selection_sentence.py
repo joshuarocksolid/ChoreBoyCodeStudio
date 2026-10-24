@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.ui4.reader import read_ui
-from app.features.form_builder.integration.chrome_text import selection_sentence, status_sentence
+from app.features.form_builder.integration.chrome_text import (
+    MIXED_LAYOUT,
+    mixed_parent_sentence,
+    selection_sentence,
+    status_sentence,
+)
 
 import pytest
 
@@ -25,6 +30,27 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
    </item>
    <item row="1" column="1">
     <widget class="QLineEdit" name="email"/>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+_GROUPED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="one"/></item>
+   <item><widget class="QPushButton" name="two"/></item>
+   <item>
+    <widget class="QGroupBox" name="box">
+     <layout class="QVBoxLayout" name="inner">
+      <item><widget class="QPushButton" name="three"/></item>
+     </layout>
+    </widget>
    </item>
   </layout>
  </widget>
@@ -65,6 +91,15 @@ _GROUP = """<?xml version="1.0" encoding="UTF-8"?>
  <connections/>
 </ui>
 """
+
+
+def test_widgets_in_different_layouts_cannot_share_a_wrap() -> None:
+    document = read_ui(_GROUPED, allocator=IdAllocator()).document
+    one = document.by_name("one")[0]
+    three = document.by_name("three")[0]
+    two = document.by_name("two")[0]
+    assert mixed_parent_sentence(document, (one, three)) == MIXED_LAYOUT
+    assert mixed_parent_sentence(document, (one, two)) == ""
 
 
 def test_gesture_text_wins_over_hover_and_the_selection() -> None:

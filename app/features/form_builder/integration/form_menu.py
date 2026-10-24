@@ -12,6 +12,7 @@ from app.qt.QtCore import QObject, Qt
 from app.qt.QtGui import QKeySequence
 
 from app.features.form_builder.engine.shell_commands import FormCommand, menu_commands, menu_hint
+from app.features.form_builder.integration.chrome_text import MIXED_LAYOUT
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.menu_action_builder import register_menu_action
 from app.shell.menus import register_menu_contributor
@@ -165,12 +166,31 @@ def _active_form(window: Any) -> Any:
     return None
 
 
+_SIBLING_COMMANDS = frozenset(
+    {
+        "form.action.layoutVertical",
+        "form.action.layoutHorizontal",
+        "form.action.layoutGrid",
+        "form.action.layoutForm",
+        "form.action.layoutHorizontalSplitter",
+        "form.action.layoutVerticalSplitter",
+        "form.action.wrap",
+        "form.action.unwrap",
+        "form.action.removeLayout",
+    }
+)
+
+
 def _sync(window: Any, menu: Any, actions: Dict[str, Any]) -> None:
-    visible = _active_form(window) is not None
+    surface = _active_form(window)
+    visible = surface is not None
+    blocked = bool(surface.mixed_layout_blocked()) if surface is not None else False
     menu_action = menu.menuAction()
     menu_action.setVisible(visible)
     by_id = {command.command_id: command for command in menu_commands()}
     for command_id, action in actions.items():
         command = by_id.get(command_id)
         available = command.available if command is not None else False
-        action.setEnabled(visible and available)
+        sibling_block = blocked and command_id in _SIBLING_COMMANDS
+        action.setEnabled(visible and available and not sibling_block)
+        action.setToolTip(MIXED_LAYOUT if sibling_block else "")
