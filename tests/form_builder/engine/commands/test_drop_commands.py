@@ -21,7 +21,7 @@ from app.features.form_builder.engine.query.drop_target import (
     DropPayload,
 )
 from app.features.form_builder.engine.query.hit_index import Rect
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.ui4.values import CStringValue, RectValue
 from tests.form_builder.engine.commands._support import button_spec, cell_of, nid, open_log, prop_text, saved
@@ -226,7 +226,7 @@ def test_a_grid_move_to_row_2_column_3_changes_only_that_cell() -> None:
     assert cell_of(log.document, "moved") == (1, 2)
     assert cell_of(log.document, "stay") == (0, 1)
     banner_item = log.document.parent(nid(log.document, "banner"))
-    assert banner_item is not None
+    assert isinstance(banner_item, LayoutItemNode)
     assert banner_item.row == 1 and banner_item.column == 0 and banner_item.colspan == 2
     assert log.undo()
     assert saved(log.document) == before
