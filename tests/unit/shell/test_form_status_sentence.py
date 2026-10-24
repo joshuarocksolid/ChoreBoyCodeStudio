@@ -46,17 +46,17 @@ def test_form_tab_status_matches_the_surface_sentence(tmp_path: Path, qapp: QApp
         assert label is not None
         surface = window._tab_content_registry.surface_for_path(str(ui_path))  # noqa: SLF001
         assert label.text() == surface.editor_status_sentence()
-        assert label.text() == "Invoice · Form layout"
+        assert label.text() == "Invoice · the form"
 
         assert surface.reveal(1, {"fb_object": "Invoice"})
         qapp.processEvents()
         assert label.text() == surface.editor_status_sentence()
-        assert label.text() == "Invoice · Form layout"
+        assert label.text() == "Invoice · the form"
 
         assert surface.reveal(1, {"fb_object": "okButton"})
         qapp.processEvents()
         assert label.text() == surface.editor_status_sentence()
         assert "okButton" in label.text()
-        assert label.text() != "Invoice · Form layout"
+        assert label.text() != "Invoice · the form"
     finally:
         shutdown_main_window_for_test(window, qapp)

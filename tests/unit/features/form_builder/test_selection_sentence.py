@@ -33,6 +33,39 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 </ui>
 """
 
+_SIZED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QWidget" name="Invoice">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>640</width><height>480</height></rect>
+  </property>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+_GROUP = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Invoice</class>
+ <widget class="QWidget" name="Invoice">
+  <widget class="QGroupBox" name="receiptGroup">
+   <layout class="QHBoxLayout" name="horizontalLayout">
+    <item>
+     <widget class="QPushButton" name="printButton"/>
+    </item>
+    <item>
+     <widget class="QPushButton" name="saveButton"/>
+    </item>
+   </layout>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
 
 def test_line_edit_in_a_form_layout_names_the_row() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
@@ -44,14 +77,28 @@ def test_line_edit_in_a_form_layout_names_the_row() -> None:
 
 def test_several_widgets_read_as_a_count() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
-    assert selection_sentence(document, document.by_name("email")[0], 3) == "3 widgets selected"
+    assert selection_sentence(document, document.by_name("email")[0], 3) == "3 selected"
 
 
 def test_nothing_selected_names_the_page() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
-    assert selection_sentence(document, None, 0) == "Invoice · Form layout"
+    assert selection_sentence(document, None, 0) == "Invoice · the form"
 
 
 def test_the_root_widget_names_the_page() -> None:
     document = read_ui(_FORM, allocator=IdAllocator()).document
-    assert selection_sentence(document, document.root.id, 1) == "Invoice · Form layout"
+    assert selection_sentence(document, document.root.id, 1) == "Invoice · the form"
+
+
+def test_the_form_sentence_includes_the_page_size() -> None:
+    document = read_ui(_SIZED, allocator=IdAllocator()).document
+    assert selection_sentence(document, None, 0) == "Invoice · the form · 640 × 480"
+
+
+def test_a_group_box_names_the_widgets_in_its_layout() -> None:
+    document = read_ui(_GROUP, allocator=IdAllocator()).document
+    group = document.by_name("receiptGroup")[0]
+    assert (
+        selection_sentence(document, group, 1)
+        == "receiptGroup · Group box · 2 widgets in a horizontal layout"
+    )

@@ -85,20 +85,53 @@ def widget_class_phrase(class_name: str) -> str:
 def selection_sentence(document: UiDocument, current: Optional[NodeId], count: int) -> str:
     """Status-bar sentence. Object names only. Never a session id."""
     if count > 1:
-        return "%d widgets selected" % count
+        return "%d selected" % count
     if current is None or current == document.root.id:
-        name, phrase = page_chip_text(document, "Form")
-        return "%s · %s" % (name, phrase)
+        return _form_sentence(document)
     node = document.get(current)
     if not isinstance(node, WidgetNode):
-        name, phrase = page_chip_text(document, "Form")
-        return "%s · %s" % (name, phrase)
+        return _form_sentence(document)
     name = node.object_name or "Widget"
     kind = widget_class_phrase(node.class_name)
+    contained = _contained_phrase(node)
+    if contained:
+        return "%s · %s · %s" % (name, kind, contained)
     place = _place_phrase(document, node)
     if place:
         return "%s · %s · %s" % (name, kind, place)
     return "%s · %s" % (name, kind)
+
+
+def _form_sentence(document: UiDocument) -> str:
+    name = document.root.object_name or "Form"
+    sentence = "%s · the form" % name
+    size = page_size_text(document)
+    if size:
+        return "%s · %s" % (sentence, size)
+    return sentence
+
+
+_CONTAINED_LAYOUT = {
+    "QHBoxLayout": "horizontal",
+    "QVBoxLayout": "vertical",
+    "QGridLayout": "grid",
+    "QFormLayout": "form",
+}
+
+
+def _contained_phrase(node: WidgetNode) -> str:
+    layout = node.layout
+    if not isinstance(layout, LayoutNode):
+        return ""
+    kind = _CONTAINED_LAYOUT.get(layout.class_name, "")
+    if not kind:
+        return ""
+    count = 0
+    for item in layout.items:
+        if isinstance(item.content, WidgetNode):
+            count += 1
+    noun = "widget" if count == 1 else "widgets"
+    return "%d %s in a %s layout" % (count, noun, kind)
 
 
 def _place_phrase(document: UiDocument, node: WidgetNode) -> str:
