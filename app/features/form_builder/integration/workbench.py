@@ -331,8 +331,10 @@ class FormToolbar(QWidget):
         self.overflow.setFocusPolicy(_strong())
         self.overflow.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
         self._menu = QMenu(self.overflow)
-        self._menu.addAction("Text size").setEnabled(False)
-        self._menu.addAction("Two widths").setEnabled(False)
+        self._text_menu_action = self._menu.addAction("Text size")
+        self._text_menu_action.setEnabled(False)
+        self._widths_menu_action = self._menu.addAction("Two widths")
+        self._widths_menu_action.setEnabled(False)
         self.overflow.setMenu(self._menu)
         self.overflow.hide()
         row.addWidget(self.overflow)
@@ -349,6 +351,40 @@ class FormToolbar(QWidget):
         beside = _button_style("ToolButtonTextBesideIcon")
         self.tab_order.setToolButtonStyle(beside)
         self.buddies.setToolButtonStyle(beside)
+
+    def attach_preview(self, preview: object) -> None:
+        """Turn on text size and two widths. Both stay off the document."""
+        self.text_size.setEnabled(True)
+        self.text_size.setToolTip("Text size")
+        self.text_size.setAccessibleName("Text size")
+        self.two_widths.setEnabled(True)
+        self.two_widths.setToolTip("Two widths")
+        self.two_widths.setAccessibleName("Two widths")
+        menu = QMenu(self.text_size)
+        menu.setObjectName("formBuilder.textSizeMenu")
+        for label, factor in (("Smaller", 0.85), ("Normal", 1.0), ("Larger", 1.25), ("Largest", 1.5)):
+            action = menu.addAction(label)
+            action.triggered.connect(lambda _checked=False, value=factor, target=preview: target.set_text_factor(value))
+        menu.addSeparator()
+        for percent in (100, 125, 150, 200):
+            action = menu.addAction("Screen %d%%" % percent)
+            action.triggered.connect(lambda _checked=False, value=percent, target=preview: target.set_screen(value))
+        self.text_size.setMenu(menu)
+        popup = getattr(getattr(QToolButton, "ToolButtonPopupMode", QToolButton), "InstantPopup")
+        self.text_size.setPopupMode(popup)
+        self.two_widths.clicked.connect(preview.toggle_widths)
+        wide = QMenu(self.two_widths)
+        wide.setObjectName("formBuilder.wideMenu")
+        for pixels in (1280, 1366, 1920):
+            action = wide.addAction("Wide · %d px" % pixels)
+            action.triggered.connect(lambda _checked=False, value=pixels, target=preview: target.set_wide(value))
+        self._text_menu_action.setEnabled(True)
+        self._text_menu_action.triggered.connect(self.text_size.showMenu)
+        self._widths_menu_action.setEnabled(True)
+        self._widths_menu_action.triggered.connect(preview.toggle_widths)
+        self.two_widths.setMenu(wide)
+        delayed = getattr(getattr(QToolButton, "ToolButtonPopupMode", QToolButton), "DelayedPopup")
+        self.two_widths.setPopupMode(delayed)
 
     def set_compact(self, compact: bool) -> None:
         self.tab_order.setText("" if compact else "Tab order")

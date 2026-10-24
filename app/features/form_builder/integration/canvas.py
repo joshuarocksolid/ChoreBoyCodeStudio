@@ -31,6 +31,7 @@ from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import HostEvent
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
+from app.features.form_builder.qtside.canvas.preview import FormPreview
 from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
@@ -115,6 +116,7 @@ class FormCanvas(QGraphicsView):
         self._stage.set_banner_push(PAGE_TITLE_HEIGHT)
         self._build_chrome()
         self._controller = CanvasController(self, session, realizer, self._index, self._stage, host)
+        self._preview = FormPreview(self, session, realizer, self._stage)
         # Same priority as the controller's view listener, subscribed after it,
         # so the caption follows the page the controller just placed.
         self._chrome_sub = session.log.subscribe(self._position_after, priority=PRIORITY_VIEWS)
@@ -135,6 +137,10 @@ class FormCanvas(QGraphicsView):
         self._stage.place()
         self._sync_title()
         self._position_chrome()
+
+    @property
+    def preview(self) -> FormPreview:
+        return self._preview
 
     def page_widget(self) -> Optional[QWidget]:
         root = self._realizer.root_widget
@@ -165,6 +171,11 @@ class FormCanvas(QGraphicsView):
             "QLabel#formBuilder\\.toast {"
             f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
             f" border: 1px solid {tokens.border}; padding: 4px 8px; }}"
+            "QLabel#formBuilder\\.previewPill, QLabel#formBuilder\\.narrowChip,"
+            " QLineEdit#formBuilder\\.wideChip {"
+            f" color: {tokens.text_primary}; background: {tokens.panel_bg};"
+            f" border: 1px solid {tokens.border}; border-radius: 4px; padding: 1px 6px;"
+            " font-size: 11px; }"
         )
         self._stage.apply_palette(self._palette.backdrop)
         fill = tokens.tree_selected_bg
@@ -217,6 +228,7 @@ class FormCanvas(QGraphicsView):
         self._stage.detach()
 
     def dispose(self) -> None:
+        self._preview.dispose()
         self._controller.dispose()
         self._chrome_sub.close()
         self._hit_sub.close()
@@ -226,6 +238,9 @@ class FormCanvas(QGraphicsView):
         controller = getattr(self, "_controller", None)
         if controller is None:
             return bool(super().viewportEvent(event))
+        preview = getattr(self, "_preview", None)
+        if preview is not None and preview.claim(event):
+            return True
         if controller.handle(event):
             _keep_claimed_shortcut(event)
             return True
@@ -248,12 +263,18 @@ class FormCanvas(QGraphicsView):
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
+        preview = getattr(self, "_preview", None)
+        if preview is not None:
+            preview.arrange()
         self._position_chrome()
 
     def drawForeground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         controller = getattr(self, "_controller", None)
         if controller is None:
             return
+        preview = getattr(self, "_preview", None)
+        if preview is not None:
+            preview.paint_cutoff(painter)
         frame = controller.frame
         paint_frame(painter, frame, self._palette, rect)
         self._title.set_docked(_docked(frame), self._palette)
@@ -296,6 +317,7 @@ class FormCanvas(QGraphicsView):
 
     def _position_after(self, _changeset: object) -> None:
         self._sync_title()
+        self._preview.arrange()
         self._position_chrome()
 
     def _scroll_moved(self, _value: int) -> None:
@@ -327,6 +349,9 @@ class FormCanvas(QGraphicsView):
         self._title.setFixedWidth(page_width)
         self._title.move(top_left.x(), title_y)
         self._title.raise_()
+        preview = getattr(self, "_preview", None)
+        if preview is not None:
+            preview.raise_chrome()
         self._frame.setGeometry(top_left.x(), title_y, page_width, page_height + PAGE_TITLE_HEIGHT)
         self._frame.lower()
         self._place_toast()

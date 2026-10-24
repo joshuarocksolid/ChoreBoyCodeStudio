@@ -298,6 +298,7 @@ class FormSurface(QWidget):
         )
         self._stack.addWidget(self._workbench)
         layout.addWidget(self._stack, 1)
+        self._toolbar.attach_preview(self._workbench.canvas.preview)
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
         self._layout_popover: Optional[QWidget] = None
@@ -340,6 +341,9 @@ class FormSurface(QWidget):
         self._rename_key = QShortcut(QKeySequence("F2"), self)
         self._rename_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._rename_key.activated.connect(self._rename_inert)
+        self._widths_key = QShortcut(QKeySequence("Ctrl+K, W"), self)
+        self._widths_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+        self._widths_key.activated.connect(self._workbench.canvas.preview.toggle_widths)
         self._esc = QShortcut(QKeySequence("Esc"), self)
         self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._esc.setEnabled(False)

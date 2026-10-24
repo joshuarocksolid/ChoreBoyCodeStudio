@@ -130,6 +130,8 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "edit total",
     "selection change",
     "inspector repopulate",
+    "sizing panel repopulate",
+    "sizing edit",
     "inspector select collapsed",
     "inspector select expanded",
     "is_dirty",
@@ -424,6 +426,7 @@ def _collect(
     rows.append(
         _inspector_shell_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
+    rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
     rows.append(
@@ -1884,6 +1887,94 @@ def _inspector_select_rows(
 
 
 SHELL_SELECT_POINT = "inspector select expanded shell"
+
+
+def _sizing_rows(
+    forms: Dict[int, Any],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """Repaint the Size group, then one sizing command, at 300 and 1000 widgets."""
+    names = ("sizing panel repopulate", "sizing edit")
+    budget = _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS)
+    rows: List[Row] = []
+    for count in (300, 1000):
+        form = forms.get(count)
+        if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
+            rows.extend(_missing(name, count, budget, "no form or no inspector") for name in names)
+            continue
+        try:
+            realize = importlib.import_module("app.features.form_builder.qtside.realize")
+            session_mod = importlib.import_module("app.features.form_builder.engine.session")
+            forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+            inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+            selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+            sizing_cmd = importlib.import_module("app.features.form_builder.engine.commands.catalog_ext.sizing")
+            values = importlib.import_module("app.features.form_builder.engine.ui4.values")
+            session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+        except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+            rows.extend(
+                Row(name, count, None, None, None, budget, "skip", str(exc)) for name in names
+            )
+            continue
+        pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+        pane.resize(288, 600)
+        pane.show()
+        target = _first_widget(session.document, "QLineEdit") or _first_widget(session.document, "QPushButton")
+        if target is None:
+            pane.dispose()
+            _dispose_held([realizer, session])
+            rows.extend(
+                Row(name, count, None, None, None, budget, "skip", "reference form has no widget")
+                for name in names
+            )
+            continue
+        session.selection.set((target,), source=selection.SelectionSource.PROGRAM)
+        pane.flush()
+        state = {"fill": False}
+
+        def edit(owner: Any = target, log: Any = session.log, cmd: Any = sizing_cmd, size_values: Any = values, flag: Dict[str, bool] = state) -> None:
+            flag["fill"] = not flag["fill"]
+            horizontal = "Expanding" if flag["fill"] else "Fixed"
+            log.execute(
+                cmd.ApplySizing(
+                    owner,
+                    size_values.SizePolicyValue(horizontal, "Preferred", 0, 0),
+                    touch_policy=True,
+                )
+            )
+
+        try:
+            rows.append(
+                _timed(
+                    names[0],
+                    count,
+                    pane.flush,
+                    INSPECTOR_REPOPULATE_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                )[0]
+            )
+            rows.append(
+                _timed(
+                    names[1],
+                    count,
+                    edit,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                )[0]
+            )
+        finally:
+            pane.dispose()
+            _dispose_held([realizer, session])
+    return rows
 
 
 def _inspector_shell_row(
