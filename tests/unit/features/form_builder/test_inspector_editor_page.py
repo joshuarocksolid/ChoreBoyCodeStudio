@@ -310,3 +310,47 @@ def test_escape_cancels_a_rename_and_a_text_edit(tmp_path: Path, qapp: QApplicat
             search.setText("")
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-INSP-013: after a slot is picked the Behavior list shows the new row."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        session = surface._session  # noqa: SLF001
+        pane = surface._workbench.inspector  # noqa: SLF001
+        sender = session.document.by_name("okButtonWithAVeryLongObjectName")[0]
+        _show(surface, qapp, "okButtonWithAVeryLongObjectName")
+        tabs = pane.findChild(QTabWidget)
+        assert tabs is not None
+        behavior = next(index for index in range(tabs.count()) if tabs.tabText(index).startswith("Behavior"))
+        tabs.setCurrentIndex(behavior)
+        pane.flush()
+        qapp.processEvents()
+        add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
+        add.click()
+        qapp.processEvents()
+        signal = pane.findChild(QComboBox, "formBuilder.draftSignal")
+        slot = pane.findChild(QComboBox, "formBuilder.draftSlot")
+        assert signal is not None and slot is not None
+        signal.hidePopup()
+        slot.setCurrentIndex(0)
+        slot.activated.emit(0)
+        pane.flush()
+        qapp.processEvents()
+        for popup in pane.findChildren(QComboBox):
+            popup.hidePopup()
+        assert len(session.document.connections()) == 1
+        assert session.selection.state.ids == (sender,)
+        assert tabs.tabText(behavior) == "Behavior (1)"
+        name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
+        assert name is not None and name.text() == "okButtonWithAVeryLongObjectName"
+        assert add.isEnabled()
+        assert pane.findChild(QWidget, "formBuilder.connectionDraft") is None
+        session.log.undo()
+        pane.flush()
+        qapp.processEvents()
+        assert session.document.connections() == ()
+        assert session.selection.state.ids == (sender,)
+    finally:
+        shutdown_main_window_for_test(window, qapp)

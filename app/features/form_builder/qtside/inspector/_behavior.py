@@ -3,8 +3,10 @@ from __future__ import annotations
 
 from typing import Dict, List, Literal, Optional, Tuple
 
+from app.features.form_builder.engine.commands.base import CommandOutcome
 from app.features.form_builder.engine.commands.catalog import AddConnection, DeleteNodes, EditConnection
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.nodes import ConnectionNode, WidgetNode
 from app.features.form_builder.qtside.inspector._live import live_classes
 from app.features.form_builder.qtside.inspector._services import Services
@@ -168,7 +170,17 @@ class BehaviorPage(QWidget):
         signal = draft.signal or self._add_signal
         receiver = draft.receiver or document.root.object_name
         self._clear_draft()
-        self._services.execute(AddConnection(view.sender_name, signal, receiver, chosen, index))
+        sender = view.sender
+        result = self._services.execute(AddConnection(view.sender_name, signal, receiver, chosen, index))
+        if not isinstance(result, CommandOutcome):
+            return
+        # AddConnection selects the new connection, which would swap the
+        # inspector to it. Keep the sender and open the new row (UX-INSP-013).
+        # Undo still restores the sender, the selection before the command.
+        added = result.result
+        if isinstance(added, int):
+            self._pending_open = NodeId(added)
+        self._services.session.selection.set((sender,), source=SelectionSource.INSPECTOR)
 
     def _clear_draft(self) -> None:
         self._draft = None
