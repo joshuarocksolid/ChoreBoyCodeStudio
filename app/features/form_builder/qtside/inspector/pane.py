@@ -150,7 +150,9 @@ class InspectorPane(QWidget):
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self.setStyleSheet(_stylesheet(chrome))
-        self.properties.apply_colors(chrome.panel, chrome.text, chrome.faint, chrome.row_hover)
+        self.properties.apply_colors(
+            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted
+        )
         self.properties.set_match_color(chrome.search_match_bg)
         self.behavior.apply_colors(chrome.panel, chrome.text)
         data = self.findChild(QWidget, "formBuilder.dataBody")
@@ -480,11 +482,11 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.border,
             chrome.input,
             chrome.text,
-            chrome.border,
+            chrome.accent,
             chrome.selected,
             chrome.text,
             chrome.accent,
-            chrome.faint,
+            chrome.muted,
             chrome.row_hover,
         )
     )

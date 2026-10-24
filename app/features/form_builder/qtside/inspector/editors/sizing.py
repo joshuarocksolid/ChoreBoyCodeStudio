@@ -44,13 +44,14 @@ from app.features.form_builder.qtside.sizing_live import (
     class_phrase,
     why_text,
 )
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QEvent, QObject, QTimer, Qt
 from app.qt.QtGui import QIntValidator
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QSizePolicy,
     QSpinBox,
     QToolButton,
     QVBoxLayout,
@@ -83,14 +84,21 @@ class SizeBody:
         self._why.setObjectName("formBuilder.sizeWhy")
         self._why.setAccessibleName("Why is it this size?")
         self._why.setWordWrap(True)
+        self._why.setMinimumWidth(0)
+        self._watched: Optional[QWidget] = None
+        self._watch = _ResizeWatch(self._queue_why, self._root)
+        self._why_timer = QTimer(self._root)
+        self._why_timer.setSingleShot(True)
+        self._why_timer.timeout.connect(self._refresh_why)
         layout.addWidget(self._width.widget)
-        layout.addWidget(self._height.widget)
         layout.addWidget(self._share_width.widget)
+        layout.addWidget(self._height.widget)
         layout.addWidget(self._share_height.widget)
         layout.addWidget(self._at_least.widget)
         layout.addWidget(self._at_most.widget)
         layout.addWidget(self._reset)
         layout.addWidget(self._why)
+        self._root.setMinimumWidth(0)
 
     @property
     def widget(self) -> QWidget:
@@ -113,6 +121,28 @@ class SizeBody:
         self._paint_limits(owners, projections)
         stored = any(node.prop("sizePolicy") is not None or _has_lock(node) for node in owners)
         self._reset.setVisible(stored)
+        self._watch_live(owners)
+        self._why.setText(self._why_text(owners))
+
+    def _watch_live(self, owners: Sequence[WidgetNode]) -> None:
+        widget = self._host.live(owners[0].id) if len(owners) == 1 else None
+        if widget is self._watched:
+            return
+        if self._watched is not None:
+            self._watched.removeEventFilter(self._watch)
+        self._watched = widget
+        if widget is not None:
+            widget.installEventFilter(self._watch)
+
+    def _queue_why(self) -> None:
+        if self._painting:
+            return
+        self._why_timer.start(0)
+
+    def _refresh_why(self) -> None:
+        if self._painting:
+            return
+        owners = [node for node in self._owners() if isinstance(node, WidgetNode)]
         self._why.setText(self._why_text(owners))
 
     def _owners(self) -> List[WidgetNode]:
@@ -311,7 +341,8 @@ class _AxisRow:
         self._bar.setMinimumHeight(18)
         line.addWidget(self._bar)
         self._label = QLabel(title, self.widget)
-        self._label.setFixedWidth(72)
+        self._label.setMinimumWidth(0)
+        self._label.setMaximumWidth(52)
         line.addWidget(self._label)
         self._buttons: Dict[str, QToolButton] = {}
         for word in WORDS:
@@ -391,6 +422,8 @@ class _ShareRow:
         self._box.setObjectName("formBuilder.size.share.%s.value" % axis)
         self._box.setRange(0, 999)
         self._box.setAccessibleName("Share of spare room")
+        self._box.setMinimumWidth(40)
+        _shrink_wide(self._box)
         self._box.setFocusPolicy(_strong())
         editor = self._box.lineEdit()
         if editor is not None:
@@ -435,7 +468,8 @@ class _LimitRow:
         self._bar.setFixedWidth(2)
         line.addWidget(self._bar)
         self._label = QLabel(title, self.widget)
-        self._label.setFixedWidth(72)
+        self._label.setMinimumWidth(0)
+        self._label.setMaximumWidth(52)
         line.addWidget(self._label)
         self._width = _blank_edit(self.widget, "%s width" % title, "formBuilder.size.%s.width" % name)
         self._height = _blank_edit(self.widget, "%s height" % title, "formBuilder.size.%s.height" % name)
@@ -590,7 +624,9 @@ def _blank_edit(parent: QWidget, accessible: str, object_name: str) -> QLineEdit
     edit.setValidator(QIntValidator(0, QWIDGET_SIZE_MAX, edit))
     edit.setAccessibleName(accessible)
     edit.setFocusPolicy(_strong())
-    edit.setFixedWidth(72)
+    edit.setMinimumWidth(40)
+    edit.setMaximumWidth(72)
+    _shrink_wide(edit)
     return edit
 
 
@@ -634,6 +670,26 @@ def _reset_button(parent: QWidget, object_name: str, accessible: str, on_click: 
     button.clicked.connect(on_click)
     button.hide()
     return button
+
+
+def _shrink_wide(widget: QWidget) -> None:
+    policy = widget.sizePolicy()
+    ignored = getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Ignored")
+    policy.setHorizontalPolicy(ignored)
+    widget.setSizePolicy(policy)
+    widget.setMinimumWidth(min(int(widget.minimumWidth()), 40) if widget.minimumWidth() > 0 else 0)
+
+
+class _ResizeWatch(QObject):
+    def __init__(self, refresh: object, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._refresh = refresh
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        resize = getattr(getattr(QEvent, "Type", QEvent), "Resize")
+        if event.type() == resize:
+            self._refresh()
+        return False
 
 
 def _strong() -> Qt.FocusPolicy:

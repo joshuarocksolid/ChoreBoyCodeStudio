@@ -112,6 +112,7 @@ def measure_axes(document: UiDocument, node_id: NodeId, widget: QWidget) -> Tupl
             horizontal.word == "Fixed",
             label_width,
             empty,
+            int(widget.minimumSizeHint().width()),
         ),
         _axis(
             "Height",
@@ -130,6 +131,7 @@ def measure_axes(document: UiDocument, node_id: NodeId, widget: QWidget) -> Tupl
             vertical.word == "Fixed",
             None,
             empty,
+            int(widget.minimumSizeHint().height()),
         ),
     )
 
@@ -151,6 +153,7 @@ def _axis(
     fixed: bool,
     form_label_width: Optional[int],
     canvas_empty: bool,
+    minimum_hint: int,
 ) -> AxisFacts:
     return AxisFacts(
         name,
@@ -172,6 +175,7 @@ def _axis(
         size > hint and policy in _SOFT and not fixed,
         form_label_width,
         canvas_empty,
+        minimum_hint,
     )
 
 

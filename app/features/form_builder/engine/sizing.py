@@ -22,8 +22,8 @@ WORD_FILL = "Fill"
 WORD_FIXED = "Fixed"
 WORDS = (WORD_HUG, WORD_FILL, WORD_FIXED)
 
-_FILL_POLICIES = frozenset({"Expanding", "MinimumExpanding", "Ignored"})
-_HUG_POLICIES = frozenset({"Preferred", "Fixed"})
+# Outlined class defaults only. A stored axis uses the three exact encodings.
+_OUTLINE_FILL = frozenset({"Expanding", "MinimumExpanding", "Ignored"})
 _SOFT_DEFAULTS = frozenset({"Preferred", "Minimum", "Maximum"})
 _CUSTOM_CLAUSE = {
     "Minimum": "grows, never smaller than its content",
@@ -110,6 +110,7 @@ class AxisFacts:
     grew: bool
     form_label_width: Optional[int] = None
     canvas_empty: bool = False
+    minimum_hint: int = 0
 
 
 def policy_tail(policy: str) -> str:
@@ -117,22 +118,33 @@ def policy_tail(policy: str) -> str:
 
 
 def effective_word(policy: str, fixed_size: bool) -> Optional[str]:
-    """The word the chip and the Size group share for a live policy."""
+    """A filled segment. Only three stored encodings name Hug, Fill, or Fixed.
+
+    Fixed with no lock is Hug. Expanding is Fill. Fixed whose minimum equals
+    its maximum is Fixed. Every other stored policy is custom.
+    """
     name = policy_tail(policy)
     if name == "Fixed" and fixed_size:
         return WORD_FIXED
-    if name in _FILL_POLICIES:
-        return WORD_FILL
-    if name in _HUG_POLICIES:
+    if name == "Fixed":
         return WORD_HUG
+    if name == "Expanding":
+        return WORD_FILL
     return None
 
 
 def outlined_word(class_default_policy: str) -> str:
-    """The outlined segment when the file stores no policy on this axis."""
-    if policy_tail(class_default_policy) in _FILL_POLICIES:
+    """The outlined segment for a class default that the file did not change."""
+    if policy_tail(class_default_policy) in _OUTLINE_FILL:
         return WORD_FILL
     return WORD_HUG
+
+
+def chip_axis(projection: AxisProjection) -> Optional[str]:
+    """The canvas chip label. A custom axis keeps the Qt policy name."""
+    if projection.custom:
+        return projection.policy_name or None
+    return projection.word
 
 
 def project_axis(
@@ -145,8 +157,10 @@ def project_axis(
 ) -> AxisProjection:
     """Project one axis. ``minimum`` and ``maximum`` are that axis only."""
     phrase = class_phrase.strip() or "widget"
-    if stored_policy is None:
-        default_name = policy_tail(class_default_policy) or "Preferred"
+    default_name = policy_tail(class_default_policy) or "Preferred"
+    locked = _limits_locked(minimum, maximum)
+    stored_name = None if stored_policy is None else policy_tail(stored_policy)
+    if stored_name is None or (stored_name == default_name and not locked):
         word = outlined_word(default_name)
         if default_name in _SOFT_DEFAULTS:
             caption = (
@@ -156,13 +170,7 @@ def project_axis(
         else:
             caption = "Default for %s" % _articled(phrase)
         return AxisProjection(word, False, False, None, default_name, caption)
-    name = policy_tail(stored_policy)
-    locked = (
-        minimum is not None
-        and maximum is not None
-        and minimum == maximum
-        and maximum < QWIDGET_SIZE_MAX
-    )
+    name = stored_name
     word = effective_word(name, locked)
     if word is None:
         clause = _CUSTOM_CLAUSE.get(name, "is a policy the three words do not name")
@@ -348,7 +356,7 @@ def preview_pill(
     elif float(text_factor) < 0.999:
         smaller = True
     screen_changed = int(screen_percent) != 100
-    if not larger and not smaller and not screen_changed and cut_off <= 0:
+    if not larger and not smaller and not screen_changed:
         return None
     bits = []
     if larger:
@@ -385,7 +393,7 @@ def _axis_sentence(axis: AxisFacts) -> str:
         parent = axis.parent_phrase or "layout"
         return "%s fills the room the %s gives it." % (axis.name, parent)
     if axis.squeezed:
-        floor = axis.minimum if axis.minimum_set else axis.minimum
+        floor = max(int(axis.minimum), int(axis.minimum_hint))
         return (
             "%s is squeezed below the %d px it asks for, because the window is too narrow. "
             "It can't go below %d px."
@@ -398,16 +406,39 @@ def _axis_sentence(axis: AxisFacts) -> str:
     if axis.minimum_set and axis.size <= axis.minimum:
         return "%s can't go below its minimum of %d px." % (axis.name, int(axis.minimum))
     if axis.word == WORD_HUG or axis.word is None:
-        kind = axis.class_phrase or "widget"
-        return "%s is what a %s needs for its content: %d px." % (axis.name, kind, int(axis.hint))
+        return _hug_sentence(axis)
     return ""
 
 
+def _hug_sentence(axis: AxisFacts) -> str:
+    """The content sentence only while the live size still matches the hint."""
+    kind = axis.class_phrase or "widget"
+    if abs(int(axis.size) - int(axis.hint)) <= 2:
+        return "%s is what a %s needs for its content: %d px." % (axis.name, kind, int(axis.hint))
+    if axis.maximum_set and int(axis.size) > int(axis.hint):
+        if int(axis.size) >= int(axis.maximum) - 2:
+            return "%s stops at its maximum of %d px." % (axis.name, int(axis.maximum))
+        return "%s is %d px, under its maximum of %d px." % (
+            axis.name,
+            int(axis.size),
+            int(axis.maximum),
+        )
+    floor = max(int(axis.minimum), int(axis.minimum_hint))
+    if int(axis.size) < int(axis.hint) and floor > 0:
+        return "%s can't go below its minimum of %d px." % (axis.name, int(floor))
+    return "%s is %d px." % (axis.name, int(axis.size))
+
+
 def _apply_word(word: str, pixels: Optional[int], low: int, high: int) -> Tuple[str, int, int]:
+    """Hug and Fill keep an At least or At most. A lock is the exception."""
     if word == WORD_HUG:
-        return "Fixed", 0, QWIDGET_SIZE_MAX
+        if _locked(low, high):
+            return "Fixed", 0, QWIDGET_SIZE_MAX
+        return "Fixed", low, high
     if word == WORD_FILL:
-        return "Expanding", 0, QWIDGET_SIZE_MAX
+        if _locked(low, high):
+            return "Expanding", 0, QWIDGET_SIZE_MAX
+        return "Expanding", low, high
     size = int(pixels or 0)
     return "Fixed", size, size
 
@@ -440,6 +471,15 @@ def _pair(size: Optional[SizeValue], fallback: int) -> Tuple[int, int]:
 
 def _locked(low: int, high: int) -> bool:
     return low == high and high < QWIDGET_SIZE_MAX
+
+
+def _limits_locked(minimum: Optional[int], maximum: Optional[int]) -> bool:
+    return (
+        minimum is not None
+        and maximum is not None
+        and minimum == maximum
+        and maximum < QWIDGET_SIZE_MAX
+    )
 
 
 def _size_or_none(width: int, height: int, empty: int) -> Optional[SizeValue]:

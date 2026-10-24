@@ -305,6 +305,21 @@ def test_the_property_page_does_not_scroll_sideways(qapp: QApplication) -> None:
         assert label.parentWidget().width() == 104
         pane.set_compact(True)
         assert label.parentWidget().width() == 96
+        window.resize(236, 640)
+        pane.set_group_expanded(GroupId.SIZE, True)
+        pane.flush()
+        qapp.processEvents()
+        assert scroll.viewport().width() <= 236
+        body = pane.findChild(QWidget, "formBuilder.sizeBody")
+        assert body is not None
+        assert body.width() <= scroll.viewport().width()
+        assert scroll.horizontalScrollBar().maximum() == 0
+        why = pane.findChild(QLabel, "formBuilder.sizeWhy")
+        assert why is not None and why.wordWrap()
+        for edit_name in ("formBuilder.size.minimumSize.width", "formBuilder.size.maximumSize.width"):
+            field = pane.findChild(QLineEdit, edit_name)
+            assert isinstance(field, QLineEdit)
+            assert field.minimumWidth() <= 40
     finally:
         _close(window, pane, realizer, session, qapp)
 

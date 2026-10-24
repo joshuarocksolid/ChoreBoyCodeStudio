@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
+import pytest
+
 from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing, from_write
 from app.features.form_builder.engine.sizing import (
     QWIDGET_SIZE_MAX,
@@ -9,10 +13,12 @@ from app.features.form_builder.engine.sizing import (
     WORD_FIXED,
     WORD_HUG,
     AxisFacts,
+    chip_axis,
     clear_property,
     effective_word,
     encode_axis,
     explain,
+    outlined_word,
     preview_pill,
     project_axis,
     reset_words,
@@ -264,8 +270,155 @@ def test_why_text_uses_only_the_measured_numbers() -> None:
     assert "what a push button needs for its content: 28 px." in text
 
 
+_POLICIES = (
+    "Fixed",
+    "Minimum",
+    "Maximum",
+    "Preferred",
+    "Expanding",
+    "MinimumExpanding",
+    "Ignored",
+)
+
+
+def _view(
+    policy: str,
+    default: str,
+    minimum: Optional[int] = None,
+    maximum: Optional[int] = None,
+):
+    return project_axis(
+        stored_policy=policy,
+        minimum=minimum,
+        maximum=maximum,
+        class_default_policy=default,
+        class_phrase="push button",
+    )
+
+
+@pytest.mark.parametrize("policy", _POLICIES)
+def test_a_stored_policy_fills_only_an_exact_encoding(policy: str) -> None:
+    default = "Minimum" if policy != "Minimum" else "Preferred"
+    viewed = _view(policy, default)
+    if policy == "Fixed":
+        assert viewed.word == WORD_HUG and viewed.filled and not viewed.custom
+    elif policy == "Expanding":
+        assert viewed.word == WORD_FILL and viewed.filled and not viewed.custom
+    else:
+        assert viewed.custom and viewed.word is None and not viewed.filled
+        assert viewed.policy_name == policy
+        assert chip_axis(viewed) == policy
+    assert effective_word(policy, False) == (
+        WORD_HUG if policy == "Fixed" else WORD_FILL if policy == "Expanding" else None
+    )
+
+
+@pytest.mark.parametrize("policy", _POLICIES)
+def test_a_stored_class_default_stays_outlined(policy: str) -> None:
+    viewed = _view(policy, policy)
+    assert not viewed.filled and not viewed.custom
+    assert viewed.word == outlined_word(policy)
+    assert chip_axis(viewed) == viewed.word
+
+
+def test_a_locked_fixed_axis_is_fixed_even_when_that_is_the_class_default() -> None:
+    viewed = _view("Fixed", "Fixed", 40, 40)
+    assert viewed.word == WORD_FIXED and viewed.filled and viewed.pixels == 40
+    assert chip_axis(viewed) == WORD_FIXED
+
+
+def test_mixed_axes_do_not_share_one_segment() -> None:
+    hug = _view("Fixed", "Preferred")
+    custom = _view("Ignored", "Preferred")
+    assert (hug.word, hug.filled, hug.custom) != (custom.word, custom.filled, custom.custom)
+    assert chip_axis(hug) == WORD_HUG
+    assert chip_axis(custom) == "Ignored"
+
+
+def test_fill_keeps_an_at_least_and_clears_only_a_lock() -> None:
+    kept = encode_axis(
+        axis="h",
+        word=WORD_FILL,
+        pixels=None,
+        current_policy=None,
+        current_minimum=SizeValue(200, 0),
+        current_maximum=None,
+        class_default_h="Preferred",
+        class_default_v="Preferred",
+    )
+    assert kept.minimum is not None and kept.minimum.width == 200
+    cleared = encode_axis(
+        axis="h",
+        word=WORD_HUG,
+        pixels=None,
+        current_policy=None,
+        current_minimum=SizeValue(80, 0),
+        current_maximum=SizeValue(80, QWIDGET_SIZE_MAX),
+        class_default_h="Preferred",
+        class_default_v="Preferred",
+    )
+    assert cleared.minimum is None
+    assert cleared.maximum is None
+
+
+def test_a_squeezed_axis_cannot_go_below_the_hint() -> None:
+    facts = (
+        AxisFacts(
+            "Width",
+            30,
+            80,
+            0,
+            QWIDGET_SIZE_MAX,
+            "Minimum",
+            None,
+            0,
+            0,
+            0,
+            "horizontal layout",
+            "push button",
+            False,
+            False,
+            False,
+            True,
+            False,
+            minimum_hint=23,
+        ),
+    )
+    text = explain(30, 24, facts, qt_names=False)
+    assert "can't go below 23 px." in text
+    assert "can't go below 0 px." not in text
+
+
+def test_hug_with_a_maximum_names_the_maximum_when_the_size_is_not_the_hint() -> None:
+    facts = (
+        AxisFacts(
+            "Width",
+            160,
+            105,
+            0,
+            160,
+            "Fixed",
+            WORD_HUG,
+            0,
+            0,
+            0,
+            "horizontal layout",
+            "push button",
+            False,
+            True,
+            False,
+            False,
+            False,
+        ),
+    )
+    text = explain(160, 28, facts, qt_names=False)
+    assert "stops at its maximum of 160 px." in text
+    assert "needs" not in text
+
+
 def test_preview_pill_is_absent_at_normal_and_names_a_cutoff() -> None:
     assert preview_pill(10, 1.0, 100, None, 0) is None
+    assert preview_pill(10, 1.0, 100, None, 3) is None
     assert preview_pill(10, 1.25, 100, None, 0) == "Previewing larger text · Reset"
     assert preview_pill(10, 1.25, 100, None, 2) == "Previewing larger text · 2 widgets cut off text · Reset"
     assert preview_pill(10, 1.0, 100, 16, 0) == "Previewing larger text · Reset"

@@ -176,7 +176,7 @@ class PropertiesPage(QWidget):
     def request_rebuild(self) -> None:
         self._on_search()
 
-    def apply_colors(self, panel: str, text: str, faint: str, hover: str = "") -> None:
+    def apply_colors(self, panel: str, text: str, faint: str, hover: str = "", caption: str = "") -> None:
         """The scroll viewport does not inherit the inspector stylesheet."""
         self.setStyleSheet(
             "QWidget#formBuilder\\.inspectorBody { background: %s; color: %s; }"
@@ -209,7 +209,7 @@ class PropertiesPage(QWidget):
             " QLineEdit[fbState=\"mixed\"], QFontComboBox[fbState=\"mixed\"], QCheckBox[fbState=\"mixed\"],"
             " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
             "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
-            % (panel, text, text, faint, text, text, faint, faint, faint, hover or panel)
+            % (panel, text, text, faint, text, text, faint, faint, caption or text, hover or panel)
         )
 
     def paint(self, body: BodyView) -> None:
