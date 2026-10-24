@@ -44,9 +44,10 @@ from app.features.form_builder.engine.ui4.values import (
 )
 from app.features.form_builder.qtside.inspector.api import EnumSpec
 from app.features.form_builder.qtside.inspector.model import LiveClass, LiveProperty
-from app.features.form_builder.qtside.realize import Realizer
+from app.features.form_builder.qtside.realize import CANVAS_OVERRIDES, Realizer
 from app.qt.QtCore import QMetaMethod, QMetaObject, QMetaProperty
-from app.qt.qt_compat import enum_value
+from app.qt.QtWidgets import QWidget
+from app.qt.qt_compat import delete_now, enum_value
 
 _ELEMENT_FOR_TYPE: Mapping[str, str] = {
     "QString": StringValue.ELEMENT,
@@ -83,6 +84,8 @@ _ELEMENT_FOR_TYPE: Mapping[str, str] = {
 }
 
 _CACHE: Dict[str, LiveClass] = {}
+# Class name -> the CANVAS_OVERRIDES values of an unmodified instance.
+_PRISTINE: Dict[str, Dict[str, Optional[Value]]] = {}
 
 def live_classes(
     realizer: Realizer,
@@ -204,10 +207,39 @@ def _methods(meta: QMetaObject) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
     return tuple(signals), tuple(slots)
 
 def _stamp_values(obj: object, shape: LiveClass) -> LiveClass:
+    pristine = _pristine_values(obj, shape)
     stamped = []
     for prop in shape.properties:
-        stamped.append(dataclasses.replace(prop, value=_read_value(obj, prop)))
+        if prop.name in pristine:
+            value = pristine[prop.name]
+        else:
+            value = _read_value(obj, prop)
+        stamped.append(dataclasses.replace(prop, value=value))
     return LiveClass(shape.chain, tuple(stamped), shape.signals, shape.slots)
+
+
+def _pristine_values(obj: object, shape: LiveClass) -> Dict[str, Optional[Value]]:
+    """The canvas-overridden properties, read once per class from a fresh widget."""
+    if not isinstance(obj, QWidget):
+        return {}
+    key = _text(obj.metaObject().className())
+    cached = _PRISTINE.get(key)
+    if cached is not None:
+        return cached
+    found: Dict[str, Optional[Value]] = {}
+    overridden = [prop for prop in shape.properties if prop.name in CANVAS_OVERRIDES]
+    if overridden:
+        try:
+            fresh = type(obj)()
+        except (TypeError, RuntimeError):
+            fresh = None
+        for prop in overridden:
+            found[prop.name] = None if fresh is None else _read_value(fresh, prop)
+        if fresh is not None:
+            delete_now(fresh)
+    if key:
+        _PRISTINE[key] = found
+    return found
 
 
 def _read_value(obj: object, prop: LiveProperty) -> Optional[Value]:

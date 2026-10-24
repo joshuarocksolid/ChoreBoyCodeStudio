@@ -75,6 +75,11 @@ from app.features.form_builder.qtside.realize.slots import (
 )
 
 STAND_IN_PROPERTY = "_cbcsStandIn"
+# Q_PROPERTYs that ``_construct`` overrides on every canvas widget so the canvas
+# keeps the keyboard and the native menu bar. The live widget holds the
+# canvas's value, not the class's, so the inspector reads these from an
+# unmodified instance. Keep this in step with ``_construct``.
+CANVAS_OVERRIDES = frozenset({"focusPolicy", "nativeMenuBar"})
 
 _PAGE_CLASSES = frozenset(
     {

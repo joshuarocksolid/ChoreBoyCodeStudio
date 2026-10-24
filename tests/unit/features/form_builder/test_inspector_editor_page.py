@@ -16,6 +16,7 @@ from app.qt.QtWidgets import (  # noqa: E402
     QCheckBox,
     QComboBox,
     QLabel,
+    QLineEdit,
     QScrollArea,
     QSpinBox,
     QWidget,
@@ -111,3 +112,38 @@ def test_editor_page_shows_live_defaults_and_the_form_size(tmp_path: Path, qapp:
         assert box is not None and box.isChecked() == bool(widget.isEnabled())
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def test_all_properties_show_the_class_value_not_the_canvas_override(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-INSP-008: the canvas turns focus off on every widget; the inspector must not show that."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        session = surface._session  # noqa: SLF001
+        pane = surface._workbench.inspector  # noqa: SLF001
+        email = session.document.by_name("email")[0]
+        session.selection.set((email,), source=SelectionSource.PROGRAM)
+        pane.set_group_expanded(GroupId.ALL, True)
+        pane.flush()
+        qapp.processEvents()
+        widget = surface._realizer.widget_for(email)  # noqa: SLF001
+        assert widget is not None
+        no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
+        assert enum_value(widget.focusPolicy()) == enum_value(no_focus)
+        policy = surface.findChild(QWidget, "formBuilder.row.focusPolicy")
+        tracking = surface.findChild(QWidget, "formBuilder.row.mouseTracking")
+        assert policy is not None and tracking is not None
+        combo = policy.findChild(QComboBox)
+        box = tracking.findChild(QCheckBox)
+        assert combo is not None and box is not None
+        assert combo.currentText() == "StrongFocus"
+        # Qt's own QLineEdit constructor turns tracking on, so the class value
+        # comes from a fresh line edit rather than a constant.
+        fresh = QLineEdit()
+        try:
+            assert box.isChecked() == fresh.hasMouseTracking()
+        finally:
+            fresh.deleteLater()
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
