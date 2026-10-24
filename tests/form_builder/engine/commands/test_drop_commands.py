@@ -13,7 +13,7 @@ from app.features.form_builder.engine.commands.catalog_ext.drop import (
     SwapFormRows,
     WrapWithNew,
 )
-from app.features.form_builder.engine.commands.drop_plan import commands_for
+from app.features.form_builder.engine.commands.drop_plan import commands_for, nudge_commands
 from app.features.form_builder.engine.commands.placement import InGridCell
 from app.features.form_builder.engine.query.drop_target import (
     AcceptedDrop,
@@ -231,6 +231,19 @@ def test_a_grid_move_to_row_2_column_3_changes_only_that_cell() -> None:
     assert log.undo()
     assert saved(log.document) == before
     assert cell_of(log.document, "moved") == (0, 0)
+
+
+def test_a_form_nudge_swaps_the_two_rows() -> None:
+    log = open_log(FORM)
+    layout = log.document.root.layout
+    assert layout is not None
+    log.execute(InsertFormRow(layout.id, 1, fragment=Fragment(nodes=(button_spec("go", "Go"),))))
+    commands = nudge_commands(log.document, (nid(log.document, "go"),), "up")
+    assert len(commands) == 1
+    assert isinstance(commands[0], SwapFormRows)
+    log.execute(commands[0])
+    assert cell_of(log.document, "go") == (0, 1)
+    assert cell_of(log.document, "email") == (1, 1)
 
 
 def test_swapping_form_rows_exchanges_only_those_rows() -> None:

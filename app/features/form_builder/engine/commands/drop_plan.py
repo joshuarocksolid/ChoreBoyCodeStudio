@@ -19,6 +19,7 @@ from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
     InsertPage,
+    SwapFormRows,
     WrapWithNew,
 )
 from app.features.form_builder.engine.commands.placement import (
