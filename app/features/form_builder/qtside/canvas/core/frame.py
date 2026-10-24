@@ -33,6 +33,7 @@ class Stroke:
     width: float
     style: Literal["solid", "dashed", "dotted"]
     alpha: float = 1.0
+    caps: bool = False
 
 
 @dataclass(frozen=True)
@@ -68,6 +69,7 @@ class Chip:
     leader: Optional[Leader]
     #: In the dock strip. The view paints it as chrome above the page caption.
     docked: bool = False
+    tip: str = ""
 
 
 @dataclass(frozen=True)
@@ -105,7 +107,20 @@ class OpenProblem:
     message: str
 
 
-ChipAction = Union[OpenLayoutPopover, OpenProblem]
+@dataclass(frozen=True)
+class AddPage:
+    container: NodeId
+
+
+@dataclass(frozen=True)
+class ShowStacked:
+    """``delta`` is -1 or 1. Zero means the click position picks the arrow."""
+
+    container: NodeId
+    delta: int = 0
+
+
+ChipAction = Union[OpenLayoutPopover, OpenProblem, AddPage, ShowStacked]
 
 
 @dataclass(frozen=True)

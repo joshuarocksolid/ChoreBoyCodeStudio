@@ -86,4 +86,12 @@ def fragment_for(key: str) -> Optional[Fragment]:
     fields = (("class_name", class_name), ("object_name", _OBJECT_NAMES.get(class_name, "widget")))
     text = _TEXT.get(class_name)
     properties = () if text is None else (PropertyEntry("property", "text", StringValue(text)),)
-    return Fragment(nodes=(NodeSpec("widget", None, fields, properties),))
+    slots = ()
+    if class_name in ("QGroupBox", "QFrame", "QScrollArea", "QWidget"):
+        layout = NodeSpec(
+            "layout",
+            None,
+            (("class_name", "QVBoxLayout"), ("object_name", "verticalLayout")),
+        )
+        slots = (("layout", (layout,)),)
+    return Fragment(nodes=(NodeSpec("widget", None, fields, properties, (), slots),))

@@ -75,8 +75,45 @@ def _paint_one(painter: QPainter, item: Item, palette: CanvasPalette) -> None:
 def _stroke(painter: QPainter, item: Stroke, palette: CanvasPalette) -> None:
     width = max(item.width, palette.overlay.min_stroke)
     painter.setBrush(_no_brush())
+    if item.caps:
+        _capped_line(painter, item, palette, width)
+        return
     painter.setPen(_pen(_ink(palette, item.role, item.alpha), width, item.style))
     painter.drawRect(_box(item.rect))
+
+
+def _capped_line(painter: QPainter, item: Stroke, palette: CanvasPalette, width: float) -> None:
+    rect = item.rect
+    ink = _ink(palette, item.role, item.alpha)
+    horizontal = rect.width >= rect.height
+    if horizontal:
+        y = rect.y + rect.height / 2.0
+        start = rect.x
+        end = rect.x + rect.width
+        painter.setPen(_round_pen(ink, width))
+        painter.drawLine(QPointF(start, y), QPointF(end, y))
+        _cap(painter, ink, start, y)
+        _cap(painter, ink, end, y)
+        return
+    x = rect.x + rect.width / 2.0
+    start = rect.y
+    end = rect.y + rect.height
+    painter.setPen(_round_pen(ink, width))
+    painter.drawLine(QPointF(x, start), QPointF(x, end))
+    _cap(painter, ink, x, start)
+    _cap(painter, ink, x, end)
+
+
+def _cap(painter: QPainter, ink: QColor, x: float, y: float) -> None:
+    painter.setPen(_no_pen())
+    painter.setBrush(ink)
+    painter.drawEllipse(QPointF(x, y), 3.0, 3.0)
+
+
+def _round_pen(color: QColor, width: float) -> QPen:
+    pen = _pen(color, width, "solid")
+    pen.setCapStyle(getattr(getattr(Qt, "PenCapStyle", Qt), "RoundCap"))
+    return pen
 
 
 def _fill(painter: QPainter, item: Fill, palette: CanvasPalette) -> None:

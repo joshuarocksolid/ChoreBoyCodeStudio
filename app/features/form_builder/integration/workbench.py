@@ -35,11 +35,11 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertFormRow
 from app.features.form_builder.engine.commands.drop_plan import auto_commands
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.qtside.canvas.core.gesture import (
     EditTextAsked,
     HoverFrom,
+    PlaceAsked,
     PlaceDrop,
     PlaceHover,
 )
@@ -54,14 +54,14 @@ from app.features.form_builder.engine.query.drop_target import (
     AcceptedDrop,
     DropPayload,
     NoDrop,
+    OutlineRow,
     blocked_ids,
-    hosts_from,
-    resolve_drop,
+    resolve_outline,
 )
-from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, FormPoint
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.integration.canvas import FormCanvas, _drop_payload
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.canvas.controller import CanvasHost
 from app.features.form_builder.integration.layout import (
@@ -585,6 +585,8 @@ class OutlinePane(QWidget):
         self._drop_line = QFrame(self.tree.viewport())
         self._drop_line.setObjectName("formBuilder.outlineDrop")
         self._drop_line.setFixedHeight(2)
+        self._drop_color = ""
+        self._paint_drop_line()
         self._drop_line.hide()
         self._spring = QTimer(self)
         self._spring.setSingleShot(True)
@@ -662,6 +664,10 @@ class OutlinePane(QWidget):
         self._hover_fill = color
         self._paint_row(self._hover)
 
+    def set_drop_color(self, color: str) -> None:
+        self._drop_color = color
+        self._paint_drop_line()
+
     def set_hover(self, node: Optional[NodeId]) -> None:
         previous = self._hover
         self._hover = node
@@ -686,24 +692,43 @@ class OutlinePane(QWidget):
         action = getattr(getattr(Qt, "DropAction", Qt), "MoveAction")
         starter = getattr(drag, "exec", None) or getattr(drag, "exec_")
         starter(action)
+        self._finish_drag()
 
-    def _move_line(self, pos: QPoint) -> None:
+    def _finish_drag(self) -> None:
+        self._drop_line.hide()
+        self._spring.stop()
+        self._spring_item = None
+        post = self._post
+        if post is not None:
+            post(PlaceDrop(CanvasPoint(0, 0), True, None, True))
+
+    def _arm_row_spring(self, pos: QPoint) -> None:
         item = self.tree.itemAt(pos)
-        if item is None:
-            self._drop_line.hide()
-            return
-        rect = self.tree.visualItemRect(item)
-        y = rect.y() if pos.y() < rect.center().y() else rect.bottom()
-        self._drop_line.setGeometry(rect.x(), y, rect.width(), 2)
-        self._drop_line.show()
-        self._drop_line.raise_()
-        if not item.isExpanded() and item.childCount():
+        if item is not None and not item.isExpanded() and item.childCount():
             if item is not self._spring_item:
                 self._spring_item = item
                 self._spring.start()
-        else:
-            self._spring.stop()
-            self._spring_item = None
+            return
+        self._spring.stop()
+        self._spring_item = None
+
+    def _paint_drop_line(self) -> None:
+        color = self._drop_color or self.tree.palette().highlight().color().name()
+        self._drop_line.setStyleSheet(
+            "QFrame#formBuilder\\.outlineDrop { background: %s; border: none; }" % color
+        )
+
+    def _show_line(self, target: object) -> None:
+        if not isinstance(target, AcceptedDrop):
+            self._drop_line.hide()
+            return
+        rect = target.indicator.rect
+        height = max(rect.height, 2)
+        self._paint_drop_line()
+        self._drop_line.setFixedHeight(height)
+        self._drop_line.setGeometry(rect.x, rect.y, max(rect.width, 1), height)
+        self._drop_line.show()
+        self._drop_line.raise_()
 
     def _expand_hovered(self) -> None:
         item = self._spring_item
@@ -715,17 +740,52 @@ class OutlinePane(QWidget):
         if post is not None:
             post(PlaceHover(CanvasPoint(0, 0), True, None, True))
 
+    def _ensure_placing(self, event: QEvent, pos: QPoint) -> None:
+        payload_of = self._payload
+        if payload_of is not None and payload_of() is not None:
+            return
+        doc = self._document
+        post = self._post
+        if doc is None or post is None:
+            return
+        parsed = _drop_payload(event, doc)
+        if parsed is None:
+            return
+        body, key = parsed
+        post(PlaceAsked(CanvasPoint(pos.x(), pos.y()), body, key))
+
     def _post_target(self, pos: QPoint, drop: bool) -> None:
         post = self._post
         if post is None:
             return
+        self._arm_row_spring(pos)
         target = self._outline_target(pos)
         point = CanvasPoint(pos.x(), pos.y())
         if drop:
             post(PlaceDrop(point, True, target, False, False))  # type: ignore[arg-type]
             self._drop_line.hide()
             return
+        self._show_line(target)
         post(PlaceHover(point, True, target, False, False))
+
+    def _outline_rows(self) -> Tuple[OutlineRow, ...]:
+        rows = []
+        for node_id, item in self._rows.items():
+            if item.isHidden():
+                continue
+            visual = self.tree.visualItemRect(item)
+            if visual.height() <= 0:
+                continue
+            rows.append(
+                OutlineRow(
+                    NodeId(int(node_id)),
+                    visual.y(),
+                    visual.height(),
+                    max(visual.width(), 1),
+                    visual.x(),
+                )
+            )
+        return tuple(rows)
 
     def _outline_target(self, pos: QPoint) -> object:
         doc = self._document
@@ -735,19 +795,7 @@ class OutlinePane(QWidget):
         payload = payload_of()
         if payload is None:
             return NoDrop()
-        rects = {}
-        for node_id, item in self._rows.items():
-            visual = self.tree.visualItemRect(item)
-            rects[NodeId(int(node_id))] = Rect(visual.x(), visual.y(), max(visual.width(), 1), max(visual.height(), 1))
-        target = resolve_drop(
-            hosts_from(doc, rects),
-            (pos.x(), pos.y()),
-            payload,
-            blocked_ids(doc, payload.source_ids),
-        )
-        if isinstance(target, AcceptedDrop) and target.action == "free":
-            return NoDrop()
-        return target
+        return resolve_outline(doc, self._outline_rows(), pos.y(), payload, blocked_ids(doc, payload.source_ids))
 
     def hit_global(self, global_pos: QPoint) -> Optional[object]:
         viewport = self.tree.viewport()
@@ -758,8 +806,9 @@ class OutlinePane(QWidget):
             self._drop_line.hide()
             self._spring.stop()
             return None
-        self._move_line(local)
-        return self._outline_target(local)
+        target = self._outline_target(local)
+        self._show_line(target)
+        return target
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if watched is not self.tree.viewport():
@@ -778,10 +827,12 @@ class OutlinePane(QWidget):
                 return True
         elif kind == "DragEnter" and _drag_mime(event):
             event.acceptProposedAction()  # type: ignore[attr-defined]
+            pos = event_pos(event)
+            self._ensure_placing(event, pos)
+            self._post_target(pos, False)
             return True
         elif kind == "DragMove" and _drag_mime(event):
             event.acceptProposedAction()  # type: ignore[attr-defined]
-            self._move_line(event_pos(event))
             self._post_target(event_pos(event), False)
             return True
         elif kind == "Drop" and _drag_mime(event):
@@ -837,6 +888,8 @@ class InsertPane(QWidget):
         super().__init__(parent)
         self._on_collapsed = on_collapsed
         self._place: Optional[Callable[[str], None]] = None
+        self._preview: Optional[Callable[[Optional[str]], None]] = None
+        self._on_drag_finished: Optional[Callable[[], None]] = None
         self.setObjectName("formBuilder.insert")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -852,18 +905,50 @@ class InsertPane(QWidget):
         self.filter.setPlaceholderText("Search widgets")
         self.filter.textChanged.connect(self._refill)
         layout.addWidget(self.filter)
-        self.body = _TileList(self)
+        self.caption = QLabel(self)
+        self.caption.setObjectName("formBuilder.insertCaption")
+        self.caption.setWordWrap(True)
+        layout.addWidget(self.caption)
+        self.body = _TileList(self, self._drag_finished)
         self.body.setObjectName("formBuilder.insertBody")
         self.body.setAccessibleName("Insert")
         self.body.setFocusPolicy(_strong())
         self.body.itemDoubleClicked.connect(self._activated)
         self.body.itemActivated.connect(self._activated)
+        self.body.currentItemChanged.connect(lambda *_args: self._announce_preview())
         layout.addWidget(self.body, 1)
         self._collapsed = False
         self._refill("")
 
     def set_place(self, place: Callable[[str], None]) -> None:
         self._place = place
+
+    def set_preview(self, preview: Callable[[Optional[str]], None]) -> None:
+        self._preview = preview
+
+    def set_caption(self, text: str) -> None:
+        self.caption.setText(text)
+
+    def set_drag_finished(self, done: Callable[[], None]) -> None:
+        self._on_drag_finished = done
+
+    def _drag_finished(self) -> None:
+        done = self._on_drag_finished
+        if done is not None:
+            done()
+
+    def _announce_preview(self) -> None:
+        preview = self._preview
+        if preview is None or not self.body.hasFocus():
+            return
+        item = self.body.currentItem()
+        key = None if item is None else item.data(getattr(Qt, "UserRole"))
+        preview(None if not key else str(key))
+
+    def _clear_preview(self) -> None:
+        preview = self._preview
+        if preview is not None:
+            preview(None)
 
     def set_collapsed(self, collapsed: bool) -> None:
         self._collapsed = collapsed
@@ -894,6 +979,22 @@ class InsertPane(QWidget):
 
 
 class _TileList(QListWidget):
+    def __init__(self, parent: QWidget, on_finished: Optional[Callable[[], None]] = None) -> None:
+        super().__init__(parent)
+        self._on_finished = on_finished
+
+    def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().focusInEvent(event)
+        announce = getattr(self.parent(), "_announce_preview", None)
+        if announce is not None:
+            announce()
+
+    def focusOutEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().focusOutEvent(event)
+        clear = getattr(self.parent(), "_clear_preview", None)
+        if clear is not None:
+            clear()
+
     def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
         buttons = getattr(event, "buttons", lambda: 0)()
         left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
@@ -915,6 +1016,9 @@ class _TileList(QListWidget):
         if starter is None:
             starter = getattr(drag, "exec_")
         starter(action)
+        done = self._on_finished
+        if done is not None:
+            done()
 
 
 class _RailButton(QToolButton):
@@ -1028,6 +1132,8 @@ class FormWorkbench(QWidget):
         self.outline.set_hover_target(self.canvas.send)
         self.outline.set_drop_bridge(self.canvas.send, self.canvas.place_payload)
         self.insert.set_place(self._place_tile)
+        self.insert.set_preview(self._preview_insert)
+        self.insert.set_drag_finished(self._cancel_place)
 
         self._right_stack = QStackedWidget(self._splitter)
         self.inspector = InspectorPane(
@@ -1107,6 +1213,7 @@ class FormWorkbench(QWidget):
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self.outline.set_hover_fill(tokens.tree_hover_bg)
+        self.outline.set_drop_color(tokens.accent)
         for name, glyph in _RAIL_GLYPHS.items():
             button = self.findChild(QToolButton, name)
             if isinstance(button, QToolButton):
@@ -1243,6 +1350,13 @@ class FormWorkbench(QWidget):
         self.canvas.setFocus()
         if any(isinstance(command, InsertFormRow) for command in commands):
             self.canvas.send(EditTextAsked())
+
+    def _preview_insert(self, key: Optional[str]) -> None:
+        self.canvas.set_insert_preview(key)
+        self.insert.set_caption("" if key is None else self.canvas.preview_sentence())
+
+    def _cancel_place(self) -> None:
+        self.canvas.send(PlaceDrop(CanvasPoint(0, 0), True, None, True))
 
     def _focus_inspector_tab(self, tab: TabId) -> None:
         if self._plan is not None and not self._plan.inspector_docked:

@@ -9,6 +9,12 @@ import pytest
 from app.qt.QtCore import QPoint
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QLabel, QVBoxLayout, QWidget
+from app.features.form_builder.engine.query.drop_target import DropPayload
+from app.features.form_builder.engine.query.selection import SelectionSource
+from app.features.form_builder.integration.workbench import OutlinePane
+from app.features.form_builder.qtside.canvas.core.frame import Chip
+from app.features.form_builder.qtside.canvas.core.gesture import PlaceAsked, PlaceDrop
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.qtside.support import form
 from tests.form_builder.qtside.test_drop import (
@@ -30,6 +36,7 @@ _SIZES = ((1080, 600), (1400, 900))
 _MODES = ("light", "dark", "high_contrast_light", "high_contrast_dark")
 
 
+@pytest.mark.timeout(120)
 def test_drop_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)
     out.mkdir(parents=True, exist_ok=True)
@@ -44,6 +51,9 @@ def test_drop_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no-unty
             for name, text, point_of, needle in scenes:
                 _grab_drag(qapp, tokens, out, name, text, point_of, needle, width, height, mode)
             _grab_form_editor(qapp, tokens, out, width, height, mode)
+            _grab_span(qapp, tokens, out, width, height, mode)
+            _grab_plus(qapp, tokens, out, width, height, mode)
+            _grab_outline(qapp, tokens, out, width, height, mode)
 
 
 def _grab_drag(qapp, tokens, out: Path, name: str, text: str, point_of, needle: str, width: int, height: int, mode: str) -> None:  # type: ignore[no-untyped-def]
@@ -63,6 +73,8 @@ def _grab_drag(qapp, tokens, out: Path, name: str, text: str, point_of, needle: 
         assert needle.lower() in sentence.lower(), sentence
         if name == "invalid":
             assert any(isinstance(item, Stroke) and item.role == "problem" for item in canvas.overlay().items)
+        if name == "vertical":
+            assert any(isinstance(item, Chip) and item.text for item in canvas.overlay().items)
         _paint_status(shell, tokens, sentence)
         qapp.processEvents()
         image = shell.grab()
@@ -112,6 +124,84 @@ def _paint_status(shell: QWidget, tokens: object, sentence: str) -> None:
     bar.setStyleSheet(
         "color: %s; background: %s; border-top: 1px solid %s; padding-left: 8px;"
         % (tokens.text_primary, tokens.panel_bg, tokens.border)  # type: ignore[attr-defined]
+    )
+
+
+def _grab_span(qapp, tokens, out: Path, width: int, height: int, mode: str) -> None:  # type: ignore[no-untyped-def]
+    with _shown(_span()) as (session, canvas, host):
+        del session
+        shell = _shell(canvas, width, height)
+        canvas.apply_theme(tokens)
+        left = _widget(canvas, "left")
+        end = left.mapTo(canvas.page_widget(), QPoint(left.width() // 2, left.height() + 8))
+        _press_move(canvas, "banner", end)
+        assert any(isinstance(item, Chip) and item.text for item in canvas.overlay().items)
+        sentence = next((item for item in reversed(host.sentences) if item), "")
+        _paint_status(shell, tokens, sentence or "Move banner")
+        qapp.processEvents()
+        shell.grab().save(str(out / ("drop-span-%s-%dx%d.png" % (mode, width, height))), "PNG")
+        _release(canvas, end)
+        shell.deleteLater()
+
+
+def _grab_plus(qapp, tokens, out: Path, width: int, height: int, mode: str) -> None:  # type: ignore[no-untyped-def]
+    with _shown(_tabs()) as (session, canvas, _host):
+        shell = _shell(canvas, width, height)
+        canvas.apply_theme(tokens)
+        tabs = session.document.by_name("tabs")[0]
+        session.selection.set((tabs,), current=tabs, source=SelectionSource.PROGRAM)
+        _flush()
+        assert any(isinstance(item, Chip) and item.text == "+" for item in canvas.overlay().items)
+        _paint_status(shell, tokens, "Add a tab")
+        qapp.processEvents()
+        shell.grab().save(str(out / ("drop-plus-%s-%dx%d.png" % (mode, width, height))), "PNG")
+        shell.deleteLater()
+
+
+def _grab_outline(qapp, tokens, out: Path, width: int, height: int, mode: str) -> None:  # type: ignore[no-untyped-def]
+    with _shown(_vertical()) as (session, canvas, _host):
+        shell = _shell(canvas, width, height)
+        canvas.apply_theme(tokens)
+        pane = OutlinePane(lambda _node: None, lambda _collapsed: None, shell)
+        pane.set_drop_color(tokens.accent)
+        pane.rebuild(session.document, None)
+        pane.set_drop_bridge(canvas.send, canvas.place_payload)  # type: ignore[arg-type]
+        pane.setGeometry(0, 0, 220, height - 32)
+        pane.show()
+        receipts = session.document.by_name("receipts")[0]
+        canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget", (receipts,)), ""))
+        _flush()
+        pane._post_target(QPoint(12, 40), False)  # type: ignore[attr-defined]
+        _flush()
+        assert pane._drop_line.isVisible()  # type: ignore[attr-defined]
+        _paint_status(shell, tokens, "Outline drop")
+        qapp.processEvents()
+        shell.grab().save(str(out / ("drop-outline-%s-%dx%d.png" % (mode, width, height))), "PNG")
+        canvas.send(PlaceDrop(CanvasPoint(0, 0), True, None, True))
+        shell.deleteLater()
+
+
+def _span() -> str:
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0" colspan="2"><widget class="QLabel" name="banner"><property name="text"><string>Banner</string></property></widget></item>
+   <item row="1" column="0"><widget class="QPushButton" name="left"><property name="text"><string>Left</string></property></widget></item>
+   <item row="1" column="1"><widget class="QPushButton" name="right"><property name="text"><string>Right</string></property></widget></item>
+  </layout>
+""",
+    )
+
+
+def _tabs() -> str:
+    return form(
+        'class="QTabWidget" name="tabs"',
+        """
+  <widget class="QWidget" name="pageOne"><attribute name="title"><string>One</string></attribute>
+   <layout class="QVBoxLayout" name="verticalLayout"/>
+  </widget>
+""",
     )
 
 

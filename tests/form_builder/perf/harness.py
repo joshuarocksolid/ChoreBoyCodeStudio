@@ -49,8 +49,10 @@ from tests.form_builder.engine.commands._support import button_spec
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.events import PRIORITY_DIAGNOSTICS, ChangeSet
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
-from app.features.form_builder.engine.query.drop_target import DropPayload, hosts_from, resolve_drop
-from app.features.form_builder.engine.query.hit_index import Rect
+from app.features.form_builder.engine.query.drop_target import DropPayload
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
+from app.features.form_builder.qtside.canvas.core.place import resolve_at
+from app.features.form_builder.qtside.canvas.core.space import FormPoint
 from app.features.form_builder.engine.ui4 import defaults as class_defaults
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
@@ -870,6 +872,19 @@ def _hit_rows(
     return tuple(invalidate_rows + refresh_rows + query_rows)
 
 
+class _FlatGeometry:
+    """Synthetic rects. The timed path still walks ``rect_of`` on every call."""
+
+    def __init__(self, entries: Tuple[GeoEntry, ...]) -> None:
+        self._entries = entries
+
+    def settle(self) -> None:
+        return None
+
+    def entries(self) -> Tuple[GeoEntry, ...]:
+        return self._entries
+
+
 def _drop_target_rows(
     documents: Dict[int, UiDocument],
     samples: int,
@@ -885,15 +900,22 @@ def _drop_target_rows(
         if document is None:
             rows.append(_missing(label, count, _ms_budget(DROP_TARGET_BUDGET_MS), "no %d-widget form in this run" % count))
             continue
-        rects = {}
+        entries = []
         y = 0
         for node in document.iter_preorder():
-            rects[node.id] = Rect(0, y, 240, 24)
+            entries.append(GeoEntry(node.id, "widget", Rect(0, y, 240, 24), None, True, y))
             y += 28
-        pointer = (12, 40)
+        index = HitIndex(_FlatGeometry(tuple(entries)))
+        index.ensure_fresh()
+        point = FormPoint(12, 40)
+        resolve_at(document, index, point, payload)
 
-        def run(document: UiDocument = document, rects: dict = rects, pointer: Tuple[int, int] = pointer) -> None:
-            resolve_drop(hosts_from(document, rects), pointer, payload)
+        def run(
+            document: UiDocument = document,
+            index: HitIndex = index,
+            point: FormPoint = point,
+        ) -> None:
+            resolve_at(document, index, point, payload)
 
         rows.append(
             _timed(

@@ -314,7 +314,6 @@ class Placing:
     outside: bool
     #: False while the outline owns the indicator. The status sentence stays.
     draw: bool = True
-    draw: bool = True
 
 
 @dataclass(frozen=True)
@@ -784,7 +783,10 @@ def _drag_move(gesture: Drag, event: Move, world: World) -> Step:
     if "left" not in event.held:
         return Step(gesture, (), True)
     moved = _retarget(gesture, world.view.to_form(event.at), not event.mods.shift, world)
-    return Step(moved, _live_effects(moved))
+    effects = _live_effects(moved)
+    if isinstance(gesture, _PREVIEW) and not isinstance(moved, _PREVIEW):
+        effects = (EndPreview(),) + effects
+    return Step(moved, effects)
 
 
 def _drag_shift(gesture: Drag, event: Union[Key, KeyUp], world: World) -> Step:
@@ -965,6 +967,16 @@ def _moved(world: World, node: NodeId) -> MovedItem:
 def _retarget(state: Drag, point: FormPoint, snap: bool, world: World) -> Drag:
     if isinstance(state, Banding):
         return replace(state, pointer=point)
+    if isinstance(state, Moving) and _all_free(world, tuple(item.node for item in state.items)):
+        landed = _land_in_layout(state, point, snap, world)
+        if landed is not None:
+            return landed
+    if isinstance(state, Placing) and _all_free(world, state.payload.source_ids):
+        payload = replace(state.payload, snap=snap)
+        target = resolve_at(world.document, world.index, point, payload)
+        if not _lays_out(target):
+            return _resume_free_move(state, point, snap, world)
+        return replace(state, payload=payload, pointer=point, target=target, outside=False, draw=True)
     if isinstance(state, Placing):
         payload = replace(state.payload, snap=snap)
         target = resolve_at(world.document, world.index, point, payload)
@@ -972,6 +984,32 @@ def _retarget(state: Drag, point: FormPoint, snap: bool, world: World) -> Drag:
     if isinstance(state, _PREVIEW):
         return replace(state, pointer=point, snap=snap)
     return state
+
+
+def _all_free(world: World, nodes: Tuple[NodeId, ...]) -> bool:
+    if not nodes:
+        return False
+    return all(isinstance(positioning_of(world.document, node), Free) for node in nodes if world.document.contains(node))
+
+
+def _lays_out(target: DropTarget) -> bool:
+    return isinstance(target, AcceptedDrop) and target.action != "free"
+
+
+def _land_in_layout(state: Moving, point: FormPoint, snap: bool, world: World) -> Optional[Placing]:
+    nodes = tuple(item.node for item in state.items)
+    payload = payload_for(world.document, nodes, snap)
+    target = resolve_at(world.document, world.index, point, payload)
+    if not _lays_out(target):
+        return None
+    return Placing(state.token, payload, "", point, FormPoint(0, 0), target, False)
+
+
+def _resume_free_move(state: Placing, point: FormPoint, snap: bool, world: World) -> Moving:
+    nodes = state.payload.source_ids
+    primary = nodes[0]
+    items = tuple(_moved(world, node) for node in nodes)
+    return Moving(state.token, primary, items, point, point, snap)
 
 
 def _pointer_of(state: Drag) -> FormPoint:

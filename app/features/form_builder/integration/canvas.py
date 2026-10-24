@@ -253,6 +253,12 @@ class FormCanvas(QGraphicsView):
     def place_payload(self) -> Optional[DropPayload]:
         return self._controller.place_payload()
 
+    def set_insert_preview(self, key: Optional[str]) -> None:
+        self._controller.set_insert_preview(key)
+
+    def preview_sentence(self) -> str:
+        return self._controller.preview_sentence()
+
     def overlay(self) -> OverlayFrame:
         return self._controller.frame
 
