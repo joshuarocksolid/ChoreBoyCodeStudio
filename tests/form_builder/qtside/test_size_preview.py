@@ -105,22 +105,28 @@ def test_point_size_reflows_the_column_and_writes_nothing() -> None:
         assert app is not None
         font_before = _font_stamp(app.font())
         palette_before = _palette_stamp(app.palette())
+        sheet_before = app.styleSheet()
+        # A tooltip sheet is enough to stop parent setFont from reaching children.
+        app.setStyleSheet("QToolTip { color: #ffffff; background-color: #000000; }")
         logged = len(session.log.entries())
         startup = startup_font()
-        apply_preview(root, PreviewState(text_point_size=10), startup)
-        _pump()
-        smaller = _heights(root)
-        apply_preview(root, PreviewState(text_point_size=16), startup)
-        _pump()
-        larger = _heights(root)
-        assert smaller != larger
-        for name in ("one", "two"):
-            body = _widget_body(session.text(), name)
-            assert "<x>" not in body
-            assert "<y>" not in body
-        assert _font_stamp(app.font()) == font_before
-        assert _palette_stamp(app.palette()) == palette_before
-        assert len(session.log.entries()) == logged
+        try:
+            apply_preview(root, PreviewState(text_point_size=10), startup)
+            _pump()
+            smaller = _heights(root)
+            apply_preview(root, PreviewState(text_point_size=16), startup)
+            _pump()
+            larger = _heights(root)
+            assert smaller != larger
+            for name in ("one", "two"):
+                body = _widget_body(session.text(), name)
+                assert "<x>" not in body
+                assert "<y>" not in body
+            assert _font_stamp(app.font()) == font_before
+            assert _palette_stamp(app.palette()) == palette_before
+            assert len(session.log.entries()) == logged
+        finally:
+            app.setStyleSheet(sheet_before)
 
 
 def test_larger_preview_shows_the_pill_and_reset_restores_the_startup_font() -> None:
