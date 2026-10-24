@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Tuple
 
@@ -14,7 +15,19 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
-from app.qt.QtWidgets import QApplication, QHBoxLayout, QLabel, QLineEdit, QPushButton, QToolButton, QWidget
+from app.qt.QtCore import QPoint, QPointF, Qt
+from app.qt.qt_compat import wrapper_is_valid
+from app.qt.QtTest import QTest
+from app.qt.QtWidgets import (
+    QApplication,
+    QGraphicsProxyWidget,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QToolButton,
+    QWidget,
+)
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.qtside.support import opened
 
@@ -167,20 +180,38 @@ def test_reset_removes_minimum_size_from_the_file() -> None:
         pane.dispose()
 
 
+_ROW_OF_BUTTONS = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>180</width><height>80</height></rect></property>
+  <layout class="QHBoxLayout" name="horizontalLayout">
+   <item>
+    <widget class="QPushButton" name="stay"><property name="text"><string>Stay</string></property></widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="grow"><property name="text"><string>Grow</string></property></widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
 @pytest.mark.pain("P-2")
 def test_fill_and_stretch_let_the_second_button_grow_wider() -> None:
-    with opened(_COLUMN) as (session, realizer):
+    with opened(_ROW_OF_BUTTONS) as (session, realizer):
         pane, _same = _show(session, realizer)
-        _select(session, pane, "stay")
-        _button(pane, "formBuilder.size.width.Hug").click()
         _select(session, pane, "grow")
         _button(pane, "formBuilder.size.width.Fill").click()
-        share = pane.findChild(QWidget, "formBuilder.size.share.v.value")
+        share = pane.findChild(QWidget, "formBuilder.size.share.h.value")
         assert share is not None
         share.setValue(1)  # type: ignore[attr-defined]
         share.editingFinished.emit()  # type: ignore[attr-defined]
         _events()
-        assert len(session.log.entries()) == 3
+        assert len(session.log.entries()) == 2
         root = realizer.root_widget
         assert root is not None
         root.resize(420, 160)
@@ -304,6 +335,240 @@ def test_preview_and_two_widths_do_not_dirty_the_document() -> None:
         parent.deleteLater()
 
 
+_NARROW = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>200</height></rect></property>
+  <property name="minimumSize"><size><width>300</width><height>200</height></size></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QPushButton" name="cancel"><property name="text"><string>Cancel</string></property></widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+_HEADING = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>360</width><height>120</height></rect></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLabel" name="total">
+     <property name="text"><string>Total</string></property>
+     <property name="font"><font><pointsize>18</pointsize><bold>true</bold></font></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="body"><property name="text"><string>Total</string></property></widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def _canvas(session: object, realizer: object, width: int = 1100, height: int = 480) -> Tuple[QWidget, FormCanvas]:
+    parent = QWidget()
+    canvas = FormCanvas(session, realizer, _Host(), parent)
+    parent.resize(width, height)
+    canvas.resize(width, height)
+    parent.show()
+    _events()
+    return parent, canvas
+
+
+def test_fill_on_a_button_height_leaves_the_width_at_its_default() -> None:
+    with opened(_COLUMN) as (session, realizer):
+        pane, _same = _show(session, realizer)
+        _select(session, pane, "stay")
+        _button(pane, "formBuilder.size.height.Fill").click()
+        _events()
+        width_hug = _button(pane, "formBuilder.size.width.Hug")
+        width_fill = _button(pane, "formBuilder.size.width.Fill")
+        assert width_hug.property("fbOutline") == "true"
+        assert not width_hug.isChecked()
+        assert not width_fill.isChecked()
+        note = pane.findChild(QWidget, "formBuilder.size.h").findChild(QLabel, "formBuilder.rowNote")  # type: ignore[union-attr]
+        assert isinstance(note, QLabel)
+        assert not note.text().startswith("Custom")
+        assert _button(pane, "formBuilder.size.height.Fill").isChecked()
+        pane.dispose()
+
+
+def test_why_text_tracks_the_widget_after_a_text_size_preview() -> None:
+    with opened(_COLUMN) as (session, realizer):
+        parent, canvas = _canvas(session, realizer)
+        pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+        pane.resize(320, 640)
+        pane.show()
+        _select(session, pane, "grow")
+        label = pane.findChild(QLabel, "formBuilder.sizeWhy")
+        assert isinstance(label, QLabel)
+        root = realizer.root_widget
+        assert root is not None
+        widget = root.findChild(QPushButton, "grow")
+        assert widget is not None
+        canvas.preview.set_points(16)
+        _events()
+        assert label.text().startswith("%d × %d px." % (widget.width(), widget.height()))
+        canvas.dispose()
+        pane.dispose()
+        parent.deleteLater()
+
+
+def test_hug_with_a_maximum_explains_the_live_width() -> None:
+    with opened(_ROW) as (session, realizer):
+        parent, canvas = _canvas(session, realizer)
+        pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+        pane.resize(320, 640)
+        pane.show()
+        _select(session, pane, "email")
+        _button(pane, "formBuilder.size.width.Hug").click()
+        edit = pane.findChild(QLineEdit, "formBuilder.size.maximumSize.width")
+        assert isinstance(edit, QLineEdit)
+        edit.setText("160")
+        edit.editingFinished.emit()
+        _events()
+        root = realizer.root_widget
+        assert root is not None
+        root.resize(640, 160)
+        layout = root.layout()
+        assert layout is not None
+        layout.activate()
+        _events()
+        widget = root.findChild(QLineEdit, "email")
+        assert widget is not None
+        label = pane.findChild(QLabel, "formBuilder.sizeWhy")
+        assert isinstance(label, QLabel)
+        text = label.text()
+        assert text.startswith("%d × %d px." % (widget.width(), widget.height()))
+        assert abs(int(widget.width()) - int(widget.sizeHint().width())) > 2
+        assert "Width stops at its maximum of %d px." % int(widget.maximumWidth()) in text
+        assert "Width is what" not in text
+        canvas.dispose()
+        pane.dispose()
+        parent.deleteLater()
+
+
+def test_a_squeezed_label_names_the_hint_floor() -> None:
+    with opened(_ROW) as (session, realizer):
+        parent, canvas = _canvas(session, realizer)
+        pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+        pane.resize(320, 640)
+        pane.show()
+        _select(session, pane, "caption")
+        root = realizer.root_widget
+        assert root is not None
+        widget = root.findChild(QLabel, "caption")
+        assert widget is not None
+        widget.setMaximumWidth(24)
+        root.resize(80, 80)
+        layout = root.layout()
+        assert layout is not None
+        layout.activate()
+        _events()
+        assert widget is not None
+        assert int(widget.width()) < int(widget.sizeHint().width())
+        floor = max(int(widget.minimumSize().width()), int(widget.minimumSizeHint().width()))
+        label = pane.findChild(QLabel, "formBuilder.sizeWhy")
+        assert isinstance(label, QLabel)
+        assert label.text().startswith("%d × %d px." % (widget.width(), widget.height()))
+        assert "can't go below %d px." % floor in label.text()
+        assert "can't go below 0 px." not in label.text()
+        canvas.dispose()
+        pane.dispose()
+        parent.deleteLater()
+
+
+def test_a_click_in_the_wide_copy_selects_that_widget() -> None:
+    with opened(_COLUMN) as (session, realizer):
+        parent, canvas = _canvas(session, realizer, 1200, 520)
+        canvas.preview.toggle_widths()
+        _events()
+        wide_root = _click_wide(canvas, "grow")
+        _events()
+        assert session.selection.state.current == _id(session, "grow")  # type: ignore[attr-defined]
+        canvas.preview.toggle_widths()
+        _events()
+        assert not wrapper_is_valid(wide_root)
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_two_widths_uses_the_stored_minimum_and_puts_it_back() -> None:
+    with opened(_NARROW) as (session, realizer):
+        parent, canvas = _canvas(session, realizer, 1200, 520)
+        root = realizer.root_widget
+        assert root is not None
+        canvas.preview.toggle_widths()
+        _events()
+        chip = canvas.findChild(QLabel, "formBuilder.narrowChip")
+        assert isinstance(chip, QLabel)
+        number = int(re.search(r"(\d+)", chip.text()).group(1))  # type: ignore[union-attr]
+        assert number >= 300
+        assert int(root.minimumWidth()) >= 300
+        canvas.preview.toggle_widths()
+        _events()
+        assert root.minimumWidth() == 300
+        assert root.minimumHeight() == 200
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def test_a_saved_point_size_stays_larger_than_the_preview() -> None:
+    with opened(_HEADING) as (session, realizer):
+        parent, canvas = _canvas(session, realizer)
+        canvas.preview.set_points(10)
+        _events()
+        root = realizer.root_widget
+        assert root is not None
+        sheet = root.styleSheet()
+        star = re.search(r"\* \{ font-size: ([0-9.]+)pt", sheet)
+        heading = root.findChild(QLabel, "total")
+        assert heading is not None
+        rule = re.search(r"#total \{ font-size: ([0-9.]+)pt", heading.styleSheet())
+        assert star is not None and rule is not None
+        assert float(rule.group(1)) > float(star.group(1))
+        body = root.findChild(QLabel, "body")
+        assert heading is not None and body is not None
+        assert heading.sizeHint().height() > body.sizeHint().height()
+        canvas.preview.set_text_factor(1.0)
+        _events()
+        pill = canvas.findChild(QLabel, "formBuilder.previewPill")
+        assert isinstance(pill, QLabel)
+        assert not pill.isVisible()
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def _click_wide(canvas: FormCanvas, name: str) -> QWidget:
+    scene = canvas.scene()
+    assert scene is not None
+    proxies = [
+        item
+        for item in scene.items()
+        if isinstance(item, QGraphicsProxyWidget) and item.isVisible() and item.widget() is not None
+    ]
+    assert proxies
+    wide = max(proxies, key=lambda item: item.sceneBoundingRect().left())
+    root = wide.widget()
+    assert root is not None
+    target = root.findChild(QWidget, name)
+    assert isinstance(target, QWidget)
+    center = target.mapTo(root, QPoint(max(1, target.width() // 2), max(1, target.height() // 2)))
+    view_pos = canvas.mapFromScene(wide.mapToScene(QPointF(float(center.x()), float(center.y()))))
+    QTest.mouseClick(canvas.viewport(), Qt.LeftButton, Qt.NoModifier, view_pos)
+    return root
+
+
 def test_sizing_screenshots(qapp) -> None:  # type: ignore[no-untyped-def]
     out = os.environ.get("CBCS_FB_SCREENSHOT_DIR")
     if not out:
@@ -322,6 +587,9 @@ def test_sizing_screenshots(qapp) -> None:  # type: ignore[no-untyped-def]
         _button(pane, "formBuilder.size.width.Fill").click()
         _events()
         _grab(qapp, host, canvas, pane, folder, "size-fill")
+        _button(pane, "formBuilder.size.height.Fill").click()
+        _events()
+        _grab(qapp, host, canvas, pane, folder, "button-height-fill")
         _select(session, pane, "stay")
         _button(pane, "formBuilder.size.width.Hug").click()
         _events()
@@ -332,7 +600,24 @@ def test_sizing_screenshots(qapp) -> None:  # type: ignore[no-untyped-def]
         _grab(qapp, host, canvas, pane, folder, "preview-16")
         canvas.preview.reset()
         canvas.preview.toggle_widths()
+        _click_wide(canvas, "grow")
+        _events()
         _grab(qapp, host, canvas, pane, folder, "widths")
+        canvas.dispose()
+        pane.dispose()
+        host.close()
+    with opened(_HEADING) as (session, realizer):
+        host = QWidget()
+        layout = QHBoxLayout(host)
+        canvas = FormCanvas(session, realizer, _Host(), host)
+        pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+        layout.addWidget(canvas, 1)
+        layout.addWidget(pane)
+        host.show()
+        _select(session, pane, "total")
+        canvas.preview.set_points(16)
+        _events()
+        _grab(qapp, host, canvas, pane, folder, "heading-16")
         canvas.dispose()
         pane.dispose()
         host.close()

@@ -362,13 +362,31 @@ class FormToolbar(QWidget):
         self.two_widths.setAccessibleName("Two widths")
         menu = QMenu(self.text_size)
         menu.setObjectName("formBuilder.textSizeMenu")
+        menu.addSection("Text size")
+        text_actions = []
         for label, factor in (("Smaller", 0.85), ("Normal", 1.0), ("Larger", 1.25), ("Largest", 1.5)):
             action = menu.addAction(label)
+            action.setCheckable(True)
             action.triggered.connect(lambda _checked=False, value=factor, target=preview: target.set_text_factor(value))
-        menu.addSeparator()
+            text_actions.append((action, factor))
+        menu.addSection("Screen scale")
+        screen_actions = []
         for percent in (100, 125, 150, 200):
-            action = menu.addAction("Screen %d%%" % percent)
+            action = menu.addAction("%d%%" % percent)
+            action.setCheckable(True)
             action.triggered.connect(lambda _checked=False, value=percent, target=preview: target.set_screen(value))
+            screen_actions.append((action, percent))
+
+        def _mark_preview() -> None:
+            choice = preview.preview_choice()
+            factor, screen, absolute = choice
+            for item, value in text_actions:
+                item.setChecked(absolute is None and abs(float(factor) - float(value)) < 0.001)
+            for item, value in screen_actions:
+                item.setChecked(int(screen) == int(value))
+
+        menu.aboutToShow.connect(_mark_preview)
+        _mark_preview()
         self.text_size.setMenu(menu)
         popup = getattr(getattr(QToolButton, "ToolButtonPopupMode", QToolButton), "InstantPopup")
         self.text_size.setPopupMode(popup)

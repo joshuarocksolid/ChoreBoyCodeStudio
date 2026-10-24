@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from app.qt.QtCore import QObject, qRegisterResourceData, qUnregisterResourceData
+from app.qt.QtCore import QObject, Qt, qRegisterResourceData, qUnregisterResourceData
 from app.qt.QtWidgets import (
     QApplication,
     QBoxLayout,
@@ -870,6 +870,8 @@ def _fresh_host() -> QWidget:
         _ensure_app()
         host = QWidget()
         host.setObjectName("_cbcsFreshHost")
+        # The probe is a hidden parent, not a window the desktop should show.
+        host.setAttribute(Qt.WA_DontShowOnScreen, True)
         _FRESH_HOST = host
     return _FRESH_HOST
 

@@ -132,6 +132,8 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "inspector repopulate",
     "sizing panel repopulate",
     "sizing edit",
+    "sizing edit canvas normal",
+    "sizing edit canvas 16pt",
     "inspector select collapsed",
     "inspector select expanded",
     "is_dirty",
@@ -1897,7 +1899,12 @@ def _sizing_rows(
     wall_on: bool,
 ) -> List[Row]:
     """Repaint the Size group, then one sizing command, at 300 and 1000 widgets."""
-    names = ("sizing panel repopulate", "sizing edit")
+    names = (
+        "sizing panel repopulate",
+        "sizing edit",
+        "sizing edit canvas normal",
+        "sizing edit canvas 16pt",
+    )
     budget = _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS)
     rows: List[Row] = []
     for count in (300, 1000):
@@ -1984,10 +1991,100 @@ def _sizing_rows(
                     wall_on=wall_on,
                 )[0]
             )
+            pane.hide()
+            rows.extend(
+                _sizing_preview_rows(
+                    session,
+                    realizer,
+                    target,
+                    count,
+                    samples,
+                    warmup,
+                    enforce_absolute,
+                    wall_on,
+                )
+            )
         finally:
             pane.dispose()
             _dispose_held([realizer, session])
     return rows
+
+
+def _sizing_preview_rows(
+    session: Any,
+    realizer: Any,
+    target: Any,
+    count: int,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """One sizing command while the canvas preview is listening.
+
+    The plain ``sizing edit`` row times the command alone. These rows keep a
+    FormCanvas up, at Normal and at 16 pt, and include one event-loop turn so
+    a deferred cut-off recount is part of the sample.
+    """
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    sizing_cmd = importlib.import_module("app.features.form_builder.engine.commands.catalog_ext.sizing")
+    values = importlib.import_module("app.features.form_builder.engine.ui4.values")
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    parent.show()
+    app = QApplication.instance()
+    assert app is not None
+    for _ in range(3):
+        app.processEvents()
+    state = {"fill": False}
+
+    def edit(log: Any = session.log, cmd: Any = sizing_cmd, size_values: Any = values, flag: Dict[str, bool] = state, loop: Any = app) -> None:
+        flag["fill"] = not flag["fill"]
+        horizontal = "Expanding" if flag["fill"] else "Fixed"
+        log.execute(
+            cmd.ApplySizing(
+                target,
+                size_values.SizePolicyValue(horizontal, "Preferred", 0, 0),
+                touch_policy=True,
+            )
+        )
+        loop.processEvents()
+
+    rows: List[Row] = []
+    try:
+        rows.append(
+            _timed(
+                "sizing edit canvas normal",
+                count,
+                edit,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        )
+        canvas.preview.set_points(16)
+        app.processEvents()
+        rows.append(
+            _timed(
+                "sizing edit canvas 16pt",
+                count,
+                edit,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        )
+        canvas.preview.reset()
+        return rows
+    finally:
+        canvas.dispose()
+        parent.deleteLater()
 
 
 def _inspector_shell_row(

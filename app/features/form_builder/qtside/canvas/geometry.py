@@ -60,7 +60,9 @@ class LiveGeometrySource:
                     continue
                 x = px + child.x()
                 y = py + child.y()
-                visible = child.isVisibleTo(root)
+                # The walk never enters a hidden widget, so the child's own
+                # flag is the same answer as isVisibleTo(root) and cheaper.
+                visible = child.isVisible()
                 node = _tagged_widget(child, document)
                 if node is None:
                     if visible:

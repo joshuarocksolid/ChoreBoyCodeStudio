@@ -157,6 +157,10 @@ class HitIndex:
         self._require_fresh()
         return self._children.get(container, ())
 
+    def indexed_entries(self) -> Tuple[GeoEntry, ...]:
+        """The entries from the last ``ensure_fresh``. Order is the walk order."""
+        return self._entries
+
     @property
     def refresh_count(self) -> int:
         return self._refreshes
