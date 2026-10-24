@@ -515,23 +515,25 @@ def _requests(
             _Face("chip", primary, role, text, None),
             required=True,
         )
-    for node in document.iter_preorder():
-        message = inputs.problems.get(node.id)
-        if not message:
-            continue
-        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
-        if rect is None:
-            continue
-        _ask(
-            faces,
-            requests,
-            ("badge", node.id),
-            rect,
-            CanvasSize(BADGE_SLOT, BADGE_SLOT),
-            BADGE_CORNERS,
-            document,
-            _Face("badge", node.id, "problem", message, OpenProblem(node.id, message)),
-        )
+    # An empty map must not walk the form. Selection repaint is on an 8 ms budget.
+    if inputs.problems:
+        for node in document.iter_preorder():
+            message = inputs.problems.get(node.id)
+            if not message:
+                continue
+            rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
+            if rect is None:
+                continue
+            _ask(
+                faces,
+                requests,
+                ("badge", node.id),
+                rect,
+                CanvasSize(BADGE_SLOT, BADGE_SLOT),
+                BADGE_CORNERS,
+                document,
+                _Face("badge", node.id, "problem", message, OpenProblem(node.id, message)),
+            )
     for node_id in static.unlaid:
         rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
         if rect is None:
