@@ -376,6 +376,41 @@ def test_container_with_free_children_snaps_a_ghost_and_does_not_auto_layout() -
     assert target.sentence == "x 120, y 48"
 
 
+PAGE = """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QStackedWidget" name="stack">
+     <widget class="QWidget" name="pageA">
+      <layout class="QVBoxLayout" name="pageLayout"/>
+     </widget>
+     <widget class="QWidget" name="pageB"/>
+    </widget>
+   </item>
+  </layout>
+"""
+
+
+def test_empty_page_layout_is_a_gap_into_that_page() -> None:
+    document = _document(PAGE)
+    root = _nid(document, "Form")
+    outer = _nid(document, "verticalLayout")
+    stack = _nid(document, "stack")
+    page = _nid(document, "pageA")
+    layout = _nid(document, "pageLayout")
+    entries = (
+        _entry(root, "widget", (0, 0, 400, 300), None),
+        _entry(outer, "layout", (0, 0, 400, 300), root, z=-1),
+        _entry(stack, "widget", (8, 8, 380, 280), outer),
+        _entry(page, "widget", (8, 8, 380, 280), stack),
+        _entry(layout, "layout", (16, 16, 360, 260), page, z=-1),
+    )
+    target = resolve(document, _canvas(entries), Point(40, 40), NewCargo("QPushButton", (80, 24)), 0)
+    assert isinstance(target.recipe, Place)
+    assert target.recipe.placement == InBoxLayout(layout, 0)
+    assert isinstance(target.mark, GapMark)
+    assert target.sentence == "Into the pageA tab"
+
+
 def test_dropping_a_widget_into_its_descendant_refuses() -> None:
     document = _document(SELF)
     root = _nid(document, "Form")

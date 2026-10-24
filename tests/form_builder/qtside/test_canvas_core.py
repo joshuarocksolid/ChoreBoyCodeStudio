@@ -41,6 +41,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OnWidget,
     OpenLayoutPopover,
     OverlayFrame,
+    ShowCanvasPage,
     Stroke,
 )
 from app.features.form_builder.qtside.canvas.core.gesture import (
@@ -867,6 +868,69 @@ def test_the_selected_form_does_not_add_an_overlay_chip() -> None:
             _inputs(session, view, SelectionState((form,), form), Idle()),
         )
         assert not any(isinstance(item, Chip) and item.role == "select" for item in frame.items)
+
+
+STACK = _ui(
+    """
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QStackedWidget" name="stack">
+     <widget class="QWidget" name="pageA">
+      <layout class="QVBoxLayout" name="pageLayout"/>
+     </widget>
+     <widget class="QWidget" name="pageB">
+      <widget class="QLabel" name="kept">
+       <property name="text"><string>Kept</string></property>
+      </widget>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+"""
+)
+
+
+def test_an_empty_stack_page_says_drop_widgets_on_this_page() -> None:
+    with _opened(STACK) as session:
+        view = _view()
+        form = _nid(session, "Form")
+        outer = _nid(session, "verticalLayout")
+        stack = _nid(session, "stack")
+        page = _nid(session, "pageA")
+        layout = _nid(session, "pageLayout")
+        other = _nid(session, "pageB")
+        kept = _nid(session, "kept")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 300), None),
+                _entry(outer, "layout", (0, 0, 400, 300), form, z=-1),
+                _entry(stack, "widget", (8, 8, 380, 280), outer),
+                _entry(page, "widget", (8, 8, 380, 280), stack),
+                _entry(layout, "layout", (16, 16, 360, 260), page, z=-1),
+                _entry(other, "widget", (8, 8, 380, 280), stack),
+                _entry(kept, "widget", (20, 20, 80, 24), other),
+            )
+        )
+        static = build_static(session.document, index, view)
+        captions = [item.lines for item in static.items if isinstance(item, Caption)]
+        assert ("Drop widgets on this page",) in captions
+        assert ("Drop widgets here",) not in captions
+        frame = build_frame(static, _inputs(session, view, SelectionState(), Idle()))
+        chips = [item for item in frame.items if isinstance(item, Chip) and item.text.startswith("◀")]
+        assert [item.text for item in chips] == ["◀ 1 / 2 ▶"]
+        flips = [
+            target.action
+            for _rect, target in frame.targets
+            if isinstance(target, OnChip) and isinstance(target.action, ShowCanvasPage)
+        ]
+        assert len(flips) == 1
+        action = flips[0]
+        assert isinstance(action, ShowCanvasPage)
+        assert action.index == 1
+        assert action.tip == "pageA"
+        assert action.container == stack
 
 
 def test_importing_canvas_core_does_not_import_qt() -> None:

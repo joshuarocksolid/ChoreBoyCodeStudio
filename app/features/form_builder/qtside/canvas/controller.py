@@ -27,6 +27,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OpenLayoutPopover,
     OpenProblem,
     OverlayFrame,
+    ShowCanvasPage,
 )
 from app.features.form_builder.qtside.canvas.core.gesture import (
     ArmSlot,
@@ -294,6 +295,9 @@ class CanvasController:
                 return
             if isinstance(action, OpenLayoutPopover):
                 self._host.open_layout_popover(action.node)
+                return
+            if isinstance(action, ShowCanvasPage):
+                self._stage.show_page(action.container, action.index)
                 return
         if isinstance(effect, ArmSlot):
             self._host.arm_slot(effect)

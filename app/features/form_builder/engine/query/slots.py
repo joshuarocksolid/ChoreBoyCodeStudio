@@ -360,6 +360,10 @@ def _mark(recipe: Recipe, facts: _Facts) -> Mark:
         return NoMark()
     if facts.place == "cell":
         return CellMark(facts.rect)
+    if facts.place == "page" and isinstance(recipe, Place):
+        if isinstance(recipe.placement, InBoxLayout):
+            return GapMark(facts.rect, facts.axis)
+        return FrameMark(facts.rect)
     if facts.place == "frame":
         return FrameMark(facts.rect)
     if facts.place == "ghost":

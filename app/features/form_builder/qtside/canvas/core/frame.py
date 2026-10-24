@@ -106,7 +106,26 @@ class OpenProblem:
     message: str
 
 
-ChipAction = Union[OpenLayoutPopover, OpenProblem]
+@dataclass(frozen=True)
+class ShowCanvasPage:
+    """Show one page of a stack. The document ``currentIndex`` stays put."""
+
+    container: NodeId
+    index: int
+    tip: str
+
+
+@dataclass(frozen=True)
+class StackPager:
+    """One chip for the whole switcher. Hits are the left and right halves."""
+
+    container: NodeId
+    current: int
+    count: int
+    page_name: str
+
+
+ChipAction = Union[OpenLayoutPopover, OpenProblem, ShowCanvasPage, StackPager]
 
 
 @dataclass(frozen=True)

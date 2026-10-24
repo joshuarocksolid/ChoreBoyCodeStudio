@@ -22,6 +22,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OnSpace,
     OnWidget,
     OverlayFrame,
+    ShowCanvasPage,
     Target,
 )
 from app.features.form_builder.qtside.canvas.core.snap import GRID, snap_move, snap_page, snap_resize
@@ -676,9 +677,10 @@ def _idle_move(gesture: Idle, event: Move, world: World) -> Step:
         return Step(gesture, (), False)
     target = aim(event.at, world.frame, world.index, world.document, world.view)
     node, cursor, sentence = _hover_readout(world, target)
+    tip = Tip(_pointer_tip(target), event.port)
     if gesture.hover == node:
-        return Step(gesture, (Cursor(cursor),))
-    effects: Tuple[Effect, ...] = (HoverChanged(node), Cursor(cursor))
+        return Step(gesture, (Cursor(cursor), tip))
+    effects: Tuple[Effect, ...] = (HoverChanged(node), Cursor(cursor), tip)
     # A widget hover is the status hover sentence. Narrating it would stick as a gesture.
     if sentence and node is None:
         effects = effects + (Narrate(sentence),)
@@ -1070,6 +1072,12 @@ def _zoom_effect(key: KeyName) -> Zoom:
     if key == "zoom_fit":
         return Zoom(ZoomFit(), None)
     return Zoom(ZoomTo(1.0), None)
+
+
+def _pointer_tip(target: Target) -> str:
+    if isinstance(target, OnChip) and isinstance(target.action, ShowCanvasPage):
+        return target.action.tip
+    return ""
 
 
 def _hover_readout(world: World, target: Target) -> Tuple[Optional[NodeId], CursorShape, str]:

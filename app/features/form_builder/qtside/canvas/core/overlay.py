@@ -9,7 +9,7 @@ frame. Neither reads Qt.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
@@ -58,7 +58,9 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OverlayFrame,
     Pill,
     Role,
+    ShowCanvasPage,
     Spring,
+    StackPager,
     Stroke,
     Target,
 )
@@ -119,6 +121,8 @@ _EMPTY_FORM = (
     "/ insert · Ctrl+Shift+G wrap · F2 rename",
 )
 _EMPTY_NESTED = "Drop widgets here"
+_EMPTY_PAGE = "Drop widgets on this page"
+_PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 _PLUS = 12
 _TITLES = frozenset({"page_tab", "menu_title"})
 _DESCENDS = frozenset({"widget", "layout"})
@@ -203,7 +207,13 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 empties.append(Caption(canvas, _EMPTY_FORM))
                 targets.append((canvas, OnSpace(node.id, node.id)))
             else:
-                _empty_mark(empties, targets, canvas, OnSpace(node.id, node.id))
+                _empty_mark(
+                    empties,
+                    targets,
+                    canvas,
+                    OnSpace(node.id, node.id),
+                    _empty_words(document, node),
+                )
             continue
         if isinstance(node, SpacerNode):
             placed.append(Obstacle(node.id, canvas))
@@ -229,6 +239,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 targets,
                 canvas,
                 OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                _empty_words(document, node),
             )
 
     for obstacle in placed:
@@ -349,16 +360,27 @@ def _spacer_axis(node: SpacerNode) -> Literal["horizontal", "vertical"]:
     return "horizontal"
 
 
+def _empty_words(document: UiDocument, node: Union[LayoutNode, WidgetNode]) -> str:
+    widget_id = node.owner_widget_id() if isinstance(node, LayoutNode) else node.id
+    if widget_id is None:
+        return _EMPTY_NESTED
+    parent = document.parent(widget_id)
+    if isinstance(parent, WidgetNode) and parent.class_name in _PAGE_HOSTS:
+        return _EMPTY_PAGE
+    return _EMPTY_NESTED
+
+
 def _empty_mark(
     items: List[Item],
     targets: List[Tuple[CanvasRect, Target]],
     canvas: CanvasRect,
     target: Target,
+    words: str,
 ) -> None:
     mark = _at_least(canvas, EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT)
     items.append(Stroke(mark, "layout_faint", 1, "dashed"))
     if mark.width >= EMPTY_CAPTION_MIN_WIDTH:
-        items.append(Caption(mark, (_EMPTY_NESTED,)))
+        items.append(Caption(mark, (words,)))
     else:
         items.append(Glyph(_centred(mark, _PLUS, _PLUS), "plus", "layout_faint"))
     targets.append((mark, target))
@@ -492,42 +514,49 @@ def _page_arrows(
         if rect is None:
             continue
         current = _stack_index(node)
-        size = CanvasSize(max(16, inputs.measure("◀") + 12), LABEL_HEIGHT)
-        if current > 0:
-            _ask(
-                faces,
-                requests,
-                ("page", node.id, current - 1),
-                rect,
-                size,
-                ("above_left",),
-                document,
-                _Face("chip", node.id, "select", "◀", None),
-            )
-        if current + 1 < len(pages):
-            _ask(
-                faces,
-                requests,
-                ("page", node.id, current + 1),
-                rect,
-                size,
-                ("above_right",),
-                document,
-                _Face("chip", node.id, "select", "▶", None),
-            )
+        shown = current if 0 <= current < len(pages) else 0
+        label = "◀ %d / %d ▶" % (shown + 1, len(pages))
+        _ask(
+            faces,
+            requests,
+            ("pager", node.id, shown, len(pages)),
+            rect,
+            _label_size(label, inputs.measure),
+            ("above_left",),
+            document,
+            _Face(
+                "chip",
+                node.id,
+                "select",
+                label,
+                StackPager(node.id, shown, len(pages), pages[shown].object_name),
+            ),
+        )
 
 
 def _page_controls(seats: Sequence[ChipSeat], view: ViewMap) -> Tuple[PageControl, ...]:
     found: List[PageControl] = []
     for seat in seats:
         key = seat.key
-        if not isinstance(key, tuple) or len(key) != 3 or key[0] != "page":
+        if not isinstance(key, tuple) or len(key) != 4 or key[0] != "pager":
             continue
-        container, index = key[1], key[2]
-        if not isinstance(index, int):
+        container, current, count = key[1], key[2], key[3]
+        if not isinstance(current, int) or not isinstance(count, int):
             continue
-        found.append(PageControl(_form_rect(view, seat.rect), container, index))
+        left, right = _halves(seat.rect)
+        if current > 0:
+            found.append(PageControl(_form_rect(view, left), container, current - 1))
+        if current + 1 < count:
+            found.append(PageControl(_form_rect(view, right), container, current + 1))
     return tuple(found)
+
+
+def _halves(rect: CanvasRect) -> Tuple[CanvasRect, CanvasRect]:
+    left_width = max(1, rect.width // 2)
+    return (
+        CanvasRect(rect.x, rect.y, left_width, rect.height),
+        CanvasRect(rect.x + left_width, rect.y, max(1, rect.width - left_width), rect.height),
+    )
 
 
 def _stack_index(node: WidgetNode) -> int:
@@ -643,9 +672,22 @@ def _seat_items(
         else:
             items.append(Chip(seat.rect, face.text, face.role, leader, chrome_dock and isinstance(seat, DockSeat)))
         rows.append((seat.rect, face.node))
-        if face.action is not None:
-            hits.append((seat.rect, OnChip(face.action)))
+        hits.extend(_chip_hits(seat.rect, face.action))
     return hits, rows
+
+
+def _chip_hits(rect: CanvasRect, action: Optional[ChipAction]) -> List[Tuple[CanvasRect, Target]]:
+    if isinstance(action, StackPager):
+        left, right = _halves(rect)
+        hits: List[Tuple[CanvasRect, Target]] = []
+        if action.current > 0:
+            hits.append((left, OnChip(ShowCanvasPage(action.container, action.current - 1, action.page_name))))
+        if action.current + 1 < action.count:
+            hits.append((right, OnChip(ShowCanvasPage(action.container, action.current + 1, action.page_name))))
+        return hits
+    if action is None:
+        return []
+    return [(rect, OnChip(action))]
 
 
 def _shown_rect(
