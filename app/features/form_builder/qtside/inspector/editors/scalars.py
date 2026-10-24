@@ -119,6 +119,8 @@ class IntEditor:
         low, high = _INT_RANGE[spec.element]
         self._spin = QSpinBox(parent)
         self._spin.setRange(low, high)
+        # Commit on Enter, focus-out or a step, not on every typed digit.
+        self._spin.setKeyboardTracking(False)
         self._spin.valueChanged.connect(self._commit)
 
     @property
@@ -151,6 +153,8 @@ class DoubleEditor:
         self._spin = QDoubleSpinBox(parent)
         self._spin.setDecimals(6)
         self._spin.setRange(-1e12, 1e12)
+        # Commit on Enter, focus-out or a step, not on every typed digit.
+        self._spin.setKeyboardTracking(False)
         self._spin.valueChanged.connect(self._commit)
 
     @property

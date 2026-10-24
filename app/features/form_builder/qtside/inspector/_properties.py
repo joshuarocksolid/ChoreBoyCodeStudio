@@ -660,6 +660,7 @@ class _Row(QWidget):
             button.setText("\u21ba")
             button.setFixedSize(16, 16)
             button.setAccessibleName("Reset")
+            button.setToolTip("Reset: remove this property from the file")
             button.clicked.connect(self._reset_clicked)
             button.hide()
             self._line.addWidget(button, 0)
