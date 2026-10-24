@@ -132,6 +132,8 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "inspector repopulate",
     "inspector select collapsed",
     "inspector select expanded",
+    "sizing panel repopulate",
+    "sizing edit",
     "is_dirty",
     "revision",
     "cheap diagnostics",
@@ -424,6 +426,7 @@ def _collect(
     rows.append(
         _inspector_shell_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
+    rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
     rows.append(
@@ -1729,6 +1732,121 @@ def _repaint(realizer: Any) -> None:
     app = QApplication.instance()
     if app is not None:
         app.processEvents()
+
+
+def _sizing_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """Size-group flush and one Hug/Fill edit at 300 and 1000 widgets."""
+    names = ("sizing panel repopulate", "sizing edit")
+    budget = _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS)
+    rows: List[Row] = []
+    if not _module_exists("app.features.form_builder.qtside.inspector"):
+        for count in (300, 1000):
+            for name in names:
+                rows.append(_missing(name, count, budget, "no qtside inspector yet"))
+        return rows
+    for count in (300, 1000):
+        form = forms.get(count)
+        if form is None:
+            for name in names:
+                rows.append(_missing(name, count, budget, "form size is not in this run"))
+            continue
+        rows.extend(
+            _sizing_rows_for(
+                form,
+                count,
+                samples,
+                warmup,
+                enforce_absolute,
+                wall_on,
+            )
+        )
+    return rows
+
+
+def _sizing_rows_for(
+    form: ReferenceForm,
+    count: int,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    budget = _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS)
+    names = ("sizing panel repopulate", "sizing edit")
+    try:
+        realize = importlib.import_module("app.features.form_builder.qtside.realize")
+        session_mod = importlib.import_module("app.features.form_builder.engine.session")
+        forms = importlib.import_module("app.features.form_builder.engine.project.forms")
+        inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+        sizing = importlib.import_module("app.features.form_builder.engine.sizing")
+        live = importlib.import_module("app.features.form_builder.qtside.sizing_live")
+        session, realizer = _open_realized(form.xml, session_mod, forms, realize)
+    except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+        return [
+            Row(name, count, None, None, None, budget, "skip", str(exc))
+            for name in names
+        ]
+    pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+    pane.resize(320, 720)
+    pane.show()
+    line = _first_widget(session.document, "QLineEdit")
+    button = _first_widget(session.document, "QPushButton")
+    if line is None or button is None:
+        pane.dispose()
+        _dispose_held([realizer, session])
+        return [
+            Row(name, count, None, None, None, budget, "skip", "reference form has no line edit and push button")
+            for name in names
+        ]
+    current = {"id": line}
+    word = {"name": "Fill"}
+
+    def flip() -> None:
+        nxt = button if current["id"] == line else line
+        current["id"] = nxt
+        session.selection.set((nxt,), source=selection.SelectionSource.PROGRAM)
+
+    def edit_once() -> None:
+        nxt = "Hug" if word["name"] == "Fill" else "Fill"
+        word["name"] = nxt
+        facts = live.selection_facts(session.document, (button,), realizer)
+        for command in sizing.plan(facts, sizing.SetWord("width", nxt, None)):
+            session.log.execute(command)
+        _repaint(realizer)
+
+    try:
+        flush_row, _flush_dist = _timed(
+            "sizing panel repopulate",
+            count,
+            pane.flush,
+            INSPECTOR_REPOPULATE_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=flip,
+        )
+        edit_row, _edit_dist = _timed(
+            "sizing edit",
+            count,
+            edit_once,
+            INSPECTOR_REPOPULATE_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )
+        return [flush_row, edit_row]
+    finally:
+        pane.dispose()
+        _dispose_held([realizer, session])
 
 
 def _inspector_row(
