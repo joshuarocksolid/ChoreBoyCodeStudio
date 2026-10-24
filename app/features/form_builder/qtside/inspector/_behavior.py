@@ -215,7 +215,11 @@ class BehaviorPage(QWidget):
         self._services.execute(command)
 
     def _on_delete(self, connection: NodeId) -> None:
-        self._services.execute(DeleteNodes((connection,)))
+        view = self._view
+        result = self._services.execute(DeleteNodes((connection,)))
+        # DeleteNodes selects the parent, the <ui> node. Keep the sender.
+        if isinstance(result, CommandOutcome) and view is not None:
+            self._services.session.selection.set((view.sender,), source=SelectionSource.INSPECTOR)
 
     def _choices(self, node: NodeId, kind: Literal["signals", "slots"]) -> Tuple[str, ...]:
         document = self._services.session.document

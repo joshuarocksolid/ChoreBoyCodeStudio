@@ -20,6 +20,7 @@ from app.features.form_builder.qtside.inspector.model import (
     OneBehavior,
     esc_action,
     project,
+    inspected_ids,
     project_header,
     tab_order_stale,
 )
@@ -186,7 +187,7 @@ class InspectorPane(QWidget):
         self._stale = False
         self._timer.stop()
         session = self._services.session
-        ids = session.selection.state.ids or (session.document.root.id,)
+        ids = inspected_ids(session.document, session.selection.state.ids) or (session.document.root.id,)
         include_all = self.properties.builds_all_properties()
         live = live_classes(
             self._realizer,

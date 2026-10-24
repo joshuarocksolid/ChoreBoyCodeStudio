@@ -352,6 +352,24 @@ def test_adding_a_connection_keeps_the_sender_selected(tmp_path: Path, qapp: QAp
         qapp.processEvents()
         assert session.document.connections() == ()
         assert session.selection.state.ids == (sender,)
+        # Redo selects the ConnectionNode again; the inspector shows its sender.
+        session.log.redo()
+        pane.flush()
+        qapp.processEvents()
+        assert len(session.document.connections()) == 1
+        assert name.text() == "okButtonWithAVeryLongObjectName" and not name.isReadOnly()
+        assert tabs.tabText(behavior) == "Behavior (1)"
+        assert add.isEnabled()
+        # Remove keeps the sender too, not the <ui> node.
+        remove = next(button for button in pane.findChildren(QToolButton) if button.text() == "Remove")
+        remove.click()
+        pane.flush()
+        qapp.processEvents()
+        assert session.document.connections() == ()
+        assert session.selection.state.ids == (sender,)
+        assert name.text() == "okButtonWithAVeryLongObjectName"
+        assert tabs.tabText(behavior) == "Behavior"
+        assert add.isEnabled()
     finally:
         shutdown_main_window_for_test(window, qapp)
 

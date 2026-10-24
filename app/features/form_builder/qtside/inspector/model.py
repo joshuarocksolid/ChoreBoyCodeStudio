@@ -257,9 +257,35 @@ _WINDOW_TITLE = RowSpec(
     "windowTitle", GroupId.CONTENT, "Title", "The text in the window's title bar.", Prop("windowTitle")
 )
 
+def inspected_ids(document: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
+    """The nodes the inspector shows for a selection.
+
+    A connection shows as its sender, so adding, removing or redoing one keeps
+    the sender's Behavior list. Other nodes that are not widgets, layouts or
+    spacers (the ``<ui>`` node, actions, items) have no inspector page of
+    their own and fall back to the form.
+    """
+    found: List[NodeId] = []
+    for node_id in ids:
+        node = document.node(node_id)
+        if isinstance(node, ConnectionNode):
+            senders = [
+                candidate
+                for candidate in document.by_name(node.sender)
+                if isinstance(document.node(candidate), WidgetNode)
+            ]
+            if not senders:
+                continue
+            node_id = senders[0]
+        elif not isinstance(node, (WidgetNode, LayoutNode, SpacerNode)):
+            continue
+        if node_id not in found:
+            found.append(node_id)
+    return tuple(found)
+
 def project_header(session: FormSession) -> HeaderView:
     document = session.document
-    ids = session.selection.state.ids
+    ids = inspected_ids(document, session.selection.state.ids)
     if len(ids) > 1:
         return ManyHeader(len(ids), _kinds(document, ids))
     if not ids:
@@ -283,7 +309,7 @@ def project(
     live_size: Optional[Tuple[int, int]] = None,
 ) -> Pages:
     document = session.document
-    owners = session.selection.state.ids
+    owners = inspected_ids(document, session.selection.state.ids)
     facts = Facts(document, live, QtClassTable.shared(), catalog.editor_keys())
     if not owners:
         return Pages(
