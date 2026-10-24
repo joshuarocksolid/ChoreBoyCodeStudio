@@ -66,6 +66,9 @@ class TextEditor:
         self._edit.setPlaceholderText(_placeholder(value))
         self._edit.blockSignals(False)
 
+    def is_dirty(self) -> bool:
+        return self._edit.text() != self._shown
+
     def _commit(self) -> None:
         text = self._edit.text()
         if text == self._shown:

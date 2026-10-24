@@ -387,11 +387,12 @@ class EscAction(Enum):
     REVERT_FIELD = "revert_field"
     LEAVE = "leave"
 
-def esc_action(search: str, field_invalid: bool) -> EscAction:
+def esc_action(search: str, field_invalid: bool, field_dirty: bool = False) -> EscAction:
+    """One Esc closes the innermost thing: an edit in progress, then the search."""
+    if field_invalid or field_dirty:
+        return EscAction.REVERT_FIELD
     if search:
         return EscAction.CLEAR_SEARCH
-    if field_invalid:
-        return EscAction.REVERT_FIELD
     return EscAction.LEAVE
 
 _LEAVES_TAB_ORDER = (PropertyChanged,)

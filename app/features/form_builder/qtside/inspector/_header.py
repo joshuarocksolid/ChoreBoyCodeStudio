@@ -88,6 +88,13 @@ class Header(QWidget):
     def has_invalid_name(self) -> bool:
         return self._invalid
 
+    def has_pending_name(self) -> bool:
+        """The name field has focus and text that is not the document's name."""
+        name = self._name
+        if name.isReadOnly() or not name.hasFocus():
+            return False
+        return name.text() != self._saved_name
+
     def revert_name(self) -> None:
         self._invalid = False
         self._name.blockSignals(True)

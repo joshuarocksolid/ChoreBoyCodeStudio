@@ -263,3 +263,50 @@ def test_alignment_segments_show_the_value(tmp_path: Path, qapp: QApplication) -
         assert written is not None and "AlignRight" in str(written)
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def test_escape_cancels_a_rename_and_a_text_edit(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-TEXT-003 / UX-SEL-004: Esc cancels the edit in progress, a second Esc leaves."""
+    _require()
+    window, surface = _open(tmp_path, qapp)
+    try:
+        session = surface._session  # noqa: SLF001
+        pane = surface._workbench.inspector  # noqa: SLF001
+        email = session.document.by_name("email")[0]
+        _show(surface, qapp, "email")
+        name = surface.findChild(QLineEdit, "formBuilder.inspectorName")
+        assert name is not None
+        name.setFocus()
+        name.selectAll()
+        QTest.keyClicks(name, "fooName")
+        QTest.keyClick(name, Qt.Key_Escape)
+        qapp.processEvents()
+        assert name.text() == "email"
+        assert qapp.focusWidget() is name
+        QTest.keyClick(name, Qt.Key_Escape)
+        qapp.processEvents()
+        assert session.document.node(email).object_name == "email"
+        assert not pane.isAncestorOf(qapp.focusWidget())
+
+        for searching in (False, True):
+            _show(surface, qapp, "email")
+            search = surface.findChild(QLineEdit, "formBuilder.inspectorSearch")
+            assert search is not None
+            search.setText("tool" if searching else "")
+            pane.flush()
+            qapp.processEvents()
+            editor = _row(surface, "toolTip").findChild(QLineEdit)
+            assert editor is not None
+            _key_into(editor, "typed")
+            QTest.keyClick(editor, Qt.Key_Escape)
+            qapp.processEvents()
+            assert editor.text() == ""
+            assert qapp.focusWidget() is editor
+            if searching:
+                assert search.text() == "tool"
+            QTest.keyClick(editor, Qt.Key_Escape)
+            qapp.processEvents()
+            assert session.document.node(email).prop("toolTip") is None
+            search.setText("")
+    finally:
+        shutdown_main_window_for_test(window, qapp)

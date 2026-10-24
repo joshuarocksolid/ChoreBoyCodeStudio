@@ -244,6 +244,13 @@ class PropertiesPage(QWidget):
         row = self._row_holding(focus)
         return row is not None and row.is_invalid()
 
+    def focused_row_dirty(self) -> bool:
+        focus = QApplication.focusWidget()
+        if focus is None:
+            return False
+        row = self._row_holding(focus)
+        return row is not None and row.is_dirty()
+
     def revert_focused_row(self) -> None:
         focus = QApplication.focusWidget()
         if focus is None:
@@ -670,6 +677,11 @@ class _Row(QWidget):
 
     def is_invalid(self) -> bool:
         return self._invalid
+
+    def is_dirty(self) -> bool:
+        """The editor shows text the user typed and has not committed."""
+        dirty = getattr(self._editor, "is_dirty", None)
+        return bool(dirty()) if callable(dirty) else False
 
     def paint(self, view: Row, match_color: str, qt_names: bool = False) -> None:
         self.setObjectName("formBuilder.row.%s" % view.key)

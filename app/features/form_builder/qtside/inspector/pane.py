@@ -379,7 +379,7 @@ class InspectorPane(QWidget):
                 self.properties.clear_search()
                 return
             if action is EscAction.REVERT_FIELD:
-                if self.header.has_invalid_name():
+                if self.header.has_invalid_name() or self.header.has_pending_name():
                     self.header.revert_name()
                 else:
                     self.properties.revert_focused_row()
@@ -391,7 +391,10 @@ class InspectorPane(QWidget):
 
     def _esc(self) -> EscAction:
         invalid = self.header.has_invalid_name() or self.properties.focused_row_invalid()
-        return esc_action(self.properties.search, invalid)
+        # Typed but not committed: Esc cancels it rather than letting the
+        # focus-out that follows commit it (UX-TEXT-003).
+        dirty = self.header.has_pending_name() or self.properties.focused_row_dirty()
+        return esc_action(self.properties.search, invalid, dirty)
 
 class _TabOrderMemo:
     def __init__(self, session: FormSession) -> None:

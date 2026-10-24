@@ -205,6 +205,9 @@ class Editor(Protocol):
         """Paint ``value``. The pane drops any write that this call triggers."""
         ...
 
+    # Optional: ``is_dirty() -> bool`` when the editor holds uncommitted text,
+    # so Esc reverts it instead of the focus-out committing it.
+
 class EditorFactory(Protocol):
     def __call__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> Editor: ...
 
