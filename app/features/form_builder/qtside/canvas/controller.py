@@ -97,12 +97,7 @@ from app.features.form_builder.qtside.canvas.core.overlay import (
 from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import TextTarget, text_target
-from app.features.form_builder.qtside.canvas.core.words import (
-    SizingWord,
-    describe_selection,
-    sizing_word,
-    zoom_label,
-)
+from app.features.form_builder.qtside.canvas.core.words import describe_selection, zoom_label
 from app.features.form_builder.qtside.sizing_live import class_default_policies, class_phrase
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
 from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
