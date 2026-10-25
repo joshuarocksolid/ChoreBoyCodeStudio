@@ -5,13 +5,18 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, FrozenSet, Literal, Optional, Tuple, Union, get_args
 
+from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.commands.catalog import SetGeometry, SetProperty
+from app.features.form_builder.engine.commands.catalog_ext.drop import InsertFormRow
+from app.features.form_builder.engine.commands.drop_plan import nudge_commands
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue
+from app.features.form_builder.qtside.canvas.core.place import drop_commands, payload_for, resolve_at
 from app.features.form_builder.qtside.canvas.core.frame import (
     ChipAction,
     OnChip,
@@ -38,6 +43,7 @@ from app.features.form_builder.qtside.canvas.core.space import (
 from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
+    Managed,
     Positioning,
     band_candidates,
     effective_selection,
@@ -181,7 +187,36 @@ class EditTextAsked:
     pass
 
 
-HostEvent = Union[ZoomAsked, HoverFrom, EditTextAsked]
+@dataclass(frozen=True)
+class PlaceAsked:
+    at: CanvasPoint
+    payload: DropPayload
+    insert_key: str = ""
+
+
+@dataclass(frozen=True)
+class PlaceHover:
+    at: CanvasPoint
+    snap: bool = True
+    target: Optional[DropTarget] = None
+    outside: bool = False
+    #: False when the outline draws the indicator. The canvas keeps the sentence.
+    draw: bool = True
+
+
+@dataclass(frozen=True)
+class PlaceDrop:
+    at: CanvasPoint
+    snap: bool = True
+    target: Optional[DropTarget] = None
+    outside: bool = False
+    draw: bool = True
+
+
+DropTarget = Union[AcceptedDrop, RefusedDrop, NoDrop]
+
+
+HostEvent = Union[ZoomAsked, HoverFrom, EditTextAsked, PlaceAsked, PlaceHover, PlaceDrop]
 Event = Union[
     Press,
     Move,
@@ -197,6 +232,9 @@ Event = Union[
     ZoomAsked,
     HoverFrom,
     EditTextAsked,
+    PlaceAsked,
+    PlaceHover,
+    PlaceDrop,
 ]
 
 
@@ -264,12 +302,27 @@ class Inert:
 
 
 @dataclass(frozen=True)
+class Placing:
+    """A layout drag. The original stays put until release."""
+
+    token: str
+    payload: DropPayload
+    insert_key: str
+    pointer: FormPoint
+    grab: FormPoint
+    target: DropTarget
+    outside: bool
+    #: False while the outline owns the indicator. The status sentence stays.
+    draw: bool = True
+
+
+@dataclass(frozen=True)
 class Panning:
     last: PortPoint
     armed: bool
 
 
-Drag = Union[Moving, Resizing, PageResizing, Banding, Inert]
+Drag = Union[Moving, Resizing, PageResizing, Banding, Inert, Placing]
 _DRAG = get_args(Drag)
 _PREVIEW = (Moving, Resizing, PageResizing)
 
@@ -287,7 +340,9 @@ class Editing:
     token: str
 
 
-Gesture = Union[Idle, PanArmed, Pressed, Moving, Resizing, PageResizing, Banding, Inert, Panning, Editing]
+Gesture = Union[
+    Idle, PanArmed, Pressed, Moving, Resizing, PageResizing, Banding, Inert, Placing, Panning, Editing
+]
 
 
 @dataclass(frozen=True)
@@ -306,8 +361,10 @@ class Toggle:
 @dataclass(frozen=True)
 class Commit:
     label: str
-    commands: Tuple[Union[SetGeometry, SetProperty], ...]
+    commands: Tuple[Command, ...]
     token: str
+    #: After the entry, open the in-place editor on the new selection.
+    edit: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -423,6 +480,8 @@ class World:
 
 
 def needs_fresh_geometry(gesture: Gesture, event: Event) -> bool:
+    if isinstance(event, PlaceAsked):
+        return True
     if isinstance(event, DocumentChanged) or isinstance(gesture, _DRAG) or isinstance(gesture, (Pressed, Panning)):
         return False
     if isinstance(event, EditorDone) and event.how in ("tab", "backtab"):
@@ -661,8 +720,13 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
 def _nudge(gesture: Idle, event: Key, world: World) -> Step:
     shown = effective_selection(world.document, world.selection)
     nodes = shown.ids
-    if not nodes or any(not isinstance(positioning_of(world.document, node), Free) for node in nodes):
+    if not nodes:
         return Step(gesture, (), True)
+    if any(not isinstance(positioning_of(world.document, node), Free) for node in nodes):
+        commands = nudge_commands(world.document, nodes, event.key)
+        if not commands:
+            return Step(gesture, (), True)
+        return Step(gesture, (Commit("Nudge", tuple(commands), world.fresh_token),))
     delta = _NUDGE.get(event.key)
     if delta is None:
         return Step(gesture, (), True)
@@ -707,7 +771,7 @@ def _pressed_move(gesture: Pressed, event: Move, world: World) -> Step:
     dy = event.port.y - gesture.origin.y
     if dx * dx + dy * dy <= DRAG_THRESHOLD * DRAG_THRESHOLD:
         return Step(gesture, (), True)
-    entered = _retarget(gesture.on_drag, world.view.to_form(event.at), not event.mods.shift)
+    entered = _retarget(gesture.on_drag, world.view.to_form(event.at), not event.mods.shift, world)
     return Step(entered, _begin_effects(entered))
 
 
@@ -718,19 +782,24 @@ def _pressed_release(gesture: Pressed, event: Release, world: World) -> Step:
 def _drag_move(gesture: Drag, event: Move, world: World) -> Step:
     if "left" not in event.held:
         return Step(gesture, (), True)
-    moved = _retarget(gesture, world.view.to_form(event.at), not event.mods.shift)
-    return Step(moved, _live_effects(moved))
+    moved = _retarget(gesture, world.view.to_form(event.at), not event.mods.shift, world)
+    effects = _live_effects(moved)
+    if isinstance(gesture, _PREVIEW) and not isinstance(moved, _PREVIEW):
+        effects = (EndPreview(),) + effects
+    return Step(moved, effects)
 
 
 def _drag_shift(gesture: Drag, event: Union[Key, KeyUp], world: World) -> Step:
     if isinstance(event, Key) and event.key != "shift":
         return Step(gesture, (), True)
     snap = isinstance(event, KeyUp)
-    moved = _retarget(gesture, _pointer_of(gesture), snap)
+    moved = _retarget(gesture, _pointer_of(gesture), snap, world)
     return Step(moved, _live_effects(moved))
 
 
 def _drag_release(gesture: Drag, event: Release, world: World) -> Step:
+    if isinstance(gesture, Placing):
+        return _finish_place(gesture, world)
     if isinstance(gesture, _PREVIEW):
         commands = _commands(gesture, world)
         effects: Tuple[Effect, ...] = (EndPreview(),)
@@ -755,6 +824,8 @@ def _drag_escape(gesture: Union[Pressed, Drag], event: Key, world: World) -> Ste
         return Step(gesture, (), True)
     if isinstance(gesture, _PREVIEW) or (isinstance(gesture, Pressed) and isinstance(gesture.on_drag, _PREVIEW)):
         return Step(Idle(None), (EndPreview(), Cursor("arrow")))
+    if isinstance(gesture, Placing) or (isinstance(gesture, Pressed) and isinstance(gesture.on_drag, Placing)):
+        return Step(Idle(None), (Cursor("arrow"), Narrate("")))
     return Step(Idle(None), (Cursor("arrow"),))
 
 
@@ -883,8 +954,8 @@ def _move_or_inert(world: World, nodes: Tuple[NodeId, ...], point: FormPoint, sn
         primary = world.selection.current if world.selection.current in nodes else nodes[0]
         items = tuple(_moved(world, node) for node in nodes)
         return Moving(world.fresh_token, primary, items, point, point, snap)
-    if any(isinstance(place, LaidOut) for place in places):
-        return Inert(MOVE_IN_LAYOUT_LATER)
+    if any(isinstance(place, (LaidOut, Managed)) for place in places):
+        return _placing(world, nodes, point, snap, "")
     return Inert("")
 
 
@@ -893,16 +964,56 @@ def _moved(world: World, node: NodeId) -> MovedItem:
     return MovedItem(node, free_origin(world.document, world.index, node), rect)
 
 
-def _retarget(state: Drag, point: FormPoint, snap: bool) -> Drag:
+def _retarget(state: Drag, point: FormPoint, snap: bool, world: World) -> Drag:
     if isinstance(state, Banding):
         return replace(state, pointer=point)
+    if isinstance(state, Moving) and _all_free(world, tuple(item.node for item in state.items)):
+        landed = _land_in_layout(state, point, snap, world)
+        if landed is not None:
+            return landed
+    if isinstance(state, Placing) and _all_free(world, state.payload.source_ids):
+        payload = replace(state.payload, snap=snap)
+        target = resolve_at(world.document, world.index, point, payload)
+        if not _lays_out(target):
+            return _resume_free_move(state, point, snap, world)
+        return replace(state, payload=payload, pointer=point, target=target, outside=False, draw=True)
+    if isinstance(state, Placing):
+        payload = replace(state.payload, snap=snap)
+        target = resolve_at(world.document, world.index, point, payload)
+        return replace(state, payload=payload, pointer=point, target=target, outside=False, draw=True)
     if isinstance(state, _PREVIEW):
         return replace(state, pointer=point, snap=snap)
     return state
 
 
+def _all_free(world: World, nodes: Tuple[NodeId, ...]) -> bool:
+    if not nodes:
+        return False
+    return all(isinstance(positioning_of(world.document, node), Free) for node in nodes if world.document.contains(node))
+
+
+def _lays_out(target: DropTarget) -> bool:
+    return isinstance(target, AcceptedDrop) and target.action != "free"
+
+
+def _land_in_layout(state: Moving, point: FormPoint, snap: bool, world: World) -> Optional[Placing]:
+    nodes = tuple(item.node for item in state.items)
+    payload = payload_for(world.document, nodes, snap)
+    target = resolve_at(world.document, world.index, point, payload)
+    if not _lays_out(target):
+        return None
+    return Placing(state.token, payload, "", point, FormPoint(0, 0), target, False)
+
+
+def _resume_free_move(state: Placing, point: FormPoint, snap: bool, world: World) -> Moving:
+    nodes = state.payload.source_ids
+    primary = nodes[0]
+    items = tuple(_moved(world, node) for node in nodes)
+    return Moving(state.token, primary, items, point, point, snap)
+
+
 def _pointer_of(state: Drag) -> FormPoint:
-    if isinstance(state, (Moving, Resizing, PageResizing, Banding)):
+    if isinstance(state, (Moving, Resizing, PageResizing, Banding, Placing)):
         return state.pointer
     return FormPoint(0, 0)
 
@@ -924,6 +1035,8 @@ def _live_effects(state: Drag) -> Tuple[Effect, ...]:
         return (PreviewPage(page_size(state)), Cursor(cursor))
     if isinstance(state, Inert):
         return (Cursor("forbidden"),)
+    if isinstance(state, Placing):
+        return _place_effects(state)
     return ()
 
 
@@ -1024,6 +1137,96 @@ def _merge(base: Tuple[NodeId, ...], extra: Tuple[NodeId, ...]) -> Tuple[NodeId,
     return tuple(dict.fromkeys(base + extra))
 
 
+def _placing(
+    world: World,
+    nodes: Tuple[NodeId, ...],
+    point: FormPoint,
+    snap: bool,
+    insert_key: str,
+) -> Placing:
+    payload = payload_for(world.document, nodes, snap)
+    rect = world.index.rect_of(nodes[0]) if nodes else None
+    grab = FormPoint(0, 0) if rect is None else FormPoint(point.x - rect.x, point.y - rect.y)
+    return Placing(
+        world.fresh_token,
+        payload,
+        insert_key,
+        point,
+        grab,
+        resolve_at(world.document, world.index, point, payload),
+        False,
+    )
+
+
+def _place_effects(state: Placing) -> Tuple[Effect, ...]:
+    if state.outside or isinstance(state.target, NoDrop):
+        return (Cursor("move"), Narrate(""))
+    cursor: CursorShape = "forbidden" if isinstance(state.target, RefusedDrop) else "move"
+    return (Cursor(cursor), Narrate(state.target.sentence))
+
+
+def _finish_place(state: Placing, world: World) -> Step:
+    if state.outside or not isinstance(state.target, AcceptedDrop):
+        return Step(Idle(None), (Cursor("arrow"), Narrate("")))
+    commands = drop_commands(world.document, state.target, state.payload, state.insert_key)
+    if not commands:
+        return Step(Idle(None), (Cursor("arrow"), Narrate("")))
+    edit = "widget" if any(isinstance(command, InsertFormRow) for command in commands) else None
+    label = "Move" if state.payload.source_ids else "Drop"
+    return Step(Idle(None), (Commit(label, commands, state.token, edit), Cursor("arrow"), Narrate("")))
+
+
+def _place_asked(gesture: Idle, event: PlaceAsked, world: World) -> Step:
+    del gesture
+    point = world.view.to_form(event.at)
+    state = Placing(
+        world.fresh_token,
+        event.payload,
+        event.insert_key,
+        point,
+        FormPoint(0, 0),
+        resolve_at(world.document, world.index, point, event.payload),
+        False,
+    )
+    return Step(state, (CanvasPressed(),) + _place_effects(state))
+
+
+def _place_hover(gesture: Placing, event: PlaceHover, world: World) -> Step:
+    if event.outside:
+        nxt = replace(gesture, outside=True, target=NoDrop(), draw=False)
+        return Step(nxt, _place_effects(nxt))
+    if event.target is not None:
+        nxt = replace(
+            gesture,
+            pointer=world.view.to_form(event.at),
+            target=event.target,
+            outside=False,
+            draw=event.draw,
+        )
+        return Step(nxt, _place_effects(nxt))
+    nxt = _retarget(gesture, world.view.to_form(event.at), event.snap, world)
+    return Step(nxt, _live_effects(nxt))
+
+
+def _place_drop(gesture: Placing, event: PlaceDrop, world: World) -> Step:
+    if event.outside:
+        return Step(Idle(None), (Cursor("arrow"), Narrate("")))
+    current = gesture
+    if event.target is not None:
+        current = replace(gesture, target=event.target, outside=False)
+    else:
+        current = _retarget(gesture, world.view.to_form(event.at), event.snap, world)
+    if not isinstance(current, Placing):
+        return Step(Idle(None), (Cursor("arrow"),))
+    return _finish_place(current, world)
+
+
+def _placing_leave(gesture: Placing, event: Leave, world: World) -> Step:
+    del event, world
+    nxt = replace(gesture, outside=True, target=NoDrop())
+    return Step(nxt, _place_effects(nxt))
+
+
 def handles_for(place: Positioning) -> Tuple[Compass, ...]:
     if isinstance(place, Free):
         return _FREE_HANDLES
@@ -1061,6 +1264,10 @@ DRAG_ROWS: Dict[type, Handler] = {
     Probe: _busy_probe,
 }
 TABLE.update({(state, event): handler for state in _DRAG for event, handler in DRAG_ROWS.items()})
+TABLE[(Idle, PlaceAsked)] = _place_asked
+TABLE[(Placing, PlaceHover)] = _place_hover
+TABLE[(Placing, PlaceDrop)] = _place_drop
+TABLE[(Placing, Leave)] = _placing_leave
 
 ANY_STATE: Dict[type, Handler] = {
     DocumentChanged: _on_document,

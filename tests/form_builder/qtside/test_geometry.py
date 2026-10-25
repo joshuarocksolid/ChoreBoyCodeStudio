@@ -152,6 +152,12 @@ def test_query_agrees_with_child_at_across_the_form(shown: Tuple[FormSession, Re
             hit = index.query(x, y)
             assert hit is not None
             expected = _child_at(realizer, root, x, y)
+            # A tab title belongs to its page. childAt still reports the tab widget.
+            if hit.kind in ("page_tab", "menu_title"):
+                container = hit.path[1] if len(hit.path) > 1 else hit.node
+                if container != expected:
+                    mismatches.append((x, y, expected, container))
+                continue
             actual = _nearest_widget(session, hit.path)
             if actual != expected:
                 mismatches.append((x, y, expected, actual))

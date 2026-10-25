@@ -172,16 +172,15 @@ LAID = form(
 )
 
 
-def test_alt_arrow_on_a_laid_out_widget_does_not_move_the_selection() -> None:
+def test_alt_arrow_on_a_laid_out_widget_moves_one_slot() -> None:
     with _shown(LAID) as (session, canvas):
         _click(canvas, "first")
-        first = _widget(canvas, "first")
-        origin = (first.x(), first.y())
-        selected = session.selection.state.current
         _key(canvas, "Key_Down", "AltModifier")
-        assert session.selection.state.current == selected
-        assert (first.x(), first.y()) == origin
-        assert session.log.undo_label() != "Nudge"
+        assert _slot_names(session.document, "verticalLayout") == ["second", "first"]
+        assert session.log.undo_label() == "Nudge"
+        assert session.log.undo()
+        _flush()
+        assert _slot_names(session.document, "verticalLayout") == ["first", "second"]
 
 
 def test_a_canvas_press_does_not_scroll_and_an_outline_selection_does() -> None:
@@ -256,6 +255,15 @@ def _id(document: UiDocument, name: str) -> NodeId:
     matches = [node.id for node in document.iter_preorder() if getattr(node, "object_name", None) == name]
     assert len(matches) == 1
     return matches[0]
+
+
+def _slot_names(document: UiDocument, layout_name: str) -> list:
+    layout = next(node for node in document.iter_preorder() if getattr(node, "object_name", None) == layout_name)
+    names = []
+    for item in layout.items:
+        content = item.content
+        names.append("" if content is None else getattr(content, "object_name", "") or getattr(content, "class_name", ""))
+    return names
 
 
 def _flush() -> None:

@@ -9,9 +9,10 @@ frame. Neither reads Qt.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.drop_target import AcceptedDrop, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -39,6 +40,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     Glyph,
     Handle,
     Item,
+    AddPage,
     OnChip,
     OnHandle,
     OnPageEdge,
@@ -46,6 +48,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OnWidget,
     OpenLayoutPopover,
     OpenProblem,
+    ShowStacked,
     OverlayFrame,
     Pill,
     Role,
@@ -58,6 +61,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Gesture,
     Idle,
     Moving,
+    Placing,
     PageResizing,
     Resizing,
     band_hits,
@@ -103,6 +107,8 @@ _EMPTY_FORM = (
     "/ insert · Ctrl+Shift+G wrap · F2 rename",
 )
 _EMPTY_NESTED = "Drop widgets here"
+_EMPTY_PAGE = "Drop widgets on this page"
+_PAGE_PARENTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 _PLUS = 12
 _TITLES = frozenset({"page_tab", "menu_title"})
 _DESCENDS = frozenset({"widget", "layout"})
@@ -122,6 +128,10 @@ class StaticLayer:
     targets: Tuple[Tuple[CanvasRect, Target], ...]
     #: Unclipped canvas rect of every visible widget, layout and spacer.
     placed: Tuple[Obstacle, ...]
+    #: Tab-title rects. ``(tab widget, canvas rect of one title)``.
+    tabs: Tuple[Tuple[NodeId, CanvasRect], ...] = ()
+    #: Stacked widgets. ``(widget, canvas rect, page object names)``.
+    stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...]], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -145,6 +155,10 @@ class FrameInputs:
     viewport: Optional[CanvasRect] = None
     #: Chrome strip for a selection chip with no clear seat (the page caption).
     dock: Optional[CanvasRect] = None
+    #: Where Enter would insert, drawn while the Insert list has a tile focused.
+    preview: Optional[AcceptedDrop] = None
+    #: Canvas-only page shown for a stacked widget. Absent keys use the property.
+    shown_pages: Optional[Mapping[NodeId, int]] = None
 
 
 @dataclass(frozen=True)
@@ -154,6 +168,7 @@ class _Face:
     role: Role
     text: str
     action: Optional[ChipAction]
+    tip: str = ""
 
 
 def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> StaticLayer:
@@ -169,6 +184,8 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
     placed: List[Obstacle] = []
     unlaid: List[NodeId] = []
     targets: List[Tuple[CanvasRect, Target]] = []
+    tabs: List[Tuple[NodeId, CanvasRect]] = []
+    stacks: List[Tuple[NodeId, CanvasRect, Tuple[str, ...]]] = []
 
     for node in document.iter_preorder():
         if node.id != document.root.id and not visible.get(node.id, False):
@@ -186,7 +203,13 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 empties.append(Caption(canvas, _EMPTY_FORM))
                 targets.append((canvas, OnSpace(node.id, node.id)))
             else:
-                _empty_mark(empties, targets, canvas, OnSpace(node.id, node.id))
+                _empty_mark(
+                    empties,
+                    targets,
+                    canvas,
+                    OnSpace(node.id, node.id),
+                    _drop_caption(document, node),
+                )
             continue
         if isinstance(node, SpacerNode):
             placed.append(Obstacle(node.id, canvas))
@@ -195,6 +218,9 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         if not isinstance(node, WidgetNode):
             continue
         placed.append(Obstacle(node.id, canvas))
+        if node.class_name == "QStackedWidget" and node.child_widgets:
+            names = tuple(child.object_name or "page" for child in node.child_widgets)
+            stacks.append((node.id, canvas, names))
         clipped = _clip(canvas, page)
         if clipped is not None:
             content.append(Obstacle(node.id, clipped))
@@ -212,6 +238,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 targets,
                 canvas,
                 OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                _drop_caption(document, node),
             )
 
     for obstacle in placed:
@@ -224,6 +251,11 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         clipped = _clip(view.to_canvas(entry.rect), page)
         if clipped is not None:
             content.append(Obstacle(entry.node, clipped))
+        if entry.kind == "page_tab" and entry.container is not None:
+            tabs.append((entry.container, view.to_canvas(entry.rect)))
+    for entry in index.title_entries():
+        if entry.kind == "page_tab" and entry.container is not None:
+            tabs.append((entry.container, view.to_canvas(entry.rect)))
 
     return StaticLayer(
         index.epoch,
@@ -233,6 +265,8 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(unlaid),
         tuple(targets),
         tuple(placed),
+        tuple(tabs),
+        tuple(stacks),
     )
 
 
@@ -273,6 +307,8 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
             items.append(Stroke(primary_rect.grown(3), "select", 1, "dotted"))
     if isinstance(gesture, Banding):
         _band(items, view, gesture)
+    _drop_marks(items, view, inputs)
+    plus_hits = _plus_hits(items, static, document, gesture, shown)
 
     faces, requests = _requests(static, inputs, shown, rects)
     fixed = tuple(hit for hit, _target in handle_hits) + inputs.chrome
@@ -280,6 +316,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
     chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None)
     targets: List[Tuple[CanvasRect, Target]] = []
+    targets.extend(reversed(plus_hits))
     targets.extend(reversed(chip_hits))
     targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
     targets.extend(reversed(handle_hits))
@@ -328,16 +365,30 @@ def _spacer_axis(node: SpacerNode) -> Literal["horizontal", "vertical"]:
     return "horizontal"
 
 
+def _drop_caption(document: UiDocument, node: object) -> str:
+    owner = getattr(node, "id", None)
+    if isinstance(node, LayoutNode):
+        found = node.owner_widget_id()
+        if found is not None:
+            owner = found
+    parent = document.parent(owner) if owner is not None else None
+    parent_node = document.get(parent) if parent is not None else None
+    if isinstance(parent_node, WidgetNode) and parent_node.class_name in _PAGE_PARENTS:
+        return _EMPTY_PAGE
+    return _EMPTY_NESTED
+
+
 def _empty_mark(
     items: List[Item],
     targets: List[Tuple[CanvasRect, Target]],
     canvas: CanvasRect,
     target: Target,
+    caption: str = _EMPTY_NESTED,
 ) -> None:
     mark = _at_least(canvas, EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT)
     items.append(Stroke(mark, "layout_faint", 1, "dashed"))
     if mark.width >= EMPTY_CAPTION_MIN_WIDTH:
-        items.append(Caption(mark, (_EMPTY_NESTED,)))
+        items.append(Caption(mark, (caption,)))
     else:
         items.append(Glyph(_centred(mark, _PLUS, _PLUS), "plus", "layout_faint"))
     targets.append((mark, target))
@@ -409,6 +460,70 @@ def _grabbers(page: CanvasRect, hot: bool) -> Tuple[Pill, ...]:
     return (east, south)
 
 
+def _shown_drop(inputs: FrameInputs) -> Optional[Tuple[Union[AcceptedDrop, RefusedDrop], str]]:
+    gesture = inputs.gesture
+    if isinstance(gesture, Placing) and not gesture.outside and gesture.draw:
+        if isinstance(gesture.target, NoDrop):
+            return None
+        return gesture.target, gesture.token
+    if inputs.preview is not None and not isinstance(gesture, (Placing, Moving)):
+        return inputs.preview, "preview"
+    return None
+
+
+def _drop_chip(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+) -> None:
+    shown = _shown_drop(inputs)
+    if shown is None:
+        return
+    target, token = shown
+    text = target.chip or target.sentence
+    if not text:
+        return
+    host = target.host if isinstance(target, (AcceptedDrop, RefusedDrop)) and target.host is not None else inputs.document.root.id
+    role: Role = "problem" if isinstance(target, RefusedDrop) or target.indicator.role == "problem" else "select"
+    _ask(
+        faces,
+        requests,
+        ("drop", token),
+        inputs.view.to_canvas(target.indicator.rect),
+        _label_size(text, inputs.measure),
+        LABEL_CORNERS,
+        inputs.document,
+        _Face("chip", host, role, text, None),
+        required=True,
+    )
+
+
+def _drop_marks(items: List[Item], view: ViewMap, inputs: FrameInputs) -> None:
+    shown = _shown_drop(inputs)
+    if shown is None:
+        return
+    target = shown[0]
+    if isinstance(target, NoDrop):
+        return
+    role: Role = "problem" if isinstance(target, RefusedDrop) else "layout"
+    items.append(Stroke(view.to_canvas(target.frame), role, 1.5, "solid"))
+    indicator = target.indicator
+    paint: Role = "problem" if indicator.role == "problem" else "select"
+    rect = view.to_canvas(indicator.rect)
+    if indicator.dashed and indicator.role != "problem":
+        items.append(Fill(rect, "drop_fill"))
+    thin = min(rect.width, rect.height) <= 4
+    items.append(
+        Stroke(
+            rect,
+            paint,
+            1.5 if indicator.dashed else 2,
+            "dashed" if indicator.dashed else "solid",
+            caps=thin and not indicator.dashed,
+        )
+    )
+
+
 def _band(items: List[Item], view: ViewMap, gesture: Banding) -> None:
     area = view.to_canvas(band_rect(gesture))
     items.append(Fill(area, "drop_fill"))
@@ -429,8 +544,10 @@ def _requests(
     document = inputs.document
     faces: Dict[Hashable, _Face] = {}
     requests: List[ChipRequest] = []
+    _drop_chip(faces, requests, inputs)
     primary = shown.current
-    if primary is not None and primary in rects and primary != document.root.id:
+    placing = isinstance(inputs.gesture, Placing)
+    if not placing and primary is not None and primary in rects and primary != document.root.id:
         text = chip_text(document, inputs.selection, inputs.sizing)
         role: Role = "layout" if isinstance(document.get(primary), LayoutNode) else "select"
         _ask(
@@ -444,23 +561,25 @@ def _requests(
             _Face("chip", primary, role, text, None),
             required=True,
         )
-    for node in document.iter_preorder():
-        message = inputs.problems.get(node.id)
-        if not message:
-            continue
-        rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
-        if rect is None:
-            continue
-        _ask(
-            faces,
-            requests,
-            ("badge", node.id),
-            rect,
-            CanvasSize(BADGE_SLOT, BADGE_SLOT),
-            BADGE_CORNERS,
-            document,
-            _Face("badge", node.id, "problem", message, OpenProblem(node.id, message)),
-        )
+    # An empty map must not walk the form. Selection repaint is on an 8 ms budget.
+    if inputs.problems:
+        for node in document.iter_preorder():
+            message = inputs.problems.get(node.id)
+            if not message:
+                continue
+            rect = _shown_rect(static, inputs.view, document, inputs.gesture, node.id)
+            if rect is None:
+                continue
+            _ask(
+                faces,
+                requests,
+                ("badge", node.id),
+                rect,
+                CanvasSize(BADGE_SLOT, BADGE_SLOT),
+                BADGE_CORNERS,
+                document,
+                _Face("badge", node.id, "problem", message, OpenProblem(node.id, message)),
+            )
     for node_id in static.unlaid:
         rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
         if rect is None:
@@ -477,7 +596,76 @@ def _requests(
             _Face("chip", node_id, "tab", text, OpenLayoutPopover(node_id)),
             own_frame=True,
         )
+    _page_chips(faces, requests, static, inputs)
     return faces, requests
+
+
+def _page_chips(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    shown = inputs.shown_pages or {}
+    for node_id, rect, names in static.stacks:
+        if not names:
+            continue
+        current = shown.get(node_id, 0)
+        if node_id not in shown:
+            node = inputs.document.get(node_id)
+            if isinstance(node, WidgetNode):
+                entry = node.prop("currentIndex")
+                value = getattr(getattr(entry, "value", None), "value", None)
+                if isinstance(value, int):
+                    current = value
+        current = max(0, min(len(names) - 1, current))
+        text = "◀ %d / %d ▶" % (current + 1, len(names))
+        _ask(
+            faces,
+            requests,
+            ("stack", node_id),
+            rect,
+            _label_size(text, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", node_id, "select", text, ShowStacked(node_id, 0), names[current]),
+            required=True,
+        )
+
+
+def _plus_hits(
+    items: List[Item],
+    static: StaticLayer,
+    document: UiDocument,
+    gesture: Gesture,
+    shown: SelectionState,
+) -> List[Tuple[CanvasRect, Target]]:
+    groups: Dict[NodeId, List[CanvasRect]] = {}
+    for container, rect in static.tabs:
+        groups.setdefault(container, []).append(rect)
+    hits: List[Tuple[CanvasRect, Target]] = []
+    hot = _plus_ids(gesture, shown)
+    dragging = isinstance(gesture, Placing)
+    for container, rects in groups.items():
+        node = document.get(container)
+        if not isinstance(node, WidgetNode) or node.class_name != "QTabWidget":
+            continue
+        pages = {page.id for page in node.child_widgets}
+        if not dragging and container not in hot and not pages.intersection(hot):
+            continue
+        last = max(rects, key=lambda rect: rect.x + rect.width)
+        side = max(last.height, 18)
+        plus = CanvasRect(last.x + last.width + 4, last.y, side, side)
+        items.append(Chip(plus, "+", "select", None))
+        hits.append((plus, OnChip(AddPage(container))))
+    return hits
+
+
+def _plus_ids(gesture: Gesture, shown: SelectionState) -> Set[NodeId]:
+    found = set(shown.ids)
+    if isinstance(gesture, Idle) and gesture.hover is not None:
+        found.add(gesture.hover)
+    return found
 
 
 def _ask(
@@ -513,9 +701,17 @@ def _seat_items(
         if face.kind == "badge":
             items.append(Badge(seat.rect, "error", face.role, leader))
         else:
-            items.append(Chip(seat.rect, face.text, face.role, leader, chrome_dock and isinstance(seat, DockSeat)))
+            items.append(
+                Chip(seat.rect, face.text, face.role, leader, chrome_dock and isinstance(seat, DockSeat), face.tip)
+            )
         rows.append((seat.rect, face.node))
-        if face.action is not None:
+        if isinstance(face.action, ShowStacked) and face.action.delta == 0:
+            third = max(seat.rect.width // 3, 1)
+            left = CanvasRect(seat.rect.x, seat.rect.y, third, seat.rect.height)
+            right = CanvasRect(seat.rect.x + seat.rect.width - third, seat.rect.y, third, seat.rect.height)
+            hits.append((left, OnChip(ShowStacked(face.action.container, -1))))
+            hits.append((right, OnChip(ShowStacked(face.action.container, 1))))
+        elif face.action is not None:
             hits.append((seat.rect, OnChip(face.action)))
     return hits, rows
 
