@@ -89,7 +89,10 @@ def mixed_parent_sentence(document: UiDocument, ids: tuple) -> str:
     """The wrap explanation when the selection sits in more than one layout."""
     if len(ids) < 2:
         return ""
-    parents = {structural_parent(document, node_id) for node_id in ids}
+    live = tuple(node_id for node_id in ids if document.contains(node_id))
+    if len(live) < 2:
+        return ""
+    parents = {structural_parent(document, node_id) for node_id in live}
     if len(parents) <= 1:
         return ""
     return MIXED_LAYOUT

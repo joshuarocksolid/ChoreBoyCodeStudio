@@ -25,6 +25,13 @@ _STRETCH_FIELDS = (
 )
 
 
+def register(registry: object) -> None:
+    add = getattr(registry, "add", None)
+    if add is None:
+        return
+    add(ApplySizing)
+
+
 @dataclass(frozen=True)
 class ApplySizing:
     """Write the size policy, the limits, and one layout stretch together."""

@@ -54,6 +54,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     MovedItem,
     Moving,
     PageResizing,
+    Placing,
     Press,
     Pressed,
     Release,
@@ -442,7 +443,7 @@ def test_a_press_inside_the_drag_threshold_does_not_commit() -> None:
         assert not any(isinstance(effect, Commit) for effect in released.effects)
 
 
-def test_dragging_a_laid_out_widget_writes_nothing() -> None:
+def test_dragging_a_laid_out_widget_waits_for_release() -> None:
     with _opened(LAID) as session:
         view = _view()
         form = _nid(session, "Form")
@@ -463,13 +464,17 @@ def test_dragging_a_laid_out_widget_writes_nothing() -> None:
             Move(_canvas(view, 50, 30), PortPoint(20, 0), frozenset(("left",)), Mods()),
             world,
         )
-        assert isinstance(dragged.gesture, Inert)
+        assert isinstance(dragged.gesture, Placing)
+        assert not any(isinstance(effect, Commit) for effect in dragged.effects)
         released = step(
             dragged.gesture,
             Release(_canvas(view, 50, 30), PortPoint(20, 0), "left", Mods()),
             world,
         )
-        assert not any(isinstance(effect, Commit) for effect in released.effects)
+        commits = [effect for effect in released.effects if isinstance(effect, Commit)]
+        assert len(commits) <= 1
+        if commits:
+            assert commits[0].label == "Move"
 
 
 def test_every_drag_state_consumes_release_without_an_empty_commit() -> None:

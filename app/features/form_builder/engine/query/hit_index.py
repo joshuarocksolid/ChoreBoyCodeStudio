@@ -114,9 +114,10 @@ class HitIndex:
         grouped: Dict[Optional[NodeId], List[GeoEntry]] = {}
         rects: Dict[NodeId, Rect] = {}
         for entry in entries:
+            if entry.kind in _TITLES:
+                continue
             grouped.setdefault(entry.container, []).append(entry)
-            if entry.kind not in _TITLES:
-                rects[entry.node] = entry.rect
+            rects[entry.node] = entry.rect
         self._entries = entries
         self._children = {
             container: tuple(sorted(group, key=lambda entry: entry.z))
@@ -138,6 +139,9 @@ class HitIndex:
             level = self._children.get(hit.node, ())
         if not trail:
             return None
+        title = _title_over(self._entries, trail, x, y)
+        if title is not None:
+            trail.append(title)
         deepest = trail[-1]
         return HitResult(deepest.node, deepest.kind, tuple(entry.node for entry in reversed(trail)))
 
@@ -161,6 +165,26 @@ class HitIndex:
         """The entries from the last ``ensure_fresh``. Order is the walk order."""
         return self._entries
 
+    def title_entries(self) -> Tuple[GeoEntry, ...]:
+        self._require_fresh()
+        return tuple(entry for entry in self._entries if entry.kind in _TITLES and entry.visible)
+
+    def plus_at(self, x: int, y: int) -> Optional[Tuple[NodeId, Rect]]:
+        """The '+' after the last tab of one tab bar, in form pixels."""
+        self._require_fresh()
+        groups: Dict[NodeId, List[GeoEntry]] = {}
+        for entry in self._entries:
+            if entry.kind != "page_tab" or not entry.visible or entry.container is None:
+                continue
+            groups.setdefault(entry.container, []).append(entry)
+        for container, tabs in groups.items():
+            last = max(tabs, key=lambda entry: entry.rect.x + entry.rect.width)
+            side = max(last.rect.height, 18)
+            rect = Rect(last.rect.x + last.rect.width + 4, last.rect.y, side, side)
+            if rect.contains(x, y):
+                return container, rect
+        return None
+
     @property
     def refresh_count(self) -> int:
         return self._refreshes
@@ -172,6 +196,25 @@ class HitIndex:
 
 def _topmost_at(level: Tuple[GeoEntry, ...], x: int, y: int) -> Optional[GeoEntry]:
     for entry in reversed(level):
+        if entry.kind in _TITLES:
+            continue
         if entry.visible and entry.rect.contains(x, y):
             return entry
     return None
+
+
+def _title_over(entries: Tuple[GeoEntry, ...], trail: Sequence[GeoEntry], x: int, y: int) -> Optional[GeoEntry]:
+    """A tab or menu title drawn on top of the widget trail. It is not a child."""
+    depth = {entry.node: index for index, entry in enumerate(trail)}
+    found: Optional[GeoEntry] = None
+    rank: Optional[Tuple[int, int]] = None
+    for entry in entries:
+        if entry.kind not in _TITLES or not entry.visible or entry.container not in depth:
+            continue
+        if not entry.rect.contains(x, y):
+            continue
+        key = (depth[entry.container], entry.z)
+        if rank is None or key > rank:
+            rank = key
+            found = entry
+    return found
