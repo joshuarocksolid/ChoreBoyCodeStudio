@@ -335,6 +335,21 @@ def test_mixed_axes_do_not_share_one_segment() -> None:
     assert chip_axis(custom) == "Ignored"
 
 
+def test_picking_the_class_default_stores_no_policy() -> None:
+    write = encode_axis(
+        axis="h",
+        word=WORD_FILL,
+        pixels=None,
+        current_policy=None,
+        current_minimum=None,
+        current_maximum=None,
+        class_default_h="Expanding",
+        class_default_v="Fixed",
+    )
+    assert write.policy is None
+    assert write.minimum is None and write.maximum is None
+
+
 def test_fill_keeps_an_at_least_and_clears_only_a_lock() -> None:
     kept = encode_axis(
         axis="h",

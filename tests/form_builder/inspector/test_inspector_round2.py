@@ -320,8 +320,30 @@ def test_the_property_page_does_not_scroll_sideways(qapp: QApplication) -> None:
             field = pane.findChild(QLineEdit, edit_name)
             assert isinstance(field, QLineEdit)
             assert field.minimumWidth() <= 40
+        _assert_no_overlap(body)
+        fill = pane.findChild(QWidget, "formBuilder.size.width.Fill")
+        assert isinstance(fill, QToolButton)
+        fill.click()
+        pane.flush()
+        assert session.document.node(session.document.by_name("email")[0]).prop("sizePolicy") is None
+        fixed = pane.findChild(QWidget, "formBuilder.size.width.Fixed")
+        assert isinstance(fixed, QToolButton)
+        fixed.click()
+        pane.flush()
+        qapp.processEvents()
+        _assert_no_overlap(body)
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def _assert_no_overlap(body: QWidget) -> None:
+    """No two visible siblings in the Size body may draw over each other."""
+    for parent in [body] + body.findChildren(QWidget):
+        shown = [item for item in parent.children() if isinstance(item, QWidget) and item.isVisible()]
+        for index, first in enumerate(shown):
+            for second in shown[index + 1 :]:
+                both = first.geometry().intersected(second.geometry())
+                assert both.isEmpty(), (first.objectName() or first.metaObject().className(), second.objectName() or second.metaObject().className())
 
 
 def test_reset_is_a_hover_icon_and_the_label_is_strong(qapp: QApplication) -> None:

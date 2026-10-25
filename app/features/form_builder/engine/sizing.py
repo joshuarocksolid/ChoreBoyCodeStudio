@@ -7,7 +7,7 @@ file already knows, and Reset deletes those properties.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
@@ -209,7 +209,17 @@ def encode_axis(
         horizontal, min_w, max_w = _apply_word(word, pixels, min_w, max_w)
     else:
         vertical, min_h, max_h = _apply_word(word, pixels, min_h, max_h)
-    return _pack(horizontal, vertical, horstretch, verstretch, min_w, min_h, max_w, max_h)
+    packed = _pack(horizontal, vertical, horstretch, verstretch, min_w, min_h, max_w, max_h)
+    plain = (horizontal, vertical, horstretch, verstretch) == (
+        policy_tail(class_default_h),
+        policy_tail(class_default_v),
+        0,
+        0,
+    )
+    if plain:
+        # A policy equal to the class default is not stored; the axis stays outlined.
+        return replace(packed, policy=None)
+    return packed
 
 
 def reset_words(

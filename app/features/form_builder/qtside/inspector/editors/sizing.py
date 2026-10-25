@@ -193,21 +193,19 @@ class SizeBody:
             if word == WORD_FIXED and pixels is None:
                 pixels = 40
             defaults = _defaults(widget, node)
-            commands.append(
-                from_write(
-                    node.id,
-                    encode_axis(
-                        axis=axis,
-                        word=word,
-                        pixels=pixels,
-                        current_policy=_policy(node),
-                        current_minimum=_size(node, "minimumSize"),
-                        current_maximum=_size(node, "maximumSize"),
-                        class_default_h=defaults[0],
-                        class_default_v=defaults[1],
-                    ),
-                )
+            write = encode_axis(
+                axis=axis,
+                word=word,
+                pixels=pixels,
+                current_policy=_policy(node),
+                current_minimum=_size(node, "minimumSize"),
+                current_maximum=_size(node, "maximumSize"),
+                class_default_h=defaults[0],
+                class_default_v=defaults[1],
             )
+            if _unchanged(node, write):
+                continue
+            commands.append(from_write(node.id, write))
         if commands:
             self._host.run("Size", commands)
 
@@ -368,9 +366,14 @@ class _AxisRow:
             editor.setAccessibleName("%s in pixels" % title)
         self._pixels.editingFinished.connect(lambda: on_pixels(axis, self._pixels.value()))
         self._pixels.hide()
-        line.addWidget(self._pixels)
         line.addStretch(1)
         outer.addLayout(line)
+        # Fixed pixels sit under the segments; one line cannot hold both at 236 px.
+        pixel_line = QHBoxLayout()
+        pixel_line.setContentsMargins(8, 0, 0, 0)
+        pixel_line.addWidget(self._pixels)
+        pixel_line.addStretch(1)
+        outer.addLayout(pixel_line)
         self._caption = QLabel(self.widget)
         self._caption.setObjectName("formBuilder.rowNote")
         self._caption.setWordWrap(True)
@@ -423,7 +426,6 @@ class _ShareRow:
         self._box.setRange(0, 999)
         self._box.setAccessibleName("Share of spare room")
         self._box.setMinimumWidth(40)
-        _shrink_wide(self._box)
         self._box.setFocusPolicy(_strong())
         editor = self._box.lineEdit()
         if editor is not None:
@@ -471,17 +473,16 @@ class _LimitRow:
         self._label.setMinimumWidth(0)
         self._label.setMaximumWidth(52)
         line.addWidget(self._label)
-        self._width = _blank_edit(self.widget, "%s width" % title, "formBuilder.size.%s.width" % name)
-        self._height = _blank_edit(self.widget, "%s height" % title, "formBuilder.size.%s.height" % name)
+        self._width = _blank_edit(self.widget, "%s width in pixels" % title, "formBuilder.size.%s.width" % name)
+        self._height = _blank_edit(self.widget, "%s height in pixels" % title, "formBuilder.size.%s.height" % name)
         self._width.editingFinished.connect(lambda: _commit_limit(self._width, name, "h", on_limit))
         self._height.editingFinished.connect(lambda: _commit_limit(self._height, name, "v", on_limit))
-        line.addWidget(self._width)
+        # The fields share the free width; a trailing stretch would starve them.
+        line.addWidget(self._width, 1)
         line.addWidget(QLabel("×", self.widget))
-        line.addWidget(self._height)
-        line.addWidget(QLabel("px", self.widget))
+        line.addWidget(self._height, 1)
         self._reset = _reset_button(self.widget, "formBuilder.size.%s.reset" % name, "Reset %s" % title.lower(), lambda: on_reset(name))
         line.addWidget(self._reset)
-        line.addStretch(1)
         outer.addLayout(line)
 
     def paint(
@@ -601,6 +602,14 @@ def _pair(size: Optional[SizeValue], empty: int) -> Tuple[int, int]:
     return int(size.width), int(size.height)
 
 
+def _unchanged(node: WidgetNode, write: SizingWrite) -> bool:
+    return (
+        write.policy == _policy(node)
+        and write.minimum == _size(node, "minimumSize")
+        and write.maximum == _size(node, "maximumSize")
+    )
+
+
 def _size_or_none(width: int, height: int, empty: int) -> Optional[SizeValue]:
     if width == empty and height == empty:
         return None
@@ -624,9 +633,12 @@ def _blank_edit(parent: QWidget, accessible: str, object_name: str) -> QLineEdit
     edit.setValidator(QIntValidator(0, QWIDGET_SIZE_MAX, edit))
     edit.setAccessibleName(accessible)
     edit.setFocusPolicy(_strong())
-    edit.setMinimumWidth(40)
+    edit.setToolTip(accessible)
+    edit.setMinimumWidth(34)
     edit.setMaximumWidth(72)
-    _shrink_wide(edit)
+    policy = edit.sizePolicy()
+    policy.setHorizontalPolicy(getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Preferred"))
+    edit.setSizePolicy(policy)
     return edit
 
 
@@ -670,14 +682,6 @@ def _reset_button(parent: QWidget, object_name: str, accessible: str, on_click: 
     button.clicked.connect(on_click)
     button.hide()
     return button
-
-
-def _shrink_wide(widget: QWidget) -> None:
-    policy = widget.sizePolicy()
-    ignored = getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Ignored")
-    policy.setHorizontalPolicy(ignored)
-    widget.setSizePolicy(policy)
-    widget.setMinimumWidth(min(int(widget.minimumWidth()), 40) if widget.minimumWidth() > 0 else 0)
 
 
 class _ResizeWatch(QObject):
