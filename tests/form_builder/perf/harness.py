@@ -135,6 +135,10 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "edit total",
     "selection change",
     "inspector repopulate",
+    "sizing panel repopulate",
+    "sizing edit",
+    "sizing edit canvas normal",
+    "sizing edit canvas 16pt",
     "inspector select collapsed",
     "inspector select expanded",
     "is_dirty",
@@ -430,6 +434,7 @@ def _collect(
     rows.append(
         _inspector_shell_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
+    rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
     rows.append(
@@ -1950,6 +1955,202 @@ def _inspector_select_rows(
 
 
 SHELL_SELECT_POINT = "inspector select expanded shell"
+
+
+def _sizing_rows(
+    forms: Dict[int, Any],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """Repaint the Size group, then one sizing command, at 300 and 1000 widgets."""
+    names = (
+        "sizing panel repopulate",
+        "sizing edit",
+        "sizing edit canvas normal",
+        "sizing edit canvas 16pt",
+    )
+    budget = _ms_budget(INSPECTOR_REPOPULATE_BUDGET_MS)
+    rows: List[Row] = []
+    for count in (300, 1000):
+        form = forms.get(count)
+        if form is None or not _module_exists("app.features.form_builder.qtside.inspector"):
+            rows.extend(_missing(name, count, budget, "no form or no inspector") for name in names)
+            continue
+        try:
+            realize = importlib.import_module("app.features.form_builder.qtside.realize")
+            session_mod = importlib.import_module("app.features.form_builder.engine.session")
+            forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+            inspector = importlib.import_module("app.features.form_builder.qtside.inspector")
+            selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+            sizing_cmd = importlib.import_module("app.features.form_builder.engine.commands.catalog_ext.sizing")
+            values = importlib.import_module("app.features.form_builder.engine.ui4.values")
+            session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+        except (ImportError, AttributeError, TypeError, RuntimeError) as exc:
+            rows.extend(
+                Row(name, count, None, None, None, budget, "skip", str(exc)) for name in names
+            )
+            continue
+        pane = inspector.InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None)
+        pane.resize(288, 600)
+        pane.show()
+        line = _first_widget(session.document, "QLineEdit")
+        button = _first_widget(session.document, "QPushButton")
+        owners = []
+        for owner in (line, button, session.document.root.id):
+            if owner is not None and owner not in owners:
+                owners.append(owner)
+        if len(owners) < 2:
+            pane.dispose()
+            _dispose_held([realizer, session])
+            rows.extend(
+                Row(name, count, None, None, None, budget, "skip", "reference form has no second widget")
+                for name in names
+            )
+            continue
+        target = line or button or owners[0]
+        session.selection.set((owners[0],), source=selection.SelectionSource.PROGRAM)
+        pane.flush()
+        cursor = {"index": 0}
+
+        def flip(ids: List[Any] = owners, log: Any = session, source: Any = selection.SelectionSource.PROGRAM, pos: Dict[str, int] = cursor) -> None:
+            pos["index"] = 1 - pos["index"]
+            log.selection.set((ids[pos["index"]],), source=source)
+
+        state = {"fill": False}
+
+        def edit(owner: Any = target, log: Any = session.log, cmd: Any = sizing_cmd, size_values: Any = values, flag: Dict[str, bool] = state) -> None:
+            flag["fill"] = not flag["fill"]
+            horizontal = "Expanding" if flag["fill"] else "Fixed"
+            log.execute(
+                cmd.ApplySizing(
+                    owner,
+                    size_values.SizePolicyValue(horizontal, "Preferred", 0, 0),
+                    touch_policy=True,
+                )
+            )
+
+        try:
+            rows.append(
+                _timed(
+                    names[0],
+                    count,
+                    pane.flush,
+                    INSPECTOR_REPOPULATE_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=flip,
+                )[0]
+            )
+            rows.append(
+                _timed(
+                    names[1],
+                    count,
+                    edit,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                )[0]
+            )
+            pane.hide()
+            rows.extend(
+                _sizing_preview_rows(
+                    session,
+                    realizer,
+                    target,
+                    count,
+                    samples,
+                    warmup,
+                    enforce_absolute,
+                    wall_on,
+                )
+            )
+        finally:
+            pane.dispose()
+            _dispose_held([realizer, session])
+    return rows
+
+
+def _sizing_preview_rows(
+    session: Any,
+    realizer: Any,
+    target: Any,
+    count: int,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> List[Row]:
+    """One sizing command while the canvas preview is listening.
+
+    The plain ``sizing edit`` row times the command alone. These rows keep a
+    FormCanvas up, at Normal and at 16 pt, and include one event-loop turn so
+    a deferred cut-off recount is part of the sample.
+    """
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    sizing_cmd = importlib.import_module("app.features.form_builder.engine.commands.catalog_ext.sizing")
+    values = importlib.import_module("app.features.form_builder.engine.ui4.values")
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    parent.show()
+    app = QApplication.instance()
+    assert app is not None
+    for _ in range(3):
+        app.processEvents()
+    state = {"fill": False}
+
+    def edit(log: Any = session.log, cmd: Any = sizing_cmd, size_values: Any = values, flag: Dict[str, bool] = state, loop: Any = app) -> None:
+        flag["fill"] = not flag["fill"]
+        horizontal = "Expanding" if flag["fill"] else "Fixed"
+        log.execute(
+            cmd.ApplySizing(
+                target,
+                size_values.SizePolicyValue(horizontal, "Preferred", 0, 0),
+                touch_policy=True,
+            )
+        )
+        loop.processEvents()
+
+    rows: List[Row] = []
+    try:
+        rows.append(
+            _timed(
+                "sizing edit canvas normal",
+                count,
+                edit,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        )
+        canvas.preview.set_points(16)
+        app.processEvents()
+        rows.append(
+            _timed(
+                "sizing edit canvas 16pt",
+                count,
+                edit,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+            )[0]
+        )
+        canvas.preview.reset()
+        return rows
+    finally:
+        canvas.dispose()
+        parent.deleteLater()
 
 
 def _inspector_shell_row(

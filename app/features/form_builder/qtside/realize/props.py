@@ -346,6 +346,17 @@ def norm_qt(value: object) -> object:
     """A comparable form of a Qt readback."""
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
+    horizontal = getattr(value, "horizontalPolicy", None)
+    vertical = getattr(value, "verticalPolicy", None)
+    if callable(horizontal) and callable(vertical):
+        stretch_h = getattr(value, "horizontalStretch", None)
+        stretch_v = getattr(value, "verticalStretch", None)
+        return (
+            _enum_name(horizontal()),
+            _enum_name(vertical()),
+            int(stretch_h()) if callable(stretch_h) else 0,
+            int(stretch_v()) if callable(stretch_v) else 0,
+        )
     raw = getattr(value, "value", None)
     if raw is not None and not isinstance(value, (bytes, bytearray)):
         try:
@@ -366,6 +377,13 @@ def norm_qt(value: object) -> object:
     if callable(text):
         return text()
     return str(value)
+
+
+def _enum_name(value: object) -> str:
+    name = getattr(value, "name", None)
+    if isinstance(name, str) and name:
+        return name.split("::")[-1]
+    return str(value).rsplit(".", 1)[-1]
 
 
 def path_under(base_dir: str, path: str) -> str:

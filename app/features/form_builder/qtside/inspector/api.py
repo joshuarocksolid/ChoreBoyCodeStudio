@@ -226,6 +226,15 @@ class GroupHost(Protocol):
         """The standard row widget for ``row``, wired to its write, with its caption line."""
         ...
 
+    @property
+    def qt_names(self) -> bool:
+        """True when the inspector is showing Qt property names."""
+        ...
+
+    def live(self, owner: NodeId) -> Optional[QWidget]:
+        """The realized widget for ``owner``, or None. O(1)."""
+        ...
+
 class GroupBody(Protocol):
     @property
     def widget(self) -> QWidget: ...

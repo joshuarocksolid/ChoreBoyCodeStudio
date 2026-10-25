@@ -69,7 +69,7 @@ class InspectorPane(QWidget):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.inspector")
-        self._services = Services(session, default_catalog())
+        self._services = Services(session, default_catalog(), realizer)
         self._realizer = realizer
         self._on_leave = on_leave
         self._short = False
@@ -150,7 +150,9 @@ class InspectorPane(QWidget):
 
     def apply_chrome(self, chrome: FormChrome) -> None:
         self.setStyleSheet(_stylesheet(chrome))
-        self.properties.apply_colors(chrome.panel, chrome.text, chrome.faint)
+        self.properties.apply_colors(
+            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted
+        )
         self.properties.set_match_color(chrome.search_match_bg)
         self.behavior.apply_colors(chrome.panel, chrome.text)
         data = self.findChild(QWidget, "formBuilder.dataBody")
@@ -455,7 +457,10 @@ def _stylesheet(chrome: FormChrome) -> str:
         # Segments are drawn by the sheet in every state: a native button is
         # bright on a dark panel, and the shell's checked text is unreadable.
         "QToolButton[fbSegment=\"true\"] { background: %s; color: %s; border: 1px solid %s; }"
+        "QToolButton[fbSegment=\"true\"][fbOutline=\"true\"] {"
+        " background: %s; color: %s; border: 1px dashed %s; }"
         "QToolButton[fbSegment=\"true\"]:checked { background: %s; color: %s; border: 1px solid %s; }"
+        "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
         % (
             chrome.panel,
             chrome.text,
@@ -475,9 +480,14 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.input,
             chrome.text,
             chrome.border,
+            chrome.input,
+            chrome.text,
+            chrome.accent,
             chrome.selected,
             chrome.text,
             chrome.accent,
+            chrome.muted,
+            chrome.row_hover,
         )
     )
 

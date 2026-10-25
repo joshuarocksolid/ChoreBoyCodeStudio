@@ -1,3 +1,10 @@
+"""Extra commands (CONTRACTS.md section 1.4).
+
+Modules in this package are discovered in sorted module-name order. Each
+defines ``register(registry)`` when it needs a process-wide registry.
+``ApplySizing`` is imported by the Size group. It does not edit ``catalog.py``.
+"""
+
 from __future__ import annotations
 
 import importlib

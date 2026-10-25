@@ -8,7 +8,7 @@ import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
-from app.qt.QtCore import QObject, qRegisterResourceData, qUnregisterResourceData
+from app.qt.QtCore import QObject, Qt, qRegisterResourceData, qUnregisterResourceData
 from app.qt.QtWidgets import (
     QApplication,
     QBoxLayout,
@@ -87,7 +87,8 @@ _LAYOUT_FIELDS = frozenset(
         "columnminimumwidth",
     }
 )
-_FRESH: Dict[str, QWidget] = {}
+_FRESH: Dict[Tuple[str, bool], QWidget] = {}
+_FRESH_HOST: Optional[QWidget] = None
 
 
 @dataclass(frozen=True)
@@ -106,8 +107,9 @@ class PatchStats:
 class Realizer(_Structure):
     """One per FormSession. ``build`` once, then patch each ChangeSet."""
 
-    def __init__(self, session: FormSession) -> None:
+    def __init__(self, session: FormSession, *, own_resources: bool = True) -> None:
         self._session = session
+        self._own_resources = own_resources
         self._widgets: Dict[NodeId, QWidget] = {}
         self._layouts: Dict[NodeId, QLayout] = {}
         self._actions: Dict[NodeId, object] = {}
@@ -158,7 +160,8 @@ class Realizer(_Structure):
         self._pool.clear()
         self._problems.clear()
         self._start_patch()
-        self._register_resources()
+        if self._own_resources:
+            self._register_resources()
         root_node = self._session.document.root
         widget = self._create_widget(root_node, None)
         self._root = widget
@@ -453,7 +456,12 @@ class Realizer(_Structure):
     def _reset_property(self, node: object, obj: object, name: str) -> None:
         if not isinstance(node, WidgetNode):
             return
-        fresh = _fresh_widget(self._qt_class_name(node.class_name), self._widget_type(node.class_name))
+        window = isinstance(obj, QWidget) and obj.isWindow()
+        fresh = _fresh_widget(
+            self._qt_class_name(node.class_name),
+            self._widget_type(node.class_name),
+            window=window,
+        )
         if fresh is None:
             return
         info = QtClassTable.shared().property_info(self._qt_class_name(node.class_name), name)
@@ -850,18 +858,37 @@ class Realizer(_Structure):
         return path_under(self._base_dir, path)
 
 
-def _fresh_widget(short_name: str, cls: type) -> Optional[QWidget]:
-    cached = _FRESH.get(short_name)
+def _fresh_host() -> QWidget:
+    """A parent so a probe is not a window.
+
+    A parentless QStatusBar is a window, and a window pins its minimum size to
+    the size hint. Resetting a child from that probe grows the live widget, so
+    a child probe is parented and a window probe is not.
+    """
+    global _FRESH_HOST
+    if _FRESH_HOST is None or not wrapper_is_valid(_FRESH_HOST):
+        _ensure_app()
+        host = QWidget()
+        host.setObjectName("_cbcsFreshHost")
+        # The probe is a hidden parent, not a window the desktop should show.
+        host.setAttribute(Qt.WA_DontShowOnScreen, True)
+        _FRESH_HOST = host
+    return _FRESH_HOST
+
+
+def _fresh_widget(short_name: str, cls: type, *, window: bool = True) -> Optional[QWidget]:
+    key = (short_name, window)
+    cached = _FRESH.get(key)
     if cached is not None and wrapper_is_valid(cached):
         return cached
     try:
-        created = cls()
+        created = cls() if window else cls(_fresh_host())
     except (TypeError, RuntimeError):
         return None
     if not isinstance(created, QWidget):
         return None
     created.setObjectName("_cbcsFresh")
-    _FRESH[short_name] = created
+    _FRESH[key] = created
     return created
 
 

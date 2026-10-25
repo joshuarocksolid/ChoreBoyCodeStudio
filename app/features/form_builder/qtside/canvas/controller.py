@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import replace
-from typing import Dict, FrozenSet, Optional, Protocol, Tuple
+from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
 
 from app.qt.QtCore import QEvent, QPoint, QRect, Qt, QTimer
 from app.qt.QtGui import QFont, QFontMetrics, QPixmap
@@ -27,14 +27,16 @@ from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage
 from app.features.form_builder.engine.commands.drop_plan import auto_target, indicate_preview
+from app.features.form_builder.engine.sizing import chip_axis, project_axis
 from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
-from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.engine.ui4.values import SizePolicyValue, SizeValue
 from app.features.form_builder.qtside.canvas import _input
 from app.features.form_builder.qtside.canvas.core.frame import (
     AddPage,
@@ -90,15 +92,13 @@ from app.features.form_builder.qtside.canvas.core.overlay import (
     build_frame,
     build_static,
     frame_basis,
+    shift_static,
 )
+from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import TextTarget, text_target
-from app.features.form_builder.qtside.canvas.core.words import (
-    SizingWord,
-    describe_selection,
-    sizing_word,
-    zoom_label,
-)
+from app.features.form_builder.qtside.canvas.core.words import describe_selection, zoom_label
+from app.features.form_builder.qtside.sizing_live import class_default_policies, class_phrase
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
 from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
@@ -111,8 +111,6 @@ REVEAL_SOURCES: FrozenSet[SelectionSource] = frozenset(
 
 # Detach must run before the realizer deletes a replaced root (priority 10).
 PRIORITY_DETACH = 9
-
-_QT_MAX = 16777215
 
 
 class CanvasHost(Protocol):
@@ -158,6 +156,7 @@ class CanvasController:
         self._host = host
         self._gesture = Idle()
         self._static: Optional[StaticLayer] = None
+        self._static_entries: Tuple[GeoEntry, ...] = ()
         self._frame = OverlayFrame(
             frame_basis(index, stage.view_map(), session.selection.state, 0),
             (),
@@ -675,6 +674,7 @@ class CanvasController:
 
     def _pre_paint(self) -> None:
         self._index.ensure_fresh()
+        self._note_moved()
         pending = self._pending_reveal
         self._pending_reveal = None
         if pending is not None:
@@ -685,14 +685,36 @@ class CanvasController:
         self._rebuild(static=self._static_stale())
         self._view.viewport().update()
 
+    def _note_moved(self) -> None:
+        preview = getattr(self._view, "preview", None)
+        note = getattr(preview, "note_moved", None)
+        if note is None:
+            return
+        note(_moved_ids(self._static_entries, self._index.indexed_entries()))
+
     def _static_stale(self) -> bool:
         view = self._stage.view_map()
-        return self._static is None or self._static.epoch != self._index.epoch or self._static.view != view
+        static = self._static
+        if static is None or static.view != view:
+            return True
+        if static.epoch == self._index.epoch:
+            return False
+        # Rebuilding every stroke when one widget moved is the O(form) part
+        # of an edit. Shift the obstacles that moved. The frame still rebuilds,
+        # so the selection chip follows.
+        current = self._index.indexed_entries()
+        shifted = _reuse_static(static, view, self._static_entries, current)
+        if shifted is None:
+            return True
+        self._static = replace(shifted, epoch=self._index.epoch)
+        self._static_entries = current
+        return False
 
     def _rebuild(self, static: bool) -> None:
         view = self._stage.view_map()
         if static or self._static is None:
             self._static = build_static(self._session.document, self._index, view)
+            self._static_entries = self._index.indexed_entries()
         selection = self._session.selection.state
         self._frame = build_frame(
             self._static,
@@ -762,18 +784,36 @@ class CanvasController:
 
     def _sizing(
         self, selection: SelectionState
-    ) -> Optional[Tuple[Optional[SizingWord], Optional[SizingWord]]]:
+    ) -> Optional[Tuple[Optional[str], Optional[str]]]:
         current = effective_selection(self._session.document, selection).current
         if current is None:
             return None
         widget = self._realizer.widget_for(current)
-        if widget is None:
+        if widget is None or not isinstance(widget, QWidget):
             return None
-        policy = widget.sizePolicy()
-        return (
-            sizing_word(_policy_name(policy.horizontalPolicy()), _axis_fixed(widget, True)),
-            sizing_word(_policy_name(policy.verticalPolicy()), _axis_fixed(widget, False)),
+        node = self._session.document.get(current)
+        if not isinstance(node, WidgetNode):
+            return None
+        stored = _stored_policy(node)
+        minimum = _stored_size(node, "minimumSize")
+        maximum = _stored_size(node, "maximumSize")
+        defaults = class_default_policies(widget)
+        phrase = class_phrase(node.class_name)
+        horizontal = project_axis(
+            stored_policy=None if stored is None else stored.hsizetype,
+            minimum=None if minimum is None else minimum.width,
+            maximum=None if maximum is None else maximum.width,
+            class_default_policy=defaults[0],
+            class_phrase=phrase,
         )
+        vertical = project_axis(
+            stored_policy=None if stored is None else stored.vsizetype,
+            minimum=None if minimum is None else minimum.height,
+            maximum=None if maximum is None else maximum.height,
+            class_default_policy=defaults[1],
+            class_phrase=phrase,
+        )
+        return (chip_axis(horizontal), chip_axis(vertical))
 
     def _measure(self, text: str) -> int:
         font = QFont(self._view.font())
@@ -784,6 +824,47 @@ class CanvasController:
         if advance is None:
             return int(metrics.width(text))
         return int(advance(text))
+
+
+def _moved_ids(
+    previous: Tuple[GeoEntry, ...],
+    current: Tuple[GeoEntry, ...],
+) -> Optional[Tuple[NodeId, ...]]:
+    """Node ids whose rect changed. None when the entry list is not the same widgets."""
+    if len(previous) != len(current):
+        return None
+    moved: List[NodeId] = []
+    for left, right in zip(previous, current):
+        if left.kind != right.kind or left.node != right.node or left.visible != right.visible:
+            return None
+        if left.rect != right.rect:
+            moved.append(right.node)
+    return tuple(moved)
+
+
+def _reuse_static(
+    static: StaticLayer,
+    view: ViewMap,
+    previous: Tuple[GeoEntry, ...],
+    current: Tuple[GeoEntry, ...],
+) -> Optional[StaticLayer]:
+    if len(previous) != len(current):
+        return None
+    updates = {}
+    for left, right in zip(previous, current):
+        if (
+            left.kind != right.kind
+            or left.node != right.node
+            or left.visible != right.visible
+            or left.container != right.container
+            or left.z != right.z
+        ):
+            return None
+        if left.rect != right.rect:
+            if right.kind not in ("widget", "spacer"):
+                return None
+            updates[right.node] = right.rect
+    return shift_static(static, view, updates)
 
 
 def _show_page(page: QWidget) -> bool:
@@ -835,16 +916,19 @@ def _mints_token(gesture: Gesture, event: Event) -> bool:
     return isinstance(event, EditorDone) and event.how in ("tab", "backtab")
 
 
-def _policy_name(value: object) -> str:
-    name = getattr(value, "name", None)
-    if isinstance(name, str) and name:
-        return name
-    return str(value).rsplit(".", 1)[-1]
+def _stored_policy(node: object) -> Optional[SizePolicyValue]:
+    if not isinstance(node, WidgetNode):
+        return None
+    entry = node.prop("sizePolicy")
+    if entry is None or not isinstance(entry.value, SizePolicyValue):
+        return None
+    return entry.value
 
 
-def _axis_fixed(widget: QWidget, horizontal: bool) -> bool:
-    minimum = widget.minimumSize()
-    maximum = widget.maximumSize()
-    if horizontal:
-        return minimum.width() == maximum.width() and maximum.width() < _QT_MAX
-    return minimum.height() == maximum.height() and maximum.height() < _QT_MAX
+def _stored_size(node: object, name: str) -> Optional[SizeValue]:
+    if not isinstance(node, WidgetNode):
+        return None
+    entry = node.prop(name)
+    if entry is None or not isinstance(entry.value, SizeValue):
+        return None
+    return entry.value

@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Literal, Optional, Tuple
+from typing import Optional, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.qtside.canvas.core.structure import effective_class, effective_selection
-
-SizingWord = Literal["Hug", "Fill", "Fixed"]
 
 ELIDE_AT = 24
 
@@ -22,8 +20,6 @@ MOVE_IN_LAYOUT_LATER = (
 )
 RESIZE_IN_LAYOUT_LATER = "Size handles on widgets in a layout arrive with Hug, Fill and Fixed."
 
-_FILL = frozenset({"Expanding", "MinimumExpanding", "Ignored"})
-_HUG = frozenset({"Preferred", "Fixed"})
 _LAYOUT = {
     "QHBoxLayout": ("Horizontal", "Horizontal layout"),
     "QVBoxLayout": ("Vertical", "Vertical layout"),
@@ -58,18 +54,6 @@ _CLASS_WORDS = {
 }
 
 
-def sizing_word(policy: str, fixed_size: bool) -> Optional[SizingWord]:
-    """Hug, Fill, or Fixed. None is a custom policy the chip does not name."""
-    name = policy.split("::")[-1]
-    if name == "Fixed" and fixed_size:
-        return "Fixed"
-    if name in _FILL:
-        return "Fill"
-    if name in _HUG:
-        return "Hug"
-    return None
-
-
 def elide_middle(name: str, limit: int = ELIDE_AT) -> str:
     if len(name) <= limit:
         return name
@@ -84,7 +68,7 @@ def elide_middle(name: str, limit: int = ELIDE_AT) -> str:
 def chip_text(
     document: UiDocument,
     state: SelectionState,
-    sizing: Optional[Tuple[Optional[SizingWord], Optional[SizingWord]]],
+    sizing: Optional[Tuple[Optional[str], Optional[str]]],
 ) -> str:
     shown = effective_selection(document, state)
     current = document.get(shown.current) if shown.current is not None else None

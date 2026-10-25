@@ -161,6 +161,10 @@ class HitIndex:
         self._require_fresh()
         return self._children.get(container, ())
 
+    def indexed_entries(self) -> Tuple[GeoEntry, ...]:
+        """The entries from the last ``ensure_fresh``. Order is the walk order."""
+        return self._entries
+
     def title_entries(self) -> Tuple[GeoEntry, ...]:
         self._require_fresh()
         return tuple(entry for entry in self._entries if entry.kind in _TITLES and entry.visible)

@@ -176,7 +176,7 @@ class PropertiesPage(QWidget):
     def request_rebuild(self) -> None:
         self._on_search()
 
-    def apply_colors(self, panel: str, text: str, faint: str) -> None:
+    def apply_colors(self, panel: str, text: str, faint: str, hover: str = "", caption: str = "") -> None:
         """The scroll viewport does not inherit the inspector stylesheet."""
         self.setStyleSheet(
             "QWidget#formBuilder\\.inspectorBody { background: %s; color: %s; }"
@@ -208,7 +208,8 @@ class PropertiesPage(QWidget):
             "QSpinBox[fbState=\"mixed\"], QDoubleSpinBox[fbState=\"mixed\"], QComboBox[fbState=\"mixed\"],"
             " QLineEdit[fbState=\"mixed\"], QFontComboBox[fbState=\"mixed\"], QCheckBox[fbState=\"mixed\"],"
             " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
-            % (panel, text, text, faint, text, text, faint, faint)
+            "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
+            % (panel, text, text, faint, text, text, faint, faint, caption or text, hover or panel)
         )
 
     def paint(self, body: BodyView) -> None:
@@ -520,6 +521,9 @@ class _Group(QWidget):
             self._host = _GroupHost(self._services, self._owners)
             self._custom = factory(self._host, self._body)
             self._body_layout.addWidget(self._custom.widget)
+        if self._host is not None:
+            self._host.set_frame(self._owners, self._qt_names)
+        self._custom.widget.show()
         self._custom.show(view.rows())
 
     def _hide_custom(self) -> None:
@@ -803,7 +807,7 @@ class _Row(QWidget):
             return
         self._editor = factory(view.spec, self, self._slot)
         _shrink(self._editor.widget)
-        self._editor.widget.setAccessibleName(view.label)
+        _name_editors(self._editor.widget, view.label)
         self._slot_layout.addWidget(self._editor.widget)
         self._editor.widget.show()
 
@@ -913,6 +917,11 @@ class _GroupHost:
     def __init__(self, services: Services, owners: Tuple[NodeId, ...]) -> None:
         self._services = services
         self._owners = owners
+        self._qt_names = False
+
+    def set_frame(self, owners: Tuple[NodeId, ...], qt_names: bool) -> None:
+        self._owners = owners
+        self._qt_names = qt_names
 
     @property
     def document(self) -> UiDocument:
@@ -921,6 +930,13 @@ class _GroupHost:
     @property
     def owners(self) -> Tuple[NodeId, ...]:
         return self._owners
+
+    @property
+    def qt_names(self) -> bool:
+        return self._qt_names
+
+    def live(self, owner: NodeId) -> Optional[QWidget]:
+        return self._services.live(owner)
 
     def run(self, label: str, commands: Sequence[Command]) -> Optional[str]:
         result = self._services.execute_all(label, commands)
@@ -977,6 +993,37 @@ def _escape(text: str) -> str:
         .replace(">", "&gt;")
         .replace('"', "&quot;")
     )
+
+def _name_editors(root: QWidget, label: str) -> None:
+    """Name the editor and the line edit Qt uses as its focus proxy."""
+    root.setAccessibleName(label)
+    _name_line(root, label)
+    for child in root.findChildren(QWidget):
+        meta = child.metaObject()
+        kind = str(meta.className()) if meta is not None else ""
+        if kind not in (
+            "QSpinBox",
+            "QDoubleSpinBox",
+            "QLineEdit",
+            "QComboBox",
+            "QFontComboBox",
+            "QPlainTextEdit",
+            "QKeySequenceEdit",
+        ):
+            continue
+        if not child.accessibleName():
+            child.setAccessibleName(label)
+        _name_line(child, child.accessibleName() or label)
+
+
+def _name_line(widget: QWidget, label: str) -> None:
+    line = getattr(widget, "lineEdit", None)
+    if not callable(line):
+        return
+    editor = line()
+    if isinstance(editor, QWidget) and not editor.accessibleName():
+        editor.setAccessibleName(label)
+
 
 def _shrink(widget: QWidget) -> None:
     policy = getattr(QSizePolicy, "Policy", QSizePolicy)

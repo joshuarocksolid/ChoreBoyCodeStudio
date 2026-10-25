@@ -13,7 +13,7 @@ from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, S
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, NoDrop, RefusedDrop
-from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex
+from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
@@ -83,7 +83,7 @@ from app.features.form_builder.qtside.canvas.core.structure import (
     managed_container,
     positioning_of,
 )
-from app.features.form_builder.qtside.canvas.core.words import SizingWord, chip_text, no_layout_text
+from app.features.form_builder.qtside.canvas.core.words import chip_text, no_layout_text
 
 #: UX-EMPTY-002 canvas-only minimum for an empty layout or container mark.
 EMPTY_MIN_WIDTH = 48
@@ -145,7 +145,7 @@ class FrameInputs:
     problems: Mapping[NodeId, str]
     problems_revision: int
     #: The primary's (width, height) words, read from the live widget.
-    sizing: Optional[Tuple[Optional[SizingWord], Optional[SizingWord]]]
+    sizing: Optional[Tuple[Optional[str], Optional[str]]]
     #: Page chip and size readout label rects. Backdrop chrome, not overlay chips.
     chrome: Tuple[CanvasRect, ...]
     #: Advance of chip text at 11 px semibold. The only font fact needed.
@@ -267,6 +267,63 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(placed),
         tuple(tabs),
         tuple(stacks),
+    )
+
+
+def shift_static(
+    layer: StaticLayer,
+    view: ViewMap,
+    updates: Mapping[NodeId, Rect],
+) -> Optional[StaticLayer]:
+    """Move obstacles whose form rect changed. None means the caller rebuilds.
+
+    Layout strokes carry no node id, so a layout move is a rebuild. A widget
+    or spacer that was not placed is a rebuild too.
+    """
+    if not updates:
+        return layer
+    page = view.page_rect()
+    placed: List[Obstacle] = []
+    previous = {}
+    found = set()
+    for obstacle in layer.placed:
+        rect = updates.get(obstacle.node)
+        if rect is None:
+            placed.append(obstacle)
+            previous.setdefault(obstacle.node, obstacle.rect)
+            continue
+        canvas = view.to_canvas(rect)
+        placed.append(Obstacle(obstacle.node, canvas))
+        previous.setdefault(obstacle.node, obstacle.rect)
+        found.add(obstacle.node)
+    if found != set(updates):
+        return None
+    content: List[Obstacle] = []
+    seen = set()
+    for obstacle in layer.content:
+        rect = updates.get(obstacle.node)
+        old = previous.get(obstacle.node)
+        if rect is None or old is None or not _same_canvas(obstacle.rect, old, page):
+            content.append(obstacle)
+            continue
+        seen.add(obstacle.node)
+        clipped = _clip(view.to_canvas(rect), page)
+        if clipped is not None:
+            content.append(Obstacle(obstacle.node, clipped))
+    for node, rect in updates.items():
+        if node in seen:
+            continue
+        clipped = _clip(view.to_canvas(rect), page)
+        if clipped is not None:
+            content.append(Obstacle(node, clipped))
+    return StaticLayer(
+        layer.epoch,
+        layer.view,
+        layer.items,
+        tuple(content),
+        layer.unlaid,
+        layer.targets,
+        tuple(placed),
     )
 
 
@@ -799,6 +856,18 @@ def _centred(host: CanvasRect, width: int, height: int) -> CanvasRect:
         width,
         height,
     )
+
+
+def _same_canvas(rect: CanvasRect, placed: CanvasRect, page: CanvasRect) -> bool:
+    """True when ``rect`` is the placed widget, or that widget clipped to the page.
+
+    A tab title shares its page's node id and a different rect, so a page move
+    must not drag the title.
+    """
+    if rect == placed:
+        return True
+    clipped = _clip(placed, page)
+    return clipped is not None and rect == clipped
 
 
 def _clip(rect: CanvasRect, page: CanvasRect) -> Optional[CanvasRect]:
