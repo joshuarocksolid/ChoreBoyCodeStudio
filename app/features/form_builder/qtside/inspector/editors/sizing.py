@@ -462,7 +462,7 @@ class _LimitRow:
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         line = QHBoxLayout()
-        line.setSpacing(6)
+        line.setSpacing(4)
         self._bar = QFrame(self.widget)
         self._bar.setObjectName("formBuilder.rowChanged")
         self._bar.setFixedWidth(2)

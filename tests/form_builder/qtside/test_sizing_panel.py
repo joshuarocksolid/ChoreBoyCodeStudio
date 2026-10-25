@@ -6,7 +6,7 @@ from __future__ import annotations
 import os
 import re
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import pytest
 
@@ -664,8 +664,10 @@ def _grab(qapp, host: QWidget, canvas: FormCanvas, pane: InspectorPane, folder: 
                 if proxies:
                     wide = max(proxies, key=lambda item: item.sceneBoundingRect().width())
                     root = wide.widget()
-                    target = root.findChild(QWidget, "grow") if root is not None else None
-                    if isinstance(target, QWidget) and root is not None:
+                    target: Optional[QWidget] = None
+                    if root is not None:
+                        target = root.findChild(QWidget, "grow")
+                    if target is not None and root is not None:
                         point = target.mapTo(root, QPoint(max(1, target.width() // 2), max(1, target.height() // 2)))
                         canvas.centerOn(wide.mapToScene(QPointF(float(point.x()), float(point.y()))))
                     else:
