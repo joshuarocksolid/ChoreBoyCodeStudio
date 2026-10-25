@@ -246,7 +246,7 @@ def test_an_outline_drop_reorders_the_row() -> None:
         receipts = session.document.by_name("receipts")[0]
         canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget", (receipts,)), ""))
         _flush()
-        pane._post_target(QPoint(12, 40), True)  # type: ignore[attr-defined]
+        pane._post_target(_row_top(pane, session, "shop"), True)  # type: ignore[attr-defined]
         _flush()
         assert _content_names(_layout(session.document, "verticalLayout")) == ["receipts", "shop"]
         canvas.dispose()
@@ -259,7 +259,7 @@ def test_an_insert_dropped_on_the_outline_lands_in_the_layout() -> None:
         pane = _outline(canvas, parent, session)
         canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget"), "QPushButton"))
         _flush()
-        pane._post_target(QPoint(12, 40), True)  # type: ignore[attr-defined]
+        pane._post_target(_row_top(pane, session, "shop"), True)  # type: ignore[attr-defined]
         _flush()
         assert _content_names(_layout(session.document, "verticalLayout")) == ["pushButton", "shop", "receipts"]
         canvas.dispose()
@@ -312,6 +312,13 @@ def _outline(canvas: FormCanvas, parent: QWidget, session) -> OutlinePane:  # ty
     pane.show()
     _flush()
     return pane
+
+
+def _row_top(pane: OutlinePane, session, name: str) -> QPoint:  # type: ignore[no-untyped-def]
+    """Point in the top third of a row, so the test holds at any font height."""
+    node = session.document.by_name(name)[0]
+    rect = pane.tree.visualItemRect(pane._rows[int(node)])  # type: ignore[attr-defined]
+    return QPoint(12, rect.y() + max(1, rect.height() // 6))
 
 
 def _canvas(session, realizer, width: int, height: int):
