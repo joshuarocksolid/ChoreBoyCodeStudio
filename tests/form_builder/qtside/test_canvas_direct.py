@@ -20,6 +20,7 @@ from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.canvas.controller import READOUT_LINGER_MS
 from app.features.form_builder.qtside.canvas.core.frame import Chip, FocusShare, OnChip, OnKnob
@@ -59,6 +60,34 @@ GRID = form(
    <item row="0" column="0"><widget class="QPushButton" name="a"><property name="text"><string>A</string></property></widget></item>
    <item row="0" column="1"><widget class="QPushButton" name="b"><property name="text"><string>B</string></property></widget></item>
    <item row="1" column="1"><widget class="QPushButton" name="c"><property name="text"><string>C</string></property></widget></item>
+  </layout>
+""",
+)
+
+SPAN = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QGridLayout" name="gridLayout">
+   <item row="0" column="0"><widget class="QPushButton" name="a"><property name="text"><string>A</string></property></widget></item>
+   <item row="1" column="0"><widget class="QPushButton" name="b"><property name="text"><string>B</string></property></widget></item>
+   <item row="1" column="1"><widget class="QPushButton" name="c"><property name="text"><string>C</string></property></widget></item>
+  </layout>
+""",
+)
+
+PANES = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="%s" name="outer">
+   <item>
+    <widget class="QSplitter" name="split">
+     <property name="orientation"><enum>%s</enum></property>
+     <widget class="QListWidget" name="first"/>
+     <widget class="QListWidget" name="second"/>
+    </widget>
+   </item>
   </layout>
 """,
 )
@@ -249,6 +278,70 @@ def test_repeated_ctrl_shift_arrows_are_one_undo() -> None:
         assert isinstance(node, WidgetNode) and node.prop("sizePolicy") is None
 
 
+@pytest.mark.parametrize(
+    "text, select, key, delta, read, moved",
+    (
+        pytest.param(
+            STACK, "ok", ("gap", "verticalLayout", "v0"),
+            lambda session, realizer: (0, 10),
+            lambda session, realizer: _qlayout(session, realizer, "verticalLayout").spacing(),
+            lambda before: before + 10,
+            id="spacing",
+            marks=pytest.mark.parity("R3-48"),
+        ),
+        pytest.param(
+            STACK, "ok", ("margin", "verticalLayout", "left"),
+            lambda session, realizer: (6, 0),
+            lambda session, realizer: _qlayout(session, realizer, "verticalLayout").contentsMargins().left(),
+            lambda before: before + 6,
+            id="margin",
+            marks=pytest.mark.parity("R3-47"),
+        ),
+        pytest.param(
+            SPAN, "a", ("size", "a", "e"),
+            lambda session, realizer: (_right(session, realizer, "c") - _right(session, realizer, "a"), 0),
+            lambda session, realizer: _cell(session, realizer, "gridLayout", "a"),
+            lambda before: before[:3] + (2,),
+            id="span",
+            marks=pytest.mark.parity("R3-52"),
+        ),
+        pytest.param(
+            PANES % ("QVBoxLayout", "Qt::Horizontal"), None, ("grip", "split", "0"),
+            lambda session, realizer: (30, 0),
+            lambda session, realizer: _sizes(session, realizer, "split"),
+            lambda before: (before[0] + 30, before[1] - 30),
+            id="splitter-h",
+            marks=pytest.mark.parity("R3-39"),
+        ),
+        pytest.param(
+            PANES % ("QHBoxLayout", "Qt::Vertical"), None, ("grip", "split", "0"),
+            lambda session, realizer: (0, 30),
+            lambda session, realizer: _sizes(session, realizer, "split"),
+            lambda before: (before[0] + 30, before[1] - 30),
+            id="splitter-v",
+            marks=(pytest.mark.parity("R3-40"), pytest.mark.pain("P-19")),
+        ),
+    ),
+)
+def test_a_knob_drop_survives_save_and_reload(text, select, key, delta, read, moved) -> None:
+    with _shown(text) as (session, realizer, canvas):
+        before = read(session, realizer)
+        if select is not None:
+            _click(canvas, select)
+        kind, owner, detail = key
+        knob: KnobKey = (kind, _id(session, owner), detail)
+        start = _gap_point(canvas, knob) if kind == "gap" else _knob_point(canvas, knob)
+        dx, dy = delta(session, realizer)
+        _press(canvas, start)
+        _move(canvas, start + QPoint(dx, dy))
+        _release(canvas, start + QPoint(dx, dy))
+        dropped = read(session, realizer)
+        assert dropped == moved(before)
+        saved = write_ui(session.document).text
+    with _shown(saved) as (session, realizer, canvas):
+        assert read(session, realizer) == dropped
+
+
 def test_a_share_chip_focuses_the_share_spin(tmp_path: Path) -> None:
     parent = QWidget()
     parent.resize(1280, 800)
@@ -328,6 +421,30 @@ def _stored_sizes(session: FormSession, node: NodeId) -> Optional[Tuple[int, ...
     assert isinstance(found, WidgetNode)
     value = found.value("cbcsSplitterSizes")
     return None if value is None else splitter_sizes(value)
+
+
+def _qlayout(session: FormSession, realizer: Realizer, name: str):
+    found = realizer.layout_for(_id(session, name))
+    assert found is not None
+    return found
+
+
+def _right(session: FormSession, realizer: Realizer, name: str) -> int:
+    widget = realizer.widget_for(_id(session, name))
+    assert widget is not None
+    return widget.geometry().right()
+
+
+def _cell(session: FormSession, realizer: Realizer, layout: str, name: str) -> Tuple[int, ...]:
+    grid = _qlayout(session, realizer, layout)
+    widget = realizer.widget_for(_id(session, name))
+    return tuple(grid.getItemPosition(grid.indexOf(widget)))
+
+
+def _sizes(session: FormSession, realizer: Realizer, name: str) -> Tuple[int, ...]:
+    splitter = realizer.widget_for(_id(session, name))
+    assert isinstance(splitter, QSplitter) and splitter.count() == 2
+    return tuple(splitter.sizes())
 
 
 def _id(session: FormSession, name: str) -> NodeId:

@@ -367,23 +367,98 @@ _SPLIT = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@pytest.mark.parametrize("orientation, axis", (("Qt::Horizontal", "h"), ("Qt::Vertical", "v")))
-def test_a_splitter_pane_share_survives_save_and_reload(qapp: QApplication, orientation: str, axis: str) -> None:
-    window, pane, session, realizer = _pane(qapp, _SPLIT % orientation)
+_BOX = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Column</class>
+ <widget class="QWidget" name="Column">
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item><widget class="QPushButton" name="stay"/></item>
+   <item><widget class="QPushButton" name="grow"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+_CELLS = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Cells</class>
+ <widget class="QWidget" name="Cells">
+  <layout class="QGridLayout" name="cells" rowminimumheight="24,0" columnminimumwidth="0,60">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="0" column="1"><widget class="QPushButton" name="b"/></item>
+   <item row="1" column="1"><widget class="QPushButton" name="c"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+@pytest.mark.parametrize(
+    "text, name, axis, shown, live, expected",
+    (
+        pytest.param(
+            _SPLIT % "Qt::Horizontal", "right", "h", ("h",),
+            lambda session, realizer: _widget(session, realizer, "right").sizePolicy().horizontalStretch(),
+            2,
+            id="pane-h",
+        ),
+        pytest.param(
+            _SPLIT % "Qt::Vertical", "right", "v", ("v",),
+            lambda session, realizer: _widget(session, realizer, "right").sizePolicy().verticalStretch(),
+            2,
+            id="pane-v",
+        ),
+        pytest.param(
+            _BOX, "grow", "v", ("v",),
+            lambda session, realizer: _layout(session, realizer, "mainLayout").stretch(1),
+            2,
+            id="box",
+            marks=pytest.mark.parity("R3-50"),
+        ),
+        pytest.param(
+            _CELLS, "b", "h", ("h", "v"),
+            lambda session, realizer: (
+                _layout(session, realizer, "cells").columnStretch(1),
+                _layout(session, realizer, "cells").columnMinimumWidth(1),
+            ),
+            (2, 60),
+            id="grid-column",
+            marks=pytest.mark.parity("R3-51"),
+        ),
+        pytest.param(
+            _CELLS, "b", "v", ("h", "v"),
+            lambda session, realizer: (
+                _layout(session, realizer, "cells").rowStretch(0),
+                _layout(session, realizer, "cells").rowMinimumHeight(0),
+            ),
+            (2, 24),
+            id="grid-row",
+            marks=pytest.mark.parity("R3-51"),
+        ),
+    ),
+)
+def test_a_share_survives_save_and_reload(qapp: QApplication, text, name, axis, shown, live, expected) -> None:
+    window, pane, session, realizer = _pane(qapp, text)
     try:
-        spin = _pane_share(pane, session, axis)
+        assert _shares_shown(pane, session, name) == shown
+        spin = _share_spin(pane, axis)
         spin.setValue(2)
         spin.editingFinished.emit()
         pane.flush()
         assert session.log.undo_label() == "Size"
-        assert _live_stretch(realizer, session, axis) == 2
+        assert live(session, realizer) == expected
         saved = write_ui(session.document).text
     finally:
         _close(window, pane, realizer, session, qapp)
     window, pane, session, realizer = _pane(qapp, saved)
     try:
-        assert _pane_share(pane, session, axis).value() == 2
-        assert _live_stretch(realizer, session, axis) == 2
+        assert _shares_shown(pane, session, name) == shown
+        assert _share_spin(pane, axis).value() == 2
+        assert live(session, realizer) == expected
     finally:
         _close(window, pane, realizer, session, qapp)
 
@@ -393,7 +468,7 @@ def test_a_pane_share_row_fits_a_narrow_size_body(qapp: QApplication) -> None:
     try:
         pane.set_compact(True)
         window.resize(236, 640)
-        _pane_share(pane, session, "h")
+        assert _shares_shown(pane, session, "right") == ("h",)
         qapp.processEvents()
         scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
         body = pane.findChild(QWidget, "formBuilder.sizeBody")
@@ -405,23 +480,31 @@ def test_a_pane_share_row_fits_a_narrow_size_body(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
-def _pane_share(pane: InspectorPane, session, axis: str) -> QSpinBox:
-    """Select the right pane, open Size, and return its share spin. The other axis has no share."""
-    _select(session, "right")
+def _shares_shown(pane: InspectorPane, session, name: str) -> tuple:
+    """Select ``name``, open Size, and list the axes whose share row shows."""
+    _select(session, name)
     pane.set_group_expanded(GroupId.SIZE, True)
     pane.flush()
-    other = pane.findChild(QWidget, "formBuilder.size.share.%s" % ("v" if axis == "h" else "h"))
-    assert other is not None and not other.isVisibleTo(pane)
+    rows = {axis: pane.findChild(QWidget, "formBuilder.size.share.%s" % axis) for axis in ("h", "v")}
+    return tuple(axis for axis, row in rows.items() if row is not None and row.isVisibleTo(pane))
+
+
+def _share_spin(pane: InspectorPane, axis: str) -> QSpinBox:
     spin = pane.findChild(QSpinBox, "formBuilder.size.share.%s.value" % axis)
-    assert spin is not None and spin.isVisibleTo(pane)
+    assert spin is not None
     return spin
 
 
-def _live_stretch(realizer, session, axis: str) -> int:
-    widget = realizer.widget_for(session.document.by_name("right")[0])
+def _widget(session, realizer, name: str) -> QWidget:
+    widget = realizer.widget_for(session.document.by_name(name)[0])
     assert widget is not None
-    policy = widget.sizePolicy()
-    return policy.horizontalStretch() if axis == "h" else policy.verticalStretch()
+    return widget
+
+
+def _layout(session, realizer, name: str):
+    layout = realizer.layout_for(session.document.by_name(name)[0])
+    assert layout is not None
+    return layout
 
 
 def test_reset_is_a_hover_icon_and_the_label_is_strong(qapp: QApplication) -> None:
