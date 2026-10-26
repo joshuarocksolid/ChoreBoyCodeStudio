@@ -23,6 +23,7 @@ from typing import (
 
 from app.features.form_builder.engine.commands import catalog
 from app.features.form_builder.engine.commands.base import Command, CommandRejected
+from app.features.form_builder.engine.commands.catalog_ext.host_wrap import WrapFree, WrapSplitter, WrapTab
 from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing, from_write
 from app.features.form_builder.engine.commands.log import CommandLog
 from app.features.form_builder.engine.ids import NodeId
@@ -832,24 +833,41 @@ def _wrap(doc: UiDocument, ids: Tuple[NodeId, ...], kind: Kind, measured: Measur
         not isinstance(doc.node(node_id), WidgetNode) for node_id in siblings.ids
     ):
         return Refused("Only widgets can go in %s." % kind.noun)
-    if not siblings.in_layout or isinstance(shape, (SplitterShape, TabShape)):
-        return Refused("Wrapping in %s isn't available here yet." % kind.noun)
-    sentence = "Wrapped %s in %s" % (_count(len(siblings.ids), "widget", "widgets"), kind.noun)
-    if isinstance(shape, ContainerShape):
+    rects = _rects(doc, siblings.ids, measured)
+    geometry: Optional[RectValue] = None
+    if not siblings.in_layout:
+        geometry = _bounds([rects[node_id] for node_id in siblings.ids if node_id in rects])
+        if geometry is None:
+            return Refused("Its size isn't known yet.")
+    command: Command
+    if isinstance(shape, SplitterShape):
+        command = WrapSplitter(siblings.ids, shape.orientation, geometry)
+    elif isinstance(shape, TabShape):
+        command = WrapTab(siblings.ids, shape.title, geometry)
+    elif siblings.in_layout and isinstance(shape, ContainerShape):
         command = catalog.Wrap(siblings.ids, shape.container_class)
-    else:
+    elif siblings.in_layout:
         assert isinstance(shape, LayoutShape)
-        command = catalog.Wrap(siblings.ids, None, shape.layout_class, _wrap_cells(siblings.ids, shape, measured))
+        command = catalog.Wrap(siblings.ids, None, shape.layout_class, _named_cells(siblings.ids, shape, rects))
+    else:
+        assert geometry is not None
+        if isinstance(shape, ContainerShape):
+            host, layout_class = shape.container_class, "QVBoxLayout"
+        else:
+            host, layout_class = "QWidget", shape.layout_class
+        order, cells = _arrange(siblings.ids, layout_class, rects)
+        command = WrapFree(siblings.ids, host, layout_class, geometry, order, cells)
+    sentence = "Wrapped %s in %s" % (_count(len(siblings.ids), "widget", "widgets"), kind.noun)
     return _Ready("Wrap", (command,), sentence)
 
 
-def _wrap_cells(
-    ids: Tuple[NodeId, ...], shape: LayoutShape, measured: Measured
+def _named_cells(
+    ids: Tuple[NodeId, ...], shape: LayoutShape, rects: Mapping[NodeId, RectValue]
 ) -> Optional[Tuple[Tuple[NodeId, int, int], ...]]:
     if shape.layout_class == "QFormLayout":
-        return _form_cells(ids, measured)
+        return _form_cells(ids, rects)
     if shape.layout_class == "QGridLayout":
-        return tuple((node_id, row, column) for node_id, row, column, _rs, _cs in _grid_cells(ids, measured))
+        return tuple((node_id, row, column) for node_id, row, column, _rs, _cs in _grid_cells(ids, rects))
     return None
 
 
@@ -859,15 +877,22 @@ def _lay_out(doc: UiDocument, widget: WidgetNode, kind: Kind, measured: Measured
     if widget.class_name == "QMainWindow":
         return Refused("Lay out the central widget instead.")
     children = tuple(child.id for child in widget.child_widgets)
-    order = _reading_order(children, measured, vertical=shape.layout_class != "QHBoxLayout")
-    cells: Optional[Tuple[Tuple[NodeId, int, int, int, int], ...]] = None
-    if shape.layout_class == "QGridLayout":
-        cells = _grid_cells(order, measured)
-    elif shape.layout_class == "QFormLayout":
-        form = _form_cells(order, measured)
-        cells = None if form is None else tuple((node_id, row, column, 1, 1) for node_id, row, column in form)
+    order, cells = _arrange(children, shape.layout_class, _rects(doc, children, measured))
     command = catalog.ApplyLayout(widget.id, shape.layout_class, order, cells)
     return _Ready("Lay out", (command,), "Laid out %s in %s" % (_name(doc, widget), kind.noun))
+
+
+def _arrange(
+    ids: Tuple[NodeId, ...], layout_class: str, rects: Mapping[NodeId, RectValue]
+) -> Tuple[Tuple[NodeId, ...], Optional[Tuple[Tuple[NodeId, int, int, int, int], ...]]]:
+    """Reading order and ``ApplyLayout`` cells for free widgets about to share a layout."""
+    order = _reading_order(ids, rects, vertical=layout_class != "QHBoxLayout")
+    if layout_class == "QGridLayout":
+        return order, _grid_cells(order, rects)
+    if layout_class == "QFormLayout":
+        form = _form_cells(order, rects)
+        return order, None if form is None else tuple((node_id, row, column, 1, 1) for node_id, row, column in form)
+    return order, None
 
 
 def _morph(doc: UiDocument, layout: LayoutNode, new_class: str) -> _Plan:
@@ -895,15 +920,14 @@ def _orient(splitter: WidgetNode, shape: SplitterShape, kind: Kind) -> _Plan:
 
 
 def _grid_cells(
-    ids: Tuple[NodeId, ...], measured: Measured
+    ids: Tuple[NodeId, ...], rects: Mapping[NodeId, RectValue]
 ) -> Tuple[Tuple[NodeId, int, int, int, int], ...]:
-    """Rows and columns from the widgets' measured bands; one column when they collide."""
+    """Rows and columns from the widgets' bands; one column when they collide."""
     one_column = tuple((node_id, index, 0, 1, 1) for index, node_id in enumerate(ids))
-    rects = [measured[node_id].rect if node_id in measured else None for node_id in ids]
-    if not ids or any(rect is None for rect in rects):
+    if not ids or any(node_id not in rects for node_id in ids):
         return one_column
-    rows = _bands([(rect.y, rect.y + rect.height) for rect in rects if rect is not None])
-    columns = _bands([(rect.x, rect.x + rect.width) for rect in rects if rect is not None])
+    rows = _bands([(rects[node_id].y, rects[node_id].y + rects[node_id].height) for node_id in ids])
+    columns = _bands([(rects[node_id].x, rects[node_id].x + rects[node_id].width) for node_id in ids])
     taken = set()
     cells = []
     for node_id, (row, rowspan), (column, colspan) in zip(ids, rows, columns):
@@ -915,16 +939,16 @@ def _grid_cells(
     return tuple(cells)
 
 
-def _form_cells(ids: Tuple[NodeId, ...], measured: Measured) -> Optional[Tuple[Tuple[NodeId, int, int], ...]]:
+def _form_cells(
+    ids: Tuple[NodeId, ...], rects: Mapping[NodeId, RectValue]
+) -> Optional[Tuple[Tuple[NodeId, int, int], ...]]:
     """Label and field pairs per row band. None lets the form place them in order."""
-    rects = [measured[node_id].rect if node_id in measured else None for node_id in ids]
-    if not ids or any(rect is None for rect in rects):
+    if not ids or any(node_id not in rects for node_id in ids):
         return None
-    rows = _bands([(rect.y, rect.y + rect.height) for rect in rects if rect is not None])
+    rows = _bands([(rects[node_id].y, rects[node_id].y + rects[node_id].height) for node_id in ids])
     by_row: Dict[int, List[Tuple[int, NodeId]]] = {}
-    for node_id, rect, (row, _span) in zip(ids, rects, rows):
-        assert rect is not None
-        by_row.setdefault(row, []).append((rect.x, node_id))
+    for node_id, (row, _span) in zip(ids, rows):
+        by_row.setdefault(row, []).append((rects[node_id].x, node_id))
     cells = []
     for row_index, row in enumerate(sorted(by_row)):
         members = [node_id for _x, node_id in sorted(by_row[row])]
@@ -958,15 +982,39 @@ def _overlaps(a: Tuple[int, int], b: Tuple[int, int]) -> bool:
     return 2 * shared > min(a[1] - a[0], b[1] - b[0])
 
 
-def _reading_order(ids: Tuple[NodeId, ...], measured: Measured, *, vertical: bool) -> Tuple[NodeId, ...]:
+def _reading_order(
+    ids: Tuple[NodeId, ...], rects: Mapping[NodeId, RectValue], *, vertical: bool
+) -> Tuple[NodeId, ...]:
     def key(node_id: NodeId) -> Tuple[int, int, int]:
-        measure = measured.get(node_id)
-        if measure is None:
+        rect = rects.get(node_id)
+        if rect is None:
             return (1, 0, 0)
-        rect = measure.rect
         return (0, rect.y, rect.x) if vertical else (0, rect.x, rect.y)
 
     return tuple(sorted(ids, key=key))
+
+
+def _rects(doc: UiDocument, ids: Sequence[NodeId], measured: Measured) -> Dict[NodeId, RectValue]:
+    """Live rects, or the stored geometry of a free widget that was not measured."""
+    found: Dict[NodeId, RectValue] = {}
+    for node_id in ids:
+        measure = measured.get(node_id)
+        stored = doc.node(node_id).value("geometry")
+        if measure is not None:
+            found[node_id] = measure.rect
+        elif isinstance(stored, RectValue):
+            found[node_id] = stored
+    return found
+
+
+def _bounds(rects: Sequence[RectValue]) -> Optional[RectValue]:
+    if not rects:
+        return None
+    left = min(rect.x for rect in rects)
+    top = min(rect.y for rect in rects)
+    right = max(rect.x + rect.width for rect in rects)
+    bottom = max(rect.y + rect.height for rect in rects)
+    return RectValue(left, top, right - left, bottom - top)
 
 
 def _grid_gaps(layout: LayoutNode) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:

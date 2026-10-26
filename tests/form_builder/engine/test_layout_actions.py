@@ -6,13 +6,17 @@ from typing import Dict, Tuple
 
 import pytest
 
+from app.features.form_builder.engine.commands.log import replay
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.layout_actions import (
     FORM,
     GRID,
     GROUP,
+    HSPLIT,
     MIXED_PARENT,
+    TAB,
     VERTICAL,
+    VSPLIT,
     ApplyKind,
     Current,
     Done,
@@ -33,7 +37,7 @@ from app.features.form_builder.engine.layout_actions import (
 )
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue, SizeValue
-from tests.form_builder.engine.commands._support import BOX, GRID as FULL_GRID, nid, open_log, saved
+from tests.form_builder.engine.commands._support import BOX, FREE, GRID as FULL_GRID, nid, open_log, saved
 
 _HEAD = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
@@ -178,6 +182,42 @@ def test_wrapping_siblings_in_a_group_box_is_one_step() -> None:
     assert item is not None
     owner = doc.owning_widget(item.id)
     assert isinstance(owner, WidgetNode) and owner.class_name == "QGroupBox"
+
+
+@pytest.mark.parametrize(
+    ("text", "kind_id", "host_class"),
+    [
+        (BOX, HSPLIT, "QSplitter"),
+        (BOX, TAB, "QTabWidget"),
+        (FREE, VSPLIT, "QSplitter"),
+        (FREE, TAB, "QTabWidget"),
+        (FREE, GROUP, "QGroupBox"),
+        (FREE, GRID, "QWidget"),
+    ],
+)
+def test_a_host_wrap_is_valid_replays_and_selects_the_host(text: str, kind_id: str, host_class: str) -> None:
+    log = open_log(text)
+    doc = log.document
+    before = saved(doc)
+    names = {name: nid(doc, name) for name in ("okButton", "label")}
+    ids = (names["okButton"], names["label"])
+    measured = _measured(names, {"label": (10, 10, 80, 20), "okButton": (10, 40, 80, 24)})
+
+    outcome = carry_out(doc, ids, PickWrap(kind_id), measured, transact(log))
+
+    assert isinstance(outcome, Done), outcome
+    (host,) = log.selection.ids
+    node = doc.node(host)
+    assert isinstance(node, WidgetNode) and node.class_name == host_class
+    assert all(host in doc.ancestors(node_id) for node_id in ids)
+    assert replay(text, log.entries()).fingerprint() == doc.fingerprint()
+    after = saved(doc)
+
+    log.undo()
+    assert saved(doc) == before
+    log.redo()
+    assert saved(doc) == after
+    assert log.selection.ids == (host,)
 
 
 def test_simplify_is_refused_when_the_grid_has_no_gaps() -> None:
