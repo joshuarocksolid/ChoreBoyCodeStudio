@@ -19,7 +19,6 @@ class ProductStateLayout:
 
     install_base: Path
     state_root: Path
-    shop_pointer_path: Path
     occupancy_filename: str
     migrating_suffix: str
     legacy_leaf: str
@@ -43,7 +42,6 @@ class ProductStateLayout:
 DEFAULT_PRODUCT_STATE_LAYOUT = ProductStateLayout(
     install_base=Path(constants.PRODUCT_INSTALL_BASE),
     state_root=Path(constants.PRODUCT_STATE_ROOT),
-    shop_pointer_path=Path(constants.SHOP_STATE_ROOT_POINTER_PATH),
     occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
     migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
     legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
@@ -67,7 +65,7 @@ def resolve_global_state_root(state_root: Optional[PathInput] = None) -> Path:
     """Return the local state root. Explicit argument or the product dest.
 
     Logs, caches, history, plugins, crash reports, trash, and SQLite live
-    here. ``CBCS_STATE_ROOT`` and the shop pointer do not move this path.
+    here. ``CBCS_STATE_ROOT`` and shop sharing do not move this path.
     No filesystem copy. No hidden-path probe.
     """
     if state_root is not None:
@@ -278,24 +276,6 @@ def _state_root_from_env() -> Optional[Path]:
     if not candidate.is_absolute():
         return None
     return normalize_state_root_identity(candidate)
-
-
-def _state_root_from_pointer_file(pointer_path: Path) -> Optional[Path]:
-    try:
-        if not pointer_path.is_file():
-            return None
-        text = pointer_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    for line in text.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith("#"):
-            continue
-        candidate = Path(stripped).expanduser()
-        if not candidate.is_absolute():
-            continue
-        return normalize_state_root_identity(candidate)
-    return None
 
 
 def _normalize_absolute_path(path: PathInput, field_name: str) -> Path:

@@ -595,25 +595,25 @@ Global-only settings (for example theme mode, keybindings, syntax color override
 
 Local state and shared settings are different directories.
 
-Local state stays at `/home/default/FreeCAD/CBCS/state`. It is never inside a versioned install (`choreboy_code_studio_vX`). It holds logs, cache, history, plugins, crash reports, trash, and SQLite. `resolve_global_state_root` returns this path, or an explicit `state_root` argument. `CBCS_STATE_ROOT` and the shop pointer do not move it. The directory must accept a file lock and a SQLite write (`probe_state_dir`). The 2026-10-20 FreeCAD 1.0 measurements show that under `~/FreeCAD/CBCS`.
+Local state stays at `/home/default/FreeCAD/CBCS/state`. It is never inside a versioned install (`choreboy_code_studio_vX`). It holds logs, cache, history, plugins, crash reports, trash, and SQLite. `resolve_global_state_root` returns this path, or an explicit `state_root` argument. `CBCS_STATE_ROOT` and shop sharing do not move it. The directory must accept a file lock and a SQLite write (`probe_state_dir`). The 2026-10-20 FreeCAD 1.0 measurements show that under `~/FreeCAD/CBCS`.
 
-Shared settings are opt-in and hold only JSON:
+Shop sharing is opt-in and covers only three JSON documents: settings, recent projects, and Python Console history. It is owned by `app/features/shop_sharing/` and specified in `docs/shop_sharing/SPEC.md`.
 
-- `settings.json`
-- `recent_projects.json`
-- `python_console_history.json`
+`resolve_settings_root` picks the directory of this machine's own JSON files:
 
-`resolve_settings_root` picks that directory:
+1. Explicit `state_root` argument if provided. Sharing is off.
+2. Env `CBCS_STATE_ROOT` if set (non-empty, absolute after expanduser). Sharing is off. If it cannot be written, settings use the local root and startup records "Shared settings are not available".
+3. The local state root otherwise.
 
-1. Explicit `state_root` argument if provided.
-2. Env `CBCS_STATE_ROOT` if set (non-empty, absolute after expanduser).
-3. The first shop pointer file that contains an absolute path (blank and `#` lines ignored). Candidates, in order: `/home/default/share/Chore_Boy/CBCS/cbcs_state_root`, then `~/share/Chore_Boy/CBCS/cbcs_state_root` when that is a different path, then `~/share/<child>/Chore_Boy/CBCS/cbcs_state_root` for each single visible child of `~/share`, sorted by name. A client that sees the shop share as `~/share/net1/...` is covered by the child rule. The lab did not have a `net*` child. Real shops share `~/share` across machines.
-4. A legacy `~/choreboy_code_studio_state` symlink whose target is inside `~/share`. The settings root is the symlink path.
-5. The local state root, when nothing above is set.
+Shop mode never moves that root. `ShopSharingService` reads the local choice file `shop_sharing.json`: `mode: "shop"` with a `folder`, or `mode: "local"`. Persistence callers (`SettingsService`, `recent_projects`, `python_console_history`) ask `route_documents()` and, in shop mode, go through `ShopLink`:
 
-If the requested shared directory cannot be created or written, settings for this session use the local root and startup records "Shared settings are not available". The check writes a temporary file. It does not take a file lock and it does not create SQLite. SQLite and logs never go on the shared root. Treat `~/share` as a network share even though the lab's `~/share` was on the home filesystem.
+- The shop folder is `<share root>/Code Studio Settings/` with `shop.json`, `settings.json`, `shop_recent_projects.json` (v2) and `python_console_history.json`. Shared files hold no absolute paths except other hosts' own project paths.
+- Every shared write is a typed op appended to `shop_mirror/pending.json`, then pushed when the folder is reachable (folder exists and `shop.json` reads). Settings ops are leaf diffs against the session's merge base, so another machine's keys survive. Offline, reads come from the mirror plus pending ops, and the status bar says so.
+- Shop-folder writes use a temp file and `os.replace` in the existing folder. Nothing creates the folder's parents, and the folder path is never `Path.resolve()`d.
+- Recents v2 stores `share` entries relative to the share root and `host`/`path` entries for everything else. Other hosts' entries are never pruned, and nothing is pruned offline.
+- No choice file: a v0.4.13 pointer or `~/choreboy_code_studio_state` link is converted once (`legacy.py`, remove in v0.4.16). Otherwise the machine is undecided and the window offers the one-time prompt when a shop folder is found.
 
-State-root identity is normalized to an absolute path without following the final symlink hop, so a home→share symlink stays meaningful.
+SQLite and logs never go on the share.
 
 `run_editor.main` copies leftover settings before logging. Occupancy is `dest/settings.json`. The destination is the active settings root. The first leftover that has `settings.json` and is not dest wins: `$HOME/choreboy_code_studio_state`, then `$HOME/.local/share/FreeCAD/choreboy_code_studio_state`, then `$HOME/.cache/FreeCAD/choreboy_code_studio_state`, then `$HOME/FreeCAD/choreboy_code_studio_state`. Only the three JSON files are copied. History, cache, logs, and `*.sqlite3` / `*-wal` / `*-shm` stay in the source. Sources are not modified. There is no staging tree and no promote step. When more than one leftover folder exists, the outcome says settings came from the folder that was used.
 
@@ -637,9 +637,9 @@ Local contents:
   startup_dismissals.json
 ```
 
-When shared settings are off, the three JSON files live in that same local directory. When they are on, they live only in the shared directory.
+The three JSON files live in that same local directory in local mode. In shop mode the shared copies are authoritative and `shop_mirror/` keeps the last synced copy.
 
-Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. The installer still asks for a folder. Shop recipe: pick `/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. That does not automatically share settings. Point `CBCS_STATE_ROOT` or a `cbcs_state_root` pointer at a shared directory to opt in. That pointer moves settings JSON only.
+Product install dest is `/home/default/FreeCAD/CBCS/choreboy_code_studio_vX`. The installer still asks for a folder. Shop recipe: pick `/home/default/share/Chore_Boy/CBCS/choreboy_code_studio_vX`. That does not share settings. Turn on Settings > General > Shop sharing to opt in.
 
 ## 11.1 What belongs here
 

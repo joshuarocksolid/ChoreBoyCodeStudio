@@ -44,8 +44,9 @@ class MainWindowLifecycle:
         if window._python_console_widget is not None:
             try:
                 save_python_console_history(
-                    window._python_console_history_path,
+                    window._state_root,
                     window._python_console_widget.history_snapshot(),
+                    appended=window._python_console_widget.history_appended_count(),
                     max_entries=200,
                 )
             except OSError as exc:

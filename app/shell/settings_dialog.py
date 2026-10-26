@@ -96,6 +96,7 @@ from app.shell.settings_dialog_sections import (
 from app.shell.style_sheet import build_settings_style_sheet
 from app.shell.python_tooling_status_copy import UNKNOWN_SETTINGS_COPY
 from app.shell.theme_tokens import ShellThemeTokens, tokens_from_palette
+from app.features.shop_sharing.settings_group import ShopSharingGroup
 from app.ui.segmented_control import SegmentedControl
 
 
@@ -115,6 +116,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         python_tooling_runtime_details: str = UNKNOWN_SETTINGS_COPY.runtime_details,
         python_tooling_config_text: str = UNKNOWN_SETTINGS_COPY.config_text,
         python_tooling_config_details: str = UNKNOWN_SETTINGS_COPY.config_details,
+        shop_sharing_group: ShopSharingGroup | None = None,
     ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -165,6 +167,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         self._keybindings_tab_index: int | None = None
         self._syntax_tab_index: int | None = None
         self._appearance_group: QGroupBox | None = None
+        self._shop_sharing_group = shop_sharing_group
         self._output_reset_to_global_btn: QPushButton | None = None
         self._editor_reset_to_global_btn: QPushButton | None = None
         self._intelligence_reset_to_global_btn: QPushButton | None = None
@@ -226,6 +229,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
             python_tooling_runtime_details=python_tooling_runtime_details,
             python_tooling_config_text=python_tooling_config_text,
             python_tooling_config_details=python_tooling_config_details,
+            shop_sharing_group=shop_sharing_group,
         )
         build_keybindings_tab(self, tabs, snapshot)
         build_syntax_tab(self, tabs)
@@ -241,17 +245,37 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
 
+    def accept(self) -> None:
+        """Commit sharing before the dialog closes. A refusal stays open on the group."""
+        group = self._shop_sharing_group
+        if group is not None and not group.commit():
+            self.reveal_shop_sharing_group()
+            return
+        super().accept()
+
+    def reveal_shop_sharing_group(self) -> None:
+        """Global scope, General tab, scrolled to Shop sharing, focus on the checkbox."""
+        group = self._shop_sharing_group
+        if group is None:
+            return
+        if self._active_scope != SETTINGS_SCOPE_GLOBAL:
+            self._set_scope(SETTINGS_SCOPE_GLOBAL, apply_snapshot=True)
+        checkbox = group.findChild(QCheckBox, "shell.settings.shopSharing.enabled")
+        self._reveal_general_control(group, checkbox if checkbox is not None else group)
+
     def reveal_completion_mode_control(self) -> None:
         """Show the General tab scrolled to the code completion control, with focus on it."""
-        combo = self._completion_mode_input
+        self._reveal_general_control(self._completion_mode_input, self._completion_mode_input)
+
+    def _reveal_general_control(self, widget: QWidget, focus: QWidget) -> None:
         if self._tabs_widget is not None:
             self._tabs_widget.setCurrentIndex(0)
-        parent = combo.parentWidget()
+        parent = widget.parentWidget()
         while parent is not None and not isinstance(parent, QScrollArea):
             parent = parent.parentWidget()
         if isinstance(parent, QScrollArea):
-            QTimer.singleShot(0, lambda area=parent: area.ensureWidgetVisible(combo, 0, 80))
-        QTimer.singleShot(0, lambda: combo.setFocus(Qt.OtherFocusReason))
+            QTimer.singleShot(0, lambda area=parent, target=widget: area.ensureWidgetVisible(target, 0, 80))
+        QTimer.singleShot(0, lambda target=focus: target.setFocus(Qt.OtherFocusReason))
 
     def snapshot(self) -> EditorSettingsSnapshot:
         """Return settings snapshot from current dialog values."""

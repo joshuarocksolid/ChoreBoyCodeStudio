@@ -6,7 +6,7 @@ import logging
 import subprocess
 import time
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Optional, Protocol
 
 from app.qt.QtWidgets import QDialog, QInputDialog, QLineEdit, QMessageBox, QWidget
 
@@ -48,6 +48,11 @@ from app.shell.source_root_workflow import SourceRootWorkflow
 from app.shell.theme_tokens import ShellThemeTokens
 from app.templates.template_service import TemplateMetadata, TemplateService
 from app.qt.qt_compat import exec_qt
+
+if TYPE_CHECKING:
+    from app.features.shop_sharing.settings_group import ShopSharingGroup
+
+SettingsFocus = Literal["completion_mode", "shop_sharing"]
 
 
 class FileProjectCommandsHost(Protocol):
@@ -149,6 +154,9 @@ class FileProjectCommandsHost(Protocol):
         ...
 
     def settings_dialog_python_tooling_copy(self) -> PythonToolingSettingsCopy:
+        ...
+
+    def shop_sharing_settings_group(self) -> Optional["ShopSharingGroup"]:
         ...
 
 
@@ -255,6 +263,9 @@ class MainWindowFileProjectCommandsHost:
 
     def settings_dialog_python_tooling_copy(self) -> PythonToolingSettingsCopy:
         return self._window._settings_dialog_python_tooling_copy()
+
+    def shop_sharing_settings_group(self) -> Optional["ShopSharingGroup"]:
+        return self._window._shop_sharing.settings_group()
 
 
 class FileProjectCommandsWorkflow:
@@ -458,9 +469,13 @@ class FileProjectCommandsWorkflow:
 
     def handle_open_completion_setting(self) -> None:
         """Status-bar completion chip: open Settings at the code completion control."""
-        self._open_settings_dialog(focus_completion_mode=True)
+        self._open_settings_dialog(focus="completion_mode")
 
-    def _open_settings_dialog(self, *, focus_completion_mode: bool = False) -> None:
+    def handle_open_shop_sharing_setting(self) -> None:
+        """Status-bar shop chip: open Settings on the General tab at Shop sharing."""
+        self._open_settings_dialog(focus="shop_sharing")
+
+    def _open_settings_dialog(self, *, focus: Optional[SettingsFocus] = None) -> None:
         settings_service = self._host.settings_service()
         global_settings_payload = settings_service.load_global()
         global_snapshot = parse_editor_settings_snapshot(global_settings_payload)
@@ -491,16 +506,19 @@ class FileProjectCommandsWorkflow:
             python_tooling_runtime_details=python_tooling_copy.runtime_details,
             python_tooling_config_text=python_tooling_copy.config_text,
             python_tooling_config_details=python_tooling_copy.config_details,
+            shop_sharing_group=self._host.shop_sharing_settings_group(),
             initial_scope=(
                 SETTINGS_SCOPE_PROJECT
-                if focus_completion_mode
+                if focus == "completion_mode"
                 and project_root is not None
                 and effective_snapshot.completion_mode != global_snapshot.completion_mode
                 else SETTINGS_SCOPE_GLOBAL
             ),
         )
-        if focus_completion_mode:
+        if focus == "completion_mode":
             dialog.reveal_completion_mode_control()
+        elif focus == "shop_sharing":
+            dialog.reveal_shop_sharing_group()
         if exec_qt(dialog) != QDialog.Accepted:
             return
 
@@ -519,8 +537,10 @@ class FileProjectCommandsWorkflow:
         if project_root is not None and merged_project_settings != project_settings_payload:
             settings_service.save_project(project_root, merged_project_settings)
 
+        # After the save this read is the shop document when the dialog just joined.
+        # merged_global_settings is still the local payload and would paint over that shop.
         preferences_bundle = build_shell_preferences_bundle(
-            merged_global_settings,
+            settings_service.load_global(),
             merged_project_settings if project_root is not None else None,
         )
         self._host.settings_apply_workflow().apply_after_settings_saved(

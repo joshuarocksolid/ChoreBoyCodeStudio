@@ -12,7 +12,7 @@ from app.bootstrap.startup_facade import StartupCapabilityFacade
 from app.core import constants
 from app.core.models import CapabilityProbeReport, LoadedProject, RuntimeIssue, RuntimeIssueReport
 from app.persistence.settings_service import SettingsService
-from app.project.recent_projects import load_recent_projects
+from app.project.recent_projects import load_recent_rows
 from app.shell.background_tasks import GeneralTaskScheduler
 from app.shell.runtime_center_dialog import RuntimeCenterDialog
 from app.shell.status_bar import ShellStatusBarController, map_startup_report_to_status
@@ -363,11 +363,11 @@ class RuntimeOnboardingWorkflow:
         force_show_onboarding: bool = False,
     ) -> None:
         try:
-            recent_paths = load_recent_projects(state_root=self._host.state_root())
+            recent_rows = load_recent_rows(state_root=self._host.state_root())
         except Exception as exc:
             self._host.logger().debug("Recent projects unavailable for welcome widget: %s", exc)
-            recent_paths = []
-        widget.set_recent_projects(recent_paths)
+            recent_rows = []
+        widget.set_recent_projects(recent_rows)
         startup_status = map_startup_report_to_status(self._host.startup_report)
         widget.set_runtime_summary(startup_status.text, startup_status.details)
         widget.set_project_health_available(self._host.loaded_project() is not None)

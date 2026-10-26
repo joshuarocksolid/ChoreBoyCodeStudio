@@ -202,6 +202,40 @@ QLabel#shell\\.runStatusLabel[runSeverity="error"] {{
 QLabel#shell\\.runStatusLabel[runSeverity="ok"] {{
     color: {tokens.debug_running_color};
 }}
+QLabel#shell\\.status\\.shopSharing[shopSharingSeverity="ok"] {{
+    color: {tokens.debug_running_color};
+}}
+QLabel#shell\\.status\\.shopSharing[shopSharingSeverity="warning"] {{
+    color: {tokens.diag_warning_color};
+}}
+QFrame#shell\\.shopPrompt {{
+    background: {tokens.panel_bg};
+    border-bottom: 1px solid {tokens.border};
+    border-left: 3px solid {tokens.accent};
+}}
+QFrame#shell\\.shopPrompt QLabel {{
+    color: {tokens.text_primary};
+    background: transparent;
+}}
+QFrame#shell\\.shopPrompt QLabel[shopPromptRole="headline"] {{
+    font-weight: bold;
+}}
+QFrame#shell\\.shopPrompt QLabel[shopPromptRole="note"] {{
+    color: {tokens.text_muted};
+}}
+QFrame#shell\\.shopPrompt QLabel[shopPromptRole="error"] {{
+    color: {tokens.diag_error_color};
+}}
+QFrame#shell\\.shopPrompt QPushButton {{
+    background: {tokens.input_bg};
+    color: {tokens.text_primary};
+    border: 1px solid {tokens.border};
+    border-radius: 4px;
+    padding: 3px 10px;
+}}
+QFrame#shell\\.shopPrompt QPushButton:focus {{
+    border: {tokens.focus_border_width}px solid {tokens.accent};
+}}
 QToolButton#shell\\.statusBar\\.activeRunConfig {{
     background: transparent;
     color: {tokens.text_muted};

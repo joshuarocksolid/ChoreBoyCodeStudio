@@ -5,10 +5,14 @@ from __future__ import annotations
 import os
 import time
 from dataclasses import dataclass, replace
-from typing import Any, Protocol, cast
+from typing import Any, Optional, Protocol, cast
 
 from app.bootstrap.logging_setup import get_subsystem_logger
-from app.shell.settings_models import EditorSettingsSnapshot
+from app.shell.settings_models import (
+    EditorSettingsSnapshot,
+    parse_editor_settings_snapshot,
+    parse_effective_editor_settings_snapshot,
+)
 from app.shell.shell_composition_context import MainWindowCompositionSurface
 from app.shell.shell_preferences import SettingsReader, ShellPreferencesBundle, build_shell_preferences_bundle
 
@@ -72,6 +76,20 @@ class SettingsApplyDiff:
     lint_profile_changed: bool
     cache_enabled_changed: bool
     cache_newly_enabled: bool
+
+    @classmethod
+    def everything(cls) -> "SettingsApplyDiff":
+        """Every flag True. A document swap has no unchanged baseline."""
+        return cls(
+            theme_mode_changed=True,
+            theme_affecting_changed=True,
+            editor_preferences_changed=True,
+            intelligence_highlighting_changed=True,
+            shortcut_overrides_changed=True,
+            lint_profile_changed=True,
+            cache_enabled_changed=True,
+            cache_newly_enabled=True,
+        )
 
 
 def _snapshot_field_value(snapshot: EditorSettingsSnapshot, field_name: str) -> object:
@@ -404,16 +422,22 @@ class SettingsApplyWorkflow:
         self,
         *,
         updated_snapshot: EditorSettingsSnapshot,
-        baseline: SettingsApplyBaseline,
+        baseline: Optional[SettingsApplyBaseline],
         project_root: str | None,
         preferences_bundle: ShellPreferencesBundle | None = None,
     ) -> None:
-        """Apply preferences bundle, theme, timers, and lint refresh side effects."""
+        """Apply preferences bundle, theme, timers, and lint refresh side effects.
+
+        ``baseline`` None means nothing is known unchanged, so every apply path runs.
+        """
 
         profile_enabled = os.environ.get("CBCS_PROFILE_SETTINGS_APPLY", "").strip() == "1"
         started_at = time.perf_counter() if profile_enabled else 0.0
 
-        diff = build_settings_apply_diff(baseline, updated_snapshot)
+        if baseline is None:
+            diff = SettingsApplyDiff.everything()
+        else:
+            diff = build_settings_apply_diff(baseline, updated_snapshot)
 
         if diff.theme_mode_changed:
             self._host.apply_theme_mode(updated_snapshot.theme_mode, skip_theme_styles=True)
@@ -455,7 +479,8 @@ class SettingsApplyWorkflow:
             self._host.apply_theme_styles()
         self._profile_phase(profile_enabled, started_at, "runtime_apply")
 
-        if baseline.snapshot.enable_preview and not self._host.editor_enable_preview():
+        preview_was_on = baseline is None or baseline.snapshot.enable_preview
+        if preview_was_on and not self._host.editor_enable_preview():
             self._host.cancel_pending_project_tree_preview()
             self._host.promote_existing_preview_tab()
 
@@ -468,7 +493,7 @@ class SettingsApplyWorkflow:
             self._host.render_merged_problems_panel()
 
         effective_excludes = self._host.load_effective_exclude_patterns(project_root)
-        excludes_changed = effective_excludes != baseline.effective_excludes
+        excludes_changed = baseline is None or effective_excludes != baseline.effective_excludes
         if excludes_changed:
             self._host.reload_current_project()
             if self._host.loaded_project_root() is not None:
@@ -484,6 +509,27 @@ class SettingsApplyWorkflow:
 
         self._host.log_settings_updated()
         self._profile_phase(profile_enabled, started_at, "complete")
+
+    def apply_reloaded_settings(self, *, project_root: str | None) -> None:
+        """Shop sharing swapped the documents behind settings.
+
+        Called only from the sharing listener, so ``load_global`` here keeps the
+        merge base of an open Settings save.
+        """
+        payload = self._settings_service.load_global()
+        project_payload = (
+            self._settings_service.load_project(project_root) if project_root is not None else None
+        )
+        if project_payload is None:
+            snapshot = parse_editor_settings_snapshot(payload)
+        else:
+            snapshot = parse_effective_editor_settings_snapshot(payload, project_payload)
+        self.apply_after_settings_saved(
+            updated_snapshot=snapshot,
+            baseline=None,
+            project_root=project_root,
+            preferences_bundle=build_shell_preferences_bundle(payload, project_payload),
+        )
 
     def _profile_phase(self, enabled: bool, started_at: float, phase: str) -> None:
         if not enabled:

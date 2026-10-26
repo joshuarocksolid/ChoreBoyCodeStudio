@@ -15,7 +15,6 @@ from app.bootstrap.paths import (
     global_app_log_path,
     global_cache_dir,
     global_history_dir,
-    global_python_console_history_path,
     resolve_global_state_root,
     try_ensure_directory,
 )
@@ -148,7 +147,6 @@ def install_layout_foundation(ctx: ShellCompositionContext) -> None:
             "_state_root": state_root,
             "_logger": logger,
             "_startup_capability_facade": StartupCapabilityFacade(),
-            "_python_console_history_path": global_python_console_history_path(state_root),
             "_settings_service": settings_service,
             "_stored_lint_diagnostics": {},
             "_stored_runtime_problems": [],
@@ -484,12 +482,20 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
     )
     toolbar = build_run_toolbar_widget(menu_registry)
     window._toolbar = toolbar
-    if toolbar is not None:
-        center_panel = window.findChild(QWidget, "shell.centerPanel")
-        if center_panel is not None:
-            center_layout = center_panel.layout()
-            if isinstance(center_layout, QVBoxLayout):
-                center_layout.insertWidget(0, toolbar, 0)
+    center_panel = window.findChild(QWidget, "shell.centerPanel")
+    center_layout = center_panel.layout() if center_panel is not None else None
+    if toolbar is not None and isinstance(center_layout, QVBoxLayout):
+        center_layout.insertWidget(0, toolbar, 0)
+    if isinstance(center_layout, QVBoxLayout):
+        layout = center_layout
+        _continue_optional_startup_step(
+            "shop sharing",
+            lambda: window._shop_sharing.build(
+                status_bar=window._status_controller.status_bar,
+                center_layout=layout,
+                center_stack=window._center_stack,
+            ),
+        )
     window._shell_theme_workflow.refresh_surface_refs()
     window._shell_theme_workflow.apply_theme_styles()
     window._editor_tab_workflow.apply_runtime_intelligence_preferences_to_open_editors()

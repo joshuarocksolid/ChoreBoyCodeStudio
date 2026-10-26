@@ -45,6 +45,7 @@ def build_general_tab(
     python_tooling_runtime_details: str,
     python_tooling_config_text: str,
     python_tooling_config_details: str,
+    shop_sharing_group: QGroupBox | None = None,
 ) -> None:
     general_tab = QWidget(tabs)
     general_tab_layout = QVBoxLayout(general_tab)
@@ -58,6 +59,9 @@ def build_general_tab(
     general_layout = QVBoxLayout(scroll_content)
     general_layout.setContentsMargins(16, 12, 16, 12)
     general_layout.setSpacing(4)
+
+    if shop_sharing_group is not None:
+        general_layout.addWidget(shop_sharing_group)
 
     appearance_group = QGroupBox("Appearance")
     appearance_group.setObjectName("shell.settingsDialog.appearanceGroup")

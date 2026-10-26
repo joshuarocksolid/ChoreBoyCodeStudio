@@ -97,6 +97,7 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | `#shell.indentStatusLabel` | Spaces / Tabs |
 | `#shell.editorStatusLabel` | file, line, col, modified/saved, then `changed on disk` (stale tab) or `missing from disk` (missing tab, replaces modified/saved) |
 | `#shell.completionModeStatusLabel` | `Completion: Manual · Ctrl+Space (Global setting)` / `Completion: While typing (Project setting)` / `Completion: Off (Global setting)`. Click opens Settings (`exec_()`, blocks the bridge); read it with `control-cbcs read`. |
+| `#shell.status.shopSharing` | `Settings: shop · <label>` or `Settings: shop offline · copy from <HH:MM>`. Hidden in local and pinned mode. Click opens Settings on the General tab at Shop sharing. |
 | `#shell.statusBar.activeRunConfig` | Default or named config |
 
 ## Find, search, markdown
@@ -144,6 +145,15 @@ Onboarding action buttons share `#shell.welcome.onboardingActionBtn`. Use `text:
 | Handle | What |
 |--------|------|
 | `#shell.settingsDialog` | Settings. Modal. Use `arm` `shell.action.file.settings`. |
+| `#shell.settings.shopSharing` | Shop sharing group. Global scope only. Hidden on the Project tab. |
+| `#shell.settings.shopSharing.enabled` | Share my settings with the other ChoreBoys in this shop |
+| `#shell.settings.shopSharing.folder` | Saved-in path. Read only. |
+| `#shell.settings.shopSharing.change` | Change… Starts in `~/share`. |
+| `#shell.settings.shopSharing.status` | Shared / offline / this computer only |
+| `#shell.settings.shopSharing.error` | Refusal reason. Empty until Save refuses. |
+| `#shell.shopPrompt` | One-time bar directly above the center stack. |
+| `#shell.shopPrompt.use` | Use shop settings |
+| `#shell.shopPrompt.keep` | Keep this computer's |
 | `#shell.runtimeCenterDialog` | Runtime Center |
 | `#shell.runtimeOnboardingDialog` | Onboarding |
 | `#shell.packageWizardDialog` | Package Project. Modal. Use `arm` `shell.action.build.package`. Step 1 of 2 = **Choose Package Destination** (primary **Next**, Cancel); Step 2 of 2 = **Review Package Metadata** (primary **Package**). The install-folder checkbox is `vis=False` on Step 1 and visible/unchecked on Step 2. |
@@ -349,6 +359,12 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.searchSidebar.replaceToggle`
 - `#shell.searchSidebar.summary`
 - `#shell.searchSidebar.wordBtn`
+- `#shell.settings.shopSharing`
+- `#shell.settings.shopSharing.change`
+- `#shell.settings.shopSharing.enabled`
+- `#shell.settings.shopSharing.error`
+- `#shell.settings.shopSharing.folder`
+- `#shell.settings.shopSharing.status`
 - `#shell.settingsDialog.addExcludeBtn`
 - `#shell.settingsDialog.addLocalHistoryExcludeBtn`
 - `#shell.settingsDialog.appearanceGroup`
@@ -395,6 +411,10 @@ The Dune checker requires each handle below to match a `setObjectName` call unde
 - `#shell.settingsDialog.syntaxValidation`
 - `#shell.settingsDialog.tabs`
 - `#shell.settingsDialog.validationBanner`
+- `#shell.shopPrompt`
+- `#shell.shopPrompt.keep`
+- `#shell.shopPrompt.use`
+- `#shell.status.shopSharing`
 - `#shell.testExplorer.countSkipped`
 - `#shell.testExplorer.debugFailedBtn`
 - `#shell.testExplorer.filterBar`
