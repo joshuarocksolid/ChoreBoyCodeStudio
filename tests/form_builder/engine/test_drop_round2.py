@@ -122,6 +122,26 @@ def test_a_layout_tile_drops_a_plain_widget_that_owns_the_layout(
     assert '<layout class="%s" name="%s"' % (layout_class, layout_name) in text
 
 
+@pytest.mark.parity("R3-45")
+@pytest.mark.parametrize(
+    ("key", "name", "orientation"),
+    (
+        ("spacer-h", "horizontalSpacer", "Qt::Horizontal"),
+        ("spacer-v", "verticalSpacer", "Qt::Vertical"),
+    ),
+)
+def test_a_spacer_tile_drops_a_named_spacer_with_its_orientation(key: str, name: str, orientation: str) -> None:
+    log = open_log(write_ui(_doc('  <layout class="QHBoxLayout" name="row"/>')).text)
+    fragment = fragment_for(key)
+    assert fragment is not None
+    root_layout = log.document.root.layout
+    assert root_layout is not None
+    log.execute(InsertFragment(InBoxLayout(root_layout.id, 0), fragment))
+    text = write_ui(log.document).text
+    assert '<spacer name="%s">' % name in text
+    assert "<enum>%s</enum>" % orientation in text
+
+
 def test_form_rows_use_the_widgets_and_the_tail_is_a_new_row() -> None:
     doc = _doc(
         """

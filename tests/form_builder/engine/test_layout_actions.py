@@ -228,6 +228,7 @@ def test_simplify_is_refused_when_the_grid_has_no_gaps() -> None:
     assert gate(sheet, Simplify()) == Offer(False, "This grid has no empty rows or columns.")
 
 
+@pytest.mark.parity("R3-43")
 def test_simplify_closes_a_row_gap_and_its_stretch_in_one_undoable_step() -> None:
     log = open_log(
         _HEAD

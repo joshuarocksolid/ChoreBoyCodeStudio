@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 
 import pytest
 
 from app.qt.QtCore import QPoint, Qt, QTimer
-from app.qt.QtGui import QContextMenuEvent
+from app.qt.QtGui import QContextMenuEvent, QPainter
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import (
     QApplication,
@@ -18,10 +19,12 @@ from app.qt.QtWidgets import (
     QLabel,
     QMenu,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
+from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.qtside.support import form
 from tests.unit.features.form_builder.test_workbench import _open
 
@@ -96,6 +99,7 @@ def test_only_a_tile_writes_from_the_wrap_popover(tmp_path: Path) -> None:
         _close(parent, surface)
 
 
+@pytest.mark.parity("R3-55")
 def test_change_to_in_the_context_menu_changes_the_right_clicked_widget(tmp_path: Path) -> None:
     parent, surface = _shown(tmp_path, "morph")
     try:
@@ -109,6 +113,26 @@ def test_change_to_in_the_context_menu_changes_the_right_clicked_widget(tmp_path
 
         assert isinstance(_named(root, "one"), QToolButton)
         assert isinstance(_named(root, "two"), QPushButton)
+    finally:
+        _close(parent, surface)
+
+
+@pytest.mark.parity("R3-56")
+def test_set_minimum_to_current_size_in_the_context_menu_locks_the_minimum(tmp_path: Path) -> None:
+    parent, surface = _shown(tmp_path, "lock")
+    try:
+        canvas, root = _canvas(surface)
+        one = _named(root, "one")
+        size = one.size()
+        _right_click(canvas, one)
+        menu = surface.findChild(QMenu, "formBuilder.contextMenu")
+        assert menu is not None
+
+        _action(_submenu(menu, "Size constraints"), "Set minimum to current size").trigger()
+        _flush()
+
+        assert _named(root, "one").minimumSize() == size
+        assert _named(root, "two").minimumSize().isNull()
     finally:
         _close(parent, surface)
 
@@ -195,6 +219,133 @@ def test_the_layout_menu_of_a_bare_container_gives_it_that_layout(tmp_path: Path
         assert isinstance(bare.layout(), QHBoxLayout)
     finally:
         _close(parent, surface)
+
+
+_SHOT_MODES = ("light", "dark", "high_contrast_light", "high_contrast_dark")
+_SHOT_SIZES = ((1080, 600), (1400, 900))
+
+
+def test_layout_command_screenshots(qapp: QApplication, tmp_path: Path) -> None:
+    out = os.environ.get("CBCS_FB_SCREENSHOT_DIR") or ""
+    if not out:
+        pytest.skip("CBCS_FB_SCREENSHOT_DIR is not set")
+    folder = Path(out)
+    folder.mkdir(parents=True, exist_ok=True)
+    _shoot_layout_commands(qapp, tmp_path, folder)
+
+
+def _shoot_layout_commands(qapp: QApplication, tmp_path: Path, folder: Path) -> None:
+    parent, surface = _shown(tmp_path, "shots")
+    try:
+        canvas, root = _canvas(surface)
+        one, two = _named(root, "one"), _named(root, "two")
+        box = _named(root, "box")
+        for mode, width, height in _shot_frames():
+            _frame(parent, surface, qapp, mode, width, height)
+            _click(canvas, one)
+            _click(canvas, two, shift=True)
+            surface.dispatch("form.action.wrap")
+            _flush()
+            popover = surface.findChild(QFrame, "formBuilder.wrapPopover")
+            assert popover is not None and popover.isVisible()
+            assert popover.findChild(QLabel, "formBuilder.wrapHeader").text() == "Wrap 2 widgets in\u2026"
+            _save(parent, popover, folder, "wrap-popover", mode, width, height)
+            popover.close()
+            _flush()
+
+            _right_click(canvas, box, QPoint(box.width() // 2, 3))
+            menu = surface.findChild(QMenu, "formBuilder.contextMenu")
+            assert menu is not None and menu.isVisible()
+            change = _submenu(menu, "Change to")
+            change.popup(menu.mapToGlobal(menu.rect().topRight()))
+            _flush()
+            _save(parent, change, folder, "change-to", mode, width, height)
+            menu.close()
+            _flush()
+
+            _right_click(canvas, box, QPoint(box.width() // 2, 3))
+            menu = surface.findChild(QMenu, "formBuilder.contextMenu")
+            assert menu is not None
+            _grab_confirm(parent, surface, folder, mode, width, height)
+            _action(menu, "Remove layout\u2026").trigger()
+            _flush()
+
+            QTest.mouseClick(
+                canvas.viewport(),
+                Qt.MouseButton.LeftButton,
+                Qt.KeyboardModifier.NoModifier,
+                _port(canvas, box, QPoint(max(2, box.width() // 2), 6)),
+            )
+            _flush()
+            pane = surface.findChild(QWidget, "formBuilder.inspector")
+            assert pane is not None
+            pane.flush()
+            _flush()
+            kind = pane.findChild(QWidget, "formBuilder.layout.kind")
+            assert kind is not None and kind.isVisible()
+            scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+            if scroll is not None:
+                scroll.ensureWidgetVisible(kind)
+            _flush()
+            _save(parent, None, folder, "layout-kind", mode, width, height)
+    finally:
+        _close(parent, surface)
+
+
+def _shot_frames() -> List[Tuple[str, int, int]]:
+    frames = []
+    for mode in _SHOT_MODES:
+        for width, height in _SHOT_SIZES:
+            if mode.startswith("high_contrast") and (width, height) != (1080, 600):
+                continue
+            frames.append((mode, width, height))
+    return frames
+
+
+def _frame(parent: QWidget, surface: QWidget, qapp: QApplication, mode: str, width: int, height: int) -> None:
+    parent.resize(width, height)
+    surface.resize(width, height)
+    surface.apply_theme(tokens_from_palette(qapp.palette(), force_mode=mode))
+    _flush()
+
+
+def _save(
+    host: QWidget,
+    overlay: Optional[QWidget],
+    folder: Path,
+    stem: str,
+    mode: str,
+    width: int,
+    height: int,
+) -> None:
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
+    image = host.grab()
+    if overlay is not None and overlay.isVisible():
+        overlay.adjustSize()
+        app.processEvents()
+        tile = overlay.grab()
+        painter = QPainter(image)
+        painter.drawPixmap(max(8, (image.width() - tile.width()) // 2), 48, tile)
+        painter.end()
+    image.save(str(folder / ("%s-%s-%dx%d.png" % (stem, mode, width, height))))
+
+
+def _grab_confirm(parent: QWidget, surface: QWidget, folder: Path, mode: str, width: int, height: int) -> None:
+    def grab() -> None:
+        question = surface.findChild(QFrame, "formBuilder.layoutConfirm")
+        if question is None or not question.isVisible():
+            QTimer.singleShot(10, grab)
+            return
+        _save(parent, question, folder, "remove-layout-confirm", mode, width, height)
+        for button in question.findChildren(QPushButton):
+            if button.text() == "Cancel":
+                button.click()
+                return
+        raise AssertionError("confirm has no Cancel button")
+
+    QTimer.singleShot(0, grab)
 
 
 def _answer(surface: QWidget, button: str) -> List[str]:
