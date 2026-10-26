@@ -95,6 +95,10 @@ class LayoutFacts:
     margins: Tuple[int, int, int, int]
     columns: Tuple[Track, ...]
     rows: Tuple[Track, ...]
+    #: Live spacing(). None when the facts were not measured from Qt.
+    box_spacing: Optional[int] = None
+    horizontal_spacing: Optional[int] = None
+    vertical_spacing: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -152,10 +156,12 @@ class Spacing:
     #: "spacing" for a box layout, else "horizontalSpacing" or "verticalSpacing".
     name: str
     axis: Axis
-    #: The stored value, else the measured gap.
+    #: The value a drag starts from. A stored number, else the layout's spacing().
     origin: int
     stored: bool
     gap: Rect
+    #: The property a double-click deletes. None when the gap shows Qt's own value.
+    reset_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -314,24 +320,32 @@ def survey_scope(document: UiDocument, primary: Optional[NodeId], splitters: Tup
     return SurveyScope(primary, tuple(found), splitters)
 
 
-def knob_set(survey: Survey, document: UiDocument, scale: float, window: Optional[Rect] = None) -> KnobSet:
+def knob_set(
+    survey: Survey,
+    document: UiDocument,
+    scale: float,
+    window: Optional[Rect] = None,
+    sites: Optional[Tuple[Site, ...]] = None,
+) -> KnobSet:
     """Every knob for ``survey``. ``scale`` is screen pixels per form pixel.
 
     ``window`` drops sites whose hit area misses it, so a long layout costs what is on screen.
     """
-    thick = max(1, int(math.ceil(HIT_PX / max(scale, 0.01))))
-    sites: List[Site] = []
-    for splitter in survey.splitters:
-        sites.extend(_grip_sites(splitter, thick))
-    for facts in survey.layouts:
-        sites.extend(_gap_sites(document, facts, thick, window))
-    for facts in survey.layouts:
-        sites.extend(_margin_sites(document, facts, thick))
-    if window is not None:
-        sites = [site for site in sites if site.hit.intersects(window)]
+    if sites is None:
+        thick = max(1, int(math.ceil(HIT_PX / max(scale, 0.01))))
+        found: List[Site] = []
+        for splitter in survey.splitters:
+            found.extend(_grip_sites(splitter, thick))
+        for facts in survey.layouts:
+            found.extend(_gap_sites(document, facts, thick, window))
+        for facts in survey.layouts:
+            found.extend(_margin_sites(document, facts, thick))
+        if window is not None:
+            found = [site for site in found if site.hit.intersects(window)]
+        sites = tuple(found)
     return KnobSet(
         _handle_knobs(document, survey),
-        tuple(sites),
+        sites,
         _share_tags(document, survey),
         _ticks(document, survey),
     )
@@ -371,7 +385,9 @@ def reset(knob: Knob) -> Turn:
     """
     rule = knob.rule
     if isinstance(rule, Spacing):
-        commands: Tuple[Command, ...] = (SetProperty(rule.layout, rule.name, None),) if rule.stored else ()
+        commands: Tuple[Command, ...] = (
+            (SetProperty(rule.layout, rule.reset_name, None),) if rule.reset_name else ()
+        )
         text = "%s default" % _spacing_word(rule.axis, rule.name)
         return Turn("Reset spacing", commands, Readout(knob.key, text, rule.gap), None, None)
     if isinstance(rule, Margin):
@@ -739,6 +755,30 @@ def _grip_sites(facts: SplitterFacts, thick: int) -> List[Site]:
     return found
 
 
+def _gap_origin(
+    layout: LayoutNode, facts: LayoutFacts, box: bool, axis: str, name: str, measured: int
+) -> Tuple[int, Optional[str]]:
+    """The drag's starting number, and the property a double-click deletes.
+
+    The bar is drawn in the visible gap. The number is the layout's spacing,
+    because a box of fixed-size widgets puts spare room into that gap.
+    """
+    specific = _stored_number(layout, name)
+    if specific is not None:
+        return specific, name
+    if not box:
+        legacy = _stored_number(layout, "spacing")
+        if legacy is not None:
+            return legacy, "spacing"
+    if box and facts.box_spacing is not None:
+        return int(facts.box_spacing), None
+    if not box:
+        live = facts.horizontal_spacing if axis == "h" else facts.vertical_spacing
+        if live is not None:
+            return int(live), None
+    return measured, None
+
+
 def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int, window: Optional[Rect]) -> List[Site]:
     layout = document.get(facts.layout)
     if not isinstance(layout, LayoutNode):
@@ -753,7 +793,6 @@ def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int, window: Opt
         if len(tracks) < 2 or not across:
             continue
         name = "spacing" if box else ("horizontalSpacing" if axis == "h" else "verticalSpacing")
-        stored = _stored_number(layout, name)
         low = across[0].start
         high = across[-1].end
         first, last = _along(window, axis)
@@ -769,7 +808,8 @@ def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int, window: Opt
             else:
                 gap = Rect(low, before.end, high - low, size)
                 bar = Rect(low, before.end + size // 2 - BAR_PX // 2, high - low, BAR_PX)
-            rule = Spacing(layout.id, name, axis, size if stored is None else stored, stored is not None, gap)
+            origin, reset_name = _gap_origin(layout, facts, box, axis, name, size)
+            rule = Spacing(layout.id, name, axis, origin, reset_name is not None, gap, reset_name)
             pull: Pull = "e" if axis == "h" else "s"
             key = ("gap", layout.id, "%s%d" % (axis, index))
             found.append(Site(Knob(key, layout.id, pull, HINT_GAP, rule), _widen(gap, axis, thick), bar, "bar"))
@@ -822,6 +862,38 @@ def _widen(rect: Rect, axis: str, thick: int) -> Rect:
 
 
 # --- Handles ---
+
+
+def resize_knob(
+    document: UiDocument,
+    node_id: NodeId,
+    rect: Optional[Rect],
+    pull: Pull,
+    defaults: Tuple[str, str],
+    free: Optional[RectValue],
+) -> Optional[Knob]:
+    """The east or south handle for ``node_id``, from the document and its rect.
+
+    The overlay may cull the drawn handle. The keyboard still turns this knob.
+    """
+    node = document.get(node_id)
+    if not isinstance(node, WidgetNode) or rect is None or node.id == document.root.id:
+        return None
+    if free is not None:
+        return Knob(("size", node.id, pull), node.id, pull, "", FreeRect(node.id, pull, free, rect))
+    policy = node.value("sizePolicy")
+    minimum = node.value("minimumSize")
+    maximum = node.value("maximumSize")
+    rule = FixedSize(
+        node.id,
+        pull,
+        rect,
+        policy if isinstance(policy, SizePolicyValue) else None,
+        minimum if isinstance(minimum, SizeValue) else None,
+        maximum if isinstance(maximum, SizeValue) else None,
+        defaults,
+    )
+    return Knob(("size", node.id, pull), node.id, pull, HINT_FIXED, rule)
 
 
 def _handle_knobs(document: UiDocument, survey: Survey) -> Tuple[Knob, ...]:

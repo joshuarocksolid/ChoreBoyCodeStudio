@@ -256,12 +256,18 @@ def _layout_facts(realizer: Realizer, index: HitIndex, document: UiDocument, lay
         tracks = _box_tracks(_shown_items(realizer, index, node), horizontal)
         across = (_extent(inner, dy if horizontal else dx, not horizontal),)
         columns, rows = (tracks, across) if horizontal else (across, tracks)
+    box_spacing = int(qlayout.spacing()) if hasattr(qlayout, "spacing") else None
+    horizontal = int(qlayout.horizontalSpacing()) if hasattr(qlayout, "horizontalSpacing") else None
+    vertical = int(qlayout.verticalSpacing()) if hasattr(qlayout, "verticalSpacing") else None
     return LayoutFacts(
         layout_id,
         rect,
         (margins.left(), margins.top(), margins.right(), margins.bottom()),
         columns,
         rows,
+        box_spacing,
+        horizontal,
+        vertical,
     )
 
 
@@ -324,14 +330,26 @@ def _along(rect: Rect, horizontal: bool, item: Optional[NodeId] = None) -> Track
 
 
 def _splitter_facts(realizer: Realizer, index: HitIndex, splitter_id: NodeId) -> Optional[SplitterFacts]:
-    splitter = realizer.widget_for(splitter_id)
+    found = realizer.widget_for(splitter_id)
     rect = index.rect_of(splitter_id)
-    if not isinstance(splitter, QSplitter) or rect is None:
+    if rect is None or not isinstance(found, QSplitter):
         return None
+    splitter = found
     horizontal = splitter.orientation() == Qt.Orientation.Horizontal
     inner = splitter.contentsRect()
     count = splitter.count()
-    panes = [splitter.widget(at) for at in range(count)]
+    panes: List[QWidget] = []
+    for at in range(count):
+        pane = splitter.widget(at)
+        if not isinstance(pane, QWidget):
+            return None
+        panes.append(pane)
+    handles: List[Rect] = []
+    for at in range(1, count):
+        handle = splitter.handle(at)
+        if handle is None:
+            return None
+        handles.append(_offset(handle.geometry(), rect.x, rect.y))
     return SplitterFacts(
         splitter_id,
         "h" if horizontal else "v",
@@ -339,7 +357,7 @@ def _splitter_facts(realizer: Realizer, index: HitIndex, splitter_id: NodeId) ->
         inner.width() if horizontal else inner.height(),
         splitter.handleWidth(),
         # Handle 0 is never shown. Handle i sits before pane i.
-        tuple(_offset(splitter.handle(at).geometry(), rect.x, rect.y) for at in range(1, count)),
+        tuple(handles),
         tuple(_offset(pane.geometry(), rect.x, rect.y) for pane in panes),
         tuple(int(size) for size in splitter.sizes()),
         tuple(_pane_minimum(pane, horizontal) for pane in panes),

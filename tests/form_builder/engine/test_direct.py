@@ -6,6 +6,7 @@ from typing import Optional, Tuple
 
 import pytest
 
+from app.features.form_builder.engine.commands.catalog import SetProperty
 from app.features.form_builder.engine.commands.catalog_ext.sizing import write_share
 from app.features.form_builder.engine.commands.log import CommandLog
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
@@ -30,7 +31,7 @@ from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.sizing import PaneShare, read_share, share_slots
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.reader import read_ui
-from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue
+from app.features.form_builder.engine.ui4.values import NumberValue, RectValue, SizePolicyValue, SizeValue
 from tests.form_builder.engine.commands._support import BOX, FREE, GRID, nid, open_log, saved
 
 _SPLIT = """<?xml version="1.0" encoding="UTF-8"?>
@@ -203,6 +204,30 @@ def test_gap_drags_one_px_and_shift_snaps_to_four(how: How, dy: int, stored: Opt
     assert _number(log, "verticalLayout", "spacing") == stored
     shown = 6 if stored is None else stored
     assert result.readout.text == "Spacing %d px" % shown
+
+
+def test_gap_drag_starts_from_spacing_when_the_visible_gap_holds_spare_room() -> None:
+    log = open_log(BOX)
+    layout = log.document.get(nid(log.document, "verticalLayout"))
+    assert isinstance(layout, LayoutNode)
+    first = layout.items[0].content
+    second = layout.items[1].content
+    assert first is not None and second is not None
+    rows = (Track(10, 34, first.id), Track(89, 113, second.id))
+    assert rows[1].start - rows[0].end == 55
+    facts = LayoutFacts(layout.id, _BOX_RECT, (9, 9, 9, 9), _BOX_COLUMNS, rows, box_spacing=6)
+    survey = _survey(log, primary="okButton", layouts=(facts,))
+    result = turn(_site_knob(log, survey, "gap", "v0"), 0, 10, "drag")
+    assert result.readout.text == "Spacing 16 px"
+
+
+def test_a_grid_gap_reset_deletes_the_stored_spacing() -> None:
+    log = open_log(GRID)
+    layout_id = nid(log.document, "gridLayout")
+    log.execute(SetProperty(layout_id, "spacing", NumberValue(27)))
+    survey = _survey(log, primary="a", layouts=(_grid_facts(log),))
+    cleared = reset(_site_knob(log, survey, "gap", "h0"))
+    assert cleared.commands == (SetProperty(layout_id, "spacing", None),)
 
 
 def test_gap_reset_deletes_only_a_stored_spacing() -> None:

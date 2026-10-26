@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import random
 from typing import Tuple
 
 import pytest
@@ -127,6 +128,69 @@ def _shown_sizes(realizer: Realizer, session: FormSession) -> Tuple[int, ...]:
     splitter = realizer.widget_for(session.document.by_name("splitter")[0])
     assert isinstance(splitter, QSplitter)
     return tuple(splitter.sizes())
+
+
+def test_a_stored_margin_does_not_cover_a_new_side(qapp: object) -> None:
+    del qapp
+    with opened(_top("QVBoxLayout", _number("margin", 5))) as (session, realizer):
+        layout_id = session.document.by_name("lay")[0]
+        live = realizer.layout_for(layout_id)
+        assert live is not None
+        realizer.apply_live((LiveProp(layout_id, "leftMargin", NumberValue(19)),))
+        preview = _facts(live)
+        assert preview[0] == 19 and preview[1:4] == (5, 5, 5)
+        session.log.execute(SetProperty(layout_id, "leftMargin", NumberValue(19)))
+        assert _facts(live) == preview
+        assert _facts(live) == _built(session, "lay")
+
+
+def test_stored_spacing_does_not_cover_a_new_grid_axis(qapp: object) -> None:
+    del qapp
+    with opened(_top("QGridLayout", _number("spacing", 27))) as (session, realizer):
+        layout_id = session.document.by_name("lay")[0]
+        live = realizer.layout_for(layout_id)
+        assert isinstance(live, QGridLayout)
+        realizer.apply_live((LiveProp(layout_id, "horizontalSpacing", NumberValue(19)),))
+        assert live.horizontalSpacing() == 19
+        assert live.verticalSpacing() == 27
+        preview = _facts(live)
+        session.log.execute(SetProperty(layout_id, "horizontalSpacing", NumberValue(19)))
+        assert _facts(live) == preview
+        assert _facts(live) == _built(session, "lay")
+
+
+def test_preview_commit_and_a_fresh_build_agree_for_a_seed(qapp: object) -> None:
+    del qapp
+    rng = random.Random(7)
+    names = (
+        "margin",
+        "leftMargin",
+        "topMargin",
+        "rightMargin",
+        "bottomMargin",
+        "spacing",
+        "horizontalSpacing",
+        "verticalSpacing",
+    )
+    for step in range(8):
+        chosen = [name for name in names if rng.randrange(2)]
+        if not any(name == "margin" or name.endswith("Margin") for name in chosen):
+            chosen.append("leftMargin")
+        if not any(name in ("spacing", "horizontalSpacing", "verticalSpacing") for name in chosen):
+            chosen.append("spacing")
+        values = {name: rng.randint(1, 24) for name in chosen}
+        props = "".join(_number(name, values[name]) for name in sorted(values))
+        override = rng.choice(tuple(values))
+        with opened(_top("QGridLayout", props)) as (session, realizer):
+            layout_id = session.document.by_name("lay")[0]
+            live = realizer.layout_for(layout_id)
+            assert live is not None
+            assert _facts(live) == _built(session, "lay")
+            realizer.apply_live((LiveProp(layout_id, override, NumberValue(values[override] + 9)),))
+            preview = _facts(live)
+            session.log.execute(SetProperty(layout_id, override, NumberValue(values[override] + 9)))
+            assert _facts(live) == preview, (step, override, values)
+            assert _facts(live) == _built(session, "lay"), (step, override, values)
 
 
 def test_deleting_splitter_sizes_splits_the_panes_by_their_size_hints(qapp: object) -> None:

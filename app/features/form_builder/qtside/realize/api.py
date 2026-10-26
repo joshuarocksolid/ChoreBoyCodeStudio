@@ -56,6 +56,7 @@ from app.features.form_builder.engine.ui4.spec import PropertyEntry
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     norm_qt,
+    ordered_layout_metrics,
     path_under,
     text_of,
 )
@@ -149,6 +150,8 @@ class Realizer(_Structure):
         self._registered: List[object] = []
         self._problems: List[str] = []
         self._root: Optional[QWidget] = None
+        # Live splitter sizes at the start of a preview, restored on Escape.
+        self._splitter_at_preview: Dict[NodeId, List[int]] = {}
         self._created = 0
         self._patched = 0
         self._reconciled = 0
@@ -271,6 +274,10 @@ class Realizer(_Structure):
         """Show ``props`` on the live objects. The document does not change."""
         document = self._session.document
         for prop in props:
+            if prop.name == "cbcsSplitterSizes" and prop.owner not in self._splitter_at_preview:
+                widget = self.widget_for(prop.owner)
+                if isinstance(widget, QSplitter):
+                    self._splitter_at_preview[prop.owner] = list(widget.sizes())
             node = document.get(prop.owner)
             obj = self.object_for(prop.owner)
             if node is None or obj is None:
@@ -420,6 +427,8 @@ class Realizer(_Structure):
         if obj is None or not wrapper_is_valid(obj):
             return
         entry = node.prop(name)
+        if name == "cbcsSplitterSizes" and entry is not None:
+            self._splitter_at_preview.pop(owner, None)
         self._put(node, obj, name, entry)
         if entry is not None and name == "buddy" and isinstance(node, WidgetNode):
             self._note_buddy(node)
@@ -483,7 +492,12 @@ class Realizer(_Structure):
     def _reset_property(self, node: object, obj: object, name: str) -> None:
         if name == "cbcsSplitterSizes":
             if isinstance(obj, QSplitter):
-                obj.setSizes(_pane_hints(obj))
+                node_id = _node_id(obj)
+                saved = None if node_id is None else self._splitter_at_preview.pop(node_id, None)
+                if saved is not None:
+                    obj.setSizes(saved)
+                else:
+                    obj.setSizes(_distributed_sizes(obj))
                 self._patched += 1
             return
         if not isinstance(node, WidgetNode):
@@ -515,30 +529,21 @@ class Realizer(_Structure):
             return
 
     def _apply_family(self, node: LayoutNode, layout: QLayout, name: str, entry: Optional[PropertyEntry]) -> None:
-        """Reset the margin or spacing family, then apply it in file order with ``entry`` as ``name``.
+        """Reset one family, then apply it in uic order.
 
-        ``margin`` and ``spacing`` overwrite their siblings, so a fresh build's
-        result depends on file order and one member is never applied alone. A
-        missing side takes the sides still stored, then the legacy ``margin``,
-        then Qt's default for this layout. A missing ``horizontalSpacing`` or
-        ``verticalSpacing`` takes ``spacing``.
+        ``margin`` is applied before any stored side, and ``spacing`` before a
+        stored ``horizontalSpacing`` or ``verticalSpacing``. File order does
+        not change the result. A preview value for ``name`` is included even
+        when the document does not store it yet.
         """
         family = _MARGIN_FAMILY if name in _MARGIN_FAMILY else _SPACING_FAMILY
         if family is _MARGIN_FAMILY:
             layout.setContentsMargins(-1, -1, -1, -1)
         else:
             layout.setSpacing(-1)
-        chain: List[PropertyEntry] = []
-        for stored in node.properties():
-            if stored.name not in family:
+        for each in ordered_layout_metrics(node.properties(), name, entry):
+            if each.name not in family:
                 continue
-            if stored.name != name:
-                chain.append(stored)
-            elif entry is not None:
-                chain.append(entry)
-        if entry is not None and node.prop(name) is None:
-            chain.append(entry)
-        for each in chain:
             apply_entry(layout, each, is_root=False, resolve_path=self._resolve_path, problems=self._problems)
         self._patched += 1
 
@@ -934,6 +939,54 @@ def _fresh_host() -> QWidget:
         host.setAttribute(Qt.WA_DontShowOnScreen, True)
         _FRESH_HOST = host
     return _FRESH_HOST
+
+
+class _PaneStandIn(QWidget):
+    """A scratch pane with one real pane's hint, limits and policy."""
+
+    def __init__(self, hint: object, policy: object, minimum: object, maximum: object) -> None:
+        super().__init__()
+        self._hint = hint
+        self.setSizePolicy(policy)  # type: ignore[arg-type]
+        self.setMinimumSize(minimum)  # type: ignore[arg-type]
+        self.setMaximumSize(maximum)  # type: ignore[arg-type]
+
+    def sizeHint(self) -> object:  # type: ignore[override]
+        return self._hint
+
+    def minimumSizeHint(self) -> object:  # type: ignore[override]
+        return self.minimumSize()
+
+
+def _distributed_sizes(splitter: QSplitter) -> List[int]:
+    """Sizes a fresh splitter gives these panes at this splitter's size.
+
+    ``setSizes(sizeHint)`` ignores stretch, so unequal shares collapse to an
+    even split. A scratch splitter with the same hints, limits, policies and
+    stretch factors lays the panes out the way a fresh build does.
+    """
+    scratch = QSplitter()
+    scratch.setAttribute(Qt.WA_DontShowOnScreen, True)
+    scratch.setOrientation(splitter.orientation())
+    scratch.setHandleWidth(splitter.handleWidth())
+    scratch.setChildrenCollapsible(splitter.childrenCollapsible())
+    for index in range(splitter.count()):
+        pane = splitter.widget(index)
+        if pane is None:
+            scratch.addWidget(QWidget())
+            continue
+        scratch.addWidget(
+            _PaneStandIn(pane.sizeHint(), pane.sizePolicy(), pane.minimumSize(), pane.maximumSize())
+        )
+    scratch.resize(max(splitter.width(), 1), max(splitter.height(), 1))
+    scratch.show()
+    sizes = [int(size) for size in scratch.sizes()]
+    scratch.hide()
+    scratch.setParent(None)
+    delete_now(scratch)
+    if len(sizes) != splitter.count():
+        return _pane_hints(splitter)
+    return sizes
 
 
 def _pane_hints(splitter: QSplitter) -> List[int]:
