@@ -57,11 +57,11 @@ from app.features.form_builder.engine.ui4.nodes import (
     SpacerNode,
     WidgetNode,
 )
+from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
-    splitter_sizes,
     text_of,
     to_qt,
 )

@@ -27,7 +27,8 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OverlayFrame,
     Target,
 )
-from app.features.form_builder.qtside.canvas.core.snap import GRID, snap_move, snap_page, snap_resize
+from app.features.form_builder.engine.query.direct import GRID, snap_resize
+from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
 from app.features.form_builder.qtside.canvas.core.space import (
     CanvasPoint,
     Compass,
@@ -535,7 +536,8 @@ def drawn_rect(state: Moving, item: MovedItem) -> Rect:
 
 
 def resized_rect(state: Resizing) -> RectValue:
-    return snap_resize(state.item.origin, state.at, _delta(state.anchor, state.pointer), state.snap)
+    delta = _delta(state.anchor, state.pointer)
+    return snap_resize(state.item.origin, state.at, delta.x, delta.y, state.snap)
 
 
 def resized_drawn(state: Resizing) -> Rect:

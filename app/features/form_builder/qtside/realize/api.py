@@ -39,7 +39,7 @@ from app.features.form_builder.engine.events import (
     NodeRemoved,
 )
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.logic.storage import is_logic_key
+from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -55,7 +55,6 @@ from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     norm_qt,
     path_under,
-    splitter_sizes,
     text_of,
 )
 from app.features.form_builder.qtside.realize.slots import LayoutHints, _Mirror, collect_layout_hints

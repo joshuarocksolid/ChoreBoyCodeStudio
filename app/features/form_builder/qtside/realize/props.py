@@ -172,24 +172,6 @@ def text_of(value: Value) -> str:
     return ""
 
 
-def splitter_sizes(value: Value) -> Tuple[int, ...]:
-    raw = ""
-    if isinstance(value, StringValue):
-        raw = value.text
-    elif isinstance(value, StringListValue):
-        raw = ",".join(value.items)
-    found = []
-    for piece in raw.split(","):
-        piece = piece.strip()
-        if not piece:
-            continue
-        try:
-            found.append(int(piece))
-        except ValueError:
-            found.append(0)
-    return tuple(found)
-
-
 def apply_geometry(obj: object, value: object, is_root: bool) -> None:
     if isinstance(value, RectValue):
         x, y, width, height = value.x, value.y, value.width, value.height

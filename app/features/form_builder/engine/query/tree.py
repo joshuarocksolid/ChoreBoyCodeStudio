@@ -11,7 +11,7 @@ from typing import Dict, FrozenSet, List, Literal, Optional, Tuple
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 
 # Used when the class table has not been generated yet. A known class trusts
@@ -124,6 +124,29 @@ def grid_shape(doc: UiDocument, layout_id: NodeId) -> GridShape:
                     seen.add(pair)
                     overlaps.append(pair)
     return GridShape(rows, columns, tuple(cells), tuple(empty), tuple(overlaps))
+
+
+def blocked(shape: GridShape, cell: GridCell) -> bool:
+    """True when ``cell`` covers a cell another item holds."""
+    for other in shape.cells:
+        if other.item == cell.item:
+            continue
+        if (
+            cell.row < other.row + other.rowspan
+            and other.row < cell.row + cell.rowspan
+            and cell.column < other.column + other.colspan
+            and other.column < cell.column + cell.colspan
+        ):
+            return True
+    return False
+
+
+def effective_class(doc: UiDocument, node: WidgetNode) -> str:
+    """The Qt class a promoted widget extends, else its own class."""
+    custom = doc.custom_widget(node.class_name)
+    if isinstance(custom, CustomWidgetNode) and custom.extends:
+        return custom.extends.split("::")[-1]
+    return node.class_name
 
 
 def next_free_cell(

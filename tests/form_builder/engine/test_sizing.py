@@ -13,6 +13,7 @@ from app.features.form_builder.engine.sizing import (
     WORD_FIXED,
     WORD_HUG,
     AxisFacts,
+    ShareSlot,
     chip_axis,
     clear_property,
     effective_word,
@@ -208,7 +209,7 @@ def test_fixed_then_reset_leaves_no_size_policy_or_lock() -> None:
 def test_share_slots_follow_the_parent_layout() -> None:
     box = open_log(BOX).document
     assert share_slots(box, nid(box, "okButton"))[0].axis == "v"
-    assert share_slots(box, nid(box, "label"))[0].index == 1
+    assert share_slots(box, nid(box, "label")) == (ShareSlot(nid(box, "verticalLayout"), "stretch", 1, "v"),)
     grid = open_log(GRID).document
     slots = share_slots(grid, nid(grid, "b"))
     assert {slot.axis for slot in slots} == {"h", "v"}

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from app.features.form_builder.engine.commands.catalog_ext.sizing import from_write
+from app.features.form_builder.engine.commands.catalog_ext.sizing import from_write, write_share
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.sizing import (
     FILL_TIP,
@@ -21,17 +21,16 @@ from app.features.form_builder.engine.sizing import (
     WORD_HUG,
     WORDS,
     AxisProjection,
-    ShareSlot,
+    Share,
     SizingWrite,
     clear_property,
     encode_axis,
     project_axis,
+    read_share,
     reset_words,
     share_slots,
-    splice_stretch,
-    stretch_at,
 )
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import SizePolicyValue, SizeValue
 from app.features.form_builder.qtside.inspector.api import (
     GroupHost,
@@ -243,20 +242,11 @@ class SizeBody:
             if found is None:
                 continue
             slot, _current = found
-            layout = self._host.document.get(slot.layout)
-            if not isinstance(layout, LayoutNode):
-                continue
-            text = layout.field(slot.field)
-            current = text if isinstance(text, str) else None
-            commands.append(
-                from_write(
-                    node.id,
-                    SizingWrite(None, None, None, False, False, False),
-                    layout=slot.layout,
-                    stretch_field=slot.field,
-                    stretch=splice_stretch(current, slot.index, value, _stretch_length(layout, slot.field)),
-                )
+            command = write_share(
+                self._host.document, slot, node.id, value, _defaults(self._host.live(node.id), node)
             )
+            if command is not None:
+                commands.append(command)
         if commands:
             self._host.run("Size", commands)
 
@@ -558,23 +548,11 @@ def _column(
     return tuple(pair[index] for pair in projections)
 
 
-def _slot_for(host: GroupHost, node: WidgetNode, axis: str) -> Optional[Tuple[ShareSlot, int]]:
+def _slot_for(host: GroupHost, node: WidgetNode, axis: str) -> Optional[Tuple[Share, int]]:
     for slot in share_slots(host.document, node.id):
-        if slot.axis != axis:
-            continue
-        layout = host.document.get(slot.layout)
-        text = layout.field(slot.field) if isinstance(layout, LayoutNode) else None
-        current = text if isinstance(text, str) else None
-        return slot, stretch_at(current, slot.index)
+        if slot.axis == axis:
+            return slot, read_share(host.document, slot).value
     return None
-
-
-def _stretch_length(layout: LayoutNode, field: str) -> int:
-    if field == "stretch":
-        return max(len(layout.items), 1)
-    if field == "columnstretch":
-        return max((int(item.column or 0) + int(item.colspan or 1) for item in layout.items), default=1)
-    return max((int(item.row or 0) + int(item.rowspan or 1) for item in layout.items), default=1)
 
 
 def _live_pixels(widget: Optional[QWidget], axis: str) -> Optional[int]:
