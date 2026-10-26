@@ -1207,6 +1207,9 @@ class _SpeedHost:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def _deepest_point(index: Any, width: int, height: int) -> Tuple[int, int, int]:
     best = (0, 0, 0)

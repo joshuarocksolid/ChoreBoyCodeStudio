@@ -85,6 +85,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_canvas_backdrop_starts_from_backdrop_colors(monkeypatch: pytest.MonkeyPatch, qapp: QApplication, tmp_path: Path) -> None:
     del tmp_path

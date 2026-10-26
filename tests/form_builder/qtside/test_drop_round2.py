@@ -99,6 +99,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_a_cancelled_insert_drag_lets_the_next_click_select() -> None:
     with opened(FREE_AND_BOX) as (session, realizer):

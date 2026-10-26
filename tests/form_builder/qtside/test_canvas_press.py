@@ -49,6 +49,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_press_on_the_viewport_selects_the_deepest_widget() -> None:
     with opened(NESTED) as (session, realizer):

@@ -48,6 +48,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_authored_page_stays_640_by_480_and_the_readout_matches() -> None:
     with opened(AUTHORED) as (session, realizer):

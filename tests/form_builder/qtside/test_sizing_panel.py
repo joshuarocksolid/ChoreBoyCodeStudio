@@ -129,6 +129,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def _id(session: object, name: str) -> object:
     document = session.document  # type: ignore[attr-defined]

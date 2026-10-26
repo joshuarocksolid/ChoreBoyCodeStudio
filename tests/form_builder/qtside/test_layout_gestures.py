@@ -169,9 +169,13 @@ def test_adjust_size_fits_a_free_widget_to_its_content_in_one_step() -> None:
 
         assert outcome == Done("Resized ok to fit its content")
         assert len(session.log.entries()) == entries + 1
-        assert realizer.widget_for(ok).size() == hint
+        resized = realizer.widget_for(ok)
+        assert resized is not None
+        assert resized.size() == hint
         session.log.undo()
-        assert realizer.widget_for(ok).size() == stored
+        restored_size = realizer.widget_for(ok)
+        assert restored_size is not None
+        assert restored_size.size() == stored
 
 
 @pytest.mark.pain("P-5")
@@ -196,11 +200,16 @@ def test_removing_one_row_layout_keeps_the_next_rows_width() -> None:
 
         assert asked == ["Remove layout"]
         assert outcome == Done("Removed the layout")
-        assert realizer.widget_for(first).layout() is None
-        assert realizer.widget_for(doc.by_name("second")[0]).width() == width
+        broken = realizer.widget_for(first)
+        kept = realizer.widget_for(doc.by_name("second")[0])
+        assert broken is not None and kept is not None
+        assert broken.layout() is None
+        assert kept.width() == width
         session.log.undo()
         _layout_pass()
-        restored = realizer.widget_for(first).layout()
+        brought_back = realizer.widget_for(first)
+        assert brought_back is not None
+        restored = brought_back.layout()
         assert isinstance(restored, QHBoxLayout)
         assert restored.indexOf(realizer.widget_for(doc.by_name("nameEdit")[0])) >= 0
         root.hide()
