@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Mapping, Sequence, Tuple
 
+from app.features.form_builder.engine.layout_actions import request_for
+
 
 FORM_SHORTCUT_CATEGORY = "Form designer"
 
@@ -57,7 +59,7 @@ def _row(
         shortcut=shortcut,
         contexts=contexts,
         menu_path=menu,
-        available=available,
+        available=available or request_for(command_id) is not None,
         kind=kind,
         shell_action_id=shell_action_id,
     )
@@ -122,6 +124,13 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
     _row("form.action.removeLayout", "Remove layout\u2026", "", _CANVAS_OUTLINE, menu=("Layout", "Remove layout\u2026")),
     _row("form.action.adjustSize", "Adjust size", "Ctrl+J", _CANVAS_OUTLINE, menu=("Layout", "Adjust size")),
     _row("form.action.simplifyGrid", "Simplify grid", "", _CANVAS_OUTLINE, menu=("Layout", "Simplify grid")),
+    _row(
+        "form.action.keepAtContentSize",
+        "Keep at content size",
+        "",
+        _CANVAS_OUTLINE,
+        menu=("Layout", "Keep at content size"),
+    ),
     _row("form.action.sizeHugWidth", "Hug width", "", _CANVAS_OUTLINE, menu=("Size", "Hug width")),
     _row("form.action.sizeHugHeight", "Hug height", "", _CANVAS_OUTLINE, menu=("Size", "Hug height")),
     _row("form.action.sizeFillWidth", "Fill width", "", _CANVAS_OUTLINE, menu=("Size", "Fill width")),

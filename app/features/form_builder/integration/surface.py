@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.QtGui import QKeySequence
@@ -31,6 +31,14 @@ from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.layout_actions import (
+    Done,
+    OfferSheet,
+    OpenWrap,
+    Refused,
+    offers,
+    request_for,
+)
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.shell_commands import (
@@ -78,6 +86,7 @@ from app.features.form_builder.qtside.canvas.core.structure import effective_sel
 from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
 from app.features.form_builder.qtside.canvas.core.words import hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
+from app.features.form_builder.qtside.layout_gestures import ask, measure, perform
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.shortcut_preferences import default_shortcut_map
@@ -117,6 +126,12 @@ def plain_banner_error(error: str) -> str:
 
 
 _RENAME_ACTION = "shell.action.edit.renameSymbol"
+# Window actions on Ctrl+1 and Ctrl+2. While either is enabled, the canvas
+# shortcut on the same key is ambiguous and neither fires.
+_EDITOR_GROUP_ACTIONS = (
+    "shell.action.view.focusFirstEditorGroup",
+    "shell.action.view.focusSecondEditorGroup",
+)
 
 
 def _shell_registry(window: QWidget) -> object:
@@ -125,6 +140,43 @@ def _shell_registry(window: QWidget) -> object:
     if registry_fn is None:
         return None
     return registry_fn() if callable(registry_fn) else registry_fn
+
+
+def _silence(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> None:
+    """Force shell actions off for ``holder``. Each keeps the flag it had before the first silence."""
+    registry = _shell_registry(window)
+    if registry is None:
+        return
+    held = _silenced(window)
+    for action_id in action_ids:
+        action = registry.action(action_id)  # type: ignore[attr-defined]
+        if action is None:
+            continue
+        prior = held[action_id][0] if action_id in held else bool(action.isEnabled())
+        held[action_id] = (prior, holder)
+        action.setEnabled(False)
+
+
+def _restore(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> None:
+    """Give back the actions ``holder`` silenced. Another holder's silence stays."""
+    held = _silenced(window)
+    registry = _shell_registry(window)
+    for action_id in action_ids:
+        entry = held.get(action_id)
+        if entry is None or entry[1] is not holder:
+            continue
+        del held[action_id]
+        action = None if registry is None else registry.action(action_id)  # type: ignore[attr-defined]
+        if action is not None:
+            action.setEnabled(entry[0])
+
+
+def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
+    held = getattr(window, "_form_silenced", None)
+    if not isinstance(held, dict):
+        held = {}
+        window._form_silenced = held  # type: ignore[attr-defined]
+    return held
 
 
 def _outline_mode(change_set: object) -> str:
@@ -302,6 +354,7 @@ class FormSurface(QWidget):
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
         self._layout_popover: Optional[QWidget] = None
+        self._toast_held = False
 
         self._load_memory()
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
@@ -412,9 +465,37 @@ class FormSurface(QWidget):
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
 
-    def mixed_layout_blocked(self) -> bool:
-        state = self._session.selection.state
-        return bool(mixed_parent_sentence(self._session.document, state.ids))
+    def layout_offers(self) -> OfferSheet:
+        """What each layout request would do to the current selection, measured from the canvas."""
+        document = self._session.document
+        ids = self._session.selection.state.ids
+        return offers(document, ids, measure(document, ids, self._realizer.widget_for))
+
+    def dispatch(self, command_id: str) -> None:
+        """Run the layout gesture behind a Form command row or its key."""
+        request = request_for(command_id)
+        if request is None or isinstance(request, OpenWrap) or self._source.mode != "visual":
+            return
+        self.run_layout(request)
+
+    def run_layout(self, request: object) -> None:
+        """One layout request on the selection. A change toasts with Undo. A refusal goes to the status bar."""
+        log = self._session.log
+        before = log.entries()
+        previous = before[-1] if before else None
+        # The log listener toasts inside the commit, before the sentence is known.
+        self._toast_held = True
+        try:
+            outcome = perform(self._session, self._realizer.widget_for, request, ask(self))
+        finally:
+            self._toast_held = False
+        entries = log.entries()
+        top = entries[-1] if entries else None
+        if isinstance(outcome, Done) and top is not None and top is not previous:
+            note = ToastNote(outcome.sentence, "Undo", log.undo_label() or "", len(entries), top)
+            self._command_toast.show_note(note, self._undo_announced)
+        elif isinstance(outcome, Refused):
+            self.narrate(outcome.reason)
 
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
@@ -744,6 +825,8 @@ class FormSurface(QWidget):
         self._command_toast.place()
 
     def _sync_toast(self, change_set: object) -> None:
+        if self._toast_held:
+            return
         origin = getattr(change_set, "origin", "")
         label = str(getattr(change_set, "label", "") or "")
         if origin != "do":
@@ -1037,8 +1120,12 @@ class FormSurface(QWidget):
         return frozenset(found)
 
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
-        """Gestures behind canvas, outline, and inspector keys. None exist yet."""
-        return {}
+        """Gestures behind canvas, outline, and inspector keys."""
+        return {
+            command.command_id: lambda command_id=command.command_id: self.dispatch(command_id)
+            for command in FORM_COMMANDS
+            if request_for(command.command_id) is not None
+        }
 
     def _note_inert(self) -> None:
         self._inert_note = INERT_STATUS
@@ -1234,7 +1321,10 @@ class FormSurface(QWidget):
         self._apply_responsive()
 
     def _on_focus_changed(self, _old: object, new: object) -> None:
-        if self._released or new is None:
+        if self._released:
+            return
+        self._sync_editor_group_keys(new)
+        if new is None:
             return
         if new is self or self.isAncestorOf(new):  # type: ignore[arg-type]
             self._bind_shell_undo()
@@ -1286,34 +1376,26 @@ class FormSurface(QWidget):
             redo.triggered.connect(lambda _checked=False, host=window: _shell_history(host, True))
             window._form_undo_wired = True  # type: ignore[attr-defined]
         window._form_undo_surface = self  # type: ignore[attr-defined]
-        self._silence_rename(registry)
+        _silence(window, self, (_RENAME_ACTION,))
         self._sync_shell_undo()
 
-    def _silence_rename(self, registry: object) -> None:
-        action = registry.action(_RENAME_ACTION)  # type: ignore[attr-defined]
-        if action is None:
-            return
-        window = self.window()
-        if not getattr(window, "_form_rename_silenced", False):
-            window._form_rename_prior = action.isEnabled()  # type: ignore[attr-defined]
-            window._form_rename_silenced = True  # type: ignore[attr-defined]
-        action.setEnabled(False)
-
-    def _restore_rename(self) -> None:
-        window = self.window()
-        if not getattr(window, "_form_rename_silenced", False):
-            return
-        registry = _shell_registry(window)
-        action = None if registry is None else registry.action(_RENAME_ACTION)  # type: ignore[attr-defined]
-        if action is not None:
-            action.setEnabled(bool(getattr(window, "_form_rename_prior", True)))
-        window._form_rename_silenced = False  # type: ignore[attr-defined]
+    def _sync_editor_group_keys(self, focused: object) -> None:
+        """Ctrl+1 and Ctrl+2 belong to the canvas and outline while one of them has focus."""
+        hosts = (self._workbench.canvas, self._workbench.outline.tree)
+        inside = isinstance(focused, QWidget) and any(
+            host is focused or host.isAncestorOf(focused) for host in hosts
+        )
+        if inside:
+            _silence(self.window(), self, _EDITOR_GROUP_ACTIONS)
+        else:
+            _restore(self.window(), self, _EDITOR_GROUP_ACTIONS)
 
     def _clear_shell_undo(self) -> None:
         window = self.window()
+        _restore(window, self, _EDITOR_GROUP_ACTIONS)
         if getattr(window, "_form_undo_surface", None) is not self:
             return
-        self._restore_rename()
+        _restore(window, self, (_RENAME_ACTION,))
         window._form_undo_surface = None  # type: ignore[attr-defined]
         self._set_shell_actions("Undo", False, "Redo", False)
 
