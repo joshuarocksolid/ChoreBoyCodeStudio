@@ -58,6 +58,7 @@ from app.shell.command_broker import CommandBroker
 from app.shell.console_model import ConsoleModel
 from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow, MainWindowDebugInspectorHost
+from app.shell.editor_key_scope import EDITOR_ONLY_ACTION_IDS, EditorKeyScope
 from app.shell.editor_tab_factory import EditorTabFactory
 from app.shell.editor_tab_workflow import build_editor_tab_workflow
 from app.shell.editor_workspace_controller import EditorWorkspaceController
@@ -456,6 +457,15 @@ def install_theme_and_finalize(ctx: ShellCompositionContext) -> None:
         window._action_registry = ShellActionRegistry(
             menu_registry=menu_registry,
             command_broker=window._command_broker,
+        )
+        # Parented to the window, which keeps it alive.
+        EditorKeyScope(
+            window,
+            lambda: [
+                action
+                for action in (menu_registry.action(action_id) for action_id in EDITOR_ONLY_ACTION_IDS)
+                if action is not None
+            ],
         )
     window._status_controller = create_shell_status_bar(
         window,
