@@ -37,7 +37,6 @@ from app.features.form_builder.engine.shell_commands import (
     FORM_COMMANDS,
     INERT_SHORTCUTS,
     INERT_STATUS,
-    editor_only_shell_actions,
     is_widget_shortcut,
     normalize_form_shortcut,
 )
@@ -80,7 +79,6 @@ from app.features.form_builder.qtside.canvas.core.words import hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
-from app.shell.shortcut_preferences import default_shortcut_map
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -171,12 +169,10 @@ class _ShellKeyGuard(QObject):
     """Keeps shell window keys that mean nothing here off the builder chrome.
 
     Installed on the workbench and toolbar widgets, never on the XML editor.
-    Accepting ``ShortcutOverride`` sends the key to the focused widget instead
-    of a window action:
-
-    * code-editor keys (Tab, Shift+Tab) then move focus (UX-A11Y-009);
-    * inert keys (Ctrl+H, Ctrl+G, ...) are swallowed on their key press and
-      the status bar says they are not used (UX-KEY-004).
+    Accepting ``ShortcutOverride`` sends an inert key (Ctrl+H, Ctrl+G, ...) to
+    the focused widget instead of a window action; its key press is then
+    swallowed and the status bar says it is not used (UX-KEY-004). The shell
+    keeps Tab and Shift+Tab out of window actions outside code editors.
 
     The shell also binds the inert keys, so a QShortcut of the same key would
     be ambiguous and fire nothing.
@@ -184,13 +180,11 @@ class _ShellKeyGuard(QObject):
 
     def __init__(
         self,
-        editor_keys: Callable[[], frozenset],
         inert_keys: frozenset,
         on_inert: Callable[[], None],
         parent: QObject,
     ) -> None:
         super().__init__(parent)
-        self._editor_keys = editor_keys
         self._inert_keys = inert_keys
         self._on_inert = on_inert
         self._pending = ""
@@ -202,9 +196,6 @@ class _ShellKeyGuard(QObject):
             text = _key_text(event)
             if text in self._inert_keys:
                 self._pending = text
-                getattr(event, "accept")()
-                return True
-            if text in self._editor_keys():
                 getattr(event, "accept")()
                 return True
             return False
@@ -1014,7 +1005,6 @@ class FormSurface(QWidget):
                     shortcut.activated.connect(handler)
                 self._widget_shortcuts.append(shortcut)
         self._key_guard = _ShellKeyGuard(
-            self._editor_only_keys,
             frozenset(normalize_form_shortcut(key) for key in INERT_SHORTCUTS),
             self._note_inert,
             self,
@@ -1025,16 +1015,6 @@ class FormSurface(QWidget):
             root.installEventFilter(self._key_guard)
             for child in root.findChildren(QWidget):
                 child.installEventFilter(self._key_guard)
-
-    def _editor_only_keys(self) -> frozenset:
-        effective = getattr(self.window(), "_effective_shortcuts", None)
-        keys = effective if isinstance(effective, Mapping) else default_shortcut_map()
-        found = set()
-        for action_id in editor_only_shell_actions():
-            text = normalize_form_shortcut(str(keys.get(action_id, "") or ""))
-            if text:
-                found.add(text)
-        return frozenset(found)
 
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
         """Gestures behind canvas, outline, and inspector keys. None exist yet."""
