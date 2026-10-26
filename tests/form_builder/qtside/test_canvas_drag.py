@@ -14,7 +14,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.integration.canvas import FormCanvas
-from app.features.form_builder.qtside.canvas.core.frame import OnHandle, OnPageEdge
+from app.features.form_builder.qtside.canvas.core.frame import OnKnob, OnPageEdge
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from tests.form_builder.qtside.support import form, opened
 
@@ -187,7 +187,7 @@ def _center(canvas: FormCanvas, name: str) -> QPoint:
 
 def _handle(canvas: FormCanvas, at: str) -> QPoint:
     for rect, target in canvas.overlay().targets:
-        if isinstance(target, OnHandle) and target.at == at and target.writes:
+        if isinstance(target, OnKnob) and target.knob.key[0] == "size" and target.knob.pull == at:
             return _from_rect(canvas, rect)
     raise AssertionError(at)
 

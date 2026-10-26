@@ -20,6 +20,7 @@ from app.qt.QtWidgets import (
     QMenu,
     QPushButton,
     QSizePolicy,
+    QSpinBox,
     QSplitter,
     QStackedWidget,
     QTabWidget,
@@ -74,6 +75,7 @@ from app.features.form_builder.integration.layout import (
 )
 from app.features.form_builder.integration.structure import structure_entries
 from app.features.form_builder.qtside.inspector import InspectorPane, TabId
+from app.features.form_builder.qtside.inspector.api import GroupId
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_style import flat_tool_button_qss, mode_group_qss
@@ -1416,6 +1418,16 @@ class FormWorkbench(QWidget):
         if self._plan is not None and not self._plan.inspector_docked:
             self.open_right()
         self.inspector.focus_tab(tab)
+
+    def focus_share(self, axis: str) -> None:
+        """Open the Size group on the current selection and focus its share spin for ``axis``."""
+        self._focus_inspector_tab(TabId.PROPERTIES)
+        self.inspector.set_group_expanded(GroupId.SIZE, True)
+        self.inspector.flush()
+        spin = self.inspector.findChild(QSpinBox, "formBuilder.size.share.%s.value" % axis)
+        if spin is not None and spin.isVisibleTo(self.inspector):
+            spin.setFocus()
+            spin.selectAll()
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]

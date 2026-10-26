@@ -9,6 +9,7 @@ from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.commands.catalog import SetGeometry, SetProperty
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertFormRow
 from app.features.form_builder.engine.commands.drop_plan import nudge_commands
+from app.features.form_builder.engine.commands.live import LiveProp, live_props
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
@@ -21,13 +22,24 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     ChipAction,
     OnChip,
     OnHandle,
+    OnKnob,
     OnPageEdge,
     OnSpace,
     OnWidget,
     OverlayFrame,
     Target,
 )
-from app.features.form_builder.engine.query.direct import GRID, snap_resize
+from app.features.form_builder.engine.query.direct import (
+    GRID,
+    Knob,
+    KnobKey,
+    Pull,
+    Readout,
+    Turn,
+    clicks_through,
+    reset,
+    turn,
+)
 from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
 from app.features.form_builder.qtside.canvas.core.space import (
     CanvasPoint,
@@ -45,7 +57,6 @@ from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
     Managed,
-    Positioning,
     band_candidates,
     effective_selection,
     first_child,
@@ -58,8 +69,8 @@ from app.features.form_builder.qtside.canvas.core.structure import (
 from app.features.form_builder.qtside.canvas.core.text import TextTarget, enter_opens_editor, next_text_target, text_commit, text_target
 from app.features.form_builder.qtside.canvas.core.words import (
     FIRST_FOCUS_HINT,
+    GIVEN_SIZE,
     MOVE_IN_LAYOUT_LATER,
-    RESIZE_IN_LAYOUT_LATER,
     hover_sentence,
 )
 
@@ -89,8 +100,8 @@ _ZOOM_KEYS = frozenset({"zoom_in", "zoom_out", "zoom_reset", "zoom_fit"})
 _CLAIMED = frozenset(
     {"tab", "backtab", "left", "right", "up", "down", "enter", "space", "zoom_in", "zoom_out", "zoom_reset", "zoom_fit"}
 )
-_FREE_HANDLES: Tuple[Compass, ...] = ("nw", "n", "ne", "e", "se", "s", "sw", "w")
-_LAID_HANDLES: Tuple[Compass, ...] = ("e", "s", "se")
+#: A key commit folds into the previous step with the same ``Commit.merge`` inside this window.
+KEY_MERGE_S = 1.0
 
 
 @dataclass(frozen=True)
@@ -242,6 +253,8 @@ Event = Union[
 @dataclass(frozen=True)
 class Idle:
     hover: Optional[NodeId] = None
+    #: The knob under the pointer. A hovered grip draws its glyph.
+    knob: Optional[KnobKey] = None
 
 
 @dataclass(frozen=True)
@@ -267,13 +280,14 @@ class Moving:
 
 
 @dataclass(frozen=True)
-class Resizing:
+class Turning:
+    """A knob drag. The preview shows the commands the release would commit."""
+
     token: str
-    item: MovedItem
-    at: Compass
+    knob: Knob
     anchor: FormPoint
     pointer: FormPoint
-    snap: bool
+    shift: bool
 
 
 @dataclass(frozen=True)
@@ -323,9 +337,9 @@ class Panning:
     armed: bool
 
 
-Drag = Union[Moving, Resizing, PageResizing, Banding, Inert, Placing]
+Drag = Union[Moving, Turning, PageResizing, Banding, Inert, Placing]
 _DRAG = get_args(Drag)
-_PREVIEW = (Moving, Resizing, PageResizing)
+_PREVIEW = (Moving, Turning, PageResizing)
 
 
 @dataclass(frozen=True)
@@ -342,7 +356,7 @@ class Editing:
 
 
 Gesture = Union[
-    Idle, PanArmed, Pressed, Moving, Resizing, PageResizing, Banding, Inert, Placing, Panning, Editing
+    Idle, PanArmed, Pressed, Moving, Turning, PageResizing, Banding, Inert, Placing, Panning, Editing
 ]
 
 
@@ -366,11 +380,17 @@ class Commit:
     token: str
     #: After the entry, open the in-place editor on the new selection.
     edit: Optional[str] = None
+    #: What the knob's chip reads once the commit lands.
+    readout: Optional[Readout] = None
+    #: Folds into the previous step with this token inside ``KEY_MERGE_S``.
+    merge: Optional[str] = None
 
 
 @dataclass(frozen=True)
 class Preview:
-    rects: Tuple[Tuple[NodeId, RectValue], ...]
+    """Values shown on live objects. The document does not change."""
+
+    props: Tuple[LiveProp, ...]
 
 
 @dataclass(frozen=True)
@@ -500,8 +520,12 @@ def aim(
     index: HitIndex,
     document: UiDocument,
     view: ViewMap,
+    knobs: bool = True,
 ) -> Target:
+    """The topmost target at ``at``. ``knobs`` False looks through knob sites."""
     for rect, target in frame.targets:
+        if not knobs and isinstance(target, OnKnob):
+            continue
         if rect.contains(at):
             return target
     form = view.to_form(at)
@@ -535,20 +559,9 @@ def drawn_rect(state: Moving, item: MovedItem) -> Rect:
     return Rect(item.drawn.x + dx, item.drawn.y + dy, item.drawn.width, item.drawn.height)
 
 
-def resized_rect(state: Resizing) -> RectValue:
+def turned(state: Turning) -> Turn:
     delta = _delta(state.anchor, state.pointer)
-    return snap_resize(state.item.origin, state.at, delta.x, delta.y, state.snap)
-
-
-def resized_drawn(state: Resizing) -> Rect:
-    new = resized_rect(state)
-    item = state.item
-    return Rect(
-        item.drawn.x + new.x - item.origin.x,
-        item.drawn.y + new.y - item.origin.y,
-        new.width,
-        new.height,
-    )
+    return turn(state.knob, delta.x, delta.y, "shift_drag" if state.shift else "drag")
 
 
 def page_size(state: PageResizing) -> Size:
@@ -586,6 +599,8 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
     if event.button != "left":
         return Step(gesture, (CanvasPressed(),))
     target = aim(event.at, world.frame, world.index, world.document, world.view)
+    if isinstance(target, OnKnob):
+        return _knob_press(target.knob, event, world)
     if event.double and isinstance(target, OnWidget):
         editing = text_target(world.document, target.node, target.site)
         if editing is not None:
@@ -595,20 +610,9 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
             )
     point = world.view.to_form(event.at)
     snap = not event.mods.shift
+    drag: Drag
     if isinstance(target, OnHandle):
-        drag: Drag
-        if target.writes:
-            drag = Resizing(
-                world.fresh_token,
-                _moved(world, target.node),
-                target.at,
-                point,
-                point,
-                snap,
-            )
-        else:
-            drag = Inert(RESIZE_IN_LAYOUT_LATER)
-        return Step(Pressed(event.port, (), drag), (CanvasPressed(), HoverChanged(None)))
+        return Step(Pressed(event.port, (), Inert(GIVEN_SIZE)), (CanvasPressed(), HoverChanged(None)))
     if isinstance(target, OnPageEdge):
         drag = PageResizing(
             world.fresh_token,
@@ -662,18 +666,45 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
     return Step(Pressed(event.port, click, drag), (CanvasPressed(), HoverChanged(None)))
 
 
+def _knob_press(knob: Knob, event: Press, world: World) -> Step:
+    """A drag turns the knob. A double-click resets it. A gap, margin or grip click selects what is under it."""
+    pressed: Tuple[Effect, ...] = (CanvasPressed(), HoverChanged(None))
+    if event.double:
+        done = reset(knob)
+        if not done.commands:
+            return Step(Idle(None), pressed)
+        return Step(Idle(None), pressed + (Commit(done.label, done.commands, world.fresh_token, readout=done.readout),))
+    click = _click_beneath(event, world) if clicks_through(knob) else ()
+    point = world.view.to_form(event.at)
+    drag = Turning(world.fresh_token, knob, point, point, event.mods.shift)
+    return Step(Pressed(event.port, click, drag), pressed)
+
+
+def _click_beneath(event: Press, world: World) -> Tuple[Effect, ...]:
+    beneath = aim(event.at, world.frame, world.index, world.document, world.view, knobs=False)
+    additive = event.mods.shift or event.mods.ctrl
+    if isinstance(beneath, OnWidget):
+        return (_toggle(world, beneath.node),) if additive else (Select((beneath.node,), beneath.node),)
+    if isinstance(beneath, OnSpace) and not additive:
+        return (Select((beneath.select,), beneath.select),)
+    return ()
+
+
 def _idle_move(gesture: Idle, event: Move, world: World) -> Step:
     if event.held:
         return Step(gesture, (), False)
     target = aim(event.at, world.frame, world.index, world.document, world.view)
     node, cursor, sentence = _hover_readout(world, target)
-    if gesture.hover == node:
+    knob = target.knob.key if isinstance(target, OnKnob) else None
+    if gesture.hover == node and gesture.knob == knob:
         return Step(gesture, (Cursor(cursor),))
     effects: Tuple[Effect, ...] = (HoverChanged(node), Cursor(cursor))
     # A widget hover is the status hover sentence. Narrating it would stick as a gesture.
     if sentence and node is None:
         effects = effects + (Narrate(sentence),)
-    return Step(Idle(node), effects)
+    elif gesture.knob is not None:
+        effects = effects + (Narrate(""),)
+    return Step(Idle(node, knob), effects)
 
 
 def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
@@ -700,6 +731,8 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         if nxt is None:
             return Step(gesture, (), True)
         return Step(gesture, _select_and_reveal(world, (nxt,), nxt))
+    if event.key in _ARROWS and event.mods.ctrl and event.mods.shift:
+        return _resize_by_key(gesture, event, world, current)
     if event.key in _ARROWS and event.mods.alt:
         return _nudge(gesture, event, world)
     if event.key in _ARROWS:
@@ -744,6 +777,28 @@ def _nudge(gesture: Idle, event: Key, world: World) -> Step:
             )
         )
     return Step(gesture, (Commit("Nudge", tuple(commands), world.fresh_token),))
+
+
+def _resize_by_key(gesture: Idle, event: Key, world: World, primary: NodeId) -> Step:
+    """Ctrl+Shift+arrow turns the primary's east or south handle by 8, or 1 with Alt."""
+    pull: Pull = "e" if event.key in ("left", "right") else "s"
+    knob = next(
+        (
+            target.knob
+            for _rect, target in world.frame.targets
+            if isinstance(target, OnKnob) and target.knob.key == ("size", primary, pull)
+        ),
+        None,
+    )
+    if knob is None:
+        return Step(gesture, (), True)
+    step_px = 1 if event.mods.alt else GRID
+    dx, dy = _NUDGE[event.key]
+    done = turn(knob, dx * step_px, dy * step_px, "key")
+    if not done.commands:
+        return Step(gesture, (), True)
+    merge = "resize:" + ",".join(str(node) for node in world.selection.ids)
+    return Step(gesture, (Commit(done.label, done.commands, world.fresh_token, readout=done.readout, merge=merge),))
 
 
 def _edit_text(gesture: Idle, event: EditTextAsked, world: World) -> Step:
@@ -802,7 +857,13 @@ def _drag_shift(gesture: Drag, event: Union[Key, KeyUp], world: World) -> Step:
 def _drag_release(gesture: Drag, event: Release, world: World) -> Step:
     if isinstance(gesture, Placing):
         return _finish_place(gesture, world)
-    if isinstance(gesture, _PREVIEW):
+    if isinstance(gesture, Turning):
+        done = turned(gesture)
+        ended: Tuple[Effect, ...] = (EndPreview(),)
+        if done.commands:
+            ended = ended + (Commit(done.label, done.commands, gesture.token, readout=done.readout),)
+        return Step(Idle(None), ended + (Cursor("arrow"),))
+    if isinstance(gesture, (Moving, PageResizing)):
         commands = _commands(gesture, world)
         effects: Tuple[Effect, ...] = (EndPreview(),)
         if commands:
@@ -923,9 +984,10 @@ def _on_focus(gesture: Gesture, event: Focus, world: World) -> Step:
 
 
 def _on_leave(gesture: Idle, event: Leave, world: World) -> Step:
-    if gesture.hover is None:
+    hint: Tuple[Effect, ...] = (Narrate(""),) if gesture.knob is not None else ()
+    if gesture.hover is None and gesture.knob is None:
         return Step(gesture, (Cursor("arrow"),))
-    return Step(Idle(None), (HoverChanged(None), Cursor("arrow")))
+    return Step(Idle(None), (HoverChanged(None), Cursor("arrow")) + hint)
 
 
 def _on_hover_from(gesture: Idle, event: HoverFrom, world: World) -> Step:
@@ -983,7 +1045,9 @@ def _retarget(state: Drag, point: FormPoint, snap: bool, world: World) -> Drag:
         payload = replace(state.payload, snap=snap)
         target = resolve_at(world.document, world.index, point, payload)
         return replace(state, payload=payload, pointer=point, target=target, outside=False, draw=True)
-    if isinstance(state, _PREVIEW):
+    if isinstance(state, Turning):
+        return replace(state, pointer=point, shift=not snap)
+    if isinstance(state, (Moving, PageResizing)):
         return replace(state, pointer=point, snap=snap)
     return state
 
@@ -1015,7 +1079,7 @@ def _resume_free_move(state: Placing, point: FormPoint, snap: bool, world: World
 
 
 def _pointer_of(state: Drag) -> FormPoint:
-    if isinstance(state, (Moving, Resizing, PageResizing, Banding, Placing)):
+    if isinstance(state, (Moving, Turning, PageResizing, Banding, Placing)):
         return state.pointer
     return FormPoint(0, 0)
 
@@ -1029,9 +1093,10 @@ def _begin_effects(state: Drag) -> Tuple[Effect, ...]:
 
 def _live_effects(state: Drag) -> Tuple[Effect, ...]:
     if isinstance(state, Moving):
-        return (Preview(moved_rects(state)), Cursor("move"))
-    if isinstance(state, Resizing):
-        return (Preview(((state.item.node, resized_rect(state)),)), Cursor(_handle_cursor(state.at)))
+        moved = tuple(LiveProp(node, "geometry", rect) for node, rect in moved_rects(state))
+        return (Preview(moved), Cursor("move"))
+    if isinstance(state, Turning):
+        return (Preview(live_props(turned(state).commands)), Cursor(_handle_cursor(state.knob.pull)))
     if isinstance(state, PageResizing):
         cursor: CursorShape = "size_h" if state.at == "e" else "size_v"
         return (PreviewPage(page_size(state)), Cursor(cursor))
@@ -1042,7 +1107,7 @@ def _live_effects(state: Drag) -> Tuple[Effect, ...]:
     return ()
 
 
-def _commands(state: Union[Moving, Resizing, PageResizing], world: World) -> Tuple[SetGeometry, ...]:
+def _commands(state: Union[Moving, PageResizing], world: World) -> Tuple[SetGeometry, ...]:
     if isinstance(state, Moving):
         found = []
         for node, rect in moved_rects(state):
@@ -1055,12 +1120,6 @@ def _commands(state: Union[Moving, Resizing, PageResizing], world: World) -> Tup
             ):
                 found.append(SetGeometry(node, rect, state.token))
         return tuple(found)
-    if isinstance(state, Resizing):
-        rect = resized_rect(state)
-        origin = state.item.origin
-        if (rect.x, rect.y, rect.width, rect.height) == (origin.x, origin.y, origin.width, origin.height):
-            return ()
-        return (SetGeometry(state.item.node, rect, state.token),)
     size = page_size(state)
     if size == state.origin:
         return ()
@@ -1071,11 +1130,9 @@ def _commands(state: Union[Moving, Resizing, PageResizing], world: World) -> Tup
     return (SetGeometry(root.id, RectValue(x, y, size.width, size.height), state.token),)
 
 
-def _commit_label(state: Union[Moving, Resizing, PageResizing]) -> str:
+def _commit_label(state: Union[Moving, PageResizing]) -> str:
     if isinstance(state, Moving):
         return "Move"
-    if isinstance(state, Resizing):
-        return "Resize"
     return "Resize form"
 
 
@@ -1098,6 +1155,8 @@ def _zoom_effect(key: KeyName) -> Zoom:
 
 
 def _hover_readout(world: World, target: Target) -> Tuple[Optional[NodeId], CursorShape, str]:
+    if isinstance(target, OnKnob):
+        return None, _handle_cursor(target.knob.pull), target.knob.hint
     if isinstance(target, OnHandle):
         return target.node, _handle_cursor(target.at), ""
     if isinstance(target, OnPageEdge):
@@ -1227,14 +1286,6 @@ def _placing_leave(gesture: Placing, event: Leave, world: World) -> Step:
     del event, world
     nxt = replace(gesture, outside=True, target=NoDrop())
     return Step(nxt, _place_effects(nxt))
-
-
-def handles_for(place: Positioning) -> Tuple[Compass, ...]:
-    if isinstance(place, Free):
-        return _FREE_HANDLES
-    if isinstance(place, LaidOut):
-        return _LAID_HANDLES
-    return ()
 
 
 TABLE: Dict[Tuple[type, type], Handler] = {

@@ -75,6 +75,8 @@ class Track:
 
     start: int
     end: int
+    #: The item a box track holds. Qt skips hidden items, so index order is not enough.
+    item: Optional[NodeId] = None
 
 
 @dataclass(frozen=True)
@@ -934,9 +936,9 @@ def _box_tags(document: UiDocument, layout: LayoutNode, facts: LayoutFacts) -> L
     across = facts.rows if axis == "h" else facts.columns
     if not across:
         return found
-    for index, item in enumerate(layout.items):
-        content = item.content
-        if not isinstance(content, WidgetNode) or index >= len(tracks):
+    for track in tracks:
+        content = None if track.item is None else document.get(track.item)
+        if not isinstance(content, WidgetNode):
             continue
         slots = share_slots(document, content.id)
         if not slots:
@@ -944,7 +946,6 @@ def _box_tags(document: UiDocument, layout: LayoutNode, facts: LayoutFacts) -> L
         value = read_share(document, slots[0]).value
         if not value:
             continue
-        track = tracks[index]
         if axis == "h":
             anchor = Rect(track.start, across[0].start, track.end - track.start, across[-1].end - across[0].start)
         else:

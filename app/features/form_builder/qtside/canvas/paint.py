@@ -67,7 +67,7 @@ def _paint_one(painter: QPainter, item: Item, palette: CanvasPalette) -> None:
         _caption(painter, item, palette)
         return
     if isinstance(item, Glyph):
-        _glyph(painter, item.name, item.rect, _ink(palette, item.role, 1.0), _ink(palette, "select", 1.0))
+        _glyph(painter, item.name, item.rect, _ink(palette, item.role, 1.0), _color(palette.overlay.chip_text, 1.0))
         return
     raise AssertionError(type(item))
 
@@ -247,7 +247,26 @@ def _glyph(painter: QPainter, name: str, rect: CanvasRect, colour: QColor, text:
         painter.setFont(_semibold(11))
         painter.drawText(_box(rect), _align("AlignCenter"), "!")
         return
+    if name == "grip":
+        _grip(painter, rect, colour, text)
+        return
     raise AssertionError(name)
+
+
+def _grip(painter: QPainter, rect: CanvasRect, colour: QColor, rim: QColor) -> None:
+    """Three dots along the handle. A light rim keeps them readable over any pane."""
+    box = _box(rect)
+    tall = box.height() >= box.width()
+    spacing = max(box.width(), box.height()) / 3.0
+    radius = min(min(box.width(), box.height()), spacing) / 2.0 - 0.5
+    painter.setPen(_pen(rim, 1.0, "solid"))
+    painter.setBrush(colour)
+    for offset in (-1, 0, 1):
+        if tall:
+            centre = QPointF(box.center().x(), box.center().y() + offset * spacing)
+        else:
+            centre = QPointF(box.center().x() + offset * spacing, box.center().y())
+        painter.drawEllipse(centre, radius, radius)
 
 
 def _ink(palette: CanvasPalette, role: Role, alpha: float) -> QColor:

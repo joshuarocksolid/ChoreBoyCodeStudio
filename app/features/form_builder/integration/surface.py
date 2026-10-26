@@ -851,6 +851,10 @@ class FormSurface(QWidget):
     def open_layout_popover(self, node: NodeId) -> None:
         self._layout_popover = open_layout_menu(self, FORM_COMMANDS, self._chip_anchor(node))
 
+    def focus_share(self, node: NodeId, axis: str) -> None:
+        self._session.selection.set((node,), current=node, source=SelectionSource.CANVAS)
+        self._workbench.focus_share(axis)
+
     def _chip_anchor(self, node: NodeId) -> QPoint:
         canvas = self._workbench.canvas
         for rect, chip_node in canvas.overlay().chips:

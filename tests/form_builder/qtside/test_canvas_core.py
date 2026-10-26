@@ -7,12 +7,25 @@ import subprocess
 import sys
 from typing import Iterator, Optional, Sequence, Tuple
 from contextlib import contextmanager
+from dataclasses import replace
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog import SetGeometry
+from app.features.form_builder.engine.commands.catalog import SetGeometry, SetLayoutCell
+from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.direct import (
+    FreeRect,
+    Knob,
+    KnobSet,
+    LayoutFacts,
+    PrimaryFacts,
+    Survey,
+    Track,
+    knob_set,
+    survey_scope,
+)
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.session import FormSession
@@ -36,6 +49,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     Handle,
     OnChip,
     OnHandle,
+    OnKnob,
     OnPageEdge,
     OnSpace,
     OnWidget,
@@ -46,6 +60,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
 from app.features.form_builder.qtside.canvas.core.gesture import (
     Banding,
     Commit,
+    Gesture,
     Idle,
     Inert,
     Key,
@@ -53,22 +68,23 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Move,
     MovedItem,
     Moving,
+    Narrate,
     PageResizing,
     Placing,
     Press,
     Pressed,
     Release,
-    Resizing,
     Reveal,
     Select,
     Toggle,
+    Turning,
     World,
     aim,
     band_hits,
     previewing,
     step,
 )
-from app.features.form_builder.qtside.canvas.core.structure import nearest_in_direction
+from app.features.form_builder.qtside.canvas.core.structure import Free, free_origin, nearest_in_direction, positioning_of
 from app.features.form_builder.qtside.canvas.core.overlay import FrameInputs, build_frame, build_static
 from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
 from app.features.form_builder.qtside.canvas.core.space import (
@@ -218,9 +234,10 @@ def _inputs(
     session: FormSession,
     view: ViewMap,
     selection: SelectionState,
-    gesture: Idle,
+    gesture: Gesture,
+    knobs: Optional[KnobSet] = None,
 ) -> FrameInputs:
-    return FrameInputs(
+    inputs = FrameInputs(
         session.document,
         selection,
         gesture,
@@ -232,6 +249,48 @@ def _inputs(
         (),
         lambda text: len(text) * 6,
     )
+    return inputs if knobs is None else replace(inputs, knobs=knobs)
+
+
+def _knobs(
+    session: FormSession,
+    index: HitIndex,
+    view: ViewMap,
+    primary: NodeId,
+    layouts: Tuple[LayoutFacts, ...] = (),
+) -> KnobSet:
+    """What the live surveyor would measure, built from the hand-made index."""
+    document = session.document
+    rect = index.rect_of(primary)
+    assert rect is not None
+    free = free_origin(document, index, primary) if isinstance(positioning_of(document, primary), Free) else None
+    facts = PrimaryFacts(primary, rect, ("Minimum", "Fixed"), free)
+    survey = Survey(index.epoch, survey_scope(document, primary, ()), facts, layouts, ())
+    return knob_set(survey, document, view.factor)
+
+
+def _drag(world: World, frame: OverlayFrame, start: CanvasPoint, end: CanvasPoint, mods: Mods = Mods()) -> Tuple[Gesture, Tuple[object, ...]]:
+    """Press, move and release through ``step``. Returns the last gesture and the release effects."""
+    world = replace(world, frame=frame)
+    pressed = step(Idle(), Press(start, PortPoint(0, 0), "left", mods, False), world)
+    moved = step(
+        pressed.gesture,
+        Move(end, PortPoint(end.x - start.x, end.y - start.y), frozenset(("left",)), mods),
+        world,
+    )
+    released = step(moved.gesture, Release(end, PortPoint(0, 0), "left", mods), world)
+    return moved.gesture, tuple(released.effects)
+
+
+def _centre(rect: CanvasRect) -> CanvasPoint:
+    return CanvasPoint(rect.x + rect.width // 2, rect.y + rect.height // 2)
+
+
+def _size_knob(frame: OverlayFrame, at: str) -> Tuple[CanvasRect, Knob]:
+    for rect, target in frame.targets:
+        if isinstance(target, OnKnob) and target.knob.key[0] == "size" and target.knob.pull == at:
+            return rect, target.knob
+    raise AssertionError(at)
 
 
 def _bare_index(session: FormSession) -> HitIndex:
@@ -485,9 +544,10 @@ def test_every_drag_state_consumes_release_without_an_empty_commit() -> None:
         form = _nid(session, "Form")
         item = MovedItem(ok, RectValue(8, 16, 80, 24), Rect(30, 46, 80, 24))
         origin = FormPoint(0, 0)
+        free = Knob(("size", ok, "e"), ok, "e", "", FreeRect(ok, "e", item.origin, item.drawn))
         states = (
             Moving("t", ok, (item,), origin, origin, True),
-            Resizing("t", item, "e", origin, origin, True),
+            Turning("t", free, origin, origin, False),
             PageResizing("t", "e", Size(400, 300), Size(80, 60), origin, origin, True),
             Banding(form, origin, FormPoint(2, 2), False, (), ()),
             Inert(""),
@@ -561,7 +621,7 @@ def test_hover_stroke_is_drawn_only_while_idle() -> None:
         assert not any(isinstance(item, Stroke) and item.role == "layout_faint" for item in hidden.items)
 
 
-def test_free_handles_write_and_laid_out_handles_do_not() -> None:
+def test_a_free_widget_handle_resizes_on_the_grid() -> None:
     with _opened(BARE) as session:
         view = _view()
         index = _bare_index(session)
@@ -569,21 +629,21 @@ def test_free_handles_write_and_laid_out_handles_do_not() -> None:
         selection = SelectionState((ok,), ok)
         frame = build_frame(
             build_static(session.document, index, view),
-            _inputs(session, view, selection, Idle()),
+            _inputs(session, view, selection, Idle(), _knobs(session, index, view, ok)),
         )
-        handles = [target for _rect, target in frame.targets if isinstance(target, OnHandle)]
-        assert len(handles) == 8
-        assert all(target.writes for target in handles)
-        east = next(pair for pair in frame.targets if isinstance(pair[1], OnHandle) and pair[1].at == "e")
-        hit = aim(
-            CanvasPoint(east[0].x + east[0].width // 2, east[0].y + east[0].height // 2),
-            frame,
-            index,
-            session.document,
-            view,
-        )
-        assert isinstance(hit, OnHandle) and hit.writes and hit.at == "e"
+        handles = [target for _rect, target in frame.targets if isinstance(target, OnKnob)]
+        assert {target.knob.pull for target in handles} == {"nw", "n", "ne", "e", "se", "s", "sw", "w"}
+        east, _knob = _size_knob(frame, "e")
+        start = _centre(east)
+        _gesture, effects = _drag(_world(session, index, view, selection), frame, start, CanvasPoint(start.x + 13, start.y))
+        commits = [effect for effect in effects if isinstance(effect, Commit)]
+        # Stored x 10 and width 80: the east edge goes from 90 to 103 and lands on 104.
+        assert [command.rect for commit in commits for command in commit.commands if isinstance(command, SetGeometry)] == [
+            RectValue(10, 16, 94, 24)
+        ]
 
+
+def test_a_laid_out_widget_handle_writes_fixed() -> None:
     with _opened(LAID) as session:
         view = _view()
         form = _nid(session, "Form")
@@ -599,11 +659,98 @@ def test_free_handles_write_and_laid_out_handles_do_not() -> None:
         selection = SelectionState((ok,), ok)
         frame = build_frame(
             build_static(session.document, index, view),
-            _inputs(session, view, selection, Idle()),
+            _inputs(session, view, selection, Idle(), _knobs(session, index, view, ok)),
         )
-        handles = [target for _rect, target in frame.targets if isinstance(target, OnHandle)]
-        assert {target.at for target in handles} == {"e", "s", "se"}
-        assert all(not target.writes for target in handles)
+        assert {target.knob.pull for _rect, target in frame.targets if isinstance(target, OnKnob)} == {"e", "s", "se"}
+        east, _knob = _size_knob(frame, "e")
+        start = _centre(east)
+        _gesture, effects = _drag(_world(session, index, view, selection), frame, start, CanvasPoint(start.x + 40, start.y))
+        commit = next(effect for effect in effects if isinstance(effect, Commit))
+        sizing = commit.commands[0]
+        assert isinstance(sizing, ApplySizing) and sizing.owner == ok
+        assert sizing.policy is not None and sizing.policy.hsizetype == "Fixed"
+        assert commit.readout is not None and commit.readout.text.startswith("Fixed 140 × ")
+        assert commit.merge is None
+
+
+GRID = _ui(
+    """
+ <widget class="QWidget" name="Form">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QGridLayout" name="gridLayout">
+   <item row="0" column="0">
+    <widget class="QPushButton" name="a"/>
+   </item>
+   <item row="1" column="1">
+    <widget class="QPushButton" name="b"/>
+   </item>
+  </layout>
+ </widget>
+"""
+)
+
+
+@pytest.mark.parametrize("shift", [False, True])
+def test_a_grid_widget_handle_spans_until_shift(shift: bool) -> None:
+    with _opened(GRID) as session:
+        view = _view()
+        form = _nid(session, "Form")
+        grid = _nid(session, "gridLayout")
+        a = _nid(session, "a")
+        b = _nid(session, "b")
+        columns = (Track(9, 195), Track(201, 391))
+        rows = (Track(9, 39), Track(45, 75))
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 300), None),
+                _entry(grid, "layout", (0, 0, 400, 300), form),
+                _entry(a, "widget", (columns[0].start, rows[0].start, 186, 30), grid),
+                _entry(b, "widget", (columns[1].start, rows[1].start, 190, 30), grid),
+            )
+        )
+        facts = LayoutFacts(grid, Rect(0, 0, 400, 300), (9, 9, 9, 9), columns, rows)
+        selection = SelectionState((a,), a)
+        frame = build_frame(
+            build_static(session.document, index, view),
+            _inputs(session, view, selection, Idle(), _knobs(session, index, view, a, (facts,))),
+        )
+        east, _knob = _size_knob(frame, "e")
+        start = _centre(east)
+        end = CanvasPoint(start.x + columns[1].end - columns[0].end, start.y)
+        _gesture, effects = _drag(_world(session, index, view, selection), frame, start, end, Mods(shift=shift))
+        commit = next(effect for effect in effects if isinstance(effect, Commit))
+        written = commit.commands[0]
+        if shift:
+            assert isinstance(written, ApplySizing) and written.owner == a
+        else:
+            assert isinstance(written, SetLayoutCell) and written.colspan == 2
+            assert commit.readout is not None and commit.readout.text == "Spans 2 columns"
+
+
+def test_a_selected_layout_handle_writes_nothing() -> None:
+    with _opened(LAID) as session:
+        view = _view()
+        form = _nid(session, "Form")
+        layout = _nid(session, "verticalLayout")
+        ok = _nid(session, "ok")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 300), None),
+                _entry(layout, "layout", (9, 9, 382, 282), form),
+                _entry(ok, "widget", (20, 20, 100, 30), layout),
+            )
+        )
+        selection = SelectionState((layout,), layout)
+        frame = build_frame(build_static(session.document, index, view), _inputs(session, view, selection, Idle()))
+        handles = [(rect, target) for rect, target in frame.targets if isinstance(target, OnHandle)]
+        assert {target.at for _rect, target in handles} == {"e", "s", "se"}
+        start = _centre(handles[0][0])
+        world = replace(_world(session, index, view, selection), frame=frame)
+        pressed = step(Idle(), Press(start, PortPoint(0, 0), "left", Mods(), False), world)
+        moved = step(pressed.gesture, Move(CanvasPoint(start.x + 30, start.y), PortPoint(30, 0), frozenset(("left",)), Mods()), world)
+        assert any(isinstance(effect, Narrate) and effect.sentence for effect in moved.effects)
+        released = step(moved.gesture, Release(CanvasPoint(start.x + 30, start.y), PortPoint(30, 0), "left", Mods()), world)
+        assert not any(isinstance(effect, Commit) for effect in released.effects)
 
 
 def test_handles_stay_a_fixed_screen_size_when_the_page_is_zoomed() -> None:
@@ -613,7 +760,7 @@ def test_handles_stay_a_fixed_screen_size_when_the_page_is_zoomed() -> None:
         ok = _nid(session, "ok")
         frame = build_frame(
             build_static(session.document, index, view),
-            _inputs(session, view, SelectionState((ok,), ok), Idle()),
+            _inputs(session, view, SelectionState((ok,), ok), Idle(), _knobs(session, index, view, ok)),
         )
         handles = [item for item in frame.items if isinstance(item, Handle)]
         assert handles

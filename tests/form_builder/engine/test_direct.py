@@ -67,8 +67,13 @@ _GRID_ROWS = (Track(9, 40), Track(46, 77))
 _PREFERRED = ("Preferred", "Preferred")
 
 
-def _box_facts(log: CommandLog) -> LayoutFacts:
-    return LayoutFacts(nid(log.document, "verticalLayout"), _BOX_RECT, (9, 9, 9, 9), _BOX_COLUMNS, _BOX_ROWS)
+def _box_facts(log: CommandLog, hidden: Tuple[str, ...] = ()) -> LayoutFacts:
+    layout = log.document.get(nid(log.document, "verticalLayout"))
+    assert isinstance(layout, LayoutNode)
+    shown = [item.content.id for item in layout.items if item.content is not None]
+    shown = [node for node in shown if node not in {nid(log.document, name) for name in hidden}]
+    rows = tuple(Track(track.start, track.end, node) for track, node in zip(_BOX_ROWS, shown))
+    return LayoutFacts(layout.id, _BOX_RECT, (9, 9, 9, 9), _BOX_COLUMNS, rows)
 
 
 def _grid_facts(log: CommandLog) -> LayoutFacts:
@@ -370,6 +375,14 @@ def test_box_share_chips_show_only_when_the_box_or_its_container_is_selected() -
         tags = knob_set(survey, log.document, 1.0).shares
         assert tuple(tag.text for tag in tags) == expected, primary
         assert all(tag.node == nid(log.document, "label") for tag in tags)
+
+
+def test_a_box_share_chip_sits_on_its_own_track_when_an_earlier_item_is_hidden() -> None:
+    log = open_log(BOX.replace('name="verticalLayout">', 'name="verticalLayout" stretch="0,1">'))
+    survey = _survey(log, primary="verticalLayout", layouts=(_box_facts(log, hidden=("okButton",)),))
+    (tag,) = knob_set(survey, log.document, 1.0).shares
+    assert tag.node == nid(log.document, "label")
+    assert (tag.anchor.y, tag.anchor.height) == (_BOX_ROWS[0].start, _BOX_ROWS[0].end - _BOX_ROWS[0].start)
 
 
 def test_grid_share_chips_follow_nonzero_track_stretch() -> None:

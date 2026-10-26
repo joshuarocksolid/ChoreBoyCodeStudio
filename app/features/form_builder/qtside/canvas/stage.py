@@ -14,7 +14,7 @@ from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
 from app.qt.qt_compat import wrapper_is_valid
 
-from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.commands.live import PropKey
 from app.features.form_builder.engine.query.hit_index import InvalidationReason, Rect
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.values import RectValue
@@ -92,7 +92,7 @@ class Stage:
         self._zoom: ZoomSetting = Fit()
         self._factor = 0.0
         self._banner_push = 0
-        self._preview_ids: Tuple[NodeId, ...] = ()
+        self._previewed: Tuple[PropKey, ...] = ()
         self._page_preview = False
         self._form_selected = False
         self._selected_page_style = ""
@@ -354,20 +354,21 @@ class Stage:
         self._view.verticalScrollBar().setValue(nxt.y)
 
     def _run_preview(self, effect: Preview) -> None:
-        self._preview_ids = tuple(node for node, _rect in effect.rects)
+        """Mutate the live objects in place. No rebuild, and the hit index stays frozen."""
+        keys = tuple(dict.fromkeys(prop.key for prop in effect.props))
+        dropped = tuple(key for key in self._previewed if key not in keys)
         self._page_preview = False
-        for node, rect in effect.rects:
-            widget = self._realizer.widget_for(node)
-            if widget is None:
-                continue
-            widget.setGeometry(rect.x, rect.y, rect.width, rect.height)
+        if dropped:
+            self._realizer.reapply(dropped)
+        self._realizer.apply_live(effect.props)
+        self._previewed = keys
 
     def _run_preview_page(self, effect: PreviewPage) -> None:
         root = self._realizer.root_widget
         if root is None:
             return
         self._page_preview = True
-        self._preview_ids = (self._session.document.root.id,)
+        self._previewed = ((self._session.document.root.id, "geometry"),)
         root.resize(effect.size.width, effect.size.height)
         self._proxy.setScale(self._factor or 1.0)
         self._grow_scene(root)
@@ -375,11 +376,11 @@ class Stage:
         self.position_labels()
 
     def _run_end_preview(self) -> None:
-        ids = self._preview_ids
-        self._preview_ids = ()
+        keys = self._previewed
+        self._previewed = ()
         self._page_preview = False
-        if ids:
-            self._realizer.reapply(tuple((node, "geometry") for node in ids))
+        if keys:
+            self._realizer.reapply(keys)
         self.place()
         # The frozen index is stale even when the root size came back unchanged.
         self._invalidate("root_resize")
