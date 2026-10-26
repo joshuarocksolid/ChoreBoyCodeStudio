@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """Direct manipulation on live widgets. Preview mutates Qt, release commits once."""
 
 from __future__ import annotations

@@ -332,7 +332,7 @@ def _along(rect: Rect, horizontal: bool, item: Optional[NodeId] = None) -> Track
 def _splitter_facts(realizer: Realizer, index: HitIndex, splitter_id: NodeId) -> Optional[SplitterFacts]:
     found = realizer.widget_for(splitter_id)
     rect = index.rect_of(splitter_id)
-    if rect is None or not isinstance(found, QSplitter):
+    if rect is None or found is None or not isinstance(found, QSplitter):
         return None
     splitter = found
     horizontal = splitter.orientation() == Qt.Orientation.Horizontal

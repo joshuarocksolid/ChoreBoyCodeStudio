@@ -885,14 +885,15 @@ class CanvasController:
             return found
         view_font = self._view.font()
         key = (view_font.family(), int(view_font.pointSize()), int(view_font.pixelSize()))
-        if self._chip_metrics is None or self._chip_font_key != key:
+        metrics = self._chip_metrics
+        if metrics is None or self._chip_font_key != key:
             font = QFont(view_font)
             font.setPixelSize(11)
             font.setBold(True)
-            self._chip_metrics = QFontMetrics(font)
+            metrics = QFontMetrics(font)
+            self._chip_metrics = metrics
             self._chip_font_key = key
             self._chip_widths = {}
-        metrics = self._chip_metrics
         advance = getattr(metrics, "horizontalAdvance", None)
         width = int(metrics.width(text) if advance is None else advance(text))
         self._chip_widths[text] = width

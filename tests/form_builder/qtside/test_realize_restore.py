@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """A deleted spacing, margin or splitter size leaves the live object as a fresh build would."""
 
 from __future__ import annotations

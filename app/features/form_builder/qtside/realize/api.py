@@ -276,7 +276,7 @@ class Realizer(_Structure):
         for prop in props:
             if prop.name == "cbcsSplitterSizes" and prop.owner not in self._splitter_at_preview:
                 widget = self.widget_for(prop.owner)
-                if isinstance(widget, QSplitter):
+                if widget is not None and isinstance(widget, QSplitter):
                     self._splitter_at_preview[prop.owner] = list(widget.sizes())
             node = document.get(prop.owner)
             obj = self.object_for(prop.owner)
