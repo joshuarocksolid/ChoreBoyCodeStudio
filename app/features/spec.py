@@ -38,6 +38,10 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
         key="hidden-path-policy",
         ownership_globs=("app/features/hidden-path-policy/**",),
     ),
+    FeatureSpec(
+        key="shop-sharing",
+        ownership_globs=("app/features/shop_sharing/**",),
+    ),
 )
 
 __all__ = ["FEATURE_SPECS", "FeatureInstall", "FeatureSpec"]

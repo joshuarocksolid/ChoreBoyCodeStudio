@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from app.core.models import CapabilityProbeReport
-from app.features import FEATURE_SPECS
+from app.features.spec import FEATURE_SPECS
 from app.shell.main_window_composition_phases import (
     connect_composition_timers,
     create_composition_timers,
