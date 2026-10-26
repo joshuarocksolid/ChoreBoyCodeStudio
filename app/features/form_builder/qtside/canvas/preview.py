@@ -402,7 +402,7 @@ class FormPreview:
             max_w, max_h = _stored_size(self._session.document.root, "maximumSize", QWIDGET_SIZE_MAX)
             root.setMinimumSize(min_w, min_h)
             root.setMaximumSize(max_w, max_h)
-            self._realizer.reapply_geometry((self._session.document.root.id,))
+            self._realizer.reapply(((self._session.document.root.id, "geometry"),))
         self._forced = False
 
     def _ensure_mirror(self) -> Realizer:

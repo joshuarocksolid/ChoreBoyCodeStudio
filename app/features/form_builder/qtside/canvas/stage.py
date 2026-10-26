@@ -379,7 +379,7 @@ class Stage:
         self._preview_ids = ()
         self._page_preview = False
         if ids:
-            self._realizer.reapply_geometry(ids)
+            self._realizer.reapply(tuple((node, "geometry") for node in ids))
         self.place()
         # The frozen index is stale even when the root size came back unchanged.
         self._invalidate("root_resize")

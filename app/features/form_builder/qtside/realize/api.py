@@ -38,6 +38,7 @@ from app.features.form_builder.engine.events import (
     NodeMoved,
     NodeRemoved,
 )
+from app.features.form_builder.engine.commands.live import LiveProp, PropKey
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
 from app.features.form_builder.engine.session import FormSession
@@ -47,6 +48,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     CustomWidgetNode,
     LayoutItemNode,
     LayoutNode,
+    Node,
     ResourceNode,
     WidgetNode,
 )
@@ -86,6 +88,9 @@ _LAYOUT_FIELDS = frozenset(
         "columnminimumwidth",
     }
 )
+_MARGIN_FAMILY = frozenset({"margin", "leftMargin", "topMargin", "rightMargin", "bottomMargin"})
+_SPACING_FAMILY = frozenset({"spacing", "horizontalSpacing", "verticalSpacing"})
+_LAYOUT_FAMILIES = _MARGIN_FAMILY | _SPACING_FAMILY
 _FRESH: Dict[Tuple[str, bool], QWidget] = {}
 _FRESH_HOST: Optional[QWidget] = None
 
@@ -262,9 +267,23 @@ class Realizer(_Structure):
             return None
         return spacer
 
-    def reapply_geometry(self, ids: Sequence[NodeId]) -> None:
-        """Write those nodes' document geometry back onto the live widgets."""
-        self._reapply_document_geometry(set(ids))
+    def apply_live(self, props: Sequence[LiveProp]) -> None:
+        """Show ``props`` on the live objects. The document does not change."""
+        document = self._session.document
+        for prop in props:
+            node = document.get(prop.owner)
+            obj = self.object_for(prop.owner)
+            if node is None or obj is None:
+                continue
+            entry = None if prop.value is None else PropertyEntry("property", prop.name, prop.value)
+            self._put(node, obj, prop.name, entry)
+
+    def reapply(self, keys: Sequence[PropKey]) -> None:
+        """Put the document's values for ``keys`` back on the live objects."""
+        self._reapply_document_geometry({owner for owner, name in keys if name == "geometry"})
+        for owner, name in keys:
+            if name != "geometry":
+                self._patch_property(owner, "property", name)
 
     def node_for(self, obj: object) -> Optional[NodeId]:
         current = obj
@@ -400,15 +419,27 @@ class Realizer(_Structure):
         obj = self._objects.get(owner)
         if obj is None or not wrapper_is_valid(obj):
             return
-        if name == "cbcsSplitterSizes" and isinstance(obj, QSplitter):
-            entry = node.prop(name)
-            if entry is not None:
-                obj.setSizes(list(splitter_sizes(entry.value)))
-                self._patched += 1
+        entry = node.prop(name)
+        self._put(node, obj, name, entry)
+        if entry is not None and name == "buddy" and isinstance(node, WidgetNode):
+            self._note_buddy(node)
+            self._set_buddy(node)
+
+    def _put(self, node: Node, obj: object, name: str, entry: Optional[PropertyEntry]) -> None:
+        """Apply ``entry``, or restore what a fresh build holds when the file does not set ``name``.
+
+        A patch, undo, preview end and Esc all land here.
+        """
+        if isinstance(node, LayoutNode) and isinstance(obj, QLayout) and name in _LAYOUT_FAMILIES:
+            self._apply_family(node, obj, name, entry)
             return
-        entry = node.prop(name) if kind == "property" else node.attr(name)
         if entry is None:
             self._reset_property(node, obj, name)
+            return
+        if name == "cbcsSplitterSizes":
+            if isinstance(obj, QSplitter):
+                obj.setSizes(list(splitter_sizes(entry.value)))
+                self._patched += 1
             return
         if apply_entry(
             obj,
@@ -418,9 +449,6 @@ class Realizer(_Structure):
             problems=self._problems,
         ):
             self._patched += 1
-        if name == "buddy" and isinstance(node, WidgetNode):
-            self._note_buddy(node)
-            self._set_buddy(node)
 
     def _patch_attribute(self, node: object, name: str) -> None:
         if not isinstance(node, WidgetNode) or node.parent_id is None:
@@ -453,6 +481,11 @@ class Realizer(_Structure):
             self._patched += 1
 
     def _reset_property(self, node: object, obj: object, name: str) -> None:
+        if name == "cbcsSplitterSizes":
+            if isinstance(obj, QSplitter):
+                obj.setSizes(_pane_hints(obj))
+                self._patched += 1
+            return
         if not isinstance(node, WidgetNode):
             return
         window = isinstance(obj, QWidget) and obj.isWindow()
@@ -480,6 +513,34 @@ class Realizer(_Structure):
             self._patched += 1
         except (TypeError, RuntimeError, AttributeError):
             return
+
+    def _apply_family(self, node: LayoutNode, layout: QLayout, name: str, entry: Optional[PropertyEntry]) -> None:
+        """Reset the margin or spacing family, then apply it in file order with ``entry`` as ``name``.
+
+        ``margin`` and ``spacing`` overwrite their siblings, so a fresh build's
+        result depends on file order and one member is never applied alone. A
+        missing side takes the sides still stored, then the legacy ``margin``,
+        then Qt's default for this layout. A missing ``horizontalSpacing`` or
+        ``verticalSpacing`` takes ``spacing``.
+        """
+        family = _MARGIN_FAMILY if name in _MARGIN_FAMILY else _SPACING_FAMILY
+        if family is _MARGIN_FAMILY:
+            layout.setContentsMargins(-1, -1, -1, -1)
+        else:
+            layout.setSpacing(-1)
+        chain: List[PropertyEntry] = []
+        for stored in node.properties():
+            if stored.name not in family:
+                continue
+            if stored.name != name:
+                chain.append(stored)
+            elif entry is not None:
+                chain.append(entry)
+        if entry is not None and node.prop(name) is None:
+            chain.append(entry)
+        for each in chain:
+            apply_entry(layout, each, is_root=False, resolve_path=self._resolve_path, problems=self._problems)
+        self._patched += 1
 
     def _rename(self, node_id: NodeId, new: object = None) -> None:
         """Re-read the name from the document. ``new`` is the event value and is ignored."""
@@ -873,6 +934,19 @@ def _fresh_host() -> QWidget:
         host.setAttribute(Qt.WA_DontShowOnScreen, True)
         _FRESH_HOST = host
     return _FRESH_HOST
+
+
+def _pane_hints(splitter: QSplitter) -> List[int]:
+    horizontal = splitter.orientation() == Qt.Orientation.Horizontal
+    hints: List[int] = []
+    for index in range(splitter.count()):
+        pane = splitter.widget(index)
+        hint = pane.sizeHint() if pane is not None else None
+        if hint is None:
+            hints.append(0)
+        else:
+            hints.append(max(0, hint.width() if horizontal else hint.height()))
+    return hints
 
 
 def _fresh_widget(short_name: str, cls: type, *, window: bool = True) -> Optional[QWidget]:
