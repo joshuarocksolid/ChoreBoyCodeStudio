@@ -7,11 +7,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Literal, Optional, Tuple
+from weakref import WeakKeyDictionary
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 
 # Used when the class table has not been generated yet. A known class trusts
@@ -98,8 +99,24 @@ class GridShape:
     overlaps: Tuple[Tuple[NodeId, NodeId], ...]
 
 
+_SHAPES: WeakKeyDictionary = WeakKeyDictionary()
+
+
 def grid_shape(doc: UiDocument, layout_id: NodeId) -> GridShape:
-    """O(items)."""
+    """O(items) the first time this revision reads ``layout_id``. Later reads reuse that shape.
+
+    A selection pass asks for the same grid once for the survey and again for every handle.
+    """
+    generation = _SHAPES.get(doc)
+    shapes: Dict[NodeId, GridShape]
+    if generation is not None and generation[0] == doc.revision:
+        shapes = generation[1]
+    else:
+        shapes = {}
+        _SHAPES[doc] = (doc.revision, shapes)
+    found = shapes.get(layout_id)
+    if found is not None:
+        return found
     cells = _cells(doc, layout_id)
     rows = 0
     columns = 0
@@ -123,7 +140,32 @@ def grid_shape(doc: UiDocument, layout_id: NodeId) -> GridShape:
                 if pair not in seen:
                     seen.add(pair)
                     overlaps.append(pair)
-    return GridShape(rows, columns, tuple(cells), tuple(empty), tuple(overlaps))
+    shape = GridShape(rows, columns, tuple(cells), tuple(empty), tuple(overlaps))
+    shapes[layout_id] = shape
+    return shape
+
+
+def blocked(shape: GridShape, cell: GridCell) -> bool:
+    """True when ``cell`` covers a cell another item holds."""
+    for other in shape.cells:
+        if other.item == cell.item:
+            continue
+        if (
+            cell.row < other.row + other.rowspan
+            and other.row < cell.row + cell.rowspan
+            and cell.column < other.column + other.colspan
+            and other.column < cell.column + cell.colspan
+        ):
+            return True
+    return False
+
+
+def effective_class(doc: UiDocument, node: WidgetNode) -> str:
+    """The Qt class a promoted widget extends, else its own class."""
+    custom = doc.custom_widget(node.class_name)
+    if isinstance(custom, CustomWidgetNode) and custom.extends:
+        return custom.extends.split("::")[-1]
+    return node.class_name
 
 
 def next_free_cell(

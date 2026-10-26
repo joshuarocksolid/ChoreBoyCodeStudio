@@ -6,6 +6,7 @@ decides lives in ``core.gesture.step`` and ``core.overlay.build_frame``.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import replace
 from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
@@ -31,6 +32,7 @@ from app.features.form_builder.engine.sizing import chip_axis, project_axis
 from app.features.form_builder.engine.diagnostics import Severity
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.direct import KnobSet, Readout, Survey, knob_set, survey_scope
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
@@ -41,6 +43,7 @@ from app.features.form_builder.qtside.canvas import _input
 from app.features.form_builder.qtside.canvas.core.frame import (
     AddPage,
     Chip,
+    FocusShare,
     OpenLayoutPopover,
     OpenProblem,
     OverlayFrame,
@@ -62,6 +65,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     HoverChanged,
     HostEvent,
     Idle,
+    KEY_MERGE_S,
     Key,
     Move,
     PlaceAsked,
@@ -85,7 +89,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
 )
 from app.features.form_builder.qtside.canvas.core.palette import tile_for
 from app.features.form_builder.qtside.canvas.core.place import resolve_at
-from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, FormPoint
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, FormPoint
 from app.features.form_builder.qtside.canvas.core.overlay import (
     FrameInputs,
     StaticLayer,
@@ -100,6 +104,7 @@ from app.features.form_builder.qtside.canvas.core.text import TextTarget, text_t
 from app.features.form_builder.qtside.canvas.core.words import describe_selection, zoom_label
 from app.features.form_builder.qtside.sizing_live import class_default_policies, class_phrase
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
+from app.features.form_builder.qtside.canvas.geometry import survey_live
 from app.features.form_builder.qtside.canvas.stage import Stage, visible_scene_rect
 from app.features.form_builder.qtside.realize.api import Realizer
 
@@ -111,6 +116,9 @@ REVEAL_SOURCES: FrozenSet[SelectionSource] = frozenset(
 
 # Detach must run before the realizer deletes a replaced root (priority 10).
 PRIORITY_DETACH = 9
+
+#: A knob's chip keeps its number this long after the commit lands.
+READOUT_LINGER_MS = 600
 
 
 class CanvasHost(Protocol):
@@ -186,6 +194,17 @@ class CanvasController:
         self._queued_target: Optional[TextTarget] = None
         self._spring_flip: Optional[Tuple[NodeId, int]] = None
         self._tip = ""
+        self._survey: Optional[Survey] = None
+        self._knobs: Optional[Tuple[Survey, float, Rect, KnobSet]] = None
+        self._site_key: Optional[tuple] = None
+        self._sites: Optional[tuple] = None
+        self._chip_metrics: Optional[QFontMetrics] = None
+        self._chip_font_key: Optional[Tuple[str, int, int]] = None
+        self._chip_widths: Dict[str, int] = {}
+        self._readout: Optional[Readout] = None
+        self._linger = QTimer()
+        self._linger.setSingleShot(True)
+        self._linger.timeout.connect(self._end_readout)
         self._spring = QTimer()
         self._spring.setSingleShot(True)
         self._spring.timeout.connect(self._spring_fire)
@@ -232,6 +251,7 @@ class CanvasController:
             return
         self._closed = True
         self._spring.stop()
+        self._linger.stop()
         if isinstance(self._gesture, Placing):
             self._fade(self._gesture.payload.source_ids, 1.0)
         self._ghost = None
@@ -267,6 +287,9 @@ class CanvasController:
         return result.consumed
 
     def _world(self) -> World:
+        current = effective_selection(self._session.document, self._session.selection.state).current
+        widget = None if current is None else self._realizer.widget_for(current)
+        defaults = class_default_policies(widget) if isinstance(widget, QWidget) else ("Preferred", "Preferred")
         return World(
             self._session.document,
             self._session.selection.state,
@@ -275,6 +298,7 @@ class CanvasController:
             self._frame,
             self._stage.page_minimum(),
             str(self._serial),
+            defaults,
         )
 
     def _run(self, effect: Effect) -> None:
@@ -326,6 +350,11 @@ class CanvasController:
             if isinstance(action, ShowStacked):
                 self._show_stacked(action.container, action.delta)
                 return
+            if isinstance(action, FocusShare):
+                focus = getattr(self._host, "focus_share", None)
+                if focus is not None:
+                    focus(action.node, action.axis)
+                return
         raise AssertionError(type(effect))
 
     def placing(self) -> bool:
@@ -362,7 +391,10 @@ class CanvasController:
         try:
             merge_token = None
             merge_within_s = 0.0
-            if effect.label == "Nudge":
+            if effect.merge is not None:
+                merge_token = effect.merge
+                merge_within_s = KEY_MERGE_S
+            elif effect.label == "Nudge":
                 merge_token = _nudge_token(effect.commands)
                 merge_within_s = 1.0
             elif effect.label in ("Drop", "Move", "Edit text"):
@@ -378,6 +410,9 @@ class CanvasController:
         except CommandRejected as exc:
             self._host.narrate(str(exc))
             return
+        if effect.readout is not None:
+            self._readout = effect.readout
+            self._linger.start(READOUT_LINGER_MS)
         if effect.label in ("Drop", "Move"):
             self._view.setFocus()
         if effect.edit:
@@ -737,8 +772,37 @@ class CanvasController:
                 self._stage.dock_rect(),
                 self._preview_target(),
                 dict(self._shown_page),
+                knobs=self._knob_set(self._static, selection),
+                readout=self._readout,
             ),
         )
+
+    def _knob_set(self, static: StaticLayer, selection: SelectionState) -> KnobSet:
+        """Survey on a new scope or a new index epoch. A preview keeps the epoch, so it reuses the survey."""
+        document = self._session.document
+        primary = effective_selection(document, selection).current
+        scope = survey_scope(document, primary, static.splitters)
+        survey = self._survey
+        if survey is None or survey.scope != scope or survey.epoch != self._index.epoch:
+            survey = survey_live(self._realizer, self._index, document, scope, survey)
+            self._survey = survey
+        view = self._stage.view_map()
+        window = _knob_window(view, visible_scene_rect(self._view))
+        cached = self._knobs
+        if cached is not None and cached[0] is survey and cached[1] == view.factor and cached[2] == window:
+            return cached[3]
+        site_key = (self._index.epoch, scope.layouts, scope.splitters, view.factor, window)
+        sites = self._sites if self._site_key == site_key else None
+        knobs = knob_set(survey, document, view.factor, window, sites)
+        if sites is None:
+            self._site_key = site_key
+            self._sites = knobs.sites
+        self._knobs = (survey, view.factor, window, knobs)
+        return knobs
+
+    def _end_readout(self) -> None:
+        self._readout = None
+        self._request_frame()
 
     def refresh_overlay(self) -> None:
         if self._closed:
@@ -820,14 +884,24 @@ class CanvasController:
         return (chip_axis(horizontal), chip_axis(vertical))
 
     def _measure(self, text: str) -> int:
-        font = QFont(self._view.font())
-        font.setPixelSize(11)
-        font.setBold(True)
-        metrics = QFontMetrics(font)
+        found = self._chip_widths.get(text)
+        if found is not None:
+            return found
+        view_font = self._view.font()
+        key = (view_font.family(), int(view_font.pointSize()), int(view_font.pixelSize()))
+        metrics = self._chip_metrics
+        if metrics is None or self._chip_font_key != key:
+            font = QFont(view_font)
+            font.setPixelSize(11)
+            font.setBold(True)
+            metrics = QFontMetrics(font)
+            self._chip_metrics = metrics
+            self._chip_font_key = key
+            self._chip_widths = {}
         advance = getattr(metrics, "horizontalAdvance", None)
-        if advance is None:
-            return int(metrics.width(text))
-        return int(advance(text))
+        width = int(metrics.width(text) if advance is None else advance(text))
+        self._chip_widths[text] = width
+        return width
 
 
 def _moved_ids(
@@ -844,6 +918,21 @@ def _moved_ids(
         if left.rect != right.rect:
             moved.append(right.node)
     return tuple(moved)
+
+
+def _knob_window(view: ViewMap, shown: CanvasRect) -> Rect:
+    """The visible scene and one viewport past each side, in form pixels.
+
+    A scrollbar drag rebuilds the frame only on release, so the slack keeps nearby gaps drawn meanwhile.
+    """
+    factor = view.factor if view.factor else 1.0
+    corner = view.to_form(CanvasPoint(shown.x - shown.width, shown.y - shown.height))
+    return Rect(
+        int(math.floor(corner.x)),
+        int(math.floor(corner.y)),
+        int(math.ceil(3 * shown.width / factor)),
+        int(math.ceil(3 * shown.height / factor)),
+    )
 
 
 def _reuse_static(

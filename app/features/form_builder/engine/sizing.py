@@ -7,13 +7,14 @@ file already knows, and Reset deletes those properties.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
-from typing import Optional, Sequence, Tuple
+from dataclasses import dataclass
+from typing import Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.tree import effective_class
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import SizePolicyValue, SizeValue
+from app.features.form_builder.engine.ui4.values import EnumValue, SizePolicyValue, SizeValue
 
 QWIDGET_SIZE_MAX = 16777215
 
@@ -85,6 +86,25 @@ class ShareSlot:
     field: str
     index: int
     axis: str
+
+
+@dataclass(frozen=True)
+class PaneShare:
+    """A splitter pane's share: its sizePolicy stretch on the splitter's axis."""
+
+    splitter: NodeId
+    pane: NodeId
+    axis: str
+
+
+Share = Union[ShareSlot, PaneShare]
+
+
+@dataclass(frozen=True)
+class ShareReading:
+    value: int
+    #: Sum over the siblings that split the same spare room.
+    total: int
 
 
 @dataclass(frozen=True)
@@ -183,10 +203,32 @@ def project_axis(
     return AxisProjection(word, True, False, pixels, name, "")
 
 
+def stored_policy(
+    horizontal: str,
+    vertical: str,
+    horstretch: int,
+    verstretch: int,
+    class_default_h: str,
+    class_default_v: str,
+) -> Optional[SizePolicyValue]:
+    """The sizePolicy to store, or None when the class default with no stretch says the same.
+
+    The file then omits the property and the axes stay outlined.
+    """
+    if (horizontal, vertical, int(horstretch), int(verstretch)) == (
+        policy_tail(class_default_h),
+        policy_tail(class_default_v),
+        0,
+        0,
+    ):
+        return None
+    return SizePolicyValue(horizontal, vertical, int(horstretch), int(verstretch))
+
+
 def encode_axis(
     *,
     axis: str,
-    word: str,
+    word: Optional[str],
     pixels: Optional[int],
     current_policy: Optional[SizePolicyValue],
     current_minimum: Optional[SizeValue],
@@ -194,8 +236,12 @@ def encode_axis(
     class_default_h: str,
     class_default_v: str,
 ) -> SizingWrite:
-    """Store ``word`` on one axis. The other axis keeps what it already has."""
-    if word not in WORDS:
+    """Store ``word`` on one axis. The other axis keeps what it already has.
+
+    ``word`` None returns this axis to its class default policy and drops a
+    Fixed lock on this axis only. A plain minimum and both stretches stay.
+    """
+    if word is not None and word not in WORDS:
         raise ValueError(word)
     if word == WORD_FIXED and pixels is None:
         raise ValueError("Fixed needs a pixel size")
@@ -206,20 +252,38 @@ def encode_axis(
     min_w, min_h = _pair(current_minimum, 0)
     max_w, max_h = _pair(current_maximum, QWIDGET_SIZE_MAX)
     if axis == "h":
-        horizontal, min_w, max_w = _apply_word(word, pixels, min_w, max_w)
+        horizontal, min_w, max_w = _apply_word(word, pixels, min_w, max_w, policy_tail(class_default_h))
     else:
-        vertical, min_h, max_h = _apply_word(word, pixels, min_h, max_h)
-    packed = _pack(horizontal, vertical, horstretch, verstretch, min_w, min_h, max_w, max_h)
-    plain = (horizontal, vertical, horstretch, verstretch) == (
-        policy_tail(class_default_h),
-        policy_tail(class_default_v),
-        0,
-        0,
+        vertical, min_h, max_h = _apply_word(word, pixels, min_h, max_h, policy_tail(class_default_v))
+    return SizingWrite(
+        stored_policy(horizontal, vertical, horstretch, verstretch, class_default_h, class_default_v),
+        _size_or_none(min_w, min_h, 0),
+        _size_or_none(max_w, max_h, QWIDGET_SIZE_MAX),
+        True,
+        True,
+        True,
     )
-    if plain:
-        # A policy equal to the class default is not stored; the axis stays outlined.
-        return replace(packed, policy=None)
-    return packed
+
+
+def encode_share(
+    *,
+    axis: str,
+    value: int,
+    current_policy: Optional[SizePolicyValue],
+    class_default_h: str,
+    class_default_v: str,
+) -> SizingWrite:
+    """Store a pane share in the sizePolicy stretch on ``axis``. Limits stay."""
+    horizontal = current_policy.hsizetype if current_policy is not None else policy_tail(class_default_h)
+    vertical = current_policy.vsizetype if current_policy is not None else policy_tail(class_default_v)
+    horstretch = current_policy.horstretch if current_policy is not None else 0
+    verstretch = current_policy.verstretch if current_policy is not None else 0
+    if axis == "h":
+        horstretch = int(value)
+    else:
+        verstretch = int(value)
+    policy = stored_policy(horizontal, vertical, horstretch, verstretch, class_default_h, class_default_v)
+    return SizingWrite(policy, None, None, True, False, False)
 
 
 def reset_words(
@@ -254,9 +318,14 @@ def clear_property(name: str) -> SizingWrite:
     raise ValueError(name)
 
 
-def share_slots(document: UiDocument, node_id: NodeId) -> Tuple[ShareSlot, ...]:
-    """Box and grid stretch for ``node_id``. Form layouts and splitters have none."""
+def share_slots(document: UiDocument, node_id: NodeId) -> Tuple[Share, ...]:
+    """Box and grid stretch, or the pane share when the parent is a splitter.
+
+    Form layouts have none.
+    """
     parent = document.parent(node_id)
+    if isinstance(parent, WidgetNode) and effective_class(document, parent) == "QSplitter":
+        return (PaneShare(parent.id, node_id, splitter_axis(parent)),)
     if not isinstance(parent, LayoutItemNode):
         return ()
     layout = document.parent(parent.id)
@@ -275,6 +344,38 @@ def share_slots(document: UiDocument, node_id: NodeId) -> Tuple[ShareSlot, ...]:
             found.append(ShareSlot(layout.id, "rowstretch", int(parent.row), "v"))
         return tuple(found)
     return ()
+
+
+def splitter_axis(splitter: WidgetNode) -> str:
+    """"h" unless the splitter stores a vertical orientation, Qt's default being horizontal."""
+    value = splitter.value("orientation")
+    if isinstance(value, EnumValue) and value.key()[1] == "Vertical":
+        return "v"
+    return "h"
+
+
+def read_share(document: UiDocument, slot: Share) -> ShareReading:
+    """The one share reader for the inspector, the why text, and the canvas chips."""
+    if isinstance(slot, PaneShare):
+        splitter = document.get(slot.splitter)
+        panes = splitter.child_widgets if isinstance(splitter, WidgetNode) else ()
+        total = sum(_pane_stretch(pane, slot.axis) for pane in panes)
+        pane = document.get(slot.pane)
+        value = _pane_stretch(pane, slot.axis) if isinstance(pane, WidgetNode) else 0
+        return ShareReading(value, total)
+    layout = document.get(slot.layout)
+    raw = layout.field(slot.field) if isinstance(layout, LayoutNode) else None
+    text = raw if isinstance(raw, str) else None
+    return ShareReading(stretch_at(text, slot.index), _sum_stretch(text))
+
+
+def stretch_length(layout: LayoutNode, field: str) -> int:
+    """How many cells a stretch list for ``field`` covers."""
+    if field == "stretch":
+        return max(len(layout.items), 1)
+    if field == "columnstretch":
+        return max((int(item.column or 0) + int(item.colspan or 1) for item in layout.items), default=1)
+    return max((int(item.row or 0) + int(item.rowspan or 1) for item in layout.items), default=1)
 
 
 def stretch_at(value: Optional[str], index: int) -> int:
@@ -439,38 +540,42 @@ def _hug_sentence(axis: AxisFacts) -> str:
     return "%s is %d px." % (axis.name, int(axis.size))
 
 
-def _apply_word(word: str, pixels: Optional[int], low: int, high: int) -> Tuple[str, int, int]:
-    """Hug and Fill keep an At least or At most. A lock is the exception."""
+def _apply_word(
+    word: Optional[str], pixels: Optional[int], low: int, high: int, default: str
+) -> Tuple[str, int, int]:
+    """Hug, Fill and the class default keep an At least or At most. A lock is the exception."""
+    if word == WORD_FIXED:
+        size = int(pixels or 0)
+        return "Fixed", size, size
     if word == WORD_HUG:
-        if _locked(low, high):
-            return "Fixed", 0, QWIDGET_SIZE_MAX
-        return "Fixed", low, high
-    if word == WORD_FILL:
-        if _locked(low, high):
-            return "Expanding", 0, QWIDGET_SIZE_MAX
-        return "Expanding", low, high
-    size = int(pixels or 0)
-    return "Fixed", size, size
+        name = "Fixed"
+    elif word == WORD_FILL:
+        name = "Expanding"
+    else:
+        name = default
+    if _locked(low, high):
+        return name, 0, QWIDGET_SIZE_MAX
+    return name, low, high
 
 
-def _pack(
-    horizontal: str,
-    vertical: str,
-    horstretch: int,
-    verstretch: int,
-    min_w: int,
-    min_h: int,
-    max_w: int,
-    max_h: int,
-) -> SizingWrite:
-    return SizingWrite(
-        SizePolicyValue(horizontal, vertical, int(horstretch), int(verstretch)),
-        _size_or_none(min_w, min_h, 0),
-        _size_or_none(max_w, max_h, QWIDGET_SIZE_MAX),
-        True,
-        True,
-        True,
-    )
+def _pane_stretch(pane: object, axis: str) -> int:
+    if not isinstance(pane, WidgetNode):
+        return 0
+    entry = pane.prop("sizePolicy")
+    if entry is None or not isinstance(entry.value, SizePolicyValue):
+        return 0
+    return int(entry.value.horstretch if axis == "h" else entry.value.verstretch)
+
+
+def _sum_stretch(value: Optional[str]) -> int:
+    if not value:
+        return 0
+    total = 0
+    for piece in value.split(","):
+        text = piece.strip()
+        if text.lstrip("-").isdigit():
+            total += int(text)
+    return total
 
 
 def _pair(size: Optional[SizeValue], fallback: int) -> Tuple[int, int]:

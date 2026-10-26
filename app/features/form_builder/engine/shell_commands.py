@@ -191,6 +191,7 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
     *_directions("moveOrNudge", "Move or nudge", "Alt", _CANVAS, ("Left", "Right")),
     *_directions("nudgeOne", "Nudge by 1 px", "Alt+Shift", _CANVAS),
     *_directions("resize", "Resize", "Ctrl+Shift", _CANVAS),
+    *_directions("resizeOne", "Resize by 1 px", "Ctrl", _CANVAS),
     _row(
         "form.action.outlineNest",
         "Nest into previous sibling",

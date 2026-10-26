@@ -272,6 +272,10 @@ class _ShellKeyGuard(QObject):
 class FormSurface(QWidget):
     """``TabSurface`` for one ``.ui`` tab."""
 
+    @property
+    def session(self) -> FormSession:
+        return self._session
+
     def __init__(
         self,
         request: TabSurfaceRequest,
@@ -1013,6 +1017,10 @@ class FormSurface(QWidget):
         if drawn is None:
             return QRect(bounds.center(), QSize(0, 0)), bounds
         return QRect(viewport.mapToGlobal(drawn.topLeft()), drawn.size()), bounds
+
+    def focus_share(self, node: NodeId, axis: str) -> None:
+        self._session.selection.set((node,), current=node, source=SelectionSource.CANVAS)
+        self._workbench.focus_share(axis)
 
     def _chip_anchor(self, node: NodeId) -> QPoint:
         canvas = self._workbench.canvas

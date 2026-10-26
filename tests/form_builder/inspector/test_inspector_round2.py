@@ -16,6 +16,7 @@ from app.features.form_builder.engine.ui4.values import (
     UIntValue,
     ULongLongValue,
 )
+from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
 from app.features.form_builder.qtside.inspector import InspectorPane
 from app.features.form_builder.qtside.inspector._live import live_classes
@@ -83,8 +84,8 @@ _CHROME = chrome_from_values(
 )
 
 
-def _pane(qapp: QApplication):
-    session, realizer = realize(_FORM)
+def _pane(qapp: QApplication, text: str = _FORM):
+    session, realizer = realize(text)
     window = QWidget()
     pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None, parent=window)
     # The workbench always applies chrome. Its style sheet owns the mixed
@@ -366,6 +367,166 @@ def _assert_no_overlap(body: QWidget) -> None:
             for second in shown[index + 1 :]:
                 both = first.geometry().intersected(second.geometry())
                 assert both.isEmpty(), (first.objectName() or first.metaObject().className(), second.objectName() or second.metaObject().className())
+
+
+_SPLIT = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Panes</class>
+ <widget class="QWidget" name="Panes">
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QSplitter" name="split">
+     <property name="orientation"><enum>%s</enum></property>
+     <widget class="QTextEdit" name="left"/>
+     <widget class="QTextEdit" name="right"/>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+_BOX = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Column</class>
+ <widget class="QWidget" name="Column">
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item><widget class="QPushButton" name="stay"/></item>
+   <item><widget class="QPushButton" name="grow"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+_CELLS = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Cells</class>
+ <widget class="QWidget" name="Cells">
+  <layout class="QGridLayout" name="cells" rowminimumheight="24,0" columnminimumwidth="0,60">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="0" column="1"><widget class="QPushButton" name="b"/></item>
+   <item row="1" column="1"><widget class="QPushButton" name="c"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+@pytest.mark.parametrize(
+    "text, name, axis, shown, live, expected",
+    (
+        pytest.param(
+            _SPLIT % "Qt::Horizontal", "right", "h", ("h",),
+            lambda session, realizer: _widget(session, realizer, "right").sizePolicy().horizontalStretch(),
+            2,
+            id="pane-h",
+        ),
+        pytest.param(
+            _SPLIT % "Qt::Vertical", "right", "v", ("v",),
+            lambda session, realizer: _widget(session, realizer, "right").sizePolicy().verticalStretch(),
+            2,
+            id="pane-v",
+        ),
+        pytest.param(
+            _BOX, "grow", "v", ("v",),
+            lambda session, realizer: _layout(session, realizer, "mainLayout").stretch(1),
+            2,
+            id="box",
+            marks=pytest.mark.parity("R3-50"),
+        ),
+        pytest.param(
+            _CELLS, "b", "h", ("h", "v"),
+            lambda session, realizer: (
+                _layout(session, realizer, "cells").columnStretch(1),
+                _layout(session, realizer, "cells").columnMinimumWidth(1),
+            ),
+            (2, 60),
+            id="grid-column",
+            marks=pytest.mark.parity("R3-51"),
+        ),
+        pytest.param(
+            _CELLS, "b", "v", ("h", "v"),
+            lambda session, realizer: (
+                _layout(session, realizer, "cells").rowStretch(0),
+                _layout(session, realizer, "cells").rowMinimumHeight(0),
+            ),
+            (2, 24),
+            id="grid-row",
+            marks=pytest.mark.parity("R3-51"),
+        ),
+    ),
+)
+def test_a_share_survives_save_and_reload(qapp: QApplication, text, name, axis, shown, live, expected) -> None:
+    window, pane, session, realizer = _pane(qapp, text)
+    try:
+        assert _shares_shown(pane, session, name) == shown
+        spin = _share_spin(pane, axis)
+        spin.setValue(2)
+        spin.editingFinished.emit()
+        pane.flush()
+        assert session.log.undo_label() == "Size"
+        assert live(session, realizer) == expected
+        saved = write_ui(session.document).text
+    finally:
+        _close(window, pane, realizer, session, qapp)
+    window, pane, session, realizer = _pane(qapp, saved)
+    try:
+        assert _shares_shown(pane, session, name) == shown
+        assert _share_spin(pane, axis).value() == 2
+        assert live(session, realizer) == expected
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_a_pane_share_row_fits_a_narrow_size_body(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _SPLIT % "Qt::Horizontal")
+    try:
+        pane.set_compact(True)
+        window.resize(236, 640)
+        assert _shares_shown(pane, session, "right") == ("h",)
+        qapp.processEvents()
+        scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+        body = pane.findChild(QWidget, "formBuilder.sizeBody")
+        assert scroll is not None and body is not None
+        assert scroll.viewport().width() <= 236
+        assert scroll.horizontalScrollBar().maximum() == 0
+        _assert_no_overlap(body)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def _shares_shown(pane: InspectorPane, session, name: str) -> tuple:
+    """Select ``name``, open Size, and list the axes whose share row shows."""
+    _select(session, name)
+    pane.set_group_expanded(GroupId.SIZE, True)
+    pane.flush()
+    rows = {axis: pane.findChild(QWidget, "formBuilder.size.share.%s" % axis) for axis in ("h", "v")}
+    return tuple(axis for axis, row in rows.items() if row is not None and row.isVisibleTo(pane))
+
+
+def _share_spin(pane: InspectorPane, axis: str) -> QSpinBox:
+    spin = pane.findChild(QSpinBox, "formBuilder.size.share.%s.value" % axis)
+    assert spin is not None
+    return spin
+
+
+def _widget(session, realizer, name: str) -> QWidget:
+    widget = realizer.widget_for(session.document.by_name(name)[0])
+    assert widget is not None
+    return widget
+
+
+def _layout(session, realizer, name: str):
+    layout = realizer.layout_for(session.document.by_name(name)[0])
+    assert layout is not None
+    return layout
 
 
 def test_reset_is_a_hover_icon_and_the_label_is_strong(qapp: QApplication) -> None:

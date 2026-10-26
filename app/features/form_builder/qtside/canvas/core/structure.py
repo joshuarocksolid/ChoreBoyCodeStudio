@@ -9,9 +9,9 @@ from typing import FrozenSet, List, Literal, Optional, Sequence, Tuple, Union
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.engine.query.tree import effective_class
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
-    CustomWidgetNode,
     LayoutItemNode,
     LayoutNode,
     SpacerNode,
@@ -80,13 +80,6 @@ def positioning_of(document: UiDocument, node: NodeId) -> Positioning:
     if isinstance(found, LayoutNode):
         return LaidOut(found.id)
     return Root()
-
-
-def effective_class(document: UiDocument, node: WidgetNode) -> str:
-    custom = document.custom_widget(node.class_name)
-    if isinstance(custom, CustomWidgetNode) and custom.extends:
-        return custom.extends.split("::")[-1]
-    return node.class_name
 
 
 def managed_container(document: UiDocument, node: WidgetNode) -> bool:

@@ -8,7 +8,7 @@ Nothing here raises for a bad value.
 from __future__ import annotations
 
 import os
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt import QtCore, QtGui, QtWidgets
 from app.qt.QtCore import QDate, QDateTime, QPoint, QRect, QSize, QTime, Qt, QUrl
@@ -55,6 +55,32 @@ from app.features.form_builder.engine.ui4.values import (
 
 _MARGINS = ("leftMargin", "topMargin", "rightMargin", "bottomMargin")
 _SKIP = frozenset({"buddy", "cbcsSplitterSizes"})
+# uic applies the legacy value first. A stored side or axis then wins, in any file order.
+_METRIC_ORDER = ("margin",) + _MARGINS + ("spacing", "horizontalSpacing", "verticalSpacing")
+_METRIC_NAMES = frozenset(_METRIC_ORDER)
+
+
+def ordered_layout_metrics(
+    entries: Sequence[PropertyEntry],
+    override_name: Optional[str] = None,
+    override: Optional[PropertyEntry] = None,
+) -> List[PropertyEntry]:
+    """Margin and spacing entries in uic order.
+
+    ``margin`` is applied before any side, and ``spacing`` before
+    ``horizontalSpacing`` or ``verticalSpacing``. File order does not matter.
+    ``override`` replaces ``override_name``. ``override`` None drops it.
+    """
+    by_name: Dict[str, PropertyEntry] = {}
+    for entry in entries:
+        if entry.name in _METRIC_NAMES:
+            by_name[entry.name] = entry
+    if override_name in _METRIC_NAMES:
+        if override is None:
+            by_name.pop(override_name, None)
+        else:
+            by_name[override_name] = override
+    return [by_name[name] for name in _METRIC_ORDER if name in by_name]
 
 
 def apply_entry(
@@ -170,24 +196,6 @@ def text_of(value: Value) -> str:
     if isinstance(value, EnumValue):
         return value.text
     return ""
-
-
-def splitter_sizes(value: Value) -> Tuple[int, ...]:
-    raw = ""
-    if isinstance(value, StringValue):
-        raw = value.text
-    elif isinstance(value, StringListValue):
-        raw = ",".join(value.items)
-    found = []
-    for piece in raw.split(","):
-        piece = piece.strip()
-        if not piece:
-            continue
-        try:
-            found.append(int(piece))
-        except ValueError:
-            found.append(0)
-    return tuple(found)
 
 
 def apply_geometry(obj: object, value: object, is_root: bool) -> None:

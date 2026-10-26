@@ -295,6 +295,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | Alt+arrow | canvas, bare container | Nudge by 8 px | new |
 | Alt+Shift+arrow | canvas, bare container | Nudge by 1 px | new |
 | Ctrl+Shift+arrow | canvas | Resize: width or height ± 8 px, writing Fixed (UX-RESIZE-006) | new |
+| Ctrl+arrow | canvas | Resize: width or height ± 1 px, writing Fixed (UX-RESIZE-006) | new |
 | / | canvas, outline | Quick insert after the selection | new |
 | Ctrl+1 / Ctrl+2 | canvas, outline | Lay out horizontally / vertically (Designer parity) | new |
 | Ctrl+3 / Ctrl+4 | canvas, outline | Lay out in a horizontal / vertical splitter | new |
@@ -614,7 +615,7 @@ The spike's name chip sits above the selected widget and covers the field above 
 
 **UX-RESIZE-005** `M3.3` `[T]` A widget in a bare container (absolute geometry) has eight handles and moves freely; its handles write `geometry`. Snap 8 px; Shift disables snap.
 
-**UX-RESIZE-006** `M3.3` `[K]` Ctrl+Shift+Right/Left changes the width by ±8 px, Ctrl+Shift+Down/Up the height, with the same effect as a handle drag. With Alt added, ±1 px.
+**UX-RESIZE-006** `M3.3` `[K]` Ctrl+Shift+Right/Left changes the width by ±8 px, Ctrl+Shift+Down/Up the height, with the same effect as a handle drag. Ctrl+arrow without Shift changes it by ±1 px. Alt is not used, because ChoreBoy's window manager takes Ctrl+Alt+arrow (`_WM_FORBIDDEN` in `engine/shell_commands.py`).
 
 **UX-RESIZE-007** `M3.3` `[T]` Every drag gesture that edits a number (gap, margin, resize, splitter, page edge) moves in 1 px steps by default and snaps to multiples of 8 with Shift (gaps snap to 4; UX-GAP-002). The spike mixed 4 px default steps with Alt for 1 px; Alt is withdrawn.
 
