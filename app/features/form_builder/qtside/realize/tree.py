@@ -431,10 +431,12 @@ class _Structure(_LayoutSlots):
         app = QtWidgets.QApplication.instance()
         if app is None:
             return
-        for widget in list(app.allWidgets()):
+        # The orphan is parentless, so it is a top-level widget. allWidgets()
+        # would walk the whole form on every window fill.
+        for widget in list(app.topLevelWidgets()):
             if not isinstance(widget, QMenuBar) or widget is installed or not wrapper_is_valid(widget):
                 continue
-            if widget.parent() is not None or _node_id(widget) is not None:
+            if _node_id(widget) is not None:
                 continue
             delete_now(widget)
 
