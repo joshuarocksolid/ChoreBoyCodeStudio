@@ -89,7 +89,7 @@ def share_roots(machine: Machine) -> Tuple[Path, ...]:
         tops.append(machine.default_home / "share")
     ordered: list[Path] = []
     for top in tops:
-        for root in (top, *_visible_child_dirs(top)):
+        for root in (top, *visible_child_dirs(top)):
             logical = _logical(root)
             if logical not in ordered:
                 ordered.append(logical)
@@ -133,9 +133,13 @@ def marker_payload(hostname: str, now: datetime) -> dict[str, Any]:
 
 
 def read_shop_doc(folder: Path, doc: ShopDoc) -> DocRead:
+    return read_shop_file(folder, doc.value)
+
+
+def read_shop_file(folder: Path, name: str) -> DocRead:
     """A missing file is Absent only while the folder is a readable directory. An empty file is Unreadable."""
     try:
-        raw = (folder / doc.value).read_bytes()
+        raw = (folder / name).read_bytes()
     except FileNotFoundError:
         try:
             folder_ok = folder.is_dir()
@@ -354,7 +358,7 @@ def _logical(path: Path) -> Path:
     return Path(os.path.abspath(str(path)))
 
 
-def _visible_child_dirs(top: Path) -> list[Path]:
+def visible_child_dirs(top: Path) -> list[Path]:
     try:
         children = [entry for entry in top.iterdir() if not entry.name.startswith(".") and entry.is_dir()]
     except OSError:

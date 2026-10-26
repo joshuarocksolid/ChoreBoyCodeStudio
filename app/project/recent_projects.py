@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from app.bootstrap.paths import PathInput, global_recent_projects_path
 from app.core.errors import ProjectStructureValidationError
@@ -56,6 +56,11 @@ def remember_recent_project(
     if max_entries is not None:
         return remembered[:max_entries]
     return remembered
+
+
+def replace_recent_projects(project_paths: Sequence[str], state_root: PathInput) -> None:
+    """Write the whole v1 list. ``state_root`` is required, so this never routes to the shop."""
+    _save_recent_projects_payload(global_recent_projects_path(state_root), list(project_paths))
 
 
 def _extract_project_list(raw_projects: object) -> list[str]:
