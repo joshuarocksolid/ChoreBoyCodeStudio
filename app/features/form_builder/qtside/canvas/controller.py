@@ -6,6 +6,7 @@ decides lives in ``core.gesture.step`` and ``core.overlay.build_frame``.
 
 from __future__ import annotations
 
+import math
 import time
 from dataclasses import replace
 from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
@@ -88,7 +89,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
 )
 from app.features.form_builder.qtside.canvas.core.palette import tile_for
 from app.features.form_builder.qtside.canvas.core.place import resolve_at
-from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, FormPoint
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, FormPoint
 from app.features.form_builder.qtside.canvas.core.overlay import (
     FrameInputs,
     StaticLayer,
@@ -190,7 +191,7 @@ class CanvasController:
         self._spring_flip: Optional[Tuple[NodeId, int]] = None
         self._tip = ""
         self._survey: Optional[Survey] = None
-        self._knobs: Optional[Tuple[Survey, float, KnobSet]] = None
+        self._knobs: Optional[Tuple[Survey, float, Rect, KnobSet]] = None
         self._readout: Optional[Readout] = None
         self._linger = QTimer()
         self._linger.setSingleShot(True)
@@ -770,14 +771,15 @@ class CanvasController:
         scope = survey_scope(document, primary, static.splitters)
         survey = self._survey
         if survey is None or survey.scope != scope or survey.epoch != self._index.epoch:
-            survey = survey_live(self._realizer, self._index, document, scope)
+            survey = survey_live(self._realizer, self._index, document, scope, survey)
             self._survey = survey
-        factor = self._stage.view_map().factor
+        view = self._stage.view_map()
+        window = _knob_window(view, visible_scene_rect(self._view))
         cached = self._knobs
-        if cached is not None and cached[0] is survey and cached[1] == factor:
-            return cached[2]
-        knobs = knob_set(survey, document, factor)
-        self._knobs = (survey, factor, knobs)
+        if cached is not None and cached[0] is survey and cached[1] == view.factor and cached[2] == window:
+            return cached[3]
+        knobs = knob_set(survey, document, view.factor, window)
+        self._knobs = (survey, view.factor, window, knobs)
         return knobs
 
     def _end_readout(self) -> None:
@@ -888,6 +890,21 @@ def _moved_ids(
         if left.rect != right.rect:
             moved.append(right.node)
     return tuple(moved)
+
+
+def _knob_window(view: ViewMap, shown: CanvasRect) -> Rect:
+    """The visible scene and one viewport past each side, in form pixels.
+
+    A scrollbar drag rebuilds the frame only on release, so the slack keeps nearby gaps drawn meanwhile.
+    """
+    factor = view.factor if view.factor else 1.0
+    corner = view.to_form(CanvasPoint(shown.x - shown.width, shown.y - shown.height))
+    return Rect(
+        int(math.floor(corner.x)),
+        int(math.floor(corner.y)),
+        int(math.ceil(3 * shown.width / factor)),
+        int(math.ceil(3 * shown.height / factor)),
+    )
 
 
 def _reuse_static(

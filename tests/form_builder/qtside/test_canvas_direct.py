@@ -12,7 +12,7 @@ import pytest
 from app.qt.QtCore import QEvent, QPoint, QPointF, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtGui import QMouseEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QSplitter, QWidget
+from app.qt.QtWidgets import QApplication, QFormLayout, QSplitter, QWidget
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.query.direct import KnobKey, survey_scope
@@ -72,6 +72,22 @@ SPAN = form(
    <item row="0" column="0"><widget class="QPushButton" name="a"><property name="text"><string>A</string></property></widget></item>
    <item row="1" column="0"><widget class="QPushButton" name="b"><property name="text"><string>B</string></property></widget></item>
    <item row="1" column="1"><widget class="QPushButton" name="c"><property name="text"><string>C</string></property></widget></item>
+  </layout>
+""",
+)
+
+ROWS = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>Name</string></property></widget></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="name"/></item>
+   <item row="1" column="0"><widget class="QLabel" name="goneLabel"><property name="text"><string>Gone</string></property></widget></item>
+   <item row="1" column="1"><widget class="QLineEdit" name="gone"/></item>
+   <item row="2" column="0" colspan="2"><widget class="QCheckBox" name="wide"><property name="text"><string>A check box wider than any label</string></property></widget></item>
+   <item row="3" column="0"><widget class="QLabel" name="cityLabel"><property name="text"><string>Home city</string></property></widget></item>
+   <item row="3" column="1"><widget class="QLineEdit" name="city"/></item>
   </layout>
 """,
 )
@@ -170,6 +186,26 @@ def test_the_live_survey_measures_grid_columns_from_their_cells() -> None:
         qlayout = realizer.layout_for(grid)
         assert qlayout is not None
         assert facts.columns[1].start - facts.columns[0].end == qlayout.horizontalSpacing()
+
+
+def test_the_live_survey_gaps_a_form_by_its_spacing_past_hidden_rows_and_spanning_items() -> None:
+    with _shown(ROWS) as (session, realizer, canvas):
+        for name in ("goneLabel", "gone"):
+            widget = realizer.widget_for(_id(session, name))
+            assert widget is not None
+            widget.hide()
+        _flush()
+        document = session.document
+        index = _fresh_index(realizer)
+        layout = _id(session, "formLayout")
+        survey = survey_live(realizer, index, document, survey_scope(document, _id(session, "name"), ()))
+        facts = next(found for found in survey.layouts if found.layout == layout)
+        qlayout = realizer.layout_for(layout)
+        assert isinstance(qlayout, QFormLayout)
+        assert len(facts.columns) == 2 and len(facts.rows) == 3
+        assert facts.columns[1].start - facts.columns[0].end == qlayout.horizontalSpacing()
+        gaps = {after.start - before.end for before, after in zip(facts.rows, facts.rows[1:])}
+        assert gaps == {qlayout.verticalSpacing()}
 
 
 def test_the_live_survey_measures_splitter_panes() -> None:

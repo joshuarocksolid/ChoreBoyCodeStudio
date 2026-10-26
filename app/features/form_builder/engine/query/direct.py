@@ -314,16 +314,21 @@ def survey_scope(document: UiDocument, primary: Optional[NodeId], splitters: Tup
     return SurveyScope(primary, tuple(found), splitters)
 
 
-def knob_set(survey: Survey, document: UiDocument, scale: float) -> KnobSet:
-    """Every knob for ``survey``. ``scale`` is screen pixels per form pixel."""
+def knob_set(survey: Survey, document: UiDocument, scale: float, window: Optional[Rect] = None) -> KnobSet:
+    """Every knob for ``survey``. ``scale`` is screen pixels per form pixel.
+
+    ``window`` drops sites whose hit area misses it, so a long layout costs what is on screen.
+    """
     thick = max(1, int(math.ceil(HIT_PX / max(scale, 0.01))))
     sites: List[Site] = []
     for splitter in survey.splitters:
         sites.extend(_grip_sites(splitter, thick))
     for facts in survey.layouts:
-        sites.extend(_gap_sites(document, facts, thick))
+        sites.extend(_gap_sites(document, facts, thick, window))
     for facts in survey.layouts:
         sites.extend(_margin_sites(document, facts, thick))
+    if window is not None:
+        sites = [site for site in sites if site.hit.intersects(window)]
     return KnobSet(
         _handle_knobs(document, survey),
         tuple(sites),
@@ -734,7 +739,7 @@ def _grip_sites(facts: SplitterFacts, thick: int) -> List[Site]:
     return found
 
 
-def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int) -> List[Site]:
+def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int, window: Optional[Rect]) -> List[Site]:
     layout = document.get(facts.layout)
     if not isinstance(layout, LayoutNode):
         return []
@@ -751,11 +756,12 @@ def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int) -> List[Sit
         stored = _stored_number(layout, name)
         low = across[0].start
         high = across[-1].end
+        first, last = _along(window, axis)
         for index in range(len(tracks) - 1):
             before = tracks[index]
             after = tracks[index + 1]
             size = after.start - before.end
-            if size < 0:
+            if size < 0 or after.start + thick <= first or before.end - thick >= last:
                 continue
             if axis == "h":
                 gap = Rect(before.end, low, size, high - low)
@@ -768,6 +774,15 @@ def _gap_sites(document: UiDocument, facts: LayoutFacts, thick: int) -> List[Sit
             key = ("gap", layout.id, "%s%d" % (axis, index))
             found.append(Site(Knob(key, layout.id, pull, HINT_GAP, rule), _widen(gap, axis, thick), bar, "bar"))
     return found
+
+
+def _along(window: Optional[Rect], axis: str) -> Tuple[float, float]:
+    """``window``'s extent on ``axis``. Unbounded without a window."""
+    if window is None:
+        return -math.inf, math.inf
+    if axis == "h":
+        return window.x, window.x + window.width
+    return window.y, window.y + window.height
 
 
 def _margin_sites(document: UiDocument, facts: LayoutFacts, thick: int) -> List[Site]:

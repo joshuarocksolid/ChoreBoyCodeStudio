@@ -161,6 +161,29 @@ def test_sites_hit_grips_then_gaps_then_margins_at_least_twelve_screen_px(scale:
         assert site.hit.contains(site.mark.x + site.mark.width // 2, site.mark.y + site.mark.height // 2)
 
 
+@pytest.mark.parametrize("scale", (0.5, 1.0, 2.0))
+@pytest.mark.parametrize(
+    "window",
+    (
+        Rect(0, 0, 200, 100),
+        Rect(-50, -50, 40, 40),
+        Rect(0, 0, 97, 37),
+        Rect(103, 0, 97, 100),
+        Rect(107, 0, 93, 100),
+        Rect(110, 0, 90, 100),
+        Rect(0, 49, 200, 51),
+        Rect(118, 58, 82, 42),
+    ),
+)
+def test_a_window_keeps_exactly_the_sites_whose_hit_meets_it(scale: float, window: Rect) -> None:
+    log = open_log(GRID)
+    survey = _survey(log, primary="gridLayout", layouts=(_grid_facts(log),))
+    every = knob_set(survey, log.document, scale).sites
+    assert knob_set(survey, log.document, scale, window).sites == tuple(
+        site for site in every if site.hit.intersects(window)
+    )
+
+
 @pytest.mark.parametrize(
     ("how", "dy", "stored"),
     (
