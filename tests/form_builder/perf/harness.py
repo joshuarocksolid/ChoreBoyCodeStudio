@@ -97,6 +97,7 @@ OPEN_BUDGET_MS = 150.0
 HIT_REFRESH_BUDGET_MS = {300: 4.0, 1000: 12.0}
 HIT_QUERY_BUDGET_MS = 0.2
 OVERLAY_BUDGET_MS = 4.0
+DIRECT_HIT_BUDGET_MS = 2.0
 DROP_TARGET_BUDGET_MS = 2.0
 OUTLINE_PATCH_BUDGET_MS = 2.0
 EDIT_BUDGET_MS = 16.0
@@ -131,6 +132,8 @@ SECTION_12_POINTS: Tuple[str, ...] = (
     "hit index refresh",
     "hit query",
     "overlay paint",
+    "direct hit",
+    "overlay paint direct",
     "outline patch",
     "edit total",
     "selection change",
@@ -423,6 +426,7 @@ def _collect(
     rows.extend(_hit_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_drop_target_rows(documents, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_direct_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no separate patch timing"))
     rows.append(
@@ -988,42 +992,9 @@ def _canvas_rows(
     if painted_items == 0:
         raise RuntimeError("overlay frame is empty, so paint would time nothing")
     try:
-        fill, dot = theme.backdrop_fill(False, False)
-        palette = theme.CanvasPalette(
-            overlay=theme.overlay_palette(False),
-            backdrop=theme.BackdropPalette(
-                fill=fill,
-                dot=dot,
-                faint="#666F76",
-                accent="#3366FF",
-                muted="#5A6168",
-                panel="#FFFFFF",
-                border="#DEE2E6",
-                text="#212529",
-            ),
+        paint, image = _paint_row(
+            "overlay paint", 300, canvas, QRectF(canvas.sceneRect()), paint_mod, theme, samples, warmup, enforce_absolute, wall_on
         )
-        scene = canvas.sceneRect()
-        image = QImage(
-            max(1, int(scene.width())),
-            max(1, int(scene.height())),
-            getattr(getattr(QImage, "Format", QImage), "Format_ARGB32"),
-        )
-        image.fill(0)
-        painter = QPainter(image)
-        exposed = QRectF(scene)
-        try:
-            paint = _timed(
-                "overlay paint",
-                300,
-                lambda: paint_mod.paint_frame(painter, canvas.overlay(), palette, exposed),
-                OVERLAY_BUDGET_MS,
-                samples=samples,
-                warmup=warmup,
-                enforce_absolute=enforce_absolute,
-                wall_on=wall_on,
-            )[0]
-        finally:
-            painter.end()
         ids = [
             node.id
             for node in session.document.iter_preorder()
@@ -1089,6 +1060,169 @@ def _canvas_rows(
         parent.deleteLater()
         app.processEvents()
         _dispose_held([realizer, session])
+
+
+def _paint_row(
+    point: str,
+    widgets: int,
+    canvas: Any,
+    exposed: QRectF,
+    paint_mod: Any,
+    theme: Any,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, QImage]:
+    """Time paint_frame of the canvas's current overlay into an image the size of ``exposed``."""
+    fill, dot = theme.backdrop_fill(False, False)
+    palette = theme.CanvasPalette(
+        overlay=theme.overlay_palette(False),
+        backdrop=theme.BackdropPalette(
+            fill=fill,
+            dot=dot,
+            faint="#666F76",
+            accent="#3366FF",
+            muted="#5A6168",
+            panel="#FFFFFF",
+            border="#DEE2E6",
+            text="#212529",
+        ),
+    )
+    image = QImage(
+        max(1, int(exposed.width())),
+        max(1, int(exposed.height())),
+        getattr(getattr(QImage, "Format", QImage), "Format_ARGB32"),
+    )
+    image.fill(0)
+    painter = QPainter(image)
+    painter.translate(-exposed.left(), -exposed.top())
+    try:
+        row = _timed(
+            point,
+            widgets,
+            lambda: paint_mod.paint_frame(painter, canvas.overlay(), palette, exposed),
+            OVERLAY_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+    finally:
+        painter.end()
+    return row, image
+
+
+def _direct_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Per-move knob work and the knob overlay paint on a realized 1000-widget canvas.
+
+    The primary sits in the form's most crowded layout, so its frame carries the most gap sites.
+    The survey and the knob set are built on select and reused while the index epoch holds,
+    so a move pays for aim, turn and live_props only.
+    """
+    points = (("direct hit", DIRECT_HIT_BUDGET_MS), ("overlay paint direct", OVERLAY_BUDGET_MS))
+    form = forms.get(1000)
+    if form is None or not _module_exists("app.features.form_builder.engine.query.direct"):
+        return tuple(_missing(point, 1000, _ms_budget(budget), "no 1000-widget form or no knobs") for point, budget in points)
+    if QApplication.instance() is None:
+        QApplication([])
+    realize = importlib.import_module("app.features.form_builder.qtside.realize")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    canvas_mod = importlib.import_module("app.features.form_builder.integration.canvas")
+    paint_mod = importlib.import_module("app.features.form_builder.qtside.canvas.paint")
+    theme = importlib.import_module("app.features.form_builder.qtside.theme.overlay")
+    selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    frame_mod = importlib.import_module("app.features.form_builder.qtside.canvas.core.frame")
+    gesture = importlib.import_module("app.features.form_builder.qtside.canvas.core.gesture")
+    space = importlib.import_module("app.features.form_builder.qtside.canvas.core.space")
+    direct = importlib.import_module("app.features.form_builder.engine.query.direct")
+    live = importlib.import_module("app.features.form_builder.engine.commands.live")
+    stage = importlib.import_module("app.features.form_builder.qtside.canvas.stage")
+    session, realizer = _open_realized(form.xml, session_mod, forms_mod, realize)
+    parent = QWidget()
+    parent.resize(960, 720)
+    canvas = canvas_mod.FormCanvas(session, realizer, _SpeedHost(), parent)
+    canvas.resize(960, 720)
+    parent.show()
+    app = QApplication.instance()
+    assert app is not None
+    try:
+        for _ in range(4):
+            app.processEvents()
+        primary, crowd = _crowded_child(session.document)
+        if primary is None:
+            raise RuntimeError("the reference form has no laid-out widget")
+        session.selection.set((primary,), current=primary, source=selection.SelectionSource.CANVAS)
+        for _ in range(4):
+            app.processEvents()
+        frame = canvas.overlay()
+        sites = [(rect, target.knob) for rect, target in frame.targets if isinstance(target, frame_mod.OnKnob)]
+        if not sites:
+            raise RuntimeError("the selection drew no knobs, so the rows would time nothing")
+        rect, knob = sites[-1]
+        at = space.CanvasPoint(rect.x + rect.width // 2, rect.y + rect.height // 2)
+        document = session.document
+        index = canvas._index
+        view = canvas._stage.view_map()
+        step = {"n": 0}
+
+        def move() -> None:
+            step["n"] = step["n"] % 16 + 1
+            gesture.aim(at, frame, index, document, view)
+            live.live_props(direct.turn(knob, step["n"], step["n"], "drag").commands)
+
+        hit = _timed(
+            "direct hit",
+            1000,
+            move,
+            DIRECT_HIT_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        shown = stage.visible_scene_rect(canvas)
+        visible = QRectF(shown.x, shown.y, shown.width, shown.height)
+        paint, image = _paint_row(
+            "overlay paint direct", 1000, canvas, visible, paint_mod, theme, samples, warmup, enforce_absolute, wall_on
+        )
+        return (
+            _with_detail(
+                hit,
+                "aim over %d overlay targets, then turn and live_props of the last %s knob. The layout holds %d items"
+                % (len(frame.targets), knob.key[0], crowd),
+            ),
+            _with_detail(
+                paint,
+                "paint_frame of %d overlay items with %d knob sites. A frame paints the visible %dx%d scene rect"
+                % (len(frame.items), len(sites), image.width(), image.height()),
+            ),
+        )
+    finally:
+        canvas.dispose()
+        parent.deleteLater()
+        app.processEvents()
+        _dispose_held([realizer, session])
+
+
+def _crowded_child(document: UiDocument) -> Tuple[Optional[NodeId], int]:
+    """The first widget in the layout with the most items, and that item count."""
+    best: Optional[NodeId] = None
+    crowd = 0
+    for node in document.iter_preorder():
+        if not isinstance(node, LayoutNode) or len(node.items) <= crowd:
+            continue
+        child = next((item.content.id for item in node.items if isinstance(item.content, WidgetNode)), None)
+        if child is not None:
+            best, crowd = child, len(node.items)
+    return best, crowd
 
 
 def _outline_attached_rows(
