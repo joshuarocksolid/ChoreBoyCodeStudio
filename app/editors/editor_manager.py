@@ -151,8 +151,10 @@ class EditorManager:
     def save_tab(self, file_path: str) -> EditorTabState:
         """Save current content for an open tab back to disk."""
         tab = self._require_tab(file_path)
-        atomic_write_text(Path(tab.file_path), tab.current_content)
-        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path))
+        path = Path(tab.file_path)
+        text = tab.current_content
+        atomic_write_text(path, text)
+        tab.mark_saved(last_known_mtime=self._read_file_mtime(tab.file_path), saved_text=text)
         return tab
 
     def current_disk_mtime(self, file_path: str) -> float | None:
@@ -220,6 +222,7 @@ class EditorManager:
         """Close an open file tab if it exists."""
         tab = self.get_tab(file_path)
         if tab is not None:
+            tab.drop_content_source_subscription()
             self._remove_tab(tab)
 
     def remap_paths_for_move(self, source_path: str, destination_path: str) -> dict[str, str]:
@@ -291,6 +294,7 @@ class EditorManager:
         self._preview_buffer_id = None
         if preview_tab is None:
             return None
+        preview_tab.drop_content_source_subscription()
         self._remove_tab(preview_tab)
         return preview_tab
 

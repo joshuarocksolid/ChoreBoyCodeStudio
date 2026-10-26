@@ -8,6 +8,10 @@ from typing import Iterable, Optional
 if __package__:
     from .composition import CompositionError, find_composition_violations
     from .concurrency import ConcurrencyError, find_concurrency_violations
+    from .feature_install_imports import (
+        FeatureInstallImportError,
+        find_feature_install_import_violations,
+    )
     from .feature_map import FeatureMapError, find_feature_map_violations
     from .file_roles import FileRoleError, find_file_role_violations
     from .handles import HandlesError, find_handle_violations
@@ -21,6 +25,10 @@ if __package__:
 else:
     from composition import CompositionError, find_composition_violations
     from concurrency import ConcurrencyError, find_concurrency_violations
+    from feature_install_imports import (
+        FeatureInstallImportError,
+        find_feature_install_import_violations,
+    )
     from feature_map import FeatureMapError, find_feature_map_violations
     from file_roles import FileRoleError, find_file_role_violations
     from handles import HandlesError, find_handle_violations
@@ -58,12 +66,14 @@ def run(
         violations.extend(find_handle_violations(repo_root, app_files))
         violations.extend(find_composition_violations(repo_root, app_files))
         violations.extend(find_qt_portability_violations(repo_root, app_files))
+        violations.extend(find_feature_install_import_violations(repo_root, app_files))
         violations.extend(
             find_feature_map_violations(repo_root, frozenset(owners))
         )
     except (
         CompositionError,
         ConcurrencyError,
+        FeatureInstallImportError,
         FeatureMapError,
         FileRoleError,
         HandlesError,

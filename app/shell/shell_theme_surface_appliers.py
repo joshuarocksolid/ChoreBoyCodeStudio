@@ -78,7 +78,10 @@ def apply_editor_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -
 
 
 def apply_markdown_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:
-    refs.tab_content_registry.apply_all_markdown_themes(tokens)
+    registry = refs.tab_content_registry
+    if registry is None:
+        return
+    registry.apply_all_themes(tokens)
 
 
 def apply_python_console_theme(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:

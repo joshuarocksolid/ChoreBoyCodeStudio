@@ -60,6 +60,7 @@ from app.shell.debug_control_workflow import DebugControlWorkflow
 from app.shell.debug_inspector_workflow import DebugInspectorWorkflow, MainWindowDebugInspectorHost
 from app.shell.editor_key_scope import EDITOR_ONLY_ACTION_IDS, EditorKeyScope
 from app.shell.editor_tab_factory import EditorTabFactory
+from app.shell.tab_content_providers import TabContentProviderRegistry
 from app.shell.editor_tab_workflow import build_editor_tab_workflow
 from app.shell.editor_workspace_controller import EditorWorkspaceController
 from app.shell.events import ShellEventBus
@@ -291,6 +292,7 @@ def install_editors(ctx: ShellCompositionContext) -> None:
             "_workspace_controller": workspace_controller,
             "_editor_manager": editor_manager,
             "_editor_widgets_by_path": workspace_controller.editor_widgets_by_path,
+            "_tab_content_registry": TabContentProviderRegistry(),
             "_editor_tab_factory": EditorTabFactory(window),
             "_indent_source_by_path": {},
             "_debug_exception_policy": DebugExceptionPolicy(),
@@ -407,12 +409,14 @@ def install_editor_project_wiring(ctx: ShellCompositionContext) -> None:
     window._project_tree_ui_workflow = build_project_tree_ui_workflow(window)
     window._project_tree_action_coordinator = ProjectTreeActionCoordinator(
         project_tree_controller=window._project_tree_controller,
-        open_editor_paths=window._workspace_controller.open_editor_paths,
+        # reset_editor_tabs() replaces the manager. A method bound here would
+        # keep listing the project that was open at composition time.
+        open_tab_paths=lambda: window._editor_manager.open_paths(),
         widget_for_path=window._workspace_controller.widget_for_path,
-        pop_editor_for_path=window._workspace_controller.pop_editor_for_path,
         tab_index_for_path=window._editor_groups.tab_index_for_path_in_any_group,
         remove_tab_at_index=window._editor_groups.remove_tabs_for_last_path,
-        release_editor_widget=window._project_tree_ui_workflow.release_editor_widget,
+        release_tab_content=window._editor_tab_workflow.release_tab_content,
+        rekey_tab_content=window._project_tree_ui_workflow.rekey_tab_content,
         close_editor_file=lambda file_path: window._editor_manager.close_file(file_path),
         breakpoint_store=window._debug_control_workflow.breakpoint_store,
         refresh_breakpoints_list=window._debug_control_workflow.refresh_breakpoints_list,
