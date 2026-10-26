@@ -232,8 +232,8 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         kind="shell",
         shell_action_id="shell.action.edit.renameSymbol",
     ),
-    _row("form.action.contextMenu", "Context menu", "Shift+F10", _CANVAS_OUTLINE, kind="qt"),
-    _row("form.action.contextMenuKey", "Context menu key", "Menu", _CANVAS_OUTLINE, kind="qt"),
+    _row("form.action.contextMenu", "Context menu", "Shift+F10", _CANVAS_OUTLINE, available=True, kind="qt"),
+    _row("form.action.contextMenuKey", "Context menu key", "Menu", _CANVAS_OUTLINE, available=True, kind="qt"),
     _row(
         "form.action.saveAll",
         "Save all",

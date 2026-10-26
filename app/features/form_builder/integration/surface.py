@@ -9,13 +9,14 @@ import os
 from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QTreeWidget,
     QShortcut,
@@ -24,6 +25,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from app.qt.qt_compat import wrapper_is_valid
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
@@ -35,9 +37,12 @@ from app.features.form_builder.engine.layout_actions import (
     Done,
     OfferSheet,
     OpenWrap,
+    PickWrap,
     Refused,
+    gate,
     offers,
     request_for,
+    transact,
 )
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -58,6 +63,8 @@ from app.features.form_builder.integration.chrome_text import (
     status_sentence,
     undo_menu_text,
 )
+from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.integration.context_menu import fill_context_menu
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
@@ -81,12 +88,13 @@ from app.features.form_builder.integration.toast import (
     undo_matches,
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
+from app.features.form_builder.integration.wrap_popover import WrapPopover
 from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
 from app.features.form_builder.qtside.canvas.core.words import hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
-from app.features.form_builder.qtside.layout_gestures import ask, measure, perform
+from app.features.form_builder.qtside.layout_gestures import ask, beside, measure, perform
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.shortcut_preferences import default_shortcut_map
@@ -354,6 +362,7 @@ class FormSurface(QWidget):
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
         self._layout_popover: Optional[QWidget] = None
+        self._context_menu: Optional[QMenu] = None
         self._toast_held = False
 
         self._load_memory()
@@ -401,6 +410,18 @@ class FormSurface(QWidget):
         self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._esc.setEnabled(False)
         self._esc.activated.connect(self._workbench.close_drawers)
+        # The Menu key arrives as a context menu event. Qt does not turn Shift+F10 into one on X11.
+        outline = self._workbench.outline
+        outline.set_menu_target(self._open_outline_menu)
+        self._menu_keys = []
+        for host, opener in (
+            (self._workbench.canvas, lambda: self.open_context_menu(None, None)),
+            (outline.tree, outline.request_menu),
+        ):
+            menu_key = QShortcut(QKeySequence("Shift+F10"), host)
+            menu_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+            menu_key.activated.connect(opener)
+            self._menu_keys.append(menu_key)
         self._workbench.set_drawer_listener(self._sync_drawer_escape)
         self._order_focus()
         self._refresh_design()
@@ -465,28 +486,39 @@ class FormSurface(QWidget):
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
 
-    def layout_offers(self) -> OfferSheet:
-        """What each layout request would do to the current selection, measured from the canvas."""
+    def layout_offers(self, ids: Optional[Sequence[NodeId]] = None) -> OfferSheet:
+        """What each layout request would do to ``ids`` (the selection by default), measured from the canvas."""
         document = self._session.document
-        ids = self._session.selection.state.ids
-        return offers(document, ids, measure(document, ids, self._realizer.widget_for))
+        targets = self._session.selection.state.ids if ids is None else tuple(ids)
+        return offers(document, targets, measure(document, targets, self._realizer.widget_for))
 
     def dispatch(self, command_id: str) -> None:
         """Run the layout gesture behind a Form command row or its key."""
         request = request_for(command_id)
-        if request is None or isinstance(request, OpenWrap) or self._source.mode != "visual":
+        if request is None or self._source.mode != "visual":
+            return
+        if isinstance(request, OpenWrap):
+            self._open_wrap_popover()
             return
         self.run_layout(request)
 
-    def run_layout(self, request: object) -> None:
-        """One layout request on the selection. A change toasts with Undo. A refusal goes to the status bar."""
-        log = self._session.log
+    def run_layout(self, request: object, ids: Optional[Sequence[NodeId]] = None) -> None:
+        """One layout request on ``ids`` (the selection by default).
+
+        A change toasts with Undo. A refusal goes to the status bar.
+        """
+        session = self._session
+        targets = session.selection.state.ids if ids is None else tuple(ids)
+        log = session.log
         before = log.entries()
         previous = before[-1] if before else None
+        confirm = ask(self, chrome_for(self._tokens), lambda: self._place(targets))
         # The log listener toasts inside the commit, before the sentence is known.
         self._toast_held = True
         try:
-            outcome = perform(self._session, self._realizer.widget_for, request, ask(self))
+            outcome = perform(
+                session.document, targets, self._realizer.widget_for, transact(log), request, confirm
+            )
         finally:
             self._toast_held = False
         entries = log.entries()
@@ -932,7 +964,64 @@ class FormSurface(QWidget):
         self._problem_popover.show_message(text)
 
     def open_layout_popover(self, node: NodeId) -> None:
-        self._layout_popover = open_layout_menu(self, FORM_COMMANDS, self._chip_anchor(node))
+        targets = (node,)
+        self._layout_popover = open_layout_menu(
+            self,
+            self.layout_offers(targets),
+            lambda request: self.run_layout(request, targets),
+            self._chip_anchor(node),
+        )
+
+    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint]) -> None:
+        if self._source.mode != "visual":
+            return
+        shown = self._context_menu
+        if shown is not None and wrapper_is_valid(shown):
+            if shown.isVisible():
+                return
+            shown.deleteLater()
+        selection = self._session.selection
+        if node is not None and node not in selection.state.ids:
+            selection.set((node,), current=node, source=SelectionSource.CANVAS)
+        menu = QMenu(self)
+        menu.setObjectName("formBuilder.contextMenu")
+        fill_context_menu(menu, self.layout_offers(), self.run_layout)
+        if at is None:
+            subject, bounds = self._place(selection.state.ids)
+            at = beside(subject, menu.sizeHint(), bounds)
+        menu.popup(at)
+        self._context_menu = menu
+
+    def _open_outline_menu(self, node: NodeId, at: QPoint) -> None:
+        if node not in self._session.selection.state.ids:
+            self._on_outline_pick(node)
+        self.open_context_menu(node, at)
+
+    def _open_wrap_popover(self) -> None:
+        sheet = self.layout_offers()
+        offer = gate(sheet, OpenWrap())
+        if not offer.enabled:
+            self.narrate(offer.reason)
+            return
+        ids = self._session.selection.state.ids
+        popover = WrapPopover(
+            self,
+            sheet,
+            len(ids),
+            chrome_for(self._tokens),
+            lambda kind_id: self.run_layout(PickWrap(kind_id)),
+        )
+        popover.open_beside(*self._place(ids))
+
+    def _place(self, ids: Sequence[NodeId]) -> Tuple[QRect, QRect]:
+        """``ids`` on screen and the visible canvas, both global, for a popover beside them."""
+        canvas = self._workbench.canvas
+        viewport = canvas.viewport()
+        bounds = QRect(viewport.mapToGlobal(QPoint(0, 0)), viewport.size())
+        drawn = canvas.viewport_rect(ids or (self._session.document.root.id,))
+        if drawn is None:
+            return QRect(bounds.center(), QSize(0, 0)), bounds
+        return QRect(viewport.mapToGlobal(drawn.topLeft()), drawn.size()), bounds
 
     def _chip_anchor(self, node: NodeId) -> QPoint:
         canvas = self._workbench.canvas

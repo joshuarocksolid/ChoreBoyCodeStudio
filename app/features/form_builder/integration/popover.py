@@ -2,19 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Callable
 
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QMenu, QWidget
 
-from app.features.form_builder.engine.shell_commands import FormCommand
-
-_LAYOUT_CHOICES = (
-    ("Vertical", "form.action.layoutVertical"),
-    ("Horizontal", "form.action.layoutHorizontal"),
-    ("Grid", "form.action.layoutGrid"),
-    ("Form", "form.action.layoutForm"),
-)
+from app.features.form_builder.engine.layout_actions import KINDS, SEGMENTS, ApplyKind, OfferSheet, gate
 
 
 class ProblemPopover(QFrame):
@@ -53,19 +46,19 @@ class ProblemPopover(QFrame):
         self.move(max(0, (parent.width() - width) // 2), max(0, parent.height() - height - 16))
 
 
-def open_layout_menu(parent: QWidget, commands: Iterable[FormCommand], at: object) -> QMenu:
-    """A non-blocking menu of layout choices. Disabled rows carry a plain tooltip."""
-    by_id = {command.command_id: command for command in commands}
+def open_layout_menu(parent: QWidget, sheet: OfferSheet, run: Callable[[object], None], at: object) -> QMenu:
+    """A non-blocking menu of the four layouts. Disabled rows carry the reason as a tooltip."""
     menu = QMenu(parent)
     menu.setObjectName("formBuilder.layoutPopover")
     menu.setToolTipsVisible(True)
-    for label, command_id in _LAYOUT_CHOICES:
-        action = menu.addAction(label)
-        command = by_id.get(command_id)
-        enabled = bool(command.available) if command is not None else False
-        action.setEnabled(enabled)
-        if not enabled:
-            action.setToolTip("Not available yet")
+    for kind_id in SEGMENTS:
+        request = ApplyKind(kind_id)
+        offer = gate(sheet, request)
+        action = menu.addAction(KINDS[kind_id].label)
+        action.setEnabled(offer.enabled)
+        if offer.reason:
+            action.setToolTip(offer.reason)
+        action.triggered.connect(lambda _checked=False, request=request: run(request))
     menu.popup(at)  # type: ignore[arg-type]
     return menu
 

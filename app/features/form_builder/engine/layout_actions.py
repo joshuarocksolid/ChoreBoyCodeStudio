@@ -193,6 +193,7 @@ MIXED_PARENT = "Select widgets in the same layout to wrap them."
 _GONE = "That widget is no longer in the form."
 _ROOT_WRAP = "The form can't be wrapped."
 _DOES_NOT_APPLY = "That doesn't apply to this selection."
+_NOTHING_TO_CHANGE = "Nothing to change."
 
 
 @dataclass(frozen=True)
@@ -486,7 +487,7 @@ def _offer(plan: _Plan) -> Offer:
     if isinstance(plan, Refused):
         return Offer(False, plan.reason)
     if isinstance(plan, Current):
-        return Offer(False)
+        return Offer(False, _NOTHING_TO_CHANGE)
     return Offer(True)
 
 

@@ -18,8 +18,8 @@ from app.features.form_builder.engine.layout_actions import (
     NeedsConfirm,
     PickWrap,
     Unwrap,
+    transact,
 )
-from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.qtside.layout_gestures import perform
 from tests.form_builder.qtside.support import form, opened
@@ -63,11 +63,11 @@ def _never(prompt: NeedsConfirm) -> bool:
 def test_wrap_unwrap_and_a_layout_morph_keep_every_live_widget(selected: Tuple[str, ...], request_: object) -> None:
     with opened(_UI) as (session, realizer):
         doc = session.document
-        session.selection.set([doc.by_name(name)[0] for name in selected], source=SelectionSource.PROGRAM)
+        ids = tuple(doc.by_name(name)[0] for name in selected)
         before = {name: realizer.widget_for(doc.by_name(name)[0]) for name in _LEAVES}
         entries = len(session.log.entries())
 
-        outcome = perform(session, realizer.widget_for, request_, _never)
+        outcome = perform(doc, ids, realizer.widget_for, transact(session.log), request_, _never)
 
         assert isinstance(outcome, Done), outcome
         assert len(session.log.entries()) == entries + 1
@@ -82,11 +82,10 @@ def test_changing_a_container_class_replaces_it_and_keeps_its_children() -> None
         doc = session.document
         box = doc.by_name("box")[0]
         three = doc.by_name("three")[0]
-        session.selection.set([box], source=SelectionSource.PROGRAM)
         old_box = realizer.widget_for(box)
         old_three = realizer.widget_for(three)
 
-        outcome = perform(session, realizer.widget_for, ChangeTo("QFrame"), _never)
+        outcome = perform(doc, (box,), realizer.widget_for, transact(session.log), ChangeTo("QFrame"), _never)
 
         assert outcome == Done("Changed to a frame.")
         node = doc.node(box)
