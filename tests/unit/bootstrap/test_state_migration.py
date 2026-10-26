@@ -17,7 +17,6 @@ def _patch_layout(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, state_root
     layout = paths.ProductStateLayout(
         install_base=state_root.parent,
         state_root=state_root,
-        shop_pointer_path=tmp_path / "missing_shop_pointer",
         occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
         migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
         legacy_leaf=constants.GLOBAL_STATE_DIRNAME,

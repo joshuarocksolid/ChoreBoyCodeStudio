@@ -134,7 +134,6 @@ _COMMITTED_WINDOW_FIELDS = frozenset(
         "_project_tree_ui_workflow",
         "_project_tree_widget",
         "_python_console_container",
-        "_python_console_history_path",
         "_python_console_widget",
         "_python_console_workflow",
         "_python_style_workflow",

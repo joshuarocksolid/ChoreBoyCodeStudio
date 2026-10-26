@@ -15,7 +15,6 @@ from app.bootstrap.paths import (
     global_app_log_path,
     global_cache_dir,
     global_history_dir,
-    global_python_console_history_path,
     resolve_global_state_root,
     try_ensure_directory,
 )
@@ -147,7 +146,6 @@ def install_layout_foundation(ctx: ShellCompositionContext) -> None:
             "_state_root": state_root,
             "_logger": logger,
             "_startup_capability_facade": StartupCapabilityFacade(),
-            "_python_console_history_path": global_python_console_history_path(state_root),
             "_settings_service": settings_service,
             "_stored_lint_diagnostics": {},
             "_stored_runtime_problems": [],

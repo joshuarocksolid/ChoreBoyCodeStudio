@@ -23,7 +23,6 @@ def _isolate_state_resolution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
         paths.ProductStateLayout(
             install_base=Path(constants.PRODUCT_INSTALL_BASE),
             state_root=Path(constants.PRODUCT_STATE_ROOT),
-            shop_pointer_path=tmp_path / "missing_shop_pointer",
             occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
             migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
             legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
@@ -132,37 +131,6 @@ def test_empty_or_relative_env_does_not_select_state_root(
     assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
     monkeypatch.setenv("CBCS_STATE_ROOT", "relative/state")
     assert paths.resolve_global_state_root() == Path("/home/default/FreeCAD/CBCS/state")
-
-
-def test_shop_pointer_uses_first_absolute_path_ignoring_comments(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _isolate_state_resolution(monkeypatch, tmp_path)
-    pointed = tmp_path / "shop_state"
-    shop_pointer = tmp_path / "shop_cbcs_state_root"
-    shop_pointer.write_text(
-        "\n# canonical shop root\nrelative/not/used\n{0}\n{1}\n".format(
-            pointed,
-            tmp_path / "ignored_second",
-        ),
-        encoding="utf-8",
-    )
-    monkeypatch.setattr(
-        paths,
-        "DEFAULT_PRODUCT_STATE_LAYOUT",
-        paths.ProductStateLayout(
-            install_base=Path(constants.PRODUCT_INSTALL_BASE),
-            state_root=Path(constants.PRODUCT_STATE_ROOT),
-            shop_pointer_path=shop_pointer,
-            occupancy_filename=constants.GLOBAL_SETTINGS_FILENAME,
-            migrating_suffix=constants.STATE_MIGRATING_SUFFIX,
-            legacy_leaf=constants.GLOBAL_STATE_DIRNAME,
-        ),
-    )
-    local = Path("/home/default/FreeCAD/CBCS/state")
-    assert paths.resolve_global_state_root() == local
-    assert paths.global_settings_path().parent == Path(os.path.abspath(str(pointed)))
-    assert paths.global_state_db_path().parent == local
 
 
 def test_global_helper_paths_compose_under_state_root(tmp_path: Path) -> None:

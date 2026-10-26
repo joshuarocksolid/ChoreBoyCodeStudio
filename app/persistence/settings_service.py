@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import copy
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.bootstrap.paths import PathInput, global_settings_path, project_settings_path
 from app.core import constants
@@ -15,11 +16,25 @@ from app.persistence.settings_store import (
     save_settings,
 )
 
+if TYPE_CHECKING:
+    from app.features.shop_sharing.service import DocumentRoute
+
 
 class SettingsService:
+    """Owns global settings reads and writes.
+
+    In shop mode a save writes only the leaves that changed since the merge
+    base: the document returned by the last ``save_global`` or by the last
+    ``load_global`` outside a sharing listener. A reload inside a sharing
+    listener refreshes the cache but keeps the merge base, so a dialog payload
+    built before turn on is diffed against the settings it was built from.
+    """
+
     def __init__(self, *, state_root: PathInput | None = None) -> None:
         self._state_root = state_root
         self._cached_global_payload: dict[str, Any] | None = None
+        self._cached_generation = 0
+        self._merge_base: dict[str, Any] | None = None
         self._cached_project_payloads: dict[str, dict[str, Any]] = {}
 
     @property
@@ -30,13 +45,30 @@ class SettingsService:
         return project_settings_path(project_root)
 
     def load_global(self, *, force_refresh: bool = False) -> dict[str, Any]:
-        if self._cached_global_payload is None or force_refresh:
-            self._cached_global_payload = load_settings(state_root=self._state_root)
-        return dict(self._cached_global_payload)
+        route = _route(self._state_root)
+        if self._cached_global_payload is None or force_refresh or route.generation != self._cached_generation:
+            self._cached_global_payload = (
+                route.shop.load_settings() if route.shop is not None else load_settings(state_root=self._state_root)
+            )
+            self._cached_generation = route.generation
+        if self._merge_base is None or not route.reloading:
+            self._merge_base = copy.deepcopy(self._cached_global_payload)
+        return copy.deepcopy(self._cached_global_payload)
 
     def save_global(self, payload: Mapping[str, Any]) -> Path:
-        saved_path = save_settings(payload, state_root=self._state_root)
-        self._cached_global_payload = dict(payload)
+        route = _route(self._state_root)
+        if route.shop is None:
+            saved_path = save_settings(payload, state_root=self._state_root)
+            saved = copy.deepcopy(dict(payload))
+        else:
+            if self._merge_base is None:
+                self.load_global()
+            assert self._merge_base is not None
+            saved = route.shop.save_settings(base=self._merge_base, new=payload)
+            saved_path = route.shop.settings_path
+        self._cached_global_payload = saved
+        self._merge_base = copy.deepcopy(saved)
+        self._cached_generation = _route(self._state_root).generation
         return saved_path
 
     def update_global(self, updater: Callable[[dict[str, Any]], Mapping[str, Any]]) -> dict[str, Any]:
@@ -91,6 +123,7 @@ class SettingsService:
 
     def invalidate_cache(self) -> None:
         self._cached_global_payload = None
+        self._merge_base = None
         self._cached_project_payloads.clear()
 
     def load_recent_argv_history(self) -> list[str]:
@@ -121,6 +154,12 @@ class SettingsService:
 
         updated = self.update_global(_updater)
         return _coerce_recent_argv_history(updated)
+
+
+def _route(state_root: PathInput | None) -> "DocumentRoute":
+    from app.features.shop_sharing.service import route_documents
+
+    return route_documents(state_root)
 
 
 def _coerce_recent_argv_history(payload: Mapping[str, Any]) -> list[str]:

@@ -41,7 +41,7 @@ def _restore_python_console_history(window: Any) -> None:
     if window._python_console_widget is None:
         return
     entries = load_python_console_history(
-        window._python_console_history_path,
+        window._state_root,
         max_entries=200,
     )
     window._python_console_widget.set_history(entries)

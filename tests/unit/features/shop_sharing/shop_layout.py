@@ -72,7 +72,6 @@ def make_shop_layout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ShopLay
             paths.DEFAULT_PRODUCT_STATE_LAYOUT,
             install_base=product,
             state_root=product / "state",
-            shop_pointer_path=product / "missing_pointer",
         ),
     )
     monkeypatch.setenv("HOME", str(client_home))

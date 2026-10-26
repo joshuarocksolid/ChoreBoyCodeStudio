@@ -196,7 +196,7 @@ def _shared_settings_problem(choice: Optional[SettingsRootChoice]) -> Optional[S
         ),
         folder=str(choice.requested_path or choice.path),
         error=choice.error or "The shared settings folder could not be written.",
-        fix=f"Check that the shared folder is connected, then restart CBCS. {HELP_LINE}",
+        fix=f"Check that this folder exists on this computer, then restart CBCS. {HELP_LINE}",
     )
 
 

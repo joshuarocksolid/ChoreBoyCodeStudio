@@ -273,8 +273,9 @@ class ShopSharingService:
             save_settings(docs.settings, state_root=local)
             replace_recent_projects(docs.recent_paths, state_root=local)
             save_python_console_history(
-                local / constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME,
+                local,
                 list(docs.history),
+                appended=len(docs.history),
                 max_entries=CONSOLE_HISTORY_MAX_ENTRIES,
             )
             self._local.write_choice(LocalChoice(declined_folder=None, decided_at=self._now_text(), source="settings"))
@@ -377,10 +378,7 @@ class ShopSharingService:
             settings=load_settings(state_root=local),
             recent_paths=tuple(load_recent_projects(state_root=local)),
             history=tuple(
-                load_python_console_history(
-                    local / constants.GLOBAL_PYTHON_CONSOLE_HISTORY_FILENAME,
-                    max_entries=CONSOLE_HISTORY_MAX_ENTRIES,
-                )
+                load_python_console_history(local, max_entries=CONSOLE_HISTORY_MAX_ENTRIES)
             ),
         )
 

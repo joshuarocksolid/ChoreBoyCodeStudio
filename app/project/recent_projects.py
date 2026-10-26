@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import TYPE_CHECKING, Optional, Sequence
 
 from app.bootstrap.paths import PathInput, global_recent_projects_path
 from app.core.errors import ProjectStructureValidationError
 from app.persistence.settings_store import load_json_object, save_json_object
 from app.project.project_service import validate_openable_project_root
+
+if TYPE_CHECKING:
+    from app.features.shop_sharing.service import SharedDocuments
 
 RECENT_PROJECTS_SCHEMA_VERSION = 1
 OPEN_RECENT_MENU_LIMIT = 10
@@ -26,9 +29,14 @@ def load_recent_projects(
     """Load, normalize, prune, and persist the recent-project list.
 
     When *max_entries* is ``None`` (the default) the full history is returned.
+    In shop mode only projects openable on this machine are returned.
     """
     if max_entries is not None:
         _validate_max_entries(max_entries)
+    shop = _shop_documents(state_root)
+    if shop is not None:
+        openable = [row.path for row in shop.recent_rows() if row.available]
+        return openable[:max_entries] if max_entries is not None else openable
     recents_path = global_recent_projects_path(state_root)
     payload = load_json_object(recents_path, default=_RECENT_PROJECTS_PAYLOAD_DEFAULT)
     projects = _extract_project_list(payload.get("projects"))
@@ -50,6 +58,10 @@ def remember_recent_project(
     if max_entries is not None:
         _validate_max_entries(max_entries)
     resolved_project_root = validate_openable_project_root(project_root)
+    shop = _shop_documents(state_root)
+    if shop is not None:
+        shop.remember_project(str(resolved_project_root))
+        return load_recent_projects(state_root=state_root, max_entries=max_entries)
     recents = load_recent_projects(state_root=state_root)
     remembered = [str(resolved_project_root)] + [entry for entry in recents if entry != str(resolved_project_root)]
     _save_recent_projects_payload(global_recent_projects_path(state_root), remembered)
@@ -61,6 +73,12 @@ def remember_recent_project(
 def replace_recent_projects(project_paths: Sequence[str], state_root: PathInput) -> None:
     """Write the whole v1 list. ``state_root`` is required, so this never routes to the shop."""
     _save_recent_projects_payload(global_recent_projects_path(state_root), list(project_paths))
+
+
+def _shop_documents(state_root: PathInput | None) -> "Optional[SharedDocuments]":
+    from app.features.shop_sharing.service import route_documents
+
+    return route_documents(state_root).shop
 
 
 def _extract_project_list(raw_projects: object) -> list[str]:
