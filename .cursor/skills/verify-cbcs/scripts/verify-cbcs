@@ -1,0 +1,187 @@
+#!/usr/bin/env python3
+"""Replay a CBCS acceptance scenario on a leased lab slot."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+import time
+import traceback
+from datetime import datetime, timezone
+from pathlib import Path
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from scenarios.adapter import Adapter  # noqa: E402
+from scenarios.ctx import Ctx  # noqa: E402
+from scenarios.model import (  # noqa: E402
+    ScenarioResult,
+    Skip,
+    status_for,
+    summarize,
+    summary_markdown,
+)
+from scenarios.registry import BLURBS, load, resolve  # noqa: E402
+from scenarios.session import Session, install_signal_cleanup, now_id, resolve_harness  # noqa: E402
+
+
+def cmd_list(_args: argparse.Namespace) -> int:
+    for scenario_id in (
+        "smoke", "gates", "cb1", "cb2", "cb3", "cb3-latency", "cb4", "reload",
+        "cb5", "cb6", "cb7", "cb8", "cb9", "cb10", "ts",
+    ):
+        print("{:<14} {}".format(scenario_id, BLURBS[scenario_id]))
+    print("all            FreeCAD 1.0 acceptance (every id except smoke)")
+    return 0
+
+
+def cmd_run(args: argparse.Namespace) -> int:
+    selected = resolve(list(args.scenarios))
+    keep_going = bool(args.keep_going or args.scenarios == ["all"])
+    run_id = args.run_id or now_id()
+    session = Session(run_id, args.zip, args.want, snapshot=not args.no_snapshot)
+    session.use_harness(resolve_harness(args.harness))
+    install_signal_cleanup(session)
+    adapter = Adapter()
+    started = datetime.now(timezone.utc).isoformat()
+    t0 = time.time()
+    results = []
+    exit_code = 0
+    try:
+        slot = session.lease()
+        print("SLOT", slot, flush=True)
+        before = session.checkpoint()
+        adapter.caps.slot_snapshot = session.slot_snapshot
+        print("CHECKPOINT", before, flush=True)
+        print("HARNESS", session.harness, flush=True)
+        session.install()
+        print("INSTALLED", session.install_dir, flush=True)
+        runners = load()
+        for scenario_id in selected:
+            if _interrupted():
+                results.append(_skipped(scenario_id, "interrupted"))
+                continue
+            result = _one(session, adapter, runners[scenario_id], scenario_id)
+            results.append(result)
+            print("RESULT", scenario_id, result.status, "{:.1f}s".format(result.duration_s), flush=True)
+            if result.status in ("fail", "error") and not keep_going:
+                exit_code = 1
+                break
+            if result.status in ("fail", "error"):
+                exit_code = 1
+    except SystemExit as exc:
+        if isinstance(exc.code, int):
+            exit_code = exc.code
+        else:
+            print(exc, file=sys.stderr)
+            exit_code = 1
+    except Exception:
+        traceback.print_exc()
+        exit_code = 1
+    finally:
+        try:
+            after = session.cleanup()
+            print("REVERT", after, flush=True)
+            if session.before_hash and session.after_hash:
+                print("HOME_BEFORE", session.before_hash, flush=True)
+                print("HOME_AFTER", session.after_hash, flush=True)
+        except BaseException:
+            traceback.print_exc()
+            exit_code = 1
+    payload = summarize(
+        results,
+        run_id=run_id,
+        started=started,
+        duration_s=time.time() - t0,
+        extra={
+            "zip": session.zip_path,
+            "slot": session.slot,
+            "home_before": session.before_hash,
+            "home_after": session.after_hash,
+            "harness": session.harness,
+            "remote_share": session.remote_share,
+            "caps": adapter.caps.to_dict(),
+            "slot_snapshot": session.slot_snapshot,
+        },
+    )
+    session.artifacts.mkdir(parents=True, exist_ok=True)
+    (session.artifacts / "summary.json").write_text(
+        json.dumps(payload, indent=2) + "\n", encoding="utf-8"
+    )
+    (session.artifacts / "SUMMARY.md").write_text(summary_markdown(payload), encoding="utf-8")
+    print("ARTIFACTS", session.artifacts, flush=True)
+    print(summary_markdown(payload), flush=True)
+    return exit_code
+
+
+def _one(session, adapter, fn, scenario_id: str) -> ScenarioResult:
+    started = datetime.now(timezone.utc).isoformat()
+    t0 = time.time()
+    ctx = Ctx(session, adapter, scenario_id)
+    skipped = None
+    error = None
+    try:
+        fn(ctx)
+    except Skip as exc:
+        skipped = str(exc)
+    except Exception as exc:
+        error = "{}: {}".format(type(exc).__name__, exc)
+        ctx.note(traceback.format_exc())
+    finally:
+        try:
+            ctx.stop()
+        except Exception as exc:
+            ctx.note("stop failed: {}".format(exc))
+    result = ScenarioResult(
+        scenario=scenario_id,
+        status=status_for(ctx.checks, skipped=skipped, error=error),
+        started=started,
+        duration_s=time.time() - t0,
+        checks=list(ctx.checks),
+        metrics=dict(ctx.metrics),
+        screenshots=list(ctx.shots),
+        notes="\n".join(ctx.notes + ([skipped] if skipped else []) + ([error] if error else [])),
+    )
+    path = ctx.artifacts / "results.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(result.to_dict(), indent=2) + "\n", encoding="utf-8")
+    return result
+
+
+def _skipped(scenario_id: str, reason: str) -> ScenarioResult:
+    return ScenarioResult(
+        scenario=scenario_id,
+        status="skipped",
+        started=datetime.now(timezone.utc).isoformat(),
+        duration_s=0,
+        notes=reason,
+    )
+
+
+def _interrupted() -> bool:
+    return False
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(prog="verify-cbcs")
+    sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list", help="print scenario ids")
+    run = sub.add_parser("run", help="lease, install, run scenarios, revert, release")
+    run.add_argument("scenarios", nargs="+")
+    run.add_argument("--zip", required=True)
+    run.add_argument("--want", default=None)
+    run.add_argument("--no-snapshot", action="store_true")
+    run.add_argument("--run-id", default=None)
+    run.add_argument("--keep-going", action="store_true")
+    run.add_argument("--harness", default=None, help="remote cb_probes checkout. Default is the vm-drive tree when it exists.")
+    args = parser.parse_args(argv)
+    if args.command == "list":
+        return cmd_list(args)
+    return cmd_run(args)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
