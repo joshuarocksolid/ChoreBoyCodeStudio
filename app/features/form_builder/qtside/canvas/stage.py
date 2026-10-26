@@ -431,6 +431,9 @@ def _label(parent: QGraphicsView, name: str, accessible: str) -> QLabel:
 
 def _fit_label(label: QLabel) -> None:
     text = label.text()
+    if label.property("cbcsFit") == text:
+        return
+    label.setProperty("cbcsFit", text)
     width = label.fontMetrics().horizontalAdvance(text) + 16
     height = max(22, label.fontMetrics().height() + 8)
     label.setFixedSize(max(width, 8), height)

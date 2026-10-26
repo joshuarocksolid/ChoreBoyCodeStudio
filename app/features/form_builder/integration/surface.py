@@ -221,6 +221,10 @@ class _ShellKeyGuard(QObject):
 class FormSurface(QWidget):
     """``TabSurface`` for one ``.ui`` tab."""
 
+    @property
+    def session(self) -> FormSession:
+        return self._session
+
     def __init__(
         self,
         request: TabSurfaceRequest,

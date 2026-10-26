@@ -410,8 +410,8 @@ def test_a_double_click_on_a_stored_gap_deletes_the_spacing() -> None:
         assert [commit.commands for commit in commits] == [(SetProperty(layout, "spacing", None),)]
 
 
-@pytest.mark.parametrize(("alt", "pixels"), [(False, 8), (True, 1)])
-def test_ctrl_shift_arrow_turns_the_primary_east_handle(alt: bool, pixels: int) -> None:
+@pytest.mark.parametrize(("shift", "pixels"), [(True, 8), (False, 1)])
+def test_ctrl_arrow_turns_the_primary_east_handle(shift: bool, pixels: int) -> None:
     with _opened(_stack()) as session:
         view = _view()
         index = _index(session)
@@ -419,7 +419,7 @@ def test_ctrl_shift_arrow_turns_the_primary_east_handle(alt: bool, pixels: int) 
         selection = SelectionState((ok,), ok)
         frame = _frame(session, index, view, selection)
         world = _world(session, index, view, selection, frame)
-        result = step(Idle(), Key("right", Mods(shift=True, ctrl=True, alt=alt)), world)
+        result = step(Idle(), Key("right", Mods(shift=shift, ctrl=True)), world)
         commits: List[Commit] = [effect for effect in result.effects if isinstance(effect, Commit)]
         assert len(commits) == 1
         sizing = commits[0].commands[0]
@@ -427,6 +427,49 @@ def test_ctrl_shift_arrow_turns_the_primary_east_handle(alt: bool, pixels: int) 
         assert commits[0].readout is not None
         assert commits[0].readout.text.startswith("Fixed %d × " % (OK.width + pixels))
         assert commits[0].merge == "resize:%s" % ok
+
+
+def test_ctrl_arrow_resizes_when_no_handle_is_drawn() -> None:
+    with _opened(_stack()) as session:
+        view = _view()
+        index = _index(session)
+        ok = _nid(session, "ok")
+        selection = SelectionState((ok,), ok)
+        frame = replace(_frame(session, index, view, selection), targets=())
+        world = _world(session, index, view, selection, frame)
+        result = step(Idle(), Key("right", Mods(ctrl=True)), world)
+        commits: List[Commit] = [effect for effect in result.effects if isinstance(effect, Commit)]
+        assert len(commits) == 1
+        assert commits[0].readout is not None
+        assert commits[0].readout.text.startswith("Fixed %d × " % (OK.width + 1))
+        held = step(Idle(), Key("right", Mods(ctrl=True, shift=True, alt=True)), world)
+        assert not any(
+            isinstance(effect, Commit) and any(isinstance(command, ApplySizing) for command in effect.commands)
+            for effect in held.effects
+        )
+
+
+def test_a_direct_child_draws_gap_bars_and_margin_bands_as_a_hint() -> None:
+    with _opened(_stack()) as session:
+        view = _view()
+        index = _index(session)
+        ok = _nid(session, "ok")
+        layout = _nid(session, "verticalLayout")
+        form = _nid(session, "Form")
+        child = _frame(session, index, view, SelectionState((ok,), ok))
+        chosen = _frame(session, index, view, SelectionState((layout,), layout))
+        container = _frame(session, index, view, SelectionState((form,), form))
+
+        def _bars(frame: OverlayFrame) -> List[Fill]:
+            return [item for item in frame.items if isinstance(item, Fill) and item.role in ("gap", "gap_fill")]
+
+        faint = _bars(child)
+        assert faint
+        assert all(item.alpha == 0.35 for item in faint)
+        assert all(item.alpha == 1.0 for item in _bars(chosen))
+        assert all(item.alpha == 1.0 for item in _bars(container))
+        assert any(isinstance(target, OnKnob) and target.knob.key[0] == "gap" for _rect, target in child.targets)
+        assert not any(isinstance(item, Chip) and item.text.endswith(" px") for item in child.items)
 
 
 def test_a_landed_size_readout_replaces_the_selection_chip_text() -> None:

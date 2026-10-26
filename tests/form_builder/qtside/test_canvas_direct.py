@@ -12,7 +12,7 @@ import pytest
 from app.qt.QtCore import QEvent, QPoint, QPointF, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtGui import QMouseEvent  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QFormLayout, QSplitter, QWidget
+from app.qt.QtWidgets import QApplication, QFormLayout, QGridLayout, QSplitter, QWidget
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.query.direct import KnobKey, survey_scope
@@ -50,6 +50,72 @@ STACK = form(
    </item>
   </layout>
 """,
+)
+
+MARGIN_BOX = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="margin"><number>5</number></property>
+   <item><widget class="QPushButton" name="a"><property name="text"><string>A</string></property></widget></item>
+   <item><widget class="QPushButton" name="b"><property name="text"><string>B</string></property></widget></item>
+   <item><widget class="QPushButton" name="c"><property name="text"><string>C</string></property></widget></item>
+  </layout>
+""",
+)
+
+SPACED_GRID = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QGridLayout" name="gridLayout">
+   <property name="spacing"><number>27</number></property>
+   <item row="0" column="0"><widget class="QPushButton" name="a"><property name="text"><string>A</string></property></widget></item>
+   <item row="0" column="1"><widget class="QPushButton" name="b"><property name="text"><string>B</string></property></widget></item>
+   <item row="1" column="0"><widget class="QPushButton" name="c"><property name="text"><string>C</string></property></widget></item>
+  </layout>
+""",
+)
+
+_FIXED = (
+    '<property name="minimumSize"><size><width>80</width><height>24</height></size></property>'
+    '<property name="maximumSize"><size><width>80</width><height>24</height></size></property>'
+)
+
+FIXED_BOX = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="a">%s</widget></item>
+   <item><widget class="QPushButton" name="b">%s</widget></item>
+   <item><widget class="QPushButton" name="c">%s</widget></item>
+  </layout>
+"""
+    % (_FIXED, _FIXED, _FIXED),
+)
+
+_SHARE = (
+    '<property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Expanding">'
+    "<horstretch>%d</horstretch><verstretch>0</verstretch></sizepolicy></property>"
+)
+
+SHARES = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QSplitter" name="split">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <widget class="QTextEdit" name="left">%s</widget>
+     <widget class="QTextEdit" name="right">%s</widget>
+    </widget>
+   </item>
+  </layout>
+"""
+    % (_SHARE % 1, _SHARE % 3),
 )
 
 GRID = form(
@@ -262,6 +328,121 @@ def test_escape_restores_the_live_spacing() -> None:
         assert not session.log.can_undo()
 
 
+def test_dragging_a_side_wins_over_a_stored_margin() -> None:
+    with _shown(MARGIN_BOX) as (session, realizer, canvas):
+        layout = _id(session, "verticalLayout")
+        qlayout = realizer.layout_for(layout)
+        assert qlayout is not None
+        before = qlayout.contentsMargins()
+        assert before.left() == before.top() == before.right() == before.bottom()
+        _click(canvas, "a")
+        start = _knob_point(canvas, ("margin", layout, "left"))
+        _press(canvas, start)
+        _move(canvas, start + QPoint(6, 0))
+        during = qlayout.contentsMargins()
+        assert during.left() == before.left() + 6
+        assert (during.top(), during.right(), during.bottom()) == (before.top(), before.right(), before.bottom())
+        _release(canvas, start + QPoint(6, 0))
+        landed = qlayout.contentsMargins()
+        assert (landed.left(), landed.top(), landed.right(), landed.bottom()) == (
+            during.left(),
+            during.top(),
+            during.right(),
+            during.bottom(),
+        )
+        assert _stored(session, layout, "leftMargin") == before.left() + 6
+        saved = write_ui(session.document).text
+    with _shown(saved) as (session, realizer, canvas):
+        qlayout = realizer.layout_for(_id(session, "verticalLayout"))
+        assert qlayout is not None
+        again = qlayout.contentsMargins()
+        assert again.left() == before.left() + 6
+        assert (again.top(), again.right(), again.bottom()) == (before.top(), before.right(), before.bottom())
+
+
+def test_dragging_one_grid_axis_wins_over_stored_spacing() -> None:
+    with _shown(SPACED_GRID) as (session, realizer, canvas):
+        layout = _id(session, "gridLayout")
+        qlayout = realizer.layout_for(layout)
+        assert isinstance(qlayout, QGridLayout)
+        before_h = qlayout.horizontalSpacing()
+        before_v = qlayout.verticalSpacing()
+        assert before_h == before_v
+        _click(canvas, "a")
+        start = _knob_point(canvas, ("gap", layout, "h0"))
+        _press(canvas, start)
+        _move(canvas, start + QPoint(10, 0))
+        assert qlayout.horizontalSpacing() == before_h + 10
+        assert qlayout.verticalSpacing() == before_v
+        _release(canvas, start + QPoint(10, 0))
+        assert qlayout.horizontalSpacing() == before_h + 10
+        assert qlayout.verticalSpacing() == before_v
+        saved = write_ui(session.document).text
+    with _shown(saved) as (session, realizer, canvas):
+        qlayout = realizer.layout_for(_id(session, "gridLayout"))
+        assert isinstance(qlayout, QGridLayout)
+        assert qlayout.horizontalSpacing() == before_h + 10
+        assert qlayout.verticalSpacing() == before_v
+
+
+def test_a_gap_drag_starts_from_spacing_when_fixed_widgets_leave_spare_room() -> None:
+    with _shown(FIXED_BOX) as (session, realizer, canvas):
+        layout = _id(session, "verticalLayout")
+        qlayout = realizer.layout_for(layout)
+        assert qlayout is not None
+        before = qlayout.spacing()
+        _click(canvas, "a")
+        index = _fresh_index(realizer)
+        survey = survey_live(realizer, index, session.document, survey_scope(session.document, layout, ()))
+        facts = next(found for found in survey.layouts if found.layout == layout)
+        visual = facts.rows[1].start - facts.rows[0].end
+        assert visual > before + 10
+        start = _gap_point(canvas, ("gap", layout, "v0"))
+        _press(canvas, start)
+        _move(canvas, start + QPoint(0, 10))
+        assert qlayout.spacing() == before + 10
+        _release(canvas, start + QPoint(0, 10))
+        assert _stored(session, layout, "spacing") == before + 10
+
+
+def test_escape_and_undo_restore_splitter_sizes_when_panes_have_unequal_shares() -> None:
+    with _shown(SHARES) as (session, realizer, canvas):
+        split = _id(session, "split")
+        before = _sizes(session, realizer, "split")
+        assert before[1] > before[0] + 30
+        fresh = _fresh_splitter_sizes(session)
+        assert fresh == before
+        start = _knob_point(canvas, ("grip", split, "0"))
+        _press(canvas, start)
+        _move(canvas, start + QPoint(30, 0))
+        assert _sizes(session, realizer, "split") == (before[0] + 30, before[1] - 30)
+        QTest.keyClick(canvas, _qt_key("Key_Escape"))
+        _flush()
+        assert _sizes(session, realizer, "split") == before
+        assert not session.log.can_undo()
+        _press(canvas, start)
+        _move(canvas, start + QPoint(30, 0))
+        _release(canvas, start + QPoint(30, 0))
+        assert _stored_sizes(session, split) == (before[0] + 30, before[1] - 30)
+        assert session.log.undo()
+        _flush()
+        assert _stored_sizes(session, split) is None
+        assert _sizes(session, realizer, "split") == fresh
+
+
+def test_ctrl_arrow_resizes_by_one_pixel() -> None:
+    with _shown(STACK) as (session, realizer, canvas):
+        ok = _id(session, "ok")
+        _click(canvas, "ok")
+        button = realizer.widget_for(ok)
+        assert button is not None
+        width = button.width()
+        _key(canvas, "Key_Left", "ControlModifier")
+        assert button.width() == width - 1
+        _key(canvas, "Key_Left", "ControlModifier", "ShiftModifier", "AltModifier")
+        assert button.width() == width - 1
+
+
 def test_a_grip_drag_is_one_undo_on_release() -> None:
     with _shown(STACK) as (session, realizer, canvas):
         split = _id(session, "split")
@@ -392,7 +573,7 @@ def test_a_share_chip_focuses_the_share_spin(tmp_path: Path) -> None:
     try:
         canvas = surface.findChild(QWidget, "formBuilder.canvas")
         assert isinstance(canvas, FormCanvas)
-        session = surface._session
+        session = surface.session
         b = _id(session, "b")
         session.selection.set((b,), current=b, source=SelectionSource.PROGRAM)
         _flush()
@@ -475,6 +656,20 @@ def _cell(session: FormSession, realizer: Realizer, layout: str, name: str) -> T
     grid = _qlayout(session, realizer, layout)
     widget = realizer.widget_for(_id(session, name))
     return tuple(grid.getItemPosition(grid.indexOf(widget)))
+
+
+def _fresh_splitter_sizes(session: FormSession) -> Tuple[int, ...]:
+    fresh = Realizer(session)
+    try:
+        fresh.build()
+        root = fresh.root_widget
+        assert root is not None
+        root.resize(400, 300)
+        root.show()
+        _flush()
+        return _sizes(session, fresh, "split")
+    finally:
+        fresh.dispose()
 
 
 def _sizes(session: FormSession, realizer: Realizer, name: str) -> Tuple[int, ...]:

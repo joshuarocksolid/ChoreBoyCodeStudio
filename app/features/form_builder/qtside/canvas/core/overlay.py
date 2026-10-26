@@ -357,11 +357,12 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     gesture = inputs.gesture
     view = inputs.view
     shown = effective_selection(document, inputs.selection)
+    primary = shown.current
     live = previewing(gesture)
     items: List[Item] = []
     if not live:
         items.extend(static.items)
-        _sites(items, view, inputs.knobs)
+        _sites(items, view, inputs.knobs, _focused_layouts(document, primary))
     _hover(items, static, document, gesture)
     rects: Dict[NodeId, CanvasRect] = {}
     for node_id in shown.ids:
@@ -374,7 +375,6 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
             else:
                 items.append(Stroke(rect.grown(1), "select", 2, "solid"))
 
-    primary = shown.current
     primary_rect = rects.get(primary) if primary is not None else None
     knob_hits = _knob_handles(items, inputs.knobs, primary, primary_rect)
     inert_hits = _inert_handles(items, document, primary, primary_rect)
@@ -541,15 +541,33 @@ def _inert_handles(
     return hits
 
 
-def _sites(items: List[Item], view: ViewMap, knobs: KnobSet) -> None:
+# A direct child keeps the bars hittable, drawn as a hint. The layout and its
+# container draw them at full strength (UX-GAP-001, UX-PRIN-004).
+_HINT_ALPHA = 0.35
+
+
+def _focused_layouts(document: UiDocument, primary: Optional[NodeId]) -> Set[NodeId]:
+    """Layouts drawn at full strength: the selected layout, or the selected container's layout."""
+    if primary is None or not document.contains(primary):
+        return set()
+    node = document.get(primary)
+    if isinstance(node, LayoutNode):
+        return {node.id}
+    if isinstance(node, WidgetNode) and node.layout is not None:
+        return {node.layout.id}
+    return set()
+
+
+def _sites(items: List[Item], view: ViewMap, knobs: KnobSet, focused: Set[NodeId]) -> None:
     """Gap bars, margin bands and root-layout ticks. Grips draw only under the pointer."""
     for site in knobs.sites:
+        alpha = 1.0 if site.knob.subject in focused else _HINT_ALPHA
         if site.look == "bar":
-            items.append(Fill(_thin(view.to_canvas(site.mark), GAP_BAR), "gap"))
+            items.append(Fill(_thin(view.to_canvas(site.mark), GAP_BAR), "gap", alpha))
         elif site.look == "band":
             band = view.to_canvas(site.mark)
             if band.width > 0 and band.height > 0:
-                items.append(Fill(band, "gap_fill"))
+                items.append(Fill(band, "gap_fill", alpha))
     for tick in knobs.ticks:
         items.append(Stroke(view.to_canvas(tick.rect), "layout", 1.5, "solid", caps=True))
 

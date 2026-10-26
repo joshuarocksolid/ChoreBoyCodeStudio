@@ -118,7 +118,7 @@ def _round_pen(color: QColor, width: float) -> QPen:
 
 def _fill(painter: QPainter, item: Fill, palette: CanvasPalette) -> None:
     painter.setPen(_no_pen())
-    painter.setBrush(_ink(palette, item.role, 1.0))
+    painter.setBrush(_ink(palette, item.role, item.alpha))
     painter.drawRect(_box(item.rect))
 
 

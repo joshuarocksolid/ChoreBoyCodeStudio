@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict, FrozenSet, List, Literal, Optional, Tuple
+from weakref import WeakKeyDictionary
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
@@ -98,8 +99,24 @@ class GridShape:
     overlaps: Tuple[Tuple[NodeId, NodeId], ...]
 
 
+_SHAPES: WeakKeyDictionary = WeakKeyDictionary()
+
+
 def grid_shape(doc: UiDocument, layout_id: NodeId) -> GridShape:
-    """O(items)."""
+    """O(items) the first time this revision reads ``layout_id``. Later reads reuse that shape.
+
+    A selection pass asks for the same grid once for the survey and again for every handle.
+    """
+    generation = _SHAPES.get(doc)
+    shapes: Dict[NodeId, GridShape]
+    if generation is not None and generation[0] == doc.revision:
+        shapes = generation[1]
+    else:
+        shapes = {}
+        _SHAPES[doc] = (doc.revision, shapes)
+    found = shapes.get(layout_id)
+    if found is not None:
+        return found
     cells = _cells(doc, layout_id)
     rows = 0
     columns = 0
@@ -123,7 +140,9 @@ def grid_shape(doc: UiDocument, layout_id: NodeId) -> GridShape:
                 if pair not in seen:
                     seen.add(pair)
                     overlaps.append(pair)
-    return GridShape(rows, columns, tuple(cells), tuple(empty), tuple(overlaps))
+    shape = GridShape(rows, columns, tuple(cells), tuple(empty), tuple(overlaps))
+    shapes[layout_id] = shape
+    return shape
 
 
 def blocked(shape: GridShape, cell: GridCell) -> bool:

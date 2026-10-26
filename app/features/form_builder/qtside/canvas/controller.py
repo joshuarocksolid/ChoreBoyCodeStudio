@@ -192,6 +192,11 @@ class CanvasController:
         self._tip = ""
         self._survey: Optional[Survey] = None
         self._knobs: Optional[Tuple[Survey, float, Rect, KnobSet]] = None
+        self._site_key: Optional[tuple] = None
+        self._sites: Optional[tuple] = None
+        self._chip_metrics: Optional[QFontMetrics] = None
+        self._chip_font_key: Optional[Tuple[str, int, int]] = None
+        self._chip_widths: Dict[str, int] = {}
         self._readout: Optional[Readout] = None
         self._linger = QTimer()
         self._linger.setSingleShot(True)
@@ -278,6 +283,9 @@ class CanvasController:
         return result.consumed
 
     def _world(self) -> World:
+        current = effective_selection(self._session.document, self._session.selection.state).current
+        widget = None if current is None else self._realizer.widget_for(current)
+        defaults = class_default_policies(widget) if isinstance(widget, QWidget) else ("Preferred", "Preferred")
         return World(
             self._session.document,
             self._session.selection.state,
@@ -286,6 +294,7 @@ class CanvasController:
             self._frame,
             self._stage.page_minimum(),
             str(self._serial),
+            defaults,
         )
 
     def _run(self, effect: Effect) -> None:
@@ -778,7 +787,12 @@ class CanvasController:
         cached = self._knobs
         if cached is not None and cached[0] is survey and cached[1] == view.factor and cached[2] == window:
             return cached[3]
-        knobs = knob_set(survey, document, view.factor, window)
+        site_key = (self._index.epoch, scope.layouts, scope.splitters, view.factor, window)
+        sites = self._sites if self._site_key == site_key else None
+        knobs = knob_set(survey, document, view.factor, window, sites)
+        if sites is None:
+            self._site_key = site_key
+            self._sites = knobs.sites
         self._knobs = (survey, view.factor, window, knobs)
         return knobs
 
@@ -866,14 +880,23 @@ class CanvasController:
         return (chip_axis(horizontal), chip_axis(vertical))
 
     def _measure(self, text: str) -> int:
-        font = QFont(self._view.font())
-        font.setPixelSize(11)
-        font.setBold(True)
-        metrics = QFontMetrics(font)
+        found = self._chip_widths.get(text)
+        if found is not None:
+            return found
+        view_font = self._view.font()
+        key = (view_font.family(), int(view_font.pointSize()), int(view_font.pixelSize()))
+        if self._chip_metrics is None or self._chip_font_key != key:
+            font = QFont(view_font)
+            font.setPixelSize(11)
+            font.setBold(True)
+            self._chip_metrics = QFontMetrics(font)
+            self._chip_font_key = key
+            self._chip_widths = {}
+        metrics = self._chip_metrics
         advance = getattr(metrics, "horizontalAdvance", None)
-        if advance is None:
-            return int(metrics.width(text))
-        return int(advance(text))
+        width = int(metrics.width(text) if advance is None else advance(text))
+        self._chip_widths[text] = width
+        return width
 
 
 def _moved_ids(

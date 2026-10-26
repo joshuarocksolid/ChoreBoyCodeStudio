@@ -38,6 +38,7 @@ from app.features.form_builder.engine.query.direct import (
     Turn,
     clicks_through,
     reset,
+    resize_knob,
     turn,
 )
 from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
@@ -498,6 +499,8 @@ class World:
     frame: OverlayFrame
     page_minimum: Size
     fresh_token: str
+    #: Class default size policies for the primary. The keyboard resize uses these.
+    defaults: Tuple[str, str] = ("Preferred", "Preferred")
 
 
 def needs_fresh_geometry(gesture: Gesture, event: Event) -> bool:
@@ -731,7 +734,7 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         if nxt is None:
             return Step(gesture, (), True)
         return Step(gesture, _select_and_reveal(world, (nxt,), nxt))
-    if event.key in _ARROWS and event.mods.ctrl and event.mods.shift:
+    if event.key in _ARROWS and event.mods.ctrl and not event.mods.alt:
         return _resize_by_key(gesture, event, world, current)
     if event.key in _ARROWS and event.mods.alt:
         return _nudge(gesture, event, world)
@@ -780,19 +783,26 @@ def _nudge(gesture: Idle, event: Key, world: World) -> Step:
 
 
 def _resize_by_key(gesture: Idle, event: Key, world: World, primary: NodeId) -> Step:
-    """Ctrl+Shift+arrow turns the primary's east or south handle by 8, or 1 with Alt."""
+    """Ctrl+arrow resizes by 1 px. Ctrl+Shift+arrow resizes by 8.
+
+    The handle is computed from the selection. A culled overlay handle still moves.
+    Alt is left for the window manager, so this chord does not include it.
+    """
     pull: Pull = "e" if event.key in ("left", "right") else "s"
-    knob = next(
-        (
-            target.knob
-            for _rect, target in world.frame.targets
-            if isinstance(target, OnKnob) and target.knob.key == ("size", primary, pull)
-        ),
-        None,
+    free = None
+    if isinstance(positioning_of(world.document, primary), Free):
+        free = free_origin(world.document, world.index, primary)
+    knob = resize_knob(
+        world.document,
+        primary,
+        world.index.rect_of(primary),
+        pull,
+        world.defaults,
+        free,
     )
     if knob is None:
         return Step(gesture, (), True)
-    step_px = 1 if event.mods.alt else GRID
+    step_px = GRID if event.mods.shift else 1
     dx, dy = _NUDGE[event.key]
     done = turn(knob, dx * step_px, dy * step_px, "key")
     if not done.commands:

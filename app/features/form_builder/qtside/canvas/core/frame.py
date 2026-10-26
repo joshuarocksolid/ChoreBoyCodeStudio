@@ -42,6 +42,7 @@ class Stroke:
 class Fill:
     rect: CanvasRect
     role: Role
+    alpha: float = 1.0
 
 
 @dataclass(frozen=True)
