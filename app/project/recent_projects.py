@@ -11,6 +11,7 @@ from app.persistence.settings_store import load_json_object, save_json_object
 from app.project.project_service import validate_openable_project_root
 
 if TYPE_CHECKING:
+    from app.features.shop_sharing.model import RecentRow
     from app.features.shop_sharing.service import SharedDocuments
 
 RECENT_PROJECTS_SCHEMA_VERSION = 1
@@ -46,6 +47,26 @@ def load_recent_projects(
     if max_entries is not None:
         return pruned[:max_entries]
     return pruned
+
+
+def load_recent_rows(state_root: PathInput | None = None) -> list["RecentRow"]:
+    """Stored order as this machine sees it.
+
+    When the process service exists, this is ``ShopSharingService.recent_rows``
+    and nothing else. An explicit ``state_root`` has no service, so each stored
+    path is an available row. ``load_recent_projects`` stays ``list[str]`` for
+    Open Recent.
+    """
+    from app.features.shop_sharing.model import RecentRow
+    from app.features.shop_sharing.service import shop_sharing_service
+
+    service = shop_sharing_service(state_root)
+    if service is not None:
+        return service.recent_rows()
+    return [
+        RecentRow(path=path, label=Path(path).name, host=None, available=True)
+        for path in load_recent_projects(state_root)
+    ]
 
 
 def remember_recent_project(

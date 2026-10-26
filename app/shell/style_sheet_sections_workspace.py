@@ -315,6 +315,9 @@ QListWidget#shell\\.welcome\\.projectList::item:selected {{
     background: {tokens.tree_selected_bg};
     color: {tokens.text_primary};
 }}
+QListWidget#shell\\.welcome\\.projectList::item:disabled {{
+    color: {tokens.text_muted};
+}}
 QLabel#shell\\.welcome\\.emptyLabel {{
     color: {tokens.text_muted};
     font-size: 12px;

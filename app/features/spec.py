@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Callable, Optional
 
 from app.features.editor_groups.install import install_editor_groups
 from app.features.markdown.install import install_markdown
+from app.features.shop_sharing.install import install_shop_sharing
 
 if TYPE_CHECKING:
     from app.shell.shell_composition_context import ShellCompositionContext
@@ -41,6 +42,7 @@ FEATURE_SPECS: tuple[FeatureSpec, ...] = (
     FeatureSpec(
         key="shop-sharing",
         ownership_globs=("app/features/shop_sharing/**",),
+        install=install_shop_sharing,
     ),
 )
 
