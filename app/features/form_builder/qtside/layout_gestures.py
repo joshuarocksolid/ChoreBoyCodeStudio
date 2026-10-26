@@ -21,7 +21,7 @@ from app.features.form_builder.engine.layout_actions import (
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import RectValue, SizeValue
 from app.features.form_builder.qtside.sizing_live import class_default_policies
-from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.chrome import LAYOUT_CONFIRM_NAME, FormChrome, popover_style
 from app.qt.QtCore import QEventLoop, QPoint, QRect, QSize, Qt
 from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from app.qt.qt_compat import exec_qt
@@ -90,37 +90,12 @@ def beside(subject: QRect, size: QSize, bounds: QRect) -> QPoint:
     return kept[0]
 
 
-def popover_style(object_name: str, chrome: FormChrome) -> str:
-    """Frame, text, and buttons of the builder popover named ``object_name``."""
-    frame = "QFrame#%s" % object_name.replace(".", "\\.")
-    return (
-        "%(f)s { background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: 6px; }"
-        "%(f)s QLabel { color: %(text)s; background: transparent; border: none; }"
-        "%(f)s QLabel[note=\"true\"] { color: %(muted)s; }"
-        "%(f)s QPushButton, %(f)s QToolButton {"
-        " color: %(text)s; background: %(input)s; border: 1px solid %(border)s;"
-        " border-radius: 4px; padding: 6px 10px; }"
-        "%(f)s QPushButton:hover, %(f)s QToolButton:hover { background: %(hover)s; }"
-        "%(f)s QPushButton:focus, %(f)s QToolButton:focus {"
-        " border: %(focus)dpx solid %(accent)s; }"
-        "%(f)s QPushButton:disabled, %(f)s QToolButton:disabled { color: %(muted)s; background: %(panel)s; }"
-    ) % {
-        "f": frame,
-        "panel": chrome.panel,
-        "text": chrome.text,
-        "muted": chrome.muted,
-        "border": chrome.border,
-        "input": chrome.input,
-        "hover": chrome.row_hover,
-        "accent": chrome.accent,
-        "focus": chrome.focus_width,
-    }
-
-
-def ask(parent: QWidget, chrome: FormChrome, place: Place) -> Confirm:
+def ask(parent: QWidget, chrome: Optional[FormChrome], place: Place) -> Confirm:
     """A ``Confirm`` that asks in a popover beside the subject ``place`` names.
 
     Cancel has the focus. Esc or a click outside the popover is Cancel.
+    Without ``chrome`` the popover takes its look from a style sheet above
+    ``parent`` that styles ``LAYOUT_CONFIRM_NAME``.
     """
 
     def confirm(prompt: NeedsConfirm) -> bool:
@@ -134,11 +109,12 @@ def ask(parent: QWidget, chrome: FormChrome, place: Place) -> Confirm:
 
 
 class _Question(QFrame):
-    def __init__(self, parent: QWidget, prompt: NeedsConfirm, chrome: FormChrome) -> None:
+    def __init__(self, parent: QWidget, prompt: NeedsConfirm, chrome: Optional[FormChrome]) -> None:
         super().__init__(parent, Qt.WindowType.Popup)
-        self.setObjectName("formBuilder.layoutConfirm")
+        self.setObjectName(LAYOUT_CONFIRM_NAME)
         self.setAccessibleName("Confirm")
-        self.setStyleSheet(popover_style(self.objectName(), chrome))
+        if chrome is not None:
+            self.setStyleSheet(popover_style(LAYOUT_CONFIRM_NAME, chrome))
         column = QVBoxLayout(self)
         column.setContentsMargins(14, 12, 14, 12)
         column.setSpacing(12)

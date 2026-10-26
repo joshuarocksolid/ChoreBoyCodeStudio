@@ -10,8 +10,8 @@ from app.qt.QtWidgets import QFrame, QGridLayout, QLabel, QSizePolicy, QToolButt
 from app.qt.qt_compat import enum_value
 
 from app.features.form_builder.engine.layout_actions import KINDS, POPOVER, OfferSheet, PickWrap, gate
-from app.features.form_builder.qtside.layout_gestures import beside, popover_style
-from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.layout_gestures import beside
+from app.features.form_builder.qtside.theme.chrome import FormChrome, popover_style
 
 _COLUMNS = 3
 _DIGITS = {enum_value(getattr(Qt.Key, "Key_%d" % digit)): digit - 1 for digit in range(1, 10)}

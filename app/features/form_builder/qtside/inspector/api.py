@@ -60,6 +60,8 @@ _KEY_BY_NAME: Mapping[Tuple[str, str], EditorKey] = {
     ("keySequence", StringValue.ELEMENT): KEY_SEQUENCE,
     ("keySequence", CStringValue.ELEMENT): KEY_SEQUENCE,
     ("alignment", SetValue.ELEMENT): ALIGNMENT,
+    ("labelAlignment", SetValue.ELEMENT): ALIGNMENT,
+    ("formAlignment", SetValue.ELEMENT): ALIGNMENT,
     ("styleSheet", StringValue.ELEMENT): STYLESHEET,
 }
 

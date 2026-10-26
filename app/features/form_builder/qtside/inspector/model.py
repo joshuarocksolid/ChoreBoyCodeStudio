@@ -18,6 +18,7 @@ from app.features.form_builder.engine.commands.catalog import (
 )
 from app.features.form_builder.engine.events import ChangeSet, PropertyChanged
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.layout_actions import takes_layout
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.tree import effective_tab_order
 from app.features.form_builder.engine.session import FormSession
@@ -326,7 +327,7 @@ def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bo
     if isinstance(source, Prop):
         return read_property(facts, spec, owners, source.name, source.kind, curated=curated)
     if isinstance(source, LayoutProp):
-        layouts = [facts.document.layout_of(owner) for owner in owners]
+        layouts = [_own_layout(facts.document, owner) for owner in owners]
         ids = tuple(layout.id for layout in layouts if layout is not None)
         if len(ids) != len(owners):
             return None
@@ -468,9 +469,17 @@ def _node_body(
             blocks = (Block("", tuple(curated.get(group, ()))),)
         kept = tuple(Block(block.title, filter_rows(block.rows, search)) for block in blocks)
         kept = tuple(block for block in kept if block.rows)
-        if kept:
+        if kept or (group is GroupId.LAYOUT and not search and _layout_body(facts, catalog, owners)):
             groups.append(GroupView(group, kept))
     return NodeBody(owners, tuple(groups))
+
+def _own_layout(document: UiDocument, owner: NodeId) -> Optional[LayoutNode]:
+    node = document.node(owner)
+    return node if isinstance(node, LayoutNode) else document.layout_of(owner)
+
+def _layout_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...]) -> bool:
+    """A bare container still gets the Layout group, so its body can offer a layout."""
+    return catalog.group_body(GroupId.LAYOUT) is not None and takes_layout(facts.document, owners)
 
 def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...]) -> Tuple[Block, ...]:
     by_class: Dict[str, List[Row]] = {}

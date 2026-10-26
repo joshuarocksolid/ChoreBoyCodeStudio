@@ -25,7 +25,7 @@ from app.features.form_builder.qtside.inspector.model import (
     tab_order_stale,
 )
 from app.features.form_builder.qtside.realize import Realizer
-from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.chrome import LAYOUT_CONFIRM_NAME, FormChrome, popover_style
 from app.qt.QtCore import QEvent, QObject, QTimer, Qt
 from app.qt.QtGui import QKeyEvent, QKeySequence, QShowEvent
 from app.qt.QtWidgets import (
@@ -191,12 +191,15 @@ class InspectorPane(QWidget):
         self._stale = False
         self._timer.stop()
         session = self._services.session
-        ids = inspected_ids(session.document, session.selection.state.ids) or (session.document.root.id,)
+        document = session.document
+        ids = inspected_ids(document, session.selection.state.ids) or (document.root.id,)
         include_all = self.properties.builds_all_properties()
+        # Layout rows read their choices and defaults from the realized layout.
+        layouts = tuple(layout.id for layout in map(document.layout_of, ids) if layout is not None)
         live = live_classes(
             self._realizer,
-            session.document,
-            ids,
+            document,
+            ids + layouts,
             with_values=True,
         )
         root = self._realizer.root_widget
@@ -461,6 +464,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         " background: %s; color: %s; border: 1px dashed %s; }"
         "QToolButton[fbSegment=\"true\"]:checked { background: %s; color: %s; border: 1px solid %s; }"
         "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
+        "%s"
         % (
             chrome.panel,
             chrome.text,
@@ -488,6 +492,7 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.accent,
             chrome.muted,
             chrome.row_hover,
+            popover_style(LAYOUT_CONFIRM_NAME, chrome),
         )
     )
 

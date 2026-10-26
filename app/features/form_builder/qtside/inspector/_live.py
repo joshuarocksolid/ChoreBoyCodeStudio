@@ -6,7 +6,7 @@ from typing import Dict, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import (
     BoolValue,
     BrushValue,
@@ -83,6 +83,28 @@ _ELEMENT_FOR_TYPE: Mapping[str, str] = {
     "QUrl": UrlValue.ELEMENT,
 }
 
+# A spacer is a QSpacerItem, which has no meta-object, so its size type
+# choices are spelled out here.
+_SPACER = LiveClass(
+    ("Spacer",),
+    (
+        LiveProperty(
+            "sizeType",
+            "Spacer",
+            EnumValue.ELEMENT,
+            EnumSpec(
+                "QSizePolicy",
+                "Policy",
+                ("Fixed", "Minimum", "Maximum", "Preferred", "MinimumExpanding", "Expanding", "Ignored"),
+                False,
+            ),
+            EnumValue("QSizePolicy::Expanding"),
+        ),
+    ),
+    (),
+    (),
+)
+
 _CACHE: Dict[str, LiveClass] = {}
 # Class name -> the CANVAS_OVERRIDES values of an unmodified instance.
 _PRISTINE: Dict[str, Dict[str, Optional[Value]]] = {}
@@ -97,6 +119,9 @@ def live_classes(
     found: Dict[NodeId, LiveClass] = {}
     for node_id in ids:
         node = document.node(node_id)
+        if isinstance(node, SpacerNode):
+            found[node_id] = _SPACER
+            continue
         obj = None
         if isinstance(node, WidgetNode):
             obj = realizer.widget_for(node_id)

@@ -370,16 +370,21 @@ class OfferSheet:
     morphs: Tuple[MorphTarget, ...]
 
 
-def offers(doc: UiDocument, ids: Sequence[NodeId], measured: Measured) -> OfferSheet:
-    """Every request the selection could take, planned and not executed."""
-    requests: List[object] = [ApplyKind(kind_id) for kind_id in KEYBOARD]
-    requests += [PickWrap(kind_id) for kind_id in POPOVER]
-    requests += [InspectedKind(kind_id) for kind_id in SEGMENTS]
-    requests += [Unwrap(), RemoveLayout(), Simplify(), Adjust(), KeepContent()]
-    requests += [LockSize(which) for which, _label in LOCKS]
+def offers(
+    doc: UiDocument, ids: Sequence[NodeId], measured: Measured, only: Optional[Sequence[object]] = None
+) -> OfferSheet:
+    """Every request the selection could take, or just ``only``, planned and not executed."""
     live = all(doc.contains(node_id) for node_id in ids)
     morphs = _morph_targets(doc, ids) if live else ()
-    requests += [ChangeTo(target.class_name) for target in morphs]
+    if only is None:
+        requests: List[object] = [ApplyKind(kind_id) for kind_id in KEYBOARD]
+        requests += [PickWrap(kind_id) for kind_id in POPOVER]
+        requests += [InspectedKind(kind_id) for kind_id in SEGMENTS]
+        requests += [Unwrap(), RemoveLayout(), Simplify(), Adjust(), KeepContent()]
+        requests += [LockSize(which) for which, _label in LOCKS]
+        requests += [ChangeTo(target.class_name) for target in morphs]
+    else:
+        requests = list(only)
     sheet: Dict[object, Offer] = {}
     for request in requests:
         sheet[request] = _offer(_prepare(doc, ids, request, measured))
@@ -387,6 +392,11 @@ def offers(doc: UiDocument, ids: Sequence[NodeId], measured: Measured) -> OfferS
     layout = target[1] if target is not None else None
     current = _KIND_OF_LAYOUT.get(layout.class_name) if layout is not None else None
     return OfferSheet(sheet, current, morphs)
+
+
+def takes_layout(doc: UiDocument, ids: Sequence[NodeId]) -> bool:
+    """True when ``ids`` is one container or one layout, so an ``InspectedKind`` has a subject."""
+    return bool(ids) and all(doc.contains(node_id) for node_id in ids) and _container_target(doc, ids) is not None
 
 
 def gate(sheet: OfferSheet, request: object) -> Offer:

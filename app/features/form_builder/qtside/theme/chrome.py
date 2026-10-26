@@ -61,6 +61,36 @@ class FormChrome:
             object.__setattr__(self, "selected", self.row_hover)
 
 
+LAYOUT_CONFIRM_NAME = "formBuilder.layoutConfirm"
+
+
+def popover_style(object_name: str, chrome: FormChrome) -> str:
+    """Frame, text, and buttons of the builder popover named ``object_name``."""
+    frame = "QFrame#%s" % object_name.replace(".", "\\.")
+    return (
+        "%(f)s { background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; border-radius: 6px; }"
+        "%(f)s QLabel { color: %(text)s; background: transparent; border: none; }"
+        "%(f)s QLabel[note=\"true\"] { color: %(muted)s; }"
+        "%(f)s QPushButton, %(f)s QToolButton {"
+        " color: %(text)s; background: %(input)s; border: 1px solid %(border)s;"
+        " border-radius: 4px; padding: 6px 10px; }"
+        "%(f)s QPushButton:hover, %(f)s QToolButton:hover { background: %(hover)s; }"
+        "%(f)s QPushButton:focus, %(f)s QToolButton:focus {"
+        " border: %(focus)dpx solid %(accent)s; }"
+        "%(f)s QPushButton:disabled, %(f)s QToolButton:disabled { color: %(muted)s; background: %(panel)s; }"
+    ) % {
+        "f": frame,
+        "panel": chrome.panel,
+        "text": chrome.text,
+        "muted": chrome.muted,
+        "border": chrome.border,
+        "input": chrome.input,
+        "hover": chrome.row_hover,
+        "accent": chrome.accent,
+        "focus": chrome.focus_width,
+    }
+
+
 def on_accent_for(accent: str) -> str:
     """Text on an accent fill: white, or near-black when white is under 4.5 : 1."""
     if _contrast(accent, "#FFFFFF") >= 4.5:
