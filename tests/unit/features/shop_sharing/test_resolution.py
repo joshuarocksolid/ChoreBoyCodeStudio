@@ -77,3 +77,34 @@ def test_legacy_home_link_converts_once(shop: ShopLayout) -> None:
     assert _choice(shop.client)["source"] == "converted"
     assert (shop.client.local_state / "shop_sharing.json").read_bytes() == choice_bytes
     assert (team / "shop.json").is_file()
+
+
+def test_legacy_home_project_stays_a_host_entry(shop: ShopLayout) -> None:
+    team = shop.client_share / "team_settings"
+    team.mkdir()
+    link = shop.client.home / constants.GLOBAL_STATE_DIRNAME
+    link.symlink_to(team, target_is_directory=True)
+    project = make_project(shop.client.home / "LocalApp")
+    write_json(team / "recent_projects.json", {"schema_version": 1, "projects": [project]})
+    host_entry = {"host": "net2", "path": project}
+
+    ShopSharingService(shop.client)
+
+    projects = read_json(team / "shop_recent_projects.json")["projects"]
+    assert host_entry in projects
+    assert {"share": "LocalApp"} not in projects
+
+    write_json(
+        shop.server.local_state / "shop_sharing.json",
+        {
+            "schema_version": 1,
+            "mode": "shop",
+            "folder": str(shop.server_share / "team_settings"),
+            "declined_folder": None,
+            "decided_at": "",
+            "source": "settings",
+        },
+    )
+    ShopSharingService(shop.server).recent_rows()
+
+    assert host_entry in read_json(shop.server_share / "team_settings" / "shop_recent_projects.json")["projects"]

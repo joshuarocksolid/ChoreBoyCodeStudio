@@ -72,12 +72,23 @@ def logical_path(raw: PathInput) -> Path:
 
 
 def shop_folder_at(path: Path, machine: Machine) -> ShopFolder:
-    share_root = path.parent
+    parent = path.parent
     top_shares = {_logical(machine.home / "share"), _logical(machine.default_home / "share")}
-    if share_root not in top_shares and share_root.parent in top_shares:
-        label = share_root.name
+    if parent not in top_shares and parent.parent in top_shares:
+        label = parent.name
     else:
         label = machine.hostname
+    logical_parent = logical_path(parent)
+    real_parent = os.path.realpath(str(parent))
+    # A mount symlink and the directory it names are the same share root.
+    share_root = (
+        parent
+        if any(
+            logical_parent == logical_path(root) or real_parent == os.path.realpath(str(root))
+            for root in share_roots(machine)
+        )
+        else None
+    )
     return ShopFolder(path=path, share_root=share_root, label=label)
 
 

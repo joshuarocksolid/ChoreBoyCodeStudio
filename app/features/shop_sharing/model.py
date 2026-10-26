@@ -68,13 +68,14 @@ class ShopFolder:
     """A shop folder as seen from this machine.
 
     ``path`` is logical (``os.path.abspath``), never ``Path.resolve()``d.
-    ``share_root`` is ``path.parent``: recents ``share`` entries are relative to it.
+    ``share_root`` is ``path.parent`` when that parent is one of this machine's
+    share roots, otherwise None. Recents ``share`` entries are relative to it.
     ``label`` is the share-root child name ("net1") when the folder sits under
     ``<top share>/<child>/``, otherwise this machine's hostname.
     """
 
     path: Path
-    share_root: Path
+    share_root: Optional[Path]
     label: str
 
 
@@ -198,23 +199,30 @@ def ref_to_json(ref: RecentRef) -> dict[str, str]:
 def classify_project(project_root: str, *, folder: ShopFolder, hostname: str) -> RecentRef:
     """ShareRef when ``project_root`` is inside ``folder.share_root``, else ``HostRef(hostname, project_root)``.
 
-    Containment is checked on logical paths first, then on realpaths of both sides,
-    because ``validate_openable_project_root`` hands back a resolved path. The
-    realpath is only compared, never stored.
+    A folder with no share root is always a host entry. Containment is checked
+    on logical paths first, then on realpaths of both sides, because
+    ``validate_openable_project_root`` hands back a resolved path. The realpath
+    is only compared, never stored.
     """
     logical_root = os.path.abspath(project_root)
-    rel = _relative_inside(logical_root, os.path.abspath(str(folder.share_root)))
+    share_root = folder.share_root
+    if share_root is None:
+        return HostRef(hostname, logical_root)
+    rel = _relative_inside(logical_root, os.path.abspath(str(share_root)))
     if rel is None:
-        rel = _relative_inside(os.path.realpath(logical_root), os.path.realpath(str(folder.share_root)))
+        rel = _relative_inside(os.path.realpath(logical_root), os.path.realpath(str(share_root)))
     if rel is not None:
         return ShareRef(rel)
     return HostRef(hostname, logical_root)
 
 
 def resolve_ref(ref: RecentRef, *, folder: ShopFolder, hostname: str) -> Optional[str]:
-    """Absolute path on this machine, or None for another host's entry."""
+    """Absolute path on this machine, or None for another host or a share entry with no share root."""
     if isinstance(ref, ShareRef):
-        return str(folder.share_root.joinpath(*ref.rel.split("/")))
+        share_root = folder.share_root
+        if share_root is None:
+            return None
+        return str(share_root.joinpath(*ref.rel.split("/")))
     if ref.host == hostname:
         return ref.path
     return None

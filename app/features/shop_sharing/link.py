@@ -262,14 +262,18 @@ class ShopLink:
 
     def _openable_ref(self, ref: RecentRef) -> bool:
         path = resolve_ref(ref, folder=self.folder, hostname=self._machine.hostname)
-        return path is not None and _openable(path)
+        # No path on this machine is not evidence the project is gone.
+        if path is None:
+            return True
+        return _openable(path)
 
     def _row(self, ref: RecentRef) -> RecentRow:
         path = resolve_ref(ref, folder=self.folder, hostname=self._machine.hostname)
         if path is not None:
             return RecentRow(path=path, label=Path(path).name, host=None, available=_openable(path))
-        assert isinstance(ref, HostRef)
-        return RecentRow(path=ref.path, label=Path(ref.path).name, host=ref.host, available=False)
+        if isinstance(ref, HostRef):
+            return RecentRow(path=ref.path, label=Path(ref.path).name, host=ref.host, available=False)
+        return RecentRow(path=ref.rel, label=Path(ref.rel).name, host=None, available=False)
 
 
 def _openable(path: str) -> bool:
