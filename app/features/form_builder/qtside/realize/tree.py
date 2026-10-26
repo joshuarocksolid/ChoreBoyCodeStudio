@@ -218,6 +218,10 @@ class _Structure(_LayoutSlots):
                 self._fill_loose(node, widget)
         self._sync_items(node, widget)
         self._apply_late(node, widget)
+        if kind == "QMainWindow" and isinstance(widget, QMainWindow):
+            bar = widget.menuWidget()
+            if isinstance(bar, QMenuBar):
+                self._drop_replaced_chrome(None, bar)
 
     def _note_managed_children(self, node: WidgetNode) -> None:
         layout = node.layout
@@ -396,7 +400,13 @@ class _Structure(_LayoutSlots):
                 continue
             part = self._obtain_widget(child, widget)
             if role == "QMenuBar" and isinstance(part, QMenuBar):
-                widget.setMenuBar(part)
+                previous = widget.menuWidget()
+                if previous is not part:
+                    widget.setMenuBar(part)
+                # setMenuBar unparents the bar Qt created with the window and
+                # does not delete it. menuWidget() does not return that bar
+                # before the call. Parentless untagged bars abort shutdown.
+                self._drop_replaced_chrome(previous, part)
             elif role == "QStatusBar":
                 widget.setStatusBar(part)
             elif role == "QToolBar" and isinstance(part, QToolBar):
@@ -407,6 +417,26 @@ class _Structure(_LayoutSlots):
                 widget.setCentralWidget(part)
             self._note_managed_children(child)
         self._fill_menu(node, widget)
+
+    def _drop_replaced_chrome(self, previous: Optional[QWidget], installed: QWidget) -> None:
+        """Delete untagged menu bars ``setMenuBar`` left without a parent.
+
+        A tagged bar is a document widget. It stays in the pool so the container
+        that took it can install it again.
+        """
+        if previous is not None and previous is not installed and wrapper_is_valid(previous):
+            node_id = _node_id(previous)
+            if node_id is not None and previous.parent() is None:
+                self._hold_widget(node_id, previous)
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        for widget in list(app.allWidgets()):
+            if not isinstance(widget, QMenuBar) or widget is installed or not wrapper_is_valid(widget):
+                continue
+            if widget.parent() is not None or _node_id(widget) is not None:
+                continue
+            delete_now(widget)
 
     def _fill_menu(self, node: WidgetNode, widget: QWidget) -> None:
         if isinstance(widget, (QMenu, QMenuBar, QToolBar)):

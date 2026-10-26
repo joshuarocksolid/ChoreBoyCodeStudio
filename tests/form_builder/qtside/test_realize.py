@@ -17,6 +17,7 @@ from app.qt import QtGui, QtWidgets
 from app.qt.QtCore import QFile, QIODevice, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtCore import QObject
 from app.qt.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialogButtonBox,
     QDockWidget,
@@ -320,6 +321,21 @@ def test_containers_round_trip(qapp: object) -> None:
                 assert root.tabText(0) == "Renamed"
                 assert realizer.last_stats.fallback_rebuilds == 0
                 assert realizer.last_stats.created_widgets == 0
+
+
+def test_building_a_main_window_does_not_leave_a_parentless_menu_bar() -> None:
+    with opened(_MAIN) as (_session, realizer):
+        window = realizer.root_widget
+        assert isinstance(window, QMainWindow)
+        assert isinstance(window.menuWidget(), QMenuBar)
+        app = QApplication.instance()
+        assert app is not None
+        orphans = [
+            widget.objectName()
+            for widget in app.allWidgets()
+            if isinstance(widget, QMenuBar) and widget.parent() is None
+        ]
+        assert orphans == []
 
 
 def test_main_window_chrome_patches_per_container() -> None:
