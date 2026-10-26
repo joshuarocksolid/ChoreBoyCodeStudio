@@ -529,6 +529,7 @@ def _session_state(payload: dict) -> str:
 
 
 def _ctl_exec(sid: str, code: str, wait: int = 45) -> Tuple[int, dict, str, str]:
+    _record_for_sid(sid)
     proc = _cbapp(["ctl", sid, "eval", "-", code, "--wait", str(wait)])
     payload = {}
     try:
