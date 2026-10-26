@@ -16,6 +16,7 @@ from app.features.form_builder.engine.ui4.values import (
     UIntValue,
     ULongLongValue,
 )
+from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
 from app.features.form_builder.qtside.inspector import InspectorPane
 from app.features.form_builder.qtside.inspector._live import live_classes
@@ -83,8 +84,8 @@ _CHROME = chrome_from_values(
 )
 
 
-def _pane(qapp: QApplication):
-    session, realizer = realize(_FORM)
+def _pane(qapp: QApplication, text: str = _FORM):
+    session, realizer = realize(text)
     window = QWidget()
     pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None, parent=window)
     # The workbench always applies chrome. Its style sheet owns the mixed
@@ -344,6 +345,83 @@ def _assert_no_overlap(body: QWidget) -> None:
             for second in shown[index + 1 :]:
                 both = first.geometry().intersected(second.geometry())
                 assert both.isEmpty(), (first.objectName() or first.metaObject().className(), second.objectName() or second.metaObject().className())
+
+
+_SPLIT = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Panes</class>
+ <widget class="QWidget" name="Panes">
+  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QSplitter" name="split">
+     <property name="orientation"><enum>%s</enum></property>
+     <widget class="QTextEdit" name="left"/>
+     <widget class="QTextEdit" name="right"/>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+@pytest.mark.parametrize("orientation, axis", (("Qt::Horizontal", "h"), ("Qt::Vertical", "v")))
+def test_a_splitter_pane_share_survives_save_and_reload(qapp: QApplication, orientation: str, axis: str) -> None:
+    window, pane, session, realizer = _pane(qapp, _SPLIT % orientation)
+    try:
+        spin = _pane_share(pane, session, axis)
+        spin.setValue(2)
+        spin.editingFinished.emit()
+        pane.flush()
+        assert session.log.undo_label() == "Size"
+        assert _live_stretch(realizer, session, axis) == 2
+        saved = write_ui(session.document).text
+    finally:
+        _close(window, pane, realizer, session, qapp)
+    window, pane, session, realizer = _pane(qapp, saved)
+    try:
+        assert _pane_share(pane, session, axis).value() == 2
+        assert _live_stretch(realizer, session, axis) == 2
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_a_pane_share_row_fits_a_narrow_size_body(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _SPLIT % "Qt::Horizontal")
+    try:
+        pane.set_compact(True)
+        window.resize(236, 640)
+        _pane_share(pane, session, "h")
+        qapp.processEvents()
+        scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+        body = pane.findChild(QWidget, "formBuilder.sizeBody")
+        assert scroll is not None and body is not None
+        assert scroll.viewport().width() <= 236
+        assert scroll.horizontalScrollBar().maximum() == 0
+        _assert_no_overlap(body)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def _pane_share(pane: InspectorPane, session, axis: str) -> QSpinBox:
+    """Select the right pane, open Size, and return its share spin. The other axis has no share."""
+    _select(session, "right")
+    pane.set_group_expanded(GroupId.SIZE, True)
+    pane.flush()
+    other = pane.findChild(QWidget, "formBuilder.size.share.%s" % ("v" if axis == "h" else "h"))
+    assert other is not None and not other.isVisibleTo(pane)
+    spin = pane.findChild(QSpinBox, "formBuilder.size.share.%s.value" % axis)
+    assert spin is not None and spin.isVisibleTo(pane)
+    return spin
+
+
+def _live_stretch(realizer, session, axis: str) -> int:
+    widget = realizer.widget_for(session.document.by_name("right")[0])
+    assert widget is not None
+    policy = widget.sizePolicy()
+    return policy.horizontalStretch() if axis == "h" else policy.verticalStretch()
 
 
 def test_reset_is_a_hover_icon_and_the_label_is_strong(qapp: QApplication) -> None:
