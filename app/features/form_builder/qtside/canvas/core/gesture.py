@@ -298,7 +298,7 @@ class PageResizing:
     minimum: Size
     anchor: FormPoint
     pointer: FormPoint
-    snap: bool
+    shift: bool
 
 
 @dataclass(frozen=True)
@@ -565,7 +565,7 @@ def turned(state: Turning) -> Turn:
 
 
 def page_size(state: PageResizing) -> Size:
-    return snap_page(state.origin, state.at, _delta(state.anchor, state.pointer), state.snap, state.minimum)
+    return snap_page(state.origin, state.at, _delta(state.anchor, state.pointer), state.shift, state.minimum)
 
 
 def band_rect(state: Banding) -> Rect:
@@ -621,7 +621,7 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
             world.page_minimum,
             point,
             point,
-            snap,
+            event.mods.shift,
         )
         root = world.document.root.id
         return Step(
@@ -1045,9 +1045,9 @@ def _retarget(state: Drag, point: FormPoint, snap: bool, world: World) -> Drag:
         payload = replace(state.payload, snap=snap)
         target = resolve_at(world.document, world.index, point, payload)
         return replace(state, payload=payload, pointer=point, target=target, outside=False, draw=True)
-    if isinstance(state, Turning):
+    if isinstance(state, (Turning, PageResizing)):
         return replace(state, pointer=point, shift=not snap)
-    if isinstance(state, (Moving, PageResizing)):
+    if isinstance(state, Moving):
         return replace(state, pointer=point, snap=snap)
     return state
 
