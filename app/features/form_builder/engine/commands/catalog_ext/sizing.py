@@ -7,13 +7,21 @@ so the inverse is the inverse those ops already return.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar, Hashable, Optional
+from typing import ClassVar, Hashable, Optional, Tuple
 
 from app.features.form_builder.engine.commands import planning
 from app.features.form_builder.engine.commands.base import PlanContext
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.sizing import SizingWrite
+from app.features.form_builder.engine.sizing import (
+    PaneShare,
+    Share,
+    SizingWrite,
+    encode_share,
+    splice_stretch,
+    stretch_length,
+)
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import SizePolicyValue, SizeValue
 
 _STRETCH_FIELDS = (
@@ -97,4 +105,43 @@ def from_write(
         stretch_field,
         stretch,
         merge_token,
+    )
+
+
+def write_share(
+    document: UiDocument,
+    slot: Share,
+    owner: NodeId,
+    value: int,
+    defaults: Tuple[str, str],
+) -> Optional[ApplySizing]:
+    """The one share writer. ``defaults`` are the owner's class (horizontal, vertical) policies.
+
+    None when the slot's layout or pane is gone.
+    """
+    if isinstance(slot, PaneShare):
+        pane = document.get(slot.pane)
+        if not isinstance(pane, WidgetNode):
+            return None
+        entry = pane.prop("sizePolicy")
+        current = entry.value if entry is not None and isinstance(entry.value, SizePolicyValue) else None
+        write = encode_share(
+            axis=slot.axis,
+            value=value,
+            current_policy=current,
+            class_default_h=defaults[0],
+            class_default_v=defaults[1],
+        )
+        return from_write(owner, write)
+    layout = document.get(slot.layout)
+    if not isinstance(layout, LayoutNode):
+        return None
+    raw = layout.field(slot.field)
+    text = raw if isinstance(raw, str) else None
+    return from_write(
+        owner,
+        SizingWrite(None, None, None, False, False, False),
+        layout=slot.layout,
+        stretch_field=slot.field,
+        stretch=splice_stretch(text, slot.index, value, stretch_length(layout, slot.field)),
     )

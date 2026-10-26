@@ -57,11 +57,12 @@ from app.features.form_builder.engine.ui4.nodes import (
     SpacerNode,
     WidgetNode,
 )
+from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
-    splitter_sizes,
+    ordered_layout_metrics,
     text_of,
     to_qt,
 )
@@ -1291,7 +1292,15 @@ class _Structure(_LayoutSlots):
         obj.setProperty(NODE_ID_PROPERTY, int(node_id))  # type: ignore[attr-defined]
 
     def _apply_node_properties(self, node: object, obj: object, *, is_root: bool) -> None:
-        for entry in node.properties():  # type: ignore[attr-defined]
+        entries = list(node.properties())  # type: ignore[attr-defined]
+        deferred = ordered_layout_metrics(entries) if isinstance(node, LayoutNode) else ()
+        skip = {entry.name for entry in deferred}
+        for entry in entries:
+            if entry.name in skip:
+                continue
+            if apply_entry(obj, entry, is_root=is_root, resolve_path=self._resolve_path, problems=self._problems):
+                self._patched += 1
+        for entry in deferred:
             if apply_entry(obj, entry, is_root=is_root, resolve_path=self._resolve_path, problems=self._problems):
                 self._patched += 1
 

@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Literal, Optional, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.direct import Axis, Knob
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.qtside.canvas.core.chips import Leader
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect, Compass, ViewMap
@@ -17,13 +18,14 @@ Role = Literal[
     "layout",
     "layout_faint",
     "gap",
+    "gap_fill",
     "drop_fill",
     "tab",
     "problem",
     "backdrop_faint",
     "backdrop_accent",
 ]
-GlyphName = Literal["plus", "error"]
+GlyphName = Literal["plus", "error", "grip"]
 
 
 @dataclass(frozen=True)
@@ -40,6 +42,7 @@ class Stroke:
 class Fill:
     rect: CanvasRect
     role: Role
+    alpha: float = 1.0
 
 
 @dataclass(frozen=True)
@@ -120,14 +123,28 @@ class ShowStacked:
     delta: int = 0
 
 
-ChipAction = Union[OpenLayoutPopover, OpenProblem, AddPage, ShowStacked]
+@dataclass(frozen=True)
+class FocusShare:
+    """Select ``node`` and focus its share spin for ``axis`` in the inspector."""
+
+    node: NodeId
+    axis: Axis
+
+
+ChipAction = Union[OpenLayoutPopover, OpenProblem, AddPage, ShowStacked, FocusShare]
 
 
 @dataclass(frozen=True)
 class OnHandle:
+    """A handle on a layout or spacer. Their container gives them their size."""
+
     node: NodeId
     at: Compass
-    writes: bool
+
+
+@dataclass(frozen=True)
+class OnKnob:
+    knob: Knob
 
 
 @dataclass(frozen=True)
@@ -153,7 +170,7 @@ class OnSpace:
     band_owner: NodeId
 
 
-Target = Union[OnHandle, OnPageEdge, OnChip, OnWidget, OnSpace]
+Target = Union[OnKnob, OnHandle, OnPageEdge, OnChip, OnWidget, OnSpace]
 
 
 @dataclass(frozen=True)

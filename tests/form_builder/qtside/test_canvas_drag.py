@@ -14,7 +14,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.integration.canvas import FormCanvas
-from app.features.form_builder.qtside.canvas.core.frame import OnHandle, OnPageEdge
+from app.features.form_builder.qtside.canvas.core.frame import OnKnob, OnPageEdge
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from tests.form_builder.qtside.support import form, opened
 
@@ -133,6 +133,25 @@ def test_a_page_drag_reflows_before_it_commits() -> None:
         parent.deleteLater()
 
 
+@pytest.mark.parametrize("shift", (False, True))
+def test_a_page_drag_moves_one_px_and_shift_snaps_to_eight(shift: bool) -> None:
+    with opened(LAID) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        pulled = 13
+        free = _geometry(session, "Form").width + pulled
+        snapped = int(round(free / 8.0)) * 8
+        assert free != snapped
+        mods = "ShiftModifier" if shift else "NoModifier"
+        start = _edge(canvas, "e")
+        end = start + QPoint(pulled, 0)
+        _press(canvas, start, mods)
+        _move(canvas, end, mods)
+        _release(canvas, end, mods)
+        assert _geometry(session, "Form").width == (snapped if shift else free)
+        canvas.dispose()
+        parent.deleteLater()
+
+
 def _canvas(session: object, realizer: object) -> Tuple[FormCanvas, QWidget]:
     parent = QWidget()
     parent.resize(960, 720)
@@ -143,19 +162,19 @@ def _canvas(session: object, realizer: object) -> Tuple[FormCanvas, QWidget]:
     return canvas, parent
 
 
-def _press(canvas: FormCanvas, pos: QPoint) -> None:
-    _send(canvas, "MouseButtonPress", pos, "LeftButton", "LeftButton")
+def _press(canvas: FormCanvas, pos: QPoint, mods: str = "NoModifier") -> None:
+    _send(canvas, "MouseButtonPress", pos, "LeftButton", "LeftButton", mods)
 
 
-def _move(canvas: FormCanvas, pos: QPoint) -> None:
-    _send(canvas, "MouseMove", pos, "NoButton", "LeftButton")
+def _move(canvas: FormCanvas, pos: QPoint, mods: str = "NoModifier") -> None:
+    _send(canvas, "MouseMove", pos, "NoButton", "LeftButton", mods)
 
 
-def _release(canvas: FormCanvas, pos: QPoint) -> None:
-    _send(canvas, "MouseButtonRelease", pos, "LeftButton", "NoButton")
+def _release(canvas: FormCanvas, pos: QPoint, mods: str = "NoModifier") -> None:
+    _send(canvas, "MouseButtonRelease", pos, "LeftButton", "NoButton", mods)
 
 
-def _send(canvas: FormCanvas, kind_name: str, pos: QPoint, button_name: str, buttons_name: str) -> None:
+def _send(canvas: FormCanvas, kind_name: str, pos: QPoint, button_name: str, buttons_name: str, mods: str) -> None:
     viewport = canvas.viewport()
     kind = getattr(getattr(QEvent, "Type", QEvent), kind_name)
     event = QMouseEvent(
@@ -164,7 +183,7 @@ def _send(canvas: FormCanvas, kind_name: str, pos: QPoint, button_name: str, but
         viewport.mapToGlobal(pos),
         _mouse(button_name),
         _mouse(buttons_name),
-        _mods("NoModifier"),
+        _mods(mods),
     )
     QApplication.sendEvent(viewport, event)
     _flush()
@@ -187,7 +206,7 @@ def _center(canvas: FormCanvas, name: str) -> QPoint:
 
 def _handle(canvas: FormCanvas, at: str) -> QPoint:
     for rect, target in canvas.overlay().targets:
-        if isinstance(target, OnHandle) and target.at == at and target.writes:
+        if isinstance(target, OnKnob) and target.knob.key[0] == "size" and target.knob.pull == at:
             return _from_rect(canvas, rect)
     raise AssertionError(at)
 

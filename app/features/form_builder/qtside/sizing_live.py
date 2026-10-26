@@ -13,8 +13,8 @@ from app.features.form_builder.engine.sizing import (
     AxisFacts,
     explain,
     project_axis,
+    read_share,
     share_slots,
-    stretch_at,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
@@ -186,27 +186,12 @@ def _stretches(document: UiDocument, node_id: NodeId) -> Tuple[int, int, int, in
     vertical = 0
     vertical_sum = 0
     for slot in share_slots(document, node_id):
-        layout = document.get(slot.layout)
-        raw = layout.field(slot.field) if isinstance(layout, LayoutNode) else None
-        text = raw if isinstance(raw, str) else None
-        value = stretch_at(text, slot.index)
-        total = _sum_stretch(text)
+        reading = read_share(document, slot)
         if slot.axis == "h":
-            horizontal, horizontal_sum = value, total
+            horizontal, horizontal_sum = reading.value, reading.total
         else:
-            vertical, vertical_sum = value, total
+            vertical, vertical_sum = reading.value, reading.total
     return horizontal, horizontal_sum, vertical, vertical_sum
-
-
-def _sum_stretch(value: Optional[str]) -> int:
-    if not value:
-        return 0
-    total = 0
-    for piece in value.split(","):
-        text = piece.strip()
-        if text.lstrip("-").isdigit():
-            total += int(text)
-    return total
 
 
 def _stored_policy(node: object) -> Optional[SizePolicyValue]:

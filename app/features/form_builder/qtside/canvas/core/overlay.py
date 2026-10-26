@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Turn
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
@@ -36,6 +37,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     Chip,
     ChipAction,
     Fill,
+    FocusShare,
     FrameBasis,
     Glyph,
     Handle,
@@ -43,6 +45,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     AddPage,
     OnChip,
     OnHandle,
+    OnKnob,
     OnPageEdge,
     OnSpace,
     OnWidget,
@@ -63,20 +66,17 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Moving,
     Placing,
     PageResizing,
-    Resizing,
+    Turning,
     band_hits,
     band_rect,
     drawn_rect,
-    handles_for,
     page_size,
     previewing,
-    resized_drawn,
+    turned,
 )
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect, CanvasSize, Compass, ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import (
-    Free,
     LaidOut,
-    Positioning,
     ancestors,
     effective_class,
     effective_selection,
@@ -100,6 +100,15 @@ HANDLE_SIZE = 7
 HANDLE_HIT = 12
 PILL_LONG = 32
 PILL_SHORT = 4
+#: Gap bars are this many screen pixels across at every zoom.
+GAP_BAR = 2
+GRIP_GLYPH = CanvasSize(6, 16)
+_INERT_HANDLES: Tuple[Compass, ...] = ("e", "s", "se")
+_THIN_KINDS = frozenset({"gap", "margin"})
+_TICK_CORNERS: Dict[str, Tuple[Corner, ...]] = {
+    "top": ("above_left", "above_right"),
+    "bottom": ("below_left", "below_right"),
+}
 
 _EMPTY_FORM = (
     "Drop a widget here",
@@ -132,6 +141,8 @@ class StaticLayer:
     tabs: Tuple[Tuple[NodeId, CanvasRect], ...] = ()
     #: Stacked widgets. ``(widget, canvas rect, page object names)``.
     stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...]], ...] = ()
+    #: Visible splitters in pre-order. Their grips are hittable with any selection.
+    splitters: Tuple[NodeId, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -159,6 +170,10 @@ class FrameInputs:
     preview: Optional[AcceptedDrop] = None
     #: Canvas-only page shown for a stacked widget. Absent keys use the property.
     shown_pages: Optional[Mapping[NodeId, int]] = None
+    #: Knobs measured from live geometry for the selection's neighbourhood.
+    knobs: KnobSet = EMPTY
+    #: What a landed knob commit still reads. The controller clears it.
+    readout: Optional[Readout] = None
 
 
 @dataclass(frozen=True)
@@ -186,6 +201,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
     targets: List[Tuple[CanvasRect, Target]] = []
     tabs: List[Tuple[NodeId, CanvasRect]] = []
     stacks: List[Tuple[NodeId, CanvasRect, Tuple[str, ...]]] = []
+    splitters: List[NodeId] = []
 
     for node in document.iter_preorder():
         if node.id != document.root.id and not visible.get(node.id, False):
@@ -218,6 +234,8 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         if not isinstance(node, WidgetNode):
             continue
         placed.append(Obstacle(node.id, canvas))
+        if effective_class(document, node) == "QSplitter":
+            splitters.append(node.id)
         if node.class_name == "QStackedWidget" and node.child_widgets:
             names = tuple(child.object_name or "page" for child in node.child_widgets)
             stacks.append((node.id, canvas, names))
@@ -267,6 +285,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(placed),
         tuple(tabs),
         tuple(stacks),
+        tuple(splitters),
     )
 
 
@@ -324,6 +343,7 @@ def shift_static(
         layer.unlaid,
         layer.targets,
         tuple(placed),
+        splitters=layer.splitters,
     )
 
 
@@ -337,9 +357,12 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     gesture = inputs.gesture
     view = inputs.view
     shown = effective_selection(document, inputs.selection)
+    primary = shown.current
+    live = previewing(gesture)
     items: List[Item] = []
-    if not previewing(gesture):
+    if not live:
         items.extend(static.items)
+        _sites(items, view, inputs.knobs, _focused_layouts(document, primary))
     _hover(items, static, document, gesture)
     rects: Dict[NodeId, CanvasRect] = {}
     for node_id in shown.ids:
@@ -352,10 +375,9 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
             else:
                 items.append(Stroke(rect.grown(1), "select", 2, "solid"))
 
-    primary = shown.current
     primary_rect = rects.get(primary) if primary is not None else None
-    place = positioning_of(document, primary) if primary is not None else None
-    handle_hits = _handles(items, primary, primary_rect, place)
+    knob_hits = _knob_handles(items, inputs.knobs, primary, primary_rect)
+    inert_hits = _inert_handles(items, document, primary, primary_rect)
     page, hot = _page_canvas(view, gesture)
     grabbers = _grabbers(page, hot)
     items.extend(grabbers)
@@ -364,11 +386,15 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
             items.append(Stroke(primary_rect.grown(3), "select", 1, "dotted"))
     if isinstance(gesture, Banding):
         _band(items, view, gesture)
+    if isinstance(gesture, Turning):
+        _turn_mark(items, view, turned(gesture))
+    else:
+        _grip_hover(items, view, inputs.knobs, gesture)
     _drop_marks(items, view, inputs)
     plus_hits = _plus_hits(items, static, document, gesture, shown)
 
     faces, requests = _requests(static, inputs, shown, rects)
-    fixed = tuple(hit for hit, _target in handle_hits) + inputs.chrome
+    fixed = tuple(hit for hit, _target in knob_hits + inert_hits) + inputs.chrome
     viewport = inputs.viewport if inputs.viewport is not None else page.grown(400)
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
     chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None)
@@ -376,8 +402,11 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     targets.extend(reversed(plus_hits))
     targets.extend(reversed(chip_hits))
     targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
-    targets.extend(reversed(handle_hits))
-    if not previewing(gesture):
+    targets.extend(reversed(knob_hits))
+    if not live:
+        targets.extend((view.to_canvas(site.hit), OnKnob(site.knob)) for site in inputs.knobs.sites)
+    targets.extend(reversed(inert_hits))
+    if not live:
         targets.extend(static.targets)
     return OverlayFrame(
         FrameBasis(static.epoch, view, inputs.selection, inputs.problems_revision),
@@ -476,21 +505,109 @@ def _parent_layout(document: UiDocument, node: NodeId) -> Optional[NodeId]:
     return None
 
 
-def _handles(
+def _knob_handles(
     items: List[Item],
+    knobs: KnobSet,
     primary: Optional[NodeId],
     rect: Optional[CanvasRect],
-    place: Optional[Positioning],
 ) -> List[Tuple[CanvasRect, Target]]:
-    if primary is None or rect is None or place is None:
+    """The primary widget's size handles. Each one turns a knob."""
+    if primary is None or rect is None:
         return []
-    writes = isinstance(place, Free)
     hits: List[Tuple[CanvasRect, Target]] = []
-    for at in handles_for(place):
+    for knob in knobs.handles:
+        if knob.subject != primary:
+            continue
+        centre = _handle_point(rect, knob.pull)
+        items.append(Handle(_around(centre, HANDLE_SIZE), knob.pull))
+        hits.append((_around(centre, HANDLE_HIT), OnKnob(knob)))
+    return hits
+
+
+def _inert_handles(
+    items: List[Item],
+    document: UiDocument,
+    primary: Optional[NodeId],
+    rect: Optional[CanvasRect],
+) -> List[Tuple[CanvasRect, Target]]:
+    """A selected layout or spacer shows where its size comes from. Its handles write nothing."""
+    if primary is None or rect is None or not isinstance(document.get(primary), (LayoutNode, SpacerNode)):
+        return []
+    hits: List[Tuple[CanvasRect, Target]] = []
+    for at in _INERT_HANDLES:
         centre = _handle_point(rect, at)
         items.append(Handle(_around(centre, HANDLE_SIZE), at))
-        hits.append((_around(centre, HANDLE_HIT), OnHandle(primary, at, writes)))
+        hits.append((_around(centre, HANDLE_HIT), OnHandle(primary, at)))
     return hits
+
+
+# A direct child keeps the bars hittable, drawn as a hint. The layout and its
+# container draw them at full strength (UX-GAP-001, UX-PRIN-004).
+_HINT_ALPHA = 0.35
+
+
+def _focused_layouts(document: UiDocument, primary: Optional[NodeId]) -> Set[NodeId]:
+    """Layouts drawn at full strength: the selected layout, or the selected container's layout."""
+    if primary is None or not document.contains(primary):
+        return set()
+    node = document.get(primary)
+    if isinstance(node, LayoutNode):
+        return {node.id}
+    if isinstance(node, WidgetNode) and node.layout is not None:
+        return {node.layout.id}
+    return set()
+
+
+def _sites(items: List[Item], view: ViewMap, knobs: KnobSet, focused: Set[NodeId]) -> None:
+    """Gap bars, margin bands and root-layout ticks. Grips draw only under the pointer."""
+    for site in knobs.sites:
+        alpha = 1.0 if site.knob.subject in focused else _HINT_ALPHA
+        if site.look == "bar":
+            items.append(Fill(_thin(view.to_canvas(site.mark), GAP_BAR), "gap", alpha))
+        elif site.look == "band":
+            band = view.to_canvas(site.mark)
+            if band.width > 0 and band.height > 0:
+                items.append(Fill(band, "gap_fill", alpha))
+    for tick in knobs.ticks:
+        items.append(Stroke(view.to_canvas(tick.rect), "layout", 1.5, "solid", caps=True))
+
+
+def _turn_mark(items: List[Item], view: ViewMap, done: Turn) -> None:
+    mark = done.mark
+    if mark is None:
+        return
+    canvas = view.to_canvas(mark)
+    kind = done.readout.key[0]
+    if kind in _THIN_KINDS:
+        items.append(Fill(canvas, "gap_fill"))
+        items.append(Stroke(canvas, "gap", 1, "solid"))
+    elif kind == "grip":
+        items.append(Glyph(_grip_box(canvas), "grip", "select"))
+    else:
+        items.append(Fill(canvas, "drop_fill"))
+        items.append(Stroke(canvas, "select", 1.5, "dashed"))
+
+
+def _grip_hover(items: List[Item], view: ViewMap, knobs: KnobSet, gesture: Gesture) -> None:
+    """The splitter's own handle stays visible. The glyph sits on top of it."""
+    if not isinstance(gesture, Idle) or gesture.knob is None or gesture.knob[0] != "grip":
+        return
+    for site in knobs.sites:
+        if site.knob.key == gesture.knob:
+            items.append(Glyph(_grip_box(view.to_canvas(site.mark)), "grip", "select"))
+            return
+
+
+def _thin(rect: CanvasRect, across: int) -> CanvasRect:
+    if rect.width <= rect.height:
+        return CanvasRect(rect.x + rect.width // 2 - across // 2, rect.y, across, rect.height)
+    return CanvasRect(rect.x, rect.y + rect.height // 2 - across // 2, rect.width, across)
+
+
+def _grip_box(handle: CanvasRect) -> CanvasRect:
+    if handle.width <= handle.height:
+        return _centred(handle, GRIP_GLYPH.width, GRIP_GLYPH.height)
+    return _centred(handle, GRIP_GLYPH.height, GRIP_GLYPH.width)
 
 
 def _grabbers(page: CanvasRect, hot: bool) -> Tuple[Pill, ...]:
@@ -604,8 +721,11 @@ def _requests(
     _drop_chip(faces, requests, inputs)
     primary = shown.current
     placing = isinstance(inputs.gesture, Placing)
+    readout = turned(inputs.gesture).readout if isinstance(inputs.gesture, Turning) else inputs.readout
     if not placing and primary is not None and primary in rects and primary != document.root.id:
         text = chip_text(document, inputs.selection, inputs.sizing)
+        if readout is not None and readout.key[0] == "size" and readout.key[1] == primary:
+            text = readout.text
         role: Role = "layout" if isinstance(document.get(primary), LayoutNode) else "select"
         _ask(
             faces,
@@ -618,6 +738,10 @@ def _requests(
             _Face("chip", primary, role, text, None),
             required=True,
         )
+    if readout is not None and readout.key[0] != "size":
+        _readout_chip(faces, requests, inputs, readout)
+    if not previewing(inputs.gesture):
+        _knob_chips(faces, requests, inputs)
     # An empty map must not walk the form. Selection repaint is on an 8 ms budget.
     if inputs.problems:
         for node in document.iter_preorder():
@@ -655,6 +779,60 @@ def _requests(
         )
     _page_chips(faces, requests, static, inputs)
     return faces, requests
+
+
+def _readout_chip(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    inputs: FrameInputs,
+    readout: Readout,
+) -> None:
+    """A gap, margin or grip reads its number beside the site, rebuilt or not."""
+    anchor = next((site.mark for site in inputs.knobs.sites if site.knob.key == readout.key), readout.anchor)
+    role: Role = "gap" if readout.key[0] in _THIN_KINDS else "select"
+    _ask(
+        faces,
+        requests,
+        ("readout", readout.key),
+        inputs.view.to_canvas(anchor),
+        _label_size(readout.text, inputs.measure),
+        LABEL_CORNERS,
+        inputs.document,
+        _Face("chip", readout.key[1], role, readout.text, None),
+        required=True,
+    )
+
+
+def _knob_chips(faces: Dict[Hashable, _Face], requests: List[ChipRequest], inputs: FrameInputs) -> None:
+    """Share chips, then the root layout's margin numbers in the gutter."""
+    view = inputs.view
+    for tag in inputs.knobs.shares:
+        _ask(
+            faces,
+            requests,
+            tag.key,
+            view.to_canvas(tag.anchor),
+            _label_size(tag.text, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", tag.node, "layout", tag.text, FocusShare(tag.node, tag.axis)),
+        )
+    root_layout = inputs.document.root.layout
+    if root_layout is None:
+        return
+    for tick in inputs.knobs.ticks:
+        text = str(tick.pixels)
+        _ask(
+            faces,
+            requests,
+            ("tick", tick.side),
+            view.to_canvas(tick.rect),
+            _label_size(text, inputs.measure),
+            _TICK_CORNERS.get(tick.side, ()),
+            inputs.document,
+            _Face("chip", root_layout.id, "layout", text, None),
+            outside=True,
+        )
 
 
 def _page_chips(
@@ -736,12 +914,13 @@ def _ask(
     face: _Face,
     required: bool = False,
     own_frame: bool = False,
+    outside: bool = False,
 ) -> None:
     faces[key] = face
     exempt = ancestors(document, face.node)
     if own_frame:
         exempt = exempt | {face.node}
-    requests.append(ChipRequest(key, target, size, corners, exempt, required=required))
+    requests.append(ChipRequest(key, target, size, corners, exempt, required=required, outside=outside))
 
 
 def _seat_items(
@@ -784,8 +963,10 @@ def _shown_rect(
         for item in gesture.items:
             if item.node == node:
                 return view.to_canvas(drawn_rect(gesture, item))
-    if isinstance(gesture, Resizing) and gesture.item.node == node:
-        return view.to_canvas(resized_drawn(gesture))
+    if isinstance(gesture, Turning) and gesture.knob.subject == node:
+        outline = turned(gesture).outline
+        if outline is not None:
+            return view.to_canvas(outline)
     if isinstance(gesture, PageResizing) and node == document.root.id:
         return _page_canvas(view, gesture)[0]
     return _placed(static, node)

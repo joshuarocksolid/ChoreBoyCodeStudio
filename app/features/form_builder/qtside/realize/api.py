@@ -38,8 +38,9 @@ from app.features.form_builder.engine.events import (
     NodeMoved,
     NodeRemoved,
 )
+from app.features.form_builder.engine.commands.live import LiveProp, PropKey
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.logic.storage import is_logic_key
+from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -47,6 +48,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     CustomWidgetNode,
     LayoutItemNode,
     LayoutNode,
+    Node,
     ResourceNode,
     WidgetNode,
 )
@@ -54,8 +56,8 @@ from app.features.form_builder.engine.ui4.spec import PropertyEntry
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     norm_qt,
+    ordered_layout_metrics,
     path_under,
-    splitter_sizes,
     text_of,
 )
 from app.features.form_builder.qtside.realize.slots import LayoutHints, _Mirror, collect_layout_hints
@@ -87,6 +89,9 @@ _LAYOUT_FIELDS = frozenset(
         "columnminimumwidth",
     }
 )
+_MARGIN_FAMILY = frozenset({"margin", "leftMargin", "topMargin", "rightMargin", "bottomMargin"})
+_SPACING_FAMILY = frozenset({"spacing", "horizontalSpacing", "verticalSpacing"})
+_LAYOUT_FAMILIES = _MARGIN_FAMILY | _SPACING_FAMILY
 _FRESH: Dict[Tuple[str, bool], QWidget] = {}
 _FRESH_HOST: Optional[QWidget] = None
 
@@ -145,6 +150,8 @@ class Realizer(_Structure):
         self._registered: List[object] = []
         self._problems: List[str] = []
         self._root: Optional[QWidget] = None
+        # Live splitter sizes at the start of a preview, restored on Escape.
+        self._splitter_at_preview: Dict[NodeId, List[int]] = {}
         self._created = 0
         self._patched = 0
         self._reconciled = 0
@@ -263,9 +270,27 @@ class Realizer(_Structure):
             return None
         return spacer
 
-    def reapply_geometry(self, ids: Sequence[NodeId]) -> None:
-        """Write those nodes' document geometry back onto the live widgets."""
-        self._reapply_document_geometry(set(ids))
+    def apply_live(self, props: Sequence[LiveProp]) -> None:
+        """Show ``props`` on the live objects. The document does not change."""
+        document = self._session.document
+        for prop in props:
+            if prop.name == "cbcsSplitterSizes" and prop.owner not in self._splitter_at_preview:
+                widget = self.widget_for(prop.owner)
+                if widget is not None and isinstance(widget, QSplitter):
+                    self._splitter_at_preview[prop.owner] = list(widget.sizes())
+            node = document.get(prop.owner)
+            obj = self.object_for(prop.owner)
+            if node is None or obj is None:
+                continue
+            entry = None if prop.value is None else PropertyEntry("property", prop.name, prop.value)
+            self._put(node, obj, prop.name, entry)
+
+    def reapply(self, keys: Sequence[PropKey]) -> None:
+        """Put the document's values for ``keys`` back on the live objects."""
+        self._reapply_document_geometry({owner for owner, name in keys if name == "geometry"})
+        for owner, name in keys:
+            if name != "geometry":
+                self._patch_property(owner, "property", name)
 
     def node_for(self, obj: object) -> Optional[NodeId]:
         current = obj
@@ -401,15 +426,29 @@ class Realizer(_Structure):
         obj = self._objects.get(owner)
         if obj is None or not wrapper_is_valid(obj):
             return
-        if name == "cbcsSplitterSizes" and isinstance(obj, QSplitter):
-            entry = node.prop(name)
-            if entry is not None:
-                obj.setSizes(list(splitter_sizes(entry.value)))
-                self._patched += 1
+        entry = node.prop(name)
+        if name == "cbcsSplitterSizes" and entry is not None:
+            self._splitter_at_preview.pop(owner, None)
+        self._put(node, obj, name, entry)
+        if entry is not None and name == "buddy" and isinstance(node, WidgetNode):
+            self._note_buddy(node)
+            self._set_buddy(node)
+
+    def _put(self, node: Node, obj: object, name: str, entry: Optional[PropertyEntry]) -> None:
+        """Apply ``entry``, or restore what a fresh build holds when the file does not set ``name``.
+
+        A patch, undo, preview end and Esc all land here.
+        """
+        if isinstance(node, LayoutNode) and isinstance(obj, QLayout) and name in _LAYOUT_FAMILIES:
+            self._apply_family(node, obj, name, entry)
             return
-        entry = node.prop(name) if kind == "property" else node.attr(name)
         if entry is None:
             self._reset_property(node, obj, name)
+            return
+        if name == "cbcsSplitterSizes":
+            if isinstance(obj, QSplitter):
+                obj.setSizes(list(splitter_sizes(entry.value)))
+                self._patched += 1
             return
         if apply_entry(
             obj,
@@ -419,9 +458,6 @@ class Realizer(_Structure):
             problems=self._problems,
         ):
             self._patched += 1
-        if name == "buddy" and isinstance(node, WidgetNode):
-            self._note_buddy(node)
-            self._set_buddy(node)
 
     def _patch_attribute(self, node: object, name: str) -> None:
         if not isinstance(node, WidgetNode) or node.parent_id is None:
@@ -454,6 +490,16 @@ class Realizer(_Structure):
             self._patched += 1
 
     def _reset_property(self, node: object, obj: object, name: str) -> None:
+        if name == "cbcsSplitterSizes":
+            if isinstance(obj, QSplitter):
+                node_id = _node_id(obj)
+                saved = None if node_id is None else self._splitter_at_preview.pop(node_id, None)
+                if saved is not None:
+                    obj.setSizes(saved)
+                else:
+                    obj.setSizes(_distributed_sizes(obj))
+                self._patched += 1
+            return
         if not isinstance(node, WidgetNode):
             return
         window = isinstance(obj, QWidget) and obj.isWindow()
@@ -481,6 +527,25 @@ class Realizer(_Structure):
             self._patched += 1
         except (TypeError, RuntimeError, AttributeError):
             return
+
+    def _apply_family(self, node: LayoutNode, layout: QLayout, name: str, entry: Optional[PropertyEntry]) -> None:
+        """Reset one family, then apply it in uic order.
+
+        ``margin`` is applied before any stored side, and ``spacing`` before a
+        stored ``horizontalSpacing`` or ``verticalSpacing``. File order does
+        not change the result. A preview value for ``name`` is included even
+        when the document does not store it yet.
+        """
+        family = _MARGIN_FAMILY if name in _MARGIN_FAMILY else _SPACING_FAMILY
+        if family is _MARGIN_FAMILY:
+            layout.setContentsMargins(-1, -1, -1, -1)
+        else:
+            layout.setSpacing(-1)
+        for each in ordered_layout_metrics(node.properties(), name, entry):
+            if each.name not in family:
+                continue
+            apply_entry(layout, each, is_root=False, resolve_path=self._resolve_path, problems=self._problems)
+        self._patched += 1
 
     def _rename(self, node_id: NodeId, new: object = None) -> None:
         """Re-read the name from the document. ``new`` is the event value and is ignored."""
@@ -874,6 +939,67 @@ def _fresh_host() -> QWidget:
         host.setAttribute(Qt.WA_DontShowOnScreen, True)
         _FRESH_HOST = host
     return _FRESH_HOST
+
+
+class _PaneStandIn(QWidget):
+    """A scratch pane with one real pane's hint, limits and policy."""
+
+    def __init__(self, hint: object, policy: object, minimum: object, maximum: object) -> None:
+        super().__init__()
+        self._hint = hint
+        self.setSizePolicy(policy)  # type: ignore[arg-type]
+        self.setMinimumSize(minimum)  # type: ignore[arg-type]
+        self.setMaximumSize(maximum)  # type: ignore[arg-type]
+
+    def sizeHint(self) -> object:  # type: ignore[override]
+        return self._hint
+
+    def minimumSizeHint(self) -> object:  # type: ignore[override]
+        return self.minimumSize()
+
+
+def _distributed_sizes(splitter: QSplitter) -> List[int]:
+    """Sizes a fresh splitter gives these panes at this splitter's size.
+
+    ``setSizes(sizeHint)`` ignores stretch, so unequal shares collapse to an
+    even split. A scratch splitter with the same hints, limits, policies and
+    stretch factors lays the panes out the way a fresh build does.
+    """
+    scratch = QSplitter()
+    scratch.setAttribute(Qt.WA_DontShowOnScreen, True)
+    scratch.setOrientation(splitter.orientation())
+    scratch.setHandleWidth(splitter.handleWidth())
+    scratch.setChildrenCollapsible(splitter.childrenCollapsible())
+    for index in range(splitter.count()):
+        pane = splitter.widget(index)
+        if pane is None:
+            scratch.addWidget(QWidget())
+            continue
+        scratch.addWidget(
+            _PaneStandIn(pane.sizeHint(), pane.sizePolicy(), pane.minimumSize(), pane.maximumSize())
+        )
+    scratch.resize(max(splitter.width(), 1), max(splitter.height(), 1))
+    scratch.show()
+    sizes = [int(size) for size in scratch.sizes()]
+    scratch.hide()
+    scratch.setParent(None)
+    delete_now(scratch)
+    if len(sizes) != splitter.count():
+        return _pane_hints(splitter)
+    return sizes
+
+
+def _pane_hints(splitter: QSplitter) -> List[int]:
+    horizontal = splitter.orientation() == Qt.Orientation.Horizontal
+    hints: List[int] = []
+    for index in range(splitter.count()):
+        pane = splitter.widget(index)
+        hint = pane.sizeHint() if pane is not None else None
+        if hint is None:
+            hints.append(0)
+        else:
+            hints.append(max(0, hint.width() if horizontal else hint.height()))
+    return hints
 
 
 def _fresh_widget(short_name: str, cls: type, *, window: bool = True) -> Optional[QWidget]:

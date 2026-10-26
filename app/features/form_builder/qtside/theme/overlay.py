@@ -21,6 +21,8 @@ class OverlayPalette:
     layout: str
     layout_faint: str
     gap: str
+    #: Margin bands. The gap colour, faint, so the widgets stay readable under it.
+    gap_fill: str
     drop_fill: str
     tab: str
     problem: str
@@ -35,6 +37,7 @@ OVERLAY = OverlayPalette(
     layout="#7C3AEDFF",
     layout_faint="#7C3AED47",
     gap="#DB2777FF",
+    gap_fill="#DB27771F",
     drop_fill="#2F5BEA1A",
     tab="#B45309FF",
     problem="#C81E1EFF",
@@ -48,6 +51,7 @@ OVERLAY_HIGH_CONTRAST = OverlayPalette(
     layout="#5B21B6FF",
     layout_faint="#5B21B699",
     gap="#831843FF",
+    gap_fill="#83184333",
     drop_fill="#0000C026",
     tab="#7A3E00FF",
     problem="#9C0000FF",

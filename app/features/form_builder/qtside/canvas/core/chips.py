@@ -44,6 +44,8 @@ class ChipRequest:
     exempt: FrozenSet[NodeId]
     #: The selection chip. When nothing else is clear it goes in the dock.
     required: bool = False
+    #: Only seats clear of the page, so a page-edge number reads as gutter chrome.
+    outside: bool = False
 
 
 @dataclass(frozen=True)
@@ -112,13 +114,16 @@ def place_chips(
     taken: List[CanvasRect] = list(fixed)
     seats: List[ChipSeat] = []
     for request in requests:
-        seat: Optional[ChipSeat] = _corner_seat(request, buckets, taken, viewport)
+        # The page joins the fixed rects, ahead of the chips, so leaders may still cross it.
+        walls = [page] + taken if request.outside else taken
+        count = len(fixed) + (1 if request.outside else 0)
+        seat: Optional[ChipSeat] = _corner_seat(request, buckets, walls, viewport)
         if seat is None:
-            seat = _beside_seat(request, buckets, taken, len(fixed), viewport)
+            seat = _beside_seat(request, buckets, walls, count, viewport)
         if seat is None:
-            seat = _gutter_seat(request, buckets, taken, len(fixed), page, viewport)
+            seat = _gutter_seat(request, buckets, walls, count, page, viewport)
         if seat is None and request.required and request.target.intersects(viewport):
-            seat = _dock_seat(request, buckets, taken, len(fixed), viewport, dock)
+            seat = _dock_seat(request, buckets, walls, count, viewport, dock)
         if seat is None:
             continue
         taken.append(seat.rect)
