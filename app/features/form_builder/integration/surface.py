@@ -31,7 +31,8 @@ from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
-from app.features.form_builder.engine.events import PRIORITY_VIEWS
+from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
+from app.features.form_builder.engine.query.outline import captions_touched, structure_touched
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.layout_actions import (
     Current,
@@ -186,16 +187,10 @@ def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
     return held
 
 
-def _outline_mode(change_set: object) -> str:
-    if getattr(change_set, "replaced", False):
+def _outline_mode(change_set: ChangeSet) -> str:
+    if structure_touched(change_set):
         return "rebuild"
-    if (
-        getattr(change_set, "structure_dirty", ())
-        or getattr(change_set, "added", ())
-        or getattr(change_set, "removed", ())
-    ):
-        return "rebuild"
-    if getattr(change_set, "renamed", ()):
+    if captions_touched(change_set) or change_set.renamed:
         return "patch"
     return "keep"
 
@@ -353,6 +348,7 @@ class FormSurface(QWidget):
             self._stack,
         )
         self._stack.addWidget(self._workbench)
+        self._workbench.outline.set_status(self.narrate)
         layout.addWidget(self._stack, 1)
         self._toolbar.attach_preview(self._workbench.canvas.preview)
         self._command_toast = CommandToast(self)
@@ -858,7 +854,13 @@ class FormSurface(QWidget):
             self._refresh_undo_buttons()
             return
         current = self._session.selection.state.current
-        self._workbench.refresh(current, outline=_outline_mode(change_set))
+        if isinstance(change_set, ChangeSet):
+            mode = _outline_mode(change_set)
+            touched = captions_touched(change_set) if mode == "patch" else ()
+        else:
+            mode = "rebuild"
+            touched = ()
+        self._workbench.refresh(current, outline=mode, touched=touched)
         self._workbench.outline.show_for_design()
         self._refresh_undo_buttons()
         self._sync_shell_undo()

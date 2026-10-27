@@ -465,7 +465,7 @@ M0.1, M0.2, M0.3, M0.4, M0.5, M0.6, M0.4b, M0.7, M0.8, M0.9, M1.0, M1.1d, M1.5, 
 | P-22 | `connectSlotsByName` misses a slot that looks right. | M6.2 | todo |  | A misspelled signal is a problem row. `on_okButton_clicked` for a real `QPushButton` is clean. |
 | P-23 | A huge form freezes inside `setupUi`. | M1.3 | todo |  | Opening a fixture of 400 rows paints a first screen and allows a selection. The runtime check loads the same file with QUiLoader in the preview process. The test records the time. It does not assert a number until a baseline exists. |
 | P-24 | Undo writes a z-order entry that is not a widget. | M1.2 | done | engine/commands/test_catalog.py::test_z_order_comes_from_the_real_child_list_and_document_order_clears_it | Repeat the steps in QTBUG-62049. Save. No `<zorder>` entry names a spacer. |
-| P-25 | Rename in the object tree steals the keyboard. Evidence is R3 only. | M3.5 | todo |  | Rename ten widgets from the tree with the keyboard only. Focus is in the name field for each of them. |
+| P-25 | Rename in the object tree steals the keyboard. Evidence is R3 only. | M3.5 | done | qtside/test_outline_pane.py::test_keyboard_rename_keeps_focus_on_each_name | Rename ten widgets from the tree with the keyboard only. Focus is in the name field for each of them. |
 
 ## Logic
 
