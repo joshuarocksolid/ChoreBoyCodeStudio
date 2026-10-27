@@ -40,7 +40,7 @@ from app.features.form_builder.engine.ui4.values import BoolValue, CStringValue,
 
 PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 
-_NOWHERE = "Nothing above to nest into"
+_NOWHERE = "Nothing above to nest into."
 _KEEP_PAGE = "A page stays inside its container."
 _KEEP_FORM = "The form itself can't be deleted."
 _CAPTION_PROPS = frozenset({"text", "title", "windowTitle", "plainText", "visible"})
@@ -971,6 +971,10 @@ def _plan_key(
         return Idle()
     focus = cursor.focus
     row = None if focus is None else forest.row(focus)
+    nest_key = gesture.key in ("tab", "backtab") or command in ("form.action.outlineNest", "form.action.outlineUnnest")
+    if row is None and nest_key:
+        # No current row: Tab lands on the first row instead of leaving the pane.
+        return _ends(forest, cursor, False)
     if command == "form.action.rename" or gesture.key == "f2":
         if row is None or not row.name:
             return Idle()

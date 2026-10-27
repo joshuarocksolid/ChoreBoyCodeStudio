@@ -25,12 +25,18 @@ def test_the_current_name_is_allowed() -> None:
     assert explain_name("email", taken, _METHODS, "email") is None
 
 
-@pytest.mark.parametrize("name", ["1email", "email-box", ""])
+@pytest.mark.parametrize("name", ["1email", "email-box"])
 def test_identifier_refusal_uses_one_sentence(name: str) -> None:
     refusal = explain_name(name, frozenset(), frozenset(), "")
     assert refusal is not None
     assert refusal.code == "FB011"
     assert refusal.prose == _IDENTIFIER
+
+
+def test_an_empty_name_says_so() -> None:
+    refusal = explain_name("", frozenset(), frozenset(), "")
+    assert refusal is not None
+    assert refusal.prose == "A name can't be empty."
 
 
 @pytest.mark.parametrize("name", ["form", "record", "window", "True", "cbcsThing", "is_blank"])

@@ -404,7 +404,7 @@ def test_page_rows_use_the_title(qapp: QApplication) -> None:
     with _opened(qapp, _tabs(), "page-rows") as (pane, _session):
         page = _find_item(pane.tree, "pageA")
         assert _find_item(pane.tree, "pageB")
-        assert page.data(0, int(getattr(Qt, "UserRole")) + 1) == "First"
+        assert page.data(0, int(getattr(Qt, "UserRole")) + 1) == "Page 1 \u00b7 First"
 
 
 def test_alt_down_reorders_a_tab_page(qapp: QApplication) -> None:
@@ -415,8 +415,19 @@ def test_alt_down_reorders_a_tab_page(qapp: QApplication) -> None:
         assert _focus(qapp) is pane.tree
         assert _pages(session) == ("pageB", "pageA")
         assert _current_index(session) == 1
-        assert _find_item(pane.tree, "pageA")
-        assert _find_item(pane.tree, "pageB")
+        caption = int(getattr(Qt, "UserRole")) + 1
+        assert _find_item(pane.tree, "pageA").data(0, caption) == "Page 2 \u00b7 First"
+        assert _find_item(pane.tree, "pageB").data(0, caption) == "Page 1 \u00b7 Second"
+
+
+def test_tab_with_no_current_row_selects_the_first_row(qapp: QApplication) -> None:
+    with _opened(qapp, _pair(), "tab-first") as (pane, session):
+        pane.tree.setCurrentItem(None)
+        pane.tree.setFocus()
+        QTest.keyClick(pane.tree, _key("Key_Tab"))
+        qapp.processEvents()
+        assert _focus(qapp) is pane.tree
+        assert pane.tree.currentItem() is pane.tree.topLevelItem(0)
 
 
 def test_a_page_drop_reorders_the_page(qapp: QApplication) -> None:

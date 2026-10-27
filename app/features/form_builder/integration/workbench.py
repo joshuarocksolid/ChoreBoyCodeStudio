@@ -1941,7 +1941,11 @@ def _leaves_for_good(event: object) -> bool:
 
 def _row_caption(row: object) -> str:
     if getattr(row, "kind", "") == "page":
-        return str(getattr(row, "visible_text", "") or "")
+        # UX-OUT-007: the page number and its title ("Page 2 \u00b7 Settings").
+        slot = getattr(row, "slot", None)
+        number = "Page %d" % (slot.index + 1) if isinstance(slot, InPageSlot) else "Page"
+        title = str(getattr(row, "visible_text", "") or "")
+        return "%s \u00b7 %s" % (number, title) if title else number
     bits = []
     friendly = row.friendly  # type: ignore[attr-defined]
     primary = row.primary  # type: ignore[attr-defined]

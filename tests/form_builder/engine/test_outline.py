@@ -59,7 +59,7 @@ from tests.form_builder.engine.commands._support import BOX, FREE, SHARED, nid, 
 
 _METHODS = frozenset({"close", "show", "update", "accept", "reject", "done", "print"})
 _IDENTIFIER = "Names use letters, digits and _, and can't start with a digit."
-_NOWHERE = "Nothing above to nest into"
+_NOWHERE = "Nothing above to nest into."
 
 
 def _friendly(name: str) -> str:

@@ -13,6 +13,7 @@ from typing import FrozenSet, Optional
 from app.features.form_builder.engine.commands.refs import FORMULA_NAMES, RESERVED_NAMES
 
 _IDENTIFIER = "Names use letters, digits and _, and can't start with a digit."
+_EMPTY = "A name can't be empty."
 _RESERVED = "That name is reserved."
 _KEYWORD = "%s is a Python word, so it can't be a name."
 
@@ -31,11 +32,13 @@ def explain_name(
 ) -> Optional[NameRefusal]:
     """None when ``name`` may be committed. Keeping the widget's current name is allowed.
 
-    An empty ``current`` means there is no name to keep, so ``""`` still fails
-    the identifier rule.
+    An empty ``current`` means there is no name to keep, so ``""`` still fails,
+    with its own sentence.
     """
     if current and name == current:
         return None
+    if not name:
+        return NameRefusal("FB011", _EMPTY)
     if name.startswith("cbcs") or name in RESERVED_NAMES or name in FORMULA_NAMES:
         return NameRefusal("FB106", _RESERVED)
     if keyword.iskeyword(name):

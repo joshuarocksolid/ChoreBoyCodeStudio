@@ -325,7 +325,7 @@ def test_a_keyboard_session_stays_in_the_outline(tmp_path: Path, qapp: QApplicat
         tree = _tree(again)
         qapp.processEvents()
         assert _item(tree, "customerEmail")
-        assert _item(tree, "pageA").data(0, int(getattr(Qt, "UserRole")) + 1) == "First"
+        assert _item(tree, "pageA").data(0, int(getattr(Qt, "UserRole")) + 1) == "Page 1 \u00b7 First"
         _matches(tree, again)
         _select(tree, qapp, "okButton")
         _stay(again)
