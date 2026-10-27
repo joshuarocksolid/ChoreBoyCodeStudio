@@ -42,12 +42,14 @@ _DEFAULT_SIZE = (80, 24)
 
 
 def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
-    """Selected subtrees, buddies among them, and connections among them.
+    """Selected subtrees, buddies among them, and connections that touch them.
 
     A selected descendant of another selected node is not copied twice.
+    Selecting the form copies its contents, never the root widget.
     Ids are cleared. A buddy that names something outside the copied set is
-    left out. A connection stays when either end is in the set, so a paste
-    onto another form can keep a dangling end.
+    left out. A connection with both ends in the set is copied. A connection
+    with one end outside is copied too, so paste can keep it only when that
+    end is missing on the target.
     """
     roots = _copy_roots(doc, ids)
     specs = tuple(_without_ids(doc.node(node_id).to_spec()) for node_id in roots)
@@ -123,6 +125,100 @@ def pasted_widget_count(fragment: Fragment) -> int:
 def paste_status(count: int, anchor: str) -> str:
     """Status sentence for a paste. One widget does not take a plural noun."""
     return "Pasted %d %s after %s" % (count, _noun(count, "widget", "widgets"), anchor)
+
+
+def paste_sentence(doc: UiDocument, anchor_ids: Sequence[NodeId], count: int) -> str:
+    """Status sentence. A container is named by its visible text, never by a layout name."""
+    noun = _noun(count, "widget", "widgets")
+    placement = paste_placement(doc, anchor_ids)
+    if isinstance(placement, InContainer):
+        return "Pasted %d %s into %s" % (count, noun, _shown_name(doc, placement.widget))
+    anchor = _anchor(doc, anchor_ids)
+    node = doc.get(anchor) if anchor is not None else None
+    if isinstance(node, LayoutNode):
+        owner = node.owner_widget_id()
+        if owner is not None:
+            return "Pasted %d %s into %s" % (count, noun, _shown_name(doc, owner))
+    if isinstance(node, WidgetNode) and node.layout is not None:
+        return "Pasted %d %s into %s" % (count, noun, _shown_name(doc, node.id))
+    return paste_status(count, paste_anchor_name(doc, anchor_ids))
+
+
+def duplicate_sentence(doc: UiDocument, anchor_ids: Sequence[NodeId]) -> str:
+    """One sentence for duplicate. The name is the visible text, then the object name."""
+    anchor = _anchor(doc, anchor_ids)
+    if anchor is None or not doc.contains(anchor) or anchor == doc.root.id:
+        return "Duplicated the selection."
+    return "Duplicated %s." % _shown_name(doc, anchor)
+
+
+def cut_sentence(count: int) -> str:
+    """One sentence for cut."""
+    return "Cut %d %s." % (count, _noun(count, "widget", "widgets"))
+
+
+def connections_for_paste(fragment: Fragment, target_names: AbstractSet[str]) -> Tuple[NodeSpec, ...]:
+    """Connections paste may insert.
+
+    Both ends in the copied set stay. One end outside stays only when that
+    name is not already a widget on the target. An outside name that exists
+    is dropped so paste never wires a widget the user did not copy.
+    """
+    copied = set(_listed_names(fragment.nodes))
+    kept: List[NodeSpec] = []
+    for spec in fragment.connections:
+        outside: List[str] = []
+        for key in ("sender", "receiver"):
+            value = spec.field(key)
+            if isinstance(value, str) and value and value not in copied:
+                outside.append(value)
+        if outside and all(name in target_names for name in outside):
+            continue
+        kept.append(spec)
+    return tuple(kept)
+
+
+def sibling_ids(doc: UiDocument, current: Optional[NodeId], ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
+    """Every sibling of the anchor, in document order. The form selects its contents."""
+    anchor = current if current is not None and doc.contains(current) else None
+    if anchor is None:
+        for node_id in ids:
+            if doc.contains(node_id):
+                anchor = node_id
+                break
+    if anchor is None:
+        return ()
+    node = doc.node(anchor)
+    if anchor == doc.root.id and isinstance(node, WidgetNode):
+        return _content_ids(doc, node)
+    parent = doc.parent(anchor)
+    if isinstance(parent, LayoutItemNode):
+        layout = doc.parent(parent.id)
+        if isinstance(layout, LayoutNode):
+            return _item_contents(layout)
+    if isinstance(parent, WidgetNode):
+        return tuple(child.id for child in parent.child_widgets)
+    return (anchor,)
+
+
+def command_enabled(
+    doc: UiDocument,
+    ids: Sequence[NodeId],
+    command_id: str,
+    has_fragment: bool,
+) -> bool:
+    """Whether a clipboard command can act on this selection and clipboard."""
+    if command_id == "form.action.paste":
+        return has_fragment
+    if command_id in ("form.action.copy", "form.action.duplicate", "form.action.savePiece"):
+        return bool(selection_fragment(doc, ids).nodes)
+    if command_id in ("form.action.cut", "form.action.delete", "form.action.backspace"):
+        root = doc.root.id
+        ui = doc.ui.id
+        return any(node_id not in (root, ui) and doc.contains(node_id) for node_id in ids)
+    if command_id in ("form.action.selectAll", "form.action.selectAllSiblings"):
+        return True
+    return False
 
 
 def dangling_sentence(
@@ -206,7 +302,67 @@ def _copy_roots(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
             continue
         taken.add(node_id)
         unique.append(node_id)
+    expanded: List[NodeId] = []
+    for node_id in unique:
+        node = doc.node(node_id)
+        if node_id == doc.root.id and isinstance(node, WidgetNode):
+            expanded.extend(_content_ids(doc, node))
+        else:
+            expanded.append(node_id)
+    return _dedupe_roots(doc, expanded)
+
+
+def _dedupe_roots(doc: UiDocument, node_ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
+    chosen = [node_id for node_id in node_ids if doc.contains(node_id)]
+    chosen_set = set(chosen)
+    roots = [
+        node_id
+        for node_id in chosen
+        if not any(doc.is_ancestor(other, node_id) for other in chosen_set if other != node_id)
+    ]
+    order = {node.id: index for index, node in enumerate(doc.iter_preorder())}
+    unique: List[NodeId] = []
+    taken: Set[NodeId] = set()
+    for node_id in sorted(roots, key=lambda item: order.get(item, 0)):
+        if node_id in taken:
+            continue
+        taken.add(node_id)
+        unique.append(node_id)
     return tuple(unique)
+
+
+def _content_ids(doc: UiDocument, widget: WidgetNode) -> Tuple[NodeId, ...]:
+    """What copying the form copies: the root layout's items, or the free children."""
+    if widget.layout is not None:
+        return _item_contents(widget.layout)
+    return tuple(child.id for child in widget.child_widgets)
+
+
+def _item_contents(layout: LayoutNode) -> Tuple[NodeId, ...]:
+    found: List[NodeId] = []
+    for item in layout.items:
+        content = item.content
+        if content is not None and content.kind in _COPYABLE:
+            found.append(content.id)
+    return tuple(found)
+
+
+def _shown_name(doc: UiDocument, node_id: NodeId) -> str:
+    """Visible text, then the object name. Layouts borrow the widget that owns them."""
+    node = doc.get(node_id)
+    if isinstance(node, LayoutNode):
+        owner = node.owner_widget_id()
+        if owner is not None:
+            return _shown_name(doc, owner)
+        return "the form"
+    if isinstance(node, WidgetNode):
+        for key in ("text", "title", "windowTitle"):
+            value = node.value(key)
+            if isinstance(value, (StringValue, CStringValue)) and value.text.strip():
+                return value.text.strip()
+        if node.object_name:
+            return node.object_name
+    return "the form"
 
 
 def _copy_target(doc: UiDocument, node_id: NodeId) -> Optional[Node]:
@@ -334,8 +490,12 @@ def _place_widget(doc: UiDocument, widget: WidgetNode) -> Placement:
         return _place_widget(doc, page)
     if widget.layout is not None:
         return _end_of_layout(doc, widget.layout)
-    if is_container(doc, widget.id):
-        return InContainer(widget.id, len(widget.child_widgets))
+    # UX-BARE-001 makes a vertical layout only when the container is empty.
+    # A container that already has free children keeps those rectangles.
+    if (is_container(doc, widget.id) or widget.id == doc.root.id) and not is_page_container(doc, widget.id):
+        if widget.child_widgets:
+            return _beside(widget, widget.child_widgets[-1])
+        return InContainer(widget.id, 0)
     item = _holding_item(doc, widget.id)
     if item is not None:
         return _after_item(doc, item)

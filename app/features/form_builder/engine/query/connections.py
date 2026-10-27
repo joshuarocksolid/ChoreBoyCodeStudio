@@ -27,7 +27,7 @@ def missing_connection_diagnostics(doc: UiDocument) -> Tuple[FormDiagnostic, ...
             FormDiagnostic(
                 code=info.code,
                 severity=info.severity,
-                message=info.title,
+                message=_connection_sentence(node, missing),
                 location=DiagnosticLocation(
                     node_id=node.id,
                     object_name=missing,
@@ -37,6 +37,24 @@ def missing_connection_diagnostics(doc: UiDocument) -> Tuple[FormDiagnostic, ...
             )
         )
     return tuple(found)
+
+
+def _connection_sentence(node: Node, missing: str) -> str:
+    """Name the connection and say what to do (UX-COPY-003)."""
+    sender = _text_field(node, "sender")
+    receiver = _text_field(node, "receiver")
+    signal = _text_field(node, "signal").replace("()", "")
+    slot = _text_field(node, "slot").replace("()", "")
+    return (
+        "The connection %s.%s → %s.%s points at %s, which isn't in this form. "
+        "Add a widget named %s or delete the connection."
+        % (sender, signal, receiver, slot, missing, missing)
+    )
+
+
+def _text_field(node: Node, name: str) -> str:
+    value = node.field(name)
+    return value if isinstance(value, str) else ""
 
 
 def _missing_end(node: Node, alive: FrozenSet[str]) -> Optional[str]:

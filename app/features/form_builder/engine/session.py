@@ -17,6 +17,7 @@ from app.features.form_builder.engine.events import (
     PRIORITY_SELECTION,
     PRIORITY_SELECTION_NOTIFY,
     ChangeSet,
+    FieldChanged,
 )
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
@@ -156,11 +157,13 @@ class FormSession:
     def _on_replaced(self, changeset: ChangeSet) -> None:
         """A replaced document has new ids. Read it again so reader rows point at live nodes.
 
-        Connection endpoints are checked on every edit so undo and redo refresh FB014.
+        FB014 is scanned when names or connections change, including undo and redo.
         """
         if changeset.replaced:
             text = self._serializer.text(self._document)
             self._diagnostics.publish("reader", live_reader_diagnostics(self._document, text))
+        if not _connection_scan_needed(changeset):
+            return
         found = missing_connection_diagnostics(self._document)
         if found != self._connection_rows:
             self._connection_rows = found
@@ -177,6 +180,19 @@ class FormSession:
     def _live(self) -> None:
         if self._disposed:
             raise RuntimeError("session is disposed")
+
+
+_CONNECTION_FIELDS = frozenset({"sender", "signal", "receiver", "slot"})
+
+
+def _connection_scan_needed(changeset: ChangeSet) -> bool:
+    """True when a name or a connection may have changed."""
+    if changeset.replaced or changeset.renamed or changeset.added or changeset.removed:
+        return True
+    return any(
+        isinstance(change, FieldChanged) and change.field in _CONNECTION_FIELDS
+        for change in changeset.changes
+    )
 
 
 def live_reader_diagnostics(document: UiDocument, text: str) -> Tuple[FormDiagnostic, ...]:

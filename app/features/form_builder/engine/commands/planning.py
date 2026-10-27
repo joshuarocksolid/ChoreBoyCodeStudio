@@ -10,6 +10,7 @@ from dataclasses import fields, is_dataclass
 from functools import cmp_to_key
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
+from app.features.form_builder.engine.clipboard import connections_for_paste
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.ops import (
     InsertNodeOp,
@@ -80,29 +81,48 @@ def insert_fragment(
     fragment: Fragment,
     auto_layout: bool,
 ) -> Tuple[Tuple[NodeId, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...], Tuple[str, ...]]:
-    dest = _destination(doc, ctx, placement, auto_layout, moving=(), incoming=len(fragment.nodes))
+    pair = _form_pair_indexes(fragment.nodes) if isinstance(placement, InFormRow) else None
+    if isinstance(placement, InFormRow) and pair is None:
+        role = _lone_form_role(fragment.nodes)
+        if role is not None:
+            placement = InFormRow(placement.layout, placement.row, role, True)
+    incoming = 1 if pair is not None else len(fragment.nodes)
+    if pair is not None and isinstance(placement, InFormRow):
+        dest = _form_pair_dest(doc, ctx, placement)
+    else:
+        dest = _destination(doc, ctx, placement, auto_layout, moving=(), incoming=incoming)
     chosen: set = set()
     counts = _name_counts(fragment.nodes)
     mapping: Dict[str, str] = {}
     prepared = tuple(_assign_names(spec, doc, chosen, counts, mapping) for spec in fragment.nodes)
     prepared = tuple(rewrite_spec_refs(spec, mapping) for spec in prepared)
+    if not dest.wrap and dest.slot == "children":
+        prepared = tuple(_hold_free(spec, doc, chosen) for spec in prepared)
     conflicts = _merge_declarations(doc, ctx, fragment)
     _merge_resources(doc, ctx, fragment)
     top_ids: List[NodeId] = []
     scope: List[NodeId] = []
     for offset, spec in enumerate(prepared):
-        spec = _wrap_for_dest(spec, dest, offset)
+        if pair is not None:
+            column = 0 if offset == pair[0] else 1
+            spec = _item_spec(spec, row=dest.row, column=column)
+        else:
+            spec = _wrap_for_dest(spec, dest, offset)
         allocated = allocate_spec(ctx, spec)
         ctx.do(InsertNodeOp(dest.parent, dest.slot, dest.index + offset, allocated))
         if dest.geometry is not None:
             target = _content_spec_id(allocated)
-            set_property(doc, ctx, target, "geometry", dest.geometry)
+            rect = dest.geometry
+            if offset:
+                rect = RectValue(rect.x + 16 * offset, rect.y + 16 * offset, rect.width, rect.height)
+            set_property(doc, ctx, target, "geometry", rect)
         top_ids.append(_content_spec_id(allocated))
         scope.extend(allocated.ids())
     alive = doc.names()
     dangling: List[str] = []
     seen_dangling: Set[str] = set()
-    for spec in fragment.connections:
+    pasted_connections = connections_for_paste(fragment, doc.names())
+    for spec in pasted_connections:
         rewritten = rewrite_spec_refs(spec, mapping)
         allocated = allocate_spec(ctx, rewritten)
         count = len(doc.ui.children("connections"))
@@ -1056,6 +1076,76 @@ class _Dest:
         self.column = column
         self.rowspan = rowspan
         self.colspan = colspan
+
+
+def _class_name(spec: NodeSpec) -> str:
+    value = spec.field("class_name")
+    return value if isinstance(value, str) else ""
+
+
+def _form_pair_indexes(nodes: Sequence[NodeSpec]) -> Optional[Tuple[int, int]]:
+    """Indexes of the label and the field when the fragment is one of each."""
+    if len(nodes) != 2 or any(node.kind != "widget" for node in nodes):
+        return None
+    labels = [index for index, node in enumerate(nodes) if _class_name(node) == "QLabel"]
+    if len(labels) != 1:
+        return None
+    label = labels[0]
+    return label, 1 - label
+
+
+def _lone_form_role(nodes: Sequence[NodeSpec]) -> Optional[str]:
+    """A single pasted widget takes its own form column."""
+    if len(nodes) != 1 or nodes[0].kind != "widget":
+        return None
+    if _class_name(nodes[0]) == "QLabel":
+        return "label"
+    return "field"
+
+
+def _form_pair_dest(doc: UiDocument, ctx: PlanContext, placement: InFormRow) -> _Dest:
+    """One new form row. The label and the field share it."""
+    _require_cell_layout(doc, placement)
+    if placement.insert_row:
+        _shift_axis(doc, ctx, placement.layout, "row", placement.row, (), delta=1)
+    cells: Set[Tuple[int, str]] = set()
+    cells |= form_occupied_cells(placement.row, 0, 1)
+    cells |= form_occupied_cells(placement.row, 1, 1)
+    if _form_conflict(doc, placement.layout, cells, ()):
+        raise CommandRejected("That cell is already occupied.")
+    count = len(doc.node(placement.layout).children("layout_items"))
+    return _Dest(placement.layout, "layout_items", count, True, row=placement.row, column=0)
+
+
+def _hold_free(spec: NodeSpec, doc: UiDocument, chosen: set) -> NodeSpec:
+    """A layout or spacer cannot sit at a coordinate. A holder widget can.
+
+    The container already has free children, so it has no layout item list.
+    """
+    if spec.kind == "widget":
+        return spec
+    held = spec
+    if spec.kind == "spacer":
+        item = NodeSpec("layoutitem", None, (), (), (), (("content", (spec,)),))
+        held = NodeSpec(
+            "layout",
+            None,
+            _ordered("layout", {"class_name": "QVBoxLayout", "object_name": _take_name("verticalLayout", doc, chosen)}),
+            (),
+            (),
+            (("layout_items", (item,)),),
+        )
+    if held.kind != "layout":
+        return spec
+    name = _take_name("holder", doc, chosen)
+    return NodeSpec(
+        "widget",
+        None,
+        _ordered("widget", {"class_name": "QWidget", "object_name": name}),
+        (),
+        (),
+        (("layout", (held,)),),
+    )
 
 
 def _destination(

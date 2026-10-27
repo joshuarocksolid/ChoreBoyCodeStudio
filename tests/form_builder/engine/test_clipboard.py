@@ -389,7 +389,9 @@ def test_a_free_offset_does_not_ask_for_a_new_layout() -> None:
     place = paste_placement(doc, (nid(doc, "okButton"),))
     assert paste_auto_layout(place) is False
     boxed = paste_placement(doc, ())
-    assert paste_auto_layout(boxed) is True
+    assert isinstance(boxed, InContainer)
+    assert boxed.geometry is not None
+    assert paste_auto_layout(boxed) is False
 
 
 def test_select_all_ids_skip_the_document_node() -> None:

@@ -45,6 +45,11 @@ class InsertFragment(_CommandBase):
     placement: Placement
     fragment: Fragment
     auto_layout: bool = True
+    undo_label: str = ""
+
+    @property
+    def label(self) -> str:
+        return self.undo_label or self._label_text
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> "InsertResult":
         ids, renames, conflicts, dangling = planning.insert_fragment(
@@ -68,6 +73,11 @@ class DeleteNodes(_CommandBase):
     command_type: ClassVar[str] = "delete_nodes"
     _label_text: ClassVar[str] = "Delete"
     ids: Tuple[NodeId, ...]
+    undo_label: str = ""
+
+    @property
+    def label(self) -> str:
+        return self.undo_label or self._label_text
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> Tuple[str, ...]:
         return planning.delete_nodes(doc, ctx, self.ids)

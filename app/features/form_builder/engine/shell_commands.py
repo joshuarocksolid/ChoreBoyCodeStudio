@@ -157,7 +157,7 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
     ),
     _row("form.action.formSettings", "Form settings\u2026", "", _FORM, menu=("Form settings\u2026",)),
     _row("form.action.createWindowClass", "Create window class\u2026", "", _FORM, menu=("Create window class\u2026",)),
-    _row("form.action.selectAllSiblings", "Select all siblings", "Ctrl+A", _CANVAS_OUTLINE),
+    _row("form.action.selectAllSiblings", "Select all siblings", "Ctrl+A", _CANVAS_OUTLINE, available=True),
     _row("form.action.selectAll", "Select all", "", _CANVAS_OUTLINE, menu=("Select all",), available=True),
     _row("form.action.duplicate", "Duplicate", "Ctrl+D", _CANVAS_OUTLINE, available=True),
     _row("form.action.savePiece", "Save to pieces", "", _CANVAS_OUTLINE, available=True),

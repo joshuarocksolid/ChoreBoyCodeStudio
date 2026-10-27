@@ -128,6 +128,11 @@ def kept_as_is_line_spans(result: WriteResult) -> Tuple[Tuple[int, int], ...]:
     return result.opaque_spans
 
 
+# Top-level siblings live in this layout so two layouts, or a widget and a layout, keep document order.
+FRAGMENT_ORDER_NAME = "_cbcs_fragment_order"
+_ITEM_KINDS = frozenset({"widget", "layout", "spacer"})
+
+
 def write_fragment(fragment: Fragment) -> str:
     """Clipboard text for ``fragment`` (same byte rules as ``write_ui``)."""
     allocator = IdAllocator()
@@ -1294,8 +1299,6 @@ def _esc_attr(text: str) -> str:
 
 
 def _fragment_spec(fragment: Fragment, allocator: IdAllocator) -> NodeSpec:
-    from app.features.form_builder.engine.ui4.schema import SCHEMA as schema
-
     def mint(spec: NodeSpec) -> NodeSpec:
         return NodeSpec(
             kind=spec.kind,
@@ -1307,16 +1310,34 @@ def _fragment_spec(fragment: Fragment, allocator: IdAllocator) -> NodeSpec:
             extra_attrs=spec.extra_attrs,
         )
 
-    buckets: Dict[str, List[NodeSpec]] = {}
+    items: List[NodeSpec] = []
+    rest: List[NodeSpec] = []
     for spec in fragment.nodes:
+        minted = mint(spec)
+        if spec.kind in _ITEM_KINDS:
+            items.append(NodeSpec("layoutitem", allocator.alloc(), (), (), (), (("content", (minted,)),)))
+        else:
+            rest.append(minted)
+    buckets: Dict[str, List[NodeSpec]] = {}
+    if items:
+        order = NodeSpec(
+            "layout",
+            allocator.alloc(),
+            (("class_name", "QVBoxLayout"), ("object_name", FRAGMENT_ORDER_NAME)),
+            (),
+            (),
+            (("layout_items", tuple(items)),),
+        )
+        buckets["layout"] = [order]
+    for spec in rest:
         placed = False
-        for slot in schema["widget"].slots:
-            if spec.kind in slot.accepts and slot.name != "opaque":
-                buckets.setdefault(slot.name, []).append(mint(spec))
+        for slot in SCHEMA["widget"].slots:
+            if spec.kind in slot.accepts and slot.name != "opaque" and slot.name != "layout":
+                buckets.setdefault(slot.name, []).append(spec)
                 placed = True
                 break
         if not placed:
-            buckets.setdefault("opaque", []).append(mint(spec))
+            buckets.setdefault("opaque", []).append(spec)
     root_slots = tuple((name, tuple(kids)) for name, kids in buckets.items() if kids)
     root = NodeSpec(
         kind="widget",
