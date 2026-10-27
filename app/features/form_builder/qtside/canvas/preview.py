@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QRectF, QTimer, Qt
+from app.qt.QtCore import QEvent, QPoint, QRect, QRectF, QTimer, Qt
 from app.qt.QtGui import QColor, QFont, QPainter, QPen
 from app.qt.QtWidgets import (
     QGraphicsProxyWidget,
@@ -18,7 +18,7 @@ from app.qt.QtWidgets import (
     QLineEdit,
     QWidget,
 )
-from app.qt.qt_compat import event_pos, wrapper_is_valid
+from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_REALIZE, ChangeSet
 from app.features.form_builder.engine.ids import NodeId
@@ -31,7 +31,7 @@ from app.features.form_builder.engine.sizing import (
     preview_pill,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import FontValue, SizeValue
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.stage import Stage
@@ -145,6 +145,7 @@ class FormPreview:
         self._cut_widgets: List[QWidget] = []
         self._hint_cache: Dict[int, Tuple[int, int]] = {}
         self._moved: Optional[Tuple[NodeId, ...]] = None
+        self._wide_hover: Optional[NodeId] = None
         self._cut_wait = False
         self._cut_timer = QTimer(view)
         self._cut_timer.setSingleShot(True)
@@ -185,11 +186,18 @@ class FormPreview:
             self._wide_edit.setText("Wide · %d px" % self._wide)
 
     def toggle_widths(self) -> None:
+        """Show or hide the wide copy. The view scale stays where the design copy left it."""
+        opening = not self._widths
         self._widths = not self._widths
-        if not self._widths:
+        if opening:
+            self._stage.hold_fit_page(True)
+        else:
             self._release_width()
             self._drop_mirror()
-        self._refresh()
+            self._wide_hover = None
+            self._stage.hold_fit_page(False)
+        self._on_change(None)
+        self.arrange()
 
     def reset(self) -> None:
         self._text_factor = 1.0
@@ -202,7 +210,8 @@ class FormPreview:
         if not self._widths or self._mirror_proxy is None:
             return False
         press = getattr(getattr(QEvent, "Type", QEvent), "MouseButtonPress")
-        if event.type() != press:
+        move = getattr(getattr(QEvent, "Type", QEvent), "MouseMove")
+        if event.type() not in (press, move):
             return False
         proxy = self._mirror_proxy
         if not proxy.isVisible():
@@ -210,6 +219,9 @@ class FormPreview:
         pos = event_pos(event)
         scene_pos = self._view.mapToScene(QPoint(int(pos.x()), int(pos.y())))
         if not proxy.sceneBoundingRect().contains(scene_pos):
+            if event.type() == move and self._wide_hover is not None:
+                self._wide_hover = None
+                self._view.viewport().update()
             return False
         local = proxy.mapFromScene(scene_pos)
         root = proxy.widget()
@@ -217,7 +229,20 @@ class FormPreview:
             return True
         child = _widget_at(root, int(local.x()), int(local.y()))
         node = _node_of(child)
-        if node is not None:
+        move = getattr(getattr(QEvent, "Type", QEvent), "MouseMove")
+        if event.type() == move:
+            if node != self._wide_hover:
+                self._wide_hover = node
+                self._view.viewport().update()
+            return True
+        if node is None:
+            return True
+        flags = enum_value(event.modifiers())
+        shift = enum_value(getattr(getattr(Qt, "KeyboardModifier", Qt), "ShiftModifier"))
+        ctrl = enum_value(getattr(getattr(Qt, "KeyboardModifier", Qt), "ControlModifier"))
+        if flags & shift or flags & ctrl:
+            self._session.selection.toggle(node, source=SelectionSource.CANVAS)
+        else:
             self._session.selection.set((node,), source=SelectionSource.CANVAS)
         return True
 
@@ -271,6 +296,7 @@ class FormPreview:
             scene.setSceneRect(0, 0, max(current.width(), scene_w), max(current.height(), scene_h))
         self._move_chip(self._narrow, origin.x(), origin.y(), "Narrowest · %d px" % int(narrow.width()))
         self._move_wide(wide_origin.x(), wide_origin.y())
+        self._clear_width_chips()
 
     def paint_cutoff(self, painter: QPainter) -> None:
         if self._identity():
@@ -291,7 +317,7 @@ class FormPreview:
             painter.drawRect(self._stage.proxy.mapRectToScene(rect))
 
     def paint_wide_selection(self, painter: QPainter) -> None:
-        """The design overlay only knows the narrow page. The wide copy gets the same stroke."""
+        """O(selection). The wide copy draws the design selection. Handles are not draggable."""
         proxy = self._mirror_proxy
         mirror = self._mirror
         if not self._widths or proxy is None or mirror is None or not proxy.isVisible():
@@ -299,22 +325,37 @@ class FormPreview:
         root = proxy.widget()
         if root is None or not wrapper_is_valid(root):
             return
-        current = effective_selection(self._session.document, self._session.selection.state).current
-        if current is None:
+        shown = effective_selection(self._session.document, self._session.selection.state)
+        no_brush = getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush")
+        for node_id in shown.ids:
+            rect = self._mirror_scene_rect(node_id)
+            if rect is None:
+                continue
+            node = self._session.document.get(node_id)
+            if isinstance(node, LayoutNode):
+                pen = QPen(_overlay_color(self._view, "layout"))
+                pen.setWidthF(1.5)
+            else:
+                pen = QPen(_overlay_color(self._view, "select"))
+                pen.setWidth(2)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.setBrush(no_brush)
+            painter.drawRect(rect)
+            if node_id == shown.current:
+                _paint_handles(painter, rect, _overlay_color(self._view, "select"))
+        hover = self._wide_hover
+        if hover is None or hover in shown.ids:
             return
-        widget = mirror.widget_for(current)
-        if widget is None or not widget.isVisible():
+        rect = self._mirror_scene_rect(hover)
+        if rect is None:
             return
-        if widget is not root and not root.isAncestorOf(widget):
-            return
-        origin = widget.mapTo(root, QPoint(0, 0))
-        rect = QRectF(float(origin.x()), float(origin.y()), float(widget.width()), float(widget.height()))
-        pen = QPen(_overlay_color(self._view, "select"))
+        pen = QPen(_overlay_color(self._view, "hover"))
         pen.setCosmetic(True)
-        pen.setWidth(2)
+        pen.setWidth(1)
         painter.setPen(pen)
-        painter.setBrush(getattr(getattr(Qt, "BrushStyle", Qt), "NoBrush"))
-        painter.drawRect(proxy.mapRectToScene(rect))
+        painter.setBrush(no_brush)
+        painter.drawRect(rect)
 
     def dispose(self) -> None:
         self._cut_timer.stop()
@@ -584,6 +625,44 @@ class FormPreview:
         if digits:
             self.set_wide(int(digits))
 
+    def _mirror_scene_rect(self, node_id: NodeId) -> Optional[QRectF]:
+        """O(depth). The node's rect on the wide copy, in scene coordinates."""
+        proxy = self._mirror_proxy
+        mirror = self._mirror
+        if proxy is None or mirror is None:
+            return None
+        root = proxy.widget()
+        if root is None or not wrapper_is_valid(root):
+            return None
+        widget = mirror.widget_for(node_id)
+        if widget is not None and wrapper_is_valid(widget) and widget.isVisible():
+            if widget is root or root.isAncestorOf(widget):
+                origin = widget.mapTo(root, QPoint(0, 0))
+                local = QRectF(float(origin.x()), float(origin.y()), float(widget.width()), float(widget.height()))
+                return proxy.mapRectToScene(local)
+        layout = mirror.layout_for(node_id)
+        if layout is None:
+            return None
+        host = layout.parentWidget()
+        if host is None or not wrapper_is_valid(host):
+            return None
+        if host is not root and not root.isAncestorOf(host):
+            return None
+        geo = layout.geometry()
+        origin = host.mapTo(root, geo.topLeft())
+        local = QRectF(float(origin.x()), float(origin.y()), float(geo.width()), float(geo.height()))
+        return proxy.mapRectToScene(local)
+
+    def _clear_width_chips(self) -> None:
+        """O(chips). Keep preview chips off the caption, the size readout and both copies."""
+        blockers = _widget_rects(self._view, ("formBuilder.pageTitle", "formBuilder.sizeReadout"))
+        blockers.extend(_proxy_rects(self._view, (self._stage.proxy, self._mirror_proxy)))
+        for widget in (self._pill, self._narrow, self._wide_edit):
+            if not widget.isVisible():
+                continue
+            _nudge_clear(widget, blockers)
+            blockers.append(widget.geometry())
+
     def _move_chip(self, label: QLabel, scene_x: float, scene_y: float, text: str) -> None:
         label.setText(text)
         label.adjustSize()
@@ -599,6 +678,59 @@ class FormPreview:
         self._wide_edit.move(int(origin.x()), max(4, int(origin.y()) - PAGE_TITLE_HEIGHT - self._wide_edit.height() - 4))
         self._wide_edit.show()
         self._wide_edit.raise_()
+
+
+def _paint_handles(painter: QPainter, rect: QRectF, color: QColor) -> None:
+    size = 7.0
+    painter.setBrush(color)
+    painter.setPen(getattr(getattr(Qt, "PenStyle", Qt), "NoPen"))
+    for x, y in (
+        (rect.right(), rect.center().y()),
+        (rect.center().x(), rect.bottom()),
+        (rect.right(), rect.bottom()),
+    ):
+        painter.drawRect(QRectF(x - size / 2.0, y - size / 2.0, size, size))
+
+
+def _widget_rects(view: QGraphicsView, names: Tuple[str, ...]) -> List[QRect]:
+    found = []
+    for name in names:
+        widget = view.findChild(QWidget, name)
+        if isinstance(widget, QWidget) and widget.isVisible():
+            found.append(QRect(widget.geometry()))
+    return found
+
+
+def _proxy_rects(view: QGraphicsView, proxies: Tuple[Optional[QGraphicsProxyWidget], ...]) -> List[QRect]:
+    found = []
+    for proxy in proxies:
+        if proxy is None or not proxy.isVisible():
+            continue
+        scene = proxy.sceneBoundingRect()
+        top_left = view.mapFromScene(scene.topLeft())
+        found.append(
+            QRect(int(top_left.x()), int(top_left.y()), max(1, int(scene.width())), max(1, int(scene.height())))
+        )
+    return found
+
+
+def _nudge_clear(widget: QWidget, blockers: Sequence[QRect]) -> None:
+    rect = QRect(widget.geometry())
+    for _step in range(12):
+        hit = None
+        for other in blockers:
+            if rect.intersects(other):
+                hit = other
+                break
+        if hit is None:
+            break
+        above = QRect(rect)
+        above.moveBottom(hit.top() - 4)
+        if above.top() >= 0 and not any(above.intersects(other) for other in blockers):
+            rect = above
+            continue
+        rect.moveTop(hit.bottom() + 4)
+    widget.move(rect.topLeft())
 
 
 def _narrow_width(widget: QWidget, stored_minimum: int) -> int:

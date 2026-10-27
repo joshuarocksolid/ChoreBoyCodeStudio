@@ -13,6 +13,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import EditorDone
 from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.text import TextTarget
 from app.features.form_builder.qtside.realize.api import Realizer
+from app.features.form_builder.qtside.theme.chrome import editor_field_colors
 from app.features.form_builder.qtside.theme.overlay import overlay_palette
 
 _How = Literal["enter", "tab", "backtab", "escape", "focus_out"]
@@ -210,10 +211,11 @@ def _sheet(viewport: QWidget, font: QFont) -> str:
         size = "%dpx" % font.pixelSize()
     else:
         size = "%gpt" % font.pointSizeF()
+    background, foreground = editor_field_colors()
     return (
-        "background: #FFFFFF; color: #212529; border: 1px solid %s; padding: 0px;"
+        "background: %s; color: %s; border: 1px solid %s; padding: 0px;"
         " font-family: '%s'; font-size: %s;"
-    ) % (color, family, size)
+    ) % (background, foreground, color, family, size)
 
 
 def _copy_alignment(widget: QWidget, edit: _Edit) -> None:

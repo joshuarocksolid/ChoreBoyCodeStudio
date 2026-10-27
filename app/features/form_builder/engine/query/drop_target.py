@@ -264,6 +264,16 @@ def _resolve_box(host: DropHost, pointer: Tuple[int, int], payload: DropPayload)
             wrap_layout=layout,
             index=slot.index,
         )
+    if not host.slots:
+        sentence = "Insert into %s" % (host.name or "the layout")
+        return _accept(
+            host,
+            "box",
+            sentence,
+            sentence,
+            DropIndicator(_cover_empty(host.rect), dashed=True),
+            index=0,
+        )
     index = _box_index(host.slots, pointer, vertical)
     sentence = _between(host.slots, index, "Insert", host.name or "the layout")
     return _accept(
@@ -760,6 +770,18 @@ def _pane_sentence(slots: Sequence[SlotGeom], index: int) -> str:
         if slot.text:
             return "New pane before %s" % slot.text
     return "New pane"
+
+
+def _cover_empty(rect: Rect) -> Rect:
+    """The into-indicator of an empty layout. At least the empty-mark minimum."""
+    width = max(rect.width, 48)
+    height = max(rect.height, 32)
+    return Rect(
+        rect.x - (width - rect.width) // 2,
+        rect.y - (height - rect.height) // 2,
+        width,
+        height,
+    )
 
 
 def _gap_line(host: DropHost, index: int, vertical: bool) -> Rect:

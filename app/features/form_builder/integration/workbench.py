@@ -902,6 +902,7 @@ class OutlinePane(QWidget):
             if item is None:
                 return
         self._blocked = True
+        previous = self.tree.currentItem()
         if item is None:
             self.tree.setCurrentItem(None)
             self.tree.clearSelection()
@@ -909,8 +910,12 @@ class OutlinePane(QWidget):
             command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
             flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
             self.tree.setCurrentItem(item, 0, flags)
-            self.tree.scrollToItem(item)
+            visible = self.tree.viewport().rect()
+            row = self.tree.visualItemRect(item)
+            if not visible.contains(row):
+                self.tree.scrollToItem(item)
         self._blocked = False
+        _repaint_rows(self.tree, previous, item)
 
     def patch_labels(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         forest = self._forest
@@ -2941,6 +2946,19 @@ class FormWorkbench(QWidget):
             self._splitter.setSizes([plan.left_width, canvas, plan.inspector_width])
         finally:
             self._applying = False
+
+
+def _repaint_rows(
+    tree: QTreeWidget,
+    previous: Optional[QTreeWidgetItem],
+    current: Optional[QTreeWidgetItem],
+) -> None:
+    """O(1). The old row and the new row, not the viewport."""
+    viewport = tree.viewport()
+    for item in (previous, current):
+        if item is None:
+            continue
+        viewport.update(tree.visualItemRect(item))
 
 
 __all__ = ["FormToolbar", "FormWorkbench", "NoticeBar", "problems_link_color"]

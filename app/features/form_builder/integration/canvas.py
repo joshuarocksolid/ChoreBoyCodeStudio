@@ -67,6 +67,7 @@ from app.features.form_builder.qtside.theme.chrome import (
     PAGE_TITLE_HEIGHT,
     PAGE_TITLE_TEXT,
     backdrop_colors,
+    fallback_backdrop_roles,
     on_accent_for,
     page_shadow_rgba,
 )
@@ -481,6 +482,9 @@ class FormCanvas(QGraphicsView):
         frame = controller.frame
         paint_frame(painter, frame, self._palette, rect)
         controller.paint_ghost(painter)
+
+    def sync_docked_chips(self, frame: OverlayFrame) -> None:
+        """Dock chips when the frame is built, never from inside paint."""
         self._title.set_docked(_docked(frame), self._palette)
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
@@ -557,6 +561,8 @@ class FormCanvas(QGraphicsView):
         title_y = max(0, top_left.y() - PAGE_TITLE_HEIGHT)
         self._title.setFixedWidth(page_width)
         self._title.move(top_left.x(), title_y)
+        if top_left.y() <= PAGE_TITLE_HEIGHT:
+            self._stage.seat_page_chip(self._title)
         self._title.raise_()
         preview = getattr(self, "_preview", None)
         if preview is not None:
@@ -588,17 +594,18 @@ class FormCanvas(QGraphicsView):
 def _palette(tokens: Optional[ShellThemeTokens]) -> CanvasPalette:
     if tokens is None:
         fill, dot = backdrop_colors(is_dark=False, is_high_contrast=False)
+        faint, accent, muted, panel, border, text = fallback_backdrop_roles()
         return CanvasPalette(
             overlay=overlay_palette(False),
             backdrop=BackdropPalette(
                 fill=fill,
                 dot=dot,
-                faint="#666F76",
-                accent="#3366FF",
-                muted="#5A6168",
-                panel="#FFFFFF",
-                border="#DEE2E6",
-                text="#212529",
+                faint=faint,
+                accent=accent,
+                muted=muted,
+                panel=panel,
+                border=border,
+                text=text,
             ),
         )
     fill, dot = backdrop_colors(is_dark=tokens.is_dark, is_high_contrast=tokens.is_high_contrast)
