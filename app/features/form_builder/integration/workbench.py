@@ -1757,7 +1757,11 @@ class OutlinePane(QWidget):
         if self._session is None:
             return False
         if self._renaming is not None:
-            # The tree has the key, so the editor lost focus without telling us.
+            if self._editor.hasFocus() or _modifier_only(event):
+                # A key the editor let through (a bare Shift, Ctrl+D): it is still the
+                # editor's key. Swallow it so the tree does not type-ahead or act.
+                return True
+            # The tree really has focus, so the editor lost it without telling us.
             self.end_rename()
         return self.consider(key_gesture(event))
 
@@ -1807,6 +1811,9 @@ class OutlinePane(QWidget):
         gesture = key_gesture(event)
         if watched is self.tree and self.tree.hasFocus():
             return claims_key(gesture)
+        if watched is self._editor and self._renaming is not None and gesture.command_id.startswith("form.action."):
+            # A name is being typed: form commands (Ctrl+D, Ctrl+C, ...) belong to the text, or to nothing.
+            return True
         if watched is self._filter and (gesture.command_id == "form.action.find" or gesture.key == "esc"):
             return True
         if watched is self._insert_list and gesture.key in ("esc", "enter"):
@@ -1938,6 +1945,15 @@ class OutlinePane(QWidget):
             )
         )
         return True
+
+
+_MODIFIER_KEYS = ("Key_Shift", "Key_Control", "Key_Alt", "Key_Meta", "Key_AltGr", "Key_CapsLock")
+
+
+def _modifier_only(event: object) -> bool:
+    key = int(getattr(event, "key")())
+    keys = getattr(Qt, "Key", Qt)
+    return any(key == int(getattr(keys, name)) for name in _MODIFIER_KEYS if hasattr(keys, name))
 
 
 def _leaves_for_good(event: object) -> bool:
