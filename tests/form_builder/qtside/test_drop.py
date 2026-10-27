@@ -64,7 +64,9 @@ def _shown(text: str) -> Iterator[Tuple[FormSession, FormCanvas, _Host]]:
             parent.deleteLater()
 
 
+@pytest.mark.parity("R3-21")
 def test_a_box_drag_inserts_between_the_neighbours() -> None:
+    """Dragging a laid-out widget reorders it. The insertion sentence is the cursor."""
     text = form(
         'class="QWidget" name="Form"',
         """

@@ -12,6 +12,7 @@ from app.qt.QtCore import QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.ui4.nodes import LayoutNode
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -88,7 +89,9 @@ def test_shift_click_on_the_only_widget_selects_the_form() -> None:
         assert session.selection.state.ids == (_id(session.document, "Form"),)
 
 
+@pytest.mark.parity("R3-19")
 def test_ctrl_click_adds_the_widget() -> None:
+    """Ctrl-click adds. The property editor half of R3-19 is the inspector test."""
     with _shown() as (session, canvas):
         _click(canvas, "north")
         _click(canvas, "east", "ControlModifier")
@@ -103,6 +106,21 @@ def test_a_rubber_band_selects_the_widgets_it_covers() -> None:
         _drag(canvas, 20, 120, 520, 20)
         selected = set(session.selection.state.ids)
         assert selected == {_id(session.document, "north"), _id(session.document, "east")}
+
+
+@pytest.mark.parity("R3-20")
+def test_escape_selects_the_parent_layout() -> None:
+    """UX-SEL-004. Esc selects the parent layout. Designer uses Shift-click."""
+    with _shown(LAID) as (session, canvas):
+        _click(canvas, "first")
+        _key(canvas, "Key_Escape")
+        current = session.selection.state.current
+        assert current is not None
+        node = session.document.node(current)
+        assert isinstance(node, LayoutNode)
+        assert node.object_name == "verticalLayout"
+        _key(canvas, "Key_Escape")
+        assert session.selection.state.current == _id(session.document, "Form")
 
 
 def test_escape_selects_the_parent_and_stops_on_the_form() -> None:
@@ -137,7 +155,9 @@ def test_arrow_selects_the_neighbor() -> None:
         assert session.selection.state.current == _id(session.document, "east")
 
 
+@pytest.mark.parity("R3-18")
 def test_alt_arrow_nudges_a_free_widget() -> None:
+    """UX-NUDGE. Alt+arrow moves by 8 px. Designer uses plain arrows to snap."""
     with _shown() as (session, canvas):
         _click(canvas, "north")
         north = _widget(canvas, "north")

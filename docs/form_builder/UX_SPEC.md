@@ -701,7 +701,7 @@ Paste never shows "cannot paste" errors (pain 3, R3 weakness "Paste into a layou
 
 **UX-WIDTHS-002** `M3.6` `[S]` If both copies do not fit side by side at the current zoom, they stack vertically (narrow above wide) and the view scrolls. Each copy has a label chip above its top-left corner.
 
-**UX-WIDTHS-003** `M3.6` `[T]` Both copies are editable and share one selection: selecting in either draws the selection in both. Drops and resizes work in both. Neither copy changes the form's design size.
+**UX-WIDTHS-003** `M3` `[T]` Both copies share one selection frame (M3, built with the canvas). Selecting in either draws the selection in both. Neither copy changes the form's design size. Drops, moves and resizes inside the wide copy are `M9.5`.
 
 ### 5.22 Text-size and screen-scale preview
 
@@ -849,7 +849,7 @@ The curated rows per class come from a registry (M3.1b) so M4 adds rows without 
 
 ### 7.6 Behavior and Data tabs
 
-**UX-INSP-013** `M3.1b` `[S T]` Until M6, the Behavior tab holds a working Connections list (R3 2–7 basics): each connection is a row "When **clicked** → **Invoice** · **accept()**" in words with the Qt signature in `fb.faint`. "+ Add connection" inserts a new row at the top of the list, already selected and in edit state with the "When" picker open (pain 16: never added off-screen). Each row has a delete button and a context menu. Signals and slots are filtered to the sender's and receiver's meta-objects, common ones first (LOGIC_DESIGN §2.2 table), "More" for the rest.
+**UX-INSP-013** `M3.1b` `[S T]` The Behavior tab holds a working Connections list (R3 2–7 basics): each connection is a row "When **clicked** → **Invoice** · **accept()**" in words with the Qt signature in `fb.faint`. Each row has a delete button and a context menu. The signal and slot pickers ("When", the receiver, and "More") are `M6.1`. "+ Add connection" inserts a new row at the top of the list, already selected. Pain 16: a new row is never added off-screen.
 
 **UX-INSP-014** `M6.0` `[S]` From M6 the Behavior tab follows LOGIC_DESIGN §2.1: sections State, Checks, Events in that fixed order, with the Connections list becoming the Events list. The layout reserves this order already: the M3 Connections list sits where Events will go (bottom), so muscle memory carries over.
 
@@ -937,7 +937,7 @@ The curated rows per class come from a registry (M3.1b) so M4 adds rows without 
 
 ## 10. Accessibility
 
-**UX-A11Y-001** `M3.7` `[K]` Keyboard-only paths exist for every task in the M2–M3 scope, and the keyboard script (section 12.3) completes each without the mouse: create a form from a template; insert, move, nest, wrap, unwrap, morph, delete, copy, paste and duplicate widgets; rename; edit text; set Hug/Fill/Fixed, share, minimum and maximum; change gaps and margins (inspector); change splitter sizes (inspector); reorder tab order; set buddies; zoom; preview; switch to XML and back.
+**UX-A11Y-001** `M3.7` `[K]` Keyboard-only paths exist for every task in the M2–M3 scope, and the keyboard script (section 12.3) completes each without the mouse: create a form from a template; insert, move, nest, wrap, unwrap, morph, delete, copy, paste and duplicate widgets; rename; edit text; set Hug/Fill/Fixed, share, minimum and maximum; change gaps and margins (inspector); change splitter sizes (inspector); zoom; preview; switch to XML and back. Reorder tab order and set buddies are `M5.6`, because those overlays are built there.
 
 **UX-A11Y-002** `M3.1` `[S]` Focus is always visible and always distinct from selection: a 2 px `fb.accent` focus ring (HC: `focus_border_width`, 2 px) on the focused control; the focused pane shows a 2 px `fb.accent` line along its top edge; on the canvas the focused-and-selected widget gets an extra 1 px dotted `ov.select` ring outside the selection stroke. In the outline, the focused row has the focus ring in addition to the selected-row fill (the spike shows no difference between a focused and an unfocused selected row, extra capture `focus-outline.png`).
 

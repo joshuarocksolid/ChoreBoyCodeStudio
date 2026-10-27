@@ -323,7 +323,9 @@ def test_page_request_keeps_a_positive_document_size() -> None:
     assert page_request(None, Size(100, 40), Size(80, 60)) == Size(100, 60)
 
 
+@pytest.mark.parity("R3-18")
 def test_snap_lands_on_the_grid_unless_shift_is_down() -> None:
+    """UX-NUDGE. Shift turns snap off. Designer arrow-key snap is not this gesture."""
     origin = RectValue(10, 16, 80, 24)
     dx, dy = snap_move(origin, FormPoint(20, 3), True)
     assert (origin.x + dx) % 8 == 0
@@ -487,7 +489,9 @@ def test_shift_click_on_the_only_selected_widget_selects_the_form() -> None:
         assert chosen == [Select((form,), form)]
 
 
+@pytest.mark.parity("R3-22")
 def test_tab_selects_the_next_widget_and_reveals_it() -> None:
+    """Widget-mode Tab. This is not tab-order editing."""
     with _opened(BARE) as session:
         view = _view()
         index = _bare_index(session)
@@ -895,7 +899,9 @@ def test_handles_stay_a_fixed_screen_size_when_the_page_is_zoomed() -> None:
         assert selected.rect.width > 80
 
 
+@pytest.mark.parity("R3-34")
 def test_no_layout_chip_does_not_cover_the_child() -> None:
+    """A container with children and no layout shows the broken-layout chip."""
     with _opened(BARE) as session:
         view = _view()
         index = _bare_index(session)

@@ -103,6 +103,27 @@ class _Host:
         return None
 
 
+@pytest.mark.parity("R3-17")
+def test_an_insert_drag_highlights_the_container_under_the_pointer() -> None:
+    """Dragging an Insert tile highlights the container under the pointer."""
+    with opened(FREE_AND_BOX) as (session, realizer):
+        canvas, parent = _canvas(session, realizer, 440, 270)
+        point = _center(canvas, "box")
+        scene = canvas.mapToScene(point)
+        at = CanvasPoint(int(scene.x()), int(scene.y()))
+        canvas.send(PlaceAsked(at, DropPayload("widget"), "QLineEdit"))
+        canvas.send(PlaceHover(at, True))
+        _flush()
+        highlighted = [
+            item
+            for item in canvas.overlay().items
+            if isinstance(item, Stroke) and item.role == "layout"
+        ]
+        assert highlighted
+        canvas.dispose()
+        parent.deleteLater()
+
+
 def test_a_cancelled_insert_drag_lets_the_next_click_select() -> None:
     with opened(FREE_AND_BOX) as (session, realizer):
         canvas, parent = _canvas(session, realizer, 440, 270)

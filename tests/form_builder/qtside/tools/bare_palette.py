@@ -26,17 +26,27 @@ def _color(widget: object, name: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    path = (argv or sys.argv[1:])[0]
+    args = list(argv or sys.argv[1:])
+    path = args[0]
+    page_png = args[1] if len(args) > 1 else ""
+    window_png = args[2] if len(args) > 2 else ""
     text = open(path, encoding="utf-8").read()
     app = QApplication.instance() or QApplication([])
     with opened(text) as (session, realizer):
         root = realizer.root_widget
-        label = realizer.widget_for(session.document.by_name("caption")[0])
+        assert root is not None
+        named = session.document.by_name("label") or session.document.by_name("caption")
+        label = realizer.widget_for(named[0]) if named else root
         view = host_form(root)
         window = QMainWindow()
         window.setCentralWidget(view)
+        window.resize(1400, 900)
         window.show()
         app.processEvents()
+        if page_png:
+            root.grab().save(page_png)
+        if window_png:
+            window.grab().save(window_png)
         scene = view.scene()
         payload = {
             "scene_window": scene.palette().color(_role("Window")).name(),
