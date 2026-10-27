@@ -925,7 +925,8 @@ def _plan_change_to(
     dropped = _dropped_names(node, known)
     if not dropped:
         return ready
-    return _Confirm("%s will be removed." % _listed(dropped), "Change", ready)
+    noun = "property" if len(dropped) == 1 else "properties"
+    return _Confirm("The %s %s will be removed." % (_listed(dropped), noun), "Change", ready)
 
 
 _PLANNERS: Mapping[type, Callable[..., _Plan]] = {
@@ -989,7 +990,9 @@ def _wrap(doc: UiDocument, ids: Tuple[NodeId, ...], kind: Kind, measured: Measur
     if not siblings.in_layout:
         parent = doc.node(siblings.parent)
         if isinstance(parent, WidgetNode) and parent.layout is not None:
-            return Refused("That container already has a layout.")
+            return Refused(
+                "%s already has a layout, so its free widgets can't be wrapped." % _subject(doc, parent)
+            )
         geometry = _bounds([rects[node_id] for node_id in siblings.ids if node_id in rects])
         if geometry is None:
             return Refused("Its size isn't known yet.")

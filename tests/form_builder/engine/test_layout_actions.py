@@ -19,6 +19,7 @@ from app.features.form_builder.engine.layout_actions import (
     VERTICAL,
     VSPLIT,
     ApplyKind,
+    ChangeTo,
     Current,
     Done,
     KeepContent,
@@ -461,13 +462,13 @@ def test_free_widgets_beside_a_layout_are_not_offered_a_wrap() -> None:
     )
 
     sheet = offers(doc, ids, measured)
-    refused = Offer(False, "That container already has a layout.")
+    refused = Offer(False, "The form already has a layout, so its free widgets can't be wrapped.")
 
     assert gate(sheet, ApplyKind(HORIZONTAL)) == refused
     assert gate(sheet, PickWrap(HORIZONTAL)) == refused
     assert gate(sheet, OpenWrap()) == refused
     assert carry_out(doc, ids, ApplyKind(HORIZONTAL), measured, transact(log)) == Refused(
-        "That container already has a layout."
+        "The form already has a layout, so its free widgets can't be wrapped."
     )
     assert log.entries() == ()
 
@@ -577,4 +578,23 @@ def test_remove_layout_on_the_form_leaves_the_form_free_to_shrink() -> None:
     assert doc.root.layout is None
     assert doc.root.value("minimumSize") is None
     assert doc.root.value("maximumSize") is None
+
+
+@pytest.mark.parametrize(
+    ("properties", "expected"),
+    [
+        (("echoMode",), "The echoMode property will be removed."),
+        (("text", "echoMode"), "The text and echoMode properties will be removed."),
+    ],
+)
+def test_change_to_names_the_properties_it_drops(properties: Tuple[str, ...], expected: str) -> None:
+    values = {"text": "<string>Hi</string>", "echoMode": "<enum>QLineEdit::Password</enum>"}
+    body = "".join('<property name="%s">%s</property>' % (name, values[name]) for name in properties)
+    log = open_log(_HEAD + '  <widget class="QLineEdit" name="edit">%s</widget>\n' % body + _TAIL)
+    doc = log.document
+    edit = nid(doc, "edit")
+
+    asked = carry_out(doc, (edit,), ChangeTo("QTextBrowser"), {}, transact(log), accepted={"QTextBrowser": ("geometry",)})
+
+    assert asked == NeedsConfirm(expected, "Change")
 

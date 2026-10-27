@@ -56,7 +56,7 @@ _PLAIN_ENUM = {
     "SetMinAndMaxSize": "Min and max",
     "FieldsStayAtSizeHint": "Stay at hint",
     "ExpandingFieldsGrow": "Expanding",
-    "AllNonFixedFieldsGrow": "All grow",
+    "AllNonFixedFieldsGrow": "All but fixed",
     "DontWrapRows": "Don't wrap",
     "WrapLongRows": "Long rows",
     "WrapAllRows": "All rows",

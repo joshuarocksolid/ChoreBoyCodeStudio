@@ -256,7 +256,7 @@ def test_the_layout_group_fits_at_236_px() -> None:
         _no_overlap(body)
         growth = [ _combo(pane, "layout.fieldGrowthPolicy").itemText(index) for index in range(_combo(pane, "layout.fieldGrowthPolicy").count()) ]
         wrap = [ _combo(pane, "layout.rowWrapPolicy").itemText(index) for index in range(_combo(pane, "layout.rowWrapPolicy").count()) ]
-        assert "All grow" in growth
+        assert "All but fixed" in growth
         assert "Don't wrap" in wrap
         assert "AllNonFixedFieldsGrow" not in growth
         assert "DontWrapRows" not in wrap
