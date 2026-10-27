@@ -42,7 +42,7 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>Form</class>
  <widget class="QWidget" name="Form">
-  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>980</height></rect></property>
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>1400</height></rect></property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item><widget class="QLabel" name="label"><property name="text"><string>Label</string></property></widget></item>
    <item><widget class="QPushButton" name="pushButton"><property name="text"><string>Button</string></property></widget></item>
@@ -57,6 +57,11 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
    <item><widget class="QSlider" name="slider"><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
    <item><widget class="QTabWidget" name="tabWidget"><widget class="QWidget" name="tabPage"><attribute name="title"><string>Page</string></attribute></widget></widget></item>
    <item><widget class="QTableWidget" name="tableWidget"><property name="rowCount"><number>1</number></property><property name="columnCount"><number>1</number></property></widget></item>
+   <item><widget class="QDateEdit" name="dateEdit"/></item>
+   <item><widget class="QTextEdit" name="textEdit"><property name="html"><string>Text</string></property></widget></item>
+   <item><widget class="QProgressBar" name="progressBar"><property name="value"><number>40</number></property></widget></item>
+   <item><widget class="QListWidget" name="listWidget"><item><property name="text"><string>Row</string></property></item></widget></item>
+   <item><widget class="QTreeWidget" name="treeWidget"><column><property name="text"><string>Name</string></property></column><item><property name="text"><string>Node</string></property></item></widget></item>
    <item><widget class="QGroupBox" name="groupBox"><property name="title"><string>Group box</string></property></widget></item>
    <item>
     <widget class="QWidget" name="horizontalLayoutWidget">
@@ -108,6 +113,15 @@ def _shots() -> Path:
         path = Path(tempfile.gettempdir()) / "cbcs-fb-iso"
         path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def test_the_reference_form_holds_every_insert_tile() -> None:
+    """The ISO form keeps pace with the Insert catalog as it grows."""
+    from app.features.form_builder.qtside.canvas.core.palette import TILES
+
+    classes = {tile[0] for tile in TILES if tile[0].startswith("Q")}
+    missing = sorted(name for name in classes if 'class="%s"' % name not in _FORM)
+    assert missing == []
 
 
 def _require() -> None:
