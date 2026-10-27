@@ -139,6 +139,8 @@ class Realizer(_Structure):
         self._fresh: Set[NodeId] = set()
         self._unplaced: Set[NodeId] = set()
         self._geometry_targets: Set[NodeId] = set()
+        # Lasting: widgets in a layout item that store a rect (see _note_stored_geometry_below).
+        self._laid_out_rects: Set[NodeId] = set()
         # Pooled widgets whose children were never filled (a morph's new object).
         self._needs_fill: Set[NodeId] = set()
         self._mdi: Dict[NodeId, object] = {}

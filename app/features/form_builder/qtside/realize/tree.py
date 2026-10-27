@@ -132,21 +132,6 @@ def _cpp_address(obj: object) -> int:
     return int(shiboken.getCppPointer(obj)[0])
 
 
-def _layout_widgets(layout: LayoutNode) -> List[WidgetNode]:
-    """Widgets held by ``layout`` and its nested layouts, not their children."""
-    found: List[WidgetNode] = []
-    pending = [layout]
-    while pending:
-        current = pending.pop()
-        for item in current.items:
-            content = item.content
-            if isinstance(content, WidgetNode):
-                found.append(content)
-            elif isinstance(content, LayoutNode):
-                pending.append(content)
-    return found
-
-
 def _toplevel_menu_bar_ids() -> Set[int]:
     """C++ addresses of the parentless menu bars. Python ids change per call."""
     app = QtWidgets.QApplication.instance()
@@ -797,23 +782,25 @@ class _Structure(_LayoutSlots):
             self._reconciled += 1
 
     def _note_stored_geometry_below(self, node: WidgetNode) -> None:
-        """Target every stored rect under a moved widget.
+        """Target the stored rects of laid-out widgets under a moved widget.
 
         Re-inserting it can show it and run a layout that has not run yet,
-        which moves laid-out descendants off their stored rect. A fresh build
-        writes every stored rect last, so the patch does the same here.
+        which moves its widgets off their stored rects. A fresh build writes
+        every stored rect last, so the patch writes these again. Only widgets
+        in a layout item can be moved by a layout, and they rarely store a
+        rect, so this reads that small set, not the moved subtree.
         """
-        pending = list(node.child_widgets)
-        layout = node.layout
-        if isinstance(layout, LayoutNode):
-            pending.extend(_layout_widgets(layout))
-        while pending:
-            current = pending.pop()
-            if current.prop("geometry") is not None:
-                self._geometry_targets.add(current.id)
-            pending.extend(current.child_widgets)
-            if isinstance(current.layout, LayoutNode):
-                pending.extend(_layout_widgets(current.layout))
+        document = self._session.document
+        for node_id in tuple(self._laid_out_rects):
+            if not document.contains(node_id):
+                self._laid_out_rects.discard(node_id)
+                continue
+            current = document.parent(node_id)
+            while current is not None:
+                if current.id == node.id:
+                    self._geometry_targets.add(node_id)
+                    break
+                current = document.parent(current.id)
 
     def _park_children(self, node: WidgetNode, widget: QWidget) -> None:
         """Detach this container's live children into the pool. The container stays."""
@@ -1228,6 +1215,7 @@ class _Structure(_LayoutSlots):
         """
         document = self._session.document
         if targets is None:
+            self._laid_out_rects.clear()
             nodes = (node for node in document.iter_preorder() if isinstance(node, WidgetNode))
         else:
             nodes = (document.get(node_id) for node_id in targets)
@@ -1236,7 +1224,12 @@ class _Structure(_LayoutSlots):
                 continue
             entry = node.prop("geometry")
             if entry is None:
+                self._laid_out_rects.discard(node.id)
                 continue
+            if isinstance(document.parent(node.id), LayoutItemNode):
+                self._laid_out_rects.add(node.id)
+            else:
+                self._laid_out_rects.discard(node.id)
             widget = self._widgets.get(node.id)
             if not isinstance(widget, QWidget) or not wrapper_is_valid(widget):
                 continue
