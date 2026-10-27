@@ -41,6 +41,7 @@ class MenuCallbacks:
     on_open_file: Callable[[], object] | None = None
     on_file_menu_about_to_show: Callable[[], object] | None = None
     on_save: Callable[[], object] | None = None
+    on_save_as: Callable[[], object] | None = None
     on_save_all: Callable[[], object] | None = None
     on_toggle_auto_save: Callable[[bool], object] | None = None
     on_open_settings: Callable[[], object] | None = None

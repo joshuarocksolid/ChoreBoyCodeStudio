@@ -35,12 +35,14 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-def _arm_discard(app: QApplication) -> None:
+def _arm_discard(app: QApplication) -> dict:
+    seen = {"clicked": False}
     pending = {"left": 40}
 
     def click() -> None:
         for widget in app.allWidgets():
             if isinstance(widget, QPushButton) and widget.isVisible() and "Discard" in widget.text():
+                seen["clicked"] = True
                 widget.click()
                 return
         pending["left"] -= 1
@@ -48,12 +50,15 @@ def _arm_discard(app: QApplication) -> None:
             QTimer.singleShot(50, click)
 
     QTimer.singleShot(0, click)
+    return seen
 
 
 def _open(window: MainWindow, app: QApplication, path: Path) -> object:
     path.write_text(_FORM, encoding="utf-8")
     assert window._editor_tab_factory.open_file_in_editor(str(path))  # noqa: SLF001
-    window._center_stack.setCurrentIndex(1)  # noqa: SLF001
+    stack = window._center_stack  # noqa: SLF001
+    assert stack is not None
+    stack.setCurrentIndex(1)
     window.resize(1400, 900)
     window.show()
     app.processEvents()
@@ -116,9 +121,14 @@ def main(argv: list[str] | None = None) -> int:
     elif scenario == "editor":
         _editor(first, app)
         _dirty(first)
-    _arm_discard(app)
+    seen = _arm_discard(app)
     window.close()
     app.processEvents()
+    if scenario in ("discard", "editor"):
+        text = (root / "one.ui").read_text(encoding="utf-8")
+        with open(log_path, "a", encoding="utf-8") as handle:
+            handle.write("discard-seen\n" if seen["clicked"] else "discard-missed\n")
+            handle.write("dirty-gone\n" if "Changed" not in text else "dirty-kept\n")
     shutdown_main_window_for_test(window, app)
     return 0
 

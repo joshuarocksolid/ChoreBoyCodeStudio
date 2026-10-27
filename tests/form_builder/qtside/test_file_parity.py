@@ -2,7 +2,7 @@
 """File commands on a real main window (R3-13..16).
 
 Designer binds Ctrl+N to New Form. CBCS binds Ctrl+N to New Project, and
-New Form is the File menu item. Save As is registered with no callback.
+New Form is the File menu item. Save As writes a new .ui and ui_<name>.py.
 """
 
 from __future__ import annotations
@@ -54,7 +54,7 @@ def _load(window: MainWindow, root: Path) -> None:
         project_root=str(root.resolve()),
         manifest_path=str((root / "cbcs" / "project.json").resolve()),
         metadata=ProjectMetadata(schema_version=1, name="Shop", default_entry="forms/invoice.ui"),
-        entries=(),
+        entries=[],
     )
 
 
@@ -62,7 +62,9 @@ def _open(window: MainWindow, qapp: QApplication, path: Path, text: str = _FORM)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(text, encoding="utf-8")
     assert window._editor_tab_factory.open_file_in_editor(str(path))  # noqa: SLF001
-    window._center_stack.setCurrentIndex(1)  # noqa: SLF001
+    stack = window._center_stack  # noqa: SLF001
+    assert stack is not None
+    stack.setCurrentIndex(1)
     window.resize(1400, 900)
     window.show()
     qapp.processEvents()
@@ -80,12 +82,14 @@ def _dirty(surface: object, text: str) -> None:
     qapp.processEvents()
 
 
-def _arm_discard(qapp: QApplication) -> None:
+def _arm_discard(qapp: QApplication) -> dict:
+    seen = {"clicked": False}
     pending = {"left": 40}
 
     def click() -> None:
         for widget in qapp.allWidgets():
             if isinstance(widget, QPushButton) and widget.isVisible() and "Discard" in widget.text():
+                seen["clicked"] = True
                 widget.click()
                 return
         pending["left"] -= 1
@@ -93,6 +97,7 @@ def _arm_discard(qapp: QApplication) -> None:
             QTimer.singleShot(50, click)
 
     QTimer.singleShot(0, click)
+    return seen
 
 
 def _pump(qapp: QApplication, times: int = 12) -> None:
@@ -112,7 +117,9 @@ def test_new_form_from_the_file_menu_opens_a_form_tab(tmp_path: Path, qapp: QApp
         window.resize(1400, 900)
         window.show()
         qapp.processEvents()
-        action = window.menu_registry.action("shell.action.file.newForm")
+        registry = window.menu_registry
+        assert registry is not None
+        action = registry.action("shell.action.file.newForm")
         assert action is not None
         action.trigger()
         _pump(qapp)
@@ -163,11 +170,7 @@ def test_open_ui_opens_a_form_tab_with_the_canvas(tmp_path: Path, qapp: QApplica
 def test_ctrl_s_and_save_all_write_the_ui_and_the_generated_module(
     tmp_path: Path, qapp: QApplication
 ) -> None:
-    """Ctrl+S and Save All write the .ui and ui_*.py for dirty project forms.
-
-    Save As is a File menu item with no callback (file_menu_builder), so this
-    test does not claim it writes a path.
-    """
+    """Ctrl+S and Save All write the .ui and ui_*.py for dirty project forms."""
     _require()
     root = tmp_path / "shop"
     window = MainWindow(state_root=str((tmp_path / "state").resolve()))
@@ -191,6 +194,19 @@ def test_ctrl_s_and_save_all_write_the_ui_and_the_generated_module(
         for path, needle in ((first, "Left saved"), (second, "Right saved")):
             assert needle in path.read_text(encoding="utf-8")
             assert (path.parent / ("ui_%s.py" % path.stem)).is_file()
+        copy = root / "forms" / "invoice_copy.ui"
+        with patch(
+            "app.shell.save_workflow.QFileDialog.getSaveFileName",
+            return_value=(str(copy), "UI forms (*.ui)"),
+        ):
+            registry = window.menu_registry
+            assert registry is not None
+            save_as = registry.action("shell.action.file.saveAs")
+            assert save_as is not None
+            save_as.trigger()
+        _pump(qapp, 20)
+        assert "saved" in copy.read_text(encoding="utf-8").lower()
+        assert (copy.parent / "ui_invoice_copy.py").is_file()
     finally:
         shutdown_main_window_for_test(window, qapp)
 
@@ -205,11 +221,10 @@ def test_closing_a_dirty_form_tab_asks_before_discard(tmp_path: Path, qapp: QApp
     try:
         surface = _open(window, qapp, path)
         _dirty(surface, "Unsaved")
-        _arm_discard(qapp)
-        # Ctrl+W calls a missing MainWindow._close_active_tab
-        # (shell_preferences_runtime.py:370). The tab command itself prompts.
-        window._editor_tab_workflow.close_active_tab()  # noqa: SLF001
-        _pump(qapp, 20)
+        seen = _arm_discard(qapp)
+        QTest.keyClick(window, Qt.Key_W, Qt.ControlModifier)
+        _pump(qapp, 30)
+        assert seen["clicked"]
         assert window._tab_content_registry.surface_for_path(str(path)) is None  # noqa: SLF001
         assert "Unsaved" not in path.read_text(encoding="utf-8")
     finally:
@@ -226,9 +241,10 @@ def test_quitting_with_a_dirty_form_asks_before_discard(tmp_path: Path, qapp: QA
     try:
         surface = _open(window, qapp, path)
         _dirty(surface, "Unsaved")
-        _arm_discard(qapp)
+        seen = _arm_discard(qapp)
         window.close()
         _pump(qapp, 20)
+        assert seen["clicked"]
         assert "Unsaved" not in path.read_text(encoding="utf-8")
         assert window._tab_content_registry.surface_for_path(str(path)) is None  # noqa: SLF001
     finally:

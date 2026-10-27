@@ -141,6 +141,8 @@ def build_file_menu(ctx: MenuBuildContext) -> object:
         action_lookup=ctx.actions,
         action_id="shell.action.file.saveAs",
         label="Save As...",
+        enabled=True,
+        callback=callbacks.on_save_as,
     )
     register_menu_action(
         qt_widgets=ctx.qt_widgets,

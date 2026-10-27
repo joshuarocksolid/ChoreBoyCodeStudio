@@ -25,3 +25,6 @@ def test_open_forms_shut_down_cleanly(tmp_path: Path, scenario: str) -> None:
     assert "one.ui" in released
     if scenario == "discard":
         assert "two.ui" in released
+    if scenario in ("discard", "editor"):
+        assert "discard-seen" in released
+        assert "dirty-gone" in released

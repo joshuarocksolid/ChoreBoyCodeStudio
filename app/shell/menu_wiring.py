@@ -32,6 +32,7 @@ def build_main_window_menus(
         on_new_window=window._file_project_commands_workflow.handle_new_window_action,
         on_file_menu_about_to_show=window._file_project_commands_workflow.refresh_open_recent_menu,
         on_save=window._save_workflow.handle_save_action,
+        on_save_as=window._save_workflow.handle_save_as_action,
         on_save_all=window._save_workflow.handle_save_all_action,
         on_toggle_auto_save=window._save_workflow.handle_toggle_auto_save,
         on_open_settings=window._file_project_commands_workflow.handle_open_settings_action,
