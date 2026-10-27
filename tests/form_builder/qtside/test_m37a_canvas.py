@@ -974,3 +974,43 @@ def test_selecting_an_off_screen_widget_scrolls_its_outline_row_into_view(qapp: 
         assert tree.viewport().rect().contains(tree.visualItemRect(item))
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+class _LayoutRequests(QObject):
+    def __init__(self, watched: QWidget) -> None:
+        super().__init__()
+        self.watched = watched
+        self.count = 0
+
+    def eventFilter(self, obj: QObject, event: QEvent) -> bool:  # noqa: N802
+        if obj is self.watched and event.type() == getattr(getattr(QEvent, "Type", QEvent), "LayoutRequest"):
+            self.count += 1
+        return False
+
+
+def test_selecting_another_widget_does_not_relayout_the_inspector_header(qapp: QApplication, tmp_path: Path) -> None:
+    """The header's class line and crumbs change text on every select. That must
+    not invalidate the header, which re-lays out every shell ancestor up to the
+    MainWindow (about 17 ms of a 24 ms select at 1000 widgets)."""
+    _require()
+    window = MainWindow(state_root=str(tmp_path / "state"))
+    try:
+        surface = _open(window, qapp, tmp_path / "keys.ui", _KEYS)
+        session = surface._session  # type: ignore[attr-defined]
+        pane = surface.findChild(QWidget, "formBuilder.inspectorHeader")  # type: ignore[attr-defined]
+        assert pane is not None
+        ids = [session.document.by_name(name)[0] for name in ("free", "holder", "laid")]
+        for node in ids:
+            session.selection.set((node,), source=SelectionSource.CANVAS)
+            qapp.processEvents()
+        counter = _LayoutRequests(pane)
+        qapp.installEventFilter(counter)
+        try:
+            for node in ids:
+                session.selection.set((node,), source=SelectionSource.CANVAS)
+                qapp.processEvents()
+        finally:
+            qapp.removeEventFilter(counter)
+        assert counter.count == 0
+    finally:
+        shutdown_main_window_for_test(window, qapp)

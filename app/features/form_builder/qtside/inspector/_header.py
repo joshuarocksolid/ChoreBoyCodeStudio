@@ -8,7 +8,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.inspector._services import Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.model import Crumb, HeaderView, ManyHeader, OneHeader
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QEvent, Qt
 from app.qt.QtGui import QFont, QPainter, QPen, QResizeEvent
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
 
@@ -23,6 +23,8 @@ class Header(QWidget):
         self._invalid = False
         self._short = False
         self._crumbs_data: Tuple[Crumb, ...] = ()
+        self._class_full = ""
+        self._class_short = ""
         self._link_color = ""
         self._glyph = _ClassGlyph(self)
         self._name = QLineEdit(self)
@@ -30,11 +32,18 @@ class Header(QWidget):
         self._name.setAccessibleName("Name")
         self._name.setFont(_title_font())
         self._name.editingFinished.connect(self._on_name_entered)
-        self._class = QLabel(self)
+        # The class line and the crumbs change text on every select. Each sits
+        # alone in a layout-less slot, so its updateGeometry stops at the slot
+        # instead of re-laying out every parent up to the MainWindow.
+        self._class_slot = _Slot(self, self._show_class)
+        self._class = QLabel(self._class_slot)
+        self._class_slot.hold(self._class)
         self._class.setObjectName("formBuilder.inspectorClass")
         self._class.setWordWrap(False)
         self._class.setTextFormat(Qt.PlainText)
-        self._crumbs = QLabel(self)
+        self._crumbs_slot = _Slot(self, self._render_crumbs)
+        self._crumbs = QLabel(self._crumbs_slot)
+        self._crumbs_slot.hold(self._crumbs)
         self._crumbs.setObjectName("formBuilder.inspectorCrumbs")
         self._crumbs.setAccessibleName("Selection path")
         self._crumbs.setTextFormat(Qt.RichText)
@@ -48,7 +57,7 @@ class Header(QWidget):
         self._error.setObjectName("formBuilder.inspectorNameError")
         self._error.setWordWrap(True)
         self._error.hide()
-        self._crumbs.hide()
+        self._crumbs_slot.hide()
 
         self._identity = QHBoxLayout()
         self._identity.setContentsMargins(8, 6, 8, 0)
@@ -58,13 +67,13 @@ class Header(QWidget):
         self._class_line = QWidget(self)
         self._class_row = QHBoxLayout(self._class_line)
         self._class_row.setContentsMargins(8, 0, 8, 0)
-        self._class_row.addWidget(self._class, 1)
+        self._class_row.addWidget(self._class_slot, 1)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 6)
         self._layout.setSpacing(2)
         self._layout.addLayout(self._identity)
         self._layout.addWidget(self._class_line)
-        self._layout.addWidget(self._crumbs)
+        self._layout.addWidget(self._crumbs_slot)
         self._layout.addWidget(self._error)
         self.setFocusProxy(self._name)
 
@@ -73,6 +82,9 @@ class Header(QWidget):
         self._render_crumbs()
 
     def paint(self, view: HeaderView, short: bool) -> None:
+        # A theme sheet can change the label fonts after construction. O(1).
+        self._class_slot.fit()
+        self._crumbs_slot.fit()
         with self._services.painting():
             self._apply_short(short)
             if isinstance(view, ManyHeader):
@@ -117,9 +129,9 @@ class Header(QWidget):
         self._name.setText("%d selected" % view.count)
         self._name.blockSignals(False)
         self._glyph.set_kind("")
-        self._class.setText(view.kinds)
+        self._set_class_text(view.kinds, view.kinds)
         self._crumbs_data = ()
-        self._crumbs.hide()
+        self._crumbs_slot.hide()
         self._error.hide()
 
     def _paint_one(self, view: OneHeader) -> None:
@@ -129,7 +141,7 @@ class Header(QWidget):
         self._saved_name = view.name
         self._name.setReadOnly(False)
         self._glyph.set_kind(view.glyph)
-        self._class.setText("%s \u00b7 %s" % (view.friendly, view.qt_class))
+        self._set_class_text("%s \u00b7 %s" % (view.friendly, view.qt_class), view.qt_class)
         if not self._invalid:
             self._name.blockSignals(True)
             self._name.setText(view.name)
@@ -146,12 +158,34 @@ class Header(QWidget):
         self._short = short
         if short:
             self._class_line.hide()
-            self._identity.addWidget(self._class, 0)
+            self._identity.addWidget(self._class_slot, 1)
             return
-        self._identity.removeWidget(self._class)
-        self._class.setParent(self._class_line)
-        self._class_row.addWidget(self._class, 1)
+        self._identity.removeWidget(self._class_slot)
+        self._class_slot.setParent(self._class_line)
+        self._class_row.addWidget(self._class_slot, 1)
         self._class_line.show()
+
+    def _set_class_text(self, text: str, short: str) -> None:
+        self._class_full = text
+        self._class_short = short
+        self._show_class()
+
+    def _show_class(self) -> None:
+        """Elide the class line to its slot. The full text is the tooltip. O(1)."""
+        full = self._class_full
+        label = self._class
+        width = label.width()
+        shown = full
+        if width > 0:
+            # Too narrow for "Push button · QPushButton": keep the Qt class.
+            elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+            metrics = label.fontMetrics()
+            shown = metrics.elidedText(full, elide, width)
+            if shown != full and self._class_short:
+                shown = metrics.elidedText(self._class_short, elide, width)
+        if label.text() != shown:
+            label.setText(shown)
+        label.setToolTip(full if shown != full else "")
 
     def _on_name_entered(self) -> None:
         node = self._node
@@ -180,7 +214,7 @@ class Header(QWidget):
     def _render_crumbs(self) -> None:
         crumbs = self._crumbs_data
         if len(crumbs) <= 1:
-            self._crumbs.hide()
+            self._crumbs_slot.hide()
             return
         labels = [crumb.label for crumb in crumbs]
         self._crumbs.setToolTip(" \u203a ".join(labels))
@@ -201,8 +235,10 @@ class Header(QWidget):
                 '<a href="%d"%s>%s</a>' % (int(crumb.node), style, _escape(crumb.label))
             )
         parts.append(_escape(shown[-1].label))
-        self._crumbs.setText(" \u203a ".join(parts))
-        self._crumbs.show()
+        text = " \u203a ".join(parts)
+        if self._crumbs.text() != text:
+            self._crumbs.setText(text)
+        self._crumbs_slot.show()
 
 def _plain_width(label: QLabel, crumbs: list) -> int:
     text = " \u203a ".join(crumb.label for crumb in crumbs)
@@ -285,3 +321,49 @@ def _draw_glyph(painter: QPainter, kind: str) -> None:
         painter.drawRect(left, top + 10, 8, 2)
         return
     painter.drawRoundedRect(left, top, 12, 12, 1, 1)
+
+
+class _Slot(QWidget):
+    """A one-line holder with no layout. Its label fills it.
+
+    A child's updateGeometry posts a LayoutRequest to this widget, which has
+    no layout to act on it, so the request goes no further. The slot's own
+    size never follows the text: ignored width, one line of height.
+    """
+
+    def __init__(self, parent: QWidget, on_resize: "object") -> None:
+        super().__init__(parent)
+        self._child: Optional[QWidget] = None
+        self._on_resize = on_resize
+        self.setSizePolicy(_ignored(), getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Fixed"))
+
+    def hold(self, child: QWidget) -> None:
+        self._child = child
+        self.fit()
+
+    def fit(self) -> None:
+        child = self._child
+        if child is None:
+            return
+        height = max(1, child.fontMetrics().height() + 2 * getattr(child, "margin", lambda: 0)())
+        if self.minimumHeight() != height or self.maximumHeight() != height:
+            self.setFixedHeight(height)
+
+    def changeEvent(self, event: object) -> None:  # noqa: N802
+        super().changeEvent(event)  # type: ignore[arg-type]
+        kind = getattr(event, "type", lambda: None)()
+        if kind in (_FONT_CHANGE, _STYLE_CHANGE):
+            self.fit()
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        child = self._child
+        if child is not None:
+            child.setGeometry(self.rect())
+        callback = self._on_resize
+        if callable(callback):
+            callback()
+
+
+_FONT_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "FontChange")
+_STYLE_CHANGE = getattr(getattr(QEvent, "Type", QEvent), "StyleChange")
