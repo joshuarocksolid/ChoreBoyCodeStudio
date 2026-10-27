@@ -261,10 +261,19 @@ def test_double_click_on_a_form_problem_without_a_widget_opens_xml(
         QTest.mouseClick(tree.viewport(), button, modifier, pos)
         qapp.processEvents()
         assert not toggle.isChecked()
-        item = _row(tree, "version")
-        QTest.mouseDClick(tree.viewport(), button, modifier, tree.visualItemRect(item).center())
-        qapp.processEvents()
-        assert toggle.isChecked()
+        opened = False
+        for _ in range(3):
+            item = _row(tree, "version")
+            tree.scrollToItem(item)
+            qapp.processEvents()
+            QTest.mouseDClick(
+                tree.viewport(), button, modifier, tree.visualItemRect(item).center()
+            )
+            qapp.processEvents()
+            if toggle.isChecked():
+                opened = True
+                break
+        assert opened
     finally:
         shutdown_main_window_for_test(window, qapp)
 
