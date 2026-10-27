@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.features.form_builder.engine.commands.catalog import ApplyLayout, InsertFragment
-from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage, SwapFormRows
+from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage, SpliceReading, SwapFormRows
 from app.features.form_builder.engine.commands.drop_plan import commands_for
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
@@ -385,7 +385,8 @@ def test_a_drop_between_grid_rows_inserts_there() -> None:
     between = resolve_outline(doc, rows, 62, DropPayload("widget"))
     assert isinstance(between, AcceptedDrop)
     assert between.host == grid
-    assert between.action == "grid_row"
+    assert between.action == "grid_reading"
+    assert between.index == 1
 
 
 def test_missing_selection_ids_do_not_break_the_wrap_sentence() -> None:
@@ -468,3 +469,87 @@ def test_a_new_vertical_layout_uses_the_designer_name() -> None:
     again = other.document.root.layout
     assert again is not None
     assert again.object_name == "horizontalLayout"
+
+
+def test_thirty_percent_of_a_container_row_is_into() -> None:
+    doc = _doc(
+        """
+  <widget class="QGroupBox" name="receiptGroup">
+   <property name="title"><string>Receipt</string></property>
+  </widget>
+"""
+    )
+    group = _named(doc, "receiptGroup")
+    rows = (OutlineRow(group, 0, 40, 180, 0),)
+    target = resolve_outline(doc, rows, 12, DropPayload("widget"))
+    assert isinstance(target, AcceptedDrop)
+    assert target.host == group
+    assert target.indicator.dashed
+
+
+_CELLS = """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QLabel" name="cellA"/></item>
+   <item row="0" column="1"><widget class="QLabel" name="cellB"/></item>
+   <item row="1" column="0"><widget class="QLabel" name="cellC"/></item>
+  </layout>
+"""
+
+
+def _reading(doc, layout_name: str):  # type: ignore[no-untyped-def]
+    layout = doc.node(_named(doc, layout_name))
+    assert isinstance(layout, LayoutNode)
+    ordered = sorted(layout.items, key=lambda item: (item.row or 0, item.column or 0, item.slot_index))
+    return tuple(item.content.object_name for item in ordered if isinstance(item.content, WidgetNode))
+
+
+def test_dropping_after_cell_a_lands_between_a_and_b() -> None:
+    doc = _doc(_CELLS)
+    grid = _named(doc, "grid")
+    cell_a = _named(doc, "cellA")
+    rows = (
+        OutlineRow(grid, 0, 30, 180, 0),
+        OutlineRow(cell_a, 30, 40, 160, 16),
+        OutlineRow(_named(doc, "cellB"), 70, 40, 160, 16),
+        OutlineRow(_named(doc, "cellC"), 110, 40, 160, 16),
+    )
+    local = 30 + int(40 * 0.80)
+    target = resolve_outline(doc, rows, local, DropPayload("widget"))
+    assert isinstance(target, AcceptedDrop)
+    assert target.action == "grid_reading"
+    assert target.index == 1
+
+
+def test_splicing_a_new_widget_after_cell_a_reads_before_cell_b() -> None:
+    log = open_log(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+%s
+ </widget>
+</ui>
+"""
+        % _CELLS
+    )
+    grid = nid(log.document, "grid")
+    fragment = fragment_for("QPushButton")
+    assert fragment is not None
+    log.execute(SpliceReading(grid, 1, (), fragment))
+    assert _reading(log.document, "grid")[:3] == ("cellA", log.document.node(log.selection.current).object_name, "cellB")
+
+
+def test_moving_cell_c_after_cell_a_changes_the_reading_order() -> None:
+    log = open_log(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+%s
+ </widget>
+</ui>
+"""
+        % _CELLS
+    )
+    grid = nid(log.document, "grid")
+    cell_c = nid(log.document, "cellC")
+    log.execute(SpliceReading(grid, 1, (cell_c,)))
+    assert _reading(log.document, "grid") == ("cellA", "cellC", "cellB")

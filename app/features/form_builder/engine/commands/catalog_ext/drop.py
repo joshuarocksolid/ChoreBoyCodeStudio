@@ -32,6 +32,7 @@ def register(registry: object) -> None:
     add(AdoptIntoBox)
     add(SwapFormRows)
     add(InsertPage)
+    add(SpliceReading)
 
 
 @dataclass(frozen=True)
@@ -221,6 +222,21 @@ class InsertPage(_CommandBase):
         assert self.fragment is not None
         planning.insert_fragment(doc, ctx, InBoxLayout(layout_id, 0), self.fragment, False)
         return page_id
+
+
+@dataclass(frozen=True)
+class SpliceReading(_CommandBase):
+    """Insert into a uniform grid at a reading-order index."""
+
+    command_type: ClassVar[str] = "splice_reading"
+    _label_text: ClassVar[str] = "Move"
+    layout: NodeId
+    index: int
+    existing: Tuple[NodeId, ...] = ()
+    fragment: Optional[Fragment] = None
+
+    def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
+        planning.splice_grid_reading(doc, ctx, self.layout, self.index, self.existing, self.fragment)
 
 
 def _clear_geometry(doc: UiDocument, ctx: PlanContext, node_id: NodeId) -> None:

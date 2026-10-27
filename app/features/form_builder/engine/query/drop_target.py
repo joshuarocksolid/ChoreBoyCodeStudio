@@ -37,6 +37,7 @@ DropAction = Literal[
     "wrap",
     "grid_cell",
     "grid_row",
+    "grid_reading",
     "grid_column",
     "form_cell",
     "form_row",
@@ -1427,9 +1428,13 @@ def _outline_row_at(rows: Sequence[OutlineRow], y: int) -> Optional[OutlineRow]:
 def _outline_band(row: OutlineRow, y: int, into: bool) -> str:
     height = max(row.height, 1)
     local = y - row.top
-    if into and local >= height / 3.0 and local < (2.0 * height) / 3.0:
+    if into:
+        if local < height * 0.25:
+            return "before"
+        if local >= height * 0.75:
+            return "after"
         return "into"
-    if y < row.top + height // 2:
+    if local < height * 0.5:
         return "before"
     return "after"
 
@@ -1523,6 +1528,18 @@ def _outline_beside(doc: UiDocument, row: OutlineRow, before: bool, payload: Dro
     return NoDrop()
 
 
+def _uniform_grid(layout: LayoutNode) -> bool:
+    return all((item.rowspan or 1) == 1 and (item.colspan or 1) == 1 for item in layout.items)
+
+
+def _reading_index(layout: LayoutNode, item: LayoutItemNode) -> int:
+    ordered = sorted(layout.items, key=lambda entry: (entry.row or 0, entry.column or 0, entry.slot_index))
+    for index, entry in enumerate(ordered):
+        if entry.id == item.id:
+            return index
+    return 0
+
+
 def _outline_layout_side(
     layout: LayoutNode,
     item: LayoutItemNode,
@@ -1539,6 +1556,11 @@ def _outline_layout_side(
         role: FormRole = "label" if payload.kind == "label" else "field"
         return _accept(host, "form_row", sentence, sentence, line, row=at, role=role)
     if layout.class_name == "QGridLayout":
+        if _uniform_grid(layout):
+            at = _reading_index(layout, item)
+            if not before:
+                at += 1
+            return _accept(host, "grid_reading", sentence, sentence, line, index=at)
         at = (0 if item.row is None else item.row) + (0 if before else (1 if item.rowspan is None else item.rowspan))
         column = 0 if item.column is None else item.column
         return _accept(
