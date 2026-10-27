@@ -20,6 +20,12 @@ def shutdown_main_window_for_test(window: MainWindow, app: Any | None = None) ->
     window._is_shutting_down = True
     MainWindowLifecycle.begin_shutdown_teardown(window)
     MainWindowLifecycle.stop_active_run_before_close(window)
+    # The first shutdown only cancels. Join before delete_now so a probe
+    # thread is not still inside the window when Qt destroys it.
+    tasks = getattr(window, "_background_tasks", None)
+    join = getattr(tasks, "shutdown", None)
+    if callable(join):
+        join(wait=True)
     if app is not None:
         app.processEvents()
     reap_leaked_runtime_children()
