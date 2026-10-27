@@ -7,8 +7,11 @@ from typing import Tuple
 import pytest
 
 from app.features.form_builder.engine.clipboard import (
+    paste_anchor_name,
+    paste_auto_layout,
     paste_placement,
     plain_names,
+    selectable_ids,
     selection_fragment,
 )
 from app.features.form_builder.engine.commands.catalog import (
@@ -365,3 +368,32 @@ def test_undo_clears_fb014_for_a_missing_connection_end() -> None:
         assert [row.code for row in session.diagnostics.all() if row.code == "FB014"] == ["FB014"]
     finally:
         session.dispose()
+
+
+def test_the_anchor_name_is_the_widget_or_the_form() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    assert paste_anchor_name(doc, ()) == "the form"
+    assert paste_anchor_name(doc, (doc.root.id,)) == "the form"
+    assert paste_anchor_name(doc, (nid(doc, "okButton"),)) == "okButton"
+
+
+def test_a_free_offset_does_not_ask_for_a_new_layout() -> None:
+    log = open_log(FREE)
+    doc = log.document
+    place = paste_placement(doc, (nid(doc, "okButton"),))
+    assert paste_auto_layout(place) is False
+    boxed = paste_placement(doc, ())
+    assert paste_auto_layout(boxed) is True
+
+
+def test_select_all_ids_skip_the_document_node() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    chosen = selectable_ids(doc)
+    assert doc.ui.id not in chosen
+    assert doc.root.id in chosen
+    assert nid(doc, "okButton") in chosen
+    layout = doc.root.layout
+    assert layout is not None
+    assert layout.id in chosen

@@ -26,6 +26,25 @@ def paint_menu(menu: QMenu, chrome: FormChrome) -> None:
         child.setStyleSheet(sheet)
 
 
+_CLIPBOARD_ROWS = (
+    ("Copy", "form.action.copy"),
+    ("Cut", "form.action.cut"),
+    ("Paste", "form.action.paste"),
+    ("Duplicate", "form.action.duplicate"),
+    ("Delete", "form.action.delete"),
+    ("Select all", "form.action.selectAll"),
+    ("Save to pieces", "form.action.savePiece"),
+)
+
+
+def add_clipboard_actions(menu: QMenu, dispatch: Callable[[str], None]) -> None:
+    """Copy through Save to pieces. Each row calls ``dispatch`` with its command id."""
+    for label, command_id in _CLIPBOARD_ROWS:
+        action = menu.addAction(label)
+        action.triggered.connect(lambda _checked=False, command_id=command_id: dispatch(command_id))
+    menu.addSeparator()
+
+
 def fill_context_menu(menu: QMenu, sheet: OfferSheet, run: Callable[[object], None]) -> None:
     """Change to, Remove layout, Keep at content size, and Size constraints.
 

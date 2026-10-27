@@ -6,7 +6,7 @@ XML. This module stays on the document and the placement types.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Set, Tuple
+from typing import AbstractSet, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.commands.placement import (
     InBoxLayout,
@@ -88,6 +88,68 @@ def paste_placement(doc: UiDocument, anchor_ids: Sequence[NodeId]) -> Placement:
 def plain_names(fragment: Fragment) -> str:
     """One object name per line, document order. Empty when nothing is named."""
     return "\n".join(_listed_names(fragment.nodes))
+
+
+def paste_anchor_name(doc: UiDocument, anchor_ids: Sequence[NodeId]) -> str:
+    """The object name a paste was placed after. The form root reads as ``the form``."""
+    anchor = _anchor(doc, anchor_ids)
+    if anchor is None or anchor == doc.root.id:
+        return "the form"
+    node = doc.node(anchor)
+    if isinstance(node, (WidgetNode, LayoutNode)) and node.object_name:
+        return node.object_name
+    return "the form"
+
+
+def paste_auto_layout(placement: Placement) -> bool:
+    """A free widget already carries geometry, so paste must not add a box."""
+    if isinstance(placement, InContainer) and placement.geometry is not None:
+        return False
+    return True
+
+
+def selectable_ids(doc: UiDocument) -> Tuple[NodeId, ...]:
+    """Every widget and layout, including the root. The document node stays out."""
+    return tuple(node.id for node in doc.iter_preorder() if node.kind in ("widget", "layout"))
+
+
+def pasted_widget_count(fragment: Fragment) -> int:
+    """Widgets in ``fragment``. A fragment with none counts its top-level nodes."""
+    count = sum(_widget_count(spec) for spec in fragment.nodes)
+    return count or len(fragment.nodes)
+
+
+def missing_connection_count(
+    fragment: Fragment,
+    renames: Sequence[Tuple[str, str]],
+    alive: AbstractSet[str],
+) -> int:
+    """Connections whose sender or receiver is not a name on the form."""
+    mapping = dict(renames)
+    found = 0
+    for spec in fragment.connections:
+        if _end_missing(spec, mapping, alive):
+            found += 1
+    return found
+
+
+def _widget_count(spec: NodeSpec) -> int:
+    found = 1 if spec.kind == "widget" else 0
+    for _slot, kids in spec.slots:
+        for child in kids:
+            found += _widget_count(child)
+    return found
+
+
+def _end_missing(spec: NodeSpec, mapping: Dict[str, str], alive: AbstractSet[str]) -> bool:
+    for key in ("sender", "receiver"):
+        value = spec.field(key)
+        if not isinstance(value, str) or not value:
+            continue
+        value = mapping.get(value, value)
+        if value not in alive:
+            return True
+    return False
 
 
 def _copy_roots(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:

@@ -126,7 +126,16 @@ def test_registered_rows_use_portable_ctrl_text_and_the_form_category() -> None:
 
 
 def test_new_keys_stay_disabled_until_a_handler_exists() -> None:
-    live = {"form.action.zoomToFit", "form.action.editText"}
+    live = {
+        "form.action.zoomToFit",
+        "form.action.editText",
+        "form.action.cut",
+        "form.action.copy",
+        "form.action.paste",
+        "form.action.duplicate",
+        "form.action.delete",
+        "form.action.backspace",
+    }
     for command in registered_commands():
         handled = command.command_id in live or request_for(command.command_id) is not None
         assert command.available is handled
