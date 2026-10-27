@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple, cast
 
 from app.qt.QtCore import QObject, Qt, qRegisterResourceData, qUnregisterResourceData
 from app.qt.QtWidgets import (
@@ -40,7 +40,6 @@ from app.features.form_builder.engine.events import (
 )
 from app.features.form_builder.engine.commands.live import LiveProp, PropKey
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.tree import child_stack_order
 from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
@@ -750,7 +749,7 @@ class Realizer(_Structure):
             props.append((entry.name, norm_qt(widget.property(entry.name))))
         parent = widget.parentWidget()
         parent_id = _node_id(parent) if parent is not None else None
-        sibling_index = _document_sibling_index(self._session.document, node)
+        sibling_index = _sibling_index(self._session.document, node, widget)
         buddy_name = None
         if hasattr(widget, "buddy") and widget.buddy() is not None and wrapper_is_valid(widget.buddy()):
             buddy_name = widget.buddy().objectName()
@@ -1047,13 +1046,12 @@ def _document_object_name(node: object) -> str:
     return ""
 
 
-def _document_sibling_index(document: UiDocument, node: WidgetNode) -> int:
-    """Index in the document, which a patch and a fresh build both read.
+def _sibling_index(document: UiDocument, node: WidgetNode, widget: QWidget) -> int:
+    """Layout children use the cell. Free widgets use the live named-child order.
 
-    The live child list is not that index. A form layout's ``itemAt`` order
-    and a main window's unnamed status bar differ after a patch even when the
-    cells and the stacking field match. Free widgets use the stacking field.
-    Layout widgets use the item or the cell.
+    A patch and a fresh build both read the document for a cell, so that index
+    cannot see a z-order miss. Free widgets stack as named children of the
+    parent widget, and that live order is what a mismatch has to catch.
     """
     if node.parent_id is None:
         return 0
@@ -1061,11 +1059,37 @@ def _document_sibling_index(document: UiDocument, node: WidgetNode) -> int:
     if isinstance(parent, LayoutItemNode):
         return _layout_item_spot(document, parent)
     if isinstance(parent, WidgetNode):
+        return _named_child_index(widget)
+    return 0
+
+
+def _named_child_index(widget: QWidget) -> int:
+    owner = widget.parentWidget()
+    while owner is not None and not isinstance(owner, (QWizard, QTabWidget, QToolBox, QStackedWidget)):
+        owner = owner.parentWidget()
+    if isinstance(owner, QWizard):
+        wizard = cast(QWizard, owner)
+        pages = []
+        for page_id in wizard.pageIds():
+            pages.append(wizard.page(page_id))
         try:
-            return child_stack_order(document, parent.id).index(node.object_name)
+            return pages.index(widget)
         except ValueError:
             return -1
-    return 0
+    if isinstance(owner, QTabWidget) or isinstance(owner, QToolBox) or isinstance(owner, QStackedWidget):
+        return int(cast(QStackedWidget, owner).indexOf(widget))
+    parent = widget.parentWidget()
+    if parent is None:
+        return 0
+    named = [
+        child
+        for child in parent.children()
+        if isinstance(child, QWidget) and _node_id(child) is not None
+    ]
+    try:
+        return named.index(widget)
+    except ValueError:
+        return -1
 
 
 def _layout_item_spot(document: UiDocument, item: LayoutItemNode) -> int:

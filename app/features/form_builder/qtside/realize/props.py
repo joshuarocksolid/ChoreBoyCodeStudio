@@ -428,8 +428,23 @@ def _palette_norm(palette: QPalette) -> Tuple[Tuple[str, str, str], ...]:
 def _icon_norm(icon: QIcon) -> Tuple[object, ...]:
     if icon.isNull():
         return ("icon",)
-    sizes = sorted((size.width(), size.height()) for size in icon.availableSizes())
-    return ("icon", tuple(sizes))
+    sizes = tuple(sorted((size.width(), size.height()) for size in icon.availableSizes()))
+    extent = max((max(width, height) for width, height in sizes), default=16)
+    image = icon.pixmap(max(extent, 1), max(extent, 1)).toImage()
+    return ("icon", sizes, _image_token(image))
+
+
+def _image_token(image: object) -> bytes:
+    import hashlib
+
+    from app.qt.QtCore import QBuffer, QIODevice
+
+    buffer = QBuffer()
+    buffer.open(QIODevice.WriteOnly)
+    saved = image.save(buffer, "PNG")  # type: ignore[attr-defined]
+    if not saved:
+        return b""
+    return hashlib.sha256(bytes(buffer.data())).digest()
 
 
 def _enum_name(value: object) -> str:
