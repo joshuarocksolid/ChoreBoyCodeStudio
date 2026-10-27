@@ -9,7 +9,6 @@ from __future__ import annotations
 import re
 from typing import Optional, Tuple
 
-from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QFont, QPalette
 from app.qt.QtWidgets import (
     QApplication,
@@ -28,9 +27,6 @@ RUNTIME_STYLE_KEY = "Fusion"
 _STYLE: Optional[QStyle] = None
 _PALETTE: Optional[QPalette] = None
 _FONT: Optional[QFont] = None
-_ROOT_MARK = "_cbcsRuntimeRoot"
-_RELEASING = False
-_PIN_FILTER: Optional[QObject] = None
 
 _COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _BLOCK = re.compile(r"([^{}]+)\{")
@@ -96,81 +92,15 @@ def _fusion_for(widget: QWidget) -> QStyle:
 
 
 def isolate_widget(widget: QWidget) -> None:
-    """Pin one realized root to Fusion.
+    """Pin one realized root to the runtime look.
 
-    The shell styles tooltips without an application style sheet. An ancestor
-    sheet can still wrap this tree. The pin filter puts Fusion back and
-    refreshes that ancestor widget only. It never clears the application sheet.
+    Child widgets inherit the root's style, palette and font. The shell keeps
+    the application style sheet empty, so no QStyleSheetStyle wraps the form.
+    A later shell theme change updates the application, not this root.
     """
-    widget.setProperty(_ROOT_MARK, True)
     widget.setStyle(_fusion_for(widget))
     widget.setPalette(QPalette(runtime_palette()))
     widget.setFont(startup_font())
-    _install_pin_filter()
-
-
-def _pin_tree(widget: QWidget) -> None:
-    targets = [widget]
-    children = widget.findChildren(QWidget)
-    if children:
-        targets.extend(list(children))
-    attribute = Qt.WidgetAttribute
-    for target in targets:
-        own_palette = QPalette(target.palette()) if target.testAttribute(attribute.WA_SetPalette) else None
-        own_font = QFont(target.font()) if target.testAttribute(attribute.WA_SetFont) else None
-        if target.style().metaObject().className() != "QFusionStyle":
-            target.setStyle(_fusion_for(target))
-        if own_palette is not None:
-            target.setPalette(own_palette)
-        else:
-            target.setPalette(QPalette(runtime_palette()))
-        if own_font is not None:
-            target.setFont(own_font)
-        else:
-            target.setFont(startup_font())
-
-
-def _release_ancestor_sheet(widget: QWidget) -> None:
-    global _RELEASING
-    parent = widget.parentWidget()
-    seen = set()
-    while parent is not None and id(parent) not in seen:
-        seen.add(id(parent))
-        sheet = parent.styleSheet()
-        if sheet:
-            _RELEASING = True
-            try:
-                parent.setStyleSheet("")
-                parent.setStyleSheet(sheet)
-            finally:
-                _RELEASING = False
-            return
-        parent = parent.parentWidget()
-
-
-class _FusionPin(QObject):
-    """Put Fusion back when an ancestor style sheet wraps the realized tree."""
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        # StyleChange re-enters setStyle and crashes a corpus build. Parenting
-        # is the moment an ancestor sheet can wrap the tree, and it does not.
-        if _RELEASING or event.type() != QEvent.ParentChange or not isinstance(watched, QWidget):
-            return False
-        if not watched.property(_ROOT_MARK) or watched.property("_cbcsSheetReleased"):
-            return False
-        watched.setProperty("_cbcsSheetReleased", True)
-        _pin_tree(watched)
-        _release_ancestor_sheet(watched)
-        return False
-
-
-def _install_pin_filter() -> None:
-    global _PIN_FILTER
-    app = QApplication.instance()
-    if not isinstance(app, QApplication) or _PIN_FILTER is not None:
-        return
-    _PIN_FILTER = _FusionPin(app)
-    app.installEventFilter(_PIN_FILTER)
 
 
 def host_form(root: QWidget) -> QGraphicsView:
