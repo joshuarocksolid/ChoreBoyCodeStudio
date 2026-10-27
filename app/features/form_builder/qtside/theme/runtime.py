@@ -30,7 +30,6 @@ _PALETTE: Optional[QPalette] = None
 _FONT: Optional[QFont] = None
 _SEALING = False
 _RESEAL_ARMED = False
-_DEFERRED = False
 _RESEAL_WIDGET: Optional[QWidget] = None
 
 _COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
@@ -93,10 +92,9 @@ def isolate_widget(widget: QWidget) -> None:
     ``QStyleSheetStyle``. That wrapper makes a spin box 2px taller than
     Fusion and shifts antialiasing. ``setStyle(Fusion)`` does not stick
     while the sheet is installed. Clearing the sheet and putting it back
-    leaves a widget that already owns its style on Fusion. The seal runs
-    before ``build`` returns. Parenting the form into the canvas can wrap
-    the style again, so one later turn seals the same widget if it is still
-    wrapped.
+    leaves a widget that already owns its style on Fusion. Doing that
+    inside ``build`` repolishes every live widget, so the seal waits until
+    the next event-loop turn.
     """
     widget.setStyle(runtime_style())
     widget.setPalette(QPalette(runtime_palette()))
@@ -163,34 +161,20 @@ def _release_stylesheet_style() -> None:
 
 
 def _schedule_reseal(widget: QWidget) -> None:
-    """Seal now, and once more on the next turn if parenting wraps it again."""
-    global _RESEAL_ARMED, _RESEAL_WIDGET, _DEFERRED
+    """One pending seal. A corpus build must not toggle the sheet per file."""
+    global _RESEAL_ARMED, _RESEAL_WIDGET
     _RESEAL_WIDGET = widget
-    if not _DEFERRED:
-        _DEFERRED = True
-        QTimer.singleShot(0, _deferred_reseal)
     if _RESEAL_ARMED or _SEALING:
         return
     _RESEAL_ARMED = True
-    try:
-        _finish_reseal()
-    finally:
-        _RESEAL_ARMED = False
-
-
-def _deferred_reseal() -> None:
-    global _DEFERRED
-    _DEFERRED = False
-    widget = _RESEAL_WIDGET
-    if widget is None or not wrapper_is_valid(widget):
-        return
-    if widget.style().metaObject().className() != "QStyleSheetStyle":
-        return
-    _schedule_reseal(widget)
+    QTimer.singleShot(0, _finish_reseal)
 
 
 def _finish_reseal() -> None:
+    global _RESEAL_ARMED, _RESEAL_WIDGET
+    _RESEAL_ARMED = False
     widget = _RESEAL_WIDGET
+    _RESEAL_WIDGET = None
     if widget is None or _SEALING or not wrapper_is_valid(widget):
         return
     if widget.style().metaObject().className() != "QStyleSheetStyle":
