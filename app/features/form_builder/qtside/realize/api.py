@@ -139,7 +139,7 @@ class Realizer(_Structure):
         self._fresh: Set[NodeId] = set()
         self._unplaced: Set[NodeId] = set()
         self._geometry_targets: Set[NodeId] = set()
-        # Lasting: widgets in a layout item that store a rect (see _note_stored_geometry_below).
+        # Lasting: widgets a layout places that store a rect (see _target_laid_out_rects).
         self._laid_out_rects: Set[NodeId] = set()
         # Pooled widgets whose children were never filled (a morph's new object).
         self._needs_fill: Set[NodeId] = set()
@@ -355,9 +355,6 @@ class Realizer(_Structure):
         for change in changeset.changes:
             if isinstance(change, NodeMoved):
                 self._detach_moved(change.node)
-                moved = document.get(change.node)
-                if isinstance(moved, WidgetNode) and change.old_parent != change.new_parent:
-                    self._note_stored_geometry_below(moved)
         containers = set(changeset.structure_dirty)
         containers.update(self._pending_containers)
         self._pending_containers.clear()
@@ -399,6 +396,7 @@ class Realizer(_Structure):
         targets = self._geometry_targets
         targets.update(self._touched)
         targets.update(_geometry_owners(changeset))
+        self._target_laid_out_rects()
         if targets:
             self._reapply_document_geometry(targets)
         return destroyed

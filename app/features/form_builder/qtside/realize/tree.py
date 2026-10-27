@@ -790,26 +790,20 @@ class _Structure(_LayoutSlots):
             self._fill_widget(node, widget)
             self._reconciled += 1
 
-    def _note_stored_geometry_below(self, node: WidgetNode) -> None:
-        """Target the stored rects of laid-out widgets under a moved widget.
+    def _target_laid_out_rects(self) -> None:
+        """Write again every stored rect that a layout places.
 
-        Re-inserting it can show it and run a layout that has not run yet,
-        which moves its widgets off their stored rects. A fresh build writes
-        every stored rect last, so the patch writes these again. Only a widget
-        a layout places can be moved that way, and few of those store a rect,
-        so this reads that small set, not the moved subtree.
+        Any patch can re-run a layout (items moved in or out, a page shown,
+        a host re-inserted), which moves its widgets off their stored rects.
+        A fresh build writes every stored rect last. Designer writes no rect
+        for a laid-out widget, so this set is small.
         """
         document = self._session.document
         for node_id in tuple(self._laid_out_rects):
-            if not document.contains(node_id):
+            if document.contains(node_id):
+                self._geometry_targets.add(node_id)
+            else:
                 self._laid_out_rects.discard(node_id)
-                continue
-            current = document.parent(node_id)
-            while current is not None:
-                if current.id == node.id:
-                    self._geometry_targets.add(node_id)
-                    break
-                current = document.parent(current.id)
 
     def _park_children(self, node: WidgetNode, widget: QWidget) -> None:
         """Detach this container's live children into the pool. The container stays."""
