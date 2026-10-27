@@ -1064,27 +1064,34 @@ def _sibling_index(document: UiDocument, node: WidgetNode, widget: QWidget) -> i
 
 
 def _named_child_index(widget: QWidget) -> int:
+    """Page index in a page container, else the stacking index among siblings.
+
+    The owner is the nearest realized ancestor. Qt puts unnamed internals
+    (a tab widget's stack, a tool box's scroll area) between a page and its
+    container. Windows such as menus are not stacked: they read -2 and do not
+    count among their siblings.
+    """
+    if widget.isWindow():
+        return -2
     owner = widget.parentWidget()
-    while owner is not None and not isinstance(owner, (QWizard, QTabWidget, QToolBox, QStackedWidget)):
+    while owner is not None and _node_id(owner) is None:
         owner = owner.parentWidget()
     if isinstance(owner, QWizard):
         wizard = cast(QWizard, owner)
-        pages = []
-        for page_id in wizard.pageIds():
-            pages.append(wizard.page(page_id))
-        try:
+        pages = [wizard.page(page_id) for page_id in wizard.pageIds()]
+        if widget in pages:
             return pages.index(widget)
-        except ValueError:
-            return -1
-    if isinstance(owner, QTabWidget) or isinstance(owner, QToolBox) or isinstance(owner, QStackedWidget):
-        return int(cast(QStackedWidget, owner).indexOf(widget))
+    if isinstance(owner, (QTabWidget, QToolBox, QStackedWidget)):
+        page = int(cast(QStackedWidget, owner).indexOf(widget))
+        if page >= 0:
+            return page
     parent = widget.parentWidget()
     if parent is None:
         return 0
     named = [
         child
         for child in parent.children()
-        if isinstance(child, QWidget) and _node_id(child) is not None
+        if isinstance(child, QWidget) and not child.isWindow() and _node_id(child) is not None
     ]
     try:
         return named.index(widget)

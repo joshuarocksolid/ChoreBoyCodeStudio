@@ -214,7 +214,7 @@ class _Structure(_LayoutSlots):
                 # ``parent`` None means the container reparents on insert, so
                 # a widget parked in place keeps its parent until then.
                 if parent is not None and pooled.parentWidget() is not parent:
-                    pooled.setParent(parent)
+                    _reparent(pooled, parent)
                 self._widgets[node.id] = pooled
                 self._objects[node.id] = pooled
                 self._apply_node_properties(node, pooled, is_root=pooled is self._root)
@@ -228,7 +228,7 @@ class _Structure(_LayoutSlots):
         if isinstance(current, QWidget) and current is not pooled:
             if wrapper_is_valid(current):
                 if parent is not None and current.parentWidget() is not parent:
-                    current.setParent(parent)
+                    _reparent(current, parent)
                 return current
             self._wipe(node.id)
         return self._create_widget(node, parent)
@@ -1554,3 +1554,15 @@ def QSizePolicy_expanding() -> object:
 def QSizePolicy_minimum() -> object:
     policy = getattr(QSizePolicy, "Policy", QSizePolicy)
     return getattr(policy, "Minimum")
+
+
+def _reparent(widget: QWidget, parent: QWidget) -> None:
+    """Move ``widget`` under ``parent``. A menu stays a popup window.
+
+    ``setParent(parent)`` resets the window flags, so a moved QMenu would turn
+    into an inline child widget while a fresh build keeps it a popup.
+    """
+    if isinstance(widget, QMenu):
+        widget.setParent(parent, widget.windowFlags() | Qt.Popup)
+        return
+    widget.setParent(parent)
