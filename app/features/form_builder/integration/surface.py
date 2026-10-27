@@ -80,6 +80,7 @@ from app.features.form_builder.integration.layout import (
     plan_workbench,
 )
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
+from app.features.form_builder.integration.pieces import SavedPieceStore
 from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.toast import (
     CommandToast,
@@ -296,6 +297,7 @@ class FormSurface(QWidget):
         self._save_faded = True
         self._tab_widget: Optional[QTabWidget] = None
         self._store: Optional[WorkbenchMemoryStore] = None
+        self._pieces: Optional[SavedPieceStore] = None
         self._plan = plan_workbench(0, 0, WorkbenchMemory())
         self._preview_request: Optional[str] = None
         self._preview_listener: Optional[Callable[[str], None]] = None
@@ -927,12 +929,7 @@ class FormSurface(QWidget):
         self._command_toast.show_note(note, lambda _note: self._show_in_problems())
 
     def save_selected_piece(self) -> None:
-        insert = getattr(self, "_workbench", None)
-        if insert is None:
-            return
-        save = getattr(insert.insert, "save_selection", None)
-        if callable(save):
-            save(self._session)
+        self._workbench.insert.save_selection(self._session)
 
     def show_plain(self, sentence: str) -> None:
         if not sentence:
@@ -1358,9 +1355,11 @@ class FormSurface(QWidget):
         root = getattr(window, "_state_root", None)
         if root:
             self._store = WorkbenchMemoryStore(str(root))
+            self._pieces = SavedPieceStore(str(root))
             self._memory = self._store.load()
         else:
             self._store = None
+            self._pieces = None
             memory = getattr(window, "_form_workbench_memory", None)
             if not isinstance(memory, WorkbenchMemory):
                 memory = WorkbenchMemory()
@@ -1370,6 +1369,7 @@ class FormSurface(QWidget):
         if workbench is not None:
             workbench.outline.set_collapsed(self._memory.outline_collapsed)
             workbench.insert.set_collapsed(self._memory.insert_collapsed)
+            workbench.insert.bind_pieces(self._pieces)
             if self._store is not None:
                 workbench.inspector.bind_settings(self._store)
 
