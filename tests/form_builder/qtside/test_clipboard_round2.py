@@ -14,14 +14,18 @@ from app.qt.QtWidgets import QApplication, QLineEdit, QListWidget, QMenu, QPushB
 from app.qt.qt_compat import delete_now
 
 from app.features.form_builder.engine.query.selection import SelectionSource
+from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.spec import Fragment
+from app.features.form_builder.engine.ui4.writer import write_fragment
+from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.clipboard_actions import apply_command, clipboard_has_fragment
 from app.features.form_builder.integration.context_menu import add_clipboard_actions
 from app.features.form_builder.integration.pieces import SavedPieceStore
 from app.features.form_builder.integration.workbench import InsertPane
+from app.features.form_builder.qtside.canvas.core.palette import MIME_FRAGMENT
 from app.features.form_builder.qtside.inspector.editors.sizing import SizeBody
-from app.features.form_builder.engine.session import FormSession
-from tests.form_builder.engine.commands._support import BOX, nid
-from tests.form_builder.qtside.support import open_session
+from tests.form_builder.engine.commands._support import BOX, button_spec, nid
+from tests.form_builder.qtside.support import open_session, opened
 
 pytestmark = pytest.mark.usefixtures("qapp")
 
@@ -253,6 +257,85 @@ def test_deleting_a_piece_offers_undo(qapp, tmp_path: Path) -> None:  # type: ig
     finally:
         session.dispose()
         parent.deleteLater()
+
+
+_BARE = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <widget class="QLineEdit" name="nameEdit">
+   <property name="geometry"><rect><x>20</x><y>30</y><width>160</width><height>24</height></rect></property>
+  </widget>
+  <widget class="QPushButton" name="okButton">
+   <property name="geometry"><rect><x>40</x><y>80</y><width>80</width><height>24</height></rect></property>
+   <property name="text"><string>OK</string></property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def test_a_paste_onto_a_shown_bare_dialog_shows_the_new_widget(qapp) -> None:  # type: ignore[no-untyped-def]
+    with opened(_BARE) as (session, realizer):
+        parent = QWidget()
+        parent.resize(800, 600)
+        host = _PasteHost(session)
+        canvas = FormCanvas(session, realizer, host, parent)
+        parent.show()
+        qapp.processEvents()
+        document = session.document
+        root = realizer.root_widget
+        assert root is not None
+        session.selection.set((document.root.id,), current=document.root.id, source=SelectionSource.COMMAND)
+        mime = QMimeData()
+        mime.setData(MIME_FRAGMENT, write_fragment(Fragment(nodes=(button_spec("extra", "Extra"),))).encode("utf-8"))
+        QApplication.clipboard().setMimeData(mime)
+        assert apply_command(host, "form.action.paste") is True
+        qapp.processEvents()
+        extra = realizer.widget_for(document.by_name("extra")[0])
+        kept = realizer.widget_for(document.by_name("okButton")[0])
+        assert extra is not None and kept is not None
+        assert extra.isVisibleTo(root)
+        assert kept.isVisibleTo(root)
+        assert document.root.layout is None
+        canvas.dispose()
+        parent.deleteLater()
+        QApplication.clipboard().clear()
+
+
+class _PasteHost:
+    def __init__(self, session: FormSession) -> None:
+        self._session = session
+        self.sentences: List[str] = []
+
+    def narrate(self, sentence: str) -> None:
+        self.sentences.append(sentence)
+
+    def show_paste_problem(self, text: str) -> None:
+        self.sentences.append(text)
+
+    def save_selected_piece(self) -> None:
+        return None
+
+    def canvas_pressed(self) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
+
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
 
 
 def test_a_deleted_size_watch_does_not_raise(qapp) -> None:  # type: ignore[no-untyped-def]

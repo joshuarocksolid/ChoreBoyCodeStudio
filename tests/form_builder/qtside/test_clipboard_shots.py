@@ -204,6 +204,7 @@ _BARE = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>Dialog</class>
  <widget class="QDialog" name="Dialog">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>520</width><height>400</height></rect></property>
   <widget class="QLineEdit" name="nameEdit">
    <property name="geometry"><rect><x>20</x><y>30</y><width>160</width><height>24</height></rect></property>
   </widget>
