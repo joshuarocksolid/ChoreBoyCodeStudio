@@ -132,6 +132,15 @@ def _cpp_address(obj: object) -> int:
     return int(shiboken.getCppPointer(obj)[0])
 
 
+def _qt_places(widget: QWidget, parent: object) -> bool:
+    """True when a layout sizes ``widget``: a layout item, or a host whose own
+    layout places its content (a dock's widget, a main window's central widget)."""
+    if isinstance(parent, LayoutItemNode):
+        return True
+    host = widget.parentWidget()
+    return host is not None and host.layout() is not None
+
+
 def _toplevel_menu_bar_ids() -> Set[int]:
     """C++ addresses of the parentless menu bars. Python ids change per call."""
     app = QtWidgets.QApplication.instance()
@@ -786,9 +795,9 @@ class _Structure(_LayoutSlots):
 
         Re-inserting it can show it and run a layout that has not run yet,
         which moves its widgets off their stored rects. A fresh build writes
-        every stored rect last, so the patch writes these again. Only widgets
-        in a layout item can be moved by a layout, and they rarely store a
-        rect, so this reads that small set, not the moved subtree.
+        every stored rect last, so the patch writes these again. Only a widget
+        a layout places can be moved that way, and few of those store a rect,
+        so this reads that small set, not the moved subtree.
         """
         document = self._session.document
         for node_id in tuple(self._laid_out_rects):
@@ -1226,13 +1235,14 @@ class _Structure(_LayoutSlots):
             if entry is None:
                 self._laid_out_rects.discard(node.id)
                 continue
-            if isinstance(document.parent(node.id), LayoutItemNode):
+            widget = self._widgets.get(node.id)
+            if not isinstance(widget, QWidget) or not wrapper_is_valid(widget):
+                self._laid_out_rects.discard(node.id)
+                continue
+            if _qt_places(widget, document.parent(node.id)):
                 self._laid_out_rects.add(node.id)
             else:
                 self._laid_out_rects.discard(node.id)
-            widget = self._widgets.get(node.id)
-            if not isinstance(widget, QWidget) or not wrapper_is_valid(widget):
-                continue
             apply_geometry(widget, entry.value, widget is self._root)
 
     def _queue_widget_host(self, node: WidgetNode) -> None:
