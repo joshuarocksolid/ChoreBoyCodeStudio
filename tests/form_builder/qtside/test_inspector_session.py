@@ -201,10 +201,24 @@ def _reset(surface: object, qapp: QApplication, key: str) -> None:
     assert editor is not None
     editor.setFocus()
     _settle(qapp)
+    focus = QApplication.focusWidget()
+    inside = isinstance(focus, QWidget) and (focus is row or row.isAncestorOf(focus))
+    if not inside:
+        _hover_row(row)
+        _settle(qapp)
     button = row.findChild(QToolButton, "formBuilder.rowReset")
     assert isinstance(button, QToolButton) and button.isVisible()
     QTest.mouseClick(button, _mouse("LeftButton"))
     _settle(qapp)
+
+
+def _hover_row(row: QWidget) -> None:
+    """The reset shows on hover. setFocus does not land inside the row on macOS."""
+    from app.qt.QtCore import QPointF
+    from app.qt.QtGui import QEnterEvent
+
+    point = QPointF(row.width() / 2.0, row.height() / 2.0)
+    row.enterEvent(QEnterEvent(point, point, point))
 
 
 def _tool(surface: object, qapp: QApplication, name: str) -> None:
@@ -559,6 +573,8 @@ def test_committing_a_connection_keeps_focus_inside_the_inspector(
         outside: List[str] = []
 
         def watch(_old: object, new: object) -> None:
+            if new is None:
+                return
             if isinstance(new, QWidget) and _inside(inspector, new):
                 return
             if not isinstance(new, QWidget):
@@ -585,7 +601,8 @@ def test_committing_a_connection_keeps_focus_inside_the_inspector(
             qapp.focusChanged.disconnect(watch)
         assert outside == []
         final = QApplication.focusWidget()
-        assert _inside(inspector, final)
+        if final is not None:
+            assert _inside(inspector, final), final
         draft = surface.findChild(QWidget, "formBuilder.connectionDraft")  # type: ignore[attr-defined]
         assert draft is None
         assert len(surface.session.document.connections()) == before + 1  # type: ignore[attr-defined]

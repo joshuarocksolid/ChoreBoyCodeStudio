@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
@@ -129,13 +130,11 @@ def _show_problems(window: MainWindow, qapp: QApplication) -> QTreeWidget:
 
 def _row(tree: QTreeWidget, text: str) -> QTreeWidgetItem:
     app = QApplication.instance()
-    for _ in range(5):
-        if app is not None:
-            app.processEvents()
-        found = _live_row(tree, text)
-        if found is not None:
-            return found
-    raise AssertionError(text)
+    if app is not None:
+        app.processEvents()
+    found = _live_row(tree, text)
+    assert found is not None, text
+    return found
 
 
 def _live_row(tree: QTreeWidget, text: str) -> QTreeWidgetItem | None:
@@ -143,30 +142,25 @@ def _live_row(tree: QTreeWidget, text: str) -> QTreeWidgetItem | None:
         group = tree.topLevelItem(index)
         if group is None:
             continue
-        try:
-            child_count = group.childCount()
-        except RuntimeError:
-            continue
-        for child_index in range(child_count):
-            try:
-                child = group.child(child_index)
-                if child is not None and text in child.text(1):
-                    return child
-            except RuntimeError:
-                continue
+        for child_index in range(group.childCount()):
+            child = group.child(child_index)
+            if child is not None and text in child.text(1):
+                return child
     return None
 
 
 def _click(tree: QTreeWidget, item: QTreeWidgetItem, qapp: QApplication, *, double: bool) -> None:
     tree.scrollToItem(item)
     qapp.processEvents()
-    pos = tree.visualItemRect(item).center()
+    window = tree.window()
+    handle = window.windowHandle()
+    pos = tree.viewport().mapTo(window, tree.visualItemRect(item).center())
     button = _button()
     modifier = _mod("NoModifier")
     if double:
-        QTest.mouseDClick(tree.viewport(), button, modifier, pos)
+        QTest.mouseDClick(handle, button, modifier, pos)
     else:
-        QTest.mouseClick(tree.viewport(), button, modifier, pos)
+        QTest.mouseClick(handle, button, modifier, pos)
     qapp.processEvents()
 
 
@@ -252,34 +246,20 @@ def test_double_click_on_a_form_problem_without_a_widget_opens_xml(
         qapp.processEvents()
         tree = _show_problems(window, qapp)
         item = _row(tree, "version")
-        tree.scrollToItem(item)
-        qapp.processEvents()
-        item = _row(tree, "version")
-        pos = tree.visualItemRect(item).center()
-        button = _button()
-        modifier = _mod("NoModifier")
-        QTest.mouseClick(tree.viewport(), button, modifier, pos)
-        qapp.processEvents()
+        _click(tree, item, qapp, double=False)
         assert not toggle.isChecked()
-        opened = False
-        for _ in range(3):
-            item = _row(tree, "version")
-            tree.scrollToItem(item)
-            qapp.processEvents()
-            QTest.mouseDClick(
-                tree.viewport(), button, modifier, tree.visualItemRect(item).center()
-            )
-            qapp.processEvents()
-            if toggle.isChecked():
-                opened = True
-                break
-        assert opened
+        _click(tree, _row(tree, "version"), qapp, double=True)
+        assert toggle.isChecked()
     finally:
         shutdown_main_window_for_test(window, qapp)
 
 
 def test_alt_o_opens_the_form_menu(tmp_path: Path, qapp: QApplication) -> None:
     _require()
+    if sys.platform == "darwin":
+        from app.qt.QtGui import qt_set_sequence_auto_mnemonic
+
+        qt_set_sequence_auto_mnemonic(True)
     window = _window(tmp_path)
     try:
         _open(window, qapp, tmp_path / "invoice.ui", _FORM)

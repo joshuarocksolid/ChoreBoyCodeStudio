@@ -4,8 +4,9 @@
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
-from typing import Tuple
+from typing import Tuple, cast
 
 import pytest
 
@@ -16,7 +17,7 @@ from app.features.form_builder.engine.session import FormSession  # noqa: E402
 from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.features.form_builder.integration.chrome import chrome_for  # noqa: E402
 from app.features.form_builder.qtside.inspector import InspectorPane  # noqa: E402
-from app.features.form_builder.qtside.inspector.api import GroupId  # noqa: E402
+from app.features.form_builder.qtside.inspector.api import GROUP_ORDER, GroupId  # noqa: E402
 from app.features.form_builder.qtside.realize.api import Realizer  # noqa: E402
 from app.qt.QtCore import Qt  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
@@ -25,6 +26,7 @@ from app.qt.QtWidgets import (  # noqa: E402
     QHBoxLayout,
     QLabel,
     QScrollArea,
+    QSplitter,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -178,6 +180,29 @@ def _shot(qapp: QApplication, folder: Path, stem: str, text: str, name: str, gro
             _events()
 
 
+_MAIN = form(
+    'class="QMainWindow" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>320</height></rect></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item><widget class="QLineEdit" name="email"/></item>
+   </layout>
+  </widget>
+  <widget class="QStatusBar" name="statusbar"/>
+""",
+)
+
+
+def _only(pane: InspectorPane, groups: Tuple[GroupId, ...]) -> None:
+    wanted = set(groups)
+    for group in GROUP_ORDER:
+        pane.set_group_expanded(group, group in wanted)
+    _events()
+    pane.flush()
+    _events()
+
+
 def test_m37b_inspector_shots(qapp: QApplication, tmp_path: Path) -> None:
     if not form_builder_enabled():
         pytest.skip("form builder is registered on PySide6")
@@ -188,6 +213,36 @@ def test_m37b_inspector_shots(qapp: QApplication, tmp_path: Path) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     _shot(qapp, folder, "s5-form-label", _LABELS, "shortLabel", GroupId.SIZE)
     _shot(qapp, folder, "s11-free-widget", _FREE, "free", GroupId.SIZE)
+    with opened(_FREE) as (session, realizer):
+        window, pane = _host(session, realizer)
+        try:
+            _only(pane, (GroupId.SIZE, GroupId.PLACEMENT))
+            _select(session, pane, "free")
+            _save(qapp, window, pane, folder, "s11-size-and-placement")
+        finally:
+            pane.dispose()
+            window.close()
+            window.deleteLater()
+            _events()
+    with opened(_splitter()) as (session, realizer):
+        window, pane = _host(session, realizer)
+        try:
+            root = realizer.root_widget
+            assert isinstance(root, QSplitter)
+            splitter = cast(QSplitter, root)
+            sizes = [int(size) for size in splitter.sizes()]
+            splitter.setSizes([sizes[0] + 40, sizes[1] - 40])
+            _events()
+            _only(pane, (GroupId.SIZE,))
+            _select(session, pane, "right")
+            _show_why(pane)
+            _save(qapp, window, pane, folder, "l2-after-grip")
+        finally:
+            pane.dispose()
+            window.close()
+            window.deleteLater()
+            _events()
+    _shot(qapp, folder, "s11-centralwidget", _MAIN, "centralwidget", GroupId.SIZE)
     _shot(qapp, folder, "l2-splitter-pane", _splitter(), "right", GroupId.SIZE)
     _shot(qapp, folder, "s9-root-layout", _ROOT, "verticalLayout", GroupId.LAYOUT)
     with opened(_LINE) as (session, realizer):
@@ -211,6 +266,10 @@ def test_m37b_inspector_shots(qapp: QApplication, tmp_path: Path) -> None:
         return
     path = tmp_path / "invoice.ui"
     path.write_text(_LINE, encoding="utf-8")
+    if sys.platform == "darwin":
+        from app.qt.QtGui import qt_set_sequence_auto_mnemonic
+
+        qt_set_sequence_auto_mnemonic(True)
     window = MainWindow(state_root=str((tmp_path / "state").resolve()))
     try:
         assert window._editor_tab_factory.open_file_in_editor(str(path))  # noqa: SLF001
@@ -219,8 +278,11 @@ def test_m37b_inspector_shots(qapp: QApplication, tmp_path: Path) -> None:
         stack.setCurrentIndex(1)
         window.resize(1400, 900)
         window.show()
+        window.activateWindow()
         _events()
-        QTest.keyClick(window, getattr(Qt, "Key_O"), getattr(Qt, "AltModifier"))
+        key = getattr(getattr(Qt, "Key", Qt), "Key_O")
+        modifier = getattr(getattr(Qt, "KeyboardModifier", Qt), "AltModifier")
+        QTest.keyClick(window, key, modifier)
         _events()
         popup = QApplication.activePopupWidget()
         assert popup is not None and popup.objectName() == "formBuilder.menu"

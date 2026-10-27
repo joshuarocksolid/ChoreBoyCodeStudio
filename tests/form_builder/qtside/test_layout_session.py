@@ -300,7 +300,7 @@ def test_keep_at_content_size_holds_a_group_in_a_vertical_layout(
         assert len(session.log.entries()) == 1
         toast = surface.findChild(QLabel, "formBuilder.toastText")  # type: ignore[attr-defined]
         assert isinstance(toast, QLabel)
-        assert toast.text() == "receiptGroup now keeps its content height"
+        assert toast.text() == "Receipt now keeps its content height."
 
         root = document.root
         geometry = root.value("geometry")

@@ -40,6 +40,7 @@ def test_double_click_on_a_form_problem_with_a_widget_activates_it(tmp_path: Pat
         tree.scrollToItem(item)
         qapp.processEvents()
         panel = window._problems_panel
+        assert panel is not None
         fired = []
         panel.item_activated.connect(lambda path, line: fired.append(line))
         pos = tree.viewport().mapTo(window, tree.visualItemRect(item).center())

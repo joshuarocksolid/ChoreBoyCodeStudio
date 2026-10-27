@@ -116,7 +116,12 @@ def test_the_root_layout_caption_wraps_inside_a_236_px_inspector() -> None:
             assert scroll is not None and body is not None
             assert caption.isVisible()
             assert caption.text() == _FOLLOWS
-            assert "#5c5c5c" in caption.styleSheet().lower()
+            content = pane.findChild(QWidget, "formBuilder.inspectorContent")
+            assert content is not None
+            sheet = content.styleSheet().lower().replace("\\", "")
+            assert "formbuilder.layout.followswindow" in sheet
+            assert "#5c5c5c" in sheet
+            assert caption.styleSheet() == ""
             within = caption.width() <= scroll.viewport().width()
             wrapped = caption.height() > caption.heightForWidth(4000)
             assert wrapped or within

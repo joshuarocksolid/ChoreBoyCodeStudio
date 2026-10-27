@@ -24,6 +24,11 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
  <widget class="QWidget" name="Invoice">
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
+    <widget class="QLabel" name="caption">
+     <property name="text"><string>Caption</string></property>
+    </widget>
+   </item>
+   <item>
     <widget class="QPushButton" name="okButton">
      <property name="text"><string>OK</string></property>
     </widget>
@@ -98,14 +103,26 @@ def test_expanded_controls_carry_context_in_their_names(tmp_path: Path, qapp: QA
         assert _check_names(surface, "Bold") == {"Font: Bold"}
         assert _check_names(surface, "Italic") == {"Font: Italic"}
         assert _tool_names(surface) >= {
-            "Alignment: Left",
-            "Alignment: Horizontal center",
-            "Alignment: Vertical center",
-            "Alignment: Right",
-            "Alignment: Justify",
-            "Alignment: Top",
-            "Alignment: Bottom",
+            "Alignment in cell: Left",
+            "Alignment in cell: Horizontal center",
+            "Alignment in cell: Vertical center",
+            "Alignment in cell: Right",
+            "Alignment in cell: Justify",
+            "Alignment in cell: Top",
+            "Alignment in cell: Bottom",
         }
+        _select(surface, "caption")
+        _settle(qapp)
+        assert _tool_names(surface) >= {
+            "Text alignment: Left",
+            "Text alignment: Horizontal center",
+            "Text alignment: Vertical center",
+            "Text alignment: Right",
+            "Text alignment: Justify",
+            "Text alignment: Top",
+            "Text alignment: Bottom",
+        }
+        assert "Alignment: Left" not in _tool_names(surface)
         crumbs = surface.findChild(QWidget, "formBuilder.inspectorCrumbs")
         assert crumbs is not None and crumbs.isVisible()
         assert crumbs.accessibleName() == "Selection path"

@@ -20,6 +20,8 @@ from app.qt.QtWidgets import (
     QApplication,
     QFormLayout,
     QLabel,
+    QScrollArea,
+    QSpinBox,
     QSplitter,
     QToolButton,
     QVBoxLayout,
@@ -184,8 +186,11 @@ def test_a_form_label_sentence_uses_the_live_label_and_column_widths() -> None:
         try:
             for name in ("shortLabel", "longLabel"):
                 label = realizer.widget_for(_id(session, name))  # type: ignore[arg-type]
+                assert label is not None
                 assert isinstance(label, QLabel)
-                form_layout = label.parentWidget().layout() if label.parentWidget() is not None else None
+                parent = label.parentWidget()
+                assert parent is not None
+                form_layout = parent.layout()
                 assert isinstance(form_layout, QFormLayout)
                 column = _column_width(form_layout)
                 _select(session, pane, name)
@@ -232,7 +237,7 @@ def test_a_free_button_reports_its_stored_rectangle() -> None:
         window, pane = _pane(session, realizer)
         try:
             button = realizer.widget_for(_id(session, "free"))  # type: ignore[arg-type]
-            assert isinstance(button, QWidget)
+            assert button is not None
             _select(session, pane, "free")
             text = _why(pane).text()
             assert text == "%d × %d px, as stored. A layout would size it." % (
@@ -248,45 +253,36 @@ def test_a_free_button_reports_its_stored_rectangle() -> None:
                 for label in body.findChildren(QLabel, "formBuilder.rowNote")
                 if label.isVisible()
             ]
-            assert notes.count("Not in a layout: its size is the rectangle in Placement.") == 2
+            assert notes.count("Not in a layout: its size is the rectangle in Placement.") == 1
             for axis in ("width", "height"):
                 for word in ("Hug", "Fill", "Fixed"):
                     segment = pane.findChild(QToolButton, "formBuilder.size.%s.%s" % (axis, word))
                     assert isinstance(segment, QToolButton)
                     assert not segment.isEnabled()
+                    assert segment.property("fbOutline") != "true"
         finally:
             _close(window, pane)
 
 
-def test_a_splitter_pane_sentence_uses_the_measured_growth() -> None:
+def test_a_grip_drag_and_a_shrink_leave_the_growth_sentence_alone() -> None:
     with opened(_splitter(1, 3)) as (session, realizer):
         root = _show_root(realizer)
         assert isinstance(root, QSplitter)
         window, pane = _pane(session, realizer)
         try:
             _select(session, pane, "right")
-            before = [int(size) for size in root.sizes()]
-            width = int(root.width())
-            root.resize(width + 200, int(root.height()))
+            first = _growth_sentence(_why(pane).text())
+            assert "of every" in first
+            sizes = [int(size) for size in root.sizes()]
+            root.setSizes([sizes[0] + 40, max(0, sizes[1] - 40)])
             _events()
             _events()
-            after = [int(size) for size in root.sizes()]
-            index = _pane_index(root, realizer.widget_for(_id(session, "right")))  # type: ignore[arg-type]
-            sentence = _growth_sentence(_why(pane).text())
-            numbers = [int(item) for item in re.findall(r"\d+", sentence)]
-            pane_delta = after[index] - before[index]
-            total = sum(after) - sum(before)
-            assert numbers, (sentence, before, after)
-            for number in numbers:
-                assert abs(number - pane_delta) <= 1 or abs(number - total) <= 1, (
-                    sentence,
-                    numbers,
-                    pane_delta,
-                    total,
-                    before,
-                    after,
-                )
-            assert "spare room" not in sentence
+            assert _growth_sentence(_why(pane).text()) == first
+            root.resize(max(80, int(root.width()) - 120), int(root.height()))
+            _events()
+            _events()
+            assert _growth_sentence(_why(pane).text()) == first
+            assert "spare room" not in first
         finally:
             _close(window, pane)
 
@@ -298,19 +294,59 @@ def test_a_splitter_pane_with_no_share_states_no_ratio() -> None:
         window, pane = _pane(session, realizer)
         try:
             _select(session, pane, "left")
-            root.resize(int(root.width()) + 200, int(root.height()))
+            first = _growth_sentence(_why(pane).text())
+            assert "of every" not in first
+            assert re.search(r"\d+\s+of\s+\d+", first) is None
+            sizes = [int(size) for size in root.sizes()]
+            root.setSizes([sizes[0] + 40, max(0, sizes[1] - 40)])
             _events()
             _events()
-            sentence = _growth_sentence(_why(pane).text())
-            assert "of every" not in sentence
-            assert re.search(r"\d+\s+of\s+\d+", sentence) is None
+            root.resize(max(80, int(root.width()) - 80), int(root.height()))
+            _events()
+            _events()
+            assert _growth_sentence(_why(pane).text()) == first
             assert "spare room" not in _why(pane).text()
         finally:
             _close(window, pane)
 
 
-def _pane_index(splitter: QSplitter, pane: object) -> int:
-    for index in range(splitter.count()):
-        if splitter.widget(index) is pane:
-            return index
-    raise AssertionError("pane is not in the splitter")
+def test_placement_spins_show_four_digits_at_236_px() -> None:
+    with opened(_FREE) as (session, realizer):
+        _show_root(realizer)
+        window, pane = _pane(session, realizer)
+        try:
+            pane.setFixedWidth(236)
+            window.resize(236, 800)
+            pane.set_group_expanded(GroupId.PLACEMENT, True)
+            _events()
+            _select(session, pane, "free")
+            row = pane.findChild(QWidget, "formBuilder.row.geometry")
+            assert isinstance(row, QWidget)
+            spins = [spin for spin in row.findChildren(QSpinBox) if spin.isVisible()]
+            assert len(spins) >= 4
+            for spin in spins:
+                spin.setValue(1280)
+            _events()
+            for spin in spins:
+                edit = spin.lineEdit()
+                assert edit is not None
+                text = edit.text()
+                digits = text.replace(",", "").replace(" ", "").replace("\u202f", "")
+                assert digits == "1280", text
+                advance = int(edit.fontMetrics().horizontalAdvance(text))
+                assert advance <= int(edit.contentsRect().width()), (text, advance, edit.contentsRect())
+            scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+            assert isinstance(scroll, QScrollArea)
+            assert scroll.horizontalScrollBar().maximum() == 0
+            _no_sideways_overlap(pane)
+        finally:
+            _close(window, pane)
+
+
+def _no_sideways_overlap(pane: QWidget) -> None:
+    for parent in [pane] + pane.findChildren(QWidget):
+        shown = [item for item in parent.children() if isinstance(item, QWidget) and item.isVisible()]
+        for index, first in enumerate(shown):
+            for second in shown[index + 1 :]:
+                both = first.geometry().intersected(second.geometry())
+                assert both.isEmpty(), (first.objectName(), second.objectName(), both)
