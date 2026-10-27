@@ -58,7 +58,7 @@ from app.features.form_builder.qtside.canvas.core.space import FormPoint
 from app.features.form_builder.engine.ui4 import defaults as class_defaults
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
-from app.features.form_builder.engine.ui4.values import StringValue
+from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
 from app.features.form_builder.engine.ui4.writer import write_ui
 from tests.form_builder.perf import raw_qt
 from tests.form_builder.perf.reference import (
@@ -2667,6 +2667,7 @@ def _surface_window_rows(
             [
                 "select real window + inspector",
                 "edit total surface",
+                "edit layout spacing",
                 "paste surface",
                 "hit index refresh after edit",
             ]
@@ -2758,12 +2759,14 @@ def _surface_window_rows(
                 prepare=app.processEvents,
             )[0]
         )
-        owner = _named_id(session.document, form.edit_name) or line
+        label = _named_id(session.document, "label0000") or _named_id(session.document, form.edit_name) or line
+        layout_id = session.document.by_name("identityForm")
+        spacing_owner = layout_id[0] if layout_id else label
         step = {"n": 0}
 
         def edit() -> None:
             step["n"] += 1
-            outcome = session.log.execute(SetProperty(owner, "toolTip", StringValue("surface %d" % step["n"])))
+            outcome = session.log.execute(SetProperty(label, "text", StringValue("surface %d" % step["n"])))
             if outcome.noop:
                 raise RuntimeError("text edit was a no-op")
             app.processEvents()
@@ -2782,7 +2785,30 @@ def _surface_window_rows(
                 prepare=app.processEvents,
             )[0]
         )
-        session.selection.set((owner,), source=selection.SelectionSource.CANVAS)
+        def space() -> None:
+            step["n"] += 1
+            outcome = session.log.execute(
+                SetProperty(spacing_owner, "spacing", NumberValue(6 + (step["n"] % 5)))
+            )
+            if outcome.noop:
+                raise RuntimeError("spacing edit was a no-op")
+            app.processEvents()
+            pane.flush()
+
+        rows.append(
+            _timed(
+                "edit layout spacing",
+                count,
+                space,
+                EDIT_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=app.processEvents,
+            )[0]
+        )
+        session.selection.set((label,), source=selection.SelectionSource.CANVAS)
         app.processEvents()
         surface.dispatch("form.action.copy")
 
@@ -2814,7 +2840,7 @@ def _surface_window_rows(
 
         def refresh() -> None:
             step["n"] += 1
-            session.log.execute(SetProperty(owner, "toolTip", StringValue("hit %d" % step["n"])))
+            session.log.execute(SetProperty(label, "text", StringValue("hit %d" % step["n"])))
             index.ensure_fresh()
             visits["n"] = max(visits["n"], int(index.last_visit_count))
 
@@ -2829,7 +2855,7 @@ def _surface_window_rows(
             wall_on=wall_on,
         )[0]
         detail = "visits %d" % visits["n"]
-        if visits["n"] > 64:
+        if visits["n"] >= max(len(index.indexed_entries()), 1):
             refreshed = Row(
                 refreshed.point,
                 refreshed.widgets,
