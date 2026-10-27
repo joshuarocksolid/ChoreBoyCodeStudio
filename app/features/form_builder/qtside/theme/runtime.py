@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from typing import Optional, Tuple
 
-from app.qt.QtCore import QEvent, QObject, QTimer, Qt
+from app.qt.QtCore import QTimer, Qt
 from app.qt.QtGui import QFont, QPalette
 from app.qt.QtWidgets import (
     QApplication,
@@ -29,8 +29,8 @@ _STYLE: Optional[QStyle] = None
 _PALETTE: Optional[QPalette] = None
 _FONT: Optional[QFont] = None
 _SEALING = False
-_HOLDS: set = set()
-_PENDING: set = set()
+_RESEAL_ARMED = False
+_RESEAL_WIDGET: Optional[QWidget] = None
 
 _COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _BLOCK = re.compile(r"([^{}]+)\{")
@@ -92,19 +92,15 @@ def isolate_widget(widget: QWidget) -> None:
     ``QStyleSheetStyle``. That wrapper makes a spin box 2px taller than
     Fusion and shifts antialiasing. ``setStyle(Fusion)`` does not stick
     while the sheet is installed. Clearing the sheet and putting it back
-    leaves a widget that already owns its style on Fusion. A later dynamic
-    property change wraps it again, so the root re-seals on the next turn
-    and lays out at the Fusion size.
+    leaves a widget that already owns its style on Fusion. Doing that
+    inside ``build`` repolishes every live widget, so the seal waits until
+    the next event-loop turn.
     """
     widget.setStyle(runtime_style())
     widget.setPalette(QPalette(runtime_palette()))
     widget.setFont(startup_font())
-    if not _application_stylesheet():
-        return
-    _pin_owned_style(widget)
-    _release_stylesheet_style()
-    _apply_runtime_look(widget)
-    _hold_across_reparent(widget)
+    if _application_stylesheet():
+        _schedule_reseal(widget)
 
 
 def _application_stylesheet() -> str:
@@ -164,35 +160,22 @@ def _release_stylesheet_style() -> None:
         _SEALING = False
 
 
-class _FusionHold(QObject):
-    """Re-seal Fusion after a property change wraps the style again."""
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        if _SEALING or not isinstance(watched, QWidget):
-            return False
-        if getattr(watched, "_cbcs_seal_settled", False):
-            return False
-        kind = int(event.type())
-        watched_kind = (
-            int(QEvent.Type.ParentChange),
-            int(QEvent.Type.DynamicPropertyChange),
-            int(QEvent.Type.StyleChange),
-        )
-        if kind in watched_kind:
-            _schedule_reseal(watched)
-        return False
-
-
 def _schedule_reseal(widget: QWidget) -> None:
-    if widget in _PENDING or _SEALING:
+    """One pending seal. A corpus build must not toggle the sheet per file."""
+    global _RESEAL_ARMED, _RESEAL_WIDGET
+    _RESEAL_WIDGET = widget
+    if _RESEAL_ARMED or _SEALING:
         return
-    _PENDING.add(widget)
-    QTimer.singleShot(0, lambda watched=widget: _finish_reseal(watched))
+    _RESEAL_ARMED = True
+    QTimer.singleShot(0, _finish_reseal)
 
 
-def _finish_reseal(widget: QWidget) -> None:
-    _PENDING.discard(widget)
-    if _SEALING or not wrapper_is_valid(widget):
+def _finish_reseal() -> None:
+    global _RESEAL_ARMED, _RESEAL_WIDGET
+    _RESEAL_ARMED = False
+    widget = _RESEAL_WIDGET
+    _RESEAL_WIDGET = None
+    if widget is None or _SEALING or not wrapper_is_valid(widget):
         return
     if widget.style().metaObject().className() != "QStyleSheetStyle":
         return
@@ -200,8 +183,6 @@ def _finish_reseal(widget: QWidget) -> None:
     _release_stylesheet_style()
     _apply_runtime_look(widget)
     _relayout(widget)
-    if widget.style().metaObject().className() == "QStyleSheetStyle":
-        widget._cbcs_seal_settled = True  # noqa: SLF001
 
 
 def _relayout(widget: QWidget) -> None:
@@ -211,15 +192,6 @@ def _relayout(widget: QWidget) -> None:
         layout.invalidate()
         layout.activate()
     widget.update()
-
-
-def _hold_across_reparent(widget: QWidget) -> None:
-    if getattr(widget, "_cbcs_fusion_hold", None) is not None:
-        return
-    guard = _FusionHold(widget)
-    _HOLDS.add(guard)
-    widget._cbcs_fusion_hold = guard  # noqa: SLF001
-    widget.installEventFilter(guard)
 
 
 def host_form(root: QWidget) -> QGraphicsView:
