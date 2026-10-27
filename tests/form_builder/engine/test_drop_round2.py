@@ -284,6 +284,110 @@ def test_outline_thirds_enter_a_container_and_flank_a_leaf() -> None:
     assert before.index == 0
 
 
+def test_a_full_indent_left_of_a_nested_row_outdents() -> None:
+    doc = _doc(
+        """
+  <layout class="QVBoxLayout" name="outer">
+   <item>
+    <widget class="QGroupBox" name="group">
+     <layout class="QVBoxLayout" name="inner">
+      <item><widget class="QPushButton" name="shop"/></item>
+     </layout>
+    </widget>
+   </item>
+   <item><widget class="QPushButton" name="tail"/></item>
+  </layout>
+"""
+    )
+    outer = _named(doc, "outer")
+    group = _named(doc, "group")
+    shop = _named(doc, "shop")
+    rows = (
+        OutlineRow(outer, 0, 30, 180, 0),
+        OutlineRow(group, 30, 30, 160, 20),
+        OutlineRow(_named(doc, "inner"), 60, 30, 140, 40),
+        OutlineRow(shop, 90, 30, 120, 60),
+    )
+    target = resolve_outline(doc, rows, 92, DropPayload("widget", (shop,)), x=0, indent=20)
+    assert isinstance(target, AcceptedDrop)
+    assert target.host == outer
+    assert target.action == "box"
+    assert target.index == 1
+
+
+def test_a_pointer_on_the_row_does_not_outdent() -> None:
+    doc = _doc(
+        """
+  <layout class="QVBoxLayout" name="outer">
+   <item>
+    <widget class="QGroupBox" name="group">
+     <layout class="QVBoxLayout" name="inner">
+      <item><widget class="QPushButton" name="shop"/></item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+"""
+    )
+    inner = _named(doc, "inner")
+    shop = _named(doc, "shop")
+    rows = (
+        OutlineRow(_named(doc, "outer"), 0, 30, 180, 0),
+        OutlineRow(_named(doc, "group"), 30, 30, 160, 20),
+        OutlineRow(inner, 60, 30, 140, 40),
+        OutlineRow(shop, 90, 30, 120, 60),
+    )
+    target = resolve_outline(doc, rows, 92, DropPayload("widget", (shop,)), x=50, indent=20)
+    assert isinstance(target, AcceptedDrop)
+    assert target.host == inner
+    assert target.index == 0
+
+
+def test_a_drop_into_a_grid_uses_the_next_free_cell() -> None:
+    doc = _doc(
+        """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="0" column="1"><widget class="QPushButton" name="c"/></item>
+   <item row="1" column="0"><widget class="QPushButton" name="b"/></item>
+  </layout>
+"""
+    )
+    grid = _named(doc, "grid")
+    button = _named(doc, "b")
+    rows = (
+        OutlineRow(grid, 0, 30, 180, 0),
+        OutlineRow(_named(doc, "a"), 30, 30, 160, 20),
+        OutlineRow(button, 60, 30, 160, 20),
+    )
+    into = resolve_outline(doc, rows, 15, DropPayload("widget"))
+    assert isinstance(into, AcceptedDrop)
+    assert into.host == grid
+    assert into.action == "grid_cell"
+    assert (into.row, into.column) == (1, 1)
+
+
+def test_a_drop_between_grid_rows_inserts_there() -> None:
+    doc = _doc(
+        """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="1" column="0"><widget class="QPushButton" name="b"/></item>
+  </layout>
+"""
+    )
+    grid = _named(doc, "grid")
+    rows = (
+        OutlineRow(grid, 0, 30, 180, 0),
+        OutlineRow(_named(doc, "a"), 30, 30, 160, 20),
+        OutlineRow(_named(doc, "b"), 60, 30, 160, 20),
+    )
+    between = resolve_outline(doc, rows, 62, DropPayload("widget"))
+    assert isinstance(between, AcceptedDrop)
+    assert between.host == grid
+    assert between.action == "grid_row"
+
+
 def test_missing_selection_ids_do_not_break_the_wrap_sentence() -> None:
     doc = _doc('<widget class="QPushButton" name="ok"/>')
     gone = _named(doc, "ok")

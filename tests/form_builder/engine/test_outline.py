@@ -577,6 +577,30 @@ def test_a_layout_shortcut_does_not_move_the_row() -> None:
     assert isinstance(effect, Idle)
 
 
+def test_grid_rows_follow_reading_order() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QGridLayout" name="grid">
+   <item row="1" column="0"><widget class="QPushButton" name="lower"/></item>
+   <item row="0" column="0"><widget class="QPushButton" name="upper"/></item>
+  </layout>
+ </widget>
+</ui>
+"""
+    doc = open_log(text).document
+    names = tuple(row.name for row in _forest(doc).rows)
+    assert names.index("upper") < names.index("lower")
+
+
+def test_escape_selects_the_parent() -> None:
+    doc = open_log(BOX).document
+    label = nid(doc, "label")
+    effect = plan(doc, _forest(doc), _focus(label), KeyGesture("form.action.escape"), _world(doc))
+    assert isinstance(effect, Navigate)
+    assert effect.current == nid(doc, "verticalLayout")
+
+
 def test_down_selects_the_next_row() -> None:
     log = open_log(BOX)
     doc = log.document

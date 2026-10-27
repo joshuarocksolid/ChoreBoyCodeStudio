@@ -71,6 +71,7 @@ _HANDLED = frozenset(
         "form.action.backspace",
         "form.action.outlineNest",
         "form.action.outlineUnnest",
+        "form.action.escape",
         *_CLIPBOARD,
         *_ARROWS,
         *_REORDER,
@@ -584,7 +585,7 @@ def _plan_key(
         return _ends(forest, cursor, True)
     if gesture.key == "enter":
         return _expand_or_child(forest, cursor, True)
-    if gesture.key == "esc":
+    if command == "form.action.escape" or gesture.key == "esc":
         return _parent(forest, cursor)
     return Idle()
 
@@ -791,7 +792,15 @@ def _reorder(doc: UiDocument, forest: OutlineForest, cursor: OutlineCursor, dire
 
 
 def _plan_drop(doc: UiDocument, forest: OutlineForest, gesture: DropGesture) -> Effect:
-    target = resolve_outline(doc, gesture.rows, gesture.y, gesture.payload, gesture.blocked)
+    target = resolve_outline(
+        doc,
+        gesture.rows,
+        gesture.y,
+        gesture.payload,
+        gesture.blocked,
+        x=gesture.x,
+        indent=gesture.indent,
+    )
     page = _dragged_page(forest, gesture.payload.source_ids)
     if not gesture.release:
         if isinstance(target, AcceptedDrop):
@@ -1199,4 +1208,12 @@ def _slot_children(node: Node) -> Tuple[Node, ...]:
     found: List[Node] = []
     for _name, kids in node.slots:
         found.extend(kids)
+    if isinstance(node, LayoutNode) and node.class_name in ("QGridLayout", "QFormLayout"):
+        found.sort(key=_reading_key)
     return tuple(found)
+
+
+def _reading_key(node: Node) -> Tuple[int, int, int]:
+    if isinstance(node, LayoutItemNode):
+        return (node.row or 0, node.column or 0, node.slot_index)
+    return (0, 0, 0)
