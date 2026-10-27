@@ -62,6 +62,8 @@ class LiveGeometrySource:
 
     def __init__(self, realizer: Realizer) -> None:
         self._realizer = realizer
+        # Parent form origins, valid for one retouch only (geometry is settled).
+        self._origins: Optional[Dict[int, Tuple[QWidget, Tuple[int, int]]]] = None
 
     def settle(self) -> None:
         root = self._realizer.root_widget
@@ -142,6 +144,20 @@ class LiveGeometrySource:
                 top.activate()
 
     def retouch(
+        self,
+        previous: Sequence[GeoEntry],
+        scope: RefreshScope,
+        located: Optional[Mapping[Tuple[NodeId, str], int]] = None,
+        children: Optional[Mapping[Optional[NodeId], Sequence[GeoEntry]]] = None,
+    ) -> Optional[IndexPatch]:
+        """O(changed). None means the caller walks the whole form. See ``_retouch``."""
+        self._origins = {}
+        try:
+            return self._retouch(previous, scope, located, children)
+        finally:
+            self._origins = None
+
+    def _retouch(
         self,
         previous: Sequence[GeoEntry],
         scope: RefreshScope,
@@ -277,6 +293,7 @@ class LiveGeometrySource:
                             want(ancestor)
                         else:
                             queue.append(ancestor)
+        self._origins = None
         self._remeasure_layouts(document, root, previous, replacements)
         if not replacements and not extra and not drop:
             return IndexPatch(visits=visits, changed=())
@@ -400,7 +417,23 @@ class LiveGeometrySource:
             widget = self._realizer.widget_for(node.id)
             if widget is None or not isinstance(widget, QWidget):
                 return None
-            return _form_rect(widget, root), bool(widget.isVisible())
+            memo = self._origins
+            if memo is None or widget is root:
+                return _form_rect(widget, root), bool(widget.isVisible())
+            parent = widget.parentWidget()
+            if parent is None:
+                return _form_rect(widget, root), bool(widget.isVisible())
+            # Keyed by the wrapper's id; the memo keeps the wrapper alive so the
+            # id cannot be reused by another widget during this retouch.
+            key = id(parent)
+            held = memo.get(key)
+            if held is None or held[0] is not parent:
+                held = (parent, (0, 0) if parent is root else _origin(parent, root))
+                memo[key] = held
+            base = held[1]
+            # O(1) for each sibling after the first: 400 rows share one parent.
+            rect = Rect(base[0] + widget.x(), base[1] + widget.y(), widget.width(), widget.height())
+            return rect, bool(widget.isVisible())
         if isinstance(node, LayoutNode):
             qlayout = self._realizer.layout_for(node.id)
             if qlayout is None:
