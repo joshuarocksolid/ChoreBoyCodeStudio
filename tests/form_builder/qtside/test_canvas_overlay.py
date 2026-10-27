@@ -8,10 +8,19 @@ from typing import List, Tuple
 
 import pytest
 
-from app.qt.QtCore import QEvent, QPoint, Qt  # type: ignore[reportAttributeAccessIssue]
+from app.qt.QtCore import QEvent, QPoint, QRect, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtGui import QMouseEvent, QPalette  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QLabel, QWidget
+from app.qt.QtWidgets import (
+    QAbstractButton,
+    QApplication,
+    QDockWidget,
+    QGroupBox,
+    QLabel,
+    QTabWidget,
+    QToolBox,
+    QWidget,
+)
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -26,7 +35,8 @@ from app.features.form_builder.qtside.canvas.core.space import CanvasRect, ZoomF
 from app.features.form_builder.qtside.canvas.core.words import no_layout_text
 from app.features.form_builder.qtside.theme.chrome import on_accent_for
 from app.shell.theme_tokens import tokens_from_palette
-from app.features.form_builder.qtside.realize import Realizer
+from app.features.form_builder.qtside.realize import NODE_ID_PROPERTY, Realizer
+from app.features.form_builder.qtside.canvas.core.structure import managed_container
 from tests.form_builder.qtside.support import form, opened
 
 pytestmark = pytest.mark.usefixtures("qapp")
@@ -346,6 +356,13 @@ def _assert_clear(canvas: FormCanvas, session: FormSession, realizer: Realizer, 
                 _name(document, node_id),
                 _name(document, other_id),
             )
+        for owner_id, band in _title_bands(root, proxy, document):
+            if not document.is_ancestor(owner_id, node_id):
+                continue
+            assert not chip_rect.intersects(band), "%s chip on %s covers a title" % (
+                path.name,
+                _name(document, node_id),
+            )
 
 
 def _assert_zoom_widths(
@@ -377,6 +394,145 @@ def _assert_zoom_widths(
             session.selection.set((child,), current=child, source=SelectionSource.CANVAS)
             _flush()
             _assert_clear(canvas, session, realizer, path)
+
+
+@pytest.mark.timeout(180)
+def test_unlaid_containers_keep_a_chip_on_the_choreboy_canvas() -> None:
+    """Every in-view container without a layout shows "No layout" at Fit, 100% and 200%."""
+    checked = 0
+    for path in _forms():
+        text = path.read_text(encoding="utf-8", errors="replace")
+        try:
+            with opened(text, str(path)) as (session, realizer):
+                root = realizer.root_widget
+                if root is None or root.width() <= 0:
+                    continue
+                canvas, parent = _canvas(session, realizer, _Host(), 440, 270)
+                try:
+                    pending = _unlaid(session.document, realizer)
+                    if not pending:
+                        continue
+                    for zoom in (ZoomFit(), ZoomTo(1.0), ZoomTo(2.0)):
+                        canvas.send(ZoomAsked(zoom))
+                        _flush()
+                        visible = _unlaid_in_view(canvas, session, realizer)
+                        if not visible:
+                            continue
+                        shown = _bare_nodes(canvas)
+                        missing = [node for node in visible if node not in shown]
+                        assert not missing, "%s at %r missing a No layout chip" % (path.name, zoom)
+                        checked += 1
+                finally:
+                    canvas.dispose()
+                    parent.deleteLater()
+                    _flush()
+        except UiReadError:
+            continue
+    assert checked >= 1
+
+
+def _unlaid(document: UiDocument, realizer: Realizer) -> List[NodeId]:
+    found = []
+    for node in document.iter_widgets():
+        if node.id == document.root.id or node.layout is not None or not node.child_widgets:
+            continue
+        if managed_container(document, node):
+            continue
+        if realizer.widget_for(node.id) is None:
+            continue
+        found.append(node.id)
+    return found
+
+
+def _unlaid_in_view(canvas: FormCanvas, session: FormSession, realizer: Realizer) -> List[NodeId]:
+    root = canvas.page_widget()
+    assert root is not None
+    proxy = root.graphicsProxyWidget()
+    assert proxy is not None
+    view = canvas.visible_canvas_rect()
+    found = []
+    for node_id in _unlaid(session.document, realizer):
+        widget = realizer.widget_for(node_id)
+        if widget is None or not widget.isVisible() or widget.width() <= 0 or widget.height() <= 0:
+            continue
+        if _mapped(proxy, root, widget).intersects(view):
+            found.append(node_id)
+    return found
+
+
+def _bare_nodes(canvas: FormCanvas) -> set:
+    frame = canvas.overlay()
+    text = no_layout_text()
+    bare = {item.rect for item in frame.items if isinstance(item, Chip) and item.text == text}
+    return {node_id for rect, node_id in frame.chips if rect in bare}
+
+
+def _title_bands(root: QWidget, proxy: object, document: UiDocument) -> List[Tuple[NodeId, CanvasRect]]:
+    bands = []
+    for widget in [root] + list(root.findChildren(QWidget)):
+        if not widget.isVisible() or widget.width() <= 0 or widget.height() <= 0:
+            continue
+        node_id = _live_node(widget)
+        if node_id is None or not document.contains(node_id):
+            continue
+        local = _strip(widget)
+        if local is None:
+            continue
+        bands.append((node_id, _mapped_local(proxy, root, widget, local)))
+    return bands
+
+
+def _strip(widget: QWidget) -> QRect | None:
+    if isinstance(widget, QGroupBox):
+        top = int(widget.contentsRect().top())
+        if top <= 0:
+            return None
+        return QRect(0, 0, widget.width(), top)
+    if isinstance(widget, QTabWidget):
+        bar = widget.tabBar()
+        if bar.height() <= 0:
+            return None
+        return QRect(bar.geometry())
+    if isinstance(widget, QToolBox):
+        buttons = [child for child in widget.children() if isinstance(child, QAbstractButton) and child.isVisible()]
+        if not buttons:
+            return None
+        rect = QRect(buttons[0].geometry())
+        for button in buttons[1:]:
+            rect = rect.united(QRect(button.geometry()))
+        return rect
+    if isinstance(widget, QDockWidget):
+        bar = widget.titleBarWidget()
+        if bar is not None and bar.isVisible() and bar.height() > 0:
+            return QRect(bar.geometry())
+        top = int(widget.contentsRect().top())
+        if top <= 0:
+            return None
+        return QRect(0, 0, widget.width(), top)
+    return None
+
+
+def _live_node(widget: QWidget) -> NodeId | None:
+    raw = widget.property(NODE_ID_PROPERTY)
+    if isinstance(raw, int):
+        return NodeId(raw)
+    return None
+
+
+def _mapped_local(proxy: object, root: QWidget, widget: QWidget, local: QRect) -> CanvasRect:
+    top_left = local.topLeft()
+    bottom_right = local.bottomRight()
+    if widget is not root:
+        top_left = widget.mapTo(root, top_left)
+        bottom_right = widget.mapTo(root, bottom_right)
+    scene_tl = proxy.mapToScene(top_left)  # type: ignore[attr-defined]
+    scene_br = proxy.mapToScene(bottom_right)  # type: ignore[attr-defined]
+    return CanvasRect(
+        int(min(scene_tl.x(), scene_br.x())),
+        int(min(scene_tl.y(), scene_br.y())),
+        max(1, int(abs(scene_br.x() - scene_tl.x()))),
+        max(1, int(abs(scene_br.y() - scene_tl.y()))),
+    )
 
 
 def _fully_inside(inner: CanvasRect, outer: CanvasRect) -> bool:
