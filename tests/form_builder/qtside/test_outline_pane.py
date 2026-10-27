@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Callable, Dict, Iterator, Optional, Tuple
+from typing import Callable, Dict, Iterator, Optional, Tuple, cast
 
 import pytest
 
@@ -798,10 +798,10 @@ def test_the_outline_claims_f2_and_find(qapp: QApplication) -> None:
         kind = getattr(QEvent, "ShortcutOverride", None)
         if kind is None:
             kind = getattr(QEvent.Type, "ShortcutOverride")
-        event = QKeyEvent(enum_value(kind), enum_value(_key("Key_F2")), enum_value(_mod("NoModifier")))
+        event = QKeyEvent(kind, cast(int, _key("Key_F2")), cast(int, _mod("NoModifier")))
         assert pane.eventFilter(pane.tree, event)
         assert event.isAccepted()
-        find = QKeyEvent(enum_value(kind), enum_value(_key("Key_F")), enum_value(_mod("ControlModifier")))
+        find = QKeyEvent(kind, cast(int, _key("Key_F")), cast(int, _mod("ControlModifier")))
         assert pane.eventFilter(pane.tree, find)
         assert find.isAccepted()
 
