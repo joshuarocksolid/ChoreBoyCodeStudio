@@ -1081,7 +1081,8 @@ def _named_child_index(widget: QWidget) -> int:
         pages = [wizard.page(page_id) for page_id in wizard.pageIds()]
         if widget in pages:
             return pages.index(widget)
-    if isinstance(owner, (QTabWidget, QToolBox, QStackedWidget)):
+    if isinstance(owner, (QTabWidget, QToolBox, QStackedWidget, QSplitter)):
+        # A splitter's pane order is indexOf; its child list order is not.
         page = int(cast(QStackedWidget, owner).indexOf(widget))
         if page >= 0:
             return page
