@@ -1358,8 +1358,7 @@ def _retarget_slot(
     ranks: Dict[NodeId, Dict[NodeId, int]],
 ) -> Row:
     node = doc.node(row.node)
-    parent = None if row.parent is None else doc.get(row.parent)
-    _kind, _tone, _name, _qt_class, slot = _identity(doc, node, parent, sibling_index, ranks)
+    _kind, _tone, _name, _qt_class, slot = _identity(doc, node, row.parent, sibling_index, ranks)
     if row.sibling_index == sibling_index and row.slot == slot:
         return row
     return replace(row, sibling_index=sibling_index, slot=slot)

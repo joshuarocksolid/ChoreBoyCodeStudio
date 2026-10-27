@@ -110,7 +110,9 @@ def _mod(name: str) -> Qt.KeyboardModifier:
 def _open(window: MainWindow, qapp: QApplication, path: Path, text: str) -> object:
     path.write_text(text, encoding="utf-8")
     assert window._editor_tab_factory.open_file_in_editor(str(path))  # noqa: SLF001
-    window._center_stack.setCurrentIndex(1)  # noqa: SLF001
+    stack = window._center_stack  # noqa: SLF001
+    assert stack is not None
+    stack.setCurrentIndex(1)
     window.resize(1400, 900)
     window.show()
     qapp.processEvents()

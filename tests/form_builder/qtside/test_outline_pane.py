@@ -798,10 +798,10 @@ def test_the_outline_claims_f2_and_find(qapp: QApplication) -> None:
         kind = getattr(QEvent, "ShortcutOverride", None)
         if kind is None:
             kind = getattr(QEvent.Type, "ShortcutOverride")
-        event = QKeyEvent(kind, _key("Key_F2"), _mod("NoModifier"))
+        event = QKeyEvent(enum_value(kind), enum_value(_key("Key_F2")), enum_value(_mod("NoModifier")))
         assert pane.eventFilter(pane.tree, event)
         assert event.isAccepted()
-        find = QKeyEvent(kind, _key("Key_F"), _mod("ControlModifier"))
+        find = QKeyEvent(enum_value(kind), enum_value(_key("Key_F")), enum_value(_mod("ControlModifier")))
         assert pane.eventFilter(pane.tree, find)
         assert find.isAccepted()
 
@@ -814,8 +814,10 @@ def test_a_narrow_outline_hides_the_caption_before_the_name(qapp: QApplication) 
         caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
         assert caption
         metrics = pane.tree.fontMetrics()
-        advance = getattr(metrics, "horizontalAdvance", None)
-        caption_px = int(advance(caption) if callable(advance) else metrics.width(caption))
+        if hasattr(metrics, "horizontalAdvance"):
+            caption_px = int(metrics.horizontalAdvance(caption))
+        else:
+            caption_px = int(metrics.width(caption))
         boxes = layout_row(pane.tree.viewport().width(), True, False, caption_px)
         if caption_px > boxes.name[2]:
             assert boxes.caption is None

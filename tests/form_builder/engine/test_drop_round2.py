@@ -535,7 +535,11 @@ def test_splicing_a_new_widget_after_cell_a_reads_before_cell_b() -> None:
     fragment = fragment_for("QPushButton")
     assert fragment is not None
     log.execute(SpliceReading(grid, 1, (), fragment))
-    assert _reading(log.document, "grid")[:3] == ("cellA", log.document.node(log.selection.current).object_name, "cellB")
+    current = log.selection.current
+    assert current is not None
+    placed = log.document.node(current)
+    assert isinstance(placed, WidgetNode)
+    assert _reading(log.document, "grid")[:3] == ("cellA", placed.object_name, "cellB")
 
 
 def test_moving_cell_c_after_cell_a_changes_the_reading_order() -> None:

@@ -169,22 +169,25 @@ def _grab_outline(qapp, tokens, out: Path, width: int, height: int, mode: str) -
         pane.setGeometry(0, 0, 220, height - 32)
         pane.show()
         receipts = session.document.by_name("receipts")[0]
+        layout = session.document.by_name("verticalLayout")[0]
         canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget", (receipts,)), ""))
         _flush()
-        receipts_item = None
+        layout_item = None
         role = int(getattr(Qt, "UserRole"))
 
         def _walk(item):  # type: ignore[no-untyped-def]
-            nonlocal receipts_item
-            if item.data(0, role) == int(receipts):
-                receipts_item = item
+            nonlocal layout_item
+            if item.data(0, role) == int(layout):
+                layout_item = item
             for index in range(item.childCount()):
                 _walk(item.child(index))
 
         for index in range(pane.tree.topLevelItemCount()):
             _walk(pane.tree.topLevelItem(index))
-        assert receipts_item is not None
-        visual = pane.tree.visualItemRect(receipts_item)
+        assert layout_item is not None
+        qapp.processEvents()
+        visual = pane.tree.visualItemRect(layout_item)
+        assert visual.height() > 0
         pane._post_target(visual.center(), False)  # type: ignore[attr-defined]
         _flush()
         assert pane._drop_line.isVisible()  # type: ignore[attr-defined]

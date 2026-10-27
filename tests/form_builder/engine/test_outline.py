@@ -724,8 +724,10 @@ def test_a_cell_move_reorders_only_that_layout() -> None:
 def test_deleting_a_grid_cell_selects_the_next_widget() -> None:
     log = open_log(_GRID)
     log.execute(DeleteNodes((nid(log.document, "cellA"),)))
-    assert log.selection.current == nid(log.document, "cellB")
-    assert log.document.node(log.selection.current).kind == "widget"
+    current = log.selection.current
+    assert current is not None
+    assert current == nid(log.document, "cellB")
+    assert log.document.node(current).kind == "widget"
 
 
 def test_a_measured_caption_hides_before_the_name_elides() -> None:
