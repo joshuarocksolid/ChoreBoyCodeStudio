@@ -1414,7 +1414,7 @@ def splice_grid_reading(
         parked = 0
         if layout.items:
             parked = max((item.row or 0) + (item.rowspan or 1) for item in layout.items)
-        fresh_ids, _, _ = insert_fragment(doc, ctx, InGridCell(layout_id, parked, 0), fragment, False)
+        fresh_ids, _, _, _ = insert_fragment(doc, ctx, InGridCell(layout_id, parked, 0), fragment, False)
         fresh.extend(fresh_ids)
     incoming = moving_ids + fresh
     spliced = rest[:at] + incoming + rest[at:]
