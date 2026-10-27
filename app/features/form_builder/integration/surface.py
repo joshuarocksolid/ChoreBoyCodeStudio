@@ -1064,7 +1064,7 @@ class FormSurface(QWidget):
         inspector.properties.setFocus()
 
     def _rename_inert(self) -> None:
-        self._inert_note = ""
+        self._inert_note = "F2 renames the selected outline row."
         self._refresh_shell_status()
 
     def _run_outline_command(self, action_id: str) -> None:
