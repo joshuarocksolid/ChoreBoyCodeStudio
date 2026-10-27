@@ -193,6 +193,11 @@ def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
     return held
 
 
+_CLIPBOARD_IDS = frozenset(
+    {"form.action.cut", "form.action.copy", "form.action.paste", "form.action.duplicate"}
+)
+
+
 def _shell_history(window: QWidget, redo: bool) -> None:
     surface = getattr(window, "_form_undo_surface", None)
     if not isinstance(surface, FormSurface):
@@ -1091,6 +1096,10 @@ class FormSurface(QWidget):
         self._refresh_shell_status()
 
     def _run_outline_command(self, action_id: str) -> None:
+        if action_id in _CLIPBOARD_IDS:
+            # Same path as the canvas: the clipboard commands live on the surface, not the shell menu.
+            self.dispatch(action_id)
+            return
         window = self.window()
         registry = None if window is None else _shell_registry(window)
         if registry is None:

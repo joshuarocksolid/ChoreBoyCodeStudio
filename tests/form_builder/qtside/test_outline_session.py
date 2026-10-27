@@ -272,6 +272,45 @@ def test_a_keyboard_session_stays_in_the_outline(tmp_path: Path, qapp: QApplicat
             int(surface.session.document.by_name("cellB")[0])  # type: ignore[attr-defined]
         )
 
+        # Clipboard keys with the tree focused run the form commands (UX-OUT-003) and keep focus.
+        document = lambda: surface.session.document  # type: ignore[attr-defined]  # noqa: E731
+        _select(tree, qapp, "okButton")
+        _press(tree, qapp, "Key_D", "ControlModifier")
+        _stay(surface)
+        assert len(document().by_name("okButton_2")) == 1
+        _matches(tree, surface)
+        _select(tree, qapp, "okButton")
+        _press(tree, qapp, "Key_C", "ControlModifier")
+        _press(tree, qapp, "Key_V", "ControlModifier")
+        _stay(surface)
+        assert document().by_name("okButton_3")
+        _matches(tree, surface)
+        _select(tree, qapp, "okButton_3")
+        _press(tree, qapp, "Key_X", "ControlModifier")
+        _stay(surface)
+        assert not document().by_name("okButton_3")
+        _matches(tree, surface)
+
+        # Inside the rename editor those keys edit the name; Ctrl+D and a bare Shift do nothing.
+        entries = len(surface.session.log.entries())  # type: ignore[attr-defined]
+        _select(tree, qapp, "okButton_2")
+        _press(tree, qapp, "Key_F2")
+        editor = QApplication.focusWidget()
+        assert isinstance(editor, QLineEdit)
+        _press(editor, qapp, "Key_A", "ControlModifier")
+        _press(editor, qapp, "Key_X", "ControlModifier")
+        assert editor.text() == ""
+        QTest.keyPress(editor, _key("Key_Shift"), _mod("ShiftModifier"))
+        QTest.keyClick(editor, _key("Key_S"), _mod("ShiftModifier"))
+        QTest.keyRelease(editor, _key("Key_Shift"), _mod("NoModifier"))
+        _press(editor, qapp, "Key_V", "ControlModifier")
+        _press(editor, qapp, "Key_D", "ControlModifier")
+        assert QApplication.focusWidget() is editor and editor.isVisible()
+        assert editor.text().lower() == "sokbutton_2"  # QTest sends the letter without its shifted text
+        assert len(surface.session.log.entries()) == entries  # type: ignore[attr-defined]
+        _press(editor, qapp, "Key_Escape")
+        _stay(surface)
+
         _press(tree, qapp, "Key_F", "ControlModifier")
         field = surface.findChild(QLineEdit, "formBuilder.outlineFilter")  # type: ignore[attr-defined]
         assert isinstance(field, QLineEdit) and field.isVisible()
