@@ -7,13 +7,15 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt import QtWidgets as qt_widgets
-from app.qt.QtWidgets import QMainWindow
+from app.qt.QtGui import QPalette
+from app.qt.QtWidgets import QApplication, QMainWindow, QToolTip
 
 from app.shell.menus import MenuCallbacks, build_menu_stubs
 from app.shell.shell_theme_surface_appliers import (
     ShellThemeSurfaceRefs,
     apply_menu_bar_icons,
     build_main_window_shell_theme_callbacks,
+    set_app_tooltip_style_sheet,
 )
 from app.shell.theme_tokens import ShellThemeTokens
 
@@ -113,3 +115,20 @@ def test_apply_menu_bar_icons_delegates_to_apply_menu_icons(_ensure_qapp) -> Non
     run_action = registry.action("shell.action.run.run")
     assert run_action is not None
     assert not run_action.icon().isNull()
+
+
+def test_tooltip_style_does_not_set_an_application_style_sheet(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    saved = app.styleSheet()
+    try:
+        app.setStyleSheet("")
+        set_app_tooltip_style_sheet(
+            "QToolTip {\n    background-color: #112233;\n    color: #ddeeff;\n    border: 1px solid #445566;\n}"
+        )
+        assert app.styleSheet() == ""
+        role = getattr(QPalette, "ColorRole", QPalette)
+        assert QToolTip.palette().color(getattr(role, "ToolTipBase")).name() == "#112233"
+        assert QToolTip.palette().color(getattr(role, "ToolTipText")).name() == "#ddeeff"
+    finally:
+        app.setStyleSheet(saved)
