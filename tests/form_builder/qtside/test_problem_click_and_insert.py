@@ -128,17 +128,33 @@ def _show_problems(window: MainWindow, qapp: QApplication) -> QTreeWidget:
 
 
 def _row(tree: QTreeWidget, text: str) -> QTreeWidgetItem:
-    found = None
+    app = QApplication.instance()
+    for _ in range(5):
+        if app is not None:
+            app.processEvents()
+        found = _live_row(tree, text)
+        if found is not None:
+            return found
+    raise AssertionError(text)
+
+
+def _live_row(tree: QTreeWidget, text: str) -> QTreeWidgetItem | None:
     for index in range(tree.topLevelItemCount()):
         group = tree.topLevelItem(index)
         if group is None:
             continue
-        for child_index in range(group.childCount()):
-            child = group.child(child_index)
-            if child is not None and text in child.text(1):
-                found = child
-    assert isinstance(found, QTreeWidgetItem)
-    return found
+        try:
+            child_count = group.childCount()
+        except RuntimeError:
+            continue
+        for child_index in range(child_count):
+            try:
+                child = group.child(child_index)
+                if child is not None and text in child.text(1):
+                    return child
+            except RuntimeError:
+                continue
+    return None
 
 
 def _click(tree: QTreeWidget, item: QTreeWidgetItem, qapp: QApplication, *, double: bool) -> None:
@@ -156,7 +172,9 @@ def _click(tree: QTreeWidget, item: QTreeWidgetItem, qapp: QApplication, *, doub
 
 def _problems_focus(window: MainWindow) -> bool:
     focus = QApplication.focusWidget()
-    tree = window._problems_panel.tree_widget()  # noqa: SLF001
+    panel = window._problems_panel  # noqa: SLF001
+    assert panel is not None
+    tree = panel.tree_widget()
     return focus is tree or (isinstance(focus, QWidget) and tree.isAncestorOf(focus))
 
 
@@ -183,6 +201,7 @@ def test_single_click_on_a_form_problem_without_a_widget_does_nothing(
     try:
         surface = _open(window, qapp, path, _FORM)
         panel = window._problems_panel  # noqa: SLF001
+        assert panel is not None
         panel.set_diagnostics(
             [
                 CodeDiagnostic(
