@@ -20,6 +20,7 @@ CAPTION = _user(1)
 FAINT = _user(2)
 PROBLEM = _user(3)
 TONE = _user(4)
+EXTRA = _user(5)
 
 
 def _flag(name: str) -> int:
@@ -122,7 +123,9 @@ class OutlineRowDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option: QStyleOptionViewItem, index: object) -> QSize:  # noqa: N802
         hint = super().sizeHint(option, index)
-        return QSize(hint.width(), max(24, _metrics(option).height() + 8))
+        extra = index.data(EXTRA)  # type: ignore[attr-defined]
+        added = int(extra) if isinstance(extra, int) else 0
+        return QSize(hint.width(), max(24, _metrics(option).height() + 8) + max(added, 0))
 
 
 def _metrics(option: QStyleOptionViewItem) -> QFontMetrics:

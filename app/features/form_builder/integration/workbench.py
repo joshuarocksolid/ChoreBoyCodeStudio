@@ -98,6 +98,7 @@ from app.features.form_builder.integration.toast import CommandToast, ToastNote,
 from app.features.form_builder.qtside.inspector import InspectorPane, TabId
 from app.features.form_builder.qtside.outline.delegate import (
     CAPTION,
+    EXTRA,
     FAINT,
     PROBLEM,
     TONE,
@@ -204,6 +205,8 @@ def _paint_glyph(button: QToolButton, glyph: str, tokens: ShellThemeTokens, logi
     button.setIcon(_glyph_icon(glyph, color, faint, logical, _dpr(button)))
     button.setIconSize(QSize(logical, logical))
 
+
+_NAME_ROW_PX = 24
 
 _TOOL_GLYPHS = (
     ("undo", "undo"),
@@ -1233,6 +1236,7 @@ class OutlinePane(QWidget):
             return
         self._confirm.hide()
         self._insert_pop.hide()
+        self._release_rename_row()
         self._renaming = node
         session = self._session
         if session is not None:
@@ -1247,6 +1251,7 @@ class OutlinePane(QWidget):
         self._editor.selectAll()
 
     def finish_rename(self) -> None:
+        self._release_rename_row()
         self._renaming = None
         self._editor.hide()
         self._error.hide()
@@ -1254,11 +1259,27 @@ class OutlinePane(QWidget):
     def show_name_error(self, prose: str) -> None:
         self._error.setText(prose)
         item = None if self._renaming is None else self._rows.get(int(self._renaming))
-        if item is not None:
-            rect = self.tree.visualItemRect(item)
-            self._error.setGeometry(rect.x(), rect.y() + rect.height(), max(rect.width(), 80), self._error.sizeHint().height())
+        if item is None:
+            self._error.show()
+            self._error.raise_()
+            return
+        extra = max(self._error.sizeHint().height(), self._error.fontMetrics().height())
+        self.tree.setUniformRowHeights(False)
+        item.setData(0, EXTRA, extra)
+        self.tree.doItemsLayout()
+        rect = self.tree.visualItemRect(item)
+        self._place_editor(item)
+        editor = self._editor.geometry()
+        self._editor.setGeometry(editor.x(), rect.y(), editor.width(), _NAME_ROW_PX)
+        self._error.setGeometry(rect.x(), rect.y() + _NAME_ROW_PX, max(rect.width(), 80), extra)
         self._error.show()
         self._error.raise_()
+
+    def _release_rename_row(self) -> None:
+        item = None if self._renaming is None else self._rows.get(int(self._renaming))
+        if item is not None:
+            item.setData(0, EXTRA, 0)
+        self.tree.setUniformRowHeights(True)
 
     def apply_filter(self, text: str, focus_tree: bool, select: Optional[NodeId]) -> None:
         self._filter_text = text
@@ -1361,7 +1382,9 @@ class OutlinePane(QWidget):
             "QLineEdit#formBuilder\\.outlineRename { color: %s; background: %s; border: %dpx solid %s; }"
             % (tokens.text_primary, tokens.editor_bg, width, tokens.accent)
         )
-        self._error.setStyleSheet("color: %s; background: transparent;" % tokens.diag_error_color)
+        self._error.setStyleSheet(
+            "color: %s; background: %s;" % (tokens.diag_error_color, tokens.editor_bg)
+        )
         self._confirm.setStyleSheet(
             "QFrame#formBuilder\\.outlineConfirm { background: %s; color: %s; border: %dpx solid %s; }"
             "QPushButton { color: %s; background: %s; border: %dpx solid %s; }"

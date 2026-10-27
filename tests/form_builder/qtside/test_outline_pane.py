@@ -317,6 +317,23 @@ def test_invalid_tab_keeps_the_old_name(qapp: QApplication) -> None:
         assert not session.document.by_name("1bad")
 
 
+def test_name_error_stays_inside_its_row(qapp: QApplication) -> None:
+    with _opened(qapp, _buttons(3), "rename-overlap", height=400) as (pane, session):
+        _show(pane, session, "field0")
+        QTest.keyClick(pane.tree, _key("Key_F2"))
+        editor = _editor(qapp)
+        QTest.keyClicks(editor, "1bad")
+        QTest.keyClick(editor, _key("Key_Tab"))
+        qapp.processEvents()
+        error = pane.findChild(QLabel, "formBuilder.outlineNameError")
+        assert isinstance(error, QLabel)
+        assert error.isVisible()
+        nxt = pane.tree.visualItemRect(_find_item(pane.tree, "field1"))
+        err = error.geometry()
+        assert not err.intersects(nxt)
+        assert err.bottom() <= nxt.top()
+
+
 def test_escape_cancels_a_rename(qapp: QApplication) -> None:
     with _opened(qapp, _buttons(1), "rename-esc") as (pane, session):
         _show(pane, session, "field0")
