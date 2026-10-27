@@ -8,23 +8,27 @@ from __future__ import annotations
 
 from typing import Optional, Protocol, Sequence, Tuple
 
-from app.qt.QtCore import QMimeData
+from app.qt import QtWidgets
+from app.qt.QtCore import QMimeData, QPoint
 from app.qt.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
     QComboBox,
+    QLayout,
     QLineEdit,
     QPlainTextEdit,
+    QSpacerItem,
     QTextEdit,
     QWidget,
 )
+from app.qt.qt_compat import delete_now
 
 from app.features.form_builder.engine.clipboard import (
+    CopiedBox,
     cut_sentence,
     dangling_sentence,
     duplicate_sentence,
-    paste_auto_layout,
-    paste_placement,
+    plan_paste,
     paste_sentence,
     pasted_widget_count,
     plain_names,
@@ -34,12 +38,14 @@ from app.features.form_builder.engine.clipboard import (
 )
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, InsertResult
+from app.features.form_builder.engine.commands.refs import NAME_FIELD
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_fragment
-from app.features.form_builder.engine.ui4.spec import Fragment
+from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
+from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
 from app.features.form_builder.engine.ui4.writer import write_fragment
 from app.features.form_builder.qtside.canvas.core.palette import MIME_DESIGNER_FRAGMENT, MIME_FRAGMENT
 
@@ -80,6 +86,11 @@ _TEXT_KEYS = frozenset(
 
 _PLAIN_TEXT = "The clipboard has text, not widgets."
 
+# The last copy's measured pieces, keyed by its XML. The clipboard holds only
+# the fragment; this lets a paste on another form size laid-out pieces the way
+# they looked when copied. Text that is not this XML never uses it.
+_LAST_COPY: Optional[Tuple[str, Tuple[Optional[CopiedBox], ...]]] = None
+
 
 class ClipboardHost(Protocol):
     _session: FormSession
@@ -104,7 +115,7 @@ def apply_command(host: ClipboardHost, command_id: str) -> bool:
     document = session.document
     ids = session.selection.state.ids
     if command_id == "form.action.copy":
-        _copy(document, ids)
+        _copy(host, document, ids)
     elif command_id == "form.action.cut":
         _cut(host, session, ids)
     elif command_id == "form.action.paste":
@@ -122,11 +133,11 @@ def apply_command(host: ClipboardHost, command_id: str) -> bool:
     return True
 
 
-def _copy(document: UiDocument, ids: Sequence[NodeId]) -> None:
+def _copy(host: ClipboardHost, document: UiDocument, ids: Sequence[NodeId]) -> None:
     fragment = selection_fragment(document, ids)
     if not fragment.nodes:
         return
-    _write(fragment)
+    _write(fragment, _boxes(host, fragment))
 
 
 def _cut(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
@@ -136,20 +147,22 @@ def _cut(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> No
     fragment = selection_fragment(session.document, targets)
     if not fragment.nodes:
         return
-    _write(fragment)
+    _write(fragment, _boxes(host, fragment))
     _execute_delete(session, targets, "Cut")
     count = pasted_widget_count(fragment) or len(targets)
     host.narrate(cut_sentence(count))
 
 
 def _paste(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
-    fragment = _read()
+    text = _clipboard_xml()
+    fragment = _parse(text) if text is not None else None
     if fragment is None:
         notice = clipboard_text_notice()
         if notice is not None:
             host.narrate(notice)
         return
-    _insert(host, session, ids, fragment, undo_label="Paste")
+    copied = _copied_boxes(text, fragment)
+    _insert(host, session, ids, fragment, undo_label="Paste", copied=copied)
 
 
 def _duplicate(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
@@ -192,16 +205,22 @@ def _insert(
     fragment: Fragment,
     *,
     undo_label: str,
+    copied: Optional[Sequence[Optional[CopiedBox]]] = None,
 ) -> None:
     document = session.document
-    placement = paste_placement(document, ids)
     count = pasted_widget_count(fragment)
+    known = {id(spec): box for spec, box in zip(fragment.nodes, copied or ()) if box is not None}
+
+    def measure(spec: NodeSpec) -> Optional[CopiedBox]:
+        return known.get(id(spec)) or _measure(host, spec)
+
+    placement, fragment, auto_layout = plan_paste(document, ids, fragment, measure)
     try:
         outcome = session.log.execute(
             InsertFragment(
                 placement,
                 fragment,
-                auto_layout=paste_auto_layout(placement),
+                auto_layout=auto_layout,
                 undo_label=undo_label,
             )
         )
@@ -225,6 +244,81 @@ def _execute_delete(session: FormSession, targets: Tuple[NodeId, ...], undo_labe
         session.log.execute(DeleteNodes(targets, undo_label=undo_label))
     except CommandRejected:
         return
+
+
+def _measure(host: ClipboardHost, spec: NodeSpec) -> Optional[CopiedBox]:
+    """Natural size of a copied piece with no geometry, as Designer sizes it.
+
+    The live source on this canvas gives its size hint and where it sits. A
+    piece from another form or a cut one is measured on a fresh widget of its
+    class, with no known spot.
+    """
+    live = _live_source(host, spec)
+    if live is not None:
+        return live
+    if spec.kind != "widget":
+        return None
+    widget_class = getattr(QtWidgets, str(spec.field("class_name") or ""), None)
+    if not isinstance(widget_class, type) or not issubclass(widget_class, QWidget):
+        return None
+    try:
+        widget = widget_class()
+    except (TypeError, RuntimeError):
+        return None
+    try:
+        for entry in spec.properties:
+            if entry.name in ("text", "title") and isinstance(entry.value, (StringValue, CStringValue)):
+                _call_with(widget, "setText" if entry.name == "text" else "setTitle", entry.value.text)
+        hint = widget.sizeHint()
+        if hint.width() <= 0 or hint.height() <= 0:
+            return None
+        return CopiedBox(int(hint.width()), int(hint.height()))
+    finally:
+        delete_now(widget)
+
+
+def _live_source(host: ClipboardHost, spec: NodeSpec) -> Optional[CopiedBox]:
+    find = getattr(host, "realized_object", None)
+    field_name = NAME_FIELD.get(spec.kind)
+    if not callable(find) or field_name is None:
+        return None
+    name = spec.field(field_name)
+    document = host._session.document
+    if not isinstance(name, str) or not name:
+        return None
+    matches = document.by_name(name)
+    if len(matches) != 1:
+        return None
+    node = document.node(matches[0])
+    if node.kind != spec.kind or node.field("class_name") != spec.field("class_name"):
+        return None
+    root = find(document.root.id)
+    found = find(matches[0])
+    if not isinstance(root, QWidget):
+        return None
+    if isinstance(found, QWidget):
+        hint = found.sizeHint()
+        corner = found.mapTo(root, QPoint(0, 0))
+    elif isinstance(found, QLayout):
+        hint = found.sizeHint()
+        owner = found.parentWidget()
+        if owner is None:
+            return None
+        corner = owner.mapTo(root, found.geometry().topLeft())
+    elif isinstance(found, QSpacerItem):
+        hint = found.sizeHint()
+        return CopiedBox(max(1, int(hint.width())), max(1, int(hint.height())))
+    else:
+        return None
+    if hint.width() <= 0 or hint.height() <= 0:
+        return None
+    return CopiedBox(int(hint.width()), int(hint.height()), int(corner.x()), int(corner.y()))
+
+
+def _call_with(widget: QWidget, name: str, value: str) -> None:
+    method = getattr(widget, name, None)
+    if callable(method):
+        method(value)
 
 
 def _deletable(document: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
@@ -261,8 +355,10 @@ def clipboard_text_notice() -> Optional[str]:
     return _PLAIN_TEXT
 
 
-def _write(fragment: Fragment) -> None:
+def _write(fragment: Fragment, boxes: Tuple[Optional[CopiedBox], ...] = ()) -> None:
+    global _LAST_COPY
     xml = write_fragment(fragment)
+    _LAST_COPY = (xml, boxes) if boxes else None
     raw = xml.encode("utf-8")
     mime = QMimeData()
     mime.setData(MIME_FRAGMENT, raw)
@@ -272,15 +368,33 @@ def _write(fragment: Fragment) -> None:
 
 
 def _read() -> Fragment | None:
+    text = _clipboard_xml()
+    return _parse(text) if text is not None else None
+
+
+def _clipboard_xml() -> Optional[str]:
     mime = QApplication.clipboard().mimeData()
     if mime is None:
         return None
     for name in (MIME_FRAGMENT, MIME_DESIGNER_FRAGMENT):
         if mime.hasFormat(name):
-            return _parse(bytes(mime.data(name)).decode("utf-8"))
+            return bytes(mime.data(name)).decode("utf-8")
     if mime.hasText():
-        return _parse(mime.text())
+        return mime.text()
     return None
+
+
+def _boxes(host: ClipboardHost, fragment: Fragment) -> Tuple[Optional[CopiedBox], ...]:
+    """Live sizes and spots of the copied pieces, taken while the source is on screen."""
+    boxes = tuple(_live_source(host, spec) for spec in fragment.nodes)
+    return boxes if any(box is not None for box in boxes) else ()
+
+
+def _copied_boxes(text: Optional[str], fragment: Fragment) -> Optional[Tuple[Optional[CopiedBox], ...]]:
+    """What this process measured when it copied ``text``. None for anything else."""
+    if _LAST_COPY is None or text != _LAST_COPY[0] or len(_LAST_COPY[1]) != len(fragment.nodes):
+        return None
+    return _LAST_COPY[1]
 
 
 def _parse(text: str) -> Fragment | None:

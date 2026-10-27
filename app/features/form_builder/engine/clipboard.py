@@ -6,7 +6,8 @@ XML. This module stays on the document and the placement types.
 
 from __future__ import annotations
 
-from typing import AbstractSet, Dict, List, Optional, Sequence, Set, Tuple
+from dataclasses import dataclass
+from typing import AbstractSet, Callable, Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.commands.placement import (
     InBoxLayout,
@@ -31,6 +32,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     Node,
     WidgetNode,
 )
+from app.features.form_builder.engine.ui4.schema import SCHEMA
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import CStringValue, NumberValue, RectValue, StringValue
 
@@ -38,7 +40,27 @@ _COPYABLE = frozenset({"widget", "layout", "spacer", "action", "actiongroup", "b
 _GRID = "QGridLayout"
 _FORM = "QFormLayout"
 _OFFSET = 16
+_GAP = 8
 _DEFAULT_SIZE = (80, 24)
+_MARGINS = ("leftMargin", "topMargin", "rightMargin", "bottomMargin")
+
+
+@dataclass(frozen=True)
+class CopiedBox:
+    """The size of one copied top-level piece, and where it sat when that is known.
+
+    ``x`` and ``y`` share one frame across a paste (the source form), so they
+    only matter relative to each other.
+    """
+
+    width: int
+    height: int
+    x: Optional[int] = None
+    y: Optional[int] = None
+
+
+#: Measures a copied spec that carries no geometry. None when it cannot.
+Measure = Callable[[NodeSpec], Optional[CopiedBox]]
 
 
 def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
@@ -102,6 +124,75 @@ def paste_anchor_name(doc: UiDocument, anchor_ids: Sequence[NodeId]) -> str:
     if isinstance(node, (WidgetNode, LayoutNode)) and node.object_name:
         return node.object_name
     return "the form"
+
+
+def plan_paste(
+    doc: UiDocument,
+    anchor_ids: Sequence[NodeId],
+    fragment: Fragment,
+    measure: Optional[Measure] = None,
+) -> Tuple[Placement, Fragment, bool]:
+    """Placement, fragment, and ``auto_layout`` for one ``InsertFragment`` paste."""
+    placement = paste_placement(doc, anchor_ids)
+    auto_layout = paste_auto_layout(placement)
+    if isinstance(placement, InContainer) and placement.geometry is not None:
+        placement, fragment = free_paste(doc, placement, fragment, measure)
+    return placement, fragment, auto_layout
+
+
+def free_paste(
+    doc: UiDocument,
+    placement: InContainer,
+    fragment: Fragment,
+    measure: Optional[Measure] = None,
+) -> Tuple[InContainer, Fragment]:
+    """Give every top-level piece of a paste into a free container its own rectangle.
+
+    ``placement`` is a free spot from ``paste_placement``; its corner is where
+    the paste would like to start. Each piece keeps its copied size. A piece
+    with no geometry (it came out of a layout) takes ``measure``'s size, else
+    a default. The pieces keep their arrangement as one group, the group goes
+    to the free spot nearest that corner, and it stays inside the container.
+    A layout or spacer is wrapped in a ``widget`` first, as Designer does.
+
+    Returns a placement with no geometry and the fragment with geometry set.
+    """
+    boxes: List[CopiedBox] = []
+    for spec in fragment.nodes:
+        rect = _spec_rect(spec)
+        if rect is not None:
+            boxes.append(CopiedBox(rect.width, rect.height, rect.x, rect.y))
+            continue
+        found = measure(spec) if measure is not None else None
+        if found is None or found.width <= 0 or found.height <= 0:
+            width, height = _DEFAULT_SIZE
+            found = CopiedBox(width, height)
+        boxes.append(found)
+    offsets = _arrange(boxes)
+    group_w = max((box.x + box.width for box in offsets), default=0)
+    group_h = max((box.y + box.height for box in offsets), default=0)
+    container = doc.node(placement.widget)
+    taken: List[RectValue] = []
+    bounds: Optional[Tuple[int, int]] = None
+    if isinstance(container, WidgetNode):
+        taken = [rect for rect in (_node_rect(child) for child in container.child_widgets) if rect is not None]
+        own = _node_rect(container)
+        if own is not None and own.width > 0 and own.height > 0:
+            bounds = (own.width, own.height)
+    want = placement.geometry
+    prefer = (want.x, want.y) if want is not None else (_OFFSET, _OFFSET)
+    left, top = _free_spot(prefer, (group_w, group_h), taken, bounds)
+    nodes = tuple(
+        _with_geometry(free_holder(spec), RectValue(left + box.x, top + box.y, box.width, box.height))
+        for spec, box in zip(fragment.nodes, offsets)
+    )
+    placed = Fragment(
+        nodes=nodes,
+        connections=fragment.connections,
+        customwidgets=fragment.customwidgets,
+        resources=fragment.resources,
+    )
+    return InContainer(placement.widget, placement.index), placed
 
 
 def paste_auto_layout(placement: Placement) -> bool:
@@ -556,13 +647,175 @@ def _grid_after(doc: UiDocument, layout: LayoutNode, item: LayoutItemNode) -> In
 
 
 def _beside(parent: WidgetNode, anchor: WidgetNode) -> InContainer:
+    """A free spot 16, 16 px past the anchor's corner. ``free_paste`` sizes each piece."""
     rect = anchor.value("geometry")
+    width, height = _DEFAULT_SIZE
     if isinstance(rect, RectValue):
-        box = RectValue(rect.x + _OFFSET, rect.y + _OFFSET, rect.width, rect.height)
+        box = RectValue(rect.x + _OFFSET, rect.y + _OFFSET, width, height)
     else:
-        width, height = _DEFAULT_SIZE
         box = RectValue(_OFFSET, _OFFSET, width, height)
     return InContainer(parent.id, len(parent.child_widgets), box)
+
+
+def free_holder(spec: NodeSpec, holder_name: str = "widget", layout_name: str = "verticalLayout") -> NodeSpec:
+    """Wrap a layout or spacer in a plain ``QWidget`` so it can sit at a coordinate.
+
+    Designer names that widget ``widget`` and gives the layout zero margins,
+    so it looks as it did nested in its source. A spacer first gets a
+    vertical layout of its own. Any other spec comes back unchanged.
+    """
+    if spec.kind not in ("layout", "spacer"):
+        return spec
+    held = spec
+    if spec.kind == "spacer":
+        item = NodeSpec("layoutitem", None, (), (), (), (("content", (spec,)),))
+        held = NodeSpec(
+            "layout",
+            None,
+            _fields("layout", {"class_name": "QVBoxLayout", "object_name": layout_name}),
+            (),
+            (),
+            (("layout_items", (item,)),),
+        )
+    return NodeSpec(
+        "widget",
+        None,
+        _fields("widget", {"class_name": "QWidget", "object_name": holder_name}),
+        (),
+        (),
+        (("layout", (_flush_margins(held),)),),
+    )
+
+
+def _flush_margins(layout: NodeSpec) -> NodeSpec:
+    named = {entry.name for entry in layout.properties}
+    if named & set(_MARGINS) or "margin" in named:
+        return layout
+    zero = tuple(PropertyEntry("property", name, NumberValue(0)) for name in _MARGINS)
+    return NodeSpec(
+        layout.kind,
+        layout.id,
+        layout.fields,
+        zero + layout.properties,
+        layout.attributes,
+        layout.slots,
+        layout.extra_attrs,
+    )
+
+
+def _fields(kind: str, values: Dict[str, object]) -> Tuple[Tuple[str, object], ...]:
+    return tuple((spec.name, values[spec.name]) for spec in SCHEMA[kind].fields if values.get(spec.name) is not None)
+
+
+def _spec_rect(spec: NodeSpec) -> Optional[RectValue]:
+    if spec.kind != "widget":
+        return None
+    for entry in spec.properties:
+        if entry.name == "geometry" and isinstance(entry.value, RectValue):
+            return entry.value
+    return None
+
+
+def _node_rect(node: WidgetNode) -> Optional[RectValue]:
+    rect = node.value("geometry")
+    return rect if isinstance(rect, RectValue) else None
+
+
+def _with_geometry(spec: NodeSpec, rect: RectValue) -> NodeSpec:
+    entry = PropertyEntry("property", "geometry", rect)
+    kept = [item for item in spec.properties if item.name != "geometry"]
+    index = next((at for at, item in enumerate(spec.properties) if item.name == "geometry"), 0)
+    kept.insert(index, entry)
+    return NodeSpec(spec.kind, spec.id, spec.fields, tuple(kept), spec.attributes, spec.slots, spec.extra_attrs)
+
+
+def _arrange(boxes: Sequence[CopiedBox]) -> Tuple[RectValue, ...]:
+    """Offsets from the group's corner. Known spots keep their arrangement.
+
+    Pieces with no known spot stack under the rest. If the copied spots would
+    overlap (a size hint outgrew a squeezed layout cell), the whole group
+    stacks as one column instead, so a paste never lands on itself.
+    """
+    known = [(box.x, box.y) for box in boxes if box.x is not None and box.y is not None]
+    left = min((x for x, _y in known), default=0)
+    top = min((y for _x, y in known), default=0)
+    below = max(
+        (box.y - top + box.height for box in boxes if box.x is not None and box.y is not None),
+        default=0,
+    )
+    placed: List[RectValue] = []
+    for box in boxes:
+        if box.x is not None and box.y is not None:
+            placed.append(RectValue(box.x - left, box.y - top, box.width, box.height))
+            continue
+        y = below + _GAP if below else 0
+        placed.append(RectValue(0, y, box.width, box.height))
+        below = y + box.height
+    if not any(_meets(first, second) for index, first in enumerate(placed) for second in placed[index + 1 :]):
+        return tuple(placed)
+    column: List[RectValue] = []
+    y = 0
+    for box in boxes:
+        column.append(RectValue(0, y, box.width, box.height))
+        y += box.height + _GAP
+    return tuple(column)
+
+
+def _meets(first: RectValue, second: RectValue) -> bool:
+    return (
+        first.x < second.x + second.width
+        and second.x < first.x + first.width
+        and first.y < second.y + second.height
+        and second.y < first.y + first.height
+    )
+
+
+def _free_spot(
+    prefer: Tuple[int, int],
+    size: Tuple[int, int],
+    taken: Sequence[RectValue],
+    bounds: Optional[Tuple[int, int]],
+) -> Tuple[int, int]:
+    """The corner nearest ``prefer`` where a ``size`` group covers nothing.
+
+    Candidates line up with the preferred corner and with the edges of the
+    widgets already there. With no free spot, the preferred corner is kept,
+    pulled inside ``bounds``.
+    """
+    width, height = size
+    px, py = prefer
+    xs = {px, _GAP}
+    ys = {py, _GAP}
+    for rect in taken:
+        xs.update((rect.x, rect.x + rect.width + _GAP))
+        ys.update((rect.y, rect.y + rect.height + _GAP))
+    best: Optional[Tuple[int, int, int]] = None
+    for y in sorted(ys):
+        for x in sorted(xs):
+            if not _fits(x, y, width, height, bounds):
+                continue
+            if any(_meets(RectValue(x, y, width, height), rect) for rect in taken):
+                continue
+            distance = (x - px) * (x - px) + (y - py) * (y - py)
+            if best is None or distance < best[0]:
+                best = (distance, x, y)
+    if best is not None:
+        return best[1], best[2]
+    return _clamp(px, width, bounds[0] if bounds else None), _clamp(py, height, bounds[1] if bounds else None)
+
+
+def _fits(x: int, y: int, width: int, height: int, bounds: Optional[Tuple[int, int]]) -> bool:
+    if x < 0 or y < 0:
+        return False
+    if bounds is None:
+        return True
+    return x + width <= bounds[0] and y + height <= bounds[1]
+
+
+def _clamp(value: int, extent: int, limit: Optional[int]) -> int:
+    if limit is not None:
+        value = min(value, limit - extent)
+    return max(0, value)
 
 
 def _holding_item(doc: UiDocument, node_id: NodeId) -> Optional[LayoutItemNode]:

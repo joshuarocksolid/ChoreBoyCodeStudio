@@ -313,7 +313,8 @@ def test_a_free_widget_paste_offsets_its_geometry() -> None:
     place = paste_placement(doc, (button,))
     assert isinstance(place, InContainer)
     assert place.widget == doc.root.id
-    assert place.geometry == RectValue(26, 36, 40, 30)
+    assert place.geometry is not None
+    assert (place.geometry.x, place.geometry.y) == (26, 36)
 
 
 def test_an_empty_selection_targets_the_end_of_the_root_layout() -> None:

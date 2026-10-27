@@ -9,6 +9,7 @@ from app.features.form_builder.engine.clipboard import (
     paste_auto_layout,
     paste_placement,
     paste_sentence,
+    plan_paste,
     selection_fragment,
     sibling_ids,
 )
@@ -160,8 +161,8 @@ def _pasted_top(doc) -> List[Tuple[str, str]]:
 
 def _paste(log, fragment: Fragment, anchor: Sequence[NodeId]) -> None:
     doc = log.document
-    place = paste_placement(doc, anchor)
-    outcome = log.execute(InsertFragment(place, fragment, auto_layout=paste_auto_layout(place), undo_label="Paste"))
+    place, fragment, auto_layout = plan_paste(doc, anchor, fragment)
+    outcome = log.execute(InsertFragment(place, fragment, auto_layout=auto_layout, undo_label="Paste"))
     assert isinstance(outcome.result, InsertResult)
 
 
@@ -173,7 +174,8 @@ def test_paste_onto_a_bare_dialog_keeps_free_children() -> None:
     assert doc.root.layout is None
     assert _rect(doc, "nameEdit") == before["nameEdit"]
     assert _rect(doc, "okButton") == before["okButton"]
-    assert _rect(doc, "extra") == (306, 266, 80, 24)
+    # 16, 16 px past okButton would cover it, so the paste drops just below.
+    assert _rect(doc, "extra") == (306, 282, 80, 24)
     assert log.undo_label() == "Paste"
 
 
@@ -282,7 +284,7 @@ def test_a_layout_pasted_beside_a_free_widget_keeps_the_widget() -> None:
     holders = [
         node
         for node in doc.iter_preorder()
-        if isinstance(node, WidgetNode) and node.object_name.startswith("holder")
+        if isinstance(node, WidgetNode) and node.object_name.startswith("widget")
     ]
     assert len(holders) == 1
     assert holders[0].layout is not None

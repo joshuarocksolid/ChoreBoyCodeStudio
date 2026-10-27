@@ -933,6 +933,11 @@ class FormSurface(QWidget):
         note = ToastNote(text, "Show", "", 0)
         self._command_toast.show_note(note, lambda _note: self._show_in_problems())
 
+    def realized_object(self, node_id: NodeId) -> Optional[object]:
+        """The live widget, layout, or spacer for ``node_id`` on the canvas, if any."""
+        realizer = self._realizer
+        return realizer.widget_for(node_id) or realizer.layout_for(node_id) or realizer.spacer_for(node_id)
+
     def _clipboard_enabled(self, command_id: str) -> bool:
         return command_enabled(
             self._session.document,

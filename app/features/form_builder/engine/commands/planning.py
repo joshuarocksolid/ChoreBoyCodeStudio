@@ -10,7 +10,7 @@ from dataclasses import fields, is_dataclass
 from functools import cmp_to_key
 from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
-from app.features.form_builder.engine.clipboard import connections_for_paste
+from app.features.form_builder.engine.clipboard import connections_for_paste, free_holder
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.ops import (
     InsertNodeOp,
@@ -1122,30 +1122,10 @@ def _hold_free(spec: NodeSpec, doc: UiDocument, chosen: set) -> NodeSpec:
 
     The container already has free children, so it has no layout item list.
     """
-    if spec.kind == "widget":
+    if spec.kind not in ("layout", "spacer"):
         return spec
-    held = spec
-    if spec.kind == "spacer":
-        item = NodeSpec("layoutitem", None, (), (), (), (("content", (spec,)),))
-        held = NodeSpec(
-            "layout",
-            None,
-            _ordered("layout", {"class_name": "QVBoxLayout", "object_name": _take_name("verticalLayout", doc, chosen)}),
-            (),
-            (),
-            (("layout_items", (item,)),),
-        )
-    if held.kind != "layout":
-        return spec
-    name = _take_name("holder", doc, chosen)
-    return NodeSpec(
-        "widget",
-        None,
-        _ordered("widget", {"class_name": "QWidget", "object_name": name}),
-        (),
-        (),
-        (("layout", (held,)),),
-    )
+    inner = _take_name("verticalLayout", doc, chosen) if spec.kind == "spacer" else ""
+    return free_holder(spec, _take_name("widget", doc, chosen), inner)
 
 
 def _destination(
