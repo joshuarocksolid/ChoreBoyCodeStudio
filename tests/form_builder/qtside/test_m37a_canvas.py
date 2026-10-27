@@ -12,6 +12,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.features.form_builder.engine.commands.catalog import SetProperty  # noqa: E402
 from app.features.form_builder.engine.query.drop_target import DropPayload  # noqa: E402
+from app.features.form_builder.engine.query.selection import SelectionSource  # noqa: E402
 from app.features.form_builder.engine.ui4.nodes import LayoutNode  # noqa: E402
 from app.features.form_builder.engine.ui4.values import StringValue  # noqa: E402
 from app.features.form_builder.integration.canvas import FormCanvas  # noqa: E402
@@ -871,3 +872,76 @@ class _Host:
 
     def open_context_menu(self, node: object, at: object) -> None:
         return None
+
+
+
+class _PaintRegions(QObject):
+    """Review repro: the union of regions the viewport actually repainted."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.rects = []
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == getattr(getattr(QEvent, "Type", QEvent), "Paint"):
+            self.rects.extend(QRect(rect) for rect in event.region())
+        return False
+
+    def covers(self, rect: QRect) -> bool:
+        from app.qt.QtGui import QRegion
+
+        painted = QRegion()
+        for part in self.rects:
+            painted = painted.united(QRegion(part))
+        return QRegion(rect).subtracted(painted).isEmpty()
+
+
+_WIDE_FREE = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>360</width><height>200</height></rect></property>
+  <widget class="QPushButton" name="one">
+   <property name="geometry"><rect><x>8</x><y>8</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>One</string></property>
+  </widget>
+  <widget class="QPushButton" name="two">
+   <property name="geometry"><rect><x>200</x><y>120</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>Two</string></property>
+  </widget>
+ </widget>
+</ui>
+"""
+
+
+def test_review_wide_copy_stroke_is_repainted_when_the_selection_moves(qapp: QApplication, tmp_path: Path) -> None:
+    """Clipped damage covers only design-copy frame items; the wide copy keeps stale strokes."""
+    _require()
+    window = MainWindow(state_root=str(tmp_path / "state"))
+    try:
+        surface = _open(window, qapp, tmp_path / "wide.ui", _WIDE_FREE, 2400, 1400)
+        canvas = _canvas(surface)
+        QTest.mouseClick(window.findChild(QWidget, "formBuilder.twoWidths"), _button("LeftButton"))
+        qapp.processEvents()
+        one, two = _mirror_pair(canvas, "one", "two")
+        session = surface._session  # type: ignore[attr-defined]
+        first = session.document.by_name("one")[0]
+        second = session.document.by_name("two")[0]
+        # Warm up: the first selection after open builds the inspector and repaints everything.
+        for node in (first, second, first):
+            session.selection.set((node,), source=SelectionSource.CANVAS)
+            qapp.processEvents()
+        regions = _PaintRegions()
+        canvas.viewport().installEventFilter(regions)
+        session.selection.set((second,), source=SelectionSource.CANVAS)
+        qapp.processEvents()
+        canvas.viewport().removeEventFilter(regions)
+        for widget in (one, two):
+            _proxy, scene = _widget_scene(widget)
+            port = canvas.mapFromScene(scene).boundingRect()  # type: ignore[attr-defined]
+            port = port.intersected(canvas.viewport().rect())
+            assert not port.isEmpty()
+            # The old stroke on "one" must be erased and the new one on "two" drawn.
+            assert regions.covers(port), (widget.objectName(), port)
+    finally:
+        shutdown_main_window_for_test(window, qapp)
