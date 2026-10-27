@@ -119,6 +119,22 @@ def pasted_widget_count(fragment: Fragment) -> int:
     return count or len(fragment.nodes)
 
 
+def dangling_sentence(
+    fragment: Fragment,
+    dangling: Sequence[str],
+    renames: Sequence[Tuple[str, str]],
+    alive: AbstractSet[str],
+) -> Optional[str]:
+    """The toast when a paste kept a connection that names a missing widget."""
+    if not dangling:
+        return None
+    count = pasted_widget_count(fragment)
+    gaps = missing_connection_count(fragment, renames, alive)
+    if gaps < 1:
+        gaps = len(dangling)
+    return "Pasted %d widgets. %d connection points at a widget that isn't on this form." % (count, gaps)
+
+
 def missing_connection_count(
     fragment: Fragment,
     renames: Sequence[Tuple[str, str]],

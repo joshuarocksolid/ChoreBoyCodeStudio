@@ -10,13 +10,19 @@ import pytest
 from app.qt.QtCore import QMimeData
 from app.qt.QtWidgets import QApplication, QLineEdit, QMenu
 
+from app.features.form_builder.engine.clipboard import selection_fragment
+from app.features.form_builder.engine.commands.catalog import InsertFragment
+from app.features.form_builder.engine.commands.drop_plan import commands_for
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropIndicator, DropPayload
+from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.engine.ui4.writer import write_fragment
+from app.features.form_builder.integration.canvas import _drop_payload
 from app.features.form_builder.integration.clipboard_actions import apply_command
 from app.features.form_builder.integration.context_menu import add_clipboard_actions
 from app.features.form_builder.qtside.canvas.core.palette import MIME_DESIGNER_FRAGMENT, MIME_FRAGMENT
@@ -275,6 +281,40 @@ def test_a_focused_line_edit_keeps_its_own_paste(qapp: object) -> None:
         assert _box_names(session.document) == ("top", "middle", "bottom")
     finally:
         edit.close()
+        session.dispose()
+
+
+def test_a_fragment_mime_drop_inserts_without_source_ids(qapp: object) -> None:
+    del qapp
+    session = _open(_THREE)
+    try:
+        middle = nid(session.document, "middle")
+        fragment = selection_fragment(session.document, (middle,))
+        mime = QMimeData()
+        mime.setData(MIME_FRAGMENT, write_fragment(fragment).encode("utf-8"))
+
+        class _Event:
+            def mimeData(self) -> QMimeData:
+                return mime
+
+        parsed = _drop_payload(_Event(), session.document)
+        assert parsed is not None
+        payload, key, carried = parsed
+        assert isinstance(payload, DropPayload)
+        assert payload.source_ids == ()
+        assert key == ""
+        assert carried is not None
+        layout = session.document.root.layout
+        assert layout is not None
+        commands = commands_for(
+            session.document,
+            AcceptedDrop("", "", layout.id, "box", DropIndicator(Rect(0, 0, 1, 1)), Rect(0, 0, 1, 1), index=1),
+            payload,
+            carried,
+        )
+        assert len(commands) == 1
+        assert isinstance(commands[0], InsertFragment)
+    finally:
         session.dispose()
 
 

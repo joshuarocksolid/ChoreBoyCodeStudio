@@ -820,8 +820,8 @@ class OutlinePane(QWidget):
         parsed = _drop_payload(event, doc)
         if parsed is None:
             return
-        body, key = parsed
-        post(PlaceAsked(CanvasPoint(pos.x(), pos.y()), body, key))
+        body, key, fragment = parsed
+        post(PlaceAsked(CanvasPoint(pos.x(), pos.y()), body, key, fragment))
 
     def _post_target(self, pos: QPoint, drop: bool) -> None:
         post = self._post

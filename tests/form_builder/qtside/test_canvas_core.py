@@ -11,7 +11,8 @@ from dataclasses import replace
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog import SetGeometry, SetLayoutCell
+from app.features.form_builder.engine.commands.catalog import InsertFragment, SetGeometry, SetLayoutCell
+from app.features.form_builder.engine.commands.placement import InContainer
 from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.project.forms import FormScope
@@ -26,6 +27,7 @@ from app.features.form_builder.engine.query.direct import (
     knob_set,
     survey_scope,
 )
+from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropIndicator
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.session import FormSession
@@ -60,10 +62,12 @@ from app.features.form_builder.qtside.canvas.core.frame import (
 from app.features.form_builder.qtside.canvas.core.gesture import (
     Banding,
     Commit,
+    Cursor,
     Gesture,
     Idle,
     Inert,
     Key,
+    KeyUp,
     Mods,
     Move,
     MovedItem,
@@ -84,6 +88,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     previewing,
     step,
 )
+from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.core.structure import Free, free_origin, nearest_in_direction, positioning_of
 from app.features.form_builder.qtside.canvas.core.overlay import FrameInputs, build_frame, build_static
 from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
@@ -534,6 +539,73 @@ def test_dragging_a_laid_out_widget_waits_for_release() -> None:
         assert len(commits) <= 1
         if commits:
             assert commits[0].label == "Move"
+
+
+@pytest.mark.parity("R3-25")
+@pytest.mark.parametrize("mods", (Mods(ctrl=True), Mods(alt=True)))
+def test_ctrl_or_alt_release_of_a_placing_drag_inserts_a_copy(mods: Mods) -> None:
+    with _opened(LAID) as session:
+        view = _view()
+        form = _nid(session, "Form")
+        layout = _nid(session, "verticalLayout")
+        ok = _nid(session, "ok")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 300), None),
+                _entry(layout, "layout", (9, 9, 382, 282), form),
+                _entry(ok, "widget", (20, 20, 100, 30), layout),
+            )
+        )
+        world = _world(session, index, view)
+        target = AcceptedDrop(
+            "",
+            "",
+            layout,
+            "box",
+            DropIndicator(Rect(0, 0, 10, 2)),
+            Rect(0, 0, 100, 40),
+            index=1,
+        )
+        placing = Placing("t", payload_for(session.document, (ok,)), "", FormPoint(0, 0), FormPoint(0, 0), target, False)
+        held = step(placing, Key("other", mods), world)
+        assert any(isinstance(effect, Cursor) and effect.shape == "copy" for effect in held.effects)
+        released = step(held.gesture, Release(CanvasPoint(0, 0), PortPoint(0, 0), "left", mods), world)
+        commits = [effect for effect in released.effects if isinstance(effect, Commit)]
+        assert len(commits) == 1
+        assert commits[0].label == "Duplicate"
+        command = commits[0].commands[0]
+        assert isinstance(command, InsertFragment)
+        session.log.execute(command)
+        assert session.document.by_name("ok")
+        assert session.document.by_name("ok_2")
+
+
+def test_ctrl_release_of_a_free_drag_inserts_beside_the_original() -> None:
+    with _opened(BARE) as session:
+        view = _view()
+        index = _bare_index(session)
+        ok = _nid(session, "ok")
+        box = _nid(session, "box")
+        world = _world(session, index, view)
+        item = MovedItem(ok, RectValue(10, 16, 80, 24), Rect(30, 46, 80, 24))
+        state = Moving("t", ok, (item,), FormPoint(0, 0), FormPoint(24, 16), False)
+        released = step(state, Release(CanvasPoint(0, 0), PortPoint(0, 0), "left", Mods(ctrl=True)), world)
+        commits = [effect for effect in released.effects if isinstance(effect, Commit)]
+        assert len(commits) == 1
+        command = commits[0].commands[0]
+        assert isinstance(command, InsertFragment)
+        assert command.auto_layout is False
+        assert isinstance(command.placement, InContainer)
+        assert command.placement.widget == box
+        session.log.execute(command)
+        assert len(session.document.by_name("ok")) == 1
+        copy = session.document.node(session.document.by_name("ok_2")[0])
+        geometry = copy.prop("geometry")
+        assert geometry is not None
+        assert isinstance(geometry.value, RectValue)
+        assert (geometry.value.x, geometry.value.y) == (34, 32)
+        up = step(state, KeyUp("other", Mods()), world)
+        assert not any(isinstance(effect, Cursor) and effect.shape == "copy" for effect in up.effects)
 
 
 def test_every_drag_state_consumes_release_without_an_empty_commit() -> None:

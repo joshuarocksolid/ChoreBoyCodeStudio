@@ -23,8 +23,10 @@ from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.drop_target import DropPayload
+from app.features.form_builder.engine.query.drop_target import DropPayload, PayloadKind
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.reader import UiReadError, read_fragment
+from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
@@ -45,7 +47,13 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PlaceHover,
     aim,
 )
-from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT, MIME_NODE, tile_for
+from app.features.form_builder.qtside.canvas.core.palette import (
+    MIME_DESIGNER_FRAGMENT,
+    MIME_FRAGMENT,
+    MIME_INSERT,
+    MIME_NODE,
+    tile_for,
+)
 from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
@@ -90,18 +98,45 @@ def _no_focus() -> Qt.FocusPolicy:
     return getattr(policy, "NoFocus")
 
 
-def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload, str]]:
+def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload, str, Optional[Fragment]]]:
     mime = event.mimeData()  # type: ignore[attr-defined]
     if mime.hasFormat(MIME_INSERT):
         key = bytes(mime.data(MIME_INSERT)).decode("utf-8")
         tile = tile_for(key)
         kind = tile[1] if tile is not None else "widget"
-        return DropPayload(kind), key
+        return DropPayload(kind), key, None
     if mime.hasFormat(MIME_NODE):
         raw = bytes(mime.data(MIME_NODE)).decode("utf-8")
         ids = tuple(NodeId(int(part)) for part in raw.split(",") if part)
-        return payload_for(doc, ids), ""
+        return payload_for(doc, ids), "", None
+    fragment = _fragment_mime(mime)
+    if fragment is None:
+        return None
+    return DropPayload(_fragment_kind(fragment)), "", fragment
+
+
+def _fragment_mime(mime: object) -> Optional[Fragment]:
+    for name in (MIME_FRAGMENT, MIME_DESIGNER_FRAGMENT):
+        if not mime.hasFormat(name):  # type: ignore[attr-defined]
+            continue
+        text = bytes(mime.data(name)).decode("utf-8")  # type: ignore[attr-defined]
+        try:
+            fragment = read_fragment(text)
+        except UiReadError:
+            return None
+        if fragment.nodes:
+            return fragment
+        return None
     return None
+
+
+def _fragment_kind(fragment: Fragment) -> PayloadKind:
+    spec = fragment.nodes[0]
+    if spec.kind == "spacer":
+        return "spacer"
+    if spec.kind == "widget" and spec.field("class_name") == "QLabel":
+        return "label"
+    return "widget"
 
 
 def _drop_point(event: object, view: QGraphicsView) -> CanvasPoint:
@@ -195,12 +230,12 @@ class FormCanvas(QGraphicsView):
             event.ignore()  # type: ignore[attr-defined]
             return
         event.acceptProposedAction()  # type: ignore[attr-defined]
-        body, key = payload
+        body, key, fragment = payload
         at = _drop_point(event, self)
         if self._controller.placing():
             self._controller.post(PlaceHover(at, True))
             return
-        self._controller.post(PlaceAsked(at, body, key))
+        self._controller.post(PlaceAsked(at, body, key, fragment))
 
     def dragMoveEvent(self, event: object) -> None:  # noqa: N802
         if _drop_payload(event, self._session.document) is None:

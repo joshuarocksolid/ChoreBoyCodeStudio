@@ -25,7 +25,9 @@ from app.qt.QtWidgets import (
 from app.qt import QtWidgets
 from app.qt.qt_compat import enum_value
 
+from app.features.form_builder.engine.clipboard import dangling_sentence
 from app.features.form_builder.engine.commands.base import CommandRejected
+from app.features.form_builder.engine.commands.catalog import InsertFragment, InsertResult
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage
 from app.features.form_builder.engine.commands.drop_plan import auto_target, indicate_preview
 from app.features.form_builder.engine.sizing import chip_axis, project_axis
@@ -400,16 +402,18 @@ class CanvasController:
             elif effect.label in ("Drop", "Move", "Edit text"):
                 merge_token = effect.token
                 merge_within_s = 30.0
+            applied: List[Tuple[object, object]] = []
             with self._session.log.transaction(
                 effect.label, merge_token=merge_token, merge_within_s=merge_within_s
             ) as txn:
                 for command in effect.commands:
                     fields = getattr(command, "__dataclass_fields__", {})
                     stamped = replace(command, merge_token=effect.token) if "merge_token" in fields else command
-                    txn.execute(stamped)
+                    applied.append((stamped, txn.execute(stamped)))
         except CommandRejected as exc:
             self._host.narrate(str(exc))
             return
+        self._note_dangling(applied)
         if effect.readout is not None:
             self._readout = effect.readout
             self._linger.start(READOUT_LINGER_MS)
@@ -419,6 +423,20 @@ class CanvasController:
             self._pending_edit = effect
             self._pending_page = None
             QTimer.singleShot(0, self._open_edit_now)
+
+    def _note_dangling(self, applied: List[Tuple[object, object]]) -> None:
+        show = getattr(self._host, "show_paste_problem", None)
+        if not callable(show):
+            return
+        alive = self._session.document.names()
+        for command, result in applied:
+            if not isinstance(command, InsertFragment) or not isinstance(result, InsertResult):
+                continue
+            sentence = dangling_sentence(command.fragment, result.dangling, result.renames, alive)
+            if sentence is None:
+                continue
+            show(sentence)
+            return
 
     def set_insert_preview(self, key: Optional[str]) -> None:
         self._preview_key = key

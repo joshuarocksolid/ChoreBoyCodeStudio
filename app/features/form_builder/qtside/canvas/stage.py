@@ -64,6 +64,7 @@ _CURSORS = {
     "size_bdiag": "SizeBDiagCursor",
     "open_hand": "OpenHandCursor",
     "closed_hand": "ClosedHandCursor",
+    "copy": "DragCopyCursor",
 }
 
 

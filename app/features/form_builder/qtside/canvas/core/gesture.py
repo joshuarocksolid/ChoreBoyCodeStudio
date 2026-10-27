@@ -6,7 +6,9 @@ from dataclasses import dataclass, replace
 from typing import Callable, Dict, FrozenSet, Literal, Optional, Tuple, Union, get_args
 
 from app.features.form_builder.engine.commands.base import Command
-from app.features.form_builder.engine.commands.catalog import SetGeometry, SetProperty
+from app.features.form_builder.engine.clipboard import selection_fragment
+from app.features.form_builder.engine.commands.catalog import InsertFragment, SetGeometry, SetProperty
+from app.features.form_builder.engine.commands.placement import InContainer
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertFormRow
 from app.features.form_builder.engine.commands.drop_plan import nudge_commands
 from app.features.form_builder.engine.commands.live import LiveProp, live_props
@@ -16,6 +18,7 @@ from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import RectValue
 from app.features.form_builder.qtside.canvas.core.place import drop_commands, payload_for, resolve_at
 from app.features.form_builder.qtside.canvas.core.frame import (
@@ -154,6 +157,7 @@ class Key:
 @dataclass(frozen=True)
 class KeyUp:
     key: KeyName
+    mods: Mods = Mods()
 
 
 @dataclass(frozen=True)
@@ -205,6 +209,7 @@ class PlaceAsked:
     at: CanvasPoint
     payload: DropPayload
     insert_key: str = ""
+    fragment: Optional[Fragment] = None
 
 
 @dataclass(frozen=True)
@@ -330,6 +335,7 @@ class Placing:
     outside: bool
     #: False while the outline owns the indicator. The status sentence stays.
     draw: bool = True
+    fragment: Optional[Fragment] = None
 
 
 @dataclass(frozen=True)
@@ -432,6 +438,7 @@ CursorShape = Literal[
     "size_bdiag",
     "open_hand",
     "closed_hand",
+    "copy",
 ]
 
 
@@ -853,7 +860,89 @@ def _drag_move(gesture: Drag, event: Move, world: World) -> Step:
     effects = _live_effects(moved)
     if isinstance(gesture, _PREVIEW) and not isinstance(moved, _PREVIEW):
         effects = (EndPreview(),) + effects
-    return Step(moved, effects)
+    return Step(moved, _copy_cursor(moved, event.mods, effects))
+
+
+def _has_clone_sources(gesture: Gesture) -> bool:
+    if isinstance(gesture, Placing):
+        return bool(gesture.payload.source_ids)
+    if isinstance(gesture, Moving):
+        return bool(gesture.items)
+    return False
+
+
+def _wants_clone(gesture: Drag, mods: Mods) -> bool:
+    return (mods.ctrl or mods.alt) and _has_clone_sources(gesture)
+
+
+def _copy_cursor(state: Drag, mods: Mods, effects: Tuple[Effect, ...]) -> Tuple[Effect, ...]:
+    if not (mods.ctrl or mods.alt) or not _has_clone_sources(state):
+        return effects
+    return tuple(Cursor("copy") if isinstance(effect, Cursor) else effect for effect in effects)
+
+
+def _copy_key(gesture: Union[Pressed, Drag], mods: Mods) -> Step:
+    if not isinstance(gesture, (Placing, Moving)) or not _has_clone_sources(gesture):
+        return Step(gesture, (), True)
+    if mods.ctrl or mods.alt:
+        return Step(gesture, (Cursor("copy"),), True)
+    cursors = tuple(effect for effect in _live_effects(gesture) if isinstance(effect, Cursor))
+    return Step(gesture, cursors or (Cursor("move"),), True)
+
+
+def _drag_key_up(gesture: Drag, event: KeyUp, world: World) -> Step:
+    if event.key == "shift":
+        return _drag_shift(gesture, event, world)
+    return _copy_key(gesture, event.mods)
+
+
+def _clone_moving(state: Moving, world: World) -> Tuple[Command, ...]:
+    document = world.document
+    ids = tuple(item.node for item in state.items if document.contains(item.node))
+    if not ids:
+        return ()
+    fragment = selection_fragment(document, ids)
+    if not fragment.nodes:
+        return ()
+    released = {node_id: rect for node_id, rect in moved_rects(state)}
+    fragment = _stamp_released(fragment, document, ids, released)
+    parent = document.parent(ids[0])
+    if not isinstance(parent, WidgetNode):
+        parent = document.root
+    place = InContainer(parent.id, len(parent.child_widgets))
+    return (InsertFragment(place, fragment, auto_layout=False),)
+
+
+def _stamp_released(
+    fragment: Fragment,
+    document: UiDocument,
+    ids: Tuple[NodeId, ...],
+    released: Dict[NodeId, RectValue],
+) -> Fragment:
+    by_name: Dict[str, RectValue] = {}
+    for node_id in ids:
+        node = document.node(node_id)
+        if isinstance(node, WidgetNode) and node.object_name and node_id in released:
+            by_name[node.object_name] = released[node_id]
+    return replace(fragment, nodes=tuple(_geometry_on(spec, by_name) for spec in fragment.nodes))
+
+
+def _geometry_on(spec: NodeSpec, by_name: Dict[str, RectValue]) -> NodeSpec:
+    name = spec.field("object_name")
+    rect = by_name.get(name) if isinstance(name, str) else None
+    if rect is None:
+        return spec
+    properties = tuple(entry for entry in spec.properties if entry.name != "geometry")
+    properties = properties + (PropertyEntry("property", "geometry", rect),)
+    return NodeSpec(
+        spec.kind,
+        spec.id,
+        spec.fields,
+        properties,
+        spec.attributes,
+        spec.slots,
+        spec.extra_attrs,
+    )
 
 
 def _drag_shift(gesture: Drag, event: Union[Key, KeyUp], world: World) -> Step:
@@ -865,17 +954,24 @@ def _drag_shift(gesture: Drag, event: Union[Key, KeyUp], world: World) -> Step:
 
 
 def _drag_release(gesture: Drag, event: Release, world: World) -> Step:
+    clone = _wants_clone(gesture, event.mods)
     if isinstance(gesture, Placing):
-        return _finish_place(gesture, world)
+        return _finish_place(gesture, world, clone)
     if isinstance(gesture, Turning):
         done = turned(gesture)
         ended: Tuple[Effect, ...] = (EndPreview(),)
         if done.commands:
             ended = ended + (Commit(done.label, done.commands, gesture.token, readout=done.readout),)
         return Step(Idle(None), ended + (Cursor("arrow"),))
+    if isinstance(gesture, Moving) and clone:
+        commands = _clone_moving(gesture, world)
+        effects = (EndPreview(),)
+        if commands:
+            effects = effects + (Commit("Duplicate", tuple(commands), gesture.token),)
+        return Step(Idle(None), effects + (Cursor("arrow"),))
     if isinstance(gesture, (Moving, PageResizing)):
         commands = _commands(gesture, world)
-        effects: Tuple[Effect, ...] = (EndPreview(),)
+        effects = (EndPreview(),)
         if commands:
             effects = effects + (Commit(_commit_label(gesture), commands, gesture.token),)
         return Step(Idle(None), effects + (Cursor("arrow"),))
@@ -894,7 +990,7 @@ def _drag_escape(gesture: Union[Pressed, Drag], event: Key, world: World) -> Ste
     if event.key == "shift" and isinstance(gesture, _DRAG):
         return _drag_shift(gesture, event, world)
     if event.key != "escape":
-        return Step(gesture, (), True)
+        return _copy_key(gesture, event.mods)
     if isinstance(gesture, _PREVIEW) or (isinstance(gesture, Pressed) and isinstance(gesture.on_drag, _PREVIEW)):
         return Step(Idle(None), (EndPreview(), Cursor("arrow")))
     if isinstance(gesture, Placing) or (isinstance(gesture, Pressed) and isinstance(gesture.on_drag, Placing)):
@@ -1236,14 +1332,19 @@ def _place_effects(state: Placing) -> Tuple[Effect, ...]:
     return (Cursor(cursor), Narrate(state.target.sentence))
 
 
-def _finish_place(state: Placing, world: World) -> Step:
+def _finish_place(state: Placing, world: World, clone: bool = False) -> Step:
     if state.outside or not isinstance(state.target, AcceptedDrop):
         return Step(Idle(None), (Cursor("arrow"), Narrate("")))
-    commands = drop_commands(world.document, state.target, state.payload, state.insert_key)
+    payload = state.payload
+    fragment = state.fragment
+    if clone and payload.source_ids:
+        fragment = selection_fragment(world.document, payload.source_ids)
+        payload = replace(payload, source_ids=())
+    commands = drop_commands(world.document, state.target, payload, state.insert_key, fragment)
     if not commands:
         return Step(Idle(None), (Cursor("arrow"), Narrate("")))
     edit = "widget" if any(isinstance(command, InsertFormRow) for command in commands) else None
-    label = "Move" if state.payload.source_ids else "Drop"
+    label = "Duplicate" if clone else ("Move" if state.payload.source_ids else "Drop")
     return Step(Idle(None), (Commit(label, commands, state.token, edit), Cursor("arrow"), Narrate("")))
 
 
@@ -1258,6 +1359,7 @@ def _place_asked(gesture: Idle, event: PlaceAsked, world: World) -> Step:
         FormPoint(0, 0),
         resolve_at(world.document, world.index, point, event.payload),
         False,
+        fragment=event.fragment,
     )
     return Step(state, (CanvasPressed(),) + _place_effects(state))
 
@@ -1323,7 +1425,7 @@ DRAG_ROWS: Dict[type, Handler] = {
     Move: _drag_move,
     Release: _drag_release,
     Key: _drag_escape,
-    KeyUp: _drag_shift,
+    KeyUp: _drag_key_up,
     Probe: _busy_probe,
 }
 TABLE.update({(state, event): handler for state in _DRAG for event, handler in DRAG_ROWS.items()})

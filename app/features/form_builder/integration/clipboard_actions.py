@@ -12,7 +12,7 @@ from app.qt.QtCore import QMimeData
 from app.qt.QtWidgets import QApplication, QLineEdit, QPlainTextEdit
 
 from app.features.form_builder.engine.clipboard import (
-    missing_connection_count,
+    dangling_sentence,
     paste_anchor_name,
     paste_auto_layout,
     paste_placement,
@@ -174,14 +174,9 @@ def _insert(
         return
     if narrate:
         host.narrate("Pasted %d widgets after %s" % (count, anchor))
-    if not result.dangling:
-        return
-    gaps = missing_connection_count(fragment, result.renames, document.names())
-    if gaps < 1:
-        gaps = len(result.dangling)
-    host.show_paste_problem(
-        "Pasted %d widgets. %d connection points at a widget that isn't on this form." % (count, gaps)
-    )
+    sentence = dangling_sentence(fragment, result.dangling, result.renames, document.names())
+    if sentence is not None:
+        host.show_paste_problem(sentence)
 
 
 def _execute_delete(session: FormSession, targets: Tuple[NodeId, ...]) -> None:
