@@ -27,6 +27,7 @@ from app.features.form_builder.integration.clipboard_actions import apply_comman
 from app.features.form_builder.integration.context_menu import add_clipboard_actions
 from app.features.form_builder.qtside.canvas.core.palette import MIME_DESIGNER_FRAGMENT, MIME_FRAGMENT
 from tests.form_builder.engine.commands._support import GRID, button_spec, cell_of, nid
+from tests.form_builder.qtside.support import opened
 
 _THREE = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
@@ -327,3 +328,21 @@ def test_the_context_menu_dispatches_clipboard_commands(qapp: object) -> None:
     assert labels == ["Copy", "Cut", "Paste", "Duplicate", "Delete", "Select all", "Save to pieces"]
     menu.actions()[0].trigger()
     assert seen == ["form.action.copy"]
+
+
+def test_paste_leaves_the_widgets_that_were_already_on_the_form(qapp: object) -> None:
+    del qapp
+    with opened(_THREE) as (session, realizer):
+        before = {}
+        for name in ("Form", "top", "middle", "bottom"):
+            widget = realizer.widget_for(session.document.by_name(name)[0])
+            assert widget is not None
+            before[name] = widget
+        host = _Host(session)
+        _select(session, "middle")
+        assert apply_command(host, "form.action.copy") is True
+        assert apply_command(host, "form.action.paste") is True
+        assert realizer.last_stats.fallback_rebuilds == 0
+        for name, widget in before.items():
+            assert realizer.widget_for(session.document.by_name(name)[0]) is widget
+        assert session.document.by_name("middle_2")
