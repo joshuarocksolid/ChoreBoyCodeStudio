@@ -40,7 +40,6 @@ from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNod
 from app.features.form_builder.qtside.canvas.core.structure import (
     Free,
     LaidOut,
-    Managed,
     free_origin,
     positioning_of,
 )
@@ -166,10 +165,10 @@ class LiveGeometrySource:
     ) -> Optional[IndexPatch]:
         """O(changed). None means the caller walks the whole form.
 
-        A dirty layout remeasures its items once. A structure change remeasures
-        the remaining children. A page switch or a visibility change rewalks
-        that container's subtree. A moved widget queues its layout, not every
-        sibling.
+        Only property edits come here. A dirty layout remeasures its items once.
+        A page switch, a visibility change or an edit on a container rewalks
+        that container's subtree. A moved widget queues its layout and its
+        ancestors, not every sibling.
         """
         if scope.full:
             return None
@@ -189,10 +188,7 @@ class LiveGeometrySource:
             for index, entry in enumerate(previous):
                 built.setdefault((entry.node, entry.kind), index)
             located = built
-        queue: List[NodeId] = []
-        for node_id in list(scope.dirty) + list(scope.added) + list(scope.structure) + list(scope.rewalk):
-            if node_id not in scope.removed and node_id not in queue:
-                queue.append(node_id)
+        queue: List[NodeId] = list(dict.fromkeys(list(scope.dirty) + list(scope.rewalk)))
         seen: Dict[NodeId, bool] = {}
         expanded: Set[NodeId] = set()
         expand_ids: Set[NodeId] = set()
@@ -209,7 +205,7 @@ class LiveGeometrySource:
         replacements: List[Tuple[int, GeoEntry]] = []
         extra: List[GeoEntry] = []
         changed: List[NodeId] = []
-        drop: Set[NodeId] = set(scope.removed)
+        drop: Set[NodeId] = set()
         visits = 0
         for node_id in scope.dirty:
             if isinstance(document.get(node_id), WidgetNode):
@@ -218,24 +214,19 @@ class LiveGeometrySource:
                 queue.extend(document.ancestors(node_id))
         while queue:
             node_id = queue.pop()
-            if node_id in seen or node_id in scope.removed or node_id in drop:
+            if node_id in seen or node_id in drop:
                 continue
             seen[node_id] = True
             found = document.get(node_id)
             if found is None or not isinstance(found, (WidgetNode, LayoutNode, SpacerNode)):
                 continue
             if isinstance(found, LayoutNode) and found.id not in expanded:
-                if found.id in scope.dirty or found.id in scope.structure or found.id in expand_ids:
+                if found.id in scope.dirty or found.id in expand_ids:
                     expanded.add(found.id)
                     for item in found.items:
                         content = item.content
-                        if content is not None and content.id not in scope.removed:
+                        if content is not None:
                             queue.append(content.id)
-            if isinstance(found, WidgetNode) and found.id in scope.structure:
-                for child in found.child_widgets:
-                    queue.append(child.id)
-                if found.layout is not None:
-                    queue.append(found.layout.id)
             measured = self._measure(found, root)
             if measured is None:
                 return None
@@ -244,19 +235,8 @@ class LiveGeometrySource:
             kind = "widget" if isinstance(found, WidgetNode) else "layout" if isinstance(found, LayoutNode) else "spacer"
             index = located.get((node_id, kind))
             if index is None:
-                if node_id not in scope.added:
-                    return None
-                made = self._new_entry(found, rect, visible, document)
-                if made is None:
-                    return None
-                extra.append(made)
-                changed.append(node_id)
-                if _container_moved(found, None, rect):
-                    return None
-                parent = _parent_layout(document, node_id)
-                if parent is not None:
-                    want(parent)
-                continue
+                # Not indexed (a hidden page's child, say): the full walk decides.
+                return None
             old = previous[index]
             container = isinstance(found, WidgetNode) and bool(found.child_widgets or found.layout is not None)
             # An edit on a container (font, style sheet, margins, a page title)
@@ -286,7 +266,7 @@ class LiveGeometrySource:
                     want(parent)
                 if not walk:
                     for ancestor in document.ancestors(node_id):
-                        if ancestor in seen or ancestor in scope.removed or ancestor in drop:
+                        if ancestor in seen or ancestor in drop:
                             continue
                         ancestor_node = document.get(ancestor)
                         if isinstance(ancestor_node, LayoutNode):
@@ -451,40 +431,6 @@ class LiveGeometrySource:
                 return None
             return _offset(spacer.geometry(), origin[0], origin[1]), True
         return None
-
-    def _new_entry(
-        self,
-        node: object,
-        rect: Rect,
-        visible: bool,
-        document: UiDocument,
-    ) -> Optional[GeoEntry]:
-        """O(siblings of the Qt parent) to read z. Used when a ChangeSet added a leaf."""
-        if not isinstance(node, (WidgetNode, LayoutNode, SpacerNode)):
-            return None
-        place = positioning_of(document, node.id)
-        if isinstance(place, LaidOut):
-            container: Optional[NodeId] = place.layout
-        elif isinstance(place, Free):
-            container = place.parent
-        elif isinstance(place, Managed):
-            container = place.container
-        else:
-            container = None
-        if isinstance(node, WidgetNode):
-            widget = self._realizer.widget_for(node.id)
-            if not isinstance(widget, QWidget):
-                return None
-            return GeoEntry(node.id, "widget", rect, container, visible, _z_of(widget))
-        if isinstance(node, LayoutNode):
-            # positioning_of reports a layout as laid out in itself. The hit
-            # tree uses the owner widget, or the enclosing layout when nested.
-            if node.parent_slot == "layout":
-                container = node.parent_id
-            else:
-                container = _enclosing_layout(document, node.id)
-            return GeoEntry(node.id, "layout", rect, container, True, _LAYOUT_Z)
-        return GeoEntry(node.id, "spacer", rect, container, True, _LAYOUT_Z)
 
     def _layout_tree(
         self,
@@ -868,38 +814,6 @@ def _owner_origin(realizer: Realizer, node: object, root: QWidget) -> Optional[T
         parent_id = getattr(current, "parent_id", None)
         current = realizer.document.get(parent_id) if parent_id is not None else None
     return (0, 0)
-
-
-def _z_of(widget: QWidget) -> int:
-    """O(siblings). The index among the Qt parent's children, which is paint order."""
-    parent = widget.parent()
-    if parent is None:
-        return 0
-    for index, child in enumerate(parent.children()):
-        if child is widget:
-            return index
-    return 0
-
-
-def _container_moved(node: object, old: Optional[Rect], new: Rect) -> bool:
-    """A container whose origin or size moved makes every descendant stale."""
-    if isinstance(node, WidgetNode) and (node.child_widgets or node.layout is not None):
-        if old is None:
-            return True
-        return old != new
-    if isinstance(node, LayoutNode) and old is not None and old != new:
-        return any(item.content is not None for item in node.items)
-    return False
-
-
-def _enclosing_layout(document: UiDocument, node_id: NodeId) -> Optional[NodeId]:
-    """The layout that contains ``node_id``. O(depth). None at the form root."""
-    parent = document.parent(node_id)
-    while parent is not None:
-        if isinstance(parent, LayoutNode):
-            return parent.id
-        parent = document.parent(parent.id)
-    return None
 
 
 def _parent_layout(document: UiDocument, node_id: NodeId) -> Optional[NodeId]:
