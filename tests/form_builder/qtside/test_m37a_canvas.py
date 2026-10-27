@@ -945,3 +945,32 @@ def test_review_wide_copy_stroke_is_repainted_when_the_selection_moves(qapp: QAp
             assert regions.covers(port), (widget.objectName(), port)
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def _long_form(count: int) -> str:
+    items = "".join(
+        '<item><widget class="QPushButton" name="b%03d"><property name="text"><string>B%d</string></property></widget></item>'
+        % (index, index)
+        for index in range(count)
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?><ui version="4.0"><class>Form</class>'
+        '<widget class="QWidget" name="Form"><layout class="QVBoxLayout" name="column">%s</layout></widget></ui>' % items
+    )
+
+
+def test_selecting_an_off_screen_widget_scrolls_its_outline_row_into_view(qapp: QApplication, tmp_path: Path) -> None:
+    _require()
+    window = MainWindow(state_root=str(tmp_path / "state"))
+    try:
+        surface = _open(window, qapp, tmp_path / "long.ui", _long_form(120))
+        tree = surface.findChild(QTreeWidget, "formBuilder.structure")  # type: ignore[attr-defined]
+        assert tree is not None
+        session = surface._session  # type: ignore[attr-defined]
+        last = session.document.by_name("b119")[0]
+        session.selection.set((last,), source=SelectionSource.CANVAS)
+        qapp.processEvents()
+        item = _row(tree, "b119")
+        assert tree.viewport().rect().contains(tree.visualItemRect(item))
+    finally:
+        shutdown_main_window_for_test(window, qapp)
