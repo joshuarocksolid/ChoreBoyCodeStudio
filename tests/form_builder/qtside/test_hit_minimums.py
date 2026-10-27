@@ -181,10 +181,7 @@ def _insertion_bands(canvas: object, session: object, factor: float) -> List[str
     payload = DropPayload("widget")
     band = _vertical_band(document, index, rect, payload)
     screen = band * view.factor
-    if band < 8:
-        short.append("list insertion band is %d form px" % band)
-    # Half zoom draws this 12px band as 6 screen px. The canvas lane owns that floor.
-    if factor >= 1.0 and screen < 8:
+    if screen < 8:
         short.append("list insertion at %d%% is %.1f screen px" % (int(factor * 100), screen))
     rows = [OutlineRow(button, 0, 24, 220)]
     outline = _outline_band_height(document, rows)
