@@ -132,6 +132,21 @@ def _cpp_address(obj: object) -> int:
     return int(shiboken.getCppPointer(obj)[0])
 
 
+def _layout_widgets(layout: LayoutNode) -> List[WidgetNode]:
+    """Widgets held by ``layout`` and its nested layouts, not their children."""
+    found: List[WidgetNode] = []
+    pending = [layout]
+    while pending:
+        current = pending.pop()
+        for item in current.items:
+            content = item.content
+            if isinstance(content, WidgetNode):
+                found.append(content)
+            elif isinstance(content, LayoutNode):
+                pending.append(content)
+    return found
+
+
 def _toplevel_menu_bar_ids() -> Set[int]:
     """C++ addresses of the parentless menu bars. Python ids change per call."""
     app = QtWidgets.QApplication.instance()
@@ -778,8 +793,25 @@ class _Structure(_LayoutSlots):
             self._geometry_targets.add(node.id)
             for child in node.child_widgets:
                 self._geometry_targets.add(child.id)
+                # Re-inserting a page or child can show it and run its layout,
+                # which moves laid-out descendants off their stored rect. A
+                # fresh build writes every stored rect last, so do the same.
+                self._note_stored_geometry_below(child)
             self._fill_widget(node, widget)
             self._reconciled += 1
+
+    def _note_stored_geometry_below(self, node: WidgetNode) -> None:
+        pending = list(node.child_widgets)
+        layout = node.layout
+        if isinstance(layout, LayoutNode):
+            pending.extend(_layout_widgets(layout))
+        while pending:
+            current = pending.pop()
+            if current.prop("geometry") is not None:
+                self._geometry_targets.add(current.id)
+            pending.extend(current.child_widgets)
+            if isinstance(current.layout, LayoutNode):
+                pending.extend(_layout_widgets(current.layout))
 
     def _park_children(self, node: WidgetNode, widget: QWidget) -> None:
         """Detach this container's live children into the pool. The container stays."""

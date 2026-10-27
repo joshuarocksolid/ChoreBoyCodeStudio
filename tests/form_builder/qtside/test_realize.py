@@ -40,6 +40,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.commands.catalog import (
     AddActionRef,
+    ApplyLayout,
     BreakLayout,
     CreateAction,
     DeleteNodes,
@@ -51,7 +52,7 @@ from app.features.form_builder.engine.commands.catalog import (
     SetProperty,
     SetZOrder,
 )
-from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InFormRow
+from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InContainer, InFormRow
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
@@ -59,7 +60,7 @@ from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.qtside.realize import tree as tree_module
 from app.features.form_builder.qtside.realize.tree import NODE_ID_PROPERTY
-from app.features.form_builder.engine.ui4.values import StringValue
+from app.features.form_builder.engine.ui4.values import RectValue, StringValue
 from app.features.form_builder.qtside.realize import Realizer
 from tests.form_builder.engine.commands._support import button_spec
 from tests.form_builder.qtside.support import form, open_session, opened, run_module
@@ -385,6 +386,33 @@ def test_a_parentless_menu_bar_qt_made_survives_a_main_window() -> None:
         delete_now(shell)
 
 
+def test_a_page_moved_back_keeps_a_stored_rect_inside_its_new_layout() -> None:
+    """Seed 662. A layout a patch made has not run yet; moving its page runs it.
+
+    A fresh build writes every stored rect after Qt lays out, so the patch must
+    write the rects under a re-inserted page again too.
+    """
+    text = form(
+        'class="QToolBox" name="tools"',
+        """
+  <widget class="QWidget" name="pageA"><attribute name="label"><string>A</string></attribute></widget>
+  <widget class="QWidget" name="pageB"><attribute name="label"><string>B</string></attribute>
+   <widget class="QPushButton" name="ok"/>
+   <widget class="QPushButton" name="go"/>
+  </widget>
+""",
+    )
+    with opened(text) as (session, realizer):
+        session.log.execute(
+            ApplyLayout(_named(session, "pageB"), "QVBoxLayout", (_named(session, "ok"), _named(session, "go")))
+        )
+        session.log.execute(SetProperty(_named(session, "go"), "geometry", RectValue(6, 0, 10, 10)))
+        session.log.execute(MoveNodes((_named(session, "pageB"),), InContainer(_named(session, "pageA"), 0)))
+        _same(realizer, session, "move")
+        session.log.undo()
+        _same(realizer, session, "undo")
+
+
 def test_main_window_chrome_patches_per_container() -> None:
     with opened(_MAIN) as (session, realizer):
         window = realizer.root_widget
@@ -520,7 +548,7 @@ FAST_STEPS = 30
 FAST_SEEDS = 200
 SOAK_STEPS = 50
 SOAK_SEEDS = 5000
-PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 653, 805, 1219)
+PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 653, 662, 805, 1219)
 PINNED_HASH_SEEDS = ("0", "1")
 # Allocator settings that overwrite freed memory, so a use-after-free crashes.
 SCRIBBLE_ENV = {"MallocScribble": "1", "MallocPreScribble": "1", "MALLOC_PERTURB_": "165"}
