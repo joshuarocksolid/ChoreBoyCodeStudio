@@ -721,6 +721,7 @@ class OutlinePane(QWidget):
         self._hover: Optional[NodeId] = None
         self._hover_fill = ""
         self._rows: Dict[int, QTreeWidgetItem] = {}
+        self._current_item: Optional[QTreeWidgetItem] = None
         self._send_hover: Optional[Callable[[HoverFrom], None]] = None
         self._open_menu: Optional[Callable[[NodeId, QPoint], None]] = None
         self._post: Optional[Callable[[object], None]] = None
@@ -901,16 +902,44 @@ class OutlinePane(QWidget):
             item = self._rows.get(int(selected))
             if item is None:
                 return
+        previous = self._current_item
+        if item is previous and (item is None or item.isSelected()):
+            return
         self._blocked = True
-        if item is None:
-            self.tree.setCurrentItem(None)
-            self.tree.clearSelection()
-        else:
-            command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
-            flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
-            self.tree.setCurrentItem(item, 0, flags)
-            self.tree.scrollToItem(item)
-        self._blocked = False
+        scrolling = self.tree.hasAutoScroll()
+        self.tree.setAutoScroll(False)
+        try:
+            if item is None:
+                self.tree.setCurrentItem(None)
+                self.tree.clearSelection()
+            else:
+                command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
+                flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
+                self.tree.setCurrentItem(item, 0, flags)
+            self._current_item = item
+        finally:
+            self.tree.setAutoScroll(scrolling)
+            self._blocked = False
+        self.tree.viewport().update()
+        if item is not None:
+            # Reveal after the frame: the row test runs the tree's pending
+            # layout, which must not sit inside the select itself.
+            self._reveal_item = item
+            QTimer.singleShot(0, self._reveal_current)
+
+    def _reveal_current(self) -> None:
+        """Scroll the current row into view only when it is off screen."""
+        item = getattr(self, "_reveal_item", None)
+        self._reveal_item = None
+        if item is None or item is not self._current_item:
+            return
+        try:
+            row = self.tree.visualItemRect(item)
+        except RuntimeError:
+            return
+        if row.isValid() and self.tree.viewport().rect().contains(row):
+            return
+        self.tree.scrollToItem(item)
 
     def patch_labels(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         forest = self._forest
@@ -1622,6 +1651,7 @@ class OutlinePane(QWidget):
         session.log.undo()
 
     def _install(self, forest: OutlineForest, previous: Optional[OutlineForest] = None) -> None:
+        self._current_item = None
         self._blocked = True
         mask = filter_mask(forest, self._filter_text)
         states = dict(mask.state)

@@ -761,6 +761,9 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         return Step(gesture, _select_and_reveal(world, (nxt,), nxt))
     if event.key in _ARROWS and event.mods.ctrl and not event.mods.alt:
         return _resize_by_key(gesture, event, world, current)
+    # The window manager owns Ctrl+Alt+arrow. Leaving them unconsumed is the contract.
+    if event.key in _ARROWS and event.mods.ctrl and event.mods.alt:
+        return Step(gesture, (), False)
     if event.key in _ARROWS and event.mods.alt:
         return _nudge(gesture, event, world)
     if event.key in _ARROWS:

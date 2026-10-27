@@ -85,13 +85,18 @@ class Stage:
         session: FormSession,
         realizer: Realizer,
         invalidate: Callable[[InvalidationReason], None],
+        on_factor: Optional[Callable[[float], None]] = None,
     ) -> None:
         self._view = view
         self._session = session
         self._realizer = realizer
         self._invalidate = invalidate
+        self._on_factor = on_factor
         self._zoom: ZoomSetting = Fit()
         self._factor = 0.0
+        self._fit_page: Optional[Size] = None
+        self._homed_viewport: Optional[Tuple[int, int]] = None
+        self._ignored_geometry: Optional[Tuple[int, int]] = None
         self._banner_push = 0
         self._previewed: Tuple[PropKey, ...] = ()
         self._page_preview = False
@@ -117,6 +122,15 @@ class Stage:
     def proxy(self) -> QGraphicsProxyWidget:
         return self._proxy
 
+    def hold_fit_page(self, held: bool) -> None:
+        """O(1). Fit keeps the page size from before a two-widths resize."""
+        if held:
+            root = self._realizer.root_widget
+            if root is not None and self._fit_page is None:
+                self._fit_page = Size(max(root.width(), 1), max(root.height(), 1))
+            return
+        self._fit_page = None
+
     def place(self) -> None:
         """Attach the root, keep a positive document size, and lay out the page."""
         root = self._attach()
@@ -125,25 +139,39 @@ class Stage:
         if self._settle_root_size(root):
             self._invalidate("root_resize")
         if not self._page_preview:
-            factor = zoom_factor(self._zoom, Size(root.width(), root.height()), _viewport(self._view))
+            page = self._fit_page if self._fit_page is not None else Size(root.width(), root.height())
+            factor = zoom_factor(self._zoom, page, _viewport(self._view))
             if factor != self._factor:
                 self._invalidate("zoom")
                 self._factor = factor
-        self._proxy.setScale(self._factor or 1.0)
+                if self._on_factor is not None:
+                    self._on_factor(factor)
+        scale = self._factor or 1.0
+        if abs(self._proxy.scale() - scale) > 1e-6:
+            self._proxy.setScale(scale)
         if self._page_preview:
             self._grow_scene(root)
         else:
             placed = layout_page(
                 Size(root.width(), root.height()),
-                self._factor or 1.0,
+                scale,
                 _viewport(self._view),
                 0,
             )
-            self._proxy.setPos(placed.page_origin.x, placed.page_origin.y)
+            origin = self._proxy.pos()
+            moved = abs(origin.x() - placed.page_origin.x) > 0.5 or abs(origin.y() - placed.page_origin.y) > 0.5
+            if moved:
+                self._proxy.setPos(placed.page_origin.x, placed.page_origin.y)
             scene = self._view.scene()
-            scene.setSceneRect(0, 0, placed.scene.width, placed.scene.height)
-            if self._homed:
+            current = scene.sceneRect()
+            resized = abs(current.width() - placed.scene.width) > 0.5 or abs(current.height() - placed.scene.height) > 0.5
+            if resized:
+                scene.setSceneRect(0, 0, placed.scene.width, placed.scene.height)
+            viewport = _viewport(self._view)
+            size = (viewport.width, viewport.height)
+            if self._homed and (self._scroll_off_home(placed) or size != self._homed_viewport):
                 self._go_home(placed)
+                self._homed_viewport = size
         self._refresh_labels(root)
         self.position_labels()
 
@@ -187,7 +215,11 @@ class Stage:
             return None
         scroll_x = self._view.horizontalScrollBar().value()
         scroll_y = self._view.verticalScrollBar().value()
-        return CanvasRect(widget.x() + scroll_x, widget.y() + scroll_y, widget.width(), widget.height())
+        width = widget.width()
+        name = self._name
+        if not name.isHidden() and name.x() >= widget.x():
+            width = max(width, name.x() + name.width() - widget.x())
+        return CanvasRect(widget.x() + scroll_x, widget.y() + scroll_y, width, widget.height())
 
     def dock_on(self, widget: QWidget) -> None:
         """A view widget that sticks to the top of the view: the page caption."""
@@ -249,6 +281,23 @@ class Stage:
         self._size.move(size_x, bottom_right.y() + 6)
         self._size.raise_()
 
+    def seat_page_chip(self, title: QWidget) -> None:
+        """O(1). A pinned caption keeps the page name at its right end, clear of the caption."""
+        name = self._name
+        _fit_label(name)
+        gap = 6
+        full = title.width()
+        if name.width() + gap >= full:
+            name.hide()
+            return
+        title.setFixedWidth(full - name.width() - gap)
+        name.move(
+            title.x() + title.width() + gap,
+            title.y() + max(0, (title.height() - name.height()) // 2),
+        )
+        name.show()
+        name.raise_()
+
     def run(self, effect: ViewEffect) -> None:
         if isinstance(effect, Zoom):
             self._run_zoom(effect)
@@ -292,7 +341,16 @@ class Stage:
         if isinstance(value, RectValue) and value.width > 0 and value.height > 0:
             if width == value.width and height == value.height:
                 return False
+            asked = (value.width, value.height)
+            # A layout taller than the stored page ignores the resize. Calling it
+            # again on every edit walks the form and invalidates the hit index.
+            if asked == self._ignored_geometry:
+                return False
             root.resize(value.width, value.height)
+            if root.width() == width and root.height() == height:
+                self._ignored_geometry = asked
+                return False
+            self._ignored_geometry = None
             return True
         hint = root.sizeHint()
         minimum = root.minimumSize()
@@ -321,12 +379,22 @@ class Stage:
 
     def _refresh_labels(self, root: QWidget) -> None:
         label = page_chip_label(self._session.document, "Form")
-        self._name.setText(label)
-        self._name.setAccessibleName(label)
-        self._size.setText("%d × %d" % (root.width(), root.height()))
+        if self._name.text() != label:
+            self._name.setText(label)
+            self._name.setAccessibleName(label)
+        size = "%d × %d" % (root.width(), root.height())
+        if self._size.text() != size:
+            self._size.setText(size)
 
     def _scrolled(self, _action: int) -> None:
         self._homed = False
+        self._homed_viewport = None
+
+    def _scroll_off_home(self, placed: PagePlacement) -> bool:
+        """O(1). True when the bars are not already showing the page's home."""
+        horizontal = self._view.horizontalScrollBar().value()
+        vertical = self._view.verticalScrollBar().value()
+        return abs(horizontal - placed.home.x) > 1 or abs(vertical - placed.home.y) > 1
 
     def _go_home(self, placed: PagePlacement) -> None:
         # centerOn, not setValue: a resize re-centres the view on its last

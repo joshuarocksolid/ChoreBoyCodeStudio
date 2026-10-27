@@ -595,11 +595,53 @@ def _validating() -> bool:
 
 
 def _apply_ops(doc: UiDocument, ops: Any) -> Tuple[Change, ...]:
-    changes = []
+    """Replay ops in order. A run of field writes on distinct siblings (the
+    rows a paste shifted) bubbles their parent once: undoing a paste into a
+    390-row form layout is O(rows + depth), not O(rows x depth)."""
+    changes: List[Change] = []
+    run: List[SetFieldOp] = []
     for op in ops:
+        if _joins_run(doc, run, op):
+            run.append(op)  # type: ignore[arg-type]
+            continue
+        _flush_run(doc, run, changes)
+        if isinstance(op, SetFieldOp) and _has_parent(doc, op.node):
+            run.append(op)
+            continue
         changes.append(change_from_op(doc, op))
         mutate.apply(doc, op)
+    _flush_run(doc, run, changes)
     return tuple(changes)
+
+
+def _joins_run(doc: UiDocument, run: List[SetFieldOp], op: Any) -> bool:
+    if not run or not isinstance(op, SetFieldOp):
+        return False
+    node = doc.get(op.node)
+    head = doc.get(run[0].node)
+    if node is None or head is None:
+        return False
+    if node.parent_id != head.parent_id or node.parent_slot != head.parent_slot:
+        return False
+    return all(other.node != op.node for other in run)
+
+
+def _flush_run(doc: UiDocument, run: List[SetFieldOp], changes: List[Change]) -> None:
+    if not run:
+        return
+    if len(run) == 1:
+        changes.append(change_from_op(doc, run[0]))
+        mutate.apply(doc, run[0])
+    else:
+        # Siblings of one parent: each change reads only its own node.
+        changes.extend(change_from_op(doc, op) for op in run)
+        mutate.apply_field_batch(doc, run)
+    del run[:]
+
+
+def _has_parent(doc: UiDocument, node_id: NodeId) -> bool:
+    node = doc.get(node_id)
+    return node is not None and node.parent_id is not None and node.parent_slot is not None
 
 
 def _selection_after(
