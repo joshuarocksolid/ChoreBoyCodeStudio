@@ -25,7 +25,7 @@ from app.qt.QtWidgets import (
     QTreeWidgetItem,
     QWidget,
 )
-from app.features.form_builder.engine.commands.catalog import SetProperty
+from app.features.form_builder.engine.commands.catalog import DeleteNodes, SetProperty
 from app.features.form_builder.engine.commands.drop_plan import auto_commands
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import DropPayload
@@ -138,9 +138,16 @@ def _opened(
 ) -> Iterator[Tuple[OutlinePane, FormSession]]:
     parent = QWidget()
     parent.resize(width, height)
-    pane = OutlinePane(lambda _node: None, lambda _collapsed: None, parent)
+    opened: Dict[str, FormSession] = {}
+
+    def pick(node: NodeId) -> None:
+        # What the form surface does with an outline pick.
+        opened["session"].selection.set((node,), source=SelectionSource.OUTLINE)
+
+    pane = OutlinePane(pick, lambda _collapsed: None, parent)
     pane.setGeometry(0, 0, width, height)
     session = open_session(text, "/tmp/cbcs-outline-%s.ui" % name)
+    opened["session"] = session
     parent.show()
     qapp.setActiveWindow(parent)
     pane.attach(session, place or (lambda _key: None))
@@ -484,6 +491,48 @@ def test_enter_selects_the_first_filter_match(qapp: QApplication) -> None:
         qapp.processEvents()
         assert session.selection.state.current == _id(session, "shop")
         assert pane.tree.currentItem() is _find_item(pane.tree, "shop")
+
+
+def _click_row(pane: OutlinePane, qapp: QApplication, name: str) -> None:
+    rect = pane.tree.visualItemRect(_find_item(pane.tree, name))
+    left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+    QTest.mouseClick(pane.tree.viewport(), left, _mod("NoModifier"), rect.center())
+    qapp.processEvents()
+
+
+@pytest.mark.parametrize(("typed", "kept"), [("keptName", "keptName"), ("1bad", "field0")])
+def test_clicking_another_row_ends_the_rename(qapp: QApplication, typed: str, kept: str) -> None:
+    """A valid name is kept and an invalid one dropped; the outline keys work afterwards."""
+    with _opened(qapp, _buttons(3), "rename-abandon") as (pane, session):
+        _show(pane, session, "field0")
+        QTest.keyClick(pane.tree, _key("Key_F2"))
+        editor = _editor(qapp)
+        QTest.keyClicks(editor, typed)
+        _click_row(pane, qapp, "field2")
+        assert not editor.isVisible()
+        assert session.document.by_name(kept)
+        assert pane.tree.currentItem() is _find_item(pane.tree, "field2")
+        assert _focus(qapp) is pane.tree
+        QTest.keyClick(pane.tree, _key("Key_Delete"))
+        qapp.processEvents()
+        assert not session.document.by_name("field2")
+        QTest.keyClick(pane.tree, _key("Key_F"), _mod("ControlModifier"))
+        assert _focus(qapp).objectName() == "formBuilder.outlineFilter"
+
+
+def test_removing_the_row_being_renamed_closes_the_editor(qapp: QApplication) -> None:
+    with _opened(qapp, _buttons(2), "rename-gone") as (pane, session):
+        _show(pane, session, "field0")
+        QTest.keyClick(pane.tree, _key("Key_F2"))
+        editor = _editor(qapp)
+        session.log.execute(DeleteNodes((session.document.by_name("field0")[0],)))
+        pane.note_edited()
+        qapp.processEvents()
+        assert not editor.isVisible()
+        _show(pane, session, "field1")
+        QTest.keyClick(pane.tree, _key("Key_Delete"))
+        qapp.processEvents()
+        assert not session.document.by_name("field1")
 
 
 def test_delete_toasts_an_unreferenced_widget(qapp: QApplication) -> None:

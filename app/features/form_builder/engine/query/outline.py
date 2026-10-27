@@ -329,11 +329,15 @@ class EditName:
 
 @dataclass(frozen=True)
 class CloseName:
-    """Cancel, or commit then maybe open the next row. ``then_node`` None keeps the row."""
+    """Cancel, or commit then maybe open the next row. ``then_node`` None keeps the row.
+
+    ``refocus`` False leaves focus where the user put it (focus moved away).
+    """
 
     node: NodeId
     new_name: Optional[str]
     then_node: Optional[NodeId]
+    refocus: bool = True
 
 
 @dataclass(frozen=True)
@@ -728,6 +732,12 @@ def _plan_rename(
     current = row.name
     taken = frozenset(name for name in doc.names() if name != current)
     refusal = explain_name(gesture.text, taken, world.base_methods, current)
+    if gesture.how == "blur":
+        # Focus left the editor (a click on another row, the canvas, ...). Like VS Code
+        # and Designer, keep a valid name. An invalid one is dropped: there is no editor
+        # left to show the reason under.
+        new_name = None if refusal is not None or gesture.text == current else gesture.text
+        return CloseName(gesture.node, new_name, None, refocus=False)
     if refusal is not None:
         return NameInvalid(refusal.prose)
     then: Optional[NodeId] = None

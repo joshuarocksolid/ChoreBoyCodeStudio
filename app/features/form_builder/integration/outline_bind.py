@@ -134,13 +134,14 @@ def _close(pane: Any, effect: CloseName) -> bool:
             pane.session().log.execute(Rename(effect.node, effect.new_name))
         except CommandRejected as rejected:
             pane.report(str(rejected))
-            pane.begin_rename(effect.node)
-            pane.show_name_error(str(rejected))
+            if effect.refocus:
+                pane.begin_rename(effect.node)
+                pane.show_name_error(str(rejected))
             return True
     pane.note_edited()
     if effect.then_node is not None:
         pane.begin_rename(effect.then_node)
-    else:
+    elif effect.refocus:
         pane.focus_tree()
     return True
 

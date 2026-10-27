@@ -613,6 +613,8 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        # A rename still open when the form closes is dropped, not committed.
+        self._workbench.outline.finish_rename()
         self._problem_timer.stop()
         self._kept_timer.stop()
         self._saved_timer.stop()

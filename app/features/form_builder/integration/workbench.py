@@ -742,6 +742,8 @@ class OutlinePane(QWidget):
         self._payload = payload
 
     def rebuild(self, document: UiDocument, selected: Optional[NodeId]) -> None:
+        # New items: an open editor would sit over a row that is gone.
+        self.finish_rename()
         self._document = document
         previous = self._forest
         self._forest = project(document, self._problem_ids(), friendly_of)
@@ -1035,6 +1037,9 @@ class OutlinePane(QWidget):
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         kind = _event_kind(event)
+        if kind == "FocusOut" and watched is getattr(self, "_editor", None) and _leaves_for_good(event):
+            self.end_rename()
+            return False
         if kind == "ShortcutOverride" and self._claim_override(watched, event):
             event.accept()
             return True
@@ -1130,6 +1135,8 @@ class OutlinePane(QWidget):
         raw = current.data(0, getattr(Qt, "UserRole"))
         if raw is None:
             return
+        if self._renaming is not None and int(raw) != int(self._renaming):
+            self.end_rename()
         self._on_pick(NodeId(int(raw)))
 
     def _mount_outline_tools(self) -> None:
@@ -1332,10 +1339,23 @@ class OutlinePane(QWidget):
         self._editor.selectAll()
 
     def finish_rename(self) -> None:
+        """Close the editor and clear the renaming state. Every way out of a rename ends here."""
+        had_focus = self._editor.hasFocus()
         self._release_rename_row()
         self._renaming = None
+        if had_focus:
+            # Hiding a focused editor would hand focus to whatever Qt picks next.
+            self.tree.setFocus()
         self._editor.hide()
         self._error.hide()
+
+    def end_rename(self) -> None:
+        """Focus left the editor or the row changed: keep a valid name, drop an invalid one."""
+        node = self._renaming
+        if node is None:
+            return
+        if not self.consider(RenameGesture(node, self._editor.text(), "blur")) and self._renaming is not None:
+            self.finish_rename()
 
     def show_name_error(self, prose: str) -> None:
         self._error.setText(prose)
@@ -1678,8 +1698,11 @@ class OutlinePane(QWidget):
         return NodeId(int(raw))
 
     def _on_tree_key(self, event: object) -> bool:
-        if self._session is None or self._renaming is not None:
+        if self._session is None:
             return False
+        if self._renaming is not None:
+            # The tree has the key, so the editor lost focus without telling us.
+            self.end_rename()
         return self.consider(key_gesture(event))
 
     def _on_editor_key(self, event: object) -> bool:
@@ -1859,6 +1882,16 @@ class OutlinePane(QWidget):
             )
         )
         return True
+
+
+def _leaves_for_good(event: object) -> bool:
+    """A focus change that ends a rename. Switching windows or opening a menu does not."""
+    reason = getattr(event, "reason", None)
+    if not callable(reason):
+        return True
+    reasons = getattr(Qt, "FocusReason", Qt)
+    passing = (getattr(reasons, "ActiveWindowFocusReason"), getattr(reasons, "PopupFocusReason"))
+    return reason() not in passing
 
 
 def _row_caption(row: object) -> str:
