@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """The wrap popover, the remove-layout confirm, and the canvas context menu."""
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """The inspector's Layout group: Kind, size constraint, form policies, and a spacer's size type."""
 
 from __future__ import annotations
