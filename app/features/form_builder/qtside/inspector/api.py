@@ -11,7 +11,7 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import CStringValue, SetValue, StringValue, Value
 
 if TYPE_CHECKING:
-    from app.qt.QtWidgets import QWidget
+    from app.qt.QtWidgets import QLayout, QWidget
 
 class GroupId(str, Enum):
 
@@ -60,6 +60,8 @@ _KEY_BY_NAME: Mapping[Tuple[str, str], EditorKey] = {
     ("keySequence", StringValue.ELEMENT): KEY_SEQUENCE,
     ("keySequence", CStringValue.ELEMENT): KEY_SEQUENCE,
     ("alignment", SetValue.ELEMENT): ALIGNMENT,
+    ("labelAlignment", SetValue.ELEMENT): ALIGNMENT,
+    ("formAlignment", SetValue.ELEMENT): ALIGNMENT,
     ("styleSheet", StringValue.ELEMENT): STYLESHEET,
 }
 
@@ -233,6 +235,10 @@ class GroupHost(Protocol):
 
     def live(self, owner: NodeId) -> Optional[QWidget]:
         """The realized widget for ``owner``, or None. O(1)."""
+        ...
+
+    def layout(self, owner: NodeId) -> Optional[QLayout]:
+        """The realized layout for ``owner``, or None. O(1)."""
         ...
 
 class GroupBody(Protocol):

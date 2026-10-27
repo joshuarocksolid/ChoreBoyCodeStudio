@@ -101,6 +101,8 @@ class WrapWithNew(_CommandBase):
             raise CommandRejected("There is nothing to wrap.")
         if self.existing == self.neighbour:
             raise CommandRejected("A widget can't go inside itself.")
+        if not doc.contains(self.neighbour) or (self.existing is not None and not doc.contains(self.existing)):
+            raise CommandRejected("That object is no longer in the form.")
         item = doc.parent(self.neighbour)
         if not isinstance(item, LayoutItemNode):
             raise CommandRejected("That object is not in a layout.")
@@ -161,6 +163,8 @@ class SwapFormRows(_CommandBase):
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
         if self.direction not in (-1, 1):
             raise CommandRejected("That row is the end of the form.")
+        if not isinstance(doc.get(self.layout), LayoutNode):
+            raise CommandRejected("That layout is no longer in the form.")
         other = self.row + self.direction
         rows = form_rows(doc, self.layout)
         if self.row < 0 or other < 0 or self.row >= len(rows) or other >= len(rows):
@@ -189,6 +193,8 @@ class InsertPage(_CommandBase):
     merge_token: Optional[str] = None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
+        if not doc.contains(self.container):
+            raise CommandRejected("That object is no longer in the form.")
         host = doc.node(self.container)
         count = len(host.child_widgets) if isinstance(host, WidgetNode) else 0
         page = NodeSpec(

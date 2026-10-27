@@ -628,12 +628,15 @@ class OutlinePane(QWidget):
         self.tree.setAcceptDrops(True)
         self.tree.viewport().setAcceptDrops(True)
         self.tree.viewport().installEventFilter(self)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._menu_requested)
         layout.addWidget(self.tree, 1)
         self._collapsed = False
         self._hover: Optional[NodeId] = None
         self._hover_fill = ""
         self._rows: Dict[int, QTreeWidgetItem] = {}
         self._send_hover: Optional[Callable[[HoverFrom], None]] = None
+        self._open_menu: Optional[Callable[[NodeId, QPoint], None]] = None
         self._post: Optional[Callable[[object], None]] = None
         self._payload: Optional[Callable[[], Optional[DropPayload]]] = None
         self._document: Optional[UiDocument] = None
@@ -715,6 +718,16 @@ class OutlinePane(QWidget):
 
     def set_hover_target(self, send: Callable[[HoverFrom], None]) -> None:
         self._send_hover = send
+
+    def set_menu_target(self, open_menu: Callable[[NodeId, QPoint], None]) -> None:
+        """``open_menu(node, at)`` runs for a right click or a menu key on a row. ``at`` is global."""
+        self._open_menu = open_menu
+
+    def request_menu(self) -> None:
+        """The context menu of the current row, beside that row."""
+        item = self.tree.currentItem()
+        if item is not None:
+            self._menu_requested(self.tree.visualItemRect(item).center())
 
     def set_hover_fill(self, color: str) -> None:
         self._hover_fill = color
@@ -908,6 +921,13 @@ class OutlinePane(QWidget):
     def _toggle(self) -> None:
         self.set_collapsed(not self._collapsed)
         self._on_collapsed(self._collapsed)
+
+    def _menu_requested(self, pos: QPoint) -> None:
+        item = self.tree.itemAt(pos)
+        raw = None if item is None else item.data(0, getattr(Qt, "UserRole"))
+        if raw is None or self._open_menu is None:
+            return
+        self._open_menu(NodeId(int(raw)), self.tree.viewport().mapToGlobal(pos))
 
     def _item_entered(self, item: QTreeWidgetItem, _column: int) -> None:
         raw = item.data(0, getattr(Qt, "UserRole"))

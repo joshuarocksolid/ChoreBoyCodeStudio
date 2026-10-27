@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Tuple
 from app.qt.QtCore import QObject, Qt
 from app.qt.QtGui import QKeySequence
 
+from app.features.form_builder.engine.layout_actions import gate, request_for
 from app.features.form_builder.engine.shell_commands import FormCommand, menu_commands, menu_hint
-from app.features.form_builder.integration.chrome_text import MIXED_LAYOUT
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.menu_action_builder import register_menu_action
 from app.shell.menus import register_menu_contributor
@@ -129,6 +129,9 @@ def _trigger(window: Any, command_id: str) -> None:
     surface = _active_form(window)
     if surface is None:
         return
+    if request_for(command_id) is not None:
+        surface.dispatch(command_id)
+        return
     if command_id == "form.action.viewXml":
         surface.toggle_source_view()
         return
@@ -169,25 +172,10 @@ def _active_form(window: Any) -> Any:
     return None
 
 
-_SIBLING_COMMANDS = frozenset(
-    {
-        "form.action.layoutVertical",
-        "form.action.layoutHorizontal",
-        "form.action.layoutGrid",
-        "form.action.layoutForm",
-        "form.action.layoutHorizontalSplitter",
-        "form.action.layoutVerticalSplitter",
-        "form.action.wrap",
-        "form.action.unwrap",
-        "form.action.removeLayout",
-    }
-)
-
-
 def _sync(window: Any, menu: Any, actions: Dict[str, Any]) -> None:
     surface = _active_form(window)
     visible = surface is not None
-    blocked = bool(surface.mixed_layout_blocked()) if surface is not None else False
+    sheet = surface.layout_offers() if surface is not None else None
     editable = bool(surface.can_edit_text()) if surface is not None else False
     menu_action = menu.menuAction()
     menu_action.setVisible(visible)
@@ -195,7 +183,12 @@ def _sync(window: Any, menu: Any, actions: Dict[str, Any]) -> None:
     for command_id, action in actions.items():
         command = by_id.get(command_id)
         available = command.available if command is not None else False
-        sibling_block = blocked and command_id in _SIBLING_COMMANDS
+        request = request_for(command_id)
+        reason = ""
+        if sheet is not None and request is not None:
+            offer = gate(sheet, request)
+            available = available and offer.enabled
+            reason = offer.reason
         text_block = command_id == "form.action.editText" and not editable
-        action.setEnabled(visible and available and not sibling_block and not text_block)
-        action.setToolTip(MIXED_LAYOUT if sibling_block else "")
+        action.setEnabled(visible and available and not text_block)
+        action.setToolTip(reason)

@@ -7,15 +7,16 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Callable, Mapping, Optional, Sequence, Tuple
+from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QKeySequence
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QPushButton,
     QTreeWidget,
     QShortcut,
@@ -24,6 +25,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from app.qt.qt_compat import wrapper_is_valid
 
 from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
@@ -31,6 +33,18 @@ from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.layout_actions import (
+    Current,
+    Done,
+    OfferSheet,
+    OpenWrap,
+    PickWrap,
+    Refused,
+    gate,
+    offers,
+    request_for,
+    transact,
+)
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.shell_commands import (
@@ -49,6 +63,8 @@ from app.features.form_builder.integration.chrome_text import (
     status_sentence,
     undo_menu_text,
 )
+from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.integration.context_menu import fill_context_menu, paint_menu
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
@@ -72,11 +88,13 @@ from app.features.form_builder.integration.toast import (
     undo_matches,
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
+from app.features.form_builder.integration.wrap_popover import WrapPopover
 from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
 from app.features.form_builder.qtside.canvas.core.words import hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
+from app.features.form_builder.qtside.layout_gestures import ask, beside, measure, perform, properties_for
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
@@ -115,6 +133,12 @@ def plain_banner_error(error: str) -> str:
 
 
 _RENAME_ACTION = "shell.action.edit.renameSymbol"
+# Window actions on Ctrl+1 and Ctrl+2. While either is enabled, the canvas
+# shortcut on the same key is ambiguous and neither fires.
+_EDITOR_GROUP_ACTIONS = (
+    "shell.action.view.focusFirstEditorGroup",
+    "shell.action.view.focusSecondEditorGroup",
+)
 
 
 def _shell_registry(window: QWidget) -> object:
@@ -123,6 +147,43 @@ def _shell_registry(window: QWidget) -> object:
     if registry_fn is None:
         return None
     return registry_fn() if callable(registry_fn) else registry_fn
+
+
+def _silence(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> None:
+    """Force shell actions off for ``holder``. Each keeps the flag it had before the first silence."""
+    registry = _shell_registry(window)
+    if registry is None:
+        return
+    held = _silenced(window)
+    for action_id in action_ids:
+        action = registry.action(action_id)  # type: ignore[attr-defined]
+        if action is None:
+            continue
+        prior = held[action_id][0] if action_id in held else bool(action.isEnabled())
+        held[action_id] = (prior, holder)
+        action.setEnabled(False)
+
+
+def _restore(window: QWidget, holder: object, action_ids: Tuple[str, ...]) -> None:
+    """Give back the actions ``holder`` silenced. Another holder's silence stays."""
+    held = _silenced(window)
+    registry = _shell_registry(window)
+    for action_id in action_ids:
+        entry = held.get(action_id)
+        if entry is None or entry[1] is not holder:
+            continue
+        del held[action_id]
+        action = None if registry is None else registry.action(action_id)  # type: ignore[attr-defined]
+        if action is not None:
+            action.setEnabled(entry[0])
+
+
+def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
+    held = getattr(window, "_form_silenced", None)
+    if not isinstance(held, dict):
+        held = {}
+        window._form_silenced = held  # type: ignore[attr-defined]
+    return held
 
 
 def _outline_mode(change_set: object) -> str:
@@ -297,6 +358,8 @@ class FormSurface(QWidget):
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
         self._layout_popover: Optional[QWidget] = None
+        self._context_menu: Optional[QMenu] = None
+        self._toast_held = False
 
         self._load_memory()
         self._changes: Subscription = session.log.subscribe(self._on_log, priority=PRIORITY_VIEWS)
@@ -343,6 +406,18 @@ class FormSurface(QWidget):
         self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._esc.setEnabled(False)
         self._esc.activated.connect(self._workbench.close_drawers)
+        # The Menu key arrives as a context menu event. Qt does not turn Shift+F10 into one on X11.
+        outline = self._workbench.outline
+        outline.set_menu_target(self._open_outline_menu)
+        self._menu_keys = []
+        for host, opener in (
+            (self._workbench.canvas, lambda: self.open_context_menu(None, None)),
+            (outline.tree, outline.request_menu),
+        ):
+            menu_key = QShortcut(QKeySequence("Shift+F10"), host)
+            menu_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+            menu_key.activated.connect(opener)
+            self._menu_keys.append(menu_key)
         self._workbench.set_drawer_listener(self._sync_drawer_escape)
         self._order_focus()
         self._refresh_design()
@@ -407,9 +482,61 @@ class FormSurface(QWidget):
     def set_diagnostics(self, diagnostics: Sequence[CodeDiagnostic]) -> None:
         del diagnostics
 
-    def mixed_layout_blocked(self) -> bool:
-        state = self._session.selection.state
-        return bool(mixed_parent_sentence(self._session.document, state.ids))
+    def layout_offers(self, ids: Optional[Sequence[NodeId]] = None) -> OfferSheet:
+        """What each layout request would do to ``ids`` (the selection by default), measured from the canvas."""
+        document = self._session.document
+        targets = self._session.selection.state.ids if ids is None else tuple(ids)
+        return offers(
+            document,
+            targets,
+            measure(document, targets, self._realizer.widget_for, self._realizer.layout_for),
+            accepted=properties_for(document, targets),
+        )
+
+    def dispatch(self, command_id: str) -> None:
+        """Run the layout gesture behind a Form command row or its key."""
+        request = request_for(command_id)
+        if request is None or self._source.mode != "visual":
+            return
+        if isinstance(request, OpenWrap):
+            self._open_wrap_popover()
+            return
+        self.run_layout(request)
+
+    def run_layout(self, request: object, ids: Optional[Sequence[NodeId]] = None) -> None:
+        """One layout request on ``ids`` (the selection by default).
+
+        A change toasts with Undo. A refusal goes to the status bar.
+        """
+        session = self._session
+        targets = session.selection.state.ids if ids is None else tuple(ids)
+        log = session.log
+        before = log.entries()
+        previous = before[-1] if before else None
+        confirm = ask(self, chrome_for(self._tokens), lambda: self._place(targets))
+        # The log listener toasts inside the commit, before the sentence is known.
+        self._toast_held = True
+        try:
+            outcome = perform(
+                session.document,
+                targets,
+                self._realizer.widget_for,
+                transact(log),
+                request,
+                confirm,
+                self._realizer.layout_for,
+            )
+        finally:
+            self._toast_held = False
+        entries = log.entries()
+        top = entries[-1] if entries else None
+        if isinstance(outcome, Done) and top is not None and top is not previous:
+            note = ToastNote(outcome.sentence, "Undo", log.undo_label() or "", len(entries), top)
+            self._command_toast.show_note(note, self._undo_announced)
+        elif isinstance(outcome, Refused):
+            self.narrate(outcome.reason)
+        elif isinstance(outcome, Current):
+            self.narrate("Nothing to change.")
 
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
@@ -739,6 +866,8 @@ class FormSurface(QWidget):
         self._command_toast.place()
 
     def _sync_toast(self, change_set: object) -> None:
+        if self._toast_held:
+            return
         origin = getattr(change_set, "origin", "")
         label = str(getattr(change_set, "label", "") or "")
         if origin != "do":
@@ -844,7 +973,65 @@ class FormSurface(QWidget):
         self._problem_popover.show_message(text)
 
     def open_layout_popover(self, node: NodeId) -> None:
-        self._layout_popover = open_layout_menu(self, FORM_COMMANDS, self._chip_anchor(node))
+        targets = (node,)
+        self._layout_popover = open_layout_menu(
+            self,
+            self.layout_offers(targets),
+            lambda request: self.run_layout(request, targets),
+            self._chip_anchor(node),
+        )
+
+    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint]) -> None:
+        if self._source.mode != "visual":
+            return
+        shown = self._context_menu
+        if shown is not None and wrapper_is_valid(shown):
+            if shown.isVisible():
+                return
+            shown.deleteLater()
+        selection = self._session.selection
+        if node is not None and node not in selection.state.ids:
+            selection.set((node,), current=node, source=SelectionSource.CANVAS)
+        menu = QMenu(self)
+        menu.setObjectName("formBuilder.contextMenu")
+        fill_context_menu(menu, self.layout_offers(), self.run_layout)
+        paint_menu(menu, chrome_for(self._tokens))
+        if at is None:
+            subject, bounds = self._place(selection.state.ids)
+            at = beside(subject, menu.sizeHint(), bounds)
+        menu.popup(at)
+        self._context_menu = menu
+
+    def _open_outline_menu(self, node: NodeId, at: QPoint) -> None:
+        if node not in self._session.selection.state.ids:
+            self._on_outline_pick(node)
+        self.open_context_menu(node, at)
+
+    def _open_wrap_popover(self) -> None:
+        sheet = self.layout_offers()
+        offer = gate(sheet, OpenWrap())
+        if not offer.enabled:
+            self.narrate(offer.reason)
+            return
+        ids = self._session.selection.state.ids
+        popover = WrapPopover(
+            self,
+            sheet,
+            len(ids),
+            chrome_for(self._tokens),
+            lambda kind_id: self.run_layout(PickWrap(kind_id)),
+        )
+        popover.open_beside(*self._place(ids))
+
+    def _place(self, ids: Sequence[NodeId]) -> Tuple[QRect, QRect]:
+        """``ids`` on screen and the visible canvas, both global, for a popover beside them."""
+        canvas = self._workbench.canvas
+        viewport = canvas.viewport()
+        bounds = QRect(viewport.mapToGlobal(QPoint(0, 0)), viewport.size())
+        drawn = canvas.viewport_rect(ids or (self._session.document.root.id,))
+        if drawn is None:
+            return QRect(bounds.center(), QSize(0, 0)), bounds
+        return QRect(viewport.mapToGlobal(drawn.topLeft()), drawn.size()), bounds
 
     def focus_share(self, node: NodeId, axis: str) -> None:
         self._session.selection.set((node,), current=node, source=SelectionSource.CANVAS)
@@ -1025,8 +1212,12 @@ class FormSurface(QWidget):
                 child.installEventFilter(self._key_guard)
 
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
-        """Gestures behind canvas, outline, and inspector keys. None exist yet."""
-        return {}
+        """Gestures behind canvas, outline, and inspector keys."""
+        return {
+            command.command_id: lambda command_id=command.command_id: self.dispatch(command_id)
+            for command in FORM_COMMANDS
+            if request_for(command.command_id) is not None
+        }
 
     def _note_inert(self) -> None:
         self._inert_note = INERT_STATUS
@@ -1222,7 +1413,10 @@ class FormSurface(QWidget):
         self._apply_responsive()
 
     def _on_focus_changed(self, _old: object, new: object) -> None:
-        if self._released or new is None:
+        if self._released:
+            return
+        self._sync_editor_group_keys(new)
+        if new is None:
             return
         if new is self or self.isAncestorOf(new):  # type: ignore[arg-type]
             self._bind_shell_undo()
@@ -1274,34 +1468,26 @@ class FormSurface(QWidget):
             redo.triggered.connect(lambda _checked=False, host=window: _shell_history(host, True))
             window._form_undo_wired = True  # type: ignore[attr-defined]
         window._form_undo_surface = self  # type: ignore[attr-defined]
-        self._silence_rename(registry)
+        _silence(window, self, (_RENAME_ACTION,))
         self._sync_shell_undo()
 
-    def _silence_rename(self, registry: object) -> None:
-        action = registry.action(_RENAME_ACTION)  # type: ignore[attr-defined]
-        if action is None:
-            return
-        window = self.window()
-        if not getattr(window, "_form_rename_silenced", False):
-            window._form_rename_prior = action.isEnabled()  # type: ignore[attr-defined]
-            window._form_rename_silenced = True  # type: ignore[attr-defined]
-        action.setEnabled(False)
-
-    def _restore_rename(self) -> None:
-        window = self.window()
-        if not getattr(window, "_form_rename_silenced", False):
-            return
-        registry = _shell_registry(window)
-        action = None if registry is None else registry.action(_RENAME_ACTION)  # type: ignore[attr-defined]
-        if action is not None:
-            action.setEnabled(bool(getattr(window, "_form_rename_prior", True)))
-        window._form_rename_silenced = False  # type: ignore[attr-defined]
+    def _sync_editor_group_keys(self, focused: object) -> None:
+        """Ctrl+1 and Ctrl+2 belong to the canvas and outline while one of them has focus."""
+        hosts = (self._workbench.canvas, self._workbench.outline.tree)
+        inside = isinstance(focused, QWidget) and any(
+            host is focused or host.isAncestorOf(focused) for host in hosts
+        )
+        if inside:
+            _silence(self.window(), self, _EDITOR_GROUP_ACTIONS)
+        else:
+            _restore(self.window(), self, _EDITOR_GROUP_ACTIONS)
 
     def _clear_shell_undo(self) -> None:
         window = self.window()
+        _restore(window, self, _EDITOR_GROUP_ACTIONS)
         if getattr(window, "_form_undo_surface", None) is not self:
             return
-        self._restore_rename()
+        _restore(window, self, (_RENAME_ACTION,))
         window._form_undo_surface = None  # type: ignore[attr-defined]
         self._set_shell_actions("Undo", False, "Redo", False)
 

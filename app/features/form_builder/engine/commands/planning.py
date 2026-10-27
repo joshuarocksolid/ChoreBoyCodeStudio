@@ -50,7 +50,7 @@ from app.features.form_builder.engine.query.tree import (
     is_page_container,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, Node, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, Node, SpacerNode, WidgetNode
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.schema import SCHEMA, SlotsDecl
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
@@ -60,6 +60,7 @@ from app.features.form_builder.engine.ui4.values import (
     EnumValue,
     NumberValue,
     RectValue,
+    SizePolicyValue,
     SizeValue,
     StringValue,
     Value,
@@ -386,7 +387,13 @@ def morph_layout(doc: UiDocument, ctx: PlanContext, layout_id: NodeId, new_class
     ctx.select((layout_id,))
 
 
-def morph_widget(doc: UiDocument, ctx: PlanContext, node_id: NodeId, new_class: str) -> Tuple[str, ...]:
+def morph_widget(
+    doc: UiDocument,
+    ctx: PlanContext,
+    node_id: NodeId,
+    new_class: str,
+    accepted: Optional[Tuple[str, ...]] = None,
+) -> Tuple[str, ...]:
     node = _require(doc, node_id)
     if node.kind != "widget":
         raise CommandRejected("That object is not a widget.")
@@ -394,8 +401,101 @@ def morph_widget(doc: UiDocument, ctx: PlanContext, node_id: NodeId, new_class: 
         return ()
     if _holds_content(node) and _class_holds(ctx, doc, new_class) is False:
         raise CommandRejected("The new class cannot hold the contents of this widget.")
+    old_class = node.field("class_name")
     set_field(doc, ctx, node_id, "class_name", new_class)
-    return _drop_properties(doc, ctx, node_id, new_class)
+    for old_name, new_name in morph_renames(old_class if isinstance(old_class, str) else "", new_class):
+        entry = doc.node(node_id).prop(old_name)
+        if entry is None or doc.node(node_id).prop(new_name) is not None:
+            continue
+        set_property(doc, ctx, node_id, new_name, entry.value)
+        set_property(doc, ctx, node_id, old_name, None)
+    for old_name, new_name in page_renames(old_class if isinstance(old_class, str) else "", new_class):
+        for page in doc.node(node_id).child_widgets:  # type: ignore[attr-defined]
+            entry = page.attr(old_name)
+            if entry is None or page.attr(new_name) is not None:
+                continue
+            set_property(doc, ctx, page.id, new_name, entry.value, kind="attribute")
+            set_property(doc, ctx, page.id, old_name, None, kind="attribute")
+    return _drop_properties(doc, ctx, node_id, new_class, accepted)
+
+
+def page_renames(old_class: str, new_class: str) -> Tuple[Tuple[str, str], ...]:
+    """Page attributes a class change carries over: a tab's title is a toolbox page's label."""
+    if old_class == "QTabWidget" and new_class == "QToolBox":
+        return (("title", "label"),)
+    if old_class == "QToolBox" and new_class == "QTabWidget":
+        return (("label", "title"),)
+    return ()
+
+
+_TEXT_EDITS = ("QTextEdit", "QPlainTextEdit", "QTextBrowser")
+
+
+def morph_renames(old_class: str, new_class: str) -> Tuple[Tuple[str, str], ...]:
+    """Properties a class change carries over under a new name, as Designer does.
+
+    A line edit's ``text`` is a text box's ``plainText``, and back.
+    """
+    if old_class == "QLineEdit" and new_class in _TEXT_EDITS:
+        return (("text", "plainText"),)
+    if old_class in _TEXT_EDITS and new_class == "QLineEdit":
+        return (("plainText", "text"),)
+    return ()
+
+
+def hold_layout(
+    doc: UiDocument,
+    ctx: PlanContext,
+    layout_id: NodeId,
+    minimum: SizeValue,
+    geometries: Tuple[Tuple[NodeId, RectValue], ...],
+    policy: Optional[SizePolicyValue] = None,
+) -> NodeId:
+    """Put a plain widget in a nested layout's cell and keep the children's boxes."""
+    layout = _require_layout(doc, layout_id)
+    item = doc.parent(layout_id)
+    if item is None or item.kind != "layoutitem":
+        raise CommandRejected("That layout is not nested.")
+    grand = doc.parent(item.id)
+    if grand is None or not isinstance(grand, LayoutNode):
+        raise CommandRejected("That layout is not nested.")
+    owner_id = grand.owner_widget_id()
+    if owner_id is None:
+        raise CommandRejected("That layout is not nested.")
+    geom = {node_id: rect for node_id, rect in geometries}
+    widgets: List[NodeId] = []
+    spacers: List[NodeId] = []
+    for entry in layout.items:
+        content = entry.content
+        if isinstance(content, WidgetNode):
+            widgets.append(content.id)
+        elif isinstance(content, SpacerNode):
+            spacers.append(content.id)
+        elif isinstance(content, LayoutNode):
+            raise CommandRejected("Remove the inner layouts first.")
+    for spacer_id in spacers:
+        target = _removal_target(doc, spacer_id)
+        if doc.contains(target):
+            ctx.do(RemoveNodeOp(target))
+    base = layout.object_name or ""
+    name = _take_name(base + "Widget" if base else "widget", doc, set())
+    holder = allocate_spec(ctx, _widget_spec("QWidget", name))
+    count = len(doc.node(owner_id).children("children"))
+    ctx.do(InsertNodeOp(owner_id, "children", count, holder))
+    for index, widget_id in enumerate(widgets):
+        ctx.do(MoveNodeOp(widget_id, holder.id, "children", index))  # type: ignore[arg-type]
+        if widget_id in geom:
+            set_property(doc, ctx, widget_id, "geometry", geom[widget_id])
+    ctx.do(RemoveNodeOp(layout_id))
+    ctx.do(MoveNodeOp(holder.id, item.id, "content", 0))  # type: ignore[arg-type]
+    # A plain widget has no size hint, so without a floor the parent cell
+    # would collapse. Only a floor: the cell keeps its share of spare room,
+    # so the other cells size as they did at any window size.
+    set_property(doc, ctx, holder.id, "minimumSize", minimum)  # type: ignore[arg-type]
+    if policy is not None:
+        set_property(doc, ctx, holder.id, "sizePolicy", policy)  # type: ignore[arg-type]
+    ctx.select((holder.id,))  # type: ignore[arg-type]
+    return holder.id  # type: ignore[return-value]
 
 
 def simplify_grid(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
@@ -1242,10 +1342,19 @@ def _apply_named_cells(
             _set_cell(doc, ctx, carrier, row, column, 1, 1)
 
 
-def _drop_properties(doc: UiDocument, ctx: PlanContext, node_id: NodeId, class_name: str) -> Tuple[str, ...]:
-    if ctx.classes.class_info(class_name) is None:
+def _drop_properties(
+    doc: UiDocument,
+    ctx: PlanContext,
+    node_id: NodeId,
+    class_name: str,
+    accepted: Optional[Tuple[str, ...]] = None,
+) -> Tuple[str, ...]:
+    if accepted is not None:
+        known = set(accepted)
+    elif ctx.classes.class_info(class_name) is None:
         return ()
-    known = {item.name for item in ctx.classes.properties(class_name)}
+    else:
+        known = {item.name for item in ctx.classes.properties(class_name)}
     dropped = []
     for entry in list(doc.node(node_id).properties()):
         if entry.stdset == "0" or entry.name in known:

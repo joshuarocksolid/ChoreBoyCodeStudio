@@ -337,6 +337,28 @@ def test_the_property_page_does_not_scroll_sideways(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
+def test_the_layout_group_fits_a_narrow_inspector(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "Invoice")
+        pane.set_compact(True)
+        window.resize(236, 640)
+        pane.flush()
+        qapp.processEvents()
+        scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+        body = pane.findChild(QWidget, "formBuilder.layoutBody")
+        kind = pane.findChild(QWidget, "formBuilder.layout.kind")
+        assert scroll is not None and body is not None and kind is not None
+        assert body.isVisible() and kind.isVisible()
+        assert body.width() <= scroll.viewport().width()
+        assert scroll.horizontalScrollBar().maximum() == 0
+        for segment in kind.findChildren(QToolButton):
+            assert kind.rect().contains(segment.geometry()), segment.objectName()
+        _assert_no_overlap(body)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def _assert_no_overlap(body: QWidget) -> None:
     """No two visible siblings in the Size body may draw over each other."""
     for parent in [body] + body.findChildren(QWidget):

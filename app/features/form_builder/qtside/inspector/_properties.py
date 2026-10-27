@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections import OrderedDict
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
@@ -40,6 +41,7 @@ from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMenu,
     QScrollArea,
@@ -781,10 +783,6 @@ class _Row(QWidget):
         if isinstance(view, OpenRow) and self._editor is not None:
             self._editor.show(view.value)
 
-    def show_value(self, value: RowValue) -> None:
-        if self._editor is not None and not self._invalid:
-            self._editor.show(value)
-
     def _reset_clicked(self) -> None:
         view = self._view
         if not isinstance(view, OpenRow):
@@ -938,6 +936,9 @@ class _GroupHost:
     def live(self, owner: NodeId) -> Optional[QWidget]:
         return self._services.live(owner)
 
+    def layout(self, owner: NodeId) -> Optional[QLayout]:
+        return self._services.layout(owner)
+
     def run(self, label: str, commands: Sequence[Command]) -> Optional[str]:
         result = self._services.execute_all(label, commands)
         if isinstance(result, Rejected):
@@ -946,19 +947,23 @@ class _GroupHost:
 
     def editor_for(self, row: Row, parent: QWidget) -> Editor:
         widget = _Row(self._services, parent)
-        widget.paint(row, "")
-        return _BoundEditor(widget)
+        widget.paint(row, "", self._qt_names)
+        return _BoundEditor(widget, row, self._qt_names)
 
 class _BoundEditor:
-    def __init__(self, row: _Row) -> None:
+    def __init__(self, row: _Row, view: Row, qt_names: bool) -> None:
         self._row = row
+        self._view = view
+        self._qt_names = qt_names
 
     @property
     def widget(self) -> QWidget:
         return self._row
 
     def show(self, value: RowValue) -> None:
-        self._row.show_value(value)
+        # A full paint, so the changed bar and Reset follow the value too.
+        self._view = dataclasses.replace(self._view, value=value)
+        self._row.paint(self._view, "", self._qt_names)
 
 def _spell(enum: EnumSpec, name: str, style: str) -> str:
     if not name or "::" in name or not enum.scope:

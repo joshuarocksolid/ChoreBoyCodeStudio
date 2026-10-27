@@ -534,3 +534,63 @@ def test_first_canvas_focus_states_how_to_leave_and_alt_keys_claim_their_targets
             assert not box.isVisible()
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+_ROW = _FREE.replace(
+    "  </widget>\n </widget>",
+    "  </widget>\n"
+    '  <widget class="QPushButton" name="saveButton">\n'
+    '   <property name="geometry"><rect><x>160</x><y>40</y><width>80</width><height>28</height></rect></property>\n'
+    '   <property name="text"><string>Save</string></property>\n'
+    "  </widget>\n </widget>",
+)
+
+
+def _click_widget(canvas: QWidget, widget: QWidget, shift: bool = False) -> None:
+    root = canvas.page_widget()  # type: ignore[attr-defined]
+    proxy = root.graphicsProxyWidget()
+    center = widget.mapTo(root, widget.rect().center())
+    point = canvas.mapFromScene(proxy.mapToScene(center))  # type: ignore[attr-defined]
+    mods = getattr(getattr(Qt, "KeyboardModifier", Qt), "ShiftModifier" if shift else "NoModifier")
+    QTest.mouseClick(canvas.viewport(), getattr(getattr(Qt, "MouseButton", Qt), "LeftButton"), mods, point)  # type: ignore[attr-defined]
+
+
+def test_ctrl_1_on_the_canvas_lays_out_the_selection_while_the_editor_group_key_steps_aside(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    _require_feature()
+    from app.qt.QtWidgets import QHBoxLayout
+
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        surface = _open_form(window, qapp, tmp_path / "row.ui", _ROW)
+        canvas = surface.findChild(QWidget, "formBuilder.canvas")  # type: ignore[attr-defined]
+        assert canvas is not None
+        root = canvas.page_widget()
+        printing = root.findChild(QWidget, "printButton")
+        saving = root.findChild(QWidget, "saveButton")
+        assert printing is not None and saving is not None
+        group = window.menu_registry.action("shell.action.view.focusFirstEditorGroup")
+        assert group is not None
+        _click_widget(canvas, printing)
+        _click_widget(canvas, saving, shift=True)
+        canvas.setFocus()
+        qapp.processEvents()
+        assert not group.isEnabled()
+
+        QTest.keyClick(canvas, Qt.Key_1, Qt.ControlModifier)
+        qapp.processEvents()
+
+        host = printing.parentWidget()
+        assert host is not root and host is saving.parentWidget()
+        assert isinstance(host.layout(), QHBoxLayout)
+        toast = surface.findChild(QLabel, "formBuilder.toastText")  # type: ignore[attr-defined]
+        assert toast is not None and toast.text() == "Wrapped 2 widgets in a horizontal layout"
+        QTest.keyClick(canvas, Qt.Key_Z, Qt.ControlModifier)
+        qapp.processEvents()
+        assert printing.parentWidget() is root
+        QTest.keyClick(canvas, Qt.Key_4, Qt.AltModifier)
+        qapp.processEvents()
+        assert group.isEnabled()
+    finally:
+        shutdown_main_window_for_test(window, qapp)

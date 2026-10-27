@@ -56,6 +56,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 @contextmanager
 def _shown(text: str = PAGE) -> Iterator[Tuple[FormSession, FormCanvas]]:

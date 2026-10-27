@@ -145,6 +145,10 @@ class CanvasHost(Protocol):
     def open_layout_popover(self, node: NodeId) -> None:
         ...
 
+    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint]) -> None:
+        """``at`` is global. None places the menu beside the selection."""
+        ...
+
 
 class CanvasController:
     def __init__(

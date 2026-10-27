@@ -26,9 +26,21 @@ TILES: Tuple[Tile, ...] = (
     ("QComboBox", "widget", "Combo box"),
     ("QSpinBox", "widget", "Spin box"),
     ("QGroupBox", "widget", "Group box"),
+    ("layout-v", "widget", "Vertical layout"),
+    ("layout-h", "widget", "Horizontal layout"),
+    ("layout-grid", "widget", "Grid layout"),
+    ("layout-form", "widget", "Form layout"),
     ("spacer-h", "spacer", "Horizontal spacer"),
     ("spacer-v", "spacer", "Vertical spacer"),
 )
+
+# Designer's Layouts category drops a plain widget that already owns the layout.
+_LAYOUT_WIDGETS = {
+    "layout-v": ("QVBoxLayout", "verticalLayoutWidget", "verticalLayout"),
+    "layout-h": ("QHBoxLayout", "horizontalLayoutWidget", "horizontalLayout"),
+    "layout-grid": ("QGridLayout", "gridLayoutWidget", "gridLayout"),
+    "layout-form": ("QFormLayout", "formLayoutWidget", "formLayout"),
+}
 
 _OBJECT_NAMES = {
     "QLabel": "label",
@@ -67,6 +79,8 @@ def fragment_for(key: str) -> Optional[Fragment]:
     if tile is None:
         return None
     class_name, kind, _label = tile
+    if key in _LAYOUT_WIDGETS:
+        return _layout_widget(key)
     if kind == "spacer":
         vertical = key == "spacer-v"
         name = "verticalSpacer" if vertical else "horizontalSpacer"
@@ -95,3 +109,10 @@ def fragment_for(key: str) -> Optional[Fragment]:
         )
         slots = (("layout", (layout,)),)
     return Fragment(nodes=(NodeSpec("widget", None, fields, properties, (), slots),))
+
+
+def _layout_widget(key: str) -> Fragment:
+    layout_class, widget_name, layout_name = _LAYOUT_WIDGETS[key]
+    layout = NodeSpec("layout", None, (("class_name", layout_class), ("object_name", layout_name)))
+    fields = (("class_name", "QWidget"), ("object_name", widget_name))
+    return Fragment(nodes=(NodeSpec("widget", None, fields, (), (), (("layout", (layout,)),)),))

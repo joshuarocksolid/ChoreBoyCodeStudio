@@ -12,6 +12,7 @@ tree is always empty (``slots.py``).
 
 from __future__ import annotations
 
+import importlib
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from app.qt import QtGui, QtWidgets
@@ -44,7 +45,7 @@ from app.qt.QtWidgets import (
     QWizard,
     QWizardPage,
 )
-from app.qt.qt_compat import delete_now, wrapper_is_valid
+from app.qt.qt_compat import IS_QT6, delete_now, wrapper_is_valid
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import child_stack_order
 from app.features.form_builder.engine.ui4.nodes import (
@@ -119,6 +120,37 @@ def _direct_widgets(widget: QWidget) -> List[QWidget]:
     the shared call.
     """
     return [child for child in widget.children() if isinstance(child, QWidget)]
+
+
+def _cpp_address(obj: object) -> int:
+    """The C++ object's address. Stable where ``id()`` is not.
+
+    A Qt-created object Python holds no wrapper for gets a new temporary
+    wrapper from each ``topLevelWidgets`` call, so its ``id()`` changes.
+    """
+    shiboken = importlib.import_module("shiboken6" if IS_QT6 else "shiboken2")
+    return int(shiboken.getCppPointer(obj)[0])
+
+
+def _qt_places(widget: QWidget, parent: object) -> bool:
+    """True when a layout sizes ``widget``: a layout item, or a host whose own
+    layout places its content (a dock's widget, a main window's central widget)."""
+    if isinstance(parent, LayoutItemNode):
+        return True
+    host = widget.parentWidget()
+    return host is not None and host.layout() is not None
+
+
+def _toplevel_menu_bar_ids() -> Set[int]:
+    """C++ addresses of the parentless menu bars. Python ids change per call."""
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        return set()
+    return {
+        _cpp_address(widget)
+        for widget in app.topLevelWidgets()
+        if isinstance(widget, QMenuBar) and wrapper_is_valid(widget)
+    }
 
 
 class _Structure(_LayoutSlots):
@@ -201,7 +233,9 @@ class _Structure(_LayoutSlots):
     def _fill_widget(self, node: WidgetNode, widget: QWidget) -> None:
         self._ensure_actions(node, widget)
         kind = self._qt_class_name(node.class_name)
+        before_bars: Set[int] = set()
         if kind == "QMainWindow" and isinstance(widget, QMainWindow):
+            before_bars = _toplevel_menu_bar_ids()
             self._fill_main_window(node, widget)
         elif kind == "QDockWidget" and isinstance(widget, QDockWidget):
             self._fill_dock(node, widget)
@@ -219,6 +253,10 @@ class _Structure(_LayoutSlots):
                 self._fill_loose(node, widget)
         self._sync_items(node, widget)
         self._apply_late(node, widget)
+        if kind == "QMainWindow" and isinstance(widget, QMainWindow):
+            bar = widget.menuWidget()
+            if isinstance(bar, QMenuBar):
+                self._drop_replaced_chrome(None, bar, before_bars)
 
     def _note_managed_children(self, node: WidgetNode) -> None:
         layout = node.layout
@@ -397,7 +435,13 @@ class _Structure(_LayoutSlots):
                 continue
             part = self._obtain_widget(child, widget)
             if role == "QMenuBar" and isinstance(part, QMenuBar):
-                widget.setMenuBar(part)
+                previous = widget.menuWidget()
+                if previous is not part:
+                    # Only the bar this call unparents is ours to delete. A
+                    # parentless bar that already existed belongs to another window.
+                    before = _toplevel_menu_bar_ids()
+                    widget.setMenuBar(part)
+                    self._drop_replaced_chrome(previous, part, before)
             elif role == "QStatusBar":
                 widget.setStatusBar(part)
             elif role == "QToolBar" and isinstance(part, QToolBar):
@@ -408,6 +452,31 @@ class _Structure(_LayoutSlots):
                 widget.setCentralWidget(part)
             self._note_managed_children(child)
         self._fill_menu(node, widget)
+
+    def _drop_replaced_chrome(
+        self, previous: Optional[QWidget], installed: QWidget, before: Set[int]
+    ) -> None:
+        """Delete the untagged menu bar ``setMenuBar`` left without a parent.
+
+        ``before`` is the top-level menu bars that existed before this call.
+        A tagged bar is a document widget. It stays in the pool so the container
+        that took it can install it again.
+        """
+        if previous is not None and previous is not installed and wrapper_is_valid(previous):
+            node_id = _node_id(previous)
+            if node_id is not None and previous.parent() is None:
+                self._hold_widget(node_id, previous)
+        app = QtWidgets.QApplication.instance()
+        if app is None:
+            return
+        for widget in list(app.topLevelWidgets()):
+            if not wrapper_is_valid(widget) or _cpp_address(widget) in before:
+                continue
+            if _cpp_address(widget) == _cpp_address(installed):
+                continue
+            if not isinstance(widget, QMenuBar) or _node_id(widget) is not None:
+                continue
+            delete_now(widget)
 
     def _fill_menu(self, node: WidgetNode, widget: QWidget) -> None:
         if isinstance(widget, (QMenu, QMenuBar, QToolBar)):
@@ -720,6 +789,21 @@ class _Structure(_LayoutSlots):
                 self._geometry_targets.add(child.id)
             self._fill_widget(node, widget)
             self._reconciled += 1
+
+    def _target_laid_out_rects(self) -> None:
+        """Write again every stored rect that a layout places.
+
+        Any patch can re-run a layout (items moved in or out, a page shown,
+        a host re-inserted), which moves its widgets off their stored rects.
+        A fresh build writes every stored rect last. Designer writes no rect
+        for a laid-out widget, so this set is small.
+        """
+        document = self._session.document
+        for node_id in tuple(self._laid_out_rects):
+            if document.contains(node_id):
+                self._geometry_targets.add(node_id)
+            else:
+                self._laid_out_rects.discard(node_id)
 
     def _park_children(self, node: WidgetNode, widget: QWidget) -> None:
         """Detach this container's live children into the pool. The container stays."""
@@ -1134,6 +1218,7 @@ class _Structure(_LayoutSlots):
         """
         document = self._session.document
         if targets is None:
+            self._laid_out_rects.clear()
             nodes = (node for node in document.iter_preorder() if isinstance(node, WidgetNode))
         else:
             nodes = (document.get(node_id) for node_id in targets)
@@ -1142,10 +1227,16 @@ class _Structure(_LayoutSlots):
                 continue
             entry = node.prop("geometry")
             if entry is None:
+                self._laid_out_rects.discard(node.id)
                 continue
             widget = self._widgets.get(node.id)
             if not isinstance(widget, QWidget) or not wrapper_is_valid(widget):
+                self._laid_out_rects.discard(node.id)
                 continue
+            if _qt_places(widget, document.parent(node.id)):
+                self._laid_out_rects.add(node.id)
+            else:
+                self._laid_out_rects.discard(node.id)
             apply_geometry(widget, entry.value, widget is self._root)
 
     def _queue_widget_host(self, node: WidgetNode) -> None:

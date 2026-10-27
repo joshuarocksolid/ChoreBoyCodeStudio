@@ -15,7 +15,7 @@ from app.features.form_builder.engine.commands.placement import Placement
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
-from app.features.form_builder.engine.ui4.values import RectValue, SizeValue, Value
+from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue, Value
 
 
 class _CommandBase:
@@ -149,6 +149,29 @@ class BreakLayout(_CommandBase):
 
 
 @dataclass(frozen=True)
+class HoldLayout(_CommandBase):
+    """Replace a nested layout with a plain widget in the same cell.
+
+    Children keep ``geometries`` relative to that widget. ``minimum`` is the
+    layout's measured box, written as minimumSize only, so the parent cell
+    does not collapse on reload and still takes its share of spare room.
+    The widget is named after the layout (``firstRow`` -> ``firstRowWidget``).
+    """
+
+    command_type: ClassVar[str] = "hold_layout"
+    _label_text: ClassVar[str] = "Remove layout"
+    layout: NodeId
+    minimum: SizeValue
+    geometries: Tuple[Tuple[NodeId, RectValue], ...] = ()
+    #: Fixed on each axis the layout could not grow along, so the widget
+    #: grows only where the layout did. None leaves the class default.
+    policy: Optional[SizePolicyValue] = None
+
+    def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
+        return planning.hold_layout(doc, ctx, self.layout, self.minimum, self.geometries, self.policy)
+
+
+@dataclass(frozen=True)
 class MorphLayout(_CommandBase):
     """Change a layout class using the Designer morph rules."""
 
@@ -163,15 +186,20 @@ class MorphLayout(_CommandBase):
 
 @dataclass(frozen=True)
 class MorphWidget(_CommandBase):
-    """Change a widget class. Returns the property names that were dropped."""
+    """Change a widget class. Returns the property names that were dropped.
+
+    ``accepted`` is the target class's property names. None falls back to the
+    class table, and drops nothing when that table has no row for the class.
+    """
 
     command_type: ClassVar[str] = "morph_widget"
     _label_text: ClassVar[str] = "Change widget"
     id: NodeId
     new_class: str
+    accepted: Optional[Tuple[str, ...]] = None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> Tuple[str, ...]:
-        return planning.morph_widget(doc, ctx, self.id, self.new_class)
+        return planning.morph_widget(doc, ctx, self.id, self.new_class, self.accepted)
 
 
 @dataclass(frozen=True)

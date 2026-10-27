@@ -103,7 +103,10 @@ def test_missing_section_12_points_are_listed(mac_report: SpeedReport) -> None:
     assert missing == []
     unavailable = [row for row in mac_report.rows if row.verdict == "not yet available"]
     assert unavailable
-    assert all(row.verdict != "fail" for row in mac_report.rows)
+    failed = [row for row in mac_report.rows if row.verdict == "fail"]
+    assert not failed, [
+        (row.point, row.widgets, row.p95, row.budget, row.detail) for row in failed
+    ]
 
 
 @pytest.mark.perf

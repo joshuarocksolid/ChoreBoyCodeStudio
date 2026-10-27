@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Optional
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.layout_actions import MIXED_PARENT
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue, StringValue
@@ -82,7 +83,7 @@ def widget_class_phrase(class_name: str) -> str:
     return parts[0] + "".join(" " + part.lower() for part in parts[1:])
 
 
-MIXED_LAYOUT = "Select widgets in the same layout to wrap them."
+MIXED_LAYOUT = MIXED_PARENT
 
 
 def mixed_parent_sentence(document: UiDocument, ids: tuple) -> str:

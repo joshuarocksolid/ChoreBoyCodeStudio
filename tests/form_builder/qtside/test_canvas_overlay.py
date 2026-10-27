@@ -165,6 +165,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_hover_names_the_widget_under_the_pointer() -> None:
     host = _Host()

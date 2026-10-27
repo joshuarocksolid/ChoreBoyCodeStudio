@@ -45,6 +45,34 @@ _SHORT_ALIGN = {
     "AlignHCenter": "Center",
     "AlignVCenter": "Center",
 }
+# Layout policies are long Qt enumerator names. The combo shows a short label.
+# Item data stays the enumerator, which is what the document stores.
+_PLAIN_ENUM = {
+    "SetDefaultConstraint": "Default",
+    "SetNoConstraint": "None",
+    "SetMinimumSize": "Minimum",
+    "SetFixedSize": "Fixed",
+    "SetMaximumSize": "Maximum",
+    "SetMinAndMaxSize": "Min and max",
+    "FieldsStayAtSizeHint": "Stay at hint",
+    "ExpandingFieldsGrow": "Expanding",
+    "AllNonFixedFieldsGrow": "All but fixed",
+    "DontWrapRows": "Don't wrap",
+    "WrapLongRows": "Long rows",
+    "WrapAllRows": "All rows",
+}
+
+
+def _fill_enum(combo: QComboBox, names: Tuple[str, ...]) -> None:
+    for name in names:
+        label = _PLAIN_ENUM.get(name, name)
+        combo.addItem(label)
+        index = combo.count() - 1
+        combo.setItemData(index, name)
+        if label != name:
+            combo.setItemData(index, name, Qt.ToolTipRole)
+
+
 _CURSORS = (
     "ArrowCursor",
     "UpArrowCursor",
@@ -77,7 +105,7 @@ class EnumEditor:
             self._box: QWidget = QLabel(parent)
             return
         combo = QComboBox(parent)
-        combo.addItems(list(spec.enum.names))
+        _fill_enum(combo, spec.enum.names)
         combo.currentIndexChanged.connect(self._commit)
         self._box = combo
 

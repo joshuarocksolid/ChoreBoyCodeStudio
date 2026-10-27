@@ -65,6 +65,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_a_free_drag_is_one_undo_on_release() -> None:
     with opened(FREE) as (session, realizer):

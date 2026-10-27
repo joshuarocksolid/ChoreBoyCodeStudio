@@ -94,6 +94,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_the_zoom_label_matches_fit_and_follows_a_resize(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     parent = QWidget()

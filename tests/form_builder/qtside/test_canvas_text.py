@@ -69,6 +69,9 @@ class _Host:
     def open_layout_popover(self, node: object) -> None:
         return None
 
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
 
 def test_enter_writes_one_undo_step() -> None:
     with opened(BUTTON) as (session, realizer):

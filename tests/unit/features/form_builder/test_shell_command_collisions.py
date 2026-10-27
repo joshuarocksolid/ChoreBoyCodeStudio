@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from app.features.form_builder.engine.layout_actions import request_for
 from app.features.form_builder.engine.shell_commands import (
     FORM_COMMANDS,
     FORM_SHORTCUT_CATEGORY,
@@ -127,10 +128,8 @@ def test_registered_rows_use_portable_ctrl_text_and_the_form_category() -> None:
 def test_new_keys_stay_disabled_until_a_handler_exists() -> None:
     live = {"form.action.zoomToFit", "form.action.editText"}
     for command in registered_commands():
-        if command.command_id in live:
-            assert command.available is True
-            continue
-        assert command.available is False
+        handled = command.command_id in live or request_for(command.command_id) is not None
+        assert command.available is handled
 
 
 def test_spec_keys_are_in_the_table() -> None:

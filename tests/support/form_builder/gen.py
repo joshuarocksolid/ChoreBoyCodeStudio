@@ -19,6 +19,7 @@ from app.features.form_builder.engine.commands.catalog_ext.drop import (
     SwapFormRows,
     WrapWithNew,
 )
+from app.features.form_builder.engine.commands.catalog_ext.host_wrap import WrapFree, WrapSplitter, WrapTab
 from app.features.form_builder.engine.commands.catalog import (
     AddConnection,
     AdjustSize,
@@ -194,7 +195,7 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
     layout = rng.choice(layouts) if layouts else None
     names = [item.object_name for item in widgets if item.object_name]
     forms = [item for item in layouts if item.class_name == "QFormLayout"]
-    roll = rng.randrange(44)
+    roll = rng.randrange(47)
     if roll == 0 and widget is not None:
         value = None if rng.randrange(5) == 0 else StringValue("t%d" % step)
         return SetProperty(widget.id, "text", value, merge_token=rng.choice([None, "tok"]))
@@ -426,6 +427,15 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
                     rng.choice(["QHBoxLayout", "QVBoxLayout"]),
                     fragment=Fragment(nodes=(button_spec("wrapped"),)),
                 )
+    if roll in (44, 45, 46) and widget is not None:
+        siblings = [item for item in widgets if _sibling_key(doc, item) == _sibling_key(doc, widget)]
+        chosen = tuple(item.id for item in rng.sample(siblings, min(len(siblings), rng.randrange(1, 4))))
+        box = RectValue(rng.randrange(20), rng.randrange(20), 120, 60)
+        if roll == 44:
+            return WrapSplitter(chosen, rng.choice(["Qt::Horizontal", "Qt::Vertical"]), box)
+        if roll == 45:
+            return WrapTab(chosen, "Tab 1", box)
+        return WrapFree(chosen, rng.choice(["QWidget", "QGroupBox"]), rng.choice(["QVBoxLayout", "QGridLayout"]), box)
     return None
 
 

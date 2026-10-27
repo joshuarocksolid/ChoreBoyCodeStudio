@@ -7,10 +7,10 @@ The page caption, shadow and toast stay view chrome.
 
 from __future__ import annotations
 
-from typing import Optional, Tuple
+from typing import Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QRectF, Qt, QTimer
-from app.qt.QtGui import QColor, QFont, QPainter, QPen, QPixmap
+from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt, QTimer
+from app.qt.QtGui import QColor, QContextMenuEvent, QFont, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
@@ -29,13 +29,21 @@ from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
-from app.features.form_builder.qtside.canvas.core.frame import Chip, OverlayFrame
+from app.features.form_builder.qtside.canvas.core.frame import (
+    Chip,
+    OnHandle,
+    OnPageEdge,
+    OnSpace,
+    OnWidget,
+    OverlayFrame,
+)
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect
 from app.features.form_builder.qtside.canvas.core.gesture import (
     HostEvent,
     PlaceAsked,
     PlaceDrop,
     PlaceHover,
+    aim,
 )
 from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT, MIME_NODE, tile_for
 from app.features.form_builder.qtside.canvas.core.place import payload_for
@@ -126,6 +134,7 @@ class FormCanvas(QGraphicsView):
         super().__init__(parent)
         self._session = session
         self._realizer = realizer
+        self._host = host
         self._tokens: Optional[ShellThemeTokens] = None
         self._palette = _palette(None)
         self._canvas_bg = self._palette.backdrop.fill
@@ -211,6 +220,45 @@ class FormCanvas(QGraphicsView):
         del event
         if self._controller.placing():
             self._controller.post(PlaceHover(CanvasPoint(0, 0), True, None, True))
+
+    def contextMenuEvent(self, event: QContextMenuEvent) -> None:  # noqa: N802
+        if event.reason() == QContextMenuEvent.Reason.Mouse:
+            self._host.open_context_menu(self.node_at(event.pos()), event.globalPos())
+        else:
+            self._host.open_context_menu(None, None)
+        event.accept()
+
+    def node_at(self, pos: QPoint) -> Optional[NodeId]:
+        """The node a left click at viewport ``pos`` would select. None over a chip."""
+        self._index.ensure_fresh()
+        scene = self.mapToScene(pos)
+        target = aim(
+            CanvasPoint(int(scene.x()), int(scene.y())),
+            self._controller.frame,
+            self._index,
+            self._session.document,
+            self._stage.view_map(),
+        )
+        if isinstance(target, (OnWidget, OnHandle)):
+            return target.node
+        if isinstance(target, OnSpace):
+            return target.select
+        if isinstance(target, OnPageEdge):
+            return self._session.document.root.id
+        return None
+
+    def viewport_rect(self, ids: Sequence[NodeId]) -> Optional[QRect]:
+        """Where ``ids`` are drawn, in viewport coordinates. None when none of them is."""
+        self._index.ensure_fresh()
+        view = self._stage.view_map()
+        drawn = [view.to_canvas(rect) for rect in map(self._index.rect_of, ids) if rect is not None]
+        if not drawn:
+            return None
+        top_left = self.mapFromScene(QPointF(min(rect.x for rect in drawn), min(rect.y for rect in drawn)))
+        bottom_right = self.mapFromScene(
+            QPointF(max(rect.x + rect.width for rect in drawn), max(rect.y + rect.height for rect in drawn))
+        )
+        return QRect(top_left.x(), top_left.y(), bottom_right.x() - top_left.x(), bottom_right.y() - top_left.y())
 
     def page_widget(self) -> Optional[QWidget]:
         root = self._realizer.root_widget

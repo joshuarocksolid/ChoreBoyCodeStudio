@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog import ApplyLayout
+from app.features.form_builder.engine.commands.catalog import ApplyLayout, InsertFragment
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage, SwapFormRows
 from app.features.form_builder.engine.commands.drop_plan import commands_for
+from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.query.drop_target import (
     AcceptedDrop,
@@ -95,6 +96,50 @@ def test_an_inserted_group_box_already_has_a_vertical_layout() -> None:
     assert layouts
     assert layouts[0].field("class_name") == "QVBoxLayout"
     assert layouts[0].field("object_name") == "verticalLayout"
+
+
+@pytest.mark.parity("R3-44")
+@pytest.mark.parametrize(
+    ("key", "widget_name", "layout_class", "layout_name"),
+    (
+        ("layout-v", "verticalLayoutWidget", "QVBoxLayout", "verticalLayout"),
+        ("layout-h", "horizontalLayoutWidget", "QHBoxLayout", "horizontalLayout"),
+        ("layout-grid", "gridLayoutWidget", "QGridLayout", "gridLayout"),
+        ("layout-form", "formLayoutWidget", "QFormLayout", "formLayout"),
+    ),
+)
+def test_a_layout_tile_drops_a_plain_widget_that_owns_the_layout(
+    key: str, widget_name: str, layout_class: str, layout_name: str
+) -> None:
+    log = open_log(write_ui(_doc('  <layout class="QHBoxLayout" name="row"/>')).text)
+    fragment = fragment_for(key)
+    assert fragment is not None
+    root_layout = log.document.root.layout
+    assert root_layout is not None
+    log.execute(InsertFragment(InBoxLayout(root_layout.id, 0), fragment))
+    text = write_ui(log.document).text
+    assert '<widget class="QWidget" name="%s">' % widget_name in text
+    assert '<layout class="%s" name="%s"' % (layout_class, layout_name) in text
+
+
+@pytest.mark.parity("R3-45")
+@pytest.mark.parametrize(
+    ("key", "name", "orientation"),
+    (
+        ("spacer-h", "horizontalSpacer", "Qt::Horizontal"),
+        ("spacer-v", "verticalSpacer", "Qt::Vertical"),
+    ),
+)
+def test_a_spacer_tile_drops_a_named_spacer_with_its_orientation(key: str, name: str, orientation: str) -> None:
+    log = open_log(write_ui(_doc('  <layout class="QHBoxLayout" name="row"/>')).text)
+    fragment = fragment_for(key)
+    assert fragment is not None
+    root_layout = log.document.root.layout
+    assert root_layout is not None
+    log.execute(InsertFragment(InBoxLayout(root_layout.id, 0), fragment))
+    text = write_ui(log.document).text
+    assert '<spacer name="%s">' % name in text
+    assert "<enum>%s</enum>" % orientation in text
 
 
 def test_form_rows_use_the_widgets_and_the_tail_is_a_new_row() -> None:

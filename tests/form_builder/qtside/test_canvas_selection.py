@@ -10,7 +10,6 @@ import pytest
 from app.qt.QtCore import Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QMenuBar, QTreeWidget, QWidget
-from app.features.form_builder.engine.shell_commands import menu_commands
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.chrome_text import MIXED_LAYOUT
 from app.features.form_builder.integration.form_menu import register_form_menu
@@ -106,8 +105,6 @@ def test_mixed_parents_block_wrap_and_say_why(tmp_path: Path) -> None:
         form.aboutToShow.emit()
         assert surface.editor_status_sentence() == MIXED_LAYOUT
         assert wrap.toolTip() == MIXED_LAYOUT
-        command = next(item for item in menu_commands() if item.command_id == "form.action.wrap")
-        assert wrap.isEnabled() is (command.available and not surface.mixed_layout_blocked())
         assert not wrap.isEnabled()
     finally:
         clear_menu_contributors()
