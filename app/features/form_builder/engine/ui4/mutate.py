@@ -16,7 +16,7 @@ change.
 from __future__ import annotations
 
 from dataclasses import fields, is_dataclass
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.ops import (
     InsertNodeOp,
@@ -48,6 +48,8 @@ _NAME_FIELD = {
 #: form contains. Tests read this to show insert and move do not walk the form.
 last_touched = 0
 _touched = 0
+#: Set by a test that counts ``_point`` calls. Production leaves it unset.
+trace_ids: Optional[List[int]] = None
 
 
 class OpError(ValueError):
@@ -234,6 +236,67 @@ def _set_field(doc: UiDocument, op: SetFieldOp) -> Op:
     return SetFieldOp(node=op.node, field=op.field, value=old)
 
 
+def apply_field_batch(doc: UiDocument, ops: Sequence[SetFieldOp]) -> Tuple[Op, ...]:
+    """Write every field, then bubble each parent once.
+
+    A paste into a long form layout shifts one row field per item. Bubbling
+    each of those on its own copies the ancestor path once per row.
+    """
+    global last_touched, _touched
+    _touched = 0
+    try:
+        pending: Dict[NodeId, Node] = {}
+        inverses: List[Op] = []
+        names: List[Tuple[NodeId, Optional[str], Optional[str]]] = []
+        custom = False
+        for op in ops:
+            if not isinstance(op, SetFieldOp):
+                raise OpError("field batch accepts SetFieldOp")
+            _reject_illegal_text(op.value)
+            node = pending.get(op.node)
+            if node is None:
+                node = _require(doc, op.node)
+            try:
+                spec = field_spec(node.kind, op.field)
+            except KeyError:
+                raise OpError("unknown field %s" % (op.field,))
+            if op.value is None and spec.required:
+                raise OpError("required field %s cannot be cleared" % (op.field,))
+            if not _value_ok(op.value):
+                raise OpError("field %s has an invalid value" % (op.field,))
+            old = node.field(op.field)
+            pending[op.node] = _fields_with(node, op.field, op.value)
+            inverses.append(SetFieldOp(node=op.node, field=op.field, value=old))
+            if _NAME_FIELD.get(node.kind) == op.field:
+                names.append(
+                    (
+                        node.id,
+                        old if isinstance(old, str) else None,
+                        op.value if isinstance(op.value, str) else None,
+                    )
+                )
+            if node.kind == "customwidget" and op.field == "class_name":
+                custom = True
+        groups: Dict[Tuple[NodeId, str], Dict[NodeId, Node]] = {}
+        for node_id, updated in pending.items():
+            if updated.parent_id is None or updated.parent_slot is None:
+                raise OpError("field node has no parent")
+            groups.setdefault((updated.parent_id, updated.parent_slot), {})[node_id] = updated
+        for (parent_id, slot), updates in groups.items():
+            parent = doc._nodes[parent_id]
+            kids = [updates.get(child.id, child) for child in parent.children(slot)]
+            _retarget_slot(doc, parent, slot, kids)
+        for node_id, old_name, new_name in names:
+            doc._rebind_name(node_id, old_name, new_name)
+        if custom:
+            doc._rebuild_custom_index()
+        for _op in ops:
+            doc._bump()
+        return tuple(inverses)
+    finally:
+        last_touched = _touched
+
+
 def _replace_root(doc: UiDocument, op: ReplaceRootOp) -> Op:
     if op.spec.kind != "ui" or op.spec.id != DOCUMENT_ID:
         raise OpError("ReplaceRootOp requires a ui spec")
@@ -320,6 +383,8 @@ def _point(doc: UiDocument, node: Node) -> None:
     global _touched
     doc._nodes[node.id] = node
     _touched += 1
+    if trace_ids is not None:
+        trace_ids.append(int(node.id))
 
 
 def _bubble(doc: UiDocument, node: Node) -> None:
