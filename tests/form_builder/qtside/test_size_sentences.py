@@ -264,6 +264,28 @@ def test_a_free_button_reports_its_stored_rectangle() -> None:
             _close(window, pane)
 
 
+def test_a_free_widget_shows_no_empty_caption_line() -> None:
+    # The free caption is shown once, under Width. The Height caption is empty,
+    # and an empty wrapped label still takes a blank line at 236 px.
+    with opened(_FREE) as (session, realizer):
+        _show_root(realizer)
+        window, pane = _pane(session, realizer)
+        try:
+            window.resize(236, int(window.height()))
+            _events()
+            _select(session, pane, "free")
+            body = pane.findChild(QWidget, "formBuilder.sizeBody")
+            assert body is not None
+            empty = [
+                label
+                for label in body.findChildren(QLabel, "formBuilder.rowNote")
+                if label.isVisible() and not label.text().strip()
+            ]
+            assert empty == []
+        finally:
+            _close(window, pane)
+
+
 def test_a_grip_drag_and_a_shrink_leave_the_growth_sentence_alone() -> None:
     with opened(_splitter(1, 3)) as (session, realizer):
         root = _show_root(realizer)

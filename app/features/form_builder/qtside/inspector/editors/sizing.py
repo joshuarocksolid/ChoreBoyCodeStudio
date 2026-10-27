@@ -402,6 +402,7 @@ class _AxisRow:
     def paint(self, projections: Sequence[AxisProjection]) -> None:
         if not projections:
             self._caption.setText("")
+            self._caption.hide()
             return
         first = projections[0]
         mixed = any(item.word != first.word or item.filled != first.filled or item.custom != first.custom for item in projections)
@@ -435,6 +436,8 @@ class _AxisRow:
             self._caption.setText(first.caption)
         else:
             self._caption.setText("")
+        # An empty wrapped label still takes a line at narrow widths.
+        self._caption.setVisible(bool(self._caption.text()))
 
 
 class _ShareRow:

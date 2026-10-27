@@ -7,7 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtWidgets import QApplication, QWidget
+from app.intelligence.diagnostics_models import CodeDiagnostic, DiagnosticSeverity
+from app.qt.QtWidgets import QApplication, QPlainTextEdit, QWidget
 from testing.main_window_shutdown import shutdown_main_window_for_test
 from tests.form_builder.qtside.test_problem_click_and_insert import (
     _DUPLICATE,
@@ -16,6 +17,8 @@ from tests.form_builder.qtside.test_problem_click_and_insert import (
     _open,
     _problems_focus,
     _require,
+    _settle_problems,
+    _FORM,
     _row,
     _selected_name,
     _show_problems,
@@ -79,3 +82,50 @@ def test_single_click_in_xml_view_keeps_focus_in_problems(tmp_path: Path, qapp: 
     finally:
         shutdown_main_window_for_test(window, qapp)
 
+
+
+def test_single_click_in_xml_view_on_a_row_with_no_key_goes_to_its_line(
+    tmp_path: Path, qapp: QApplication
+) -> None:
+    _require()
+    window = _window(tmp_path)
+    path = tmp_path / "invoice.ui"
+    try:
+        surface = _open(window, qapp, path, _FORM)
+        toggle = surface.findChild(QWidget, "formBuilder.viewXml")
+        toggle.click()
+        qapp.processEvents()
+        assert _xml_checked(surface)
+        _settle_problems(window)
+        panel = window._problems_panel
+        assert panel is not None
+        panel.set_diagnostics(
+            [
+                CodeDiagnostic(
+                    code="FB006",
+                    severity=DiagnosticSeverity.INFO,
+                    file_path=str(path),
+                    line_number=5,
+                    message="Kept an extra root widget.",
+                    detail={"source_label": "Form", "location_label": "Ln 5"},
+                )
+            ]
+        )
+        tree = _show_problems(window, qapp)
+        tree.setFocus()
+        tree.scrollToItem(_row(tree, "Kept an extra root widget."))
+        qapp.processEvents()
+        item = _row(tree, "Kept an extra root widget.")
+        QTest.mouseClick(tree.viewport(), _button(), _mod("NoModifier"), tree.visualItemRect(item).center())
+        qapp.processEvents()
+        editors = [
+            editor
+            for editor in surface.findChildren(QPlainTextEdit)
+            if editor.isVisible() and "<ui" in editor.toPlainText()
+        ]
+        assert len(editors) == 1
+        assert editors[0].textCursor().blockNumber() == 4
+        assert _xml_checked(surface)
+        assert _problems_focus(window), QApplication.focusWidget()
+    finally:
+        shutdown_main_window_for_test(window, qapp)

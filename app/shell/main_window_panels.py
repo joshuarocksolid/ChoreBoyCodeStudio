@@ -270,7 +270,7 @@ def _is_form_problem(detail: dict) -> bool:
     return any(str(key).startswith("fb_") for key in detail)
 
 
-def _preview_form_problem(window: Any, file_path: str, detail: dict) -> None:
+def _preview_form_problem(window: Any, file_path: str, detail: dict, line_number: int) -> None:
     surface = _surface_for_path(window, file_path)
     if surface is None or not callable(getattr(surface, "preview_problem", None)):
         factory = getattr(window, "_editor_tab_factory", None)
@@ -280,7 +280,7 @@ def _preview_form_problem(window: Any, file_path: str, detail: dict) -> None:
         surface = _surface_for_path(window, file_path)
     preview = getattr(surface, "preview_problem", None)
     if callable(preview):
-        preview(detail)
+        preview(detail, line_number)
 
 
 def _on_problem_preview(window: Any, file_path: str, line_number: int) -> None:
@@ -289,7 +289,11 @@ def _on_problem_preview(window: Any, file_path: str, line_number: int) -> None:
     form_open = callable(getattr(surface, "preview_problem", None))
     if _is_form_problem(detail) or form_open:
         if detail.get("fb_key") or detail.get("fb_object"):
-            _preview_form_problem(window, file_path, detail)
+            _preview_form_problem(window, file_path, detail, line_number)
+        elif form_open:
+            # No widget to reveal. In the XML view this moves the cursor to the
+            # row's line; in Design it does nothing.
+            surface.preview_problem(detail, line_number)
         return
     window._editor_tab_workflow.open_file_at_line(
         file_path,

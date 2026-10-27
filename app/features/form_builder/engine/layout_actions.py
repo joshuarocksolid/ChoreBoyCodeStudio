@@ -31,6 +31,7 @@ from app.features.form_builder.engine.commands.log import CommandLog
 from app.features.form_builder.engine.commands.planning import morph_renames
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import (
+    effective_class,
     form_item_role,
     form_occupied_cells,
     is_container,
@@ -1281,25 +1282,52 @@ def _name(doc: UiDocument, node: Node) -> str:
 
 
 def _subject(doc: UiDocument, node: Node) -> str:
-    visible = _visible_label(node)
+    visible = _visible_label(doc, node)
     if visible:
         return visible
     name = _name(doc, node)
     return "The" + name[3:] if name.startswith("the ") else name
 
 
-def _visible_label(node: Node) -> str:
-    """The words on the widget, when it has any. Object names stay in the file."""
-    if not isinstance(node, WidgetNode):
+# Words that are part of the form's chrome, by class. A line edit's or text
+# edit's text is the user's content, so those widgets go by object name
+# (UX-COPY-003: what the user sees on the widget, then the object name).
+_CHROME_TEXT = {
+    "QLabel": ("text",),
+    "QPushButton": ("text",),
+    "QToolButton": ("text",),
+    "QCheckBox": ("text",),
+    "QRadioButton": ("text",),
+    "QCommandLinkButton": ("text",),
+    "QGroupBox": ("title",),
+    "QDockWidget": ("windowTitle",),
+}
+# A page of a tab widget or tool box shows its tab title or item label.
+_PAGE_TITLES = ("title", "label")
+
+
+def _visible_label(doc: UiDocument, node: Node) -> str:
+    """The chrome words on the widget, when it has any. Never user content."""
+    if not isinstance(node, WidgetNode) or node.id == doc.root.id:
         return ""
-    for name in ("title", "text", "windowTitle"):
-        entry = node.prop(name)
-        if entry is None:
-            continue
-        text = getattr(entry.value, "text", None)
-        if isinstance(text, str) and text.strip():
-            return text.strip()
+    parent = doc.parent(node.id)
+    if isinstance(parent, WidgetNode) and is_page_container(doc, parent.id):
+        for name in _PAGE_TITLES:
+            text = _entry_text(node.attr(name))
+            if text:
+                return text
+    for name in _CHROME_TEXT.get(effective_class(doc, node), ()):
+        text = _entry_text(node.prop(name))
+        if text:
+            return text
     return ""
+
+
+def _entry_text(entry: object) -> str:
+    if entry is None:
+        return ""
+    text = getattr(getattr(entry, "value", None), "text", None)
+    return text.strip() if isinstance(text, str) else ""
 
 
 def _count(number: int, one: str, many: str) -> str:
