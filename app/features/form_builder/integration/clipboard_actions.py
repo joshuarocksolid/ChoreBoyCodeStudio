@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from typing import Optional, Protocol, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QMimeData, Qt
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtCore import QMimeData
 from app.qt.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
@@ -315,8 +314,8 @@ def _forward_text_edit(command_id: str) -> bool:
         _backspace_in_edit(surface)
     elif command_id in ("form.action.selectAll", "form.action.selectAllSiblings"):
         _call(surface, "selectAll")
-    elif command_id == "form.action.duplicate":
-        _send_chord(widget, "D")
+    # Duplicate has no text meaning. The key is not re-sent: a synthetic
+    # Ctrl+D would hit the same canvas or outline shortcut and run this again.
     return True
 
 
@@ -340,15 +339,6 @@ def _call(widget: QWidget, name: str) -> None:
     method = getattr(widget, name, None)
     if callable(method):
         method()
-
-
-def _send_chord(widget: QWidget, letter: str) -> None:
-    key = getattr(Qt, "Key_%s" % letter)
-    modifiers = getattr(Qt, "ControlModifier")
-    kind = getattr(QEvent, "Type", QEvent)
-    text = letter.lower()
-    QApplication.sendEvent(widget, QKeyEvent(getattr(kind, "KeyPress"), key, modifiers, text))
-    QApplication.sendEvent(widget, QKeyEvent(getattr(kind, "KeyRelease"), key, modifiers, text))
 
 
 def _delete_in_edit(widget: QWidget) -> None:

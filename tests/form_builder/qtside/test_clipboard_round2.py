@@ -8,7 +8,7 @@ from typing import List
 
 import pytest
 
-from app.qt.QtCore import QEvent, QMimeData, QObject, Qt
+from app.qt.QtCore import QEvent, QMimeData, Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QApplication, QLineEdit, QListWidget, QMenu, QPushButton, QWidget
 from app.qt.qt_compat import delete_now
@@ -61,19 +61,6 @@ class _Host:
         return None
 
 
-class _Keys(QObject):
-    def __init__(self) -> None:
-        super().__init__()
-        self.seen: List[int] = []
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        del watched
-        kind = getattr(getattr(QEvent, "Type", QEvent), "KeyPress")
-        if event.type() == kind:
-            self.seen.append(int(event.key()))  # type: ignore[attr-defined]
-        return False
-
-
 def _park_focus(qapp) -> QWidget:  # type: ignore[no-untyped-def]
     sink = QWidget()
     sink.setObjectName("formBuilder.focusSink")
@@ -113,8 +100,6 @@ def test_form_commands_stay_out_of_the_inline_editor(qapp, command_id: str) -> N
     editor = QLineEdit(canvas)
     editor.setText("Phone")
     editor.selectAll()
-    keys = _Keys()
-    editor.installEventFilter(keys)
     canvas.show()
     editor.setFocus()
     qapp.processEvents()
@@ -124,7 +109,7 @@ def test_form_commands_stay_out_of_the_inline_editor(qapp, command_id: str) -> N
         assert apply_command(host, command_id) is True
         assert _names(session) == before
         if command_id == "form.action.duplicate":
-            assert int(getattr(Qt, "Key_D")) in keys.seen
+            assert editor.text() == "Phone"
     finally:
         session.dispose()
         canvas.deleteLater()
