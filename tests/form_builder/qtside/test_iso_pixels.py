@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import os
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -101,7 +102,11 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 
 def _shots() -> Path:
     path = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR", "/opt/cursor/artifacts"))
-    path.mkdir(parents=True, exist_ok=True)
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        path = Path(tempfile.gettempdir()) / "cbcs-fb-iso"
+        path.mkdir(parents=True, exist_ok=True)
     return path
 
 
