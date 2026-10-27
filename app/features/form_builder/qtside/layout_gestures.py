@@ -16,9 +16,9 @@ from app.features.form_builder.engine.layout_actions import (
     NeedsConfirm,
     ChangeTo,
     Outcome,
-    _morph_targets,
     carry_out,
     measure_ids,
+    morph_targets,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
@@ -125,7 +125,7 @@ def _layout_ids(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
 def properties_for(doc: UiDocument, ids: Sequence[NodeId]) -> Dict[str, Tuple[str, ...]]:
     """Target classes a Change to on ``ids`` could land on, and the names each accepts."""
     found: Dict[str, Tuple[str, ...]] = {}
-    for target in _morph_targets(doc, ids):
+    for target in morph_targets(doc, ids):
         names = class_properties(target.class_name)
         if names is not None:
             found[target.class_name] = names

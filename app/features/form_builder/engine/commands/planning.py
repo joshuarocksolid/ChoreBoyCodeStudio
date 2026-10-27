@@ -401,8 +401,46 @@ def morph_widget(
         return ()
     if _holds_content(node) and _class_holds(ctx, doc, new_class) is False:
         raise CommandRejected("The new class cannot hold the contents of this widget.")
+    old_class = node.field("class_name")
     set_field(doc, ctx, node_id, "class_name", new_class)
+    for old_name, new_name in morph_renames(old_class if isinstance(old_class, str) else "", new_class):
+        entry = doc.node(node_id).prop(old_name)
+        if entry is None or doc.node(node_id).prop(new_name) is not None:
+            continue
+        set_property(doc, ctx, node_id, new_name, entry.value)
+        set_property(doc, ctx, node_id, old_name, None)
+    for old_name, new_name in page_renames(old_class if isinstance(old_class, str) else "", new_class):
+        for page in doc.node(node_id).child_widgets:  # type: ignore[attr-defined]
+            entry = page.attr(old_name)
+            if entry is None or page.attr(new_name) is not None:
+                continue
+            set_property(doc, ctx, page.id, new_name, entry.value, kind="attribute")
+            set_property(doc, ctx, page.id, old_name, None, kind="attribute")
     return _drop_properties(doc, ctx, node_id, new_class, accepted)
+
+
+def page_renames(old_class: str, new_class: str) -> Tuple[Tuple[str, str], ...]:
+    """Page attributes a class change carries over: a tab's title is a toolbox page's label."""
+    if old_class == "QTabWidget" and new_class == "QToolBox":
+        return (("title", "label"),)
+    if old_class == "QToolBox" and new_class == "QTabWidget":
+        return (("label", "title"),)
+    return ()
+
+
+_TEXT_EDITS = ("QTextEdit", "QPlainTextEdit", "QTextBrowser")
+
+
+def morph_renames(old_class: str, new_class: str) -> Tuple[Tuple[str, str], ...]:
+    """Properties a class change carries over under a new name, as Designer does.
+
+    A line edit's ``text`` is a text box's ``plainText``, and back.
+    """
+    if old_class == "QLineEdit" and new_class in _TEXT_EDITS:
+        return (("text", "plainText"),)
+    if old_class in _TEXT_EDITS and new_class == "QLineEdit":
+        return (("plainText", "text"),)
+    return ()
 
 
 def hold_layout(

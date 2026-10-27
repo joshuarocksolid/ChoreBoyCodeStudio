@@ -28,6 +28,7 @@ from app.features.form_builder.engine.commands.base import Command, CommandRejec
 from app.features.form_builder.engine.commands.catalog_ext.host_wrap import WrapFree, WrapSplitter, WrapTab
 from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing, from_write
 from app.features.form_builder.engine.commands.log import CommandLog
+from app.features.form_builder.engine.commands.planning import morph_renames
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import (
     form_item_role,
@@ -390,7 +391,7 @@ def offers(
 ) -> OfferSheet:
     """Every request the selection could take, or just ``only``, planned and not executed."""
     live = all(doc.contains(node_id) for node_id in ids)
-    morphs = _morph_targets(doc, ids) if live else ()
+    morphs = morph_targets(doc, ids) if live else ()
     if only is None:
         requests: List[object] = [ApplyKind(kind_id) for kind_id in KEYBOARD]
         requests += [PickWrap(kind_id) for kind_id in POPOVER]
@@ -922,7 +923,7 @@ def _plan_change_to(
     known = _known_properties(target.class_name, accepted)
     command = catalog.MorphWidget(node.id, target.class_name, known)
     ready = _Ready("Change widget", (command,), "Changed to %s." % target.phrase)
-    dropped = _dropped_names(node, known)
+    dropped = _dropped_names(node, target.class_name, known)
     if not dropped:
         return ready
     noun = "property" if len(dropped) == 1 else "properties"
@@ -1259,7 +1260,8 @@ def _shared_widget_parent(doc: UiDocument, ids: Sequence[NodeId]) -> Optional[Wi
     return parent if isinstance(parent, WidgetNode) else None
 
 
-def _morph_targets(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[MorphTarget, ...]:
+def morph_targets(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[MorphTarget, ...]:
+    """The classes one selected widget can change to: the rest of its family."""
     node = _single_widget(doc, ids)
     if node is None or node.id == doc.root.id:
         return ()
@@ -1306,12 +1308,15 @@ def _known_properties(
     return tuple(item.name for item in table.properties(class_name))
 
 
-def _dropped_names(node: WidgetNode, known: Optional[Tuple[str, ...]]) -> Tuple[str, ...]:
+def _dropped_names(node: WidgetNode, new_class: str, known: Optional[Tuple[str, ...]]) -> Tuple[str, ...]:
     if known is None:
         return ()
     allowed = set(known)
+    carried = {old for old, new in morph_renames(node.class_name, new_class) if new in allowed}
     return tuple(
-        entry.name for entry in node.properties() if entry.stdset != "0" and entry.name not in allowed
+        entry.name
+        for entry in node.properties()
+        if entry.stdset != "0" and entry.name not in allowed and entry.name not in carried
     )
 
 

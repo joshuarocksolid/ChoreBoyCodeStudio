@@ -39,7 +39,7 @@ from app.features.form_builder.engine.layout_actions import (
     transact,
 )
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue
+from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue, StringValue
 from tests.form_builder.engine.commands._support import BOX, FREE, GRID as FULL_GRID, nid, open_log, saved
 
 _HEAD = """<?xml version="1.0" encoding="UTF-8"?>
@@ -598,3 +598,40 @@ def test_change_to_names_the_properties_it_drops(properties: Tuple[str, ...], ex
 
     assert asked == NeedsConfirm(expected, "Change")
 
+
+def test_a_line_edit_changed_to_a_plain_text_box_keeps_its_text_as_plain_text() -> None:
+    log = open_log(_HEAD + '  <widget class="QLineEdit" name="edit"><property name="text"><string>Hi</string></property></widget>\n' + _TAIL)
+    doc = log.document
+    edit = nid(doc, "edit")
+    before = saved(doc)
+
+    done = carry_out(doc, (edit,), ChangeTo("QPlainTextEdit"), {}, transact(log))
+
+    assert done == Done("Changed to a plain text box.")
+    assert doc.node(edit).value("plainText") == StringValue("Hi")
+    assert doc.node(edit).value("text") is None
+    log.undo()
+    assert saved(doc) == before
+
+
+def test_a_tab_widget_changed_to_a_toolbox_keeps_each_page_title_as_its_label() -> None:
+    log = open_log(
+        _HEAD
+        + """  <widget class="QTabWidget" name="tabs">
+   <widget class="QWidget" name="first"><attribute name="title"><string>One</string></attribute></widget>
+   <widget class="QWidget" name="second"><attribute name="title"><string>Two</string></attribute></widget>
+  </widget>
+"""
+        + _TAIL
+    )
+    doc = log.document
+    tabs = nid(doc, "tabs")
+    before = saved(doc)
+
+    carry_out(doc, (tabs,), ChangeTo("QToolBox"), {}, transact(log))
+
+    text = saved(doc)
+    assert '<attribute name="label">' in text and '<attribute name="title">' not in text
+    assert "<string>One</string>" in text and "<string>Two</string>" in text
+    log.undo()
+    assert saved(doc) == before
