@@ -171,13 +171,39 @@ def _step(session: FormSession, rng: random.Random, counter: List[int]) -> None:
             )
 
 
-@pytest.mark.parametrize("seed", [1, 2, 3, 4, 5, 6, 7, 8])
-def test_review_structural_fuzz_matches_a_full_rebuild(live: Tuple[FormSession, Realizer, HitIndex], seed: int) -> None:
-    session, realizer, index = live
+@pytest.fixture
+def embedded() -> Iterator[Tuple[FormSession, Realizer, HitIndex]]:
+    """The root under a plain host, as on the canvas: a top-level root resizes asynchronously offscreen."""
+    from app.qt.QtWidgets import QWidget
+
+    with opened(NESTED) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        host = QWidget()
+        host.resize(1200, 1200)
+        root.setParent(host)
+        host.show()
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX)
+        try:
+            index.ensure_fresh()
+            yield session, realizer, index
+        finally:
+            subscription.close()
+            root.setParent(None)
+            host.hide()
+            host.deleteLater()
+
+
+@pytest.mark.parametrize("seed", list(range(1, 121)))
+def test_review_structural_fuzz_matches_a_full_rebuild(embedded: Tuple[FormSession, Realizer, HitIndex], seed: int) -> None:
+    session, realizer, index = embedded
     rng = random.Random(seed)
     counter = [0]
     trail: List[str] = []
-    for step in range(40):
+    for step in range(60):
         try:
             _step(session, rng, counter)
         except Exception as exc:  # refused command: not what this test checks

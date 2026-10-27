@@ -69,10 +69,12 @@ class LiveGeometrySource:
             return
         # A nested widget's invalidated layout reports an empty geometry until
         # its own posted LayoutRequest runs. Root activation does not reach it.
-        QApplication.sendPostedEvents(None, enum_value(QEvent.Type.LayoutRequest))
+        kind = enum_value(QEvent.Type.LayoutRequest)
         layout = root.layout()
-        if layout is not None:
-            layout.activate()
+        for _ in range(3):
+            QApplication.sendPostedEvents(None, kind)
+            if layout is not None:
+                layout.activate()
 
     def entries(self) -> Sequence[GeoEntry]:
         root = self._realizer.root_widget
@@ -80,6 +82,7 @@ class LiveGeometrySource:
         root_node = document.root
         if root is None or not isinstance(root_node, WidgetNode):
             return ()
+        self._activate_empty_layouts(document)
         out: List[GeoEntry] = [GeoEntry(root_node.id, "widget", Rect(0, 0, root.width(), root.height()), None, True, 0)]
         self._titles(root, document, 0, 0, root_node.id, out)
         holder: Dict[NodeId, NodeId] = {}
@@ -115,6 +118,29 @@ class LiveGeometrySource:
             stack.extend(reversed(found))
         return out
 
+    def _activate_empty_layouts(self, document: UiDocument) -> None:
+        """O(layouts). A layout the realizer just rebuilt reads an empty geometry
+        until its own LayoutRequest runs, and activating it mid-walk would move
+        entries already read. So activate them all before the walk."""
+        kind = enum_value(QEvent.Type.LayoutRequest)
+        root = self._realizer.root_widget
+        top = root.layout() if root is not None else None
+        for _ in range(3):
+            empty = []
+            for node in document.iter_preorder():
+                if not isinstance(node, LayoutNode) or not node.items:
+                    continue
+                qlayout = self._realizer.layout_for(node.id)
+                if qlayout is not None and qlayout.geometry().isEmpty():
+                    empty.append(qlayout)
+            if not empty:
+                return
+            for qlayout in empty:
+                qlayout.activate()
+            QApplication.sendPostedEvents(None, kind)
+            if top is not None:
+                top.activate()
+
     def retouch(
         self,
         previous: Sequence[GeoEntry],
@@ -130,6 +156,11 @@ class LiveGeometrySource:
         sibling.
         """
         if scope.full:
+            return None
+        if scope.added or scope.removed or scope.structure:
+            # Insert, delete and move change containers, z order and title
+            # entries. Only the full walk is proven equal to a rebuild there
+            # (tests/form_builder/qtside/test_hit_index_incremental_repro.py).
             return None
         root = self._realizer.root_widget
         document = self._realizer.document
@@ -149,11 +180,31 @@ class LiveGeometrySource:
         seen: Dict[NodeId, bool] = {}
         expanded: Set[NodeId] = set()
         expand_ids: Set[NodeId] = set()
+
+        def want(layout_id: NodeId) -> None:
+            # A layout already measured without expanding must be visited again,
+            # or a later "re-measure your items" request is lost.
+            if layout_id in expanded:
+                return
+            expand_ids.add(layout_id)
+            seen.pop(layout_id, None)
+            queue.append(layout_id)
+
         replacements: List[Tuple[int, GeoEntry]] = []
         extra: List[GeoEntry] = []
         changed: List[NodeId] = []
         drop: Set[NodeId] = set(scope.removed)
         visits = 0
+        for node_id in scope.dirty:
+            # A size-hint edit can move siblings by a stretch rounding pixel even
+            # when the edited widget keeps its rect. O(siblings) per dirty widget.
+            if isinstance(document.get(node_id), WidgetNode):
+                parent = _parent_layout(document, node_id)
+                if parent is not None and parent not in scope.removed:
+                    want(parent)
+                # A container can resize from a child's hint while the child
+                # keeps its rect. O(depth): each ancestor is measured once.
+                queue.extend(document.ancestors(node_id))
         while queue:
             node_id = queue.pop()
             if node_id in seen or node_id in scope.removed or node_id in drop:
@@ -192,15 +243,15 @@ class LiveGeometrySource:
                 if _container_moved(found, None, rect):
                     return None
                 parent = _parent_layout(document, node_id)
-                if parent is not None and parent not in expanded:
-                    expand_ids.add(parent)
-                    queue.append(parent)
+                if parent is not None:
+                    want(parent)
                 continue
             old = previous[index]
+            container = isinstance(found, WidgetNode) and bool(found.child_widgets or found.layout is not None)
+            # An edit on a container (font, style sheet, margins, a page title)
+            # can move its descendants while its own rect stays. O(subtree).
             walk = node_id in scope.rewalk or (
-                isinstance(found, WidgetNode)
-                and (found.child_widgets or found.layout is not None)
-                and (old.visible != visible or old.rect != rect)
+                container and (node_id in scope.dirty or old.visible != visible or old.rect != rect)
             )
             if walk:
                 synced = self._sync_descendants(
@@ -220,17 +271,17 @@ class LiveGeometrySource:
                 ):
                     return None
                 parent = _parent_layout(document, node_id)
-                if parent is not None and parent not in expanded:
-                    expand_ids.add(parent)
-                    queue.append(parent)
+                if parent is not None:
+                    want(parent)
                 if not walk:
                     for ancestor in document.ancestors(node_id):
                         if ancestor in seen or ancestor in scope.removed or ancestor in drop:
                             continue
                         ancestor_node = document.get(ancestor)
-                        if isinstance(ancestor_node, LayoutNode) and ancestor not in expanded:
-                            expand_ids.add(ancestor)
-                        queue.append(ancestor)
+                        if isinstance(ancestor_node, LayoutNode):
+                            want(ancestor)
+                        else:
+                            queue.append(ancestor)
         self._remeasure_layouts(document, root, previous, replacements)
         if not replacements and not extra and not drop:
             return IndexPatch(visits=visits, changed=())
