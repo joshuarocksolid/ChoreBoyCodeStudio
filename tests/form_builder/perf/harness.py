@@ -37,6 +37,7 @@ from app.features.form_builder.engine.commands.catalog import (
     InsertFragment,
     MorphWidget,
     MoveNodes,
+    MovePage,
     Rename,
     SetProperty,
 )
@@ -1303,6 +1304,8 @@ def _outline_key_rows(
         return (
             _missing("outline rename", 1000, budget, "no 1000-widget form"),
             _missing("outline alt down", 1000, budget, "no 1000-widget form"),
+            _missing("outline rename share", 1000, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no 1000-widget form"),
+            _missing("outline move share", 1000, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no 1000-widget form"),
         )
     session, parent, outline, app = _outline_widgets(form.xml)
     try:
@@ -1346,9 +1349,54 @@ def _outline_key_rows(
             enforce_absolute=enforce_absolute,
             wall_on=wall_on,
         )[0]
+        share_count = {"n": 0}
+
+        def prepare_rename() -> None:
+            share_count["n"] += 1
+            session.log.execute(Rename(owner, "share%04d" % share_count["n"]))
+
+        def rename_share() -> None:
+            outline.note_edited()
+
+        renamed_share = _timed(
+            "outline rename share",
+            form.widget_count,
+            rename_share,
+            OUTLINE_PATCH_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=prepare_rename,
+        )[0]
+        tabs = session.document.by_name("tabs")[0]
+
+        def prepare_move() -> None:
+            host = session.document.node(tabs)
+            names = [child.object_name for child in host.child_widgets]  # type: ignore[attr-defined]
+            origin = names.index("tabDetails")
+            dest = origin + 1 if origin + 1 < len(names) else origin - 1
+            session.log.execute(MovePage(tabs, origin, dest))
+
+        def move_share() -> None:
+            outline.note_edited()
+
+        moved_share = _timed(
+            "outline move share",
+            form.widget_count,
+            move_share,
+            OUTLINE_PATCH_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=prepare_move,
+        )[0]
         return (
             _with_detail(renamed, "rename one widget and patch that outline row"),
             _with_detail(moved, "Alt+Down moves one page and reuses the outline items"),
+            _with_detail(renamed_share, "outline rename updates only the changed row"),
+            _with_detail(moved_share, "outline page move reseats the page rows"),
         )
     finally:
         _close_outline(session, parent, app)

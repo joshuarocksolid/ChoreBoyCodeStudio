@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.qt.QtCore import QPoint
+from app.qt.QtCore import QPoint, Qt
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QLabel, QVBoxLayout, QWidget
 from app.features.form_builder.engine.query.drop_target import DropPayload
@@ -171,7 +171,21 @@ def _grab_outline(qapp, tokens, out: Path, width: int, height: int, mode: str) -
         receipts = session.document.by_name("receipts")[0]
         canvas.send(PlaceAsked(CanvasPoint(20, 20), DropPayload("widget", (receipts,)), ""))
         _flush()
-        pane._post_target(QPoint(12, 40), False)  # type: ignore[attr-defined]
+        receipts_item = None
+        role = int(getattr(Qt, "UserRole"))
+
+        def _walk(item):  # type: ignore[no-untyped-def]
+            nonlocal receipts_item
+            if item.data(0, role) == int(receipts):
+                receipts_item = item
+            for index in range(item.childCount()):
+                _walk(item.child(index))
+
+        for index in range(pane.tree.topLevelItemCount()):
+            _walk(pane.tree.topLevelItem(index))
+        assert receipts_item is not None
+        visual = pane.tree.visualItemRect(receipts_item)
+        pane._post_target(visual.center(), False)  # type: ignore[attr-defined]
         _flush()
         assert pane._drop_line.isVisible()  # type: ignore[attr-defined]
         _paint_status(shell, tokens, "Outline drop")

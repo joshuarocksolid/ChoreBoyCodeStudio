@@ -32,7 +32,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
-from app.features.form_builder.engine.query.outline import captions_touched, structure_touched
+from app.features.form_builder.engine.query.outline import captions_touched, order_parents
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.layout_actions import (
     Current,
@@ -187,12 +187,15 @@ def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
     return held
 
 
-def _outline_mode(change_set: ChangeSet) -> str:
-    if structure_touched(change_set):
-        return "rebuild"
+def _outline_mode(document: object, change_set: ChangeSet) -> Tuple[str, Tuple[object, ...]]:
+    parents = order_parents(document, change_set)  # type: ignore[arg-type]
+    if parents is None:
+        return "rebuild", ()
+    if parents:
+        return "reorder", parents
     if captions_touched(change_set) or change_set.renamed:
-        return "patch"
-    return "keep"
+        return "patch", captions_touched(change_set)
+    return "keep", ()
 
 
 def _shell_history(window: QWidget, redo: bool) -> None:
@@ -349,6 +352,7 @@ class FormSurface(QWidget):
         )
         self._stack.addWidget(self._workbench)
         self._workbench.outline.set_status(self.narrate)
+        self._workbench.outline.run_command = self._run_outline_command
         layout.addWidget(self._stack, 1)
         self._toolbar.attach_preview(self._workbench.canvas.preview)
         self._command_toast = CommandToast(self)
@@ -855,8 +859,7 @@ class FormSurface(QWidget):
             return
         current = self._session.selection.state.current
         if isinstance(change_set, ChangeSet):
-            mode = _outline_mode(change_set)
-            touched = captions_touched(change_set) if mode == "patch" else ()
+            mode, touched = _outline_mode(self._session.document, change_set)
         else:
             mode = "rebuild"
             touched = ()
@@ -1061,8 +1064,17 @@ class FormSurface(QWidget):
         inspector.properties.setFocus()
 
     def _rename_inert(self) -> None:
-        self._inert_note = "Rename on the form arrives in a later release."
+        self._inert_note = ""
         self._refresh_shell_status()
+
+    def _run_outline_command(self, action_id: str) -> None:
+        window = self.window()
+        registry = None if window is None else _shell_registry(window)
+        if registry is None:
+            return
+        action = registry.action(action_id)  # type: ignore[attr-defined]
+        if action is not None:
+            action.trigger()
 
     def _reveal_problem(self, text: str) -> bool:
         window = self.window()

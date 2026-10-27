@@ -110,8 +110,10 @@ def _ask(pane: Any, effect: AskDelete) -> bool:
 
 
 def _route(pane: Any, effect: Route) -> bool:
-    del pane, effect
-    return False
+    runner = getattr(pane, "run_command", None)
+    if callable(runner):
+        runner(effect.action_id)
+    return True
 
 
 def _insert(pane: Any, effect: OpenInsert) -> bool:
@@ -156,6 +158,8 @@ def _filter(pane: Any, effect: FilterSet) -> bool:
 
 def _cue(pane: Any, effect: DropCue) -> bool:
     pane.show_cue(effect)
+    if effect.prose:
+        pane.report(effect.prose)
     return True
 
 
@@ -186,9 +190,6 @@ _HANDLERS: Dict[type, Callable[[Any, Any], bool]] = {
 def _run(pane: Any, commands: tuple, label: str) -> None:
     log = pane.session().log
     try:
-        if len(commands) == 1:
-            log.execute(commands[0])
-            return
         with log.transaction(label) as txn:
             for command in commands:
                 txn.execute(command)

@@ -54,7 +54,19 @@ class OutlineRowDelegate(QStyledItemDelegate):
         problem = bool(index.data(PROBLEM))  # type: ignore[attr-defined]
         faint = bool(index.data(FAINT))  # type: ignore[attr-defined]
         tone = str(index.data(TONE) or "")  # type: ignore[attr-defined]
-        boxes = layout_row(option.rect.width(), bool(caption), problem)
+        metrics = _metrics(option)
+        caption_px = 0
+        if caption:
+            advance = getattr(metrics, "horizontalAdvance", None)
+            caption_px = int(advance(caption) if callable(advance) else metrics.width(caption))
+        width = option.rect.width()
+        widget = option.widget
+        if widget is not None and hasattr(widget, "viewport"):
+            viewport = widget.viewport()
+            visible = viewport.width() - max(option.rect.x(), 0)
+            if visible > 0:
+                width = min(width, visible)
+        boxes = layout_row(width, bool(caption), problem, caption_px)
         selected = bool(enum_value(option.state) & enum_value(QStyle.State_Selected))
         palette = option.palette
         name_color = self._swatch(

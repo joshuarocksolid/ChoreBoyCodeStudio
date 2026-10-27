@@ -48,9 +48,13 @@ from app.features.form_builder.engine.query.outline import (
     OutlineForest,
     OutlineWorld,
     RenameGesture,
+    captions_touched,
+    claims_key,
     filter_mask,
     layout_row,
+    order_parents,
     patch_captions,
+    patch_order,
     plan,
     project,
 )
@@ -673,6 +677,9 @@ class OutlinePane(QWidget):
         self.tree.setObjectName("formBuilder.structure")
         self.tree.setAccessibleName("Form structure")
         self.tree.setHeaderHidden(True)
+        self.tree.header().setStretchLastSection(True)
+        scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self.tree.setHorizontalScrollBarPolicy(scroll_off)
         # Rows share one height. Qt then skips a per-item height walk on scroll and reorder.
         self.tree.setUniformRowHeights(True)
         self.tree.setFocusPolicy(_strong())
@@ -774,6 +781,46 @@ class OutlinePane(QWidget):
         self._apply_empty(mask)
         self.show_current(selected)
 
+    def reorder_rows(
+        self,
+        document: UiDocument,
+        selected: Optional[NodeId],
+        parents: Sequence[NodeId],
+    ) -> None:
+        """Reseat the direct children of ``parents``. Other items stay put."""
+        self._document = document
+        forest = self._forest
+        if forest is None:
+            self.rebuild(document, selected)
+            return
+        patched = patch_order(forest, document, parents)
+        if patched is None:
+            self.rebuild(document, selected)
+            return
+        self._forest = patched
+        self._revision = document.revision
+        self._reseat(patched, parents)
+        self.show_current(selected)
+
+    def _reseat(self, forest: OutlineForest, parents: Sequence[NodeId]) -> None:
+        self._blocked = True
+        states = dict(filter_mask(forest, self._filter_text).state)
+        for parent_id in parents:
+            holder = self.tree.invisibleRootItem() if parent_id is None else self._rows.get(int(parent_id))
+            if holder is None:
+                self._blocked = False
+                self._install(forest)
+                return
+            for index, row in enumerate(forest.children(parent_id)):
+                item = self._rows.get(int(row.node))
+                if item is None:
+                    self._blocked = False
+                    self._install(forest)
+                    return
+                self._move_item(holder, item, index)
+                self._write_item(item, row, states)
+        self._blocked = False
+
     def show_current(self, selected: Optional[NodeId]) -> None:
         """Move the current row. Does not rebuild the tree."""
         if selected is None:
@@ -863,8 +910,13 @@ class OutlinePane(QWidget):
         self._spring.stop()
         self._spring_item = None
 
-    def _paint_drop_line(self) -> None:
+    def _paint_drop_line(self, into: bool = False) -> None:
         color = self._drop_color or self.tree.palette().highlight().color().name()
+        if into:
+            self._drop_line.setStyleSheet(
+                "QFrame#formBuilder\\.outlineDrop { background: transparent; border: 2px solid %s; }" % color
+            )
+            return
         self._drop_line.setStyleSheet(
             "QFrame#formBuilder\\.outlineDrop { background: %s; border: none; }" % color
         )
@@ -874,12 +926,15 @@ class OutlinePane(QWidget):
             self._drop_line.hide()
             return
         rect = target.indicator.rect
+        into = bool(target.indicator.dashed)
         height = max(rect.height, 2)
-        self._paint_drop_line()
+        self._paint_drop_line(into)
         self._drop_line.setFixedHeight(height)
         self._drop_line.setGeometry(rect.x, rect.y, max(rect.width, 1), height)
         self._drop_line.show()
         self._drop_line.raise_()
+        if target.sentence:
+            self.report(target.sentence)
 
     def _expand_hovered(self) -> None:
         item = self._spring_item
@@ -979,7 +1034,18 @@ class OutlinePane(QWidget):
         return target
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if _event_kind(event) == "KeyPress":
+        kind = _event_kind(event)
+        if kind == "ShortcutOverride" and self._claim_override(watched, event):
+            event.accept()
+            return True
+        if kind == "KeyPress":
+            confirm = getattr(self, "_confirm", None)
+            if (
+                confirm is not None
+                and watched in (confirm, getattr(self, "_delete_button", None), getattr(self, "_cancel_button", None))
+                and self._on_confirm_key(event)
+            ):
+                return True
             if watched is self.tree and self._on_tree_key(event):
                 return True
             if watched is self._editor and self._on_editor_key(event):
@@ -1078,6 +1144,9 @@ class OutlinePane(QWidget):
         self._anchor: Optional[NodeId] = None
         self._renaming: Optional[NodeId] = None
         self._ask_ids: Tuple[NodeId, ...] = ()
+        self._last_change: object = None
+        self._log_sub: object = None
+        self.run_command: Optional[Callable[[str], None]] = None
         self._name_color = ""
         self._faint_color = ""
         self._error_color = ""
@@ -1103,9 +1172,14 @@ class OutlinePane(QWidget):
         delete = QPushButton("Delete", self._confirm)
         delete.setObjectName("formBuilder.outlineDelete")
         delete.clicked.connect(lambda: self._answer_delete(True))
+        delete.installEventFilter(self)
         cancel = QPushButton("Cancel", self._confirm)
         cancel.setObjectName("formBuilder.outlineCancel")
         cancel.clicked.connect(lambda: self._answer_delete(False))
+        cancel.installEventFilter(self)
+        self._delete_button = delete
+        self._cancel_button = cancel
+        self._confirm.installEventFilter(self)
         buttons.addWidget(delete)
         buttons.addWidget(cancel)
         confirm_layout.addLayout(buttons)
@@ -1131,6 +1205,10 @@ class OutlinePane(QWidget):
         self._session = session
         self._place = place
         self._preview = preview
+        previous = self._log_sub
+        if previous is not None:
+            previous.close()  # type: ignore[attr-defined]
+        self._log_sub = session.log.subscribe(self._remember_change, priority=1)
         root = session.document.root
         class_name = root.class_name if isinstance(root, WidgetNode) else ""
         session.set_base_methods(window_methods(class_name))
@@ -1163,32 +1241,32 @@ class OutlinePane(QWidget):
         if session is None or forest is None:
             return
         document = session.document
-        fresh = project(document, self._problem_ids(), friendly_of)
-        same = len(forest.rows) == len(fresh.rows) and all(
-            before.node == after.node and before.parent == after.parent
-            for before, after in zip(forest.rows, fresh.rows)
-        )
-        self._document = document
-        self._revision = document.revision
-        if not same:
-            self._forest = fresh
-            self._install(fresh, forest)
-            self.show_current(session.selection.state.current)
+        current = session.selection.state.current
+        if self._revision == document.revision:
+            self.show_current(current)
             return
-        changed = tuple(
-            after.node
-            for before, after in zip(forest.rows, fresh.rows)
-            if before != after
-        )
-        self._forest = fresh
-        mask = filter_mask(fresh, self._filter_text)
-        states = dict(mask.state)
-        for node in changed:
-            row = fresh.row(node)
-            item = self._rows.get(int(node))
-            if row is not None and item is not None:
-                self._write_item(item, row, states)
-        self.show_current(session.selection.state.current)
+        change = self._last_change
+        if change is not None and getattr(change, "revision", None) == document.revision:
+            parents = order_parents(document, change)  # type: ignore[arg-type]
+            if parents is None:
+                self.rebuild(document, current)
+                return
+            if parents:
+                self.reorder_rows(document, current, parents)
+                return
+            touched = captions_touched(change)  # type: ignore[arg-type]
+            renamed = tuple(getattr(change, "renamed", ()))
+            if touched or renamed:
+                self.patch_rows(document, current, touched)
+                return
+            self._document = document
+            self._revision = document.revision
+            self.show_current(current)
+            return
+        self.rebuild(document, current)
+
+    def _remember_change(self, change_set: object) -> None:
+        self._last_change = change_set
 
     def show_selection(self, ids: Tuple[NodeId, ...], current: NodeId, anchor: NodeId) -> None:
         self._anchor = anchor
@@ -1316,18 +1394,28 @@ class OutlinePane(QWidget):
     def show_delete(self, prose: str, ids: Tuple[NodeId, ...]) -> None:
         self._ask_ids = ids
         self._confirm_text.setText(prose)
+        margin = 8
+        limit = max(self.width() - margin * 2, 64)
+        self._confirm.setMaximumWidth(limit)
+        self._confirm.setMinimumWidth(0)
+        self._confirm_text.setMaximumWidth(max(limit - 16, 32))
+        self._confirm.setMaximumHeight(max(self.height() - margin, 48))
         self._confirm.adjustSize()
+        width = min(self._confirm.sizeHint().width(), limit)
+        self._confirm.resize(width, min(self._confirm.sizeHint().height(), max(self.height() - margin, 48)))
         anchor = ids[0] if ids else self._current_node()
         item = None if anchor is None else self._rows.get(int(anchor))
+        x = margin
+        y = self.header.height()
         if item is not None:
             rect = self.tree.visualItemRect(item)
             origin = self.tree.viewport().mapTo(self, rect.topLeft())
-            self._confirm.move(origin.x(), origin.y() + rect.height())
+            x = origin.x()
+            y = origin.y() + rect.height()
+        self._place_confirm(x, y)
         self._confirm.show()
         self._confirm.raise_()
-        delete = self._confirm.findChild(QPushButton, "formBuilder.outlineDelete")
-        if delete is not None:
-            delete.setFocus()
+        self._delete_button.setFocus()
 
     def show_insert(self) -> None:
         self._fill_insert(matching_tiles(""))
@@ -1338,7 +1426,8 @@ class OutlinePane(QWidget):
         self._preview_insert_row()
 
     def show_cue(self, effect: object) -> None:
-        self._paint_drop_line()
+        into = bool(effect.into)  # type: ignore[attr-defined]
+        self._paint_drop_line(into)
         self._drop_line.setFixedHeight(max(int(effect.height), 2))  # type: ignore[attr-defined]
         self._drop_line.setGeometry(int(effect.x), int(effect.y), max(int(effect.width), 1), max(int(effect.height), 2))  # type: ignore[attr-defined]
         self._drop_line.show()
@@ -1484,7 +1573,12 @@ class OutlinePane(QWidget):
 
     def _move_item(self, holder: QTreeWidgetItem, item: QTreeWidgetItem, index: int) -> None:
         if item.treeWidget() is None:
-            holder.insertChild(index, item)
+            parent = item.parent()
+            if parent is not None:
+                row = parent.indexOfChild(item)
+                if row >= 0:
+                    item = parent.takeChild(row)
+            holder.insertChild(min(index, holder.childCount()), item)
             return
         current = item.parent() if item.parent() is not None else self.tree.invisibleRootItem()
         if current is holder and current.indexOfChild(item) == index:
@@ -1616,13 +1710,62 @@ class OutlinePane(QWidget):
         return False
 
     def _on_insert_key(self, event: object) -> bool:
-        if key_gesture(event).key != "esc":
+        gesture = key_gesture(event)
+        if gesture.key == "enter":
+            item = self._insert_list.currentItem()
+            if item is not None:
+                self._activate_insert(item)
+            return True
+        if gesture.key != "esc":
             return False
         self._insert_pop.hide()
         if self._preview is not None:
             self._preview(None)
         self.focus_tree()
         return True
+
+    def _claim_override(self, watched: QObject, event: QEvent) -> bool:
+        gesture = key_gesture(event)
+        if watched is self.tree and self.tree.hasFocus():
+            return claims_key(gesture)
+        if watched is self._filter and (gesture.command_id == "form.action.find" or gesture.key == "esc"):
+            return True
+        if watched is self._insert_list and gesture.key in ("esc", "enter"):
+            return True
+        confirm = getattr(self, "_confirm", None)
+        buttons = (confirm, getattr(self, "_delete_button", None), getattr(self, "_cancel_button", None))
+        if confirm is not None and watched in buttons and gesture.key in ("esc", "enter"):
+            return True
+        return False
+
+    def _on_confirm_key(self, event: object) -> bool:
+        if not self._confirm.isVisible():
+            return False
+        gesture = key_gesture(event)
+        if gesture.key == "esc":
+            self._answer_delete(False)
+            return True
+        if gesture.key == "enter":
+            self._answer_delete(False if self._cancel_button.hasFocus() else True)
+            return True
+        return False
+
+    def _place_confirm(self, x: int, y: int) -> None:
+        width = self._confirm.width()
+        height = self._confirm.height()
+        x = min(max(x, 0), max(self.width() - width, 0))
+        y = min(max(y, 0), max(self.height() - height, 0))
+        window = self.window()
+        if isinstance(window, QWidget) and window is not self:
+            origin = self.mapTo(window, QPoint(x, y))
+            limit = window.rect()
+            origin.setX(min(max(origin.x(), limit.left()), max(limit.right() - width, limit.left())))
+            origin.setY(min(max(origin.y(), limit.top()), max(limit.bottom() - height, limit.top())))
+            back = self.mapFrom(window, origin)
+            x, y = back.x(), back.y()
+            x = min(max(x, 0), max(self.width() - width, 0))
+            y = min(max(y, 0), max(self.height() - height, 0))
+        self._confirm.move(x, y)
 
     def _filter_edited(self, text: str) -> None:
         if self._filter.signalsBlocked():
@@ -1719,6 +1862,8 @@ class OutlinePane(QWidget):
 
 
 def _row_caption(row: object) -> str:
+    if getattr(row, "kind", "") == "page":
+        return str(getattr(row, "visible_text", "") or "")
     bits = []
     friendly = row.friendly  # type: ignore[attr-defined]
     primary = row.primary  # type: ignore[attr-defined]
@@ -2038,6 +2183,8 @@ class FormWorkbench(QWidget):
         document = self._session.document
         if outline == "patch":
             self.outline.patch_rows(document, selected, touched)
+        elif outline == "reorder":
+            self.outline.reorder_rows(document, selected, touched)
         elif outline == "keep":
             self.outline.show_current(selected)
         else:

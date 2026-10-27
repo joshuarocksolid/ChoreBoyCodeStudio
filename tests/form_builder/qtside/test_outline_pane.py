@@ -8,8 +8,8 @@ from typing import Callable, Dict, Iterator, Optional, Tuple
 
 import pytest
 
-from app.qt.QtCore import QPoint, Qt
-from app.qt.QtGui import QColor
+from app.qt.QtCore import QEvent, QPoint, Qt
+from app.qt.QtGui import QColor, QKeyEvent
 from app.qt.QtTest import QTest
 from app.qt.qt_compat import enum_value
 from app.qt.QtWidgets import (
@@ -28,7 +28,7 @@ from app.features.form_builder.engine.commands.catalog import SetProperty
 from app.features.form_builder.engine.commands.drop_plan import auto_commands
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import DropPayload
-from app.features.form_builder.engine.query.outline import layout_row
+from app.features.form_builder.engine.query.outline import layout_row, project
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
@@ -394,8 +394,9 @@ def test_a_text_edit_keeps_other_row_items(qapp: QApplication) -> None:
 
 def test_page_rows_use_the_title(qapp: QApplication) -> None:
     with _opened(qapp, _tabs(), "page-rows") as (pane, _session):
-        assert _find_item(pane.tree, "Page 1 \u00b7 First")
-        assert _find_item(pane.tree, "Page 2 \u00b7 Second")
+        page = _find_item(pane.tree, "pageA")
+        assert _find_item(pane.tree, "pageB")
+        assert page.data(0, int(getattr(Qt, "UserRole")) + 1) == "First"
 
 
 def test_alt_down_reorders_a_tab_page(qapp: QApplication) -> None:
@@ -406,8 +407,8 @@ def test_alt_down_reorders_a_tab_page(qapp: QApplication) -> None:
         assert _focus(qapp) is pane.tree
         assert _pages(session) == ("pageB", "pageA")
         assert _current_index(session) == 1
-        assert _find_item(pane.tree, "Page 1 \u00b7 Second")
-        assert _find_item(pane.tree, "Page 2 \u00b7 First")
+        assert _find_item(pane.tree, "pageA")
+        assert _find_item(pane.tree, "pageB")
 
 
 def test_a_page_drop_reorders_the_page(qapp: QApplication) -> None:
@@ -417,7 +418,7 @@ def test_a_page_drop_reorders_the_page(qapp: QApplication) -> None:
         pane.set_drop_bridge(posted.append, lambda: DropPayload("widget", (page_b,)))
         for _cycle in range(3):
             qapp.processEvents()
-        target = _find_item(pane.tree, "Page 1 \u00b7 First")
+        target = _find_item(pane.tree, "pageA")
         rect = pane.tree.visualItemRect(target)
         assert rect.height() > 0
         pane.receive_drop(QPoint(rect.x() + 10, rect.y() + 1))
@@ -660,6 +661,165 @@ def test_row_boxes_stay_disjoint_at_236(qapp: QApplication) -> None:
         elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideMiddle")
         assert enum_value(mode) == enum_value(elide)
         assert session.document.by_name(name)
+
+
+def _tree_ids(tree: QTreeWidget) -> Tuple[int, ...]:
+    role = int(getattr(Qt, "UserRole"))
+    found: list = []
+
+    def walk(item: QTreeWidgetItem) -> None:
+        raw = item.data(0, role)
+        if raw is not None:
+            found.append(int(raw))
+        for index in range(item.childCount()):
+            child = item.child(index)
+            if child is not None:
+                walk(child)
+
+    for index in range(tree.topLevelItemCount()):
+        top = tree.topLevelItem(index)
+        if top is not None:
+            walk(top)
+    return tuple(found)
+
+
+def _project_ids(session: FormSession) -> Tuple[int, ...]:
+    forest = project(session.document, frozenset(), lambda name: name)
+    return tuple(int(row.node) for row in forest.rows)
+
+
+def _matches(pane: OutlinePane, session: FormSession) -> None:
+    assert _tree_ids(pane.tree) == _project_ids(session)
+
+
+_BARE = form(
+    'class="QWidget" name="Form"',
+    """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QGroupBox" name="receiptGroup">
+    <property name="title"><string>Receipt</string></property>
+   </widget></item>
+   <item><widget class="QCheckBox" name="printCopy">
+    <property name="text"><string>Print copy</string></property>
+   </widget></item>
+   <item><widget class="QTabWidget" name="tabs">
+    <property name="currentIndex"><number>0</number></property>
+    <widget class="QWidget" name="pageA"/>
+   </widget></item>
+   <item><layout class="QGridLayout" name="grid">
+    <item row="0" column="0"><widget class="QLabel" name="cellA"><property name="text"><string>A</string></property></widget></item>
+    <item row="0" column="1"><widget class="QLabel" name="cellB"><property name="text"><string>B</string></property></widget></item>
+    <item row="1" column="0"><widget class="QLabel" name="cellC"><property name="text"><string>C</string></property></widget></item>
+   </layout></item>
+  </layout>
+""",
+)
+
+
+def test_undo_of_a_nest_keeps_every_outline_row(qapp: QApplication) -> None:
+    with _opened(qapp, _BARE, "undo-nest") as (pane, session):
+        print_copy = _items(pane.tree)[int(_id(session, "printCopy"))]
+        _show(pane, session, "printCopy")
+        QTest.keyClick(pane.tree, _key("Key_Tab"))
+        qapp.processEvents()
+        assert session.log.entries()[-1].label == "Nest"
+        _matches(pane, session)
+        session.log.undo()
+        pane.note_edited()
+        qapp.processEvents()
+        _matches(pane, session)
+        assert _items(pane.tree)[int(_id(session, "printCopy"))] is print_copy
+
+
+def test_undo_of_a_cell_move_restores_reading_order(qapp: QApplication) -> None:
+    with _opened(qapp, _BARE, "undo-cell") as (pane, session):
+        _show(pane, session, "cellB")
+        QTest.keyClick(pane.tree, _key("Key_Down"), _mod("AltModifier"))
+        qapp.processEvents()
+        _matches(pane, session)
+        session.log.undo()
+        pane.note_edited()
+        qapp.processEvents()
+        _matches(pane, session)
+        names = [_find_item(pane.tree, name).text(0) for name in ("cellA", "cellB", "cellC")]
+        assert names == ["cellA", "cellB", "cellC"]
+        order = _tree_ids(pane.tree)
+        assert order.index(int(_id(session, "cellA"))) < order.index(int(_id(session, "cellB")))
+        assert order.index(int(_id(session, "cellB"))) < order.index(int(_id(session, "cellC")))
+
+
+def test_a_refused_alt_move_stays_on_the_row(qapp: QApplication) -> None:
+    notes: list = []
+    with _opened(qapp, _BARE, "alt-refuse") as (pane, session):
+        pane.set_status(notes.append)
+        _show(pane, session, "pageA")
+        before = pane.tree.currentItem()
+        QTest.keyClick(pane.tree, _key("Key_Up"), _mod("AltModifier"))
+        qapp.processEvents()
+        assert pane.tree.currentItem() is before
+        assert notes[-1] == "pageA is already the first page."
+        _show(pane, session, "cellA")
+        current = pane.tree.currentItem()
+        QTest.keyClick(pane.tree, _key("Key_Down"), _mod("AltModifier"))
+        qapp.processEvents()
+        assert pane.tree.currentItem() is current
+        assert "can't move" in notes[-1]
+
+
+def test_the_delete_confirm_fits_and_answers_from_the_keyboard(qapp: QApplication) -> None:
+    with _opened(qapp, _email(), "confirm", width=236, height=480) as (pane, session):
+        pane.setFixedWidth(236)
+        qapp.processEvents()
+        _show(pane, session, "email")
+        QTest.keyClick(pane.tree, _key("Key_Delete"))
+        qapp.processEvents()
+        confirm = pane.findChild(QFrame, "formBuilder.outlineConfirm")
+        delete = pane.findChild(QPushButton, "formBuilder.outlineDelete")
+        assert isinstance(confirm, QFrame) and isinstance(delete, QPushButton)
+        assert confirm.isVisible()
+        assert confirm.width() <= 236
+        assert confirm.geometry().right() <= pane.width()
+        assert confirm.geometry().bottom() <= pane.height()
+        QTest.keyClick(delete, _key("Key_Escape"))
+        qapp.processEvents()
+        assert not confirm.isVisible()
+        assert _focus(qapp) is pane.tree
+        QTest.keyClick(pane.tree, _key("Key_Delete"))
+        qapp.processEvents()
+        QTest.keyClick(delete, _key("Key_Return"))
+        qapp.processEvents()
+        assert not confirm.isVisible()
+        assert not session.document.by_name("email")
+
+
+def test_the_outline_claims_f2_and_find(qapp: QApplication) -> None:
+    with _opened(qapp, _pair(), "claim") as (pane, session):
+        _show(pane, session, "shop")
+        kind = getattr(QEvent, "ShortcutOverride", None)
+        if kind is None:
+            kind = getattr(QEvent.Type, "ShortcutOverride")
+        event = QKeyEvent(kind, _key("Key_F2"), _mod("NoModifier"))
+        assert pane.eventFilter(pane.tree, event)
+        assert event.isAccepted()
+        find = QKeyEvent(kind, _key("Key_F"), _mod("ControlModifier"))
+        assert pane.eventFilter(pane.tree, find)
+        assert find.isAccepted()
+
+
+def test_a_narrow_outline_hides_the_caption_before_the_name(qapp: QApplication) -> None:
+    with _opened(qapp, _long_name(), "caption-hide", width=236, height=360) as (pane, _session):
+        pane.setFixedWidth(236)
+        qapp.processEvents()
+        item = _find_item(pane.tree, "N" * 48)
+        caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+        assert caption
+        metrics = pane.tree.fontMetrics()
+        advance = getattr(metrics, "horizontalAdvance", None)
+        caption_px = int(advance(caption) if callable(advance) else metrics.width(caption))
+        boxes = layout_row(pane.tree.viewport().width(), True, False, caption_px)
+        if caption_px > boxes.name[2]:
+            assert boxes.caption is None
+        assert pane.tree.horizontalScrollBar().isVisible() is False
 
 
 def _overlaps(left: Tuple[int, int, int, int], right: Tuple[int, int, int, int]) -> bool:
