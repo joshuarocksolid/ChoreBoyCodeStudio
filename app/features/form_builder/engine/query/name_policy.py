@@ -14,6 +14,7 @@ from app.features.form_builder.engine.commands.refs import FORMULA_NAMES, RESERV
 
 _IDENTIFIER = "Names use letters, digits and _, and can't start with a digit."
 _RESERVED = "That name is reserved."
+_KEYWORD = "%s is a Python word, so it can't be a name."
 
 
 @dataclass(frozen=True)
@@ -37,7 +38,9 @@ def explain_name(
         return None
     if name.startswith("cbcs") or name in RESERVED_NAMES or name in FORMULA_NAMES:
         return NameRefusal("FB106", _RESERVED)
-    if not name.isidentifier() or keyword.iskeyword(name):
+    if keyword.iskeyword(name):
+        return NameRefusal("FB011", _KEYWORD % name)
+    if not name.isidentifier():
         return NameRefusal("FB011", _IDENTIFIER)
     if name in taken:
         return NameRefusal("FB010", "Another widget is already called %s." % name)

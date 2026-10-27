@@ -12,6 +12,7 @@ from app.features.form_builder.engine.commands.catalog import (
     MoveNodes,
     MovePage,
     SetBuddy,
+    SetLayoutCell,
     SetProperty,
     SetTabStops,
 )
@@ -37,7 +38,9 @@ from app.features.form_builder.engine.query.outline import (
     Route,
     filter_mask,
     layout_row,
+    order_parents,
     patch_captions,
+    patch_order,
     plan,
     project,
     structure_touched,
@@ -285,17 +288,19 @@ def test_page_primary_uses_the_page_title() -> None:
     row = _forest(doc).row(nid(doc, "pageA"))
     assert row is not None
     assert isinstance(row.slot, InPageSlot)
-    assert row.primary == "Page 1 \u00b7 Settings"
+    assert row.primary == "pageA"
+    assert row.visible_text == "Settings"
     untitled = _forest(doc).row(nid(doc, "pageB"))
     assert untitled is not None
-    assert untitled.primary == "Page 2"
+    assert untitled.primary == "pageB"
 
 
 def test_toolbox_page_uses_its_label() -> None:
     doc = open_log(_tabs("label", "Tools", "QToolBox")).document
     row = _forest(doc).row(nid(doc, "pageA"))
     assert row is not None
-    assert row.primary == "Page 1 \u00b7 Tools"
+    assert row.primary == "pageA"
+    assert row.visible_text == "Tools"
 
 
 def test_stacked_page_without_a_title() -> None:
@@ -311,7 +316,7 @@ def test_stacked_page_without_a_title() -> None:
     row = _forest(doc).row(nid(doc, "pageA"))
     assert row is not None
     assert row.kind == "page"
-    assert row.primary == "Page 1"
+    assert row.primary == "pageA"
 
 
 def test_alt_down_moves_a_page() -> None:
@@ -333,8 +338,11 @@ def test_alt_down_moves_a_page() -> None:
 def test_alt_down_on_the_last_page_does_nothing() -> None:
     log = open_log(_tabs("title", "Settings"))
     doc = log.document
-    effect = plan(doc, _forest(doc), _focus(nid(doc, "pageB")), KeyGesture(key="down", alt=True), _world(doc))
-    assert isinstance(effect, Idle)
+    page = nid(doc, "pageB")
+    effect = plan(doc, _forest(doc), _focus(page), KeyGesture(key="down", alt=True), _world(doc))
+    assert isinstance(effect, Flash)
+    assert effect.node == page
+    assert effect.prose == "pageB is already the last page."
     assert not log.can_undo()
 
 
@@ -561,7 +569,7 @@ def test_the_form_itself_cannot_be_deleted() -> None:
     form = nid(doc, "Form")
     effect = plan(doc, _forest(doc), _focus(form), KeyGesture(key="delete"), _world(doc))
     assert isinstance(effect, Flash)
-    assert effect.prose == "The form itself cannot be deleted."
+    assert effect.prose == "The form itself can't be deleted."
 
 
 def test_copy_routes_to_its_action() -> None:
@@ -646,3 +654,86 @@ def test_caption_patch_keeps_untouched_rows() -> None:
 )
 def test_outline_key_resolves_to_its_command(key: str, command: str) -> None:
     assert outline_command_for(key) == command
+
+
+_GRID = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QLabel" name="cellA"><property name="text"><string>A</string></property></widget></item>
+   <item row="0" column="1"><widget class="QLabel" name="cellB"><property name="text"><string>B</string></property></widget></item>
+   <item row="1" column="0"><widget class="QLabel" name="cellC"><property name="text"><string>C</string></property></widget></item>
+  </layout>
+ </widget>
+</ui>
+"""
+
+
+def _names(doc: UiDocument) -> Tuple[str, ...]:
+    return tuple(row.name for row in _forest(doc).rows)
+
+
+def test_alt_up_on_the_first_page_says_why() -> None:
+    doc = open_log(_tabs("title", "First")).document
+    page = nid(doc, "pageA")
+    effect = plan(doc, _forest(doc), _focus(page), KeyGesture("form.action.moveOrNudgeUp", alt=True), _world(doc))
+    assert isinstance(effect, Flash)
+    assert effect.node == page
+    assert effect.prose == "pageA is already the first page."
+
+
+def test_shift_tab_at_the_top_level_says_why() -> None:
+    text = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="QPushButton" name="okButton"/>
+ </widget>
+</ui>
+"""
+    doc = open_log(text).document
+    button = nid(doc, "okButton")
+    effect = plan(doc, _forest(doc), _focus(button), KeyGesture(key="backtab", shift=True), _world(doc))
+    assert isinstance(effect, Flash)
+    assert effect.prose == "okButton is already at the top level."
+
+
+def test_a_cell_move_reorders_only_that_layout() -> None:
+    log = open_log(_GRID)
+    doc = log.document
+    before = _forest(doc)
+    cell_a = before.row(nid(doc, "cellA"))
+    cell_b = doc.node(nid(doc, "cellB"))
+    item = doc.parent(cell_b.id)
+    assert item is not None
+    pending = []
+    log.subscribe(pending.append, priority=1)
+    log.execute(SetLayoutCell(item.id, 1, 1, 1, 1))
+    parents = order_parents(log.document, pending[-1])
+    assert parents is not None and parents
+    patched = patch_order(before, log.document, parents)
+    assert patched is not None
+    assert tuple(row.name for row in patched.rows) == _names(log.document)
+    assert patched.row(nid(log.document, "cellA")) is cell_a
+    pending.clear()
+    log.undo()
+    restored = patch_order(patched, log.document, order_parents(log.document, pending[-1]) or ())
+    assert restored is not None
+    assert tuple(row.name for row in restored.rows) == _names(log.document)
+
+
+def test_deleting_a_grid_cell_selects_the_next_widget() -> None:
+    log = open_log(_GRID)
+    log.execute(DeleteNodes((nid(log.document, "cellA"),)))
+    assert log.selection.current == nid(log.document, "cellB")
+    assert log.document.node(log.selection.current).kind == "widget"
+
+
+def test_a_measured_caption_hides_before_the_name_elides() -> None:
+    hidden = layout_row(236, True, False, caption_px=200)
+    assert hidden.caption is None
+    assert hidden.name[2] == 216
+    shown = layout_row(236, True, False, caption_px=40)
+    assert shown.caption is not None
+    crushed = layout_row(80, True, False, caption_px=40)
+    assert crushed.caption is None
+    assert crushed.name_elides

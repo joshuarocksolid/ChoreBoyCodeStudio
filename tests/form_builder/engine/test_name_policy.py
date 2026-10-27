@@ -25,7 +25,7 @@ def test_the_current_name_is_allowed() -> None:
     assert explain_name("email", taken, _METHODS, "email") is None
 
 
-@pytest.mark.parametrize("name", ["class", "1email", "email-box", ""])
+@pytest.mark.parametrize("name", ["1email", "email-box", ""])
 def test_identifier_refusal_uses_one_sentence(name: str) -> None:
     refusal = explain_name(name, frozenset(), frozenset(), "")
     assert refusal is not None
@@ -67,7 +67,7 @@ def test_window_method_suggestion(taken: FrozenSet[str], methods: FrozenSet[str]
     ("name", "code", "prose"),
     [
         ("form", "FB106", _RESERVED),
-        ("class", "FB011", _IDENTIFIER),
+        ("class", "FB011", "class is a Python word, so it can't be a name."),
         ("okButton", "FB010", "Another widget is already called okButton."),
         ("cbcsThing", "FB106", _RESERVED),
     ],

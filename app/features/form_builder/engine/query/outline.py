@@ -15,7 +15,7 @@ from app.features.form_builder.engine.commands.catalog import DeleteNodes, MoveN
 from app.features.form_builder.engine.commands.catalog_ext.drop import AdoptIntoBox
 from app.features.form_builder.engine.commands.drop_plan import auto_target, commands_for, nudge_commands
 from app.features.form_builder.engine.commands.placement import InBoxLayout, InContainer
-from app.features.form_builder.engine.events import ChangeSet, FieldChanged
+from app.features.form_builder.engine.events import ChangeSet, FieldChanged, NodeMoved
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import (
     AcceptedDrop,
@@ -42,7 +42,7 @@ PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 
 _NOWHERE = "Nothing above to nest into"
 _KEEP_PAGE = "A page stays inside its container."
-_KEEP_FORM = "The form itself cannot be deleted."
+_KEEP_FORM = "The form itself can't be deleted."
 _CAPTION_PROPS = frozenset({"text", "title", "windowTitle", "plainText", "visible"})
 _CAPTION_ATTRS = frozenset({"title", "label"})
 _CLIPBOARD = frozenset(
@@ -82,6 +82,25 @@ _ROW_H = 24
 _GLYPH = 16
 _GAP = 4
 _NAME_FLOOR = 24
+_ORDER_FIELDS = frozenset({"row", "column", "rowspan", "colspan"})
+_OUTLINE_KEYS = frozenset(
+    {
+        "up",
+        "down",
+        "left",
+        "right",
+        "tab",
+        "backtab",
+        "delete",
+        "backspace",
+        "f2",
+        "enter",
+        "esc",
+        "home",
+        "end",
+        "slash",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -439,6 +458,85 @@ def structure_touched(change_set: ChangeSet) -> bool:
     return bool(change_set.replaced or change_set.added or change_set.removed or change_set.structure_dirty)
 
 
+def order_parents(doc: UiDocument, change_set: ChangeSet) -> Optional[Tuple[NodeId, ...]]:
+    """Parents whose direct rows should be reseated.
+
+    ``None`` means the child set changed and the forest must be rebuilt.
+    An empty tuple means no row moved.
+    """
+    if change_set.replaced or change_set.added or change_set.removed:
+        return None
+    parents: List[NodeId] = []
+    seen = set()
+    explained = set()
+    for change in change_set.changes:
+        if isinstance(change, NodeMoved):
+            if change.old_parent != change.new_parent:
+                return None
+            explained.add(change.old_parent)
+            explained.add(change.new_parent)
+            parent = change.new_parent
+            if parent not in seen:
+                seen.add(parent)
+                parents.append(parent)
+            continue
+        if isinstance(change, FieldChanged) and change.field in _ORDER_FIELDS:
+            node = doc.get(change.node)
+            if not isinstance(node, LayoutItemNode) or node.parent_id is None:
+                return None
+            layout = doc.get(node.parent_id)
+            if not isinstance(layout, LayoutNode):
+                return None
+            explained.add(layout.id)
+            if layout.id not in seen:
+                seen.add(layout.id)
+                parents.append(layout.id)
+    if set(change_set.structure_dirty) - explained:
+        return None
+    return tuple(parents)
+
+
+def patch_order(
+    forest: OutlineForest,
+    doc: UiDocument,
+    parents: Sequence[NodeId],
+) -> Optional[OutlineForest]:
+    """Reseat direct children of ``parents``. ``None`` when the child set differs.
+
+    Rows outside those subtrees stay the same objects. A head is replaced only
+    when its sibling index or slot changed.
+    """
+    if not parents:
+        return forest
+    rows: List[Row] = list(forest.rows)
+    ranks: Dict[NodeId, Dict[NodeId, int]] = {}
+    for parent_id in parents:
+        if not doc.contains(parent_id):
+            return None
+        expected = _direct_row_ids(doc, parent_id)
+        spans = _child_spans(rows, parent_id)
+        if spans is None:
+            return None
+        if not expected and not spans:
+            continue
+        if not expected or not spans:
+            return None
+        by_node = {head.node: (start, end) for start, end, head in spans}
+        if set(by_node) != set(expected):
+            return None
+        start = spans[0][0]
+        end = spans[-1][1]
+        middle: List[Row] = []
+        for sibling_index, node_id in enumerate(expected):
+            block_start, block_end = by_node[node_id]
+            block = rows[block_start:block_end]
+            head = _retarget_slot(doc, block[0], sibling_index, ranks)
+            middle.append(head)
+            middle.extend(block[1:])
+        rows[start:end] = middle
+    return OutlineForest(tuple(rows))
+
+
 @dataclass(frozen=True)
 class FilterMask:
     query: str
@@ -495,11 +593,17 @@ class RowBoxes:
     name_elides: bool
 
 
-def layout_row(item_width: int, has_caption: bool, has_problem: bool) -> RowBoxes:
+def layout_row(
+    item_width: int,
+    has_caption: bool,
+    has_problem: bool,
+    caption_px: int = 0,
+) -> RowBoxes:
     """24 px row. Glyph 16. Gaps 4. Problem glyph 16 at the right.
 
-    The caption is omitted when the name would have under 24 px. The name
-    takes what remains. The delegate elides that box in the middle.
+    A measured caption is shown only when the whole caption fits. Otherwise
+    the name takes the row and elides in the middle. With no measurement the
+    caption still takes about a third, so a wide row keeps both.
     """
     width = max(int(item_width), 0)
     glyph_w = min(_GLYPH, width)
@@ -515,13 +619,24 @@ def layout_row(item_width: int, has_caption: bool, has_problem: bool) -> RowBoxe
     room = max(right - left, 0)
     caption: Optional[Tuple[int, int, int, int]] = None
     name_w = room
-    if has_caption and room >= _NAME_FLOOR + _GAP + 8:
+    measured = int(caption_px)
+    if has_caption and measured > 0 and room >= _NAME_FLOOR + _GAP + measured:
+        name_w = room - _GAP - measured
+        caption = (left + name_w + _GAP, 4, measured, _GLYPH)
+    elif has_caption and measured <= 0 and room >= _NAME_FLOOR + _GAP + 8:
         caption_w = min(room // 3, room - _NAME_FLOOR - _GAP)
         if caption_w >= 8 and room - _GAP - caption_w >= _NAME_FLOOR:
             name_w = room - _GAP - caption_w
             caption = (left + name_w + _GAP, 4, caption_w, _GLYPH)
     name = (left, 4, name_w, _GLYPH)
     return RowBoxes(glyph, name, caption, problem, name_w < 80)
+
+
+def claims_key(gesture: KeyGesture) -> bool:
+    """True when the outline wants the key before a window shortcut."""
+    if gesture.command_id in _HANDLED:
+        return True
+    return gesture.key in _OUTLINE_KEYS
 
 
 def plan(
@@ -709,7 +824,7 @@ def _unnest(doc: UiDocument, forest: OutlineForest, cursor: OutlineCursor) -> Ef
         return Flash(focus, _NOWHERE)
     parent_id = block[0].parent
     if parent_id is None:
-        return Flash(focus, _NOWHERE)
+        return Flash(focus, _top_level(forest, focus))
     parent = doc.get(parent_id)
     ids = tuple(row.node for row in block)
     if isinstance(parent, LayoutNode):
@@ -768,7 +883,7 @@ def _after_widget(
     label: str,
 ) -> Effect:
     if widget.id == doc.root.id:
-        return Flash(focus, _NOWHERE)
+        return Flash(focus, _top_level_name(doc, ids[0] if ids else focus))
     parent = doc.parent(widget.id)
     if isinstance(parent, LayoutItemNode):
         layout = doc.parent(parent.id)
@@ -791,15 +906,15 @@ def _reorder(doc: UiDocument, forest: OutlineForest, cursor: OutlineCursor, dire
         host = doc.get(slot.container)
         count = len(host.child_widgets) if isinstance(host, WidgetNode) else 0
         if destination < 0 or destination >= count:
-            return Idle()
+            return Flash(row.node, _stuck(row, direction, "page"))
         return Commit((MovePage(slot.container, slot.index, destination),), "Move page")
     if isinstance(slot, InLayoutSlot):
         sharing = _layout_selection(forest, cursor, slot.layout)
         commands = nudge_commands(doc, sharing, direction)
         if not commands:
-            return Idle()
+            return Flash(row.node, _slot_refusal(forest, row, direction))
         return Commit(tuple(commands), "Move")
-    return Idle()
+    return Flash(row.node, _stuck(row, direction, "bare"))
 
 
 def _plan_drop(doc: UiDocument, forest: OutlineForest, gesture: DropGesture) -> Effect:
@@ -1161,10 +1276,93 @@ def _page_host(doc: UiDocument, node: Node) -> bool:
 
 
 def _page_primary(node: Node, index: int) -> str:
-    title = _attr(node, "title") or _attr(node, "label")
-    if title:
-        return "Page %d \u00b7 %s" % (index + 1, title)
-    return "Page %d" % (index + 1)
+    del index
+    return _object_name(node)
+
+
+def _stuck(row: Row, direction: str, kind: str) -> str:
+    name = row.primary or row.name or "That widget"
+    if kind == "page":
+        edge = "first" if direction == "up" else "last"
+        return "%s is already the %s page." % (name, edge)
+    return "%s can't move that way." % name
+
+
+def _slot_refusal(forest: OutlineForest, row: Row, direction: str) -> str:
+    name = row.primary or row.name or "That widget"
+    slot = row.slot
+    if isinstance(slot, InLayoutSlot) and slot.layout_class in ("QVBoxLayout", "QHBoxLayout"):
+        siblings = forest.children(row.parent)
+        at_start = direction == "up" and row.sibling_index == 0
+        at_end = direction == "down" and bool(siblings) and row.node == siblings[-1].node
+        if at_start or at_end:
+            edge = "first" if direction == "up" else "last"
+            return "%s is already the %s." % (name, edge)
+    return "%s can't move that way." % name
+
+
+def _top_level(forest: OutlineForest, focus: NodeId) -> str:
+    row = forest.row(focus)
+    name = row.primary if row is not None and row.primary else "That widget"
+    return "%s is already at the top level." % name
+
+
+def _top_level_name(doc: UiDocument, node_id: NodeId) -> str:
+    node = doc.get(node_id)
+    name = _object_name(node) if node is not None else ""
+    return "%s is already at the top level." % (name or "That widget")
+
+
+def _direct_row_ids(doc: UiDocument, parent_id: NodeId) -> Tuple[NodeId, ...]:
+    """Row ids ``project`` would hang directly under ``parent_id``."""
+    found: List[NodeId] = []
+
+    def walk(node: Node) -> None:
+        for child in _slot_children(node):
+            if _is_row(child):
+                found.append(child.id)
+            else:
+                walk(child)
+
+    walk(doc.node(parent_id))
+    return tuple(found)
+
+
+def _child_spans(
+    rows: Sequence[Row],
+    parent_id: NodeId,
+) -> Optional[List[Tuple[int, int, Row]]]:
+    indices = [index for index, row in enumerate(rows) if row.parent == parent_id]
+    if not indices:
+        return []
+    spans: List[Tuple[int, int, Row]] = []
+    for position, start in enumerate(indices):
+        depth = rows[start].depth
+        if position + 1 < len(indices):
+            end = indices[position + 1]
+        else:
+            end = start + 1
+            while end < len(rows) and rows[end].depth > depth:
+                end += 1
+        for cursor in range(start + 1, end):
+            if rows[cursor].depth <= depth:
+                return None
+        spans.append((start, end, rows[start]))
+    return spans
+
+
+def _retarget_slot(
+    doc: UiDocument,
+    row: Row,
+    sibling_index: int,
+    ranks: Dict[NodeId, Dict[NodeId, int]],
+) -> Row:
+    node = doc.node(row.node)
+    parent = None if row.parent is None else doc.get(row.parent)
+    _kind, _tone, _name, _qt_class, slot = _identity(doc, node, parent, sibling_index, ranks)
+    if row.sibling_index == sibling_index and row.slot == slot:
+        return row
+    return replace(row, sibling_index=sibling_index, slot=slot)
 
 
 def _visible_text(node: Node) -> str:
