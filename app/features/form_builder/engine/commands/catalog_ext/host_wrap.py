@@ -149,7 +149,7 @@ def _insert_host(
 ) -> NodeId:
     index = min(doc.node(node_id).slot_index for node_id in ordered)
     spec = NodeSpec("widget", None, (("class_name", class_name), ("object_name", _stem(class_name))))
-    ids, _renames, _conflicts = planning.insert_fragment(
+    ids, _renames, _conflicts, _dangling = planning.insert_fragment(
         doc, ctx, InContainer(holder.id, index, geometry), Fragment((spec,)), False
     )
     return ids[0]
@@ -163,7 +163,7 @@ def _insert_page(doc: UiDocument, ctx: PlanContext, tabs: NodeId, title: str) ->
         (),
         (PropertyEntry("attribute", "title", StringValue(title)),),
     )
-    ids, _renames, _conflicts = planning.insert_fragment(doc, ctx, InContainer(tabs, 0), Fragment((page,)), False)
+    ids, _renames, _conflicts, _dangling = planning.insert_fragment(doc, ctx, InContainer(tabs, 0), Fragment((page,)), False)
     return ids[0]
 
 

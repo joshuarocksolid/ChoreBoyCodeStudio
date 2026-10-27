@@ -79,7 +79,7 @@ def insert_fragment(
     placement: Placement,
     fragment: Fragment,
     auto_layout: bool,
-) -> Tuple[Tuple[NodeId, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...]]:
+) -> Tuple[Tuple[NodeId, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...], Tuple[str, ...]]:
     dest = _destination(doc, ctx, placement, auto_layout, moving=(), incoming=len(fragment.nodes))
     chosen: set = set()
     counts = _name_counts(fragment.nodes)
@@ -100,20 +100,24 @@ def insert_fragment(
         top_ids.append(_content_spec_id(allocated))
         scope.extend(allocated.ids())
     alive = doc.names()
+    dangling: List[str] = []
+    seen_dangling: Set[str] = set()
     for spec in fragment.connections:
         rewritten = rewrite_spec_refs(spec, mapping)
-        sender = rewritten.field("sender")
-        receiver = rewritten.field("receiver")
-        if sender in alive and receiver in alive:
-            allocated = allocate_spec(ctx, rewritten)
-            count = len(doc.ui.children("connections"))
-            ctx.do(InsertNodeOp(doc.ui.id, "connections", count, allocated))
-            scope.extend(allocated.ids())
+        allocated = allocate_spec(ctx, rewritten)
+        count = len(doc.ui.children("connections"))
+        ctx.do(InsertNodeOp(doc.ui.id, "connections", count, allocated))
+        scope.extend(allocated.ids())
+        for end in (rewritten.field("sender"), rewritten.field("receiver")):
+            if isinstance(end, str) and end and end not in alive and end not in seen_dangling:
+                seen_dangling.add(end)
+                dangling.append(end)
     renames = tuple(mapping.items())
     if renames:
         _participant_renames(ctx, doc, renames, scope)
-    ctx.select(tuple(top_ids))
-    return tuple(top_ids), renames, conflicts
+    current = top_ids[0] if top_ids else None
+    ctx.select(tuple(top_ids), current)
+    return tuple(top_ids), renames, conflicts, tuple(dangling)
 
 
 def delete_nodes(doc: UiDocument, ctx: PlanContext, ids: Tuple[NodeId, ...]) -> Tuple[str, ...]:

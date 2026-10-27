@@ -47,10 +47,10 @@ class InsertFragment(_CommandBase):
     auto_layout: bool = True
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> "InsertResult":
-        ids, renames, conflicts = planning.insert_fragment(
+        ids, renames, conflicts, dangling = planning.insert_fragment(
             doc, ctx, self.placement, self.fragment, self.auto_layout
         )
-        return InsertResult(ids, renames, conflicts)
+        return InsertResult(ids, renames, conflicts, dangling)
 
 
 @dataclass(frozen=True)
@@ -58,6 +58,7 @@ class InsertResult:
     ids: Tuple[NodeId, ...]
     renames: Tuple[Tuple[str, str], ...]
     conflicts: Tuple[str, ...] = ()
+    dangling: Tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
