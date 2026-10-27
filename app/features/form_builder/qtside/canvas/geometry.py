@@ -5,7 +5,17 @@ from __future__ import annotations
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QRect, Qt
-from app.qt.QtWidgets import QAbstractButton, QApplication, QGridLayout, QSplitter, QTabWidget, QToolBox, QWidget
+from app.qt.QtWidgets import (
+    QAbstractButton,
+    QApplication,
+    QDockWidget,
+    QGridLayout,
+    QGroupBox,
+    QSplitter,
+    QTabWidget,
+    QToolBox,
+    QWidget,
+)
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.ids import NodeId
@@ -17,11 +27,23 @@ from app.features.form_builder.engine.query.direct import (
     SurveyScope,
     Track,
 )
-from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
+from app.features.form_builder.engine.query.hit_index import (
+    GeoEntry,
+    HitIndex,
+    IndexPatch,
+    Rect,
+    RefreshScope,
+)
 from app.features.form_builder.engine.query.tree import grid_shape
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
-from app.features.form_builder.qtside.canvas.core.structure import Free, free_origin, positioning_of
+from app.features.form_builder.qtside.canvas.core.structure import (
+    Free,
+    LaidOut,
+    Managed,
+    free_origin,
+    positioning_of,
+)
 from app.features.form_builder.qtside.realize import NODE_ID_PROPERTY, Realizer
 from app.features.form_builder.qtside.sizing_live import class_default_policies
 
@@ -93,6 +115,139 @@ class LiveGeometrySource:
             stack.extend(reversed(found))
         return out
 
+    def retouch(self, previous: Sequence[GeoEntry], scope: RefreshScope) -> Optional[IndexPatch]:
+        """O(changed + dependants). None means the caller walks the whole form.
+
+        A property edit reads each dirty widget. Layout siblings and ancestors
+        are read only after a rect actually moves. Added or removed nodes are
+        patched when they are leaves. A moved container falls back to the full walk.
+        """
+        if scope.full:
+            return None
+        root = self._realizer.root_widget
+        document = self._realizer.document
+        root_node = document.root
+        if root is None or not isinstance(root_node, WidgetNode) or not previous:
+            return None
+        self.settle()
+        slots: Dict[Tuple[NodeId, str], List[int]] = {}
+        for index, entry in enumerate(previous):
+            slots.setdefault((entry.node, entry.kind), []).append(index)
+        queue: List[NodeId] = []
+        for node_id in list(scope.dirty) + list(scope.added):
+            if node_id not in scope.removed and node_id not in queue:
+                queue.append(node_id)
+        seen: Dict[NodeId, bool] = {}
+        replacements: List[Tuple[int, GeoEntry]] = []
+        extra: List[GeoEntry] = []
+        changed: List[NodeId] = []
+        visits = 0
+        while queue:
+            node_id = queue.pop()
+            if node_id in seen or node_id in scope.removed:
+                continue
+            seen[node_id] = True
+            found = document.get(node_id)
+            if found is None or not isinstance(found, (WidgetNode, LayoutNode, SpacerNode)):
+                continue
+            measured = self._measure(found, root)
+            if measured is None:
+                return None
+            rect, visible = measured
+            visits += 1
+            kind = "widget" if isinstance(found, WidgetNode) else "layout" if isinstance(found, LayoutNode) else "spacer"
+            indexes = slots.get((node_id, kind), [])
+            if not indexes:
+                if node_id not in scope.added:
+                    return None
+                made = self._new_entry(found, rect, visible, document)
+                if made is None:
+                    return None
+                extra.append(made)
+                changed.append(node_id)
+                if _container_moved(found, None, rect):
+                    return None
+                queue.extend(_dependants(document, node_id))
+                continue
+            old = previous[indexes[0]]
+            if old.rect == rect and old.visible == visible:
+                continue
+            updated = GeoEntry(old.node, old.kind, rect, old.container, visible, old.z)
+            replacements.append((indexes[0], updated))
+            changed.append(node_id)
+            if old.rect != rect:
+                if _container_moved(found, old.rect, rect):
+                    return None
+                if (
+                    slots.get((node_id, "page_tab"))
+                    or slots.get((node_id, "menu_title"))
+                    or slots.get((node_id, "title_band"))
+                ):
+                    return None
+                queue.extend(_dependants(document, node_id))
+        if not replacements and not extra and not scope.removed:
+            return IndexPatch(visits=visits, changed=())
+        return IndexPatch(
+            replacements=tuple(replacements),
+            extra=tuple(extra),
+            drop=scope.removed,
+            visits=visits,
+            changed=tuple(changed),
+        )
+
+    def _measure(self, node: object, root: QWidget) -> Optional[Tuple[Rect, bool]]:
+        """One entry's form rect. O(depth) parent hops, not a tree walk."""
+        if isinstance(node, WidgetNode):
+            widget = self._realizer.widget_for(node.id)
+            if not isinstance(widget, QWidget):
+                return None
+            return _form_rect(widget, root), bool(widget.isVisible())
+        if isinstance(node, LayoutNode):
+            qlayout = self._realizer.layout_for(node.id)
+            if qlayout is None:
+                return None
+            origin = _owner_origin(self._realizer, node, root)
+            if origin is None:
+                return None
+            return _offset(qlayout.geometry(), origin[0], origin[1]), True
+        if isinstance(node, SpacerNode):
+            spacer = self._realizer.spacer_for(node.id)
+            if spacer is None:
+                return None
+            origin = _owner_origin(self._realizer, node, root)
+            if origin is None:
+                return None
+            return _offset(spacer.geometry(), origin[0], origin[1]), True
+        return None
+
+    def _new_entry(
+        self,
+        node: object,
+        rect: Rect,
+        visible: bool,
+        document: UiDocument,
+    ) -> Optional[GeoEntry]:
+        """O(siblings of the Qt parent) to read z. Used when a ChangeSet added a leaf."""
+        if not isinstance(node, (WidgetNode, LayoutNode, SpacerNode)):
+            return None
+        place = positioning_of(document, node.id)
+        if isinstance(place, LaidOut):
+            container: Optional[NodeId] = place.layout
+        elif isinstance(place, Free):
+            container = place.parent
+        elif isinstance(place, Managed):
+            container = place.container
+        else:
+            container = None
+        if isinstance(node, WidgetNode):
+            widget = self._realizer.widget_for(node.id)
+            if not isinstance(widget, QWidget):
+                return None
+            return GeoEntry(node.id, "widget", rect, container, visible, _z_of(widget))
+        if isinstance(node, LayoutNode):
+            return GeoEntry(node.id, "layout", rect, container, True, _LAYOUT_Z)
+        return GeoEntry(node.id, "spacer", rect, container, True, _LAYOUT_Z)
+
     def _layout_tree(
         self,
         top: LayoutNode,
@@ -158,24 +313,57 @@ class LiveGeometrySource:
                     )
                 )
             return
-        if not isinstance(widget, QToolBox):
+        if isinstance(widget, QToolBox):
+            _toolbox_titles(widget, document, x, y, owner, out)
             return
-        buttons = [child for child in widget.children() if isinstance(child, QAbstractButton)]
-        buttons.sort(key=lambda button: (button.y(), button.x()))
-        for index, button in enumerate(buttons[: widget.count()]):
-            page = _tagged_widget(widget.widget(index), document)
-            if page is None:
-                continue
-            out.append(
-                GeoEntry(
-                    page.id,
-                    "page_tab",
-                    Rect(x + button.x(), y + button.y(), max(button.width(), 1), max(button.height(), 1)),
-                    owner,
-                    button.isVisible(),
-                    1000 + index,
-                )
+        band = _title_band(widget)
+        if band is None:
+            return
+        out.append(GeoEntry(owner, "title_band", Rect(x + band.x, y + band.y, band.width, band.height), owner, True, 900))
+
+
+def _toolbox_titles(
+    widget: QToolBox,
+    document: UiDocument,
+    x: int,
+    y: int,
+    owner: NodeId,
+    out: List[GeoEntry],
+) -> None:
+    buttons = [child for child in widget.children() if isinstance(child, QAbstractButton)]
+    buttons.sort(key=lambda button: (button.y(), button.x()))
+    for index, button in enumerate(buttons[: widget.count()]):
+        page = _tagged_widget(widget.widget(index), document)
+        if page is None:
+            continue
+        out.append(
+            GeoEntry(
+                page.id,
+                "page_tab",
+                Rect(x + button.x(), y + button.y(), max(button.width(), 1), max(button.height(), 1)),
+                owner,
+                button.isVisible(),
+                1000 + index,
             )
+        )
+
+
+def _title_band(widget: QWidget) -> Optional[Rect]:
+    """The title strip in widget-local pixels. None when the widget has no strip."""
+    if isinstance(widget, QGroupBox):
+        top = int(widget.contentsRect().top())
+        if top <= 0:
+            return None
+        return Rect(0, 0, max(widget.width(), 1), top)
+    if isinstance(widget, QDockWidget):
+        bar = widget.titleBarWidget()
+        if bar is not None and bar.isVisible() and bar.height() > 0:
+            return Rect(bar.x(), bar.y(), max(bar.width(), 1), bar.height())
+        top = int(widget.contentsRect().top())
+        if top <= 0:
+            return None
+        return Rect(0, 0, max(widget.width(), 1), top)
+    return None
 
 
 class HitIndexInvalidator:
@@ -185,7 +373,27 @@ class HitIndexInvalidator:
         self._index = index
 
     def on_changeset(self, changeset: ChangeSet) -> None:
-        self._index.invalidate("changeset")
+        """O(changed). Records the stale ids. Geometry is read later, on refresh."""
+        if changeset.replaced:
+            self._index.invalidate("changeset")
+            return
+        dirty = set(changeset.structure_dirty)
+        dirty.update(changeset.added)
+        for owner, _kind, _name in changeset.property_dirty:
+            dirty.add(owner)
+        for change in changeset.changes:
+            for name in ("node", "owner", "parent", "old_parent", "new_parent"):
+                node_id = getattr(change, name, None)
+                if node_id is not None:
+                    dirty.add(node_id)
+        self._index.invalidate(
+            "changeset",
+            RefreshScope(
+                dirty=frozenset(node_id for node_id in dirty if node_id not in changeset.removed),
+                removed=changeset.removed,
+                added=changeset.added,
+            ),
+        )
 
 
 def survey_live(
@@ -376,6 +584,88 @@ def _extent(rect: QRect, offset: int, horizontal: bool, item: Optional[NodeId] =
     if horizontal:
         return Track(offset + rect.x(), offset + rect.x() + rect.width(), item)
     return Track(offset + rect.y(), offset + rect.y() + rect.height(), item)
+
+
+def _form_rect(widget: QWidget, root: QWidget) -> Rect:
+    """Form coordinates. O(depth) parent hops."""
+    if widget is root:
+        return Rect(0, 0, widget.width(), widget.height())
+    x, y = _origin(widget, root)
+    return Rect(x, y, widget.width(), widget.height())
+
+
+def _origin(widget: QWidget, root: QWidget) -> Tuple[int, int]:
+    x = 0
+    y = 0
+    current: Optional[QWidget] = widget
+    guard = 0
+    while current is not None and current is not root and guard < 64:
+        x += current.x()
+        y += current.y()
+        parent = current.parentWidget()
+        current = parent if isinstance(parent, QWidget) else None
+        guard += 1
+    return x, y
+
+
+def _owner_origin(realizer: Realizer, node: object, root: QWidget) -> Optional[Tuple[int, int]]:
+    """The owner widget's form origin. Layout geometry is in that widget's coordinates."""
+    current = node
+    while current is not None:
+        if isinstance(current, LayoutNode):
+            owner_id = current.owner_widget_id()
+            if owner_id is not None:
+                widget = realizer.widget_for(owner_id)
+                if not isinstance(widget, QWidget):
+                    return None
+                if widget is root:
+                    return (0, 0)
+                return _origin(widget, root)
+        parent_id = getattr(current, "parent_id", None)
+        current = realizer.document.get(parent_id) if parent_id is not None else None
+    return (0, 0)
+
+
+def _z_of(widget: QWidget) -> int:
+    """O(siblings). The index among the Qt parent's children, which is paint order."""
+    parent = widget.parent()
+    if parent is None:
+        return 0
+    for index, child in enumerate(parent.children()):
+        if child is widget:
+            return index
+    return 0
+
+
+def _container_moved(node: object, old: Optional[Rect], new: Rect) -> bool:
+    """A container whose origin or size moved makes every descendant stale."""
+    if isinstance(node, WidgetNode) and (node.child_widgets or node.layout is not None):
+        if old is None:
+            return True
+        return old != new
+    if isinstance(node, LayoutNode) and old is not None and old != new:
+        return any(item.content is not None for item in node.items)
+    return False
+
+
+def _dependants(document: UiDocument, node_id: NodeId) -> List[NodeId]:
+    """Siblings in the same layout, plus ancestors. O(siblings + depth)."""
+    found: List[NodeId] = []
+    place = positioning_of(document, node_id)
+    if isinstance(place, LaidOut):
+        found.append(place.layout)
+        layout = document.get(place.layout)
+        if isinstance(layout, LayoutNode):
+            for item in layout.items:
+                content = item.content
+                if content is not None and content.id != node_id:
+                    found.append(content.id)
+    elif isinstance(place, Free):
+        found.append(place.parent)
+    elif isinstance(place, Managed):
+        found.append(place.container)
+    found.extend(document.ancestors(node_id))
+    return found
 
 
 def _tagged_widget(widget: QWidget, document: UiDocument) -> Optional[WidgetNode]:
