@@ -381,7 +381,7 @@ def test_the_anchor_name_is_the_widget_or_the_form() -> None:
     doc = log.document
     assert paste_anchor_name(doc, ()) == "the form"
     assert paste_anchor_name(doc, (doc.root.id,)) == "the form"
-    assert paste_anchor_name(doc, (nid(doc, "okButton"),)) == "okButton"
+    assert paste_anchor_name(doc, (nid(doc, "okButton"),)) == "OK"
 
 
 def test_a_free_offset_does_not_ask_for_a_new_layout() -> None:

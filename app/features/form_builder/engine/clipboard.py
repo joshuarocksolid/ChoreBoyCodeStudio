@@ -116,12 +116,17 @@ def plain_names(fragment: Fragment) -> str:
 
 
 def paste_anchor_name(doc: UiDocument, anchor_ids: Sequence[NodeId]) -> str:
-    """The object name a paste was placed after. The form root reads as ``the form``."""
+    """What a paste was placed after: visible text, then the object name (UX-COPY-003).
+
+    The form root reads as ``the form``. A layout has no text of its own.
+    """
     anchor = _anchor(doc, anchor_ids)
     if anchor is None or anchor == doc.root.id:
         return "the form"
     node = doc.node(anchor)
-    if isinstance(node, (WidgetNode, LayoutNode)) and node.object_name:
+    if isinstance(node, WidgetNode):
+        return _shown_name(doc, anchor)
+    if isinstance(node, LayoutNode) and node.object_name:
         return node.object_name
     return "the form"
 
