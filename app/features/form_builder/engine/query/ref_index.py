@@ -360,8 +360,12 @@ def participant_pairs(
         references = getattr(participant, "references", None)
         if not callable(references):
             continue
-        for owner, prop in references(doc, name):
-            found.append((owner, prop))
+        reported = references(doc, name)
+        if not isinstance(reported, tuple):
+            continue
+        for pair in reported:
+            if isinstance(pair, tuple) and len(pair) == 2:
+                found.append((pair[0], pair[1]))
     return tuple(found)
 
 

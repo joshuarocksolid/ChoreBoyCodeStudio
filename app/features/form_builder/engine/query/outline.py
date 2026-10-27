@@ -1103,12 +1103,12 @@ def _identity(
             _bare_or_layout(doc, node, parent_node, sibling_index, ranks),
         )
     assert isinstance(node, WidgetNode)
-    page = isinstance(parent_node, WidgetNode) and _page_host(doc, parent_node)
-    kind = "page" if page else "widget"
     slot: Slot
-    if page:
+    if isinstance(parent_node, WidgetNode) and _page_host(doc, parent_node):
+        kind = "page"
         slot = InPageSlot(parent_node.id, _widget_index(parent_node, node.id))
     else:
+        kind = "widget"
         slot = _bare_or_layout(doc, node, parent_node, sibling_index, ranks)
     return (kind, "widget", node.object_name, node.class_name, slot)
 

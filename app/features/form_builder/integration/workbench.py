@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
-from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QSize, Qt, QTimer
+from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QSize, Qt, QTimer
 from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
 from app.qt.QtWidgets import (
     QFrame,
@@ -783,10 +783,13 @@ class OutlinePane(QWidget):
             if item is None:
                 return
         self._blocked = True
-        self.tree.clearSelection()
-        self.tree.setCurrentItem(item)
-        if item is not None:
-            item.setSelected(True)
+        if item is None:
+            self.tree.setCurrentItem(None)
+            self.tree.clearSelection()
+        else:
+            command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
+            flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
+            self.tree.setCurrentItem(item, 0, flags)
             self.tree.scrollToItem(item)
         self._blocked = False
 
