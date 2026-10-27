@@ -1946,6 +1946,10 @@ STRUCTURAL_POINTS: Tuple[str, ...] = (
     "morph",
     "toolbar edit",
 )
+# Ten widgets in one InsertFragment. Reported at 300 and enforced at 1000.
+# It is not in STRUCTURAL_RATIO_POINTS: a 10-wide edit is not the 300-vs-1000 check.
+PASTE_POINT = "paste 10"
+PASTE_BUDGET_MS = 16.0
 # Edits whose changed set does not grow with the form. Their realize p95 at
 # 1000 widgets stays within CHANGED_RATIO_LIMIT of the 300-widget p95.
 # ``insert into layout`` shifts every grid row, so it is reported at 1000
@@ -1970,13 +1974,18 @@ def _structural_rows(
 ) -> Tuple[Row, ...]:
     """Structural edits. Realize-only p95 against the 8 ms patch budget at 300 widgets."""
     if 300 not in forms or not _module_exists("app.features.form_builder.qtside.realize"):
-        return tuple(_missing(point, 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet") for point in STRUCTURAL_POINTS)
+        missing = [_missing(point, 300, _ms_budget(REALIZER_PATCH_BUDGET_MS), "no qtside realize yet") for point in STRUCTURAL_POINTS]
+        missing.append(_missing(PASTE_POINT, 1000, _ms_budget(PASTE_BUDGET_MS), "no qtside realize yet"))
+        return tuple(missing)
     small = _structural_dists(forms[300], samples, warmup)
     if isinstance(small, str):
-        return tuple(Row(point, 300, None, None, None, "-", "skip", small) for point in STRUCTURAL_POINTS)
+        skipped = [Row(point, 300, None, None, None, "-", "skip", small) for point in STRUCTURAL_POINTS]
+        skipped.append(Row(PASTE_POINT, 300, None, None, None, "-", "skip", small))
+        return tuple(skipped)
     rows: List[Row] = []
     for point in STRUCTURAL_POINTS:
         rows.append(_structural_row(point, 300, small[point], REALIZER_PATCH_BUDGET_MS, enforce_absolute))
+    rows.append(_structural_row(PASTE_POINT, 300, small[PASTE_POINT], None, False))
     if 1000 not in forms:
         for point in STRUCTURAL_RATIO_POINTS:
             rows.append(
@@ -1991,12 +2000,16 @@ def _structural_rows(
                     "needs the 1000-widget form",
                 )
             )
+        rows.append(Row(PASTE_POINT, 1000, None, None, None, _ms_budget(PASTE_BUDGET_MS), "skip", "needs the 1000-widget form"))
         return tuple(rows)
     large = _structural_dists(forms[1000], samples, warmup)
     if isinstance(large, str):
-        return tuple(rows) + tuple(Row(point, 1000, None, None, None, "-", "skip", large) for point in STRUCTURAL_POINTS)
+        skipped = [Row(point, 1000, None, None, None, "-", "skip", large) for point in STRUCTURAL_POINTS]
+        skipped.append(Row(PASTE_POINT, 1000, None, None, None, _ms_budget(PASTE_BUDGET_MS), "skip", large))
+        return tuple(rows) + tuple(skipped)
     for point in STRUCTURAL_POINTS:
         rows.append(_structural_row(point, 1000, large[point], None, False))
+    rows.append(_structural_row(PASTE_POINT, 1000, large[PASTE_POINT], PASTE_BUDGET_MS, enforce_absolute))
     for point in STRUCTURAL_RATIO_POINTS:
         rows.append(_structural_ratio_row(point, small, large, forms, samples, warmup))
     return tuple(rows)
@@ -2188,6 +2201,17 @@ def _structural_ops(session: Any) -> Tuple[Tuple[str, Callable[[], None]], ...]:
             )
         )
 
+    def paste() -> None:
+        counter["n"] += 1
+        live = session.document.get(header_id)
+        nodes = tuple(button_spec("speedPaste%d_%d" % (counter["n"], index)) for index in range(10))
+        session.log.execute(
+            InsertFragment(
+                InBoxLayout(header_id, len(live.items)),
+                Fragment(nodes=nodes),
+            )
+        )
+
     return (
         ("insert into layout", insert),
         ("insert into box layout", append),
@@ -2197,6 +2221,7 @@ def _structural_ops(session: Any) -> Tuple[Tuple[str, Callable[[], None]], ...]:
         ("move into earlier container", move),
         ("morph", morph),
         ("toolbar edit", toolbar),
+        (PASTE_POINT, paste),
     )
 
 

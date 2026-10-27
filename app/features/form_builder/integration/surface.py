@@ -64,7 +64,13 @@ from app.features.form_builder.integration.chrome_text import (
     undo_menu_text,
 )
 from app.features.form_builder.integration.chrome import chrome_for
-from app.features.form_builder.integration.context_menu import fill_context_menu, paint_menu
+from app.features.form_builder.engine.clipboard import command_enabled
+from app.features.form_builder.integration.clipboard_actions import (
+    SHORTCUT_COMMAND_IDS,
+    apply_command,
+    clipboard_has_fragment,
+)
+from app.features.form_builder.integration.context_menu import add_clipboard_actions, fill_context_menu, paint_menu
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
@@ -79,6 +85,7 @@ from app.features.form_builder.integration.layout import (
     plan_workbench,
 )
 from app.features.form_builder.integration.memory import WorkbenchMemoryStore
+from app.features.form_builder.integration.pieces import SavedPieceStore
 from app.features.form_builder.integration.run_action import run_open_form
 from app.features.form_builder.integration.toast import (
     CommandToast,
@@ -281,6 +288,7 @@ class FormSurface(QWidget):
         self._save_faded = True
         self._tab_widget: Optional[QTabWidget] = None
         self._store: Optional[WorkbenchMemoryStore] = None
+        self._pieces: Optional[SavedPieceStore] = None
         self._plan = plan_workbench(0, 0, WorkbenchMemory())
         self._preview_request: Optional[str] = None
         self._preview_listener: Optional[Callable[[str], None]] = None
@@ -482,9 +490,13 @@ class FormSurface(QWidget):
         )
 
     def dispatch(self, command_id: str) -> None:
-        """Run the layout gesture behind a Form command row or its key."""
+        """Run a form command. Clipboard ids run before the layout table."""
+        if self._source.mode != "visual":
+            return
+        if apply_command(self, command_id):
+            return
         request = request_for(command_id)
-        if request is None or self._source.mode != "visual":
+        if request is None:
             return
         if isinstance(request, OpenWrap):
             self._open_wrap_popover()
@@ -906,6 +918,31 @@ class FormSurface(QWidget):
         self._gesture_sentence = sentence
         self._refresh_shell_status()
 
+    def show_paste_problem(self, text: str) -> None:
+        """One toast action. Show opens Problems. Ctrl+Z still undoes the paste."""
+        note = ToastNote(text, "Show", "", 0)
+        self._command_toast.show_note(note, lambda _note: self._show_in_problems())
+
+    def realized_object(self, node_id: NodeId) -> Optional[object]:
+        """The live widget, layout, or spacer for ``node_id`` on the canvas, if any."""
+        realizer = self._realizer
+        return realizer.widget_for(node_id) or realizer.layout_for(node_id) or realizer.spacer_for(node_id)
+
+    def _clipboard_enabled(self, command_id: str) -> bool:
+        return command_enabled(
+            self._session.document,
+            self._session.selection.state.ids,
+            command_id,
+            clipboard_has_fragment(),
+        )
+
+    def save_selected_piece(self) -> None:
+        self._workbench.insert.save_selection(self._session)
+
+    def _piece_notice(self, sentence: str, undo: Callable[[], None]) -> None:
+        note = ToastNote(sentence, "Undo", "", 0)
+        self._command_toast.show_note(note, lambda _note: undo())
+
     def show_plain(self, sentence: str) -> None:
         if not sentence:
             return
@@ -984,6 +1021,7 @@ class FormSurface(QWidget):
             selection.set((node,), current=node, source=SelectionSource.CANVAS)
         menu = QMenu(self)
         menu.setObjectName("formBuilder.contextMenu")
+        add_clipboard_actions(menu, self.dispatch, self._clipboard_enabled)
         fill_context_menu(menu, self.layout_offers(), self.run_layout)
         paint_menu(menu, chrome_for(self._tokens))
         if at is None:
@@ -1215,7 +1253,7 @@ class FormSurface(QWidget):
         return {
             command.command_id: lambda command_id=command.command_id: self.dispatch(command_id)
             for command in FORM_COMMANDS
-            if request_for(command.command_id) is not None
+            if request_for(command.command_id) is not None or command.command_id in SHORTCUT_COMMAND_IDS
         }
 
     def _note_inert(self) -> None:
@@ -1338,9 +1376,11 @@ class FormSurface(QWidget):
         root = getattr(window, "_state_root", None)
         if root:
             self._store = WorkbenchMemoryStore(str(root))
+            self._pieces = SavedPieceStore(str(root))
             self._memory = self._store.load()
         else:
             self._store = None
+            self._pieces = None
             memory = getattr(window, "_form_workbench_memory", None)
             if not isinstance(memory, WorkbenchMemory):
                 memory = WorkbenchMemory()
@@ -1350,6 +1390,9 @@ class FormSurface(QWidget):
         if workbench is not None:
             workbench.outline.set_collapsed(self._memory.outline_collapsed)
             workbench.insert.set_collapsed(self._memory.insert_collapsed)
+            workbench.insert.bind_pieces(self._pieces)
+            workbench.insert.set_paste(lambda: self.dispatch("form.action.paste"))
+            workbench.insert.set_notice(self._piece_notice)
             if self._store is not None:
                 workbench.inspector.bind_settings(self._store)
 

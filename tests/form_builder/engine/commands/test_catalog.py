@@ -58,6 +58,7 @@ from app.features.form_builder.engine.commands.placement import (
     InGridCell,
 )
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.connections import missing_connection_diagnostics
 from app.features.form_builder.engine.query.tree import child_stack_order, references_to
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, WidgetNode
@@ -135,7 +136,21 @@ def test_insert_renames_collisions_and_keeps_only_live_connections() -> None:
     assert ("okButton", "okButton_2") in result.renames
     assert doc.node(nid(doc, "okButton_2")).prop("text") is not None
     senders = [node.field("sender") for node in doc.ui.children("connections")]
-    assert senders == ["okButton_2"]
+    assert senders == ["ghost"]
+    assert result.dangling == ("ghost",)
+    missing = missing_connection_diagnostics(doc)
+    assert [row.code for row in missing] == ["FB014"]
+    assert missing[0].message == (
+        "The connection ghost.clicked → ghost.clear points at ghost, which isn't in this form. "
+        "Add a widget named ghost or delete the connection."
+    )
+    assert missing[0].location.object_name == "ghost"
+    log.undo()
+    assert doc.ui.children("connections") == ()
+    assert missing_connection_diagnostics(doc) == ()
+    log.redo()
+    assert [node.field("sender") for node in doc.ui.children("connections")] == ["ghost"]
+    assert [row.code for row in missing_connection_diagnostics(doc)] == ["FB014"]
 
 
 def test_drop_onto_a_layoutless_widget_creates_a_vbox() -> None:

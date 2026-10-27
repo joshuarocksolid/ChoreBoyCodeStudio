@@ -193,6 +193,9 @@ class _Structure(_LayoutSlots):
         self._fresh.add(node.id)
         is_root = parent is None and self._root is None
         self._apply_node_properties(node, widget, is_root=is_root or widget is self._root)
+        if parent is not None and parent.isVisible() and not isinstance(widget, QMenu):
+            # Qt leaves a child hidden when it is created after its parent is shown.
+            widget.show()
         return widget
 
     def _create_widget(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:

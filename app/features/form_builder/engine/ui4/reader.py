@@ -45,6 +45,7 @@ from app.features.form_builder.engine.ui4.schema import (
     SlotsDecl,
 )
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
+from app.features.form_builder.engine.ui4.writer import FRAGMENT_ORDER_NAME
 from app.features.form_builder.engine.ui4.values import (
     VALUE_CLASSES,
     BoolValue,
@@ -665,11 +666,23 @@ def read_fragment(text: str, *, source_path: Optional[str] = None) -> Fragment:
     result = read_ui(text, allocator=IdAllocator(), source_path=source_path)
     document = result.document
     nodes: List[NodeSpec] = []
-    for slot in SCHEMA["widget"].slots:
-        if slot.name == "opaque":
-            continue
-        for child in document.root.children(slot.name):
-            nodes.append(_strip_ids(child.to_spec()))
+    order = document.root.layout
+    if order is not None and order.object_name == FRAGMENT_ORDER_NAME:
+        for item in order.items:
+            content = item.content
+            if content is not None:
+                nodes.append(_strip_ids(content.to_spec()))
+        for slot in SCHEMA["widget"].slots:
+            if slot.name in ("opaque", "layout"):
+                continue
+            for child in document.root.children(slot.name):
+                nodes.append(_strip_ids(child.to_spec()))
+    else:
+        for slot in SCHEMA["widget"].slots:
+            if slot.name == "opaque":
+                continue
+            for child in document.root.children(slot.name):
+                nodes.append(_strip_ids(child.to_spec()))
     return Fragment(
         nodes=tuple(nodes),
         connections=tuple(_strip_ids(node.to_spec()) for node in document.connections()),

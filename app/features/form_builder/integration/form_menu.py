@@ -13,6 +13,11 @@ from app.qt.QtGui import QKeySequence
 
 from app.features.form_builder.engine.layout_actions import gate, request_for
 from app.features.form_builder.engine.shell_commands import FormCommand, menu_commands, menu_hint
+from app.features.form_builder.engine.clipboard import command_enabled
+from app.features.form_builder.integration.clipboard_actions import (
+    CLIPBOARD_COMMAND_IDS,
+    clipboard_has_fragment,
+)
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.menu_action_builder import register_menu_action
 from app.shell.menus import register_menu_contributor
@@ -129,7 +134,7 @@ def _trigger(window: Any, command_id: str) -> None:
     surface = _active_form(window)
     if surface is None:
         return
-    if request_for(command_id) is not None:
+    if request_for(command_id) is not None or command_id in CLIPBOARD_COMMAND_IDS:
         surface.dispatch(command_id)
         return
     if command_id == "form.action.viewXml":
@@ -189,6 +194,13 @@ def _sync(window: Any, menu: Any, actions: Dict[str, Any]) -> None:
             offer = gate(sheet, request)
             available = available and offer.enabled
             reason = offer.reason
+        if surface is not None and command_id in CLIPBOARD_COMMAND_IDS:
+            available = command_enabled(
+                surface._session.document,
+                surface._session.selection.state.ids,
+                command_id,
+                clipboard_has_fragment(),
+            )
         text_block = command_id == "form.action.editText" and not editable
         action.setEnabled(visible and available and not text_block)
         action.setToolTip(reason)
