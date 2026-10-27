@@ -384,7 +384,52 @@ def norm_qt(value: object) -> object:
     text = getattr(value, "text", None)
     if callable(text):
         return text()
+    kind = type(value).__name__
+    if kind == "QFont":
+        to_string = getattr(value, "toString", None)
+        if callable(to_string):
+            return to_string()
+    if kind == "QCursor":
+        shape = getattr(value, "shape", None)
+        if callable(shape):
+            return _enum_name(shape())
+    if kind == "QPalette":
+        return _palette_norm(value)
+    if kind == "QIcon":
+        return _icon_norm(value)
     return str(value)
+
+
+def _palette_norm(palette: QPalette) -> Tuple[Tuple[str, str, str], ...]:
+    group_owner = getattr(QPalette, "ColorGroup", QPalette)
+    role_owner = getattr(QPalette, "ColorRole", QPalette)
+    groups = ("Active", "Inactive", "Disabled")
+    roles = (
+        "Window",
+        "WindowText",
+        "Base",
+        "Text",
+        "Button",
+        "ButtonText",
+        "Highlight",
+        "HighlightedText",
+    )
+    found = []
+    for group_name in groups:
+        group = getattr(group_owner, group_name)
+        for role_name in roles:
+            role = getattr(role_owner, role_name, None)
+            if role is None:
+                continue
+            found.append((group_name, role_name, palette.color(group, role).name()))
+    return tuple(found)
+
+
+def _icon_norm(icon: QIcon) -> Tuple[object, ...]:
+    if icon.isNull():
+        return ("icon",)
+    sizes = sorted((size.width(), size.height()) for size in icon.availableSizes())
+    return ("icon", tuple(sizes))
 
 
 def _enum_name(value: object) -> str:

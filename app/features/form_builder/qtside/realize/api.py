@@ -749,6 +749,7 @@ class Realizer(_Structure):
             props.append((entry.name, norm_qt(widget.property(entry.name))))
         parent = widget.parentWidget()
         parent_id = _node_id(parent) if parent is not None else None
+        sibling_index = _sibling_index(widget, parent)
         buddy_name = None
         if hasattr(widget, "buddy") and widget.buddy() is not None and wrapper_is_valid(widget.buddy()):
             buddy_name = widget.buddy().objectName()
@@ -762,6 +763,7 @@ class Realizer(_Structure):
             widget.objectName(),
             int(node.id),
             None if parent_id is None else int(parent_id),
+            sibling_index,
             tuple(props),
             buddy_name,
             pages,
@@ -1042,6 +1044,21 @@ def _document_object_name(node: object) -> str:
     if isinstance(object_name, str):
         return object_name
     return ""
+
+
+def _sibling_index(widget: QWidget, parent: Optional[QWidget]) -> int:
+    """Index among the parent's child widgets. Stacking order, not layout order."""
+    if parent is None:
+        return 0
+    children = [
+        child
+        for child in parent.children()
+        if isinstance(child, QWidget) and child.parentWidget() is parent
+    ]
+    try:
+        return children.index(widget)
+    except ValueError:
+        return -1
 
 
 def _current_index(widget: QWidget) -> Optional[int]:
