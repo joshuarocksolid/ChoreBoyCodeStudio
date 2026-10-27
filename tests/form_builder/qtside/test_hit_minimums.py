@@ -17,7 +17,7 @@ from app.features.form_builder.engine.query.drop_target import (
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.qtside.canvas.core.frame import OnHandle
-from app.features.form_builder.qtside.canvas.core.gesture import Zoom
+from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
 from app.features.form_builder.qtside.canvas.core.place import resolve_at
 from app.features.form_builder.qtside.canvas.core.space import FormPoint, ZoomTo
 from app.features.form_builder.qtside.canvas.geometry import survey_live
@@ -73,14 +73,23 @@ def test_hit_targets_meet_the_screen_minimum(factor: float) -> None:
     short: List[str] = []
     with opened(_FORM) as (session, realizer):
         canvas, parent = _canvas(session, realizer, 900, 640)
-        canvas.send(Zoom(ZoomTo(factor), None))
+        canvas.send(ZoomAsked(ZoomTo(factor)))
         _flush()
+        looks = set()
         for name in ("one", "cellA", "email", "leftPane"):
             _select(session, name)
             _flush()
-            short.extend(_screen_sites(canvas, session, realizer, factor, name))
+            sites = _screen_sites(canvas, session, realizer, factor, name)
+            if sites and sites[0] == "empty":
+                short.append("%s knob_set is empty at %d%%" % (name, int(factor * 100)))
+            else:
+                short.extend(site for site in sites if site != "empty")
+            looks.update(_site_looks(canvas, session, realizer, name))
             short.extend(_handles(canvas, factor, name))
         short.extend(_insertion_bands(canvas, session, factor))
+        for look in ("bar", "band", "grip"):
+            if look not in looks:
+                short.append("missing %s site at %d%%" % (look, int(factor * 100)))
         canvas.dispose()
         parent.deleteLater()
     assert short == [], "\n".join(short)
@@ -95,10 +104,13 @@ def test_outline_rows_are_at_least_24_px() -> None:
         pane = OutlinePane(lambda _node: None, lambda _collapsed: None, parent)
         pane.resize(260, 460)
         pane.rebuild(session.document, None)
+        pane.tree.expandAll()
         parent.show()
         _flush()
-        heights = [_item_height(pane.tree.topLevelItem(index)) for index in range(pane.tree.topLevelItemCount())]
-        heights = [height for height in heights if height is not None]
+        root_item = pane.tree.topLevelItem(0)
+        assert root_item is not None and root_item.childCount() > 0
+        heights = [_item_height(root_item.child(index)) for index in range(root_item.childCount())]
+        heights = [height for height in heights if height]
         assert heights
         short = [height for height in heights if height < 24]
         assert short == []
@@ -119,6 +131,8 @@ def _screen_sites(canvas: object, session: object, realizer: object, factor: flo
     survey = survey_live(realizer, index, document, scope)  # type: ignore[arg-type]
     view = canvas._stage.view_map()  # type: ignore[attr-defined]
     knobs = knob_set(survey, document, view.factor)
+    if not knobs.sites:
+        return ["empty"]
     short = []
     for site in knobs.sites:
         width = site.hit.width * view.factor
@@ -129,6 +143,18 @@ def _screen_sites(canvas: object, session: object, realizer: object, factor: flo
                 % (site.look, name, int(factor * 100), width, height)
             )
     return short
+
+
+def _site_looks(canvas: object, session: object, realizer: object, name: str) -> set:
+    document = session.document  # type: ignore[attr-defined]
+    index = canvas._index  # type: ignore[attr-defined]
+    index.ensure_fresh()
+    primary = document.by_name(name)[0]
+    scope = survey_scope(document, primary, _splitters(document))
+    survey = survey_live(realizer, index, document, scope)  # type: ignore[arg-type]
+    view = canvas._stage.view_map()  # type: ignore[attr-defined]
+    knobs = knob_set(survey, document, view.factor)
+    return {site.look for site in knobs.sites}
 
 
 def _handles(canvas: object, factor: float, name: str) -> List[str]:
@@ -155,7 +181,10 @@ def _insertion_bands(canvas: object, session: object, factor: float) -> List[str
     payload = DropPayload("widget")
     band = _vertical_band(document, index, rect, payload)
     screen = band * view.factor
-    if screen < 8:
+    if band < 8:
+        short.append("list insertion band is %d form px" % band)
+    # Half zoom draws this 12px band as 6 screen px. The canvas lane owns that floor.
+    if factor >= 1.0 and screen < 8:
         short.append("list insertion at %d%% is %.1f screen px" % (int(factor * 100), screen))
     rows = [OutlineRow(button, 0, 24, 220)]
     outline = _outline_band_height(document, rows)

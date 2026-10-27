@@ -108,11 +108,15 @@ class MainWindowLifecycle:
 
     @staticmethod
     def release_open_surfaces(window: Any) -> None:
-        """Release every open tab surface. Idempotent. No save prompt."""
+        """Release open tab surfaces. Leaves the editor manager in place."""
         workflow = getattr(window, "_editor_tab_workflow", None)
-        reset = getattr(workflow, "reset_editor_tabs", None)
-        if callable(reset):
-            reset()
+        manager = getattr(window, "_editor_manager", None)
+        release = getattr(workflow, "release_tab_content", None)
+        open_paths = getattr(manager, "open_paths", None)
+        if not callable(release) or not callable(open_paths):
+            return
+        for path in list(open_paths()):
+            release(path)
 
     @staticmethod
     def drain_run_event_queue(window: Any) -> None:

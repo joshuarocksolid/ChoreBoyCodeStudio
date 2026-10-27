@@ -12,7 +12,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.core import constants  # noqa: E402
 from app.features.form_builder.install import form_builder_enabled  # noqa: E402
-from app.features.form_builder.qtside.canvas.core.gesture import Zoom  # noqa: E402
+from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.space import ZoomTo  # noqa: E402
 from app.qt.QtGui import QColor, QImage, QPalette  # noqa: E402
 from app.qt.QtWidgets import QApplication, QWidget  # noqa: E402
@@ -41,7 +41,7 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>Form</class>
  <widget class="QWidget" name="Form">
-  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>640</height></rect></property>
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>980</height></rect></property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item><widget class="QLabel" name="label"><property name="text"><string>Label</string></property></widget></item>
    <item><widget class="QPushButton" name="pushButton"><property name="text"><string>Button</string></property></widget></item>
@@ -49,6 +49,13 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
    <item><widget class="QCheckBox" name="checkBox"><property name="text"><string>Check box</string></property></widget></item>
    <item><widget class="QComboBox" name="comboBox"><item><property name="text"><string>One</string></property></item></widget></item>
    <item><widget class="QSpinBox" name="spinBox"/></item>
+   <item><widget class="QDoubleSpinBox" name="doubleSpin"/></item>
+   <item><widget class="QRadioButton" name="radioButton"><property name="text"><string>Radio</string></property></widget></item>
+   <item><widget class="QToolButton" name="toolButton"><property name="text"><string>Tool</string></property></widget></item>
+   <item><widget class="QCommandLinkButton" name="commandLink"><property name="text"><string>Command</string></property></widget></item>
+   <item><widget class="QSlider" name="slider"><property name="orientation"><enum>Qt::Horizontal</enum></property></widget></item>
+   <item><widget class="QTabWidget" name="tabWidget"><widget class="QWidget" name="tabPage"><attribute name="title"><string>Page</string></attribute></widget></widget></item>
+   <item><widget class="QTableWidget" name="tableWidget"><property name="rowCount"><number>1</number></property><property name="columnCount"><number>1</number></property></widget></item>
    <item><widget class="QGroupBox" name="groupBox"><property name="title"><string>Group box</string></property></widget></item>
    <item>
     <widget class="QWidget" name="horizontalLayoutWidget">
@@ -129,13 +136,15 @@ def test_the_page_matches_a_clean_application(tmp_path: Path, qapp: QApplication
             window._dark_chrome_palette = palette  # noqa: SLF001
         window._shell_theme_workflow.apply_theme_styles()  # noqa: SLF001
         assert window._editor_tab_factory.open_file_in_editor(str(ui_path))  # noqa: SLF001
-        window._center_stack.setCurrentIndex(1)  # noqa: SLF001
+        stack = window._center_stack  # noqa: SLF001
+        assert stack is not None
+        stack.setCurrentIndex(1)
         window.resize(1400, 900)
         window.show()
         qapp.processEvents()
         canvas = window.findChild(QWidget, "formBuilder.canvas")
         assert canvas is not None
-        canvas.send(Zoom(ZoomTo(1.0), None))
+        canvas.send(ZoomAsked(ZoomTo(1.0)))
         qapp.processEvents()
         page = canvas.page_widget()
         assert page is not None

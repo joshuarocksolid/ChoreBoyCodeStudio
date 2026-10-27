@@ -38,6 +38,7 @@ _STUBS = frozenset(
 )
 _MILESTONE = re.compile(r"\bM[0-9]+(\.[0-9]+)?[a-z]?\b")
 _BANNED = re.compile(r"\bphase\b|later release|coming soon|form\.action\.|formBuilder\.", re.IGNORECASE)
+_NODE_ID = re.compile(r"\b(?:node[_ -]?id|nid)\b|\bn\d{2,}\b", re.IGNORECASE)
 
 
 def test_user_visible_strings_hide_milestones_and_internal_ids() -> None:
@@ -64,7 +65,11 @@ def _scan() -> Iterable[Tuple[str, int, str]]:
 def _banned(text: str) -> bool:
     if text in _STUBS:
         return False
-    return _MILESTONE.search(text) is not None or _BANNED.search(text) is not None
+    return (
+        _MILESTONE.search(text) is not None
+        or _BANNED.search(text) is not None
+        or _NODE_ID.search(text) is not None
+    )
 
 
 def _is_sink(node: ast.Call) -> bool:
@@ -87,11 +92,12 @@ def _literal(node: ast.AST) -> str | None:
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
-        parts = []
-        for value in node.values:
-            if isinstance(value, ast.Constant) and isinstance(value.value, str):
-                parts.append(value.value)
-            else:
-                return None
+        parts = [
+            value.value
+            for value in node.values
+            if isinstance(value, ast.Constant) and isinstance(value.value, str)
+        ]
+        if not parts:
+            return None
         return "".join(parts)
     return None
