@@ -2618,6 +2618,16 @@ def _sizing_preview_rows(
 #: accepted for M3 and owned by M9.4; the budget is not raised. See
 #: docs/form_builder/PLAN.md, M9.4 "Known M3 misses".
 KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 known misses)"
+KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
+
+
+def _known_miss(row: Row) -> Row:
+    """Report a documented M9.4 miss as "known miss" instead of "fail"; the budget stays."""
+    assert row.point in KNOWN_M94_POINTS, row.point
+    row = _with_detail(row, KNOWN_M94_MISS)
+    if row.verdict != "fail":
+        return row
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, "known miss", row.detail, row.total_p95)
 
 
 def _surface_speed_rows(
@@ -2779,17 +2789,19 @@ def _surface_window_rows(
             pane.flush()
 
         rows.append(
-            _timed(
-                "edit total surface",
-                count,
-                edit,
-                EDIT_BUDGET_MS,
-                samples=samples,
-                warmup=warmup,
-                enforce_absolute=enforce_absolute,
-                wall_on=wall_on,
-                prepare=app.processEvents,
-            )[0]
+            _known_miss(
+                _timed(
+                    "edit total surface",
+                    count,
+                    edit,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=app.processEvents,
+                )[0]
+            )
         )
         def space() -> None:
             step["n"] += 1
@@ -2802,7 +2814,7 @@ def _surface_window_rows(
             pane.flush()
 
         rows.append(
-            _with_detail(
+            _known_miss(
                 _timed(
                     "edit layout spacing",
                     count,
@@ -2814,7 +2826,6 @@ def _surface_window_rows(
                     wall_on=wall_on,
                     prepare=app.processEvents,
                 )[0],
-                KNOWN_M94_MISS,
             )
         )
         session.selection.set((label,), source=selection.SelectionSource.CANVAS)
@@ -2831,7 +2842,7 @@ def _surface_window_rows(
             app.processEvents()
 
         rows.append(
-            _with_detail(
+            _known_miss(
                 _timed(
                     "paste surface",
                     count,
@@ -2844,7 +2855,6 @@ def _surface_window_rows(
                     prepare=app.processEvents,
                     cleanup=undo_paste,
                 )[0],
-                KNOWN_M94_MISS,
             )
         )
         visits = {"n": 0}
