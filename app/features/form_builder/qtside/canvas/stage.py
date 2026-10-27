@@ -85,11 +85,13 @@ class Stage:
         session: FormSession,
         realizer: Realizer,
         invalidate: Callable[[InvalidationReason], None],
+        on_factor: Optional[Callable[[float], None]] = None,
     ) -> None:
         self._view = view
         self._session = session
         self._realizer = realizer
         self._invalidate = invalidate
+        self._on_factor = on_factor
         self._zoom: ZoomSetting = Fit()
         self._factor = 0.0
         self._fit_page: Optional[Size] = None
@@ -142,6 +144,8 @@ class Stage:
             if factor != self._factor:
                 self._invalidate("zoom")
                 self._factor = factor
+                if self._on_factor is not None:
+                    self._on_factor(factor)
         scale = self._factor or 1.0
         if abs(self._proxy.scale() - scale) > 1e-6:
             self._proxy.setScale(scale)

@@ -26,6 +26,8 @@ from app.features.form_builder.engine.ui4.values import StringValue
 MIN_HIT = 24
 GHOST_BAND = 24
 CROSS_EDGE = 8
+#: UX_SPEC: an insertion band is at least this many screen px at every zoom.
+INSERT_BAND_SCREEN = 8
 SNAP = 8
 
 HostKind = Literal[
@@ -155,7 +157,11 @@ def resolve_drop(
     pointer: Tuple[int, int],
     payload: DropPayload,
     blocked: FrozenSet[NodeId] = frozenset(),
+    min_band: int = 0,
 ) -> DropTarget:
+    """``min_band``: the leading insertion band of a list item, in form px.
+    The canvas passes ``INSERT_BAND_SCREEN`` over the zoom so the band keeps
+    its screen size below 100%."""
     found: List[Tuple[int, DropHost]] = []
     _gather(root, pointer, 0, found)
     found.sort(
@@ -172,7 +178,7 @@ def resolve_drop(
     for _depth, host in found:
         if host.node in blocked:
             continue
-        result = _resolve_host(host, pointer, payload, blocked)
+        result = _resolve_host(host, pointer, payload, blocked, min_band)
         if result is not None:
             return result
     return NoDrop()
@@ -219,11 +225,12 @@ def _resolve_host(
     pointer: Tuple[int, int],
     payload: DropPayload,
     blocked: FrozenSet[NodeId],
+    min_band: int = 0,
 ) -> Optional[DropTarget]:
     if host.kind in ("vbox", "hbox"):
-        return _resolve_box(host, pointer, payload)
+        return _resolve_box(host, pointer, payload, min_band)
     if host.kind == "splitter":
-        return _resolve_splitter(host, pointer)
+        return _resolve_splitter(host, pointer, min_band)
     if host.kind == "grid":
         return _resolve_grid(host, pointer, payload, blocked)
     if host.kind == "form":
@@ -243,7 +250,9 @@ def _resolve_host(
     return None
 
 
-def _resolve_box(host: DropHost, pointer: Tuple[int, int], payload: DropPayload) -> AcceptedDrop:
+def _resolve_box(
+    host: DropHost, pointer: Tuple[int, int], payload: DropPayload, min_band: int = 0
+) -> AcceptedDrop:
     vertical = host.kind == "vbox"
     wrap = _wrap_slot(host, pointer, vertical, payload)
     if wrap is not None:
@@ -274,7 +283,7 @@ def _resolve_box(host: DropHost, pointer: Tuple[int, int], payload: DropPayload)
             DropIndicator(_cover_empty(host.rect), dashed=True),
             index=0,
         )
-    index = _box_index(host.slots, pointer, vertical)
+    index = _box_index(host.slots, pointer, vertical, min_band)
     sentence = _between(host.slots, index, "Insert", host.name or "the layout")
     return _accept(
         host,
@@ -286,9 +295,9 @@ def _resolve_box(host: DropHost, pointer: Tuple[int, int], payload: DropPayload)
     )
 
 
-def _resolve_splitter(host: DropHost, pointer: Tuple[int, int]) -> AcceptedDrop:
+def _resolve_splitter(host: DropHost, pointer: Tuple[int, int], min_band: int = 0) -> AcceptedDrop:
     vertical = _splitter_vertical(host)
-    index = _box_index(host.slots, pointer, vertical)
+    index = _box_index(host.slots, pointer, vertical, min_band)
     sentence = _pane_sentence(host.slots, index)
     return _accept(
         host,
@@ -714,12 +723,20 @@ def _on_main_span(rect: Rect, pointer: Tuple[int, int], vertical: bool) -> bool:
     return rect.x <= pointer[0] < rect.x + max(rect.width, 1)
 
 
-def _box_index(slots: Sequence[SlotGeom], pointer: Tuple[int, int], vertical: bool) -> int:
+def _box_index(
+    slots: Sequence[SlotGeom], pointer: Tuple[int, int], vertical: bool, min_band: int = 0
+) -> int:
+    """The insert index under ``pointer``. Each item's leading part, at least
+    ``min_band`` form px and at most the whole item, inserts before it."""
     index = 0
     coord = pointer[1] if vertical else pointer[0]
     ordered = sorted(slots, key=lambda slot: slot.index)
     for slot in ordered:
         mid = _mid(slot.rect, vertical)
+        if min_band > 0:
+            start = slot.rect.y if vertical else slot.rect.x
+            size = slot.rect.height if vertical else slot.rect.width
+            mid = max(mid, start + min(size, min_band))
         if coord >= mid:
             index = slot.index + 1
     return index

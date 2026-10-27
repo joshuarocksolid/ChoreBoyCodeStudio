@@ -140,6 +140,7 @@ class HitIndex:
         self._children: Dict[Optional[NodeId], Tuple[GeoEntry, ...]] = {}
         self._rects: Dict[NodeId, Rect] = {}
         self._at: Dict[Tuple[NodeId, str], int] = {}
+        self._screen_factor = 1.0
         self._need_full = True
         self._scope: Optional[RefreshScope] = None
         self._last_visits = 0
@@ -158,6 +159,16 @@ class HitIndex:
         if self._need_full:
             return
         self._scope = scope if self._scope is None else self._scope.merge(scope)
+
+    @property
+    def screen_factor(self) -> float:
+        """Screen px per form px on the view that queries this index. O(1)."""
+        return self._screen_factor
+
+    def set_screen_factor(self, factor: float) -> None:
+        """O(1). Hit floors stated in screen px read this; form rects do not change."""
+        if factor > 0:
+            self._screen_factor = float(factor)
 
     @property
     def epoch(self) -> int:

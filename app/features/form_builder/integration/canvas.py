@@ -207,7 +207,7 @@ class FormCanvas(QGraphicsView):
         self._hit_sub = session.log.subscribe(
             HitIndexInvalidator(self._index).on_changeset, priority=PRIORITY_HIT_INDEX
         )
-        self._stage = Stage(self, session, realizer, self._index.invalidate)
+        self._stage = Stage(self, session, realizer, self._index.invalidate, self._index.set_screen_factor)
         self._stage.set_banner_push(PAGE_TITLE_HEIGHT)
         self._build_chrome()
         self._controller = CanvasController(self, session, realizer, self._index, self._stage, host)

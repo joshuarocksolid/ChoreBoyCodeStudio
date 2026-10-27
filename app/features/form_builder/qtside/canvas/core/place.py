@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import math
 from typing import Dict, Optional, Tuple
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.commands.drop_plan import commands_for
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import (
+    INSERT_BAND_SCREEN,
     AcceptedDrop,
     DropHost,
     DropIndicator,
@@ -57,11 +59,13 @@ def resolve_at(
     else:
         geometry = _rects(doc, index)
         host = _tree(doc, index, geometry)
+    factor = float(getattr(index, "screen_factor", 1.0) or 1.0)
     target = resolve_drop(
         host,
         (int(point.x), int(point.y)),
         payload,
         blocked_ids(doc, payload.source_ids),
+        min_band=int(math.ceil(INSERT_BAND_SCREEN / factor)) if factor < 1.0 else 0,
     )
     if rects is not None:
         return target
