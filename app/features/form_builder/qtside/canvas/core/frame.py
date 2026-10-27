@@ -36,6 +36,7 @@ class Stroke:
     style: Literal["solid", "dashed", "dotted"]
     alpha: float = 1.0
     caps: bool = False
+    node: Optional[NodeId] = None
 
 
 @dataclass(frozen=True)
@@ -49,6 +50,7 @@ class Fill:
 class Spring:
     rect: CanvasRect
     axis: Literal["horizontal", "vertical"]
+    node: Optional[NodeId] = None
 
 
 @dataclass(frozen=True)

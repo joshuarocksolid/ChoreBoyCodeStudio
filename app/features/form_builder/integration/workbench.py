@@ -721,6 +721,7 @@ class OutlinePane(QWidget):
         self._hover: Optional[NodeId] = None
         self._hover_fill = ""
         self._rows: Dict[int, QTreeWidgetItem] = {}
+        self._current_item: Optional[QTreeWidgetItem] = None
         self._send_hover: Optional[Callable[[HoverFrom], None]] = None
         self._open_menu: Optional[Callable[[NodeId, QPoint], None]] = None
         self._post: Optional[Callable[[object], None]] = None
@@ -901,21 +902,25 @@ class OutlinePane(QWidget):
             item = self._rows.get(int(selected))
             if item is None:
                 return
+        previous = self._current_item
+        if item is previous and (item is None or item.isSelected()):
+            return
         self._blocked = True
-        previous = self.tree.currentItem()
-        if item is None:
-            self.tree.setCurrentItem(None)
-            self.tree.clearSelection()
-        else:
-            command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
-            flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
-            self.tree.setCurrentItem(item, 0, flags)
-            visible = self.tree.viewport().rect()
-            row = self.tree.visualItemRect(item)
-            if not visible.contains(row):
-                self.tree.scrollToItem(item)
-        self._blocked = False
-        _repaint_rows(self.tree, previous, item)
+        scrolling = self.tree.hasAutoScroll()
+        self.tree.setAutoScroll(False)
+        try:
+            if item is None:
+                self.tree.setCurrentItem(None)
+                self.tree.clearSelection()
+            else:
+                command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
+                flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
+                self.tree.setCurrentItem(item, 0, flags)
+            self._current_item = item
+        finally:
+            self.tree.setAutoScroll(scrolling)
+            self._blocked = False
+        self.tree.viewport().update()
 
     def patch_labels(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         forest = self._forest
@@ -1627,6 +1632,7 @@ class OutlinePane(QWidget):
         session.log.undo()
 
     def _install(self, forest: OutlineForest, previous: Optional[OutlineForest] = None) -> None:
+        self._current_item = None
         self._blocked = True
         mask = filter_mask(forest, self._filter_text)
         states = dict(mask.state)
@@ -2946,19 +2952,6 @@ class FormWorkbench(QWidget):
             self._splitter.setSizes([plan.left_width, canvas, plan.inspector_width])
         finally:
             self._applying = False
-
-
-def _repaint_rows(
-    tree: QTreeWidget,
-    previous: Optional[QTreeWidgetItem],
-    current: Optional[QTreeWidgetItem],
-) -> None:
-    """O(1). The old row and the new row, not the viewport."""
-    viewport = tree.viewport()
-    for item in (previous, current):
-        if item is None:
-            continue
-        viewport.update(tree.visualItemRect(item))
 
 
 __all__ = ["FormToolbar", "FormWorkbench", "NoticeBar", "problems_link_color"]

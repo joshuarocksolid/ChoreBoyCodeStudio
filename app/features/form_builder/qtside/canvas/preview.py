@@ -33,6 +33,7 @@ from app.features.form_builder.engine.sizing import (
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import FontValue, SizeValue
+from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.stage import Stage
 from app.features.form_builder.qtside.realize.api import Realizer
@@ -356,6 +357,32 @@ class FormPreview:
         painter.setPen(pen)
         painter.setBrush(no_brush)
         painter.drawRect(rect)
+
+    def wide_stroke_rects(self) -> Tuple[CanvasRect, ...]:
+        """Scene rects of the wide-copy strokes, inflated for the handles. O(selection)."""
+        if not self._widths or self._mirror_proxy is None or self._mirror is None:
+            return ()
+        if not self._mirror_proxy.isVisible():
+            return ()
+        shown = effective_selection(self._session.document, self._session.selection.state)
+        ids = list(shown.ids)
+        hover = self._wide_hover
+        if hover is not None and hover not in shown.ids:
+            ids.append(hover)
+        found: List[CanvasRect] = []
+        for node_id in ids:
+            rect = self._mirror_scene_rect(node_id)
+            if rect is None:
+                continue
+            found.append(
+                CanvasRect(
+                    int(rect.x()) - 6,
+                    int(rect.y()) - 6,
+                    max(1, int(rect.width()) + 12),
+                    max(1, int(rect.height()) + 12),
+                )
+            )
+        return tuple(found)
 
     def dispose(self) -> None:
         self._cut_timer.stop()

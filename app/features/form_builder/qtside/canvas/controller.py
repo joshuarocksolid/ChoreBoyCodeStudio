@@ -39,7 +39,7 @@ from app.features.form_builder.engine.query.drop_target import AcceptedDrop, Dro
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionChange, SelectionSource, SelectionState
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import SizePolicyValue, SizeValue
 from app.features.form_builder.qtside.canvas import _input
 from app.features.form_builder.qtside.canvas.core.frame import (
@@ -50,6 +50,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OpenProblem,
     OverlayFrame,
     ShowStacked,
+    Stroke,
 )
 from app.features.form_builder.qtside.canvas.core.gesture import (
     CanvasPressed,
@@ -190,6 +191,7 @@ class CanvasController:
         self._ghost: Optional[QPixmap] = None
         self._held_ghost: Optional[QPixmap] = None
         self._ghost_damage: Optional[CanvasRect] = None
+        self._wide_prev: Tuple[CanvasRect, ...] = ()
         self._spring_id: Optional[NodeId] = None
         self._refused: Optional[str] = None
         self._refused_at = 0.0
@@ -852,9 +854,6 @@ class CanvasController:
             return False
         updates = {}
         for node_id in changed:
-            node = self._session.document.get(node_id)
-            if isinstance(node, LayoutNode):
-                return True
             rect = self._index.rect_of(node_id)
             if rect is None:
                 return True
@@ -903,14 +902,23 @@ class CanvasController:
         self._ghost_damage = ghost
         if ghost is not None:
             rects.append(ghost)
+        wide = _wide_stroke_rects(self._view)
+        rects.extend(self._wide_prev)
+        rects.extend(wide)
+        self._wide_prev = wide
         if not rects:
             return
         viewport = self._view.viewport()
         bounds = viewport.rect()
+        origin = self._view.mapFromScene(QPointF(0.0, 0.0))
+        unit = self._view.mapFromScene(QPointF(1.0, 0.0))
+        down = self._view.mapFromScene(QPointF(0.0, 1.0))
+        scale_x = unit.x() - origin.x()
+        scale_y = down.y() - origin.y()
         ports: List[QRect] = []
         area = 0
         for rect in rects:
-            port = _port_rect(self._view, rect).adjusted(-4, -4, 4, 4).intersected(bounds)
+            port = _port_from(origin.x(), origin.y(), scale_x, scale_y, rect).adjusted(-4, -4, 4, 4).intersected(bounds)
             if port.isEmpty():
                 continue
             ports.append(port)
@@ -1079,24 +1087,40 @@ class CanvasController:
 
 
 def _changed_bounds(previous: OverlayFrame, current: OverlayFrame) -> List[CanvasRect]:
-    """Rects that are in one frame and not the other. O(items that changed)."""
-    before = _bound_counts(previous)
-    after = _bound_counts(current)
+    """Rects whose painted item changed. The key is the item, so a style change at the same rect repaints."""
+    before = _item_counts(previous)
+    after = _item_counts(current)
     changed: List[CanvasRect] = []
-    keys = set(before) | set(after)
-    for key in keys:
-        if before.get(key, 0) != after.get(key, 0):
-            changed.append(CanvasRect(key[0], key[1], key[2], key[3]))
+    for item in set(before) | set(after):
+        if before.get(item, 0) != after.get(item, 0):
+            changed.extend(_damage_rects(item))
     return changed
 
 
-def _bound_counts(frame: OverlayFrame) -> Dict[Tuple[int, int, int, int], int]:
-    counts: Dict[Tuple[int, int, int, int], int] = {}
+def _item_counts(frame: OverlayFrame) -> Dict[object, int]:
+    counts: Dict[object, int] = {}
     for item in frame.items:
-        rect = _item_bounds(item)
-        key = (rect.x, rect.y, rect.width, rect.height)
-        counts[key] = counts.get(key, 0) + 1
+        counts[item] = counts.get(item, 0) + 1
     return counts
+
+
+def _damage_rects(item: object) -> List[CanvasRect]:
+    """A page-wide stroke damages its four edges. The interior stays unexposed."""
+    rect = _item_bounds(item)
+    if (
+        isinstance(item, Stroke)
+        and not item.caps
+        and rect.width > 12
+        and rect.height > 12
+    ):
+        band = max(int(item.width) + 3, 4)
+        return [
+            CanvasRect(rect.x, rect.y, rect.width, band),
+            CanvasRect(rect.x, rect.y + rect.height - band, rect.width, band),
+            CanvasRect(rect.x, rect.y, band, rect.height),
+            CanvasRect(rect.x + rect.width - band, rect.y, band, rect.height),
+        ]
+    return [rect]
 
 
 def _item_bounds(item: object) -> CanvasRect:
@@ -1111,18 +1135,28 @@ def _item_bounds(item: object) -> CanvasRect:
     return CanvasRect(left, top, max(xs) - left, max(ys) - top)
 
 
-def _port_rect(view: QGraphicsView, rect: CanvasRect) -> QRect:
-    """Canvas pixels to viewport pixels, including the scroll origin."""
-    top_left = view.mapFromScene(QPointF(rect.x, rect.y))
-    bottom_right = view.mapFromScene(QPointF(rect.x + rect.width, rect.y + rect.height))
-    left = min(top_left.x(), bottom_right.x())
-    top = min(top_left.y(), bottom_right.y())
-    return QRect(
-        int(left),
-        int(top),
-        max(1, int(abs(bottom_right.x() - top_left.x()))),
-        max(1, int(abs(bottom_right.y() - top_left.y()))),
-    )
+def _port_from(origin_x: float, origin_y: float, scale_x: float, scale_y: float, rect: CanvasRect) -> QRect:
+    """Canvas pixels to viewport pixels from one measured origin. O(1)."""
+    left = origin_x + rect.x * scale_x
+    top = origin_y + rect.y * scale_y
+    width = rect.width * scale_x
+    height = rect.height * scale_y
+    if width < 0:
+        left += width
+        width = -width
+    if height < 0:
+        top += height
+        height = -height
+    return QRect(int(left), int(top), max(1, int(width)), max(1, int(height)))
+
+
+def _wide_stroke_rects(view: QGraphicsView) -> Tuple[CanvasRect, ...]:
+    preview = getattr(view, "preview", None)
+    reader = getattr(preview, "wide_stroke_rects", None)
+    if reader is None:
+        return ()
+    found = reader()
+    return tuple(found) if found else ()
 
 
 def _moved_ids(

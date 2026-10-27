@@ -7,14 +7,13 @@ The page caption, shadow and toast stay view chrome.
 
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple
+from typing import List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
-from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QPainter, QPen, QPixmap
+from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QImage, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGraphicsScene,
     QGraphicsView,
     QLabel,
@@ -187,6 +186,8 @@ class FormCanvas(QGraphicsView):
         self._canvas_bg = self._palette.backdrop.fill
         self._dot = self._palette.backdrop.dot
         self._dot_tile: Optional[Tuple[str, QPixmap]] = None
+        self._shadow_rgba: Optional[Tuple[int, int, int, int]] = None
+        self._shadow_plate: Optional[QPixmap] = None
         self.setObjectName("formBuilder.canvas")
         self.setAccessibleName("Form canvas")
         self.setFocusPolicy(_focus_policy())
@@ -489,14 +490,22 @@ class FormCanvas(QGraphicsView):
 
     def drawBackground(self, painter: QPainter, rect: QRectF) -> None:  # noqa: N802
         painter.fillRect(rect, QColor(self._canvas_bg))
-        if not self._dot:
+        if self._dot:
+            # A 16 px tile. An ellipse per dot was most of a selection frame.
+            painter.drawTiledPixmap(
+                rect,
+                self._dot_pixmap(),
+                QPoint(int(rect.left()) % _DOT, int(rect.top()) % _DOT),
+            )
+        self._paint_page_shadow(painter)
+
+    def _paint_page_shadow(self, painter: QPainter) -> None:
+        plate = self._shadow_plate
+        proxy = self._stage.proxy
+        if plate is None or proxy.widget() is None:
             return
-        # A 16 px tile. An ellipse per dot was most of a selection frame.
-        painter.drawTiledPixmap(
-            rect,
-            self._dot_pixmap(),
-            QPoint(int(rect.left()) % _DOT, int(rect.top()) % _DOT),
-        )
+        page = proxy.sceneBoundingRect()
+        _paint_shadow_plate(painter, plate, page)
 
     def _dot_pixmap(self) -> QPixmap:
         cached = self._dot_tile
@@ -573,15 +582,12 @@ class FormCanvas(QGraphicsView):
 
     def _apply_page_chrome(self, tokens: ShellThemeTokens) -> None:
         shadow = page_shadow_rgba(is_dark=tokens.is_dark, is_high_contrast=tokens.is_high_contrast)
-        proxy = self._stage.proxy
-        if shadow is None:
-            proxy.setGraphicsEffect(None)
-        else:
-            effect = QGraphicsDropShadowEffect(self)
-            effect.setBlurRadius(18)
-            effect.setOffset(0, 2)
-            effect.setColor(QColor(*shadow))
-            proxy.setGraphicsEffect(effect)
+        self._stage.proxy.setGraphicsEffect(None)
+        if shadow == self._shadow_rgba and self._shadow_plate is not None:
+            _apply_page_chrome_style(self._title, self._frame, tokens)
+            return
+        self._shadow_rgba = shadow
+        self._shadow_plate = None if shadow is None else _shadow_plate(shadow)
         _apply_page_chrome_style(self._title, self._frame, tokens)
 
     def _place_toast(self) -> None:
@@ -714,6 +720,104 @@ class _PageTitle(QWidget):
                 paint_docked_chip(painter, item, self._palette)
                 painter.restore()
         painter.end()
+
+
+_SHADOW_BLUR = 18
+_SHADOW_OFFSET_Y = 2
+_SHADOW_CORE = 40
+
+
+def _shadow_plate(color: Tuple[int, int, int, int]) -> QPixmap:
+    """One blurred rectangle. Corners stay 1:1 and the middle stretches over the page."""
+    span = _SHADOW_BLUR * 2 + _SHADOW_CORE
+    image = QImage(span, span, getattr(getattr(QImage, "Format", QImage), "Format_ARGB32_Premultiplied"))
+    image.fill(0)
+    painter = QPainter(image)
+    painter.setPen(getattr(getattr(Qt, "PenStyle", Qt), "NoPen"))
+    painter.setBrush(QColor(*color))
+    painter.drawRect(_SHADOW_BLUR, _SHADOW_BLUR, _SHADOW_CORE, _SHADOW_CORE)
+    painter.end()
+    return QPixmap.fromImage(_box_blur(image, _SHADOW_BLUR // 3))
+
+
+def _box_blur(image: QImage, radius: int) -> QImage:
+    current = image
+    for _pass in range(3):
+        current = _blur_once(current, radius)
+    return current
+
+
+def _blur_once(image: QImage, radius: int) -> QImage:
+    width = image.width()
+    height = image.height()
+    src = [int(image.pixel(x, y)) for y in range(height) for x in range(width)]
+    blurred = _blur_axis(_blur_axis(src, width, height, radius, True), width, height, radius, False)
+    out = QImage(width, height, image.format())
+    for y in range(height):
+        for x in range(width):
+            out.setPixel(x, y, blurred[y * width + x])
+    return out
+
+
+def _blur_axis(src: List[int], width: int, height: int, radius: int, horizontal: bool) -> List[int]:
+    out = [0] * (width * height)
+    if horizontal:
+        for y in range(height):
+            _blur_line(src, out, y * width, 1, width, radius)
+    else:
+        for x in range(width):
+            _blur_line(src, out, x, width, height, radius)
+    return out
+
+
+def _blur_line(src: List[int], out: List[int], start: int, step: int, count: int, radius: int) -> None:
+    prefix: List[Tuple[int, int, int, int]] = [(0, 0, 0, 0)]
+    acc = (0, 0, 0, 0)
+    for index in range(count):
+        pixel = src[start + index * step]
+        channel = ((pixel >> 24) & 255, (pixel >> 16) & 255, (pixel >> 8) & 255, pixel & 255)
+        acc = (acc[0] + channel[0], acc[1] + channel[1], acc[2] + channel[2], acc[3] + channel[3])
+        prefix.append(acc)
+    for index in range(count):
+        left = max(0, index - radius)
+        right = min(count - 1, index + radius)
+        sample = right - left + 1
+        high = prefix[right + 1]
+        low = prefix[left]
+        out[start + index * step] = (
+            ((high[0] - low[0]) // sample) << 24
+            | ((high[1] - low[1]) // sample) << 16
+            | ((high[2] - low[2]) // sample) << 8
+            | ((high[3] - low[3]) // sample)
+        )
+
+
+def _paint_shadow_plate(painter: QPainter, plate: QPixmap, page: QRectF) -> None:
+    blur = _SHADOW_BLUR
+    dest_x = page.x() - blur
+    dest_y = page.y() - blur + _SHADOW_OFFSET_Y
+    dest_w = page.width() + blur * 2
+    dest_h = page.height() + blur * 2
+    if dest_w <= blur * 2 or dest_h <= blur * 2:
+        painter.drawPixmap(QRectF(dest_x, dest_y, dest_w, dest_h), plate, QRectF(plate.rect()))
+        return
+    source = plate.rect()
+    margin = blur
+    core_w = source.width() - margin * 2
+    core_h = source.height() - margin * 2
+    pieces = (
+        (0, 0, margin, margin, dest_x, dest_y, margin, margin),
+        (margin, 0, core_w, margin, dest_x + margin, dest_y, dest_w - margin * 2, margin),
+        (source.width() - margin, 0, margin, margin, dest_x + dest_w - margin, dest_y, margin, margin),
+        (0, margin, margin, core_h, dest_x, dest_y + margin, margin, dest_h - margin * 2),
+        (margin, margin, core_w, core_h, dest_x + margin, dest_y + margin, dest_w - margin * 2, dest_h - margin * 2),
+        (source.width() - margin, margin, margin, core_h, dest_x + dest_w - margin, dest_y + margin, margin, dest_h - margin * 2),
+        (0, source.height() - margin, margin, margin, dest_x, dest_y + dest_h - margin, margin, margin),
+        (margin, source.height() - margin, core_w, margin, dest_x + margin, dest_y + dest_h - margin, dest_w - margin * 2, margin),
+        (source.width() - margin, source.height() - margin, margin, margin, dest_x + dest_w - margin, dest_y + dest_h - margin, margin, margin),
+    )
+    for sx, sy, sw, sh, dx, dy, dw, dh in pieces:
+        painter.drawPixmap(QRectF(dx, dy, dw, dh), plate, QRectF(sx, sy, sw, sh))
 
 
 def _paint_caption_glyphs(painter: QPainter, width: int) -> None:

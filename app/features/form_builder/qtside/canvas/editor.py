@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable, Literal, Optional, Union
 
 from app.qt.QtCore import QEvent, QObject, Qt
-from app.qt.QtGui import QFont, QKeyEvent
+from app.qt.QtGui import QFont, QKeyEvent, QPalette
 from app.qt.QtWidgets import QGraphicsView, QLineEdit, QPlainTextEdit, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -13,7 +13,6 @@ from app.features.form_builder.qtside.canvas.core.gesture import EditorDone
 from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.text import TextTarget
 from app.features.form_builder.qtside.realize.api import Realizer
-from app.features.form_builder.qtside.theme.chrome import editor_field_colors
 from app.features.form_builder.qtside.theme.overlay import overlay_palette
 
 _How = Literal["enter", "tab", "backtab", "escape", "focus_out"]
@@ -40,7 +39,7 @@ class InPlaceEditor:
         edit: _Edit = QPlainTextEdit(self._viewport) if target.multiline else QLineEdit(self._viewport)
         zoomed = _zoomed_font(widget.font(), _scale(widget))
         edit.setFont(zoomed)
-        edit.setStyleSheet(_sheet(self._viewport, zoomed))
+        edit.setStyleSheet(_sheet(widget, self._viewport, zoomed))
         _copy_alignment(widget, edit)
         text = "" if target.original is None else target.original.text
         edit.setPlainText(text) if isinstance(edit, QPlainTextEdit) else edit.setText(text)
@@ -201,7 +200,7 @@ def _zoomed_font(font: QFont, scale: float) -> QFont:
     return zoomed
 
 
-def _sheet(viewport: QWidget, font: QFont) -> str:
+def _sheet(widget: QWidget, viewport: QWidget, font: QFont) -> str:
     contrast = bool(viewport.property("formBuilderHighContrast"))
     color = overlay_palette(contrast).select
     if len(color) == 9:
@@ -211,7 +210,10 @@ def _sheet(viewport: QWidget, font: QFont) -> str:
         size = "%dpx" % font.pixelSize()
     else:
         size = "%gpt" % font.pointSizeF()
-    background, foreground = editor_field_colors()
+    role = getattr(QPalette, "ColorRole", QPalette)
+    palette = widget.palette()
+    background = palette.color(getattr(role, "Base")).name()
+    foreground = palette.color(getattr(role, "Text")).name()
     return (
         "background: %s; color: %s; border: 1px solid %s; padding: 0px;"
         " font-family: '%s'; font-size: %s;"

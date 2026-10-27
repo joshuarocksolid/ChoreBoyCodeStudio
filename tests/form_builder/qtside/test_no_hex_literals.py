@@ -4,9 +4,8 @@
 from __future__ import annotations
 
 import ast
-import tokenize
 from pathlib import Path
-from typing import Iterator, Tuple
+from typing import Iterator
 
 import pytest
 
@@ -24,14 +23,11 @@ def _hex_literals() -> Iterator[str]:
         if "qtside/theme/" in path.as_posix():
             continue
         source = path.read_text(encoding="utf-8")
-        comments = _comment_spans(path)
         tree = ast.parse(source)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Constant) or not isinstance(node.value, str):
                 continue
             if node.value in _ALLOWED:
-                continue
-            if _in_span(node, comments):
                 continue
             if _hex_in(node.value):
                 yield "%s:%s" % (path.relative_to(_ROOT.parent.parent.parent), node.lineno)
@@ -58,35 +54,6 @@ def _is_hex(text: str, size: int) -> bool:
     if size == 3 and len(text) > 3 and text[3] in "0123456789abcdefABCDEF":
         return False
     return True
-
-
-def _comment_spans(path: Path) -> Tuple[Tuple[Tuple[int, int], Tuple[int, int]], ...]:
-    spans = []
-    with path.open("rb") as handle:
-        for token in tokenize.tokenize(handle.readline):
-            if token.type == tokenize.COMMENT:
-                spans.append((token.start, token.end))
-    return tuple(spans)
-
-
-def _in_span(node: ast.AST, spans: Tuple[Tuple[Tuple[int, int], Tuple[int, int]], ...]) -> bool:
-    start = (int(getattr(node, "lineno", 0)), int(getattr(node, "col_offset", 0)))
-    for comment_start, comment_end in spans:
-        if _pos_le(comment_start, start) and _pos_lt(start, comment_end):
-            return True
-    return False
-
-
-def _pos_le(left: Tuple[int, int], right: Tuple[int, int]) -> bool:
-    if left[0] != right[0]:
-        return left[0] < right[0]
-    return left[1] <= right[1]
-
-
-def _pos_lt(left: Tuple[int, int], right: Tuple[int, int]) -> bool:
-    if left[0] != right[0]:
-        return left[0] < right[0]
-    return left[1] < right[1]
 
 
 pytestmark = pytest.mark.unit

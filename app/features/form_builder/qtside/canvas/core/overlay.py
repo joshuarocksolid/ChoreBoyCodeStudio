@@ -8,7 +8,7 @@ frame. Neither reads Qt.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
@@ -144,6 +144,8 @@ class StaticLayer:
     stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...]], ...] = ()
     #: Visible splitters in pre-order. Their grips are hittable with any selection.
     splitters: Tuple[NodeId, ...] = ()
+    #: Empty-layout marks keyed by the layout id. Drag lookup is O(1).
+    host_marks: Dict[NodeId, CanvasRect] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -213,7 +215,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         canvas = view.to_canvas(form_rect)
         if isinstance(node, LayoutNode):
             placed.append(Obstacle(node.id, canvas))
-            layouts.append(Stroke(canvas, "layout_faint", 1, "dashed"))
+            layouts.append(Stroke(canvas, "layout_faint", 1, "dashed", node=node.id))
             if _layout_filled(node):
                 continue
             if root_layout is not None and node.id == root_layout.id:
@@ -230,7 +232,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
             continue
         if isinstance(node, SpacerNode):
             placed.append(Obstacle(node.id, canvas))
-            springs.append(Spring(canvas, _spacer_axis(node)))
+            springs.append(Spring(canvas, _spacer_axis(node), node=node.id))
             continue
         if not isinstance(node, WidgetNode):
             continue
@@ -276,6 +278,10 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         if entry.kind == "page_tab" and entry.container is not None:
             tabs.append((entry.container, view.to_canvas(entry.rect)))
 
+    marks: Dict[NodeId, CanvasRect] = {}
+    for mark, hit in targets:
+        if isinstance(hit, OnSpace):
+            marks[hit.select] = mark
     return StaticLayer(
         index.epoch,
         view,
@@ -287,6 +293,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(tabs),
         tuple(stacks),
         tuple(splitters),
+        marks,
     )
 
 
@@ -297,13 +304,17 @@ def shift_static(
 ) -> Optional[StaticLayer]:
     """Move obstacles whose form rect changed. None means the caller rebuilds.
 
-    Layout strokes carry no node id, so a layout move is a rebuild. A widget
-    or spacer that was not placed is a rebuild too.
+    A layout stroke and a spacer spring carry the node id, so they move with
+    the rect. A new widget is appended. An empty-mark host still rebuilds,
+    because its caption is not a plain rect.
     """
     if not updates:
         return layer
     for obstacle in layer.content:
         if obstacle.band and obstacle.node in updates:
+            return None
+    for _mark, hit in layer.targets:
+        if isinstance(hit, OnSpace) and hit.select in updates:
             return None
     page = view.page_rect()
     placed: List[Obstacle] = []
@@ -319,8 +330,9 @@ def shift_static(
         placed.append(Obstacle(obstacle.node, canvas))
         previous.setdefault(obstacle.node, obstacle.rect)
         found.add(obstacle.node)
-    if found != set(updates):
-        return None
+    for node_id, rect in updates.items():
+        if node_id not in found:
+            placed.append(Obstacle(node_id, view.to_canvas(rect)))
     content: List[Obstacle] = []
     seen = set()
     for obstacle in layer.content:
@@ -339,15 +351,26 @@ def shift_static(
         clipped = _clip(view.to_canvas(rect), page)
         if clipped is not None:
             content.append(Obstacle(node, clipped))
+    shifted_items: List[Item] = []
+    for item in layer.items:
+        node_id = getattr(item, "node", None)
+        rect = None if node_id is None else updates.get(node_id)
+        if rect is None:
+            shifted_items.append(item)
+            continue
+        shifted_items.append(replace(item, rect=view.to_canvas(rect)))
     return StaticLayer(
         layer.epoch,
         layer.view,
-        layer.items,
+        tuple(shifted_items),
         tuple(content),
         layer.unlaid,
         layer.targets,
         tuple(placed),
-        splitters=layer.splitters,
+        layer.tabs,
+        layer.stacks,
+        layer.splitters,
+        layer.host_marks,
     )
 
 
@@ -435,7 +458,7 @@ def _visible(index: HitIndex, root: NodeId) -> Tuple[Dict[NodeId, bool], Tuple[G
     while stack:
         parent = stack.pop()
         for entry in index.children_of(parent):
-            if entry.kind in _TITLES:
+            if entry.kind in _TITLES or entry.node in flags:
                 continue
             flags[entry.node] = entry.visible
             if entry.kind in _DESCENDS:
@@ -713,9 +736,9 @@ def _into_mark(static: StaticLayer, view: ViewMap, target: object, indicator: ob
     role = getattr(indicator, "role", "")
     if host is None or not dashed or role == "problem":
         return canvas
-    for mark, hit in static.targets:
-        if isinstance(hit, OnSpace) and hit.select == host:
-            return mark
+    mark = static.host_marks.get(host)
+    if mark is not None:
+        return mark
     return canvas
 
 
