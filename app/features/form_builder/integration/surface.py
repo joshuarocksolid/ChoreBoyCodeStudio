@@ -34,6 +34,7 @@ from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.events import PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.layout_actions import (
+    Current,
     Done,
     OfferSheet,
     OpenWrap,
@@ -63,7 +64,7 @@ from app.features.form_builder.integration.chrome_text import (
     undo_menu_text,
 )
 from app.features.form_builder.integration.chrome import chrome_for
-from app.features.form_builder.integration.context_menu import fill_context_menu
+from app.features.form_builder.integration.context_menu import fill_context_menu, paint_menu
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
@@ -93,7 +94,7 @@ from app.features.form_builder.qtside.canvas.core.structure import effective_sel
 from app.features.form_builder.qtside.canvas.core.text import enter_opens_editor
 from app.features.form_builder.qtside.canvas.core.words import hover_sentence
 from app.features.form_builder.qtside.canvas.core.space import ZoomFit, ZoomStep, ZoomTo
-from app.features.form_builder.qtside.layout_gestures import ask, beside, measure, perform
+from app.features.form_builder.qtside.layout_gestures import ask, beside, measure, perform, properties_for
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.intelligence.diagnostics_models import CodeDiagnostic
 from app.shell.tab_content_providers import RestoreReason, TabSurfaceRequest
@@ -485,7 +486,12 @@ class FormSurface(QWidget):
         """What each layout request would do to ``ids`` (the selection by default), measured from the canvas."""
         document = self._session.document
         targets = self._session.selection.state.ids if ids is None else tuple(ids)
-        return offers(document, targets, measure(document, targets, self._realizer.widget_for))
+        return offers(
+            document,
+            targets,
+            measure(document, targets, self._realizer.widget_for, self._realizer.layout_for),
+            accepted=properties_for(document, targets),
+        )
 
     def dispatch(self, command_id: str) -> None:
         """Run the layout gesture behind a Form command row or its key."""
@@ -512,7 +518,13 @@ class FormSurface(QWidget):
         self._toast_held = True
         try:
             outcome = perform(
-                session.document, targets, self._realizer.widget_for, transact(log), request, confirm
+                session.document,
+                targets,
+                self._realizer.widget_for,
+                transact(log),
+                request,
+                confirm,
+                self._realizer.layout_for,
             )
         finally:
             self._toast_held = False
@@ -523,6 +535,8 @@ class FormSurface(QWidget):
             self._command_toast.show_note(note, self._undo_announced)
         elif isinstance(outcome, Refused):
             self.narrate(outcome.reason)
+        elif isinstance(outcome, Current):
+            self.narrate("Nothing to change.")
 
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
@@ -981,6 +995,7 @@ class FormSurface(QWidget):
         menu = QMenu(self)
         menu.setObjectName("formBuilder.contextMenu")
         fill_context_menu(menu, self.layout_offers(), self.run_layout)
+        paint_menu(menu, chrome_for(self._tokens))
         if at is None:
             subject, bounds = self._place(selection.state.ids)
             at = beside(subject, menu.sizeHint(), bounds)

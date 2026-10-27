@@ -14,19 +14,25 @@ from app.features.form_builder.engine.layout_actions import (
     Measure,
     Measured,
     NeedsConfirm,
+    ChangeTo,
     Outcome,
+    _morph_targets,
     carry_out,
     measure_ids,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue, SizeValue
 from app.features.form_builder.qtside.sizing_live import class_default_policies
 from app.features.form_builder.qtside.theme.chrome import LAYOUT_CONFIRM_NAME, FormChrome, popover_style
+from app.qt import QtWidgets
 from app.qt.QtCore import QEventLoop, QPoint, QRect, QSize, Qt
-from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
-from app.qt.qt_compat import exec_qt
+from app.qt.QtWidgets import QFrame, QHBoxLayout, QLabel, QLayout, QPushButton, QVBoxLayout, QWidget
+from app.qt.qt_compat import delete_now, exec_qt
 
 Live = Callable[[NodeId], Optional[QWidget]]
+Layouts = Callable[[NodeId], Optional[QLayout]]
+_PROPERTY_NAMES: Dict[str, Tuple[str, ...]] = {}
 Confirm = Callable[[NeedsConfirm], bool]
 # The subject a popover sits beside and the area it must stay inside, in global coordinates.
 Place = Callable[[], Tuple[QRect, QRect]]
@@ -34,8 +40,14 @@ Place = Callable[[], Tuple[QRect, QRect]]
 _GAP = 6
 
 
-def measure(doc: UiDocument, ids: Sequence[NodeId], live: Live) -> Measured:
-    """Geometry in parent coordinates, size hint, and class default policies of each live widget."""
+def measure(
+    doc: UiDocument, ids: Sequence[NodeId], live: Live, layouts: Optional[Layouts] = None
+) -> Measured:
+    """Geometry in parent coordinates, size hint, and class default policies of each live widget.
+
+    When ``layouts`` is set, each selected layout's rectangle is measured too.
+    A nested layout has no widget of its own, and that rectangle is its box.
+    """
     measured: Dict[NodeId, Measure] = {}
     for node_id in measure_ids(doc, ids):
         widget = live(node_id)
@@ -48,7 +60,74 @@ def measure(doc: UiDocument, ids: Sequence[NodeId], live: Live) -> Measured:
             SizeValue(hint.width(), hint.height()),
             class_default_policies(widget),
         )
+    if layouts is not None:
+        for node_id in _layout_ids(doc, ids):
+            layout = layouts(node_id)
+            if layout is None:
+                continue
+            rect = layout.geometry()
+            measured[node_id] = Measure(
+                RectValue(rect.x(), rect.y(), rect.width(), rect.height()),
+                SizeValue(rect.width(), rect.height()),
+            )
     return measured
+
+
+def class_properties(class_name: str) -> Optional[Tuple[str, ...]]:
+    """Property names from a fresh instance's meta object, including inherited ones.
+
+    ``staticMetaObject`` is a temporary in PySide and is deleted before its
+    properties can be read. The instance keeps the meta object alive.
+    """
+    bare = class_name.split("::")[-1]
+    cached = _PROPERTY_NAMES.get(bare)
+    if cached is not None:
+        return cached
+    widget_type = getattr(QtWidgets, bare, None)
+    if not isinstance(widget_type, type):
+        return None
+    try:
+        probe = widget_type()
+    except (TypeError, RuntimeError):
+        return None
+    try:
+        meta = probe.metaObject()
+        names = []
+        for index in range(meta.propertyCount()):
+            raw = meta.property(index).name()
+            if isinstance(raw, bytes):
+                raw = raw.decode("utf-8")
+            names.append(str(raw))
+    finally:
+        delete_now(probe)
+    found = tuple(names)
+    _PROPERTY_NAMES[bare] = found
+    return found
+
+
+def _layout_ids(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
+    """Selected layouts, or the layout on each selected widget. The root when nothing is selected."""
+    found = []
+    targets = list(ids) if ids else [doc.root.id]
+    for node_id in targets:
+        if not doc.contains(node_id):
+            continue
+        node = doc.node(node_id)
+        if isinstance(node, LayoutNode):
+            found.append(node.id)
+        elif isinstance(node, WidgetNode) and node.layout is not None:
+            found.append(node.layout.id)
+    return tuple(found)
+
+
+def properties_for(doc: UiDocument, ids: Sequence[NodeId]) -> Dict[str, Tuple[str, ...]]:
+    """Target classes a Change to on ``ids`` could land on, and the names each accepts."""
+    found: Dict[str, Tuple[str, ...]] = {}
+    for target in _morph_targets(doc, ids):
+        names = class_properties(target.class_name)
+        if names is not None:
+            found[target.class_name] = names
+    return found
 
 
 def perform(
@@ -58,6 +137,7 @@ def perform(
     execute: Execute,
     request: object,
     confirm: Confirm,
+    layouts: Optional[Layouts] = None,
 ) -> Outcome:
     """Plan ``request`` for ``ids`` and run it as one undo step.
 
@@ -65,10 +145,19 @@ def perform(
     an accept the widgets are measured and planned again, because they can
     move while the question is open.
     """
-    outcome = carry_out(doc, ids, request, measure(doc, ids, live), execute)
+    known = properties_for(doc, ids) if isinstance(request, ChangeTo) else None
+    outcome = carry_out(doc, ids, request, measure(doc, ids, live, layouts), execute, accepted=known)
     if not isinstance(outcome, NeedsConfirm) or not confirm(outcome):
         return outcome
-    return carry_out(doc, ids, request, measure(doc, ids, live), execute, confirmed=outcome.text)
+    return carry_out(
+        doc,
+        ids,
+        request,
+        measure(doc, ids, live, layouts),
+        execute,
+        confirmed=outcome.text,
+        accepted=known,
+    )
 
 
 def beside(subject: QRect, size: QSize, bounds: QRect) -> QPoint:

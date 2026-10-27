@@ -16,6 +16,7 @@ from typing import (
     Mapping,
     Optional,
     Sequence,
+    Set,
     Tuple,
     Union,
     get_args,
@@ -28,10 +29,13 @@ from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySi
 from app.features.form_builder.engine.commands.log import CommandLog
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import (
+    form_item_role,
+    form_occupied_cells,
     is_container,
     is_page_container,
     visual_children,
 )
+from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.sizing import (
     WORD_HUG,
     encode_axis,
@@ -371,7 +375,11 @@ class OfferSheet:
 
 
 def offers(
-    doc: UiDocument, ids: Sequence[NodeId], measured: Measured, only: Optional[Sequence[object]] = None
+    doc: UiDocument,
+    ids: Sequence[NodeId],
+    measured: Measured,
+    only: Optional[Sequence[object]] = None,
+    accepted: Optional[Mapping[str, Tuple[str, ...]]] = None,
 ) -> OfferSheet:
     """Every request the selection could take, or just ``only``, planned and not executed."""
     live = all(doc.contains(node_id) for node_id in ids)
@@ -387,7 +395,7 @@ def offers(
         requests = list(only)
     sheet: Dict[object, Offer] = {}
     for request in requests:
-        sheet[request] = _offer(_prepare(doc, ids, request, measured))
+        sheet[request] = _offer(_prepare(doc, ids, request, measured, accepted))
     target = _container_target(doc, ids) if live else None
     layout = target[1] if target is not None else None
     current = _KIND_OF_LAYOUT.get(layout.class_name) if layout is not None else None
@@ -423,6 +431,7 @@ def carry_out(
     measured: Measured,
     execute: Execute,
     confirmed: str = "",
+    accepted: Optional[Mapping[str, Tuple[str, ...]]] = None,
 ) -> Outcome:
     """Plan ``request`` and run it as one step.
 
@@ -430,7 +439,7 @@ def carry_out(
     Call again with ``confirmed`` set to the accepted text; when the plan's
     text has changed since, nothing is written.
     """
-    plan = _prepare(doc, ids, request, measured)
+    plan = _prepare(doc, ids, request, measured, accepted)
     if confirmed:
         if not isinstance(plan, _Confirm) or plan.text != confirmed:
             return Refused("The form changed while you were deciding, so nothing was changed.")
@@ -501,12 +510,20 @@ def _offer(plan: _Plan) -> Offer:
     return Offer(True)
 
 
-def _prepare(doc: UiDocument, ids: Sequence[NodeId], request: object, measured: Measured) -> _Plan:
+def _prepare(
+    doc: UiDocument,
+    ids: Sequence[NodeId],
+    request: object,
+    measured: Measured,
+    accepted: Optional[Mapping[str, Tuple[str, ...]]] = None,
+) -> _Plan:
+    if any(not doc.contains(node_id) for node_id in ids):
+        return Refused(_GONE)
+    if isinstance(request, ChangeTo):
+        return _plan_change_to(doc, tuple(ids), request, measured, accepted)
     planner = _PLANNERS.get(type(request))
     if planner is None:
         return Refused(_DOES_NOT_APPLY)
-    if any(not doc.contains(node_id) for node_id in ids):
-        return Refused(_GONE)
     return planner(doc, tuple(ids), request, measured)
 
 
@@ -598,30 +615,83 @@ def _plan_remove_layout(
     if layout is None:
         return Refused("Select a container that has a layout.")
     if layout.owner_widget_id() is None or widget is None:
-        return _Ready("Remove layout", (catalog.BreakLayout(layout.id),), "Removed the layout")
+        return _plan_hold_nested(doc, layout, measured)
     contents = [item.content for item in layout.items if item.content is not None]
     if any(isinstance(content, LayoutNode) for content in contents):
         return Refused("Remove the inner layouts first.")
     spacers = tuple(content.id for content in contents if isinstance(content, SpacerNode))
     widgets = [content.id for content in contents if isinstance(content, WidgetNode)]
-    geometries = tuple(
-        (node_id, measured[node_id].rect) for node_id in widgets if node_id in measured
-    )
+    geometries = tuple((node_id, measured[node_id].rect) for node_id in widgets if node_id in measured)
     commands: Tuple[Command, ...] = (catalog.BreakLayout(layout.id, geometries),)
     if spacers:
         commands = (catalog.DeleteNodes(spacers),) + commands
+    pinned = widget.id in measured
+    if pinned:
+        rect = measured[widget.id].rect
+        commands = commands + (catalog.SetProperty(widget.id, "minimumSize", SizeValue(rect.width, rect.height)),)
     ready = _Ready("Remove layout", commands, "Removed the layout")
-    if not widgets:
+    if not widgets and not spacers and not pinned:
         return ready
-    if len(widgets) == 1:
-        tail = "Its widget keeps its current position and size, but it won't follow the window any more."
-    else:
-        tail = (
-            "Its %d widgets keep their current position and size, but they won't follow the window any more."
-            % len(widgets)
+    return _Confirm(_remove_text(doc, widget, len(widgets), len(spacers), pinned), "Remove layout", ready)
+
+
+def _plan_hold_nested(doc: UiDocument, layout: LayoutNode, measured: Measured) -> _Plan:
+    """Replace a nested layout with a plain widget so the parent cell keeps its box."""
+    contents = [item.content for item in layout.items if item.content is not None]
+    if any(isinstance(content, LayoutNode) for content in contents):
+        return Refused("Remove the inner layouts first.")
+    box = measured.get(layout.id)
+    if box is None:
+        return Refused("Its size isn't known yet.")
+    widgets = [content for content in contents if isinstance(content, WidgetNode)]
+    missing = [content.id for content in widgets if content.id not in measured]
+    if missing:
+        return Refused("Its size isn't known yet.")
+    origin_x, origin_y = box.rect.x, box.rect.y
+    geometries = tuple(
+        (
+            content.id,
+            RectValue(
+                measured[content.id].rect.x - origin_x,
+                measured[content.id].rect.y - origin_y,
+                measured[content.id].rect.width,
+                measured[content.id].rect.height,
+            ),
         )
-    text = "Remove the layout from %s? %s" % (_name(doc, widget), tail)
-    return _Confirm(text, "Remove layout", ready)
+        for content in widgets
+    )
+    spacers = sum(1 for content in contents if isinstance(content, SpacerNode))
+    minimum = SizeValue(box.rect.width, box.rect.height)
+    ready = _Ready(
+        "Remove layout",
+        (catalog.HoldLayout(layout.id, minimum, geometries),),
+        "Removed the layout",
+    )
+    return _Confirm(
+        _remove_text(doc, layout, len(widgets), spacers, True),
+        "Remove layout",
+        ready,
+    )
+
+
+def _remove_text(doc: UiDocument, node: Node, widgets: int, spacers: int, pinned: bool) -> str:
+    parts = ["Remove the layout from %s?" % _name(doc, node)]
+    if widgets == 1:
+        parts.append(
+            "Its widget keeps its current position and size, but it won't follow the window any more."
+        )
+    elif widgets > 1:
+        parts.append(
+            "Its %d widgets keep their current position and size, but they won't follow the window any more."
+            % widgets
+        )
+    if pinned:
+        parts.append("The current size is kept as its minimum size.")
+    if spacers == 1:
+        parts.append("1 spacer will be removed.")
+    elif spacers > 1:
+        parts.append("%d spacers will be removed." % spacers)
+    return " ".join(parts)
 
 
 def _plan_simplify(doc: UiDocument, ids: Tuple[NodeId, ...], request: Simplify, measured: Measured) -> _Plan:
@@ -768,7 +838,13 @@ def _plan_lock_size(doc: UiDocument, ids: Tuple[NodeId, ...], request: LockSize,
     return _Ready("Size", (command,), sentence)
 
 
-def _plan_change_to(doc: UiDocument, ids: Tuple[NodeId, ...], request: ChangeTo, measured: Measured) -> _Plan:
+def _plan_change_to(
+    doc: UiDocument,
+    ids: Tuple[NodeId, ...],
+    request: ChangeTo,
+    measured: Measured,
+    accepted: Optional[Mapping[str, Tuple[str, ...]]] = None,
+) -> _Plan:
     del measured
     node = _single_widget(doc, ids)
     if node is None or node.id == doc.root.id:
@@ -781,11 +857,13 @@ def _plan_change_to(doc: UiDocument, ids: Tuple[NodeId, ...], request: ChangeTo,
     )
     if target is None:
         return Refused("%s can only change to a related widget." % _subject(doc, node))
-    return _Ready(
-        "Change widget",
-        (catalog.MorphWidget(node.id, target.class_name),),
-        "Changed to %s." % target.phrase,
-    )
+    known = _known_properties(target.class_name, accepted)
+    command = catalog.MorphWidget(node.id, target.class_name, known)
+    ready = _Ready("Change widget", (command,), "Changed to %s." % target.phrase)
+    dropped = _dropped_names(node, known)
+    if not dropped:
+        return ready
+    return _Confirm("%s will be removed." % _listed(dropped), "Change", ready)
 
 
 _PLANNERS: Mapping[type, Callable[..., _Plan]] = {
@@ -847,6 +925,9 @@ def _wrap(doc: UiDocument, ids: Tuple[NodeId, ...], kind: Kind, measured: Measur
     rects = _rects(doc, siblings.ids, measured)
     geometry: Optional[RectValue] = None
     if not siblings.in_layout:
+        parent = doc.node(siblings.parent)
+        if isinstance(parent, WidgetNode) and parent.layout is not None:
+            return Refused("That container already has a layout.")
         geometry = _bounds([rects[node_id] for node_id in siblings.ids if node_id in rects])
         if geometry is None:
             return Refused("Its size isn't known yet.")
@@ -911,22 +992,36 @@ def _morph(doc: UiDocument, layout: LayoutNode, new_class: str) -> _Plan:
         return Current()
     command = catalog.MorphLayout(layout.id, new_class)
     lost = spans_cleared(doc, layout.id, new_class)
-    if not lost:
+    rows, other = _shift(layout, new_class)
+    moved = rows + other
+    if not lost and not moved:
         return _Ready("Change layout", (command,), "Changed the layout")
-    ready = _Ready(
-        "Change layout",
-        (command,),
-        "Changed the layout and removed spans from %s" % _count(lost, "widget", "widgets"),
-    )
-    return _Confirm("Spans will be removed from %s." % _count(lost, "widget", "widgets"), "Change layout", ready)
+    sentence = "Changed the layout"
+    if lost:
+        sentence = "Changed the layout and removed spans from %s" % _count(lost, "widget", "widgets")
+    ready = _Ready("Change layout", (command,), sentence)
+    if lost and not moved:
+        text = "Spans will be removed from %s." % _count(lost, "widget", "widgets")
+    else:
+        parts = []
+        if rows and not other:
+            parts.append(_count(rows, "widget will move to a new row", "widgets will move to a new row"))
+        elif moved:
+            parts.append(_count(moved, "widget will move", "widgets will move"))
+        if lost:
+            parts.append("Spans will be removed from %s" % _count(lost, "widget", "widgets"))
+        text = ". ".join(parts) + "."
+    return _Confirm(text, "Change layout", ready)
 
 
 def _orient(splitter: WidgetNode, shape: SplitterShape, kind: Kind) -> _Plan:
     current = splitter.value("orientation")
-    text = current.text if isinstance(current, EnumValue) else "Qt::Horizontal"
-    if text == shape.orientation:
+    wanted = EnumValue(shape.orientation)
+    if isinstance(current, EnumValue) and current.key() == wanted.key():
         return Current()
-    command = catalog.SetProperty(splitter.id, "orientation", EnumValue(shape.orientation))
+    if not isinstance(current, EnumValue) and shape.orientation.endswith("Horizontal"):
+        return Current()
+    command = catalog.SetProperty(splitter.id, "orientation", wanted)
     return _Ready("Change layout", (command,), "Made %s %s" % (splitter.object_name or "the splitter", kind.noun))
 
 
@@ -1125,6 +1220,116 @@ def _subject(doc: UiDocument, node: Node) -> str:
 
 def _count(number: int, one: str, many: str) -> str:
     return "%d %s" % (number, one if number == 1 else many)
+
+
+def _listed(names: Sequence[str]) -> str:
+    if len(names) == 1:
+        return names[0]
+    if len(names) == 2:
+        return "%s and %s" % (names[0], names[1])
+    return "%s, and %s" % (", ".join(names[:-1]), names[-1])
+
+
+def _known_properties(
+    class_name: str, accepted: Optional[Mapping[str, Tuple[str, ...]]]
+) -> Optional[Tuple[str, ...]]:
+    if accepted is not None and class_name in accepted:
+        return accepted[class_name]
+    table = QtClassTable.shared()
+    if table.class_info(class_name) is None:
+        return None
+    return tuple(item.name for item in table.properties(class_name))
+
+
+def _dropped_names(node: WidgetNode, known: Optional[Tuple[str, ...]]) -> Tuple[str, ...]:
+    if known is None:
+        return ()
+    allowed = set(known)
+    return tuple(
+        entry.name for entry in node.properties() if entry.stdset != "0" and entry.name not in allowed
+    )
+
+
+def _shift(layout: LayoutNode, new_class: str) -> Tuple[int, int]:
+    """Widgets whose cell would move, as (row changes, other changes)."""
+    items = [item for item in layout.items if isinstance(item.content, WidgetNode)]
+    if new_class == "QFormLayout":
+        return _form_shift(items)
+    if new_class in _BOXES and layout.class_name in ("QGridLayout", "QFormLayout"):
+        return _box_shift(items, new_class)
+    return (0, 0)
+
+
+def _form_shift(items: Sequence[LayoutItemNode]) -> Tuple[int, int]:
+    dest = _form_plan(items)
+    rows = 0
+    other = 0
+    for item in items:
+        row, role = dest[item.id]
+        current_role = form_item_role(item.column, item.colspan)
+        if row == (item.row or 0) and role == current_role:
+            continue
+        if row != (item.row or 0):
+            rows += 1
+        else:
+            other += 1
+    return rows, other
+
+
+def _form_plan(items: Sequence[LayoutItemNode]) -> Dict[NodeId, Tuple[int, str]]:
+    ordered = sorted(items, key=lambda item: (item.row or 0, item.column or 0, item.slot_index))
+    claimed: Set[Tuple[int, str]] = set()
+    placed: List[Tuple[LayoutItemNode, int, str]] = []
+    displaced: List[LayoutItemNode] = []
+    for item in ordered:
+        row = item.row or 0
+        role = form_item_role(item.column, item.colspan)
+        column, colspan = _form_columns(role)
+        cells = form_occupied_cells(row, column, colspan)
+        if not claimed.isdisjoint(cells):
+            displaced.append(item)
+            continue
+        claimed.update(cells)
+        placed.append((item, row, role))
+    result = {item.id: (row, role) for item, row, role in placed}
+    for item, (row, column) in zip(displaced, _free_form_cells(claimed, len(displaced))):
+        result[item.id] = (row, "field" if column == 1 else "label")
+    return result
+
+
+def _form_columns(role: str) -> Tuple[int, int]:
+    if role == "field":
+        return 1, 1
+    if role == "spanning":
+        return 0, 2
+    return 0, 1
+
+
+def _free_form_cells(taken: Set[Tuple[int, str]], count: int) -> List[Tuple[int, int]]:
+    slots: List[Tuple[int, int]] = []
+    row = 0
+    while len(slots) < count:
+        for column, role in ((0, "label"), (1, "field")):
+            if len(slots) < count and (row, role) not in taken:
+                slots.append((row, column))
+        row += 1
+    return slots
+
+
+def _box_shift(items: Sequence[LayoutItemNode], new_class: str) -> Tuple[int, int]:
+    if new_class == "QVBoxLayout":
+        columns = {item.column or 0 for item in items}
+        if len(columns) <= 1:
+            return (0, 0)
+        left = min(columns)
+        moved = sum(1 for item in items if (item.column or 0) != left)
+        return (moved, 0)
+    rows = {item.row or 0 for item in items}
+    if len(rows) <= 1:
+        return (0, 0)
+    top = min(rows)
+    moved = sum(1 for item in items if (item.row or 0) != top)
+    return (0, moved)
 
 
 def _check_tables() -> None:

@@ -110,7 +110,7 @@ M0.1, M0.2, M0.3, M0.4, M0.5, M0.6, M0.4b, M0.7, M0.8, M0.9, M1.0, M1.1d, M1.5, 
 | R3-52 | Grid indexes and spans | Layouts |  | M | M3.3 | todo |  | Pain P-21 |
 | R3-53 | Form layout field growth, wrap, and alignment | Layouts |  | M | M3.3 | done | inspector/test_layout_group.py::test_field_growth_is_written_on_the_form_layout (+1) |  |
 | R3-54 | Morph a layout | Layouts |  | M | M3.3 | done | engine/commands/test_catalog.py::test_morph_vbox_to_grid_uses_one_column |  |
-| R3-55 | Morph a widget | Layouts | the new `class` attribute. | L | M3.3 | done | qtside/test_layout_gestures.py::test_changing_a_container_class_replaces_it_and_keeps_its_children (+1) |  |
+| R3-55 | Morph a widget | Layouts | the new `class` attribute. | L | M3.3 | done | qtside/test_layout_gestures.py::test_change_to_drops_properties_the_new_class_rejects (+1) |  |
 | R3-56 | Size constraints from the context menu | Layouts |  | S | M3.3 | done | qtside/test_layout_popovers.py::test_set_minimum_to_current_size_in_the_context_menu_locks_the_minimum |  |
 
 ### Widget box (57-123) — 0/67

@@ -101,8 +101,8 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         kind="shell",
         shell_action_id="shell.action.tools.gotoSymbolInFile",
     ),
-    _row("form.action.layoutVertical", "Vertical", "Ctrl+2", _CANVAS_OUTLINE, menu=("Layout", "Vertical")),
     _row("form.action.layoutHorizontal", "Horizontal", "Ctrl+1", _CANVAS_OUTLINE, menu=("Layout", "Horizontal")),
+    _row("form.action.layoutVertical", "Vertical", "Ctrl+2", _CANVAS_OUTLINE, menu=("Layout", "Vertical")),
     _row("form.action.layoutGrid", "Grid", "Ctrl+5", _CANVAS_OUTLINE, menu=("Layout", "Grid")),
     _row("form.action.layoutForm", "Form", "Ctrl+6", _CANVAS_OUTLINE, menu=("Layout", "Form")),
     _row(

@@ -24,6 +24,7 @@ from app.qt.QtWidgets import (
     QLabel,
     QLayout,
     QPushButton,
+    QScrollArea,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -107,7 +108,10 @@ def test_size_constraint_is_written_on_the_layout() -> None:
     with opened(_UI) as (session, realizer):
         window, pane = _pane(session, realizer)
         _select(session, pane, "column")
-        _choose(_combo(pane, "layout.sizeConstraint"), "SetFixedSize")
+        combo = _combo(pane, "layout.sizeConstraint")
+        _choose(combo, "SetFixedSize")
+        assert combo.currentText() == "Fixed"
+        assert combo.currentData() == "SetFixedSize"
 
         layout = _node(session, "columnLayout")
         assert isinstance(layout, LayoutNode)
@@ -241,6 +245,24 @@ def test_a_picked_layout_shows_its_rows_and_the_kind_control() -> None:
         _close(window, pane)
 
 
+def test_the_layout_group_fits_at_236_px() -> None:
+    with opened(_UI) as (session, realizer):
+        window, pane = _pane(session, realizer, width=236, height=640)
+        _select(session, pane, "fields")
+        scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+        body = pane.findChild(QWidget, "formBuilder.layoutBody")
+        assert scroll is not None and body is not None and body.isVisible()
+        assert scroll.horizontalScrollBar().maximum() == 0
+        _no_overlap(body)
+        growth = [ _combo(pane, "layout.fieldGrowthPolicy").itemText(index) for index in range(_combo(pane, "layout.fieldGrowthPolicy").count()) ]
+        wrap = [ _combo(pane, "layout.rowWrapPolicy").itemText(index) for index in range(_combo(pane, "layout.rowWrapPolicy").count()) ]
+        assert "All grow" in growth
+        assert "Don't wrap" in wrap
+        assert "AllNonFixedFieldsGrow" not in growth
+        assert "DontWrapRows" not in wrap
+        _close(window, pane)
+
+
 def test_the_layout_group_keeps_spacing_rows_beside_the_kind_control() -> None:
     with opened(_UI) as (session, realizer):
         window, pane = _pane(session, realizer)
@@ -312,8 +334,21 @@ def _combo(pane: QWidget, key: str) -> QComboBox:
     return combo
 
 
+def _no_overlap(body: QWidget) -> None:
+    for parent in [body] + body.findChildren(QWidget):
+        shown = [item for item in parent.children() if isinstance(item, QWidget) and item.isVisible()]
+        for index, first in enumerate(shown):
+            for second in shown[index + 1 :]:
+                both = first.geometry().intersected(second.geometry())
+                assert both.isEmpty(), (first.objectName(), second.objectName())
+
+
 def _choose(combo: QComboBox, name: str) -> None:
-    index = combo.findText(name)
+    index = -1
+    for candidate in range(combo.count()):
+        if combo.itemData(candidate) == name or combo.itemText(candidate) == name:
+            index = candidate
+            break
     assert index >= 0, name
     combo.setCurrentIndex(index)
     _events()

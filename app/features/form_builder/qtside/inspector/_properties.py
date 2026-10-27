@@ -41,6 +41,7 @@ from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMenu,
     QScrollArea,
@@ -934,6 +935,9 @@ class _GroupHost:
 
     def live(self, owner: NodeId) -> Optional[QWidget]:
         return self._services.live(owner)
+
+    def layout(self, owner: NodeId) -> Optional[QLayout]:
+        return self._services.layout(owner)
 
     def run(self, label: str, commands: Sequence[Command]) -> Optional[str]:
         result = self._services.execute_all(label, commands)

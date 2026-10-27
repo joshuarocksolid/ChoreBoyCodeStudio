@@ -64,6 +64,22 @@ class FormChrome:
 LAYOUT_CONFIRM_NAME = "formBuilder.layoutConfirm"
 
 
+def menu_style(chrome: FormChrome) -> str:
+    """Context menu and its submenus. A submenu is its own window, so it does not inherit."""
+    return (
+        "QMenu { background: %(panel)s; color: %(text)s; border: 1px solid %(border)s; }"
+        "QMenu::item { background: transparent; color: %(text)s; padding: 4px 28px 4px 12px; }"
+        "QMenu::item:selected { background: %(hover)s; color: %(text)s; }"
+        "QMenu::item:disabled { color: %(muted)s; }"
+    ) % {
+        "panel": chrome.panel,
+        "text": chrome.text,
+        "muted": chrome.muted,
+        "border": chrome.border,
+        "hover": chrome.row_hover,
+    }
+
+
 def popover_style(object_name: str, chrome: FormChrome) -> str:
     """Frame, text, and buttons of the builder popover named ``object_name``."""
     frame = "QFrame#%s" % object_name.replace(".", "\\.")

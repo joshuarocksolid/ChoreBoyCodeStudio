@@ -121,6 +121,17 @@ def _direct_widgets(widget: QWidget) -> List[QWidget]:
     return [child for child in widget.children() if isinstance(child, QWidget)]
 
 
+def _toplevel_menu_bar_ids() -> Set[int]:
+    app = QtWidgets.QApplication.instance()
+    if app is None:
+        return set()
+    return {
+        id(widget)
+        for widget in app.topLevelWidgets()
+        if isinstance(widget, QMenuBar) and wrapper_is_valid(widget)
+    }
+
+
 class _Structure(_LayoutSlots):
     """Methods mixed into ``Realizer``. Attributes live on the realizer."""
 
@@ -201,7 +212,9 @@ class _Structure(_LayoutSlots):
     def _fill_widget(self, node: WidgetNode, widget: QWidget) -> None:
         self._ensure_actions(node, widget)
         kind = self._qt_class_name(node.class_name)
+        before_bars: Set[int] = set()
         if kind == "QMainWindow" and isinstance(widget, QMainWindow):
+            before_bars = _toplevel_menu_bar_ids()
             self._fill_main_window(node, widget)
         elif kind == "QDockWidget" and isinstance(widget, QDockWidget):
             self._fill_dock(node, widget)
@@ -222,7 +235,7 @@ class _Structure(_LayoutSlots):
         if kind == "QMainWindow" and isinstance(widget, QMainWindow):
             bar = widget.menuWidget()
             if isinstance(bar, QMenuBar):
-                self._drop_replaced_chrome(None, bar)
+                self._drop_replaced_chrome(None, bar, before_bars)
 
     def _note_managed_children(self, node: WidgetNode) -> None:
         layout = node.layout
@@ -403,11 +416,11 @@ class _Structure(_LayoutSlots):
             if role == "QMenuBar" and isinstance(part, QMenuBar):
                 previous = widget.menuWidget()
                 if previous is not part:
+                    # Only the bar this call unparents is ours to delete. A
+                    # parentless bar that already existed belongs to another window.
+                    before = _toplevel_menu_bar_ids()
                     widget.setMenuBar(part)
-                # setMenuBar unparents the bar Qt created with the window and
-                # does not delete it. menuWidget() does not return that bar
-                # before the call. Parentless untagged bars abort shutdown.
-                self._drop_replaced_chrome(previous, part)
+                    self._drop_replaced_chrome(previous, part, before)
             elif role == "QStatusBar":
                 widget.setStatusBar(part)
             elif role == "QToolBar" and isinstance(part, QToolBar):
@@ -419,9 +432,12 @@ class _Structure(_LayoutSlots):
             self._note_managed_children(child)
         self._fill_menu(node, widget)
 
-    def _drop_replaced_chrome(self, previous: Optional[QWidget], installed: QWidget) -> None:
-        """Delete untagged menu bars ``setMenuBar`` left without a parent.
+    def _drop_replaced_chrome(
+        self, previous: Optional[QWidget], installed: QWidget, before: Set[int]
+    ) -> None:
+        """Delete the untagged menu bar ``setMenuBar`` left without a parent.
 
+        ``before`` is the top-level menu bars that existed before this call.
         A tagged bar is a document widget. It stays in the pool so the container
         that took it can install it again.
         """
@@ -432,12 +448,10 @@ class _Structure(_LayoutSlots):
         app = QtWidgets.QApplication.instance()
         if app is None:
             return
-        # The orphan is parentless, so it is a top-level widget. allWidgets()
-        # would walk the whole form on every window fill.
         for widget in list(app.topLevelWidgets()):
-            if not isinstance(widget, QMenuBar) or widget is installed or not wrapper_is_valid(widget):
+            if id(widget) in before or widget is installed or not wrapper_is_valid(widget):
                 continue
-            if _node_id(widget) is not None:
+            if not isinstance(widget, QMenuBar) or _node_id(widget) is not None:
                 continue
             delete_now(widget)
 

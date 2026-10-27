@@ -159,7 +159,12 @@ class LayoutBody:
         host = self._host
         document = host.document
         requests = [InspectedKind(kind_id) for kind_id in SEGMENTS]
-        sheet = offers(document, host.owners, measure(document, host.owners, host.live), only=requests)
+        sheet = offers(
+            document,
+            host.owners,
+            measure(document, host.owners, host.live, host.layout),
+            only=requests,
+        )
         for kind_id, request in zip(SEGMENTS, requests):
             self._kind.paint(kind_id, gate(sheet, request), sheet.current_kind == kind_id)
 
@@ -172,6 +177,7 @@ class LayoutBody:
             _through(host),
             InspectedKind(kind_id),
             ask(self._root, None, self._place),
+            host.layout,
         )
         self._kind.show_error(outcome.reason if isinstance(outcome, Refused) else "")
         self._paint_kind()

@@ -12,6 +12,7 @@ from app.features.form_builder.engine.layout_actions import (
     FORM,
     GRID,
     GROUP,
+    HORIZONTAL,
     HSPLIT,
     MIXED_PARENT,
     TAB,
@@ -279,6 +280,7 @@ def test_remove_layout_deletes_spacers_and_keeps_measured_geometry() -> None:
 
     assert isinstance(asked, NeedsConfirm)
     assert "Its widget keeps its current position and size" in asked.text
+    assert "1 spacer will be removed." in asked.text
 
     done = carry_out(doc, (), RemoveLayout(), measured, transact(log), confirmed=asked.text)
 
@@ -352,3 +354,139 @@ def test_a_form_layout_pairs_each_row_as_label_and_field() -> None:
 )
 def test_toast_for_names_dropped_properties_only_when_there_are_some(dropped: Tuple[str, ...], expected: str) -> None:
     assert toast_for("Changed to a plain text box.", dropped) == expected
+
+
+def test_a_grid_wider_than_a_form_asks_before_widgets_move() -> None:
+    log = open_log(
+        _HEAD
+        + """  <layout class="QGridLayout" name="gridLayout">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="0" column="1"><widget class="QPushButton" name="b"/></item>
+   <item row="0" column="2"><widget class="QPushButton" name="c"/></item>
+   <item row="1" column="1"><widget class="QPushButton" name="d"/></item>
+  </layout>
+"""
+        + _TAIL
+    )
+    doc = log.document
+
+    asked = carry_out(doc, (nid(doc, "gridLayout"),), ApplyKind(FORM), {}, transact(log))
+
+    assert asked == NeedsConfirm("1 widget will move to a new row.", "Change layout")
+    assert log.entries() == ()
+
+
+def test_a_grid_asks_before_widgets_leave_their_column() -> None:
+    log = open_log(
+        _HEAD
+        + """  <layout class="QGridLayout" name="gridLayout">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="0" column="1"><widget class="QPushButton" name="b"/></item>
+   <item row="0" column="2"><widget class="QPushButton" name="c"/></item>
+  </layout>
+"""
+        + _TAIL
+    )
+    doc = log.document
+
+    asked = carry_out(doc, (nid(doc, "gridLayout"),), ApplyKind(VERTICAL), {}, transact(log))
+
+    assert isinstance(asked, NeedsConfirm)
+    assert "2 widgets will move" in asked.text
+    assert log.entries() == ()
+
+
+def test_a_box_asks_before_it_becomes_a_form() -> None:
+    log = open_log(
+        _HEAD
+        + """  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="a"/></item>
+   <item><widget class="QPushButton" name="b"/></item>
+   <item><widget class="QPushButton" name="c"/></item>
+  </layout>
+"""
+        + _TAIL
+    )
+    doc = log.document
+
+    asked = carry_out(doc, (nid(doc, "verticalLayout"),), ApplyKind(FORM), {}, transact(log))
+
+    assert isinstance(asked, NeedsConfirm)
+    assert "2 widgets will move." in asked.text
+    assert log.entries() == ()
+
+
+def test_a_designer_horizontal_splitter_is_already_horizontal() -> None:
+    log = open_log(
+        _HEAD
+        + """  <widget class="QSplitter" name="split">
+   <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+   <widget class="QTextEdit" name="left"/>
+   <widget class="QTextEdit" name="right"/>
+  </widget>
+"""
+        + _TAIL
+    )
+    doc = log.document
+    split = nid(doc, "split")
+
+    outcome = carry_out(doc, (split,), ApplyKind(HSPLIT), {}, transact(log))
+
+    assert isinstance(outcome, Current)
+    assert log.entries() == ()
+    assert gate(offers(doc, (split,), {}), ApplyKind(HSPLIT)) == Offer(False, "Nothing to change.")
+
+
+def test_free_widgets_beside_a_layout_are_not_offered_a_wrap() -> None:
+    log = open_log(
+        _HEAD
+        + """  <widget class="QPushButton" name="freeOne">
+   <property name="geometry"><rect><x>10</x><y>10</y><width>80</width><height>24</height></rect></property>
+  </widget>
+  <widget class="QPushButton" name="freeTwo">
+   <property name="geometry"><rect><x>100</x><y>10</y><width>80</width><height>24</height></rect></property>
+  </widget>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QLabel" name="placed"><property name="text"><string>In</string></property></widget></item>
+  </layout>
+"""
+        + _TAIL
+    )
+    doc = log.document
+    ids = (nid(doc, "freeOne"), nid(doc, "freeTwo"))
+    measured = _measured(
+        {"freeOne": ids[0], "freeTwo": ids[1]},
+        {"freeOne": (10, 10, 80, 24), "freeTwo": (100, 10, 80, 24)},
+    )
+
+    sheet = offers(doc, ids, measured)
+    refused = Offer(False, "That container already has a layout.")
+
+    assert gate(sheet, ApplyKind(HORIZONTAL)) == refused
+    assert gate(sheet, PickWrap(HORIZONTAL)) == refused
+    assert gate(sheet, OpenWrap()) == refused
+    assert carry_out(doc, ids, ApplyKind(HORIZONTAL), measured, transact(log)) == Refused(
+        "That container already has a layout."
+    )
+    assert log.entries() == ()
+
+
+def test_remove_layout_names_every_spacer_it_will_delete() -> None:
+    log = open_log(
+        _HEAD
+        + """  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="go"/></item>
+   <item>%s</item>
+   <item>%s</item>
+  </layout>
+"""
+        % (_SPACER, _SPACER.replace('name="gap"', 'name="gap2"'))
+        + _TAIL
+    )
+    doc = log.document
+    go = nid(doc, "go")
+
+    asked = carry_out(doc, (), RemoveLayout(), _measured({"go": go}, {"go": (9, 11, 80, 24)}), transact(log))
+
+    assert isinstance(asked, NeedsConfirm)
+    assert "2 spacers will be removed." in asked.text

@@ -10,7 +10,7 @@ import pytest
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt.QtCore import Qt  # noqa: E402
-from app.qt.QtWidgets import QMenuBar, QShortcut, QTreeWidget, QTreeWidgetItem, QWidget  # noqa: E402
+from app.qt.QtWidgets import QMenu, QMenuBar, QShortcut, QTreeWidget, QTreeWidgetItem, QWidget  # noqa: E402
 from app.shell.menus import build_menu_stubs, clear_menu_contributors  # noqa: E402
 from app.shell.shortcut_preferences import (  # noqa: E402
     SHORTCUT_COMMANDS,
@@ -108,6 +108,24 @@ def test_widget_keys_are_menu_hints_and_not_window_shortcuts(qapp) -> None:  # t
         zoom_fit = registry.actions["form.action.zoomToFit"]
         assert zoom_fit.shortcut().isEmpty()
         assert "Ctrl+9" in zoom_fit.text()
+    finally:
+        clear_menu_contributors()
+        window.deleteLater()
+
+
+def test_the_layout_menu_lists_horizontal_before_vertical(qapp) -> None:  # type: ignore[no-untyped-def]
+    del qapp
+    window = QWidget()
+    register_form_menu(window)
+    bar = QMenuBar(window)
+    try:
+        build_menu_stubs(bar)
+        layout = window.findChild(QMenu, "formBuilder.menu.Layout")
+        assert layout is not None
+        labels = [action.text().replace("&", "") for action in layout.actions()]
+        horizontal = next(index for index, label in enumerate(labels) if label.startswith("Horizontal\t"))
+        vertical = next(index for index, label in enumerate(labels) if label.startswith("Vertical\t"))
+        assert horizontal < vertical
     finally:
         clear_menu_contributors()
         window.deleteLater()

@@ -14,6 +14,7 @@ from typing import Dict, List, Optional, Sequence, Set, Tuple
 import pytest
 
 from app.qt import QtGui, QtWidgets
+from app.qt.qt_compat import delete_now, wrapper_is_valid
 from app.qt.QtCore import QFile, QIODevice, Qt  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtCore import QObject
 from app.qt.QtWidgets import (
@@ -336,6 +337,30 @@ def test_building_a_main_window_does_not_leave_a_parentless_menu_bar() -> None:
             if isinstance(widget, QMenuBar) and widget.parent() is None
         ]
         assert orphans == []
+
+
+def test_another_windows_menu_bar_survives_a_main_window() -> None:
+    other = QMenuBar()
+    other.setObjectName("shellMenu")
+    try:
+        with opened(_MAIN) as (_session, realizer):
+            window = realizer.root_widget
+            assert isinstance(window, QMainWindow)
+            assert window.menuWidget() is not other
+            assert wrapper_is_valid(other)
+            assert other.parent() is None
+            assert other.objectName() == "shellMenu"
+            app = QApplication.instance()
+            assert app is not None
+            orphans = [
+                widget
+                for widget in app.topLevelWidgets()
+                if isinstance(widget, QMenuBar) and widget.parent() is None and wrapper_is_valid(widget)
+            ]
+            assert orphans == [other]
+    finally:
+        if wrapper_is_valid(other):
+            delete_now(other)
 
 
 def test_main_window_chrome_patches_per_container() -> None:

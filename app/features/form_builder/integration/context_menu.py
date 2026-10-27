@@ -15,6 +15,15 @@ from app.features.form_builder.engine.layout_actions import (
     RemoveLayout,
     gate,
 )
+from app.features.form_builder.qtside.theme.chrome import FormChrome, menu_style
+
+
+def paint_menu(menu: QMenu, chrome: FormChrome) -> None:
+    """Paint ``menu`` and every submenu from ``chrome``. Submenus do not inherit a sheet."""
+    sheet = menu_style(chrome)
+    menu.setStyleSheet(sheet)
+    for child in menu.findChildren(QMenu):
+        child.setStyleSheet(sheet)
 
 
 def fill_context_menu(menu: QMenu, sheet: OfferSheet, run: Callable[[object], None]) -> None:

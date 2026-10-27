@@ -24,6 +24,8 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from app.features.form_builder.engine.layout_actions import HSPLIT, ApplyKind
+from app.features.form_builder.integration.chrome import chrome_for
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.qtside.support import form
 from tests.unit.features.form_builder.test_workbench import _open
@@ -143,7 +145,7 @@ def test_cancel_on_the_remove_layout_confirm_writes_nothing(tmp_path: Path) -> N
         canvas, root = _canvas(surface)
         box = _named(root, "box")
         before = surface.current_text()
-        _right_click(canvas, box, QPoint(box.width() // 2, 3))
+        _right_click(canvas, box, QPoint(box.width() // 2, 10))
         menu = surface.findChild(QMenu, "formBuilder.contextMenu")
         assert menu is not None
 
@@ -153,7 +155,7 @@ def test_cancel_on_the_remove_layout_confirm_writes_nothing(tmp_path: Path) -> N
 
         assert asked == [
             "Remove the layout from box? Its widget keeps its current position and size,"
-            " but it won't follow the window any more."
+            " but it won't follow the window any more. The current size is kept as its minimum size."
         ]
         assert box.layout() is not None
         assert surface.current_text() == before
@@ -168,7 +170,7 @@ def test_accepting_remove_layout_keeps_the_widget_where_it_was(tmp_path: Path) -
         box = _named(root, "box")
         three = _named(box, "three")
         where = three.geometry()
-        _right_click(canvas, box, QPoint(box.width() // 2, 3))
+        _right_click(canvas, box, QPoint(box.width() // 2, 10))
         menu = surface.findChild(QMenu, "formBuilder.contextMenu")
         assert menu is not None
 
@@ -197,6 +199,56 @@ def test_shift_f10_on_the_canvas_opens_the_context_menu(tmp_path: Path) -> None:
         menu = surface.findChild(QMenu, "formBuilder.contextMenu")
         assert menu is not None and menu.isVisible()
         assert _submenu(menu, "Change to") is not None
+    finally:
+        _close(parent, surface)
+
+
+_SPLIT = form(
+    'class="QWidget" name="Form"',
+    """
+  <widget class="QSplitter" name="split">
+   <property name="orientation"><enum>Qt::Orientation::Horizontal</enum></property>
+   <widget class="QTextEdit" name="left"/>
+   <widget class="QTextEdit" name="right"/>
+  </widget>
+""",
+)
+
+
+def test_an_already_horizontal_splitter_says_nothing_to_change(tmp_path: Path) -> None:
+    parent = QWidget()
+    parent.resize(800, 600)
+    surface = _open(parent, _SPLIT, tmp_path / "split.ui")
+    parent.show()
+    surface.show()
+    _flush()
+    try:
+        split = surface._session.document.by_name("split")[0]
+        before = len(surface._session.log.entries())
+        surface.run_layout(ApplyKind(HSPLIT), (split,))
+        _flush()
+        assert len(surface._session.log.entries()) == before
+        assert "Nothing to change." in surface.editor_status_sentence()
+    finally:
+        _close(parent, surface)
+
+
+def test_the_change_to_menu_follows_the_dark_theme(qapp: QApplication, tmp_path: Path) -> None:
+    parent, surface = _shown(tmp_path, "theme")
+    try:
+        tokens = tokens_from_palette(qapp.palette(), force_mode="dark")
+        surface.apply_theme(tokens)
+        _flush()
+        box_id = surface._session.document.by_name("box")[0]
+        surface.open_context_menu(box_id, None)
+        _flush()
+        menu = surface.findChild(QMenu, "formBuilder.contextMenu")
+        assert menu is not None and menu.isVisible()
+        change = _submenu(menu, "Change to")
+        chrome = chrome_for(tokens)
+        assert chrome.panel in change.styleSheet()
+        assert chrome.text in change.styleSheet()
+        menu.close()
     finally:
         _close(parent, surface)
 
@@ -252,20 +304,18 @@ def _shoot_layout_commands(qapp: QApplication, tmp_path: Path, folder: Path) -> 
             _save(parent, popover, folder, "wrap-popover", mode, width, height)
             popover.close()
             _flush()
+            _close_menus(surface)
 
-            _right_click(canvas, box, QPoint(box.width() // 2, 3))
-            menu = surface.findChild(QMenu, "formBuilder.contextMenu")
-            assert menu is not None and menu.isVisible()
+            _right_click(canvas, box, QPoint(box.width() // 2, 10))
+            menu = _context_menu(surface)
             change = _submenu(menu, "Change to")
             change.popup(menu.mapToGlobal(menu.rect().topRight()))
             _flush()
             _save(parent, change, folder, "change-to", mode, width, height)
-            menu.close()
-            _flush()
+            _close_menus(surface)
 
-            _right_click(canvas, box, QPoint(box.width() // 2, 3))
-            menu = surface.findChild(QMenu, "formBuilder.contextMenu")
-            assert menu is not None
+            _right_click(canvas, box, QPoint(box.width() // 2, 10))
+            menu = _context_menu(surface)
             _grab_confirm(parent, surface, folder, mode, width, height)
             _action(menu, "Remove layout\u2026").trigger()
             _flush()
@@ -288,6 +338,7 @@ def _shoot_layout_commands(qapp: QApplication, tmp_path: Path, folder: Path) -> 
                 scroll.ensureWidgetVisible(kind)
             _flush()
             _save(parent, None, folder, "layout-kind", mode, width, height)
+            _close_menus(surface)
     finally:
         _close(parent, surface)
 
@@ -327,7 +378,8 @@ def _save(
         app.processEvents()
         tile = overlay.grab()
         painter = QPainter(image)
-        painter.drawPixmap(max(8, (image.width() - tile.width()) // 2), 48, tile)
+        origin = host.mapFromGlobal(overlay.mapToGlobal(QPoint(0, 0)))
+        painter.drawPixmap(origin, tile)
         painter.end()
     image.save(str(folder / ("%s-%s-%dx%d.png" % (stem, mode, width, height))))
 
@@ -411,6 +463,24 @@ def _right_click(canvas: QWidget, widget: QWidget, at: Optional[QPoint] = None) 
     port = _port(canvas, widget, at)
     event = QContextMenuEvent(QContextMenuEvent.Reason.Mouse, port, canvas.viewport().mapToGlobal(port))
     QApplication.sendEvent(canvas.viewport(), event)
+    _flush()
+
+
+def _context_menu(surface: QWidget) -> QMenu:
+    """The open context menu. A closed one stays until deleteLater runs."""
+    visible = [
+        menu
+        for menu in surface.findChildren(QMenu)
+        if menu.objectName() == "formBuilder.contextMenu" and menu.isVisible()
+    ]
+    assert visible, "context menu is not open"
+    return visible[-1]
+
+
+def _close_menus(surface: QWidget) -> None:
+    for menu in surface.findChildren(QMenu):
+        menu.hide()
+        menu.close()
     _flush()
 
 
