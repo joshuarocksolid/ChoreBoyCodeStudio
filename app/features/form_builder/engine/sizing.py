@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.tree import effective_class
+from app.features.form_builder.engine.query.tree import effective_class, is_page_container
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import EnumValue, SizePolicyValue, SizeValue
@@ -47,6 +47,7 @@ HUG_TIP = "As big as its content needs, and no bigger."
 FILL_TIP = "Takes the spare room the layout gives it."
 FIXED_TIP = "Exactly this many pixels."
 SHARE_CAPTION = "0 means no share. Two widgets with 1 and 2 split the spare room 1 : 2."
+FREE_CAPTION = "Not in a layout: its size is the rectangle in Placement."
 
 
 @dataclass(frozen=True)
@@ -64,6 +65,7 @@ class AxisProjection:
     pixels: Optional[int]
     policy_name: str
     caption: str
+    enabled: bool = True
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,10 @@ class AxisFacts:
     form_label_width: Optional[int] = None
     canvas_empty: bool = False
     minimum_hint: int = 0
+    free: bool = False
+    splitter_axis: bool = False
+    growth_taken: Optional[int] = None
+    growth_total: Optional[int] = None
 
 
 def policy_tail(policy: str) -> str:
@@ -415,8 +421,19 @@ def splice_stretch(current: Optional[str], index: int, value: int, length: int) 
     return ",".join(str(item) for item in parts)
 
 
+def placed_freely(document: UiDocument, node_id: NodeId) -> bool:
+    parent = document.parent(node_id)
+    if not isinstance(parent, WidgetNode):
+        return False
+    if is_page_container(document, parent.id):
+        return False
+    return True
+
+
 def explain(width: int, height: int, axes: Sequence[AxisFacts], *, qt_names: bool) -> str:
     """The "why is it this size?" paragraph. Every number comes from ``axes``."""
+    if axes and all(axis.free for axis in axes):
+        return "%d × %d px, as stored. A layout would size it." % (int(width), int(height))
     lines = ["%d × %d px." % (int(width), int(height))]
     if any(axis.canvas_empty for axis in axes):
         lines.append(
@@ -424,7 +441,11 @@ def explain(width: int, height: int, axes: Sequence[AxisFacts], *, qt_names: boo
         )
     for axis in axes:
         if axis.form_label_width is not None and axis.name == "Width":
-            lines.append("Labels are as wide as the longest label, %d px." % int(axis.form_label_width))
+            lines.append(
+                "This label is %d px wide. The label column is %d px, the width of the longest label."
+                % (int(axis.size), int(axis.form_label_width))
+            )
+            continue
         sentence = _axis_sentence(axis)
         if qt_names and axis.policy and sentence:
             sentence = "%s (%s)" % (sentence, policy_tail(axis.policy))
@@ -489,6 +510,8 @@ def preview_pill(
 
 
 def _axis_sentence(axis: AxisFacts) -> str:
+    if axis.splitter_axis:
+        return _splitter_growth_sentence(axis)
     if axis.fixed and axis.word == WORD_FIXED:
         return "%s is fixed at %d px." % (axis.name, int(axis.size if axis.minimum == axis.maximum else axis.minimum))
     if axis.word == WORD_FILL and axis.maximum_set and axis.size >= axis.maximum:
@@ -519,6 +542,18 @@ def _axis_sentence(axis: AxisFacts) -> str:
     if axis.word == WORD_HUG or axis.word is None:
         return _hug_sentence(axis)
     return ""
+
+
+def _splitter_growth_sentence(axis: AxisFacts) -> str:
+    taken = axis.growth_taken
+    total = axis.growth_total
+    if axis.stretch <= 0:
+        if taken is not None and int(taken) != 0:
+            return "When the splitter grows, this pane takes %d extra px." % int(taken)
+        return "When the splitter grows, this pane keeps its size."
+    if taken is None or total is None or int(total) <= 0 or int(taken) < 0:
+        return "When the splitter grows, this pane keeps its size."
+    return "When the splitter grows, this pane takes %d of every %d extra px." % (int(taken), int(total))
 
 
 def _hug_sentence(axis: AxisFacts) -> str:

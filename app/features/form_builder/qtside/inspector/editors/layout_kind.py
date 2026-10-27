@@ -6,10 +6,12 @@ the standard inspector rows, so their writes are plain property writes.
 
 from __future__ import annotations
 
-from typing import Callable, Dict, List, Sequence, Tuple
+import re
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import Command, CommandRejected
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.ui4.nodes import LayoutNode
 from app.features.form_builder.engine.layout_actions import (
     FORM,
     GRID,
@@ -90,6 +92,8 @@ _AFTER_KIND = frozenset(spec.key for spec in _ROWS)
 # slot, then a 104 px label column.
 _BAR_SLOT = 8
 _LABEL = 104
+_FOLLOWS_WINDOW = "Everything in this layout follows the window's edges."
+_WHY_COLOR = re.compile(r"QLabel#formBuilder\\.sizeWhy\s*\{\s*color:\s*([^;]+);")
 
 
 def register(registrar: Registrar) -> None:
@@ -110,7 +114,10 @@ class LayoutBody:
         self._column = QVBoxLayout(self._root)
         self._column.setContentsMargins(0, 0, 0, 0)
         self._column.setSpacing(2)
+        self._edges = _EdgeCaption(_FOLLOWS_WINDOW, self._root)
         self._kind = _KindRow(self._root, self._pick)
+        self._column.addWidget(self._edges)
+        self._edges.hide()
         self._column.addWidget(self._kind.widget)
         self._editors: Dict[str, Tuple[tuple, Editor]] = {}
         self._shown_for: Tuple[NodeId, ...] = ()
@@ -128,8 +135,9 @@ class LayoutBody:
         keys = {row.key for row in rows}
         for key in [key for key in self._editors if key not in keys]:
             self._drop(self._editors.pop(key)[1].widget)
-        self._order(before + [self._kind.widget] + after)
+        self._order([self._edges] + before + [self._kind.widget] + after)
         self._paint_kind()
+        self._paint_edges()
 
     def _editor(self, row: Row) -> QWidget:
         signature = _signature(row, self._host.qt_names)
@@ -154,6 +162,15 @@ class LayoutBody:
         widget.hide()
         self._column.removeWidget(widget)
         widget.deleteLater()
+
+    def _paint_edges(self) -> None:
+        show = _root_layout_selected(self._host)
+        self._edges.setVisible(show)
+        if not show:
+            return
+        color = _muted_caption(self._edges)
+        if color:
+            self._edges.setStyleSheet("color: %s; background: transparent;" % color)
 
     def _paint_kind(self) -> None:
         host = self._host
@@ -205,6 +222,62 @@ def _signature(row: Row, qt_names: bool) -> tuple:
         return (OpenRow, row.label, row.qt_name, row.help, row.editor, row.spec, row.write, qt_names)
     assert isinstance(row, LockedRow)
     return (LockedRow, row.label, row.qt_name, row.help, row.reason, qt_names)
+
+
+def _root_layout_selected(host: GroupHost) -> bool:
+    if len(host.owners) != 1:
+        return False
+    root_layout = host.document.root.layout
+    if root_layout is None:
+        return False
+    owner = host.document.get(host.owners[0])
+    return isinstance(owner, LayoutNode) and owner.id == root_layout.id
+
+
+def _muted_caption(widget: QWidget) -> str:
+    current: Optional[QWidget] = widget
+    while current is not None:
+        found = _WHY_COLOR.search(current.styleSheet())
+        if found is not None:
+            return found.group(1).strip()
+        current = current.parentWidget()
+    return ""
+
+
+class _EdgeCaption(QLabel):
+    """A wrapped note whose hint width does not widen the inspector."""
+
+    def __init__(self, text: str, parent: QWidget) -> None:
+        super().__init__(text, parent)
+        self.setObjectName("formBuilder.layout.followsWindow")
+        self.setWordWrap(True)
+        self.setMinimumWidth(0)
+        self.setAccessibleName(text)
+        policy = self.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        policy.setVerticalPolicy(QSizePolicy.Policy.Minimum)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+        self.hide()
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, self._wrapped(self._hint_width()))
+
+    def minimumSizeHint(self) -> QSize:  # noqa: N802
+        return QSize(0, 0)
+
+    def _hint_width(self) -> int:
+        if self.width() > 0:
+            return int(self.width())
+        parent = self.parentWidget()
+        if parent is not None and parent.width() > 0:
+            return int(parent.width())
+        return 0
+
+    def _wrapped(self, width: int) -> int:
+        if width <= 0:
+            return int(super().sizeHint().height())
+        return int(self.heightForWidth(width))
 
 
 class _KindRow:

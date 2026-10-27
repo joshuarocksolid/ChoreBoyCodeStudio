@@ -6,13 +6,15 @@ editing this file. The words and the writes live in the engine.
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from dataclasses import replace
+from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.catalog_ext.sizing import from_write, write_share
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.sizing import (
     FILL_TIP,
     FIXED_TIP,
+    FREE_CAPTION,
     HUG_TIP,
     QWIDGET_SIZE_MAX,
     SHARE_CAPTION,
@@ -25,6 +27,7 @@ from app.features.form_builder.engine.sizing import (
     SizingWrite,
     clear_property,
     encode_axis,
+    placed_freely,
     project_axis,
     read_share,
     reset_words,
@@ -73,13 +76,13 @@ class SizeBody:
         layout = QVBoxLayout(self._root)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(4)
-        self._width = _AxisRow("h", "Width", self._root, self._pick, self._pixels)
-        self._height = _AxisRow("v", "Height", self._root, self._pick, self._pixels)
-        self._share_width = _ShareRow("h", self._root, self._share)
-        self._share_height = _ShareRow("v", self._root, self._share)
-        self._at_least = _LimitRow("minimumSize", "At least", self._root, self._limit, self._clear_limit)
-        self._at_most = _LimitRow("maximumSize", "At most", self._root, self._limit, self._clear_limit)
-        self._reset = _reset_button(self._root, "formBuilder.size.reset", "Reset size", self._reset_words)
+        self._width = _AxisRow("h", "Width", self._root, self._pick, self._pixels, self._guard)
+        self._height = _AxisRow("v", "Height", self._root, self._pick, self._pixels, self._guard)
+        self._share_width = _ShareRow("h", self._root, self._share, self._guard)
+        self._share_height = _ShareRow("v", self._root, self._share, self._guard)
+        self._at_least = _LimitRow("minimumSize", "At least", self._root, self._limit, self._clear_limit, self._guard)
+        self._at_most = _LimitRow("maximumSize", "At most", self._root, self._limit, self._clear_limit, self._guard)
+        self._reset = _reset_button(self._root, "formBuilder.size.reset", "Reset size", self._reset_words, self._guard)
         self._why = QLabel(self._root)
         self._why.setObjectName("formBuilder.sizeWhy")
         self._why.setAccessibleName("Why is it this size?")
@@ -89,7 +92,7 @@ class SizeBody:
         self._watch = _ResizeWatch(self._queue_why, self._root)
         self._why_timer = QTimer(self._root)
         self._why_timer.setSingleShot(True)
-        self._why_timer.timeout.connect(self._refresh_why)
+        self._why_timer.timeout.connect(self._guard(self._root, self._refresh_why))
         layout.addWidget(self._width.widget)
         layout.addWidget(self._share_width.widget)
         layout.addWidget(self._height.widget)
@@ -141,9 +144,25 @@ class SizeBody:
             widget.installEventFilter(self._watch)
 
     def _queue_why(self) -> None:
-        if self._painting:
+        if self._painting or not wrapper_is_valid(self._root):
             return
         self._why_timer.start(0)
+
+    def _guard(self, widget: QWidget, call: Callable[[], None]) -> Callable[..., None]:
+        """Stop a late signal. A disposed session and a deleted editor are normal."""
+
+        def run(*_args: object) -> None:
+            if not wrapper_is_valid(self._root) or not wrapper_is_valid(widget):
+                return
+            try:
+                self._host.document
+            except RuntimeError as error:
+                if error.args == ("session is disposed",):
+                    return
+                raise
+            call()
+
+        return run
 
     def _refresh_why(self) -> None:
         if self._painting:
@@ -214,6 +233,12 @@ class SizeBody:
             commands.append(from_write(node.id, write))
         if commands:
             self._host.run("Size", commands)
+            return
+        self._painting = True
+        try:
+            self._paint()
+        finally:
+            self._painting = False
 
     def _pixels(self, axis: str, pixels: int) -> None:
         if self._painting:
@@ -318,6 +343,7 @@ class _AxisRow:
         parent: QWidget,
         on_word: object,
         on_pixels: object,
+        guard: Callable[[QWidget, Callable[[], None]], Callable[..., None]],
     ) -> None:
         self.axis = axis
         self._on_word = on_word
@@ -349,7 +375,7 @@ class _AxisRow:
             button.setToolTip(_TIPS[word])
             button.setAccessibleName("%s %s" % (title, word))
             button.setFocusPolicy(_strong())
-            button.clicked.connect(lambda _checked=False, chosen=word: on_word(axis, chosen))
+            button.clicked.connect(guard(button, lambda chosen=word: on_word(axis, chosen)))
             self._buttons[word] = button
             line.addWidget(button)
         self._pixels = QSpinBox(self.widget)
@@ -361,7 +387,7 @@ class _AxisRow:
         editor = self._pixels.lineEdit()
         if editor is not None:
             editor.setAccessibleName("%s in pixels" % title)
-        self._pixels.editingFinished.connect(lambda: on_pixels(axis, self._pixels.value()))
+        self._pixels.editingFinished.connect(guard(self._pixels, lambda: on_pixels(axis, self._pixels.value())))
         self._pixels.hide()
         line.addStretch(1)
         outer.addLayout(line)
@@ -385,12 +411,15 @@ class _AxisRow:
         changed = any(item.filled or item.custom for item in projections)
         set_style_flag(self._label, "fbChanged", "true" if changed else "false")
         set_style_flag(self._bar, "fbChanged", "true" if changed else "false")
+        enabled = all(item.enabled for item in projections)
         for word, button in self._buttons.items():
             button.blockSignals(True)
             button.setChecked(not mixed and first.filled and first.word == word)
             outlined = not mixed and not first.filled and not first.custom and first.word == word
             set_style_flag(button, "fbOutline", "true" if outlined else "false")
+            button.setEnabled(enabled)
             button.blockSignals(False)
+        self._pixels.setEnabled(enabled)
         show_pixels = not mixed and first.filled and first.word == WORD_FIXED
         self._pixels.setVisible(show_pixels)
         if show_pixels and first.pixels is not None:
@@ -406,7 +435,13 @@ class _AxisRow:
 
 
 class _ShareRow:
-    def __init__(self, axis: str, parent: QWidget, on_share: object) -> None:
+    def __init__(
+        self,
+        axis: str,
+        parent: QWidget,
+        on_share: object,
+        guard: Callable[[QWidget, Callable[[], None]], Callable[..., None]],
+    ) -> None:
         self.axis = axis
         self.widget = QWidget(parent)
         self.widget.setObjectName("formBuilder.size.share.%s" % axis)
@@ -427,7 +462,7 @@ class _ShareRow:
         editor = self._box.lineEdit()
         if editor is not None:
             editor.setAccessibleName("Share of spare room")
-        self._box.editingFinished.connect(lambda: on_share(axis, self._box.value()))
+        self._box.editingFinished.connect(guard(self._box, lambda: on_share(axis, self._box.value())))
         line.addWidget(self._box)
         outer.addLayout(line)
         self._caption = QLabel(SHARE_CAPTION, self.widget)
@@ -453,7 +488,15 @@ class _ShareRow:
 
 
 class _LimitRow:
-    def __init__(self, name: str, title: str, parent: QWidget, on_limit: object, on_reset: object) -> None:
+    def __init__(
+        self,
+        name: str,
+        title: str,
+        parent: QWidget,
+        on_limit: object,
+        on_reset: object,
+        guard: Callable[[QWidget, Callable[[], None]], Callable[..., None]],
+    ) -> None:
         self.name = name
         self.widget = QWidget(parent)
         self.widget.setObjectName("formBuilder.size.%s" % name)
@@ -472,13 +515,23 @@ class _LimitRow:
         line.addWidget(self._label)
         self._width = _blank_edit(self.widget, "%s width in pixels" % title, "formBuilder.size.%s.width" % name)
         self._height = _blank_edit(self.widget, "%s height in pixels" % title, "formBuilder.size.%s.height" % name)
-        self._width.editingFinished.connect(lambda: _commit_limit(self._width, name, "h", on_limit))
-        self._height.editingFinished.connect(lambda: _commit_limit(self._height, name, "v", on_limit))
+        self._width.editingFinished.connect(
+            guard(self._width, lambda: _commit_limit(self._width, name, "h", on_limit))
+        )
+        self._height.editingFinished.connect(
+            guard(self._height, lambda: _commit_limit(self._height, name, "v", on_limit))
+        )
         # The fields share the free width; a trailing stretch would starve them.
         line.addWidget(self._width, 1)
         line.addWidget(QLabel("×", self.widget))
         line.addWidget(self._height, 1)
-        self._reset = _reset_button(self.widget, "formBuilder.size.%s.reset" % name, "Reset %s" % title.lower(), lambda: on_reset(name))
+        self._reset = _reset_button(
+            self.widget,
+            "formBuilder.size.%s.reset" % name,
+            "Reset %s" % title.lower(),
+            lambda: on_reset(name),
+            guard,
+        )
         line.addWidget(self._reset)
         outer.addLayout(line)
 
@@ -525,6 +578,9 @@ def _project(host: GroupHost, node: WidgetNode) -> Tuple[AxisProjection, AxisPro
         class_default_policy=defaults[1],
         class_phrase=phrase,
     )
+    if placed_freely(host.document, node.id):
+        horizontal = replace(horizontal, caption=FREE_CAPTION, enabled=False)
+        vertical = replace(vertical, caption=FREE_CAPTION, enabled=False)
     return horizontal, vertical
 
 
@@ -655,7 +711,13 @@ def _show_blank(edit: QLineEdit, values: Sequence[Optional[int]], _empty: int) -
     edit.blockSignals(False)
 
 
-def _reset_button(parent: QWidget, object_name: str, accessible: str, on_click: object) -> QToolButton:
+def _reset_button(
+    parent: QWidget,
+    object_name: str,
+    accessible: str,
+    on_click: Callable[[], None],
+    guard: Callable[[QWidget, Callable[[], None]], Callable[..., None]],
+) -> QToolButton:
     button = QToolButton(parent)
     button.setObjectName(object_name)
     button.setProperty("fbFlat", "true")
@@ -664,7 +726,7 @@ def _reset_button(parent: QWidget, object_name: str, accessible: str, on_click: 
     button.setAccessibleName(accessible)
     button.setToolTip(accessible)
     button.setFocusPolicy(_strong())
-    button.clicked.connect(on_click)
+    button.clicked.connect(guard(button, on_click))
     button.hide()
     return button
 
