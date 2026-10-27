@@ -199,6 +199,12 @@ class _Structure(_LayoutSlots):
         return widget
 
     def _create_widget(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:
+        if parent is None and node is not self._session.document.root:
+            # A container page (splitter, tab, stack, scroll area, MDI,
+            # wizard) is inserted after it is built. Built parentless it is a
+            # window, and a window's layout pins its minimum size (QStatusBar
+            # does that in its constructor), which a patched copy never gets.
+            parent = self._nursery()
         widget = self._construct(node, parent)
         self._ensure_actions(node, widget)
         self._fill_widget(node, widget)
@@ -1059,8 +1065,8 @@ class _Structure(_LayoutSlots):
         """A hidden parent for a morph's new widget until a container takes it.
 
         A parentless widget is a window, and a window's layout pins its minimum
-        size when it activates (QStatusBar does that on construction). A fresh
-        build never makes form parts windows, so a patch must not either.
+        size when it activates (QStatusBar does that on construction). Neither
+        a build nor a patch makes a form part a window, even for a moment.
         """
         nursery = self._nursery_widget
         if nursery is None or not wrapper_is_valid(nursery):

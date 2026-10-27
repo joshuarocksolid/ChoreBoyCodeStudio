@@ -554,7 +554,7 @@ FAST_SEEDS = 200
 SOAK_STEPS = 50
 SOAK_SEEDS = 5000
 # 3438 fails on a5a01299: QStatusBar height 20 vs 22 after AdjustSize. Not a regression.
-PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 547, 653, 662, 805, 806, 1219, 2019, 2283)
+PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 547, 653, 662, 805, 806, 1219, 2019, 2283, 3438)
 PINNED_HASH_SEEDS = ("0", "1")
 # Allocator settings that overwrite freed memory, so a use-after-free crashes.
 SCRIBBLE_ENV = {"MallocScribble": "1", "MallocPreScribble": "1", "MALLOC_PERTURB_": "165"}
