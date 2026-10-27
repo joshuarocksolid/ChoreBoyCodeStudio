@@ -74,7 +74,6 @@ from app.features.form_builder.qtside.canvas.core.text import TextTarget, enter_
 from app.features.form_builder.qtside.canvas.core.words import (
     FIRST_FOCUS_HINT,
     GIVEN_SIZE,
-    MOVE_IN_LAYOUT_LATER,
     hover_sentence,
 )
 
