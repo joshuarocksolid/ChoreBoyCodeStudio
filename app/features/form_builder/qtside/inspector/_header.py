@@ -36,6 +36,7 @@ class Header(QWidget):
         self._class.setTextFormat(Qt.PlainText)
         self._crumbs = QLabel(self)
         self._crumbs.setObjectName("formBuilder.inspectorCrumbs")
+        self._crumbs.setAccessibleName("Selection path")
         self._crumbs.setTextFormat(Qt.RichText)
         self._crumbs.setTextInteractionFlags(Qt.TextBrowserInteraction)
         self._crumbs.setOpenExternalLinks(False)

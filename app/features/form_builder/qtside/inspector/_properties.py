@@ -221,6 +221,7 @@ class PropertiesPage(QWidget):
             self._form.paint(body, self._match_color)
             for group in self._groups.values():
                 group.hide()
+            self._chain_tabs()
             return
         self._form.hide()
         present = {view.group: view for view in body.groups}
@@ -233,6 +234,7 @@ class PropertiesPage(QWidget):
             group.show()
             expanded = True if searching else self._expanded[group_id]
             group.paint(view, expanded, searching, self._match_color, body.owners, self._show_qt)
+        self._chain_tabs()
 
     def focus_search(self) -> None:
         self._search.setFocus()
@@ -262,6 +264,21 @@ class PropertiesPage(QWidget):
         row = self._row_holding(focus)
         if row is not None:
             row.revert()
+
+    def reveal_after_selection(self) -> None:
+        focus = QApplication.focusWidget()
+        row = None if not isinstance(focus, QWidget) else self._row_holding(focus)
+        if row is not None and row.isVisible():
+            self._scroll.ensureWidgetVisible(row)
+            return
+        self._scroll.verticalScrollBar().setValue(0)
+
+    def _chain_tabs(self) -> None:
+        previous: Optional[QWidget] = None
+        for stop in _stops_under(self):
+            if previous is not None:
+                QWidget.setTabOrder(previous, stop)
+            previous = stop
 
     def _search_changed(self, text: str) -> None:
         if text.strip():
@@ -433,6 +450,7 @@ class _Group(QWidget):
         self._toggle.setText(group.title.upper())
         self._toggle.setFont(_overline_font())
         self._toggle.setCheckable(True)
+        self._toggle.setAccessibleName("%s group" % group.title)
         self._toggle.setChecked(page._expanded[group])
         self._toggle.setToolButtonStyle(_beside())
         self._toggle.setArrowType(_arrow(page._expanded[group]))
@@ -513,10 +531,12 @@ class _Group(QWidget):
                 self._body.hide()
                 self._drop_rows()
             self._page.request_rebuild()
+            self._page._chain_tabs()
             return
         view = self._view
         if view is not None:
             self.paint(view, expanded, False, self._match_color, self._owners, self._qt_names)
+        self._page._chain_tabs()
 
     def _paint_custom(self, view: GroupView, factory: GroupBodyFactory) -> None:
         if self._custom is None:
@@ -999,26 +1019,93 @@ def _escape(text: str) -> str:
         .replace('"', "&quot;")
     )
 
+_VALUE_KINDS = (
+    "QSpinBox",
+    "QDoubleSpinBox",
+    "QLineEdit",
+    "QComboBox",
+    "QFontComboBox",
+    "QPlainTextEdit",
+    "QKeySequenceEdit",
+)
+_BUTTON_KINDS = ("QCheckBox", "QPushButton", "QToolButton", "QRadioButton")
+
+
+def _lead(label: str) -> str:
+    if not label:
+        return label
+    return label[0].upper() + label[1:]
+
+
 def _name_editors(root: QWidget, label: str) -> None:
     """Name the editor and the line edit Qt uses as its focus proxy."""
     root.setAccessibleName(label)
     _name_line(root, label)
+    lead = _lead(label)
+    no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
     for child in root.findChildren(QWidget):
+        if child.accessibleName():
+            _name_line(child, child.accessibleName())
+            continue
         meta = child.metaObject()
         kind = str(meta.className()) if meta is not None else ""
-        if kind not in (
-            "QSpinBox",
-            "QDoubleSpinBox",
-            "QLineEdit",
-            "QComboBox",
-            "QFontComboBox",
-            "QPlainTextEdit",
-            "QKeySequenceEdit",
-        ):
-            continue
-        if not child.accessibleName():
+        if kind in _VALUE_KINDS:
             child.setAccessibleName(label)
-        _name_line(child, child.accessibleName() or label)
+            _name_line(child, label)
+            continue
+        if kind in _BUTTON_KINDS:
+            reader = getattr(child, "text", None)
+            text = str(reader()).strip() if callable(reader) else ""
+            child.setAccessibleName("%s: %s" % (lead, text) if text else lead)
+            continue
+        if child.focusPolicy() != no_focus:
+            child.setAccessibleName(lead)
+
+
+def _tab_stop(widget: QWidget) -> bool:
+    if not widget.isVisible() or not widget.isEnabled():
+        return False
+    no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
+    return widget.focusPolicy() != no_focus
+
+
+def _stops_under(widget: QWidget) -> List[QWidget]:
+    if not widget.isVisible():
+        return []
+    if isinstance(widget, QScrollArea):
+        found: List[QWidget] = []
+        if _tab_stop(widget):
+            found.append(widget)
+        content = widget.widget()
+        if content is not None:
+            found.extend(_stops_under(content))
+        return found
+    if _tab_stop(widget):
+        return [widget]
+    layout = widget.layout()
+    if layout is not None:
+        return _stops_in_layout(layout)
+    found = []
+    for child in widget.children():
+        if isinstance(child, QWidget):
+            found.extend(_stops_under(child))
+    return found
+
+
+def _stops_in_layout(layout: QLayout) -> List[QWidget]:
+    found: List[QWidget] = []
+    for index in range(layout.count()):
+        item = layout.itemAt(index)
+        if item is None:
+            continue
+        nested = item.layout()
+        if nested is not None:
+            found.extend(_stops_in_layout(nested))
+            continue
+        child = item.widget()
+        if child is not None:
+            found.extend(_stops_under(child))
+    return found
 
 
 def _name_line(widget: QWidget, label: str) -> None:

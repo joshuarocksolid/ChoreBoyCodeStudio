@@ -42,6 +42,7 @@ class SizeEditor:
         layout.setContentsMargins(0, 0, 0, 0)
         row, self._width, self._height = _pair(self._root, ("W", "H"), self._commit)
         layout.addWidget(row)
+        self._shown = ("", "")
 
     @property
     def widget(self) -> QWidget:
@@ -51,6 +52,11 @@ class SizeEditor:
         mark(self._root, value)
         size = _size(value)
         _set_pair(self._width, self._height, 0 if size is None else size.width, 0 if size is None else size.height)
+        self._shown = _texts(self._width, self._height)
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return _texts(self._width, self._height) != self._shown
 
     def _commit(self, _number: int) -> None:
         self._host.commit(SizeValue(self._width.value(), self._height.value()))
@@ -66,6 +72,7 @@ class RectEditor:
         size, self._width, self._height = _pair(self._root, ("W", "H"), self._commit)
         layout.addWidget(origin)
         layout.addWidget(size)
+        self._shown = ("", "", "", "")
 
     @property
     def widget(self) -> QWidget:
@@ -81,6 +88,11 @@ class RectEditor:
             0 if rect is None else rect.width,
             0 if rect is None else rect.height,
         )
+        self._shown = _texts(self._x, self._y, self._width, self._height)
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return _texts(self._x, self._y, self._width, self._height) != self._shown
 
     def _commit(self, _number: int) -> None:
         self._host.commit(RectValue(self._x.value(), self._y.value(), self._width.value(), self._height.value()))
@@ -103,6 +115,7 @@ class SizePolicyEditor:
         layout.addWidget(policies)
         stretch, self._horstretch, self._verstretch = _pair(self._root, ("H stretch", "V stretch"), self._commit)
         layout.addWidget(stretch)
+        self._shown = ("", "")
         self._horizontal.currentIndexChanged.connect(self._commit)
         self._vertical.currentIndexChanged.connect(self._commit)
 
@@ -123,6 +136,11 @@ class SizePolicyEditor:
             0 if policy is None else policy.horstretch,
             0 if policy is None else policy.verstretch,
         )
+        self._shown = _texts(self._horstretch, self._verstretch)
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return _texts(self._horstretch, self._verstretch) != self._shown
 
     def _commit(self, _value: object) -> None:
         self._host.commit(
@@ -150,10 +168,15 @@ def _pair(
         layout.addWidget(QLabel(caption, row))
         box = QSpinBox(row)
         box.setRange(-1000000, 1000000)
+        # Commit on Enter, focus-out or a step, not on every typed digit.
+        box.setKeyboardTracking(False)
         box.valueChanged.connect(on_change)
         layout.addWidget(box)
         boxes.append(box)
     return row, boxes[0], boxes[1]
+
+def _texts(*boxes: QSpinBox) -> Tuple[str, ...]:
+    return tuple(box.text() for box in boxes)
 
 def _set_pair(first: QSpinBox, second: QSpinBox, left: int, right: int) -> None:
     first.blockSignals(True)
