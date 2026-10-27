@@ -47,6 +47,9 @@ class WrapSplitter(_CommandBase):
         if isinstance(holder, LayoutNode):
             splitter = planning.wrap_nodes(doc, ctx, ordered, "QSplitter", "QVBoxLayout", None)
             planning.break_layout(doc, ctx, _layout_id(doc, splitter), ())
+            # A pane takes its size from the splitter; a rect a widget kept
+            # while it sat in the layout would fight that on the next build.
+            _clear_geometry(doc, ctx, ordered)
         else:
             splitter = _insert_host(doc, ctx, holder, ordered, "QSplitter", self.geometry)
             planning.move_nodes(doc, ctx, ordered, InContainer(splitter, 0))

@@ -635,3 +635,25 @@ def test_a_tab_widget_changed_to_a_toolbox_keeps_each_page_title_as_its_label() 
     assert "<string>One</string>" in text and "<string>Two</string>" in text
     log.undo()
     assert saved(doc) == before
+
+
+def test_wrapping_laid_out_widgets_in_a_splitter_drops_a_kept_rect() -> None:
+    log = open_log(
+        _HEAD
+        + """  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="one">
+    <property name="geometry"><rect><x>0</x><y>0</y><width>48</width><height>20</height></rect></property>
+   </widget></item>
+   <item><widget class="QPushButton" name="two"/></item>
+  </layout>
+"""
+        + _TAIL
+    )
+    doc = log.document
+    ids = (nid(doc, "one"), nid(doc, "two"))
+
+    done = carry_out(doc, ids, PickWrap(VSPLIT), {}, transact(log))
+
+    assert isinstance(done, Done), done
+    assert doc.node(ids[0]).value("geometry") is None
+    assert "<rect>" not in saved(doc)
