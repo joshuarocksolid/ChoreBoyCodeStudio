@@ -7,7 +7,8 @@ build ``Wrap`` or ``MorphLayout`` themselves.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, replace
 from typing import (
     Any,
     Callable,
@@ -38,7 +39,9 @@ from app.features.form_builder.engine.query.tree import (
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.sizing import (
     WORD_HUG,
+    PaneShare,
     encode_axis,
+    encode_share,
     share_slots,
     splice_stretch,
 )
@@ -56,6 +59,8 @@ from app.features.form_builder.engine.ui4.values import (
     SizePolicyValue,
     SizeValue,
 )
+
+logger = logging.getLogger(__name__)
 
 VERTICAL = "vertical"
 HORIZONTAL = "horizontal"
@@ -395,11 +400,34 @@ def offers(
         requests = list(only)
     sheet: Dict[object, Offer] = {}
     for request in requests:
-        sheet[request] = _offer(_prepare(doc, ids, request, measured, accepted))
+        sheet[request] = _guarded_offer(doc, ids, request, measured, accepted)
     target = _container_target(doc, ids) if live else None
     layout = target[1] if target is not None else None
     current = _KIND_OF_LAYOUT.get(layout.class_name) if layout is not None else None
     return OfferSheet(sheet, current, morphs)
+
+
+_PLANNER_FAILED = "This can't be worked out for this selection."
+
+
+def _guarded_offer(
+    doc: UiDocument,
+    ids: Sequence[NodeId],
+    request: object,
+    measured: Measured,
+    accepted: Optional[Mapping[str, Tuple[str, ...]]],
+) -> Offer:
+    """One request's offer. A planner that raises disables only its own row.
+
+    The error is logged with its traceback so the bug still shows; the rest of
+    the menu stays usable. ``carry_out`` does not guard, so running a broken
+    request still raises.
+    """
+    try:
+        return _offer(_prepare(doc, ids, request, measured, accepted))
+    except Exception:  # noqa: BLE001 - one planner must not take the whole menu down
+        logger.exception("form builder layout planner failed for %r", request)
+        return Offer(False, _PLANNER_FAILED)
 
 
 def takes_layout(doc: UiDocument, ids: Sequence[NodeId]) -> bool:
@@ -786,6 +814,18 @@ def _plan_keep_content(
     stretch: Optional[str] = None
     for slot in share_slots(doc, node.id):
         if slot.axis != "v":
+            continue
+        if isinstance(slot, PaneShare):
+            # A vertical splitter pane keeps its share as the vertical stretch
+            # of its own size policy, the way the sizing panel writes it.
+            shared = encode_share(
+                axis="v",
+                value=0,
+                current_policy=write.policy,
+                class_default_h=policies[0],
+                class_default_v=policies[1],
+            )
+            write = replace(write, policy=shared.policy)
             continue
         text = doc.node(slot.layout).field(slot.field)
         current = text if isinstance(text, str) else None

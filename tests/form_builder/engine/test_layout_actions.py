@@ -21,6 +21,7 @@ from app.features.form_builder.engine.layout_actions import (
     ApplyKind,
     Current,
     Done,
+    KeepContent,
     Measure,
     NeedsConfirm,
     Offer,
@@ -37,7 +38,7 @@ from app.features.form_builder.engine.layout_actions import (
     transact,
 )
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import RectValue, SizeValue
+from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue
 from tests.form_builder.engine.commands._support import BOX, FREE, GRID as FULL_GRID, nid, open_log, saved
 
 _HEAD = """<?xml version="1.0" encoding="UTF-8"?>
@@ -490,3 +491,66 @@ def test_remove_layout_names_every_spacer_it_will_delete() -> None:
 
     assert isinstance(asked, NeedsConfirm)
     assert "2 spacers will be removed." in asked.text
+
+
+_VERTICAL_PANES = (
+    _HEAD
+    + """  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QSplitter" name="split">
+     <property name="orientation"><enum>Qt::Vertical</enum></property>
+     <widget class="QTextEdit" name="top">
+      <property name="sizePolicy">
+       <sizepolicy hsizetype="Expanding" vsizetype="Expanding"><horstretch>0</horstretch><verstretch>2</verstretch></sizepolicy>
+      </property>
+     </widget>
+     <widget class="QTextEdit" name="bottom"/>
+    </widget>
+   </item>
+  </layout>
+"""
+    + _TAIL
+)
+
+
+def test_keep_at_content_size_on_a_vertical_splitter_pane_drops_its_share_in_one_step() -> None:
+    log = open_log(_VERTICAL_PANES)
+    doc = log.document
+    top = nid(doc, "top")
+    before = saved(doc)
+
+    sheet = offers(doc, (top,), {})
+    assert gate(sheet, KeepContent()) == Offer(True)
+
+    done = carry_out(doc, (top,), KeepContent(), {}, transact(log))
+
+    assert isinstance(done, Done), done
+    assert len(log.entries()) == 1
+    policy = doc.node(top).value("sizePolicy")
+    assert isinstance(policy, SizePolicyValue)
+    assert (policy.hsizetype, policy.verstretch) == ("Expanding", 0)
+    assert policy.vsizetype != "Expanding"
+    assert carry_out(doc, (top,), KeepContent(), {}, transact(log)) == Current()
+    log.undo()
+    assert saved(doc) == before
+
+
+def test_a_planner_that_raises_disables_only_its_own_row_and_logs_it(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import app.features.form_builder.engine.layout_actions as layout_actions
+
+    def broken(*args: object) -> None:
+        raise RuntimeError("planner bug")
+
+    monkeypatch.setitem(layout_actions._PLANNERS, Simplify, broken)  # type: ignore[index]
+    doc = open_log(BOX).document
+
+    with caplog.at_level("ERROR", logger=layout_actions.__name__):
+        sheet = offers(doc, (), {})
+
+    assert not gate(sheet, Simplify()).enabled
+    assert gate(sheet, ApplyKind(VERTICAL)) == gate(offers(doc, (), {}, only=[ApplyKind(VERTICAL)]), ApplyKind(VERTICAL))
+    assert any("planner bug" in (record.exc_text or "") or record.exc_info for record in caplog.records)
+    with pytest.raises(RuntimeError):
+        carry_out(doc, (), Simplify(), {}, lambda label, commands: ())
