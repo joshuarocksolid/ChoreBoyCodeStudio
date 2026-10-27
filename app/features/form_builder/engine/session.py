@@ -8,12 +8,13 @@ it carries XML text.
 from __future__ import annotations
 
 from dataclasses import replace
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, FrozenSet, List, Optional, Tuple
 
 from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
 from app.features.form_builder.engine.diagnostics import DiagnosticsStore, FormDiagnostic
 from app.features.form_builder.engine.events import (
     PRIORITY_DIAGNOSTICS,
+    PRIORITY_MODEL_CACHES,
     PRIORITY_SELECTION,
     PRIORITY_SELECTION_NOTIFY,
     ChangeSet,
@@ -21,6 +22,7 @@ from app.features.form_builder.engine.events import (
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.ref_index import RefIndex
 from app.features.form_builder.engine.query.selection import SelectionModel, SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
@@ -47,12 +49,16 @@ class FormSession:
         self._serializer = serializer
         self._selection = SelectionModel(document)
         self._disposed = False
+        self._refs = RefIndex()
+        self._refs.rebuild(document)
+        self._base_methods: FrozenSet[str] = frozenset()
         self._log = CommandLog(
             document,
             allocator,
             selection_provider=self._selection_snapshot,
         )
         self._subscriptions = [
+            self._log.subscribe(self._on_refs, priority=PRIORITY_MODEL_CACHES),
             self._log.subscribe(self._on_selection, priority=PRIORITY_SELECTION),
             self._log.subscribe(self._on_selection_notify, priority=PRIORITY_SELECTION_NOTIFY),
             self._log.subscribe(self._on_replaced, priority=PRIORITY_DIAGNOSTICS),
@@ -103,6 +109,22 @@ class FormSession:
         return self._serializer
 
     @property
+    def refs(self) -> RefIndex:
+        self._live()
+        return self._refs
+
+    @property
+    def base_methods(self) -> FrozenSet[str]:
+        self._live()
+        return self._base_methods
+
+    def set_base_methods(self, methods: FrozenSet[str]) -> None:
+        """Window method names for ``Rename``. Not a document edit."""
+        self._live()
+        self._base_methods = frozenset(methods)
+        self._log.set_base_methods(self._base_methods)
+
+    @property
     def allocator(self) -> IdAllocator:
         self._live()
         return self._allocator
@@ -139,6 +161,9 @@ class FormSession:
         self._subscriptions = []
         self._log.close()
         self._selection.clear_listeners()
+
+    def _on_refs(self, changeset: ChangeSet) -> None:
+        self._refs.apply(self._document, changeset)
 
     def _on_selection(self, changeset: ChangeSet) -> None:
         snap = self._log.selection

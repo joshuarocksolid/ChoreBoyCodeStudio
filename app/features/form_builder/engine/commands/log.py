@@ -130,11 +130,16 @@ class CommandLog:
         self._txn: Optional[_OpenTxn] = None
         self._txn_depth = 0
         self._cells_before: FrozenSet[FrozenSet[NodeId]] = frozenset()
+        self._base_methods: FrozenSet[str] = frozenset()
         self.selection = selection_provider()
 
     @property
     def document(self) -> UiDocument:
         return self._doc
+
+    def set_base_methods(self, methods: FrozenSet[str]) -> None:
+        """Window method names ``Rename`` refuses. Empty keeps the old refusals."""
+        self._base_methods = frozenset(methods)
 
     def execute(self, command: Command, *, continue_gesture: bool = False) -> CommandOutcome:
         """Apply ``command`` as one undo step, or inside the open transaction."""
@@ -511,6 +516,7 @@ class CommandLog:
             self._allocator,
             default_registry().all(),
             check_freshness=True,
+            base_methods=self._base_methods,
         )
 
     def _drop_redo(self) -> None:

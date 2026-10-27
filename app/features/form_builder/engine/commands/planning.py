@@ -5,10 +5,9 @@ This module does not import ``mutate``. It only calls ``ctx.do``.
 
 from __future__ import annotations
 
-import keyword
 from dataclasses import fields, is_dataclass
 from functools import cmp_to_key
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.ops import (
@@ -29,14 +28,13 @@ from app.features.form_builder.engine.commands.placement import (
     Placement,
 )
 from app.features.form_builder.engine.commands.refs import (
-    FORMULA_NAMES,
     NAME_FIELD,
-    RESERVED_NAMES,
     identity_name,
     native_delete_ops,
     native_rename_ops,
     rewrite_spec_refs,
 )
+from app.features.form_builder.engine.query.name_policy import explain_name
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import (
     CBCS_LAYOUT_KEYS,
@@ -610,7 +608,7 @@ def rename_node(doc: UiDocument, ctx: PlanContext, node_id: NodeId, new_name: st
         raise CommandRejected("That object has no name.")
     if new_name == old:
         return ()
-    _check_name(doc, new_name)
+    _check_name(doc, new_name, current=old, base_methods=_base_methods(ctx))
     set_field(doc, ctx, node_id, NAME_FIELD[node.kind], new_name)
     if node.id == doc.root.id and doc.ui.field("class_name") == old:
         set_field(doc, ctx, doc.ui.id, "class_name", new_name)
@@ -1470,7 +1468,7 @@ def _ensure_group(doc: UiDocument, ctx: PlanContext, name: str) -> None:
     for node in doc.ui.children("buttongroups"):
         if node.field("name") == name:
             return
-    _check_name(doc, name)
+    _check_name(doc, name, base_methods=_base_methods(ctx))
     spec = allocate_spec(ctx, NodeSpec("buttongroup", None, (("name", name),)))
     count = len(doc.ui.children("buttongroups"))
     ctx.do(InsertNodeOp(doc.ui.id, "buttongroups", count, spec))
@@ -1668,13 +1666,29 @@ def _take_name(base: str, doc: UiDocument, chosen: set) -> str:
         suffix += 1
 
 
-def _check_name(doc: UiDocument, new_name: str) -> None:
-    if new_name.startswith("cbcs") or new_name in RESERVED_NAMES or new_name in FORMULA_NAMES:
-        raise CommandRejected("That name is reserved.", code="FB106")
-    if not new_name.isidentifier() or keyword.iskeyword(new_name):
-        raise CommandRejected("That name is not a Python identifier.", code="FB011")
-    if new_name in doc.names():
-        raise CommandRejected("That name is already used.", code="FB010")
+def _check_name(
+    doc: UiDocument,
+    new_name: str,
+    current: str = "",
+    base_methods: FrozenSet[str] = frozenset(),
+) -> None:
+    taken = doc.names()
+    if current:
+        taken = frozenset(name for name in taken if name != current)
+    refusal = explain_name(new_name, taken, base_methods, current)
+    if refusal is not None:
+        raise CommandRejected(refusal.prose, code=refusal.code)
+
+
+def _base_methods(ctx: PlanContext) -> FrozenSet[str]:
+    # Contexts that never saw the window snapshot keep an empty set: today's
+    # refusals, and no FB204, until the session installs the logic-design set.
+    found = getattr(ctx, "base_methods", None)
+    if found is None:
+        return frozenset()
+    if callable(found):
+        found = found()
+    return frozenset(found)
 
 
 def _rank_index(ctx: PlanContext, node: Node, entries: Tuple[PropertyEntry, ...], name: str, dynamic: bool) -> int:
