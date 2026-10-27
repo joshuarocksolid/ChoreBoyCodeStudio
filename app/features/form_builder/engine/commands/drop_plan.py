@@ -14,6 +14,7 @@ from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
     InsertPage,
+    SpliceReading,
     SwapFormRows,
     WrapWithNew,
 )
@@ -60,6 +61,8 @@ def commands_for(
         return _place(doc, _grid(target, "cell"), sources, fragment, False)
     if action == "grid_row":
         return _place(doc, _grid(target, "insert_row"), sources, fragment, False)
+    if action == "grid_reading":
+        return (SpliceReading(target.host, target.index, sources, fragment),)
     if action == "grid_column":
         return _place(doc, _grid(target, "insert_column"), sources, fragment, False)
     if action == "form_cell":
@@ -122,7 +125,7 @@ def _preview_words(doc: UiDocument, target: AcceptedDrop) -> str:
         return "Goes on a new row."
     if target.action == "form_cell":
         return "Goes in this cell."
-    if target.action in ("grid_cell", "grid_row", "grid_column"):
+    if target.action in ("grid_cell", "grid_row", "grid_column", "grid_reading"):
         return "Goes in the grid."
     if target.action == "free":
         return "Goes at x %d, y %d." % (target.x, target.y)

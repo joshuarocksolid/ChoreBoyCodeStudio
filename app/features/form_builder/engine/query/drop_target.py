@@ -7,7 +7,7 @@ A shrunk nested layout stays hittable: its hit rect grows to 24 px.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, FrozenSet, List, Literal, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
@@ -37,6 +37,7 @@ DropAction = Literal[
     "wrap",
     "grid_cell",
     "grid_row",
+    "grid_reading",
     "grid_column",
     "form_cell",
     "form_row",
@@ -1271,6 +1272,7 @@ class OutlineRow:
     height: int
     width: int = 200
     left: int = 0
+    depth: int = 0
 
 
 def resolve_outline(
@@ -1279,8 +1281,16 @@ def resolve_outline(
     y: int,
     payload: DropPayload,
     blocked: FrozenSet[NodeId] = frozenset(),
+    *,
+    x: Optional[int] = None,
+    indent: int = 20,
 ) -> DropTarget:
-    """Before, after, or into an outline row. The indicator uses outline pixels."""
+    """Before, after, or into an outline row. The indicator uses outline pixels.
+
+    ``x`` outdents when it sits a full indent left of the row. A climb that
+    cannot land falls back to the row under the pointer, so a point on the
+    row stays a before/after of that row.
+    """
 
     row = _outline_row_at(rows, y)
     if row is None or not doc.contains(row.node):
@@ -1291,6 +1301,10 @@ def resolve_outline(
     band = _outline_band(row, y, into)
     if band == "into":
         return _outline_into(doc, row, payload)
+    if x is not None:
+        climbed = _outline_outdent(doc, rows, row, x, indent, payload)
+        if climbed is not None:
+            return climbed
     return _outline_beside(doc, row, band == "before", payload)
 
 
@@ -1414,9 +1428,13 @@ def _outline_row_at(rows: Sequence[OutlineRow], y: int) -> Optional[OutlineRow]:
 def _outline_band(row: OutlineRow, y: int, into: bool) -> str:
     height = max(row.height, 1)
     local = y - row.top
-    if into and local >= height / 3.0 and local < (2.0 * height) / 3.0:
+    if into:
+        if local < height * 0.25:
+            return "before"
+        if local >= height * 0.75:
+            return "after"
         return "into"
-    if y < row.top + height // 2:
+    if local < height * 0.5:
         return "before"
     return "after"
 
@@ -1510,6 +1528,18 @@ def _outline_beside(doc: UiDocument, row: OutlineRow, before: bool, payload: Dro
     return NoDrop()
 
 
+def _uniform_grid(layout: LayoutNode) -> bool:
+    return all((item.rowspan or 1) == 1 and (item.colspan or 1) == 1 for item in layout.items)
+
+
+def _reading_index(layout: LayoutNode, item: LayoutItemNode) -> int:
+    ordered = sorted(layout.items, key=lambda entry: (entry.row or 0, entry.column or 0, entry.slot_index))
+    for index, entry in enumerate(ordered):
+        if entry.id == item.id:
+            return index
+    return 0
+
+
 def _outline_layout_side(
     layout: LayoutNode,
     item: LayoutItemNode,
@@ -1526,6 +1556,11 @@ def _outline_layout_side(
         role: FormRole = "label" if payload.kind == "label" else "field"
         return _accept(host, "form_row", sentence, sentence, line, row=at, role=role)
     if layout.class_name == "QGridLayout":
+        if _uniform_grid(layout):
+            at = _reading_index(layout, item)
+            if not before:
+                at += 1
+            return _accept(host, "grid_reading", sentence, sentence, line, index=at)
         at = (0 if item.row is None else item.row) + (0 if before else (1 if item.rowspan is None else item.rowspan))
         column = 0 if item.column is None else item.column
         return _accept(
@@ -1543,27 +1578,61 @@ def _outline_layout_side(
     return _accept(host, "box", sentence, sentence, line, index=at)
 
 
-def _outline_layout_end(doc: UiDocument, layout: LayoutNode, row: OutlineRow, payload: DropPayload) -> AcceptedDrop:
+def _outline_layout_end(
+    doc: UiDocument, layout: LayoutNode, row: OutlineRow, payload: DropPayload
+) -> DropTarget:
     host = _outline_host(row, layout.id, _LAYOUT_CLASS.get(layout.class_name, "vbox"))
     name = layout.object_name or "the layout"
     sentence = "Insert into %s" % name
     body = _outline_body(row)
-    if layout.class_name == "QFormLayout":
-        role: FormRole = "label" if payload.kind == "label" else "field"
-        return _accept(host, "form_row", sentence, sentence, body, row=len(form_rows(doc, layout.id)), role=role)
-    if layout.class_name == "QGridLayout":
-        rows = 0
-        for item in layout.items:
-            span = 1 if item.rowspan is None else item.rowspan
-            rows = max(rows, (0 if item.row is None else item.row) + span)
-        return _accept(
-            host,
-            "grid_cell",
-            sentence,
-            sentence,
-            body,
-            row=rows,
-            rowspan=payload.rowspan,
-            colspan=payload.colspan,
-        )
+    if layout.class_name in ("QFormLayout", "QGridLayout"):
+        return _outline_auto_cell(doc, layout, row, payload)
     return _accept(host, "box", sentence, sentence, body, index=len(layout.items))
+
+
+def _outline_auto_cell(
+    doc: UiDocument, layout: LayoutNode, row: OutlineRow, payload: DropPayload
+) -> DropTarget:
+    # drop_plan imports resolve_outline from this module at load time.
+    from app.features.form_builder.engine.commands.drop_plan import auto_target
+
+    chosen = auto_target(doc, layout.id, payload)
+    if isinstance(chosen, AcceptedDrop):
+        return replace(chosen, indicator=_outline_body(row))
+    if chosen is None:
+        return NoDrop()
+    return chosen
+
+
+def _outline_outdent(
+    doc: UiDocument,
+    rows: Sequence[OutlineRow],
+    row: OutlineRow,
+    x: int,
+    indent: int,
+    payload: DropPayload,
+) -> Optional[DropTarget]:
+    by_id = {item.node: item for item in rows}
+    candidate = row
+    found: Optional[DropTarget] = None
+    while candidate.left - x >= indent:
+        parent = _outline_ancestor_row(doc, by_id, candidate)
+        if parent is None:
+            break
+        candidate = parent
+        landed = _outline_beside(doc, candidate, False, payload)
+        if not isinstance(landed, NoDrop):
+            found = landed
+    return found
+
+
+def _outline_ancestor_row(
+    doc: UiDocument, by_id: Dict[NodeId, OutlineRow], row: OutlineRow
+) -> Optional[OutlineRow]:
+    current = doc.parent(row.node)
+    while current is not None:
+        found = by_id.get(current.id)
+        if found is not None and found.node != row.node:
+            return found
+        current = doc.parent(current.id)
+    return None

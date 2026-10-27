@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from app.features.form_builder.engine.commands.catalog import ApplyLayout, InsertFragment
-from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage, SwapFormRows
+from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage, SpliceReading, SwapFormRows
 from app.features.form_builder.engine.commands.drop_plan import commands_for
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
@@ -284,6 +284,111 @@ def test_outline_thirds_enter_a_container_and_flank_a_leaf() -> None:
     assert before.index == 0
 
 
+def test_a_full_indent_left_of_a_nested_row_outdents() -> None:
+    doc = _doc(
+        """
+  <layout class="QVBoxLayout" name="outer">
+   <item>
+    <widget class="QGroupBox" name="group">
+     <layout class="QVBoxLayout" name="inner">
+      <item><widget class="QPushButton" name="shop"/></item>
+     </layout>
+    </widget>
+   </item>
+   <item><widget class="QPushButton" name="tail"/></item>
+  </layout>
+"""
+    )
+    outer = _named(doc, "outer")
+    group = _named(doc, "group")
+    shop = _named(doc, "shop")
+    rows = (
+        OutlineRow(outer, 0, 30, 180, 0),
+        OutlineRow(group, 30, 30, 160, 20),
+        OutlineRow(_named(doc, "inner"), 60, 30, 140, 40),
+        OutlineRow(shop, 90, 30, 120, 60),
+    )
+    target = resolve_outline(doc, rows, 92, DropPayload("widget", (shop,)), x=0, indent=20)
+    assert isinstance(target, AcceptedDrop)
+    assert target.host == outer
+    assert target.action == "box"
+    assert target.index == 1
+
+
+def test_a_pointer_on_the_row_does_not_outdent() -> None:
+    doc = _doc(
+        """
+  <layout class="QVBoxLayout" name="outer">
+   <item>
+    <widget class="QGroupBox" name="group">
+     <layout class="QVBoxLayout" name="inner">
+      <item><widget class="QPushButton" name="shop"/></item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+"""
+    )
+    inner = _named(doc, "inner")
+    shop = _named(doc, "shop")
+    rows = (
+        OutlineRow(_named(doc, "outer"), 0, 30, 180, 0),
+        OutlineRow(_named(doc, "group"), 30, 30, 160, 20),
+        OutlineRow(inner, 60, 30, 140, 40),
+        OutlineRow(shop, 90, 30, 120, 60),
+    )
+    target = resolve_outline(doc, rows, 92, DropPayload("widget", (shop,)), x=50, indent=20)
+    assert isinstance(target, AcceptedDrop)
+    assert target.host == inner
+    assert target.index == 0
+
+
+def test_a_drop_into_a_grid_uses_the_next_free_cell() -> None:
+    doc = _doc(
+        """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="0" column="1"><widget class="QPushButton" name="c"/></item>
+   <item row="1" column="0"><widget class="QPushButton" name="b"/></item>
+  </layout>
+"""
+    )
+    grid = _named(doc, "grid")
+    button = _named(doc, "b")
+    rows = (
+        OutlineRow(grid, 0, 30, 180, 0),
+        OutlineRow(_named(doc, "a"), 30, 30, 160, 20),
+        OutlineRow(button, 60, 30, 160, 20),
+    )
+    into = resolve_outline(doc, rows, 15, DropPayload("widget"))
+    assert isinstance(into, AcceptedDrop)
+    assert into.host == grid
+    assert into.action == "grid_cell"
+    assert (into.row, into.column) == (1, 1)
+
+
+def test_a_drop_between_grid_rows_inserts_there() -> None:
+    doc = _doc(
+        """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QPushButton" name="a"/></item>
+   <item row="1" column="0"><widget class="QPushButton" name="b"/></item>
+  </layout>
+"""
+    )
+    grid = _named(doc, "grid")
+    rows = (
+        OutlineRow(grid, 0, 30, 180, 0),
+        OutlineRow(_named(doc, "a"), 30, 30, 160, 20),
+        OutlineRow(_named(doc, "b"), 60, 30, 160, 20),
+    )
+    between = resolve_outline(doc, rows, 62, DropPayload("widget"))
+    assert isinstance(between, AcceptedDrop)
+    assert between.host == grid
+    assert between.action == "grid_reading"
+    assert between.index == 1
+
+
 def test_missing_selection_ids_do_not_break_the_wrap_sentence() -> None:
     doc = _doc('<widget class="QPushButton" name="ok"/>')
     gone = _named(doc, "ok")
@@ -364,3 +469,91 @@ def test_a_new_vertical_layout_uses_the_designer_name() -> None:
     again = other.document.root.layout
     assert again is not None
     assert again.object_name == "horizontalLayout"
+
+
+def test_thirty_percent_of_a_container_row_is_into() -> None:
+    doc = _doc(
+        """
+  <widget class="QGroupBox" name="receiptGroup">
+   <property name="title"><string>Receipt</string></property>
+  </widget>
+"""
+    )
+    group = _named(doc, "receiptGroup")
+    rows = (OutlineRow(group, 0, 40, 180, 0),)
+    target = resolve_outline(doc, rows, 12, DropPayload("widget"))
+    assert isinstance(target, AcceptedDrop)
+    assert target.host == group
+    assert target.indicator.dashed
+
+
+_CELLS = """
+  <layout class="QGridLayout" name="grid">
+   <item row="0" column="0"><widget class="QLabel" name="cellA"/></item>
+   <item row="0" column="1"><widget class="QLabel" name="cellB"/></item>
+   <item row="1" column="0"><widget class="QLabel" name="cellC"/></item>
+  </layout>
+"""
+
+
+def _reading(doc, layout_name: str):  # type: ignore[no-untyped-def]
+    layout = doc.node(_named(doc, layout_name))
+    assert isinstance(layout, LayoutNode)
+    ordered = sorted(layout.items, key=lambda item: (item.row or 0, item.column or 0, item.slot_index))
+    return tuple(item.content.object_name for item in ordered if isinstance(item.content, WidgetNode))
+
+
+def test_dropping_after_cell_a_lands_between_a_and_b() -> None:
+    doc = _doc(_CELLS)
+    grid = _named(doc, "grid")
+    cell_a = _named(doc, "cellA")
+    rows = (
+        OutlineRow(grid, 0, 30, 180, 0),
+        OutlineRow(cell_a, 30, 40, 160, 16),
+        OutlineRow(_named(doc, "cellB"), 70, 40, 160, 16),
+        OutlineRow(_named(doc, "cellC"), 110, 40, 160, 16),
+    )
+    local = 30 + int(40 * 0.80)
+    target = resolve_outline(doc, rows, local, DropPayload("widget"))
+    assert isinstance(target, AcceptedDrop)
+    assert target.action == "grid_reading"
+    assert target.index == 1
+
+
+def test_splicing_a_new_widget_after_cell_a_reads_before_cell_b() -> None:
+    log = open_log(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+%s
+ </widget>
+</ui>
+"""
+        % _CELLS
+    )
+    grid = nid(log.document, "grid")
+    fragment = fragment_for("QPushButton")
+    assert fragment is not None
+    log.execute(SpliceReading(grid, 1, (), fragment))
+    current = log.selection.current
+    assert current is not None
+    placed = log.document.node(current)
+    assert isinstance(placed, WidgetNode)
+    assert _reading(log.document, "grid")[:3] == ("cellA", placed.object_name, "cellB")
+
+
+def test_moving_cell_c_after_cell_a_changes_the_reading_order() -> None:
+    log = open_log(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+%s
+ </widget>
+</ui>
+"""
+        % _CELLS
+    )
+    grid = nid(log.document, "grid")
+    cell_c = nid(log.document, "cellC")
+    log.execute(SpliceReading(grid, 1, (cell_c,)))
+    assert _reading(log.document, "grid") == ("cellA", "cellC", "cellB")

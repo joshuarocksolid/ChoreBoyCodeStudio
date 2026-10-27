@@ -37,6 +37,8 @@ from app.features.form_builder.engine.commands.catalog import (
     InsertFragment,
     MorphWidget,
     MoveNodes,
+    MovePage,
+    Rename,
     SetProperty,
 )
 from app.features.form_builder.engine.commands.placement import InActionList, InBoxLayout, InContainer, InGridCell
@@ -373,7 +375,7 @@ def _collect(
     realize_rows = _realize_rows(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     rows.extend(realize_rows)
     build_p95 = next((row.p95 for row in realize_rows if row.point == "Realizer.build"), None)
-    rows.append(_missing("outline full build", 300, _ms_budget(OUTLINE_BUILD_BUDGET_MS), "no outline yet"))
+    rows.append(_outline_build_row(forms.get(300), samples, warmup, enforce_absolute, wall_on))
     rows.append(
         _open_read_build_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
@@ -428,7 +430,9 @@ def _collect(
     rows.extend(_canvas_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_direct_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
-    rows.append(_missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no separate patch timing"))
+    rows.append(_outline_patch_row(forms.get(300), samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_outline_key_rows(forms.get(1000), samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_outline_structure_rows(forms.get(1000), samples, warmup, enforce_absolute, wall_on))
     rows.append(
         _inspector_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
@@ -1223,6 +1227,300 @@ def _crowded_child(document: UiDocument) -> Tuple[Optional[NodeId], int]:
         if child is not None:
             best, crowd = child, len(node.items)
     return best, crowd
+
+
+def _outline_build_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    if form is None:
+        return _missing("outline full build", 300, _ms_budget(OUTLINE_BUILD_BUDGET_MS), "no 300-widget form")
+    session, parent, outline, app = _outline_widgets(form.xml)
+    try:
+        chosen = _timed(
+            "outline full build",
+            form.widget_count,
+            lambda: outline.rebuild(session.document, session.selection.state.current),
+            OUTLINE_BUILD_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        return _with_detail(chosen, "project and install every outline row")
+    finally:
+        _close_outline(session, parent, app)
+
+
+def _outline_patch_row(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Row:
+    if form is None:
+        return _missing("outline patch", 300, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no 300-widget form")
+    session, parent, outline, app = _outline_widgets(form.xml)
+    try:
+        outline.rebuild(session.document, session.selection.state.current)
+        banner = session.document.by_name("banner")[0]
+        counter = {"n": 0}
+
+        def prepare() -> None:
+            counter["n"] += 1
+            session.log.execute(SetProperty(banner, "text", StringValue("Orders %d" % counter["n"])))
+
+        def patch() -> None:
+            outline.patch_rows(session.document, banner, (banner,))
+
+        chosen = _timed(
+            "outline patch",
+            form.widget_count,
+            patch,
+            OUTLINE_PATCH_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=prepare,
+        )[0]
+        return _with_detail(chosen, "one caption rewritten on its row")
+    finally:
+        _close_outline(session, parent, app)
+
+
+def _outline_key_rows(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    budget = _ms_budget(EDIT_BUDGET_MS)
+    if form is None:
+        return (
+            _missing("outline rename", 1000, budget, "no 1000-widget form"),
+            _missing("outline alt down", 1000, budget, "no 1000-widget form"),
+            _missing("outline rename share", 1000, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no 1000-widget form"),
+            _missing("outline move share", 1000, _ms_budget(OUTLINE_PATCH_BUDGET_MS), "no 1000-widget form"),
+        )
+    session, parent, outline, app = _outline_widgets(form.xml)
+    try:
+        outline.attach(session, lambda _key: None)
+        owner = session.document.by_name(form.edit_name)[0]
+        counter = {"n": 0}
+
+        def rename() -> None:
+            counter["n"] += 1
+            session.log.execute(Rename(owner, "ren%04d" % counter["n"]))
+            outline.note_edited()
+
+        renamed = _timed(
+            "outline rename",
+            form.widget_count,
+            rename,
+            EDIT_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        page = session.document.by_name("tabDetails")[0]
+        outline.show_current(page)
+        query = importlib.import_module("app.features.form_builder.engine.query.outline")
+        direction = {"down": True}
+
+        def move() -> None:
+            command = "form.action.moveOrNudgeDown" if direction["down"] else "form.action.moveOrNudgeUp"
+            direction["down"] = not direction["down"]
+            if not outline.consider(query.KeyGesture(command, alt=True)):
+                raise RuntimeError("page move did not run")
+
+        moved = _timed(
+            "outline alt down",
+            form.widget_count,
+            move,
+            EDIT_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        share_count = {"n": 0}
+
+        def prepare_rename() -> None:
+            share_count["n"] += 1
+            session.log.execute(Rename(owner, "share%04d" % share_count["n"]))
+
+        def rename_share() -> None:
+            outline.note_edited()
+
+        renamed_share = _timed(
+            "outline rename share",
+            form.widget_count,
+            rename_share,
+            OUTLINE_PATCH_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=prepare_rename,
+        )[0]
+        tabs = session.document.by_name("tabs")[0]
+
+        def prepare_move() -> None:
+            host = session.document.node(tabs)
+            names = [child.object_name for child in host.child_widgets]  # type: ignore[attr-defined]
+            origin = names.index("tabDetails")
+            dest = origin + 1 if origin + 1 < len(names) else origin - 1
+            session.log.execute(MovePage(tabs, origin, dest))
+
+        def move_share() -> None:
+            outline.note_edited()
+
+        moved_share = _timed(
+            "outline move share",
+            form.widget_count,
+            move_share,
+            OUTLINE_PATCH_BUDGET_MS,
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+            prepare=prepare_move,
+        )[0]
+        return (
+            _with_detail(renamed, "rename one widget and patch that outline row"),
+            _with_detail(moved, "Alt+Down moves one page and reuses the outline items"),
+            _with_detail(renamed_share, "outline rename updates only the changed row"),
+            _with_detail(moved_share, "outline page move patches the page rows"),
+        )
+    finally:
+        _close_outline(session, parent, app)
+
+
+_OUTLINE_STRUCTURE_POINTS = (
+    "outline form move share",
+    "outline delete share",
+    "outline undo add share",
+    "outline reparent share",
+)
+
+
+def _outline_structure_rows(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Outline patch CPU for structural ChangeSets at 1000 widgets (CONTRACTS 12: O(changed), 2 ms).
+
+    The command runs in ``prepare``. Only ``note_edited`` (the outline patch) is timed.
+    The rows sit in a 394-row form layout, so a reseat of every sibling would show.
+    """
+    budget = _ms_budget(OUTLINE_PATCH_BUDGET_MS)
+    if form is None:
+        return tuple(_missing(point, 1000, budget, "no 1000-widget form") for point in _OUTLINE_STRUCTURE_POINTS)
+    session, parent, outline, app = _outline_widgets(form.xml)
+    plan_mod = importlib.import_module("app.features.form_builder.engine.commands.drop_plan")
+    try:
+        outline.attach(session, lambda _key: None)
+        log = session.log
+        doc = lambda: session.document  # noqa: E731
+        target = doc().by_name("label0010")[0]
+        outer = doc().by_name("outer")[0]
+        turn = {"n": 0}
+
+        def patch() -> None:
+            outline.note_edited()
+
+        def settle() -> None:
+            outline.note_edited()
+
+        def form_move() -> None:
+            turn["n"] += 1
+            direction = "down" if turn["n"] % 2 else "up"
+            commands = plan_mod.nudge_commands(doc(), (target,), direction)
+            with log.transaction("Move") as txn:
+                for command in commands:
+                    txn.execute(command)
+
+        def delete() -> None:
+            log.execute(DeleteNodes((target,)))
+
+        def restore() -> None:
+            log.undo()
+            outline.note_edited()
+
+        def undo_add() -> None:
+            log.execute(DeleteNodes((target,)))
+            outline.note_edited()
+            log.undo()
+
+        def reparent() -> None:
+            turn["n"] += 1
+            if turn["n"] % 2:
+                log.execute(MoveNodes((target,), InBoxLayout(outer, 0)))
+            else:
+                log.undo()
+
+        cases = (
+            ("outline form move share", form_move, settle, "Alt+Down in a 394-row form layout moves only that row"),
+            ("outline delete share", delete, restore, "a delete takes only the removed row"),
+            ("outline undo add share", undo_add, settle, "the undo of a delete inserts only that row"),
+            ("outline reparent share", reparent, settle, "a move to another parent takes and inserts that row"),
+        )
+        found: List[Row] = []
+        for point, prepare, cleanup, detail in cases:
+            row = _timed(
+                point,
+                form.widget_count,
+                patch,
+                OUTLINE_PATCH_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=prepare,
+                cleanup=None if cleanup is settle else cleanup,
+            )[0]
+            found.append(_with_detail(row, detail))
+        return tuple(found)
+    finally:
+        _close_outline(session, parent, app)
+
+
+def _outline_widgets(xml: str) -> Tuple[Any, QWidget, Any, Any]:
+    if QApplication.instance() is None:
+        QApplication([])
+    forms_mod = importlib.import_module("app.features.form_builder.engine.project.forms")
+    session_mod = importlib.import_module("app.features.form_builder.engine.session")
+    outline_mod = importlib.import_module("app.features.form_builder.integration.workbench")
+    scope = forms_mod.FormScope(kind="external", ui_path="/tmp/cbcs-speed-outline.ui")
+    session = session_mod.FormSession.open(xml, path="/tmp/cbcs-speed-outline.ui", scope=scope)
+    parent = QWidget()
+    parent.resize(360, 640)
+    outline = outline_mod.OutlinePane(lambda _node: None, lambda _collapsed: None, parent)
+    parent.show()
+    app = QApplication.instance()
+    assert app is not None
+    app.processEvents()
+    return session, parent, outline, app
+
+
+def _close_outline(session: object, parent: QWidget, app: object) -> None:
+    dispose = getattr(session, "dispose", None)
+    if dispose is not None:
+        dispose()
+    parent.deleteLater()
+    process = getattr(app, "processEvents", None)
+    if process is not None:
+        process()
 
 
 def _outline_attached_rows(

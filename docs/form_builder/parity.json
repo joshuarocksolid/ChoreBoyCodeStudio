@@ -452,5 +452,10 @@
     "M9.7",
     "M10.1",
     "M10.2"
+  ],
+  "notes": [
+    "UX-OUT-001 per-class glyphs are todo for the M3 icon pass. Outline rows use one shared glyph until then.",
+    "UX-OUT-010, the self.ui rename offer, is deferred to M1.4.",
+    "r5b showed Alt+Up and Alt+Down on a tab page write the page order, and save/reopen matches that order. P-20 and R3-127 stay todo because the tab-order overlay is not done."
   ]
 }

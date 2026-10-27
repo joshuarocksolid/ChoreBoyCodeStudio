@@ -525,6 +525,28 @@ def shortcut_collisions(
     return tuple(problems)
 
 
+def outline_command_for(portable: str) -> str:
+    """Form command for one outline key. Empty when the table has no row.
+
+    Outline context wins. A form-tab shortcut still counts, so Ctrl+F finds
+    a widget while the outline has focus. Backtab is Shift+Tab.
+    """
+    text = normalize_form_shortcut(portable)
+    if text == "Backtab":
+        text = "Shift+Tab"
+    if not text:
+        return ""
+    fallback = ""
+    for command in FORM_COMMANDS:
+        if normalize_form_shortcut(command.shortcut) != text or not command.command_id:
+            continue
+        if "outline" in command.contexts:
+            return command.command_id
+        if not fallback and "form_tab" in command.contexts:
+            fallback = command.command_id
+    return fallback
+
+
 def shortcut_rows() -> Tuple[Tuple[str, str, str, str], ...]:
     """``(action id, label, shortcut, category)`` for the shell shortcut list."""
     return tuple(
@@ -545,6 +567,7 @@ __all__ = [
     "menu_commands",
     "menu_hint",
     "normalize_form_shortcut",
+    "outline_command_for",
     "registered_commands",
     "shell_command_contexts",
     "shortcut_collisions",

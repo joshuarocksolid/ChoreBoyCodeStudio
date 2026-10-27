@@ -31,7 +31,7 @@ from app.editors.code_editor_widget import CodeEditorWidget
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
-from app.features.form_builder.engine.events import PRIORITY_VIEWS
+from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.layout_actions import (
     Current,
@@ -193,18 +193,9 @@ def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
     return held
 
 
-def _outline_mode(change_set: object) -> str:
-    if getattr(change_set, "replaced", False):
-        return "rebuild"
-    if (
-        getattr(change_set, "structure_dirty", ())
-        or getattr(change_set, "added", ())
-        or getattr(change_set, "removed", ())
-    ):
-        return "rebuild"
-    if getattr(change_set, "renamed", ()):
-        return "patch"
-    return "keep"
+_CLIPBOARD_IDS = frozenset(
+    {"form.action.cut", "form.action.copy", "form.action.paste", "form.action.duplicate"}
+)
 
 
 def _shell_history(window: QWidget, redo: bool) -> None:
@@ -361,6 +352,8 @@ class FormSurface(QWidget):
             self._stack,
         )
         self._stack.addWidget(self._workbench)
+        self._workbench.outline.set_status(self.narrate)
+        self._workbench.outline.run_command = self._run_outline_command
         layout.addWidget(self._stack, 1)
         self._toolbar.attach_preview(self._workbench.canvas.preview)
         self._command_toast = CommandToast(self)
@@ -625,6 +618,8 @@ class FormSurface(QWidget):
         if self._released:
             return
         self._released = True
+        # A rename still open when the form closes is dropped, not committed.
+        self._workbench.outline.finish_rename()
         self._problem_timer.stop()
         self._kept_timer.stop()
         self._saved_timer.stop()
@@ -870,7 +865,7 @@ class FormSurface(QWidget):
             self._refresh_undo_buttons()
             return
         current = self._session.selection.state.current
-        self._workbench.refresh(current, outline=_outline_mode(change_set))
+        self._workbench.refresh(current, change=change_set if isinstance(change_set, ChangeSet) else None)
         self._workbench.outline.show_for_design()
         self._refresh_undo_buttons()
         self._sync_shell_undo()
@@ -1097,8 +1092,21 @@ class FormSurface(QWidget):
         inspector.properties.setFocus()
 
     def _rename_inert(self) -> None:
-        self._inert_note = "Rename on the form arrives in a later release."
+        self._inert_note = "F2 renames the selected outline row."
         self._refresh_shell_status()
+
+    def _run_outline_command(self, action_id: str) -> None:
+        if action_id in _CLIPBOARD_IDS:
+            # Same path as the canvas: the clipboard commands live on the surface, not the shell menu.
+            self.dispatch(action_id)
+            return
+        window = self.window()
+        registry = None if window is None else _shell_registry(window)
+        if registry is None:
+            return
+        action = registry.action(action_id)  # type: ignore[attr-defined]
+        if action is not None:
+            action.trigger()
 
     def _reveal_problem(self, text: str) -> bool:
         window = self.window()

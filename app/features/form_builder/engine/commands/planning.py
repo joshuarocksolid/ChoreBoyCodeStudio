@@ -5,10 +5,9 @@ This module does not import ``mutate``. It only calls ``ctx.do``.
 
 from __future__ import annotations
 
-import keyword
 from dataclasses import fields, is_dataclass
 from functools import cmp_to_key
-from typing import Dict, Iterable, List, Optional, Sequence, Set, Tuple, Union
+from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.clipboard import connections_for_paste, free_holder
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
@@ -30,14 +29,13 @@ from app.features.form_builder.engine.commands.placement import (
     Placement,
 )
 from app.features.form_builder.engine.commands.refs import (
-    FORMULA_NAMES,
     NAME_FIELD,
-    RESERVED_NAMES,
     identity_name,
     native_delete_ops,
     native_rename_ops,
     rewrite_spec_refs,
 )
+from app.features.form_builder.engine.query.name_policy import explain_name
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import (
     CBCS_LAYOUT_KEYS,
@@ -634,7 +632,7 @@ def rename_node(doc: UiDocument, ctx: PlanContext, node_id: NodeId, new_name: st
         raise CommandRejected("That object has no name.")
     if new_name == old:
         return ()
-    _check_name(doc, new_name)
+    _check_name(doc, new_name, current=old, base_methods=_base_methods(ctx))
     set_field(doc, ctx, node_id, NAME_FIELD[node.kind], new_name)
     if node.id == doc.root.id and doc.ui.field("class_name") == old:
         set_field(doc, ctx, doc.ui.id, "class_name", new_name)
@@ -1381,6 +1379,86 @@ def _assign(doc: UiDocument, ctx: PlanContext, node: Node, field: str, value: ob
         ctx.do(SetFieldOp(node.id, field, value))
 
 
+def splice_grid_reading(
+    doc: UiDocument,
+    ctx: PlanContext,
+    layout_id: NodeId,
+    index: int,
+    moving: Sequence[NodeId],
+    fragment: Optional[Fragment],
+) -> None:
+    """Place ``moving`` and ``fragment`` at ``index`` in a uniform grid's reading order.
+
+    Cells before the splice keep their coordinates when those already match.
+    Later cells shift so the new order is row-major. A spanned grid is refused.
+    """
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode) or layout.class_name != _GRID:
+        raise CommandRejected("That layout is not a grid.")
+    if any((item.rowspan or 1) != 1 or (item.colspan or 1) != 1 for item in layout.items):
+        raise CommandRejected("That grid has a cell that spans.")
+    if not moving and fragment is None:
+        raise CommandRejected("There is nothing to place.")
+    cols = 1
+    for item in layout.items:
+        cols = max(cols, (item.column or 0) + (item.colspan or 1))
+    ordered = sorted(layout.items, key=lambda item: (item.row or 0, item.column or 0, item.slot_index))
+    contents = [item.content.id for item in ordered if item.content is not None]
+    moving_ids = [node_id for node_id in moving if doc.contains(node_id)]
+    moving_set = set(moving_ids)
+    at = index - sum(1 for node_id in contents[:index] if node_id in moving_set)
+    rest = [node_id for node_id in contents if node_id not in moving_set]
+    at = max(0, min(at, len(rest)))
+    fresh: List[NodeId] = []
+    if fragment is not None:
+        parked = 0
+        if layout.items:
+            parked = max((item.row or 0) + (item.rowspan or 1) for item in layout.items)
+        fresh_ids, _, _, _ = insert_fragment(doc, ctx, InGridCell(layout_id, parked, 0), fragment, False)
+        fresh.extend(fresh_ids)
+    incoming = moving_ids + fresh
+    spliced = rest[:at] + incoming + rest[at:]
+    prefix_ok = True
+    for position, node_id in enumerate(spliced[:at]):
+        row, column = divmod(position, cols)
+        carrier = _item_carrier(doc, node_id)
+        item = doc.get(carrier) if carrier is not None else None
+        if not isinstance(item, LayoutItemNode) or (item.row or 0) != row or (item.column or 0) != column:
+            prefix_ok = False
+            break
+    start_at = at if prefix_ok else 0
+    occupied = set()
+    for position, node_id in enumerate(spliced):
+        row, column = divmod(position, cols)
+        occupied.add((row, column))
+        if position < start_at:
+            continue
+        carrier = _carry_into(doc, ctx, node_id, layout_id)
+        _set_cell(doc, ctx, carrier, row, column, 1, 1)
+    next_pos = len(spliced)
+    for item in list(doc.node(layout_id).children("layout_items")):
+        if not isinstance(item, LayoutItemNode) or item.content is not None:
+            continue
+        while True:
+            row, column = divmod(next_pos, cols)
+            next_pos += 1
+            if (row, column) not in occupied:
+                break
+        occupied.add((row, column))
+        _set_cell(doc, ctx, item.id, row, column, 1, 1)
+    if incoming:
+        ctx.select(tuple(incoming), incoming[0])
+
+
+def _carry_into(doc: UiDocument, ctx: PlanContext, node_id: NodeId, layout_id: NodeId) -> NodeId:
+    carrier = _ensure_item(doc, ctx, node_id, layout_id)
+    parent = doc.parent(carrier)
+    if parent is None or parent.id != layout_id:
+        count = len(doc.node(layout_id).children("layout_items"))
+        ctx.do(MoveNodeOp(carrier, layout_id, "layout_items", count))
+    return carrier
+
+
 def _reorder_reading(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
     layout = doc.node(layout_id)
     if not isinstance(layout, LayoutNode):
@@ -1544,7 +1622,7 @@ def _ensure_group(doc: UiDocument, ctx: PlanContext, name: str) -> None:
     for node in doc.ui.children("buttongroups"):
         if node.field("name") == name:
             return
-    _check_name(doc, name)
+    _check_name(doc, name, base_methods=_base_methods(ctx))
     spec = allocate_spec(ctx, NodeSpec("buttongroup", None, (("name", name),)))
     count = len(doc.ui.children("buttongroups"))
     ctx.do(InsertNodeOp(doc.ui.id, "buttongroups", count, spec))
@@ -1742,13 +1820,29 @@ def _take_name(base: str, doc: UiDocument, chosen: set) -> str:
         suffix += 1
 
 
-def _check_name(doc: UiDocument, new_name: str) -> None:
-    if new_name.startswith("cbcs") or new_name in RESERVED_NAMES or new_name in FORMULA_NAMES:
-        raise CommandRejected("That name is reserved.", code="FB106")
-    if not new_name.isidentifier() or keyword.iskeyword(new_name):
-        raise CommandRejected("That name is not a Python identifier.", code="FB011")
-    if new_name in doc.names():
-        raise CommandRejected("That name is already used.", code="FB010")
+def _check_name(
+    doc: UiDocument,
+    new_name: str,
+    current: str = "",
+    base_methods: FrozenSet[str] = frozenset(),
+) -> None:
+    taken = doc.names()
+    if current:
+        taken = frozenset(name for name in taken if name != current)
+    refusal = explain_name(new_name, taken, base_methods, current)
+    if refusal is not None:
+        raise CommandRejected(refusal.prose, code=refusal.code)
+
+
+def _base_methods(ctx: PlanContext) -> FrozenSet[str]:
+    # Contexts that never saw the window snapshot keep an empty set: today's
+    # refusals, and no FB204, until the session installs the logic-design set.
+    found = getattr(ctx, "base_methods", None)
+    if found is None:
+        return frozenset()
+    if callable(found):
+        found = found()
+    return frozenset(found)
 
 
 def _rank_index(ctx: PlanContext, node: Node, entries: Tuple[PropertyEntry, ...], name: str, dynamic: bool) -> int:
@@ -2038,9 +2132,38 @@ def _survivor(
             chosen = _selectable(cand)
             if chosen not in removed:
                 return (chosen,)
-    if parent is not None and parent.id not in removed:
+    if isinstance(parent, LayoutItemNode):
+        neighbor = _neighbor_cell(doc, parent, removed)
+        if neighbor is not None:
+            return (neighbor,)
+    if parent is not None and parent.id not in removed and not isinstance(parent, LayoutItemNode):
         return (parent.id,)
+    if parent is not None and isinstance(parent, LayoutItemNode):
+        layout = doc.parent(parent.id)
+        if layout is not None and layout.id not in removed:
+            return (layout.id,)
     return (doc.root.id,)
+
+
+def _neighbor_cell(doc: UiDocument, item: LayoutItemNode, removed: set) -> Optional[NodeId]:
+    layout = doc.parent(item.id)
+    if not isinstance(layout, LayoutNode):
+        return None
+    ordered = sorted(layout.items, key=lambda entry: (entry.row or 0, entry.column or 0, entry.slot_index))
+    position = 0
+    for index, entry in enumerate(ordered):
+        if entry.id == item.id:
+            position = index
+            break
+    for entry in ordered[position + 1 :]:
+        content = entry.content
+        if content is not None and content.id not in removed:
+            return content.id
+    for entry in reversed(ordered[:position]):
+        content = entry.content
+        if content is not None and content.id not in removed:
+            return content.id
+    return None
 
 
 def _selectable(node: Node) -> NodeId:

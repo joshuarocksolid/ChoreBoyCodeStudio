@@ -6,7 +6,7 @@ not check it: undo puts old ids back, and redo repeats ids allocated earlier.
 
 from __future__ import annotations
 
-from typing import Any, List, Optional, Sequence, Tuple
+from typing import Any, FrozenSet, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import Command, CommandRejected
 from app.features.form_builder.engine.commands.ops import InsertNodeOp, Op, RemoveNodeOp, ReplaceRootOp
@@ -28,11 +28,13 @@ class ApplyContext:
         participants: Tuple[object, ...],
         *,
         check_freshness: bool,
+        base_methods: FrozenSet[str] = frozenset(),
     ) -> None:
         self.doc = doc
         self._allocator = allocator
         self._participants = participants
         self._check_freshness = check_freshness
+        self._base_methods = base_methods
         self.ops: List[Op] = []
         self.inverses: List[Op] = []
         self.changes: List[Change] = []
@@ -81,6 +83,10 @@ class ApplyContext:
 
     def participants(self) -> Tuple[object, ...]:
         return self._participants
+
+    @property
+    def base_methods(self) -> FrozenSet[str]:
+        return self._base_methods
 
     def _guard(self, op: Op) -> None:
         inserted = _inserted_ids(op)

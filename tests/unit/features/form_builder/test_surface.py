@@ -119,8 +119,8 @@ def test_open_shows_the_form_name_and_structure(qapp) -> None:  # type: ignore[n
     assert name is not None
     assert name.text() == "Form · Vertical layout"
     labels = _tree_labels(surface)
-    assert "QWidget  Form" in labels
-    assert "QPushButton  okButton" in labels
+    assert "Form" in labels
+    assert "okButton" in labels
     assert surface.content_source().serialize_count == 0
     assert surface.source_editor() is None
     surface.release()
@@ -292,7 +292,7 @@ def test_invalid_xml_save_then_design_stays_in_xml(qapp, tmp_path: Path) -> None
     assert toggle.isChecked() is False
     assert banner.isVisibleTo(surface) is False
     assert discard.isVisibleTo(surface) is False
-    assert "QPushButton  okButton" in _tree_labels(surface)
+    assert "okButton" in _tree_labels(surface)
     assert surface.content_source().log.document.root.object_name == "Form"
     surface.release()
 

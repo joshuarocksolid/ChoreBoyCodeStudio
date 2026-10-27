@@ -149,7 +149,7 @@ def test_tab_on_the_canvas_selects_the_next_widget(tmp_path: Path, qapp: QApplic
         assert tree is not None
         current = tree.currentItem()
         assert current is not None
-        assert current.text(0) == "QLabel  title"
+        assert current.text(0) == "title"
         log = _KeyLog()
         focused.installEventFilter(log)
         session = surface.session  # type: ignore[attr-defined]
