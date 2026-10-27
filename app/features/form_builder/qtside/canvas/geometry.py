@@ -196,12 +196,7 @@ class LiveGeometrySource:
         drop: Set[NodeId] = set(scope.removed)
         visits = 0
         for node_id in scope.dirty:
-            # A size-hint edit can move siblings by a stretch rounding pixel even
-            # when the edited widget keeps its rect. O(siblings) per dirty widget.
             if isinstance(document.get(node_id), WidgetNode):
-                parent = _parent_layout(document, node_id)
-                if parent is not None and parent not in scope.removed:
-                    want(parent)
                 # A container can resize from a child's hint while the child
                 # keeps its rect. O(depth): each ancestor is measured once.
                 queue.extend(document.ancestors(node_id))
