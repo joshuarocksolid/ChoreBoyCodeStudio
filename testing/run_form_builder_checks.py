@@ -745,12 +745,11 @@ def gate_pyright() -> GateResult:
         ["npx", "pyright", "--pythonpath", python, "app/features/form_builder"],
         [
             "npx",
-            "pyright",
+            "pyright@1.1.410",
             "--pythonpath",
             python,
             "-p",
             "pyrightconfig.tests.json",
-            "tests/form_builder",
         ],
     )
     started = time.monotonic()
