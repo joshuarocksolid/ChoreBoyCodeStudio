@@ -37,6 +37,7 @@ from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, Proper
 from app.features.form_builder.engine.ui4.values import CStringValue, NumberValue, RectValue, StringValue
 
 _COPYABLE = frozenset({"widget", "layout", "spacer", "action", "actiongroup", "buttongroup"})
+_PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 _GRID = "QGridLayout"
 _FORM = "QFormLayout"
 _OFFSET = 16
@@ -87,6 +88,11 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
         connections=tuple(connections),
         customwidgets=_custom_widgets(doc, specs),
     )
+
+
+def fragment_source_ids(doc: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, ...]:
+    """Document nodes ``selection_fragment`` copies, in that same order."""
+    return _copy_roots(doc, ids)
 
 
 def paste_placement(doc: UiDocument, anchor_ids: Sequence[NodeId]) -> Placement:
@@ -213,7 +219,11 @@ def selectable_ids(doc: UiDocument) -> Tuple[NodeId, ...]:
 
 
 def pasted_widget_count(fragment: Fragment) -> int:
-    """Widgets in ``fragment``. A fragment with none counts its top-level nodes."""
+    """Widgets in ``fragment``. A fragment with none counts its top-level nodes.
+
+    A page of a tab, stack, or toolbox is not a widget in this count. A widget
+    on that page is.
+    """
     count = sum(_widget_count(spec) for spec in fragment.nodes)
     return count or len(fragment.nodes)
 
@@ -355,11 +365,17 @@ def missing_connection_count(
 
 
 def _widget_count(spec: NodeSpec) -> int:
-    found = 1 if spec.kind == "widget" else 0
-    for _slot, kids in spec.slots:
+    return _count_widgets(spec, False)
+
+
+def _count_widgets(spec: NodeSpec, page: bool) -> int:
+    count = 0 if page or spec.kind != "widget" else 1
+    host = spec.kind == "widget" and spec.field("class_name") in _PAGE_HOSTS
+    for slot, kids in spec.slots:
         for child in kids:
-            found += _widget_count(child)
-    return found
+            child_page = bool(host and slot == "children" and child.kind == "widget")
+            count += _count_widgets(child, child_page)
+    return count
 
 
 def _end_missing(spec: NodeSpec, mapping: Dict[str, str], alive: AbstractSet[str]) -> bool:
