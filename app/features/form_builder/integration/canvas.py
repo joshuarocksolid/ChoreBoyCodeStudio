@@ -212,6 +212,11 @@ class FormCanvas(QGraphicsView):
         self._build_chrome()
         self._controller = CanvasController(self, session, realizer, self._index, self._stage, host)
         self._preview = FormPreview(self, session, realizer, self._stage)
+        # The page can change size without a ChangeSet: two widths forces the
+        # narrowest width, a layout grows the root. Rects in the hit index and
+        # the overlay are then stale, so any page resize re-measures. O(1) here;
+        # the walk runs on the next frame.
+        self._stage.proxy.geometryChanged.connect(self._page_resized)
         # Same priority as the controller's view listener, subscribed after it,
         # so the caption follows the page the controller just placed.
         self._chrome_sub = session.log.subscribe(self._position_after, priority=PRIORITY_VIEWS)
@@ -236,6 +241,17 @@ class FormCanvas(QGraphicsView):
     @property
     def preview(self) -> FormPreview:
         return self._preview
+
+    def _page_resized(self) -> None:
+        proxy = self._stage.proxy
+        size = (round(proxy.size().width()), round(proxy.size().height()))
+        if size == getattr(self, "_page_size", None):
+            return
+        self._page_size = size
+        self._index.invalidate("root_resize")
+        controller = getattr(self, "_controller", None)
+        if controller is not None:
+            controller.refresh_overlay()
 
     def dragEnterEvent(self, event: object) -> None:  # noqa: N802
         payload = _drop_payload(event, self._session.document)

@@ -287,9 +287,12 @@ class FormPreview:
             scene_h = origin.y() + max(narrow_h, wide_h) + 64
             wide_origin = proxy.pos()
         else:
-            proxy.setPos(origin.x(), origin.y() + narrow_h + gap + 18)
+            # Stacked: the design page's size readout and the "Wide" caption
+            # both sit in the gap, so it is as tall as the two of them.
+            stacked = float(self._stack_gap())
+            proxy.setPos(origin.x(), origin.y() + narrow_h + stacked)
             scene_w = origin.x() + max(narrow_w, wide_w) + 48
-            scene_h = origin.y() + narrow_h + gap + wide_h + 80
+            scene_h = origin.y() + narrow_h + stacked + wide_h + 80
             wide_origin = proxy.pos()
         scene = self._view.scene()
         if scene is not None:
@@ -680,9 +683,17 @@ class FormPreview:
         local = QRectF(float(origin.x()), float(origin.y()), float(geo.width()), float(geo.height()))
         return proxy.mapRectToScene(local)
 
+    def _stack_gap(self) -> int:
+        """Scene px between the stacked copies: size readout, then the wide caption."""
+        readout = self._view.findChild(QWidget, "formBuilder.sizeReadout")
+        readout_h = readout.height() if isinstance(readout, QWidget) else 24
+        return 6 + readout_h + 8 + max(self._wide_edit.height(), 20) + 8
+
     def _clear_width_chips(self) -> None:
-        """O(chips). Keep preview chips off the caption, the size readout and both copies."""
-        blockers = _widget_rects(self._view, ("formBuilder.pageTitle", "formBuilder.sizeReadout"))
+        """O(chips). Keep preview chips off the caption, the page name, the size readout and both copies."""
+        blockers = _widget_rects(
+            self._view, ("formBuilder.pageTitle", "formBuilder.name", "formBuilder.sizeReadout")
+        )
         blockers.extend(_proxy_rects(self._view, (self._stage.proxy, self._mirror_proxy)))
         for widget in (self._pill, self._narrow, self._wide_edit):
             if not widget.isVisible():
@@ -702,7 +713,8 @@ class FormPreview:
         self._wide_edit.setText("Wide · %d px" % self._wide)
         self._wide_edit.setFixedWidth(max(120, _text_width(self._wide_edit, self._wide_edit.text()) + 16))
         origin = self._view.mapFromScene(scene_x, scene_y)
-        self._wide_edit.move(int(origin.x()), max(4, int(origin.y()) - PAGE_TITLE_HEIGHT - self._wide_edit.height() - 4))
+        # The wide copy has no title strip: the caption sits right on top of it.
+        self._wide_edit.move(int(origin.x()), max(4, int(origin.y()) - self._wide_edit.height() - 4))
         self._wide_edit.show()
         self._wide_edit.raise_()
 
@@ -751,6 +763,12 @@ def _nudge_clear(widget: QWidget, blockers: Sequence[QRect]) -> None:
                 break
         if hit is None:
             break
+        # Same row first, right of what it hit: a caption stays above its copy.
+        beside = QRect(rect)
+        beside.moveLeft(hit.right() + 8)
+        if not any(beside.intersects(other) for other in blockers):
+            rect = beside
+            continue
         above = QRect(rect)
         above.moveBottom(hit.top() - 4)
         if above.top() >= 0 and not any(above.intersects(other) for other in blockers):

@@ -1014,3 +1014,73 @@ def test_selecting_another_widget_does_not_relayout_the_inspector_header(qapp: Q
         assert counter.count == 0
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+_WIDE_COLUMN = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>280</height></rect></property>
+  <layout class="QVBoxLayout" name="column">
+   <item><widget class="QPushButton" name="one"><property name="text"><string>One</string></property></widget></item>
+   <item><widget class="QPushButton" name="two"><property name="text"><string>Two</string></property></widget></item>
+  </layout>
+ </widget>
+</ui>
+"""
+
+
+@pytest.mark.parametrize("select_first", [False, True])
+def test_two_widths_overlay_matches_the_narrowed_design_page(
+    qapp: QApplication, tmp_path: Path, select_first: bool
+) -> None:
+    """Two widths narrows the design page without a ChangeSet. At 100% (no refit
+    to hide it) the selection stroke must follow the narrowed widget, and each
+    width caption sits above its own copy, clear of the page name."""
+    from app.features.form_builder.qtside.canvas.core.gesture import ZoomAsked
+    from app.features.form_builder.qtside.canvas.core.space import ZoomTo
+
+    _require()
+    window = MainWindow(state_root=str(tmp_path / "state"))
+    try:
+        surface = _open(window, qapp, tmp_path / "column.ui", _WIDE_COLUMN)
+        canvas = _canvas(surface)
+        session = surface._session  # type: ignore[attr-defined]
+        two = session.document.by_name("two")[0]
+        canvas.send(ZoomAsked(ZoomTo(1.0)))  # type: ignore[attr-defined]
+        qapp.processEvents()
+        if select_first:
+            session.selection.set((two,), source=SelectionSource.OUTLINE)
+            qapp.processEvents()
+        QTest.mouseClick(window.findChild(QWidget, "formBuilder.twoWidths"), _button("LeftButton"))
+        qapp.processEvents()
+        if not select_first:
+            session.selection.set((two,), source=SelectionSource.OUTLINE)
+            qapp.processEvents()
+        page = canvas.page_widget()
+        assert page is not None
+        button = page.findChild(QPushButton, "two")
+        assert button is not None
+        _proxy, live = _widget_scene(button)
+        strokes = [
+            item.rect
+            for item in canvas.overlay().items  # type: ignore[attr-defined]
+            if isinstance(item, Stroke) and item.role == "select" and item.width == 2
+        ]
+        assert strokes
+        stroke = strokes[0]
+        assert abs(stroke.x - live.x()) <= 2 and abs(stroke.y - live.y()) <= 2
+        assert abs(stroke.width - live.width()) <= 4 and abs(stroke.height - live.height()) <= 4
+        name = canvas.findChild(QLabel, "formBuilder.name")
+        narrow = canvas.findChild(QLabel, "formBuilder.narrowChip")
+        wide = canvas.findChild(QWidget, "formBuilder.wideChip")
+        assert narrow is not None and wide is not None
+        if name is not None and name.isVisible():
+            assert not narrow.geometry().intersects(name.geometry())
+        mirror = canvas.preview._mirror_proxy  # type: ignore[attr-defined]
+        top = canvas.mapFromScene(mirror.sceneBoundingRect().topLeft())  # type: ignore[attr-defined]
+        assert wide.geometry().bottom() < top.y() <= wide.geometry().bottom() + 24
+        design = canvas.mapFromScene(canvas._stage.proxy.sceneBoundingRect().topLeft())  # type: ignore[attr-defined]
+        assert narrow.geometry().bottom() < design.y()
+    finally:
+        shutdown_main_window_for_test(window, qapp)
