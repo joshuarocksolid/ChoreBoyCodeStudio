@@ -2,6 +2,7 @@
 """Review repro (M3.7a gate): the ChangeSet-scoped hit index must equal a full rebuild."""
 from __future__ import annotations
 
+import random
 from typing import Callable, Iterator, List, Tuple
 
 import pytest
@@ -82,3 +83,23 @@ def test_incremental_index_equals_full_rebuild_after_undo(
     index.ensure_fresh()
     session.log.undo()
     _assert_matches_full(realizer, index)
+
+
+def test_random_edits_and_undo_match_a_full_rebuild(live: Tuple[FormSession, Realizer, HitIndex]) -> None:
+    session, realizer, index = live
+    rng = random.Random(37)
+    for _step in range(24):
+        kind = rng.randrange(5)
+        if kind == 0:
+            session.log.execute(SetProperty(_id(session, "label"), "text", StringValue("n%d" % rng.randrange(50))))
+        elif kind == 1:
+            session.log.execute(SetProperty(_id(session, "formLayout"), "spacing", NumberValue(rng.randrange(2, 24))))
+        elif kind == 2:
+            session.log.execute(
+                SetProperty(_id(session, "groupLayout"), "topMargin", NumberValue(rng.randrange(0, 20)))
+            )
+        elif kind == 3:
+            session.log.execute(SetProperty(_id(session, "tabs"), "currentIndex", NumberValue(rng.randrange(2))))
+        elif not session.log.undo():
+            session.log.redo()
+        _assert_matches_full(realizer, index)

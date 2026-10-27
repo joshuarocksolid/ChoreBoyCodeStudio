@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QRect, Qt
 from app.qt.QtWidgets import (
@@ -115,12 +115,19 @@ class LiveGeometrySource:
             stack.extend(reversed(found))
         return out
 
-    def retouch(self, previous: Sequence[GeoEntry], scope: RefreshScope) -> Optional[IndexPatch]:
-        """O(changed + dependants). None means the caller walks the whole form.
+    def retouch(
+        self,
+        previous: Sequence[GeoEntry],
+        scope: RefreshScope,
+        located: Optional[Mapping[Tuple[NodeId, str], int]] = None,
+        children: Optional[Mapping[Optional[NodeId], Sequence[GeoEntry]]] = None,
+    ) -> Optional[IndexPatch]:
+        """O(changed). None means the caller walks the whole form.
 
-        A property edit reads each dirty widget. Layout siblings and ancestors
-        are read only after a rect actually moves. Added or removed nodes are
-        patched when they are leaves. A moved container falls back to the full walk.
+        A dirty layout remeasures its items once. A structure change remeasures
+        the remaining children. A page switch or a visibility change rewalks
+        that container's subtree. A moved widget queues its layout, not every
+        sibling.
         """
         if scope.full:
             return None
@@ -130,34 +137,51 @@ class LiveGeometrySource:
         if root is None or not isinstance(root_node, WidgetNode) or not previous:
             return None
         self.settle()
-        slots: Dict[Tuple[NodeId, str], List[int]] = {}
-        for index, entry in enumerate(previous):
-            slots.setdefault((entry.node, entry.kind), []).append(index)
+        if located is None:
+            built: Dict[Tuple[NodeId, str], int] = {}
+            for index, entry in enumerate(previous):
+                built.setdefault((entry.node, entry.kind), index)
+            located = built
         queue: List[NodeId] = []
-        for node_id in list(scope.dirty) + list(scope.added):
+        for node_id in list(scope.dirty) + list(scope.added) + list(scope.structure) + list(scope.rewalk):
             if node_id not in scope.removed and node_id not in queue:
                 queue.append(node_id)
         seen: Dict[NodeId, bool] = {}
+        expanded: Set[NodeId] = set()
+        expand_ids: Set[NodeId] = set()
         replacements: List[Tuple[int, GeoEntry]] = []
         extra: List[GeoEntry] = []
         changed: List[NodeId] = []
+        drop: Set[NodeId] = set(scope.removed)
         visits = 0
         while queue:
             node_id = queue.pop()
-            if node_id in seen or node_id in scope.removed:
+            if node_id in seen or node_id in scope.removed or node_id in drop:
                 continue
             seen[node_id] = True
             found = document.get(node_id)
             if found is None or not isinstance(found, (WidgetNode, LayoutNode, SpacerNode)):
                 continue
+            if isinstance(found, LayoutNode) and found.id not in expanded:
+                if found.id in scope.dirty or found.id in scope.structure or found.id in expand_ids:
+                    expanded.add(found.id)
+                    for item in found.items:
+                        content = item.content
+                        if content is not None and content.id not in scope.removed:
+                            queue.append(content.id)
+            if isinstance(found, WidgetNode) and found.id in scope.structure:
+                for child in found.child_widgets:
+                    queue.append(child.id)
+                if found.layout is not None:
+                    queue.append(found.layout.id)
             measured = self._measure(found, root)
             if measured is None:
                 return None
             rect, visible = measured
             visits += 1
             kind = "widget" if isinstance(found, WidgetNode) else "layout" if isinstance(found, LayoutNode) else "spacer"
-            indexes = slots.get((node_id, kind), [])
-            if not indexes:
+            index = located.get((node_id, kind))
+            if index is None:
                 if node_id not in scope.added:
                     return None
                 made = self._new_entry(found, rect, visible, document)
@@ -167,39 +191,168 @@ class LiveGeometrySource:
                 changed.append(node_id)
                 if _container_moved(found, None, rect):
                     return None
-                queue.extend(_dependants(document, node_id))
+                parent = _parent_layout(document, node_id)
+                if parent is not None and parent not in expanded:
+                    expand_ids.add(parent)
+                    queue.append(parent)
                 continue
-            old = previous[indexes[0]]
-            if old.rect == rect and old.visible == visible:
-                continue
-            updated = GeoEntry(old.node, old.kind, rect, old.container, visible, old.z)
-            replacements.append((indexes[0], updated))
-            changed.append(node_id)
-            if old.rect != rect:
-                if _container_moved(found, old.rect, rect):
+            old = previous[index]
+            walk = node_id in scope.rewalk or (
+                isinstance(found, WidgetNode)
+                and (found.child_widgets or found.layout is not None)
+                and (old.visible != visible or old.rect != rect)
+            )
+            if walk:
+                synced = self._sync_descendants(
+                    found, root, document, previous, located, children, replacements, extra, drop, changed, seen
+                )
+                if synced is None:
                     return None
-                if (
-                    slots.get((node_id, "page_tab"))
-                    or slots.get((node_id, "menu_title"))
-                    or slots.get((node_id, "title_band"))
+                visits += synced
+            if old.rect == rect and old.visible == visible and not walk:
+                continue
+            if old.rect != rect or old.visible != visible:
+                replacements.append((index, GeoEntry(old.node, old.kind, rect, old.container, visible, old.z)))
+                changed.append(node_id)
+            if old.rect != rect:
+                if not walk and (
+                    located.get((node_id, "page_tab")) is not None or located.get((node_id, "title_band")) is not None
                 ):
                     return None
-                queue.extend(_dependants(document, node_id))
-        if not replacements and not extra and not scope.removed:
+                parent = _parent_layout(document, node_id)
+                if parent is not None and parent not in expanded:
+                    expand_ids.add(parent)
+                    queue.append(parent)
+                if not walk:
+                    for ancestor in document.ancestors(node_id):
+                        if ancestor in seen or ancestor in scope.removed or ancestor in drop:
+                            continue
+                        ancestor_node = document.get(ancestor)
+                        if isinstance(ancestor_node, LayoutNode) and ancestor not in expanded:
+                            expand_ids.add(ancestor)
+                        queue.append(ancestor)
+        self._remeasure_layouts(document, root, previous, replacements)
+        if not replacements and not extra and not drop:
             return IndexPatch(visits=visits, changed=())
         return IndexPatch(
             replacements=tuple(replacements),
             extra=tuple(extra),
-            drop=scope.removed,
+            drop=frozenset(drop),
             visits=visits,
-            changed=tuple(changed),
+            changed=tuple(dict.fromkeys(changed)),
         )
+
+    def _remeasure_layouts(
+        self,
+        document: UiDocument,
+        root: QWidget,
+        previous: Sequence[GeoEntry],
+        replacements: List[Tuple[int, GeoEntry]],
+    ) -> None:
+        """A parent layout can still read empty until its items have been visited."""
+        if not replacements:
+            return
+        self.settle()
+        for slot, (index, entry) in enumerate(replacements):
+            node = document.get(entry.node)
+            if not isinstance(node, LayoutNode):
+                continue
+            qlayout = self._realizer.layout_for(node.id)
+            if qlayout is not None:
+                qlayout.activate()
+            measured = self._measure(node, root)
+            if measured is None:
+                continue
+            rect, visible = measured
+            if rect == entry.rect and visible == entry.visible:
+                continue
+            old = previous[index]
+            replacements[slot] = (index, GeoEntry(old.node, old.kind, rect, old.container, visible, old.z))
+
+    def _sync_descendants(
+        self,
+        node: WidgetNode,
+        root: QWidget,
+        document: UiDocument,
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+        children: Optional[Mapping[Optional[NodeId], Sequence[GeoEntry]]],
+        replacements: List[Tuple[int, GeoEntry]],
+        extra: List[GeoEntry],
+        drop: Set[NodeId],
+        changed: List[NodeId],
+        seen: Dict[NodeId, bool],
+    ) -> Optional[int]:
+        """Rewrite one container's descendants from the live widget tree. O(subtree)."""
+        widget = self._realizer.widget_for(node.id)
+        if widget is None or not isinstance(widget, QWidget):
+            return None
+        origin = _form_rect(widget, root)
+        produced: List[GeoEntry] = []
+        self._descend(widget, document, origin.x, origin.y, produced)
+        keys: Dict[Tuple[NodeId, str], GeoEntry] = {}
+        for entry in produced:
+            keys.setdefault((entry.node, entry.kind), entry)
+        for key, entry in keys.items():
+            seen[entry.node] = True
+            index = located.get(key)
+            if index is None:
+                extra.append(entry)
+                changed.append(entry.node)
+                continue
+            old = previous[index]
+            if old.rect != entry.rect or old.visible != entry.visible or old.container != entry.container:
+                replacements.append((index, entry))
+                changed.append(entry.node)
+        if children is None:
+            return len(keys)
+        for old in _indexed_descendants(children, node.id):
+            if (old.node, old.kind) in keys or old.node in drop:
+                continue
+            drop.add(old.node)
+            seen[old.node] = True
+        return len(keys)
+
+    def _descend(self, widget: QWidget, document: UiDocument, x: int, y: int, out: List[GeoEntry]) -> None:
+        """Entries under ``widget``, not ``widget`` itself. Hidden subtrees stop."""
+        node = _tagged_widget(widget, document)
+        if node is None or not widget.isVisible():
+            return
+        holder: Dict[NodeId, NodeId] = {}
+        self._titles(widget, document, x, y, node.id, out)
+        if node.layout is not None:
+            self._layout_tree(node.layout, node.id, x, y, holder, out)
+        stack: List[Tuple[QWidget, int, int, NodeId]] = [(widget, x, y, node.id)]
+        while stack:
+            parent, px, py, owner = stack.pop()
+            found: List[Tuple[QWidget, int, int, NodeId]] = []
+            for z, child in enumerate(parent.children()):
+                if not isinstance(child, QWidget) or child.isWindow():
+                    continue
+                cx = px + child.x()
+                cy = py + child.y()
+                visible = child.isVisible()
+                tagged = _tagged_widget(child, document)
+                if tagged is None:
+                    if visible:
+                        found.append((child, cx, cy, owner))
+                    continue
+                rect = Rect(cx, cy, child.width(), child.height())
+                out.append(GeoEntry(tagged.id, "widget", rect, holder.get(tagged.id, owner), visible, z))
+                if not visible:
+                    continue
+                self._titles(child, document, cx, cy, tagged.id, out)
+                if tagged.layout is not None:
+                    self._layout_tree(tagged.layout, tagged.id, cx, cy, holder, out)
+                if tagged.layout is not None or tagged.child_widgets:
+                    found.append((child, cx, cy, tagged.id))
+            stack.extend(reversed(found))
 
     def _measure(self, node: object, root: QWidget) -> Optional[Tuple[Rect, bool]]:
         """One entry's form rect. O(depth) parent hops, not a tree walk."""
         if isinstance(node, WidgetNode):
             widget = self._realizer.widget_for(node.id)
-            if not isinstance(widget, QWidget):
+            if widget is None or not isinstance(widget, QWidget):
                 return None
             return _form_rect(widget, root), bool(widget.isVisible())
         if isinstance(node, LayoutNode):
@@ -245,6 +398,12 @@ class LiveGeometrySource:
                 return None
             return GeoEntry(node.id, "widget", rect, container, visible, _z_of(widget))
         if isinstance(node, LayoutNode):
+            # positioning_of reports a layout as laid out in itself. The hit
+            # tree uses the owner widget, or the enclosing layout when nested.
+            if node.parent_slot == "layout":
+                container = node.parent_id
+            else:
+                container = _enclosing_layout(document, node.id)
             return GeoEntry(node.id, "layout", rect, container, True, _LAYOUT_Z)
         return GeoEntry(node.id, "spacer", rect, container, True, _LAYOUT_Z)
 
@@ -379,19 +538,25 @@ class HitIndexInvalidator:
             return
         dirty = set(changeset.structure_dirty)
         dirty.update(changeset.added)
-        for owner, _kind, _name in changeset.property_dirty:
+        rewalk = set()
+        for owner, _kind, name in changeset.property_dirty:
             dirty.add(owner)
+            if name in ("currentIndex", "visible"):
+                rewalk.add(owner)
         for change in changeset.changes:
             for name in ("node", "owner", "parent", "old_parent", "new_parent"):
                 node_id = getattr(change, name, None)
                 if node_id is not None:
                     dirty.add(node_id)
+        kept = changeset.removed
         self._index.invalidate(
             "changeset",
             RefreshScope(
-                dirty=frozenset(node_id for node_id in dirty if node_id not in changeset.removed),
+                dirty=frozenset(node_id for node_id in dirty if node_id not in kept),
                 removed=changeset.removed,
                 added=changeset.added,
+                structure=frozenset(node_id for node_id in changeset.structure_dirty if node_id not in kept),
+                rewalk=frozenset(node_id for node_id in rewalk if node_id not in kept),
             ),
         )
 
@@ -648,23 +813,39 @@ def _container_moved(node: object, old: Optional[Rect], new: Rect) -> bool:
     return False
 
 
-def _dependants(document: UiDocument, node_id: NodeId) -> List[NodeId]:
-    """Siblings in the same layout, plus ancestors. O(siblings + depth)."""
-    found: List[NodeId] = []
+def _enclosing_layout(document: UiDocument, node_id: NodeId) -> Optional[NodeId]:
+    """The layout that contains ``node_id``. O(depth). None at the form root."""
+    parent = document.parent(node_id)
+    while parent is not None:
+        if isinstance(parent, LayoutNode):
+            return parent.id
+        parent = document.parent(parent.id)
+    return None
+
+
+def _parent_layout(document: UiDocument, node_id: NodeId) -> Optional[NodeId]:
+    """The layout that holds ``node_id``, when it is laid out. O(1)."""
     place = positioning_of(document, node_id)
     if isinstance(place, LaidOut):
-        found.append(place.layout)
-        layout = document.get(place.layout)
-        if isinstance(layout, LayoutNode):
-            for item in layout.items:
-                content = item.content
-                if content is not None and content.id != node_id:
-                    found.append(content.id)
-    elif isinstance(place, Free):
-        found.append(place.parent)
-    elif isinstance(place, Managed):
-        found.append(place.container)
-    found.extend(document.ancestors(node_id))
+        return place.layout
+    return None
+
+
+def _indexed_descendants(
+    children: Mapping[Optional[NodeId], Sequence[GeoEntry]], root_id: NodeId
+) -> List[GeoEntry]:
+    """Hit-tree descendants of ``root_id``. O(subtree)."""
+    found: List[GeoEntry] = []
+    stack: List[GeoEntry] = list(children.get(root_id, ()))
+    seen = {root_id}
+    while stack:
+        entry = stack.pop()
+        if entry.node in seen:
+            continue
+        seen.add(entry.node)
+        found.append(entry)
+        if entry.kind in ("widget", "layout"):
+            stack.extend(children.get(entry.node, ()))
     return found
 
 

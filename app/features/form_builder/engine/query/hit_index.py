@@ -90,6 +90,10 @@ class RefreshScope:
     removed: FrozenSet[NodeId] = field(default_factory=frozenset)
     added: FrozenSet[NodeId] = field(default_factory=frozenset)
     full: bool = False
+    #: Parents whose child lists changed. Their remaining children are remeasured.
+    structure: FrozenSet[NodeId] = field(default_factory=frozenset)
+    #: Containers whose subtree visibility changed (current page, hidden widget).
+    rewalk: FrozenSet[NodeId] = field(default_factory=frozenset)
 
     def merge(self, other: "RefreshScope") -> "RefreshScope":
         """O(changed). Two scopes before the next refresh are one scope."""
@@ -99,6 +103,8 @@ class RefreshScope:
             dirty=self.dirty | other.dirty,
             removed=self.removed | other.removed,
             added=self.added | other.added,
+            structure=self.structure | other.structure,
+            rewalk=self.rewalk | other.rewalk,
         )
 
 
@@ -133,6 +139,7 @@ class HitIndex:
         self._entries: Tuple[GeoEntry, ...] = ()
         self._children: Dict[Optional[NodeId], Tuple[GeoEntry, ...]] = {}
         self._rects: Dict[NodeId, Rect] = {}
+        self._at: Dict[Tuple[NodeId, str], int] = {}
         self._need_full = True
         self._scope: Optional[RefreshScope] = None
         self._last_visits = 0
@@ -169,7 +176,7 @@ class HitIndex:
         if scope is not None and self._entries:
             retouch = getattr(self._source, "retouch", None)
             if retouch is not None:
-                patch = retouch(self._entries, scope)
+                patch = retouch(self._entries, scope, self._at, self._children)
                 if isinstance(patch, IndexPatch):
                     self._apply_patch(patch)
                     return
@@ -201,6 +208,10 @@ class HitIndex:
             for container, group in grouped.items()
         }
         self._rects = rects
+        located: Dict[Tuple[NodeId, str], int] = {}
+        for index, entry in enumerate(entries):
+            located.setdefault((entry.node, entry.kind), index)
+        self._at = located
 
     def _apply_patch(self, patch: IndexPatch) -> None:
         """O(changed) when only rects move. A structural patch rebinds the stored entries."""
@@ -218,32 +229,36 @@ class HitIndex:
             items = [entry for entry in items if entry.node not in patch.drop]
         if patch.extra:
             items.extend(patch.extra)
-        if patch.drop or patch.extra:
+        moved = any(
+            self._entries[index].container != entry.container
+            for index, entry in patch.replacements
+            if 0 <= index < len(self._entries)
+        )
+        if patch.drop or patch.extra or moved:
             self._bind(tuple(items))
             return
+        by_container: Dict[Optional[NodeId], Dict[int, GeoEntry]] = {}
         for index, entry in patch.replacements:
             previous = self._entries[index]
             if entry.kind in _TITLES:
                 continue
             self._rects[entry.node] = entry.rect
-            self._swap_child(previous, entry)
+            by_container.setdefault(previous.container, {})[id(previous)] = entry
+        for container, replacing in by_container.items():
+            group = self._children.get(container, ())
+            self._children[container] = tuple(replacing.get(id(item), item) for item in group)
         self._entries = tuple(items)
-
-    def _swap_child(self, previous: GeoEntry, entry: GeoEntry) -> None:
-        """O(siblings in this container)."""
-        group = self._children.get(previous.container, ())
-        self._children[previous.container] = tuple(
-            entry if item is previous else item for item in group
-        )
 
     def query(self, x: int, y: int) -> Optional[HitResult]:
         self._require_fresh()
         trail: List[GeoEntry] = []
+        seen: set[NodeId] = set()
         level = self._children.get(None, ())
         while level:
             hit = _topmost_at(level, x, y)
-            if hit is None:
+            if hit is None or hit.node in seen:
                 break
+            seen.add(hit.node)
             trail.append(hit)
             if hit.kind not in _DESCENDS:
                 break
