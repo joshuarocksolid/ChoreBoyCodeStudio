@@ -442,6 +442,7 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
             return WrapSplitter(chosen, rng.choice(["Qt::Horizontal", "Qt::Vertical"]), box)
         if roll == 45:
             return WrapTab(chosen, "Tab 1", box)
+        if roll == 46:
             return WrapFree(chosen, rng.choice(["QWidget", "QGroupBox"]), rng.choice(["QVBoxLayout", "QGridLayout"]), box)
     # A skipped roll becomes a font or cursor edit. No extra random draw, so
     # every other roll keeps the sequence the pinned seeds already run.

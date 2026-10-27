@@ -33,7 +33,7 @@ OPT_IN = frozenset({"speed"})
 PERF_GATE_TIMEOUT_SECONDS = 30
 
 UNIT_MARKER = "not oracle and not perf and not performance and not soak"
-PYTEST_TIMEOUT_SECONDS = 480
+PYTEST_TIMEOUT_SECONDS = 300
 FAST_SHARD_TIMEOUT_SECONDS = 400
 COMMAND_TIMEOUT_SECONDS = 180
 
@@ -750,6 +750,7 @@ def gate_pyright() -> GateResult:
             python,
             "-p",
             "pyrightconfig.tests.json",
+            "tests/form_builder",
         ],
     )
     started = time.monotonic()
