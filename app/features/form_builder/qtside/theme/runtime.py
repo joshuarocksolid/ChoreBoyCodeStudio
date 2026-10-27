@@ -170,6 +170,8 @@ class _FusionHold(QObject):
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         if _SEALING or not isinstance(watched, QWidget):
             return False
+        if getattr(watched, "_cbcs_seal_settled", False):
+            return False
         kind = int(event.type())
         watched_kind = (
             int(QEvent.Type.ParentChange),
@@ -198,6 +200,8 @@ def _finish_reseal(widget: QWidget) -> None:
     _release_stylesheet_style()
     _apply_runtime_look(widget)
     _relayout(widget)
+    if widget.style().metaObject().className() == "QStyleSheetStyle":
+        widget._cbcs_seal_settled = True  # noqa: SLF001
 
 
 def _relayout(widget: QWidget) -> None:

@@ -158,6 +158,10 @@ def _diff(themed: Path, bare: Path, diff_path: Path) -> str:
         return "a grab failed to load"
     if left.size() != right.size():
         return "page size %sx%s vs clean %sx%s" % (left.width(), left.height(), right.width(), right.height())
+    if bytes(left.constBits()) == bytes(right.constBits()):
+        if diff_path.exists():
+            diff_path.unlink()
+        return ""
     changed = 0
     diff = QImage(left.size(), QImage.Format_ARGB32)
     diff.fill(QColor(0, 0, 0))
@@ -166,9 +170,5 @@ def _diff(themed: Path, bare: Path, diff_path: Path) -> str:
             if left.pixel(x, y) != right.pixel(x, y):
                 changed += 1
                 diff.setPixel(x, y, QColor(255, 0, 0).rgba())
-    if changed == 0:
-        if diff_path.exists():
-            diff_path.unlink()
-        return ""
     diff.save(str(diff_path))
     return "%s pixels differ. Diff saved at %s" % (changed, diff_path)
