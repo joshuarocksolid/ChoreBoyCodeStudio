@@ -670,6 +670,8 @@ class OutlinePane(QWidget):
         self.tree.setObjectName("formBuilder.structure")
         self.tree.setAccessibleName("Form structure")
         self.tree.setHeaderHidden(True)
+        # Rows share one height. Qt then skips a per-item height walk on scroll and reorder.
+        self.tree.setUniformRowHeights(True)
         self.tree.setFocusPolicy(_strong())
         elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideMiddle")
         self.tree.setTextElideMode(elide)
@@ -731,9 +733,10 @@ class OutlinePane(QWidget):
 
     def rebuild(self, document: UiDocument, selected: Optional[NodeId]) -> None:
         self._document = document
+        previous = self._forest
         self._forest = project(document, self._problem_ids(), friendly_of)
         self._revision = document.revision
-        self._install(self._forest)
+        self._install(self._forest, previous)
         self.show_current(selected)
         self._paint_row(self._hover)
 
@@ -1163,7 +1166,7 @@ class OutlinePane(QWidget):
         self._revision = document.revision
         if not same:
             self._forest = fresh
-            self._install(fresh)
+            self._install(fresh, forest)
             self.show_current(session.selection.state.current)
             return
         changed = tuple(
@@ -1411,20 +1414,25 @@ class OutlinePane(QWidget):
             return
         session.log.undo()
 
-    def _install(self, forest: object) -> None:
+    def _install(self, forest: OutlineForest, previous: Optional[OutlineForest] = None) -> None:
         self._blocked = True
-        mask = filter_mask(forest, self._filter_text)  # type: ignore[arg-type]
+        mask = filter_mask(forest, self._filter_text)
         states = dict(mask.state)
         alive = set()
         role = int(getattr(Qt, "UserRole"))
-        for row in forest.rows:  # type: ignore[attr-defined]
+        filtered = bool(self._filter_text)
+        for row in forest.rows:
             alive.add(int(row.node))
             item = self._rows.get(int(row.node))
             if item is None:
                 item = QTreeWidgetItem()
                 item.setData(0, role, int(row.node))
                 self._rows[int(row.node)] = item
-            self._write_item(item, row, states)
+                self._write_item(item, row, states)
+                continue
+            before = None if previous is None else previous.row(row.node)
+            if filtered or before != row:
+                self._write_item(item, row, states)
         for node_id, item in list(self._rows.items()):
             if node_id not in alive:
                 self._take(item)

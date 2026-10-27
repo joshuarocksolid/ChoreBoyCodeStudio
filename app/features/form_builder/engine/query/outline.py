@@ -132,6 +132,13 @@ class OutlineForest:
     def __init__(self, rows: Tuple[Row, ...]) -> None:
         self.rows = rows
         self.index: Dict[NodeId, int] = {row.node: position for position, row in enumerate(rows)}
+        # A page move asks every parent for its children. One pass, not one scan per parent.
+        grouped: Dict[Optional[NodeId], List[Row]] = {}
+        for row in rows:
+            grouped.setdefault(row.parent, []).append(row)
+        self._kids: Dict[Optional[NodeId], Tuple[Row, ...]] = {
+            key: tuple(value) for key, value in grouped.items()
+        }
 
     def row(self, node: NodeId) -> Optional[Row]:
         position = self.index.get(node)
@@ -141,7 +148,7 @@ class OutlineForest:
 
     def children(self, node: Optional[NodeId]) -> Tuple[Row, ...]:
         """Direct child rows, sibling order. ``None`` is the root list."""
-        return tuple(row for row in self.rows if row.parent == node)
+        return self._kids.get(node, ())
 
     def next_visible(
         self,
@@ -368,14 +375,17 @@ def project(
 ) -> OutlineForest:
     """Pre-order rows. Layout items are not rows. O(form)."""
     found: List[Row] = []
+    ranks: Dict[NodeId, Dict[NodeId, int]] = {}
+    counts: Dict[Optional[NodeId], int] = {}
 
     def walk(node: Node, depth: int, parent: Optional[NodeId]) -> None:
         if not _is_row(node):
             for child in _slot_children(node):
                 walk(child, depth, parent)
             return
-        sibling_index = sum(1 for row in found if row.parent == parent)
-        found.append(_make_row(doc, node, parent, depth, sibling_index, problems, friendly_of))
+        sibling_index = counts.get(parent, 0)
+        counts[parent] = sibling_index + 1
+        found.append(_make_row(doc, node, parent, depth, sibling_index, problems, friendly_of, ranks))
         for child in _slot_children(node):
             walk(child, depth + 1, node.id)
 
@@ -1021,8 +1031,9 @@ def _make_row(
     sibling_index: int,
     problems: FrozenSet[NodeId],
     friendly_of: Callable[[str], str],
+    ranks: Dict[NodeId, Dict[NodeId, int]],
 ) -> Row:
-    kind, tone, name, qt_class, slot = _identity(doc, node, parent, sibling_index)
+    kind, tone, name, qt_class, slot = _identity(doc, node, parent, sibling_index, ranks)
     visible = _visible_text(node)
     if kind == "page" and not visible:
         visible = _attr(node, "label")
@@ -1078,17 +1089,18 @@ def _identity(
     node: Node,
     parent: Optional[NodeId],
     sibling_index: int,
+    ranks: Dict[NodeId, Dict[NodeId, int]],
 ) -> Tuple[str, str, str, str, Slot]:
     parent_node = None if parent is None else doc.get(parent)
     if isinstance(node, SpacerNode):
-        return ("spacer", "spacer", node.name, "Spacer", _bare_or_layout(doc, node, parent_node, sibling_index))
+        return ("spacer", "spacer", node.name, "Spacer", _bare_or_layout(doc, node, parent_node, sibling_index, ranks))
     if isinstance(node, LayoutNode):
         return (
             "layout",
             "layout",
             node.object_name,
             node.class_name,
-            _bare_or_layout(doc, node, parent_node, sibling_index),
+            _bare_or_layout(doc, node, parent_node, sibling_index, ranks),
         )
     assert isinstance(node, WidgetNode)
     page = isinstance(parent_node, WidgetNode) and _page_host(doc, parent_node)
@@ -1097,7 +1109,7 @@ def _identity(
     if page:
         slot = InPageSlot(parent_node.id, _widget_index(parent_node, node.id))
     else:
-        slot = _bare_or_layout(doc, node, parent_node, sibling_index)
+        slot = _bare_or_layout(doc, node, parent_node, sibling_index, ranks)
     return (kind, "widget", node.object_name, node.class_name, slot)
 
 
@@ -1106,24 +1118,31 @@ def _bare_or_layout(
     node: Node,
     parent_node: Optional[Node],
     sibling_index: int,
+    ranks: Dict[NodeId, Dict[NodeId, int]],
 ) -> Slot:
     item = doc.parent(node.id)
     if isinstance(item, LayoutItemNode):
         layout = doc.parent(item.id)
         if isinstance(layout, LayoutNode):
-            return InLayoutSlot(layout.id, layout.class_name, _layout_index(layout, item))
+            return InLayoutSlot(layout.id, layout.class_name, _layout_index(layout, item, ranks))
     container = parent_node.id if parent_node is not None else node.id
     return InBareSlot(container, sibling_index)
 
 
-def _layout_index(layout: LayoutNode, item: LayoutItemNode) -> int:
+def _layout_index(
+    layout: LayoutNode,
+    item: LayoutItemNode,
+    ranks: Dict[NodeId, Dict[NodeId, int]],
+) -> int:
     if layout.class_name not in ("QGridLayout", "QFormLayout"):
         return item.slot_index
-    ranked = sorted(layout.items, key=lambda entry: (entry.row or 0, entry.column or 0, entry.slot_index))
-    for index, entry in enumerate(ranked):
-        if entry.id == item.id:
-            return index
-    return item.slot_index
+    # Sorting every child made one project walk quadratic on a crowded grid.
+    table = ranks.get(layout.id)
+    if table is None:
+        ordered = sorted(layout.items, key=lambda entry: (entry.row or 0, entry.column or 0, entry.slot_index))
+        table = {entry.id: index for index, entry in enumerate(ordered)}
+        ranks[layout.id] = table
+    return table.get(item.id, item.slot_index)
 
 
 def _page_host(doc: UiDocument, node: Node) -> bool:
