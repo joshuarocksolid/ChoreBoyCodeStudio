@@ -134,6 +134,8 @@ _NESTED = form(
 )
 
 _SIZE = (420, 240)
+_BIG = (640, 420)
+_FIRST_ROW = ("nameLabel", "nameEdit")
 
 
 def _never(prompt: NeedsConfirm) -> bool:
@@ -222,6 +224,7 @@ def test_adjust_size_fits_a_free_widget_to_its_content_in_one_step() -> None:
 
 @pytest.mark.pain("P-5")
 def test_removing_one_row_layout_keeps_every_rectangle_after_reload(tmp_path: Path) -> None:
+    bigger = _placed_in(_TWO_ROWS, _BIG)
     with opened(_TWO_ROWS) as (session, realizer):
         doc = session.document
         first = doc.by_name("first")[0]
@@ -240,15 +243,19 @@ def test_removing_one_row_layout_keeps_every_rectangle_after_reload(tmp_path: Pa
         )
         _settle(root, _SIZE)
 
-        assert asked and "minimum size" in asked[0]
+        assert asked and "first keeps its current size as its smallest size." in asked[0]
         assert outcome == Done("Removed the layout")
         assert _same(before, _placed(root))
         block = write_ui(doc).text.split('name="first"', 1)[1].split("</widget>", 1)[0]
         assert "minimumSize" in block
         saved = write_ui(doc).text
+        assert "maximumSize" not in saved
+        _settle(root, _BIG)
+        assert _same(_siblings(bigger, _FIRST_ROW), _placed(root))
         root.hide()
 
     _reopen_matches(saved, before)
+    _reopen_matches(saved, _siblings(bigger, _FIRST_ROW), _BIG)
     _generated_matches(saved, before, tmp_path)
 
 
@@ -306,13 +313,27 @@ def _same(before: Dict[str, Tuple[int, int, int, int]], after: Dict[str, Tuple[i
     return True
 
 
-def _reopen_matches(text: str, before: Dict[str, Tuple[int, int, int, int]]) -> None:
+def _reopen_matches(
+    text: str, before: Dict[str, Tuple[int, int, int, int]], size: Tuple[int, int] = _SIZE
+) -> None:
+    assert _same(before, _placed_in(text, size))
+
+
+def _placed_in(text: str, size: Tuple[int, int]) -> Dict[str, Tuple[int, int, int, int]]:
     with opened(text, "/tmp/cbcs-form-reopen.ui") as (session, realizer):
         root = realizer.widget_for(session.document.root.id)
         assert root is not None
-        _settle(root, _SIZE)
-        assert _same(before, _placed(root))
+        _settle(root, size)
+        placed = _placed(root)
         root.hide()
+    return placed
+
+
+def _siblings(
+    placed: Dict[str, Tuple[int, int, int, int]], removed: Tuple[str, ...]
+) -> Dict[str, Tuple[int, int, int, int]]:
+    """Every rectangle outside the removed layout. Its own widgets stop following the window."""
+    return {name: rect for name, rect in placed.items() if name not in removed}
 
 
 def _generated_matches(text: str, before: Dict[str, Tuple[int, int, int, int]], directory: Path) -> None:
@@ -371,6 +392,7 @@ def _python_ui(text: str, directory: Path) -> str:
 
 @pytest.mark.pain("P-5")
 def test_removing_a_nested_layout_keeps_every_rectangle(tmp_path: Path) -> None:
+    bigger = _placed_in(_NESTED, _BIG)
     with opened(_NESTED) as (session, realizer):
         doc = session.document
         row = doc.by_name("firstRow")[0]
@@ -390,11 +412,20 @@ def test_removing_a_nested_layout_keeps_every_rectangle(tmp_path: Path) -> None:
         )
         _settle(root, _SIZE)
 
-        assert asked and "minimum size" in asked[0]
+        assert asked and "firstRow keeps its current size as its smallest size." in asked[0]
         assert outcome == Done("Removed the layout")
         assert len(session.log.entries()) == entries + 1
         assert _same(before, _placed(root))
+        assert doc.by_name("firstRowWidget")
         saved = write_ui(doc).text
+        assert "maximumSize" not in saved
+        _settle(root, _BIG)
+        assert _same(_siblings(bigger, _FIRST_ROW), _placed(root))
+        holder = realizer.widget_for(doc.by_name("firstRowWidget")[0])
+        second = realizer.layout_for(doc.by_name("secondRow")[0])
+        assert holder is not None and second is not None
+        assert holder.width() == second.geometry().width()
+        _settle(root, _SIZE)
         bytes_before = write_ui(doc).text
         session.log.undo()
         assert write_ui(doc).text != bytes_before
@@ -403,6 +434,7 @@ def test_removing_a_nested_layout_keeps_every_rectangle(tmp_path: Path) -> None:
         root.hide()
 
     _reopen_matches(saved, before)
+    _reopen_matches(saved, _siblings(bigger, _FIRST_ROW), _BIG)
     _generated_matches(saved, before, tmp_path)
 
 

@@ -15,7 +15,7 @@ from app.features.form_builder.engine.commands.placement import Placement
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
-from app.features.form_builder.engine.ui4.values import RectValue, SizeValue, Value
+from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue, Value
 
 
 class _CommandBase:
@@ -153,8 +153,9 @@ class HoldLayout(_CommandBase):
     """Replace a nested layout with a plain widget in the same cell.
 
     Children keep ``geometries`` relative to that widget. ``minimum`` is the
-    layout's measured box, written as both minimumSize and maximumSize, so the
-    parent cell neither collapses on reload nor grows into the spare space.
+    layout's measured box, written as minimumSize only, so the parent cell
+    does not collapse on reload and still takes its share of spare room.
+    The widget is named after the layout (``firstRow`` -> ``firstRowWidget``).
     """
 
     command_type: ClassVar[str] = "hold_layout"
@@ -162,9 +163,12 @@ class HoldLayout(_CommandBase):
     layout: NodeId
     minimum: SizeValue
     geometries: Tuple[Tuple[NodeId, RectValue], ...] = ()
+    #: Fixed on each axis the layout could not grow along, so the widget
+    #: grows only where the layout did. None leaves the class default.
+    policy: Optional[SizePolicyValue] = None
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
-        return planning.hold_layout(doc, ctx, self.layout, self.minimum, self.geometries)
+        return planning.hold_layout(doc, ctx, self.layout, self.minimum, self.geometries, self.policy)
 
 
 @dataclass(frozen=True)

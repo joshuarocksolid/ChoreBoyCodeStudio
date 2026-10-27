@@ -60,6 +60,7 @@ from app.features.form_builder.engine.ui4.values import (
     EnumValue,
     NumberValue,
     RectValue,
+    SizePolicyValue,
     SizeValue,
     StringValue,
     Value,
@@ -410,6 +411,7 @@ def hold_layout(
     layout_id: NodeId,
     minimum: SizeValue,
     geometries: Tuple[Tuple[NodeId, RectValue], ...],
+    policy: Optional[SizePolicyValue] = None,
 ) -> NodeId:
     """Put a plain widget in a nested layout's cell and keep the children's boxes."""
     layout = _require_layout(doc, layout_id)
@@ -437,7 +439,8 @@ def hold_layout(
         target = _removal_target(doc, spacer_id)
         if doc.contains(target):
             ctx.do(RemoveNodeOp(target))
-    name = _take_name("widget", doc, set())
+    base = layout.object_name or ""
+    name = _take_name(base + "Widget" if base else "widget", doc, set())
     holder = allocate_spec(ctx, _widget_spec("QWidget", name))
     count = len(doc.node(owner_id).children("children"))
     ctx.do(InsertNodeOp(owner_id, "children", count, holder))
@@ -447,11 +450,12 @@ def hold_layout(
             set_property(doc, ctx, widget_id, "geometry", geom[widget_id])
     ctx.do(RemoveNodeOp(layout_id))
     ctx.do(MoveNodeOp(holder.id, item.id, "content", 0))  # type: ignore[arg-type]
-    # A plain widget is Preferred, so the parent layout would give it every
-    # spare pixel and push the following rows. The measured box is both the
-    # floor and the ceiling.
+    # A plain widget has no size hint, so without a floor the parent cell
+    # would collapse. Only a floor: the cell keeps its share of spare room,
+    # so the other cells size as they did at any window size.
     set_property(doc, ctx, holder.id, "minimumSize", minimum)  # type: ignore[arg-type]
-    set_property(doc, ctx, holder.id, "maximumSize", minimum)  # type: ignore[arg-type]
+    if policy is not None:
+        set_property(doc, ctx, holder.id, "sizePolicy", policy)  # type: ignore[arg-type]
     ctx.select((holder.id,))  # type: ignore[arg-type]
     return holder.id  # type: ignore[return-value]
 

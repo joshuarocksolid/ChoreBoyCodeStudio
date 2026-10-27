@@ -66,9 +66,11 @@ def measure(
             if layout is None:
                 continue
             rect = layout.geometry()
+            most = layout.maximumSize()
             measured[node_id] = Measure(
                 RectValue(rect.x(), rect.y(), rect.width(), rect.height()),
                 SizeValue(rect.width(), rect.height()),
+                maximum=SizeValue(most.width(), most.height()),
             )
     return measured
 

@@ -554,3 +554,27 @@ def test_a_planner_that_raises_disables_only_its_own_row_and_logs_it(
     assert any("planner bug" in (record.exc_text or "") or record.exc_info for record in caplog.records)
     with pytest.raises(RuntimeError):
         carry_out(doc, (), Simplify(), {}, lambda label, commands: ())
+
+
+def test_remove_layout_on_the_form_leaves_the_form_free_to_shrink() -> None:
+    log = open_log(
+        _HEAD
+        + """  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QPushButton" name="go"/></item>
+  </layout>
+"""
+        + _TAIL
+    )
+    doc = log.document
+    go = nid(doc, "go")
+    measured = _measured({"go": go, "Form": doc.root.id}, {"go": (9, 11, 80, 24), "Form": (0, 0, 126, 136)})
+
+    asked = carry_out(doc, (), RemoveLayout(), measured, transact(log))
+    assert isinstance(asked, NeedsConfirm)
+    assert "smallest size" not in asked.text
+    carry_out(doc, (), RemoveLayout(), measured, transact(log), confirmed=asked.text)
+
+    assert doc.root.layout is None
+    assert doc.root.value("minimumSize") is None
+    assert doc.root.value("maximumSize") is None
+

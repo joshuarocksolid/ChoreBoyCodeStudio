@@ -302,6 +302,8 @@ class Measure:
     rect: RectValue
     hint: SizeValue
     policies: Tuple[str, str] = ("Preferred", "Preferred")
+    #: A layout box only: the most that layout could grow to.
+    maximum: Optional[SizeValue] = None
 
 
 Measured = Mapping[NodeId, Measure]
@@ -653,7 +655,10 @@ def _plan_remove_layout(
     commands: Tuple[Command, ...] = (catalog.BreakLayout(layout.id, geometries),)
     if spacers:
         commands = (catalog.DeleteNodes(spacers),) + commands
-    pinned = widget.id in measured
+    # Only a floor, and only inside a parent layout: the container keeps its
+    # share of spare room, so its siblings size as before at any window size.
+    # A container that no layout sizes (the form itself) gets nothing.
+    pinned = widget.id in measured and doc.containing_layout_item(widget.id) is not None
     if pinned:
         rect = measured[widget.id].rect
         commands = commands + (catalog.SetProperty(widget.id, "minimumSize", SizeValue(rect.width, rect.height)),)
@@ -692,7 +697,7 @@ def _plan_hold_nested(doc: UiDocument, layout: LayoutNode, measured: Measured) -
     minimum = SizeValue(box.rect.width, box.rect.height)
     ready = _Ready(
         "Remove layout",
-        (catalog.HoldLayout(layout.id, minimum, geometries),),
+        (catalog.HoldLayout(layout.id, minimum, geometries, _held_policy(box)),),
         "Removed the layout",
     )
     return _Confirm(
@@ -700,6 +705,23 @@ def _plan_hold_nested(doc: UiDocument, layout: LayoutNode, measured: Measured) -
         "Remove layout",
         ready,
     )
+
+
+def _held_policy(box: Measure) -> Optional[SizePolicyValue]:
+    """Fixed on each axis the layout could not grow along, else None.
+
+    The holder only gets a floor, never a ceiling, so it grows like any plain
+    widget. Where the old layout was already at its largest (a row of line
+    edits can't get taller), Fixed keeps it at the floor instead, so the
+    other cells keep the room they had.
+    """
+    if box.maximum is None:
+        return None
+    fixed_h = box.maximum.width <= box.rect.width
+    fixed_v = box.maximum.height <= box.rect.height
+    if not fixed_h and not fixed_v:
+        return None
+    return SizePolicyValue("Fixed" if fixed_h else "Preferred", "Fixed" if fixed_v else "Preferred")
 
 
 def _remove_text(doc: UiDocument, node: Node, widgets: int, spacers: int, pinned: bool) -> str:
@@ -714,7 +736,7 @@ def _remove_text(doc: UiDocument, node: Node, widgets: int, spacers: int, pinned
             % widgets
         )
     if pinned:
-        parts.append("The current size is kept as its minimum size.")
+        parts.append("%s keeps its current size as its smallest size." % _subject(doc, node))
     if spacers == 1:
         parts.append("1 spacer will be removed.")
     elif spacers > 1:

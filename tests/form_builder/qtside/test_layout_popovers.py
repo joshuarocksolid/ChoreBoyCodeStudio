@@ -155,7 +155,7 @@ def test_cancel_on_the_remove_layout_confirm_writes_nothing(tmp_path: Path) -> N
 
         assert asked == [
             "Remove the layout from box? Its widget keeps its current position and size,"
-            " but it won't follow the window any more. The current size is kept as its minimum size."
+            " but it won't follow the window any more. box keeps its current size as its smallest size."
         ]
         assert box.layout() is not None
         assert surface.current_text() == before
