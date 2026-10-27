@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
-from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QColor, QFont, QPalette
-from app.qt.QtWidgets import QApplication, QToolTip, QWidget
-from app.qt.qt_compat import enum_value
+from app.qt.QtWidgets import QApplication, QToolTip
 
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.menu_icons import apply_menu_icons
@@ -59,36 +57,16 @@ def _tab_chrome_theme_applier(window: Any) -> Callable[[ShellThemeTokens], None]
     return None if coordinator is None else coordinator.apply_tab_chrome_theme
 
 
-_TIP_SHEET = ""
-_TIP_FILTER: Optional[QObject] = None
 _COLOR_DECL = re.compile(r"(?m)^\s*(background-color|color|border)\s*:\s*([^;]+);")
 
 
-class _TooltipWindowFilter(QObject):
-    """Apply the tooltip sheet to the tip window only.
-
-    An application style sheet wraps every widget in QStyleSheetStyle, including
-    a realized form, and a later clear-and-restore repolishes the whole process.
-    """
-
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() != QEvent.Show or not isinstance(watched, QWidget) or not watched.isWindow():
-            return False
-        window_type = enum_value(watched.windowFlags()) & 0xFF
-        if window_type != enum_value(Qt.ToolTip):
-            return False
-        sheet = _TIP_SHEET
-        if sheet and watched.styleSheet() != sheet:
-            watched.setStyleSheet(sheet)
-        return False
-
-
 def set_app_tooltip_style_sheet(style_sheet: str) -> None:
-    """Style tooltips from the shell tokens without an application style sheet."""
-    global _TIP_SHEET
-    _TIP_SHEET = style_sheet
+    """Give tooltips the shell colours and font without an application style sheet.
+
+    The QSS rule itself lives in the main window sheet (``build_shell_style_sheet``).
+    The palette covers tips shown for widgets outside that window.
+    """
     _apply_tooltip_palette(style_sheet)
-    _install_tooltip_filter()
 
 
 def _apply_tooltip_palette(style_sheet: str) -> None:
@@ -114,16 +92,6 @@ def _tooltip_colors(style_sheet: str) -> tuple:
         elif name == "color":
             foreground = value.strip()
     return background, foreground
-
-
-def _install_tooltip_filter() -> None:
-    global _TIP_FILTER
-    app = QApplication.instance()
-    if not isinstance(app, QApplication):
-        return
-    if _TIP_FILTER is None:
-        _TIP_FILTER = _TooltipWindowFilter(app)
-        app.installEventFilter(_TIP_FILTER)
 
 
 def apply_editor_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:

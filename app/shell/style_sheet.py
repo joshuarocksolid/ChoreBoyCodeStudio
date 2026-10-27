@@ -73,6 +73,10 @@ def build_shell_style_sheet(tokens: ShellThemeTokens) -> str:
         + shell_section_dialog_chrome(tokens)
         + shell_section_draft_recovery_dialog(tokens)
         + shell_section_unsaved_changes_dialog(tokens)
+        # A tip label takes its shown-for widget as its style sheet parent, so
+        # this window-level rule styles shell tooltips. It is not an
+        # application sheet, which would wrap every widget in QStyleSheetStyle.
+        + shell_section_tooltips(tokens)
     )
 
 
