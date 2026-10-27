@@ -283,6 +283,8 @@ class Moving:
     anchor: FormPoint
     pointer: FormPoint
     snap: bool
+    #: Set when the drag began with Ctrl held, so release clones even if Ctrl is up.
+    armed_clone: bool = False
 
 
 @dataclass(frozen=True)
@@ -336,6 +338,8 @@ class Placing:
     #: False while the outline owns the indicator. The status sentence stays.
     draw: bool = True
     fragment: Optional[Fragment] = None
+    #: Set when the drag began with Ctrl held, so release clones even if Ctrl is up.
+    armed_clone: bool = False
 
 
 @dataclass(frozen=True)
@@ -354,6 +358,8 @@ class Pressed:
     origin: PortPoint
     on_click: Tuple["Effect", ...]
     on_drag: Drag
+    #: Ctrl was down at press. A drag clones. A click with no drag toggles.
+    clone_press: bool = False
 
 
 @dataclass(frozen=True)
@@ -644,7 +650,19 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
             (CanvasPressed(), HoverChanged(None)),
         )
     if isinstance(target, OnWidget):
-        if event.mods.shift or event.mods.ctrl:
+        if event.mods.ctrl:
+            selected = target.node in world.selection.ids
+            moving = world.selection.ids if selected else (target.node,)
+            return Step(
+                Pressed(
+                    event.port,
+                    (_toggle(world, target.node),),
+                    _move_or_inert(world, moving, point, snap),
+                    True,
+                ),
+                (CanvasPressed(), HoverChanged(None)),
+            )
+        if event.mods.shift:
             return Step(
                 Pressed(event.port, (), Inert("")),
                 (CanvasPressed(), HoverChanged(None), _toggle(world, target.node)),
@@ -846,7 +864,9 @@ def _pressed_move(gesture: Pressed, event: Move, world: World) -> Step:
     if dx * dx + dy * dy <= DRAG_THRESHOLD * DRAG_THRESHOLD:
         return Step(gesture, (), True)
     entered = _retarget(gesture.on_drag, world.view.to_form(event.at), not event.mods.shift, world)
-    return Step(entered, _begin_effects(entered))
+    if gesture.clone_press and isinstance(entered, (Moving, Placing)):
+        entered = replace(entered, armed_clone=True)
+    return Step(entered, _copy_cursor(entered, event.mods, _begin_effects(entered)))
 
 
 def _pressed_release(gesture: Pressed, event: Release, world: World) -> Step:
@@ -872,11 +892,16 @@ def _has_clone_sources(gesture: Gesture) -> bool:
 
 
 def _wants_clone(gesture: Drag, mods: Mods) -> bool:
-    return (mods.ctrl or mods.alt) and _has_clone_sources(gesture)
+    if not _has_clone_sources(gesture):
+        return False
+    if getattr(gesture, "armed_clone", False):
+        return True
+    return mods.ctrl or mods.alt
 
 
 def _copy_cursor(state: Drag, mods: Mods, effects: Tuple[Effect, ...]) -> Tuple[Effect, ...]:
-    if not (mods.ctrl or mods.alt) or not _has_clone_sources(state):
+    armed = bool(getattr(state, "armed_clone", False))
+    if not (armed or mods.ctrl or mods.alt) or not _has_clone_sources(state):
         return effects
     return tuple(Cursor("copy") if isinstance(effect, Cursor) else effect for effect in effects)
 
@@ -910,7 +935,7 @@ def _clone_moving(state: Moving, world: World) -> Tuple[Command, ...]:
     if not isinstance(parent, WidgetNode):
         parent = document.root
     place = InContainer(parent.id, len(parent.child_widgets))
-    return (InsertFragment(place, fragment, auto_layout=False),)
+    return (InsertFragment(place, fragment, auto_layout=False, undo_label="Duplicate"),)
 
 
 def _stamp_released(
@@ -1343,6 +1368,11 @@ def _finish_place(state: Placing, world: World, clone: bool = False) -> Step:
     commands = drop_commands(world.document, state.target, payload, state.insert_key, fragment)
     if not commands:
         return Step(Idle(None), (Cursor("arrow"), Narrate("")))
+    if clone:
+        commands = tuple(
+            replace(command, undo_label="Duplicate") if isinstance(command, InsertFragment) else command
+            for command in commands
+        )
     edit = "widget" if any(isinstance(command, InsertFormRow) for command in commands) else None
     label = "Duplicate" if clone else ("Move" if state.payload.source_ids else "Drop")
     return Step(Idle(None), (Commit(label, commands, state.token, edit), Cursor("arrow"), Narrate("")))

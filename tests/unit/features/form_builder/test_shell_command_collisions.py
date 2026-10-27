@@ -135,6 +135,7 @@ def test_new_keys_stay_disabled_until_a_handler_exists() -> None:
         "form.action.duplicate",
         "form.action.delete",
         "form.action.backspace",
+        "form.action.selectAllSiblings",
     }
     for command in registered_commands():
         handled = command.command_id in live or request_for(command.command_id) is not None

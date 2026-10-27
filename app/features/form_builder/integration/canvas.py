@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt, QTimer
-from app.qt.QtGui import QColor, QContextMenuEvent, QFont, QPainter, QPen, QPixmap
+from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
+from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
+    QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
     QGraphicsScene,
@@ -86,6 +87,16 @@ def _keep_claimed_shortcut(event: QEvent) -> None:
     if event.type() != override:
         return
     event.accept()
+
+
+def _over_saved_pieces(widget: object) -> bool:
+    current = widget
+    while current is not None:
+        name = getattr(current, "objectName", lambda: "")()
+        if name in ("formBuilder.savedPieces", "formBuilder.savedPiecesBox"):
+            return True
+        current = getattr(current, "parentWidget", lambda: None)()
+    return False
 
 
 def _focus_policy() -> Qt.FocusPolicy:
@@ -403,10 +414,39 @@ class FormCanvas(QGraphicsView):
         preview = getattr(self, "_preview", None)
         if preview is not None and preview.claim(event):
             return True
+        if self._offer_piece_drag(event):
+            return True
         if controller.handle(event):
             _keep_claimed_shortcut(event)
             return True
         return bool(super().viewportEvent(event))
+
+    def _offer_piece_drag(self, event: QEvent) -> bool:
+        """A canvas drag that lands on Saved pieces saves the dragged widgets."""
+        move = getattr(getattr(QEvent, "Type", QEvent), "MouseMove")
+        if event.type() != move:
+            return False
+        buttons = getattr(event, "buttons", None)
+        if not callable(buttons):
+            return False
+        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+        if not (enum_value(buttons()) & enum_value(left)):
+            return False
+        if not _over_saved_pieces(QApplication.widgetAt(QCursor.pos())):
+            return False
+        controller = self._controller
+        ids = controller.drag_node_ids()
+        if not ids:
+            return False
+        controller.abandon_drag()
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(MIME_NODE, str(int(ids[0])).encode("utf-8"))
+        drag.setMimeData(mime)
+        action = getattr(getattr(Qt, "DropAction", Qt), "CopyAction")
+        starter = getattr(drag, "exec", None) or getattr(drag, "exec_")
+        starter(action)
+        return True
 
     def event(self, event: QEvent) -> bool:  # noqa: N802
         # Qt sends events from inside the QWidget constructor, before the

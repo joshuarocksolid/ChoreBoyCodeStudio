@@ -109,6 +109,7 @@ def test_pasting_the_middle_button_inserts_it_and_selects_it(qapp: object) -> No
         assert isinstance(pasted, WidgetNode)
         assert pasted.object_name == "middle_2"
         assert host.sentences == ["Pasted 1 widget after middle"]
+        assert session.log.undo_label() == "Paste"
         session.log.undo()
         assert _box_names(session.document) == ("top", "middle", "bottom")
     finally:
@@ -140,7 +141,7 @@ def test_duplicate_does_not_change_the_clipboard(qapp: object) -> None:
         apply_command(host, "form.action.duplicate")
         assert _fragment_xml() == before
         assert _box_names(session.document) == ("top", "middle", "middle_2", "bottom")
-        assert host.sentences == []
+        assert host.sentences == ["Duplicated middle."]
     finally:
         session.dispose()
 
@@ -152,6 +153,8 @@ def test_cut_undo_restores_the_widgets_and_leaves_the_clipboard(qapp: object) ->
         host = _Host(session)
         _select(session, "middle")
         apply_command(host, "form.action.cut")
+        assert host.sentences == ["Cut 1 widget."]
+        assert session.log.undo_label() == "Cut"
         assert _box_names(session.document) == ("top", "bottom")
         held = _fragment_xml()
         assert "middle" in held
@@ -252,7 +255,7 @@ def test_plain_text_pastes_only_when_it_is_a_fragment(qapp: object) -> None:
         QApplication.clipboard().setMimeData(mime)
         apply_command(host, "form.action.paste")
         assert _box_names(session.document) == ("top", "middle", "bottom")
-        assert host.sentences == []
+        assert host.sentences == ["The clipboard has text, not widgets."]
         mime = QMimeData()
         mime.setText(xml)
         QApplication.clipboard().setMimeData(mime)
@@ -325,7 +328,15 @@ def test_the_context_menu_dispatches_clipboard_commands(qapp: object) -> None:
     seen: List[str] = []
     add_clipboard_actions(menu, seen.append)
     labels = [action.text() for action in menu.actions() if not action.isSeparator()]
-    assert labels == ["Copy", "Cut", "Paste", "Duplicate", "Delete", "Select all", "Save to pieces"]
+    assert labels == [
+        "Copy\tCtrl+C",
+        "Cut\tCtrl+X",
+        "Paste\tCtrl+V",
+        "Duplicate\tCtrl+D",
+        "Delete\tDelete",
+        "Select all",
+        "Save to pieces",
+    ]
     menu.actions()[0].trigger()
     assert seen == ["form.action.copy"]
 

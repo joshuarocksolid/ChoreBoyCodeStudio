@@ -8,13 +8,13 @@ named fragment is dropped.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.clipboard import plain_names, selection_fragment
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_fragment
-from app.features.form_builder.engine.ui4.spec import Fragment
+from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.engine.ui4.writer import write_fragment
 from app.features.form_builder.integration.memory import SETTINGS_KEY
 from app.persistence.settings_service import SettingsService
@@ -67,8 +67,7 @@ def unique_piece_name(name: str, taken: Sequence[str]) -> str:
 def piece_from_fragment(fragment: Fragment, taken: Sequence[str]) -> Optional[SavedPiece]:
     if not fragment.nodes:
         return None
-    lines = [line for line in plain_names(fragment).splitlines() if line]
-    base = lines[0] if lines else _FALLBACK_NAME
+    base = _visible_base(fragment)
     return SavedPiece(unique_piece_name(base, taken), write_fragment(fragment))
 
 
@@ -96,12 +95,38 @@ def without_piece(pieces: Sequence[SavedPiece], index: int) -> Tuple[SavedPiece,
     return tuple(piece for slot, piece in enumerate(pieces) if slot != index)
 
 
+_STORES: Dict[str, "SavedPieceStore"] = {}
+
+
 class SavedPieceStore:
-    """Load and save one user's pieces."""
+    """One store per settings root. Every open form reads the same list."""
+
+    def __new__(cls, state_root: Optional[str] = None) -> "SavedPieceStore":
+        key = "" if state_root is None else state_root
+        found = _STORES.get(key)
+        if found is not None:
+            return found
+        created = object.__new__(cls)
+        _STORES[key] = created
+        return created
 
     def __init__(self, state_root: Optional[str] = None) -> None:
+        if getattr(self, "_ready", False):
+            return
+        self._ready = True
         self._service = SettingsService(state_root=state_root)
         self._pieces: Optional[Tuple[SavedPiece, ...]] = None
+        self._listeners: List[Callable[[], None]] = []
+
+    def subscribe(self, listener: Callable[[], None]) -> Callable[[], None]:
+        """Call ``listener`` after every replace. The return value unsubscribes."""
+        self._listeners.append(listener)
+
+        def stop() -> None:
+            if listener in self._listeners:
+                self._listeners.remove(listener)
+
+        return stop
 
     def load(self) -> Tuple[SavedPiece, ...]:
         if self._pieces is None:
@@ -118,6 +143,38 @@ class SavedPieceStore:
             self._service.update_global(lambda payload: payload_with_pieces(payload, stored))
         except OSError:
             return
+        for listener in tuple(self._listeners):
+            listener()
+
+
+def _visible_base(fragment: Fragment) -> str:
+    widget = _first_widget(fragment.nodes[0])
+    shown = _visible_text(widget) if widget is not None else ""
+    if shown:
+        return shown
+    lines = [line for line in plain_names(fragment).splitlines() if line]
+    return lines[0] if lines else _FALLBACK_NAME
+
+
+def _first_widget(spec: NodeSpec) -> Optional[NodeSpec]:
+    if spec.kind == "widget":
+        return spec
+    for _slot, kids in spec.slots:
+        for child in kids:
+            found = _first_widget(child)
+            if found is not None:
+                return found
+    return None
+
+
+def _visible_text(spec: NodeSpec) -> str:
+    for entry in spec.properties:
+        if entry.name not in ("text", "title", "windowTitle"):
+            continue
+        text = getattr(entry.value, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    return ""
 
 
 def _piece(item: object) -> Optional[SavedPiece]:

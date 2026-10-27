@@ -77,6 +77,10 @@ def test_clipboard_screenshots(qapp, tmp_path: Path) -> None:  # type: ignore[no
             _grab_grid(qapp, tokens, out, width, height, mode)
             _grab_toast(qapp, tokens, out, width, height, mode)
             _grab_pieces(qapp, tokens, out, width, height, mode)
+            if (width, height) == (1400, 900):
+                _grab_bare_paste(qapp, tokens, out, mode)
+                _grab_form_row(qapp, tokens, out, mode)
+                _grab_two_pieces(qapp, tokens, out, mode)
 
 
 def _grab_grid(qapp, tokens, out: Path, width: int, height: int, mode: str) -> None:  # type: ignore[no-untyped-def]
@@ -192,5 +196,123 @@ def _grab_pieces(qapp, tokens, out: Path, width: int, height: int, mode: str) ->
         shell.show()
         qapp.processEvents()
         shell.grab().save(str(out / ("clipboard-saved-pieces-%s-%dx%d.png" % (mode, width, height))), "PNG")
+        canvas.dispose()
+        shell.deleteLater()
+
+
+_BARE = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Dialog</class>
+ <widget class="QDialog" name="Dialog">
+  <widget class="QLineEdit" name="nameEdit">
+   <property name="geometry"><rect><x>20</x><y>30</y><width>160</width><height>24</height></rect></property>
+  </widget>
+  <widget class="QPushButton" name="okButton">
+   <property name="geometry"><rect><x>290</x><y>250</y><width>80</width><height>24</height></rect></property>
+   <property name="text"><string>OK</string></property>
+  </widget>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+_ROW = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <property name="windowTitle"><string>Contact details</string></property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0">
+    <widget class="QLabel" name="phoneLabel"><property name="text"><string>Phone</string></property></widget>
+   </item>
+   <item row="0" column="1"><widget class="QLineEdit" name="phone"/></item>
+   <item row="1" column="0">
+    <widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property></widget>
+   </item>
+   <item row="1" column="1"><widget class="QLineEdit" name="email"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def _grab_bare_paste(qapp, tokens, out: Path, mode: str) -> None:  # type: ignore[no-untyped-def]
+    with opened(_BARE) as (session, realizer):
+        parent = QWidget()
+        parent.resize(1400, 900)
+        host = _Host(session)
+        canvas = FormCanvas(session, realizer, host, parent)
+        canvas.apply_theme(tokens)
+        parent.show()
+        canvas.resize(1400, 900)
+        document = session.document
+        session.selection.set((document.root.id,), current=document.root.id, source=SelectionSource.COMMAND)
+        mime = QMimeData()
+        mime.setData(MIME_FRAGMENT, write_fragment(Fragment(nodes=(button_spec("extra", "Extra"),))).encode("utf-8"))
+        QApplication.clipboard().setMimeData(mime)
+        assert apply_command(host, "form.action.paste") is True
+        assert document.root.layout is None
+        _flush()
+        qapp.processEvents()
+        parent.grab().save(str(out / ("clipboard-bare-paste-%s-1400x900.png" % mode)), "PNG")
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def _grab_form_row(qapp, tokens, out: Path, mode: str) -> None:  # type: ignore[no-untyped-def]
+    with opened(_ROW) as (session, realizer):
+        parent = QWidget()
+        parent.resize(1400, 900)
+        host = _Host(session)
+        canvas = FormCanvas(session, realizer, host, parent)
+        canvas.apply_theme(tokens)
+        parent.show()
+        canvas.resize(1400, 900)
+        document = session.document
+        label = document.by_name("phoneLabel")[0]
+        field = document.by_name("phone")[0]
+        session.selection.set((label, field), current=field, source=SelectionSource.COMMAND)
+        assert apply_command(host, "form.action.copy") is True
+        email = document.by_name("email")[0]
+        session.selection.set((email,), current=email, source=SelectionSource.COMMAND)
+        assert apply_command(host, "form.action.paste") is True
+        _flush()
+        qapp.processEvents()
+        parent.grab().save(str(out / ("clipboard-form-row-%s-1400x900.png" % mode)), "PNG")
+        canvas.dispose()
+        parent.deleteLater()
+
+
+def _grab_two_pieces(qapp, tokens, out: Path, mode: str) -> None:  # type: ignore[no-untyped-def]
+    with opened(_ROW) as (session, realizer):
+        shell = QWidget()
+        shell.resize(1400, 900)
+        row = QHBoxLayout(shell)
+        row.setContentsMargins(0, 0, 0, 0)
+        pane = InsertPane(lambda _collapsed: None, shell)
+        host = _Host(session)
+        canvas = FormCanvas(session, realizer, host, shell)
+        pane.setMaximumWidth(280)
+        pane.bind_session(session)
+        pane.apply_theme(tokens)
+        canvas.apply_theme(tokens)
+        row.addWidget(pane)
+        row.addWidget(canvas, 1)
+        phone = session.document.by_name("phoneLabel")[0]
+        field = session.document.by_name("phone")[0]
+        session.selection.set((phone, field), current=phone, source=SelectionSource.COMMAND)
+        pane.save_selection(session)
+        email = session.document.by_name("emailLabel")[0]
+        session.selection.set((email,), current=email, source=SelectionSource.COMMAND)
+        pane.save_selection(session)
+        listed = pane.findChild(QListWidget, "formBuilder.savedPieces")
+        assert isinstance(listed, QListWidget)
+        assert listed.count() == 2
+        shell.show()
+        qapp.processEvents()
+        shell.grab().save(str(out / ("clipboard-two-pieces-%s-1400x900.png" % mode)), "PNG")
         canvas.dispose()
         shell.deleteLater()

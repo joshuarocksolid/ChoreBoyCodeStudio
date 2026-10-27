@@ -9,7 +9,7 @@ import os
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeyEvent
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -66,6 +66,7 @@ from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas, _drop_payload
+from app.features.form_builder.integration.clipboard_actions import publish_xml
 from app.features.form_builder.integration.pieces import (
     SavedPiece,
     SavedPieceStore,
@@ -1006,7 +1007,11 @@ class InsertPane(QWidget):
         self._session: Optional[FormSession] = None
         self._piece_store: Optional[SavedPieceStore] = None
         self._pieces: Tuple[SavedPiece, ...] = ()
+        self._piece_unsub: Optional[Callable[[], None]] = None
+        self._notice: Optional[Callable[[str, Callable[[], None]], None]] = None
+        self._paste: Optional[Callable[[], None]] = None
         self._piece_box = _PieceBox(self)
+        self.destroyed.connect(lambda *_args: self._drop_piece_sub())
         layout.addWidget(self._piece_box)
         self._collapsed = False
         self._refill("")
@@ -1051,10 +1056,33 @@ class InsertPane(QWidget):
     def bind_session(self, session: FormSession) -> None:
         self._session = session
 
+    def set_paste(self, paste: Callable[[], None]) -> None:
+        self._paste = paste
+
+    def set_notice(self, notice: Callable[[str, Callable[[], None]], None]) -> None:
+        self._notice = notice
+
     def bind_pieces(self, store: Optional[SavedPieceStore]) -> None:
+        self._drop_piece_sub()
         self._piece_store = store
         if store is not None:
             self._pieces = store.load()
+            self._piece_unsub = store.subscribe(self._on_pieces_changed)
+        else:
+            self._pieces = ()
+        self._refresh_pieces()
+
+    def _drop_piece_sub(self) -> None:
+        unsub = self._piece_unsub
+        self._piece_unsub = None
+        if unsub is not None:
+            unsub()
+
+    def _on_pieces_changed(self) -> None:
+        store = self._piece_store
+        if store is None:
+            return
+        self._pieces = store.load()
         self._refresh_pieces()
 
     def save_selection(self, session: FormSession) -> None:
@@ -1083,10 +1111,36 @@ class InsertPane(QWidget):
         self._refresh_pieces()
 
     def delete_piece(self, index: int) -> None:
-        updated = without_piece(self._pieces, index)
-        if updated == self._pieces:
+        if index < 0 or index >= len(self._pieces):
             return
+        removed = self._pieces[index]
+        updated = without_piece(self._pieces, index)
         self._pieces = updated
+        self._store_pieces()
+        self._refresh_pieces()
+        notice = self._notice
+        if notice is None:
+            return
+
+        def undo(slot: int = index, piece: SavedPiece = removed) -> None:
+            self._restore_piece(slot, piece)
+
+        notice("Deleted %s." % removed.name, undo)
+
+    def insert_piece(self, index: int) -> None:
+        piece = self.piece_at(index)
+        if piece is None:
+            return
+        publish_xml(piece.xml)
+        paste = self._paste
+        if paste is not None:
+            paste()
+
+    def _restore_piece(self, index: int, piece: SavedPiece) -> None:
+        items = list(self._pieces)
+        slot = index if 0 <= index <= len(items) else len(items)
+        items.insert(slot, piece)
+        self._pieces = tuple(items)
         self._store_pieces()
         self._refresh_pieces()
 
@@ -1230,6 +1284,7 @@ class _PieceBox(QWidget):
         for index, piece in enumerate(pieces):
             item = QListWidgetItem(piece.name)
             item.setData(role, index)
+            item.setToolTip("Insert %s. Press Enter." % piece.name)
             self.list.addItem(item)
         self._fit()
 
@@ -1286,6 +1341,18 @@ class _PieceBox(QWidget):
 
 
 class _PieceList(QListWidget):
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        enter = getattr(Qt, "Key_Return")
+        keypad = getattr(Qt, "Key_Enter")
+        if event.key() in (enter, keypad):
+            item = self.currentItem()
+            raw = None if item is None else item.data(getattr(Qt, "UserRole"))
+            box = self.parent()
+            if raw is not None and isinstance(box, _PieceBox):
+                box._pane.insert_piece(int(raw))
+                return
+        super().keyPressEvent(event)
+
     def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
         buttons = getattr(event, "buttons", lambda: 0)()
         left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")

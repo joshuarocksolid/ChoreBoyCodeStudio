@@ -68,6 +68,8 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     HostEvent,
     Idle,
     KEY_MERGE_S,
+    Moving,
+    Pressed,
     Key,
     Move,
     PlaceAsked,
@@ -247,6 +249,29 @@ class CanvasController:
         if self._closed:
             return
         self._feed(event)
+
+    def drag_node_ids(self) -> Tuple[NodeId, ...]:
+        """Nodes a press or drag would move. Empty when the gesture is not a move."""
+        gesture = self._gesture
+        if isinstance(gesture, Pressed):
+            gesture = gesture.on_drag
+        if isinstance(gesture, Moving):
+            return tuple(item.node for item in gesture.items)
+        if isinstance(gesture, Placing):
+            return tuple(gesture.payload.source_ids)
+        return ()
+
+    def abandon_drag(self) -> None:
+        """Drop the in-progress move so another surface can take the pointer."""
+        gesture = self._gesture
+        active = gesture.on_drag if isinstance(gesture, Pressed) else gesture
+        placing = gesture if isinstance(gesture, Placing) else active
+        if isinstance(placing, Placing):
+            self._fade(placing.payload.source_ids, 1.0)
+        if previewing(gesture) or previewing(active):
+            self._stage.run(EndPreview())
+        self._ghost = None
+        self._gesture = Idle()
 
     def dispose(self) -> None:
         if self._closed:

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Callable
+from typing import Callable, Optional
 
 from app.qt.QtWidgets import QMenu
 
@@ -27,20 +27,33 @@ def paint_menu(menu: QMenu, chrome: FormChrome) -> None:
 
 
 _CLIPBOARD_ROWS = (
-    ("Copy", "form.action.copy"),
-    ("Cut", "form.action.cut"),
-    ("Paste", "form.action.paste"),
-    ("Duplicate", "form.action.duplicate"),
-    ("Delete", "form.action.delete"),
-    ("Select all", "form.action.selectAll"),
-    ("Save to pieces", "form.action.savePiece"),
+    ("Copy", "form.action.copy", "Ctrl+C"),
+    ("Cut", "form.action.cut", "Ctrl+X"),
+    ("Paste", "form.action.paste", "Ctrl+V"),
+    ("Duplicate", "form.action.duplicate", "Ctrl+D"),
+    ("Delete", "form.action.delete", "Delete"),
+    ("Select all", "form.action.selectAll", ""),
+    ("Save to pieces", "form.action.savePiece", ""),
 )
 
 
-def add_clipboard_actions(menu: QMenu, dispatch: Callable[[str], None]) -> None:
-    """Copy through Save to pieces. Each row calls ``dispatch`` with its command id."""
-    for label, command_id in _CLIPBOARD_ROWS:
-        action = menu.addAction(label)
+def add_clipboard_actions(
+    menu: QMenu,
+    dispatch: Callable[[str], None],
+    enabled: Optional[Callable[[str], bool]] = None,
+) -> None:
+    """Copy through Save to pieces. Each row calls ``dispatch`` with its command id.
+
+    ``enabled`` decides which rows can act. A missing callback leaves every row on.
+    """
+    menu.setToolTipsVisible(True)
+    for label, command_id, shortcut in _CLIPBOARD_ROWS:
+        text = "%s\t%s" % (label, shortcut) if shortcut else label
+        action = menu.addAction(text)
+        if enabled is not None:
+            action.setEnabled(enabled(command_id))
+        if shortcut:
+            action.setToolTip(shortcut)
         action.triggered.connect(lambda _checked=False, command_id=command_id: dispatch(command_id))
     menu.addSeparator()
 

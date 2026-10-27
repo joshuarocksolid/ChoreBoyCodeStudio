@@ -44,6 +44,7 @@ from app.features.form_builder.qtside.sizing_live import (
     why_text,
 )
 from app.qt.QtCore import QEvent, QObject, QTimer, Qt
+from app.qt.qt_compat import wrapper_is_valid
 from app.qt.QtGui import QIntValidator
 from app.qt.QtWidgets import (
     QFrame,
@@ -125,10 +126,16 @@ class SizeBody:
 
     def _watch_live(self, owners: Sequence[WidgetNode]) -> None:
         widget = self._host.live(owners[0].id) if len(owners) == 1 else None
-        if widget is self._watched:
+        watched = self._watched
+        if watched is not None and not wrapper_is_valid(watched):
+            watched = None
+            self._watched = None
+        if widget is not None and not wrapper_is_valid(widget):
+            widget = None
+        if widget is watched:
             return
-        if self._watched is not None:
-            self._watched.removeEventFilter(self._watch)
+        if watched is not None:
+            watched.removeEventFilter(self._watch)
         self._watched = widget
         if widget is not None:
             widget.installEventFilter(self._watch)

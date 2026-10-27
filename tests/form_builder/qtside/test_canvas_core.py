@@ -416,6 +416,60 @@ def test_an_open_corner_inside_the_viewport_stays_there() -> None:
     assert seats[0].rect.y < target.y
 
 
+def test_ctrl_click_without_a_drag_toggles_on_release() -> None:
+    with _opened(BARE) as session:
+        view = _view()
+        index = _bare_index(session)
+        ok = _nid(session, "ok")
+        form = _nid(session, "Form")
+        world = _world(session, index, view, SelectionState((ok,), ok))
+        pressed = step(
+            Idle(),
+            Press(_canvas(view, 40, 50), PortPoint(0, 0), "left", Mods(ctrl=True), False),
+            world,
+        )
+        assert [effect for effect in pressed.effects if isinstance(effect, (Select, Toggle))] == []
+        assert isinstance(pressed.gesture, Pressed)
+        released = step(
+            pressed.gesture,
+            Release(_canvas(view, 40, 50), PortPoint(0, 0), "left", Mods(ctrl=True)),
+            world,
+        )
+        assert Select((form,), form) in released.effects
+
+
+def test_ctrl_press_then_drag_clones_the_widget() -> None:
+    with _opened(BARE) as session:
+        view = _view()
+        index = _bare_index(session)
+        ok = _nid(session, "ok")
+        world = _world(session, index, view, SelectionState((ok,), ok))
+        pressed = step(
+            Idle(),
+            Press(_canvas(view, 40, 50), PortPoint(0, 0), "left", Mods(ctrl=True), False),
+            world,
+        )
+        moved = step(
+            pressed.gesture,
+            Move(_canvas(view, 80, 50), PortPoint(24, 0), frozenset(("left",)), Mods(ctrl=True)),
+            world,
+        )
+        assert isinstance(moved.gesture, Moving)
+        assert moved.gesture.armed_clone is True
+        assert any(isinstance(effect, Cursor) and effect.shape == "copy" for effect in moved.effects)
+        released = step(
+            moved.gesture,
+            Release(_canvas(view, 80, 50), PortPoint(24, 0), "left", Mods()),
+            world,
+        )
+        commits = [effect for effect in released.effects if isinstance(effect, Commit)]
+        assert len(commits) == 1
+        assert commits[0].label == "Duplicate"
+        command = commits[0].commands[0]
+        assert isinstance(command, InsertFragment)
+        assert command.label == "Duplicate"
+
+
 def test_shift_click_on_the_only_selected_widget_selects_the_form() -> None:
     with _opened(BARE) as session:
         view = _view()
