@@ -314,6 +314,19 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 | M9.6 | Docs: user manual pages (`docs/manual*`), keyboard reference, README, CHANGELOG, acceptance tests | G, O-UX (copy) | Docs reviewed |
 | M9.7 | Final logic soundness audit across the engine, generator, expression language, rules and data layer | O-logic | APPROVE |
 
+**M9.4 known misses carried from M3 (accepted at M3.7; budgets unchanged).** Real MainWindow, 1400×900, 1000-widget reference form, CPU p50 at load 30–50 on the Mac. These are the `edit layout spacing` and `paste surface` rows in `tests/form_builder/perf/harness.py`, which fail on purpose until this work lands.
+
+- Edit layout spacing: ~22–33 ms against 16 ms. Qt's own relayout of the 394-row form layout costs ~5–6 ms. The rest is the hit-index refresh, which re-measures ~400 items (it has to: every item moves), plus a whole-page repaint of the proxied form.
+- Paste: ~50–65 ms against 16 ms, ~50 ms with the inspector hidden. Undoing it costs ~60 ms. The cost is the realize patch (reconciling a 394-row form layout), a full hit-index walk after any structural change (~5–7 ms), a full rebuild of the overlay's static layer on insert (~7 ms), and the row shift in the engine. The row shift is already one bubble per parent for the forward edit, and for undo and redo since M3.7a.
+- Edit label text was ~20 ms CPU at load 30 when M3.7a closed. The rescue did not reach 16. A text edit on a QLabel in the form layout invalidates the whole proxied page (the scene reports the full page rect) although no widget moves. Bisecting it showed that only the realizer's property patch is needed; a raw `setText` on the same widget does not do it. Nothing found yet.
+- Leads:
+  1. A cached page or a region paint layer, so overlay and caption changes never re-render the proxied form.
+  2. An O(changed) static overlay layer on insert and delete.
+  3. A structural refresh of the hit index that only re-measures the changed container. Today any insert, delete or move takes the full walk, the only path proven equal to a rebuild by the structural fuzz in `tests/form_builder/qtside/test_hit_index_incremental_repro.py`.
+  4. A cheaper realize patch for long form layouts.
+  5. The whole-page invalidation after a QLabel text patch.
+  6. The shell's draft autosave, which serializes the whole form to XML (~20–40 ms) and sometimes lands inside an edit.
+
 ### M10. Release candidate
 
 | WP | Work | Who | Done when |

@@ -2614,6 +2614,12 @@ def _sizing_preview_rows(
         parent.deleteLater()
 
 
+#: These two rows still miss the 16 ms budget at 1000 widgets. The miss is
+#: accepted for M3 and owned by M9.4; the budget is not raised. See
+#: docs/form_builder/PLAN.md, M9.4 "Known M3 misses".
+KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 known misses)"
+
+
 def _surface_speed_rows(
     forms: Dict[int, ReferenceForm],
     samples: int,
@@ -2796,17 +2802,20 @@ def _surface_window_rows(
             pane.flush()
 
         rows.append(
-            _timed(
-                "edit layout spacing",
-                count,
-                space,
-                EDIT_BUDGET_MS,
-                samples=samples,
-                warmup=warmup,
-                enforce_absolute=enforce_absolute,
-                wall_on=wall_on,
-                prepare=app.processEvents,
-            )[0]
+            _with_detail(
+                _timed(
+                    "edit layout spacing",
+                    count,
+                    space,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=app.processEvents,
+                )[0],
+                KNOWN_M94_MISS,
+            )
         )
         session.selection.set((label,), source=selection.SelectionSource.CANVAS)
         app.processEvents()
@@ -2822,18 +2831,21 @@ def _surface_window_rows(
             app.processEvents()
 
         rows.append(
-            _timed(
-                "paste surface",
-                count,
-                paste,
-                EDIT_BUDGET_MS,
-                samples=samples,
-                warmup=warmup,
-                enforce_absolute=enforce_absolute,
-                wall_on=wall_on,
-                prepare=app.processEvents,
-                cleanup=undo_paste,
-            )[0]
+            _with_detail(
+                _timed(
+                    "paste surface",
+                    count,
+                    paste,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=app.processEvents,
+                    cleanup=undo_paste,
+                )[0],
+                KNOWN_M94_MISS,
+            )
         )
         visits = {"n": 0}
         index = canvas._index
