@@ -143,6 +143,7 @@ class Ledger:
     pains: Tuple[Pain, ...]
     logic: Tuple[LogicFeature, ...]
     wps_without_items: frozenset
+    notes: Tuple[str, ...] = ()
 
     def entries(self) -> Iterator[Entry]:
         for item in self.r3:
@@ -387,7 +388,7 @@ def parse_ledger(text: str) -> Tuple[Optional[Ledger], Tuple[Finding, ...]]:
     root = _check_keys(
         data,
         ("schema", "areas", "r3", "pains", "logic", "wps_without_items"),
-        (),
+        ("notes",),
         "ledger",
         findings,
     )
@@ -401,10 +402,11 @@ def parse_ledger(text: str) -> Tuple[Optional[Ledger], Tuple[Finding, ...]]:
     pains = _parse_pains(root.get("pains"), findings)
     logic = _parse_logic(root.get("logic"), findings)
     exempt = _parse_exempt(root.get("wps_without_items"), findings)
+    notes = _parse_notes(root.get("notes"), findings)
     if findings:
         return None, _sort_findings(findings)
     assert areas is not None and r3_items is not None
-    assert pains is not None and logic is not None and exempt is not None
+    assert pains is not None and logic is not None and exempt is not None and notes is not None
     r3_sorted = tuple(sorted(r3_items, key=lambda item: item.number))
     pains_sorted = tuple(sorted(pains, key=lambda pain: pain.rank))
     return (
@@ -414,6 +416,7 @@ def parse_ledger(text: str) -> Tuple[Optional[Ledger], Tuple[Finding, ...]]:
             pains=pains_sorted,
             logic=tuple(logic),
             wps_without_items=frozenset(exempt),
+            notes=tuple(notes),
         ),
         (),
     )
@@ -1474,7 +1477,28 @@ def render_markdown(view: View) -> str:
             )
         )
     lines.append("")
+    if view.ledger.notes:
+        lines.extend(["## Notes", ""])
+        for note in view.ledger.notes:
+            lines.append("- %s" % note)
+        lines.append("")
     return "\n".join(lines)
+
+
+def _parse_notes(value: object, findings: List[Finding]) -> Optional[Tuple[str, ...]]:
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        _schema(findings, None, "notes must be a list of strings")
+        return None
+    notes = []
+    for index, item in enumerate(value):
+        text = _nonblank(item)
+        if text is None:
+            _schema(findings, None, "notes[%d] must be a non-blank string" % index)
+            return None
+        notes.append(text)
+    return tuple(notes)
 
 
 def build(paths: Paths, junit: Optional[Path] = None) -> Report:
