@@ -240,13 +240,18 @@ def test_copy_keeps_references_inside_the_selection() -> None:
     log.execute(AddConnection("email", "textChanged(QString)", "emailLabel", "setText(QString)"))
     log.execute(AddConnection("email", "textChanged(QString)", "missingPerson", "clear()"))
     fragment = selection_fragment(doc, (email, label))
-    assert len(fragment.connections) == 1
-    assert fragment.connections[0].field("receiver") == "emailLabel"
-    label_spec = fragment.nodes[1]
+    assert {spec.field("receiver") for spec in fragment.connections} == {"emailLabel", "missingPerson"}
+    label_spec = next(spec for spec in fragment.nodes if spec.field("object_name") == "emailLabel")
     assert _buddy_text(label_spec) == "email"
     dropped = selection_fragment(doc, (label,))
-    assert dropped.connections == ()
+    assert len(dropped.connections) == 1
+    assert dropped.connections[0].field("sender") == "email"
     assert _buddy_text(dropped.nodes[0]) == ""
+    target = open_log(BOX)
+    outcome = target.execute(InsertFragment(paste_placement(target.document, ()), dropped))
+    result = outcome.result
+    assert isinstance(result, InsertResult)
+    assert result.dangling == ("email",)
 
 
 def test_suffix_rename_rewrites_internal_references() -> None:

@@ -108,7 +108,7 @@ def test_pasting_the_middle_button_inserts_it_and_selects_it(qapp: object) -> No
         pasted = session.document.node(current)
         assert isinstance(pasted, WidgetNode)
         assert pasted.object_name == "middle_2"
-        assert host.sentences == ["Pasted 1 widgets after middle"]
+        assert host.sentences == ["Pasted 1 widget after middle"]
         session.log.undo()
         assert _box_names(session.document) == ("top", "middle", "bottom")
     finally:
@@ -227,7 +227,7 @@ def test_a_missing_connection_end_offers_show(qapp: object) -> None:
         QApplication.clipboard().setMimeData(mime)
         apply_command(host, "form.action.paste")
         assert host.problems == [
-            "Pasted 1 widgets. 1 connection points at a widget that isn't on this form."
+            "Pasted 1 widget. 1 connection points at a widget that isn't on this form."
         ]
         assert [row.code for row in session.diagnostics.all() if row.code == "FB014"] == ["FB014"]
         current = session.selection.state.current

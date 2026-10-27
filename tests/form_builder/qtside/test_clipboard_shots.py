@@ -29,7 +29,7 @@ pytestmark = pytest.mark.usefixtures("qapp")
 
 _SIZES = ((1080, 600), (1400, 900))
 _MODES = ("light", "dark")
-_TOAST = "Pasted 1 widgets. 1 connection points at a widget that isn't on this form."
+_TOAST = "Pasted 1 widget. 1 connection points at a widget that isn't on this form."
 
 
 class _Host:

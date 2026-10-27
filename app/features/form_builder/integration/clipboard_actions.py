@@ -14,6 +14,7 @@ from app.qt.QtWidgets import QApplication, QLineEdit, QPlainTextEdit
 from app.features.form_builder.engine.clipboard import (
     dangling_sentence,
     paste_anchor_name,
+    paste_status,
     paste_auto_layout,
     paste_placement,
     pasted_widget_count,
@@ -173,7 +174,7 @@ def _insert(
     if outcome.noop or not isinstance(result, InsertResult):
         return
     if narrate:
-        host.narrate("Pasted %d widgets after %s" % (count, anchor))
+        host.narrate(paste_status(count, anchor))
     sentence = dangling_sentence(fragment, result.dangling, result.renames, document.names())
     if sentence is not None:
         host.show_paste_problem(sentence)

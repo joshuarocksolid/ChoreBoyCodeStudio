@@ -45,8 +45,9 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
     """Selected subtrees, buddies among them, and connections among them.
 
     A selected descendant of another selected node is not copied twice.
-    Ids are cleared. A buddy or connection that names something outside the
-    copied set is left out.
+    Ids are cleared. A buddy that names something outside the copied set is
+    left out. A connection stays when either end is in the set, so a paste
+    onto another form can keep a dangling end.
     """
     roots = _copy_roots(doc, ids)
     specs = tuple(_without_ids(doc.node(node_id).to_spec()) for node_id in roots)
@@ -55,7 +56,7 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
     connections = [
         _without_ids(node.to_spec())
         for node in doc.connections()
-        if _names_a_pair(node, names)
+        if _touches_selection(node, names)
     ]
     return Fragment(
         nodes=specs,
@@ -119,6 +120,11 @@ def pasted_widget_count(fragment: Fragment) -> int:
     return count or len(fragment.nodes)
 
 
+def paste_status(count: int, anchor: str) -> str:
+    """Status sentence for a paste. One widget does not take a plural noun."""
+    return "Pasted %d %s after %s" % (count, _noun(count, "widget", "widgets"), anchor)
+
+
 def dangling_sentence(
     fragment: Fragment,
     dangling: Sequence[str],
@@ -132,7 +138,14 @@ def dangling_sentence(
     gaps = missing_connection_count(fragment, renames, alive)
     if gaps < 1:
         gaps = len(dangling)
-    return "Pasted %d widgets. %d connection points at a widget that isn't on this form." % (count, gaps)
+    widgets = "%d %s" % (count, _noun(count, "widget", "widgets"))
+    links = "%d %s" % (gaps, _noun(gaps, "connection", "connections"))
+    verb = "points" if gaps == 1 else "point"
+    return "Pasted %s. %s %s at a widget that isn't on this form." % (widgets, links, verb)
+
+
+def _noun(count: int, singular: str, plural: str) -> str:
+    return singular if count == 1 else plural
 
 
 def missing_connection_count(
@@ -210,15 +223,12 @@ def _copy_target(doc: UiDocument, node_id: NodeId) -> Optional[Node]:
     return node
 
 
-def _names_a_pair(node: Node, names: Set[str]) -> bool:
+def _touches_selection(node: Node, names: Set[str]) -> bool:
     sender = node.field("sender")
     receiver = node.field("receiver")
-    return (
-        isinstance(sender, str)
-        and isinstance(receiver, str)
-        and sender in names
-        and receiver in names
-    )
+    if not isinstance(sender, str) or not isinstance(receiver, str):
+        return False
+    return sender in names or receiver in names
 
 
 def _custom_widgets(doc: UiDocument, specs: Sequence[NodeSpec]) -> Tuple[NodeSpec, ...]:
