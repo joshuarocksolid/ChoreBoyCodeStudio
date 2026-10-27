@@ -190,8 +190,7 @@ def _pair(
 
 
 def _show_four_digits(box: QSpinBox) -> None:
-    # Measure on the spin. lineEdit() during construction can hand back a
-    # layout item, and that item has no font metrics.
+    # The spin's own font, so the width follows the theme's point size.
     metrics = box.fontMetrics()
     text_width = int(metrics.horizontalAdvance("0000"))
     current = int(metrics.horizontalAdvance(box.text() or "0"))

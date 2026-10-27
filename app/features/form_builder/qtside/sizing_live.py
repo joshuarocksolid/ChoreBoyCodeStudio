@@ -271,12 +271,13 @@ def _form_label_width(document: UiDocument, node_id: NodeId, widget: QWidget) ->
     role = getattr(getattr(QFormLayout, "ItemRole", QFormLayout), "LabelRole")
     widest = 0
     seen = False
-    for row in range(form.rowCount()):
-        item = form.itemAt(row, role)
-        if item is None:
+    # Not form.itemAt(): PySide keeps those wrappers alive with the layout, and
+    # they alias new objects once Qt deletes the item.
+    for child in host.children():
+        if not isinstance(child, QWidget) or child.isWindow():
             continue
-        child = item.widget()
-        if child is None:
+        row, child_role = form.getWidgetPosition(child)
+        if row < 0 or child_role != role:
             continue
         widest = max(widest, int(child.width()))
         seen = True

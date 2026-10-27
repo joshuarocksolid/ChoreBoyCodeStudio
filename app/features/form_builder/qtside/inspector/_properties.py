@@ -68,7 +68,7 @@ class PropertiesPage(QWidget):
         self._show_qt = False
         self._qt_store: object = None
         self._link_color = ""
-        self._tab_key: Optional[Tuple[Tuple[int, str], ...]] = None
+        self._tab_key: Optional[Tuple[QWidget, ...]] = None
         self._search = QLineEdit(self)
         self._search.setObjectName("formBuilder.inspectorSearch")
         self._search.setPlaceholderText("Find a property")
@@ -292,10 +292,10 @@ class PropertiesPage(QWidget):
 
     def _chain_tabs(self) -> None:
         stops = _stops_under(self)
-        key = tuple((id(stop), stop.objectName()) for stop in stops)
-        if key == self._tab_key:
+        known = self._tab_key
+        if known is not None and len(known) == len(stops) and all(a is b for a, b in zip(known, stops)):
             return
-        self._tab_key = key
+        self._tab_key = tuple(stops)
         previous: Optional[QWidget] = None
         for stop in stops:
             if previous is not None:
@@ -1117,7 +1117,7 @@ def _stops_under(widget: QWidget) -> List[QWidget]:
         return [widget]
     layout = widget.layout()
     if layout is not None:
-        return _stops_in_layout(layout)
+        return _stops_in_layout(layout, widget)
     found = []
     for child in widget.children():
         if isinstance(child, QWidget):
@@ -1125,18 +1125,31 @@ def _stops_under(widget: QWidget) -> List[QWidget]:
     return found
 
 
-def _stops_in_layout(layout: QLayout) -> List[QWidget]:
+def _stops_in_layout(layout: QLayout, owner: QWidget) -> List[QWidget]:
+    """Stops in layout order, without ``QLayout.itemAt``.
+
+    PySide keeps every ``itemAt`` wrapper alive with its layout. Qt deletes the
+    item when its widget goes, the wrapper stays registered, and a new object at
+    that address comes back as a ``QWidgetItem``. So order the owner's child
+    widgets and the nested layouts by ``indexOf`` instead.
+    """
+    entries: List[Tuple[int, int, object]] = []
+    for child in owner.children():
+        if isinstance(child, QWidget):
+            index = layout.indexOf(child)
+            if index >= 0:
+                entries.append((index, len(entries), child))
+    for child in layout.children():
+        if isinstance(child, QLayout):
+            index = layout.indexOf(child)
+            if index >= 0:
+                entries.append((index, len(entries), child))
+    entries.sort(key=lambda entry: (entry[0], entry[1]))
     found: List[QWidget] = []
-    for index in range(layout.count()):
-        item = layout.itemAt(index)
-        if item is None:
-            continue
-        nested = item.layout()
-        if nested is not None:
-            found.extend(_stops_in_layout(nested))
-            continue
-        child = item.widget()
-        if child is not None:
+    for _index, _order, child in entries:
+        if isinstance(child, QLayout):
+            found.extend(_stops_in_layout(child, owner))
+        elif isinstance(child, QWidget):
             found.extend(_stops_under(child))
     return found
 

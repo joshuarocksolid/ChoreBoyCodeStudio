@@ -125,7 +125,38 @@ def _show_problems(window: MainWindow, qapp: QApplication) -> QTreeWidget:
     splitter = window._vertical_splitter  # noqa: SLF001
     splitter.setSizes([600, 280])
     qapp.processEvents()
+    _settle_problems(window)
     return panel.tree_widget()
+
+
+def _signature(tree: QTreeWidget) -> tuple:
+    rows = []
+    for index in range(tree.topLevelItemCount()):
+        group = tree.topLevelItem(index)
+        if group is None:
+            continue
+        rows.append((id(group), group.childCount()))
+    return tuple(rows)
+
+
+def _settle_problems(window: MainWindow) -> None:
+    """Wait until no late diagnostics pass rebuilds the Problems rows.
+
+    Opening a form schedules lint and form diagnostics; under load they land
+    after a plain processEvents, and a rebuild deletes every row item.
+    """
+    panel = window._problems_panel  # noqa: SLF001
+    assert panel is not None
+    tree = panel.tree_widget()
+    last = None
+    steady = 0
+    for _ in range(200):
+        QTest.qWait(20)
+        current = _signature(tree)
+        steady = steady + 1 if current == last else 0
+        last = current
+        if steady >= 10:
+            return
 
 
 def _row(tree: QTreeWidget, text: str) -> QTreeWidgetItem:
@@ -150,8 +181,12 @@ def _live_row(tree: QTreeWidget, text: str) -> QTreeWidgetItem | None:
 
 
 def _click(tree: QTreeWidget, item: QTreeWidgetItem, qapp: QApplication, *, double: bool) -> None:
+    # Problems rebuilds its rows when a late diagnostics pass lands, so look the
+    # row up again after the events run instead of using an item from before.
+    text = item.text(1)
     tree.scrollToItem(item)
     qapp.processEvents()
+    item = _row(tree, text)
     window = tree.window()
     handle = window.windowHandle()
     pos = tree.viewport().mapTo(window, tree.visualItemRect(item).center())
@@ -194,6 +229,7 @@ def test_single_click_on_a_form_problem_without_a_widget_does_nothing(
     path = tmp_path / "invoice.ui"
     try:
         surface = _open(window, qapp, path, _FORM)
+        _settle_problems(window)
         panel = window._problems_panel  # noqa: SLF001
         assert panel is not None
         panel.set_diagnostics(
@@ -275,6 +311,10 @@ def test_alt_o_opens_the_form_menu(tmp_path: Path, qapp: QApplication) -> None:
         if popup is not None:
             popup.close()
         shutdown_main_window_for_test(window, qapp)
+        if sys.platform == "darwin":
+            from app.qt.QtGui import qt_set_sequence_auto_mnemonic
+
+            qt_set_sequence_auto_mnemonic(False)
 
 
 @pytest.mark.parametrize("key_name", ["Key_Return", "Key_Enter"])
