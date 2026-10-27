@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
-from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QSize, Qt, QTimer
+from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeyEvent
 from app.qt.QtWidgets import (
     QFrame,
@@ -1132,6 +1132,9 @@ class OutlinePane(QWidget):
         if watched is not self.tree.viewport():
             return super().eventFilter(watched, event)
         kind = _event_kind(event)
+        if kind == "Resize" and self._renaming is not None:
+            # A scrollbar that appears (the error row grew) narrows the viewport: refit.
+            self._refit_rename()
         if kind == "Leave":
             self._announce_hover(None)
             self._press = None
@@ -1420,7 +1423,11 @@ class OutlinePane(QWidget):
             self._error.show()
             self._error.raise_()
             return
-        extra = max(self._error.sizeHint().height(), self._error.fontMetrics().height())
+        rect = self.tree.visualItemRect(item)
+        width = max(self._visible_width(rect), 80)
+        # The error wraps inside the visible part of the row, under the editor.
+        wrapped = self._error.heightForWidth(width)
+        extra = max(wrapped, self._error.sizeHint().height(), self._error.fontMetrics().height())
         self.tree.setUniformRowHeights(False)
         item.setData(0, EXTRA, extra)
         self.tree.doItemsLayout()
@@ -1428,9 +1435,18 @@ class OutlinePane(QWidget):
         self._place_editor(item)
         editor = self._editor.geometry()
         self._editor.setGeometry(editor.x(), rect.y(), editor.width(), _NAME_ROW_PX)
-        self._error.setGeometry(rect.x(), rect.y() + _NAME_ROW_PX, max(rect.width(), 80), extra)
+        self._error.setGeometry(rect.x(), rect.y() + _NAME_ROW_PX, max(self._visible_width(rect), 80), extra)
         self._error.show()
         self._error.raise_()
+
+    def _refit_rename(self) -> None:
+        item = None if self._renaming is None else self._rows.get(int(self._renaming))
+        if item is None:
+            return
+        if self._error.isVisible():
+            self.show_name_error(self._error.text())
+        else:
+            self._place_editor(item)
 
     def _release_rename_row(self) -> None:
         item = None if self._renaming is None else self._rows.get(int(self._renaming))
@@ -1702,9 +1718,13 @@ class OutlinePane(QWidget):
         rect = self.tree.visualItemRect(item)
         caption = str(item.data(0, CAPTION) or "")
         problem = bool(item.data(0, PROBLEM))
-        boxes = layout_row(rect.width(), bool(caption), problem)
+        boxes = layout_row(self._visible_width(rect), bool(caption), problem)
         left, _top, width, _height = boxes.name
         self._editor.setGeometry(rect.x() + left, rect.y(), max(width, 40), max(rect.height(), 24))
+
+    def _visible_width(self, rect: QRect) -> int:
+        """Width of ``rect`` that is inside the viewport, so nothing sits under the scrollbar."""
+        return max(min(rect.right() + 1, self.tree.viewport().width()) - max(rect.x(), 0), 0)
 
     def _cursor(self) -> object:
         focus = self._current_node()

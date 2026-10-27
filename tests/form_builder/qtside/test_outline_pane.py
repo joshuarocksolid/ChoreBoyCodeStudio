@@ -342,6 +342,27 @@ def test_name_error_stays_inside_its_row(qapp: QApplication) -> None:
         assert err.bottom() <= nxt.top()
 
 
+def test_a_narrow_name_error_fits_beside_the_scrollbar(qapp: QApplication) -> None:
+    # Twelve rows just fit; the error row is what brings in the vertical scrollbar.
+    with _opened(qapp, _buttons(10), "rename-narrow", width=236, height=330) as (pane, session):
+        pane.setFixedWidth(236)
+        _show(pane, session, "field3")
+        QTest.keyClick(pane.tree, _key("Key_F2"))
+        editor = _editor(qapp)
+        editor.selectAll()
+        QTest.keyClicks(editor, "field1")
+        QTest.keyClick(editor, _key("Key_Return"))
+        qapp.processEvents()
+        error = pane.findChild(QLabel, "formBuilder.outlineNameError")
+        assert isinstance(error, QLabel) and error.isVisible()
+        assert error.text() == "Another widget is already called field1."
+        viewport = pane.tree.viewport().width()
+        assert pane.tree.verticalScrollBar().isVisible()
+        assert editor.geometry().right() < viewport
+        assert error.geometry().right() < viewport
+        assert error.heightForWidth(error.width()) <= error.height()
+
+
 def test_escape_cancels_a_rename(qapp: QApplication) -> None:
     with _opened(qapp, _buttons(1), "rename-esc") as (pane, session):
         _show(pane, session, "field0")
