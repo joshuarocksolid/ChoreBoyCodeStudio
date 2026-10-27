@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QKeySequence
+from app.qt.QtGui import QKeySequence, QTextCursor
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
@@ -578,6 +578,23 @@ class FormSurface(QWidget):
         if not self._toolbar.xml.isChecked():
             self._toolbar.xml.setChecked(True)
         editor.go_to_line(line)
+        return True
+
+    def preview_problem(self, detail: Optional[Mapping[str, str]], line: int = 0) -> bool:
+        """A single click on a Problems row. ``line`` is the row's own line number."""
+        if self._toolbar.xml.isChecked():
+            self._point_xml_line(detail, line)
+            return True
+        node_id = self._node_for_detail(detail)
+        if node_id is None:
+            return False
+        self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
+        if self._session.selection.state.current != node_id:
+            return False
+        name = self._object_name(node_id)
+        if name:
+            self._workbench.canvas.ensure_widget_visible(name)
+        self._refresh_shell_status()
         return True
 
     def restore_text(self, text: str, reason: RestoreReason) -> None:
@@ -1185,6 +1202,35 @@ class FormSurface(QWidget):
             return
         self._saved_timer.stop()
         self._toolbar.set_save("", error=False, tokens=self._tokens)
+
+    def _point_xml_line(self, detail: Optional[Mapping[str, str]], fallback: int = 0) -> None:
+        """Move the XML cursor. A single click must not take focus out of Problems."""
+        editor = self._editor
+        if editor is None:
+            return
+        line = self._detail_line(detail) or int(fallback)
+        if line < 1:
+            return
+        block = editor.document().findBlockByNumber(line - 1)
+        if not block.isValid():
+            return
+        focus = QApplication.focusWidget()
+        # A block, not QTextCursor.Down: Down counts wrapped visual lines.
+        cursor = QTextCursor(block)
+        editor.setTextCursor(cursor)
+        if focus is not None and QApplication.focusWidget() is not focus:
+            focus.setFocus()
+
+    def _detail_line(self, detail: Optional[Mapping[str, str]]) -> int:
+        if not detail:
+            return 0
+        key = detail.get("fb_key") or ""
+        if not key:
+            return 0
+        for diagnostic in self._session.diagnostics.all():
+            if diagnostic.key == key:
+                return int(diagnostic.location.line)
+        return 0
 
     def _node_for_detail(self, detail: Optional[Mapping[str, str]]) -> Optional[NodeId]:
         if not detail:
