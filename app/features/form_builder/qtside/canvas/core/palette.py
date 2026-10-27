@@ -15,6 +15,8 @@ from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue, St
 
 MIME_INSERT = "application/x-cbcs-insert"
 MIME_NODE = "application/x-cbcs-node"
+MIME_FRAGMENT = "application/x-cbcs-form-fragment"
+MIME_DESIGNER_FRAGMENT = "application/x-qt-designer-ui-fragment"
 
 Tile = Tuple[str, PayloadKind, str]
 

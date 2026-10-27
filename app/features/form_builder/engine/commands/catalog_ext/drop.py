@@ -53,7 +53,7 @@ class InsertFormRow(_CommandBase):
             (("class_name", "QLabel"), ("object_name", "label")),
             (PropertyEntry("property", "text", StringValue("New field:")),),
         )
-        label_ids, _, _ = planning.insert_fragment(
+        label_ids, _, _, _ = planning.insert_fragment(
             doc,
             ctx,
             InFormRow(self.layout, self.row, "label", True),
@@ -67,7 +67,7 @@ class InsertFormRow(_CommandBase):
             field_id = self.existing
         else:
             assert self.fragment is not None
-            field_ids, _, _ = planning.insert_fragment(
+            field_ids, _, _, _ = planning.insert_fragment(
                 doc,
                 ctx,
                 InFormRow(self.layout, self.row, "field", False),
@@ -116,7 +116,7 @@ class WrapWithNew(_CommandBase):
             new_id = self.existing
         else:
             assert self.fragment is not None
-            ids, _, _ = planning.insert_fragment(
+            ids, _, _, _ = planning.insert_fragment(
                 doc, ctx, InBoxLayout(layout.id, at), self.fragment, False
             )
             new_id = ids[0]
@@ -145,7 +145,7 @@ class AdoptIntoBox(_CommandBase):
             ctx.select(self.existing, self.existing[0])
             return self.existing
         assert self.fragment is not None
-        ids, _, _ = planning.insert_fragment(
+        ids, _, _, _ = planning.insert_fragment(
             doc, ctx, InBoxLayout(layout_id, 0), self.fragment, False
         )
         return ids
@@ -204,7 +204,7 @@ class InsertPage(_CommandBase):
             (),
             (PropertyEntry("attribute", "title", StringValue("Tab %d" % (count + 1))),),
         )
-        ids, _, _ = planning.insert_fragment(
+        ids, _, _, _ = planning.insert_fragment(
             doc, ctx, InContainer(self.container, count), Fragment((page,)), False
         )
         page_id = ids[0]

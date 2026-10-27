@@ -9,10 +9,11 @@ import os
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QObject, QPoint, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeyEvent
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -45,6 +46,8 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PlaceHover,
 )
 from app.features.form_builder.qtside.canvas.core.palette import (
+    MIME_DESIGNER_FRAGMENT,
+    MIME_FRAGMENT,
     MIME_INSERT,
     MIME_NODE,
     fragment_for,
@@ -63,6 +66,14 @@ from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas, _drop_payload
+from app.features.form_builder.integration.clipboard_actions import publish_xml
+from app.features.form_builder.integration.pieces import (
+    SavedPiece,
+    SavedPieceStore,
+    piece_for_ids,
+    renamed_pieces,
+    without_piece,
+)
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.canvas.controller import CanvasHost
 from app.features.form_builder.integration.layout import (
@@ -820,8 +831,8 @@ class OutlinePane(QWidget):
         parsed = _drop_payload(event, doc)
         if parsed is None:
             return
-        body, key = parsed
-        post(PlaceAsked(CanvasPoint(pos.x(), pos.y()), body, key))
+        body, key, fragment = parsed
+        post(PlaceAsked(CanvasPoint(pos.x(), pos.y()), body, key, fragment))
 
     def _post_target(self, pos: QPoint, drop: bool) -> None:
         post = self._post
@@ -993,8 +1004,18 @@ class InsertPane(QWidget):
         self.body.itemActivated.connect(self._activated)
         self.body.currentItemChanged.connect(lambda *_args: self._announce_preview())
         layout.addWidget(self.body, 1)
+        self._session: Optional[FormSession] = None
+        self._piece_store: Optional[SavedPieceStore] = None
+        self._pieces: Tuple[SavedPiece, ...] = ()
+        self._piece_unsub: Optional[Callable[[], None]] = None
+        self._notice: Optional[Callable[[str, Callable[[], None]], None]] = None
+        self._paste: Optional[Callable[[], None]] = None
+        self._piece_box = _PieceBox(self)
+        self.destroyed.connect(lambda *_args: self._drop_piece_sub())
+        layout.addWidget(self._piece_box)
         self._collapsed = False
         self._refill("")
+        self._refresh_pieces()
 
     def set_place(self, place: Callable[[str], None]) -> None:
         self._place = place
@@ -1030,6 +1051,141 @@ class InsertPane(QWidget):
         self._collapsed = collapsed
         self.filter.setVisible(not collapsed)
         self.body.setVisible(not collapsed)
+        self._refresh_pieces()
+
+    def bind_session(self, session: FormSession) -> None:
+        self._session = session
+
+    def set_paste(self, paste: Callable[[], None]) -> None:
+        self._paste = paste
+
+    def set_notice(self, notice: Callable[[str, Callable[[], None]], None]) -> None:
+        self._notice = notice
+
+    def bind_pieces(self, store: Optional[SavedPieceStore]) -> None:
+        self._drop_piece_sub()
+        self._piece_store = store
+        if store is not None:
+            self._pieces = store.load()
+            self._piece_unsub = store.subscribe(self._on_pieces_changed)
+        else:
+            self._pieces = ()
+        self._refresh_pieces()
+
+    def _drop_piece_sub(self) -> None:
+        unsub = self._piece_unsub
+        self._piece_unsub = None
+        if unsub is not None:
+            unsub()
+
+    def _on_pieces_changed(self) -> None:
+        store = self._piece_store
+        if store is None:
+            return
+        self._pieces = store.load()
+        self._refresh_pieces()
+
+    def save_selection(self, session: FormSession) -> None:
+        self._session = session
+        self._save_ids(session, session.selection.state.ids)
+
+    def save_node(self, node_id: NodeId) -> None:
+        session = self._session
+        if session is None or not session.document.contains(node_id):
+            return
+        selected = session.selection.state.ids
+        ids = selected if node_id in selected else (node_id,)
+        self._save_ids(session, ids)
+
+    def piece_at(self, index: int) -> Optional[SavedPiece]:
+        if index < 0 or index >= len(self._pieces):
+            return None
+        return self._pieces[index]
+
+    def rename_piece(self, index: int, name: str) -> None:
+        updated = renamed_pieces(self._pieces, index, name)
+        if updated == self._pieces:
+            return
+        self._pieces = updated
+        self._store_pieces()
+        self._refresh_pieces()
+
+    def delete_piece(self, index: int) -> None:
+        if index < 0 or index >= len(self._pieces):
+            return
+        removed = self._pieces[index]
+        updated = without_piece(self._pieces, index)
+        self._pieces = updated
+        self._store_pieces()
+        self._refresh_pieces()
+        notice = self._notice
+        if notice is None:
+            return
+
+        def undo(slot: int = index, piece: SavedPiece = removed) -> None:
+            self._restore_piece(slot, piece)
+
+        notice("Deleted %s." % removed.name, undo)
+
+    def insert_piece(self, index: int) -> None:
+        piece = self.piece_at(index)
+        if piece is None:
+            return
+        publish_xml(piece.xml)
+        paste = self._paste
+        if paste is not None:
+            paste()
+
+    def _restore_piece(self, index: int, piece: SavedPiece) -> None:
+        items = list(self._pieces)
+        slot = index if 0 <= index <= len(items) else len(items)
+        items.insert(slot, piece)
+        self._pieces = tuple(items)
+        self._store_pieces()
+        self._refresh_pieces()
+
+    def piece_menu(self, index: int) -> QMenu:
+        menu = QMenu(self)
+        rename = menu.addAction("Rename")
+        delete = menu.addAction("Delete")
+        rename.triggered.connect(lambda _checked=False, slot=index: self._prompt_rename(slot))
+        delete.triggered.connect(lambda _checked=False, slot=index: self.delete_piece(slot))
+        return menu
+
+    def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        self._piece_box.apply_theme(tokens)
+
+    def _save_ids(self, session: FormSession, ids: Sequence[NodeId]) -> None:
+        piece = piece_for_ids(session.document, ids, tuple(item.name for item in self._pieces))
+        if piece is None:
+            return
+        self._pieces = self._pieces + (piece,)
+        self._store_pieces()
+        self._refresh_pieces()
+
+    def _store_pieces(self) -> None:
+        store = self._piece_store
+        if store is not None:
+            store.replace(self._pieces)
+
+    def _refresh_pieces(self) -> None:
+        self._piece_box.fill(self._pieces)
+        self._piece_box.setVisible(not self._collapsed)
+        self._piece_box.list.setVisible(not self._collapsed and bool(self._pieces))
+
+    def _prompt_rename(self, index: int) -> None:
+        if index < 0 or index >= len(self._pieces):
+            return
+        text, ok = QInputDialog.getText(
+            self,
+            "Rename piece",
+            "Name:",
+            QLineEdit.Normal,
+            self._pieces[index].name,
+        )
+        if not ok:
+            return
+        self.rename_piece(index, str(text))
 
     def _toggle(self) -> None:
         self.set_collapsed(not self._collapsed)
@@ -1095,6 +1251,158 @@ class _TileList(QListWidget):
         done = self._on_finished
         if done is not None:
             done()
+
+
+class _PieceBox(QWidget):
+    """Saved pieces under the insert list. The list stays hidden while empty."""
+
+    def __init__(self, pane: InsertPane) -> None:
+        super().__init__(pane)
+        self._pane = pane
+        self.setObjectName("formBuilder.savedPiecesBox")
+        self.setAcceptDrops(True)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 4, 0, 0)
+        layout.setSpacing(0)
+        self.title = QLabel("Saved pieces", self)
+        self.title.setObjectName("formBuilder.sectionTitle")
+        layout.addWidget(self.title)
+        self.list = _PieceList(self)
+        self.list.setObjectName("formBuilder.savedPieces")
+        self.list.setAccessibleName("Saved pieces")
+        self.list.setFocusPolicy(_strong())
+        self.list.setAcceptDrops(True)
+        policy = getattr(getattr(Qt, "ContextMenuPolicy", Qt), "CustomContextMenu")
+        self.list.setContextMenuPolicy(policy)
+        self.list.customContextMenuRequested.connect(self._menu)
+        layout.addWidget(self.list)
+        self.list.hide()
+
+    def fill(self, pieces: Sequence[SavedPiece]) -> None:
+        self.list.clear()
+        role = getattr(Qt, "UserRole")
+        for index, piece in enumerate(pieces):
+            item = QListWidgetItem(piece.name)
+            item.setData(role, index)
+            item.setToolTip("Insert %s. Press Enter." % piece.name)
+            self.list.addItem(item)
+        self._fit()
+
+    def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        width = tokens.focus_border_width
+        self.list.setStyleSheet(
+            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
+            "QListWidget::item:selected { background: %s; color: %s; }"
+            "QListWidget:focus { border: %dpx solid %s; }"
+            % (
+                tokens.editor_bg,
+                tokens.text_primary,
+                tokens.border,
+                tokens.tree_selected_bg,
+                tokens.text_primary,
+                width,
+                tokens.accent,
+            )
+        )
+
+    def showEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._fit()
+
+    def dragEnterEvent(self, event: object) -> None:  # noqa: N802
+        _accept_node(event)
+
+    def dragMoveEvent(self, event: object) -> None:  # noqa: N802
+        _accept_node(event)
+
+    def dropEvent(self, event: object) -> None:  # noqa: N802
+        node_id = _accept_node(event)
+        if node_id is not None:
+            self._pane.save_node(node_id)
+
+    def _fit(self) -> None:
+        count = self.list.count()
+        if count < 1:
+            return
+        row_h = self.list.sizeHintForRow(0)
+        if row_h < 1:
+            return
+        shown = count if count < 8 else 8
+        self.list.setFixedHeight(row_h * shown + self.list.frameWidth() * 2)
+
+    def _menu(self, pos: QPoint) -> None:
+        item = self.list.itemAt(pos)
+        if item is None:
+            return
+        raw = item.data(getattr(Qt, "UserRole"))
+        if raw is None:
+            return
+        self._pane.piece_menu(int(raw)).popup(self.list.mapToGlobal(pos))
+
+
+class _PieceList(QListWidget):
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        enter = getattr(Qt, "Key_Return")
+        keypad = getattr(Qt, "Key_Enter")
+        if event.key() in (enter, keypad):
+            item = self.currentItem()
+            raw = None if item is None else item.data(getattr(Qt, "UserRole"))
+            box = self.parent()
+            if raw is not None and isinstance(box, _PieceBox):
+                box._pane.insert_piece(int(raw))
+                return
+        super().keyPressEvent(event)
+
+    def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
+        buttons = getattr(event, "buttons", lambda: 0)()
+        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+        if not buttons & left:
+            super().mouseMoveEvent(event)  # type: ignore[arg-type]
+            return
+        item = self.currentItem()
+        if item is None:
+            return
+        raw = item.data(getattr(Qt, "UserRole"))
+        if raw is None:
+            return
+        box = self.parent()
+        if not isinstance(box, _PieceBox):
+            return
+        piece = box._pane.piece_at(int(raw))
+        if piece is None:
+            return
+        drag = QDrag(self)
+        mime = QMimeData()
+        raw_xml = piece.xml.encode("utf-8")
+        mime.setData(MIME_FRAGMENT, raw_xml)
+        mime.setData(MIME_DESIGNER_FRAGMENT, raw_xml)
+        drag.setMimeData(mime)
+        action = getattr(getattr(Qt, "DropAction", Qt), "CopyAction")
+        starter = getattr(drag, "exec", None) or getattr(drag, "exec_")
+        starter(action)
+
+    def dragEnterEvent(self, event: object) -> None:  # noqa: N802
+        self.parent().dragEnterEvent(event)  # type: ignore[attr-defined]
+
+    def dragMoveEvent(self, event: object) -> None:  # noqa: N802
+        self.parent().dragMoveEvent(event)  # type: ignore[attr-defined]
+
+    def dropEvent(self, event: object) -> None:  # noqa: N802
+        self.parent().dropEvent(event)  # type: ignore[attr-defined]
+
+
+def _accept_node(event: object) -> Optional[NodeId]:
+    mime = getattr(event, "mimeData", lambda: None)()
+    if mime is None or not mime.hasFormat(MIME_NODE):
+        event.ignore()  # type: ignore[attr-defined]
+        return None
+    try:
+        node_id = NodeId(int(bytes(mime.data(MIME_NODE)).decode("utf-8").strip()))
+    except ValueError:
+        event.ignore()  # type: ignore[attr-defined]
+        return None
+    event.acceptProposedAction()  # type: ignore[attr-defined]
+    return node_id
 
 
 class _RailButton(QToolButton):
@@ -1181,6 +1489,7 @@ class FormWorkbench(QWidget):
         self._left_stack = QStackedWidget(self._splitter)
         self.outline = OutlinePane(on_pick, lambda collapsed: on_collapsed("outline", collapsed), self._left_stack)
         self.insert = InsertPane(lambda collapsed: on_collapsed("insert", collapsed), self._left_stack)
+        self.insert.bind_session(session)
         self._left_body = QWidget(self._left_stack)
         self._left_split = QSplitter(self._left_body)
         self._left_split.setObjectName("formBuilder.leftSplitter")
@@ -1368,6 +1677,7 @@ class FormWorkbench(QWidget):
                 ),
             )
         )
+        self.insert.apply_theme(tokens)
         self.canvas.apply_theme(tokens)
         self.inspector.apply_chrome(chrome_for(tokens))
         self.inspector.set_link_color(problems_link_color(tokens))

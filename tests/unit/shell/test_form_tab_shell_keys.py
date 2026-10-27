@@ -118,7 +118,7 @@ def test_down_in_the_outline_moves_the_current_item(tmp_path: Path, qapp: QAppli
         QTest.keyClick(tree, Qt.Key_Return)
         qapp.processEvents()
         tree.removeEventFilter(log)
-        assert Qt.Key_A in log.keys
+        assert Qt.Key_A not in log.keys
         assert Qt.Key_Return in log.keys
     finally:
         shutdown_main_window_for_test(window, qapp)
@@ -137,11 +137,9 @@ def test_tab_on_the_canvas_selects_the_next_widget(tmp_path: Path, qapp: QApplic
         assert focused is canvas or canvas.isAncestorOf(focused)
         log = _KeyLog()
         focused.installEventFilter(log)
-        QTest.keyClick(focused, Qt.Key_A, Qt.ControlModifier)
         QTest.keyClick(focused, Qt.Key_Return)
         qapp.processEvents()
         focused.removeEventFilter(log)
-        assert Qt.Key_A in log.keys
         assert Qt.Key_Return in log.keys
         QTest.keyClick(focused, Qt.Key_Tab)
         qapp.processEvents()
@@ -152,6 +150,20 @@ def test_tab_on_the_canvas_selects_the_next_widget(tmp_path: Path, qapp: QApplic
         current = tree.currentItem()
         assert current is not None
         assert current.text(0) == "QLabel  title"
+        log = _KeyLog()
+        focused.installEventFilter(log)
+        session = surface.session  # type: ignore[attr-defined]
+        QTest.keyClick(focused, Qt.Key_A, Qt.ControlModifier)
+        qapp.processEvents()
+        focused.removeEventFilter(log)
+        assert Qt.Key_A not in log.keys
+        names = set()
+        for node_id in session.selection.state.ids:
+            node = session.document.get(node_id)
+            name = getattr(node, "object_name", "")
+            if isinstance(name, str) and name:
+                names.add(name)
+        assert names == {"title", "shopName", "okButton"}
     finally:
         shutdown_main_window_for_test(window, qapp)
 

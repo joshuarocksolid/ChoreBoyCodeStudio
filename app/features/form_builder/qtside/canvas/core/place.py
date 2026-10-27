@@ -98,11 +98,12 @@ def drop_commands(
     target: DropTarget,
     payload: DropPayload,
     insert_key: str,
+    fragment: Optional[Fragment] = None,
 ) -> Tuple[Command, ...]:
-    fragment: Optional[Fragment] = None
-    if not payload.source_ids and insert_key:
-        fragment = fragment_for(insert_key)
-    return commands_for(doc, target, payload, fragment)
+    chosen = fragment
+    if chosen is None and not payload.source_ids and insert_key:
+        chosen = fragment_for(insert_key)
+    return commands_for(doc, target, payload, chosen)
 
 
 def _rects(doc: UiDocument, index: HitIndex) -> Dict[NodeId, Rect]:

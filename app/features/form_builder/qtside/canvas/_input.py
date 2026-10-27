@@ -163,7 +163,7 @@ def _key(event: QKeyEvent, pressed: bool) -> Optional[Event]:
         return None
     if pressed:
         return Key(name, _mods(event.modifiers()))
-    return KeyUp(name)
+    return KeyUp(name, _mods(event.modifiers()))
 
 
 def _probe(event: QKeyEvent) -> Optional[Probe]:

@@ -9,9 +9,10 @@ from __future__ import annotations
 
 from typing import Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, Qt, QTimer
-from app.qt.QtGui import QColor, QContextMenuEvent, QFont, QPainter, QPen, QPixmap
+from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
+from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
+    QApplication,
     QFrame,
     QGraphicsDropShadowEffect,
     QGraphicsScene,
@@ -23,8 +24,10 @@ from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.drop_target import DropPayload
+from app.features.form_builder.engine.query.drop_target import DropPayload, PayloadKind
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.reader import UiReadError, read_fragment
+from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
@@ -45,7 +48,13 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PlaceHover,
     aim,
 )
-from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT, MIME_NODE, tile_for
+from app.features.form_builder.qtside.canvas.core.palette import (
+    MIME_DESIGNER_FRAGMENT,
+    MIME_FRAGMENT,
+    MIME_INSERT,
+    MIME_NODE,
+    tile_for,
+)
 from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.canvas.paint import paint_docked_chip, paint_frame
@@ -80,6 +89,16 @@ def _keep_claimed_shortcut(event: QEvent) -> None:
     event.accept()
 
 
+def _over_saved_pieces(widget: object) -> bool:
+    current = widget
+    while current is not None:
+        name = getattr(current, "objectName", lambda: "")()
+        if name in ("formBuilder.savedPieces", "formBuilder.savedPiecesBox"):
+            return True
+        current = getattr(current, "parentWidget", lambda: None)()
+    return False
+
+
 def _focus_policy() -> Qt.FocusPolicy:
     policy = getattr(Qt, "FocusPolicy", Qt)
     return getattr(policy, "StrongFocus")
@@ -90,18 +109,45 @@ def _no_focus() -> Qt.FocusPolicy:
     return getattr(policy, "NoFocus")
 
 
-def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload, str]]:
+def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload, str, Optional[Fragment]]]:
     mime = event.mimeData()  # type: ignore[attr-defined]
     if mime.hasFormat(MIME_INSERT):
         key = bytes(mime.data(MIME_INSERT)).decode("utf-8")
         tile = tile_for(key)
         kind = tile[1] if tile is not None else "widget"
-        return DropPayload(kind), key
+        return DropPayload(kind), key, None
     if mime.hasFormat(MIME_NODE):
         raw = bytes(mime.data(MIME_NODE)).decode("utf-8")
         ids = tuple(NodeId(int(part)) for part in raw.split(",") if part)
-        return payload_for(doc, ids), ""
+        return payload_for(doc, ids), "", None
+    fragment = _fragment_mime(mime)
+    if fragment is None:
+        return None
+    return DropPayload(_fragment_kind(fragment)), "", fragment
+
+
+def _fragment_mime(mime: object) -> Optional[Fragment]:
+    for name in (MIME_FRAGMENT, MIME_DESIGNER_FRAGMENT):
+        if not mime.hasFormat(name):  # type: ignore[attr-defined]
+            continue
+        text = bytes(mime.data(name)).decode("utf-8")  # type: ignore[attr-defined]
+        try:
+            fragment = read_fragment(text)
+        except UiReadError:
+            return None
+        if fragment.nodes:
+            return fragment
+        return None
     return None
+
+
+def _fragment_kind(fragment: Fragment) -> PayloadKind:
+    spec = fragment.nodes[0]
+    if spec.kind == "spacer":
+        return "spacer"
+    if spec.kind == "widget" and spec.field("class_name") == "QLabel":
+        return "label"
+    return "widget"
 
 
 def _drop_point(event: object, view: QGraphicsView) -> CanvasPoint:
@@ -195,12 +241,12 @@ class FormCanvas(QGraphicsView):
             event.ignore()  # type: ignore[attr-defined]
             return
         event.acceptProposedAction()  # type: ignore[attr-defined]
-        body, key = payload
+        body, key, fragment = payload
         at = _drop_point(event, self)
         if self._controller.placing():
             self._controller.post(PlaceHover(at, True))
             return
-        self._controller.post(PlaceAsked(at, body, key))
+        self._controller.post(PlaceAsked(at, body, key, fragment))
 
     def dragMoveEvent(self, event: object) -> None:  # noqa: N802
         if _drop_payload(event, self._session.document) is None:
@@ -368,10 +414,39 @@ class FormCanvas(QGraphicsView):
         preview = getattr(self, "_preview", None)
         if preview is not None and preview.claim(event):
             return True
+        if self._offer_piece_drag(event):
+            return True
         if controller.handle(event):
             _keep_claimed_shortcut(event)
             return True
         return bool(super().viewportEvent(event))
+
+    def _offer_piece_drag(self, event: QEvent) -> bool:
+        """A canvas drag that lands on Saved pieces saves the dragged widgets."""
+        move = getattr(getattr(QEvent, "Type", QEvent), "MouseMove")
+        if event.type() != move:
+            return False
+        buttons = getattr(event, "buttons", None)
+        if not callable(buttons):
+            return False
+        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+        if not (enum_value(buttons()) & enum_value(left)):
+            return False
+        if not _over_saved_pieces(QApplication.widgetAt(QCursor.pos())):
+            return False
+        controller = self._controller
+        ids = controller.drag_node_ids()
+        if not ids:
+            return False
+        controller.abandon_drag()
+        drag = QDrag(self)
+        mime = QMimeData()
+        mime.setData(MIME_NODE, str(int(ids[0])).encode("utf-8"))
+        drag.setMimeData(mime)
+        action = getattr(getattr(Qt, "DropAction", Qt), "CopyAction")
+        starter = getattr(drag, "exec", None) or getattr(drag, "exec_")
+        starter(action)
+        return True
 
     def event(self, event: QEvent) -> bool:  # noqa: N802
         # Qt sends events from inside the QWidget constructor, before the

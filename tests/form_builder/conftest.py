@@ -82,3 +82,7 @@ def qapp():  # type: ignore[no-untyped-def]
     if app is None:
         app = QApplication([])
     yield app
+    # setMimeData then process exit segfaults under this offscreen build.
+    clipboard = app.clipboard()
+    if clipboard is not None:
+        clipboard.clear()

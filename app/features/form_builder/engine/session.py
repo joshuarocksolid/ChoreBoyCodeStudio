@@ -17,10 +17,12 @@ from app.features.form_builder.engine.events import (
     PRIORITY_SELECTION,
     PRIORITY_SELECTION_NOTIFY,
     ChangeSet,
+    FieldChanged,
 )
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
 from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.query.connections import missing_connection_diagnostics
 from app.features.form_builder.engine.query.selection import SelectionModel, SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
@@ -52,6 +54,7 @@ class FormSession:
             allocator,
             selection_provider=self._selection_snapshot,
         )
+        self._connection_rows = missing_connection_diagnostics(document)
         self._subscriptions = [
             self._log.subscribe(self._on_selection, priority=PRIORITY_SELECTION),
             self._log.subscribe(self._on_selection_notify, priority=PRIORITY_SELECTION_NOTIFY),
@@ -65,6 +68,7 @@ class FormSession:
         result = read_ui(text, allocator=allocator, source_path=path)
         diagnostics = DiagnosticsStore()
         diagnostics.publish("reader", result.diagnostics)
+        diagnostics.publish("connections", missing_connection_diagnostics(result.document))
         return cls(path, scope, result.document, allocator, diagnostics, SerializationCache())
 
     @property
@@ -151,11 +155,19 @@ class FormSession:
         )
 
     def _on_replaced(self, changeset: ChangeSet) -> None:
-        """A replaced document has new ids. Read it again so reader rows point at live nodes."""
-        if not changeset.replaced:
+        """A replaced document has new ids. Read it again so reader rows point at live nodes.
+
+        FB014 is scanned when names or connections change, including undo and redo.
+        """
+        if changeset.replaced:
+            text = self._serializer.text(self._document)
+            self._diagnostics.publish("reader", live_reader_diagnostics(self._document, text))
+        if not _connection_scan_needed(changeset):
             return
-        text = self._serializer.text(self._document)
-        self._diagnostics.publish("reader", live_reader_diagnostics(self._document, text))
+        found = missing_connection_diagnostics(self._document)
+        if found != self._connection_rows:
+            self._connection_rows = found
+            self._diagnostics.publish("connections", found)
 
     def _on_selection_notify(self, changeset: ChangeSet) -> None:
         del changeset
@@ -168,6 +180,19 @@ class FormSession:
     def _live(self) -> None:
         if self._disposed:
             raise RuntimeError("session is disposed")
+
+
+_CONNECTION_FIELDS = frozenset({"sender", "signal", "receiver", "slot"})
+
+
+def _connection_scan_needed(changeset: ChangeSet) -> bool:
+    """True when a name or a connection may have changed."""
+    if changeset.replaced or changeset.renamed or changeset.added or changeset.removed:
+        return True
+    return any(
+        isinstance(change, FieldChanged) and change.field in _CONNECTION_FIELDS
+        for change in changeset.changes
+    )
 
 
 def live_reader_diagnostics(document: UiDocument, text: str) -> Tuple[FormDiagnostic, ...]:
