@@ -12,6 +12,7 @@ tree is always empty (``slots.py``).
 
 from __future__ import annotations
 
+import importlib
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from app.qt import QtGui, QtWidgets
@@ -44,7 +45,7 @@ from app.qt.QtWidgets import (
     QWizard,
     QWizardPage,
 )
-from app.qt.qt_compat import delete_now, wrapper_is_valid
+from app.qt.qt_compat import IS_QT6, delete_now, wrapper_is_valid
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import child_stack_order
 from app.features.form_builder.engine.ui4.nodes import (
@@ -121,12 +122,23 @@ def _direct_widgets(widget: QWidget) -> List[QWidget]:
     return [child for child in widget.children() if isinstance(child, QWidget)]
 
 
+def _cpp_address(obj: object) -> int:
+    """The C++ object's address. Stable where ``id()`` is not.
+
+    A Qt-created object Python holds no wrapper for gets a new temporary
+    wrapper from each ``topLevelWidgets`` call, so its ``id()`` changes.
+    """
+    shiboken = importlib.import_module("shiboken6" if IS_QT6 else "shiboken2")
+    return int(shiboken.getCppPointer(obj)[0])
+
+
 def _toplevel_menu_bar_ids() -> Set[int]:
+    """C++ addresses of the parentless menu bars. Python ids change per call."""
     app = QtWidgets.QApplication.instance()
     if app is None:
         return set()
     return {
-        id(widget)
+        _cpp_address(widget)
         for widget in app.topLevelWidgets()
         if isinstance(widget, QMenuBar) and wrapper_is_valid(widget)
     }
@@ -449,7 +461,9 @@ class _Structure(_LayoutSlots):
         if app is None:
             return
         for widget in list(app.topLevelWidgets()):
-            if id(widget) in before or widget is installed or not wrapper_is_valid(widget):
+            if not wrapper_is_valid(widget) or _cpp_address(widget) in before:
+                continue
+            if _cpp_address(widget) == _cpp_address(installed):
                 continue
             if not isinstance(widget, QMenuBar) or _node_id(widget) is not None:
                 continue

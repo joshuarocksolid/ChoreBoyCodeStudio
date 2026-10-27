@@ -363,6 +363,28 @@ def test_another_windows_menu_bar_survives_a_main_window() -> None:
             delete_now(other)
 
 
+def test_a_parentless_menu_bar_qt_made_survives_a_main_window() -> None:
+    """Python holds no wrapper for this bar, so each topLevelWidgets call wraps it anew."""
+    shell = QMainWindow()
+    shell.menuBar().setObjectName("shellMenu")
+    # Qt unparents the bar it made and only deletes it at the next deferred delete.
+    shell.setMenuBar(QMenuBar())
+    app = QApplication.instance()
+    assert app is not None
+
+    def bars() -> List[str]:
+        return [widget.objectName() for widget in app.topLevelWidgets() if isinstance(widget, QMenuBar)]
+
+    assert bars().count("shellMenu") == 1
+    try:
+        with opened(_MAIN) as (_session, realizer):
+            assert isinstance(realizer.root_widget, QMainWindow)
+            assert bars().count("shellMenu") == 1
+            assert bars().count("shellMenu") == 1
+    finally:
+        delete_now(shell)
+
+
 def test_main_window_chrome_patches_per_container() -> None:
     with opened(_MAIN) as (session, realizer):
         window = realizer.root_widget
