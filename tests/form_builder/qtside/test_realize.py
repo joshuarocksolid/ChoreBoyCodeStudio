@@ -744,13 +744,13 @@ def test_signature_records_layout_items_and_container_state() -> None:
     )
     with opened(combo) as (session, realizer):
         combo_part = _part_for(realizer.signature(), _named(session, "combo"))
-        assert combo_part[9] == ("Alpha", "Beta")
+        assert combo_part[10] == ("Alpha", "Beta")
         stack_part = _part_for(realizer.signature(), _named(session, "stack"))
-        assert stack_part[8] == 1
+        assert stack_part[9] == 1
         assert isinstance(realizer.widget_for(_named(session, "stack")), QStackedWidget)
     with opened(_MAIN) as (session, realizer):
         menu = _part_for(realizer.signature(), _named(session, "menuFile"))
-        names = menu[10]
+        names = menu[11]
         assert isinstance(names, tuple)
         assert "actionNew" in names
 
@@ -819,6 +819,14 @@ def test_z_order_moves_the_sibling_index_and_round_trips() -> None:
             _part_for(realizer.signature(), front)[4],
         )
         assert after != before
+        root_widget = realizer.widget_for(root)
+        assert isinstance(root_widget, QWidget)
+        live = tuple(
+            child.objectName()
+            for child in root_widget.children()
+            if isinstance(child, QWidget) and child.objectName()
+        )
+        assert live == tuple(reversed(order))
         _same(realizer, session, "z-order")
         assert session.log.undo()
         restored = (
@@ -826,6 +834,12 @@ def test_z_order_moves_the_sibling_index_and_round_trips() -> None:
             _part_for(realizer.signature(), front)[4],
         )
         assert restored == before
+        live_restored = tuple(
+            child.objectName()
+            for child in root_widget.children()
+            if isinstance(child, QWidget) and child.objectName()
+        )
+        assert live_restored == order
         assert session.log.redo()
         redone = (
             _part_for(realizer.signature(), back)[4],

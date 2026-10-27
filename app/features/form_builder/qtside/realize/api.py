@@ -40,6 +40,7 @@ from app.features.form_builder.engine.events import (
 )
 from app.features.form_builder.engine.commands.live import LiveProp, PropKey
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.tree import child_stack_order
 from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
@@ -749,7 +750,7 @@ class Realizer(_Structure):
             props.append((entry.name, norm_qt(widget.property(entry.name))))
         parent = widget.parentWidget()
         parent_id = _node_id(parent) if parent is not None else None
-        sibling_index = _sibling_index(widget, parent)
+        sibling_index = _document_sibling_index(self._session.document, node)
         buddy_name = None
         if hasattr(widget, "buddy") and widget.buddy() is not None and wrapper_is_valid(widget.buddy()):
             buddy_name = widget.buddy().objectName()
@@ -1046,19 +1047,43 @@ def _document_object_name(node: object) -> str:
     return ""
 
 
-def _sibling_index(widget: QWidget, parent: Optional[QWidget]) -> int:
-    """Index among the parent's child widgets. Stacking order, not layout order."""
-    if parent is None:
+def _document_sibling_index(document: UiDocument, node: WidgetNode) -> int:
+    """Index in the document, which a patch and a fresh build both read.
+
+    The live child list is not that index. A form layout's ``itemAt`` order
+    and a main window's unnamed status bar differ after a patch even when the
+    cells and the stacking field match. Free widgets use the stacking field.
+    Layout widgets use the item or the cell.
+    """
+    if node.parent_id is None:
         return 0
-    children = [
-        child
-        for child in parent.children()
-        if isinstance(child, QWidget) and child.parentWidget() is parent
-    ]
-    try:
-        return children.index(widget)
-    except ValueError:
-        return -1
+    parent = document.get(node.parent_id)
+    if isinstance(parent, LayoutItemNode):
+        return _layout_item_spot(document, parent)
+    if isinstance(parent, WidgetNode):
+        try:
+            return child_stack_order(document, parent.id).index(node.object_name)
+        except ValueError:
+            return -1
+    return 0
+
+
+def _layout_item_spot(document: UiDocument, item: LayoutItemNode) -> int:
+    if item.parent_id is None:
+        return 0
+    layout = document.get(item.parent_id)
+    if not isinstance(layout, LayoutNode):
+        return 0
+    row = 0 if item.row is None else item.row
+    column = 0 if item.column is None else item.column
+    if layout.class_name == "QFormLayout":
+        return row * 3 + column
+    if layout.class_name == "QGridLayout":
+        return row * 1000 + column
+    for index, candidate in enumerate(layout.items):
+        if candidate.id == item.id:
+            return index
+    return -1
 
 
 def _current_index(widget: QWidget) -> Optional[int]:
