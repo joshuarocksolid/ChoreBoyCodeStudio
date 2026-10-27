@@ -81,7 +81,6 @@ _HANDLED = frozenset(
 _ROW_H = 24
 _GLYPH = 16
 _GAP = 4
-_NAME_FLOOR = 24
 _ORDER_FIELDS = frozenset({"row", "column", "rowspan", "colspan"})
 _OUTLINE_KEYS = frozenset(
     {
@@ -598,12 +597,14 @@ def layout_row(
     has_caption: bool,
     has_problem: bool,
     caption_px: int = 0,
+    name_px: int = 0,
 ) -> RowBoxes:
     """24 px row. Glyph 16. Gaps 4. Problem glyph 16 at the right.
 
-    A measured caption is shown only when the whole caption fits. Otherwise
-    the name takes the row and elides in the middle. With no measurement the
-    caption still takes about a third, so a wide row keeps both.
+    The caption is shown only when the whole name, the gap and the whole
+    caption fit (UX-OUT-002). Otherwise the caption goes first and the name
+    takes the row; the name elides in the middle only when it alone does not
+    fit. Without both measurements there is no caption, so nothing is clipped.
     """
     width = max(int(item_width), 0)
     glyph_w = min(_GLYPH, width)
@@ -619,17 +620,13 @@ def layout_row(
     room = max(right - left, 0)
     caption: Optional[Tuple[int, int, int, int]] = None
     name_w = room
-    measured = int(caption_px)
-    if has_caption and measured > 0 and room >= _NAME_FLOOR + _GAP + measured:
-        name_w = room - _GAP - measured
-        caption = (left + name_w + _GAP, 4, measured, _GLYPH)
-    elif has_caption and measured <= 0 and room >= _NAME_FLOOR + _GAP + 8:
-        caption_w = min(room // 3, room - _NAME_FLOOR - _GAP)
-        if caption_w >= 8 and room - _GAP - caption_w >= _NAME_FLOOR:
-            name_w = room - _GAP - caption_w
-            caption = (left + name_w + _GAP, 4, caption_w, _GLYPH)
+    measured = max(int(caption_px), 0)
+    named = max(int(name_px), 0)
+    if has_caption and measured > 0 and named > 0 and named + _GAP + measured <= room:
+        name_w = named
+        caption = (left + named + _GAP, 4, measured, _GLYPH)
     name = (left, 4, name_w, _GLYPH)
-    return RowBoxes(glyph, name, caption, problem, name_w < 80)
+    return RowBoxes(glyph, name, caption, problem, named > name_w)
 
 
 def claims_key(gesture: KeyGesture) -> bool:

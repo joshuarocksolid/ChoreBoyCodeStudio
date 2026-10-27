@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from typing import Optional
 
 from app.qt.QtCore import QRect, QSize, Qt
-from app.qt.QtGui import QBrush, QColor, QFontMetrics, QPainter, QPen
+from app.qt.QtGui import QBrush, QColor, QFontMetrics, QFontMetricsF, QPainter, QPen
 from app.qt.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -54,11 +55,11 @@ class OutlineRowDelegate(QStyledItemDelegate):
         problem = bool(index.data(PROBLEM))  # type: ignore[attr-defined]
         faint = bool(index.data(FAINT))  # type: ignore[attr-defined]
         tone = str(index.data(TONE) or "")  # type: ignore[attr-defined]
-        metrics = _metrics(option)
-        caption_px = 0
-        if caption:
-            advance = getattr(metrics, "horizontalAdvance", None)
-            caption_px = int(advance(caption) if callable(advance) else metrics.width(caption))
+        # Measure with the font the text is drawn in, rounded up: elidedText cuts a text whose
+        # fractional width is a hair over the rounded advance.
+        metrics = QFontMetricsF(option.font)
+        caption_px = _advance(metrics, caption) if caption else 0
+        name_px = _advance(metrics, primary) if primary else 0
         width = option.rect.width()
         widget = option.widget
         if widget is not None and hasattr(widget, "viewport"):
@@ -66,7 +67,7 @@ class OutlineRowDelegate(QStyledItemDelegate):
             visible = viewport.width() - max(option.rect.x(), 0)
             if visible > 0:
                 width = min(width, visible)
-        boxes = layout_row(width, bool(caption), problem, caption_px)
+        boxes = layout_row(width, bool(caption), problem, caption_px, name_px)
         selected = bool(enum_value(option.state) & enum_value(QStyle.State_Selected))
         palette = option.palette
         name_color = self._swatch(
@@ -83,10 +84,11 @@ class OutlineRowDelegate(QStyledItemDelegate):
             _placed(option.rect, boxes.name),
             primary,
             name_color,
-            elide_middle=True,
+            elide="middle",
         )
         if boxes.caption is not None and caption:
-            self._text(painter, option, _placed(option.rect, boxes.caption), caption, caption_color, elide_middle=False)
+            # layout_row shows a caption only when it fits. Eliding is the guard so nothing is cut bare.
+            self._text(painter, option, _placed(option.rect, boxes.caption), caption, caption_color, elide="right")
         if boxes.problem is not None:
             self._problem(painter, _placed(option.rect, boxes.problem), palette.text().color())
         painter.restore()
@@ -110,16 +112,15 @@ class OutlineRowDelegate(QStyledItemDelegate):
         rect: QRect,
         text: str,
         color: QColor,
-        elide_middle: bool = False,
+        elide: str = "middle",
     ) -> None:
         if rect.width() <= 0 or not text:
             return
         painter.setFont(option.font)
         painter.setPen(QPen(color))
-        shown = text
-        if elide_middle:
-            mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideMiddle")
-            shown = QFontMetrics(option.font).elidedText(text, mode, rect.width())
+        name = "ElideMiddle" if elide == "middle" else "ElideRight"
+        mode = getattr(getattr(Qt, "TextElideMode", Qt), name)
+        shown = QFontMetrics(option.font).elidedText(text, mode, rect.width())
         align = _flag("AlignLeft") | _flag("AlignVCenter")
         painter.drawText(rect, align, shown)
 
@@ -151,6 +152,11 @@ def _metrics(option: QStyleOptionViewItem) -> QFontMetrics:
     if callable(font):
         font = font()
     return QFontMetrics(font)
+
+
+def _advance(metrics: QFontMetricsF, text: str) -> int:
+    advance = getattr(metrics, "horizontalAdvance", None)
+    return int(math.ceil(advance(text) if callable(advance) else metrics.width(text))) + 1
 
 
 def _placed(origin: QRect, box: Optional[tuple]) -> QRect:

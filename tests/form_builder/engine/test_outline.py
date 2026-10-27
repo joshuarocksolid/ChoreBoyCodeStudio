@@ -502,11 +502,26 @@ def test_layout_boxes_do_not_overlap(width: int, caption: bool, problem: bool) -
             assert not _overlaps(rect, other)
 
 
-def test_caption_hides_before_the_name_is_crushed() -> None:
-    wide = layout_row(220, True, True)
-    narrow = layout_row(40, True, False)
-    assert wide.caption is not None
-    assert narrow.caption is None
+@pytest.mark.parametrize(
+    ("width", "name_px", "caption_px", "caption", "name_elides"),
+    [
+        (236, 80, 100, True, False),  # both fit
+        (236, 80, 140, False, False),  # the caption goes first; the name stays whole
+        (198, 150, 40, False, False),  # the name alone fits
+        (198, 220, 10, False, True),  # only now does the name elide
+    ],
+)
+def test_the_caption_goes_before_the_name_elides(
+    width: int, name_px: int, caption_px: int, caption: bool, name_elides: bool
+) -> None:
+    boxes = layout_row(width, True, False, caption_px=caption_px, name_px=name_px)
+    assert (boxes.caption is not None) == caption
+    assert boxes.name_elides == name_elides
+    if boxes.caption is not None:
+        assert boxes.name[2] == name_px
+        assert boxes.caption[2] == caption_px
+    elif not name_elides:
+        assert boxes.name[2] >= name_px
 
 
 def _overlaps(rect: Tuple[int, int, int, int], other: Tuple[int, int, int, int]) -> bool:
@@ -728,14 +743,3 @@ def test_deleting_a_grid_cell_selects_the_next_widget() -> None:
     assert current is not None
     assert current == nid(log.document, "cellB")
     assert log.document.node(current).kind == "widget"
-
-
-def test_a_measured_caption_hides_before_the_name_elides() -> None:
-    hidden = layout_row(236, True, False, caption_px=200)
-    assert hidden.caption is None
-    assert hidden.name[2] == 216
-    shown = layout_row(236, True, False, caption_px=40)
-    assert shown.caption is not None
-    crushed = layout_row(80, True, False, caption_px=40)
-    assert crushed.caption is None
-    assert crushed.name_elides

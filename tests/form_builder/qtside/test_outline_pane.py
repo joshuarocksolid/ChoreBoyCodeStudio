@@ -8,8 +8,8 @@ from typing import Callable, Dict, Iterator, Optional, Tuple, cast
 
 import pytest
 
-from app.qt.QtCore import QEvent, QPoint, Qt
-from app.qt.QtGui import QColor, QKeyEvent
+from app.qt.QtCore import QEvent, QPoint, QRect, Qt
+from app.qt.QtGui import QColor, QImage, QKeyEvent, QPainter
 from app.qt.QtTest import QTest
 from app.qt.qt_compat import enum_value
 from app.qt.QtWidgets import (
@@ -19,6 +19,7 @@ from app.qt.QtWidgets import (
     QLineEdit,
     QListWidget,
     QPushButton,
+    QStyleOptionViewItem,
     QToolButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -806,21 +807,82 @@ def test_the_outline_claims_f2_and_find(qapp: QApplication) -> None:
         assert find.isAccepted()
 
 
-def test_a_narrow_outline_hides_the_caption_before_the_name(qapp: QApplication) -> None:
-    with _opened(qapp, _long_name(), "caption-hide", width=236, height=360) as (pane, _session):
-        pane.setFixedWidth(236)
+def _receipt() -> str:
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QGroupBox" name="receiptGroup">
+    <property name="title"><string>Receipt</string></property>
+   </widget></item>
+   <item><widget class="QPushButton" name="ok"><property name="text"><string>Go</string></property></widget></item>
+   <item><widget class="QLabel" name="emailLabel"><property name="text"><string>Email:</string></property></widget></item>
+   <item><widget class="QPushButton" name="%s"><property name="text"><string>Hi</string></property></widget></item>
+  </layout>
+"""
+        % ("N" * 48),
+    )
+
+
+class _Recorder(QPainter):
+    """Keeps every text the delegate paints with the box it was given."""
+
+    def __init__(self, device: QImage) -> None:
+        super().__init__(device)
+        self.drawn: list = []
+
+    def drawText(self, *args: object) -> None:  # noqa: N802
+        if len(args) == 3 and isinstance(args[0], QRect):
+            self.drawn.append((QRect(args[0]), str(args[2])))
+        super().drawText(*args)  # type: ignore[call-overload]
+
+
+def _painted(pane: OutlinePane, item: QTreeWidgetItem) -> list:
+    tree = pane.tree
+    tree.setCurrentItem(item)
+    index = tree.currentIndex()
+    option = QStyleOptionViewItem()
+    option.rect = tree.visualItemRect(item)
+    option.font = tree.font()
+    option.fontMetrics = tree.fontMetrics()
+    option.palette = tree.palette()
+    option.widget = tree
+    image = QImage(tree.viewport().size(), QImage.Format.Format_ARGB32)
+    painter = _Recorder(image)
+    try:
+        tree.itemDelegate().paint(painter, option, index)
+    finally:
+        painter.end()
+    # The glyph is one character. Keep the name and the caption.
+    return [(rect, text) for rect, text in painter.drawn if len(text) > 1]
+
+
+@pytest.mark.parametrize("width", [236, 198])
+def test_a_narrow_outline_drops_the_caption_before_the_name(qapp: QApplication, width: int) -> None:
+    with _opened(qapp, _receipt(), "caption-%d" % width, width=width, height=360) as (pane, _session):
+        pane.setFixedWidth(width)
         qapp.processEvents()
-        item = _find_item(pane.tree, "N" * 48)
-        caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
-        assert caption
         metrics = pane.tree.fontMetrics()
-        if hasattr(metrics, "horizontalAdvance"):
-            caption_px = int(metrics.horizontalAdvance(caption))
-        else:
-            caption_px = int(metrics.width(caption))
-        boxes = layout_row(pane.tree.viewport().width(), True, False, caption_px)
-        if caption_px > boxes.name[2]:
-            assert boxes.caption is None
+        for name in ("Form", "verticalLayout", "receiptGroup", "ok", "emailLabel", "N" * 48):
+            item = _find_item(pane.tree, name)
+            caption = str(item.data(0, int(getattr(Qt, "UserRole")) + 1) or "")
+            assert caption
+            drawn = _painted(pane, item)
+            for rect, text in drawn:
+                assert metrics.horizontalAdvance(text) <= rect.width(), (width, name, text)
+            texts = [text for _rect, text in drawn]
+            rect = pane.tree.visualItemRect(item)
+            room = min(rect.width(), pane.tree.viewport().width() - max(rect.x(), 0)) - 20
+            if metrics.horizontalAdvance(name) <= room:
+                assert texts[0] == name, (width, texts)
+            else:
+                assert texts[0] != name and "\u2026" in texts[0], (width, texts)
+                assert caption not in texts
+            if caption in texts:
+                assert texts[0] == name
+        # The reviewer's case: the name fits on its own, the caption does not.
+        group = [text for _rect, text in _painted(pane, _find_item(pane.tree, "receiptGroup"))]
+        assert group[0] == "receiptGroup"
         assert pane.tree.horizontalScrollBar().isVisible() is False
 
 
