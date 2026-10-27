@@ -32,7 +32,6 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
-from app.features.form_builder.engine.query.outline import captions_touched, order_parents
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.layout_actions import (
     Current,
@@ -185,17 +184,6 @@ def _silenced(window: QWidget) -> Dict[str, Tuple[bool, object]]:
         held = {}
         window._form_silenced = held  # type: ignore[attr-defined]
     return held
-
-
-def _outline_mode(document: object, change_set: ChangeSet) -> Tuple[str, Tuple[object, ...]]:
-    parents = order_parents(document, change_set)  # type: ignore[arg-type]
-    if parents is None:
-        return "rebuild", ()
-    if parents:
-        return "reorder", parents
-    if captions_touched(change_set) or change_set.renamed:
-        return "patch", captions_touched(change_set)
-    return "keep", ()
 
 
 def _shell_history(window: QWidget, redo: bool) -> None:
@@ -860,12 +848,7 @@ class FormSurface(QWidget):
             self._refresh_undo_buttons()
             return
         current = self._session.selection.state.current
-        if isinstance(change_set, ChangeSet):
-            mode, touched = _outline_mode(self._session.document, change_set)
-        else:
-            mode = "rebuild"
-            touched = ()
-        self._workbench.refresh(current, outline=mode, touched=touched)
+        self._workbench.refresh(current, change=change_set if isinstance(change_set, ChangeSet) else None)
         self._workbench.outline.show_for_design()
         self._refresh_undo_buttons()
         self._sync_shell_undo()

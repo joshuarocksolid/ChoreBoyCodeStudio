@@ -8,14 +8,14 @@ of Qt.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, MoveNodes, MovePage, SetProperty
 from app.features.form_builder.engine.commands.catalog_ext.drop import AdoptIntoBox
 from app.features.form_builder.engine.commands.drop_plan import auto_target, commands_for, nudge_commands
 from app.features.form_builder.engine.commands.placement import InBoxLayout, InContainer
-from app.features.form_builder.engine.events import ChangeSet, FieldChanged, NodeMoved
+from app.features.form_builder.engine.events import ChangeSet, FieldChanged
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import (
     AcceptedDrop,
@@ -104,13 +104,16 @@ _OUTLINE_KEYS = frozenset(
 
 @dataclass(frozen=True)
 class InLayoutSlot:
+    """In ``layout``. The position is the row's place among its siblings, not a field."""
+
     layout: NodeId
     layout_class: str
-    index: int
 
 
 @dataclass(frozen=True)
 class InPageSlot:
+    """Page ``index`` of ``container``. Pages are few, so a page move refreshes them all."""
+
     container: NodeId
     index: int
 
@@ -118,7 +121,6 @@ class InPageSlot:
 @dataclass(frozen=True)
 class InBareSlot:
     container: NodeId
-    index: int
 
 
 Slot = Union[InLayoutSlot, InPageSlot, InBareSlot]
@@ -126,12 +128,15 @@ Slot = Union[InLayoutSlot, InPageSlot, InBareSlot]
 
 @dataclass(frozen=True)
 class Row:
-    """One outline row. Identity is ``node``. Caption fields change without a new item."""
+    """One outline row. Identity is ``node``. Caption fields change without a new item.
+
+    No field holds a position among siblings, so an insert or a move does not
+    rewrite the rows after it. ``OutlineForest.position`` answers that.
+    """
 
     node: NodeId
     parent: Optional[NodeId]
     depth: int
-    sibling_index: int
     kind: str
     tone: str
     name: str
@@ -146,28 +151,94 @@ class Row:
 
 
 class OutlineForest:
-    """Pre-order rows. ``index`` is the row position of a node."""
+    """Rows by id plus each parent's child ids. Patched in place, O(changed).
 
-    def __init__(self, rows: Tuple[Row, ...]) -> None:
-        self.rows = rows
-        self.index: Dict[NodeId, int] = {row.node: position for position, row in enumerate(rows)}
-        # A page move asks every parent for its children. One pass, not one scan per parent.
-        grouped: Dict[Optional[NodeId], List[Row]] = {}
+    ``rows`` is the pre-order spine. It is built on first use after a patch,
+    so the edit path never walks the whole form.
+    """
+
+    def __init__(self, rows: Sequence[Row] = ()) -> None:
+        self._row: Dict[NodeId, Row] = {}
+        grouped: Dict[Optional[NodeId], List[NodeId]] = {}
         for row in rows:
-            grouped.setdefault(row.parent, []).append(row)
-        self._kids: Dict[Optional[NodeId], Tuple[Row, ...]] = {
+            self._row[row.node] = row
+            grouped.setdefault(row.parent, []).append(row.node)
+        self._kids: Dict[Optional[NodeId], Tuple[NodeId, ...]] = {
             key: tuple(value) for key, value in grouped.items()
         }
+        self._order: Optional[Tuple[Row, ...]] = tuple(rows)
+        self._index: Optional[Dict[NodeId, int]] = None
+
+    @property
+    def rows(self) -> Tuple[Row, ...]:
+        order = self._order
+        if order is None:
+            found: List[Row] = []
+            stack = list(reversed(self._kids.get(None, ())))
+            while stack:
+                node = stack.pop()
+                found.append(self._row[node])
+                stack.extend(reversed(self._kids.get(node, ())))
+            order = tuple(found)
+            self._order = order
+        return order
+
+    @property
+    def index(self) -> Dict[NodeId, int]:
+        index = self._index
+        if index is None:
+            index = {row.node: position for position, row in enumerate(self.rows)}
+            self._index = index
+        return index
+
+    def __len__(self) -> int:
+        return len(self._row)
 
     def row(self, node: NodeId) -> Optional[Row]:
-        position = self.index.get(node)
-        if position is None:
-            return None
-        return self.rows[position]
+        return self._row.get(node)
+
+    def kid_ids(self, node: Optional[NodeId]) -> Tuple[NodeId, ...]:
+        """Direct child ids, sibling order. ``None`` is the root list."""
+        return self._kids.get(node, ())
 
     def children(self, node: Optional[NodeId]) -> Tuple[Row, ...]:
         """Direct child rows, sibling order. ``None`` is the root list."""
-        return self._kids.get(node, ())
+        return tuple(self._row[kid] for kid in self._kids.get(node, ()))
+
+    def position(self, node: NodeId) -> int:
+        """Index among siblings. O(siblings)."""
+        row = self._row.get(node)
+        if row is None:
+            return -1
+        return self._kids.get(row.parent, ()).index(node)
+
+    def subtree(self, node: NodeId) -> List[NodeId]:
+        """``node`` and every row under it, pre-order."""
+        found: List[NodeId] = []
+        stack = [node]
+        while stack:
+            current = stack.pop()
+            found.append(current)
+            stack.extend(reversed(self._kids.get(current, ())))
+        return found
+
+    def _commit(
+        self,
+        rows: Dict[NodeId, Row],
+        dropped: Sequence[NodeId],
+        kids: Dict[Optional[NodeId], Tuple[NodeId, ...]],
+    ) -> None:
+        for node in dropped:
+            self._row.pop(node, None)
+            self._kids.pop(node, None)
+        self._row.update(rows)
+        for parent, ids in kids.items():
+            if ids:
+                self._kids[parent] = ids
+            else:
+                self._kids.pop(parent, None)
+        self._order = None
+        self._index = None
 
     def next_visible(
         self,
@@ -396,19 +467,15 @@ def project(
     problems: FrozenSet[NodeId],
     friendly_of: Callable[[str], str],
 ) -> OutlineForest:
-    """Pre-order rows. Layout items are not rows. O(form)."""
+    """Pre-order rows. Layout items are not rows. O(form): open and replace only."""
     found: List[Row] = []
-    ranks: Dict[NodeId, Dict[NodeId, int]] = {}
-    counts: Dict[Optional[NodeId], int] = {}
 
     def walk(node: Node, depth: int, parent: Optional[NodeId]) -> None:
         if not _is_row(node):
             for child in _slot_children(node):
                 walk(child, depth, parent)
             return
-        sibling_index = counts.get(parent, 0)
-        counts[parent] = sibling_index + 1
-        found.append(_make_row(doc, node, parent, depth, sibling_index, problems, friendly_of, ranks))
+        found.append(_make_row(doc, node, parent, depth, problems, friendly_of))
         for child in _slot_children(node):
             walk(child, depth + 1, node.id)
 
@@ -423,23 +490,18 @@ def patch_captions(
     problems: FrozenSet[NodeId],
     friendly_of: Callable[[str], str],
 ) -> OutlineForest:
-    """Replace caption fields of ``nodes`` that are rows. Same row objects elsewhere."""
-    wanted = set(nodes)
-    rows: List[Row] = []
-    changed = False
-    for row in forest.rows:
-        if row.node not in wanted or not doc.contains(row.node):
-            rows.append(row)
+    """Replace caption fields of ``nodes`` that are rows, in place. O(nodes)."""
+    updated: Dict[NodeId, Row] = {}
+    for node in nodes:
+        row = forest.row(node)
+        if row is None or not doc.contains(node):
             continue
-        updated = _retitle(row, doc, doc.node(row.node), problems, friendly_of)
-        if updated != row:
-            changed = True
-            rows.append(updated)
-        else:
-            rows.append(row)
-    if not changed:
-        return forest
-    return OutlineForest(tuple(rows))
+        fresh = _retitle(row, doc, doc.node(node), problems, friendly_of)
+        if fresh != row:
+            updated[node] = fresh
+    if updated:
+        forest._commit(updated, (), {})
+    return forest
 
 
 def captions_touched(change_set: ChangeSet) -> Tuple[NodeId, ...]:
@@ -457,87 +519,321 @@ def captions_touched(change_set: ChangeSet) -> Tuple[NodeId, ...]:
 
 
 def structure_touched(change_set: ChangeSet) -> bool:
-    """Replaced, added, removed, or a parent whose children changed."""
-    return bool(change_set.replaced or change_set.added or change_set.removed or change_set.structure_dirty)
+    """Replaced, added, removed, a parent whose children changed, or a grid cell moved."""
+    if change_set.replaced or change_set.added or change_set.removed or change_set.structure_dirty:
+        return True
+    return any(isinstance(change, FieldChanged) and change.field in _ORDER_FIELDS for change in change_set.changes)
 
 
-def order_parents(doc: UiDocument, change_set: ChangeSet) -> Optional[Tuple[NodeId, ...]]:
-    """Parents whose direct rows should be reseated.
+def outline_mode(change_set: ChangeSet) -> str:
+    """``rebuild``, ``structure``, ``captions`` or ``keep`` for one ChangeSet."""
+    if change_set.replaced:
+        return "rebuild"
+    if structure_touched(change_set):
+        return "structure"
+    if captions_touched(change_set) or change_set.renamed:
+        return "captions"
+    return "keep"
 
-    ``None`` means the child set changed and the forest must be rebuilt.
-    An empty tuple means no row moved.
+
+@dataclass(frozen=True)
+class StructurePatch:
+    """What a view does to its items after ``patch_structure``. Every list is O(changed).
+
+    Detach ``taken`` (removed heads and every existing row in ``placed``), forget
+    ``dropped``, make items for ``created`` (parents first), rewrite
+    ``rewritten``, then insert ``placed`` in order: per parent, indexes ascend,
+    so each insert lands at its final index.
     """
-    if change_set.replaced or change_set.added or change_set.removed:
-        return None
-    parents: List[NodeId] = []
-    seen = set()
-    explained = set()
-    for change in change_set.changes:
-        if isinstance(change, NodeMoved):
-            if change.old_parent != change.new_parent:
-                return None
-            explained.add(change.old_parent)
-            explained.add(change.new_parent)
-            parent = change.new_parent
-            if parent not in seen:
-                seen.add(parent)
-                parents.append(parent)
-            continue
-        if isinstance(change, FieldChanged) and change.field in _ORDER_FIELDS:
-            node = doc.get(change.node)
-            if not isinstance(node, LayoutItemNode) or node.parent_id is None:
-                return None
-            layout = doc.get(node.parent_id)
-            if not isinstance(layout, LayoutNode):
-                return None
-            explained.add(layout.id)
-            if layout.id not in seen:
-                seen.add(layout.id)
-                parents.append(layout.id)
-    if set(change_set.structure_dirty) - explained:
-        return None
-    return tuple(parents)
+
+    taken: Tuple[NodeId, ...]
+    dropped: Tuple[NodeId, ...]
+    created: Tuple[NodeId, ...]
+    rewritten: Tuple[NodeId, ...]
+    placed: Tuple[Tuple[Optional[NodeId], NodeId, int], ...]
 
 
-def patch_order(
+def patch_structure(
     forest: OutlineForest,
     doc: UiDocument,
-    parents: Sequence[NodeId],
-) -> Optional[OutlineForest]:
-    """Reseat direct children of ``parents``. ``None`` when the child set differs.
+    change_set: ChangeSet,
+    problems: FrozenSet[NodeId],
+    friendly_of: Callable[[str], str],
+) -> Optional[StructurePatch]:
+    """Bring ``forest`` up to ``doc`` after ``change_set``, in place, O(changed).
 
-    Rows outside those subtrees stay the same objects. A head is replaced only
-    when its sibling index or slot changed.
+    Only parents whose child rows changed are re-read (their direct children,
+    not their subtrees). Rows that stay where they were keep their objects.
+    ``None`` leaves ``forest`` untouched and means: rebuild (a replaced
+    document, or a change this patch cannot explain).
     """
-    if not parents:
-        return forest
-    rows: List[Row] = list(forest.rows)
-    ranks: Dict[NodeId, Dict[NodeId, int]] = {}
-    for parent_id in parents:
-        if not doc.contains(parent_id):
-            return None
-        expected = _direct_row_ids(doc, parent_id)
-        spans = _child_spans(rows, parent_id)
-        if spans is None:
-            return None
-        if not expected and not spans:
+    if change_set.replaced:
+        return None
+    work: List[Optional[NodeId]] = []
+    for node_id in _dirty_parents(doc, change_set):
+        owner = _row_owner(doc, node_id)
+        if owner is _GONE:
             continue
-        if not expected or not spans:
-            return None
-        by_node = {head.node: (start, end) for start, end, head in spans}
-        if set(by_node) != set(expected):
-            return None
-        start = spans[0][0]
-        end = spans[-1][1]
-        middle: List[Row] = []
-        for sibling_index, node_id in enumerate(expected):
-            block_start, block_end = by_node[node_id]
-            block = rows[block_start:block_end]
-            head = _retarget_slot(doc, block[0], sibling_index, ranks)
-            middle.append(head)
-            middle.extend(block[1:])
-        rows[start:end] = middle
-    return OutlineForest(tuple(rows))
+        work.append(owner)  # type: ignore[arg-type]
+    patcher = _Patcher(forest, doc, problems, friendly_of)
+    if not patcher.run(work):
+        return None
+    for node in captions_touched(change_set):
+        patcher.retitle(node)
+    return patcher.commit()
+
+
+_GONE = object()
+
+
+def _dirty_parents(doc: UiDocument, change_set: ChangeSet) -> List[NodeId]:
+    found: List[NodeId] = list(change_set.structure_dirty)
+    for change in change_set.changes:
+        if isinstance(change, FieldChanged) and change.field in _ORDER_FIELDS:
+            parent = doc.parent(change.node) if doc.contains(change.node) else None
+            if parent is not None:
+                found.append(parent.id)
+    return found
+
+
+def _row_owner(doc: UiDocument, node_id: NodeId) -> object:
+    """The row whose direct rows hang under ``node_id``. ``None`` is the root list."""
+    node = doc.get(node_id)
+    if node is None:
+        return _GONE
+    while node is not None and not _is_row(node):
+        node = doc.parent(node.id)
+    return None if node is None else node.id
+
+
+class _Patcher:
+    """One structural patch. Reads the forest, writes only through ``commit``."""
+
+    def __init__(
+        self,
+        forest: OutlineForest,
+        doc: UiDocument,
+        problems: FrozenSet[NodeId],
+        friendly_of: Callable[[str], str],
+    ) -> None:
+        self.forest = forest
+        self.doc = doc
+        self.problems = problems
+        self.friendly_of = friendly_of
+        self.kids: Dict[Optional[NodeId], Tuple[NodeId, ...]] = {}
+        self.dest: Dict[NodeId, Optional[NodeId]] = {}
+        self.rows: Dict[NodeId, Row] = {}
+        self.created: List[NodeId] = []
+        self.dropped: List[NodeId] = []
+        self.heads: List[NodeId] = []
+        self.depths: Dict[NodeId, int] = {}
+
+    def run(self, work: List[Optional[NodeId]]) -> bool:
+        forest = self.forest
+        queue = list(dict.fromkeys(work))
+        done = set()
+        while queue:
+            parent = queue.pop()
+            if parent in done:
+                continue
+            done.add(parent)
+            if parent is not None and (forest.row(parent) is None or not self.doc.contains(parent)):
+                # A new row is built from the parent that gained it. A removed row
+                # goes with its parent's list.
+                continue
+            self._read(parent, queue)
+        # A parent rows left: removed rows go, rows that moved were placed elsewhere.
+        for parent in list(self.kids):
+            if parent is not None and forest.row(parent) is None:
+                continue
+            for kid in set(forest.kid_ids(parent)).difference(self.dest):
+                if self.doc.contains(kid):
+                    return False
+                self._drop(kid)
+        return True
+
+    def _read(self, parent: Optional[NodeId], queue: List[Optional[NodeId]]) -> None:
+        ids = _direct_row_ids(self.doc, parent)
+        self.kids[parent] = ids
+        for kid in ids:
+            self.dest[kid] = parent
+            old = self.forest.row(kid)
+            if old is None:
+                self._build(kid, parent, queue)
+            elif old.parent != parent and old.parent not in self.kids:
+                queue.append(old.parent)
+
+    def _build(self, node_id: NodeId, parent: Optional[NodeId], queue: List[Optional[NodeId]]) -> None:
+        if node_id in self.rows:
+            return
+        node = self.doc.node(node_id)
+        self.rows[node_id] = _make_row(self.doc, node, parent, 0, self.problems, self.friendly_of)
+        self.created.append(node_id)
+        ids = _direct_row_ids(self.doc, node_id)
+        self.kids[node_id] = ids
+        for kid in ids:
+            self.dest[kid] = node_id
+            old = self.forest.row(kid)
+            if old is None:
+                self._build(kid, node_id, queue)
+            elif old.parent not in self.kids:
+                queue.append(old.parent)
+
+    def _drop(self, head: NodeId) -> None:
+        self.heads.append(head)
+        for node in self.forest.subtree(head):
+            if node in self.dest:
+                continue  # moved out of the removed subtree; placed by its new parent
+            self.dropped.append(node)
+
+    def retitle(self, node: NodeId) -> None:
+        if node in self.rows or not self.doc.contains(node):
+            return
+        row = self.forest.row(node)
+        if row is None:
+            return
+        fresh = _retitle(row, self.doc, self.doc.node(node), self.problems, self.friendly_of)
+        if fresh != row:
+            self.rows[node] = fresh
+
+    def _depth(self, node: NodeId) -> int:
+        known = self.depths.get(node)
+        if known is not None:
+            return known
+        if node in self.dest:
+            parent = self.dest[node]
+        else:
+            row = self.forest.row(node)
+            parent = None if row is None else row.parent
+        depth = 0 if parent is None else self._depth(parent) + 1
+        self.depths[node] = depth
+        return depth
+
+    def commit(self) -> StructurePatch:
+        forest = self.forest
+        doc = self.doc
+        created = set(self.created)
+        placed: List[Tuple[Optional[NodeId], NodeId, int]] = []
+        taken: List[NodeId] = list(self.heads)
+        arrivals: List[NodeId] = []
+        for parent, ids in self.kids.items():
+            old = () if parent in created else forest.kid_ids(parent)
+            if ids == old:
+                continue
+            staying = [kid for kid in old if self.dest.get(kid) == parent] if parent not in created else []
+            head, tail, keep = _stable(staying, ids)
+            if parent is not None and _page_host(doc, doc.node(parent)):
+                # Pages are few. Each one's number may have changed.
+                for kid in ids:
+                    self._refresh(kid, parent, created)
+            # The shared head and tail stay put: only the rows between are looked at.
+            for index in range(head, len(ids) - tail):
+                kid = ids[index]
+                if kid in keep:
+                    continue
+                placed.append((parent, kid, index))
+                previous = forest.row(kid)
+                if kid in created:
+                    arrivals.append(kid)
+                    continue
+                taken.append(kid)
+                if previous is not None and previous.parent != parent:
+                    arrivals.append(kid)
+                    self._refresh(kid, parent, created)
+        # Depths change only for rows that arrived under a new parent, and the rows under them.
+        for node in arrivals:
+            depth = self._depth(node)
+            row = self.rows.get(node) or forest.row(node)
+            if row is not None and row.depth != depth:
+                self.rows[node] = replace(row, depth=depth)
+                self._redepth_below(node, depth)
+        rewritten = [node for node in self.rows if node not in created]
+        forest._commit(self.rows, self.dropped, self.kids)
+        return StructurePatch(
+            tuple(dict.fromkeys(taken)),
+            tuple(self.dropped),
+            tuple(self.created),
+            tuple(rewritten),
+            tuple(placed),
+        )
+
+    def _refresh(self, node: NodeId, parent: Optional[NodeId], created: Set[NodeId]) -> None:
+        """A row under a new parent, or a page, gets fresh kind, slot and page number."""
+        if node in created:
+            return
+        previous = self.rows.get(node) or self.forest.row(node)
+        if previous is None:
+            return
+        fresh = _make_row(self.doc, self.doc.node(node), parent, previous.depth, self.problems, self.friendly_of)
+        if fresh != previous:
+            self.rows[node] = fresh
+
+    def _final_kids(self, node: NodeId) -> Tuple[NodeId, ...]:
+        if node in self.kids:
+            return self.kids[node]
+        return self.forest.kid_ids(node)
+
+    def _redepth_below(self, node: NodeId, depth: int) -> None:
+        stack = [(kid, depth + 1) for kid in self._final_kids(node)]
+        while stack:
+            kid, kid_depth = stack.pop()
+            self.depths[kid] = kid_depth
+            row = self.rows.get(kid) or self.forest.row(kid)
+            if row is not None and row.depth != kid_depth:
+                self.rows[kid] = replace(row, depth=kid_depth)
+            stack.extend((grand, kid_depth + 1) for grand in self._final_kids(kid))
+
+
+def _stable(old: Sequence[NodeId], new: Sequence[NodeId]) -> Tuple[int, int, FrozenSet[NodeId]]:
+    """Which rows of ``new`` keep their item in place.
+
+    Returns the length of the shared head, of the shared tail, and the ids
+    between them that stay (a longest run in the same order). A one-row move
+    costs the rows between, not the whole sibling list.
+    """
+    head = 0
+    limit = min(len(old), len(new))
+    while head < limit and old[head] == new[head]:
+        head += 1
+    tail = 0
+    while tail < limit - head and old[len(old) - 1 - tail] == new[len(new) - 1 - tail]:
+        tail += 1
+    middle_old = old[head : len(old) - tail]
+    middle_new = new[head : len(new) - tail]
+    if not middle_old or not middle_new:
+        return head, tail, frozenset()
+    rank = {node: index for index, node in enumerate(middle_old)}
+    sequence = [(rank[node], node) for node in middle_new if node in rank]
+    return head, tail, frozenset(_longest_increasing(sequence))
+
+
+def _longest_increasing(sequence: Sequence[Tuple[int, NodeId]]) -> List[NodeId]:
+    """Patience sort: the longest run of ``sequence`` whose ranks increase."""
+    tails: List[int] = []
+    tail_at: List[int] = []
+    back: List[int] = []
+    for position, (rank, _node) in enumerate(sequence):
+        low, high = 0, len(tails)
+        while low < high:
+            mid = (low + high) // 2
+            if tails[mid] < rank:
+                low = mid + 1
+            else:
+                high = mid
+        back.append(tail_at[low - 1] if low else -1)
+        if low == len(tails):
+            tails.append(rank)
+            tail_at.append(position)
+        else:
+            tails[low] = rank
+            tail_at[low] = position
+    found: List[NodeId] = []
+    cursor = tail_at[-1] if tail_at else -1
+    while cursor >= 0:
+        found.append(sequence[cursor][1])
+        cursor = back[cursor]
+    found.reverse()
+    return found
 
 
 @dataclass(frozen=True)
@@ -1072,8 +1368,10 @@ def _sibling_block(forest: OutlineForest, cursor: OutlineCursor, focus: NodeId) 
         if row is None or row.parent != focus_row.parent:
             return None
         rows.append(row)
-    rows.sort(key=lambda row: row.sibling_index)
-    indexes = [row.sibling_index for row in rows]
+    siblings = forest.kid_ids(focus_row.parent)
+    place = {node: index for index, node in enumerate(siblings)}
+    rows.sort(key=lambda row: place.get(row.node, -1))
+    indexes = [place.get(row.node, -1) for row in rows]
     if indexes != list(range(indexes[0], indexes[0] + len(indexes))):
         return None
     return tuple(rows)
@@ -1153,25 +1451,21 @@ def _make_row(
     node: Node,
     parent: Optional[NodeId],
     depth: int,
-    sibling_index: int,
     problems: FrozenSet[NodeId],
     friendly_of: Callable[[str], str],
-    ranks: Dict[NodeId, Dict[NodeId, int]],
 ) -> Row:
-    kind, tone, name, qt_class, slot = _identity(doc, node, parent, sibling_index, ranks)
+    kind, tone, name, qt_class, slot = _identity(doc, node, parent)
     visible = _visible_text(node)
     if kind == "page" and not visible:
         visible = _attr(node, "label")
-    primary = _page_primary(node, slot.index) if kind == "page" and isinstance(slot, InPageSlot) else name
     return Row(
         node.id,
         parent,
         depth,
-        sibling_index,
         kind,
         tone,
         name,
-        primary,
+        name,
         friendly_of(qt_class),
         qt_class,
         visible,
@@ -1193,15 +1487,10 @@ def _retitle(
     visible = _visible_text(node)
     if row.kind == "page" and not visible:
         visible = _attr(node, "label")
-    primary = row.primary
-    if row.kind == "page" and isinstance(row.slot, InPageSlot):
-        primary = _page_primary(node, row.slot.index)
-    elif row.kind != "page":
-        primary = name
     return replace(
         row,
         name=name,
-        primary=primary,
+        primary=name,
         friendly=friendly_of(row.qt_class),
         visible_text=visible,
         hidden=_hidden(node),
@@ -1213,20 +1502,12 @@ def _identity(
     doc: UiDocument,
     node: Node,
     parent: Optional[NodeId],
-    sibling_index: int,
-    ranks: Dict[NodeId, Dict[NodeId, int]],
 ) -> Tuple[str, str, str, str, Slot]:
     parent_node = None if parent is None else doc.get(parent)
     if isinstance(node, SpacerNode):
-        return ("spacer", "spacer", node.name, "Spacer", _bare_or_layout(doc, node, parent_node, sibling_index, ranks))
+        return ("spacer", "spacer", node.name, "Spacer", _bare_or_layout(doc, node, parent_node))
     if isinstance(node, LayoutNode):
-        return (
-            "layout",
-            "layout",
-            node.object_name,
-            node.class_name,
-            _bare_or_layout(doc, node, parent_node, sibling_index, ranks),
-        )
+        return ("layout", "layout", node.object_name, node.class_name, _bare_or_layout(doc, node, parent_node))
     assert isinstance(node, WidgetNode)
     slot: Slot
     if isinstance(parent_node, WidgetNode) and _page_host(doc, parent_node):
@@ -1234,40 +1515,18 @@ def _identity(
         slot = InPageSlot(parent_node.id, _widget_index(parent_node, node.id))
     else:
         kind = "widget"
-        slot = _bare_or_layout(doc, node, parent_node, sibling_index, ranks)
+        slot = _bare_or_layout(doc, node, parent_node)
     return (kind, "widget", node.object_name, node.class_name, slot)
 
 
-def _bare_or_layout(
-    doc: UiDocument,
-    node: Node,
-    parent_node: Optional[Node],
-    sibling_index: int,
-    ranks: Dict[NodeId, Dict[NodeId, int]],
-) -> Slot:
+def _bare_or_layout(doc: UiDocument, node: Node, parent_node: Optional[Node]) -> Slot:
     item = doc.parent(node.id)
     if isinstance(item, LayoutItemNode):
         layout = doc.parent(item.id)
         if isinstance(layout, LayoutNode):
-            return InLayoutSlot(layout.id, layout.class_name, _layout_index(layout, item, ranks))
+            return InLayoutSlot(layout.id, layout.class_name)
     container = parent_node.id if parent_node is not None else node.id
-    return InBareSlot(container, sibling_index)
-
-
-def _layout_index(
-    layout: LayoutNode,
-    item: LayoutItemNode,
-    ranks: Dict[NodeId, Dict[NodeId, int]],
-) -> int:
-    if layout.class_name not in ("QGridLayout", "QFormLayout"):
-        return item.slot_index
-    # Sorting every child made one project walk quadratic on a crowded grid.
-    table = ranks.get(layout.id)
-    if table is None:
-        ordered = sorted(layout.items, key=lambda entry: (entry.row or 0, entry.column or 0, entry.slot_index))
-        table = {entry.id: index for index, entry in enumerate(ordered)}
-        ranks[layout.id] = table
-    return table.get(item.id, item.slot_index)
+    return InBareSlot(container)
 
 
 def _page_host(doc: UiDocument, node: Node) -> bool:
@@ -1282,11 +1541,6 @@ def _page_host(doc: UiDocument, node: Node) -> bool:
     return isinstance(extends, str) and extends in PAGE_HOSTS
 
 
-def _page_primary(node: Node, index: int) -> str:
-    del index
-    return _object_name(node)
-
-
 def _stuck(row: Row, direction: str, kind: str) -> str:
     name = row.primary or row.name or "That widget"
     if kind == "page":
@@ -1299,9 +1553,9 @@ def _slot_refusal(forest: OutlineForest, row: Row, direction: str) -> str:
     name = row.primary or row.name or "That widget"
     slot = row.slot
     if isinstance(slot, InLayoutSlot) and slot.layout_class in ("QVBoxLayout", "QHBoxLayout"):
-        siblings = forest.children(row.parent)
-        at_start = direction == "up" and row.sibling_index == 0
-        at_end = direction == "down" and bool(siblings) and row.node == siblings[-1].node
+        siblings = forest.kid_ids(row.parent)
+        at_start = direction == "up" and bool(siblings) and row.node == siblings[0]
+        at_end = direction == "down" and bool(siblings) and row.node == siblings[-1]
         if at_start or at_end:
             edge = "first" if direction == "up" else "last"
             return "%s is already the %s." % (name, edge)
@@ -1320,8 +1574,8 @@ def _top_level_name(doc: UiDocument, node_id: NodeId) -> str:
     return "%s is already at the top level." % (name or "That widget")
 
 
-def _direct_row_ids(doc: UiDocument, parent_id: NodeId) -> Tuple[NodeId, ...]:
-    """Row ids ``project`` would hang directly under ``parent_id``."""
+def _direct_row_ids(doc: UiDocument, parent_id: Optional[NodeId]) -> Tuple[NodeId, ...]:
+    """Row ids ``project`` would hang directly under ``parent_id``. O(direct children)."""
     found: List[NodeId] = []
 
     def walk(node: Node) -> None:
@@ -1331,44 +1585,14 @@ def _direct_row_ids(doc: UiDocument, parent_id: NodeId) -> Tuple[NodeId, ...]:
             else:
                 walk(child)
 
-    walk(doc.node(parent_id))
+    if parent_id is None:
+        root = doc.ui
+        if _is_row(root):
+            return (root.id,)
+        walk(root)
+    else:
+        walk(doc.node(parent_id))
     return tuple(found)
-
-
-def _child_spans(
-    rows: Sequence[Row],
-    parent_id: NodeId,
-) -> Optional[List[Tuple[int, int, Row]]]:
-    indices = [index for index, row in enumerate(rows) if row.parent == parent_id]
-    if not indices:
-        return []
-    spans: List[Tuple[int, int, Row]] = []
-    for position, start in enumerate(indices):
-        depth = rows[start].depth
-        if position + 1 < len(indices):
-            end = indices[position + 1]
-        else:
-            end = start + 1
-            while end < len(rows) and rows[end].depth > depth:
-                end += 1
-        for cursor in range(start + 1, end):
-            if rows[cursor].depth <= depth:
-                return None
-        spans.append((start, end, rows[start]))
-    return spans
-
-
-def _retarget_slot(
-    doc: UiDocument,
-    row: Row,
-    sibling_index: int,
-    ranks: Dict[NodeId, Dict[NodeId, int]],
-) -> Row:
-    node = doc.node(row.node)
-    _kind, _tone, _name, _qt_class, slot = _identity(doc, node, row.parent, sibling_index, ranks)
-    if row.sibling_index == sibling_index and row.slot == slot:
-        return row
-    return replace(row, sibling_index=sibling_index, slot=slot)
 
 
 def _visible_text(node: Node) -> str:

@@ -432,6 +432,7 @@ def _collect(
     rows.extend(_outline_attached_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.append(_outline_patch_row(forms.get(300), samples, warmup, enforce_absolute, wall_on))
     rows.extend(_outline_key_rows(forms.get(1000), samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_outline_structure_rows(forms.get(1000), samples, warmup, enforce_absolute, wall_on))
     rows.append(
         _inspector_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
@@ -1396,8 +1397,100 @@ def _outline_key_rows(
             _with_detail(renamed, "rename one widget and patch that outline row"),
             _with_detail(moved, "Alt+Down moves one page and reuses the outline items"),
             _with_detail(renamed_share, "outline rename updates only the changed row"),
-            _with_detail(moved_share, "outline page move reseats the page rows"),
+            _with_detail(moved_share, "outline page move patches the page rows"),
         )
+    finally:
+        _close_outline(session, parent, app)
+
+
+_OUTLINE_STRUCTURE_POINTS = (
+    "outline form move share",
+    "outline delete share",
+    "outline undo add share",
+    "outline reparent share",
+)
+
+
+def _outline_structure_rows(
+    form: Optional[ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Outline patch CPU for structural ChangeSets at 1000 widgets (CONTRACTS 12: O(changed), 2 ms).
+
+    The command runs in ``prepare``. Only ``note_edited`` (the outline patch) is timed.
+    The rows sit in a 394-row form layout, so a reseat of every sibling would show.
+    """
+    budget = _ms_budget(OUTLINE_PATCH_BUDGET_MS)
+    if form is None:
+        return tuple(_missing(point, 1000, budget, "no 1000-widget form") for point in _OUTLINE_STRUCTURE_POINTS)
+    session, parent, outline, app = _outline_widgets(form.xml)
+    plan_mod = importlib.import_module("app.features.form_builder.engine.commands.drop_plan")
+    try:
+        outline.attach(session, lambda _key: None)
+        log = session.log
+        doc = lambda: session.document  # noqa: E731
+        target = doc().by_name("label0010")[0]
+        outer = doc().by_name("outer")[0]
+        turn = {"n": 0}
+
+        def patch() -> None:
+            outline.note_edited()
+
+        def settle() -> None:
+            outline.note_edited()
+
+        def form_move() -> None:
+            turn["n"] += 1
+            direction = "down" if turn["n"] % 2 else "up"
+            commands = plan_mod.nudge_commands(doc(), (target,), direction)
+            with log.transaction("Move") as txn:
+                for command in commands:
+                    txn.execute(command)
+
+        def delete() -> None:
+            log.execute(DeleteNodes((target,)))
+
+        def restore() -> None:
+            log.undo()
+            outline.note_edited()
+
+        def undo_add() -> None:
+            log.execute(DeleteNodes((target,)))
+            outline.note_edited()
+            log.undo()
+
+        def reparent() -> None:
+            turn["n"] += 1
+            if turn["n"] % 2:
+                log.execute(MoveNodes((target,), InBoxLayout(outer, 0)))
+            else:
+                log.undo()
+
+        cases = (
+            ("outline form move share", form_move, settle, "Alt+Down in a 394-row form layout moves only that row"),
+            ("outline delete share", delete, restore, "a delete takes only the removed row"),
+            ("outline undo add share", undo_add, settle, "the undo of a delete inserts only that row"),
+            ("outline reparent share", reparent, settle, "a move to another parent takes and inserts that row"),
+        )
+        found: List[Row] = []
+        for point, prepare, cleanup, detail in cases:
+            row = _timed(
+                point,
+                form.widget_count,
+                patch,
+                OUTLINE_PATCH_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=prepare,
+                cleanup=None if cleanup is settle else cleanup,
+            )[0]
+            found.append(_with_detail(row, detail))
+        return tuple(found)
     finally:
         _close_outline(session, parent, app)
 

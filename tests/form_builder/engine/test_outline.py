@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Tuple
+import os
+import random
+from typing import List, Tuple
 
 import pytest
 
@@ -17,7 +19,9 @@ from app.features.form_builder.engine.commands.catalog import (
     SetTabStops,
 )
 from app.features.form_builder.engine.commands.catalog_ext.drop import AdoptIntoBox
+from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.log import CommandLog
+from app.features.form_builder.engine.events import ChangeSet
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.query.drop_target import DropPayload, OutlineRow as PixelRow
 from app.features.form_builder.engine.query.outline import (
@@ -38,9 +42,9 @@ from app.features.form_builder.engine.query.outline import (
     Route,
     filter_mask,
     layout_row,
-    order_parents,
     patch_captions,
-    patch_order,
+    outline_mode,
+    patch_structure,
     plan,
     project,
     structure_touched,
@@ -715,25 +719,23 @@ def test_shift_tab_at_the_top_level_says_why() -> None:
 def test_a_cell_move_reorders_only_that_layout() -> None:
     log = open_log(_GRID)
     doc = log.document
-    before = _forest(doc)
-    cell_a = before.row(nid(doc, "cellA"))
+    forest = _forest(doc)
+    cell_a = forest.row(nid(doc, "cellA"))
     cell_b = doc.node(nid(doc, "cellB"))
     item = doc.parent(cell_b.id)
     assert item is not None
     pending = []
     log.subscribe(pending.append, priority=1)
     log.execute(SetLayoutCell(item.id, 1, 1, 1, 1))
-    parents = order_parents(log.document, pending[-1])
-    assert parents is not None and parents
-    patched = patch_order(before, log.document, parents)
-    assert patched is not None
-    assert tuple(row.name for row in patched.rows) == _names(log.document)
-    assert patched.row(nid(log.document, "cellA")) is cell_a
+    patch = patch_structure(forest, log.document, pending[-1], frozenset(), _friendly)
+    assert patch is not None
+    assert tuple(row.name for row in forest.rows) == _names(log.document)
+    assert forest.row(nid(log.document, "cellA")) is cell_a
+    assert len(patch.placed) == 1  # one row moves; the others keep their items
     pending.clear()
     log.undo()
-    restored = patch_order(patched, log.document, order_parents(log.document, pending[-1]) or ())
-    assert restored is not None
-    assert tuple(row.name for row in restored.rows) == _names(log.document)
+    assert patch_structure(forest, log.document, pending[-1], frozenset(), _friendly) is not None
+    assert tuple(row.name for row in forest.rows) == _names(log.document)
 
 
 def test_deleting_a_grid_cell_selects_the_next_widget() -> None:
@@ -743,3 +745,128 @@ def test_deleting_a_grid_cell_selects_the_next_widget() -> None:
     assert current is not None
     assert current == nid(log.document, "cellB")
     assert log.document.node(current).kind == "widget"
+
+
+def _drive(seed: int, steps: int) -> None:
+    """Random edits, undos and redos. After each ChangeSet the patched forest equals ``project``."""
+    from tests.support.form_builder.gen import FORMS, command_for
+
+    rng = random.Random(seed)
+    log = open_log(FORMS[seed % len(FORMS)])
+    held = {"forest": _forest(log.document)}
+    stats = {"structure": 0}
+
+    def follow(change_set: ChangeSet) -> None:
+        doc = log.document
+        forest = held["forest"]
+        mode = outline_mode(change_set)
+        if mode == "structure":
+            stats["structure"] += 1
+            patch = patch_structure(forest, doc, change_set, frozenset(), _friendly)
+            assert patch is not None, "FB_SEED=%s %s fell back to a rebuild" % (seed, change_set.label)
+        elif mode == "captions":
+            patch_captions(forest, doc, captions_touched(change_set), frozenset(), _friendly)
+        elif mode == "rebuild":
+            forest = held["forest"] = _forest(doc)  # a replaced document is the one allowed rebuild
+        expected = _forest(doc).rows
+        assert forest.rows == expected, "FB_SEED=%s after %s %s" % (seed, change_set.origin, change_set.label)
+
+    log.subscribe(follow, priority=1)
+    done = 0
+    for attempt in range(steps * 6):
+        if done >= steps:
+            break
+        roll = rng.randrange(10)
+        if roll < 2 and log.can_undo():
+            log.undo()
+        elif roll == 2 and log.can_redo():
+            log.redo()
+        elif roll == 3:
+            commands = [command_for(log.document, rng, seed * 1000 + attempt) for _ in range(3)]
+            try:
+                with log.transaction("T") as txn:
+                    for command in commands:
+                        if command is not None:
+                            txn.execute(command)
+            except CommandRejected:
+                continue
+        else:
+            command = command_for(log.document, rng, seed * 1000 + attempt)
+            if command is None:
+                continue
+            try:
+                log.execute(command)
+            except CommandRejected:
+                continue
+        done += 1
+    while log.undo():
+        pass
+    while log.redo():
+        pass
+    assert stats["structure"] > 0
+
+
+def _seeds() -> List[int]:
+    chosen = os.environ.get("FB_SEED")
+    if chosen:
+        return [int(chosen)]
+    return list(range(28))
+
+
+@pytest.mark.parametrize("seed", _seeds())
+def test_patched_outline_matches_a_fresh_projection(seed: int) -> None:
+    _drive(seed, 40)
+
+
+_NESTED = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0"><class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="outer">
+   <item><widget class="QGroupBox" name="box">
+    <layout class="QVBoxLayout" name="boxLayout">
+     <item><widget class="QLabel" name="inner"/></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QGroupBox" name="holder">
+    <layout class="QVBoxLayout" name="holderLayout">
+     <item><widget class="QFrame" name="frame">
+      <layout class="QVBoxLayout" name="frameLayout">
+       <item><widget class="QLabel" name="deep"/></item>
+      </layout>
+     </widget></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QTabWidget" name="tabs">
+    <widget class="QWidget" name="pageA"><attribute name="title"><string>First</string></attribute></widget>
+    <widget class="QWidget" name="pageB"><attribute name="title"><string>Second</string></attribute></widget>
+    <widget class="QWidget" name="pageC"><attribute name="title"><string>Third</string></attribute></widget>
+   </widget></item>
+  </layout>
+ </widget>
+</ui>
+"""
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        lambda doc: MoveNodes((nid(doc, "box"),), InBoxLayout(nid(doc, "frameLayout"), 0)),
+        lambda doc: MoveNodes((nid(doc, "frame"),), InBoxLayout(nid(doc, "outer"), 0)),
+        lambda doc: MovePage(nid(doc, "tabs"), 0, 2),
+        lambda doc: DeleteNodes((nid(doc, "pageA"),)),
+    ],
+    ids=["deeper", "shallower", "page-move", "page-delete"],
+)
+def test_a_patched_move_keeps_depths_and_page_numbers(command) -> None:
+    log = open_log(_NESTED)
+    forest = _forest(log.document)
+    pending: List[ChangeSet] = []
+    log.subscribe(pending.append, priority=1)
+    log.execute(command(log.document))
+    for origin in ("do", "undo", "redo"):
+        if origin == "undo":
+            log.undo()
+        elif origin == "redo":
+            log.redo()
+        assert patch_structure(forest, log.document, pending[-1], frozenset(), _friendly) is not None
+        assert forest.rows == _forest(log.document).rows, origin

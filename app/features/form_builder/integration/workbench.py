@@ -52,9 +52,9 @@ from app.features.form_builder.engine.query.outline import (
     claims_key,
     filter_mask,
     layout_row,
-    order_parents,
+    outline_mode,
     patch_captions,
-    patch_order,
+    patch_structure,
     plan,
     project,
 )
@@ -769,58 +769,117 @@ class OutlinePane(QWidget):
             self._revision = document.revision
             self.show_current(selected)
             return
-        self._forest = patch_captions(forest, document, nodes, self._problem_ids(), friendly_of)
+        patch_captions(forest, document, nodes, self._problem_ids(), friendly_of)
         self._revision = document.revision
-        mask = filter_mask(self._forest, self._filter_text)
-        states = dict(mask.state)
+        states = self._filter_states(forest)
         for node in nodes:
-            row = self._forest.row(node)
+            row = forest.row(node)
             item = self._rows.get(int(node))
             if row is None or item is None:
-                self.rebuild(document, selected)
-                return
+                if document.contains(node) and row is not None:
+                    self.rebuild(document, selected)
+                    return
+                continue
             self._write_item(item, row, states)
-        self._apply_empty(mask)
         self.show_current(selected)
 
-    def reorder_rows(
-        self,
-        document: UiDocument,
-        selected: Optional[NodeId],
-        parents: Sequence[NodeId],
-    ) -> None:
-        """Reseat the direct children of ``parents``. Other items stay put."""
-        self._document = document
+    def apply_change(self, document: UiDocument, selected: Optional[NodeId], change: object) -> None:
+        """Patch rows for one ChangeSet. Only open and replace rebuild (CONTRACTS 12)."""
+        mode = outline_mode(change) if change is not None else "rebuild"  # type: ignore[arg-type]
+        if mode == "structure" and self._forest is not None:
+            self.patch_structure(document, selected, change)
+        elif mode == "captions":
+            self.patch_rows(document, selected, captions_touched(change))  # type: ignore[arg-type]
+        elif mode == "keep" and self._forest is not None:
+            self._document = document
+            self._revision = document.revision
+            self.show_current(selected)
+        else:
+            self.rebuild(document, selected)
+
+    def patch_structure(self, document: UiDocument, selected: Optional[NodeId], change: object) -> None:
+        """Insert, take and move only the rows ``change`` touched. Untouched items stay put."""
         forest = self._forest
         if forest is None:
             self.rebuild(document, selected)
             return
-        patched = patch_order(forest, document, parents)
-        if patched is None:
+        patch = patch_structure(forest, document, change, self._problem_ids(), friendly_of)  # type: ignore[arg-type]
+        if patch is None:
             self.rebuild(document, selected)
             return
-        self._forest = patched
+        # Rows shift under an open editor: end the rename like a rebuild does.
+        self.finish_rename()
+        self._document = document
         self._revision = document.revision
-        self._reseat(patched, parents)
-        self.show_current(selected)
-
-    def _reseat(self, forest: OutlineForest, parents: Sequence[NodeId]) -> None:
         self._blocked = True
-        states = dict(filter_mask(forest, self._filter_text).state)
-        for parent_id in parents:
-            holder = self.tree.invisibleRootItem() if parent_id is None else self._rows.get(int(parent_id))
-            if holder is None:
-                self._blocked = False
-                self._install(forest)
-                return
-            for index, row in enumerate(forest.children(parent_id)):
-                item = self._rows.get(int(row.node))
-                if item is None:
-                    self._blocked = False
-                    self._install(forest)
-                    return
-                self._move_item(holder, item, index)
-                self._write_item(item, row, states)
+        try:
+            for node in patch.taken:
+                item = self._rows.get(int(node))
+                if item is not None:
+                    self._take(item)
+            for node in patch.dropped:
+                self._rows.pop(int(node), None)
+                self._closed.discard(node)
+            states = self._filter_states(forest)
+            role = int(getattr(Qt, "UserRole"))
+            for node in patch.created:
+                item = QTreeWidgetItem()
+                item.setData(0, role, int(node))
+                self._rows[int(node)] = item
+                row = forest.row(node)
+                if row is not None:
+                    self._write_item(item, row, states)
+            for node in patch.rewritten:
+                item = self._rows.get(int(node))
+                row = forest.row(node)
+                if item is not None and row is not None:
+                    self._write_item(item, row, states)
+            root = self.tree.invisibleRootItem()
+            for parent, node, index in patch.placed:
+                holder = root if parent is None else self._rows.get(int(parent))
+                item = self._rows.get(int(node))
+                if holder is None or item is None:
+                    raise LookupError(node)
+                # Qt ignores insertChild for an item that still has a parent.
+                holder.insertChild(min(index, holder.childCount()), item)
+            for _parent, node, _index in patch.placed:
+                self._restore_expansion(forest, node)
+        except LookupError:
+            self._blocked = False
+            self.rebuild(document, selected)
+            return
+        self._blocked = False
+        if self._filter_text:
+            self._apply_empty(filter_mask(forest, self._filter_text))
+        self.show_current(selected)
+        self._reselect()
+
+    def _filter_states(self, forest: OutlineForest) -> Dict[NodeId, str]:
+        """Row filter states. Empty means every row matches, which costs nothing to know."""
+        if not self._filter_text:
+            return {}
+        return dict(filter_mask(forest, self._filter_text).state)
+
+    def _restore_expansion(self, forest: OutlineForest, node: NodeId) -> None:
+        """A taken item forgets that it and its children were open. O(subtree)."""
+        for each in forest.subtree(node):
+            item = self._rows.get(int(each))
+            if item is None or item.childCount() == 0:
+                continue
+            opened = each not in self._closed
+            if item.isExpanded() != opened:
+                item.setExpanded(opened)
+
+    def _reselect(self) -> None:
+        """Re-mark selected rows a take/insert unselected. O(selection)."""
+        session = self._session
+        if session is None:
+            return
+        self._blocked = True
+        for node in session.selection.state.ids:
+            item = self._rows.get(int(node))
+            if item is not None and not item.isSelected():
+                item.setSelected(True)
         self._blocked = False
 
     def show_current(self, selected: Optional[NodeId]) -> None:
@@ -1254,21 +1313,7 @@ class OutlinePane(QWidget):
             return
         change = self._last_change
         if change is not None and getattr(change, "revision", None) == document.revision:
-            parents = order_parents(document, change)  # type: ignore[arg-type]
-            if parents is None:
-                self.rebuild(document, current)
-                return
-            if parents:
-                self.reorder_rows(document, current, parents)
-                return
-            touched = captions_touched(change)  # type: ignore[arg-type]
-            renamed = tuple(getattr(change, "renamed", ()))
-            if touched or renamed:
-                self.patch_rows(document, current, touched)
-                return
-            self._document = document
-            self._revision = document.revision
-            self.show_current(current)
+            self.apply_change(document, current, change)
             return
         self.rebuild(document, current)
 
@@ -2212,12 +2257,13 @@ class FormWorkbench(QWidget):
         selected: Optional[NodeId],
         outline: str = "rebuild",
         touched: Sequence[NodeId] = (),
+        change: object = None,
     ) -> None:
         document = self._session.document
-        if outline == "patch":
+        if change is not None:
+            self.outline.apply_change(document, selected, change)
+        elif outline == "patch":
             self.outline.patch_rows(document, selected, touched)
-        elif outline == "reorder":
-            self.outline.reorder_rows(document, selected, touched)
         elif outline == "keep":
             self.outline.show_current(selected)
         else:

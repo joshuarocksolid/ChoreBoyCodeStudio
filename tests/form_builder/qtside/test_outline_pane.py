@@ -941,3 +941,73 @@ def _overlaps(left: Tuple[int, int, int, int], right: Tuple[int, int, int, int])
     if lw <= 0 or lh <= 0 or rw <= 0 or rh <= 0:
         return False
     return lx < rx + rw and rx < lx + lw and ly < ry + rh and ry < ly + lh
+
+
+def _shape(tree: QTreeWidget) -> Tuple[Tuple[int, int, str], ...]:
+    """Pre-order (id, parent id, text) of the tree items."""
+    role = int(getattr(Qt, "UserRole"))
+    found: list = []
+
+    def walk(item: QTreeWidgetItem, parent: int) -> None:
+        node = int(item.data(0, role))
+        found.append((node, parent, item.text(0)))
+        for index in range(item.childCount()):
+            walk(item.child(index), node)
+
+    for index in range(tree.topLevelItemCount()):
+        walk(tree.topLevelItem(index), -1)
+    return tuple(found)
+
+
+def _project_shape(session: FormSession) -> Tuple[Tuple[int, int, str], ...]:
+    forest = project(session.document, frozenset(), lambda name: name)
+    return tuple((int(row.node), -1 if row.parent is None else int(row.parent), row.primary) for row in forest.rows)
+
+
+@pytest.mark.parametrize("seed", range(6))
+def test_random_edits_undo_and_redo_keep_the_outline_equal_to_the_form(qapp: QApplication, seed: int) -> None:
+    """Structural edits patch rows in place: shape, collapsed rows and the current row survive."""
+    import random
+
+    from app.features.form_builder.engine.commands.base import CommandRejected
+    from tests.support.form_builder.gen import FORMS, command_for
+
+    rng = random.Random(seed)
+    with _opened(qapp, FORMS[seed % len(FORMS)], "random-%d" % seed, height=640) as (pane, session):
+        log = session.log
+        for step in range(30):
+            items = _items(pane.tree)
+            parents = [node for node, item in items.items() if item.childCount()]
+            if parents and rng.randrange(2) == 0:
+                items[rng.choice(parents)].setExpanded(False)
+            opened = {node: item.isExpanded() for node, item in items.items() if item.childCount()}
+            roll = rng.randrange(8)
+            if roll == 0:
+                log.undo()
+            elif roll == 1:
+                log.redo()
+            else:
+                command = command_for(session.document, rng, seed * 1000 + step)
+                if command is None or type(command).__name__ == "ReplaceDocument":
+                    continue
+                try:
+                    log.execute(command)
+                except CommandRejected:
+                    continue
+            pane.note_edited()
+            qapp.processEvents()
+            assert _shape(pane.tree) == _project_shape(session), "seed %d step %d" % (seed, step)
+            items = _items(pane.tree)
+            current = session.selection.state.current
+            revealed = set()
+            if current is not None and int(current) in items:
+                assert pane.tree.currentItem() is items[int(current)]
+                parent = items[int(current)].parent()
+                while parent is not None:
+                    revealed.add(int(parent.data(0, int(getattr(Qt, "UserRole")))))
+                    parent = parent.parent()
+            for node, was in opened.items():
+                item = items.get(node)
+                if item is None or not item.childCount() or node in revealed:
+                    continue
+                assert item.isExpanded() == was, "seed %d step %d node %d" % (seed, step, node)
