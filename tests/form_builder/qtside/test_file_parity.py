@@ -194,21 +194,53 @@ def test_ctrl_s_and_save_all_write_the_ui_and_the_generated_module(
         for path, needle in ((first, "Left saved"), (second, "Right saved")):
             assert needle in path.read_text(encoding="utf-8")
             assert (path.parent / ("ui_%s.py" % path.stem)).is_file()
-        copy = root / "forms" / "invoice_copy.ui"
-        with patch(
-            "app.shell.save_workflow.QFileDialog.getSaveFileName",
-            return_value=(str(copy), "UI forms (*.ui)"),
-        ):
-            registry = window.menu_registry
-            assert registry is not None
-            save_as = registry.action("shell.action.file.saveAs")
-            assert save_as is not None
-            save_as.trigger()
-        _pump(qapp, 20)
-        assert "saved" in copy.read_text(encoding="utf-8").lower()
-        assert (copy.parent / "ui_invoice_copy.py").is_file()
+        _save_as_copies_and_retargets(window, qapp, root, {first: left, second: right})
     finally:
         shutdown_main_window_for_test(window, qapp)
+
+
+def _save_as_copies_and_retargets(
+    window: MainWindow, qapp: QApplication, root: Path, surfaces: dict
+) -> None:
+    """Save As writes a new .ui and ui_<name>.py, retitles the tab, and leaves
+    the old pair, its breakpoints and its history alone. The next Ctrl+S
+    writes the new file."""
+    active = window._editor_manager.active_tab()  # noqa: SLF001
+    assert active is not None
+    source = Path(active.file_path)
+    surface = surfaces[source]
+    old_ui = source.read_text(encoding="utf-8")
+    old_module = (source.parent / ("ui_%s.py" % source.stem)).read_text(encoding="utf-8")
+    breakpoints = window._debug_control_workflow.breakpoint_store  # noqa: SLF001
+    breakpoints.set_line_enabled(str(source), 3, enabled=True)
+    _dirty(surface, "Copied text")
+    copy = root / "forms" / "copy_form.ui"
+    with patch(
+        "app.shell.save_workflow.QFileDialog.getSaveFileName",
+        return_value=(str(copy), "UI forms (*.ui)"),
+    ):
+        registry = window.menu_registry
+        assert registry is not None
+        save_as = registry.action("shell.action.file.saveAs")
+        assert save_as is not None
+        save_as.trigger()
+    _pump(qapp, 20)
+    assert "Copied text" in copy.read_text(encoding="utf-8")
+    assert (copy.parent / "ui_copy_form.py").is_file()
+    assert source.read_text(encoding="utf-8") == old_ui
+    assert (source.parent / ("ui_%s.py" % source.stem)).read_text(encoding="utf-8") == old_module
+    assert breakpoints.lines_for_file(str(source)) == {3}
+    assert breakpoints.lines_for_file(str(copy)) == set()
+    moved = window._editor_manager.active_tab()  # noqa: SLF001
+    assert moved is not None and Path(moved.file_path) == copy
+    tabs = window._editor_tabs_widget  # noqa: SLF001
+    assert tabs is not None
+    assert tabs.tabText(tabs.currentIndex()).startswith("copy_form.ui")
+    _dirty(surface, "Next save")
+    QTest.keyClick(window, Qt.Key_S, Qt.ControlModifier)
+    _pump(qapp, 20)
+    assert "Next save" in copy.read_text(encoding="utf-8")
+    assert source.read_text(encoding="utf-8") == old_ui
 
 
 @pytest.mark.parity("R3-16")

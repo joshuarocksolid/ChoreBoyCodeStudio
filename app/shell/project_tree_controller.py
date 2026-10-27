@@ -67,10 +67,18 @@ class ProjectTreeController(Generic[W]):
         migrate_buffer_state: Optional[Callable[[str, str], None]] = None,
         remap_file_lineage: Optional[Callable[[dict[str, str]], None]] = None,
         rekey_tab_content: Optional[Callable[[str, str], None]] = None,
+        carry_file_state: bool = True,
     ) -> None:
+        """Point open tabs at ``destination_path``.
+
+        A move carries breakpoints and local-history lineage to the new path.
+        Save As passes ``carry_file_state=False``: the old file still exists and
+        keeps both, and the new file starts with neither.
+        """
         remapped_paths = remap_editor_paths(source_path, destination_path)
         for old_path, new_path in remapped_paths.items():
-            breakpoint_store.remap_paths({old_path: new_path})
+            if carry_file_state:
+                breakpoint_store.remap_paths({old_path: new_path})
             if migrate_buffer_state is not None:
                 migrate_buffer_state(old_path, new_path)
             tab_index = tab_index_for_path(new_path)
@@ -85,7 +93,7 @@ class ProjectTreeController(Generic[W]):
             update_widget_language(widget, new_path)
 
         refresh_breakpoints_list()
-        if remap_file_lineage is not None and remapped_paths:
+        if carry_file_state and remap_file_lineage is not None and remapped_paths:
             remap_file_lineage(dict(remapped_paths))
         maybe_rewrite_imports(source_path, destination_path)
 

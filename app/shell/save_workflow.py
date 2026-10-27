@@ -285,10 +285,12 @@ class MainWindowSaveDocumentHost:
             test_runner_workflow.refresh_discovery()
 
     def retarget_open_path(self, source_path: str, destination_path: str) -> None:
+        # Save As copies: the old file keeps its breakpoints and history.
         self._window._project_tree_action_coordinator.apply_path_move_updates(
             source_path,
             destination_path,
             rewrite_imports=False,
+            carry_file_state=False,
         )
 
 
