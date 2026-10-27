@@ -80,7 +80,7 @@ M0.1, M0.2, M0.3, M0.4, M0.5, M0.6, M0.4b, M0.7, M0.8, M0.9, M1.0, M1.1d, M1.5, 
 | R3-27 | Scratch pad | Canvas editing |  | M | M3.4 | done | qtside/test_saved_pieces.py::test_insert_pane_hides_the_piece_list_when_empty (+1) | Pain P-3 |
 | R3-28 | Object inspector | Canvas editing |  | M | M3.1b | done | inspector/test_inspector_pane.py::test_crumb_click_selects_the_ancestor (+1) | Pain P-4, P-15, P-25 |
 | R3-29 | Object name rules | Canvas editing |  | M | M3.1b | done | inspector/test_inspector_pane.py::test_keyboard_path_through_the_inspector | Pain P-15 |
-| R3-30 | In-place text edit | Canvas editing |  | S | M3.1 | done | qtside/test_canvas_text.py::test_enter_writes_one_undo_step |  |
+| R3-30 | In-place text edit | Canvas editing |  | S | M3.1 | done | qtside/test_canvas_text.py::test_a_double_click_opens_the_in_place_editor (+1) |  |
 | R3-31 | Change text command | Canvas editing |  | S | M3.1 | done | qtside/test_canvas_text.py::test_change_text_opens_the_in_place_editor |  |
 | R3-32 | Z-order commands | Canvas editing |  | M | M3.4 | done | engine/commands/test_catalog.py::test_z_order_comes_from_the_real_child_list_and_document_order_clears_it | Pain P-24 |
 | R3-33 | Undo and redo | Canvas editing |  | M | M3.4 | done | engine/commands/test_log.py::test_undo_then_redo_restores_the_edit | Pain P-24 |

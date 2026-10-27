@@ -95,6 +95,25 @@ def test_enter_writes_one_undo_step() -> None:
         parent.deleteLater()
 
 
+@pytest.mark.parity("R3-30")
+def test_a_double_click_opens_the_in_place_editor() -> None:
+    """UX-TEXT-001. A double-click opens the same in-place editor as Enter."""
+    with opened(BUTTON) as (session, realizer):
+        canvas, parent = _canvas(session, realizer)
+        QTest.mouseDClick(
+            canvas.viewport(),
+            _mouse("LeftButton"),
+            _mods("NoModifier"),
+            _center(canvas, "ok"),
+        )
+        _flush()
+        edit = _visible_edit(canvas)
+        assert edit is not None
+        assert edit.text() == "OK"
+        canvas.dispose()
+        parent.deleteLater()
+
+
 @pytest.mark.parity("R3-31")
 def test_change_text_opens_the_in_place_editor(tmp_path: Path) -> None:
     """The Change text command opens the same in-place editor as Enter."""
