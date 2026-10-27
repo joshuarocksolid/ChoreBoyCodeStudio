@@ -49,6 +49,9 @@ FIXED_TIP = "Exactly this many pixels."
 SHARE_CAPTION = "0 means no share. Two widgets with 1 and 2 split the spare room 1 : 2."
 FREE_CAPTION = "Not in a layout: its size is the rectangle in Placement."
 
+# These parents position their children. A missing layout does not mean the child is free.
+_MANAGED_HOSTS = frozenset({"QMainWindow", "QScrollArea", "QDockWidget"})
+
 
 @dataclass(frozen=True)
 class AxisProjection:
@@ -422,10 +425,19 @@ def splice_stretch(current: Optional[str], index: int, value: int, length: int) 
 
 
 def placed_freely(document: UiDocument, node_id: NodeId) -> bool:
+    """True when the parent is a plain container with no layout.
+
+    A layout item is not free. Neither is a main-window part, scroll or dock
+    contents, or a page of a tab, stack, toolbox, wizard, splitter, or MDI area.
+    """
     parent = document.parent(node_id)
     if not isinstance(parent, WidgetNode):
         return False
+    if parent.layout is not None:
+        return False
     if is_page_container(document, parent.id):
+        return False
+    if effective_class(document, parent) in _MANAGED_HOSTS:
         return False
     return True
 

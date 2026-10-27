@@ -154,12 +154,9 @@ class SizeBody:
         def run(*_args: object) -> None:
             if not wrapper_is_valid(self._root) or not wrapper_is_valid(widget):
                 return
-            try:
-                self._host.document
-            except RuntimeError as error:
-                if error.args == ("session is disposed",):
-                    return
-                raise
+            session = getattr(self._host, "session", None)
+            if session is not None and bool(getattr(session, "disposed", False)):
+                return
             call()
 
         return run
@@ -415,7 +412,13 @@ class _AxisRow:
         for word, button in self._buttons.items():
             button.blockSignals(True)
             button.setChecked(not mixed and first.filled and first.word == word)
-            outlined = not mixed and not first.filled and not first.custom and first.word == word
+            outlined = (
+                enabled
+                and not mixed
+                and not first.filled
+                and not first.custom
+                and first.word == word
+            )
             set_style_flag(button, "fbOutline", "true" if outlined else "false")
             button.setEnabled(enabled)
             button.blockSignals(False)
@@ -580,7 +583,7 @@ def _project(host: GroupHost, node: WidgetNode) -> Tuple[AxisProjection, AxisPro
     )
     if placed_freely(host.document, node.id):
         horizontal = replace(horizontal, caption=FREE_CAPTION, enabled=False)
-        vertical = replace(vertical, caption=FREE_CAPTION, enabled=False)
+        vertical = replace(vertical, caption="", enabled=False)
     return horizontal, vertical
 
 

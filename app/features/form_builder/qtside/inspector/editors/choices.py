@@ -45,15 +45,22 @@ _SHORT_ALIGN = {
     "AlignHCenter": "Center",
     "AlignVCenter": "Center",
 }
-_ALIGN_NAMES = {
-    "AlignLeft": "Alignment: Left",
-    "AlignHCenter": "Alignment: Horizontal center",
-    "AlignRight": "Alignment: Right",
-    "AlignJustify": "Alignment: Justify",
-    "AlignTop": "Alignment: Top",
-    "AlignVCenter": "Alignment: Vertical center",
-    "AlignBottom": "Alignment: Bottom",
+_ALIGN_TAILS = {
+    "AlignLeft": "Left",
+    "AlignHCenter": "Horizontal center",
+    "AlignRight": "Right",
+    "AlignJustify": "Justify",
+    "AlignTop": "Top",
+    "AlignVCenter": "Vertical center",
+    "AlignBottom": "Bottom",
 }
+
+
+def _row_label(host: EditorHost) -> str:
+    label = getattr(host, "row_label", "")
+    if isinstance(label, str) and label.strip():
+        return label.strip()
+    return "Alignment"
 # Layout policies are long Qt enumerator names. The combo shows a short label.
 # Item data stays the enumerator, which is what the document stores.
 _PLAIN_ENUM = {
@@ -233,7 +240,7 @@ class AlignmentEditor:
         for index, name in enumerate(names):
             button = QToolButton(row)
             button.setText(_SHORT_ALIGN.get(name, name.replace("Align", "")))
-            button.setAccessibleName(_ALIGN_NAMES.get(name, "Alignment: %s" % button.text()))
+            button.setAccessibleName("%s: %s" % (_row_label(self._host), _ALIGN_TAILS.get(name, button.text())))
             button.setToolTip(name)
             button.setCheckable(True)
             button.setProperty("fbSegment", "true")

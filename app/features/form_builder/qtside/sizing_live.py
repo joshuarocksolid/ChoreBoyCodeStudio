@@ -28,7 +28,6 @@ from app.qt.QtWidgets import QFormLayout, QSizePolicy, QSplitter, QWidget
 from app.qt.qt_compat import delete_now
 
 _DEFAULTS: Dict[str, Tuple[str, str]] = {}
-_SEEN: Dict[int, Tuple[Tuple[int, ...], Dict[int, Tuple[int, int]]]] = {}
 _SOFT = frozenset({"Preferred", "Minimum", "Maximum"})
 _GROWTH = 200
 _PARENT = {
@@ -264,7 +263,9 @@ def _form_label_width(document: UiDocument, node_id: NodeId, widget: QWidget) ->
     if not isinstance(layout, LayoutNode) or layout.class_name != "QFormLayout":
         return None
     host = widget.parentWidget()
-    form = host.layout() if host is not None else None
+    if host is None:
+        return None
+    form = host.layout()
     if not isinstance(form, QFormLayout):
         return None
     role = getattr(getattr(QFormLayout, "ItemRole", QFormLayout), "LabelRole")
@@ -307,21 +308,11 @@ def _growth_for(
 
 
 def _pane_growth(splitter: QSplitter, pane: QWidget, horizontal: bool) -> Tuple[Optional[int], Optional[int]]:
-    sizes = tuple(int(size) for size in splitter.sizes())
+    """What this pane does when the splitter grows. A grip drag is not growth."""
     index = _pane_index(splitter, pane)
     if index is None:
         return (None, None)
-    cached = _SEEN.get(id(splitter))
-    if cached is not None and cached[0] == sizes and index in cached[1]:
-        return cached[1][index]
-    if cached is not None and len(cached[0]) == len(sizes) and cached[0] != sizes:
-        total = sum(sizes) - sum(cached[0])
-        measured = {at: (sizes[at] - cached[0][at], total) for at in range(len(sizes))}
-        _SEEN[id(splitter)] = (sizes, measured)
-        return measured[index]
-    measured = _scratch_growth(splitter, horizontal)
-    _SEEN[id(splitter)] = (sizes, measured)
-    return measured.get(index, (None, None))
+    return _scratch_growth(splitter, horizontal).get(index, (None, None))
 
 
 def _pane_index(splitter: QSplitter, pane: QWidget) -> Optional[int]:

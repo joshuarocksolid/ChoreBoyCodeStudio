@@ -864,7 +864,7 @@ def _plan_keep_content(
     if unchanged:
         return Current()
     command = from_write(node.id, write, layout=layout_id, stretch_field=field, stretch=stretch)
-    return _Ready("Size", (command,), "%s now keeps its content height" % _subject(doc, node))
+    return _Ready("Size", (command,), "%s now keeps its content height." % _subject(doc, node))
 
 
 def _plan_lock_size(doc: UiDocument, ids: Tuple[NodeId, ...], request: LockSize, measured: Measured) -> _Plan:
@@ -1281,8 +1281,25 @@ def _name(doc: UiDocument, node: Node) -> str:
 
 
 def _subject(doc: UiDocument, node: Node) -> str:
+    visible = _visible_label(node)
+    if visible:
+        return visible
     name = _name(doc, node)
     return "The" + name[3:] if name.startswith("the ") else name
+
+
+def _visible_label(node: Node) -> str:
+    """The words on the widget, when it has any. Object names stay in the file."""
+    if not isinstance(node, WidgetNode):
+        return ""
+    for name in ("title", "text", "windowTitle"):
+        entry = node.prop(name)
+        if entry is None:
+            continue
+        text = getattr(entry.value, "text", None)
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+    return ""
 
 
 def _count(number: int, one: str, many: str) -> str:

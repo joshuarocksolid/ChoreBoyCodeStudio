@@ -478,6 +478,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QToolButton[fbSegment=\"true\"] { background: %s; color: %s; border: 1px solid %s; }"
         "QToolButton[fbSegment=\"true\"][fbOutline=\"true\"] {"
         " background: %s; color: %s; border: 1px dashed %s; }"
+        "QToolButton[fbSegment=\"true\"]:disabled { background: %s; color: %s; border: none; }"
         "QToolButton[fbSegment=\"true\"]:checked { background: %s; color: %s; border: 1px solid %s; }"
         "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
         "%s"
@@ -503,6 +504,8 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.input,
             chrome.text,
             chrome.accent,
+            chrome.panel,
+            chrome.faint,
             chrome.selected,
             chrome.text,
             chrome.accent,

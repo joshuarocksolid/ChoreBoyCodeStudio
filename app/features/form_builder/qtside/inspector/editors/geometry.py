@@ -18,6 +18,7 @@ from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -160,20 +161,42 @@ def register(registrar: Registrar) -> None:
 def _pair(
     parent: QWidget, captions: Tuple[str, str], on_change: object
 ) -> Tuple[QWidget, QSpinBox, QSpinBox]:
+    """One spin per line. A horizontal pair clips a 4-digit value at 236 px."""
     row = QWidget(parent)
-    layout = QHBoxLayout(row)
+    layout = QVBoxLayout(row)
     layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
     boxes: List[QSpinBox] = []
     for caption in captions:
-        layout.addWidget(QLabel(caption, row))
-        box = QSpinBox(row)
+        line = QWidget(row)
+        line_layout = QHBoxLayout(line)
+        line_layout.setContentsMargins(0, 0, 0, 0)
+        line_layout.setSpacing(4)
+        label = QLabel(caption, line)
+        label.setMinimumWidth(0)
+        box = QSpinBox(line)
         box.setRange(-1000000, 1000000)
         # Commit on Enter, focus-out or a step, not on every typed digit.
         box.setKeyboardTracking(False)
+        box.setMinimumWidth(0)
+        box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         box.valueChanged.connect(on_change)
-        layout.addWidget(box)
+        _show_four_digits(box)
+        line_layout.addWidget(label)
+        line_layout.addWidget(box, 1)
+        layout.addWidget(line)
         boxes.append(box)
     return row, boxes[0], boxes[1]
+
+
+def _show_four_digits(box: QSpinBox) -> None:
+    # Measure on the spin. lineEdit() during construction can hand back a
+    # layout item, and that item has no font metrics.
+    metrics = box.fontMetrics()
+    text_width = int(metrics.horizontalAdvance("0000"))
+    current = int(metrics.horizontalAdvance(box.text() or "0"))
+    chrome = max(0, int(box.sizeHint().width()) - current)
+    box.setMinimumWidth(text_width + chrome + 6)
 
 def _texts(*boxes: QSpinBox) -> Tuple[str, ...]:
     return tuple(box.text() for box in boxes)

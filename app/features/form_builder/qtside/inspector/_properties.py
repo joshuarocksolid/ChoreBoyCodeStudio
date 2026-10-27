@@ -68,6 +68,7 @@ class PropertiesPage(QWidget):
         self._show_qt = False
         self._qt_store: object = None
         self._link_color = ""
+        self._tab_key: Optional[Tuple[Tuple[int, str], ...]] = None
         self._search = QLineEdit(self)
         self._search.setObjectName("formBuilder.inspectorSearch")
         self._search.setPlaceholderText("Find a property")
@@ -211,7 +212,23 @@ class PropertiesPage(QWidget):
             " QLineEdit[fbState=\"mixed\"], QFontComboBox[fbState=\"mixed\"], QCheckBox[fbState=\"mixed\"],"
             " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
             "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
-            % (panel, text, text, faint, text, text, faint, faint, caption or text, hover or panel)
+            "QLabel#formBuilder\\.layout\\.followsWindow { color: %s; background: transparent; }"
+            "QToolButton[fbSegment=\"true\"]:disabled { background: %s; color: %s; border: none; }"
+            % (
+                panel,
+                text,
+                text,
+                faint,
+                text,
+                text,
+                faint,
+                faint,
+                caption or text,
+                hover or panel,
+                caption or text,
+                panel,
+                faint,
+            )
         )
 
     def paint(self, body: BodyView) -> None:
@@ -274,8 +291,13 @@ class PropertiesPage(QWidget):
         self._scroll.verticalScrollBar().setValue(0)
 
     def _chain_tabs(self) -> None:
+        stops = _stops_under(self)
+        key = tuple((id(stop), stop.objectName()) for stop in stops)
+        if key == self._tab_key:
+            return
+        self._tab_key = key
         previous: Optional[QWidget] = None
-        for stop in _stops_under(self):
+        for stop in stops:
             if previous is not None:
                 QWidget.setTabOrder(previous, stop)
             previous = stop
@@ -712,6 +734,13 @@ class _Row(QWidget):
         dirty = getattr(self._editor, "is_dirty", None)
         return bool(dirty()) if callable(dirty) else False
 
+    @property
+    def row_label(self) -> str:
+        view = self._view
+        if view is None:
+            return ""
+        return view.label
+
     def paint(self, view: Row, match_color: str, qt_names: bool = False) -> None:
         self.setObjectName("formBuilder.row.%s" % view.key)
         previous = self._view
@@ -944,6 +973,10 @@ class _GroupHost:
     @property
     def document(self) -> UiDocument:
         return self._services.session.document
+
+    @property
+    def session(self) -> object:
+        return self._services.session
 
     @property
     def owners(self) -> Tuple[NodeId, ...]:

@@ -6,8 +6,7 @@ the standard inspector rows, so their writes are plain property writes.
 
 from __future__ import annotations
 
-import re
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import Command, CommandRejected
 from app.features.form_builder.engine.ids import NodeId
@@ -93,7 +92,6 @@ _AFTER_KIND = frozenset(spec.key for spec in _ROWS)
 _BAR_SLOT = 8
 _LABEL = 104
 _FOLLOWS_WINDOW = "Everything in this layout follows the window's edges."
-_WHY_COLOR = re.compile(r"QLabel#formBuilder\\.sizeWhy\s*\{\s*color:\s*([^;]+);")
 
 
 def register(registrar: Registrar) -> None:
@@ -164,13 +162,7 @@ class LayoutBody:
         widget.deleteLater()
 
     def _paint_edges(self) -> None:
-        show = _root_layout_selected(self._host)
-        self._edges.setVisible(show)
-        if not show:
-            return
-        color = _muted_caption(self._edges)
-        if color:
-            self._edges.setStyleSheet("color: %s; background: transparent;" % color)
+        self._edges.setVisible(_root_layout_selected(self._host))
 
     def _paint_kind(self) -> None:
         host = self._host
@@ -232,16 +224,6 @@ def _root_layout_selected(host: GroupHost) -> bool:
         return False
     owner = host.document.get(host.owners[0])
     return isinstance(owner, LayoutNode) and owner.id == root_layout.id
-
-
-def _muted_caption(widget: QWidget) -> str:
-    current: Optional[QWidget] = widget
-    while current is not None:
-        found = _WHY_COLOR.search(current.styleSheet())
-        if found is not None:
-            return found.group(1).strip()
-        current = current.parentWidget()
-    return ""
 
 
 class _EdgeCaption(QLabel):

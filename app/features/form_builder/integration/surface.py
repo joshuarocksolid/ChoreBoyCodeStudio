@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QKeySequence
+from app.qt.QtGui import QKeySequence, QTextCursor
 from app.qt.QtWidgets import (
     QApplication,
     QFrame,
@@ -581,10 +581,9 @@ class FormSurface(QWidget):
         return True
 
     def preview_problem(self, detail: Optional[Mapping[str, str]]) -> bool:
-        if detail and self._toolbar.xml.isChecked():
-            self._on_design()
-            if self._toolbar.xml.isChecked():
-                return False
+        if self._toolbar.xml.isChecked():
+            self._point_xml_line(detail)
+            return True
         node_id = self._node_for_detail(detail)
         if node_id is None:
             return False
@@ -1202,6 +1201,33 @@ class FormSurface(QWidget):
             return
         self._saved_timer.stop()
         self._toolbar.set_save("", error=False, tokens=self._tokens)
+
+    def _point_xml_line(self, detail: Optional[Mapping[str, str]]) -> None:
+        """Move the XML cursor. A single click must not take focus out of Problems."""
+        editor = self._editor
+        if editor is None:
+            return
+        line = self._detail_line(detail)
+        if line < 1:
+            return
+        focus = QApplication.focusWidget()
+        cursor = editor.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        cursor.movePosition(QTextCursor.Down, QTextCursor.MoveAnchor, line - 1)
+        editor.setTextCursor(cursor)
+        if focus is not None and QApplication.focusWidget() is not focus:
+            focus.setFocus()
+
+    def _detail_line(self, detail: Optional[Mapping[str, str]]) -> int:
+        if not detail:
+            return 0
+        key = detail.get("fb_key") or ""
+        if not key:
+            return 0
+        for diagnostic in self._session.diagnostics.all():
+            if diagnostic.key == key:
+                return int(diagnostic.location.line)
+        return 0
 
     def _node_for_detail(self, detail: Optional[Mapping[str, str]]) -> Optional[NodeId]:
         if not detail:

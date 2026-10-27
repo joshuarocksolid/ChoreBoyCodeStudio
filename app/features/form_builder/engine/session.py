@@ -151,6 +151,11 @@ class FormSession:
         if scope is not None:
             self._scope = scope
 
+    @property
+    def disposed(self) -> bool:
+        """True after ``dispose``. Reading this does not raise."""
+        return self._disposed
+
     def dispose(self) -> None:
         """Close every log subscription and the selection listeners.
 
