@@ -793,14 +793,16 @@ class _Structure(_LayoutSlots):
             self._geometry_targets.add(node.id)
             for child in node.child_widgets:
                 self._geometry_targets.add(child.id)
-                # Re-inserting a page or child can show it and run its layout,
-                # which moves laid-out descendants off their stored rect. A
-                # fresh build writes every stored rect last, so do the same.
-                self._note_stored_geometry_below(child)
             self._fill_widget(node, widget)
             self._reconciled += 1
 
     def _note_stored_geometry_below(self, node: WidgetNode) -> None:
+        """Target every stored rect under a moved widget.
+
+        Re-inserting it can show it and run a layout that has not run yet,
+        which moves laid-out descendants off their stored rect. A fresh build
+        writes every stored rect last, so the patch does the same here.
+        """
         pending = list(node.child_widgets)
         layout = node.layout
         if isinstance(layout, LayoutNode):

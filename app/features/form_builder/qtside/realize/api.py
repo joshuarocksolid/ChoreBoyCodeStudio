@@ -353,6 +353,9 @@ class Realizer(_Structure):
         for change in changeset.changes:
             if isinstance(change, NodeMoved):
                 self._detach_moved(change.node)
+                moved = document.get(change.node)
+                if isinstance(moved, WidgetNode) and change.old_parent != change.new_parent:
+                    self._note_stored_geometry_below(moved)
         containers = set(changeset.structure_dirty)
         containers.update(self._pending_containers)
         self._pending_containers.clear()
