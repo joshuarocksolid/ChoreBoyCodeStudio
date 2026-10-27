@@ -580,6 +580,23 @@ class FormSurface(QWidget):
         editor.go_to_line(line)
         return True
 
+    def preview_problem(self, detail: Optional[Mapping[str, str]]) -> bool:
+        if detail and self._toolbar.xml.isChecked():
+            self._on_design()
+            if self._toolbar.xml.isChecked():
+                return False
+        node_id = self._node_for_detail(detail)
+        if node_id is None:
+            return False
+        self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
+        if self._session.selection.state.current != node_id:
+            return False
+        name = self._object_name(node_id)
+        if name:
+            self._workbench.canvas.ensure_widget_visible(name)
+        self._refresh_shell_status()
+        return True
+
     def restore_text(self, text: str, reason: RestoreReason) -> None:
         try:
             self._session.log.execute(ReplaceDocument(text, reason=_RESTORE_REASON[reason]))
