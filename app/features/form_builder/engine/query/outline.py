@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 
+from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, MoveNodes, MovePage, SetProperty
 from app.features.form_builder.engine.commands.catalog_ext.drop import AdoptIntoBox
 from app.features.form_builder.engine.commands.drop_plan import auto_target, commands_for, nudge_commands
@@ -256,7 +257,7 @@ Gesture = Union[KeyGesture, DropGesture, RenameGesture, FilterGesture, InsertGes
 
 @dataclass(frozen=True)
 class Commit:
-    commands: Tuple[object, ...]
+    commands: Tuple[Command, ...]
     label: str
     toast: str = ""
 
@@ -880,7 +881,9 @@ def _move_visible(forest: OutlineForest, cursor: OutlineCursor, forward: bool) -
 
 def _collapse_or_parent(forest: OutlineForest, cursor: OutlineCursor) -> Effect:
     focus = cursor.focus
-    row = None if focus is None else forest.row(focus)
+    if focus is None:
+        return Idle()
+    row = forest.row(focus)
     if row is None:
         return Idle()
     if focus not in cursor.expanded and forest.children(focus):

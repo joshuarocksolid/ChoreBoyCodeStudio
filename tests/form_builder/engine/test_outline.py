@@ -244,7 +244,9 @@ def test_free_children_use_one_bare_nest_entry() -> None:
     assert group.layout is not None
     assert _contents(log.document, group.layout.object_name) == ("kept", "outside")
     assert log.undo()
-    assert log.document.node(nid(log.document, "group")).layout is None
+    restored = log.document.node(nid(log.document, "group"))
+    assert isinstance(restored, WidgetNode)
+    assert restored.layout is None
     assert not log.can_undo()
 
 
