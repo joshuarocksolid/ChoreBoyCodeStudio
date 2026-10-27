@@ -1,7 +1,7 @@
 
 from __future__ import annotations
 
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Callable, Dict, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.commands.base import CommandOutcome
 from app.features.form_builder.engine.commands.catalog import AddConnection, DeleteNodes, EditConnection
@@ -13,6 +13,7 @@ from app.features.form_builder.qtside.inspector._services import Services
 from app.features.form_builder.qtside.inspector.model import BehaviorView, ConnectionView, ManyBehavior, OneBehavior
 from app.features.form_builder.qtside.realize import Realizer
 from app.qt.QtWidgets import (
+    QApplication,
     QComboBox,
     QHBoxLayout,
     QLabel,
@@ -35,6 +36,8 @@ class BehaviorPage(QWidget):
         self._view: Optional[OneBehavior] = None
         self._draft: Optional[_Draft] = None
         self._draft_row: Optional[_DraftRow] = None
+        self._refresh: Optional[Callable[[], None]] = None
+        self._committing = False
         self._message = QLabel(self)
         self._message.setWordWrap(True)
         self._add = QPushButton("+ Add connection", self)
@@ -91,6 +94,9 @@ class BehaviorPage(QWidget):
             row = self._rows.get(pending)
             if row is not None:
                 row.focus_signal()
+
+    def set_refresh(self, refresh: Callable[[], None]) -> None:
+        self._refresh = refresh
 
     def has_draft(self) -> bool:
         return self._draft is not None
@@ -155,6 +161,15 @@ class BehaviorPage(QWidget):
         row.set_slots(self._slots_for(text))
 
     def _commit_draft(self, slot: str) -> None:
+        if self._committing:
+            return
+        self._committing = True
+        try:
+            self._commit_draft_now(slot)
+        finally:
+            self._committing = False
+
+    def _commit_draft_now(self, slot: str) -> None:
         view = self._view
         draft = self._draft
         chosen = slot.strip()
@@ -169,7 +184,6 @@ class BehaviorPage(QWidget):
                 break
         signal = draft.signal or self._add_signal
         receiver = draft.receiver or document.root.object_name
-        self._clear_draft()
         sender = view.sender
         result = self._services.execute(AddConnection(view.sender_name, signal, receiver, chosen, index))
         if not isinstance(result, CommandOutcome):
@@ -177,10 +191,31 @@ class BehaviorPage(QWidget):
         # AddConnection selects the new connection. Keep the sender selected
         # and focus the new row (UX-INSP-013); its popup stays closed.
         # Undo still restores the sender, the selection before the command.
+        # The draft still holds focus until the new row exists, so focus
+        # cannot fall through to the shell while the row is created.
         added = result.result
-        if isinstance(added, int):
-            self._pending_open = NodeId(added)
+        added_id = NodeId(added) if isinstance(added, int) else None
+        if added_id is not None:
+            self._pending_open = added_id
         self._services.session.selection.set((sender,), source=SelectionSource.INSPECTOR)
+        refresh = self._refresh
+        if refresh is not None:
+            refresh()
+        self._focus_new_row(added_id)
+        self._clear_draft()
+
+    def _focus_new_row(self, added_id: Optional[NodeId]) -> None:
+        draft = self._draft_row
+        focus = QApplication.focusWidget()
+        if draft is None or not isinstance(focus, QWidget):
+            return
+        if focus is not draft and not draft.isAncestorOf(focus):
+            return
+        row = None if added_id is None else self._rows.get(added_id)
+        if row is not None:
+            row.focus_signal()
+            return
+        self._add.setFocus()
 
     def _clear_draft(self) -> None:
         self._draft = None

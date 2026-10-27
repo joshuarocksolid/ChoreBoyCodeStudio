@@ -2249,6 +2249,18 @@ class _TileList(QListWidget):
         super().__init__(parent)
         self._on_finished = on_finished
 
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        # Mac Qt does not emit itemActivated when Return is pressed.
+        enter = getattr(Qt, "Key_Return")
+        keypad = getattr(Qt, "Key_Enter")
+        if event.key() in (enter, keypad):
+            item = self.currentItem()
+            pane = self.parent()
+            if item is not None and isinstance(pane, InsertPane):
+                pane._activated(item)
+                return
+        super().keyPressEvent(event)
+
     def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
         super().focusInEvent(event)
         announce = getattr(self.parent(), "_announce_preview", None)

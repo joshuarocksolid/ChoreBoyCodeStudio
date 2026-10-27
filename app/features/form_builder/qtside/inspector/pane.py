@@ -84,6 +84,8 @@ class InspectorPane(QWidget):
         self._problem_count = 0
         self._on_show_problems: Optional[Callable[[], None]] = None
         self._link_color = ""
+        self._inspected_ids: frozenset = frozenset()
+        self._reset_scroll = False
         self.header = Header(self._services, self)
         self.tabs = QTabWidget(self)
         self.tabs.setObjectName("formBuilder.inspectorTabs")
@@ -91,6 +93,7 @@ class InspectorPane(QWidget):
         self.tabs.tabBar().setAccessibleName("Inspector")
         self.properties = PropertiesPage(self._services, self._schedule, self.tabs)
         self.behavior = BehaviorPage(self._services, realizer, self.tabs)
+        self.behavior.set_refresh(self._refresh_now)
         self._tab_index: Dict[TabId, int] = {}
         for tab in TAB_ORDER:
             if tab is TabId.DATA and not data_tab:
@@ -190,6 +193,8 @@ class InspectorPane(QWidget):
         self._pending = False
         self._stale = False
         self._timer.stop()
+        reset_scroll = self._reset_scroll
+        self._reset_scroll = False
         session = self._services.session
         document = session.document
         ids = inspected_ids(document, session.selection.state.ids) or (document.root.id,)
@@ -216,6 +221,8 @@ class InspectorPane(QWidget):
         with self._services.painting():
             self.properties.paint(pages.body)
             self.behavior.paint(pages.behavior)
+        if reset_scroll:
+            self.properties.reveal_after_selection()
         title = "Behavior"
         behavior = pages.behavior
         if isinstance(behavior, OneBehavior) and behavior.connections:
@@ -292,8 +299,17 @@ class InspectorPane(QWidget):
         self._schedule()
 
     def _on_selection(self, _change: SelectionChange) -> None:
+        document = self._services.session.document
+        ids = frozenset(inspected_ids(document, self._services.session.selection.state.ids))
+        if ids != self._inspected_ids:
+            self._inspected_ids = ids
+            self._reset_scroll = True
         self._paint_header()
         self._schedule()
+
+    def _refresh_now(self) -> None:
+        self._pending = True
+        self.flush()
 
     def _on_diagnostics(self, _found: Tuple[FormDiagnostic, ...]) -> None:
         self._schedule()
@@ -462,6 +478,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QToolButton[fbSegment=\"true\"] { background: %s; color: %s; border: 1px solid %s; }"
         "QToolButton[fbSegment=\"true\"][fbOutline=\"true\"] {"
         " background: %s; color: %s; border: 1px dashed %s; }"
+        "QToolButton[fbSegment=\"true\"]:disabled { background: %s; color: %s; border: none; }"
         "QToolButton[fbSegment=\"true\"]:checked { background: %s; color: %s; border: 1px solid %s; }"
         "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
         "%s"
@@ -487,6 +504,8 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.input,
             chrome.text,
             chrome.accent,
+            chrome.panel,
+            chrome.faint,
             chrome.selected,
             chrome.text,
             chrome.accent,

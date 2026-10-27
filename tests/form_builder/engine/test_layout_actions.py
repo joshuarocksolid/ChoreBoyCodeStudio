@@ -657,3 +657,49 @@ def test_wrapping_laid_out_widgets_in_a_splitter_drops_a_kept_rect() -> None:
     assert isinstance(done, Done), done
     assert doc.node(ids[0]).value("geometry") is None
     assert "<rect>" not in saved(doc)
+
+
+_NAMED_BY_CHROME = (
+    _HEAD
+    + """  <layout class="QVBoxLayout" name="mainLayout">
+   <item>
+    <widget class="QLineEdit" name="emailField">
+     <property name="text"><string>jo@example.com</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="receiptGroup">
+     <property name="title"><string>Receipt</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTabWidget" name="pages">
+     <widget class="QWidget" name="firstPage">
+      <attribute name="title"><string>Billing</string></attribute>
+      <layout class="QVBoxLayout" name="pageLayout">
+       <item><widget class="QLabel" name="note"><property name="text"><string>Notes</string></property></widget></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+"""
+    + _TAIL
+)
+
+
+@pytest.mark.parametrize(
+    "name, subject",
+    [
+        # A line edit's text is the user's content, so it goes by object name.
+        ("emailField", "emailField"),
+        ("receiptGroup", "Receipt"),
+        ("note", "Notes"),
+    ],
+)
+def test_keep_at_content_size_names_a_widget_by_its_chrome_text_only(name: str, subject: str) -> None:
+    log = open_log(_NAMED_BY_CHROME)
+    doc = log.document
+    done = carry_out(doc, (nid(doc, name),), KeepContent(), {}, transact(log))
+    assert isinstance(done, Done), done
+    assert done.sentence == "%s now keeps its content height." % subject

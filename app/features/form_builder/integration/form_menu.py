@@ -45,7 +45,7 @@ def _qt_alive(obj: Any) -> bool:
 def _build(window: Any, ctx: Any) -> None:
     if not _qt_alive(window):
         return
-    menu = ctx.menu_bar.addMenu("Form")
+    menu = ctx.menu_bar.addMenu("F&orm")
     menu.setObjectName("formBuilder.menu")
     ctx.menus["formBuilder.menu"] = menu
     actions: Dict[str, Any] = {}

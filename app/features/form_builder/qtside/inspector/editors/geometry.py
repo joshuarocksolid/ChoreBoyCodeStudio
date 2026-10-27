@@ -18,6 +18,7 @@ from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -42,6 +43,7 @@ class SizeEditor:
         layout.setContentsMargins(0, 0, 0, 0)
         row, self._width, self._height = _pair(self._root, ("W", "H"), self._commit)
         layout.addWidget(row)
+        self._shown = ("", "")
 
     @property
     def widget(self) -> QWidget:
@@ -51,6 +53,11 @@ class SizeEditor:
         mark(self._root, value)
         size = _size(value)
         _set_pair(self._width, self._height, 0 if size is None else size.width, 0 if size is None else size.height)
+        self._shown = _texts(self._width, self._height)
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return _texts(self._width, self._height) != self._shown
 
     def _commit(self, _number: int) -> None:
         self._host.commit(SizeValue(self._width.value(), self._height.value()))
@@ -66,6 +73,7 @@ class RectEditor:
         size, self._width, self._height = _pair(self._root, ("W", "H"), self._commit)
         layout.addWidget(origin)
         layout.addWidget(size)
+        self._shown = ("", "", "", "")
 
     @property
     def widget(self) -> QWidget:
@@ -81,6 +89,11 @@ class RectEditor:
             0 if rect is None else rect.width,
             0 if rect is None else rect.height,
         )
+        self._shown = _texts(self._x, self._y, self._width, self._height)
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return _texts(self._x, self._y, self._width, self._height) != self._shown
 
     def _commit(self, _number: int) -> None:
         self._host.commit(RectValue(self._x.value(), self._y.value(), self._width.value(), self._height.value()))
@@ -103,6 +116,7 @@ class SizePolicyEditor:
         layout.addWidget(policies)
         stretch, self._horstretch, self._verstretch = _pair(self._root, ("H stretch", "V stretch"), self._commit)
         layout.addWidget(stretch)
+        self._shown = ("", "")
         self._horizontal.currentIndexChanged.connect(self._commit)
         self._vertical.currentIndexChanged.connect(self._commit)
 
@@ -123,6 +137,11 @@ class SizePolicyEditor:
             0 if policy is None else policy.horstretch,
             0 if policy is None else policy.verstretch,
         )
+        self._shown = _texts(self._horstretch, self._verstretch)
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return _texts(self._horstretch, self._verstretch) != self._shown
 
     def _commit(self, _value: object) -> None:
         self._host.commit(
@@ -142,18 +161,44 @@ def register(registrar: Registrar) -> None:
 def _pair(
     parent: QWidget, captions: Tuple[str, str], on_change: object
 ) -> Tuple[QWidget, QSpinBox, QSpinBox]:
+    """One spin per line. A horizontal pair clips a 4-digit value at 236 px."""
     row = QWidget(parent)
-    layout = QHBoxLayout(row)
+    layout = QVBoxLayout(row)
     layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
     boxes: List[QSpinBox] = []
     for caption in captions:
-        layout.addWidget(QLabel(caption, row))
-        box = QSpinBox(row)
+        line = QWidget(row)
+        line_layout = QHBoxLayout(line)
+        line_layout.setContentsMargins(0, 0, 0, 0)
+        line_layout.setSpacing(4)
+        label = QLabel(caption, line)
+        label.setMinimumWidth(0)
+        box = QSpinBox(line)
         box.setRange(-1000000, 1000000)
+        # Commit on Enter, focus-out or a step, not on every typed digit.
+        box.setKeyboardTracking(False)
+        box.setMinimumWidth(0)
+        box.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         box.valueChanged.connect(on_change)
-        layout.addWidget(box)
+        _show_four_digits(box)
+        line_layout.addWidget(label)
+        line_layout.addWidget(box, 1)
+        layout.addWidget(line)
         boxes.append(box)
     return row, boxes[0], boxes[1]
+
+
+def _show_four_digits(box: QSpinBox) -> None:
+    # The spin's own font, so the width follows the theme's point size.
+    metrics = box.fontMetrics()
+    text_width = int(metrics.horizontalAdvance("0000"))
+    current = int(metrics.horizontalAdvance(box.text() or "0"))
+    chrome = max(0, int(box.sizeHint().width()) - current)
+    box.setMinimumWidth(text_width + chrome + 6)
+
+def _texts(*boxes: QSpinBox) -> Tuple[str, ...]:
+    return tuple(box.text() for box in boxes)
 
 def _set_pair(first: QSpinBox, second: QSpinBox, left: int, right: int) -> None:
     first.blockSignals(True)
