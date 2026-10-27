@@ -19,6 +19,7 @@ from app.features.form_builder.engine.commands.catalog import (
     SetProperty,
 )
 from app.features.form_builder.engine.commands.placement import InContainer, InFormRow
+from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.connections import missing_connection_diagnostics
 from app.features.form_builder.engine.session import FormSession
@@ -157,7 +158,7 @@ def _pasted_top(doc) -> List[Tuple[str, str]]:
     return found
 
 
-def _paste(log, fragment: Fragment, anchor: Sequence[int]) -> None:
+def _paste(log, fragment: Fragment, anchor: Sequence[NodeId]) -> None:
     doc = log.document
     place = paste_placement(doc, anchor)
     outcome = log.execute(InsertFragment(place, fragment, auto_layout=paste_auto_layout(place), undo_label="Paste"))
