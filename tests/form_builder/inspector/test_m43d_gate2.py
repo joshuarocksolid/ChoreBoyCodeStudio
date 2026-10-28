@@ -1,0 +1,185 @@
+# pyright: reportAttributeAccessIssue=false
+"""Round-2 gate: Mixed in the text popover, popover titles, rich-text sizes
+under a large app font, and the flag-bit seam with several owners."""
+
+from __future__ import annotations
+
+import pytest
+
+from app.features.form_builder.engine.ui4.values import SetValue
+from app.features.form_builder.qtside.inspector.rich_html import Paragraph, Span, stable_html
+from app.qt.QtGui import QFont, QTextCursor
+from app.qt.QtTest import QTest
+from app.qt.QtWidgets import QApplication, QCheckBox, QLabel, QPlainTextEdit, QToolButton, QWidget
+from app.qt.QtCore import Qt
+from tests.form_builder.inspector.test_m43d_r2 import _FLAGS, _open, _sample_catalog
+from tests.form_builder.qtside.test_m43d_text import (
+    _CHROME,
+    _LIST,
+    _close,
+    _expand_all,
+    _pane,
+    _select,
+    _settle,
+)
+
+pytestmark = pytest.mark.unit
+
+_TIPS = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="QLabel" name="one">
+   <property name="toolTip"><string>First
+line</string></property>
+  </widget>
+  <widget class="QLabel" name="two">
+   <property name="toolTip"><string>Other
+text</string></property>
+  </widget>
+ </widget>
+</ui>
+"""
+
+
+def _rich_form(html: str) -> str:
+    escaped = html.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="QLabel" name="richLabel">
+   <property name="text"><string>%s</string></property>
+   <property name="textFormat"><enum>Qt::RichText</enum></property>
+  </widget>
+ </widget>
+</ui>
+""" % escaped
+
+
+def _popover(window: QWidget) -> QWidget:
+    popover = window.findChild(QWidget, "formBuilder.rowPopover")
+    assert popover is not None
+    return popover
+
+
+def _value(session, name: str, prop: str):
+    node = session.document.node(session.document.by_name(name)[0])
+    entry = node.prop(prop)
+    return None if entry is None else entry.value
+
+
+def test_mixed_text_popover_shows_mixed(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _TIPS)
+    try:
+        _select(session, "one", "two")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.toolTip")
+        assert row is not None
+        summary = row.findChild(QWidget, "formBuilder.summary")
+        assert summary is not None
+        assert summary.property("fbState") == "mixed"
+        summary.click()
+        qapp.processEvents()
+        edit = _popover(window).findChild(QPlainTextEdit)
+        assert edit is not None
+        assert edit.toPlainText() == ""
+        assert edit.placeholderText() == "Mixed"
+        assert edit.property("fbState") == "mixed"
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_popover_title_is_friendly_when_the_label_is_the_qt_name(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _LIST)
+    try:
+        _select(session, "Form")
+        _expand_all(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.tags")
+        assert row is not None
+        button = row.findChild(QWidget, "formBuilder.summary")
+        assert button is not None
+        button.click()
+        qapp.processEvents()
+        popover = _popover(window)
+        title = popover.findChild(QLabel, "formBuilder.popoverTitle")
+        caption = popover.findChild(QLabel, "formBuilder.popoverQtName")
+        assert title is not None and caption is not None
+        assert title.text() == "Tags"
+        assert caption.text() == "tags"
+        box = QCheckBox("Probe", popover)
+        box.ensurePolished()
+        assert box.palette().color(box.foregroundRole()).name().lower() == _CHROME.text.lower()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_rich_text_keeps_sizes_under_a_large_app_font(qapp: QApplication) -> None:
+    original = Paragraph((Span("Plain "), Span("Big", size="large"), Span(" tiny", size="small")))
+    html = stable_html((original,))
+    window, pane, session, realizer = _pane(qapp, _rich_form(html))
+    saved = QFont(qapp.font())
+    try:
+        font = QFont(saved)
+        font.setPointSize(13)
+        qapp.setFont(font)
+        _select(session, "richLabel")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.text")
+        assert row is not None
+        summary = row.findChild(QWidget, "formBuilder.summary")
+        assert summary is not None
+        summary.click()
+        qapp.processEvents()
+        popover = _popover(window)
+        formatted = next(
+            item for item in popover.findChildren(QWidget) if item.accessibleName() == "Text: formatted text"
+        )
+        cursor = formatted.textCursor()
+        cursor.movePosition(QTextCursor.Start)
+        formatted.setTextCursor(cursor)
+        QTest.keyClicks(formatted, "A")
+        QTest.keyClick(formatted, Qt.Key_Backspace)
+        qapp.processEvents()
+        assert _value(session, "richLabel", "text").text == html
+    finally:
+        qapp.setFont(saved)
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_flag_bit_several_owners_is_one_step_and_reset_keeps_other_bits(qapp: QApplication) -> None:
+    window, pane, session, realizer = _open(qapp, _FLAGS, _sample_catalog())
+    try:
+        _select(session, "dockA", "dockB")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.closable")
+        assert row is not None
+        box = row.findChild(QCheckBox)
+        assert box is not None
+        steps = len(session.log.entries())
+        box.click()
+        _settle(qapp, pane)
+        assert len(session.log.entries()) == steps + 1
+        for name in ("dockA", "dockB"):
+            keys = _value(session, name, "features").keys()
+            assert ("QDockWidget", "DockWidgetClosable") in keys
+            assert ("QDockWidget", "DockWidgetMovable") in keys
+        session.log.undo()
+        assert _value(session, "dockB", "features") == SetValue("QDockWidget::DockWidgetMovable")
+
+        _select(session, "dockA")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.closable")
+        assert row is not None
+        box = row.findChild(QCheckBox)
+        assert box is not None
+        box.setFocus()
+        qapp.processEvents()
+        reset = row.findChild(QToolButton, "formBuilder.rowReset")
+        assert reset is not None and reset.isVisible()
+        reset.click()
+        _settle(qapp, pane)
+        assert _value(session, "dockA", "features").keys() == (("QDockWidget", "DockWidgetMovable"),)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+

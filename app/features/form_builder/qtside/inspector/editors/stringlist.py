@@ -16,6 +16,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Registrar,
     RowValue,
     Written,
+    mark,
 )
 from app.features.form_builder.qtside.inspector.editors._list_editor import ListEditor, summarize
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
@@ -57,6 +58,7 @@ class StringListEditor:
         text = "Mixed" if isinstance(value, Mixed) else summarize(self._value.items)
         self._button.set_row_label(self._host.label)
         self._button.set_summary(text)
+        mark(self._button, value)
 
     def _open(self) -> None:
         if self._popover is not None and not self._popover.closed:

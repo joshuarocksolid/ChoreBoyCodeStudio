@@ -86,6 +86,19 @@ def _strong_focus() -> object:
     return getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus")
 
 
+def popover_title(row_label: str, qt_name: str) -> str:
+    """The popover's title. A row labelled by its Qt name (All properties,
+    custom properties) gets friendly words; the Qt name stays the caption."""
+    if not row_label or row_label != qt_name:
+        return row_label
+    words: List[str] = []
+    for index, ch in enumerate(row_label):
+        if index and ch.isupper() and not row_label[index - 1].isupper():
+            words.append(" ")
+        words.append(ch.lower() if index else ch.upper())
+    return "".join(words)
+
+
 def _elide_right() -> object:
     return getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
 
@@ -205,7 +218,7 @@ class RowPopover(QFrame):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(PADDING, PADDING, PADDING, PADDING)
         outer.setSpacing(8)
-        title = QLabel(row_label, self)
+        title = QLabel(popover_title(row_label, qt_name), self)
         title.setObjectName("formBuilder.popoverTitle")
         outer.addWidget(title)
         if qt_name:
@@ -355,6 +368,8 @@ class RowPopover(QFrame):
             "QDoubleSpinBox",
             "QFontComboBox",
             "QCheckBox",
+            "QPlainTextEdit",
+            "QPushButton#formBuilder\\.summary",
         )
         unset_sel = ", ".join('%s %s[fbState="unset"]' % (frame, kind) for kind in state_kinds)
         mixed_sel = ", ".join(
@@ -364,6 +379,7 @@ class RowPopover(QFrame):
             "%(frame)s { background: %(fill)s; border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
             "%(frame)s QScrollArea { background: %(input)s; border: none; }"
             "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
+            "%(frame)s QCheckBox { color: %(text)s; background: transparent; }"
             "%(frame)s QLabel#formBuilder\\.popoverTitle { color: %(text)s; font-size: 13px; font-weight: 600; }"
             "%(frame)s QLabel#formBuilder\\.popoverQtName { color: %(faint)s; font-size: 11px; font-weight: 400; }"
             "%(fields)s { background: %(input)s; color: %(text)s; border: 1px solid %(line)s; }"

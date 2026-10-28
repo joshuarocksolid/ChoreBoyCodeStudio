@@ -39,13 +39,21 @@ from app.features.form_builder.qtside.inspector.editors._translation import Tran
 from app.features.form_builder.qtside.inspector.rich_html import (
     looks_like_html,
     paragraphs_from_document,
+    size_name,
     stable_html,
     unsupported_formatting,
 )
 from app.features.form_builder.qtside.inspector.translatable import shows_translation
 from app.qt.QtCore import QEvent, QObject, QRect, QSize, Qt
 from app.qt.qt_compat import exec_qt
-from app.qt.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextListFormat
+from app.qt.QtGui import (
+    QColor,
+    QFont,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextCursor,
+    QTextListFormat,
+)
 from app.qt.QtWidgets import (
     QApplication,
     QHBoxLayout,
@@ -138,6 +146,7 @@ class StringEditor:
         self._host = host
         self._shown = ""
         self._value: Optional[StringValue] = None
+        self._state: RowValue = Unset(StringValue(""))
         self._popover: Optional[RowPopover] = None
         self._box = QWidget(parent)
         self._edit = QLineEdit(self._box)
@@ -166,6 +175,7 @@ class StringEditor:
 
     def show(self, value: RowValue) -> None:
         self._value = _string_of(value)
+        self._state = value
         self._shown = self._value.text if self._value is not None else _plain(value)
         multiline = self._multiline(self._shown)
         self._edit.setVisible(not multiline)
@@ -179,6 +189,7 @@ class StringEditor:
         self._edit.blockSignals(False)
         self._summary.set_row_label(self._host.label)
         self._summary.set_summary(_first_line(self._shown) if self._shown else _placeholder(value))
+        mark(self._summary, value)
         self._show_translation(value)
 
     def is_dirty(self) -> bool:
@@ -274,7 +285,9 @@ class StringEditor:
             large=self._rich(text),
         )
         self._popover = popover
-        _TextBody(popover, self._host, self._with_text(text), self._rich(text))
+        body = _TextBody(popover, self._host, self._with_text(text), self._rich(text))
+        if not text:
+            body.show_state(self._state)
         popover.open_popover()
 
     def _current_text(self) -> str:
@@ -386,13 +399,18 @@ class _TextBody:
         elif rich or looks_like_html(value.text):
             self._show_mode("formatted" if rich else "source")
             if looks_like_html(value.text):
-                self._formatted.setHtml(value.text)
+                self._load_html(value.text)
                 self._source.setPlainText(value.text)
             else:
                 self._formatted.setPlainText(value.text)
         else:
             self._show_mode("plain")
         self._ready = True
+
+    def show_state(self, value: RowValue) -> None:
+        """An empty field says why it is empty: "Mixed" in italic, or the default (UX-PED-007)."""
+        self._plain.setPlaceholderText(_placeholder(value))
+        mark(self._plain, value)
 
     def _tool(self, glyph: str, name: str) -> QPushButton:
         button = QPushButton(glyph)
@@ -426,7 +444,7 @@ class _TextBody:
                 self._source.setPlainText(current)
             elif mode == "formatted":
                 if looks_like_html(current):
-                    self._formatted.setHtml(current)
+                    self._load_html(current)
                 else:
                     self._formatted.setPlainText(current)
             self._ready = True
@@ -486,6 +504,36 @@ class _TextBody:
         self._bold.setChecked(bool(font.bold()) or int(font.weight()) >= 600)
         self._italic.setChecked(bool(font.italic()))
         self._underline.setChecked(bool(font.underline()))
+
+    def _load_html(self, text: str) -> None:
+        """Show file HTML at the app font size.
+
+        The file stores 7 / 9 / 14 pt. Shown as is under a larger app font,
+        9 pt would read back as small and 14 pt as normal, so each fragment
+        is moved to the display size of its file size before editing.
+        """
+        self._formatted.setHtml(text)
+        document = self._formatted.document()
+        found = []
+        block = document.begin()
+        while block.isValid():
+            iterator = block.begin()
+            while not iterator.atEnd():
+                fragment = iterator.fragment()
+                if fragment.isValid():
+                    point = int(round(fragment.charFormat().fontPointSize()))
+                    found.append((fragment.position(), fragment.length(), size_name(point)))
+                iterator += 1
+            block = block.next()
+        cursor = QTextCursor(document)
+        keep = getattr(getattr(QTextCursor, "MoveMode", QTextCursor), "KeepAnchor")
+        for start, length, name in found:
+            fmt = QTextCharFormat()
+            fmt.setFontPointSize(self._display_point(name))
+            cursor.setPosition(start)
+            cursor.setPosition(start + length, keep)
+            cursor.mergeCharFormat(fmt)
+        document.setModified(False)
 
     def _display_point(self, name: str) -> int:
         if name == "small":
