@@ -5,11 +5,15 @@ their row's ``SummaryButton``. Nothing here knows a property; the editor writes
 through ``host.commit(value, session=popover.session)`` or ``popover.session.run``.
 
 Session rules (see ``_services``): the popover's session is opened when the
-popover is built. ``done()`` (Done, Enter in a one-line field, a click outside,
-a selection change, a structural command) closes it and keeps the writes.
-``revert()`` (Esc) undoes everything the session wrote, so the document and the
-undo stack are as they were before the popover opened. Ctrl+Z outside a text
-field closes it, keeps the writes and undoes them as one step.
+popover is built. A keep close (Done, Enter in a one-line field or a spin box,
+a click outside, a selection change, a structural command, a tab switch, a
+pane hide, a window resize) moves focus to the summary first, so a field's
+focus-out commit joins the session, then closes the session. ``revert()``
+(Esc) does the same flush and then rolls the session back, so the document
+and the undo stack are as they were before the popover opened. Ctrl+Z
+(``QKeySequence.StandardKey.Undo``, not Ctrl+Shift+Z) outside a text field
+keeps, then undoes that one step. Enter inside a list (or a widget that sets
+``fbEnterStays``) does not close. Tab inside a multi-line editor does not cycle.
 
 Focus: while open, focus stays in the popover; when it closes, focus goes to
 the summary button, whatever closed it.
@@ -22,7 +26,11 @@ from typing import TYPE_CHECKING, Callable, List, Optional
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
 from app.qt.QtGui import QColor, QFontMetrics, QKeySequence
 from app.qt.QtWidgets import (
+    QAbstractItemView,
+    QAbstractSlider,
+    QAbstractSpinBox,
     QApplication,
+    QComboBox,
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
@@ -30,12 +38,11 @@ from app.qt.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
-    QAbstractSpinBox,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import wrapper_is_valid
+from app.qt.qt_compat import event_global_pos, wrapper_is_valid
 
 if TYPE_CHECKING:
     from app.features.form_builder.qtside.inspector.api import EditorHost, EditSession
@@ -67,10 +74,6 @@ def _mouse(name: str) -> object:
 
 def _event(name: str) -> object:
     return getattr(getattr(QEvent, "Type", QEvent), name)
-
-
-def _window_flag_popup() -> object:
-    return getattr(getattr(Qt, "WindowType", Qt), "Popup")
 
 
 def _no_focus() -> object:
@@ -163,6 +166,8 @@ class _Guard(QObject):
 
 
 _TEXT_KINDS = (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox)
+_MULTILINE = (QPlainTextEdit, QTextEdit)
+_ENTER_COMMITS = (QLineEdit, QAbstractSpinBox)
 
 
 class RowPopover(QFrame):
@@ -191,6 +196,7 @@ class RowPopover(QFrame):
         self._guard = _Guard(self)
         self._subscription: Optional[Callable[[], None]] = None
         self._reset_callback: Optional[Callable[[], None]] = None
+        self._window_size: Optional[object] = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(PADDING, PADDING, PADDING, PADDING)
@@ -261,11 +267,22 @@ class RowPopover(QFrame):
         self.place()
         self.show()
         self.raise_()
+        self._guard_wheels()
+        window = self.window()
+        self._window_size = window.size() if window is not None else None
         QApplication.instance().installEventFilter(self._guard)  # type: ignore[union-attr]
         self._subscription = self._session.watch(self.close_for_structure)
         first = self.focusables()
         if first:
             first[0].setFocus()
+
+    def _guard_wheels(self) -> None:
+        """UX-PED-005 for fields the popover owns. The row's guard does not cover them.
+
+        The same filter lives on the row. This copy stays here because an editor
+        module may import ``inspector.api`` and not ``_properties``.
+        """
+        _install_wheel_guard(self._body)
 
     def place(self) -> None:
         window = self.parentWidget()
@@ -304,29 +321,54 @@ class RowPopover(QFrame):
 
     def _apply_style(self) -> None:
         tokens = self._chrome.fb
-        border = 2 if self._chrome.is_high_contrast else 1
+        frame_px = 2 if self._chrome.is_high_contrast else 1
         edge = self._chrome.text if self._chrome.is_high_contrast else tokens.popup_border
+        focus = self._chrome.focus_width if self._chrome.focus_width > 0 else 1
+        # The popover is parented to the window, so it does not inherit the
+        # inspector sheet. The field rules are the pane's, scoped under the
+        # frame. The Qt-name rule names both the frame and the label: a bare
+        # ``QLabel#id`` loses to ``QFrame#id QLabel`` and the caption stays
+        # body colour instead of faint.
+        frame = "QFrame#formBuilder\\.rowPopover"
+        fields = (
+            "QLineEdit",
+            "QSpinBox",
+            "QDoubleSpinBox",
+            "QComboBox",
+            "QPlainTextEdit",
+            "QKeySequenceEdit",
+            "QListWidget",
+            "QFontComboBox",
+        )
+        field_sel = ", ".join("%s %s" % (frame, kind) for kind in fields)
+        focus_sel = ", ".join("%s %s:focus" % (frame, kind) for kind in fields)
         self.setStyleSheet(
-            "QFrame#formBuilder\\.rowPopover { background: %(fill)s; border: %(border)dpx solid %(edge)s;"
-            " border-radius: 6px; }"
-            "QFrame#formBuilder\\.rowPopover QLabel { color: %(text)s; background: transparent; border: none; }"
-            "QLabel#formBuilder\\.popoverTitle { font-weight: 600; }"
-            "QLabel#formBuilder\\.popoverQtName { color: %(faint)s; }"
-            "QPushButton { color: %(text)s; background: %(input)s; border: 1px solid %(border)s;"
+            "%(frame)s { background: %(fill)s; border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
+            "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
+            "%(frame)s QLabel#formBuilder\\.popoverTitle { color: %(text)s; font-size: 13px; font-weight: 600; }"
+            "%(frame)s QLabel#formBuilder\\.popoverQtName { color: %(faint)s; font-size: 11px; font-weight: 400; }"
+            "%(fields)s { background: %(input)s; color: %(text)s; border: 1px solid %(line)s; }"
+            "%(focused)s { border: %(focus)dpx solid %(accent)s; }"
+            "%(frame)s QPushButton { color: %(text)s; background: %(input)s; border: 1px solid %(line)s;"
             " border-radius: 4px; padding: 6px 10px; }"
-            "QPushButton:hover { background: %(hover)s; }"
-            "QPushButton#formBuilder\\.popoverDone { background: %(accent)s; color: %(on_accent)s;"
+            "%(frame)s QPushButton:hover { background: %(hover)s; }"
+            "%(frame)s QPushButton#formBuilder\\.popoverDone { background: %(accent)s; color: %(on_accent)s;"
             " border: none; font-weight: 600; }"
             % {
+                "frame": frame,
+                "fields": field_sel,
+                "focused": focus_sel,
                 "fill": tokens.popup,
-                "border": border,
+                "frame_px": frame_px,
                 "edge": edge,
                 "text": self._chrome.text,
                 "faint": self._chrome.faint,
                 "input": self._chrome.input,
+                "line": self._chrome.border,
                 "hover": self._chrome.row_hover,
                 "accent": self._chrome.accent,
                 "on_accent": self._chrome.on_accent,
+                "focus": focus,
             }
         )
         self.apply_chrome_shadow()
@@ -335,20 +377,17 @@ class RowPopover(QFrame):
 
     def done(self, *_args: object) -> None:
         """Close and keep the writes. Focus returns to the summary button."""
-        self._close(restore_focus=True)
+        self._close(restore_focus=True, keep=True)
 
     def revert(self) -> None:
         """Esc: undo everything this popover wrote, then close."""
-        if self._closed:
-            return
-        self._session.revert()
-        self._close(restore_focus=True)
+        self._close(restore_focus=True, keep=False)
 
     def undo_and_close(self) -> None:
         """Ctrl+Z outside a text field: close, keep, then undo the session as one step."""
         if self._closed:
             return
-        self._close(restore_focus=True)
+        self._close(restore_focus=True, keep=True)
         self._session.undo()
 
     def _on_reset(self) -> None:
@@ -356,19 +395,21 @@ class RowPopover(QFrame):
         if callback is None:
             return
         callback()
-        self._close(restore_focus=True)
+        self._close(restore_focus=True, keep=True)
 
-    def _close(self, *, restore_focus: bool) -> None:
+    def _close(self, *, restore_focus: bool, keep: bool) -> None:
         if self._closed:
             return
         self._closed = True
-        app = QApplication.instance()
-        if app is not None:
-            app.removeEventFilter(self._guard)
-        if self._subscription is not None:
-            self._subscription()
-            self._subscription = None
-        self._session.close()
+        self._unwatch()
+        # Focus leaves the field while the session is still open, so
+        # editingFinished commits into this step. A keep close then ends the
+        # session. Esc rolls that step back, pending text included.
+        self._flush_focus()
+        if keep:
+            self._session.close()
+        else:
+            self._session.revert()
         self.hide()
         if restore_focus:
             self._restore_focus()
@@ -377,6 +418,23 @@ class RowPopover(QFrame):
         if wrapper_is_valid(self):
             self.deleteLater()
 
+    def _flush_focus(self) -> None:
+        anchor = self._anchor
+        if anchor is not None and wrapper_is_valid(anchor):
+            anchor.setFocus()
+            return
+        focus = QApplication.focusWidget()
+        if isinstance(focus, QWidget) and (focus is self or self.isAncestorOf(focus)):
+            focus.clearFocus()
+
+    def _unwatch(self) -> None:
+        app = QApplication.instance()
+        if app is not None:
+            app.removeEventFilter(self._guard)
+        if self._subscription is not None:
+            self._subscription()
+            self._subscription = None
+
     def _restore_focus(self) -> None:
         anchor = self._anchor
         if anchor is not None and wrapper_is_valid(anchor) and anchor.isVisible():
@@ -384,7 +442,7 @@ class RowPopover(QFrame):
 
     def close_for_structure(self, *_args: object) -> None:
         """A selection change or a structural command closes the popover and keeps the writes."""
-        self._close(restore_focus=False)
+        self._close(restore_focus=False, keep=True)
 
     # -- events ----------------------------------------------------------
 
@@ -395,14 +453,20 @@ class RowPopover(QFrame):
         if kind == _event("KeyPress"):
             return self._key(event)
         if kind == _event("ShortcutOverride"):
-            key = event.key()  # type: ignore[attr-defined]
-            mods = event.modifiers()  # type: ignore[attr-defined]
-            if key == _key("Key_Z") and bool(mods & _modifier("ControlModifier")) and not self._in_text():
-                event.accept()  # type: ignore[attr-defined]
-                return True
-            return False
+            return self._shortcut(event)
         if kind == _event("MouseButtonPress") and isinstance(watched, QWidget):
-            return self._outside_press(watched)
+            return self._outside_press(watched, event)
+        if kind == _event("Wheel") and isinstance(watched, QWidget):
+            return self._wheel(watched)
+        if kind in (_event("Hide"), _event("Destroy")) and isinstance(watched, QWidget):
+            return self._lifetime(watched)
+        if kind == _event("Resize") and watched is self.window():
+            size = watched.size()  # type: ignore[attr-defined]
+            if size == self._window_size:
+                return False
+            self._window_size = size
+            self.done()
+            return False
         return False
 
     def _in_text(self) -> bool:
@@ -413,6 +477,23 @@ class RowPopover(QFrame):
         focus = QApplication.focusWidget()
         return focus is not None and (focus is self or self.isAncestorOf(focus))
 
+    def _is_undo(self, event: QEvent) -> bool:
+        matches = getattr(event, "matches", None)
+        if not callable(matches):
+            return False
+        return bool(matches(getattr(QKeySequence.StandardKey, "Undo")))
+
+    def _enter_stays(self) -> bool:
+        """A list editor uses Enter to add a row (UX-CONT-019). It must not close the popover."""
+        widget = QApplication.focusWidget()
+        while isinstance(widget, QWidget):
+            if isinstance(widget, QAbstractItemView) or bool(widget.property("fbEnterStays")):
+                return True
+            if widget is self:
+                return False
+            widget = widget.parentWidget()
+        return False
+
     def _key(self, event: QEvent) -> bool:
         if not self._focus_inside():
             return False
@@ -422,16 +503,68 @@ class RowPopover(QFrame):
             self.revert()
             return True
         if key in (_key("Key_Tab"), _key("Key_Backtab")):
+            if bool(mods & _modifier("ControlModifier")) or isinstance(QApplication.focusWidget(), _MULTILINE):
+                return False
             self._cycle(backward=key == _key("Key_Backtab") or bool(mods & _modifier("ShiftModifier")))
             return True
         if key in (_key("Key_Return"), _key("Key_Enter")):
             # The field handles Enter first (its editor commits), then the popover closes.
-            if isinstance(QApplication.focusWidget(), QLineEdit):
+            if not self._enter_stays() and isinstance(QApplication.focusWidget(), _ENTER_COMMITS):
                 QTimer.singleShot(0, self._done_later)
             return False
-        if key == _key("Key_Z") and bool(mods & _modifier("ControlModifier")) and not self._in_text():
+        if self._is_undo(event) and not self._in_text():
             self.undo_and_close()
             return True
+        return False
+
+    def _shortcut(self, event: QEvent) -> bool:
+        """A window-level Esc, Tab or Return shortcut must not win while focus is in here."""
+        if not self._focus_inside():
+            return False
+        key = event.key()  # type: ignore[attr-defined]
+        mods = event.modifiers()  # type: ignore[attr-defined]
+        accept = False
+        if self._is_undo(event) and not self._in_text():
+            accept = True
+        elif key == _key("Key_Escape"):
+            accept = True
+        elif key in (_key("Key_Tab"), _key("Key_Backtab")):
+            accept = not bool(mods & _modifier("ControlModifier")) and not isinstance(
+                QApplication.focusWidget(), _MULTILINE
+            )
+        elif key in (_key("Key_Return"), _key("Key_Enter")):
+            accept = not self._enter_stays()
+        if not accept:
+            return False
+        event.accept()  # type: ignore[attr-defined]
+        return True
+
+    def _wheel(self, target: QWidget) -> bool:
+        """Scrolling the inspector (or anything else in the window) closes and keeps."""
+        if target is self or self.isAncestorOf(target):
+            return False
+        if target.window() is not self.window():
+            return False
+        self.done()
+        return False
+
+    def _lifetime(self, watched: QWidget) -> bool:
+        """Hide or destroy of the row or an ancestor (a tab switch, a pane hide) closes and keeps."""
+        if watched is self or self.isAncestorOf(watched):
+            return False
+        if not self._on_row_chain(watched):
+            return False
+        self.done()
+        return False
+
+    def _on_row_chain(self, widget: QWidget) -> bool:
+        cursor: Optional[QWidget] = self._row if wrapper_is_valid(self._row) else None
+        while cursor is not None and wrapper_is_valid(cursor):
+            if cursor is widget:
+                return True
+            if cursor.isWindow():
+                return False
+            cursor = cursor.parentWidget()
         return False
 
     def _done_later(self) -> None:
@@ -447,21 +580,51 @@ class RowPopover(QFrame):
         step = -1 if backward else 1
         stops[(index + step) % len(stops)].setFocus()
 
-    def _outside_press(self, target: QWidget) -> bool:
-        if self._contains(target):
+    def _outside_press(self, target: QWidget, event: QEvent) -> bool:
+        # A combo list and a child dialog are their own windows. A modal file
+        # picker is activeModalWidget. Both count as inside (M4.3c).
+        if QApplication.activeModalWidget() is not None:
             return False
-        if target.windowFlags() & _window_flag_popup():  # a combo list or menu the popover opened
+        if target.window() is not self.window():
+            return False
+        if self.rect().contains(self.mapFromGlobal(event_global_pos(event))):
             return False
         anchor = self._anchor
-        if anchor is not None and wrapper_is_valid(anchor) and (target is anchor or anchor.isAncestorOf(target)):
-            # The summary toggles: close here and swallow the press, so the click does not reopen it.
-            self.done()
-            return True
+        swallow = (
+            anchor is not None
+            and wrapper_is_valid(anchor)
+            and (target is anchor or anchor.isAncestorOf(target))
+        )
         self.done()
-        return False
+        return swallow
 
-    def _contains(self, target: QWidget) -> bool:
-        return target is self or self.isAncestorOf(target)
+
+_WHEEL_EVENT = getattr(getattr(QEvent, "Type", QEvent), "Wheel")
+_WHEEL_KINDS = (QAbstractSpinBox, QComboBox, QAbstractSlider)
+
+
+class _WheelGuard(QObject):
+    """A spin box, combo or slider ignores the wheel until it has focus."""
+
+    def __init__(self, target: QWidget) -> None:
+        super().__init__(target)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() != _WHEEL_EVENT:
+            return False
+        focus = QApplication.focusWidget()
+        if focus is not None and isinstance(watched, QWidget) and (
+            focus is watched or watched.isAncestorOf(focus)
+        ):
+            return False
+        event.ignore()
+        return True
+
+
+def _install_wheel_guard(root: QWidget) -> None:
+    for target in [root, *root.findChildren(QWidget)]:
+        if isinstance(target, _WHEEL_KINDS):
+            target.installEventFilter(_WheelGuard(target))
 
 
 def _width_for(row_width: int, large: bool) -> int:
