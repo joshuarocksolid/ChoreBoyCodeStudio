@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, Mapping, NewType, Optional, Protocol, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Literal, Mapping, NewType, Optional, Protocol, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.ids import NodeId
@@ -214,6 +214,8 @@ class EditSession(Protocol):
     def revert(self) -> bool: ...
 
     def close(self) -> None: ...
+
+    def watch(self, on_change: Callable[[], None]) -> Callable[[], None]: ...
 
 class EditorHost(Protocol):
     def commit(self, value: Value, session: Optional[EditSession] = None) -> None:

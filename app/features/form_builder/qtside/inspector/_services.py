@@ -27,7 +27,7 @@ from __future__ import annotations
 import math
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Dict, Iterator, Optional, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Dict, Iterator, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command, CommandRejected
 from app.features.form_builder.engine.ids import NodeId
@@ -40,6 +40,8 @@ if TYPE_CHECKING:
 
 #: A session's writes merge whatever the gap between them. Only the token ends a merge.
 SESSION_WINDOW_S = math.inf
+#: Listeners that close a popover run after the views have painted.
+_WATCH_PRIORITY = 1000
 
 @dataclass(frozen=True)
 class Rejected:
@@ -206,6 +208,25 @@ class EditSession:
     def run(self, commands: Sequence[Command]) -> Union[Tuple[object, ...], Rejected, Dropped]:
         """Run ``commands`` as part of this session's one undo step. Returns each command's result."""
         return self._services.run_in(self, commands)
+
+    def watch(self, on_change: Callable[[], None]) -> Callable[[], None]:
+        """Call ``on_change`` on a selection change or a structural step. Returns the stop function."""
+        session = self._services.session
+
+        def structural(change_set: object) -> None:
+            if getattr(change_set, "added", ()) or getattr(change_set, "removed", ()) or getattr(
+                change_set, "structure_dirty", ()
+            ):
+                on_change()
+
+        subscription = session.log.subscribe(structural, priority=_WATCH_PRIORITY)
+        stop_selection = session.selection.subscribe(lambda _change: on_change())
+
+        def stop() -> None:
+            subscription.close()
+            stop_selection()
+
+        return stop
 
     def has_step(self) -> bool:
         """True when this session's step is the top undo entry."""
