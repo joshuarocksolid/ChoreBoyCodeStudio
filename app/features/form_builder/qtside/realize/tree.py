@@ -13,6 +13,7 @@ tree is always empty (``slots.py``).
 from __future__ import annotations
 
 import importlib
+from functools import partial
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from app.qt import QtGui, QtWidgets
@@ -61,6 +62,7 @@ from app.features.form_builder.engine.ui4.nodes import (
 from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.forced import CANVAS_OVERRIDES
+from app.features.form_builder.qtside.realize.stand_in import StandInWidget, stand_in_name
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
@@ -170,7 +172,12 @@ class _Structure(_LayoutSlots):
         return cls
 
     def _construct(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:
-        cls = self._widget_type(node.class_name)
+        friendly = stand_in_name(self._qt_class_name(node.class_name))
+        if friendly is not None:
+            # Never build these in the editor: no GL context, no QML engine (UX-CONT-017).
+            cls: type = partial(StandInWidget, friendly=friendly)  # type: ignore[assignment]
+        else:
+            cls = self._widget_type(node.class_name)
         try:
             widget = cls(parent)
         except (TypeError, RuntimeError) as exc:

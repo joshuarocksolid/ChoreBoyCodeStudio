@@ -27,6 +27,12 @@ class OverlayPalette:
     tab: str
     problem: str
     chip_text: str
+    #: Stand-ins (UX-CONT-017): fill, dashed border, and centred text.
+    stand_in_fill: str
+    stand_in_line: str
+    stand_in_text: str
+    #: Dock-side drop bands (UX-CONT-012): the fill, with a ``select`` edge.
+    dock_band: str
     #: High contrast raises every stroke to 2 px.
     min_stroke: float
 
@@ -42,6 +48,10 @@ OVERLAY = OverlayPalette(
     tab="#B45309FF",
     problem="#C81E1EFF",
     chip_text="#FFFFFFFF",
+    stand_in_fill="#F4F4F4FF",
+    stand_in_line="#8A8A8AFF",
+    stand_in_text="#3C3C3CFF",
+    dock_band="#2F5BEA1A",
     min_stroke=1.0,
 )
 
@@ -56,6 +66,10 @@ OVERLAY_HIGH_CONTRAST = OverlayPalette(
     tab="#7A3E00FF",
     problem="#9C0000FF",
     chip_text="#FFFFFFFF",
+    stand_in_fill="#FFFFFFFF",
+    stand_in_line="#000000FF",
+    stand_in_text="#000000FF",
+    dock_band="#0000C026",
     min_stroke=2.0,
 )
 
