@@ -383,6 +383,7 @@ class RowPopover(QFrame):
             "%(frame)s QScrollArea { background: %(input)s; border: none; }"
             "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
             "%(frame)s QCheckBox { color: %(text)s; background: transparent; }"
+            "%(frame)s QLabel#formBuilder\\.rowError { color: %(error)s; }"
             "%(frame)s QLabel#formBuilder\\.popoverTitle { color: %(text)s; font-size: 13px; font-weight: 600; }"
             "%(frame)s QLabel#formBuilder\\.popoverQtName { color: %(faint)s; font-size: 11px; font-weight: 400; }"
             "%(fields)s { background: %(input)s; color: %(text)s; border: 1px solid %(line)s; }"
@@ -407,6 +408,7 @@ class RowPopover(QFrame):
                 "edge": edge,
                 "text": self._chrome.text,
                 "faint": self._chrome.faint,
+                "error": self._chrome.error,
                 "input": self._chrome.input,
                 "line": self._chrome.border,
                 "hover": self._chrome.row_hover,

@@ -235,7 +235,9 @@ class PropertiesPage(QWidget):
     def request_rebuild(self) -> None:
         self._on_search()
 
-    def apply_colors(self, panel: str, text: str, faint: str, hover: str = "", caption: str = "") -> None:
+    def apply_colors(
+        self, panel: str, text: str, faint: str, hover: str = "", caption: str = "", error: str = ""
+    ) -> None:
         """The scroll viewport does not inherit the inspector stylesheet."""
         self.setStyleSheet(
             "QWidget#formBuilder\\.inspectorBody { background: %s; color: %s; }"
@@ -272,6 +274,9 @@ class PropertiesPage(QWidget):
             "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
             "QLabel#formBuilder\\.layout\\.followsWindow { color: %s; background: transparent; }"
             "QToolButton[fbSegment=\"true\"]:disabled { background: %s; color: %s; border: none; }"
+            # This sheet's bare QLabel rule is nearer than the pane's, so the
+            # refusal colour (UX-PED-008) is repeated here.
+            "QLabel#formBuilder\\.rowError, QLabel#formBuilder\\.inspectorNameError { color: %s; }"
             % (
                 panel,
                 text,
@@ -286,6 +291,7 @@ class PropertiesPage(QWidget):
                 caption or text,
                 panel,
                 faint,
+                error or text,
             )
         )
 
@@ -1403,9 +1409,13 @@ class _Row(QWidget):
                 self._caption.clear()
             return
         caption = self._caption_label()
-        caption.setObjectName(
-            "formBuilder.rowError" if error else "formBuilder.rowNote"
-        )
+        name = "formBuilder.rowError" if error else "formBuilder.rowNote"
+        if caption.objectName() != name:
+            # A new object name does not restyle the label by itself.
+            caption.setObjectName(name)
+            style = caption.style()
+            style.unpolish(caption)
+            style.polish(caption)
         caption.setText(text)
         caption.show()
 

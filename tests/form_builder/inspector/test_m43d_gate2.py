@@ -10,11 +10,12 @@ from app.features.form_builder.engine.ui4.values import SetValue
 from app.features.form_builder.qtside.inspector.rich_html import Paragraph, Span, stable_html
 from app.qt.QtGui import QFont, QTextCursor
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QPlainTextEdit, QToolButton, QWidget
+from app.qt.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QLineEdit, QPlainTextEdit, QToolButton, QWidget
 from app.qt.QtCore import Qt
 from tests.form_builder.inspector.test_m43d_r2 import _FLAGS, _open, _sample_catalog
 from tests.form_builder.qtside.test_m43d_text import (
     _CHROME,
+    _LABEL,
     _LIST,
     _close,
     _expand_all,
@@ -252,5 +253,44 @@ def test_rich_text_bar_lights_only_the_state_of_the_cursor(qapp: QApplication) -
         qapp.processEvents()
         assert button("Bulleted list").isChecked()
         assert not button("Numbered list").isChecked()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def _foreground(label: QLabel) -> str:
+    label.ensurePolished()
+    return label.palette().color(label.foregroundRole()).name().lower()
+
+
+def test_refusal_captions_take_the_error_colour(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _LABEL)
+    try:
+        _select(session, "titleLabel")
+        _expand_all(qapp, pane)
+        add = pane.findChild(QWidget, "formBuilder.addCustomProperty")
+        assert add is not None
+        add.click()
+        qapp.processEvents()
+        form = pane.findChild(QWidget, "formBuilder.customProperties")
+        assert form is not None
+        name = form.findChild(QLineEdit)
+        assert name is not None
+        name.setText("2nd")
+        QTest.keyClick(name, Qt.Key_Return)
+        qapp.processEvents()
+        error = form.findChild(QLabel, "formBuilder.rowError")
+        assert error is not None and error.isVisible()
+        assert _foreground(error) == _CHROME.error.lower()
+
+        row = pane.findChild(QWidget, "formBuilder.row.buddy")
+        assert row is not None
+        edit = row.findChild(QLineEdit)
+        assert edit is not None
+        edit.setText("missing")
+        edit.editingFinished.emit()
+        qapp.processEvents()
+        refusals = [label for label in row.findChildren(QLabel, "formBuilder.rowError") if label.isVisible()]
+        assert refusals
+        assert all(_foreground(label) == _CHROME.error.lower() for label in refusals)
     finally:
         _close(window, pane, realizer, session, qapp)

@@ -159,7 +159,7 @@ class InspectorPane(QWidget):
         self._services.set_chrome(chrome)
         self.setStyleSheet(_stylesheet(chrome))
         self.properties.apply_colors(
-            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted
+            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted, error=chrome.error
         )
         self.properties.set_match_color(chrome.search_match_bg)
         self.behavior.apply_colors(chrome.panel, chrome.text)
