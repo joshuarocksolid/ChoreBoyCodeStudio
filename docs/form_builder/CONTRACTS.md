@@ -103,7 +103,8 @@ Registries discover modules in a package in sorted module-name order. Each modul
 | Diagnostic codes | `engine/diagnostic_codes/` | M1.0 seeds `fb0xx.py`, `fb5xx.py`, `fb6xx.py`, `fb9xx.py` |
 | Codegen expanders | `engine/codegen/expanders/` | M1.3 |
 | Property editors | `qtside/inspector/editors/` | M3.1b |
-| Widget catalog entries | `qtside/insert/catalog/` | M4.1 |
+| Widget catalog entries | `qtside/insert/catalog/` (Qt-free data) | M4.1 |
+| Context-menu contributors | `integration/menu_ext/` (groups "first", "structure", "last"; UX-CONT-020) | M4.0s |
 | Tab-content providers | registered at install (shell registry) | M2.0 |
 
 ---
@@ -274,7 +275,9 @@ Owner WP in brackets. The stub `commands/catalog.py` has the fields and full sem
 | `SetLayoutStretch` [M1.2] | layout, field, value | Comma-list text | — | `("layout_stretch", layout, field)` |
 | `SetGeometry` [M1.2] | id, rect | Free widgets and resizing the root page edge | — | `("geometry", id)` |
 | `MovePage` [M4.2] | container, from, to | Keeps the current page current | page | — |
-| `SetItems` [M4.4] | widget, items, rows, columns | Replaces the whole item list | — | — |
+| `InsertPage` [M3.2, M4.2] | container, index, fragment or existing | Writes the page title where the container's loader reads it: tab `title` attribute, toolbox `label` attribute, wizard `title` property on a `QWizardPage`, MDI `windowTitle` property, stacked none (UX-CONT-001). New page gets a vertical layout. Keeps `currentIndex` on the same page | new page | — |
+| `DeletePage` [M4.2] | container, index | Deletes the page and its subtree with DeleteNodes reference rules; keeps `currentIndex` on the same page, else clamps | next page, else previous, else container | — |
+| `SetItems` [M4.4] | widget, items, rows, columns, merge_token | Replaces the whole item list. One item-editor session merges into one entry (UX-ITEM-007) | — | `("set_items", widget)` with the session token |
 | `CreateAction`, `AddActionRef`, `CreateMenu` [M5.1] | spec/placement/name/title | "Type here", dragging an action onto a toolbar (pain 17) | new node | — |
 | `AddConnection`, `EditConnection`, `MoveConnection` [M6.1] | fields | Signatures are normalised the way Designer writes them | connection | — |
 | `SetTabStops` [M5.6] | names or None | None removes the element | — | — |
