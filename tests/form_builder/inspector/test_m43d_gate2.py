@@ -10,7 +10,7 @@ from app.features.form_builder.engine.ui4.values import SetValue
 from app.features.form_builder.qtside.inspector.rich_html import Paragraph, Span, stable_html
 from app.qt.QtGui import QFont, QTextCursor
 from app.qt.QtTest import QTest
-from app.qt.QtWidgets import QApplication, QCheckBox, QLabel, QPlainTextEdit, QToolButton, QWidget
+from app.qt.QtWidgets import QApplication, QCheckBox, QComboBox, QLabel, QPlainTextEdit, QToolButton, QWidget
 from app.qt.QtCore import Qt
 from tests.form_builder.inspector.test_m43d_r2 import _FLAGS, _open, _sample_catalog
 from tests.form_builder.qtside.test_m43d_text import (
@@ -183,3 +183,27 @@ def test_flag_bit_several_owners_is_one_step_and_reset_keeps_other_bits(qapp: QA
     finally:
         _close(window, pane, realizer, session, qapp)
 
+
+
+def test_choice_dropdown_says_mixed_when_owners_differ(qapp: QApplication) -> None:
+    window, pane, session, realizer = _open(qapp, _FLAGS, _sample_catalog())
+    try:
+        _select(session, "dockA")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.swatch")
+        assert row is not None
+        combo = row.findChild(QComboBox)
+        assert combo is not None
+        combo.setCurrentIndex(0)
+        _settle(qapp, pane)
+        _select(session, "dockA", "dockB")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.swatch")
+        assert row is not None
+        combo = row.findChild(QComboBox)
+        assert combo is not None
+        assert combo.currentIndex() == -1
+        assert combo.placeholderText() == "Mixed"
+        assert combo.property("fbState") == "mixed"
+    finally:
+        _close(window, pane, realizer, session, qapp)

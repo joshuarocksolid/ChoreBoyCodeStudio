@@ -155,14 +155,19 @@ class EnumEditor:
             combo = self._box
             assert isinstance(combo, QComboBox)
             mark(combo, value)
-            written = value.value if isinstance(value, Written) else None
+            # Written, or an Unset row's default (faint by ``mark``).
+            current = _payload(value)
             index = -1
-            for position, choice in enumerate(self._choices):
-                if semantic_equal(choice.value, written):
-                    index = position
-                    break
+            if current is not None:
+                for position, choice in enumerate(self._choices):
+                    if semantic_equal(choice.value, current):
+                        index = position
+                        break
             combo.blockSignals(True)
             combo.setCurrentIndex(index)
+            combo.setPlaceholderText(
+                MIXED_TEXT if isinstance(value, Mixed) else ("" if index >= 0 else NOT_SET_TEXT)
+            )
             combo.blockSignals(False)
             return
         text = _enum_text(value)
