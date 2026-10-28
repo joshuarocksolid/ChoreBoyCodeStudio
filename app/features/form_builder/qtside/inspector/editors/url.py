@@ -69,14 +69,17 @@ class UrlEditor:
         self._warning.setObjectName("formBuilder.rowWarning")
         self._warning.setWordWrap(True)
         self._warning.hide()
-        self._translation = TranslationDisclosure(self._box)
+        self._translation = TranslationDisclosure()
         self._translation.set_on_change(self._change_attr)
         layout = QVBoxLayout(self._box)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         layout.addWidget(self._edit)
         layout.addWidget(self._warning)
-        layout.addWidget(self._translation)
+
+    @property
+    def caption_widget(self) -> QWidget:
+        return self._translation
 
     @property
     def widget(self) -> QWidget:
@@ -99,7 +102,6 @@ class UrlEditor:
         self._edit.blockSignals(False)
         self._paint_warning(self._shown)
         if shows_translation(self._host.qt_name, UrlValue.ELEMENT) and isinstance(value, Written):
-            names = getattr(self._host, "qt_names", None)
             self._translation.show()
             inner = self._value.string
             self._translation.set_values(
@@ -107,7 +109,7 @@ class UrlEditor:
                 comment=inner.comment,
                 extracomment=inner.extracomment,
                 ident=inner.id,
-                show_id=bool(names()) if callable(names) else False,
+                show_id=self._host.qt_names(),
             )
         else:
             self._translation.hide()

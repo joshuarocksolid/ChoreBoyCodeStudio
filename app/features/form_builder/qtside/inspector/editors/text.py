@@ -39,16 +39,18 @@ from app.features.form_builder.qtside.inspector.editors._translation import Tran
 from app.features.form_builder.qtside.inspector.rich_html import (
     looks_like_html,
     paragraphs_from_document,
-    point_size,
     stable_html,
+    unsupported_formatting,
 )
 from app.features.form_builder.qtside.inspector.translatable import shows_translation
-from app.qt.QtCore import QEvent, QObject, Qt
+from app.qt.QtCore import QEvent, QObject, QRect, QSize, Qt
 from app.qt.qt_compat import exec_qt
 from app.qt.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextListFormat
 from app.qt.QtWidgets import (
+    QApplication,
     QHBoxLayout,
     QLabel,
+    QLayout,
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
@@ -72,6 +74,7 @@ _EXPANDED: dict = {}
 
 _NO_WIDGET = "No widget called \u201c%s\u201d on this form."
 _MAKE_RICH = "Make this text formatted? It is stored as HTML."
+_LIMIT = "This text has formatting the editor can't keep."
 
 
 def _key(name: str) -> object:
@@ -95,17 +98,11 @@ def _translation_label(label: str) -> str:
 
 
 def _document(host: EditorHost) -> Optional[UiDocument]:
-    found = getattr(host, "document", None)
-    if callable(found):
-        return found()
-    return None
+    return host.document()
 
 
 def _owners(host: EditorHost) -> Tuple[NodeId, ...]:
-    found = getattr(host, "owner_ids", None)
-    if callable(found):
-        return tuple(found())
-    return ()
+    return host.owner_ids()
 
 
 def _node(host: EditorHost) -> Optional[WidgetNode]:
@@ -149,7 +146,7 @@ class StringEditor:
         self._summary = SummaryButton(host.label, self._box)
         self._summary.set_opener(self._open)
         self._summary.hide()
-        self._translation = TranslationDisclosure(self._box)
+        self._translation = TranslationDisclosure()
         self._translation.set_on_change(self._change_attr)
         self._translation.set_on_toggle(self._remember_expanded)
         self._translation.hide()
@@ -158,7 +155,10 @@ class StringEditor:
         column.setSpacing(2)
         column.addWidget(self._edit)
         column.addWidget(self._summary)
-        column.addWidget(self._translation)
+
+    @property
+    def caption_widget(self) -> QWidget:
+        return self._translation
 
     @property
     def widget(self) -> QWidget:
@@ -224,7 +224,7 @@ class StringEditor:
             comment=None if current is None else current.comment,
             extracomment=None if current is None else current.extracomment,
             ident=None if current is None else current.id,
-            show_id=bool(getattr(self._host, "qt_names", lambda: False)()),
+            show_id=self._host.qt_names(),
         )
         key = (self._host.qt_name, self._host.label)
         if key in _EXPANDED:
@@ -263,6 +263,7 @@ class StringEditor:
     def _open(self) -> None:
         if self._popover is not None and not self._popover.closed:
             return
+        text = self._current_text()
         popover = RowPopover(
             self._host.row_widget,
             self._host,
@@ -270,11 +271,27 @@ class StringEditor:
             session_label=_change_label(self._host.label),
             qt_name=self._host.qt_name,
             anchor=self._summary,
-            large=self._rich(self._shown),
+            large=self._rich(text),
         )
         self._popover = popover
-        _TextBody(popover, self._host, self._with_text(self._shown), self._rich(self._shown))
+        _TextBody(popover, self._host, self._with_text(text), self._rich(text))
         popover.open_popover()
+
+    def _current_text(self) -> str:
+        """The document's text, so a popover opened after undo does not edit a stale copy."""
+        owners = _owners(self._host)
+        document = _document(self._host)
+        if document is None or len(owners) != 1:
+            return self._shown
+        node = document.node(owners[0])
+        if not isinstance(node, WidgetNode):
+            return self._shown
+        entry = node.prop(self._host.qt_name)
+        if entry is None or not isinstance(entry.value, StringValue):
+            return self._shown
+        self._value = entry.value
+        self._shown = entry.value.text
+        return self._shown
 
 
 class _TextBody:
@@ -297,12 +314,15 @@ class _TextBody:
         self._plain = QPlainTextEdit()
         self._plain.setPlainText(value.text)
         self._plain.setAccessibleName("%s: text" % host.label)
+        self._app_size = _app_point_size()
+        display = QFont(_app_family(), self._app_size)
         self._formatted = QTextEdit()
-        self._formatted.setFont(QFont("Sans Serif", 9))
+        self._formatted.setFont(display)
+        self._formatted.document().setDefaultFont(display)
         self._formatted.setAccessibleName("%s: formatted text" % host.label)
         self._source = QPlainTextEdit()
         self._source.setAccessibleName("%s: HTML source" % host.label)
-        self._source.setFont(QFont("Sans Serif", 9))
+        self._source.setFont(display)
         _XmlHighlighter(self._source, host.chrome.accent, host.chrome.text)
         self._bar = QWidget()
         bar = QHBoxLayout(self._bar)
@@ -317,17 +337,16 @@ class _TextBody:
         bar.addWidget(self._source_button)
         bar.addStretch(1)
         self._tools = QWidget()
-        tools = QHBoxLayout(self._tools)
-        tools.setContentsMargins(0, 0, 0, 0)
-        self._bold = self._tool("Bold", "Ctrl+B")
-        self._italic = self._tool("Italic", "Ctrl+I")
-        self._underline = self._tool("Underline", "Ctrl+U")
-        self._link = self._tool("Link\u2026", "")
-        self._bullets = self._tool("Bulleted list", "")
-        self._numbers = self._tool("Numbered list", "")
-        self._smaller = self._tool("Smaller", "")
-        self._normal = self._tool("Normal", "")
-        self._larger = self._tool("Larger", "")
+        tools = _Flow(self._tools)
+        self._bold = self._tool("B", "Bold")
+        self._italic = self._tool("I", "Italic")
+        self._underline = self._tool("U", "Underline")
+        self._link = self._tool("\u2197", "Link")
+        self._bullets = self._tool("\u2022", "Bulleted list")
+        self._numbers = self._tool("1.", "Numbered list")
+        self._smaller = self._tool("A\u2212", "Smaller")
+        self._normal = self._tool("A", "Normal")
+        self._larger = self._tool("A+", "Larger")
         for button in (
             self._bold, self._italic, self._underline, self._link,
             self._bullets, self._numbers, self._smaller, self._normal, self._larger,
@@ -335,6 +354,11 @@ class _TextBody:
             tools.addWidget(button)
         layout.addWidget(self._bar)
         layout.addWidget(self._tools)
+        self._limit = QLabel(_LIMIT)
+        self._limit.setObjectName("formBuilder.richLimit")
+        self._limit.setWordWrap(True)
+        self._limit.hide()
+        layout.addWidget(self._limit)
         layout.addWidget(self._formatted)
         layout.addWidget(self._plain)
         layout.addWidget(self._source)
@@ -352,9 +376,14 @@ class _TextBody:
         self._smaller.clicked.connect(lambda: self._size("small"))
         self._normal.clicked.connect(lambda: self._size("normal"))
         self._larger.clicked.connect(lambda: self._size("large"))
+        self._formatted.cursorPositionChanged.connect(self._sync_checks)
         for edit in (self._plain, self._formatted, self._source):
-            edit.installEventFilter(_CtrlEnter(popover))
-        if rich or looks_like_html(value.text):
+            edit.installEventFilter(_CtrlEnter(popover, self))
+        self._limited = unsupported_formatting(value.text)
+        if self._limited:
+            self._source.setPlainText(value.text)
+            self._show_mode("source")
+        elif rich or looks_like_html(value.text):
             self._show_mode("formatted" if rich else "source")
             if looks_like_html(value.text):
                 self._formatted.setHtml(value.text)
@@ -365,10 +394,14 @@ class _TextBody:
             self._show_mode("plain")
         self._ready = True
 
-    def _tool(self, text: str, shortcut: str) -> QPushButton:
-        del shortcut
-        button = QPushButton(text)
-        button.setAccessibleName(text)
+    def _tool(self, glyph: str, name: str) -> QPushButton:
+        button = QPushButton(glyph)
+        button.setAccessibleName(name)
+        button.setToolTip(name)
+        button.setCheckable(True)
+        button.setProperty("fbGlyph", "true")
+        fixed = getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Fixed")
+        button.setSizePolicy(fixed, fixed)
         return button
 
     def _mark(self) -> None:
@@ -401,6 +434,7 @@ class _TextBody:
         rich = mode in ("formatted", "source")
         self._bar.setVisible(rich or self._rich)
         self._tools.setVisible(mode == "formatted")
+        self._limit.setVisible(self._limited)
         self._formatted.setVisible(mode == "formatted")
         self._source.setVisible(mode == "source")
         self._plain.setVisible(mode == "plain")
@@ -428,19 +462,41 @@ class _TextBody:
         )
 
     def _style(self, which: str) -> None:
+        self._toggle(which)
+
+    def _toggle(self, which: str) -> None:
+        cursor = self._formatted.textCursor()
+        font = cursor.charFormat().font()
         fmt = QTextCharFormat()
         if which == "bold":
-            fmt.setFontWeight(QFont.Bold)
+            on = bool(font.bold()) or int(font.weight()) >= 600
+            weight = getattr(QFont, "Normal", 400) if on else getattr(QFont, "Bold", 700)
+            fmt.setFontWeight(weight)
         elif which == "italic":
-            fmt.setFontItalic(True)
+            fmt.setFontItalic(not bool(font.italic()))
         else:
-            fmt.setFontUnderline(True)
-        self._formatted.textCursor().mergeCharFormat(fmt)
+            fmt.setFontUnderline(not bool(font.underline()))
+        cursor.mergeCharFormat(fmt)
+        self._formatted.mergeCurrentCharFormat(fmt)
+        self._sync_checks()
         self._formatted.setFocus()
+
+    def _sync_checks(self) -> None:
+        font = self._formatted.textCursor().charFormat().font()
+        self._bold.setChecked(bool(font.bold()) or int(font.weight()) >= 600)
+        self._italic.setChecked(bool(font.italic()))
+        self._underline.setChecked(bool(font.underline()))
+
+    def _display_point(self, name: str) -> int:
+        if name == "small":
+            return max(1, self._app_size - 4)
+        if name == "large":
+            return self._app_size + 5
+        return self._app_size
 
     def _size(self, name: str) -> None:
         fmt = QTextCharFormat()
-        fmt.setFontPointSize(point_size(name))
+        fmt.setFontPointSize(self._display_point(name))
         self._formatted.textCursor().mergeCharFormat(fmt)
 
     def _list_style(self, numbered: bool) -> None:
@@ -539,9 +595,10 @@ class CStringEditor:
 
 
 class _CtrlEnter(QObject):
-    def __init__(self, popover: RowPopover) -> None:
+    def __init__(self, popover: RowPopover, body: _TextBody) -> None:
         super().__init__(popover)
         self._popover = popover
+        self._body = body
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
         if event.type() != getattr(getattr(QEvent, "Type", QEvent), "KeyPress"):
@@ -555,26 +612,97 @@ class _CtrlEnter(QObject):
         if not ctrl or not isinstance(watched, QTextEdit):
             return False
         if key == _key("Key_B"):
-            _apply_weight(watched)
+            self._body._toggle("bold")
             return True
         if key == _key("Key_I"):
-            fmt = QTextCharFormat()
-            fmt.setFontItalic(True)
-            watched.textCursor().mergeCharFormat(fmt)
+            self._body._toggle("italic")
             return True
         if key == _key("Key_U"):
-            fmt = QTextCharFormat()
-            fmt.setFontUnderline(True)
-            watched.textCursor().mergeCharFormat(fmt)
+            self._body._toggle("underline")
             return True
         return False
 
 
-def _apply_weight(edit: QTextEdit) -> None:
-    fmt = QTextCharFormat()
-    bold = getattr(QFont, "Bold", 700)
-    fmt.setFontWeight(bold)
-    edit.textCursor().mergeCharFormat(fmt)
+def _app_point_size() -> int:
+    app = QApplication.instance()
+    if app is None:
+        return 9
+    size = app.font().pointSize()
+    return size if size > 0 else 9
+
+
+def _app_family() -> str:
+    app = QApplication.instance()
+    if app is None:
+        return "Sans Serif"
+    family = app.font().family()
+    return family or "Sans Serif"
+
+
+class _Flow(QLayout):
+    """Wraps the rich-text glyphs onto as many lines as the popover is wide."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._items: list = []
+        self._gap = 4
+
+    def addItem(self, item: object) -> None:  # noqa: N802
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> object:  # noqa: N802
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> object:  # noqa: N802
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self) -> object:  # noqa: N802
+        orient = getattr(Qt, "Orientation", None)
+        if orient is not None:
+            return orient(0)
+        return 0
+
+    def hasHeightForWidth(self) -> bool:  # noqa: N802
+        return True
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        return self._arrange(QRect(0, 0, width, 0), False)
+
+    def setGeometry(self, rect: QRect) -> None:  # noqa: N802
+        super().setGeometry(rect)
+        self._arrange(rect, True)
+
+    def sizeHint(self) -> QSize:  # noqa: N802
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:  # noqa: N802
+        return QSize(48, self._arrange(QRect(0, 0, 220, 0), False))
+
+    def _arrange(self, rect: QRect, apply: bool) -> int:
+        x = rect.x()
+        y = rect.y()
+        line = 0
+        right = rect.x() + max(0, rect.width())
+        for item in self._items:
+            hint = item.sizeHint()
+            width = hint.width()
+            height = hint.height()
+            if x > rect.x() and x + width > right:
+                x = rect.x()
+                y += line + self._gap
+                line = 0
+            if apply:
+                item.setGeometry(QRect(x, y, width, height))
+            x += width + self._gap
+            line = max(line, height)
+        return (y + line) - rect.y()
 
 
 class _XmlHighlighter(QSyntaxHighlighter):

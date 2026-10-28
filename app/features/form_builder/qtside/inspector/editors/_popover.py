@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, List, Optional
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
-from app.qt.QtGui import QColor, QFontMetrics, QKeySequence
+from app.qt.QtGui import QColor, QFontMetrics, QKeySequence, QPalette
 from app.qt.QtWidgets import (
     QAbstractItemView,
     QAbstractSlider,
@@ -39,6 +39,7 @@ from app.qt.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -184,6 +185,7 @@ class RowPopover(QFrame):
         qt_name: str = "",
         anchor: Optional[QWidget] = None,
         large: bool = False,
+        on_keep: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(row.window())
         self.setObjectName("formBuilder.rowPopover")
@@ -197,6 +199,7 @@ class RowPopover(QFrame):
         self._guard = _Guard(self)
         self._subscription: Optional[Callable[[], None]] = None
         self._reset_callback: Optional[Callable[[], None]] = None
+        self._on_keep = on_keep
         self._window_size: Optional[object] = None
 
         outer = QVBoxLayout(self)
@@ -265,6 +268,7 @@ class RowPopover(QFrame):
         """Place, show, take focus, and start listening for the closing events."""
         if self._closed:
             return
+        self._paint_wells()
         self.place()
         self.show()
         self.raise_()
@@ -337,6 +341,7 @@ class RowPopover(QFrame):
             "QDoubleSpinBox",
             "QComboBox",
             "QPlainTextEdit",
+            "QTextEdit",
             "QKeySequenceEdit",
             "QListWidget",
             "QFontComboBox",
@@ -357,6 +362,7 @@ class RowPopover(QFrame):
         )
         self.setStyleSheet(
             "%(frame)s { background: %(fill)s; border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
+            "%(frame)s QScrollArea { background: %(input)s; border: none; }"
             "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
             "%(frame)s QLabel#formBuilder\\.popoverTitle { color: %(text)s; font-size: 13px; font-weight: 600; }"
             "%(frame)s QLabel#formBuilder\\.popoverQtName { color: %(faint)s; font-size: 11px; font-weight: 400; }"
@@ -367,6 +373,8 @@ class RowPopover(QFrame):
             "%(frame)s QPushButton { color: %(text)s; background: %(input)s; border: 1px solid %(line)s;"
             " border-radius: 4px; padding: 6px 10px; }"
             "%(frame)s QPushButton:hover { background: %(hover)s; }"
+            "%(frame)s QPushButton:checked { background: %(accent)s; color: %(on_accent)s; }"
+            "%(frame)s QPushButton[fbGlyph=\"true\"] { padding: 2px 6px; }"
             "%(frame)s QPushButton#formBuilder\\.popoverDone { background: %(accent)s; color: %(on_accent)s;"
             " border: none; font-weight: 600; }"
             % {
@@ -389,6 +397,19 @@ class RowPopover(QFrame):
             }
         )
         self.apply_chrome_shadow()
+
+    def _paint_wells(self) -> None:
+        """Scroll wells inside the popover keep the input colour. A bare viewport stays the platform white."""
+        color = QColor(self._chrome.input)
+        for scroll in self.findChildren(QScrollArea):
+            for widget in (scroll.viewport(), scroll.widget()):
+                if widget is None:
+                    continue
+                palette = widget.palette()
+                palette.setColor(QPalette.Window, color)
+                palette.setColor(QPalette.Base, color)
+                widget.setPalette(palette)
+                widget.setAutoFillBackground(True)
 
     # -- closing ---------------------------------------------------------
 
@@ -423,6 +444,8 @@ class RowPopover(QFrame):
         # editingFinished commits into this step. A keep close then ends the
         # session. Esc rolls that step back, pending text included.
         self._flush_focus()
+        if keep and self._on_keep is not None:
+            self._on_keep()
         if keep:
             self._session.close()
         else:

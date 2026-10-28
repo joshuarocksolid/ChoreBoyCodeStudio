@@ -43,6 +43,7 @@ class StringListEditor:
         self._value = StringListValue(())
         self._mixed = False
         self._popover: Optional[RowPopover] = None
+        self._editor: Optional[ListEditor] = None
         self._button = SummaryButton(host.label, parent)
         self._button.set_opener(self._open)
 
@@ -67,9 +68,11 @@ class StringListEditor:
             session_label=_change_label(self._host.label),
             qt_name=self._host.qt_name,
             anchor=self._button,
+            on_keep=self._drop_trailing,
         )
         self._popover = popover
         editor = ListEditor(name=self._host.label or "List")
+        self._editor = editor
         editor.set_texts(self._value.items)
         editor.set_on_texts(self._commit_items)
         editor.set_on_close(popover.done)
@@ -77,13 +80,12 @@ class StringListEditor:
         popover.body().addWidget(editor)
         if not self._mixed and shows_translation(self._host.qt_name, StringListValue.ELEMENT):
             disclosure = TranslationDisclosure()
-            names = getattr(self._host, "qt_names", None)
             disclosure.set_values(
                 notr=self._value.notr,
                 comment=self._value.comment,
                 extracomment=self._value.extracomment,
                 ident=self._value.id,
-                show_id=bool(names()) if callable(names) else False,
+                show_id=self._host.qt_names(),
             )
             disclosure.set_on_change(self._commit_attr)
             popover.body().addWidget(disclosure)
@@ -100,6 +102,14 @@ class StringListEditor:
         if self._popover is not None:
             self._host.commit(self._value, session=self._popover.session)
 
+    def _drop_trailing(self) -> None:
+        editor = self._editor
+        if editor is None:
+            return
+        trimmed = _trim_trailing(editor.texts())
+        if trimmed != self._value.items:
+            self._commit_items(trimmed)
+
     def _commit_attr(self, field: str, raw: object) -> None:
         current = self._value
         updated = StringListValue(
@@ -113,6 +123,13 @@ class StringListEditor:
         session = self._host.begin_session(_translation_label(self._host.label))
         self._host.commit(updated, session=session)
         session.close()
+
+
+def _trim_trailing(items: tuple) -> tuple:
+    end = len(items)
+    while end and items[end - 1] == "":
+        end -= 1
+    return tuple(items[:end])
 
 
 def _value_of(value: RowValue) -> StringListValue:

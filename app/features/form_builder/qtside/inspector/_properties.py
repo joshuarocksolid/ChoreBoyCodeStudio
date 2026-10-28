@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections import OrderedDict
-from typing import Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.ids import NodeId
@@ -36,7 +36,7 @@ from app.features.form_builder.qtside.inspector.model import (
     GroupView,
     value_text,
 )
-from app.qt.QtCore import QEvent, QObject, Qt, QTimer
+from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.qt_compat import delete_now, wrapper_is_valid
 from app.qt.QtGui import QFont
 from app.qt.QtWidgets import (
@@ -779,8 +779,9 @@ class _Row(QWidget):
         self._qt: Optional[QLabel] = None
         self._reset: Optional[QToolButton] = None
         self._caption: Optional[QLabel] = None
+        self._extra_caption: Optional[QWidget] = None
         self._label = QLabel(self)
-        self._label.setWordWrap(True)
+        self._label.setWordWrap(False)
         self._label_col = QWidget(self)
         self._label_px = _LABEL_WIDE
         self._stacked = False
@@ -965,8 +966,10 @@ class _Row(QWidget):
             # so a select does not walk every child of every row.
             _name_editors(self._editor.widget, view.label)
         self._paint_value_match(view, match_color)
+        self._place_caption()
         if not self._invalid and self._editor is not None:
             self._editor.show(view.value)
+        self._elide_label()
         self._sync_reset()
 
     def set_label_width(self, width: int) -> None:
@@ -976,6 +979,8 @@ class _Row(QWidget):
     def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._sync_stacked()
+        self._move_reset()
+        self._elide_label()
 
     def _apply_label_width(self) -> None:
         if self._stacked:
@@ -1005,17 +1010,24 @@ class _Row(QWidget):
             self._seat_bar()
 
     def _place_reset(self) -> None:
-        """The reset button sits on the label line when stacked, and after the editor when not."""
+        """The reset button overlays the right edge of the label, so the editor keeps its width."""
         button = self._reset
         if button is None:
             return
         self._line.removeWidget(button)
         if self._head is not None:
             self._head.removeWidget(button)
-        if self._stacked:
-            self._ensure_head().addWidget(button, 0)
-        else:
-            self._line.addWidget(button, 0)
+        button.setParent(self)
+        self._move_reset()
+
+    def _move_reset(self) -> None:
+        button = self._reset
+        if button is None:
+            return
+        label = self._label
+        point = label.mapTo(self, QPoint(max(0, label.width() - button.width()), 0))
+        button.move(point)
+        button.raise_()
 
     def note_focus(self, focus: object) -> None:
         del focus
@@ -1044,7 +1056,7 @@ class _Row(QWidget):
             return
         if session is None:
             session = self._services.inline_session(view.key, _change_label(view.label), self)
-        result = session.run((view.write.edit(value, session.token),))
+        result = session.run(_as_commands(view.write.edit(value, session.token)))
         if isinstance(result, Dropped):
             return
         if isinstance(result, Rejected):
@@ -1103,7 +1115,11 @@ class _Row(QWidget):
             )
             self._announce("Removed custom property %s \u00b7 Undo" % view.qt_name)
             return
-        self._services.execute(view.write.reset())
+        produced = view.write.reset()
+        if isinstance(produced, tuple):
+            self._services.execute_all("Reset", produced)
+        else:
+            self._services.execute(produced)
 
     def _needs_new_editor(self, previous: Optional[Row], view: OpenRow) -> bool:
         if self._editor is None or not isinstance(previous, OpenRow):
@@ -1154,6 +1170,44 @@ class _Row(QWidget):
         self._label.setTextFormat(Qt.PlainText)
         self._label.setText(view.label)
 
+    def _elide_label(self) -> None:
+        view = self._view
+        if view is None:
+            return
+        if view.match is not None and view.match.where == "label":
+            return
+        width = self._label.width()
+        if width <= 0:
+            return
+        full = view.label
+        mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        elided = self._label.fontMetrics().elidedText(full, mode, width)
+        if self._label.text() != elided:
+            self._label.setText(elided)
+        tip = _tip(view)
+        if elided != full:
+            self._label.setToolTip(full if not tip or tip == full else "%s\n%s" % (full, tip))
+        else:
+            self._label.setToolTip(tip)
+
+    def _place_caption(self) -> None:
+        editor = self._editor
+        widget = getattr(editor, "caption_widget", None) if editor is not None else None
+        caption = widget if isinstance(widget, QWidget) else None
+        if caption is self._extra_caption:
+            return
+        previous = self._extra_caption
+        if previous is not None:
+            self._outer.removeWidget(previous)
+            previous.hide()
+            previous.deleteLater()
+        self._extra_caption = caption
+        if caption is None:
+            return
+        caption.setParent(self)
+        self._outer.addWidget(caption)
+        caption.show()
+
     def _paint_qt(self, view: Row, match_color: str) -> None:
         match = view.match
         matched = match is not None and match.where == "qt_name"
@@ -1199,6 +1253,7 @@ class _Row(QWidget):
             else:
                 button.setToolTip("Reset: remove this property from the file")
             button.setVisible(inside)
+            self._move_reset()
         elif self._reset is not None:
             self._reset.hide()
         if dynamic:
@@ -1217,6 +1272,7 @@ class _Row(QWidget):
         button.setFixedSize(16, 16)
         button.setAccessibleName("Custom property menu")
         button.setPopupMode(_popup_mode())
+        button.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         menu = QMenu(button)
         menu.addAction("Rename\u2026").triggered.connect(self._rename_custom)
         types = menu.addMenu("Change type")
@@ -1314,6 +1370,12 @@ class _Row(QWidget):
         self._painted_sheet = sheet
 
     def _clear_slot(self) -> None:
+        extra = self._extra_caption
+        if extra is not None:
+            self._outer.removeWidget(extra)
+            extra.hide()
+            extra.deleteLater()
+            self._extra_caption = None
         editor = self._editor
         if editor is not None:
             editor.widget.hide()
@@ -1344,6 +1406,12 @@ def _change_label(label: str) -> str:
     if not label:
         return "Change value"
     return "Change " + label[0].lower() + label[1:]
+
+
+def _as_commands(produced: Union[Command, Tuple[Command, ...]]) -> Tuple[Command, ...]:
+    if isinstance(produced, tuple):
+        return produced
+    return (produced,)
 
 
 _EVENT = getattr(QEvent, "Type", QEvent)

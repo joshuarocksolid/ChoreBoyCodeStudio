@@ -10,6 +10,7 @@ formatted editor may display any font. Only this structure is saved.
 from __future__ import annotations
 
 import html
+import re
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
@@ -75,13 +76,21 @@ def stable_html(paragraphs: Sequence[Paragraph]) -> str:
     return "".join(body)
 
 
-def size_name(point_size: int) -> str:
-    """Map a point size back to the three sizes the bar offers."""
+def size_name(point_size: int, normal: int = _NORMAL) -> str:
+    """Map a display point size back to small, normal or large.
+
+    ``normal`` is the editor's font size. The file still stores 7, 9 and 14.
+    A size within one step of ``normal`` stays normal, so the app font does
+    not change the bytes.
+    """
     if point_size <= 0:
         return "normal"
-    if point_size <= _SMALL + 1:
+    baseline = normal if normal > 0 else _NORMAL
+    small = max(1, baseline - 4)
+    large = baseline + 5
+    if point_size < baseline and abs(point_size - small) <= abs(point_size - baseline):
         return "small"
-    if point_size >= _LARGE - 1:
+    if point_size > baseline and abs(point_size - large) <= abs(point_size - baseline):
         return "large"
     return "normal"
 
@@ -97,6 +106,22 @@ def point_size(name: str) -> int:
 def looks_like_html(text: str) -> bool:
     stripped = text.lstrip()
     return stripped.startswith("<") and ">" in stripped
+
+
+_SIZE_IN_HTML = re.compile(r"font-size\s*:\s*(\d+)")
+
+
+def unsupported_formatting(text: str) -> bool:
+    """True when Designer HTML has colour, alignment or a size this editor drops."""
+    if not looks_like_html(text):
+        return False
+    lower = text.lower()
+    if "color:" in lower or "background-color" in lower or "text-align" in lower or "align=" in lower:
+        return True
+    for found in _SIZE_IN_HTML.findall(lower):
+        if int(found) not in (_SMALL, _NORMAL, _LARGE):
+            return True
+    return False
 
 
 def _span(span: Span) -> str:
@@ -128,10 +153,11 @@ def paragraphs_from_document(document: object) -> Tuple[Paragraph, ...]:
     begin = getattr(document, "begin", None)
     if not callable(begin):
         return (Paragraph((Span(""),)),)
+    normal = _document_normal(document)
     found: List[Paragraph] = []
     block = begin()
     while getattr(block, "isValid", lambda: False)():
-        spans = tuple(_fragments(block))
+        spans = tuple(_fragments(block, normal))
         kind = _list_kind(block)
         found.append(Paragraph(spans or (Span(""),), kind))
         nxt = getattr(block, "next", None)
@@ -159,13 +185,24 @@ def _list_kind(block: object) -> str:
     return "ul"
 
 
-def _fragments(block: object) -> List[Span]:
+def _document_normal(document: object) -> int:
+    default_font = getattr(document, "defaultFont", None)
+    if not callable(default_font):
+        return _NORMAL
+    try:
+        size = int(default_font().pointSize())
+    except (TypeError, ValueError):
+        return _NORMAL
+    return size if size > 0 else _NORMAL
+
+
+def _fragments(block: object, normal: int) -> List[Span]:
     iterator = block.begin()
     spans: List[Span] = []
     while not iterator.atEnd():
         fragment = iterator.fragment()
         if fragment.isValid():
-            spans.append(_span_from(fragment))
+            spans.append(_span_from(fragment, normal))
         iterator += 1
     if not spans:
         text = block.text()
@@ -174,11 +211,11 @@ def _fragments(block: object) -> List[Span]:
     return spans
 
 
-def _span_from(fragment: object) -> Span:
+def _span_from(fragment: object, normal: int) -> Span:
     fmt = fragment.charFormat()
     font = fmt.font()
-    bold = bool(font.bold()) or int(font.weight()) >= 700
-    size = size_name(int(font.pointSize()))
+    bold = bool(font.bold()) or int(font.weight()) >= 600
+    size = size_name(int(font.pointSize()), normal)
     href = ""
     anchor = getattr(fmt, "anchorHref", None)
     if callable(anchor):
