@@ -96,6 +96,9 @@ def load_pictures(locations: Sequence[str], base_dir: str) -> PictureIndex:
     issues: List[QrcIssue] = []
     by_path: Dict[str, QrcPicture] = {}
     for location in locations:
+        if not os.path.isabs(location) and not base_dir:
+            issues.append(QrcIssue(location, "Code Studio can't find %s." % os.path.basename(location)))
+            continue
         qrc_path = location if os.path.isabs(location) else os.path.normpath(os.path.join(base_dir, location))
         parsed = _cached_document(qrc_path)
         if isinstance(parsed, QrcIssue):
@@ -156,17 +159,24 @@ def lookup_stored(stored: str, base_dir: str, index: PictureIndex) -> Tuple[str,
         if found is None or is_missing(found):
             return "", True
         return found.disk_path, False
-    disk = stored if os.path.isabs(stored) else os.path.join(base_dir, stored) if base_dir else stored
+    if not os.path.isabs(stored) and not base_dir:
+        return "", True
+    disk = stored if os.path.isabs(stored) else os.path.join(base_dir, stored)
     return disk, not os.path.isfile(disk)
 
 
 def stored_for_file(absolute: str, form_dir: str, index: PictureIndex) -> str:
-    """A resource path when the file is in a ``.qrc``, else a form-relative path."""
+    """A resource path when the file is in a ``.qrc``, else a form-relative path.
+
+    An unsaved form (no folder) stores the absolute path, as Designer does.
+    """
     target = os.path.normcase(os.path.abspath(absolute))
     for picture in index.pictures:
         if os.path.normcase(os.path.abspath(picture.disk_path)) == target and not is_missing(picture):
             return picture.resource_path
-    relative = os.path.relpath(os.path.abspath(absolute), form_dir or os.getcwd())
+    if not form_dir:
+        return os.path.abspath(absolute).replace(os.sep, "/")
+    relative = os.path.relpath(os.path.abspath(absolute), form_dir)
     return relative.replace(os.sep, "/")
 
 

@@ -15,6 +15,7 @@ from app.features.form_builder.engine.project.pictures import (
     load_pictures,
     lookup_stored,
     resource_path,
+    stored_for_file,
 )
 
 pytestmark = pytest.mark.unit
@@ -147,3 +148,15 @@ def test_form_includes_are_read_from_the_document(tmp_path: Path) -> None:
     assert [item.resource_path for item in index.pictures] == [":/dot.png"]
     disk, missing = lookup_stored("dot.png", str(tmp_path), index)
     assert missing is False and disk.endswith("dot.png")
+
+
+def test_an_unsaved_form_never_resolves_against_the_process_folder(tmp_path: Path, monkeypatch) -> None:
+    """With no form folder, relative paths are missing and picked files are stored absolute."""
+    (tmp_path / "app.qrc").write_text('<RCC><qresource><file>a.png</file></qresource></RCC>', encoding="utf-8")
+    (tmp_path / "a.png").write_bytes(_PNG)
+    monkeypatch.chdir(tmp_path)
+    index = load_pictures(("app.qrc",), "")
+    assert index.pictures == ()
+    assert [issue.sentence for issue in index.issues] == ["Code Studio can't find app.qrc."]
+    assert lookup_stored("a.png", "", index) == ("", True)
+    assert stored_for_file(str(tmp_path / "a.png"), "", index) == str(tmp_path / "a.png").replace(os.sep, "/")
