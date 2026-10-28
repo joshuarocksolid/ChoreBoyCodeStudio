@@ -83,6 +83,8 @@ def page_title_target(document: UiDocument, node: NodeId) -> Optional[TextTarget
         return _attribute_target(found, _page_attribute(document, found), "page_tab")
     if container == "QWizard" and found.class_name == "QWizardPage":
         return _property_target(found, "title", "page_tab", False)
+    if container == "QMdiArea":
+        return _property_target(found, "windowTitle", "page_tab", False)
     return None
 
 

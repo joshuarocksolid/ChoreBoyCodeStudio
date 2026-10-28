@@ -14,6 +14,7 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.canvas.core.frame import Chip
 from tests.form_builder.qtside.support import form, opened
 from app.qt.QtTest import QTest
 from app.qt.QtCore import Qt
@@ -93,5 +94,8 @@ def test_ctrl_page_down_shows_the_next_window_and_the_file_stays_the_same() -> N
         QTest.keyClick(canvas, Qt.Key.Key_PageDown, Qt.KeyboardModifier.ControlModifier)
         _flush()
         assert area.activeSubWindow() is windows[1]
+        chips = [item for item in canvas.overlay().items if isinstance(item, Chip) and item.text.startswith("\u25c0")]
+        assert chips and chips[0].text == "\u25c0 2 / 2 \u25b6"
+        assert chips[0].tip == "Shows Todo \u00b7 starts on Notes"
         assert write_ui(session.document).text == before
         assert not session.log.is_dirty()

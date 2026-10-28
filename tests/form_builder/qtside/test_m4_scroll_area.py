@@ -16,6 +16,9 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.canvas.core.gesture import PlaceAsked
+from app.features.form_builder.qtside.canvas.core.place import payload_for
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from tests.form_builder.qtside.support import form, opened
 
 pytestmark = pytest.mark.usefixtures("qapp")
@@ -151,4 +154,36 @@ def test_tab_to_a_widget_below_the_fold_scrolls_the_area_to_show_it() -> None:
         assert target is not None
         top_left = target.mapTo(area.viewport(), target.rect().topLeft())
         assert area.viewport().rect().contains(top_left)
+        assert not session.log.is_dirty()
+
+
+def test_a_drag_on_the_bottom_edge_scrolls_and_the_hit_index_follows() -> None:
+    """16 px edge auto-scroll. The dwell is a timer; the step is what moves the content."""
+    with _canvas(AREA) as (session, canvas, _host):
+        controller = canvas._controller
+        index = controller._index
+        index.ensure_fresh()
+        area_id = session.document.by_name("scroll")[0]
+        rect = index.rect_of(area_id)
+        assert rect is not None
+        view = controller._stage.view_map()
+        point = CanvasPoint(
+            int(view.page_origin.x + (rect.x + rect.width // 2) * view.factor),
+            int(view.page_origin.y + (rect.y + rect.height - 4) * view.factor),
+        )
+        button = session.document.by_name("b2")[0]
+        before = index.rect_of(button)
+        canvas.send(PlaceAsked(point, payload_for(session.document, (button,))))
+        assert controller._edge == (area_id, 1)
+        assert controller._edge_timer.isActive()
+        assert controller._edge_timer.interval() == 400
+        controller._edge_fire()
+        area = canvas.page_widget().findChild(QScrollArea, "scroll")  # type: ignore[union-attr]
+        assert area.verticalScrollBar().value() > 0
+        index.ensure_fresh()
+        after = index.rect_of(button)
+        assert before is not None and after is not None and after.y < before.y
+        # The button has moved into the viewport. A query there finds it.
+        hit = index.query(after.x + after.width // 2, after.y + after.height // 2)
+        assert hit is not None and button in hit.path
         assert not session.log.is_dirty()

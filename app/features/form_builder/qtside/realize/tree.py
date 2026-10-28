@@ -20,6 +20,7 @@ from app.qt import QtGui, QtWidgets
 from app.qt.QtCore import QObject, Qt
 from app.qt.QtGui import QAction, QActionGroup, QIcon
 from app.qt.QtWidgets import (
+    QMdiSubWindow,
     QComboBox,
     QDockWidget,
     QGridLayout,
@@ -196,6 +197,12 @@ class _Structure(_LayoutSlots):
         self._fresh.add(node.id)
         is_root = parent is None and self._root is None
         self._apply_node_properties(node, widget, is_root=is_root or widget is self._root)
+        if isinstance(widget, QWizard) and parent is not None:
+            # A wizard is a dialog. Inside a form it has to be an ordinary child
+            # or the canvas never sees it (UX-CONT-013).
+            widget.setWindowFlag(Qt.Window, False)
+            widget.setParent(parent)
+            widget.setVisible(True)
         if parent is not None and parent.isVisible() and not isinstance(widget, QMenu):
             # Qt leaves a child hidden when it is created after its parent is shown.
             widget.show()
@@ -844,9 +851,14 @@ class _Structure(_LayoutSlots):
         if isinstance(widget, QMdiArea):
             for sub in list(widget.subWindowList()):
                 inner = sub.widget()
-                self._park_page(inner)
-                widget.removeSubWindow(sub)
-                delete_now(sub)
+                if isinstance(inner, QWidget) and wrapper_is_valid(inner):
+                    self._retire_subwindow(widget, sub, inner)
+                    self._park_page(inner)
+                elif wrapper_is_valid(sub):
+                    widget.removeSubWindow(sub)
+                    sub.setParent(None)
+                    sub.hide()
+                    self._retired_windows.append(sub)
             return
         # Pages come off the end so the current page changes only once, and
         # they stay parented: the container takes them back in the same window.
@@ -943,9 +955,12 @@ class _Structure(_LayoutSlots):
             widget.setParent(None)
         elif isinstance(parent, QMdiArea):
             sub = self._mdi.pop(_node_id(widget), None)
-            if sub is not None:
-                parent.removeSubWindow(sub)
-                delete_now(sub)
+            if sub is not None and wrapper_is_valid(sub):
+                self._retire_subwindow(parent, sub, widget)
+                return
+        elif isinstance(parent, QMdiSubWindow):
+            self._retire_subwindow(parent.mdiArea(), parent, widget)
+            return
         else:
             host = parent
             # A page's parentWidget() is the container's internal stack, frame
@@ -1370,11 +1385,35 @@ class _Structure(_LayoutSlots):
                 found.setdefault(action.objectName(), action)
         return found
 
-    def _clear_mdi(self, area: QMdiArea) -> None:
-        for sub in list(area.subWindowList()):
+    def _retire_subwindow(self, area: Optional[QMdiArea], sub: QWidget, widget: QWidget) -> None:
+        """Take ``sub`` off ``area`` without deleting the page it was showing."""
+        if hasattr(sub, "setWidget"):
+            sub.setWidget(None)
+        widget.setParent(self._nursery())
+        if area is not None and wrapper_is_valid(area):
             area.removeSubWindow(sub)
-            delete_now(sub)
-        self._mdi = {key: value for key, value in self._mdi.items() if value.parent() is not None}
+        sub.setParent(None)
+        sub.hide()
+        self._retired_windows.append(sub)
+
+    def _clear_mdi(self, area: QMdiArea) -> None:
+        """Drop the subwindows. The page widgets stay alive under the nursery.
+
+        Deleting a subwindow deletes the widget it still holds. The next fill
+        would then use a freed wrapper and disposing the form crashes.
+        """
+        for sub in list(area.subWindowList()):
+            if not wrapper_is_valid(sub):
+                continue
+            inner = sub.widget() if hasattr(sub, "widget") else None
+            if isinstance(inner, QWidget) and wrapper_is_valid(inner):
+                self._retire_subwindow(area, sub, inner)
+            else:
+                area.removeSubWindow(sub)
+                sub.setParent(None)
+                sub.hide()
+                self._retired_windows.append(sub)
+        self._mdi = {}
 
     def _order_key(self, node_id: NodeId) -> Tuple[int, ...]:
         doc = self._session.document
@@ -1574,4 +1613,8 @@ def _reparent(widget: QWidget, parent: QWidget) -> None:
     if isinstance(widget, QMenu):
         widget.setParent(parent, widget.windowFlags() | Qt.Popup)
         return
+    if isinstance(widget, QWizard):
+        widget.setWindowFlag(Qt.Window, False)
     widget.setParent(parent)
+    if isinstance(widget, QWizard) and parent.isVisible():
+        widget.show()

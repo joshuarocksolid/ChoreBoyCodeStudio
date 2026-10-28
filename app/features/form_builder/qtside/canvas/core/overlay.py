@@ -13,7 +13,14 @@ from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, S
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Site, Turn
-from app.features.form_builder.engine.query.drop_target import AcceptedDrop, NoDrop, RefusedDrop
+from app.features.form_builder.engine.query.drop_target import (
+    DOCK_BAND_PX,
+    DOCK_REFUSAL,
+    AcceptedDrop,
+    NoDrop,
+    RefusedDrop,
+)
+from app.features.form_builder.engine.query.pages import page_title, pages, start_page
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -148,8 +155,9 @@ class StaticLayer:
     placed: Tuple[Obstacle, ...]
     #: Tab-title rects. ``(tab widget, canvas rect of one title)``.
     tabs: Tuple[Tuple[NodeId, CanvasRect], ...] = ()
-    #: Stacked widgets. ``(widget, canvas rect, page object names)``.
-    stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...]], ...] = ()
+    #: Page switchers. ``(widget, canvas rect, titles, kind)``.
+    #: ``kind`` is ``stacked``, ``wizard`` or ``mdi``.
+    stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...], str], ...] = ()
     #: Visible splitters in pre-order. Their grips are hittable with any selection.
     splitters: Tuple[NodeId, ...] = ()
     #: Empty-layout marks keyed by the layout id. Drag lookup is O(1).
@@ -211,7 +219,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
     unlaid: List[NodeId] = []
     targets: List[Tuple[CanvasRect, Target]] = []
     tabs: List[Tuple[NodeId, CanvasRect]] = []
-    stacks: List[Tuple[NodeId, CanvasRect, Tuple[str, ...]]] = []
+    stacks: List[Tuple[NodeId, CanvasRect, Tuple[str, ...], str]] = []
     splitters: List[NodeId] = []
 
     for node in document.iter_preorder():
@@ -247,9 +255,9 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         placed.append(Obstacle(node.id, canvas))
         if effective_class(document, node) == "QSplitter":
             splitters.append(node.id)
-        if node.class_name == "QStackedWidget" and node.child_widgets:
-            names = tuple(child.object_name or "page" for child in node.child_widgets)
-            stacks.append((node.id, canvas, names))
+        switch = _switcher(document, node)
+        if switch is not None:
+            stacks.append((node.id, canvas, switch[0], switch[1]))
         clipped = _clip(canvas, page)
         if clipped is not None:
             content.append(Obstacle(node.id, clipped))
@@ -437,6 +445,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     else:
         _grip_hover(items, view, inputs.knobs, gesture)
     _drop_marks(items, view, inputs, static)
+    _paint_dock_bands(items, static, inputs)
     _anchor_ticks(items, static, document, primary)
     plus_hits = _plus_hits(items, static, document, gesture, shown)
 
@@ -819,6 +828,7 @@ def _requests(
     faces: Dict[Hashable, _Face] = {}
     requests: List[ChipRequest] = []
     _drop_chip(faces, requests, inputs)
+    _dock_band_chips(faces, requests, static, inputs)
     primary = shown.current
     placing = isinstance(inputs.gesture, Placing)
     readout = turned(inputs.gesture).readout if isinstance(inputs.gesture, Turning) else inputs.readout
@@ -943,11 +953,11 @@ def _page_chips(
     inputs: FrameInputs,
 ) -> None:
     shown = inputs.shown_pages or {}
-    for node_id, rect, names in static.stacks:
+    for node_id, rect, names, kind in static.stacks:
         if not names:
             continue
         current = shown.get(node_id, 0)
-        if node_id not in shown:
+        if node_id not in shown and kind == "stacked":
             node = inputs.document.get(node_id)
             if isinstance(node, WidgetNode):
                 entry = node.prop("currentIndex")
@@ -955,7 +965,10 @@ def _page_chips(
                 if isinstance(value, int):
                     current = value
         current = max(0, min(len(names) - 1, current))
-        text = "◀ %d / %d ▶" % (current + 1, len(names))
+        if kind == "wizard":
+            text = "\u25c0 Step %d of %d \u25b6" % (current + 1, len(names))
+        else:
+            text = "\u25c0 %d / %d \u25b6" % (current + 1, len(names))
         _ask(
             faces,
             requests,
@@ -964,7 +977,116 @@ def _page_chips(
             _label_size(text, inputs.measure),
             LABEL_CORNERS,
             inputs.document,
-            _Face("chip", node_id, "select", text, ShowStacked(node_id, 0), names[current]),
+            _Face(
+                "chip",
+                node_id,
+                "select",
+                text,
+                ShowStacked(node_id, 0),
+                _switch_tip(inputs.document, node_id, current, names),
+            ),
+            required=True,
+        )
+
+
+def _switcher(document: UiDocument, node: WidgetNode) -> Optional[Tuple[Tuple[str, ...], str]]:
+    """Titles and the chip kind for a stacked widget, wizard or MDI area."""
+    if not node.child_widgets:
+        return None
+    if node.class_name == "QStackedWidget":
+        names = tuple(child.object_name or "page" for child in node.child_widgets)
+        return names, "stacked"
+    if node.class_name == "QWizard":
+        names = tuple(page_title(document, child.id) or child.object_name or "step" for child in node.child_widgets)
+        return names, "wizard"
+    if node.class_name == "QMdiArea":
+        names = tuple(page_title(document, child.id) or child.object_name or "window" for child in node.child_widgets)
+        return names, "mdi"
+    return None
+
+
+def _switch_tip(document: UiDocument, container: NodeId, shown: int, names: Tuple[str, ...]) -> str:
+    """``Shows {title} · starts on {title}`` when the canvas page is not the saved one."""
+    found = pages(document, container)
+    if not found:
+        return names[shown] if names else ""
+    start = start_page(document, container)
+    start_at = next((index for index, page in enumerate(found) if page.id == start), 0)
+    if start_at == shown:
+        return names[shown]
+    shown_title = page_title(document, found[shown].id) or names[shown]
+    start_title = page_title(document, found[start_at].id) or names[start_at]
+    return "Shows %s \u00b7 starts on %s" % (shown_title, start_title)
+
+
+_DOCK_CHIP = (
+    ("Left", "Left side"),
+    ("Right", "Right side"),
+    ("Top", "Top"),
+    ("Bottom", "Bottom"),
+)
+
+
+def _dock_host(inputs: FrameInputs) -> Optional[NodeId]:
+    gesture = inputs.gesture
+    if not isinstance(gesture, Placing) or gesture.outside or not gesture.draw or not gesture.payload.dock:
+        return None
+    target = gesture.target
+    if isinstance(target, AcceptedDrop) and target.action == "dock_side":
+        return target.host
+    if isinstance(target, RefusedDrop) and target.sentence == DOCK_REFUSAL:
+        return target.host
+    return None
+
+
+def _dock_boxes(static: StaticLayer, inputs: FrameInputs) -> Tuple[Tuple[str, CanvasRect, str], ...]:
+    host = _dock_host(inputs)
+    if host is None:
+        return ()
+    rect = None
+    for obstacle in static.placed:
+        if obstacle.node == host:
+            rect = obstacle.rect
+            break
+    if rect is None or rect.width < 8 or rect.height < 8:
+        return ()
+    factor = inputs.view.factor or 1.0
+    band = max(1, int(round(DOCK_BAND_PX * factor)))
+    band = min(band, max(rect.width // 4, 1), max(rect.height // 4, 1))
+    boxes = {
+        "Left": CanvasRect(rect.x, rect.y, band, rect.height),
+        "Right": CanvasRect(rect.x + rect.width - band, rect.y, band, rect.height),
+        "Top": CanvasRect(rect.x, rect.y, rect.width, band),
+        "Bottom": CanvasRect(rect.x, rect.y + rect.height - band, rect.width, band),
+    }
+    return tuple((name, boxes[name], label) for name, label in _DOCK_CHIP)
+
+
+def _paint_dock_bands(items: List[Item], static: StaticLayer, inputs: FrameInputs) -> None:
+    for _name, rect, _label in _dock_boxes(static, inputs):
+        items.append(Fill(rect, "dock_band"))
+        items.append(Stroke(rect, "select", 1, "dashed"))
+
+
+def _dock_band_chips(
+    faces: Dict[Hashable, _Face],
+    requests: List[ChipRequest],
+    static: StaticLayer,
+    inputs: FrameInputs,
+) -> None:
+    host = _dock_host(inputs)
+    if host is None:
+        return
+    for name, rect, label in _dock_boxes(static, inputs):
+        _ask(
+            faces,
+            requests,
+            ("dockband", host, name),
+            rect,
+            _label_size(label, inputs.measure),
+            LABEL_CORNERS,
+            inputs.document,
+            _Face("chip", host, "select", label, None),
             required=True,
         )
 

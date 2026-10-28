@@ -144,6 +144,7 @@ class Realizer(_Structure):
         # Pooled widgets whose children were never filled (a morph's new object).
         self._needs_fill: Set[NodeId] = set()
         self._mdi: Dict[NodeId, object] = {}
+        self._retired_windows: List[QWidget] = []
         self._nursery_widget: Optional[QWidget] = None
         self._buddy_of: Dict[NodeId, str] = {}
         self._buddy_users: Dict[str, List[NodeId]] = {}
@@ -872,6 +873,14 @@ class Realizer(_Structure):
             )
 
     def _destroy_tree(self) -> None:
+        # Subwindows taken off an MDI area are parentless. Delete them before
+        # the form. Deleting them while they were still in the area corrupts it.
+        retired = list(getattr(self, "_retired_windows", ()))
+        self._retired_windows = []
+        for window in retired:
+            if wrapper_is_valid(window):
+                window.setParent(None)
+                delete_now(window)
         root = self._root
         self._root = None
         # A replaced layout can sit in the pool still holding widgets that the

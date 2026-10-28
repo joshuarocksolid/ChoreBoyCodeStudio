@@ -15,6 +15,7 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.canvas.core.frame import Chip
 from tests.form_builder.qtside.support import form, opened
 from tests.form_builder.qtside.test_m4_scroll_area import _Host, _flush
 
@@ -75,6 +76,9 @@ def test_ctrl_page_down_shows_the_next_step_and_the_file_stays_the_same() -> Non
         _flush()
         assert wizard.currentId() == ids[1]
         assert host.sentences[-1] == "Showing step 2 of 3: Payment"
+        chips = [item for item in canvas.overlay().items if isinstance(item, Chip) and item.text.startswith("\u25c0")]
+        assert chips and chips[0].text == "\u25c0 Step 2 of 3 \u25b6"
+        assert chips[0].tip == "Shows Payment \u00b7 starts on Details"
         assert write_ui(session.document).text == before
         assert not session.log.is_dirty()
 

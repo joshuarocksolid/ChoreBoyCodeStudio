@@ -403,6 +403,14 @@ class FormCanvas(QGraphicsView):
     def preview_sentence(self) -> str:
         return self._controller.preview_sentence()
 
+    def show_container_page(self, container: NodeId, delta: int) -> None:
+        """Show the next or previous page. Canvas only. The file does not change."""
+        self._controller.show_page_step(container, delta)
+
+    def arrange_windows(self, container: NodeId, how: str) -> None:
+        """Tile or cascade the windows of an MDI area. Not saved."""
+        self._controller.arrange_windows(container, how)
+
     def overlay(self) -> OverlayFrame:
         return self._controller.frame
 
