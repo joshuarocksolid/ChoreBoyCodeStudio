@@ -1614,6 +1614,9 @@ class OutlinePane(QWidget):
         )
         self._confirm.setStyleSheet(
             "QFrame#formBuilder\\.outlineConfirm { background: %s; color: %s; border: %dpx solid %s; }"
+            # The canvas confirm is reparented to the form surface, so the
+            # sentence cannot inherit the outline pane's text colour.
+            "QLabel#formBuilder\\.outlineDeleteText { color: %s; background: transparent; }"
             "QPushButton { color: %s; background: %s; border: %dpx solid %s; }"
             "QPushButton:focus { border: %dpx solid %s; }"
             % (
@@ -1621,6 +1624,7 @@ class OutlinePane(QWidget):
                 tokens.text_primary,
                 width,
                 tokens.border,
+                tokens.text_primary,
                 tokens.text_primary,
                 tokens.panel_bg,
                 width,
