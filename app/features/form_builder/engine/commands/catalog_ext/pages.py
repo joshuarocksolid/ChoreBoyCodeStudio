@@ -25,6 +25,7 @@ from app.features.form_builder.engine.query.pages import (
     start_index,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument, next_object_name
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
 
@@ -35,6 +36,7 @@ def register(registry: object) -> None:
         return
     add(InsertPage)
     add(DeletePage)
+    add(FillScrollArea)
 
 
 @dataclass(frozen=True)
@@ -146,6 +148,47 @@ class DeletePage(_CommandBase):
         ctx.select((after,), after)
 
 
+@dataclass(frozen=True)
+class FillScrollArea(_CommandBase):
+    """Give an empty scroll area its content widget, then put the drop in it (UX-CONT-010).
+
+    The content is ``scrollAreaWidgetContents`` with a vertical layout. One undo step.
+    """
+
+    command_type: ClassVar[str] = "fill_scroll_area"
+    _label_text: ClassVar[str] = "Insert"
+    container: NodeId
+    fragment: Optional[Fragment] = None
+    existing: Tuple[NodeId, ...] = ()
+    merge_token: Optional[str] = None
+
+    def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
+        if not doc.contains(self.container):
+            raise CommandRejected("That object is no longer in the form.")
+        host = doc.node(self.container)
+        if not isinstance(host, WidgetNode) or host.class_name != "QScrollArea":
+            raise CommandRejected("That is not a scroll area.")
+        if host.child_widgets:
+            raise CommandRejected("That scroll area already has its content.")
+        if self.existing and any(not doc.contains(node_id) for node_id in self.existing):
+            raise CommandRejected("That object is no longer in the form.")
+        name = next_object_name("scrollAreaWidgetContents", _taken_names(doc))
+        spec = NodeSpec("widget", None, (("class_name", "QWidget"), ("object_name", name)), ())
+        ids, _, _, _ = planning.insert_fragment(doc, ctx, InContainer(self.container, 0), Fragment((spec,)), False)
+        content = ids[0]
+        layout_id = planning.apply_layout_command(doc, ctx, content, "QVBoxLayout", (), None)
+        if self.existing:
+            planning.move_nodes(doc, ctx, self.existing, InBoxLayout(layout_id, 0))
+            for node_id in self.existing:
+                _clear_geometry(doc, ctx, node_id)
+            ctx.select(self.existing, self.existing[0])
+            return content
+        if self.fragment is not None:
+            planning.insert_fragment(doc, ctx, InBoxLayout(layout_id, 0), self.fragment, False)
+        ctx.select((content,), content)
+        return content
+
+
 def _title_entry(kind: PageKind, title: str) -> Optional[PropertyEntry]:
     if kind.title_home is None:
         return None
@@ -168,4 +211,4 @@ def _clear_geometry(doc: UiDocument, ctx: PlanContext, node_id: NodeId) -> None:
         planning.set_property(doc, ctx, node_id, "geometry", None)
 
 
-__all__ = ["DeletePage", "InsertPage", "register"]
+__all__ = ["DeletePage", "FillScrollArea", "InsertPage", "register"]

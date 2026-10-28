@@ -31,6 +31,7 @@ def payload_for(doc: UiDocument, source_ids: Tuple[NodeId, ...], snap: bool = Tr
     rowspan = 1
     colspan = 1
     dock = False
+    wizard_page = False
     if len(source_ids) == 1 and doc.contains(source_ids[0]):
         node = doc.node(source_ids[0])
         if isinstance(node, SpacerNode):
@@ -38,11 +39,12 @@ def payload_for(doc: UiDocument, source_ids: Tuple[NodeId, ...], snap: bool = Tr
         elif isinstance(node, WidgetNode) and node.class_name == "QLabel":
             kind = "label"
         dock = isinstance(node, WidgetNode) and node.class_name == "QDockWidget"
+        wizard_page = isinstance(node, WidgetNode) and node.class_name == "QWizardPage"
         parent = doc.parent(source_ids[0])
         if isinstance(parent, LayoutItemNode):
             rowspan = 1 if parent.rowspan is None else parent.rowspan
             colspan = 1 if parent.colspan is None else parent.colspan
-    return DropPayload(kind, source_ids, rowspan, colspan, snap, dock=dock)
+    return DropPayload(kind, source_ids, rowspan, colspan, snap, dock=dock, wizard_page=wizard_page)
 
 
 # One tree per document epoch. A page switch bumps the epoch and rebuilds it.

@@ -10,7 +10,7 @@ from app.features.form_builder.engine.commands.catalog import (
     SetLayoutCell,
     SetProperty,
 )
-from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
+from app.features.form_builder.engine.commands.catalog_ext.pages import FillScrollArea, InsertPage
 from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
@@ -58,6 +58,18 @@ def commands_for(
         if not sources:
             return ()
         return (MoveNodes(sources, AsMainWindowPart(target.host, "dock", target.dock_side)),)
+    if action == "wizard_step":
+        if not sources:
+            return ()
+        wizard = doc.node(target.host)
+        index = len(wizard.child_widgets) if isinstance(wizard, WidgetNode) else 0
+        return (MoveNodes(sources, InContainer(target.host, index)),)
+    if action == "scroll_content":
+        if sources:
+            return (FillScrollArea(target.host, existing=sources),)
+        if fragment is None:
+            return ()
+        return (FillScrollArea(target.host, fragment=_plain(fragment)),)
     if action == "box":
         return _place(doc, InBoxLayout(target.host, target.index), sources, fragment, False)
     if action == "splitter":
