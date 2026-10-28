@@ -99,7 +99,10 @@ def test_single_click_in_xml_view_on_a_row_with_no_key_goes_to_its_line(
         _settle_problems(window)
         panel = window._problems_panel
         assert panel is not None
-        panel.set_diagnostics(
+        # Through the controller, so a later merged render (the runtime
+        # module probe relints when it lands) keeps the row.
+        window._problems_controller.apply_lint_diagnostics_result(  # noqa: SLF001
+            str(path),
             [
                 CodeDiagnostic(
                     code="FB006",
