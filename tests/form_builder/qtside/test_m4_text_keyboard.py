@@ -68,51 +68,55 @@ def test_k12_text_translations_and_custom_properties(qapp: QApplication) -> None
         qapp.processEvents()
         assert 'extracomment="Shown on receipts"' in write_ui(session.document).text
         _expand_all(qapp, pane)
-        toggle_all = pane.findChild(QToolButton, "formBuilder.group.all")
-        assert toggle_all is not None
-        if toggle_all.isChecked():
-            toggle_all.click()
-            _settle(qapp, pane)
-        toggle_all.click()
-        _settle(qapp, pane)
-        _select(session, "titleLabel")
-        _settle(qapp, pane)
         add = pane.findChild(QWidget, "formBuilder.addCustomProperty")
-        assert add is not None
+        assert add is not None and add.isVisible()
         add.setFocus()
-        QTest.keyClick(add, Qt.Key_Space)
+        QTest.keyClick(add, Qt.Key_Return)
         qapp.processEvents()
         name = next(
             item for item in pane.findChildren(QLineEdit) if item.accessibleName() == "Custom property name"
         )
-        name.setFocus()
+        assert name.hasFocus()
         QTest.keyClicks(name, "requiredRole")
-        QTest.keyClick(name, Qt.Key_Return)
+        QTest.keyClick(name, Qt.Key_Tab)
+        kind = qapp.focusWidget()
+        assert kind is not None and kind.accessibleName() == "Custom property type"
+        assert kind.currentText() == "Text"
+        QTest.keyClick(kind, Qt.Key_Return)
         qapp.processEvents()
-        if 'name="requiredRole"' not in write_ui(session.document).text:
-            confirm = next(item for item in pane.findChildren(QWidget) if getattr(item, "text", lambda: "")() == "Add")
-            confirm.click()
-            qapp.processEvents()
+        _settle(qapp, pane)
+        qapp.processEvents()
         written = write_ui(session.document).text
-        assert 'name="requiredRole"' in written, written
-        assert 'stdset="0"' in written
+        assert '<property name="requiredRole" stdset="0">' in written, written
+        value = qapp.focusWidget()
+        assert isinstance(value, QLineEdit)
+        assert value.accessibleName() != "Custom property name"
+        QTest.keyClicks(value, "manager")
+        QTest.keyClick(value, Qt.Key_Return)
+        qapp.processEvents()
+        role = session.document.node(session.document.by_name("titleLabel")[0]).prop("requiredRole")
+        assert role is not None and role.is_dynamic and role.value.text == "manager"
         _expand_all(qapp, pane)
         add = pane.findChild(QWidget, "formBuilder.addCustomProperty")
         assert add is not None
         add.setFocus()
-        QTest.keyClick(add, Qt.Key_Space)
+        QTest.keyClick(add, Qt.Key_Return)
         qapp.processEvents()
         name = next(
             item for item in pane.findChildren(QLineEdit) if item.accessibleName() == "Custom property name"
         )
-        name.setFocus()
         QTest.keyClicks(name, "2nd")
         QTest.keyClick(name, Qt.Key_Return)
         qapp.processEvents()
         error = pane.findChild(QWidget, "formBuilder.rowError")
         assert error is not None and error.isVisible()
         assert "digit" in error.text()
+        refused = write_ui(session.document).text
+        QTest.keyClick(name, Qt.Key_Return)
+        assert write_ui(session.document).text == refused
         QTest.keyClick(name, Qt.Key_Escape)
+        qapp.processEvents()
+        assert not name.isVisible()
         _select(session, "richLabel")
         _settle(qapp, pane)
         rich = pane.findChild(QWidget, "formBuilder.row.text")
@@ -139,6 +143,26 @@ def test_k12_text_translations_and_custom_properties(qapp: QApplication) -> None
         qapp.processEvents()
         bold = write_ui(session.document).text
         assert "font-weight:600" in bold
+        # Same steps again on the same start: the same bytes (CONTRACTS §8.3).
+        session.log.undo()
+        summary.setFocus()
+        QTest.keyClick(summary, Qt.Key_Space)
+        qapp.processEvents()
+        popover = [item for item in window.findChildren(QWidget, "formBuilder.rowPopover") if item.isVisible()][-1]
+        formatted = next(
+            item for item in popover.findChildren(QWidget) if item.accessibleName() == "Text: formatted text"
+        )
+        formatted.setFocus()
+        cursor = formatted.textCursor()
+        cursor.select(QTextCursor.Document)
+        formatted.setTextCursor(cursor)
+        QTest.keyClick(formatted, Qt.Key_B, Qt.ControlModifier)
+        done = popover.findChild(QWidget, "formBuilder.popoverDone")
+        assert done is not None
+        done.setFocus()
+        QTest.keyClick(done, Qt.Key_Space)
+        qapp.processEvents()
+        assert write_ui(session.document).text == bold
         while session.log.undo():
             pass
         assert write_ui(session.document).text == original

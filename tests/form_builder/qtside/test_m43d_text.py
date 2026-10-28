@@ -679,7 +679,8 @@ def test_popover_copies_unset_and_mixed_rules(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
-def test_translation_matches_uic(tmp_path: Path) -> None:
+def test_translation_matches_uic(qapp: QApplication, tmp_path: Path) -> None:
+    del qapp
     text = """<?xml version="1.0" encoding="UTF-8"?>
 <ui version="4.0">
  <class>Form</class>
@@ -724,3 +725,120 @@ def test_has_step_after_the_log_trims(qapp: QApplication) -> None:
         services.dispose()
     finally:
         session.dispose()
+
+
+def _live_popover(window: QWidget) -> QWidget:
+    shown = [item for item in window.findChildren(QWidget, "formBuilder.rowPopover") if item.isVisible()]
+    assert shown
+    return shown[-1]
+
+
+def _named(parent: QWidget, accessible: str) -> QWidget:
+    return next(item for item in parent.findChildren(QWidget) if item.accessibleName() == accessible)
+
+
+def test_rich_lists_line_breaks_and_segments_keep_the_edit(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _LABEL)
+    try:
+        _select(session, "richLabel")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.text")
+        assert row is not None
+        summary = row.findChild(QWidget, "formBuilder.summary")
+        assert summary is not None
+        summary.click()
+        qapp.processEvents()
+        popover = _live_popover(window)
+        formatted = _named(popover, "Text: formatted text")
+        formatted.setFocus()
+        cursor = formatted.textCursor()
+        cursor.movePosition(QTextCursor.End)
+        formatted.setTextCursor(cursor)
+        QTest.keyClick(formatted, Qt.Key_Return, Qt.ShiftModifier)
+        QTest.keyClicks(formatted, "there")
+        _named(popover, "Numbered list").click()
+        qapp.processEvents()
+        written = session.document.node(session.document.by_name("richLabel")[0]).prop("text").value.text
+        assert "Hello<br />there" in written
+        assert "<ol>" in written and "<li" in written
+        _named(popover, "Source").click()
+        qapp.processEvents()
+        source = _named(popover, "Text: HTML source")
+        assert source.toPlainText() == written
+        source.moveCursor(QTextCursor.End)
+        QTest.keyClicks(source, " ")
+        qapp.processEvents()
+        kept = session.document.node(session.document.by_name("richLabel")[0]).prop("text").value.text
+        assert "<ol>" in kept and "there" in kept
+        steps = len(session.log.entries())
+        done = popover.findChild(QWidget, "formBuilder.popoverDone")
+        assert done is not None
+        done.click()
+        qapp.processEvents()
+        assert len(session.log.entries()) == steps
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_mixed_texts_have_no_translation_disclosure(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _LABEL)
+    try:
+        _select(session, "titleLabel", "richLabel")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.toolTip")
+        if row is None:
+            row = pane.findChild(QWidget, "formBuilder.row.text")
+        assert row is not None
+        toggle = row.findChild(QToolButton, "formBuilder.translationToggle")
+        assert toggle is None or not toggle.isVisible()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_list_editor_keys_act_on_the_clicked_row(qapp: QApplication) -> None:
+    host = QWidget()
+    layout = QVBoxLayout(host)
+    editor = ListEditor(name="Colours")
+    layout.addWidget(editor)
+    seen = []
+    editor.set_on_texts(seen.append)
+    host.resize(320, 240)
+    host.show()
+    editor.set_texts(["a", "b", "c", "d"])
+    qapp.processEvents()
+    editor.focus_row(0)
+    third = next(item for item in editor.findChildren(QLineEdit) if item.accessibleName() == "Colours row 3")
+    QTest.mouseClick(third, Qt.LeftButton)
+    qapp.processEvents()
+    focused = qapp.focusWidget()
+    assert focused is third
+    QTest.keyClick(third, Qt.Key_Delete, Qt.ControlModifier)
+    qapp.processEvents()
+    assert editor.texts() == ("a", "b", "d")
+    host.close()
+
+
+def test_editor_column_is_132_at_236_px(qapp: QApplication) -> None:
+    from app.qt.QtWidgets import QScrollArea
+
+    window, pane, session, realizer = _pane(qapp, _LABEL)
+    try:
+        _select(session, "nameEdit")
+        _settle(qapp, pane)
+        scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+        assert scroll is not None
+        row = pane.findChild(QWidget, "formBuilder.row.echoMode")
+        assert row is not None
+        width = 400
+        for _attempt in range(20):
+            window.resize(width, 760)
+            _settle(qapp, pane)
+            if row.width() == 236:
+                break
+            width += 236 - row.width()
+        assert row.width() == 236
+        editor = row._editor.widget
+        assert editor.width() == 132
+        assert scroll.horizontalScrollBar().maximum() == 0
+    finally:
+        _close(window, pane, realizer, session, qapp)
