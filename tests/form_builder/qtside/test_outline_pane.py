@@ -664,6 +664,17 @@ def test_copy_does_not_change_the_form(qapp: QApplication) -> None:
         assert _focus(qapp) is pane.tree
 
 
+def test_quick_insert_does_not_scroll_sideways_at_236(qapp: QApplication) -> None:
+    with _opened(qapp, _pair(), "quick-width", width=236, height=480) as (pane, _session):
+        pane.setFixedWidth(236)
+        pane.set_quick_recent(lambda: ("layout-v", "layout-h", "spacer-v", "splitter-h"))
+        pane.show_insert()
+        qapp.processEvents()
+        listed = pane.findChild(QListWidget, "formBuilder.outlineInsertList")
+        assert isinstance(listed, QListWidget)
+        assert listed.horizontalScrollBar().maximum() == 0
+
+
 def test_slash_opens_the_insert_list(qapp: QApplication) -> None:
     with _opened(qapp, _pair(), "slash") as (pane, _session):
         _show(pane, _session, "shop")

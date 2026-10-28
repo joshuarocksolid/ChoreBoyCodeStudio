@@ -17,6 +17,7 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QMenu,
@@ -1388,6 +1389,10 @@ class OutlinePane(QWidget):
         self._quick_delegate.set_icons(False)
         self._quick_delegate.set_width(200)
         self._insert_list.setItemDelegate(self._quick_delegate)
+        # Rows are sized to the viewport and elide. A sideways bar clips the name.
+        scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self._insert_list.setHorizontalScrollBarPolicy(scroll_off)
+        self._insert_list.setResizeMode(QListView.ResizeMode.Adjust)
         self._insert_list.itemActivated.connect(self._activate_insert)
         self._insert_list.currentItemChanged.connect(lambda *_args: self._preview_insert_row())
         self._insert_list.installEventFilter(self)
@@ -1751,6 +1756,29 @@ class OutlinePane(QWidget):
                 tokens.border,
                 width,
                 tokens.accent,
+            )
+        )
+        # The delegate paints theme text. An unstyled list stays white, so dark and
+        # high-contrast text disappears on it.
+        self._insert_pop.setStyleSheet(
+            "QFrame#formBuilder\\.outlineInsert { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.outlineInsertFilter { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.outlineInsertFilter:focus { border: %dpx solid %s; }"
+            "QListWidget#formBuilder\\.outlineInsertList { background: %s; color: %s; border: none; }"
+            "QListWidget#formBuilder\\.outlineInsertList::item:selected { background: %s; color: %s; }"
+            % (
+                tokens.panel_bg,
+                tokens.text_primary,
+                tokens.border,
+                tokens.input_bg,
+                tokens.text_primary,
+                tokens.border,
+                width,
+                tokens.accent,
+                tokens.panel_bg,
+                tokens.text_primary,
+                tokens.tree_selected_bg,
+                tokens.text_primary,
             )
         )
         self.tree.viewport().update()
@@ -2378,8 +2406,11 @@ class FormWorkbench(QWidget):
         self.insert.set_drag_finished(self._cancel_place)
         self.insert.set_leave(self.canvas.setFocus)
         application = QApplication.instance()
+        self._focus_hooked = False
         if application is not None:
             application.focusChanged.connect(self._on_focus_changed)
+            self._focus_hooked = True
+            self.destroyed.connect(self.dispose)
         self.insert.set_report(self.outline.report)
         self.insert.set_open_window(self._open_window_kind)
         self.outline.set_quick_recent(self._insert_memory.recent)
@@ -2573,6 +2604,19 @@ class FormWorkbench(QWidget):
         self.canvas.apply_theme(tokens)
         self.inspector.apply_chrome(chrome_for(tokens))
         self.inspector.set_link_color(problems_link_color(tokens))
+
+    def dispose(self, *_args: object) -> None:
+        """Drop the focus watch. A closed form must not keep the application signal."""
+        if not self._focus_hooked:
+            return
+        self._focus_hooked = False
+        application = QApplication.instance()
+        if application is None:
+            return
+        try:
+            application.focusChanged.disconnect(self._on_focus_changed)
+        except (RuntimeError, TypeError):
+            return
 
     def open_left(self) -> None:
         self._open_drawer("left")
