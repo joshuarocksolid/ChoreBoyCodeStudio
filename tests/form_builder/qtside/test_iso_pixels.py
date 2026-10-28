@@ -97,6 +97,32 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
      <property name="sizeHint"><size><width>20</width><height>40</height></size></property>
     </spacer>
    </item>
+   <item><widget class="QCalendarWidget" name="calendarWidget"/></item>
+   <item><widget class="QColumnView" name="columnView"/></item>
+   <item><widget class="QDateTimeEdit" name="dateTimeEdit"/></item>
+   <item><widget class="QDial" name="dial"/></item>
+   <item><widget class="QDialogButtonBox" name="buttonBox"/></item>
+   <item><widget class="QDockWidget" name="dockWidget"/></item>
+   <item><widget class="QFontComboBox" name="fontComboBox"/></item>
+   <item><widget class="QFrame" name="frame"/></item>
+   <item><widget class="QGraphicsView" name="graphicsView"/></item>
+   <item><widget class="QKeySequenceEdit" name="keySequenceEdit"/></item>
+   <item><widget class="QLCDNumber" name="lcdNumber"/></item>
+   <item><widget class="QListView" name="listView"/></item>
+   <item><widget class="QMdiArea" name="mdiArea"/></item>
+   <item><widget class="QOpenGLWidget" name="openGLWidget"/></item>
+   <item><widget class="QPlainTextEdit" name="plainTextEdit"/></item>
+   <item><widget class="QQuickWidget" name="quickWidget"/></item>
+   <item><widget class="QScrollArea" name="scrollArea"/></item>
+   <item><widget class="QStackedWidget" name="stackedWidget"/></item>
+   <item><widget class="QTableView" name="tableView"/></item>
+   <item><widget class="QTextBrowser" name="textBrowser"/></item>
+   <item><widget class="QTimeEdit" name="timeEdit"/></item>
+   <item><widget class="QToolBox" name="toolBox"/></item>
+   <item><widget class="QTreeView" name="treeView"/></item>
+   <item><widget class="QUndoView" name="undoView"/></item>
+   <item><widget class="QWizard" name="wizard"/></item>
+   <item><widget class="QWizardPage" name="wizardPage"/></item>
   </layout>
  </widget>
  <resources/>
@@ -117,8 +143,9 @@ def _shots() -> Path:
 
 def test_the_reference_form_holds_every_insert_tile() -> None:
     """The ISO form keeps pace with the Insert catalog as it grows."""
-    # The seven tiles the page had before the catalog grew (M4.1). The catalog's other entries are not on this page.
-    classes = {"QLabel", "QPushButton", "QLineEdit", "QCheckBox", "QComboBox", "QSpinBox", "QGroupBox"}
+    from app.features.form_builder.qtside.canvas.core.palette import TILES
+
+    classes = {tile[0] for tile in TILES if tile[0].startswith("Q")}
     missing = sorted(name for name in classes if 'class="%s"' % name not in _FORM)
     assert missing == []
 
