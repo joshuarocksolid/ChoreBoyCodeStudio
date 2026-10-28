@@ -13,7 +13,9 @@ def _ink(color: str) -> str:
 
 
 def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
-    overlay = overlay_palette(tokens.is_high_contrast)
+    # The high-contrast overlay inks are tuned for the light form surface; on
+    # HC-dark chrome they fall below 3:1, so HC dark keeps the standard inks.
+    overlay = overlay_palette(tokens.is_high_contrast and not tokens.is_dark)
     return chrome_from_values(
         window=tokens.window_bg,
         panel=tokens.panel_bg,
