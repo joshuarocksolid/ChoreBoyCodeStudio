@@ -576,6 +576,7 @@ def test_rollback_restores_a_redo_stack_a_net_nil_write_dropped() -> None:
     assert log.undo()
     cp = log.checkpoint()
     original = prop_text(doc, "okButton")
+    assert isinstance(original, str)
     _session_writes(log, owner, "s1", "X", original)
     assert not log.can_redo()
     assert log.entries() == ()
