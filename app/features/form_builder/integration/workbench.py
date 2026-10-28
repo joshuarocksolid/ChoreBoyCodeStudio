@@ -2701,6 +2701,11 @@ class FormWorkbench(QWidget):
             "QTreeWidget#formBuilder\\.structure:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.noticeText { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.insertBody { color: %s; background: transparent; border: none; }"
+            "QListWidget#formBuilder\\.insertBody { background: %s; color: %s; border: 1px solid %s; }"
+            "QListWidget#formBuilder\\.insertBody::item:selected { background: %s; color: %s; }"
+            "QListWidget#formBuilder\\.insertBody:focus { border: %dpx solid %s; }"
+            "QLineEdit#formBuilder\\.insertFilter { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.insertFilter:focus { border: %dpx solid %s; }"
             "QWidget#formBuilder\\.sectionHeader { background: transparent; color: %s; border: none; }"
             "QWidget#formBuilder\\.sectionHeader:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.sectionTitle {"
@@ -2735,6 +2740,18 @@ class FormWorkbench(QWidget):
                 tokens.accent,
                 tokens.text_primary,
                 tokens.text_muted,
+                tokens.editor_bg,
+                tokens.text_primary,
+                tokens.border,
+                tokens.tree_selected_bg,
+                tokens.text_primary,
+                width,
+                tokens.accent,
+                tokens.editor_bg,
+                tokens.text_primary,
+                tokens.border,
+                width,
+                tokens.accent,
                 tokens.text_primary,
                 width,
                 tokens.accent,
