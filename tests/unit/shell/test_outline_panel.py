@@ -461,3 +461,17 @@ def test_apply_theme_tokens_refreshes_icons_without_rebuilding_tree(_ensure_qapp
     assert panel.tree_widget().topLevelItem(0).isExpanded()
     assert not top_item.icon(0).isNull()
     assert top_item.icon(0).cacheKey() != first_icon.cacheKey() or first_icon.isNull()
+
+
+def test_ui_file_outline_text_follows_form_builder_availability(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    """Runs under both bindings. The Outline-tab sentence only when the form builder is registered."""
+    from app.features.form_builder.install import form_builder_enabled
+
+    panel = OutlinePanel()
+    panel.set_unsupported_language("ui")
+    text = panel._empty_label.text()  # noqa: SLF001
+    if form_builder_enabled():
+        assert text == "This form's outline is in the Outline tab."
+    else:
+        assert text == "No outline for .ui files."
+    assert "Outline tab" not in text or form_builder_enabled()

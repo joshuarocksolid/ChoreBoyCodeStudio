@@ -39,6 +39,17 @@ from app.shell.outline.outline_tree import (
 )
 
 
+_FORM_OUTLINE_TEXT = "This form's outline is in the Outline tab."
+_NO_UI_OUTLINE_TEXT = "No outline for .ui files."
+
+
+def _ui_outline_text() -> str:
+    """The form builder owns the outline of a .ui file only when it is registered (PySide6 builds)."""
+    from app.features.form_builder.install import form_builder_enabled
+
+    return _FORM_OUTLINE_TEXT if form_builder_enabled() else _NO_UI_OUTLINE_TEXT
+
+
 class OutlinePanel(QWidget):
     """Tree of classes/functions/methods/properties for the active editor."""
 
@@ -287,7 +298,7 @@ class OutlinePanel(QWidget):
         if language == "python":
             self._empty_label.setText("Open a Python file to see its outline.")
         elif language == "ui":
-            self._empty_label.setText("This form's outline is in the Outline tab.")
+            self._empty_label.setText(_ui_outline_text())
         else:
             self._empty_label.setText(f"No outline available for {language} files.")
         self._stack_layout.setCurrentWidget(self._empty_label)
