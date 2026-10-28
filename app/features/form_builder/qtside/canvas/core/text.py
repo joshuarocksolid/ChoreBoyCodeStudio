@@ -66,6 +66,26 @@ def text_target(document: UiDocument, node: NodeId, site: TextSite) -> Optional[
     return _property_target(found, prop, "widget", multiline)
 
 
+def page_title_target(document: UiDocument, node: NodeId) -> Optional[TextTarget]:
+    """The title of a selected page, on the storage its container reads (UX-CONT-008).
+
+    Tab widget ``title`` and toolbox ``label`` are attributes; a wizard page's
+    ``title`` is a property. A stacked page has no title.
+    """
+    found = document.get(node)
+    if not isinstance(found, WidgetNode):
+        return None
+    parent = document.parent(found.id)
+    if not isinstance(parent, WidgetNode):
+        return None
+    container = effective_class(document, parent)
+    if container in ("QTabWidget", "QToolBox"):
+        return _attribute_target(found, _page_attribute(document, found), "page_tab")
+    if container == "QWizard" and found.class_name == "QWizardPage":
+        return _property_target(found, "title", "page_tab", False)
+    return None
+
+
 def enter_opens_editor(document: UiDocument, node: NodeId) -> bool:
     """A container or a layout takes Enter as "select the first child"."""
     found = document.get(node)

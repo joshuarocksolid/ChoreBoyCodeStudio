@@ -71,7 +71,14 @@ from app.features.form_builder.qtside.canvas.core.structure import (
     parent_step,
     positioning_of,
 )
-from app.features.form_builder.qtside.canvas.core.text import TextTarget, enter_opens_editor, next_text_target, text_commit, text_target
+from app.features.form_builder.qtside.canvas.core.text import (
+    TextTarget,
+    enter_opens_editor,
+    next_text_target,
+    page_title_target,
+    text_commit,
+    text_target,
+)
 from app.features.form_builder.qtside.canvas.core.words import (
     FIRST_FOCUS_HINT,
     GIVEN_SIZE,
@@ -791,6 +798,10 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
             return Step(gesture, (), True)
         return Step(gesture, (Select((parent,), parent),))
     if event.key == "enter":
+        title = page_title_target(world.document, current)
+        if title is not None:
+            # Enter on a page edits its title, not its first child (UX-CONT-008).
+            return Step(Editing(title, world.fresh_token), (OpenEditor(title),))
         if enter_opens_editor(world.document, current):
             target = text_target(world.document, current, "widget")
             if target is not None:
