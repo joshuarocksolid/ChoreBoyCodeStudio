@@ -813,17 +813,9 @@ def test_k1_create_and_fill(tmp_path: Path, qapp: QApplication) -> None:
             kb.check(kb.current() == "notesEdit", "Alt+1 keeps the selection")
             kb.press("Key_Slash")
         kb.log.append("quick insert focus: %s" % kb.focus_name())
-        # Typing to search the list and the Date edit tile are M4.1 (Insert search
-        # and the widget catalog). Arrow to Line edit, which proves the same row rule.
+        # M4.1: the quick list has a search field. Type the words; Enter inserts the first result.
         before_edits = kb.text().count('class="QLineEdit"')
-        insert_list = kb.focus()
-        items = [insert_list.item(i).text() for i in range(insert_list.count())] if hasattr(insert_list, "item") else []  # type: ignore[union-attr]
-        kb.log.append("insert list: %s" % items)
-        for _ in range(len(items) + 1):
-            current = insert_list.currentItem() if hasattr(insert_list, "currentItem") else None  # type: ignore[union-attr]
-            if current is not None and current.text() == "Line edit":
-                break
-            kb.press("Key_Down")
+        kb.type("line edit")
         kb.press("Key_Return")
         text = kb.text()
         kb.check(text.count('class="QLineEdit"') == before_edits + 1, "/ then Enter on Line edit inserts a field")

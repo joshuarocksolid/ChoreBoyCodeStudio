@@ -70,7 +70,8 @@ from app.features.form_builder.integration.clipboard_actions import (
     apply_command,
     clipboard_has_fragment,
 )
-from app.features.form_builder.integration.context_menu import add_clipboard_actions, fill_context_menu, paint_menu
+from app.features.form_builder.integration.context_menu import build_context_menu, paint_menu
+from app.features.form_builder.integration.menu_ext import default_registry
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
@@ -563,6 +564,19 @@ class FormSurface(QWidget):
         elif isinstance(outcome, Current):
             self.narrate("Nothing to change.")
 
+    def run_menu_request(self, request: object) -> None:
+        """``MenuContext.run``: an engine ``Command`` runs as one undo step (the log
+        listener toasts it) and a refusal is narrated; a layout request goes
+        through ``run_layout``."""
+        # ``Command`` is a Protocol; every engine command declares ``command_type``.
+        if getattr(type(request), "command_type", None) and callable(getattr(request, "apply", None)):
+            try:
+                self._session.log.execute(request)  # type: ignore[arg-type]
+            except CommandRejected as exc:
+                self.narrate(str(exc))
+            return
+        self.run_layout(request)
+
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
         mixed = mixed_parent_sentence(self._session.document, state.ids)
@@ -671,6 +685,7 @@ class FormSurface(QWidget):
         self._selection_unsub()
         self._source_unsub()
         self._changes.close()
+        self._workbench.dispose()
         self._workbench.canvas_view().dispose()
         self._workbench.inspector.dispose()
         self._realizer.dispose()
@@ -1103,7 +1118,7 @@ class FormSurface(QWidget):
             self._chip_anchor(node),
         )
 
-    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint]) -> None:
+    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint], *, source: str = "canvas") -> None:
         if self._source.mode != "visual":
             return
         shown = self._context_menu
@@ -1116,8 +1131,20 @@ class FormSurface(QWidget):
             selection.set((node,), current=node, source=SelectionSource.CANVAS)
         menu = QMenu(self)
         menu.setObjectName("formBuilder.contextMenu")
-        add_clipboard_actions(menu, self.dispatch, self._clipboard_enabled)
-        fill_context_menu(menu, self.layout_offers(), self.run_layout)
+        build_context_menu(
+            menu,
+            contributors=default_registry(),
+            ids=selection.state.ids,
+            current=selection.state.current,
+            session=self._session,
+            dispatch=self.dispatch,
+            enabled=self._clipboard_enabled,
+            sheet=self.layout_offers(),
+            run=self.run_menu_request,
+            at=at,
+            source=source,
+            live=self._realizer.widget_for,
+        )
         paint_menu(menu, chrome_for(self._tokens))
         if at is None:
             subject, bounds = self._place(selection.state.ids)
@@ -1128,7 +1155,7 @@ class FormSurface(QWidget):
     def _open_outline_menu(self, node: NodeId, at: QPoint) -> None:
         if node not in self._session.selection.state.ids:
             self._on_outline_pick(node)
-        self.open_context_menu(node, at)
+        self.open_context_menu(node, at, source="outline")
 
     def _open_wrap_popover(self) -> None:
         sheet = self.layout_offers()

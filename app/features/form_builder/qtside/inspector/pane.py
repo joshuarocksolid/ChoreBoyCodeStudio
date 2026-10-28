@@ -152,6 +152,7 @@ class InspectorPane(QWidget):
         self.properties.set_group_expanded(group, expanded)
 
     def apply_chrome(self, chrome: FormChrome) -> None:
+        self._services.set_chrome(chrome)
         self.setStyleSheet(_stylesheet(chrome))
         self.properties.apply_colors(
             chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted
@@ -253,6 +254,7 @@ class InspectorPane(QWidget):
         if self._diag_unsub is not None:
             self._diag_unsub()
             self._diag_unsub = None
+        self._services.dispose()
 
     def event(self, event: QEvent) -> bool:
         if (

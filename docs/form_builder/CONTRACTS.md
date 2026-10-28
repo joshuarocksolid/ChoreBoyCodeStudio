@@ -104,7 +104,7 @@ Registries discover modules in a package in sorted module-name order. Each modul
 | Codegen expanders | `engine/codegen/expanders/` | M1.3 |
 | Property editors | `qtside/inspector/editors/` | M3.1b |
 | Widget catalog entries | `qtside/insert/catalog/` (Qt-free data) | M4.1 |
-| Context-menu contributors | `integration/menu_ext/` (groups "first", "structure", "last"; UX-CONT-020) | M4.0s |
+| Context-menu contributors | `integration/menu_ext/` (groups "first", "structure", "last"; `MenuContext.at`, `source` `"canvas"` or `"outline"`, `live(node_id)`, `run(command)`; UX-CONT-020) | M4.0s |
 | Tab-content providers | registered at install (shell registry) | M2.0 |
 
 ---

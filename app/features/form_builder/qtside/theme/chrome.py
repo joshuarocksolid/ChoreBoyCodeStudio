@@ -78,12 +78,107 @@ class FormChrome:
     search_match_bg: str = ""
     # Background of a chosen item (a checked segment), under ``text``.
     selected: str = ""
+    # UX-TOK-001 popup pair and the shell's icon colour (UX-TOK-005 ``fb.glyph``).
+    popup: str = ""
+    popup_border: str = ""
+    glyph: str = ""
+    is_dark: bool = False
+    is_high_contrast: bool = False
+    # ov.layout and ov.gap, as ``#RRGGBB``, for layout and spacer glyphs.
+    layout: str = ""
+    gap: str = ""
 
     def __post_init__(self) -> None:
         if not self.search_match_bg:
             object.__setattr__(self, "search_match_bg", self.row_hover)
         if not self.selected:
             object.__setattr__(self, "selected", self.row_hover)
+        if not self.popup:
+            object.__setattr__(self, "popup", self.panel)
+        if not self.popup_border:
+            object.__setattr__(self, "popup_border", self.border)
+        if not self.glyph:
+            object.__setattr__(self, "glyph", self.text)
+
+    @property
+    def fb(self) -> "ChromeTokens":
+        """The ``fb.*`` tokens of UX-TOK-005 for this chrome."""
+        return chrome_tokens(self)
+
+
+@dataclass(frozen=True)
+class ChromeTokens:
+    """UX-TOK-005 chrome tokens. Aliases read the chrome; the rest are fixed per mode."""
+
+    popup: str
+    popup_border: str
+    tile_hover: str
+    tile_current: str
+    glyph: str
+    match: str
+    swatch_border: str
+    checker_a: str
+    checker_b: str
+    handle_fill: str
+    handle_border: str
+    handle_border_px: float
+    handle_current_border: str
+    handle_current_px: int
+
+
+# Fixed colours of UX-TOK-005 that are not aliases: (light, dark, HC light, HC dark).
+_CHECKER_A = ("#FFFFFF", "#3C434A", "#FFFFFF", "#000000")
+_CHECKER_B = ("#D3D8DF", "#262C33", "#000000", "#FFFFFF")
+_HANDLE_FILL = ("", "", "#FFFFFF", "#000000")
+_HANDLE_BORDER = ("", "", "#000000", "#FFFFFF")
+_HANDLE_CURRENT = ("", "", "#0000C0", "#7CB7FF")
+_SWATCH_BORDER = ("", "", "#000000", "#FFFFFF")
+
+
+def _mode_index(chrome: FormChrome) -> int:
+    if chrome.is_high_contrast:
+        return 3 if chrome.is_dark else 2
+    return 1 if chrome.is_dark else 0
+
+
+def chrome_tokens(chrome: FormChrome) -> ChromeTokens:
+    """The UX-TOK-005 chrome tokens for ``chrome``. Form-surface tokens are not here."""
+    mode = _mode_index(chrome)
+    high_contrast = chrome.is_high_contrast
+    return ChromeTokens(
+        popup=chrome.popup,
+        popup_border=chrome.popup_border,
+        tile_hover=chrome.row_hover,
+        tile_current=chrome.selected,
+        glyph=chrome.glyph,
+        match=chrome.search_match_bg,
+        swatch_border=_SWATCH_BORDER[mode] if high_contrast else chrome.border,
+        checker_a=_CHECKER_A[mode],
+        checker_b=_CHECKER_B[mode],
+        handle_fill=_HANDLE_FILL[mode] if high_contrast else chrome.panel,
+        handle_border=_HANDLE_BORDER[mode] if high_contrast else chrome.text,
+        handle_border_px=2.0 if high_contrast else 1.5,
+        handle_current_border=_HANDLE_CURRENT[mode] if high_contrast else chrome.accent,
+        handle_current_px=2,
+    )
+
+
+def default_chrome() -> FormChrome:
+    """The chrome used before a shell theme is applied (light fallback roles)."""
+    faint, accent, muted, panel, border, text = fallback_backdrop_roles()
+    return chrome_from_values(
+        window=panel,
+        panel=panel,
+        text=text,
+        muted=muted,
+        faint=faint,
+        border=border,
+        accent=accent,
+        row_hover=border,
+        input_bg=panel,
+        error=FALLBACK_ACCENT,
+        focus_width=1,
+    )
 
 
 LAYOUT_CONFIRM_NAME = "formBuilder.layoutConfirm"
@@ -171,6 +266,13 @@ def chrome_from_values(
     focus_width: int,
     search_match_bg: str = "",
     selected: str = "",
+    popup: str = "",
+    popup_border: str = "",
+    glyph: str = "",
+    is_dark: bool = False,
+    is_high_contrast: bool = False,
+    layout: str = "",
+    gap: str = "",
 ) -> FormChrome:
     return FormChrome(
         window=window,
@@ -187,4 +289,11 @@ def chrome_from_values(
         on_accent=on_accent_for(accent),
         search_match_bg=search_match_bg,
         selected=selected,
+        popup=popup,
+        popup_border=popup_border,
+        glyph=glyph,
+        is_dark=is_dark,
+        is_high_contrast=is_high_contrast,
+        layout=layout,
+        gap=gap,
     )

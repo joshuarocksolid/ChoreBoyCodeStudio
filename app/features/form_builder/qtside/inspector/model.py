@@ -455,6 +455,8 @@ def _node_body(
     for spec in catalog.rows():
         if spec.classes and not all(_admits(facts, owner, spec.classes) for owner in owners):
             continue
+        if spec.parent_classes and not all(_parent_admits(facts, owner, spec.parent_classes) for owner in owners):
+            continue
         row = bind(facts, spec, owners)
         if row is not None:
             curated.setdefault(spec.group, []).append(row)
@@ -469,7 +471,11 @@ def _node_body(
             blocks = (Block("", tuple(curated.get(group, ()))),)
         kept = tuple(Block(block.title, filter_rows(block.rows, search)) for block in blocks)
         kept = tuple(block for block in kept if block.rows)
-        if kept or (group is GroupId.LAYOUT and not search and _layout_body(facts, catalog, owners)):
+        shown_body = not search and (
+            (group is GroupId.LAYOUT and _layout_body(facts, catalog, owners))
+            or catalog.body_applies(group, facts.document, owners)
+        )
+        if kept or shown_body:
             groups.append(GroupView(group, kept))
     return NodeBody(owners, tuple(groups))
 
@@ -619,6 +625,13 @@ def _match(row: Row, needle: str) -> Optional[Match]:
 def _admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
     chain = _chain(facts, owner)
     return any(name in chain for name in classes)
+
+def _parent_admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
+    """The nearest ancestor that is a widget (layouts are skipped) admits one of ``classes``."""
+    for ancestor in facts.document.ancestors(owner):
+        if isinstance(facts.document.node(ancestor), WidgetNode):
+            return _admits(facts, ancestor, classes)
+    return False
 
 def _chain(facts: Facts, owner: NodeId) -> Tuple[str, ...]:
     live = facts.live.get(owner)

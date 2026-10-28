@@ -485,3 +485,14 @@ Object names use `formBuilder.<area>.<name>`. View XML reuses `#shell.editorTabs
 | `formBuilder.newForm.name` | Name field |
 | `formBuilder.newForm.card.*` | Start cards |
 | `formBuilder.fromTable` | Build a form from a table |
+| `formBuilder.insert` | Insert pane |
+| `formBuilder.insertFilter` | Insert search field ("Search widgets") |
+| `formBuilder.insertSearch` | Insert header search button |
+| `formBuilder.insertMore` | Insert header more menu (Show as icons or list, Expand all, Collapse all, Clear recently used) |
+| `formBuilder.insertBody` | Insert tiles, rows and category headers |
+| `formBuilder.insertCaption` | Insert caption (where the next insert goes) |
+| `formBuilder.insertEmpty` | Insert no-match message |
+| `formBuilder.insertClear` | Insert no-match Clear link |
+| `formBuilder.outlineInsert` | Quick insert popover (`/`) |
+| `formBuilder.outlineInsertFilter` | Quick insert search field |
+| `formBuilder.outlineInsertList` | Quick insert rows |

@@ -7,6 +7,8 @@ from typing import Dict, Tuple
 from app.qt.QtCore import QPointF, Qt
 from app.qt.QtGui import QColor, QPainter, QPen, QPixmap, QPolygonF
 
+from app.features.form_builder.qtside.icons.catalog_strokes import CATALOG_STROKES
+
 Stroke = Tuple[Tuple[float, float], ...]
 _GRID = 16.0
 _STROKE_AT_16 = 1.5
@@ -177,3 +179,4 @@ _GLYPHS: Dict[str, Tuple[Stroke, ...]] = {
     "behavior": (((3, 4), (8, 4), (8, 8), (13, 8), (13, 12)),),
     "pin": (_ring(8, 5, 2.4), ((8, 7.4), (8, 13.5))),
 }
+_GLYPHS.update(CATALOG_STROKES)

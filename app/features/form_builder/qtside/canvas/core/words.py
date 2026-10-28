@@ -9,6 +9,7 @@ from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.qtside.canvas.core.structure import effective_class, effective_selection
+from app.features.form_builder.qtside.insert.catalog import load_catalog
 
 ELIDE_AT = 24
 
@@ -22,32 +23,6 @@ _LAYOUT = {
     "QVBoxLayout": ("Vertical", "Vertical layout"),
     "QGridLayout": ("Grid", "Grid layout"),
     "QFormLayout": ("Form", "Form layout"),
-}
-_CLASS_WORDS = {
-    "QLabel": "Label",
-    "QPushButton": "Push button",
-    "QToolButton": "Tool button",
-    "QRadioButton": "Radio button",
-    "QCheckBox": "Check box",
-    "QCommandLinkButton": "Command link button",
-    "QLineEdit": "Line edit",
-    "QGroupBox": "Group box",
-    "QFrame": "Frame",
-    "QWidget": "Widget",
-    "QScrollArea": "Scroll area",
-    "QTabWidget": "Tab widget",
-    "QStackedWidget": "Stacked widget",
-    "QToolBox": "Toolbox",
-    "QSplitter": "Splitter",
-    "QMainWindow": "Main window",
-    "QDialog": "Dialog",
-    "QComboBox": "Combo box",
-    "QListWidget": "List",
-    "QTextEdit": "Text edit",
-    "QPlainTextEdit": "Plain text",
-    "QSpinBox": "Spin box",
-    "QSlider": "Slider",
-    "QProgressBar": "Progress bar",
 }
 
 
@@ -145,7 +120,7 @@ def _friendly(document: UiDocument, node: object) -> str:
         return "Spacer"
     if isinstance(node, WidgetNode):
         class_name = effective_class(document, node)
-        known = _CLASS_WORDS.get(class_name)
+        known = load_catalog().friendly_for_class(class_name)
         if known:
             return known
         return _split_class(class_name)

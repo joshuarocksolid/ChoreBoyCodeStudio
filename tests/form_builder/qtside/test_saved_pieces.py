@@ -23,7 +23,9 @@ from app.features.form_builder.integration.pieces import (
     payload_with_pieces,
     unique_piece_name,
 )
-from app.features.form_builder.integration.workbench import InsertPane
+from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory
+from app.features.form_builder.integration.workbench import _PieceOps
+from app.features.form_builder.qtside.insert.pane import InsertPane
 from app.features.form_builder.qtside.canvas.core.palette import MIME_NODE
 from tests.form_builder.engine.commands._support import button_spec
 
@@ -58,7 +60,7 @@ def _open() -> FormSession:
 
 
 def _pane(parent: QWidget) -> InsertPane:
-    pane = InsertPane(lambda _collapsed: None, parent)
+    pane = InsertPane(lambda _collapsed: None, parent, memory=InMemoryInsertMemory(), pieces=_PieceOps())
     parent.show()
     pane.show()
     return pane
