@@ -81,6 +81,24 @@ class Entry:
     committed_at: float = 0.0
 
 
+@dataclass(frozen=True)
+class Checkpoint:
+    """A marker in the log taken by ``CommandLog.checkpoint`` and consumed by ``rollback``.
+
+    ``depth`` is the undo depth when it was taken. ``tip_token`` names the top
+    undo entry then (the base token when the stack was empty). ``redo`` and
+    ``redo_tokens`` are the redo stack as it stood, and ``save_token`` the save
+    point. Opaque to callers except ``depth``.
+    """
+
+    depth: int
+    tip_token: int
+    redo: Tuple["Entry", ...]
+    redo_tokens: Tuple[int, ...]
+    save_token: Optional[int]
+    saves: int
+
+
 class Subscription:
     def __init__(self, log: "CommandLog", key: int) -> None:
         self._log = log
@@ -123,6 +141,7 @@ class CommandLog:
         self._redo_tokens: List[int] = []
         self._next_token = 1
         self._save_token: Optional[int] = 0
+        self._saves = 0
         self._base_token = 0
         self._listeners: List[Tuple[int, int, Callable[[ChangeSet], None]]] = []
         self._listener_seq = 0
@@ -281,6 +300,74 @@ class CommandLog:
         if self._txn is not None:
             raise CommandRejected("The form cannot be marked saved during a transaction.")
         self._save_token = self._tip_token()
+        self._saves += 1
+
+    def checkpoint(self) -> Checkpoint:
+        """Remember where the log is now, for ``rollback``. O(redo depth)."""
+        return Checkpoint(
+            depth=len(self._undo),
+            tip_token=self._tip_token(),
+            redo=tuple(self._redo),
+            redo_tokens=tuple(self._redo_tokens),
+            save_token=self._save_token,
+            saves=self._saves,
+        )
+
+    def rollback(self, cp: Checkpoint, token: str) -> bool:
+        """Undo everything written since ``cp`` by steps that carry ``token``, as one change set.
+
+        Refused (False, nothing changed) unless the undo stack below ``cp`` is
+        unchanged and every entry above it carries ``token``, and nothing was
+        redone or undone since (no redo entry may exist while entries sit above
+        ``cp``). On success the inverses of the entries above ``cp`` run in
+        reverse as one change set of origin "undo", the undo stack is back at
+        ``cp``'s depth, the redo stack and its tokens are ``cp``'s, and the save
+        point is ``cp``'s, or None when a ``mark_saved`` happened since ``cp``
+        (the file on disk then holds a state this rollback removes).
+        """
+        self._reject_reentry()
+        if self._txn is not None:
+            raise CommandRejected("Rollback is not available during a transaction.")
+        if cp.tip_token == self._base_token:
+            start = 0
+        elif cp.tip_token in self._tokens:
+            start = self._tokens.index(cp.tip_token) + 1
+        else:
+            return False
+        above = self._undo[start:]
+        if any(entry.merge_token != token for entry in above):
+            return False
+        if above and self._redo:
+            return False
+        if not above:
+            if self._redo:
+                return self._redo_tokens == list(cp.redo_tokens)
+            if cp.redo:
+                # A net-nil write dropped the redo stack without leaving an entry.
+                self._restore_redo(cp, keep_save=self._saves != cp.saves)
+            return True
+        ops: List[Op] = []
+        for entry in reversed(above):
+            ops.extend(reversed(entry.inverse_ops))
+        changes = _apply_ops(self._doc, ops)
+        del self._undo[start:]
+        del self._tokens[start:]
+        self._restore_redo(cp)
+        self.selection = _present(self._doc, above[0].selection_before)
+        self._emit(assemble(changes, self._doc.revision, "undo", above[0].label))
+        return True
+
+    def _restore_redo(self, cp: Checkpoint, *, keep_save: bool = False) -> None:
+        self._redo = list(cp.redo)
+        self._redo_tokens = list(cp.redo_tokens)
+        if keep_save:
+            return
+        saved = cp.save_token
+        if self._saves != cp.saves:
+            saved = None
+        elif saved is not None and saved != self._base_token and saved not in self._tokens and saved not in self._redo_tokens:
+            saved = None
+        self._save_token = saved
 
     def subscribe(self, listener: Callable[[ChangeSet], None], *, priority: int) -> Subscription:
         """Run ``listener`` after each committed step, undo and redo."""

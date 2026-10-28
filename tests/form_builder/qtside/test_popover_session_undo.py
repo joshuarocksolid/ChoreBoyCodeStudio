@@ -228,13 +228,6 @@ def test_escape_leaves_the_document_and_the_undo_stack_as_they_were(qapp: QAppli
         rig.close()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Owner: engine/commands/log.py (orchestrator decides). Esc undoes the session, but the entry "
-        "stays on the redo stack, so Redo re-applies the reverted edit. Repro: Esc, then can_redo()."
-    ),
-)
 def test_escape_leaves_the_redo_stack_as_it_was(qapp: QApplication, monkeypatch: pytest.MonkeyPatch) -> None:
     rig = _Rig(qapp, monkeypatch)
     try:
@@ -286,5 +279,73 @@ def test_ctrl_z_outside_a_text_field_closes_keeps_and_undoes_as_one_step(qapp: Q
         assert popover.closed
         assert rig.session.log.entries() == before
         assert rig.xml() == before_xml
+    finally:
+        rig.close()
+
+
+def test_a_save_inside_the_popover_does_not_split_the_revert(qapp: QApplication, monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = _Rig(qapp, monkeypatch)
+    try:
+        before_xml = rig.xml()
+        before = rig.session.log.entries()
+        popover = rig.open()
+        first, second = rig.fields(popover)
+        first.setFocus()
+        _settle(qapp)
+        QTest.keyClicks(first, "One")
+        rig.session.log.mark_saved()
+        second.setFocus()
+        _settle(qapp)
+        QTest.keyClicks(second, "xy")
+        _settle(qapp)
+        assert len(rig.session.log.entries()) == len(before) + 2
+        QTest.keyClick(second, _k("Key_Escape"))
+        _settle(qapp)
+        assert popover.closed
+        assert rig.xml() == before_xml
+        assert rig.session.log.entries() == before
+        assert rig.session.log.is_dirty()
+    finally:
+        rig.close()
+
+
+def test_escape_puts_back_the_redo_stack_it_found(qapp: QApplication, monkeypatch: pytest.MonkeyPatch) -> None:
+    rig = _Rig(qapp, monkeypatch)
+    try:
+        rig.session.log.execute(SetProperty(rig.other, "windowTitle", StringValue("R")))
+        assert rig.session.log.undo()
+        redo_label = rig.session.log.redo_label()
+        assert redo_label is not None
+        before_xml = rig.xml()
+        popover = rig.open()
+        _write_three_and_two(rig, popover)
+        first, _second = rig.fields(popover)
+        first.setFocus()
+        _settle(qapp)
+        QTest.keyClick(first, _k("Key_Escape"))
+        _settle(qapp)
+        assert rig.xml() == before_xml
+        assert rig.session.log.redo_label() == redo_label
+        assert rig.session.log.redo()
+        assert rig.session.log.redo_label() is None
+    finally:
+        rig.close()
+
+
+def test_a_foreign_step_closes_the_popover_and_keeps_the_sessions_writes(
+    qapp: QApplication, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rig = _Rig(qapp, monkeypatch)
+    try:
+        before = rig.session.log.entries()
+        popover = rig.open()
+        _write_three_and_two(rig, popover)
+        rig.session.log.execute(SetProperty(rig.other, "windowTitle", StringValue("Foreign")))
+        _settle(qapp)
+        assert popover.closed
+        kept = rig.xml()
+        assert len(rig.session.log.entries()) == len(before) + 2
+        assert _window_title(rig) == "xy"
+        assert rig.xml() == kept
     finally:
         rig.close()

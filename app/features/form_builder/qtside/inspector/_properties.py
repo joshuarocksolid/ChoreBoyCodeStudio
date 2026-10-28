@@ -866,7 +866,7 @@ class _Row(QWidget):
         if not isinstance(view, OpenRow):
             return
         if session is None:
-            session = self._services.inline_session(view.key, _change_label(view.label))
+            session = self._services.inline_session(view.key, _change_label(view.label), self)
         result = session.run((view.write.edit(value, session.token),))
         if isinstance(result, Dropped):
             return
@@ -894,20 +894,6 @@ class _Row(QWidget):
     @property
     def chrome(self):  # type: ignore[no-untyped-def]
         return self._services.chrome
-
-    def _focus_left(self) -> None:
-        # Deferred: the field's own focus-out commit runs first, so it joins the session.
-        QTimer.singleShot(0, self._settle_focus)
-
-    def _settle_focus(self) -> None:
-        if not wrapper_is_valid(self):
-            return
-        focus = QApplication.focusWidget()
-        if focus is not None and (focus is self or self.isAncestorOf(focus)):
-            return
-        key = self._session_key
-        if key:
-            self._services.end_inline_session(key)
 
     def enum_value(self, enum: EnumSpec, names: Sequence[str]) -> Value:
         style = self._services.session.document.enum_style()
@@ -1090,8 +1076,6 @@ class _EditorGuard(QObject):
                 event.ignore()
                 return True
             return False
-        if kind == _EVENT.FocusOut:
-            self._row._focus_left()
         return False
 
 

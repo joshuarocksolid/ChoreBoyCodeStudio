@@ -471,3 +471,123 @@ def test_redo_does_not_run_apply_again() -> None:
     assert log.redo()
     assert calls["n"] == 1
     assert prop_text(doc, "okButton") == "Go"
+
+
+def _session_writes(log, owner: NodeId, token: str, *texts: str) -> None:  # type: ignore[no-untyped-def]
+    for text in texts:
+        with log.transaction("Session", merge_token=token, merge_within_s=float("inf")) as txn:
+            txn.execute(SetProperty(owner, "text", StringValue(text)))
+
+
+def test_rollback_restores_bytes_stack_redo_and_tokens() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "text", StringValue("A")))
+    log.execute(SetProperty(owner, "toolTip", StringValue("T")))
+    assert log.undo()
+    original = saved(doc)
+    cp = log.checkpoint()
+    _session_writes(log, owner, "s1", "X", "Y")
+    assert len(log.entries()) == 2
+    assert not log.can_redo()
+    seen = []
+    log.subscribe(seen.append, priority=1)
+    assert log.rollback(cp, "s1") is True
+    assert saved(doc) == original
+    assert len(log.entries()) == 1
+    assert log.redo_label() == "Edit"
+    assert [(s.origin, s.label) for s in seen] == [("undo", "Session")]
+    assert log.redo()
+    assert prop_text(doc, "okButton") == "A"
+    assert not log.can_redo()
+
+
+def test_rollback_across_a_save_undoes_both_halves_and_leaves_the_log_dirty() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    original = saved(doc)
+    cp = log.checkpoint()
+    _session_writes(log, owner, "s1", "X")
+    log.mark_saved()
+    _session_writes(log, owner, "s1", "Y")
+    assert len(log.entries()) == 2
+    assert log.rollback(cp, "s1") is True
+    assert saved(doc) == original
+    assert log.entries() == ()
+    assert log.is_dirty()
+    log.mark_saved()
+    assert not log.is_dirty()
+
+
+def test_rollback_without_a_save_keeps_the_clean_state() -> None:
+    log = open_log(BOX)
+    owner = nid(log.document, "okButton")
+    log.mark_saved()
+    cp = log.checkpoint()
+    _session_writes(log, owner, "s1", "X")
+    assert log.is_dirty()
+    assert log.rollback(cp, "s1") is True
+    assert not log.is_dirty()
+
+
+def test_rollback_is_refused_when_a_foreign_step_landed() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    cp = log.checkpoint()
+    _session_writes(log, owner, "s1", "X")
+    log.execute(SetProperty(nid(doc, "label"), "text", StringValue("F")))
+    after = saved(doc)
+    assert log.rollback(cp, "s1") is False
+    assert saved(doc) == after
+    assert len(log.entries()) == 2
+
+
+def test_rollback_is_refused_when_the_stack_below_changed() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(nid(doc, "label"), "text", StringValue("F")))
+    cp = log.checkpoint()
+    _session_writes(log, owner, "s1", "X")
+    assert log.undo()
+    assert log.undo()
+    log.execute(SetProperty(nid(doc, "label"), "text", StringValue("G")))
+    assert log.rollback(cp, "s1") is False
+
+
+def test_rollback_is_refused_after_an_undo_of_the_sessions_step() -> None:
+    log = open_log(BOX)
+    owner = nid(log.document, "okButton")
+    cp = log.checkpoint()
+    _session_writes(log, owner, "s1", "X")
+    assert log.undo()
+    assert log.rollback(cp, "s1") is False
+    assert log.can_redo()
+
+
+def test_rollback_restores_a_redo_stack_a_net_nil_write_dropped() -> None:
+    log = open_log(BOX)
+    doc = log.document
+    owner = nid(doc, "okButton")
+    log.execute(SetProperty(owner, "text", StringValue("A")))
+    assert log.undo()
+    cp = log.checkpoint()
+    original = prop_text(doc, "okButton")
+    _session_writes(log, owner, "s1", "X", original)
+    assert not log.can_redo()
+    assert log.entries() == ()
+    assert log.rollback(cp, "s1") is True
+    assert log.redo_label() == "Edit"
+
+
+def test_rollback_with_no_entries_and_an_untouched_redo_is_a_no_op() -> None:
+    log = open_log(BOX)
+    owner = nid(log.document, "okButton")
+    log.execute(SetProperty(owner, "text", StringValue("A")))
+    assert log.undo()
+    cp = log.checkpoint()
+    assert log.rollback(cp, "s1") is True
+    assert log.redo_label() == "Edit"

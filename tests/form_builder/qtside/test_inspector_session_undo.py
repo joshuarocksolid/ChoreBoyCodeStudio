@@ -202,13 +202,6 @@ def test_set_label_names_the_step_from_its_first_write(qapp: QApplication) -> No
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Owner: engine/commands/log.py (orchestrator decides). CommandLog has no public way to drop the "
-        "reverted step from the redo stack, so revert() leaves a redo entry. Repro: revert, then can_redo()."
-    ),
-)
 def test_revert_leaves_no_redo_entry(qapp: QApplication) -> None:
     del qapp
     session, realizer = realize(_FORM)

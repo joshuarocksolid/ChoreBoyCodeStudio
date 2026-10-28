@@ -254,6 +254,7 @@ class InspectorPane(QWidget):
         if self._diag_unsub is not None:
             self._diag_unsub()
             self._diag_unsub = None
+        self._services.dispose()
 
     def event(self, event: QEvent) -> bool:
         if (
