@@ -391,6 +391,7 @@ def _python_ui(text: str, directory: Path) -> str:
 
 
 @pytest.mark.pain("P-5")
+@pytest.mark.parity("R3-41")
 def test_removing_a_nested_layout_keeps_every_rectangle(tmp_path: Path) -> None:
     bigger = _placed_in(_NESTED, _BIG)
     with opened(_NESTED) as (session, realizer):

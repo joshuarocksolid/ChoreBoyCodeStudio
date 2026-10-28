@@ -23,6 +23,7 @@ from app.features.form_builder.engine.ui4.values import (  # noqa: E402
 from app.features.form_builder.engine.ui4.writer import write_ui  # noqa: E402
 from app.features.form_builder.install import form_builder_enabled  # noqa: E402
 from app.qt.QtCore import QPoint, Qt  # noqa: E402
+from app.qt.qt_compat import enum_value  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QAction,
@@ -205,6 +206,7 @@ def _highlight(qapp: QApplication, menu: QMenu, label: str) -> None:
     raise AssertionError(label)
 
 
+@pytest.mark.parity("R3-39")
 def test_a_horizontal_splitter_grip_drag_survives_save_and_undo(
     tmp_path: Path, qapp: QApplication
 ) -> None:
@@ -260,6 +262,33 @@ def test_a_horizontal_splitter_grip_drag_survives_save_and_undo(
     finally:
         if reopened is not None:
             shutdown_main_window_for_test(reopened)
+        shutdown_main_window_for_test(window)
+
+
+@pytest.mark.parity("R3-40")
+def test_ctrl_4_creates_a_vertical_splitter(tmp_path: Path, qapp: QApplication) -> None:
+    _require()
+    window = MainWindow(state_root=str((tmp_path / "state").resolve()))
+    try:
+        path = tmp_path / "ledger.ui"
+        surface = _open(window, qapp, path, _LISTS)
+        session = surface.session  # type: ignore[attr-defined]
+        document = session.document
+        customers = document.by_name("customers")
+        invoices = document.by_name("invoices")
+        session.selection.set(
+            (customers[0], invoices[0]),
+            current=invoices[0],
+            source=SelectionSource.COMMAND,
+        )
+        canvas = _focus(surface, qapp)
+        QTest.keyClick(canvas, _key("Key_4"), _mod("ControlModifier"))
+        _flush(qapp)
+        splitter = _splitter(canvas)
+        assert splitter.count() == 2
+        vertical = getattr(getattr(Qt, "Orientation", Qt), "Vertical")
+        assert enum_value(splitter.orientation()) == enum_value(vertical)
+    finally:
         shutdown_main_window_for_test(window)
 
 

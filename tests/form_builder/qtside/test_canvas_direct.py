@@ -530,7 +530,7 @@ def test_repeated_ctrl_shift_arrows_are_one_undo() -> None:
             lambda session, realizer: _sizes(session, realizer, "split"),
             lambda before: (before[0] + 30, before[1] - 30),
             id="splitter-h",
-            marks=pytest.mark.parity("R3-39"),
+            marks=pytest.mark.pain("P-19"),
         ),
         pytest.param(
             PANES % ("QHBoxLayout", "Qt::Vertical"), None, ("grip", "split", "0"),
@@ -538,7 +538,7 @@ def test_repeated_ctrl_shift_arrows_are_one_undo() -> None:
             lambda session, realizer: _sizes(session, realizer, "split"),
             lambda before: (before[0] + 30, before[1] - 30),
             id="splitter-v",
-            marks=(pytest.mark.parity("R3-40"), pytest.mark.pain("P-19")),
+            marks=pytest.mark.pain("P-19"),
         ),
     ),
 )

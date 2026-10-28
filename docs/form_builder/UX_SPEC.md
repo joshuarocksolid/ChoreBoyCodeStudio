@@ -719,7 +719,7 @@ Paste never shows "cannot paste" errors (pain 3, R3 weakness "Paste into a layou
 
 **UX-OUT-001** `M3.5` `[S]` Each row (24 px): disclosure triangle, 16 px class glyph, object name (Body), then in `fb.faint` Caption the friendly class and the visible text in quotes ("Line edit “Full name”"). Layout rows use `ov.layout` for glyph and name, spacer rows `ov.gap`. A row whose widget has a problem shows the problem glyph at its right end. Hidden widgets (`visible` false) show their name in `fb.faint`.
 
-**UX-OUT-002** `M3.5` `[S]` The friendly class and text column hides first when the pane is narrow; names elide in the middle; hovering an elided row shows the full row as a tooltip.
+**UX-OUT-002** `M3.5` `[S]` The friendly class and text column hides first when the pane is narrow. Each nested level indents 12 px. A name elides at the end, and only when the name alone cannot fit, so the start of the name stays readable. Hovering an elided row shows the full row as a tooltip.
 
 **UX-OUT-003** `M3.5` `[K]` Keyboard grammar (focus in the outline):
 
@@ -1108,7 +1108,7 @@ Tab sizes: **L** = 1440 × 860 tab, **C** = 1080 × 600 tab inside the CBCS shel
 Each script starts with focus in the form tab and uses only keys. The PR runs the scripts that touch its clauses.
 
 - **K1 Create and fill a data-entry form.** File > New Form… (menu by keyboard), type a name, arrow to "Data entry form", Enter. Assert: Workbench open, first input selected, canvas focused. Then `/`, type "date", Enter: a date field is inserted as a new form row with its label editor open; type "Issued", Enter. Assert the row, the buddy and that focus is on the canvas.
-- **K2 Structure.** Select two sibling fields (Down, Shift+Down), Ctrl+1: wrapped in a horizontal layout; Ctrl+Shift+B: unwrapped; Ctrl+Shift+G, 7, Enter: wrapped in a group box; Esc: the group's layout is selected; Esc: the group; Alt+Up: moved up one place. Undo all: original bytes.
+- **K2 Structure.** Select two sibling fields (Down, Shift+Down), Ctrl+1: wrapped in a horizontal layout; Ctrl+Shift+B: unwrapped; Ctrl+Shift+G, 7: wrapped in a group box; Esc: the group's layout is selected; Esc: the group; Alt+Up: moved up one place. Undo all: original bytes.
 - **K3 Clipboard.** Select a field, Ctrl+C, Ctrl+V: pasted after it and selected; Ctrl+D: duplicated; Delete on a referenced field: the confirm opens; Esc: nothing deleted; Delete again, Enter on [Delete]: deleted, toast shown, focus unchanged.
 - **K4 Rename ten.** Alt+1, F2, type a name, Tab, … ten times. Assert after each step: the focus widget is the rename editor or the outline, never anything else (pain 25).
 - **K5 Sizing.** Alt+4, move to Size, set Width Fill, Share 1, Height Fixed 120, At least width 200; Reset each; assert the file has none of those lines after the resets. Ctrl+Shift+Right twice: Fixed width +16.
