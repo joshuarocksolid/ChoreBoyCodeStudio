@@ -207,14 +207,14 @@ def test_a_form_drop_opens_the_new_field_editor() -> None:
   <layout class="QFormLayout" name="formLayout">
    <item row="0" column="0"><widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property></widget></item>
    <item row="0" column="1"><widget class="QLineEdit" name="email"/></item>
-   <item row="1" column="1"><widget class="QPushButton" name="go"><property name="text"><string>Go</string></property></widget></item>
+   <item row="1" column="1"><widget class="QLineEdit" name="city"/></item>
   </layout>
 """,
     )
     with _shown(text) as (session, canvas, _host):
         email = _widget(canvas, "email")
         below = email.mapTo(canvas.page_widget(), QPoint(email.width() // 2, email.height() + 30))
-        _drag_widget_to(canvas, "go", below)
+        _drag_widget_to(canvas, "city", below)
         assert "New field:" in _label_texts(session.document)
         edits = [edit for edit in canvas.viewport().findChildren(QLineEdit) if edit.isVisible()]
         assert any(edit.text() == "New field:" and edit.selectedText() == "New field:" for edit in edits)
