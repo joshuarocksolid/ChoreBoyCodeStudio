@@ -36,8 +36,12 @@ def paint_frame(painter: QPainter, frame: OverlayFrame, palette: CanvasPalette, 
     painter.setRenderHint(getattr(hints, "Antialiasing"), True)
     region = exposed.adjusted(-2, -2, 2, 2)
     for item in frame.items:
-        if _box(item.rect).intersects(region):
-            _paint_one(painter, item, palette)
+        if isinstance(item, Stroke) and not item.caps:
+            if not _stroke_meets(item, region):
+                continue
+        elif not _box(item.rect).intersects(region):
+            continue
+        _paint_one(painter, item, palette)
     painter.restore()
 
 
@@ -70,6 +74,21 @@ def _paint_one(painter: QPainter, item: Item, palette: CanvasPalette) -> None:
         _glyph(painter, item.name, item.rect, _ink(palette, item.role, 1.0), _color(palette.overlay.chip_text, 1.0))
         return
     raise AssertionError(type(item))
+
+
+def _stroke_meets(item: Stroke, region: QRectF) -> bool:
+    """A stroke paints its border. An exposed interior does not redraw it."""
+    rect = item.rect
+    band = max(item.width, 2.0) + 2.0
+    if rect.width <= band * 2 or rect.height <= band * 2:
+        return _box(rect).intersects(region)
+    edges = (
+        QRectF(rect.x, rect.y, rect.width, band),
+        QRectF(rect.x, rect.y + rect.height - band, rect.width, band),
+        QRectF(rect.x, rect.y, band, rect.height),
+        QRectF(rect.x + rect.width - band, rect.y, band, rect.height),
+    )
+    return any(edge.intersects(region) for edge in edges)
 
 
 def _stroke(painter: QPainter, item: Stroke, palette: CanvasPalette) -> None:

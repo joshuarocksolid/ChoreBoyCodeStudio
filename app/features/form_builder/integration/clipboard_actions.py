@@ -6,7 +6,8 @@ are one ``InsertFragment``. Cut and delete are one ``DeleteNodes``.
 
 from __future__ import annotations
 
-from typing import Optional, Protocol, Sequence, Tuple
+from dataclasses import replace
+from typing import List, Optional, Protocol, Sequence, Tuple
 
 from app.qt import QtWidgets
 from app.qt.QtCore import QMimeData, QPoint
@@ -28,6 +29,7 @@ from app.features.form_builder.engine.clipboard import (
     cut_sentence,
     dangling_sentence,
     duplicate_sentence,
+    fragment_source_ids,
     plan_paste,
     paste_sentence,
     pasted_widget_count,
@@ -38,7 +40,6 @@ from app.features.form_builder.engine.clipboard import (
 )
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, InsertResult
-from app.features.form_builder.engine.commands.refs import NAME_FIELD
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -137,7 +138,7 @@ def _copy(host: ClipboardHost, document: UiDocument, ids: Sequence[NodeId]) -> N
     fragment = selection_fragment(document, ids)
     if not fragment.nodes:
         return
-    _write(fragment, _boxes(host, fragment))
+    _write(fragment, _boxes(host, fragment, fragment_source_ids(document, ids)))
 
 
 def _cut(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
@@ -147,7 +148,7 @@ def _cut(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> No
     fragment = selection_fragment(session.document, targets)
     if not fragment.nodes:
         return
-    _write(fragment, _boxes(host, fragment))
+    _write(fragment, _boxes(host, fragment, fragment_source_ids(session.document, targets)))
     _execute_delete(session, targets, "Cut")
     count = pasted_widget_count(fragment) or len(targets)
     host.narrate(cut_sentence(count))
@@ -169,7 +170,8 @@ def _duplicate(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId])
     fragment = selection_fragment(session.document, ids)
     if not fragment.nodes:
         return
-    _insert(host, session, ids, fragment, undo_label="Duplicate")
+    copied = _boxes(host, fragment, fragment_source_ids(session.document, ids))
+    _insert(host, session, ids, fragment, undo_label="Duplicate", copied=copied)
 
 
 def _delete(session: FormSession, ids: Sequence[NodeId]) -> None:
@@ -247,15 +249,16 @@ def _execute_delete(session: FormSession, targets: Tuple[NodeId, ...], undo_labe
 
 
 def _measure(host: ClipboardHost, spec: NodeSpec) -> Optional[CopiedBox]:
-    """Natural size of a copied piece with no geometry, as Designer sizes it.
-
-    The live source on this canvas gives its size hint and where it sits. A
-    piece from another form or a cut one is measured on a fresh widget of its
-    class, with no known spot.
-    """
+    fresh = _fresh_box(spec)
     live = _live_source(host, spec)
-    if live is not None:
-        return live
+    if fresh is not None:
+        if live is not None and live.x is not None and live.y is not None:
+            return CopiedBox(fresh.width, fresh.height, live.x, live.y)
+        return fresh
+    return live
+
+
+def _fresh_box(spec: NodeSpec) -> Optional[CopiedBox]:
     if spec.kind != "widget":
         return None
     widget_class = getattr(QtWidgets, str(spec.field("class_name") or ""), None)
@@ -279,21 +282,19 @@ def _measure(host: ClipboardHost, spec: NodeSpec) -> Optional[CopiedBox]:
 
 def _live_source(host: ClipboardHost, spec: NodeSpec) -> Optional[CopiedBox]:
     find = getattr(host, "realized_object", None)
-    field_name = NAME_FIELD.get(spec.kind)
-    if not callable(find) or field_name is None:
+    if not callable(find) or spec.id is None:
         return None
-    name = spec.field(field_name)
     document = host._session.document
-    if not isinstance(name, str) or not name:
+    if not document.contains(spec.id):
         return None
-    matches = document.by_name(name)
-    if len(matches) != 1:
+    node = document.node(spec.id)
+    if node.kind != spec.kind:
         return None
-    node = document.node(matches[0])
-    if node.kind != spec.kind or node.field("class_name") != spec.field("class_name"):
+    spec_class = spec.field("class_name")
+    if spec_class is not None and node.field("class_name") != spec_class:
         return None
     root = find(document.root.id)
-    found = find(matches[0])
+    found = find(spec.id)
     if not isinstance(root, QWidget):
         return None
     if isinstance(found, QWidget):
@@ -384,9 +385,17 @@ def _clipboard_xml() -> Optional[str]:
     return None
 
 
-def _boxes(host: ClipboardHost, fragment: Fragment) -> Tuple[Optional[CopiedBox], ...]:
+def _boxes(
+    host: ClipboardHost,
+    fragment: Fragment,
+    source_ids: Sequence[NodeId],
+) -> Tuple[Optional[CopiedBox], ...]:
     """Live sizes and spots of the copied pieces, taken while the source is on screen."""
-    boxes = tuple(_live_source(host, spec) for spec in fragment.nodes)
+    found: List[Optional[CopiedBox]] = []
+    for index, spec in enumerate(fragment.nodes):
+        stamped = replace(spec, id=source_ids[index]) if index < len(source_ids) else spec
+        found.append(_live_source(host, stamped))
+    boxes = tuple(found)
     return boxes if any(box is not None for box in boxes) else ()
 
 

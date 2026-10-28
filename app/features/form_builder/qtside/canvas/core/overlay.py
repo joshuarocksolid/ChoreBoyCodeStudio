@@ -8,7 +8,7 @@ frame. Neither reads Qt.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
@@ -119,7 +119,8 @@ _EMPTY_NESTED = "Drop widgets here"
 _EMPTY_PAGE = "Drop widgets on this page"
 _PAGE_PARENTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 _PLUS = 12
-_TITLES = frozenset({"page_tab", "menu_title"})
+_TITLES = frozenset({"page_tab", "menu_title", "title_band"})
+_BANDS = frozenset({"page_tab", "title_band"})
 _DESCENDS = frozenset({"widget", "layout"})
 
 
@@ -143,6 +144,8 @@ class StaticLayer:
     stacks: Tuple[Tuple[NodeId, CanvasRect, Tuple[str, ...]], ...] = ()
     #: Visible splitters in pre-order. Their grips are hittable with any selection.
     splitters: Tuple[NodeId, ...] = ()
+    #: Empty-layout marks keyed by the layout id. Drag lookup is O(1).
+    host_marks: Dict[NodeId, CanvasRect] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -212,7 +215,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         canvas = view.to_canvas(form_rect)
         if isinstance(node, LayoutNode):
             placed.append(Obstacle(node.id, canvas))
-            layouts.append(Stroke(canvas, "layout_faint", 1, "dashed"))
+            layouts.append(Stroke(canvas, "layout_faint", 1, "dashed", node=node.id))
             if _layout_filled(node):
                 continue
             if root_layout is not None and node.id == root_layout.id:
@@ -229,7 +232,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
             continue
         if isinstance(node, SpacerNode):
             placed.append(Obstacle(node.id, canvas))
-            springs.append(Spring(canvas, _spacer_axis(node)))
+            springs.append(Spring(canvas, _spacer_axis(node), node=node.id))
             continue
         if not isinstance(node, WidgetNode):
             continue
@@ -268,13 +271,17 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
     for entry in titles:
         clipped = _clip(view.to_canvas(entry.rect), page)
         if clipped is not None:
-            content.append(Obstacle(entry.node, clipped))
+            content.append(Obstacle(entry.node, clipped, band=entry.kind in _BANDS))
         if entry.kind == "page_tab" and entry.container is not None:
             tabs.append((entry.container, view.to_canvas(entry.rect)))
     for entry in index.title_entries():
         if entry.kind == "page_tab" and entry.container is not None:
             tabs.append((entry.container, view.to_canvas(entry.rect)))
 
+    marks: Dict[NodeId, CanvasRect] = {}
+    for mark, hit in targets:
+        if isinstance(hit, OnSpace):
+            marks[hit.select] = mark
     return StaticLayer(
         index.epoch,
         view,
@@ -286,6 +293,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(tabs),
         tuple(stacks),
         tuple(splitters),
+        marks,
     )
 
 
@@ -296,11 +304,18 @@ def shift_static(
 ) -> Optional[StaticLayer]:
     """Move obstacles whose form rect changed. None means the caller rebuilds.
 
-    Layout strokes carry no node id, so a layout move is a rebuild. A widget
-    or spacer that was not placed is a rebuild too.
+    A layout stroke and a spacer spring carry the node id, so they move with
+    the rect. A new widget is appended. An empty-mark host still rebuilds,
+    because its caption is not a plain rect.
     """
     if not updates:
         return layer
+    for obstacle in layer.content:
+        if obstacle.band and obstacle.node in updates:
+            return None
+    for _mark, hit in layer.targets:
+        if isinstance(hit, OnSpace) and hit.select in updates:
+            return None
     page = view.page_rect()
     placed: List[Obstacle] = []
     previous = {}
@@ -315,8 +330,9 @@ def shift_static(
         placed.append(Obstacle(obstacle.node, canvas))
         previous.setdefault(obstacle.node, obstacle.rect)
         found.add(obstacle.node)
-    if found != set(updates):
-        return None
+    for node_id, rect in updates.items():
+        if node_id not in found:
+            placed.append(Obstacle(node_id, view.to_canvas(rect)))
     content: List[Obstacle] = []
     seen = set()
     for obstacle in layer.content:
@@ -335,15 +351,26 @@ def shift_static(
         clipped = _clip(view.to_canvas(rect), page)
         if clipped is not None:
             content.append(Obstacle(node, clipped))
+    shifted_items: List[Item] = []
+    for item in layer.items:
+        node_id = getattr(item, "node", None)
+        rect = None if node_id is None else updates.get(node_id)
+        if rect is None:
+            shifted_items.append(item)
+            continue
+        shifted_items.append(replace(item, rect=view.to_canvas(rect)))
     return StaticLayer(
         layer.epoch,
         layer.view,
-        layer.items,
+        tuple(shifted_items),
         tuple(content),
         layer.unlaid,
         layer.targets,
         tuple(placed),
-        splitters=layer.splitters,
+        layer.tabs,
+        layer.stacks,
+        layer.splitters,
+        layer.host_marks,
     )
 
 
@@ -390,7 +417,8 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         _turn_mark(items, view, turned(gesture))
     else:
         _grip_hover(items, view, inputs.knobs, gesture)
-    _drop_marks(items, view, inputs)
+    _drop_marks(items, view, inputs, static)
+    _anchor_ticks(items, static, document, primary)
     plus_hits = _plus_hits(items, static, document, gesture, shown)
 
     faces, requests = _requests(static, inputs, shown, rects)
@@ -424,20 +452,18 @@ def frame_basis(
 
 
 def _visible(index: HitIndex, root: NodeId) -> Tuple[Dict[NodeId, bool], Tuple[GeoEntry, ...]]:
+    """O(entries). Title strips live beside the child lists, so read them from the index."""
     flags = {root: True}
-    titles: List[GeoEntry] = []
     stack = [root]
     while stack:
         parent = stack.pop()
         for entry in index.children_of(parent):
-            if entry.kind in _TITLES:
-                if entry.visible:
-                    titles.append(entry)
+            if entry.kind in _TITLES or entry.node in flags:
                 continue
             flags[entry.node] = entry.visible
             if entry.kind in _DESCENDS:
                 stack.append(entry.node)
-    return flags, tuple(titles)
+    return flags, index.title_entries()
 
 
 def _layout_filled(layout: LayoutNode) -> bool:
@@ -452,14 +478,18 @@ def _spacer_axis(node: SpacerNode) -> Literal["horizontal", "vertical"]:
 
 
 def _drop_caption(document: UiDocument, node: object) -> str:
+    """O(depth). A tab, stack or toolbox page says so. A group box does not."""
     owner = getattr(node, "id", None)
     if isinstance(node, LayoutNode):
         found = node.owner_widget_id()
         if found is not None:
             owner = found
-    parent = document.parent(owner) if owner is not None else None
-    parent_node = document.get(parent) if parent is not None else None
-    if isinstance(parent_node, WidgetNode) and parent_node.class_name in _PAGE_PARENTS:
+    if owner is None or not document.contains(owner):
+        return _EMPTY_NESTED
+    parent = document.parent(owner)
+    while parent is not None and not isinstance(parent, WidgetNode):
+        parent = document.parent(parent.id)
+    if isinstance(parent, WidgetNode) and parent.class_name in _PAGE_PARENTS:
         return _EMPTY_PAGE
     return _EMPTY_NESTED
 
@@ -672,7 +702,7 @@ def _drop_chip(
     )
 
 
-def _drop_marks(items: List[Item], view: ViewMap, inputs: FrameInputs) -> None:
+def _drop_marks(items: List[Item], view: ViewMap, inputs: FrameInputs, static: StaticLayer) -> None:
     shown = _shown_drop(inputs)
     if shown is None:
         return
@@ -683,7 +713,7 @@ def _drop_marks(items: List[Item], view: ViewMap, inputs: FrameInputs) -> None:
     items.append(Stroke(view.to_canvas(target.frame), role, 1.5, "solid"))
     indicator = target.indicator
     paint: Role = "problem" if indicator.role == "problem" else "select"
-    rect = view.to_canvas(indicator.rect)
+    rect = _into_mark(static, view, target, indicator)
     if indicator.dashed and indicator.role != "problem":
         items.append(Fill(rect, "drop_fill"))
     thin = min(rect.width, rect.height) <= 4
@@ -696,6 +726,50 @@ def _drop_marks(items: List[Item], view: ViewMap, inputs: FrameInputs) -> None:
             caps=thin and not indicator.dashed,
         )
     )
+
+
+def _into_mark(static: StaticLayer, view: ViewMap, target: object, indicator: object) -> CanvasRect:
+    """O(empty marks). The into-indicator of an empty layout is that layout's empty mark."""
+    canvas = view.to_canvas(indicator.rect)  # type: ignore[attr-defined]
+    host = getattr(target, "host", None)
+    dashed = bool(getattr(indicator, "dashed", False))
+    role = getattr(indicator, "role", "")
+    if host is None or not dashed or role == "problem":
+        return canvas
+    mark = static.host_marks.get(host)
+    if mark is not None:
+        return mark
+    return canvas
+
+
+def _anchor_ticks(
+    items: List[Item],
+    static: StaticLayer,
+    document: UiDocument,
+    primary: Optional[NodeId],
+) -> None:
+    """O(1). Four layout ticks, one on each page edge, while the root layout is selected."""
+    layout = document.root.layout
+    if layout is None or primary != layout.id:
+        return
+    box = None
+    for obstacle in static.placed:
+        if obstacle.node == layout.id:
+            box = obstacle.rect
+            break
+    if box is None:
+        return
+    page = static.view.page_rect()
+    span = 8
+    mid_x = box.x + max(box.width, 1) // 2
+    mid_y = box.y + max(box.height, 1) // 2
+    for rect in (
+        CanvasRect(page.x, mid_y, span, 2),
+        CanvasRect(page.x + page.width - span, mid_y, span, 2),
+        CanvasRect(mid_x, page.y, 2, span),
+        CanvasRect(mid_x, page.y + page.height - span, 2, span),
+    ):
+        items.append(Stroke(rect, "layout", 1.5, "solid"))
 
 
 def _band(items: List[Item], view: ViewMap, gesture: Banding) -> None:
@@ -775,6 +849,7 @@ def _requests(
             BARE_CORNERS,
             document,
             _Face("chip", node_id, "tab", text, OpenLayoutPopover(node_id)),
+            required=True,
             own_frame=True,
         )
     _page_chips(faces, requests, static, inputs)

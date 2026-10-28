@@ -493,6 +493,8 @@ class Realizer(_Structure):
             self._patched += 1
 
     def _reset_property(self, node: object, obj: object, name: str) -> None:
+        if name in CANVAS_OVERRIDES:
+            return
         if name == "cbcsSplitterSizes":
             if isinstance(obj, QSplitter):
                 node_id = _node_id(obj)

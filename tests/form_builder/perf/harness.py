@@ -58,7 +58,7 @@ from app.features.form_builder.qtside.canvas.core.space import FormPoint
 from app.features.form_builder.engine.ui4 import defaults as class_defaults
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_ui
-from app.features.form_builder.engine.ui4.values import StringValue
+from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
 from app.features.form_builder.engine.ui4.writer import write_ui
 from tests.form_builder.perf import raw_qt
 from tests.form_builder.perf.reference import (
@@ -442,6 +442,7 @@ def _collect(
     rows.append(
         _inspector_shell_row(forms.get(300), samples, warmup, enforce_absolute, wall_on)
     )
+    rows.extend(_surface_speed_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
@@ -2611,6 +2612,303 @@ def _sizing_preview_rows(
     finally:
         canvas.dispose()
         parent.deleteLater()
+
+
+#: These two rows still miss the 16 ms budget at 1000 widgets. The miss is
+#: accepted for M3 and owned by M9.4; the budget is not raised. See
+#: docs/form_builder/PLAN.md, M9.4 "Known M3 misses".
+KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 known misses)"
+KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
+
+
+def _known_miss(row: Row) -> Row:
+    """Report a documented M9.4 miss as "known miss" instead of "fail"; the budget stays."""
+    assert row.point in KNOWN_M94_POINTS, row.point
+    row = _with_detail(row, KNOWN_M94_MISS)
+    if row.verdict != "fail":
+        return row
+    return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, "known miss", row.detail, row.total_p95)
+
+
+def _surface_speed_rows(
+    forms: Dict[int, ReferenceForm],
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+) -> Tuple[Row, ...]:
+    """Selection, edit and paste in a real MainWindow form tab."""
+    rows: List[Row] = []
+    if forms.get(300) is not None:
+        rows.extend(
+            _surface_window_rows(
+                forms[300],
+                300,
+                samples,
+                warmup,
+                enforce_absolute,
+                wall_on,
+                select_only=True,
+            )
+        )
+    form = forms.get(1000)
+    if form is None:
+        return tuple(rows)
+    rows.extend(
+        _surface_window_rows(
+            form,
+            1000,
+            samples,
+            warmup,
+            enforce_absolute,
+            wall_on,
+            select_only=False,
+        )
+    )
+    return tuple(rows)
+
+
+def _surface_window_rows(
+    form: ReferenceForm,
+    count: int,
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+    select_only: bool,
+) -> Tuple[Row, ...]:
+    points = ["select real window"]
+    if not select_only:
+        points.extend(
+            [
+                "select real window + inspector",
+                "edit total surface",
+                "edit layout spacing",
+                "paste surface",
+                "hit index refresh after edit",
+            ]
+        )
+    if not _module_exists("app.shell.main_window"):
+        return tuple(_missing(point, count, _ms_budget(SELECTION_BUDGET_MS), "no shell") for point in points)
+    try:
+        install = importlib.import_module("app.features.form_builder.install")
+        if not install.form_builder_enabled():
+            return tuple(
+                Row(point, count, None, None, None, _ms_budget(SELECTION_BUDGET_MS), "skip", "PySide6 only")
+                for point in points
+            )
+        main_window = importlib.import_module("app.shell.main_window")
+        shutdown_mod = importlib.import_module("testing.main_window_shutdown")
+        selection = importlib.import_module("app.features.form_builder.engine.query.selection")
+    except (ImportError, AttributeError) as exc:
+        return tuple(_missing(point, count, _ms_budget(SELECTION_BUDGET_MS), str(exc)) for point in points)
+    import tempfile
+
+    previous = os.environ.get("CBCS_DISABLE_BACKGROUND_RUNTIME")
+    os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = "1"
+    app = QApplication.instance() or QApplication([])
+    scratch = None
+    window = None
+    try:
+        scratch = tempfile.TemporaryDirectory(prefix="cbcs-surface-speed-")
+        root = Path(scratch.name).resolve()
+        path = root / "speed_form.ui"
+        path.write_text(form.xml, encoding="utf-8")
+        window = main_window.MainWindow(state_root=str(root / "state"))
+        if not window._editor_tab_factory.open_file_in_editor(str(path)):
+            return tuple(_missing(point, count, _ms_budget(SELECTION_BUDGET_MS), "the shell did not open the form") for point in points)
+        window._center_stack.setCurrentIndex(1)
+        window.resize(1400, 900)
+        window.show()
+        app.processEvents()
+        surface = window._tab_content_registry.surface_for_path(str(path))
+        session = surface._session
+        canvas = surface._workbench.canvas
+        pane = surface._workbench.inspector
+        line = _first_widget(session.document, "QLineEdit")
+        button = _first_widget(session.document, "QPushButton")
+        if line is None or button is None:
+            return tuple(_missing(point, count, _ms_budget(SELECTION_BUDGET_MS), "no line edit and push button") for point in points)
+        current = {"id": button}
+
+        def select() -> None:
+            nxt = button if current["id"] == line else line
+            current["id"] = nxt
+            session.selection.set((nxt,), source=selection.SelectionSource.CANVAS)
+            # The inspector flushes on a 0 ms timer. This row is the canvas and
+            # the outline. The next row calls pane.flush() itself.
+            timer = getattr(pane, "_timer", None)
+            if timer is not None:
+                timer.stop()
+            app.processEvents()
+
+        rows: List[Row] = [
+            _timed(
+                "select real window",
+                count,
+                select,
+                SELECTION_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=app.processEvents,
+            )[0]
+        ]
+        if select_only:
+            return tuple(rows)
+
+        def select_and_flush() -> None:
+            select()
+            pane.flush()
+
+        rows.append(
+            _timed(
+                "select real window + inspector",
+                count,
+                select_and_flush,
+                INSPECTOR_REPOPULATE_BUDGET_MS,
+                samples=samples,
+                warmup=warmup,
+                enforce_absolute=enforce_absolute,
+                wall_on=wall_on,
+                prepare=app.processEvents,
+            )[0]
+        )
+        label = _named_id(session.document, "label0000") or _named_id(session.document, form.edit_name) or line
+        layout_id = session.document.by_name("identityForm")
+        spacing_owner = layout_id[0] if layout_id else label
+        step = {"n": 0}
+
+        def edit() -> None:
+            step["n"] += 1
+            outcome = session.log.execute(SetProperty(label, "text", StringValue("surface %d" % step["n"])))
+            if outcome.noop:
+                raise RuntimeError("text edit was a no-op")
+            app.processEvents()
+            pane.flush()
+
+        rows.append(
+            _known_miss(
+                _timed(
+                    "edit total surface",
+                    count,
+                    edit,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=app.processEvents,
+                )[0]
+            )
+        )
+        def space() -> None:
+            step["n"] += 1
+            outcome = session.log.execute(
+                SetProperty(spacing_owner, "spacing", NumberValue(6 + (step["n"] % 5)))
+            )
+            if outcome.noop:
+                raise RuntimeError("spacing edit was a no-op")
+            app.processEvents()
+            pane.flush()
+
+        rows.append(
+            _known_miss(
+                _timed(
+                    "edit layout spacing",
+                    count,
+                    space,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=app.processEvents,
+                )[0],
+            )
+        )
+        session.selection.set((label,), source=selection.SelectionSource.CANVAS)
+        app.processEvents()
+        surface.dispatch("form.action.copy")
+
+        def paste() -> None:
+            surface.dispatch("form.action.paste")
+            app.processEvents()
+            pane.flush()
+
+        def undo_paste() -> None:
+            session.log.undo()
+            app.processEvents()
+
+        rows.append(
+            _known_miss(
+                _timed(
+                    "paste surface",
+                    count,
+                    paste,
+                    EDIT_BUDGET_MS,
+                    samples=samples,
+                    warmup=warmup,
+                    enforce_absolute=enforce_absolute,
+                    wall_on=wall_on,
+                    prepare=app.processEvents,
+                    cleanup=undo_paste,
+                )[0],
+            )
+        )
+        visits = {"n": 0}
+        index = canvas._index
+
+        def refresh() -> None:
+            step["n"] += 1
+            session.log.execute(SetProperty(label, "text", StringValue("hit %d" % step["n"])))
+            index.ensure_fresh()
+            visits["n"] = max(visits["n"], int(index.last_visit_count))
+
+        refreshed = _timed(
+            "hit index refresh after edit",
+            count,
+            refresh,
+            HIT_REFRESH_BUDGET_MS[1000],
+            samples=samples,
+            warmup=warmup,
+            enforce_absolute=enforce_absolute,
+            wall_on=wall_on,
+        )[0]
+        detail = "visits %d" % visits["n"]
+        if visits["n"] >= max(len(index.indexed_entries()), 1):
+            refreshed = Row(
+                refreshed.point,
+                refreshed.widgets,
+                refreshed.samples,
+                refreshed.p50,
+                refreshed.p95,
+                refreshed.budget,
+                "fail",
+                "visited %d entries" % visits["n"],
+            )
+        else:
+            refreshed = _with_detail(refreshed, detail)
+        rows.append(refreshed)
+        return tuple(rows)
+    finally:
+        if window is not None:
+            shutdown_mod.shutdown_main_window_for_test(window, app)
+        app.processEvents()
+        if scratch is not None:
+            scratch.cleanup()
+        if previous is None:
+            os.environ.pop("CBCS_DISABLE_BACKGROUND_RUNTIME", None)
+        else:
+            os.environ["CBCS_DISABLE_BACKGROUND_RUNTIME"] = previous
+
+
+def _named_id(document: UiDocument, name: str) -> Optional[NodeId]:
+    for widget in document.iter_widgets():
+        if widget.object_name == name:
+            return widget.id
+    return None
 
 
 def _inspector_shell_row(

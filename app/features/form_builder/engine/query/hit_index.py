@@ -8,8 +8,8 @@ returns the widget entry, never the title entry.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, List, Literal, Optional, Protocol, Sequence, Tuple
+from dataclasses import dataclass, field
+from typing import Dict, FrozenSet, List, Literal, Optional, Protocol, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 
@@ -77,10 +77,57 @@ class StaleHitIndexError(RuntimeError):
     """A query ran on an index that was invalidated and not refreshed."""
 
 
+@dataclass(frozen=True)
+class RefreshScope:
+    """The entries a ChangeSet made stale.
+
+    A partial refresh reads these nodes and, only when a rect moved, their
+    layout siblings and ancestors. ``full`` is the whole form (open, replace,
+    zoom, and any invalidation that did not name nodes).
+    """
+
+    dirty: FrozenSet[NodeId] = field(default_factory=frozenset)
+    removed: FrozenSet[NodeId] = field(default_factory=frozenset)
+    added: FrozenSet[NodeId] = field(default_factory=frozenset)
+    full: bool = False
+    #: Parents whose child lists changed. Their remaining children are remeasured.
+    structure: FrozenSet[NodeId] = field(default_factory=frozenset)
+    #: Containers whose subtree visibility changed (current page, hidden widget).
+    rewalk: FrozenSet[NodeId] = field(default_factory=frozenset)
+
+    def merge(self, other: "RefreshScope") -> "RefreshScope":
+        """O(changed). Two scopes before the next refresh are one scope."""
+        if self.full or other.full:
+            return RefreshScope(full=True)
+        return RefreshScope(
+            dirty=self.dirty | other.dirty,
+            removed=self.removed | other.removed,
+            added=self.added | other.added,
+            structure=self.structure | other.structure,
+            rewalk=self.rewalk | other.rewalk,
+        )
+
+
+@dataclass(frozen=True)
+class IndexPatch:
+    """One partial refresh. Empty replacements keep the stored entry tuple.
+
+    ``visits`` is how many entries were read. ``changed`` is the nodes whose
+    rect or visibility moved. None from the source means the caller walks
+    the whole form instead.
+    """
+
+    replacements: Tuple[Tuple[int, GeoEntry], ...] = ()
+    extra: Tuple[GeoEntry, ...] = ()
+    drop: FrozenSet[NodeId] = field(default_factory=frozenset)
+    visits: int = 0
+    changed: Tuple[NodeId, ...] = ()
+
+
 # Title entries share their page's NodeId, so descending from one would walk
 # the page's children.
 _DESCENDS = frozenset({"widget", "layout"})
-_TITLES = frozenset({"page_tab", "menu_title"})
+_TITLES = frozenset({"page_tab", "menu_title", "title_band"})
 
 
 class HitIndex:
@@ -92,9 +139,36 @@ class HitIndex:
         self._entries: Tuple[GeoEntry, ...] = ()
         self._children: Dict[Optional[NodeId], Tuple[GeoEntry, ...]] = {}
         self._rects: Dict[NodeId, Rect] = {}
+        self._at: Dict[Tuple[NodeId, str], int] = {}
+        self._screen_factor = 1.0
+        self._need_full = True
+        self._scope: Optional[RefreshScope] = None
+        self._last_visits = 0
+        self._last_changed: Optional[Tuple[NodeId, ...]] = None
 
-    def invalidate(self, reason: InvalidationReason) -> None:
+    def invalidate(self, reason: InvalidationReason, scope: Optional[RefreshScope] = None) -> None:
+        """O(1) epoch bump. A named ``changeset`` scope refreshes only those entries.
+
+        Any other reason, or a missing scope, walks the form on the next refresh.
+        """
         self._epoch += 1
+        if reason != "changeset" or scope is None or scope.full:
+            self._need_full = True
+            self._scope = None
+            return
+        if self._need_full:
+            return
+        self._scope = scope if self._scope is None else self._scope.merge(scope)
+
+    @property
+    def screen_factor(self) -> float:
+        """Screen px per form px on the view that queries this index. O(1)."""
+        return self._screen_factor
+
+    def set_screen_factor(self, factor: float) -> None:
+        """O(1). Hit floors stated in screen px read this; form rects do not change."""
+        if factor > 0:
+            self._screen_factor = float(factor)
 
     @property
     def epoch(self) -> int:
@@ -104,13 +178,34 @@ class HitIndex:
         return self._fresh_epoch == self._epoch
 
     def ensure_fresh(self) -> None:
+        """Refresh a stale index. A ChangeSet scope is O(changed). Everything else walks the form."""
         if self.is_fresh():
             return
+        scope = None if self._need_full else self._scope
+        self._need_full = False
+        self._scope = None
+        if scope is not None and self._entries:
+            retouch = getattr(self._source, "retouch", None)
+            if retouch is not None:
+                patch = retouch(self._entries, scope, self._at, self._children)
+                if isinstance(patch, IndexPatch):
+                    self._apply_patch(patch)
+                    return
         self._source.settle()
         entries = tuple(self._source.entries())
         # Settling can resize the root and invalidate; what was read is still current.
+        self._install_full(entries)
+
+    def _install_full(self, entries: Tuple[GeoEntry, ...]) -> None:
+        """O(form). Open, replace, zoom, and any refresh the partial path refused."""
         self._fresh_epoch = self._epoch
         self._refreshes += 1
+        self._last_visits = len(entries)
+        self._last_changed = None
+        self._bind(entries)
+
+    def _bind(self, entries: Tuple[GeoEntry, ...]) -> None:
+        """O(entries passed in). Rebuilds the hit maps from ``entries``."""
         grouped: Dict[Optional[NodeId], List[GeoEntry]] = {}
         rects: Dict[NodeId, Rect] = {}
         for entry in entries:
@@ -124,15 +219,57 @@ class HitIndex:
             for container, group in grouped.items()
         }
         self._rects = rects
+        located: Dict[Tuple[NodeId, str], int] = {}
+        for index, entry in enumerate(entries):
+            located.setdefault((entry.node, entry.kind), index)
+        self._at = located
+
+    def _apply_patch(self, patch: IndexPatch) -> None:
+        """O(changed) when only rects move. A structural patch rebinds the stored entries."""
+        self._fresh_epoch = self._epoch
+        self._refreshes += 1
+        self._last_visits = patch.visits
+        self._last_changed = patch.changed
+        if not patch.replacements and not patch.extra and not patch.drop:
+            return
+        items = list(self._entries)
+        for index, entry in patch.replacements:
+            if 0 <= index < len(items):
+                items[index] = entry
+        if patch.drop:
+            items = [entry for entry in items if entry.node not in patch.drop]
+        if patch.extra:
+            items.extend(patch.extra)
+        moved = any(
+            self._entries[index].container != entry.container
+            for index, entry in patch.replacements
+            if 0 <= index < len(self._entries)
+        )
+        if patch.drop or patch.extra or moved:
+            self._bind(tuple(items))
+            return
+        by_container: Dict[Optional[NodeId], Dict[int, GeoEntry]] = {}
+        for index, entry in patch.replacements:
+            previous = self._entries[index]
+            if entry.kind in _TITLES:
+                continue
+            self._rects[entry.node] = entry.rect
+            by_container.setdefault(previous.container, {})[id(previous)] = entry
+        for container, replacing in by_container.items():
+            group = self._children.get(container, ())
+            self._children[container] = tuple(replacing.get(id(item), item) for item in group)
+        self._entries = tuple(items)
 
     def query(self, x: int, y: int) -> Optional[HitResult]:
         self._require_fresh()
         trail: List[GeoEntry] = []
+        seen: set[NodeId] = set()
         level = self._children.get(None, ())
         while level:
             hit = _topmost_at(level, x, y)
-            if hit is None:
+            if hit is None or hit.node in seen:
                 break
+            seen.add(hit.node)
             trail.append(hit)
             if hit.kind not in _DESCENDS:
                 break
@@ -188,6 +325,20 @@ class HitIndex:
     @property
     def refresh_count(self) -> int:
         return self._refreshes
+
+    @property
+    def last_visit_count(self) -> int:
+        """Entries read by the last refresh. A full walk visits every entry."""
+        return self._last_visits
+
+    @property
+    def last_changed(self) -> Optional[Tuple[NodeId, ...]]:
+        """Nodes whose rect moved on the last partial refresh.
+
+        None means the last refresh walked the form, so callers cannot assume
+        a short change list.
+        """
+        return self._last_changed
 
     def _require_fresh(self) -> None:
         if not self.is_fresh():

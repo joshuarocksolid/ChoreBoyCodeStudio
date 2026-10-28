@@ -122,6 +122,9 @@ class FontEditor:
         self._size = QSpinBox(row)
         self._size.setRange(0, 256)
         self._size.setSpecialValueText(NOT_SET_TEXT)
+        self._shown_size = ""
+        # Commit on Enter, focus-out or a step, not on every typed digit.
+        self._size.setKeyboardTracking(False)
         fields.addWidget(self._family, 1)
         fields.addWidget(self._size)
         layout.addWidget(row)
@@ -129,7 +132,9 @@ class FontEditor:
         flag_row = QHBoxLayout(flags)
         flag_row.setContentsMargins(0, 0, 0, 0)
         self._bold = QCheckBox("Bold", flags)
+        self._bold.setAccessibleName("Font: Bold")
         self._italic = QCheckBox("Italic", flags)
+        self._italic.setAccessibleName("Font: Italic")
         flag_row.addWidget(self._bold)
         flag_row.addWidget(self._italic)
         layout.addWidget(flags)
@@ -182,6 +187,11 @@ class FontEditor:
         self._size.blockSignals(False)
         self._bold.blockSignals(False)
         self._italic.blockSignals(False)
+        self._shown_size = self._size.text()
+
+    def is_dirty(self) -> bool:
+        """Digits typed but not committed. Esc reverts them by re-showing the value."""
+        return self._size.text() != self._shown_size
 
     def _mark_family(self, _text: str) -> None:
         self._family_touched = True

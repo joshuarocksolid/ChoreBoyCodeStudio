@@ -17,6 +17,7 @@ from app.qt.QtWidgets import QSizePolicy
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.ui4.spec import PropertyEntry
+from app.features.form_builder.qtside.realize.forced import CANVAS_OVERRIDES
 from app.features.form_builder.engine.ui4.values import (
     BoolValue,
     BrushValue,
@@ -55,6 +56,7 @@ from app.features.form_builder.engine.ui4.values import (
 
 _MARGINS = ("leftMargin", "topMargin", "rightMargin", "bottomMargin")
 _SKIP = frozenset({"buddy", "cbcsSplitterSizes"})
+
 # uic applies the legacy value first. A stored side or axis then wins, in any file order.
 _METRIC_ORDER = ("margin",) + _MARGINS + ("spacing", "horizontalSpacing", "verticalSpacing")
 _METRIC_NAMES = frozenset(_METRIC_ORDER)
@@ -93,7 +95,7 @@ def apply_entry(
 ) -> bool:
     """Apply ``entry``. False when the value was skipped or rejected."""
     name = entry.name
-    if name in _SKIP or is_logic_key(name):
+    if name in _SKIP or is_logic_key(name) or name in CANVAS_OVERRIDES:
         return False
     value = entry.value
     if isinstance(value, OpaqueValue):

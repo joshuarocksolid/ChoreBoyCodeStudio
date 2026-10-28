@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, FrozenSet, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands.base import Command, CommandRejected
-from app.features.form_builder.engine.commands.ops import InsertNodeOp, Op, RemoveNodeOp, ReplaceRootOp
+from app.features.form_builder.engine.commands.ops import InsertNodeOp, Op, RemoveNodeOp, ReplaceRootOp, SetFieldOp
 from app.features.form_builder.engine.events import Change, DocumentReplaced, NodeRemoved, change_from_op
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
 from app.features.form_builder.engine.ui4 import mutate
@@ -71,6 +71,22 @@ class ApplyContext:
         self.inverses.append(inverse)
         self.changes.append(change)
         self._remember_removal(op)
+
+    def apply_field_batch(self, updates: Sequence[Tuple[NodeId, str, object]]) -> None:
+        """One bubble for a run of field writes. The log still stores one op each."""
+        if not updates:
+            return
+        ops = [SetFieldOp(node=node, field=field, value=value) for node, field, value in updates]
+        try:
+            changes = [change_from_op(self.doc, op) for op in ops]
+            inverses = mutate.apply_field_batch(self.doc, ops)
+        except OpError as exc:
+            raise CommandRejected(str(exc)) from exc
+        except KeyError as exc:
+            raise CommandRejected("That object is no longer in the form.") from exc
+        self.ops.extend(ops)
+        self.inverses.extend(inverses)
+        self.changes.extend(changes)
 
     def run(self, command: Command) -> Any:
         # The parent command is what replay re-runs. It calls ``run`` again.

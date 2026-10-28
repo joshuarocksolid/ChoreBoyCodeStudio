@@ -20,6 +20,7 @@ from app.features.form_builder.engine.sizing import (
     encode_axis,
     explain,
     outlined_word,
+    placed_freely,
     preview_pill,
     project_axis,
     reset_words,
@@ -439,3 +440,73 @@ def test_preview_pill_is_absent_at_normal_and_names_a_cutoff() -> None:
     assert preview_pill(10, 1.25, 100, None, 2) == "Previewing larger text · 2 widgets cut off text · Reset"
     assert preview_pill(10, 1.0, 100, 16, 0) == "Previewing larger text · Reset"
     assert preview_pill(10, 1.0, 150, None, 0) == "Previewing 150% screen · Reset"
+
+
+def _ui(body: str):
+    text = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n <class>Form</class>\n%s\n</ui>\n'
+        % body
+    )
+    return read_ui(text, allocator=IdAllocator()).document
+
+
+@pytest.mark.parametrize(
+    ("body", "name", "free"),
+    [
+        (
+            '<widget class="QWidget" name="Form"><widget class="QPushButton" name="free"/></widget>',
+            "free",
+            True,
+        ),
+        (
+            '<widget class="QWidget" name="Form"><layout class="QVBoxLayout" name="box">'
+            '<item><widget class="QPushButton" name="laid"/></item></layout></widget>',
+            "laid",
+            False,
+        ),
+        (
+            '<widget class="QMainWindow" name="Form"><widget class="QWidget" name="centralwidget"/>'
+            '<widget class="QStatusBar" name="statusbar"/></widget>',
+            "centralwidget",
+            False,
+        ),
+        (
+            '<widget class="QMainWindow" name="Form"><widget class="QStatusBar" name="statusbar"/></widget>',
+            "statusbar",
+            False,
+        ),
+        (
+            '<widget class="QScrollArea" name="Form"><widget class="QWidget" name="contents"/></widget>',
+            "contents",
+            False,
+        ),
+        (
+            '<widget class="QDockWidget" name="Form"><widget class="QWidget" name="contents"/></widget>',
+            "contents",
+            False,
+        ),
+        (
+            '<widget class="QTabWidget" name="Form"><widget class="QWidget" name="page"/></widget>',
+            "page",
+            False,
+        ),
+        (
+            '<widget class="QStackedWidget" name="Form"><widget class="QWidget" name="page"/></widget>',
+            "page",
+            False,
+        ),
+        (
+            '<widget class="QToolBox" name="Form"><widget class="QWidget" name="page"/></widget>',
+            "page",
+            False,
+        ),
+        (
+            '<widget class="QWizard" name="Form"><widget class="QWizardPage" name="page"/></widget>',
+            "page",
+            False,
+        ),
+    ],
+)
+def test_placed_freely_is_a_plain_container_child(body: str, name: str, free: bool) -> None:
+    document = _ui(body)
+    assert placed_freely(document, nid(document, name)) is free

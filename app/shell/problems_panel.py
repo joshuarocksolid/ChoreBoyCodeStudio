@@ -237,6 +237,7 @@ class ProblemsPanel(QWidget):
         super().__init__(parent)
         self.setObjectName("shell.problemsPanel")
         self._last_detail: dict[str, str] = {}
+        self._last_preview_detail: dict[str, str] = {}
 
         root_layout = QVBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -534,6 +535,8 @@ class ProblemsPanel(QWidget):
             resolved_line = int(line_number)
         except (TypeError, ValueError):
             return
+        detail = item.data(0, ROLE_DETAIL)
+        self._last_preview_detail = dict(detail) if isinstance(detail, dict) else {}
         self.item_preview_requested.emit(str(file_path), resolved_line)
 
     def _on_item_activated(self, item: QTreeWidgetItem) -> None:
@@ -551,6 +554,9 @@ class ProblemsPanel(QWidget):
 
     def last_activation_detail(self) -> dict[str, str]:
         return dict(self._last_detail)
+
+    def last_preview_detail(self) -> dict[str, str]:
+        return dict(self._last_preview_detail)
 
     def _on_context_menu(self, position: "QPoint") -> None:
         item = self._tree.itemAt(position)

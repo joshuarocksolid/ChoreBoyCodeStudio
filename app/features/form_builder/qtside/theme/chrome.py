@@ -14,6 +14,31 @@ PAGE_TITLE_HEIGHT = 22
 PAGE_TITLE_FILL = "#E4E4E4"
 PAGE_TITLE_GLYPH = "#6B6B6B"
 PAGE_TITLE_TEXT = "#3C3C3C"
+EDITOR_BACKGROUND = "#FFFFFF"
+EDITOR_TEXT = "#212529"
+FALLBACK_FAINT = "#666F76"
+FALLBACK_ACCENT = "#3366FF"
+FALLBACK_MUTED = "#5A6168"
+FALLBACK_PANEL = "#FFFFFF"
+FALLBACK_BORDER = "#DEE2E6"
+FALLBACK_TEXT = "#212529"
+
+
+def editor_field_colors() -> Tuple[str, str]:
+    """In-place editor fill and text. Hex for the builder stays in this module."""
+    return (EDITOR_BACKGROUND, EDITOR_TEXT)
+
+
+def fallback_backdrop_roles() -> Tuple[str, str, str, str, str, str]:
+    """faint, accent, muted, panel, border, text when no shell theme is applied."""
+    return (
+        FALLBACK_FAINT,
+        FALLBACK_ACCENT,
+        FALLBACK_MUTED,
+        FALLBACK_PANEL,
+        FALLBACK_BORDER,
+        FALLBACK_TEXT,
+    )
 
 
 def backdrop_colors(*, is_dark: bool, is_high_contrast: bool) -> Tuple[str, str]:

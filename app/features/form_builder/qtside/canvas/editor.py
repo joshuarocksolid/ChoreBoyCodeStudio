@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Callable, Literal, Optional, Union
 
 from app.qt.QtCore import QEvent, QObject, Qt
-from app.qt.QtGui import QFont, QKeyEvent
+from app.qt.QtGui import QFont, QKeyEvent, QPalette
 from app.qt.QtWidgets import QGraphicsView, QLineEdit, QPlainTextEdit, QWidget
 from app.qt.qt_compat import enum_value
 
@@ -39,7 +39,7 @@ class InPlaceEditor:
         edit: _Edit = QPlainTextEdit(self._viewport) if target.multiline else QLineEdit(self._viewport)
         zoomed = _zoomed_font(widget.font(), _scale(widget))
         edit.setFont(zoomed)
-        edit.setStyleSheet(_sheet(self._viewport, zoomed))
+        edit.setStyleSheet(_sheet(widget, self._viewport, zoomed))
         _copy_alignment(widget, edit)
         text = "" if target.original is None else target.original.text
         edit.setPlainText(text) if isinstance(edit, QPlainTextEdit) else edit.setText(text)
@@ -200,7 +200,7 @@ def _zoomed_font(font: QFont, scale: float) -> QFont:
     return zoomed
 
 
-def _sheet(viewport: QWidget, font: QFont) -> str:
+def _sheet(widget: QWidget, viewport: QWidget, font: QFont) -> str:
     contrast = bool(viewport.property("formBuilderHighContrast"))
     color = overlay_palette(contrast).select
     if len(color) == 9:
@@ -210,10 +210,14 @@ def _sheet(viewport: QWidget, font: QFont) -> str:
         size = "%dpx" % font.pixelSize()
     else:
         size = "%gpt" % font.pointSizeF()
+    role = getattr(QPalette, "ColorRole", QPalette)
+    palette = widget.palette()
+    background = palette.color(getattr(role, "Base")).name()
+    foreground = palette.color(getattr(role, "Text")).name()
     return (
-        "background: #FFFFFF; color: #212529; border: 1px solid %s; padding: 0px;"
+        "background: %s; color: %s; border: 1px solid %s; padding: 0px;"
         " font-family: '%s'; font-size: %s;"
-    ) % (color, family, size)
+    ) % (background, foreground, color, family, size)
 
 
 def _copy_alignment(widget: QWidget, edit: _Edit) -> None:

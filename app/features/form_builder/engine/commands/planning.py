@@ -1284,13 +1284,20 @@ def _shift_axis(
         carrier = _item_carrier(doc, node_id)
         if carrier is not None:
             ignore.add(carrier)
+    updates = []
     for item in list(doc.node(layout_id).children("layout_items")):
         if item.id in ignore or not isinstance(item, LayoutItemNode):
             continue
         current = item.row if field == "row" else item.column
         current = 0 if current is None else current
         if current >= start:
-            ctx.do(SetFieldOp(item.id, field, current + delta))
+            updates.append((item.id, field, current + delta))
+    batch = getattr(ctx, "apply_field_batch", None)
+    if batch is not None:
+        batch(updates)
+        return
+    for node_id, field_name, value in updates:
+        ctx.do(SetFieldOp(node_id, field_name, value))
 
 
 def _ensure_vbox(doc: UiDocument, ctx: PlanContext, widget_id: NodeId) -> NodeId:

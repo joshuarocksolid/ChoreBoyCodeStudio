@@ -305,3 +305,39 @@ def test_one_thousand_property_edits_average_under_a_millisecond() -> None:
             os.environ["CBCS_FB_VALIDATE"] = previous
     average = elapsed / 1000.0
     assert average < 0.001, "average %.6f s" % average
+
+
+def test_paste_into_a_long_form_bubbles_each_ancestor_once() -> None:
+    log = open_log(_form_rows(390))
+    doc = log.document
+    layout = doc.by_name("form")[0]
+    form = doc.by_name("Form")[0]
+    before = doc.fingerprint()
+    mutate.trace_ids = []
+    try:
+        log.execute(InsertFragment(InBoxLayout(layout, 0), Fragment(nodes=(button_spec("extra"),))))
+        traced = list(mutate.trace_ids or [])
+    finally:
+        mutate.trace_ids = None
+    assert traced.count(int(layout)) <= 8
+    assert traced.count(int(form)) <= 8
+    assert log.undo()
+    assert doc.fingerprint() == before
+
+
+def _form_rows(rows: int) -> str:
+    items = []
+    for index in range(rows):
+        items.append(
+            '<item row="%d" column="0"><widget class="QLabel" name="l%d">'
+            '<property name="text"><string>L</string></property></widget></item>'
+            '<item row="%d" column="1"><widget class="QLineEdit" name="e%d"/></item>'
+            % (index, index, index, index)
+        )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<ui version="4.0"><class>Form</class>'
+        '<widget class="QWidget" name="Form">'
+        '<layout class="QFormLayout" name="form">%s</layout>'
+        "</widget></ui>" % "".join(items)
+    )

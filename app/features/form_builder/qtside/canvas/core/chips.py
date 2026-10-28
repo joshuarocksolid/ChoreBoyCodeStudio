@@ -52,6 +52,8 @@ class ChipRequest:
 class Obstacle:
     node: NodeId
     rect: CanvasRect
+    #: A title strip. Descendants may cover the ancestor's body, never this band.
+    band: bool = False
 
 
 @dataclass(frozen=True)
@@ -476,6 +478,10 @@ class _Buckets:
         seen = set()
         for cell in _cover(rect):
             for obstacle in self._cells.get(cell, ()):
+                if obstacle.band:
+                    if _closed(rect, obstacle.rect):
+                        return True
+                    continue
                 if obstacle.node in exempt or obstacle.node in seen:
                     continue
                 seen.add(obstacle.node)

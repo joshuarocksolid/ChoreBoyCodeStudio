@@ -11,7 +11,7 @@ import time
 from dataclasses import replace
 from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
 
-from app.qt.QtCore import QEvent, QPoint, QRect, Qt, QTimer
+from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
 from app.qt.QtGui import QFont, QFontMetrics, QPixmap
 from app.qt.QtWidgets import (
     QApplication,
@@ -50,6 +50,7 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     OpenProblem,
     OverlayFrame,
     ShowStacked,
+    Stroke,
 )
 from app.features.form_builder.qtside.canvas.core.gesture import (
     CanvasPressed,
@@ -188,9 +189,13 @@ class CanvasController:
         self._closed = False
         self._editor = InPlaceEditor(view.viewport(), realizer, self._on_editor_done)
         self._ghost: Optional[QPixmap] = None
+        self._held_ghost: Optional[QPixmap] = None
+        self._ghost_damage: Optional[CanvasRect] = None
+        self._wide_prev: Tuple[CanvasRect, ...] = ()
         self._spring_id: Optional[NodeId] = None
         self._refused: Optional[str] = None
         self._refused_at = 0.0
+        self._refused_open = False
         self._shown_page: Dict[NodeId, int] = {}
         self._preview_key: Optional[str] = None
         self._pending_edit: Optional[Commit] = None
@@ -387,6 +392,16 @@ class CanvasController:
     def placing(self) -> bool:
         return isinstance(self._gesture, Placing)
 
+    def ghost_shown(self) -> bool:
+        """O(1). True when this frame paints a drag ghost."""
+        gesture = self._gesture
+        return (
+            self._ghost is not None
+            and isinstance(gesture, Placing)
+            and not gesture.outside
+            and gesture.draw
+        )
+
     def place_payload(self) -> Optional[DropPayload]:
         gesture = self._gesture
         if isinstance(gesture, Placing):
@@ -396,7 +411,7 @@ class CanvasController:
     def paint_ghost(self, painter: object) -> None:
         gesture = self._gesture
         pixmap = self._ghost
-        if pixmap is None or not isinstance(gesture, Placing) or gesture.outside:
+        if pixmap is None or not isinstance(gesture, Placing) or gesture.outside or not gesture.draw:
             return
         view = self._stage.view_map()
         origin = view.to_canvas(
@@ -518,13 +533,17 @@ class CanvasController:
         """
         if not isinstance(event, Move) or not isinstance(self._gesture, Placing):
             return None
+        viewport = self._view.viewport()
+        inside = viewport.rect().contains(event.port.x, event.port.y)
+        if not inside:
+            self._gesture = replace(self._gesture, outside=False, draw=False)
         finder = getattr(self._host, "outline_target", None)
         if finder is None:
-            return None
-        global_pos = self._view.viewport().mapToGlobal(QPoint(event.port.x, event.port.y))
+            return "" if not inside else None
+        global_pos = viewport.mapToGlobal(QPoint(event.port.x, event.port.y))
         target = finder(global_pos)
         if target is None:
-            return None
+            return "" if not inside else None
         self._gesture = replace(self._gesture, target=target, outside=False, draw=False)
         if isinstance(target, NoDrop):
             return ""
@@ -538,11 +557,23 @@ class CanvasController:
         elif isinstance(previous, Placing) and not isinstance(current, Placing):
             self._fade(previous.payload.source_ids, 1.0)
             self._ghost = None
+            self._held_ghost = None
             self._spring.stop()
             self._spring_id = None
             self._remember_refusal(previous, current)
         elif isinstance(current, Placing):
+            self._park_ghost(current)
             self._arm_spring(current)
+
+    def _park_ghost(self, state: Placing) -> None:
+        """Hide the ghost while the pointer is off the canvas. O(1). It comes back on re-entry."""
+        if state.outside or not state.draw:
+            if self._ghost is not None:
+                self._held_ghost = self._ghost
+                self._ghost = None
+            return
+        if self._ghost is None and self._held_ghost is not None:
+            self._ghost = self._held_ghost
 
     def _grab(self, state: Placing) -> None:
         self._ghost = None
@@ -654,6 +685,11 @@ class CanvasController:
         self._request_frame()
 
     def _remember_refusal(self, previous: Gesture, current: Gesture) -> None:
+        """O(1). A release on a refused target counts. The next attempt within 5 s toasts.
+
+        A drag that starts on a refused target counts at the start. A drag that
+        only becomes refused on the way counts at the release.
+        """
         if isinstance(current, Placing) and isinstance(current.target, RefusedDrop):
             sentence = current.target.sentence
             previous_sentence = (
@@ -661,18 +697,25 @@ class CanvasController:
                 if isinstance(previous, Placing) and isinstance(previous.target, RefusedDrop)
                 else None
             )
-            now = time.monotonic()
             if sentence != previous_sentence:
-                if self._refused == sentence and now - self._refused_at <= 5.0:
-                    toast = getattr(self._host, "show_plain", None)
-                    if toast is not None:
-                        toast(sentence)
-                self._refused = sentence
-                self._refused_at = now
+                self._count_refusal(sentence)
+                self._refused_open = True
             return
         if isinstance(previous, Placing) and isinstance(previous.target, RefusedDrop):
-            self._refused = previous.target.sentence
-            self._refused_at = time.monotonic()
+            if self._refused_open:
+                self._refused_open = False
+                return
+            self._count_refusal(previous.target.sentence)
+
+    def _count_refusal(self, sentence: str) -> None:
+        """O(1). Remember ``sentence``. Toast when it repeats inside 5 s."""
+        now = time.monotonic()
+        if sentence and self._refused == sentence and now - self._refused_at <= 5.0:
+            toast = getattr(self._host, "show_plain", None)
+            if toast is not None:
+                toast(sentence)
+        self._refused = sentence
+        self._refused_at = now
 
     def _add_page(self, container: NodeId) -> None:
         try:
@@ -764,13 +807,21 @@ class CanvasController:
             if rect is not None:
                 self._stage.run(Reveal(rect))
                 self._editor.follow(self._stage.view_map())
+        previous = self._frame
         self._rebuild(static=self._static_stale())
-        self._view.viewport().update()
+        self._sync_dock()
+        # O(changed overlay rects). The page pixmap is left alone.
+        self._damage_overlay(previous)
 
     def _note_moved(self) -> None:
         preview = getattr(self._view, "preview", None)
         note = getattr(preview, "note_moved", None)
         if note is None:
+            return
+        changed = self._index.last_changed
+        if changed is not None:
+            # O(changed). A full walk leaves last_changed as None.
+            note(changed)
             return
         note(_moved_ids(self._static_entries, self._index.indexed_entries()))
 
@@ -781,6 +832,9 @@ class CanvasController:
             return True
         if static.epoch == self._index.epoch:
             return False
+        changed = self._index.last_changed
+        if changed is not None:
+            return self._shift_changed(static, view, changed)
         # Rebuilding every stroke when one widget moved is the O(form) part
         # of an edit. Shift the obstacles that moved. The frame still rebuilds,
         # so the selection chip follows.
@@ -791,6 +845,91 @@ class CanvasController:
         self._static = replace(shifted, epoch=self._index.epoch)
         self._static_entries = current
         return False
+
+    def _shift_changed(self, static: StaticLayer, view: ViewMap, changed: Tuple[NodeId, ...]) -> bool:
+        """O(changed). True when the static layer has to be rebuilt."""
+        if not changed:
+            self._static = replace(static, epoch=self._index.epoch)
+            self._static_entries = self._index.indexed_entries()
+            return False
+        updates = {}
+        for node_id in changed:
+            rect = self._index.rect_of(node_id)
+            if rect is None:
+                return True
+            updates[node_id] = rect
+        shifted = shift_static(static, view, updates)
+        if shifted is None:
+            return True
+        self._static = replace(shifted, epoch=self._index.epoch)
+        self._static_entries = self._index.indexed_entries()
+        return False
+
+    def _sync_dock(self) -> None:
+        """Push docked chips when the frame is built. Paint must not move widgets."""
+        sync = getattr(self._view, "sync_docked_chips", None)
+        if sync is not None:
+            sync(self._frame)
+
+    def _ghost_rect(self) -> Optional[CanvasRect]:
+        gesture = self._gesture
+        pixmap = self._ghost
+        if pixmap is None or not isinstance(gesture, Placing) or gesture.outside or not gesture.draw:
+            return None
+        view = self._stage.view_map()
+        origin = view.to_canvas(
+            Rect(
+                int(gesture.pointer.x - gesture.grab.x),
+                int(gesture.pointer.y - gesture.grab.y),
+                1,
+                1,
+            )
+        )
+        width = max(1, int(pixmap.width() * view.factor))
+        height = max(1, int(pixmap.height() * view.factor))
+        return CanvasRect(origin.x, origin.y, width, height)
+
+    def _damage_overlay(self, previous: OverlayFrame) -> None:
+        """Repaint each overlay rect that appeared or disappeared. O(changed rects).
+
+        The bounding box of a selection and its chip is mostly empty page. Updating
+        that box repaints the widgets in the gap, so each rect is posted on its own.
+        """
+        rects = _changed_bounds(previous, self._frame)
+        if self._ghost_damage is not None:
+            rects.append(self._ghost_damage)
+        ghost = self._ghost_rect()
+        self._ghost_damage = ghost
+        if ghost is not None:
+            rects.append(ghost)
+        wide = _wide_stroke_rects(self._view)
+        rects.extend(self._wide_prev)
+        rects.extend(wide)
+        self._wide_prev = wide
+        if not rects:
+            return
+        viewport = self._view.viewport()
+        bounds = viewport.rect()
+        origin = self._view.mapFromScene(QPointF(0.0, 0.0))
+        unit = self._view.mapFromScene(QPointF(1.0, 0.0))
+        down = self._view.mapFromScene(QPointF(0.0, 1.0))
+        scale_x = unit.x() - origin.x()
+        scale_y = down.y() - origin.y()
+        ports: List[QRect] = []
+        area = 0
+        for rect in rects:
+            port = _port_from(origin.x(), origin.y(), scale_x, scale_y, rect).adjusted(-4, -4, 4, 4).intersected(bounds)
+            if port.isEmpty():
+                continue
+            ports.append(port)
+            area += port.width() * port.height()
+        if not ports:
+            return
+        if bounds.width() > 0 and area > bounds.width() * bounds.height() * 0.6:
+            viewport.update()
+            return
+        for port in ports:
+            viewport.update(port)
 
     def _rebuild(self, static: bool) -> None:
         view = self._stage.view_map()
@@ -945,6 +1084,79 @@ class CanvasController:
         width = int(metrics.width(text) if advance is None else advance(text))
         self._chip_widths[text] = width
         return width
+
+
+def _changed_bounds(previous: OverlayFrame, current: OverlayFrame) -> List[CanvasRect]:
+    """Rects whose painted item changed. The key is the item, so a style change at the same rect repaints."""
+    before = _item_counts(previous)
+    after = _item_counts(current)
+    changed: List[CanvasRect] = []
+    for item in set(before) | set(after):
+        if before.get(item, 0) != after.get(item, 0):
+            changed.extend(_damage_rects(item))
+    return changed
+
+
+def _item_counts(frame: OverlayFrame) -> Dict[object, int]:
+    counts: Dict[object, int] = {}
+    for item in frame.items:
+        counts[item] = counts.get(item, 0) + 1
+    return counts
+
+
+def _damage_rects(item: object) -> List[CanvasRect]:
+    """A page-wide stroke damages its four edges. The interior stays unexposed."""
+    rect = _item_bounds(item)
+    if (
+        isinstance(item, Stroke)
+        and not item.caps
+        and rect.width > 12
+        and rect.height > 12
+    ):
+        band = max(int(item.width) + 3, 4)
+        return [
+            CanvasRect(rect.x, rect.y, rect.width, band),
+            CanvasRect(rect.x, rect.y + rect.height - band, rect.width, band),
+            CanvasRect(rect.x, rect.y, band, rect.height),
+            CanvasRect(rect.x + rect.width - band, rect.y, band, rect.height),
+        ]
+    return [rect]
+
+
+def _item_bounds(item: object) -> CanvasRect:
+    rect = item.rect  # type: ignore[attr-defined]
+    leader = getattr(item, "leader", None)
+    if leader is None:
+        return rect
+    xs = (rect.x, rect.x + rect.width, leader.start.x, leader.end.x)
+    ys = (rect.y, rect.y + rect.height, leader.start.y, leader.end.y)
+    left = min(xs)
+    top = min(ys)
+    return CanvasRect(left, top, max(xs) - left, max(ys) - top)
+
+
+def _port_from(origin_x: float, origin_y: float, scale_x: float, scale_y: float, rect: CanvasRect) -> QRect:
+    """Canvas pixels to viewport pixels from one measured origin. O(1)."""
+    left = origin_x + rect.x * scale_x
+    top = origin_y + rect.y * scale_y
+    width = rect.width * scale_x
+    height = rect.height * scale_y
+    if width < 0:
+        left += width
+        width = -width
+    if height < 0:
+        top += height
+        height = -height
+    return QRect(int(left), int(top), max(1, int(width)), max(1, int(height)))
+
+
+def _wide_stroke_rects(view: QGraphicsView) -> Tuple[CanvasRect, ...]:
+    preview = getattr(view, "preview", None)
+    reader = getattr(preview, "wide_stroke_rects", None)
+    if reader is None:
+        return ()
+    found = reader()
+    return tuple(found) if found else ()
 
 
 def _moved_ids(

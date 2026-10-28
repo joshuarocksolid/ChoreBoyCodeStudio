@@ -830,7 +830,11 @@ The curated rows per class come from a registry (M3.1b) so M4 adds rows without 
 | Squeezed | "Width is squeezed below the {hint} px it asks for, because the window is too narrow. It can't go below {min} px." |
 | Fixed | "Width is fixed at {n} px." |
 | Held by At least | "Height can't go below its minimum of {min} px." |
-| Form label column | "Labels are as wide as the longest label, {w} px." |
+| Form label column | "This label is {label} px wide. The label column is {column} px, the width of the longest label." |
+| Not in a layout | "{w} × {h} px, as stored. A layout would size it." The Hug, Fill, and Fixed segments stay disabled, with the caption "Not in a layout: its size is the rectangle in Placement." |
+| Splitter pane | "When the splitter grows, this pane takes {taken} of every {total} extra px." |
+| Splitter pane, no share | "When the splitter grows, this pane keeps its size." |
+| Splitter pane, no share, and it still grows | "When the splitter grows, this pane takes {taken} extra px." |
 | Canvas-only minimum | "The canvas shows empty layouts bigger so you can drop into them; that size isn't saved." |
 
 `{parent}` is in words ("vertical layout", "group box Receipts"), `{class}` is the friendly class. With "Qt names" on, the Qt policy name follows in `fb.faint` parentheses.
