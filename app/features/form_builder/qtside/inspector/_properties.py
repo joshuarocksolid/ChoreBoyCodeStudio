@@ -38,8 +38,11 @@ from app.qt.QtCore import QEvent, QObject, Qt, QTimer
 from app.qt.qt_compat import delete_now, wrapper_is_valid
 from app.qt.QtGui import QFont
 from app.qt.QtWidgets import (
+    QAbstractSlider,
+    QAbstractSpinBox,
     QApplication,
     QBoxLayout,
+    QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -1092,8 +1095,20 @@ class _EditorGuard(QObject):
         return False
 
 
+_WHEEL_KINDS = (QAbstractSpinBox, QComboBox, QAbstractSlider)
+
+
 def _guard_editor(root: QWidget, row: "_Row") -> None:
+    """Install the guard only where it can act: wheel-taking widgets and focusable ones.
+
+    A filter runs in Python for every event its widget gets, so labels and
+    containers get none.
+    """
+    no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
     for target in [root, *root.findChildren(QWidget)]:
+        wheel = isinstance(target, _WHEEL_KINDS)
+        if not wheel and target.focusPolicy() == no_focus:
+            continue
         target.installEventFilter(_EditorGuard(target, row))
 
 
