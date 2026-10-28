@@ -137,15 +137,41 @@ class FlagsEditor:
             popover.set_reset(self._reset)
         popover.open_popover()
 
+    def _single_chosen(self) -> List[str]:
+        """The chosen names, with a combined or zero name split into the bits it sets.
+
+        The popover lists single bits only, so a tick or untick after
+        ``TextEditorInteraction`` must act on its bits, not on the combined name.
+        """
+        enum = self._spec.enum
+        if enum is None:
+            return list(self._chosen)
+        values = _bit_values(enum)
+        visible = _single_bits(enum)
+        mask = 0
+        for name in self._chosen:
+            mask |= values.get(name, 0)
+        out: List[str] = []
+        for name in self._chosen:
+            value = values.get(name)
+            if value is None or (value > 0 and not value & (value - 1)):
+                if name not in out:
+                    out.append(name)
+        for name in visible:
+            bit = values.get(name, 0)
+            if bit and (mask & bit) == bit and name not in out:
+                out.append(name)
+        return out
+
     def _mark(self, name: str, checked: bool) -> None:
-        chosen = [item for item in self._chosen if item != name]
+        chosen = [item for item in self._single_chosen() if item != name]
         if checked:
             chosen.append(name)
         self._chosen = tuple(chosen)
         QTimer.singleShot(0, self._write)
 
     def _radio(self, group: Sequence[str], picked: str) -> None:
-        chosen = [item for item in self._chosen if item not in group]
+        chosen = [item for item in self._single_chosen() if item not in group]
         if picked:
             chosen.append(picked)
         self._chosen = tuple(chosen)

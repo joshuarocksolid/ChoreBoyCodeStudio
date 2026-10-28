@@ -1349,3 +1349,27 @@ def test_key_clash_follows_the_selection() -> None:
         finally:
             _close(window, pane)
 
+
+def test_unticking_one_bit_of_a_combined_flag_writes_the_rest() -> None:
+    with opened(_COMBINED_FLAGS) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "caption")
+            _summary(_row(pane, "textInteractionFlags")).click()
+            _events()
+            pop = _popover()
+            boxes = {box.text(): box for box in pop.findChildren(QCheckBox)}
+            assert boxes["Select with mouse"].isChecked() and boxes["Editable"].isChecked()
+            boxes["Select with mouse"].click()
+            _events()
+            done = pop.findChild(QPushButton, "formBuilder.popoverDone")
+            assert isinstance(done, QPushButton)
+            done.click()
+            _events()
+            pane.flush()
+            xml = _xml(session)
+            assert "TextEditorInteraction" not in xml
+            assert "TextSelectableByMouse" not in xml
+            assert "Qt::TextSelectableByKeyboard" in xml and "Qt::TextEditable" in xml
+        finally:
+            _close(window, pane)
