@@ -313,6 +313,20 @@ class CommandLog:
             saves=self._saves,
         )
 
+    def entries_since(self, tip_token: int) -> Tuple[Entry, ...]:
+        """Undo entries strictly after ``tip_token``.
+
+        Empty when that token is gone and is not the current base. ``has_step``
+        uses this instead of a stored depth, which shifts when the log trims.
+        """
+        if tip_token == self._base_token:
+            start = 0
+        elif tip_token in self._tokens:
+            start = self._tokens.index(tip_token) + 1
+        else:
+            return ()
+        return tuple(self._undo[start:])
+
     def rollback(self, cp: Checkpoint, token: str) -> bool:
         """Undo everything written since ``cp`` by steps that carry ``token``, as one change set.
 

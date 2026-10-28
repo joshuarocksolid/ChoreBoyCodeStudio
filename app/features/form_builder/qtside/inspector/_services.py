@@ -339,9 +339,10 @@ class EditSession:
         to hide both, because only the top entry was checked, and Esc then kept
         the writes. Rollback still refuses when a foreign token is in that range.
         """
-        entries = self._services.session.log.entries()
-        above = entries[self._checkpoint.depth :]
-        return any(entry.merge_token == self._token for entry in above)
+        entries = self._services.session.log.entries_since(self._checkpoint.tip_token)
+        if not entries:
+            return False
+        return any(entry.merge_token == self._token for entry in entries)
 
     def undo(self) -> bool:
         """Take back everything this session wrote, as one change set. See ``revert``.

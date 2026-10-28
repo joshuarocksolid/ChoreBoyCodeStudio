@@ -8,6 +8,7 @@ from app.features.form_builder.engine.ui4.values import (
     CursorValue,
     EnumValue,
     SetValue,
+    semantic_equal,
 )
 from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
@@ -133,8 +134,16 @@ class EnumEditor:
         self._spec = spec
         self._host = host
         self._enum = spec.enum
+        self._choices = spec.choices
+        if spec.choices:
+            combo = QComboBox(parent)
+            for choice in spec.choices:
+                combo.addItem(choice.label)
+            combo.currentIndexChanged.connect(self._commit_choice)
+            self._box: QWidget = combo
+            return
         if spec.enum is None:
-            self._box: QWidget = QLabel(parent)
+            self._box = QLabel(parent)
             return
         combo = _EnumBox(parent)
         type_name = spec.enum.type_name
@@ -159,6 +168,25 @@ class EnumEditor:
         return _combo_need(combo) > int(width) - _LABEL_AND_GAP
 
     def show(self, value: RowValue) -> None:
+        if self._choices:
+            combo = self._box
+            assert isinstance(combo, QComboBox)
+            mark(combo, value)
+            # Written, or an Unset row's default (faint by ``mark``).
+            current = _payload(value)
+            index = -1
+            if current is not None:
+                for position, choice in enumerate(self._choices):
+                    if semantic_equal(choice.value, current):
+                        index = position
+                        break
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.setPlaceholderText(
+                MIXED_TEXT if isinstance(value, Mixed) else ("" if index >= 0 else NOT_SET_TEXT)
+            )
+            combo.blockSignals(False)
+            return
         text = _enum_text(value)
         if self._enum is None:
             label = self._box
@@ -212,6 +240,11 @@ class EnumEditor:
         if not isinstance(name, str) or not name:
             return
         self._host.commit(self._host.enum_value(self._enum, (name,)))
+
+    def _commit_choice(self, index: int) -> None:
+        if index < 0 or index >= len(self._choices):
+            return
+        self._host.commit(self._choices[index].value)
 
 
 class AlignmentEditor:

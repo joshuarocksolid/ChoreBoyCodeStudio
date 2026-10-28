@@ -524,9 +524,13 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
 
     log.subscribe(guarded, priority=1)
     done = 0
+    rules = random.Random(seed ^ 0x5EED)
     for attempt in range(steps * 4):
         if done >= steps:
             break
+        if rules.randrange(8) == 0:
+            _rollback_rule(log, doc, rules, seed, attempt)
+            doc.validate()
         roll = rng.randrange(20)
         if roll < 3 and log.can_undo():
             log.undo()
@@ -603,6 +607,62 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
     doc.validate()
     if doc.fingerprint() != tip:
         raise AssertionError("redo-all mismatch seed %s" % (seed,))
+
+
+def _rollback_rule(log: Any, doc: UiDocument, rng: random.Random, seed: int, attempt: int) -> None:
+    """Stateful rule: checkpoint, then random session writes, saves, undos, redos
+    and foreign steps, then rollback.
+
+    Rollback must either refuse and change nothing (bytes, redo tokens, depth,
+    dirty), or restore the checkpoint's bytes and redo tokens exactly. Dirty
+    comes back as it was when nothing was saved inside the range. When a save
+    landed inside and wrote other bytes than the checkpoint's, the restored
+    document differs from disk and the log must say dirty (dirty is allowed,
+    conservatively, when the saved bytes match the checkpoint's).
+    """
+    token = "rule-%s-%s" % (seed, attempt)
+    cp = log.checkpoint()
+    at_cp = (saved(doc), tuple(cp.redo_tokens), log.is_dirty())
+    disk: Optional[str] = None
+    for index in range(rng.randint(1, 4)):
+        act = rng.randrange(10)
+        try:
+            if act < 5:
+                command = command_for(doc, rng, attempt * 100 + index)
+                if command is None:
+                    continue
+                with log.transaction("rule", merge_token=token) as tx:
+                    tx.execute(cast(Command, command))
+            elif act == 5:
+                log.mark_saved()
+                disk = saved(doc)
+            elif act == 6:
+                log.undo()
+            elif act == 7:
+                log.redo()
+            elif act == 8:
+                command = command_for(doc, rng, attempt * 100 + index + 50)
+                if command is None:
+                    continue
+                with log.transaction("foreign", merge_token="foreign") as tx:
+                    tx.execute(cast(Command, command))
+        except CommandRejected as exc:
+            _fail_on_validation(seed, exc)
+    before = (saved(doc), tuple(log.checkpoint().redo_tokens), log.is_dirty(), len(log.entries()))
+    if not log.rollback(cp, token):
+        after = (saved(doc), tuple(log.checkpoint().redo_tokens), log.is_dirty(), len(log.entries()))
+        if after != before:
+            raise AssertionError("seed %s refused rollback changed the log" % seed)
+        return
+    if saved(doc) != at_cp[0]:
+        raise AssertionError("seed %s rollback did not restore the bytes" % seed)
+    if tuple(log.checkpoint().redo_tokens) != at_cp[1]:
+        raise AssertionError("seed %s rollback did not restore the redo stack" % seed)
+    if disk is None:
+        if log.is_dirty() != at_cp[2]:
+            raise AssertionError("seed %s rollback changed the dirty state" % seed)
+    elif disk != at_cp[0] and not log.is_dirty():
+        raise AssertionError("seed %s rollback past a save left the log clean" % seed)
 
 
 def run_many(count: int, steps: int, *, start: int = 0) -> str:

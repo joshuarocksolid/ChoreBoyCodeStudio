@@ -147,8 +147,9 @@ FILE_ROLES = (
         allowed_files=frozenset({"app/features/form_builder/qtside/inspector/editors/__init__.py"}),
         allowed_imports=(
             "app.features.form_builder.qtside.inspector.api",
-            # Sibling editors, including the row popover. The host package stays closed.
             "app.features.form_builder.qtside.inspector.editors",
+            "app.features.form_builder.qtside.inspector.rich_html",
+            "app.features.form_builder.qtside.inspector.translatable",
         ),
     ),
 )

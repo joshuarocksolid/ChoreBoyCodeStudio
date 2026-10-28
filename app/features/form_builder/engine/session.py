@@ -10,7 +10,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Dict, FrozenSet, List, Optional, Tuple
 
-from app.features.form_builder.engine.commands.log import CommandLog, SelectionSnapshot
+from app.features.form_builder.engine.commands.log import (
+    DEFAULT_UNDO_LIMIT,
+    CommandLog,
+    SelectionSnapshot,
+)
 from app.features.form_builder.engine.diagnostics import DiagnosticsStore, FormDiagnostic
 from app.features.form_builder.engine.events import (
     PRIORITY_DIAGNOSTICS,
@@ -42,6 +46,7 @@ class FormSession:
         allocator: IdAllocator,
         diagnostics: DiagnosticsStore,
         serializer: SerializationCache,
+        undo_limit: int = DEFAULT_UNDO_LIMIT,
     ) -> None:
         self._path = path
         self._scope = scope
@@ -58,6 +63,7 @@ class FormSession:
             document,
             allocator,
             selection_provider=self._selection_snapshot,
+            undo_limit=undo_limit,
         )
         self._connection_rows = missing_connection_diagnostics(document)
         self._subscriptions = [
@@ -68,14 +74,14 @@ class FormSession:
         ]
 
     @classmethod
-    def open(cls, text: str, *, path: str, scope: FormScope) -> "FormSession":
+    def open(cls, text: str, *, path: str, scope: FormScope, undo_limit: int = DEFAULT_UNDO_LIMIT) -> "FormSession":
         """Read ``text``. ``UiReadError`` propagates to the caller."""
         allocator = IdAllocator()
         result = read_ui(text, allocator=allocator, source_path=path)
         diagnostics = DiagnosticsStore()
         diagnostics.publish("reader", result.diagnostics)
         diagnostics.publish("connections", missing_connection_diagnostics(result.document))
-        return cls(path, scope, result.document, allocator, diagnostics, SerializationCache())
+        return cls(path, scope, result.document, allocator, diagnostics, SerializationCache(), undo_limit)
 
     @property
     def path(self) -> str:
