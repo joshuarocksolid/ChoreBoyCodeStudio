@@ -228,7 +228,8 @@ class InspectorPane(QWidget):
         if isinstance(behavior, OneBehavior) and behavior.connections:
             title = "Behavior (%d)" % len(behavior.connections)
         index = self._tab_index.get(TabId.BEHAVIOR)
-        if index is not None:
+        # setTabText relays out the styled tab bar even for the same text.
+        if index is not None and self.tabs.tabText(index) != title:
             self.tabs.setTabText(index, title)
 
     def dispose(self) -> None:
@@ -285,6 +286,7 @@ class InspectorPane(QWidget):
             # scrambles Shift+Tab.
             if self._pending:
                 self.flush()
+            self.properties.ensure_tab_chain()
         if kind == QEvent.ShortcutOverride and self._override(event):
             event.accept()
             self._dispatch_claimed(event)
