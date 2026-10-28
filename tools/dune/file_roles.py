@@ -145,7 +145,12 @@ FILE_ROLES = (
         ("app/features/form_builder/qtside/inspector/editors/**",),
         ("app.features.form_builder.qtside.inspector",),
         allowed_files=frozenset({"app/features/form_builder/qtside/inspector/editors/__init__.py"}),
-        allowed_imports=("app.features.form_builder.qtside.inspector.api",),
+        allowed_imports=(
+            "app.features.form_builder.qtside.inspector.api",
+            "app.features.form_builder.qtside.inspector.editors",
+            "app.features.form_builder.qtside.inspector.rich_html",
+            "app.features.form_builder.qtside.inspector.translatable",
+        ),
     ),
 )
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import weakref
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
@@ -25,6 +26,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import PropertyInfo, QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
+    ActionNode,
     ConnectionNode,
     LayoutItemNode,
     LayoutNode,
@@ -54,6 +56,7 @@ from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
     EditorKey,
     EnumSpec,
+    FlagBit,
     GROUP_ORDER,
     GroupId,
     LayoutProp,
@@ -131,6 +134,110 @@ class PropertyWrite:
         if len(self.owners) == 1:
             return SetProperty(self.owners[0], self.name, value, kind=self.kind, merge_token=token)
         return SetPropertyMany(self.owners, self.name, value, kind=self.kind, merge_token=token)
+
+_SHORTCUT_PROPS = ("shortcut", "keySequence")
+_SHORTCUT_CACHE: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Mapping[str, str]]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def form_shortcuts(document: UiDocument) -> Mapping[str, str]:
+    """Shortcut text -> the object name that owns it, from this form's file only.
+
+    Reads every widget's and action's ``shortcut`` and ``keySequence``. The
+    first owner in document order wins. Cached per document revision (which
+    only moves forward), so a repaint does not walk the tree again.
+    """
+    cached = _SHORTCUT_CACHE.get(document)
+    if cached is not None and cached[0] == document.revision:
+        return cached[1]
+    found: Dict[str, str] = {}
+    for node in document.iter_preorder():
+        if isinstance(node, WidgetNode):
+            owner = node.object_name
+        elif isinstance(node, ActionNode):
+            owner = node.name
+        else:
+            continue
+        if not owner:
+            continue
+        for name in _SHORTCUT_PROPS:
+            entry = node.prop(name)
+            value = None if entry is None else entry.value
+            if isinstance(value, (StringValue, CStringValue)) and value.text:
+                found.setdefault(value.text, owner)
+    view: Mapping[str, str] = MappingProxyType(found)
+    _SHORTCUT_CACHE[document] = (document.revision, view)
+    return view
+
+
+def _bit_key(bit: str) -> Tuple[str, str]:
+    parts = bit.split("::")
+    if len(parts) == 1:
+        return ("", parts[0])
+    return (parts[0], parts[-1])
+
+def _with_bit(current: SetValue, bit: str, on: bool) -> SetValue:
+    """Return ``current`` with only ``bit`` changed. Other flags keep their spelling."""
+    key = _bit_key(bit)
+    pieces: List[str] = []
+    for piece in current.text.split("|"):
+        name = piece.strip()
+        if not name or name == "0":
+            continue
+        if _bit_key(name) == key:
+            continue
+        pieces.append(name)
+    if on:
+        pieces.append(bit)
+    if not pieces:
+        return SetValue("0")
+    return SetValue("|".join(pieces))
+
+class FlagBitWrite:
+    """One ``SetProperty`` per owner, changing only this flag bit."""
+
+    def __init__(
+        self,
+        document: UiDocument,
+        owners: Tuple[NodeId, ...],
+        name: str,
+        bit: str,
+        defaults: Mapping[NodeId, SetValue],
+    ) -> None:
+        self.document = document
+        self.owners = owners
+        self.name = name
+        self.bit = bit
+        self.defaults = defaults
+
+    def edit(self, value: Value, token: Optional[str]) -> Tuple[Command, ...]:
+        if not isinstance(value, BoolValue):
+            raise TypeError("a flag bit takes a BoolValue, not %s" % type(value).__name__)
+        return tuple(self._set(owner, value.value, token) for owner in self.owners)
+
+    def reset(self) -> Tuple[Command, ...]:
+        return tuple(self._restore(owner) for owner in self.owners)
+
+    def _current(self, owner: NodeId) -> SetValue:
+        node = self.document.node(owner)
+        if isinstance(node, (WidgetNode, LayoutNode)):
+            entry = node.prop(self.name)
+            if entry is not None and isinstance(entry.value, SetValue):
+                return entry.value
+        return self.defaults.get(owner, SetValue(""))
+
+    def _set(self, owner: NodeId, on: bool, token: Optional[str]) -> Command:
+        updated = _with_bit(self._current(owner), self.bit, on)
+        return SetProperty(owner, self.name, updated, merge_token=token)
+
+    def _restore(self, owner: NodeId) -> Command:
+        default = self.defaults.get(owner, SetValue(""))
+        on = _bit_key(self.bit) in default.keys()
+        updated = _with_bit(self._current(owner), self.bit, on)
+        if updated.keys() == default.keys():
+            return SetProperty(owner, self.name, None)
+        return SetProperty(owner, self.name, updated)
 
 @dataclass(frozen=True)
 class GeometryWrite:
@@ -308,6 +415,7 @@ def project(
     tab_order: Optional[Callable[[], Tuple[str, ...]]] = None,
     include_all: bool = True,
     live_size: Optional[Tuple[int, int]] = None,
+    sort_properties: bool = False,
 ) -> Pages:
     document = session.document
     owners = inspected_ids(document, session.selection.state.ids)
@@ -318,12 +426,14 @@ def project(
             _behavior(facts, (document.root.id,)),
         )
     return Pages(
-        _node_body(facts, catalog, owners, search, include_all=include_all),
+        _node_body(facts, catalog, owners, search, include_all=include_all, sort_properties=sort_properties),
         _behavior(facts, owners),
     )
 
 def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
     source = spec.source
+    if isinstance(source, FlagBit):
+        return _flag_bit(facts, spec, owners, source)
     if isinstance(source, Prop):
         return read_property(facts, spec, owners, source.name, source.kind, curated=curated)
     if isinstance(source, LayoutProp):
@@ -342,6 +452,7 @@ def read_property(
     kind: PropKind,
     *,
     curated: bool,
+    origin: str = "",
 ) -> Optional[Row]:
     nodes = [facts.document.node(owner) for owner in owners]
     entries = [_entry(node, name, kind) for node in nodes]
@@ -358,7 +469,18 @@ def read_property(
             return _locked(spec, name, value, SELECT_ONE_FOR_POSITION)
         write = GeometryWrite(next(iter(owners)))
     element, enum = _element(entries, lives, infos)
-    return _open_or_kept(facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write)
+    dynamic = any(entry is not None and entry.is_dynamic for entry in entries)
+    chosen = tuple(spec.choices(facts.document, owners)) if spec.choices is not None else ()
+    if spec.editor:
+        key = EditorKey(spec.editor)
+    elif chosen:
+        key = EditorKey("enum")
+    else:
+        key = editor_key(name, element)
+    return _open_or_kept(
+        facts, spec, name, value, ValueSpec(element, enum, chosen), key, write,
+        origin=origin, dynamic=dynamic and kind == "property",
+    )
 
 def filter_rows(rows: Sequence[Row], search: str) -> Tuple[Row, ...]:
     needle = search.strip().lower()
@@ -450,6 +572,7 @@ def _node_body(
     search: str,
     *,
     include_all: bool = True,
+    sort_properties: bool = False,
 ) -> NodeBody:
     curated: Dict[GroupId, List[Row]] = {}
     for spec in catalog.rows():
@@ -466,7 +589,7 @@ def _node_body(
             groups.append(GroupView(group, ()))
             continue
         if group is GroupId.ALL:
-            blocks = _all_blocks(facts, owners)
+            blocks = _all_blocks(facts, owners, sort=sort_properties)
         else:
             blocks = (Block("", tuple(curated.get(group, ()))),)
         kept = tuple(Block(block.title, filter_rows(block.rows, search)) for block in blocks)
@@ -487,31 +610,65 @@ def _layout_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...]) -> 
     """A bare container still gets the Layout group, so its body can offer a layout."""
     return catalog.group_body(GroupId.LAYOUT) is not None and takes_layout(facts.document, owners)
 
-def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...]) -> Tuple[Block, ...]:
+def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...], *, sort: bool = False) -> Tuple[Block, ...]:
     by_class: Dict[str, List[Row]] = {}
     listed = set()
     lives = [facts.live.get(owner) for owner in owners]
     first = lives[0]
     if first is not None and all(live is not None for live in lives):
         for prop in first.properties:
-            if prop.name in _HEADER_OWNED or any(live is None or live.find(prop.name) is None for live in lives):
+            if prop.name in _HEADER_OWNED or prop.name.startswith("cbcs"):
                 continue
-            row = read_property(facts, _all_spec(prop.name, "property"), owners, prop.name, "property", curated=False)
+            if any(live is None or live.find(prop.name) is None for live in lives):
+                continue
+            lead = facts.document.node(owners[0])
+            stored_prop = lead.prop(prop.name)
+            if stored_prop is not None and stored_prop.is_dynamic:
+                continue
+            row = read_property(
+                facts, _all_spec(prop.name, "property"), owners, prop.name, "property",
+                curated=False, origin=prop.declared_by,
+            )
             if row is not None:
                 by_class.setdefault(prop.declared_by, []).append(row)
                 listed.add(("property", prop.name))
+    attributes: List[Row] = []
     stored: List[Row] = []
+    custom: List[Row] = []
     lead = facts.document.node(owners[0])
     for entry in lead.properties() + lead.attributes():
         kind: PropKind = "attribute" if entry.kind == "attribute" else "property"
-        if (kind, entry.name) in listed or entry.name in _HEADER_OWNED:
+        if (kind, entry.name) in listed or entry.name in _HEADER_OWNED or entry.name.startswith("cbcs"):
             continue
-        row = read_property(facts, _all_spec(entry.name, kind), owners, entry.name, kind, curated=False)
-        if row is not None:
+        row = read_property(
+            facts, _all_spec(entry.name, kind), owners, entry.name, kind, curated=False,
+        )
+        if row is None:
+            continue
+        if kind == "property" and entry.is_dynamic:
+            if isinstance(row, OpenRow):
+                row = dataclasses.replace(row, dynamic=True)
+            custom.append(row)
+        elif kind == "attribute":
+            attributes.append(row)
+        else:
             stored.append(row)
+    if sort:
+        flat: List[Row] = []
+        for rows in by_class.values():
+            flat.extend(rows)
+        flat.extend(attributes)
+        flat.extend(stored)
+        flat.extend(custom)
+        flat.sort(key=lambda item: item.qt_name.lower())
+        return (Block("", tuple(flat)),) if flat else ()
     blocks = [Block(title, tuple(rows)) for title, rows in by_class.items()]
+    if attributes:
+        blocks.append(Block("Stored by the parent", tuple(attributes)))
     if stored:
         blocks.append(Block("In the file", tuple(stored)))
+    if custom:
+        blocks.append(Block("Custom properties", tuple(custom)))
     return tuple(blocks)
 
 def _all_spec(name: str, kind: PropKind) -> RowSpec:
@@ -539,13 +696,59 @@ def _open_or_kept(
     value_spec: ValueSpec,
     key: EditorKey,
     write: RowWrite,
+    *,
+    origin: str = "",
+    dynamic: bool = False,
 ) -> Row:
+    if spec.editor:
+        key = EditorKey(spec.editor)
     if key not in facts.editors:
-        return _locked(spec, qt_name, value, KEPT_AS_IS)
-    return OpenRow(spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write)
+        return _locked(spec, qt_name, value, KEPT_AS_IS, origin)
+    return OpenRow(
+        spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write, origin, dynamic,
+    )
 
-def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str) -> LockedRow:
-    return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason)
+def _flag_bit(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], source: FlagBit) -> Optional[Row]:
+    """Read one flag bit. Owners that disagree are Mixed. A bit at its default is Unset."""
+    if not owners:
+        return None
+    nodes = []
+    for owner in owners:
+        node = facts.document.node(owner)
+        if not isinstance(node, (WidgetNode, LayoutNode)):
+            return None
+        nodes.append(node)
+    key = _bit_key(source.bit)
+    states: List[bool] = []
+    differs = False
+    defaults: Dict[NodeId, SetValue] = {}
+    for owner, node in zip(owners, nodes):
+        current, default = _owner_flag(facts, node, source.name)
+        defaults[owner] = default
+        on = key in current.keys()
+        states.append(on)
+        if on != (key in default.keys()):
+            differs = True
+    if len(set(states)) > 1:
+        value: RowValue = Mixed()
+    elif differs:
+        value = Written(BoolValue(states[0]))
+    else:
+        value = Unset(BoolValue(states[0]))
+    write = FlagBitWrite(facts.document, owners, source.name, source.bit, defaults)
+    editor = EditorKey(spec.editor) if spec.editor else EditorKey("bool")
+    return _open_or_kept(facts, spec, source.name, value, ValueSpec(BoolValue.ELEMENT), editor, write)
+
+def _owner_flag(facts: Facts, node: Node, name: str) -> Tuple[SetValue, SetValue]:
+    info = _table_property(facts, node, name, "property")
+    default = info.default if info is not None and isinstance(info.default, SetValue) else SetValue("")
+    entry = node.prop(name)
+    if entry is not None and isinstance(entry.value, SetValue):
+        return entry.value, default
+    return default, default
+
+def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str, origin: str = "") -> LockedRow:
+    return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason, origin)
 
 def _entry(node: Node, name: str, kind: PropKind) -> Optional[PropertyEntry]:
     return node.prop(name) if kind == "property" else node.attr(name)
@@ -620,7 +823,27 @@ def _match(row: Row, needle: str) -> Optional[Match]:
         start = text.lower().find(needle)
         if start >= 0:
             return Match(where, start, start + len(needle))
+    spec = getattr(row, "spec", None)
+    enum = None if spec is None else getattr(spec, "enum", None)
+    if enum is not None:
+        for name in enum.names:
+            friendly = _friendly_enum(name)
+            if needle in name.lower() or needle in friendly:
+                return Match("enum", 0, 0)
+    for choice in getattr(spec, "choices", ()) or ():
+        if needle in choice.label.lower():
+            return Match("enum", 0, 0)
     return None
+
+
+def _friendly_enum(name: str) -> str:
+    """``NoEcho`` -> ``no echo``. Search matches these words as well as the Qt name."""
+    chars: List[str] = []
+    for index, ch in enumerate(name):
+        if index and ch.isupper() and not name[index - 1].isupper():
+            chars.append(" ")
+        chars.append(ch)
+    return "".join(chars).lower()
 
 def _admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
     chain = _chain(facts, owner)

@@ -25,7 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, List, Optional
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
-from app.qt.QtGui import QColor, QFontMetrics, QKeySequence
+from app.qt.QtGui import QColor, QFontMetrics, QKeySequence, QPalette
 from app.qt.QtWidgets import (
     QAbstractItemView,
     QAbstractSlider,
@@ -39,6 +39,7 @@ from app.qt.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -83,6 +84,19 @@ def _no_focus() -> object:
 
 def _strong_focus() -> object:
     return getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus")
+
+
+def popover_title(row_label: str, qt_name: str) -> str:
+    """The popover's title. A row labelled by its Qt name (All properties,
+    custom properties) gets friendly words; the Qt name stays the caption."""
+    if not row_label or row_label != qt_name:
+        return row_label
+    words: List[str] = []
+    for index, ch in enumerate(row_label):
+        if index and ch.isupper() and not row_label[index - 1].isupper():
+            words.append(" ")
+        words.append(ch.lower() if index else ch.upper())
+    return "".join(words)
 
 
 def _elide_right() -> object:
@@ -184,6 +198,7 @@ class RowPopover(QFrame):
         qt_name: str = "",
         anchor: Optional[QWidget] = None,
         large: bool = False,
+        on_keep: Optional[Callable[[], None]] = None,
     ) -> None:
         super().__init__(row.window())
         self.setObjectName("formBuilder.rowPopover")
@@ -197,15 +212,19 @@ class RowPopover(QFrame):
         self._guard = _Guard(self)
         self._subscription: Optional[Callable[[], None]] = None
         self._reset_callback: Optional[Callable[[], None]] = None
+        self._on_keep = on_keep
         self._window_size: Optional[object] = None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(PADDING, PADDING, PADDING, PADDING)
         outer.setSpacing(8)
-        title = QLabel(row_label, self)
+        # A custom property's name is its label (UX-PED-060): no friendly
+        # words, and no second copy of the name as the caption.
+        custom = bool(getattr(row, "is_custom", False))
+        title = QLabel(row_label if custom else popover_title(row_label, qt_name), self)
         title.setObjectName("formBuilder.popoverTitle")
         outer.addWidget(title)
-        if qt_name:
+        if qt_name and not (custom and qt_name == row_label):
             qt = QLabel(qt_name, self)
             qt.setObjectName("formBuilder.popoverQtName")
             outer.addWidget(qt)
@@ -265,6 +284,7 @@ class RowPopover(QFrame):
         """Place, show, take focus, and start listening for the closing events."""
         if self._closed:
             return
+        self._paint_wells()
         self.place()
         self.show()
         self.raise_()
@@ -337,33 +357,58 @@ class RowPopover(QFrame):
             "QDoubleSpinBox",
             "QComboBox",
             "QPlainTextEdit",
+            "QTextEdit",
             "QKeySequenceEdit",
             "QListWidget",
             "QFontComboBox",
         )
         field_sel = ", ".join("%s %s" % (frame, kind) for kind in fields)
         focus_sel = ", ".join("%s %s:focus" % (frame, kind) for kind in fields)
+        state_kinds = (
+            "QLineEdit",
+            "QComboBox",
+            "QSpinBox",
+            "QDoubleSpinBox",
+            "QFontComboBox",
+            "QCheckBox",
+            "QPlainTextEdit",
+            "QPushButton#formBuilder\\.summary",
+        )
+        unset_sel = ", ".join('%s %s[fbState="unset"]' % (frame, kind) for kind in state_kinds)
+        mixed_sel = ", ".join(
+            '%s %s[fbState="mixed"]' % (frame, kind) for kind in state_kinds + ("QListWidget",)
+        )
         self.setStyleSheet(
             "%(frame)s { background: %(fill)s; border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
+            "%(frame)s QScrollArea { background: %(input)s; border: none; }"
             "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
+            "%(frame)s QCheckBox { color: %(text)s; background: transparent; }"
+            "%(frame)s QLabel#formBuilder\\.rowError { color: %(error)s; }"
             "%(frame)s QLabel#formBuilder\\.popoverTitle { color: %(text)s; font-size: 13px; font-weight: 600; }"
             "%(frame)s QLabel#formBuilder\\.popoverQtName { color: %(faint)s; font-size: 11px; font-weight: 400; }"
             "%(fields)s { background: %(input)s; color: %(text)s; border: 1px solid %(line)s; }"
+            "%(unset)s { color: %(faint)s; }"
+            "%(mixed)s { color: %(faint)s; font-style: italic; }"
             "%(focused)s { border: %(focus)dpx solid %(accent)s; }"
             "%(frame)s QPushButton { color: %(text)s; background: %(input)s; border: 1px solid %(line)s;"
             " border-radius: 4px; padding: 6px 10px; }"
             "%(frame)s QPushButton:hover { background: %(hover)s; }"
+            "%(frame)s QPushButton:checked { background: %(accent)s; color: %(on_accent)s; }"
+            "%(frame)s QPushButton[fbGlyph=\"true\"] { padding: 2px 6px; }"
             "%(frame)s QPushButton#formBuilder\\.popoverDone { background: %(accent)s; color: %(on_accent)s;"
             " border: none; font-weight: 600; }"
             % {
                 "frame": frame,
                 "fields": field_sel,
+                "unset": unset_sel,
+                "mixed": mixed_sel,
                 "focused": focus_sel,
                 "fill": tokens.popup,
                 "frame_px": frame_px,
                 "edge": edge,
                 "text": self._chrome.text,
                 "faint": self._chrome.faint,
+                "error": self._chrome.error,
                 "input": self._chrome.input,
                 "line": self._chrome.border,
                 "hover": self._chrome.row_hover,
@@ -373,6 +418,19 @@ class RowPopover(QFrame):
             }
         )
         self.apply_chrome_shadow()
+
+    def _paint_wells(self) -> None:
+        """Scroll wells inside the popover keep the input colour. A bare viewport stays the platform white."""
+        color = QColor(self._chrome.input)
+        for scroll in self.findChildren(QScrollArea):
+            for widget in (scroll.viewport(), scroll.widget()):
+                if widget is None:
+                    continue
+                palette = widget.palette()
+                palette.setColor(QPalette.Window, color)
+                palette.setColor(QPalette.Base, color)
+                widget.setPalette(palette)
+                widget.setAutoFillBackground(True)
 
     # -- closing ---------------------------------------------------------
 
@@ -407,6 +465,8 @@ class RowPopover(QFrame):
         # editingFinished commits into this step. A keep close then ends the
         # session. Esc rolls that step back, pending text included.
         self._flush_focus()
+        if keep and self._on_keep is not None:
+            self._on_keep()
         if keep:
             self._session.close()
         else:

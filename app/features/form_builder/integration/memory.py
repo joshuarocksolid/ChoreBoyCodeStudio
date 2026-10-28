@@ -14,6 +14,7 @@ from app.persistence.settings_service import SettingsService
 SETTINGS_KEY = "form_builder"
 WORKBENCH_KEY = "workbench"
 QT_NAMES_KEY = "qt_names"
+SORT_PROPERTIES_KEY = "sort_properties"
 
 _BOOLS = (
     "outline_collapsed",
@@ -77,6 +78,22 @@ def payload_with_qt_names(payload: Mapping[str, Any], shown: bool) -> dict[str, 
     return updated
 
 
+def sort_properties_from_payload(payload: Mapping[str, Any]) -> bool:
+    section = payload.get(SETTINGS_KEY)
+    if not isinstance(section, Mapping):
+        return False
+    return section.get(SORT_PROPERTIES_KEY) is True
+
+
+def payload_with_sort_properties(payload: Mapping[str, Any], shown: bool) -> dict[str, Any]:
+    updated = dict(payload)
+    section_raw = updated.get(SETTINGS_KEY)
+    section = dict(section_raw) if isinstance(section_raw, Mapping) else {}
+    section[SORT_PROPERTIES_KEY] = bool(shown)
+    updated[SETTINGS_KEY] = section
+    return updated
+
+
 class WorkbenchMemoryStore:
     """Load and save one user's workbench memory."""
 
@@ -112,14 +129,29 @@ class WorkbenchMemoryStore:
         except OSError:
             return
 
+    def sort_properties(self) -> bool:
+        try:
+            return sort_properties_from_payload(self._service.load_global())
+        except OSError:
+            return False
+
+    def set_sort_properties(self, shown: bool) -> None:
+        try:
+            self._service.update_global(lambda payload: payload_with_sort_properties(payload, shown))
+        except OSError:
+            return
+
 
 __all__ = [
     "QT_NAMES_KEY",
+    "SORT_PROPERTIES_KEY",
     "SETTINGS_KEY",
     "WORKBENCH_KEY",
     "WorkbenchMemoryStore",
     "memory_from_payload",
     "payload_with_memory",
     "payload_with_qt_names",
+    "payload_with_sort_properties",
     "qt_names_from_payload",
+    "sort_properties_from_payload",
 ]

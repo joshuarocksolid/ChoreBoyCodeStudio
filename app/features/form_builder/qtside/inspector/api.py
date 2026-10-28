@@ -79,11 +79,23 @@ class EnumSpec:
     is_flag: bool
 
 @dataclass(frozen=True)
+class Choice:
+    """One drop-down entry. ``value`` is what a choice writes."""
+
+    label: str
+    value: Value
+
+@dataclass(frozen=True)
 class ValueSpec:
-    """``enum`` is set only when ``element`` is "enum" or "set" and the choices are known."""
+    """``enum`` is set only when ``element`` is "enum" or "set" and the choices are known.
+
+    ``choices``, when non-empty, is what the choice editor shows. The model fills
+    it from ``RowSpec.choices``.
+    """
 
     element: str
     enum: Optional[EnumSpec] = None
+    choices: Tuple[Choice, ...] = ()
 
 @dataclass(frozen=True)
 class Unset:
@@ -106,7 +118,7 @@ RowValue = Union[Unset, Written, Mixed]
 MIXED_TEXT = "Mixed"
 NOT_SET_TEXT = "\u2014"
 
-MatchWhere = Literal["label", "qt_name", "value"]
+MatchWhere = Literal["label", "qt_name", "value", "enum"]
 
 @dataclass(frozen=True)
 class Match:
@@ -116,9 +128,9 @@ class Match:
     end: int
 
 class RowWrite(Protocol):
-    def edit(self, value: Value, token: Optional[str]) -> Command: ...
+    def edit(self, value: Value, token: Optional[str]) -> Union[Command, Tuple[Command, ...]]: ...
 
-    def reset(self) -> Command: ...
+    def reset(self) -> Union[Command, Tuple[Command, ...]]: ...
 
 @dataclass(frozen=True)
 class OpenRow:
@@ -130,6 +142,10 @@ class OpenRow:
     spec: ValueSpec
     editor: EditorKey
     write: RowWrite
+    #: Declaring class, shown on the Qt-name line when All properties is sorted.
+    origin: str = ""
+    #: A dynamic property (``stdset="0"``). The row offers rename, type and remove.
+    dynamic: bool = False
     match: Optional[Match] = None
 
     @property
@@ -144,6 +160,7 @@ class LockedRow:
     help: str
     value: RowValue
     reason: str
+    origin: str = ""
     match: Optional[Match] = None
 
     @property
@@ -170,7 +187,18 @@ class CellAlignment:
     pass
 
 
-RowSource = Union[Prop, LayoutProp, CellAlignment]
+@dataclass(frozen=True)
+class FlagBit:
+    """One bit of a flag set property.
+
+    ``name`` is the property (``features``). ``bit`` is the enumerator
+    (``QDockWidget::DockWidgetClosable``). The row uses the bool editor.
+    """
+
+    name: str
+    bit: str
+
+RowSource = Union[Prop, LayoutProp, CellAlignment, FlagBit]
 
 @dataclass(frozen=True)
 class RowSpec:
@@ -194,6 +222,10 @@ class RowSpec:
     order: Optional[int] = None
     after: str = ""
     parent_classes: Tuple[str, ...] = ()
+    #: When set, the model asks for this editor instead of ``editor_key(name, element)``.
+    editor: str = ""
+    #: Evaluated by the model. The result is ``ValueSpec.choices``.
+    choices: Optional[Callable[[UiDocument, Tuple[NodeId, ...]], Tuple[Choice, ...]]] = None
 
 class EditSession(Protocol):
     """See ``_services.EditSession``: one focus visit or one popover, one undo step."""
@@ -251,6 +283,24 @@ class EditorHost(Protocol):
         """The Qt property name of the row, or "" when the row has none."""
         ...
 
+    def document(self) -> UiDocument:
+        """The form document. Read-only: an editor does not mutate it."""
+        ...
+
+    def owner_ids(self) -> Tuple[NodeId, ...]:
+        """The nodes this row edits. Read-only."""
+        ...
+
+    def qt_names(self) -> bool:
+        """True when the inspector is showing Qt property names."""
+        ...
+
+    def form_shortcuts(self) -> Mapping[str, str]:
+        """Shortcut text -> owning widget or action name, read from this form's
+        document only (``shortcut`` and ``keySequence``). Read-only and cached
+        per revision; a key-sequence editor uses it for its clash warning."""
+        ...
+
     @property
     def row_widget(self) -> QWidget:
         """The row widget the editor was built into."""
@@ -278,6 +328,10 @@ class Editor(Protocol):
 
     # Optional: ``is_dirty() -> bool`` when the editor holds uncommitted text,
     # so Esc reverts it instead of the focus-out committing it.
+    #
+    # Optional: ``caption_widget`` is a QWidget the row places under the line,
+    # at the full row width. Translation uses it so the disclosure is not
+    # squeezed into the editor column.
 
 class EditorFactory(Protocol):
     def __call__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> Editor: ...
