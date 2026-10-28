@@ -170,6 +170,33 @@ def stored_for_file(absolute: str, form_dir: str, index: PictureIndex) -> str:
     return relative.replace(os.sep, "/")
 
 
+def label_text_hides_picture(node: object) -> bool:
+    """True when the running app shows a QLabel's text instead of its pixmap.
+
+    ``QLabel.setText`` and ``setPixmap`` each clear the other, so the one set
+    last wins. Generated code sets properties in file order, except
+    translatable strings, which ``retranslateUi`` sets at the end. An empty
+    text never clears a pixmap (QLabel ignores setting the text it already has).
+    """
+    from app.features.form_builder.engine.ui4.values import ResourcePixmap, StringValue
+
+    prop = getattr(node, "prop", None)
+    if prop is None or getattr(node, "class_name", "") != "QLabel":
+        return False
+    text = prop("text")
+    pixmap = prop("pixmap")
+    if text is None or pixmap is None:
+        return False
+    if not isinstance(text.value, StringValue) or not text.value.text:
+        return False
+    if not isinstance(pixmap.value, ResourcePixmap) or not pixmap.value.path:
+        return False
+    if text.value.notr is not True:
+        return True
+    names = [entry.name for entry in node.properties()]  # type: ignore[attr-defined]
+    return names.index("text") > names.index("pixmap")
+
+
 def file_name_of(stored: str) -> str:
     text = stored.replace("\\", "/")
     if text.startswith(":/"):

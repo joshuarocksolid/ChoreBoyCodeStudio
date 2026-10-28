@@ -25,6 +25,7 @@ from app.qt.QtWidgets import (
     QDockWidget,
     QFrame,
     QGridLayout,
+    QLabel,
     QLayout,
     QListWidget,
     QMainWindow,
@@ -62,6 +63,7 @@ from app.features.form_builder.engine.ui4.nodes import (
     WidgetNode,
 )
 from app.features.form_builder.engine.logic.storage import splitter_sizes
+from app.features.form_builder.engine.project.pictures import label_text_hides_picture
 from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.forced import CANVAS_OVERRIDES
 from app.features.form_builder.qtside.realize.stand_in import StandInWidget, stand_in_name
@@ -1463,18 +1465,17 @@ class _Structure(_LayoutSlots):
     def _apply_node_properties(self, node: object, obj: object, *, is_root: bool) -> None:
         entries = list(node.properties())  # type: ignore[attr-defined]
         deferred = ordered_layout_metrics(entries) if isinstance(node, LayoutNode) else ()
-        # QLabel.setText clears a pixmap set earlier. Pictures go last so the
-        # canvas keeps the image when the label also has text.
-        late = [entry for entry in entries if entry.name in ("pixmap", "icon", "windowIcon")]
         skip = {entry.name for entry in deferred}
-        skip.update(entry.name for entry in late)
         for entry in entries:
             if entry.name in skip:
                 continue
             if self._apply_entry(obj, entry, is_root):
                 self._patched += 1
-        for entry in late:
-            if self._apply_entry(obj, entry, is_root):
+        # QLabel text and pixmap clear each other. Generated code sets a
+        # translatable text last (retranslateUi), so the canvas does too.
+        if isinstance(obj, QLabel) and label_text_hides_picture(node):
+            text = node.prop("text")  # type: ignore[attr-defined]
+            if text is not None and self._apply_entry(obj, text, is_root):
                 self._patched += 1
         for entry in deferred:
             if self._apply_entry(obj, entry, is_root):

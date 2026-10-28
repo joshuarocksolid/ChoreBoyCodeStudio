@@ -43,6 +43,7 @@ from app.features.form_builder.engine.events import (
 from app.features.form_builder.engine.commands.live import LiveProp, PropKey
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
+from app.features.form_builder.engine.project.pictures import label_text_hides_picture
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -464,6 +465,7 @@ class Realizer(_Structure):
             return
         if entry is None:
             self._reset_property(node, obj, name)
+            self._settle_label(node, obj, name)
             return
         if name == "cbcsSplitterSizes":
             if isinstance(obj, QSplitter):
@@ -479,15 +481,16 @@ class Realizer(_Structure):
             refusals=self._refusals,
         ):
             self._patched += 1
-            self._keep_label_picture(node, obj, name)
+        self._settle_label(node, obj, name)
 
-    def _keep_label_picture(self, node: Node, obj: object, name: str) -> None:
-        """A later text edit must not wipe a pixmap QLabel.setText would clear."""
-        if name == "pixmap" or not isinstance(obj, QLabel) or not isinstance(node, WidgetNode):
+    def _settle_label(self, node: Node, obj: object, name: str) -> None:
+        """QLabel text and pixmap clear each other: end on the one the running app shows."""
+        if name not in ("text", "pixmap") or not isinstance(obj, QLabel) or not isinstance(node, WidgetNode):
             return
-        if name != "text":
+        last = "text" if label_text_hides_picture(node) else "pixmap"
+        if last == name:
             return
-        entry = node.prop("pixmap")
+        entry = node.prop(last)
         if entry is None:
             return
         apply_entry(
