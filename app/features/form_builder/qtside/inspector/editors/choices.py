@@ -8,6 +8,7 @@ from app.features.form_builder.engine.ui4.values import (
     CursorValue,
     EnumValue,
     SetValue,
+    semantic_equal,
 )
 from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
@@ -129,8 +130,16 @@ class EnumEditor:
         self._spec = spec
         self._host = host
         self._enum = spec.enum
+        self._choices = spec.choices
+        if spec.choices:
+            combo = QComboBox(parent)
+            for choice in spec.choices:
+                combo.addItem(choice.label)
+            combo.currentIndexChanged.connect(self._commit_choice)
+            self._box: QWidget = combo
+            return
         if spec.enum is None:
-            self._box: QWidget = QLabel(parent)
+            self._box = QLabel(parent)
             return
         combo = QComboBox(parent)
         _fill_enum(combo, spec.enum.names)
@@ -142,6 +151,20 @@ class EnumEditor:
         return self._box
 
     def show(self, value: RowValue) -> None:
+        if self._choices:
+            combo = self._box
+            assert isinstance(combo, QComboBox)
+            mark(combo, value)
+            written = value.value if isinstance(value, Written) else None
+            index = -1
+            for position, choice in enumerate(self._choices):
+                if semantic_equal(choice.value, written):
+                    index = position
+                    break
+            combo.blockSignals(True)
+            combo.setCurrentIndex(index)
+            combo.blockSignals(False)
+            return
         text = _enum_text(value)
         if self._enum is None:
             label = self._box
@@ -178,6 +201,11 @@ class EnumEditor:
         if self._enum is None or index < 0:
             return
         self._host.commit(self._host.enum_value(self._enum, (self._enum.names[index],)))
+
+    def _commit_choice(self, index: int) -> None:
+        if index < 0 or index >= len(self._choices):
+            return
+        self._host.commit(self._choices[index].value)
 
 class SetEditor:
 

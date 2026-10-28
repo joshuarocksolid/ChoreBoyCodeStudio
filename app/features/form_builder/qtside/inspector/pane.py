@@ -14,6 +14,7 @@ from app.features.form_builder.qtside.inspector._header import Header
 from app.features.form_builder.qtside.inspector._live import live_classes
 from app.features.form_builder.qtside.inspector._properties import PropertiesPage
 from app.features.form_builder.qtside.inspector._services import Services
+from app.features.form_builder.qtside.inspector.catalog import Catalog
 from app.features.form_builder.qtside.inspector.editors import default_catalog
 from app.features.form_builder.qtside.inspector.model import (
     EscAction,
@@ -65,11 +66,14 @@ class InspectorPane(QWidget):
         *,
         data_tab: bool,
         on_leave: Callable[[], None],
+        catalog: Optional[Catalog] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.inspector")
-        self._services = Services(session, default_catalog(), realizer)
+        self._services = Services(
+            session, default_catalog() if catalog is None else catalog, realizer
+        )
         self._realizer = realizer
         self._on_leave = on_leave
         self._short = False

@@ -54,6 +54,7 @@ from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
     EditorKey,
     EnumSpec,
+    FlagBit,
     GROUP_ORDER,
     GroupId,
     LayoutProp,
@@ -131,6 +132,74 @@ class PropertyWrite:
         if len(self.owners) == 1:
             return SetProperty(self.owners[0], self.name, value, kind=self.kind, merge_token=token)
         return SetPropertyMany(self.owners, self.name, value, kind=self.kind, merge_token=token)
+
+def _bit_key(bit: str) -> Tuple[str, str]:
+    parts = bit.split("::")
+    if len(parts) == 1:
+        return ("", parts[0])
+    return (parts[0], parts[-1])
+
+def _with_bit(current: SetValue, bit: str, on: bool) -> SetValue:
+    """Return ``current`` with only ``bit`` changed. Other flags keep their spelling."""
+    key = _bit_key(bit)
+    pieces: List[str] = []
+    for piece in current.text.split("|"):
+        name = piece.strip()
+        if not name or name == "0":
+            continue
+        if _bit_key(name) == key:
+            continue
+        pieces.append(name)
+    if on:
+        pieces.append(bit)
+    if not pieces:
+        return SetValue("0")
+    return SetValue("|".join(pieces))
+
+class FlagBitWrite:
+    """One ``SetProperty`` per owner, changing only this flag bit."""
+
+    def __init__(
+        self,
+        document: UiDocument,
+        owners: Tuple[NodeId, ...],
+        name: str,
+        bit: str,
+        defaults: Mapping[NodeId, SetValue],
+    ) -> None:
+        self.document = document
+        self.owners = owners
+        self.name = name
+        self.bit = bit
+        self.defaults = defaults
+
+    def edit(self, value: Value, token: Optional[str]) -> Tuple[Command, ...]:
+        if not isinstance(value, BoolValue):
+            raise TypeError("a flag bit takes a BoolValue, not %s" % type(value).__name__)
+        return tuple(self._set(owner, value.value, token) for owner in self.owners)
+
+    def reset(self) -> Tuple[Command, ...]:
+        return tuple(self._restore(owner) for owner in self.owners)
+
+    def _current(self, owner: NodeId) -> SetValue:
+        node = self.document.node(owner)
+        if isinstance(node, (WidgetNode, LayoutNode)):
+            entry = node.prop(self.name)
+            if entry is not None and isinstance(entry.value, SetValue):
+                return entry.value
+        return self.defaults.get(owner, SetValue(""))
+
+    def _set(self, owner: NodeId, on: bool, token: Optional[str]) -> Command:
+        updated = _with_bit(self._current(owner), self.bit, on)
+        return SetProperty(owner, self.name, updated, merge_token=token)
+
+    def _restore(self, owner: NodeId) -> Command:
+        default = self.defaults.get(owner, SetValue(""))
+        on = _bit_key(self.bit) in default.keys()
+        updated = _with_bit(self._current(owner), self.bit, on)
+        if updated.keys() == default.keys():
+            return SetProperty(owner, self.name, None)
+        return SetProperty(owner, self.name, updated)
 
 @dataclass(frozen=True)
 class GeometryWrite:
@@ -325,6 +394,8 @@ def project(
 
 def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
     source = spec.source
+    if isinstance(source, FlagBit):
+        return _flag_bit(facts, spec, owners, source)
     if isinstance(source, Prop):
         return read_property(facts, spec, owners, source.name, source.kind, curated=curated)
     if isinstance(source, LayoutProp):
@@ -361,8 +432,15 @@ def read_property(
         write = GeometryWrite(next(iter(owners)))
     element, enum = _element(entries, lives, infos)
     dynamic = any(entry is not None and entry.is_dynamic for entry in entries)
+    chosen = tuple(spec.choices(facts.document, owners)) if spec.choices is not None else ()
+    if spec.editor:
+        key = EditorKey(spec.editor)
+    elif chosen:
+        key = EditorKey("enum")
+    else:
+        key = editor_key(name, element)
     return _open_or_kept(
-        facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write,
+        facts, spec, name, value, ValueSpec(element, enum, chosen), key, write,
         origin=origin, dynamic=dynamic and kind == "property",
     )
 
@@ -584,11 +662,52 @@ def _open_or_kept(
     origin: str = "",
     dynamic: bool = False,
 ) -> Row:
+    if spec.editor:
+        key = EditorKey(spec.editor)
     if key not in facts.editors:
         return _locked(spec, qt_name, value, KEPT_AS_IS, origin)
     return OpenRow(
         spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write, origin, dynamic,
     )
+
+def _flag_bit(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], source: FlagBit) -> Optional[Row]:
+    """Read one flag bit. Owners that disagree are Mixed. A bit at its default is Unset."""
+    if not owners:
+        return None
+    nodes = []
+    for owner in owners:
+        node = facts.document.node(owner)
+        if not isinstance(node, (WidgetNode, LayoutNode)):
+            return None
+        nodes.append(node)
+    key = _bit_key(source.bit)
+    states: List[bool] = []
+    differs = False
+    defaults: Dict[NodeId, SetValue] = {}
+    for owner, node in zip(owners, nodes):
+        current, default = _owner_flag(facts, node, source.name)
+        defaults[owner] = default
+        on = key in current.keys()
+        states.append(on)
+        if on != (key in default.keys()):
+            differs = True
+    if len(set(states)) > 1:
+        value: RowValue = Mixed()
+    elif differs:
+        value = Written(BoolValue(states[0]))
+    else:
+        value = Unset(BoolValue(states[0]))
+    write = FlagBitWrite(facts.document, owners, source.name, source.bit, defaults)
+    editor = EditorKey(spec.editor) if spec.editor else EditorKey("bool")
+    return _open_or_kept(facts, spec, source.name, value, ValueSpec(BoolValue.ELEMENT), editor, write)
+
+def _owner_flag(facts: Facts, node: Node, name: str) -> Tuple[SetValue, SetValue]:
+    info = _table_property(facts, node, name, "property")
+    default = info.default if info is not None and isinstance(info.default, SetValue) else SetValue("")
+    entry = node.prop(name)
+    if entry is not None and isinstance(entry.value, SetValue):
+        return entry.value, default
+    return default, default
 
 def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str, origin: str = "") -> LockedRow:
     return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason, origin)
@@ -670,9 +789,23 @@ def _match(row: Row, needle: str) -> Optional[Match]:
     enum = None if spec is None else getattr(spec, "enum", None)
     if enum is not None:
         for name in enum.names:
-            if needle in name.lower():
+            friendly = _friendly_enum(name)
+            if needle in name.lower() or needle in friendly:
                 return Match("enum", 0, 0)
+    for choice in getattr(spec, "choices", ()) or ():
+        if needle in choice.label.lower():
+            return Match("enum", 0, 0)
     return None
+
+
+def _friendly_enum(name: str) -> str:
+    """``NoEcho`` -> ``no echo``. Search matches these words as well as the Qt name."""
+    chars: List[str] = []
+    for index, ch in enumerate(name):
+        if index and ch.isupper() and not name[index - 1].isupper():
+            chars.append(" ")
+        chars.append(ch)
+    return "".join(chars).lower()
 
 def _admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
     chain = _chain(facts, owner)

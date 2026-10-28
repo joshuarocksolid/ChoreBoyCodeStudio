@@ -102,7 +102,7 @@ Registries discover modules in a package in sorted module-name order. Each modul
 | Rename/delete participants | `engine/commands/participants/` | M1.2 |
 | Diagnostic codes | `engine/diagnostic_codes/` | M1.0 seeds `fb0xx.py`, `fb5xx.py`, `fb6xx.py`, `fb9xx.py` |
 | Codegen expanders | `engine/codegen/expanders/` | M1.3 |
-| Property editors | `qtside/inspector/editors/` | M3.1b |
+| Property editors | `qtside/inspector/editors/` and `qtside/inspector/api.py` (`RowSpec.editor`, `Choice` / `ValueSpec.choices` / `RowSpec.choices`, `FlagBit`, read-only `EditorHost.document` / `owner_ids` / `qt_names`, optional `Editor.caption_widget`) | M3.1b |
 | Widget catalog entries | `qtside/insert/catalog/` (Qt-free data) | M4.1 |
 | Context-menu contributors | `integration/menu_ext/` (groups "first", "structure", "last"; `MenuContext.at`, `source` `"canvas"` or `"outline"`, `live(node_id)`, `run(command)`; UX-CONT-020) | M4.0s |
 | Tab-content providers | registered at install (shell registry) | M2.0 |
