@@ -1069,6 +1069,7 @@ def test_two_widths_overlay_matches_the_narrowed_design_page(
         ]
         assert strokes
         stroke = strokes[0]
+        assert live is not None
         assert abs(stroke.x - live.x()) <= 2 and abs(stroke.y - live.y()) <= 2
         assert abs(stroke.width - live.width()) <= 4 and abs(stroke.height - live.height()) <= 4
         name = canvas.findChild(QLabel, "formBuilder.name")
