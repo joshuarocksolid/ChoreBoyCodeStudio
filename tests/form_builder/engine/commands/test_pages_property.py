@@ -240,7 +240,7 @@ def _check(doc: UiDocument, container: object, model: _Model, label: str) -> Non
     if expected_start is None:
         assert found is None, label
     else:
-        assert found is not None and doc.node(found).object_name == expected_start, label
+        assert found is not None and getattr(doc.node(found), "object_name", None) == expected_start, label
     if model.has_start and model.names:
         stored = _stored_start(doc, container) or 0
         assert model.names[stored] == expected_start, label
