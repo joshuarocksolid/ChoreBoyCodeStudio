@@ -11,13 +11,14 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import cast
 from typing import Optional
 
 import pytest
 
 from app.features.form_builder.engine.commands.drop_plan import auto_commands
 from app.features.form_builder.engine.project.templates import build_template_ui
-from app.features.form_builder.engine.query.drop_target import DropPayload
+from app.features.form_builder.engine.query.drop_target import DropPayload, PayloadKind
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode
 from app.features.form_builder.qtside.canvas.core.palette import fragment_for
 from app.features.form_builder.qtside.insert.catalog import load_catalog
@@ -62,7 +63,8 @@ def _insert(session, key: str) -> None:  # type: ignore[no-untyped-def]
     assert entry is not None, key
     fragment = fragment_for(key)
     assert fragment is not None, key
-    commands = auto_commands(session.document, session.selection.state.current, DropPayload(entry.payload), fragment)
+    payload_kind = cast(PayloadKind, entry.payload)
+    commands = auto_commands(session.document, session.selection.state.current, DropPayload(payload_kind), fragment)
     assert commands, "%s was refused on a host it should fit" % key
     with session.log.transaction("Insert %s" % entry.friendly.lower()) as txn:
         for command in commands:

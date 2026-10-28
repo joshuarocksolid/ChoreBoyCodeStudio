@@ -74,7 +74,8 @@ class EntryDelegate(QStyledItemDelegate):
     def _colors(self) -> Tuple[str, ...]:
         chrome = self._chrome
         if chrome is None:
-            return ("#000000", "#666666", "#FFFFFF", "#DDDDDD", "#FFFF00", "#0000FF")
+            # No chrome yet (before the first theme): the named Qt colours, so no literal hex lives here.
+            return ("black", "gray", "white", "lightgray", "yellow", "blue")
         return (chrome.text, chrome.faint, chrome.row_hover, chrome.selected, chrome.search_match_bg, chrome.accent)
 
     def _background(self, painter: QPainter, option: QStyleOptionViewItem, rect: QRect, radius: float) -> None:

@@ -19,6 +19,7 @@ from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.clipboard_actions import apply_command
 from app.features.form_builder.integration.toast import CommandToast, ToastNote
 from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory
+from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.workbench import _PieceOps
 from app.features.form_builder.qtside.insert.pane import InsertPane
 from app.features.form_builder.qtside.canvas.core.palette import MIME_FRAGMENT
@@ -184,7 +185,7 @@ def _grab_pieces(qapp, tokens, out: Path, width: int, height: int, mode: str) ->
                 tokens.text_muted,
             )
         )
-        pane.apply_theme(tokens)
+        pane.apply_chrome(chrome_for(tokens))
         canvas.apply_theme(tokens)
         row.addWidget(pane)
         row.addWidget(canvas, 1)
@@ -300,7 +301,7 @@ def _grab_two_pieces(qapp, tokens, out: Path, mode: str) -> None:  # type: ignor
         canvas = FormCanvas(session, realizer, host, shell)
         pane.setMaximumWidth(280)
         pane.bind_session(session)
-        pane.apply_theme(tokens)
+        pane.apply_chrome(chrome_for(tokens))
         canvas.apply_theme(tokens)
         row.addWidget(pane)
         row.addWidget(canvas, 1)
