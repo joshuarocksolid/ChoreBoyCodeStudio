@@ -23,6 +23,7 @@ from app.qt.QtWidgets import (
     QTabWidget,
     QToolBox,
     QWidget,
+    QWizard,
 )
 from app.qt import QtWidgets
 from app.qt.qt_compat import enum_value
@@ -803,6 +804,24 @@ class CanvasController:
         self._request_frame()
         self._host.narrate("Showing window %d of %d" % (nxt + 1, len(windows)))
 
+    def _show_step(self, wizard: QWizard, delta: int, document: UiDocument, container: NodeId) -> None:
+        """Show the next or previous wizard step, wrapping (UX-CONT-013). Canvas only."""
+        ids = list(wizard.pageIds())
+        if not ids:
+            return
+        current = wizard.currentId()
+        # A wizard that is not shown has no current page (-1), so the first step is the base.
+        index = ids.index(current) if current in ids else 0  # the canvas shows the first step until moved
+        nxt = (index + delta) % len(ids)
+        if current not in ids:
+            wizard.restart()  # a wizard that was never shown has no page to move from
+        wizard.setCurrentId(ids[nxt])
+        self._index.invalidate("page_switch")
+        self._request_frame()
+        page = pages(document, container)[nxt]
+        title = page_title(document, page.id) or page.object_name
+        self._host.narrate("Showing step %d of %d: %s" % (nxt + 1, len(ids), title))
+
     def tile_windows(self, container: NodeId) -> None:
         """Tile the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
         area = self._realizer.widget_for(container)
@@ -831,6 +850,9 @@ class CanvasController:
         widget = self._realizer.widget_for(container)
         if isinstance(widget, QMdiArea):
             self._show_window_step(widget, delta, document, container)
+            return
+        if isinstance(widget, QWizard):
+            self._show_step(widget, delta, document, container)
             return
         if widget is None or not hasattr(widget, "count") or not hasattr(widget, "setCurrentIndex"):
             return
