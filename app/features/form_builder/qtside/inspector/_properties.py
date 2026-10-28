@@ -39,6 +39,7 @@ from app.qt.qt_compat import delete_now, wrapper_is_valid
 from app.qt.QtGui import QFont
 from app.qt.QtWidgets import (
     QApplication,
+    QBoxLayout,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -646,6 +647,8 @@ class _Group(QWidget):
             delete_now(self._spare.popitem(last=False)[1])
 
 _BAR_SLOT = 8
+_UNBOUNDED = 16777215
+_STACK_GAP = 2
 
 class _Row(QWidget):
 
@@ -675,6 +678,8 @@ class _Row(QWidget):
         self._label = QLabel(self)
         self._label.setWordWrap(True)
         self._label_col = QWidget(self)
+        self._label_px = _LABEL_WIDE
+        self._stacked = False
         self._label_col.setFixedWidth(_LABEL_WIDE)
         self._column = QVBoxLayout(self._label_col)
         self._column.setContentsMargins(0, 0, 0, 0)
@@ -683,12 +688,18 @@ class _Row(QWidget):
         self._slot = QWidget(self)
         self._slot_layout = QVBoxLayout(self._slot)
         self._slot_layout.setContentsMargins(0, 0, 0, 0)
+        # The head is the changed bar and the label. A row is one line (label,
+        # then editor) or, for an editor that asks for it, two (the head, then
+        # the editor at full width). Until a row is first changed, the head's
+        # margin holds the bar's 2 px and the 6 px after it, so the columns line up.
+        self._head = QHBoxLayout()
+        self._head.setContentsMargins(_BAR_SLOT, 0, 0, 0)
+        self._head.setSpacing(6)
+        self._head.addWidget(self._label_col, 0)
         self._line = QHBoxLayout()
-        # Until a row is first changed, the margin holds the bar's 2 px and
-        # the 6 px spacing after it, so every row's columns line up.
-        self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
+        self._line.setContentsMargins(0, 0, 0, 0)
         self._line.setSpacing(6)
-        self._line.addWidget(self._label_col, 0)
+        self._line.addLayout(self._head, 0)
         self._line.addWidget(self._slot, 1)
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 2, 0, 2)
@@ -703,8 +714,8 @@ class _Row(QWidget):
             bar.setMinimumHeight(18)
             # The bar stays shown once made and fbChanged picks its colour,
             # so the columns do not move when a row is reset.
-            self._line.setContentsMargins(0, 0, 0, 0)
-            self._line.insertWidget(0, bar, 0)
+            self._head.setContentsMargins(0, 0, 0, 0)
+            self._head.insertWidget(0, bar, 0)
             self._bar = bar
         return self._bar
 
@@ -728,8 +739,8 @@ class _Row(QWidget):
             button.setToolTip("Reset: remove this property from the file")
             button.clicked.connect(self._reset_clicked)
             button.hide()
-            self._line.addWidget(button, 0)
             self._reset = button
+            self._place_reset()
         return self._reset
 
     def _caption_label(self) -> QLabel:
@@ -784,7 +795,47 @@ class _Row(QWidget):
         self._sync_reset()
 
     def set_label_width(self, width: int) -> None:
-        self._label_col.setFixedWidth(width)
+        self._label_px = width
+        self._apply_label_width()
+
+    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._sync_stacked()
+
+    def _apply_label_width(self) -> None:
+        if self._stacked:
+            self._label_col.setMinimumWidth(0)
+            self._label_col.setMaximumWidth(_UNBOUNDED)
+        else:
+            self._label_col.setFixedWidth(self._label_px)
+
+    def _sync_stacked(self) -> None:
+        """Stack the label over the editor when the editor asks for it at this width (UX-PED-002)."""
+        editor = self._editor
+        wants = getattr(editor, "wants_stacked", None)
+        stacked = bool(callable(wants) and wants(self.width()))
+        if stacked == self._stacked:
+            return
+        self._stacked = stacked
+        direction = getattr(QBoxLayout, "Direction", QBoxLayout)
+        self._line.setDirection(
+            getattr(direction, "TopToBottom") if stacked else getattr(direction, "LeftToRight")
+        )
+        self._line.setSpacing(_STACK_GAP if stacked else 6)
+        self._apply_label_width()
+        self._place_reset()
+
+    def _place_reset(self) -> None:
+        """The reset button sits on the label line when stacked, and after the editor when not."""
+        button = self._reset
+        if button is None:
+            return
+        self._line.removeWidget(button)
+        self._head.removeWidget(button)
+        if self._stacked:
+            self._head.addWidget(button, 0)
+        else:
+            self._line.addWidget(button, 0)
 
     def note_focus(self, focus: object) -> None:
         del focus
@@ -897,6 +948,7 @@ class _Row(QWidget):
         _guard_editor(self._editor.widget, self)
         self._slot_layout.addWidget(self._editor.widget)
         self._editor.widget.show()
+        self._sync_stacked()
 
     def _show_locked(self, view: LockedRow, match_color: str) -> None:
         self._clear_slot()
