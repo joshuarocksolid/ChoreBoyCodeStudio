@@ -74,6 +74,7 @@ from app.features.form_builder.qtside.canvas.core.structure import (
 from app.features.form_builder.qtside.canvas.core.text import (
     TextTarget,
     enter_opens_editor,
+    items_target,
     next_text_target,
     page_title_target,
     text_commit,
@@ -490,6 +491,11 @@ class OpenEditor:
 
 
 @dataclass(frozen=True)
+class OpenItems:
+    node: NodeId
+
+
+@dataclass(frozen=True)
 class CloseEditor:
     pass
 
@@ -543,7 +549,7 @@ class RunChipAction:
 
 ModelEffect = Union[Select, Toggle, Commit]
 ViewEffect = Union[Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal, Cursor, Tip]
-EditorEffect = Union[OpenEditor, CloseEditor]
+EditorEffect = Union[OpenEditor, CloseEditor, OpenItems]
 HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep, ScrollContent, RevealInScroll]
 Effect = Union[ModelEffect, ViewEffect, EditorEffect, HostEffect]
 
@@ -670,6 +676,19 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
     if isinstance(target, OnKnob):
         return _knob_press(target.knob, event, world)
     if event.double and isinstance(target, OnWidget):
+        kind = items_target(world.document, target.node)
+        if kind == "model":
+            from app.features.form_builder.qtside.canvas.core.text import MODEL_VIEW_SENTENCE
+
+            return Step(
+                gesture,
+                (CanvasPressed(), HoverChanged(None), Select((target.node,), target.node), Narrate(MODEL_VIEW_SENTENCE)),
+            )
+        if kind == "items":
+            return Step(
+                gesture,
+                (CanvasPressed(), HoverChanged(None), Select((target.node,), target.node), OpenItems(target.node)),
+            )
         editing = text_target(world.document, target.node, target.site)
         if editing is not None:
             return Step(
@@ -802,6 +821,9 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         if title is not None:
             # Enter on a page edits its title, not its first child (UX-CONT-008).
             return Step(Editing(title, world.fresh_token), (OpenEditor(title),))
+        opened = _items_step(current, world)
+        if opened is not None:
+            return opened
         if enter_opens_editor(world.document, current):
             target = text_target(world.document, current, "widget")
             if target is not None:
@@ -901,11 +923,27 @@ def _resize_by_key(gesture: Idle, event: Key, world: World, primary: NodeId) -> 
     return Step(gesture, (Commit(done.label, done.commands, world.fresh_token, readout=done.readout, merge=merge),))
 
 
+def _items_step(current: NodeId, world: World) -> Optional[Step]:
+    kind = items_target(world.document, current)
+    if kind == "model":
+        from app.features.form_builder.qtside.canvas.core.text import MODEL_VIEW_SENTENCE
+
+        return Step(Idle(), (Narrate(MODEL_VIEW_SENTENCE),), True)
+    if kind == "items":
+        return Step(Idle(), (OpenItems(current),), True)
+    return None
+
+
 def _edit_text(gesture: Idle, event: EditTextAsked, world: World) -> Step:
     del event
     shown = effective_selection(world.document, world.selection)
     current = shown.current
-    if current is None or not enter_opens_editor(world.document, current):
+    if current is None:
+        return Step(gesture, (), True)
+    opened = _items_step(current, world)
+    if opened is not None:
+        return opened
+    if not enter_opens_editor(world.document, current):
         return Step(gesture, (), True)
     target = text_target(world.document, current, "widget")
     if target is None:

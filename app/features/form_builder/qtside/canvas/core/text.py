@@ -172,3 +172,23 @@ def _string_text(node: WidgetNode, name: str) -> str:
 def _word_wrap(node: WidgetNode) -> bool:
     entry = node.prop("wordWrap")
     return entry is not None and isinstance(entry.value, BoolValue) and entry.value.value
+
+
+ITEM_WIDGETS = frozenset({"QComboBox", "QListWidget", "QTreeWidget", "QTableWidget"})
+MODEL_VIEWS = frozenset({"QListView", "QTreeView", "QTableView", "QColumnView", "QUndoView"})
+MODEL_VIEW_SENTENCE = (
+    "This view gets its rows from your code. To type rows here, change it to a list widget (Change to)."
+)
+
+
+def items_target(document: UiDocument, node: NodeId) -> Optional[Literal["items", "model"]]:
+    """``items`` opens the item editor. ``model`` is the status sentence, no popover."""
+    found = document.get(node)
+    if not isinstance(found, WidgetNode):
+        return None
+    class_name = effective_class(document, found)
+    if class_name in ITEM_WIDGETS:
+        return "items"
+    if class_name in MODEL_VIEWS:
+        return "model"
+    return None
