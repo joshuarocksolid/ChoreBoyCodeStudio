@@ -1,8 +1,8 @@
 """UX-CAT-007 search over the catalog. Pure: no Qt, no I/O.
 
-Matching ignores case, spaces and hyphens, and a leading "Q" ("QComboBox", "Q lin").
-A query that starts with Q is also tried without it, so "quantity" still matches. Each
-entry gets its best rank (1 to 8); ties go to category order, then catalog order.
+Matching ignores case, spaces, hyphens and a leading Q. Each entry gets its best
+rank (1 to 9). ``via`` is the synonym that matched, and only ranks 2 and 6 set it.
+Ties go to category order, then catalog order.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ _NO_RANK = 99
 
 @dataclass(frozen=True)
 class Hit:
-    """One search result. ``via`` is the synonym that matched (rank 4 or 5), else ""."""
+    """One search result. ``via`` is the synonym that matched (rank 2 or 6), else ""."""
 
     entry: Entry
     rank: int
@@ -84,22 +84,24 @@ def _rank_one(
         return (_NO_RANK, "")
     if name == form:
         return (1, "")
-    if name.startswith(form):
-        return (2, "")
-    if any(word.startswith(form) for word in words):
-        return (3, "")
     for norm, original in synonyms:
         if norm == form:
-            return (4, original)
+            return (2, original)
+    if any(word == form for word in words):
+        return (3, "")
+    if name.startswith(form):
+        return (4, "")
+    if any(word.startswith(form) for word in words):
+        return (5, "")
     for norm, original in synonyms:
         if norm.startswith(form):
-            return (5, original)
+            return (6, original)
     if qt_bare.startswith(form):
-        return (6, "")
-    if form in name or form in qt_bare:
         return (7, "")
-    if any(word.startswith(form) for word in description_words):
+    if form in name or form in qt_bare:
         return (8, "")
+    if any(word.startswith(form) for word in description_words):
+        return (9, "")
     return (_NO_RANK, "")
 
 

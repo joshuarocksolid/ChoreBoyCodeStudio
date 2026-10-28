@@ -1,10 +1,5 @@
 # pyright: reportAttributeAccessIssue=false
-"""UX-CAT-007 search: the lead result for each table row, ranking and the quick list.
-
-Rows marked xfail are where the table's lead result cannot follow from ranks (1) to (8)
-as written: a friendly name that starts with or contains the word beats a synonym.
-The conflict is reported for the spec owner to decide; the rule is not bent here.
-"""
+"""UX-CAT-007 search: the lead result for each table row, ranking and the quick list."""
 
 from __future__ import annotations
 
@@ -13,11 +8,6 @@ import pytest
 from app.features.form_builder.qtside.insert.catalog import load_catalog
 from app.features.form_builder.qtside.insert.rows import browse_rows, quick_rows, search_rows
 from app.features.form_builder.qtside.insert.catalog.search import search
-
-_CONFLICT = (
-    "UX-CAT-007 table conflicts with rules (2)/(3): a friendly name that starts with or "
-    "contains the word outranks a synonym (rank 4). Spec owner to decide."
-)
 
 _TABLE = (
     ("textbox", "Line edit"),
@@ -144,21 +134,6 @@ _TABLE = (
     ("date", "Date edit"),
 )
 
-# Table rows whose lead cannot follow from rules (2) and (3) with the names the table itself gives.
-_CONFLICTS = {
-    "input": "Input field (FreeCAD) starts with the word",
-    "field": "Input field (FreeCAD) has the word; Line edit has only a synonym",
-    "button": "Button box starts with the word; Push button has only a synonym",
-    "command": "Command link starts with the word; Push button has only a synonym",
-    "number": "LCD number has the word; Spin box has only a synonym",
-    "integer": "Integer spin box (FreeCAD) starts with the word; Spin box has only a synonym",
-    "tab": "Table widget starts with the same letters, and sorts first",
-    "box": "every 'box' name ties at rank 3; category order picks Spin box",
-    "line": "Line edit starts with the word; Horizontal line has only a word match",
-    "link": "Command link has the word; Text browser has only a synonym",
-}
-
-
 def _lead(query: str) -> str:
     catalog = load_catalog()
     hits = search(catalog.entries, catalog.windows, query)
@@ -172,10 +147,7 @@ def _params():  # type: ignore[no-untyped-def]
         if (query, expected) in seen:
             continue
         seen.add((query, expected))
-        marks = []
-        if query in _CONFLICTS:
-            marks.append(pytest.mark.xfail(strict=True, reason=_CONFLICT + " " + _CONFLICTS[query]))
-        found.append(pytest.param(query, expected, marks=marks, id="%s->%s" % (query, expected)))
+        found.append(pytest.param(query, expected, id="%s->%s" % (query, expected)))
     return found
 
 
