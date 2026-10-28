@@ -5,7 +5,7 @@ import dataclasses
 from collections import OrderedDict
 from typing import Callable, Dict, List, Optional, Sequence, Tuple
 
-from app.features.form_builder.engine.commands.base import Command, CommandOutcome
+from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, Value
@@ -13,6 +13,7 @@ from app.features.form_builder.qtside.inspector._services import Dropped, Reject
 from app.features.form_builder.qtside.inspector.api import (
     NOT_SET_TEXT,
     Editor,
+    EditSession,
     EnumSpec,
     GroupBody,
     GroupBodyFactory,
@@ -33,8 +34,8 @@ from app.features.form_builder.qtside.inspector.model import (
     GroupView,
     value_text,
 )
-from app.qt.QtCore import QEvent, Qt
-from app.qt.qt_compat import delete_now
+from app.qt.QtCore import QEvent, QObject, Qt, QTimer
+from app.qt.qt_compat import delete_now, wrapper_is_valid
 from app.qt.QtGui import QFont
 from app.qt.QtWidgets import (
     QApplication,
@@ -663,6 +664,7 @@ class _Row(QWidget):
         self._match_color = ""
         self._painted_widget: Optional[QWidget] = None
         self._painted_sheet = ""
+        self._session_key = ""
         # The changed bar, the Qt name, the reset button and the caption are
         # hidden on most rows. They are made on first use: a first build of
         # All properties shows about 60 rows, and each widget costs a polish.
@@ -756,6 +758,7 @@ class _Row(QWidget):
 
     def paint(self, view: Row, match_color: str, qt_names: bool = False) -> None:
         self.setObjectName("formBuilder.row.%s" % view.key)
+        self._session_key = view.key
         previous = self._view
         self._view = view
         self._qt_names = qt_names
@@ -804,11 +807,13 @@ class _Row(QWidget):
         self._sync_reset()
         super().leaveEvent(event)
 
-    def commit(self, value: Value) -> None:
+    def commit(self, value: Value, session: Optional[EditSession] = None) -> None:
         view = self._view
         if not isinstance(view, OpenRow):
             return
-        result = self._services.execute(view.write.edit(value, self._services.token(view.key)))
+        if session is None:
+            session = self._services.inline_session(view.key, _change_label(view.label))
+        result = session.run((view.write.edit(value, session.token),))
         if isinstance(result, Dropped):
             return
         if isinstance(result, Rejected):
@@ -816,7 +821,7 @@ class _Row(QWidget):
             self._set_caption(rejection_text(result), error=True)
             return
         self._invalid = False
-        skipped = result.result if isinstance(result, CommandOutcome) else None
+        skipped = result[0] if isinstance(result, tuple) and result else None
         if isinstance(skipped, tuple) and skipped:
             self._set_caption(
                 "Not applied to %d widgets that lack this property." % len(skipped),
@@ -828,6 +833,27 @@ class _Row(QWidget):
     def invalid(self, message: str) -> None:
         self._invalid = True
         self._set_caption(message, error=True)
+
+    def begin_session(self, label: str) -> EditSession:
+        return self._services.begin_session(label)
+
+    @property
+    def chrome(self):  # type: ignore[no-untyped-def]
+        return self._services.chrome
+
+    def _focus_left(self) -> None:
+        # Deferred: the field's own focus-out commit runs first, so it joins the session.
+        QTimer.singleShot(0, self._settle_focus)
+
+    def _settle_focus(self) -> None:
+        if not wrapper_is_valid(self):
+            return
+        focus = QApplication.focusWidget()
+        if focus is not None and (focus is self or self.isAncestorOf(focus)):
+            return
+        key = self._session_key
+        if key:
+            self._services.end_inline_session(key)
 
     def enum_value(self, enum: EnumSpec, names: Sequence[str]) -> Value:
         style = self._services.session.document.enum_style()
@@ -868,6 +894,7 @@ class _Row(QWidget):
         self._editor = factory(view.spec, self, self._slot)
         _shrink(self._editor.widget)
         _name_editors(self._editor.widget, view.label)
+        _guard_editor(self._editor.widget, self)
         self._slot_layout.addWidget(self._editor.widget)
         self._editor.widget.show()
 
@@ -971,6 +998,52 @@ class _Row(QWidget):
         )
         caption.setText(text)
         caption.show()
+
+def _change_label(label: str) -> str:
+    """The undo name of a row's own edit: "Change maximum length"."""
+    if not label:
+        return "Change value"
+    return "Change " + label[0].lower() + label[1:]
+
+
+_EVENT = getattr(QEvent, "Type", QEvent)
+
+
+def _focus_within(widget: QWidget) -> bool:
+    focus = QApplication.focusWidget()
+    return focus is not None and (focus is widget or widget.isAncestorOf(focus))
+
+
+class _EditorGuard(QObject):
+    """Installed on each widget a row's editor builds, so the rules hold for every editor.
+
+    UX-PED-005: a wheel event over a field without keyboard focus is passed on
+    (ignored, so the inspector scrolls) and does not change the value. Focus
+    leaving a field lets the row end its focus session (UX-PED-004).
+    """
+
+    def __init__(self, target: QWidget, row: "_Row") -> None:
+        super().__init__(target)
+        self._row = row
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        kind = event.type()
+        if kind == _EVENT.Wheel:
+            if isinstance(watched, QWidget) and not _focus_within(watched):
+                # Returning True stops the child from handling it; the ignored event
+                # then travels on to the parents, so the inspector scrolls.
+                event.ignore()
+                return True
+            return False
+        if kind == _EVENT.FocusOut:
+            self._row._focus_left()
+        return False
+
+
+def _guard_editor(root: QWidget, row: "_Row") -> None:
+    for target in [root, *root.findChildren(QWidget)]:
+        target.installEventFilter(_EditorGuard(target, row))
+
 
 class _GroupHost:
 

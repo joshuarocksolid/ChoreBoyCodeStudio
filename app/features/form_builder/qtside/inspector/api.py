@@ -11,6 +11,7 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import CStringValue, SetValue, StringValue, Value
 
 if TYPE_CHECKING:
+    from app.features.form_builder.qtside.theme.chrome import FormChrome
     from app.qt.QtWidgets import QLayout, QWidget
 
 class GroupId(str, Enum):
@@ -188,9 +189,48 @@ class RowSpec:
     order: Optional[int] = None
     after: str = ""
 
+class EditSession(Protocol):
+    """See ``_services.EditSession``: one focus visit or one popover, one undo step."""
+
+    @property
+    def token(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+    @property
+    def closed(self) -> bool: ...
+
+    def set_label(self, label: str) -> None: ...
+
+    def run(self, commands: Sequence[Command]) -> object:
+        """Run commands inside this session's step. Returns a tuple of results, a rejection or a drop."""
+        ...
+
+    def has_step(self) -> bool: ...
+
+    def undo(self) -> bool: ...
+
+    def revert(self) -> bool: ...
+
+    def close(self) -> None: ...
+
 class EditorHost(Protocol):
-    def commit(self, value: Value) -> None:
-        """Run the row's write. A rejection is shown under the field."""
+    def commit(self, value: Value, session: Optional[EditSession] = None) -> None:
+        """Run the row's write. Inside ``session``, it joins that session's one undo step.
+
+        Without a session, the row's focus session is used, so one focus visit is one step.
+        A rejection is shown under the field.
+        """
+        ...
+
+    def begin_session(self, label: str) -> EditSession:
+        """A session for a popover. Its writes are one undo step named ``label``; close it when the popover closes."""
+        ...
+
+    @property
+    def chrome(self) -> "FormChrome":
+        """The builder chrome in effect (UX-TOK-005 tokens come from it)."""
         ...
 
     def invalid(self, message: str) -> None:
@@ -300,6 +340,7 @@ __all__ = [
     "EditorFactory",
     "EditorHost",
     "EditorKey",
+    "EditSession",
     "EnumSpec",
     "GroupBody",
     "GroupApplies",
