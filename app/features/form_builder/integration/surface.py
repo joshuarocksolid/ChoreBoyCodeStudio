@@ -277,6 +277,21 @@ class _ShellKeyGuard(QObject):
         return False
 
 
+def _execute_press(log: object, command: object) -> object:
+    """A command with ``merge_window_s`` folds into the previous press inside that window."""
+    window = getattr(command, "merge_window_s", None)
+    execute = getattr(log, "execute")
+    if not callable(window):
+        return execute(command)
+    key_of = getattr(command, "merge_key", None)
+    key = key_of() if callable(key_of) else None
+    token = "press:%s" % (key,)
+    label = getattr(command, "label", None) or "Edit"
+    transaction = getattr(log, "transaction")
+    with transaction(label, merge_token=token, merge_within_s=float(window())) as txn:
+        return txn.execute(command)
+
+
 class FormSurface(QWidget):
     """``TabSurface`` for one ``.ui`` tab."""
 
@@ -571,7 +586,7 @@ class FormSurface(QWidget):
         # ``Command`` is a Protocol; every engine command declares ``command_type``.
         if getattr(type(request), "command_type", None) and callable(getattr(request, "apply", None)):
             try:
-                self._session.log.execute(request)  # type: ignore[arg-type]
+                _execute_press(self._session.log, request)
             except CommandRejected as exc:
                 self.narrate(str(exc))
             return
@@ -1033,7 +1048,13 @@ class FormSurface(QWidget):
 
     def ask_delete(self, prose: str, ids: Sequence[NodeId]) -> None:
         anchor, _bounds = self._place(ids)
-        self._workbench.outline.show_delete(prose, tuple(ids), anchor, self._focus_canvas)
+        canvas = self._workbench.canvas
+        viewport = canvas.viewport()
+        avoid = tuple(
+            QRect(viewport.mapToGlobal(rect.topLeft()), rect.size())
+            for rect in canvas.overlay_block_rects()
+        )
+        self._workbench.outline.show_delete(prose, tuple(ids), anchor, self._focus_canvas, avoid)
 
     def toast_place_hints(self) -> Tuple[QRect, Tuple[QRect, ...]]:
         """Viewport in this surface. Blocked rects end with the page.

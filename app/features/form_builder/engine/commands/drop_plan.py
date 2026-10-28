@@ -10,15 +10,17 @@ from app.features.form_builder.engine.commands.catalog import (
     SetLayoutCell,
     SetProperty,
 )
+from app.features.form_builder.engine.commands.catalog_ext.pages import FillScrollArea, InsertPage
+from app.features.form_builder.engine.commands.planning import dock_area_number
 from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
-    InsertPage,
     SpliceReading,
     SwapFormRows,
     WrapWithNew,
 )
 from app.features.form_builder.engine.commands.placement import (
+    AsMainWindowPart,
     InBoxLayout,
     InContainer,
     InFormRow,
@@ -32,12 +34,13 @@ from app.features.form_builder.engine.query.drop_target import (
     DropPayload,
     DropTarget,
     RefusedDrop,
+    keyboard_refusal,
 )
 from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.query.tree import form_rows, grid_shape, is_page_container
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
+from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import NumberValue, RectValue
 
 
@@ -53,6 +56,30 @@ def commands_for(
         return ()
     action = target.action
     sources = payload.source_ids
+    if action == "dock_side":
+        if sources:
+            return (MoveNodes(sources, AsMainWindowPart(target.host, "dock", target.dock_side)),)
+        if fragment is None or not fragment.nodes:
+            return ()
+        # A new dock from Insert: written on the side the band chose (UX-CONT-012).
+        place = AsMainWindowPart(target.host, "dock", target.dock_side)
+        return (InsertFragment(place, _docked(fragment, target.dock_side)),)
+    if action == "wizard_step":
+        wizard = doc.node(target.host)
+        count = len(wizard.child_widgets) if isinstance(wizard, WidgetNode) else 0
+        index = min(max(target.index, 0), count)
+        if sources:
+            return (MoveNodes(sources, InContainer(target.host, index)),)
+        if fragment is None:
+            return ()
+        # A new step gets the next free name, "Step {n}" and a vertical layout (UX-CONT-003).
+        return (InsertPage(target.host, index=index),)
+    if action == "scroll_content":
+        if sources:
+            return (FillScrollArea(target.host, existing=sources),)
+        if fragment is None:
+            return ()
+        return (FillScrollArea(target.host, fragment=_plain(fragment)),)
     if action == "box":
         return _place(doc, InBoxLayout(target.host, target.index), sources, fragment, False)
     if action == "splitter":
@@ -89,10 +116,37 @@ def auto_commands(
     payload: DropPayload,
     fragment: Optional[Fragment],
 ) -> Tuple[Command, ...]:
+    payload = _limited(payload, fragment)
     target = auto_target(doc, anchor, payload)
     if target is None:
         return ()
     return commands_for(doc, target, payload, fragment)
+
+
+def _docked(fragment: Fragment, side: str) -> Fragment:
+    """The dock fragment with ``dockWidgetArea`` set to the side's Qt number."""
+    head = _plain(fragment).nodes[0]
+    kept = tuple(entry for entry in head.attributes if entry.name != "dockWidgetArea")
+    area = PropertyEntry("attribute", "dockWidgetArea", NumberValue(dock_area_number(side)))
+    nodes = (replace(head, attributes=kept + (area,)),) + _plain(fragment).nodes[1:]
+    return replace(fragment, nodes=nodes)
+
+
+def flagged(payload: DropPayload, fragment: Optional[Fragment]) -> DropPayload:
+    """The payload with the dock and wizard-page flags its fragment's class implies."""
+    return _limited(payload, fragment)
+
+
+def _limited(payload: DropPayload, fragment: Optional[Fragment]) -> DropPayload:
+    """A palette fragment carries the class. The drag payload already has the flags."""
+    if fragment is None or not fragment.nodes:
+        return payload
+    class_name = str(fragment.nodes[0].field("class_name") or "")
+    if class_name == "QWizardPage" and not payload.wizard_page:
+        return replace(payload, wizard_page=True)
+    if class_name == "QDockWidget" and not payload.dock:
+        return replace(payload, dock=True)
+    return payload
 
 
 def indicate_preview(doc: UiDocument, index: object, target: AcceptedDrop) -> AcceptedDrop:
@@ -164,12 +218,36 @@ def _rect_of(index: object, node: NodeId) -> Optional[Rect]:
     return rect if isinstance(rect, Rect) else None
 
 
+def _enter_docks_left(doc: UiDocument, payload: DropPayload) -> bool:
+    """True when Enter should add a new dock on the main window's left side."""
+    if not payload.dock:
+        return False
+    root = doc.root
+    return isinstance(root, WidgetNode) and root.class_name == "QMainWindow"
+
+
 def auto_target(
     doc: UiDocument,
     anchor: Optional[NodeId],
     payload: DropPayload,
 ) -> Optional[Union[AcceptedDrop, RefusedDrop]]:
     """The target Enter would use. None when there is nowhere to put it."""
+    if _enter_docks_left(doc, payload):
+        # Enter on Dock widget in a main-window form adds it on the left (UX-CONT-012).
+        return _blank("dock_side", doc.root.id, dock_side="Left")
+    sentence = keyboard_refusal(doc, anchor, payload)
+    if sentence is not None:
+        host = anchor if anchor is not None and doc.contains(anchor) else doc.root.id
+        blank = Rect(0, 0, 1, 1)
+        return RefusedDrop(
+            sentence,
+            sentence,
+            host,
+            DropIndicator(blank, dashed=True, role="problem"),
+            blank,
+        )
+    if payload.wizard_page:
+        return _wizard_step_target(doc, anchor)
     if payload.kind == "spacer":
         layout = _anchor_layout(doc, anchor)
         if isinstance(layout, LayoutNode) and layout.class_name == "QFormLayout":
@@ -183,6 +261,22 @@ def auto_target(
     if bare.child_widgets:
         return _free_target(bare.id, 8, 8, payload)
     return _blank("auto_layout", bare.id)
+
+
+def _wizard_step_target(doc: UiDocument, anchor: Optional[NodeId]) -> Optional[AcceptedDrop]:
+    """A wizard page goes in as a step after the anchor's step, else last (UX-CONT-013)."""
+    node = doc.get(anchor) if anchor is not None else None
+    current = node if node is not None else doc.root
+    after: Optional[int] = None
+    while current is not None:
+        parent = doc.parent(current.id)
+        if isinstance(current, WidgetNode) and current.class_name == "QWizard":
+            count = len(current.child_widgets)
+            return _blank("wizard_step", current.id, index=count if after is None else after)
+        if isinstance(parent, WidgetNode) and parent.class_name == "QWizard" and isinstance(current, WidgetNode):
+            after = list(parent.child_widgets).index(current) + 1
+        current = parent
+    return None
 
 
 def _form_row(

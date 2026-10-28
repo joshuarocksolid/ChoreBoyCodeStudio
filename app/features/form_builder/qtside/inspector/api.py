@@ -188,6 +188,13 @@ class CellAlignment:
 
 
 @dataclass(frozen=True)
+class Note:
+    """A caption with nothing to edit. ``text`` is the sentence under the row."""
+
+    text: str
+
+
+@dataclass(frozen=True)
 class FlagBit:
     """One bit of a flag set property.
 
@@ -198,7 +205,7 @@ class FlagBit:
     name: str
     bit: str
 
-RowSource = Union[Prop, LayoutProp, CellAlignment, FlagBit]
+RowSource = Union[Prop, LayoutProp, CellAlignment, FlagBit, Note]
 
 @dataclass(frozen=True)
 class RowSpec:
@@ -226,6 +233,10 @@ class RowSpec:
     editor: str = ""
     #: Evaluated by the model. The result is ``ValueSpec.choices``.
     choices: Optional[Callable[[UiDocument, Tuple[NodeId, ...]], Tuple[Choice, ...]]] = None
+    #: Owners whose class chain includes one of these do not see the row.
+    exclude_classes: Tuple[str, ...] = ()
+    #: When set, the row is shown only when this returns true.
+    visible: Optional[Callable[[UiDocument, Tuple[NodeId, ...]], bool]] = None
 
 class EditSession(Protocol):
     """See ``_services.EditSession``: one focus visit or one popover, one undo step."""

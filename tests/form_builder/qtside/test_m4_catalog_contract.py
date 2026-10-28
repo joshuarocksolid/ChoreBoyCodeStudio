@@ -123,15 +123,7 @@ def _insert(session, key: str) -> None:  # type: ignore[no-untyped-def]
         pytest.param("QStackedWidget", marks=pytest.mark.parity("R3-81"), id="QStackedWidget"),
         pytest.param("QScrollArea", marks=pytest.mark.parity("R3-78"), id="QScrollArea"),
         pytest.param("QWizard", id="QWizard"),
-        pytest.param(
-            "QWizardPage",
-            id="QWizardPage",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="M4.2 owns the page commands: a wizard page dropped into a QWizard root is refused "
-                "('That container already has a layout.'); UX-CONT-013 insert-step is M4.2's",
-            ),
-        ),
+        pytest.param("QWizardPage", id="QWizardPage"),
         pytest.param("QMdiArea", marks=pytest.mark.parity("R3-84"), id="QMdiArea"),
         pytest.param("QDockWidget", marks=pytest.mark.parity("R3-85"), id="QDockWidget"),
         pytest.param("QLabel", marks=pytest.mark.parity("R3-102"), id="QLabel"),
@@ -195,10 +187,6 @@ def test_a_freecad_declaration_lands_once_per_form(key: str) -> None:
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.2 owns engine/query/drop_target.py: a wizard page on a plain form is not refused yet (UX-CAT-014)",
-)
 def test_a_wizard_page_outside_a_wizard_is_refused() -> None:
     session = open_session(build_template_ui("widget", "Form"), "/tmp/cbcs-m41-page.ui")
     try:
@@ -213,11 +201,8 @@ def test_a_wizard_page_outside_a_wizard_is_refused() -> None:
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.2 owns engine/query/drop_target.py: a dock widget in a main window's central area is not refused yet (UX-CAT-014)",
-)
-def test_a_dock_widget_in_a_main_window_central_area_is_refused() -> None:
+def test_enter_on_dock_widget_in_a_main_window_adds_it_on_the_left() -> None:
+    """UX-CONT-012: Enter on the Insert Dock widget entry docks left and selects it."""
     session = open_session(build_template_ui("main_window", "Shop"), "/tmp/cbcs-m41-dock.ui")
     try:
         commands = auto_commands(
@@ -226,17 +211,18 @@ def test_a_dock_widget_in_a_main_window_central_area_is_refused() -> None:
             DropPayload("widget"),
             fragment_for("QDockWidget"),
         )
-        assert commands == ()
+        assert len(commands) == 1
+        session.log.execute(commands[0])
+        docks = [node for node in session.document.iter_widgets() if node.class_name == "QDockWidget"]
+        assert len(docks) == 1
+        entry = docks[0].attr("dockWidgetArea")
+        assert entry is not None and getattr(entry.value, "value", None) == 1
+        assert session.selection.state.current == docks[0].id
     finally:
         session.dispose()
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.2 owns engine/codegen/**: uic writes 0 margins for a plain QWidget holder inside a "
-    "non-container parent, our generator gives 9 (only does 0 when the object name starts with layoutWidget)",
-)
 def test_a_layout_without_written_margins_in_a_plain_widget_matches_uic(tmp_path: Path) -> None:
     _require_oracle()
     from tests.form_builder.engine.codegen.uic_compare import compare  # pyright: ignore[reportMissingImports]

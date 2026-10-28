@@ -31,9 +31,10 @@ INSERT_BAND_SCREEN = 8
 SNAP = 8
 
 HostKind = Literal[
-    "vbox", "hbox", "grid", "form", "splitter", "pages", "bare_empty", "bare_free"
+    "vbox", "hbox", "grid", "form", "splitter", "pages", "bare_empty", "bare_free", "scroll_empty"
 ]
 PayloadKind = Literal["widget", "label", "spacer"]
+WIZARD_REFUSAL = "A wizard page can only go into a wizard."
 DropAction = Literal[
     "box",
     "wrap",
@@ -48,6 +49,9 @@ DropAction = Literal[
     "new_page",
     "auto_layout",
     "free",
+    "dock_side",
+    "wizard_step",
+    "scroll_content",
 ]
 WrapSide = Literal["before", "after", ""]
 FormRole = Literal["label", "field", "spanning", ""]
@@ -86,6 +90,10 @@ class DropHost:
     children: Tuple["DropHost", ...] = ()
     #: "tab" or "page". Empty for layouts.
     noun: str = ""
+    #: A main window: a dock widget dragged over it gets the four side bands (UX-CONT-012).
+    dock_zone: bool = False
+    #: A wizard: a wizard page dragged over it becomes a step (UX-CAT-014).
+    wizard: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,6 +106,10 @@ class DropPayload:
     colspan: int = 1
     snap: bool = True
     default_size: Tuple[int, int] = (80, 24)
+    #: The dragged widget is a dock widget (UX-CONT-012).
+    dock: bool = False
+    #: The dragged widget is a wizard page (UX-CAT-014).
+    wizard_page: bool = False
 
 
 @dataclass(frozen=True)
@@ -130,6 +142,8 @@ class AcceptedDrop:
     width: int = 0
     height: int = 0
     spring_id: Optional[NodeId] = None
+    #: For ``dock_side``: "Left", "Right", "Top" or "Bottom".
+    dock_side: str = ""
 
 
 @dataclass(frozen=True)
@@ -152,6 +166,41 @@ class NoDrop:
 DropTarget = Union[AcceptedDrop, RefusedDrop, NoDrop]
 
 
+DOCK_BAND_PX = 32
+DOCK_REFUSAL = "In a main window, a dock widget goes on one of its sides."
+_DOCK_ORDER = ("Left", "Right", "Top", "Bottom")
+_DOCK_LABEL = {"Left": "left side", "Right": "right side", "Top": "top", "Bottom": "bottom"}
+
+
+def keyboard_refusal(
+    doc: UiDocument,
+    anchor: Optional[NodeId],
+    payload: DropPayload,
+) -> Optional[str]:
+    """UX-CAT-014. Enter has no pointer, so a wizard page outside a wizard is refused.
+
+    A dock widget Enter on a main-window form is not a refusal: it lands on the
+    left side (UX-CONT-012). A pointer drop on the central area is still refused.
+    """
+    if payload.wizard_page and not _under_class(doc, anchor, "QWizard"):
+        return WIZARD_REFUSAL
+    return None
+
+
+def _under_class(doc: UiDocument, anchor: Optional[NodeId], class_name: str) -> bool:
+    current = doc.get(anchor) if anchor is not None else doc.root
+    if current is None:
+        current = doc.root
+    seen = set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        if isinstance(current, WidgetNode) and current.class_name == class_name:
+            return True
+        parent = doc.parent(current.id)
+        current = parent
+    return False
+
+
 def resolve_drop(
     root: DropHost,
     pointer: Tuple[int, int],
@@ -162,6 +211,12 @@ def resolve_drop(
     """``min_band``: the leading insertion band of a list item, in form px.
     The canvas passes ``INSERT_BAND_SCREEN`` over the zoom so the band keeps
     its screen size below 100%."""
+    if payload.dock:
+        zone = _dock_zone_at(root, pointer)
+        if zone is not None:
+            return _resolve_dock(zone, pointer)
+    if payload.wizard_page:
+        return _resolve_wizard_step(root, pointer)
     found: List[Tuple[int, DropHost]] = []
     _gather(root, pointer, 0, found)
     found.sort(
@@ -220,6 +275,70 @@ def _candidate(host: DropHost, pointer: Tuple[int, int]) -> bool:
     return _contains(host.rect, pointer)
 
 
+def _dock_zone_at(root: DropHost, pointer: Tuple[int, int]) -> Optional[DropHost]:
+    found: List[Tuple[int, DropHost]] = []
+    _gather(root, pointer, 0, found)
+    zones = [host for _depth, host in found if host.dock_zone and _contains(host.rect, pointer)]
+    if not zones:
+        return None
+    return min(zones, key=lambda host: host.rect.width * host.rect.height)
+
+
+def _resolve_wizard_step(root: DropHost, pointer: Tuple[int, int]) -> DropTarget:
+    """A wizard page goes only into a wizard, as its next step (UX-CAT-014)."""
+    found: List[Tuple[int, DropHost]] = []
+    _gather(root, pointer, 0, found)
+    holders = [host for _depth, host in found if _contains(host.rect, pointer)]
+    if not holders:
+        return NoDrop()
+    # The pointer is usually over the wizard's shown page, so look for the
+    # innermost wizard that holds it, not only at the deepest host.
+    wizards = [host for host in holders if host.wizard]
+    if not wizards:
+        deepest = min(holders, key=lambda host: host.rect.width * host.rect.height)
+        return _refuse(deepest, WIZARD_REFUSAL, DropIndicator(deepest.rect, dashed=True, role="problem"))
+    wizard = min(wizards, key=lambda host: host.rect.width * host.rect.height)
+    sentence = "New step"
+    return _accept(
+        wizard, "wizard_step", sentence, sentence, DropIndicator(wizard.rect, dashed=True), index=len(wizard.slots)
+    )
+
+
+def _resolve_dock(host: DropHost, pointer: Tuple[int, int]) -> DropTarget:
+    """The four bands along the inside edges of a main window (UX-CONT-012).
+
+    The pointer picks the band whose outer edge it is nearest. The central
+    area inside the bands is refused.
+    """
+    rect = host.rect
+    band = DOCK_BAND_PX
+    central = Rect(rect.x + band, rect.y + band, rect.width - 2 * band, rect.height - 2 * band)
+    if _contains(central, pointer):
+        return _refuse(host, DOCK_REFUSAL, DropIndicator(central, dashed=True, role="problem"))
+    rects = {
+        "Left": Rect(rect.x, rect.y, band, rect.height),
+        "Right": Rect(rect.x + rect.width - band, rect.y, band, rect.height),
+        "Top": Rect(rect.x, rect.y, rect.width, band),
+        "Bottom": Rect(rect.x, rect.y + rect.height - band, rect.width, band),
+    }
+    distance = {
+        "Left": pointer[0] - rect.x,
+        "Right": rect.x + rect.width - pointer[0],
+        "Top": pointer[1] - rect.y,
+        "Bottom": rect.y + rect.height - pointer[1],
+    }
+    side = min(_DOCK_ORDER, key=lambda name: distance[name])
+    sentence = "Dock on the %s" % _DOCK_LABEL[side]
+    return _accept(
+        host,
+        "dock_side",
+        sentence,
+        sentence,
+        DropIndicator(rects[side], dashed=True),
+        dock_side=side,
+    )
+
+
 def _resolve_host(
     host: DropHost,
     pointer: Tuple[int, int],
@@ -247,6 +366,9 @@ def _resolve_host(
         )
     if host.kind == "bare_free":
         return _resolve_free(host, pointer, payload)
+    if host.kind == "scroll_empty":
+        sentence = "Into the scroll area · makes its content"
+        return _accept(host, "scroll_content", sentence, sentence, DropIndicator(_inset(host.rect, 4), dashed=True))
     return None
 
 
@@ -651,6 +773,7 @@ def _accept(
     width: int = 0,
     height: int = 0,
     spring_id: Optional[NodeId] = None,
+    dock_side: str = "",
 ) -> AcceptedDrop:
     return AcceptedDrop(
         sentence,
@@ -674,6 +797,7 @@ def _accept(
         width,
         height,
         spring_id,
+        dock_side=dock_side,
     )
 
 
@@ -1021,7 +1145,9 @@ def _widget_host(
         if built is not None:
             children.append(built)
     kind: HostKind = "bare_free" if widget.child_widgets else "bare_empty"
-    return DropHost(widget.id, kind, name, rect, (), tuple(children))
+    if widget.class_name == "QScrollArea" and not widget.child_widgets:
+        kind = "scroll_empty"
+    return DropHost(widget.id, kind, name, rect, (), tuple(children), dock_zone=widget.class_name == "QMainWindow")
 
 
 def _layout_host(
@@ -1208,8 +1334,12 @@ def _pages_host(
 ) -> DropHost:
     kind: HostKind = "splitter" if widget.class_name == "QSplitter" else "pages"
     noun = "page" if widget.class_name in ("QToolBox", "QStackedWidget") else "tab"
+    is_wizard = widget.class_name == "QWizard"
     slots: List[SlotGeom] = []
     children: List[DropHost] = []
+    if kind == "pages" and not widget.child_widgets:
+        # No page yet: a drop anywhere in the container makes the first page (UX-CONT-009).
+        slots.append(SlotGeom(rect, 0, None, "", role="new_page"))
     for index, child in enumerate(widget.child_widgets):
         child_rect = rect_of.get(child.id, rect)
         role = "page" if kind == "pages" else "pane"
@@ -1217,7 +1347,7 @@ def _pages_host(
         built = _widget_host(doc, rect_of, child.id, child.object_name or name)
         if built is not None:
             children.append(built)
-    return DropHost(widget.id, kind, name, rect, tuple(slots), tuple(children), noun)
+    return DropHost(widget.id, kind, name, rect, tuple(slots), tuple(children), noun, wizard=is_wizard)
 
 
 def _content_host(doc: UiDocument, rect_of: Dict[NodeId, Rect], content: Optional[Node]) -> Optional[DropHost]:

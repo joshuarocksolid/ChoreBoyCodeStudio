@@ -15,6 +15,7 @@ from app.features.form_builder.engine.commands.live import LiveProp, live_props
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
+from app.features.form_builder.engine.query.pages import scroll_area_in_path, scroll_area_of
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
@@ -70,7 +71,14 @@ from app.features.form_builder.qtside.canvas.core.structure import (
     parent_step,
     positioning_of,
 )
-from app.features.form_builder.qtside.canvas.core.text import TextTarget, enter_opens_editor, next_text_target, text_commit, text_target
+from app.features.form_builder.qtside.canvas.core.text import (
+    TextTarget,
+    enter_opens_editor,
+    next_text_target,
+    page_title_target,
+    text_commit,
+    text_target,
+)
 from app.features.form_builder.qtside.canvas.core.words import (
     FIRST_FOCUS_HINT,
     GIVEN_SIZE,
@@ -95,13 +103,31 @@ KeyName = Literal[
     "zoom_out",
     "zoom_reset",
     "zoom_fit",
+    "page_next",
+    "page_previous",
     "other",
 ]
 _ARROWS = frozenset({"left", "right", "up", "down"})
 _NUDGE = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
 _ZOOM_KEYS = frozenset({"zoom_in", "zoom_out", "zoom_reset", "zoom_fit"})
+_PAGE_KEYS = frozenset({"page_next", "page_previous"})
 _CLAIMED = frozenset(
-    {"tab", "backtab", "left", "right", "up", "down", "enter", "space", "zoom_in", "zoom_out", "zoom_reset", "zoom_fit"}
+    {
+        "tab",
+        "backtab",
+        "left",
+        "right",
+        "up",
+        "down",
+        "enter",
+        "space",
+        "zoom_in",
+        "zoom_out",
+        "zoom_reset",
+        "zoom_fit",
+        "page_next",
+        "page_previous",
+    }
 )
 #: A key commit folds into the previous step with the same ``Commit.merge`` inside this window.
 KEY_MERGE_S = 1.0
@@ -474,6 +500,33 @@ class CanvasPressed:
 
 
 @dataclass(frozen=True)
+class ScrollContent:
+    """Scroll the content of the scroll area ``node`` by pixels (canvas only, UX-CONT-010)."""
+
+    node: NodeId
+    dx: int
+    dy: int
+
+
+@dataclass(frozen=True)
+class RevealInScroll:
+    """Scroll the scroll area around ``node`` until the widget is visible (canvas only)."""
+
+    node: NodeId
+
+
+@dataclass(frozen=True)
+class ShowPageStep:
+    """Ctrl+PgDown (``delta`` 1) or Ctrl+PgUp (-1) on the innermost page container of ``node``.
+
+    The shown page changes on the canvas only (UX-CONT-006, UX-CONT-007).
+    """
+
+    delta: int
+    node: NodeId
+
+
+@dataclass(frozen=True)
 class Narrate:
     sentence: str
 
@@ -491,7 +544,7 @@ class RunChipAction:
 ModelEffect = Union[Select, Toggle, Commit]
 ViewEffect = Union[Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal, Cursor, Tip]
 EditorEffect = Union[OpenEditor, CloseEditor]
-HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction]
+HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep, ScrollContent, RevealInScroll]
 Effect = Union[ModelEffect, ViewEffect, EditorEffect, HostEffect]
 
 
@@ -745,6 +798,10 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
             return Step(gesture, (), True)
         return Step(gesture, (Select((parent,), parent),))
     if event.key == "enter":
+        title = page_title_target(world.document, current)
+        if title is not None:
+            # Enter on a page edits its title, not its first child (UX-CONT-008).
+            return Step(Editing(title, world.fresh_token), (OpenEditor(title),))
         if enter_opens_editor(world.document, current):
             target = text_target(world.document, current, "widget")
             if target is not None:
@@ -779,6 +836,11 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         return Step(PanArmed(), (HoverChanged(None), Cursor("open_hand")))
     if event.key in _ZOOM_KEYS:
         return Step(gesture, (_zoom_effect(event.key),))
+    if event.key in _PAGE_KEYS:
+        if world.selection.current is None:
+            return Step(gesture, (), False)
+        delta = 1 if event.key == "page_next" else -1
+        return Step(gesture, (ShowPageStep(delta, world.selection.current),))
     return Step(gesture, (), False)
 
 
@@ -1098,9 +1160,23 @@ def _on_wheel(gesture: Gesture, event: Wheel, world: World) -> Step:
             return Step(gesture, (), True)
         direction = 1 if event.dy > 0 else -1
         return Step(gesture, (Zoom(ZoomStep(direction), event.port),))
+    area = _scroll_area_at(event.port, world)
+    if area is not None:
+        # Over a scroll area the wheel scrolls its content, not the canvas (UX-CONT-010).
+        if event.mods.shift:
+            return Step(gesture, (ScrollContent(area, -(event.dx + event.dy), 0),))
+        return Step(gesture, (ScrollContent(area, -event.dx, -event.dy),))
     if event.mods.shift:
         return Step(gesture, (ScrollBy(-(event.dx + event.dy), 0),))
     return Step(gesture, (ScrollBy(-event.dx, -event.dy),))
+
+
+def _scroll_area_at(port: PortPoint, world: World) -> Optional[NodeId]:
+    form = world.view.to_form(port)
+    hit = world.index.query(int(form.x), int(form.y))
+    if hit is None:
+        return None
+    return scroll_area_in_path(world.document, hit.path)
 
 
 def _on_focus(gesture: Gesture, event: Focus, world: World) -> Step:
@@ -1272,6 +1348,9 @@ def _commit_label(state: Union[Moving, PageResizing]) -> str:
 
 def _select_and_reveal(world: World, ids: Tuple[NodeId, ...], current: NodeId) -> Tuple[Effect, ...]:
     effects: Tuple[Effect, ...] = (Select(ids, current),)
+    if scroll_area_of(world.document, current) is not None:
+        # The scroll area moves the widget into view first; the canvas reveals it after that (UX-CONT-010).
+        return effects + (RevealInScroll(current),)
     rect = world.index.rect_of(current)
     if rect is not None:
         effects = effects + (Reveal(rect),)

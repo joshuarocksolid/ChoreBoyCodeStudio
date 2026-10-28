@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 from typing import Callable, Optional, Tuple
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QPoint, Qt
 from app.qt.QtWidgets import QGraphicsProxyWidget, QGraphicsView, QLabel, QWidget
 from app.qt.qt_compat import wrapper_is_valid
 
@@ -86,12 +86,14 @@ class Stage:
         realizer: Realizer,
         invalidate: Callable[[InvalidationReason], None],
         on_factor: Optional[Callable[[float], None]] = None,
+        on_placed: Optional[Callable[[], None]] = None,
     ) -> None:
         self._view = view
         self._session = session
         self._realizer = realizer
         self._invalidate = invalidate
         self._on_factor = on_factor
+        self._on_placed = on_placed
         self._zoom: ZoomSetting = Fit()
         self._factor = 0.0
         self._fit_page: Optional[Size] = None
@@ -174,6 +176,10 @@ class Stage:
                 self._homed_viewport = size
         self._refresh_labels(root)
         self.position_labels()
+        # Zoom moves the page without a document change. The caption is a view
+        # widget, so it does not follow the proxy unless it is placed again.
+        if self._on_placed is not None:
+            self._on_placed()
 
     def detach(self) -> None:
         widget = self._proxy.widget()
@@ -204,14 +210,23 @@ class Stage:
         return tuple(widget for widget in widgets if not widget.isHidden() and widget.width() > 0)
 
     def chrome_rects(self) -> Tuple[CanvasRect, ...]:
-        scroll_x = self._view.horizontalScrollBar().value()
-        scroll_y = self._view.verticalScrollBar().value()
+        """Name chip and size readout in scene pixels, so overlay chips can sit clear of them."""
+        view = self._view
+        viewport = view.viewport()
         rects = []
         for widget in (self._name, self._size, *self._extra):
-            if widget.isHidden():
+            if widget.isHidden() or widget.width() <= 0:
                 continue
+            origin = viewport.mapFromGlobal(widget.mapToGlobal(QPoint(0, 0)))
+            scene = view.mapToScene(origin)
+            pad = 4 if widget is self._size else 0
             rects.append(
-                CanvasRect(widget.x() + scroll_x, widget.y() + scroll_y, widget.width(), widget.height())
+                CanvasRect(
+                    int(round(scene.x())) - pad,
+                    int(round(scene.y())) - pad,
+                    widget.width() + 2 * pad,
+                    widget.height() + 2 * pad,
+                )
             )
         return tuple(rects)
 

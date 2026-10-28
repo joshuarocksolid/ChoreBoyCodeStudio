@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
+from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple, cast
 
 from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
 from app.qt.QtGui import QFont, QFontMetrics, QPixmap
@@ -17,10 +17,13 @@ from app.qt.QtWidgets import (
     QApplication,
     QGraphicsOpacityEffect,
     QGraphicsView,
+    QMdiArea,
+    QScrollArea,
     QStackedWidget,
     QTabWidget,
     QToolBox,
     QWidget,
+    QWizard,
 )
 from app.qt import QtWidgets
 from app.qt.qt_compat import enum_value
@@ -28,7 +31,16 @@ from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.clipboard import dangling_sentence
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import InsertFragment, InsertResult
-from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage
+from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
+from app.features.form_builder.engine.query.pages import (
+    innermost_container,
+    page_kind,
+    page_title,
+    pages,
+    scroll_area_in_path,
+    start_index,
+)
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.commands.drop_plan import auto_target, indicate_preview
 from app.features.form_builder.engine.sizing import chip_axis, project_axis
 from app.features.form_builder.engine.diagnostics import Severity
@@ -82,8 +94,11 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PreviewPage,
     Reveal,
     RunChipAction,
+    RevealInScroll,
     ScrollBy,
+    ScrollContent,
     Select,
+    ShowPageStep,
     Tip,
     Toggle,
     World,
@@ -105,7 +120,7 @@ from app.features.form_builder.qtside.canvas.core.overlay import (
 )
 from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
-from app.features.form_builder.qtside.canvas.core.text import TextTarget, text_target
+from app.features.form_builder.qtside.canvas.core.text import TextTarget, page_title_target, text_target
 from app.features.form_builder.qtside.canvas.core.words import describe_selection, zoom_label
 from app.features.form_builder.qtside.sizing_live import class_default_policies, class_phrase
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
@@ -155,6 +170,16 @@ class CanvasHost(Protocol):
         ...
 
 
+def _enclosing_scroll_area(widget: QWidget) -> Optional[QScrollArea]:
+    """The nearest scroll area above ``widget``, or None."""
+    parent = widget.parentWidget()
+    while parent is not None:
+        if isinstance(parent, QScrollArea):
+            return parent
+        parent = parent.parentWidget()
+    return None
+
+
 class CanvasController:
     def __init__(
         self,
@@ -197,6 +222,7 @@ class CanvasController:
         self._refused_at = 0.0
         self._refused_open = False
         self._shown_page: Dict[NodeId, int] = {}
+        self._mdi_cache: Optional[Tuple[object, int, Tuple[NodeId, ...]]] = None
         self._preview_key: Optional[str] = None
         self._pending_edit: Optional[Commit] = None
         self._pending_page: Optional[NodeId] = None
@@ -217,6 +243,11 @@ class CanvasController:
         self._spring = QTimer()
         self._spring.setSingleShot(True)
         self._spring.timeout.connect(self._spring_fire)
+        self._edge: Optional[Tuple[NodeId, int]] = None
+        self._edge_repeat = False
+        self._edge_timer = QTimer()
+        self._edge_timer.setSingleShot(True)
+        self._edge_timer.timeout.connect(self._edge_fire)
         self._detach_sub = session.log.subscribe(self._before_realize, priority=PRIORITY_DETACH)
         self._view_sub = session.log.subscribe(self._after_realize, priority=PRIORITY_VIEWS)
         self._selection_unsub = session.selection.subscribe(self._on_selection)
@@ -284,6 +315,7 @@ class CanvasController:
         self._closed = True
         self._spring.stop()
         self._linger.stop()
+        self._edge_timer.stop()
         if isinstance(self._gesture, Placing):
             self._fade(self._gesture.payload.source_ids, 1.0)
         self._ghost = None
@@ -365,6 +397,15 @@ class CanvasController:
         if isinstance(effect, Narrate):
             self._host.narrate(effect.sentence)
             return
+        if isinstance(effect, ShowPageStep):
+            self._show_page_step(effect.delta, effect.node)
+            return
+        if isinstance(effect, ScrollContent):
+            self._scroll_content(effect.node, effect.dx, effect.dy)
+            return
+        if isinstance(effect, RevealInScroll):
+            self._reveal_in_scroll(effect.node)
+            return
         if isinstance(effect, HoverChanged):
             self._host.hover_changed(effect.node)
             return
@@ -439,6 +480,9 @@ class CanvasController:
             elif effect.label == "Nudge":
                 merge_token = _nudge_token(effect.commands)
                 merge_within_s = 1.0
+            elif effect.commands and callable(getattr(effect.commands[0], "merge_window_s", None)):
+                merge_token = "press:%s" % (effect.commands[0].merge_key(),)
+                merge_within_s = float(effect.commands[0].merge_window_s())
             elif effect.label in ("Drop", "Move", "Edit text"):
                 merge_token = effect.token
                 merge_within_s = 30.0
@@ -497,7 +541,9 @@ class CanvasController:
             return
         self._settle_geometry()
         if page is not None:
-            target = text_target(self._session.document, page, "page_tab")
+            target = page_title_target(self._session.document, page)
+            if target is None:
+                target = text_target(self._session.document, page, "page_tab")
             token = str(self._serial)
         elif effect is not None and effect.edit == "widget":
             current = self._session.selection.state.current
@@ -554,16 +600,25 @@ class CanvasController:
             self._grab(current)
             self._fade(current.payload.source_ids, 0.35)
             self._remember_refusal(previous, current)
+            self._watch_edge(current)
         elif isinstance(previous, Placing) and not isinstance(current, Placing):
             self._fade(previous.payload.source_ids, 1.0)
             self._ghost = None
             self._held_ghost = None
             self._spring.stop()
             self._spring_id = None
+            self._edge = None
+            self._edge_repeat = False
+            self._edge_timer.stop()
             self._remember_refusal(previous, current)
         elif isinstance(current, Placing):
             self._park_ghost(current)
             self._arm_spring(current)
+            self._watch_edge(current)
+        else:
+            self._edge = None
+            self._edge_repeat = False
+            self._edge_timer.stop()
 
     def _park_ghost(self, state: Placing) -> None:
         """Hide the ghost while the pointer is off the canvas. O(1). It comes back on re-entry."""
@@ -731,10 +786,28 @@ class CanvasController:
         self._pending_edit = None
         QTimer.singleShot(0, self._open_edit_now)
 
+    def show_page_step(self, container: NodeId, delta: int) -> None:
+        """Show the next or previous page of ``container``. Canvas only."""
+        self._show_page_step(delta, container)
+
+    def arrange_windows(self, container: NodeId, how: str) -> None:
+        """Tile or cascade an MDI area on the canvas. Not saved."""
+        if how == "tile":
+            self.tile_windows(container)
+        elif how == "cascade":
+            self.cascade_windows(container)
+
     def _show_stacked(self, container: NodeId, delta: int) -> None:
         if delta == 0:
             return
         widget = self._realizer.widget_for(container)
+        document = self._session.document
+        if isinstance(widget, QWizard):
+            self._show_step(widget, delta, document, container)
+            return
+        if isinstance(widget, QMdiArea):
+            self._show_window_step(widget, delta, document, container)
+            return
         if widget is None or not hasattr(widget, "count"):
             return
         count = int(widget.count())
@@ -748,6 +821,182 @@ class CanvasController:
         widget.setCurrentIndex(nxt)
         self._index.invalidate("page_switch")
         self._request_frame()
+
+    def _scroll_area_widget(self, node: NodeId) -> Optional[QScrollArea]:
+        widget = self._realizer.widget_for(node)
+        return widget if isinstance(widget, QScrollArea) else None
+
+    def _mdi_widget(self, node: NodeId) -> Optional[QMdiArea]:
+        widget = self._realizer.widget_for(node)
+        return widget if isinstance(widget, QMdiArea) else None
+
+    _EDGE_PX = 16
+    _EDGE_DWELL_MS = 400
+    _EDGE_STEP_MS = 100
+
+    def _watch_edge(self, state: Placing) -> None:
+        """A drag held on a scroll area's top or bottom 16 px scrolls it (UX-CONT-010)."""
+        found = self._edge_zone(state.pointer)
+        if found == self._edge and (self._edge_timer.isActive() or self._edge_repeat):
+            return
+        self._edge = found
+        self._edge_repeat = False
+        self._edge_timer.stop()
+        if found is not None:
+            self._edge_timer.start(self._EDGE_DWELL_MS)
+
+    def _edge_zone(self, point: object) -> Optional[Tuple[NodeId, int]]:
+        self._index.ensure_fresh()
+        x = int(getattr(point, "x"))
+        y = int(getattr(point, "y"))
+        hit = self._index.query(x, y)
+        if hit is None:
+            return None
+        area_id = scroll_area_in_path(self._session.document, hit.path)
+        if area_id is None:
+            return None
+        rect = self._index.rect_of(area_id)
+        if rect is None:
+            return None
+        factor = float(self._stage.view_map().factor or 1.0)
+        edge = max(1, int(round(self._EDGE_PX / factor)))
+        if y <= rect.y + edge:
+            return area_id, -1
+        if y >= rect.y + rect.height - edge:
+            return area_id, 1
+        return None
+
+    def _edge_fire(self) -> None:
+        if not isinstance(self._gesture, Placing) or self._edge is None:
+            return
+        area_id, direction = self._edge
+        if self._edge_zone(self._gesture.pointer) != self._edge:
+            self._edge = None
+            self._edge_repeat = False
+            return
+        self._step_scroll(area_id, direction)
+        self._index.ensure_fresh()
+        self._retarget_place()
+        self._edge_repeat = True
+        self._edge_timer.start(self._EDGE_STEP_MS)
+
+    def _step_scroll(self, node: NodeId, direction: int) -> None:
+        area = self._scroll_area_widget(node)
+        if area is None:
+            return
+        bar = area.verticalScrollBar()
+        bar.setValue(bar.value() + direction * max(bar.singleStep(), 1))
+        QApplication.sendPostedEvents(None, enum_value(QEvent.Type.LayoutRequest))
+        self._index.invalidate("scroll")
+
+    def _scroll_content(self, node: NodeId, dx: int, dy: int) -> None:
+        """Wheel over a scroll area. One notch (120) is three single steps, as Qt does it (UX-CONT-010)."""
+        area = self._scroll_area_widget(node)
+        if area is None:
+            return
+        horizontal = area.horizontalScrollBar()
+        vertical = area.verticalScrollBar()
+        for bar, delta in ((horizontal, dx), (vertical, dy)):
+            if delta:
+                bar.setValue(bar.value() + int(round(delta * bar.singleStep() / 40)))
+        self._index.invalidate("scroll")
+        self._request_frame()
+
+    def _reveal_in_scroll(self, node: NodeId) -> None:
+        """Selection inside a scroll area scrolls it so the widget is visible; the canvas then reveals it."""
+        widget = self._realizer.widget_for(node)
+        if widget is None:
+            return
+        area = _enclosing_scroll_area(widget)
+        if area is not None:
+            area.ensureWidgetVisible(widget)
+        self._index.invalidate("scroll")
+        self._pending_reveal = node
+        self._request_frame()
+
+    def _show_window_step(self, area: QMdiArea, delta: int, document: UiDocument, container: NodeId) -> None:
+        """Show previous or next window (UX-CONT-011). Canvas only: the file does not change."""
+        windows = area.subWindowList()
+        if not windows:
+            return
+        current = area.activeSubWindow()
+        index = windows.index(current) if current in windows else 0
+        nxt = (index + delta) % len(windows)
+        area.setActiveSubWindow(windows[nxt])
+        self._shown_page[container] = nxt
+        self._index.invalidate("page_switch")
+        self._request_frame()
+        self._host.narrate("Showing window %d of %d" % (nxt + 1, len(windows)))
+
+    def _show_step(self, wizard: QWizard, delta: int, document: UiDocument, container: NodeId) -> None:
+        """Show the next or previous wizard step, wrapping (UX-CONT-013). Canvas only."""
+        ids = list(wizard.pageIds())
+        if not ids:
+            return
+        current = wizard.currentId()
+        # A wizard that is not shown has no current page (-1), so the first step is the base.
+        index = ids.index(current) if current in ids else 0  # the canvas shows the first step until moved
+        nxt = (index + delta) % len(ids)
+        if current not in ids:
+            wizard.restart()  # a wizard that was never shown has no page to move from
+        wizard.setCurrentId(ids[nxt])
+        self._shown_page[container] = nxt
+        self._index.invalidate("page_switch")
+        self._request_frame()
+        page = pages(document, container)[nxt]
+        title = page_title(document, page.id) or page.object_name
+        self._host.narrate("Showing step %d of %d: %s" % (nxt + 1, len(ids), title))
+
+    def tile_windows(self, container: NodeId) -> None:
+        """Tile the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
+        area = self._mdi_widget(container)
+        if area is not None:
+            area.tileSubWindows()
+            self._index.invalidate("page_switch")
+            self._request_frame()
+
+    def cascade_windows(self, container: NodeId) -> None:
+        """Cascade the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
+        area = self._mdi_widget(container)
+        if area is not None:
+            area.cascadeSubWindows()
+            self._index.invalidate("page_switch")
+            self._request_frame()
+
+    def _show_page_step(self, delta: int, node: NodeId) -> None:
+        """Ctrl+PgDown and Ctrl+PgUp: show the next or previous page, wrapping (UX-CONT-007).
+
+        Only the shown page changes. The file's start page is untouched.
+        """
+        document = self._session.document
+        container = innermost_container(document, node)
+        if container is None or page_kind(document, container) is None:
+            return
+        widget = self._realizer.widget_for(container)
+        if isinstance(widget, QMdiArea):
+            self._show_window_step(widget, delta, document, container)
+            return
+        if isinstance(widget, QWizard):
+            self._show_step(widget, delta, document, container)
+            return
+        if widget is None or not hasattr(widget, "count") or not hasattr(widget, "setCurrentIndex"):
+            return
+        count = int(widget.count())
+        if count <= 0:
+            return
+        shown = self._shown_page.get(container, int(widget.currentIndex()))
+        nxt = (shown + delta) % count
+        self._shown_page[container] = nxt
+        widget.setCurrentIndex(nxt)
+        self._index.invalidate("page_switch")
+        self._request_frame()
+        page = pages(document, container)[nxt]
+        title = page_title(document, page.id) or page.object_name
+        sentence = "Showing page %d of %d: %s" % (nxt + 1, count, title)
+        start = start_index(document, container)
+        if start is not None and start != nxt:
+            sentence += " \u00b7 the file still starts on page %d" % (start + 1)
+        self._host.narrate(sentence)
 
     def _reapply_pages(self, changeset: ChangeSet) -> None:
         for node_id, _kind, name in changeset.property_dirty:
@@ -931,6 +1180,34 @@ class CanvasController:
         for port in ports:
             viewport.update(port)
 
+    def _shown_for_frame(self) -> Dict[NodeId, int]:
+        """The page chip follows the live MDI window, which Qt activates last."""
+        shown = dict(self._shown_page)
+        for area_id in self._mdi_areas():
+            widget = self._realizer.widget_for(area_id)
+            if widget is None or not isinstance(widget, QMdiArea):
+                continue
+            windows = list(widget.subWindowList())
+            active = widget.activeSubWindow()
+            if active is None:
+                continue
+            try:
+                shown[area_id] = windows.index(active)
+            except ValueError:
+                continue
+        return shown
+
+    def _mdi_areas(self) -> Tuple[NodeId, ...]:
+        """MDI areas in the form. O(form) once per document revision, O(1) per frame."""
+        document = self._session.document
+        revision = document.revision
+        cached = self._mdi_cache
+        if cached is not None and cached[0] is document and cached[1] == revision:
+            return cached[2]
+        found = tuple(node.id for node in document.iter_widgets() if node.class_name == "QMdiArea")
+        self._mdi_cache = (document, revision, found)
+        return found
+
     def _rebuild(self, static: bool) -> None:
         view = self._stage.view_map()
         if static or self._static is None:
@@ -953,7 +1230,7 @@ class CanvasController:
                 visible_scene_rect(self._view),
                 self._stage.dock_rect(),
                 self._preview_target(),
-                dict(self._shown_page),
+                self._shown_for_frame(),
                 knobs=self._knob_set(self._static, selection),
                 readout=self._readout,
             ),
@@ -1002,6 +1279,46 @@ class CanvasController:
         self._place_and_report()
         self._reapply_pages(changeset)
         self._feed(DocumentChanged(changeset.removed, changeset.replaced))
+        self._open_inserted_page(changeset)
+
+    def _open_inserted_page(self, changeset: ChangeSet) -> None:
+        """Insert page shows the new page and opens the title editor the container reads."""
+        if changeset.label != "Insert page":
+            return
+        current = self._session.selection.state.current
+        if current is None:
+            return
+        self._show_inserted(current)
+        if page_title_target(self._session.document, current) is None:
+            return
+        self._pending_page = current
+        self._pending_edit = None
+        QTimer.singleShot(0, self._open_edit_now)
+
+    def _show_inserted(self, page_id: NodeId) -> None:
+        """Keep the new page on screen. A later realize must not snap back to the old one."""
+        document = self._session.document
+        container = innermost_container(document, page_id)
+        if container is None:
+            return
+        index = next((item for item, page in enumerate(pages(document, container)) if page.id == page_id), None)
+        if index is None:
+            return
+        self._shown_page[container] = index
+        widget = self._realizer.widget_for(container)
+        if isinstance(widget, QWizard):
+            wizard = cast(QWizard, widget)
+            ids = list(wizard.pageIds())
+            if index < len(ids):
+                wizard.setCurrentId(ids[index])
+        elif isinstance(widget, QMdiArea):
+            area = cast(QMdiArea, widget)
+            windows = area.subWindowList()
+            if index < len(windows):
+                area.setActiveSubWindow(windows[index])
+        elif widget is not None and hasattr(widget, "setCurrentIndex"):
+            widget.setCurrentIndex(index)
+        self._index.invalidate("page_switch")
 
     def _on_selection(self, change: SelectionChange) -> None:
         self._announce_selection(change.after)

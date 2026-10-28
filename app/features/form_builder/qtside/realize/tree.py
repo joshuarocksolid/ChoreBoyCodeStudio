@@ -13,14 +13,17 @@ tree is always empty (``slots.py``).
 from __future__ import annotations
 
 import importlib
+from functools import partial
 from typing import Dict, List, Optional, Set, Tuple, Union
 
 from app.qt import QtGui, QtWidgets
 from app.qt.QtCore import QObject, Qt
 from app.qt.QtGui import QAction, QActionGroup, QIcon
 from app.qt.QtWidgets import (
+    QMdiSubWindow,
     QComboBox,
     QDockWidget,
+    QFrame,
     QGridLayout,
     QLayout,
     QListWidget,
@@ -61,6 +64,7 @@ from app.features.form_builder.engine.ui4.nodes import (
 from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.forced import CANVAS_OVERRIDES
+from app.features.form_builder.qtside.realize.stand_in import StandInWidget, stand_in_name
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
@@ -161,6 +165,9 @@ class _Structure(_LayoutSlots):
 
     def _widget_type(self, class_name: str) -> type:
         short = self._qt_class_name(class_name)
+        # Designer stores a line as class ``Line`` and uic builds a QFrame.
+        if short == "Line":
+            return QFrame
         cls = getattr(QtWidgets, short, None)
         if cls is None:
             cls = getattr(QtGui, short, None)
@@ -170,7 +177,12 @@ class _Structure(_LayoutSlots):
         return cls
 
     def _construct(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:
-        cls = self._widget_type(node.class_name)
+        friendly = stand_in_name(self._qt_class_name(node.class_name))
+        if friendly is not None:
+            # Never build these in the editor: no GL context, no QML engine (UX-CONT-017).
+            cls: type = partial(StandInWidget, friendly=friendly)  # type: ignore[assignment]
+        else:
+            cls = self._widget_type(node.class_name)
         try:
             widget = cls(parent)
         except (TypeError, RuntimeError) as exc:
@@ -178,6 +190,12 @@ class _Structure(_LayoutSlots):
             widget = QWidget(parent)
         self._tag(widget, node.id)
         widget.setObjectName(node.object_name)
+        if node.class_name == "Line" and isinstance(widget, QFrame):
+            widget.setProperty("_cbcs_line", True)
+            shape = getattr(getattr(QFrame, "Shape", QFrame), "HLine")
+            shadow = getattr(getattr(QFrame, "Shadow", QFrame), "Sunken")
+            widget.setFrameShape(shape)
+            widget.setFrameShadow(shadow)
         widget.setFocusPolicy(Qt.NoFocus)
         widget.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         if isinstance(widget, QMenuBar):
@@ -189,6 +207,12 @@ class _Structure(_LayoutSlots):
         self._fresh.add(node.id)
         is_root = parent is None and self._root is None
         self._apply_node_properties(node, widget, is_root=is_root or widget is self._root)
+        if isinstance(widget, QWizard) and parent is not None:
+            # A wizard is a dialog. Inside a form it has to be an ordinary child
+            # or the canvas never sees it (UX-CONT-013).
+            widget.setWindowFlag(Qt.Window, False)
+            widget.setParent(parent)
+            widget.setVisible(True)
         if parent is not None and parent.isVisible() and not isinstance(widget, QMenu):
             # Qt leaves a child hidden when it is created after its parent is shown.
             widget.show()
@@ -650,7 +674,14 @@ class _Structure(_LayoutSlots):
     def _apply_late(self, node: WidgetNode, widget: QWidget) -> None:
         current = node.prop("currentIndex")
         if current is not None and hasattr(widget, "setCurrentIndex"):
-            apply_entry(widget, current, is_root=False, resolve_path=self._resolve_path, problems=self._problems)
+            apply_entry(
+                widget,
+                current,
+                is_root=False,
+                resolve_path=self._resolve_path,
+                problems=self._problems,
+                refusals=self._refusals,
+            )
         sizes = node.prop("cbcsSplitterSizes")
         if sizes is not None and isinstance(widget, QSplitter):
             values = splitter_sizes(sizes.value)
@@ -837,9 +868,14 @@ class _Structure(_LayoutSlots):
         if isinstance(widget, QMdiArea):
             for sub in list(widget.subWindowList()):
                 inner = sub.widget()
-                self._park_page(inner)
-                widget.removeSubWindow(sub)
-                delete_now(sub)
+                if isinstance(inner, QWidget) and wrapper_is_valid(inner):
+                    self._retire_subwindow(widget, sub, inner)
+                    self._park_page(inner)
+                elif wrapper_is_valid(sub):
+                    widget.removeSubWindow(sub)
+                    sub.setParent(None)
+                    sub.hide()
+                    self._retired_windows.append(sub)
             return
         # Pages come off the end so the current page changes only once, and
         # they stay parented: the container takes them back in the same window.
@@ -936,9 +972,12 @@ class _Structure(_LayoutSlots):
             widget.setParent(None)
         elif isinstance(parent, QMdiArea):
             sub = self._mdi.pop(_node_id(widget), None)
-            if sub is not None:
-                parent.removeSubWindow(sub)
-                delete_now(sub)
+            if sub is not None and wrapper_is_valid(sub):
+                self._retire_subwindow(parent, sub, widget)
+                return
+        elif isinstance(parent, QMdiSubWindow):
+            self._retire_subwindow(parent.mdiArea(), parent, widget)
+            return
         else:
             host = parent
             # A page's parentWidget() is the container's internal stack, frame
@@ -1363,11 +1402,35 @@ class _Structure(_LayoutSlots):
                 found.setdefault(action.objectName(), action)
         return found
 
-    def _clear_mdi(self, area: QMdiArea) -> None:
-        for sub in list(area.subWindowList()):
+    def _retire_subwindow(self, area: Optional[QMdiArea], sub: QWidget, widget: QWidget) -> None:
+        """Take ``sub`` off ``area`` without deleting the page it was showing."""
+        if hasattr(sub, "setWidget"):
+            sub.setWidget(None)
+        widget.setParent(self._nursery())
+        if area is not None and wrapper_is_valid(area):
             area.removeSubWindow(sub)
-            delete_now(sub)
-        self._mdi = {key: value for key, value in self._mdi.items() if value.parent() is not None}
+        sub.setParent(None)
+        sub.hide()
+        self._retired_windows.append(sub)
+
+    def _clear_mdi(self, area: QMdiArea) -> None:
+        """Drop the subwindows. The page widgets stay alive under the nursery.
+
+        Deleting a subwindow deletes the widget it still holds. The next fill
+        would then use a freed wrapper and disposing the form crashes.
+        """
+        for sub in list(area.subWindowList()):
+            if not wrapper_is_valid(sub):
+                continue
+            inner = sub.widget() if hasattr(sub, "widget") else None
+            if isinstance(inner, QWidget) and wrapper_is_valid(inner):
+                self._retire_subwindow(area, sub, inner)
+            else:
+                area.removeSubWindow(sub)
+                sub.setParent(None)
+                sub.hide()
+                self._retired_windows.append(sub)
+        self._mdi = {}
 
     def _order_key(self, node_id: NodeId) -> Tuple[int, ...]:
         doc = self._session.document
@@ -1387,6 +1450,16 @@ class _Structure(_LayoutSlots):
     def _tag(self, obj: object, node_id: NodeId) -> None:
         obj.setProperty(NODE_ID_PROPERTY, int(node_id))  # type: ignore[attr-defined]
 
+    def _apply_entry(self, obj: object, entry: object, is_root: bool) -> bool:
+        return apply_entry(
+            obj,
+            entry,  # type: ignore[arg-type]
+            is_root=is_root,
+            resolve_path=self._resolve_path,
+            problems=self._problems,
+            refusals=self._refusals,
+        )
+
     def _apply_node_properties(self, node: object, obj: object, *, is_root: bool) -> None:
         entries = list(node.properties())  # type: ignore[attr-defined]
         deferred = ordered_layout_metrics(entries) if isinstance(node, LayoutNode) else ()
@@ -1394,10 +1467,10 @@ class _Structure(_LayoutSlots):
         for entry in entries:
             if entry.name in skip:
                 continue
-            if apply_entry(obj, entry, is_root=is_root, resolve_path=self._resolve_path, problems=self._problems):
+            if self._apply_entry(obj, entry, is_root):
                 self._patched += 1
         for entry in deferred:
-            if apply_entry(obj, entry, is_root=is_root, resolve_path=self._resolve_path, problems=self._problems):
+            if self._apply_entry(obj, entry, is_root):
                 self._patched += 1
 
     def _apply_stretches(self, node: LayoutNode, qlayout: QLayout) -> None:
@@ -1567,4 +1640,8 @@ def _reparent(widget: QWidget, parent: QWidget) -> None:
     if isinstance(widget, QMenu):
         widget.setParent(parent, widget.windowFlags() | Qt.Popup)
         return
+    if isinstance(widget, QWizard):
+        widget.setWindowFlag(Qt.Window, False)
     widget.setParent(parent)
+    if isinstance(widget, QWizard) and parent.isVisible():
+        widget.show()

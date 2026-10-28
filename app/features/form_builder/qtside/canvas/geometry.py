@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import weakref
 from typing import Dict, List, Mapping, Optional, Sequence, Set, Tuple
 
-from app.qt.QtCore import QEvent, QRect, Qt
+from app.qt.QtCore import QEvent, QObject, QRect, Qt
 from app.qt.QtWidgets import (
     QAbstractButton,
     QApplication,
     QDockWidget,
     QGridLayout,
     QGroupBox,
+    QScrollArea,
     QSplitter,
     QTabWidget,
     QToolBox,
@@ -63,6 +65,18 @@ class LiveGeometrySource:
         self._realizer = realizer
         # Parent form origins, valid for one retouch only (geometry is settled).
         self._origins: Optional[Dict[int, Tuple[QWidget, Tuple[int, int]]]] = None
+        # Indexed scroll areas. A scoped refresh rewalks one whose contents
+        # rect, visibility or scroll offset moved while its outer rect did not.
+        self._scroll_ids: Set[NodeId] = set()
+        self._scroll_sig: Dict[NodeId, Tuple[object, ...]] = {}
+        # Node id -> the scroll area widget its watch sits on. Identity, not id():
+        # a rebuilt widget can reuse a dead wrapper's id().
+        self._armed: Dict[NodeId, QWidget] = {}
+        self._index: Optional[HitIndex] = None
+
+    def bind_index(self, index: HitIndex) -> None:
+        """The index a scrollbar range change invalidates. O(1)."""
+        self._index = index
 
     def settle(self) -> None:
         root = self._realizer.root_widget
@@ -89,6 +103,10 @@ class LiveGeometrySource:
         holder: Dict[NodeId, NodeId] = {}
         if root_node.layout is not None:
             self._layout_tree(root_node.layout, root_node.id, 0, 0, holder, out)
+        scrolls: Set[NodeId] = set()
+        if root_node.class_name == "QScrollArea":
+            scrolls.add(root_node.id)
+            self._remember_scroll(root_node.id)
         stack: List[Tuple[QWidget, int, int, NodeId]] = [(root, 0, 0, root_node.id)]
         while stack:
             parent, px, py, owner = stack.pop()
@@ -108,6 +126,9 @@ class LiveGeometrySource:
                     continue
                 rect = Rect(x, y, child.width(), child.height())
                 out.append(GeoEntry(node.id, "widget", rect, holder.get(node.id, owner), visible, z))
+                if node.class_name == "QScrollArea":
+                    scrolls.add(node.id)
+                    self._remember_scroll(node.id)
                 if visible:
                     self._titles(child, document, x, y, node.id, out)
                 if not visible:
@@ -117,7 +138,74 @@ class LiveGeometrySource:
                 if node.layout is not None or node.child_widgets:
                     found.append((child, x, y, node.id))
             stack.extend(reversed(found))
+        self._scroll_ids = scrolls
         return out
+
+    def _remember_scroll(self, area_id: NodeId) -> None:
+        """Arm the bars and store the contents signature. Called from the walk, so it adds no second pass."""
+        self._arm_scroll(area_id)
+        signature = self._scroll_signature(area_id)
+        if signature is not None:
+            self._scroll_sig[area_id] = signature
+
+    def _scroll_drift(self) -> Set[NodeId]:
+        """Scroll areas whose contents moved while the scoped refresh was not looking. O(scroll areas)."""
+        drifted: Set[NodeId] = set()
+        for area_id in self._scroll_ids:
+            self._arm_scroll(area_id)
+            signature = self._scroll_signature(area_id)
+            if signature is None or signature == self._scroll_sig.get(area_id):
+                continue
+            self._scroll_sig[area_id] = signature
+            drifted.add(area_id)
+        return drifted
+
+    def _scroll_signature(self, area_id: NodeId) -> Optional[Tuple[object, ...]]:
+        widget = self._realizer.widget_for(area_id)
+        if widget is None or not isinstance(widget, QScrollArea):
+            return None
+        contents = widget.widget()
+        if contents is None:
+            return ("empty",)
+        horizontal = widget.horizontalScrollBar()
+        vertical = widget.verticalScrollBar()
+        viewport = widget.viewport()
+        return (
+            contents.x(),
+            contents.y(),
+            contents.width(),
+            contents.height(),
+            contents.isVisible(),
+            viewport.width(),
+            viewport.height(),
+            horizontal.value(),
+            vertical.value(),
+            horizontal.maximum(),
+            vertical.maximum(),
+        )
+
+    def _arm_scroll(self, area_id: NodeId) -> None:
+        """Watch the viewport and contents, so a later layout pass that shows a bar
+        or moves the contents with no ChangeSet still stales the index. The watch
+        is a child of the scroll area: it dies with the widget, so a re-realize
+        leaves nothing connected. O(1)."""
+        widget = self._realizer.widget_for(area_id)
+        if widget is None or not isinstance(widget, QScrollArea):
+            return
+        contents = widget.widget()
+        if self._armed.get(area_id) is widget and (contents is None or contents.property(_WATCHED) == area_id):
+            return
+        self._armed[area_id] = widget
+        watch = _ScrollWatch(widget, area_id, self)
+        widget.viewport().installEventFilter(watch)
+        if contents is not None:
+            contents.setProperty(_WATCHED, area_id)
+            contents.installEventFilter(watch)
+
+    def _scroll_moved(self, area_id: NodeId) -> None:
+        index = self._index
+        if index is not None:
+            index.invalidate("changeset", RefreshScope(rewalk=frozenset((area_id,))))
 
     def _activate_empty_layouts(self, document: UiDocument) -> None:
         """O(layouts). A layout the realizer just rebuilt reads an empty geometry
@@ -189,6 +277,8 @@ class LiveGeometrySource:
                 built.setdefault((entry.node, entry.kind), index)
             located = built
         queue: List[NodeId] = list(dict.fromkeys(list(scope.dirty) + list(scope.rewalk)))
+        drifted = self._scroll_drift()
+        queue.extend(drifted)
         seen: Dict[NodeId, bool] = {}
         expanded: Set[NodeId] = set()
         expand_ids: Set[NodeId] = set()
@@ -241,7 +331,7 @@ class LiveGeometrySource:
             container = isinstance(found, WidgetNode) and bool(found.child_widgets or found.layout is not None)
             # An edit on a container (font, style sheet, margins, a page title)
             # can move its descendants while its own rect stays. O(subtree).
-            walk = node_id in scope.rewalk or (
+            walk = node_id in scope.rewalk or node_id in drifted or (
                 container and (node_id in scope.dirty or old.visible != visible or old.rect != rect)
             )
             if walk:
@@ -275,6 +365,9 @@ class LiveGeometrySource:
                             queue.append(ancestor)
         self._origins = None
         self._remeasure_layouts(document, root, previous, replacements)
+        if self._scroll_drift() - drifted:
+            # The remeasure's layout pass moved a scroll area's contents after it was read.
+            return None
         if not replacements and not extra and not drop:
             return IndexPatch(visits=visits, changed=())
         return IndexPatch(
@@ -382,6 +475,10 @@ class LiveGeometrySource:
                     continue
                 rect = Rect(cx, cy, child.width(), child.height())
                 out.append(GeoEntry(tagged.id, "widget", rect, holder.get(tagged.id, owner), visible, z))
+                if tagged.class_name == "QScrollArea":
+                    # A page switch can show a scroll area the full walk never saw.
+                    self._scroll_ids.add(tagged.id)
+                    self._remember_scroll(tagged.id)
                 if not visible:
                     continue
                 self._titles(child, document, cx, cy, tagged.id, out)
@@ -548,6 +645,28 @@ def _title_band(widget: QWidget) -> Optional[Rect]:
             return None
         return Rect(0, 0, max(widget.width(), 1), top)
     return None
+
+
+_WATCHED = "_cbcsFbHitWatch"
+_WATCH_EVENTS = frozenset(
+    enum_value(getattr(QEvent.Type, name)) for name in ("Resize", "Move", "Show", "Hide")
+)
+
+
+class _ScrollWatch(QObject):
+    """Event filter on one scroll area's viewport and contents widget."""
+
+    def __init__(self, area: QWidget, area_id: NodeId, source: "LiveGeometrySource") -> None:
+        super().__init__(area)
+        self._area_id = area_id
+        self._source = weakref.ref(source)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802 - Qt override
+        if enum_value(event.type()) in _WATCH_EVENTS:
+            source = self._source()
+            if source is not None:
+                source._scroll_moved(self._area_id)
+        return False
 
 
 class HitIndexInvalidator:

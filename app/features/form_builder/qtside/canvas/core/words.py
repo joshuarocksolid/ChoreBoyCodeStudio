@@ -65,10 +65,17 @@ def no_layout_text() -> str:
     return "No layout"
 
 
+# A page container's root holds pages, not a layout. "No layout" would be wrong.
+_PAGE_ROOTS = frozenset({"QWizard", "QTabWidget", "QToolBox", "QStackedWidget", "QMdiArea"})
+
+
 def page_chip_label(document: UiDocument, fallback_name: str) -> str:
     """``Name · Vertical layout`` above the page."""
-    name = document.root.object_name or fallback_name or "Form"
-    layout = document.root.layout
+    root = document.root
+    name = root.object_name or fallback_name or "Form"
+    if isinstance(root, WidgetNode) and root.class_name in _PAGE_ROOTS and root.layout is None:
+        return name
+    layout = root.layout
     if isinstance(layout, LayoutNode) and layout.class_name:
         phrase = _layout_words(layout.class_name)[1]
     else:

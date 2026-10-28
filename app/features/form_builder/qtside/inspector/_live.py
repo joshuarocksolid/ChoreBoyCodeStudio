@@ -108,6 +108,7 @@ _SPACER = LiveClass(
 _CACHE: Dict[str, LiveClass] = {}
 # Class name -> the CANVAS_OVERRIDES values of an unmodified instance.
 _PRISTINE: Dict[str, Dict[str, Optional[Value]]] = {}
+_FLAG_DEFAULTS: Dict[str, Dict[str, Optional[Value]]] = {}
 
 def live_classes(
     realizer: Realizer,
@@ -233,13 +234,14 @@ def _methods(meta: QMetaObject) -> Tuple[Tuple[str, ...], Tuple[str, ...]]:
 
 def _stamp_values(obj: object, shape: LiveClass) -> LiveClass:
     pristine = _pristine_values(obj, shape)
+    defaults = _flag_defaults(obj, shape)
     stamped = []
     for prop in shape.properties:
         if prop.name in pristine:
             value = pristine[prop.name]
         else:
             value = _read_value(obj, prop)
-        stamped.append(dataclasses.replace(prop, value=value))
+        stamped.append(dataclasses.replace(prop, value=value, default=defaults.get(prop.name)))
     return LiveClass(shape.chain, tuple(stamped), shape.signals, shape.slots)
 
 
@@ -265,6 +267,40 @@ def _pristine_values(obj: object, shape: LiveClass) -> Dict[str, Optional[Value]
     if key:
         _PRISTINE[key] = found
     return found
+
+
+def _flag_defaults(obj: object, shape: LiveClass) -> Dict[str, Optional[Value]]:
+    """Flags properties on a fresh widget, once per class. The committed class
+    table may not carry them, and a flag-bit row needs the class default to
+    show an unwritten bit truthfully and to reset one bit."""
+    if not isinstance(obj, QWidget):
+        return {}
+    key = _text(obj.metaObject().className())
+    cached = _FLAG_DEFAULTS.get(key)
+    if cached is not None:
+        return cached
+    found: Dict[str, Optional[Value]] = {}
+    flags = [prop for prop in shape.properties if prop.enum is not None and prop.enum.is_flag]
+    if flags:
+        try:
+            fresh = type(obj)()
+        except (TypeError, RuntimeError):
+            fresh = None
+        if fresh is not None:
+            for prop in flags:
+                found[prop.name] = _scoped(_read_value(fresh, prop), prop)
+            delete_now(fresh)
+    if key:
+        _FLAG_DEFAULTS[key] = found
+    return found
+
+
+def _scoped(value: Optional[Value], prop: LiveProperty) -> Optional[Value]:
+    """``DockWidgetClosable`` -> ``QDockWidget::DockWidgetClosable``, as a .ui file spells it."""
+    if not isinstance(value, SetValue) or prop.enum is None or not prop.enum.scope:
+        return value
+    names = [piece.strip() for piece in value.text.split("|") if piece.strip()]
+    return SetValue("|".join(name if "::" in name else "%s::%s" % (prop.enum.scope, name) for name in names))
 
 
 def _read_value(obj: object, prop: LiveProperty) -> Optional[Value]:

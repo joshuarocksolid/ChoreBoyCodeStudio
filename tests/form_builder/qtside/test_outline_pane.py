@@ -425,7 +425,7 @@ def test_page_rows_use_the_title(qapp: QApplication) -> None:
     with _opened(qapp, _tabs(), "page-rows") as (pane, _session):
         page = _find_item(pane.tree, "pageA")
         assert _find_item(pane.tree, "pageB")
-        assert page.data(0, int(getattr(Qt, "UserRole")) + 1) == "Page 1 \u00b7 First"
+        assert page.data(0, int(getattr(Qt, "UserRole")) + 1) == "Tab 1 \u00b7 First"
 
 
 def test_alt_down_reorders_a_tab_page(qapp: QApplication) -> None:
@@ -437,8 +437,8 @@ def test_alt_down_reorders_a_tab_page(qapp: QApplication) -> None:
         assert _pages(session) == ("pageB", "pageA")
         assert _current_index(session) == 1
         caption = int(getattr(Qt, "UserRole")) + 1
-        assert _find_item(pane.tree, "pageA").data(0, caption) == "Page 2 \u00b7 First"
-        assert _find_item(pane.tree, "pageB").data(0, caption) == "Page 1 \u00b7 Second"
+        assert _find_item(pane.tree, "pageA").data(0, caption) == "Tab 2 \u00b7 First"
+        assert _find_item(pane.tree, "pageB").data(0, caption) == "Tab 1 \u00b7 Second"
 
 
 def test_tab_with_no_current_row_selects_the_first_row(qapp: QApplication) -> None:
@@ -1140,3 +1140,16 @@ def test_random_edits_undo_and_redo_keep_the_outline_equal_to_the_form(qapp: QAp
                 if item is None or not item.childCount() or node in revealed:
                     continue
                 assert item.isExpanded() == was, "seed %d step %d node %d" % (seed, step, node)
+
+
+def test_the_confirm_button_names_what_this_ask_deletes(qapp: QApplication) -> None:
+    """A page ask says "Delete page"; the next widget ask, from any caller, says "Delete" again."""
+    with _opened(qapp, _email(), "delete-label") as (pane, session):
+        node = _show(pane, session, "email")
+        pane.show_delete("Delete page “Alpha” and the 2 widgets on it?", (node,))
+        qapp.processEvents()
+        delete = pane.findChild(QPushButton, "formBuilder.outlineDelete")
+        assert isinstance(delete, QPushButton) and delete.text() == "Delete page"
+        pane.show_delete(session.refs.ask_sentence(session.document, "email", ()), (node,))
+        qapp.processEvents()
+        assert delete.text() == "Delete"

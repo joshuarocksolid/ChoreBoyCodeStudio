@@ -21,6 +21,7 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
+from app.features.form_builder.engine.commands.drop_plan import flagged
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import DropPayload, PayloadKind
@@ -53,6 +54,7 @@ from app.features.form_builder.qtside.canvas.core.palette import (
     MIME_FRAGMENT,
     MIME_INSERT,
     MIME_NODE,
+    fragment_for,
     tile_for,
 )
 from app.features.form_builder.qtside.canvas.core.place import payload_for
@@ -116,7 +118,8 @@ def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload,
         key = bytes(mime.data(MIME_INSERT)).decode("utf-8")
         tile = tile_for(key)
         kind = tile[1] if tile is not None else "widget"
-        return DropPayload(kind), key, None
+        # A dock shows the side bands and a wizard page looks for a wizard (UX-CONT-012, UX-CAT-014).
+        return flagged(DropPayload(kind), fragment_for(key)), key, None
     if mime.hasFormat(MIME_NODE):
         raw = bytes(mime.data(MIME_NODE)).decode("utf-8")
         ids = tuple(NodeId(int(part)) for part in raw.split(",") if part)
@@ -124,7 +127,7 @@ def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload,
     fragment = _fragment_mime(mime)
     if fragment is None:
         return None
-    return DropPayload(_fragment_kind(fragment)), "", fragment
+    return flagged(DropPayload(_fragment_kind(fragment)), fragment), "", fragment
 
 
 def _fragment_mime(mime: object) -> Optional[Fragment]:
@@ -208,7 +211,14 @@ class FormCanvas(QGraphicsView):
         self._hit_sub = session.log.subscribe(
             HitIndexInvalidator(self._index).on_changeset, priority=PRIORITY_HIT_INDEX
         )
-        self._stage = Stage(self, session, realizer, self._index.invalidate, self._index.set_screen_factor)
+        self._stage = Stage(
+            self,
+            session,
+            realizer,
+            self._index.invalidate,
+            self._index.set_screen_factor,
+            self._position_chrome,
+        )
         self._stage.set_banner_push(PAGE_TITLE_HEIGHT)
         self._build_chrome()
         self._controller = CanvasController(self, session, realizer, self._index, self._stage, host)
@@ -325,6 +335,15 @@ class FormCanvas(QGraphicsView):
         )
         return QRect(top_left.x(), top_left.y(), bottom_right.x() - top_left.x(), bottom_right.y() - top_left.y())
 
+    def tab_viewport_rect(self, node: NodeId) -> Optional[QRect]:
+        """The page's tab or toolbox header, in viewport coordinates."""
+        self._index.ensure_fresh()
+        view = self._stage.view_map()
+        for entry in self._index.title_entries():
+            if entry.kind == "page_tab" and entry.node == node:
+                return self._viewport_of_canvas(view.to_canvas(entry.rect))
+        return None
+
     def overlay_block_rects(self) -> Tuple[QRect, ...]:
         """Chips and captions in viewport coordinates. The toast stays off them."""
         rects: List[QRect] = []
@@ -402,6 +421,14 @@ class FormCanvas(QGraphicsView):
 
     def preview_sentence(self) -> str:
         return self._controller.preview_sentence()
+
+    def show_container_page(self, container: NodeId, delta: int) -> None:
+        """Show the next or previous page. Canvas only. The file does not change."""
+        self._controller.show_page_step(container, delta)
+
+    def arrange_windows(self, container: NodeId, how: str) -> None:
+        """Tile or cascade the windows of an MDI area. Not saved."""
+        self._controller.arrange_windows(container, how)
 
     def overlay(self) -> OverlayFrame:
         return self._controller.frame
@@ -518,8 +545,9 @@ class FormCanvas(QGraphicsView):
             preview.paint_cutoff(painter)
             preview.paint_wide_selection(painter)
         frame = controller.frame
-        paint_frame(painter, frame, self._palette, rect)
+        # The ghost sits under the chips, so a move drag does not wash out band labels.
         controller.paint_ghost(painter)
+        paint_frame(painter, frame, self._palette, rect)
 
     def sync_docked_chips(self, frame: OverlayFrame) -> None:
         """Dock chips when the frame is built, never from inside paint."""

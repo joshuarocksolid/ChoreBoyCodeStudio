@@ -20,6 +20,7 @@ Role = Literal[
     "gap",
     "gap_fill",
     "drop_fill",
+    "dock_band",
     "tab",
     "problem",
     "backdrop_faint",

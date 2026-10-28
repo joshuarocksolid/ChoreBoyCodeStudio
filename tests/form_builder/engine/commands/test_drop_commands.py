@@ -6,10 +6,10 @@ import pytest
 
 from app.features.form_builder.engine.commands.catalog import MoveNodes
 from app.features.form_builder.engine.commands.catalog_ext import default_registry
+from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
 from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
-    InsertPage,
     SwapFormRows,
     WrapWithNew,
 )

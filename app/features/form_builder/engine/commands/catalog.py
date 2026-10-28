@@ -381,13 +381,23 @@ class SetGeometry(_CommandBase):
 
 @dataclass(frozen=True)
 class MovePage(_CommandBase):
-    """Reorder one page and keep ``currentIndex`` on the same page."""
+    """Reorder one page and keep ``currentIndex`` on the same page.
+
+    Presses on the same container inside one second are one undo step (UX-CONT-005).
+    """
 
     command_type: ClassVar[str] = "move_page"
     _label_text: ClassVar[str] = "Move page"
     container: NodeId
     from_index: int
     to_index: int
+
+    def merge_key(self) -> Optional[Hashable]:
+        return ("move_page", int(self.container))
+
+    def merge_window_s(self) -> float:
+        """Menu and outline presses inside this window are one undo step."""
+        return 1.0
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
         planning.move_page(doc, ctx, self.container, self.from_index, self.to_index)
