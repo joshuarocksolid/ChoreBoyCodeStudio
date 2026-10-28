@@ -9,14 +9,15 @@ import pytest
 
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.ui4.values import DateValue
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.qtside.inspector.api import GroupId
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.canvas.core.frame import Chip
-from app.qt.QtCore import Qt
-from app.qt.QtGui import QKeySequence
+from app.qt.QtCore import QLocale, Qt
+from app.qt.QtGui import QAction, QKeySequence
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import (
     QApplication,
@@ -1117,30 +1118,200 @@ _ACTIONS = form(
 )
 
 
-def test_key_sequence_warns_when_another_action_uses_it() -> None:
-    with opened(_ACTIONS) as (session, realizer):
+def _record(row: QWidget, key: str, *mods: str) -> None:
+    record = _labeled(row, "Record")
+    record.click()
+    _events()
+    field = row.findChild(QLineEdit)
+    assert isinstance(field, QLineEdit)
+    field.setFocus()
+    QTest.qWait(40)
+    QTest.keyClick(field, _key(key), _mods(*mods) if mods else _mods())
+    QTest.qWait(1200)
+
+
+def test_key_sequence_warns_for_this_form_only() -> None:
+    stray = QWidget()
+    stray.setObjectName("ideWindow")
+    ide = QAction("IDE Print", stray)
+    ide.setObjectName("idePrint")
+    ide.setShortcut(QKeySequence("Ctrl+Alt+Z"))
+    stray.addAction(ide)
+    same = QAction("IDE Same", stray)
+    same.setObjectName("ideSame")
+    same.setShortcut(QKeySequence("Ctrl+Alt+P"))
+    stray.addAction(same)
+    try:
+        with opened(_ACTIONS) as (session, realizer):
+            window, pane = _pane(session, realizer)
+            try:
+                _select(session, pane, "keys")
+                row = _row(pane, "keySequence")
+                _record(row, "Key_Z", "Control", "Alt")
+                pane.flush()
+                _events()
+                row = _row(pane, "keySequence")
+                warning = row.findChild(QLabel, "formBuilder.rowWarning")
+                assert isinstance(warning, QLabel)
+                assert not warning.isVisible(), warning.text()
+                _record(row, "Key_P", "Control", "Alt")
+                pane.flush()
+                _events()
+                row = _row(pane, "keySequence")
+                warning = row.findChild(QLabel, "formBuilder.rowWarning")
+                field = row.findChild(QLineEdit)
+                shown = field.text() if isinstance(field, QLineEdit) else ""
+                assert isinstance(warning, QLabel), (shown, _xml(session))
+                assert warning.isVisible(), (warning.text(), shown, _xml(session))
+                assert warning.text() == "actionPrint already uses Ctrl+Alt+P."
+                assert "Ctrl+Alt+P" in _xml(session)
+            finally:
+                _close(window, pane)
+    finally:
+        stray.deleteLater()
+        _events()
+
+
+_COMBINED_FLAGS = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>200</height></rect></property>
+  <widget class="QLabel" name="caption">
+   <property name="text"><string>Name</string></property>
+   <property name="textInteractionFlags"><set>Qt::TextEditorInteraction</set></property>
+  </widget>
+""",
+)
+
+
+def test_flags_popover_hides_combined_enumerators() -> None:
+    with opened(_COMBINED_FLAGS) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
-            _select(session, pane, "keys")
-            row = _row(pane, "keySequence")
-            record = _labeled(row, "Record")
-            record.click()
+            _select(session, pane, "caption")
+            row = _row(pane, "textInteractionFlags")
+            summary = _summary(row)
+            assert "Text editor" in summary.text()
+            before = _xml(session)
+            summary.click()
             _events()
-            field = row.findChild(QLineEdit)
-            assert isinstance(field, QLineEdit)
-            field.setFocus()
-            QTest.qWait(40)
-            QTest.keyClick(field, _key("Key_P"), _mods("Control", "Alt"))
-            QTest.qWait(1200)
+            pop = _popover()
+            labels = [box.text() for box in pop.findChildren(QCheckBox)]
+            tips = [box.toolTip() for box in pop.findChildren(QCheckBox)]
+            assert "No interaction" not in labels
+            assert "Text editor" not in labels
+            assert "Text browser" not in labels
+            assert "NoTextInteraction" not in tips
+            assert "TextEditorInteraction" not in tips
+            assert "TextBrowserInteraction" not in tips
+            assert "Select with mouse" in labels
+            done = pop.findChild(QPushButton, "formBuilder.popoverDone")
+            assert isinstance(done, QPushButton)
+            done.click()
+            _events()
             pane.flush()
-            _events()
-            row = _row(pane, "keySequence")
-            warning = row.findChild(QLabel, "formBuilder.rowWarning")
-            field = row.findChild(QLineEdit)
-            shown = field.text() if isinstance(field, QLineEdit) else ""
-            assert isinstance(warning, QLabel), (shown, _xml(session))
-            assert warning.isVisible(), (warning.text(), shown, _xml(session))
-            assert warning.text() == "Print already uses Ctrl+Alt+P."
-            assert "Ctrl+Alt+P" in _xml(session)
+            assert "TextEditorInteraction" in _xml(session)
+            assert _xml(session) == before
         finally:
             _close(window, pane)
+
+
+def test_size_policy_help_is_a_caption() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "email")
+            _summary(_row(pane, "sizePolicy")).click()
+            _events()
+            pop = _popover()
+            captions = pop.findChildren(QLabel, "formBuilder.policyHelp")
+            combos = pop.findChildren(QComboBox)
+            assert len(captions) >= 2 and len(combos) >= 2
+            assert captions[0].text()
+            assert captions[1].text()
+            combos[0].setCurrentIndex(combos[0].findData("Fixed"))
+            _events()
+            assert captions[0].text() == "Exactly its size hint."
+            combos[1].setCurrentIndex(combos[1].findData("Expanding"))
+            _events()
+            assert captions[1].text() == "Takes all the room it can."
+        finally:
+            _close(window, pane)
+
+
+def test_unset_dates_locale_and_scene_rect_show_a_default() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "when")
+            date = _row(pane, "date").findChild(QLineEdit)
+            assert isinstance(date, QLineEdit)
+            assert "/" in date.text() and date.text()[-4:].isdigit()
+            assert date.property("fbState") == "unset"
+            _select(session, pane, "clock")
+            clock = _row(pane, "time").findChild(QLineEdit)
+            assert isinstance(clock, QLineEdit) and ":" in clock.text()
+            _select(session, pane, "stamp")
+            stamp = _row(pane, "dateTime").findChild(QLineEdit)
+            assert isinstance(stamp, QLineEdit)
+            assert "/" in stamp.text() and ":" in stamp.text()
+            _select(session, pane, "amount")
+            amount = _row(pane, "value").findChild(QDoubleSpinBox)
+            assert isinstance(amount, QDoubleSpinBox) and amount.text()
+            _select(session, pane, "email")
+            locale = _summary(_row(pane, "locale"))
+            assert "(" in locale.text()
+            assert locale.styleSheet()
+        finally:
+            _close(window, pane)
+    with opened(_FLOATS) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "view")
+            row = _row(pane, "sceneRect")
+            text = " ".join(box.text() for box in row.findChildren(QDoubleSpinBox))
+            assert any(ch.isdigit() for ch in text), text
+        finally:
+            _close(window, pane)
+
+
+def test_locale_down_enters_the_list_and_up_returns() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "email")
+            _summary(_row(pane, "locale")).click()
+            _events()
+            pop = _popover()
+            field = pop.findChild(QLineEdit)
+            listing = pop.findChild(QListWidget)
+            assert isinstance(field, QLineEdit) and isinstance(listing, QListWidget)
+            field.setFocus()
+            QTest.keyClick(field, _key("Key_Down"))
+            _events()
+            assert listing.hasFocus()
+            listing.blockSignals(True)
+            listing.setCurrentRow(0)
+            listing.blockSignals(False)
+            listing.setFocus()
+            QTest.keyClick(listing, _key("Key_Up"))
+            _events()
+            assert field.hasFocus()
+        finally:
+            _close(window, pane)
+
+
+def test_project_locale_ignores_a_german_system_locale() -> None:
+    from app.features.form_builder.qtside.inspector.editors.dates import _format, _parse
+    from app.features.form_builder.qtside.inspector.editors._number_box import format_real, parse_real
+
+    previous = QLocale()
+    QLocale.setDefault(QLocale("de_DE"))
+    try:
+        assert str(QLocale().decimalPoint()) == ","
+        assert format_real(12.5, 1, strip=False) == "12.5"
+        assert parse_real("12.5") == 12.5
+        assert _format("date", DateValue(2026, 12, 31)) == "12/31/2026"
+        assert _parse("date", "12/31/2026") == DateValue(2026, 12, 31)
+    finally:
+        QLocale.setDefault(previous)

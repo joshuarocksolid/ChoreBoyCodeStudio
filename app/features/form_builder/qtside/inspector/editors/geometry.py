@@ -35,7 +35,7 @@ from app.features.form_builder.qtside.inspector.editors._enum_words import POLIC
 from app.features.form_builder.qtside.inspector.editors._number_box import IntBox, RealBox, _SpinHooks
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
 from app.qt.QtCore import Qt
-from app.qt.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QWidget
+from app.qt.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 _PAIR = 300
 _INT_RANGE = (-2147483648, 2147483647)
@@ -285,6 +285,14 @@ class SizePolicyEditor:
         body = popover.body()
         horizontal = _policy_combo(popover, self._host.qt_name)
         vertical = _policy_combo(popover, self._host.qt_name)
+        help_h = _policy_caption(popover, self._host)
+        help_v = _policy_caption(popover, self._host)
+        horizontal.currentIndexChanged.connect(
+            lambda _i: help_h.setText(POLICY_HELP.get(_combo_policy(horizontal), ""))
+        )
+        vertical.currentIndexChanged.connect(
+            lambda _i: help_v.setText(POLICY_HELP.get(_combo_policy(vertical), ""))
+        )
         self._horizontal = horizontal
         self._vertical = vertical
         hooks_h = _SpinHooks(lambda _n: self._commit(), self._host.invalid, lambda: None, lambda: None)
@@ -296,12 +304,14 @@ class SizePolicyEditor:
         policy = self._current
         _select_policy(horizontal, policy.hsizetype)
         _select_policy(vertical, policy.vsizetype)
+        help_h.setText(POLICY_HELP.get(_combo_policy(horizontal), ""))
+        help_v.setText(POLICY_HELP.get(_combo_policy(vertical), ""))
         horizontal_share.show_number(policy.horstretch, can_reset=False)
         vertical_share.show_number(policy.verstretch, can_reset=False)
         horizontal.currentIndexChanged.connect(lambda _i: self._commit())
         vertical.currentIndexChanged.connect(lambda _i: self._commit())
-        body.addWidget(_labeled(popover, "Horizontal", horizontal))
-        body.addWidget(_labeled(popover, "Vertical", vertical))
+        body.addWidget(_policy_block(popover, "Horizontal", horizontal, help_h))
+        body.addWidget(_policy_block(popover, "Vertical", vertical, help_v))
         body.addWidget(_labeled(popover, "Horizontal share", horizontal_share))
         body.addWidget(_labeled(popover, "Vertical share", vertical_share))
         name_part(horizontal, self._host, "horizontal")
@@ -360,6 +370,24 @@ def _combo_policy(combo: Optional[QComboBox]) -> str:
     if isinstance(data, str) and data:
         return data
     return "Preferred"
+
+
+def _policy_caption(parent: QWidget, host: EditorHost) -> QLabel:
+    caption = QLabel(parent)
+    caption.setObjectName("formBuilder.policyHelp")
+    caption.setWordWrap(True)
+    caption.setStyleSheet("color: %s;" % host.chrome.faint)
+    return caption
+
+
+def _policy_block(parent: QWidget, title: str, combo: QWidget, caption: QLabel) -> QWidget:
+    block = QWidget(parent)
+    layout = QVBoxLayout(block)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(2)
+    layout.addWidget(_labeled(block, title, combo))
+    layout.addWidget(caption)
+    return block
 
 
 def _labeled(parent: QWidget, title: str, field: QWidget) -> QWidget:

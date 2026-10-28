@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+from app.features.form_builder.engine.ui4.nodes import ActionNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import CStringValue, StringValue, Value
 from app.features.form_builder.qtside.inspector.api import (
     KEY_SEQUENCE,
@@ -26,8 +27,8 @@ from app.features.form_builder.qtside.inspector.editors._editor_kit import (
 )
 from app.qt.qt_compat import enum_value
 from app.qt.QtCore import QEvent, QTimer, Qt
-from app.qt.QtGui import QAction, QColor, QKeySequence
-from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from app.qt.QtGui import QColor, QKeySequence
+from app.qt.QtWidgets import QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 _WINDOW_MS = 1000
 _MODIFIER_KEYS = ("Key_Shift", "Key_Control", "Key_Alt", "Key_Meta")
@@ -121,6 +122,7 @@ class KeyEditor:
         self._kick.setInterval(30)
         self._kick.timeout.connect(self._drain)
         self._pending: Optional[tuple] = None
+        self._clash_text: Optional[str] = None
         self.recording = False
         self._first = ""
         self._armed_text = ""
@@ -139,7 +141,8 @@ class KeyEditor:
         if not self.recording:
             self._edit.setText(text)
             self._edit.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else "None")
-        self._paint_clash(text)
+        if text != self._clash_text:
+            self._paint_clash(text)
 
     def is_dirty(self) -> bool:
         return self.recording or self._edit.text() != self._shown
@@ -218,10 +221,11 @@ class KeyEditor:
         stored = _stored(self._spec, self._previous, text)
         self._previous = stored
         self._shown = text
-        self._host.commit(stored)
         self._paint_clash(text)
+        self._host.commit(stored)
 
     def _paint_clash(self, text: str) -> None:
+        self._clash_text = text
         if not text:
             self._warning.hide()
             self._warning.clear()
@@ -260,49 +264,57 @@ def _mod(name: str) -> object:
     return getattr(getattr(Qt, "KeyboardModifier", Qt), name)
 
 
-def _action_shortcut(action: QAction) -> str:
-    shortcut = action.shortcut()
-    if shortcut is not None and not shortcut.isEmpty():
-        return _portable(shortcut)
-    # The realizer's string setter misses QAction.shortcut, so the text is
-    # kept as a dynamic property on the action object.
-    stored = action.property("shortcut")
-    if isinstance(stored, str) and stored.strip():
-        return _portable(QKeySequence.fromString(stored))
+def _same_keys(stored: str, target: str) -> bool:
+    return bool(stored) and _portable(QKeySequence.fromString(stored)) == target
+
+
+def _owner_of(node: object) -> str:
+    if isinstance(node, WidgetNode):
+        return str(node.object_name or "")
+    if isinstance(node, ActionNode):
+        return str(node.name or "")
     return ""
 
 
-def _actions_on(widget: QWidget) -> list:
-    found = []
-    actions = getattr(widget, "actions", None)
-    if callable(actions):
-        listed = actions()
-        if isinstance(listed, (list, tuple)):
-            found.extend(item for item in listed if isinstance(item, QAction))
-    for child in widget.children():
-        if isinstance(child, QAction) and child not in found:
-            found.append(child)
-    return found
+def _shortcut_text(node: object, name: str) -> str:
+    prop = getattr(node, "prop", None)
+    if not callable(prop):
+        return ""
+    entry = prop(name)
+    value = None if entry is None else entry.value
+    if isinstance(value, (StringValue, CStringValue)) and value.text:
+        return value.text
+    return ""
 
 
 def _clash(host: EditorHost, text: str) -> str:
-    app = QApplication.instance()
-    if app is None or not text:
+    """Another owner in this form's file. IDE actions and other forms are ignored.
+
+    ``form_shortcuts`` keeps the first owner. When that owner is the row being
+    edited, the rest of the file is checked once, here, not on each paint.
+    """
+    if not text:
         return ""
-    mine = owner_name(host)
     target = _portable(QKeySequence.fromString(text))
     if not target:
         return ""
-    for widget in app.allWidgets():
-        if not isinstance(widget, QWidget):
+    mine = owner_name(host)
+    owner = ""
+    for stored, name in host.form_shortcuts().items():
+        if _same_keys(stored, target):
+            owner = name
+            break
+    if owner and owner != mine:
+        return owner
+    if owner != mine:
+        return ""
+    for node in host.document().iter_preorder():
+        other = _owner_of(node)
+        if not other or other == mine:
             continue
-        for action in _actions_on(widget):
-            if mine and action.objectName() == mine:
-                continue
-            if _action_shortcut(action) != target:
-                continue
-            label = str(action.text() or "").replace("&", "").strip()
-            return label or str(action.objectName())
+        for prop_name in ("shortcut", "keySequence"):
+            if _same_keys(_shortcut_text(node, prop_name), target):
+                return other
     return ""
 
 

@@ -95,7 +95,7 @@ def _tab_to_text(kb: Kb, text: str, limit: int = 40) -> None:
 def _open_all(kb: Kb) -> None:
     header = kb.pane("formBuilder.inspector").findChild(QWidget, "formBuilder.group.all")
     kb.check(isinstance(header, QWidget), "All properties is in the inspector")
-    for _ in range(40):
+    for _ in range(200):
         if kb.focus_name() == "formBuilder.group.all":
             break
         kb.press("Key_Tab")
@@ -189,7 +189,7 @@ def test_k11_choices_and_numbers(tmp_path: Path, qapp: QApplication) -> None:
         _walk_to(kb, "nameLabel", "Key_Up")
         kb.press("Key_4", "Alt")
         _open_all(kb)
-        _tab_to_row(kb, "textInteractionFlags")
+        _tab_to_row(kb, "textInteractionFlags", 200)
         before_flags = kb.text()
         steps = len(kb.session.log.entries())
         kb.press("Key_Return")
@@ -200,7 +200,7 @@ def test_k11_choices_and_numbers(tmp_path: Path, qapp: QApplication) -> None:
         kb.pump(4)
         kb.check(kb.text() == before_flags, "Esc from the flags popover changes nothing")
         kb.check(len(kb.session.log.entries()) == steps, "Esc adds no undo step")
-        _tab_to_row(kb, "textInteractionFlags")
+        _tab_to_row(kb, "textInteractionFlags", 200)
         kb.press("Key_Return")
         _tab_to_text(kb, "Select with mouse")
         kb.press("Key_Space")
@@ -213,7 +213,7 @@ def test_k11_choices_and_numbers(tmp_path: Path, qapp: QApplication) -> None:
         _walk_to(kb, "whenEdit")
         kb.press("Key_4", "Alt")
         _open_all(kb)
-        _tab_to_row(kb, "date")
+        _tab_to_row(kb, "date", 200)
         kb.press("Key_A", "Control")
         kb.type("12/31/2026")
         kb.press("Key_Return")
@@ -229,7 +229,7 @@ def test_k11_choices_and_numbers(tmp_path: Path, qapp: QApplication) -> None:
         _walk_to(kb, "keysEdit")
         kb.press("Key_4", "Alt")
         _open_all(kb)
-        _tab_to_row(kb, "keySequence")
+        _tab_to_row(kb, "keySequence", 200)
         _tab_to_text(kb, "Record")
         kb.press("Key_Return")
         kb.check("Press the keys" in _focus_text(kb), "Record asks for the keys")

@@ -318,6 +318,20 @@ def _coerce(prop: LiveProperty, qt_prop: QMetaProperty, raw: object) -> Optional
         return _size_value(raw)
     if element == PointValue.ELEMENT:
         return _point_value(raw)
+    if element == PointFValue.ELEMENT:
+        return _pointf_value(raw)
+    if element == SizeFValue.ELEMENT:
+        return _sizef_value(raw)
+    if element == RectFValue.ELEMENT:
+        return _rectf_value(raw)
+    if element == DateValue.ELEMENT:
+        return _date_value(raw)
+    if element == TimeValue.ELEMENT:
+        return _time_value(raw)
+    if element == DateTimeValue.ELEMENT:
+        return _datetime_value(raw)
+    if element == LocaleValue.ELEMENT:
+        return _locale_value(raw)
     if element == ColorValue.ELEMENT:
         return _color_value(raw)
     if element == SizePolicyValue.ELEMENT:
@@ -401,6 +415,91 @@ def _point_value(raw: object) -> Optional[PointValue]:
     if x is None or y is None:
         return None
     return PointValue(x, y)
+
+
+def _call_float(raw: object, name: str) -> Optional[float]:
+    method = getattr(raw, name, None)
+    if not callable(method):
+        return None
+    found = method()
+    if isinstance(found, bool) or not isinstance(found, (int, float)):
+        return None
+    return float(found)
+
+
+def _pointf_value(raw: object) -> Optional[PointFValue]:
+    x = _call_float(raw, "x")
+    y = _call_float(raw, "y")
+    if x is None or y is None:
+        return None
+    return PointFValue(x, y)
+
+
+def _sizef_value(raw: object) -> Optional[SizeFValue]:
+    width = _call_float(raw, "width")
+    height = _call_float(raw, "height")
+    if width is None or height is None:
+        return None
+    return SizeFValue(width, height)
+
+
+def _rectf_value(raw: object) -> Optional[RectFValue]:
+    x = _call_float(raw, "x")
+    y = _call_float(raw, "y")
+    width = _call_float(raw, "width")
+    height = _call_float(raw, "height")
+    if x is None or y is None or width is None or height is None:
+        return None
+    return RectFValue(x, y, width, height)
+
+
+def _date_value(raw: object) -> Optional[DateValue]:
+    year = _call_int(raw, "year")
+    month = _call_int(raw, "month")
+    day = _call_int(raw, "day")
+    if year is None or month is None or day is None or year <= 0:
+        return None
+    return DateValue(year, month, day)
+
+
+def _time_value(raw: object) -> Optional[TimeValue]:
+    hour = _call_int(raw, "hour")
+    minute = _call_int(raw, "minute")
+    second = _call_int(raw, "second")
+    if hour is None or minute is None or second is None:
+        return None
+    return TimeValue(hour, minute, second)
+
+
+def _datetime_value(raw: object) -> Optional[DateTimeValue]:
+    date = getattr(raw, "date", None)
+    clock = getattr(raw, "time", None)
+    if not callable(date) or not callable(clock):
+        return None
+    day = _date_value(date())
+    when = _time_value(clock())
+    if not isinstance(day, DateValue) or not isinstance(when, TimeValue):
+        return None
+    return DateTimeValue(when.hour, when.minute, when.second, day.year, day.month, day.day)
+
+
+def _locale_value(raw: object) -> Optional[LocaleValue]:
+    language = getattr(raw, "language", None)
+    if not callable(language):
+        return None
+    lang = str(getattr(language(), "name", "") or "")
+    if not lang or lang in ("C", "AnyLanguage"):
+        return None
+    territory = None
+    for getter in ("territory", "country"):
+        method = getattr(raw, getter, None)
+        if callable(method):
+            territory = method()
+            break
+    country = str(getattr(territory, "name", "") or "")
+    if country in ("AnyCountry", "AnyTerritory"):
+        country = ""
+    return LocaleValue(lang, country)
 
 
 def _color_value(raw: object) -> Optional[ColorValue]:

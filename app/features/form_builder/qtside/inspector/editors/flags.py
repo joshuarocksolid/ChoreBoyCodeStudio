@@ -8,6 +8,7 @@ from app.features.form_builder.engine.ui4.values import SetValue
 from app.features.form_builder.qtside.inspector.api import (
     EditorHost,
     EditorKey,
+    EnumSpec,
     Mixed,
     Registrar,
     RowValue,
@@ -19,6 +20,7 @@ from app.features.form_builder.qtside.inspector.api import (
 from app.features.form_builder.qtside.inspector.editors._editor_kit import change_label, name_part, payload
 from app.features.form_builder.qtside.inspector.editors._enum_words import friendly, radio_groups
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
+from app.qt.qt_compat import enum_value
 from app.qt.QtCore import QTimer, Qt
 from app.qt.QtWidgets import QButtonGroup, QCheckBox, QRadioButton, QWidget
 
@@ -90,21 +92,26 @@ class FlagsEditor:
         self._checks = []
         self._groups = {}
         chosen = set(self._chosen)
-        groups = radio_groups(enum.type_name, enum.names)
+        visible = _single_bits(enum)
+        values = _bit_values(enum)
+        mask = 0
+        for name in chosen:
+            mask |= values.get(name, 0)
+        groups = radio_groups(enum.type_name, visible)
         grouped = {name for group in groups for name in group}
         body = popover.body()
         for index, group in enumerate(groups):
             buttons = QButtonGroup(popover)
             buttons.setExclusive(True)
             none = QRadioButton("None", popover)
-            none.setChecked(not any(name in chosen for name in group))
+            none.setChecked(not any(_bit_on(name, chosen, values, mask) for name in group))
             name_part(none, self._host, "none")
             none.clicked.connect(lambda _checked=False, group=group: self._radio(group, ""))
             buttons.addButton(none)
             body.addWidget(none)
             for name in group:
                 button = QRadioButton(friendly(enum.type_name, self._host.qt_name, name), popover)
-                button.setChecked(name in chosen)
+                button.setChecked(_bit_on(name, chosen, values, mask))
                 button.setToolTip(name)
                 name_part(button, self._host, friendly(enum.type_name, self._host.qt_name, name))
                 button.clicked.connect(lambda _checked=False, group=group, name=name: self._radio(group, name))
@@ -112,7 +119,7 @@ class FlagsEditor:
                 body.addWidget(button)
                 self._checks.append((name, button))
             self._groups["g%d" % index] = group
-        for name in enum.names:
+        for name in visible:
             if name in grouped:
                 continue
             box = _FlagCheck(
@@ -120,7 +127,7 @@ class FlagsEditor:
                 popover,
                 popover.done,
             )
-            box.setChecked(name in chosen)
+            box.setChecked(_bit_on(name, chosen, values, mask))
             box.setToolTip(name)
             name_part(box, self._host, friendly(enum.type_name, self._host.qt_name, name))
             box.toggled.connect(lambda checked, picked=name: self._mark(picked, bool(checked)))
@@ -164,6 +171,47 @@ class FlagsEditor:
 
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(SetValue.ELEMENT), FlagsEditor)
+
+
+def _bit_values(enum: EnumSpec) -> Dict[str, int]:
+    containers = []
+    for key in (enum.type_name, enum.scope):
+        found = getattr(Qt, key, None)
+        if found is not None and found not in containers:
+            containers.append(found)
+    values: Dict[str, int] = {}
+    for name in enum.names:
+        for container in containers:
+            item = getattr(container, name, None)
+            if item is None:
+                continue
+            try:
+                values[name] = int(enum_value(item))
+            except (TypeError, ValueError):
+                continue
+            break
+    return values
+
+
+def _single_bits(enum: EnumSpec) -> Tuple[str, ...]:
+    """Zero and combined enumerators stay out of the list. A written combined name still reads."""
+    values = _bit_values(enum)
+    if not values:
+        return tuple(enum.names)
+    shown = []
+    for name in enum.names:
+        value = values.get(name)
+        if value is None or value <= 0 or value & (value - 1):
+            continue
+        shown.append(name)
+    return tuple(shown)
+
+
+def _bit_on(name: str, chosen: set, values: Dict[str, int], mask: int) -> bool:
+    bit = values.get(name, 0)
+    if bit and (mask & bit) == bit:
+        return True
+    return name in chosen
 
 
 def _tails(value: RowValue) -> Tuple[str, ...]:

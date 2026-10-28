@@ -6,11 +6,18 @@ from typing import Optional
 
 from app.features.form_builder.engine.ui4.values import Value
 from app.features.form_builder.qtside.inspector.api import EditorHost, Mixed, RowValue, Unset, Written
-from app.qt.QtCore import QEvent, QObject, Qt
+from app.qt.QtCore import QEvent, QLocale, QObject, Qt
 from app.qt.QtGui import QColor, QKeySequence
 from app.qt.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget
 
 MINUS = "\u2212"
+
+
+def project_locale() -> QLocale:
+    """Numbers and dates use the project locale, en_US, not the machine's."""
+    language = getattr(QLocale, "Language")
+    territory = getattr(QLocale, "Territory", None) or getattr(QLocale, "Country")
+    return QLocale(getattr(language, "English"), getattr(territory, "UnitedStates"))
 
 # UX spec fb.warning swatches: light, dark, high-contrast light, high-contrast dark.
 _WARNING = ((217, 119, 6), (229, 161, 0), (122, 69, 0), (255, 215, 0))

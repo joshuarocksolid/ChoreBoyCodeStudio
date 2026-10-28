@@ -10,12 +10,12 @@ from typing import Callable, Optional, Union
 
 from app.features.form_builder.qtside.inspector.editors._editor_kit import (
     MINUS,
+    project_locale,
     qt_align,
     qt_key,
     qt_mod,
     yield_form_undo,
 )
-from app.qt.QtCore import QLocale
 from app.qt.QtGui import QValidator
 from app.qt.QtWidgets import QDoubleSpinBox, QLineEdit, QSpinBox, QWidget
 
@@ -57,7 +57,7 @@ def format_real(number: float, places: int, *, strip: bool) -> str:
         text = text.rstrip("0").rstrip(".")
     if text in ("", "-", "-0"):
         text = "0"
-    mark = str(QLocale().decimalPoint())
+    mark = str(project_locale().decimalPoint())
     if mark != ".":
         text = text.replace(".", mark)
     if text.startswith("-"):
@@ -67,7 +67,7 @@ def format_real(number: float, places: int, *, strip: bool) -> str:
 
 def parse_real(text: str) -> Optional[float]:
     raw = text.strip().replace(MINUS, "-").replace(" ", "").replace("\u202f", "")
-    mark = str(QLocale().decimalPoint())
+    mark = str(project_locale().decimalPoint())
     if mark != ".":
         raw = raw.replace(mark, ".")
     raw = raw.replace(",", "")
@@ -288,6 +288,7 @@ class RealBox(QDoubleSpinBox):
         self.setGroupSeparatorShown(False)
         self.setAlignment(_right())  # type: ignore[arg-type]
         self.setRange(-1e12, 1e12)
+        self.setLocale(project_locale())
         _tabular(self)
         self.lineEdit().setAlignment(_right())  # type: ignore[arg-type]
         yield_form_undo(self)

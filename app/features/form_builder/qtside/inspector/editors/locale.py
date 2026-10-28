@@ -21,6 +21,46 @@ from app.qt.QtCore import QLocale, Qt
 from app.qt.QtWidgets import QComboBox, QLabel, QLineEdit, QListWidget, QListWidgetItem, QWidget
 
 
+class _LanguageFilter(QLineEdit):
+    """Down leaves the filter and lands on the first visible language."""
+
+    def __init__(self, parent: QWidget, on_down) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(parent)
+        self._on_down = on_down
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        keys = getattr(Qt, "Key", Qt)
+        if event.key() == getattr(keys, "Key_Down"):  # type: ignore[attr-defined]
+            self._on_down()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
+
+
+class _LanguageList(QListWidget):
+    """Up from the first visible row returns to the filter."""
+
+    def __init__(self, parent: QWidget, on_up) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(parent)
+        self._on_up = on_up
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        keys = getattr(Qt, "Key", Qt)
+        if event.key() == getattr(keys, "Key_Up") and self._at_first():  # type: ignore[attr-defined]
+            self._on_up()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
+
+    def _at_first(self) -> bool:
+        current = self.currentRow()
+        for index in range(self.count()):
+            item = self.item(index)
+            if item is not None and not item.isHidden():
+                return current <= index
+        return True
+
+
 def _languages() -> List[Tuple[str, str]]:
     rows = []
     for language in QLocale.Language:
@@ -117,12 +157,12 @@ class LocaleEditor:
         )
         self._popover = popover
         body = popover.body()
-        field = QLineEdit(popover)
+        field = _LanguageFilter(popover, self._focus_list)
         self._filter = field
         field.setPlaceholderText("Language")
         name_part(field, self._host, "language filter")
         field.textChanged.connect(self._apply_filter)
-        listing = QListWidget(popover)
+        listing = _LanguageList(popover, self._focus_filter)
         self._list = listing
         listing.setMaximumHeight(220)
         for key, label in _languages():
@@ -145,6 +185,26 @@ class LocaleEditor:
         if self._can_reset:
             popover.set_reset(self._reset)
         popover.open_popover()
+
+    def _focus_list(self) -> None:
+        listing = self._list
+        if listing is None:
+            return
+        current = listing.currentItem()
+        if current is not None and not current.isHidden():
+            listing.setFocus()
+            return
+        for index in range(listing.count()):
+            item = listing.item(index)
+            if item is not None and not item.isHidden():
+                listing.setCurrentRow(index)
+                listing.setFocus()
+                return
+
+    def _focus_filter(self) -> None:
+        field = self._filter
+        if field is not None:
+            field.setFocus()
 
     def _apply_filter(self, text: str) -> None:
         listing = self._list

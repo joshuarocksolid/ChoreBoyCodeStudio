@@ -21,6 +21,7 @@ from app.features.form_builder.qtside.inspector.editors._editor_kit import (
     change_label,
     name_part,
     payload,
+    project_locale,
     yield_form_undo,
 )
 from app.features.form_builder.qtside.inspector.editors._number_box import IntBox, _SpinHooks
@@ -34,12 +35,12 @@ _STACK = 300
 
 
 def _short_date() -> str:
-    short = QLocale().dateFormat(getattr(getattr(QLocale, "FormatType", QLocale), "ShortFormat"))
+    short = project_locale().dateFormat(getattr(getattr(QLocale, "FormatType", QLocale), "ShortFormat"))
     return four_digit_year_format(str(short))
 
 
 def _time_format(*, seconds: bool) -> str:
-    short = str(QLocale().timeFormat(getattr(getattr(QLocale, "FormatType", QLocale), "ShortFormat")))
+    short = str(project_locale().timeFormat(getattr(getattr(QLocale, "FormatType", QLocale), "ShortFormat")))
     if not seconds:
         return short.replace(":ss", "").replace(" ss", "")
     if "ss" in short:
@@ -52,6 +53,7 @@ def _time_format(*, seconds: bool) -> str:
 class _Calendar(QCalendarWidget):
     def __init__(self, parent: QWidget, on_pick) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
+        self.setLocale(project_locale())
         self._on_pick = on_pick
         self.setProperty("fbEnterStays", True)
         self.setFocusPolicy(getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus"))  # type: ignore[arg-type]
@@ -255,14 +257,14 @@ def _refusal(element: str) -> str:
 def _format(element: str, value: Optional[Value]) -> str:
     if isinstance(value, DateValue):
         date = QDate(value.year, value.month, value.day)
-        return str(QLocale().toString(date, _short_date()))
+        return str(project_locale().toString(date, _short_date()))
     if isinstance(value, TimeValue):
         time = QTime(value.hour, value.minute, value.second)
-        return str(QLocale().toString(time, _time_format(seconds=value.second != 0)))
+        return str(project_locale().toString(time, _time_format(seconds=value.second != 0)))
     if isinstance(value, DateTimeValue):
         when = QDateTime(QDate(value.year, value.month, value.day), QTime(value.hour, value.minute, value.second))
         pattern = _short_date() + " " + _time_format(seconds=value.second != 0)
-        return str(QLocale().toString(when, pattern))
+        return str(project_locale().toString(when, pattern))
     return ""
 
 
@@ -290,7 +292,7 @@ def _parse(element: str, text: str) -> Optional[Value]:
 
 
 def _parse_date(text: str) -> Optional[Tuple[int, int, int]]:
-    locale = QLocale()
+    locale = project_locale()
     for pattern in (_short_date(), "M/d/yyyy", "MM/dd/yyyy", "yyyy-MM-dd"):
         date = locale.toDate(text, pattern)
         if date.isValid():
@@ -299,7 +301,7 @@ def _parse_date(text: str) -> Optional[Tuple[int, int, int]]:
 
 
 def _parse_time(text: str) -> Optional[TimeValue]:
-    locale = QLocale()
+    locale = project_locale()
     for pattern in (
         _time_format(seconds=True),
         _time_format(seconds=False),
