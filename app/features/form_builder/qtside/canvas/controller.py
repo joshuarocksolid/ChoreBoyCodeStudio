@@ -28,7 +28,7 @@ from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.clipboard import dangling_sentence
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import InsertFragment, InsertResult
-from app.features.form_builder.engine.commands.catalog_ext.drop import InsertPage
+from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
 from app.features.form_builder.engine.commands.drop_plan import auto_target, indicate_preview
 from app.features.form_builder.engine.sizing import chip_axis, project_axis
 from app.features.form_builder.engine.diagnostics import Severity

@@ -13,6 +13,7 @@ from typing import ClassVar, Optional, Tuple
 from app.features.form_builder.engine.commands import planning
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.catalog import _CommandBase
+from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage  # re-export: the page commands moved (M4.2)
 from app.features.form_builder.engine.commands.ops import MoveNodeOp, SetFieldOp
 from app.features.form_builder.engine.commands.placement import InBoxLayout, InContainer, InFormRow
 from app.features.form_builder.engine.ids import NodeId
@@ -46,7 +47,6 @@ def register(registry: object) -> None:
     add(WrapWithNew)
     add(AdoptIntoBox)
     add(SwapFormRows)
-    add(InsertPage)
     add(SpliceReading)
 
 
@@ -201,46 +201,6 @@ class SwapFormRows(_CommandBase):
         for item_id in here:
             ctx.do(SetFieldOp(item_id, "row", other))
         _order_form_items(doc, ctx, self.layout)
-
-
-@dataclass(frozen=True)
-class InsertPage(_CommandBase):
-    command_type: ClassVar[str] = "insert_page"
-    _label_text: ClassVar[str] = "Insert page"
-    container: NodeId
-    fragment: Optional[Fragment] = None
-    existing: Tuple[NodeId, ...] = ()
-    merge_token: Optional[str] = None
-
-    def apply(self, doc: UiDocument, ctx: PlanContext) -> NodeId:
-        if not doc.contains(self.container):
-            raise CommandRejected("That object is no longer in the form.")
-        host = doc.node(self.container)
-        count = len(host.child_widgets) if isinstance(host, WidgetNode) else 0
-        page = NodeSpec(
-            "widget",
-            None,
-            (("class_name", "QWidget"), ("object_name", "page")),
-            (),
-            (PropertyEntry("attribute", "title", StringValue("Tab %d" % (count + 1))),),
-        )
-        ids, _, _, _ = planning.insert_fragment(
-            doc, ctx, InContainer(self.container, count), Fragment((page,)), False
-        )
-        page_id = ids[0]
-        layout_id = planning.apply_layout_command(doc, ctx, page_id, "QVBoxLayout", (), None)
-        if self.fragment is None and not self.existing:
-            ctx.select((page_id,), page_id)
-            return page_id
-        if self.existing:
-            planning.move_nodes(doc, ctx, self.existing, InBoxLayout(layout_id, 0))
-            for node_id in self.existing:
-                _clear_geometry(doc, ctx, node_id)
-            ctx.select(self.existing, self.existing[0])
-            return page_id
-        assert self.fragment is not None
-        planning.insert_fragment(doc, ctx, InBoxLayout(layout_id, 0), self.fragment, False)
-        return page_id
 
 
 @dataclass(frozen=True)

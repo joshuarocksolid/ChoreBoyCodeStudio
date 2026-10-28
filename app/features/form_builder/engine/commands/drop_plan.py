@@ -10,10 +10,10 @@ from app.features.form_builder.engine.commands.catalog import (
     SetLayoutCell,
     SetProperty,
 )
+from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
 from app.features.form_builder.engine.commands.catalog_ext.drop import (
     AdoptIntoBox,
     InsertFormRow,
-    InsertPage,
     SpliceReading,
     SwapFormRows,
     WrapWithNew,
