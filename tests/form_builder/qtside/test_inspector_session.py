@@ -306,17 +306,17 @@ def test_canvas_stays_nofocus_across_focus_policy_edits(tmp_path: Path, qapp: QA
         assert "StrongFocus" in _xml(surface)
         _select(surface, qapp, "email", all_properties=True)
         combo = _combo(surface, "focusPolicy")
-        assert combo.currentText() == "StrongFocus"
+        assert combo.currentText() == "Strong focus"
         _pick(combo, qapp, "ClickFocus")
         email = _page(surface, "email")
         assert _nofocus(email)
         assert "ClickFocus" in _xml(surface)
         assert "StrongFocus" not in _xml(surface)
-        assert _combo(surface, "focusPolicy").currentText() == "ClickFocus"
+        assert _combo(surface, "focusPolicy").currentText() == "Click focus"
         _reset(surface, qapp, "focusPolicy")
         assert _nofocus(_page(surface, "email"))
         assert "focusPolicy" not in _xml(surface)
-        assert _combo(surface, "focusPolicy").currentText() == "StrongFocus"
+        assert _combo(surface, "focusPolicy").currentText() == "Strong focus"
         _tool(surface, qapp, "formBuilder.undo")
         assert _nofocus(_page(surface, "email"))
         assert "ClickFocus" in _xml(surface)
