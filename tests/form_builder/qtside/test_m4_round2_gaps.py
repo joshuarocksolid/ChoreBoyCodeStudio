@@ -322,6 +322,9 @@ _TWO_DOCKS = form(
 
 def test_dock_feature_rows_start_on_and_change_one_bit() -> None:
     """A fresh dock can close, float and move (UX-PRIN-001): the rows read the class default, not an empty set."""
+    from typing import Any, Dict, Tuple
+
+    from app.features.form_builder.engine.ids import NodeId
     from app.features.form_builder.engine.ui4.values import BoolValue, SetValue
     from app.features.form_builder.qtside.inspector._live import live_classes
     from app.features.form_builder.qtside.inspector.api import Mixed, Unset, Written
@@ -330,18 +333,26 @@ def test_dock_feature_rows_start_on_and_change_one_bit() -> None:
         a = session.document.by_name("dockA")[0]
         b = session.document.by_name("dockB")[0]
 
-        def rows(ids):
+        def rows(ids: Tuple[NodeId, ...]) -> Dict[str, Any]:
             session.selection.set(ids, source=SelectionSource.CANVAS)
             live = live_classes(realizer, session.document, ids, with_values=True)
             body = project(session, default_catalog(), live=live).body
-            return {key: body.find(key) for key in ("canClose", "canFloat", "canMove")}
+            found: Dict[str, Any] = {}
+            for key in ("canClose", "canFloat", "canMove"):
+                row = body.find(key)
+                assert row is not None, key
+                found[key] = row
+            return found
+
+        def run(commands: Any) -> None:
+            for command in commands if isinstance(commands, tuple) else (commands,):
+                session.log.execute(command)
 
         fresh = rows((a,))
         for key in ("canClose", "canFloat", "canMove"):
             assert fresh[key].value == Unset(BoolValue(True)), key
         steps = len(session.log.entries())
-        for command in fresh["canFloat"].write.edit(BoolValue(False), None):
-            session.log.execute(command)
+        run(fresh["canFloat"].write.edit(BoolValue(False), None))
         assert len(session.log.entries()) == steps + 1
         entry = session.document.node(a).prop("features")
         assert entry is not None and isinstance(entry.value, SetValue)
@@ -349,8 +360,7 @@ def test_dock_feature_rows_start_on_and_change_one_bit() -> None:
         after = rows((a,))
         assert after["canFloat"].value == Written(BoolValue(False))
         assert after["canClose"].value == Unset(BoolValue(True))
-        for command in after["canFloat"].write.reset():
-            session.log.execute(command)
+        run(after["canFloat"].write.reset())
         assert session.document.node(a).prop("features") is None
 
         both = rows((a, b))
