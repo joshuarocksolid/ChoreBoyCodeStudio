@@ -401,3 +401,31 @@ def test_string_list_close_drops_the_trailing_empty_row(qapp: QApplication) -> N
         assert tags.items == ("Red", "Green", "Blue")
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+_GROUP = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <widget class="QGroupBox" name="box">
+   <property name="title"><string>Box</string></property>
+  </widget>
+ </widget>
+</ui>
+"""
+
+
+def test_an_unset_group_box_title_alignment_shows_left(qapp: QApplication) -> None:
+    # The live default is ``AlignLeft|AlignLeading`` without a scope.
+    window, pane, session, realizer = _open(qapp, _GROUP)
+    try:
+        _select(session, "box")
+        _expand_all(qapp, pane)
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.titleAlignment")
+        assert row is not None
+        combo = row.findChild(QComboBox)
+        assert combo is not None
+        assert combo.currentText() == "Left"
+    finally:
+        _close(window, pane, realizer, session, qapp)

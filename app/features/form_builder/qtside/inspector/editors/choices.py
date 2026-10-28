@@ -12,6 +12,7 @@ from app.features.form_builder.engine.ui4.values import (
 )
 from app.features.form_builder.qtside.inspector.api import (
     ALIGNMENT,
+    Choice,
     MIXED_TEXT,
     NOT_SET_TEXT,
     EditorHost,
@@ -180,6 +181,8 @@ class EnumEditor:
                     if semantic_equal(choice.value, current):
                         index = position
                         break
+                if index < 0:
+                    index = _covering_choice(self._choices, current)
             combo.blockSignals(True)
             combo.setCurrentIndex(index)
             combo.setPlaceholderText(
@@ -364,6 +367,20 @@ def _payload(value: RowValue) -> object:
     if isinstance(value, Unset) and value.default is not None:
         return value.default
     return None
+
+def _covering_choice(choices: Tuple[Choice, ...], current: object) -> int:
+    """A set the choices do not spell exactly, such as an unscoped live default
+    ``AlignLeft|AlignLeading``, shows the first choice whose names it holds."""
+    if not isinstance(current, SetValue):
+        return -1
+    held = set(_flag_tails(current.text))
+    for position, choice in enumerate(choices):
+        if isinstance(choice.value, SetValue):
+            names = set(_flag_tails(choice.value.text))
+            if names and names <= held:
+                return position
+    return -1
+
 
 def _flag_tails(text: str) -> Tuple[str, ...]:
     tails = []
