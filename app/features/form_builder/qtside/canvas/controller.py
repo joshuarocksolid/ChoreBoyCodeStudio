@@ -163,6 +163,16 @@ class CanvasHost(Protocol):
         ...
 
 
+def _enclosing_scroll_area(widget: QWidget) -> Optional[QScrollArea]:
+    """The nearest scroll area above ``widget``, or None."""
+    parent = widget.parentWidget()
+    while parent is not None:
+        if isinstance(parent, QScrollArea):
+            return parent
+        parent = parent.parentWidget()
+    return None
+
+
 class CanvasController:
     def __init__(
         self,
@@ -766,12 +776,22 @@ class CanvasController:
         self._index.invalidate("page_switch")
         self._request_frame()
 
+    def _scroll_area_widget(self, node: NodeId) -> Optional[QScrollArea]:
+        widget = self._realizer.widget_for(node)
+        return widget if isinstance(widget, QScrollArea) else None
+
+    def _mdi_widget(self, node: NodeId) -> Optional[QMdiArea]:
+        widget = self._realizer.widget_for(node)
+        return widget if isinstance(widget, QMdiArea) else None
+
     def _scroll_content(self, node: NodeId, dx: int, dy: int) -> None:
         """Wheel over a scroll area. One notch (120) is three single steps, as Qt does it (UX-CONT-010)."""
-        area = self._realizer.widget_for(node)
-        if not isinstance(area, QScrollArea):
+        area = self._scroll_area_widget(node)
+        if area is None:
             return
-        for bar, delta in ((area.horizontalScrollBar(), dx), (area.verticalScrollBar(), dy)):
+        horizontal = area.horizontalScrollBar()
+        vertical = area.verticalScrollBar()
+        for bar, delta in ((horizontal, dx), (vertical, dy)):
             if delta:
                 bar.setValue(bar.value() + int(round(delta * bar.singleStep() / 40)))
         self._index.invalidate("scroll")
@@ -782,11 +802,9 @@ class CanvasController:
         widget = self._realizer.widget_for(node)
         if widget is None:
             return
-        parent = widget.parentWidget()
-        while parent is not None and not isinstance(parent, QScrollArea):
-            parent = parent.parentWidget()
-        if isinstance(parent, QScrollArea):
-            parent.ensureWidgetVisible(widget)
+        area = _enclosing_scroll_area(widget)
+        if area is not None:
+            area.ensureWidgetVisible(widget)
         self._index.invalidate("scroll")
         self._pending_reveal = node
         self._request_frame()
@@ -824,16 +842,16 @@ class CanvasController:
 
     def tile_windows(self, container: NodeId) -> None:
         """Tile the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
-        area = self._realizer.widget_for(container)
-        if isinstance(area, QMdiArea):
+        area = self._mdi_widget(container)
+        if area is not None:
             area.tileSubWindows()
             self._index.invalidate("page_switch")
             self._request_frame()
 
     def cascade_windows(self, container: NodeId) -> None:
         """Cascade the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
-        area = self._realizer.widget_for(container)
-        if isinstance(area, QMdiArea):
+        area = self._mdi_widget(container)
+        if area is not None:
             area.cascadeSubWindows()
             self._index.invalidate("page_switch")
             self._request_frame()

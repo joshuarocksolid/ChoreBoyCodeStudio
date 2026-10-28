@@ -40,7 +40,9 @@ MAIN_RECT = Rect(0, 0, 400, 300)
 
 def _host(doc):  # type: ignore[no-untyped-def]
     rects = {nid(doc, "Main"): MAIN_RECT, nid(doc, "centralwidget"): Rect(32, 32, 336, 236)}
-    return _widget_host(doc, rects, nid(doc, "Main"), "Main")
+    host = _widget_host(doc, rects, nid(doc, "Main"), "Main")
+    assert host is not None
+    return host
 
 
 def _dock_payload(doc):  # type: ignore[no-untyped-def]
