@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 """The Pages group slot (UX-CONT-019): a group with no curated rows shows only when its body applies."""
 
 from __future__ import annotations

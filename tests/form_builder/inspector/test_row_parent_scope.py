@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 """RowSpec.parent_classes: a row shows only when the selected widget's parent widget admits it."""
 
 from __future__ import annotations

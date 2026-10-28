@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 """The row popover shell (UX-PED-003): placement, keys, focus and what closes it."""
 
 from __future__ import annotations

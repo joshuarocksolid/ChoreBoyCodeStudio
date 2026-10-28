@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
 """Context-menu contributors (UX-CONT-020): sorted discovery, groups, and painted submenus."""
 
 from __future__ import annotations
