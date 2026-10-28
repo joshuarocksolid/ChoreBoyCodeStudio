@@ -45,9 +45,11 @@ _NO_UI_OUTLINE_TEXT = "No outline for .ui files."
 
 def _ui_outline_text() -> str:
     """The form builder owns the outline of a .ui file only when it is registered (PySide6 builds)."""
-    from app.features.form_builder.install import form_builder_enabled
+    from app.features import FEATURE_SPECS, feature_is_enabled
 
-    return _FORM_OUTLINE_TEXT if form_builder_enabled() else _NO_UI_OUTLINE_TEXT
+    spec = next((item for item in FEATURE_SPECS if item.key == "form-builder"), None)
+    available = spec is not None and feature_is_enabled(spec)
+    return _FORM_OUTLINE_TEXT if available else _NO_UI_OUTLINE_TEXT
 
 
 class OutlinePanel(QWidget):

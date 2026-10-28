@@ -29,7 +29,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable, Dict, Iterator, Optional, Sequence, Tuple, Union
 
-from app.features.form_builder.engine.commands.base import Command, CommandRejected
+from app.features.form_builder.engine.commands.base import Command, CommandOutcome, CommandRejected
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.inspector.catalog import Catalog
