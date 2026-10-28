@@ -11,6 +11,7 @@ from app.qt.QtWidgets import (
     QDockWidget,
     QGridLayout,
     QGroupBox,
+    QScrollArea,
     QSplitter,
     QTabWidget,
     QToolBox,
@@ -34,7 +35,7 @@ from app.features.form_builder.engine.query.hit_index import (
     Rect,
     RefreshScope,
 )
-from app.features.form_builder.engine.query.tree import grid_shape
+from app.features.form_builder.engine.query.tree import effective_class, grid_shape
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.qtside.canvas.core.structure import (
@@ -168,7 +169,9 @@ class LiveGeometrySource:
         Only property edits come here. A dirty layout remeasures its items once.
         A page switch, a visibility change or an edit on a container rewalks
         that container's subtree. A moved widget queues its layout and its
-        ancestors, not every sibling.
+        ancestors, not every sibling. A scroll area beside that edit is
+        remeasured too: its rect can stay put while the scrollbar changes
+        the contents width on a later layout pass.
         """
         if scope.full:
             return None
@@ -212,6 +215,11 @@ class LiveGeometrySource:
                 # A container can resize from a child's hint while the child
                 # keeps its rect. O(depth): each ancestor is measured once.
                 queue.extend(document.ancestors(node_id))
+            # O(items) class checks, not a geometry read per sibling.
+            # Skip a scroll area the index never recorded (a hidden page).
+            for scroll_id in _scroll_areas_near(document, node_id):
+                if (scroll_id, "widget") in located:
+                    queue.append(scroll_id)
         while queue:
             node_id = queue.pop()
             if node_id in seen or node_id in drop:
@@ -244,6 +252,10 @@ class LiveGeometrySource:
             walk = node_id in scope.rewalk or (
                 container and (node_id in scope.dirty or old.visible != visible or old.rect != rect)
             )
+            if not walk and isinstance(found, WidgetNode) and self._scroll_contents_differ(
+                found, root, document, previous, located
+            ):
+                walk = True
             if walk:
                 synced = self._sync_descendants(
                     found, root, document, previous, located, children, replacements, extra, drop, changed, seen
@@ -431,6 +443,34 @@ class LiveGeometrySource:
                 return None
             return _offset(spacer.geometry(), origin[0], origin[1]), True
         return None
+
+    def _scroll_contents_differ(
+        self,
+        node: WidgetNode,
+        root: QWidget,
+        document: UiDocument,
+        previous: Sequence[GeoEntry],
+        located: Mapping[Tuple[NodeId, str], int],
+    ) -> bool:
+        """True when the contents widget's live rect differs from the indexed one."""
+        widget = self._realizer.widget_for(node.id)
+        if not isinstance(widget, QScrollArea):
+            return False
+        inner = widget.widget()
+        if not isinstance(inner, QWidget):
+            return False
+        tagged = _tagged_widget(inner, document)
+        if tagged is None:
+            return False
+        index = located.get((tagged.id, "widget"))
+        if index is None:
+            return False
+        measured = self._measure(tagged, root)
+        if measured is None:
+            return False
+        rect, visible = measured
+        old = previous[index]
+        return old.rect != rect or old.visible != visible
 
     def _layout_tree(
         self,
@@ -814,6 +854,66 @@ def _owner_origin(realizer: Realizer, node: object, root: QWidget) -> Optional[T
         parent_id = getattr(current, "parent_id", None)
         current = realizer.document.get(parent_id) if parent_id is not None else None
     return (0, 0)
+
+
+def _scroll_areas_near(document: UiDocument, node_id: NodeId) -> List[NodeId]:
+    """Scroll areas an edit of ``node_id`` can reflow without moving their rect."""
+    found: List[NodeId] = []
+    seen: Set[NodeId] = set()
+    for layout_id in _enclosing_layouts(document, node_id):
+        layout = document.get(layout_id)
+        if not isinstance(layout, LayoutNode):
+            continue
+        for item in layout.items:
+            _collect_scroll_area(document, item.content, found, seen, 0)
+    return found
+
+
+def _collect_scroll_area(
+    document: UiDocument,
+    node: object,
+    found: List[NodeId],
+    seen: Set[NodeId],
+    depth: int,
+) -> None:
+    if not isinstance(node, WidgetNode) or node.id in seen:
+        return
+    if effective_class(document, node) == "QScrollArea":
+        seen.add(node.id)
+        found.append(node.id)
+        return
+    # One level into a sibling container, so a group that holds a scroll area counts.
+    if depth >= 1 or node.layout is None:
+        return
+    seen.add(node.id)
+    for item in node.layout.items:
+        _collect_scroll_area(document, item.content, found, seen, depth + 1)
+
+
+def _enclosing_layouts(document: UiDocument, node_id: NodeId) -> List[NodeId]:
+    """Layouts from ``node_id`` out to the root. O(depth)."""
+    layouts: List[NodeId] = []
+    seen: Set[NodeId] = set()
+    current: Optional[NodeId] = node_id
+    while current is not None:
+        place = positioning_of(document, current)
+        if not isinstance(place, LaidOut) or place.layout in seen:
+            break
+        seen.add(place.layout)
+        layouts.append(place.layout)
+        layout = document.get(place.layout)
+        if not isinstance(layout, LayoutNode):
+            break
+        owner = layout.owner_widget_id()
+        if owner is not None:
+            current = owner
+            continue
+        parent = document.parent(layout.id)
+        if not isinstance(parent, LayoutItemNode):
+            break
+        outer = document.parent(parent.id)
+        current = outer.id if isinstance(outer, LayoutNode) else None
+    return layouts
 
 
 def _parent_layout(document: UiDocument, node_id: NodeId) -> Optional[NodeId]:
