@@ -405,7 +405,12 @@ class MovePage(_CommandBase):
 
 @dataclass(frozen=True)
 class SetItems(_CommandBase):
-    """Replace item or header slots. None leaves that slot alone."""
+    """Replace item or header slots. None leaves that slot alone.
+
+    One item-editor session is one undo step (UX-ITEM-007). The merge key is
+    the widget, and ``merge_token`` is the session, so two widgets or two
+    sessions never fold together.
+    """
 
     command_type: ClassVar[str] = "set_items"
     _label_text: ClassVar[str] = "Edit items"
@@ -413,6 +418,17 @@ class SetItems(_CommandBase):
     items: Optional[Tuple[NodeSpec, ...]] = None
     rows: Optional[Tuple[NodeSpec, ...]] = None
     columns: Optional[Tuple[NodeSpec, ...]] = None
+    merge_token: Optional[str] = None
+    widget_name: str = ""
+
+    @property
+    def label(self) -> str:
+        if self.widget_name:
+            return "Edit items of %s" % self.widget_name
+        return self._label_text
+
+    def merge_key(self) -> Optional[Hashable]:
+        return ("set_items", int(self.widget))
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
         planning.set_items(doc, ctx, self.widget, self.items, self.rows, self.columns)
