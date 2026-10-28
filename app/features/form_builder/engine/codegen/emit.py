@@ -174,6 +174,12 @@ _MODULE_RANK = {
     "PySide6.QtWidgets": 2,
 }
 
+#: Containers whose child QWidget is a page, content or window; uic keeps the
+#: style margins on that child's layout (observed with ``uic -g python``).
+_PAGE_HOSTS = frozenset(
+    {"QTabWidget", "QStackedWidget", "QToolBox", "QScrollArea", "QMdiArea", "QDockWidget", "QMainWindow", "QWizard"}
+)
+
 
 @dataclass
 class ModulePieces:
@@ -1136,6 +1142,19 @@ class _Emitter:
             return None, None
         return raw.margin, raw.spacing
 
+    def _plain_holder(self, owner: Optional[WidgetNode]) -> bool:
+        if owner is None or owner.id == self.doc.root.id:
+            return False
+        if owner.object_name.startswith("layoutWidget"):
+            return True
+        # A native attribute (true or false) keeps the style margins too.
+        if owner.class_name != "QWidget" or owner.field("native") is not None:
+            return False
+        parent = self.doc.parent(owner.id)
+        while parent is not None and not isinstance(parent, WidgetNode):
+            parent = self.doc.parent(parent.id)
+        return not (isinstance(parent, WidgetNode) and parent.class_name in _PAGE_HOSTS)
+
     def _emit_layout_props(self, layout: LayoutNode, ref: str, owner: Optional[WidgetNode]) -> None:
         margin: Optional[int] = None
         sides = {"leftMargin": None, "topMargin": None, "rightMargin": None, "bottomMargin": None}
@@ -1162,9 +1181,11 @@ class _Emitter:
                 continue
             self._emit_one_property(layout, ref, prop, copy_hfw=False)
         default_margin, default_spacing = self._layout_default()
-        # Designer names the holder of a broken-out layout layoutWidget. uic
-        # clears that layout's margins instead of applying the form default.
-        holder = owner is not None and owner.object_name.startswith("layoutWidget")
+        # Observed uic behaviour: a layout on a plain child QWidget (Designer's
+        # layoutWidget holder, a splitter pane, a widget inside a layout) that is
+        # not a page of a page container gets 0 for every side it does not write,
+        # instead of the form default or the style's margin.
+        holder = self._plain_holder(owner)
         if holder and margin is None and all(value is None for value in sides.values()):
             self.add("%s.setContentsMargins(0, 0, 0, 0)" % ref)
         elif any(value is not None for value in sides.values()) or margin is not None:
@@ -1173,6 +1194,8 @@ class _Emitter:
                     return int(sides[side])
                 if margin is not None:
                     return int(margin)
+                if holder:
+                    return 0
                 # -1 keeps the side Qt already applied (the layoutdefault or the style).
                 return -1
 
