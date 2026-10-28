@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Union
 
-from app.features.form_builder.qtside.inspector.editors._editor_kit import MINUS, qt_align, qt_key, qt_mod
+from app.features.form_builder.qtside.inspector.editors._editor_kit import (
+    MINUS,
+    qt_align,
+    qt_key,
+    qt_mod,
+    yield_form_undo,
+)
 from app.qt.QtCore import QLocale
 from app.qt.QtGui import QValidator
 from app.qt.QtWidgets import QDoubleSpinBox, QLineEdit, QSpinBox, QWidget
@@ -141,6 +147,8 @@ class IntBox(QSpinBox):
         _tabular(self)
         line = self.lineEdit()
         line.setAlignment(_right())  # type: ignore[arg-type]
+        yield_form_undo(self)
+        yield_form_undo(line)
         self.valueChanged.connect(self._stepped)
         self.editingFinished.connect(self._finished)
 
@@ -260,6 +268,8 @@ class RealBox(QDoubleSpinBox):
         self.setRange(-1e12, 1e12)
         _tabular(self)
         self.lineEdit().setAlignment(_right())  # type: ignore[arg-type]
+        yield_form_undo(self)
+        yield_form_undo(self.lineEdit())
         self.valueChanged.connect(self._stepped)
         self.editingFinished.connect(self._finished)
 
@@ -378,6 +388,7 @@ class WideIntBox(QLineEdit):
         self._shown = ""
         self.setAlignment(_right())  # type: ignore[arg-type]
         _tabular(self)
+        yield_form_undo(self)
         self.editingFinished.connect(self._finished)
 
     def show_number(self, number: int, *, can_reset: bool) -> None:

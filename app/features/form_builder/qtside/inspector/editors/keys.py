@@ -16,16 +16,18 @@ from app.features.form_builder.qtside.inspector.api import (
     mark,
 )
 from app.features.form_builder.qtside.inspector.editors._editor_kit import (
+    PairColumn,
     name_part,
     owner_name,
     payload,
     qt_key,
     warning_color,
+    yield_form_undo,
 )
 from app.qt.qt_compat import enum_value
 from app.qt.QtCore import QEvent, QTimer, Qt
 from app.qt.QtGui import QAction, QColor, QKeySequence
-from app.qt.QtWidgets import QApplication, QHBoxLayout, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QApplication, QLabel, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 _WINDOW_MS = 1000
 _MODIFIER_KEYS = ("Key_Shift", "Key_Control", "Key_Alt", "Key_Meta")
@@ -33,12 +35,28 @@ _MODIFIER_KEYS = ("Key_Shift", "Key_Control", "Key_Alt", "Key_Meta")
 
 def _key_names() -> dict:
     names = {}
-    for item in getattr(Qt, "Key", Qt):
-        name = str(getattr(item, "name", "") or "")
-        if name.startswith("Key_"):
-            name = name[4:]
-        if name:
-            names[int(item)] = name
+    enum = getattr(Qt, "Key", None)
+    items = []
+    if enum is not None and enum is not Qt:
+        try:
+            items = list(enum)
+        except TypeError:
+            items = []
+    if items:
+        for item in items:
+            name = str(getattr(item, "name", "") or "")
+            if name.startswith("Key_"):
+                name = name[4:]
+            if name:
+                names[int(item)] = name
+        return names
+    for name in dir(Qt):
+        if not name.startswith("Key_"):
+            continue
+        try:
+            names[int(getattr(Qt, name))] = name[4:]
+        except (TypeError, ValueError):
+            continue
     return names
 
 
@@ -100,6 +118,18 @@ class _KeyField(QLineEdit):
         super().keyPressEvent(event)
 
 
+class _RecordButton(QPushButton):
+    """Enter starts recording. A push button otherwise takes Space only."""
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        key = event.key()  # type: ignore[attr-defined]
+        if key in (qt_key("Key_Return"), qt_key("Key_Enter")):
+            self.click()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
+
+
 class KeyEditor:
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         self._spec = spec
@@ -110,17 +140,12 @@ class KeyEditor:
         column = QVBoxLayout(self._root)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(2)
-        row = QWidget(self._root)
-        layout = QHBoxLayout(row)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-        self._edit = _KeyField(self, row)
-        layout.addWidget(self._edit, 1)
-        self._record = QPushButton("Record", row)
+        self._edit = _KeyField(self, self._root)
+        yield_form_undo(self._edit)
+        self._record = _RecordButton("Record", self._root)
         self._record.setAutoDefault(False)
         self._record.clicked.connect(self._arm)
-        layout.addWidget(self._record, 0)
-        column.addWidget(row)
+        column.addWidget(PairColumn(self._edit, self._record, "Ctrl+Shift+Alt+F12", self._root))
         self._warning = QLabel(self._root)
         self._warning.setObjectName("formBuilder.rowWarning")
         self._warning.setWordWrap(True)
@@ -163,6 +188,10 @@ class KeyEditor:
         self._first = ""
         self._armed_text = self._shown
         self._edit.setText("Press the keys…")
+        pair = self._edit.parentWidget()
+        relayout = getattr(pair, "relayout", None)
+        if callable(relayout):
+            relayout()
         accent = getattr(self._host.chrome, "accent", "") or QColor(37, 99, 235).name()
         self._edit.setStyleSheet("border: 2px solid %s;" % accent)
         self._pending = None
@@ -268,28 +297,46 @@ def _mod(name: str) -> object:
     return getattr(getattr(Qt, "KeyboardModifier", Qt), name)
 
 
+def _action_shortcut(action: QAction) -> str:
+    shortcut = action.shortcut()
+    if shortcut is not None and not shortcut.isEmpty():
+        return _portable(shortcut)
+    # The realizer's string setter misses QAction.shortcut, so the text is
+    # kept as a dynamic property on the action object.
+    stored = action.property("shortcut")
+    if isinstance(stored, str) and stored.strip():
+        return _portable(QKeySequence.fromString(stored))
+    return ""
+
+
+def _actions_on(widget: QWidget) -> list:
+    found = []
+    actions = getattr(widget, "actions", None)
+    if callable(actions):
+        listed = actions()
+        if isinstance(listed, (list, tuple)):
+            found.extend(item for item in listed if isinstance(item, QAction))
+    for child in widget.children():
+        if isinstance(child, QAction) and child not in found:
+            found.append(child)
+    return found
+
+
 def _clash(host: EditorHost, text: str) -> str:
     app = QApplication.instance()
     if app is None or not text:
         return ""
     mine = owner_name(host)
     target = _portable(QKeySequence.fromString(text))
+    if not target:
+        return ""
     for widget in app.allWidgets():
-        actions = getattr(widget, "actions", None)
-        if not callable(actions):
+        if not isinstance(widget, QWidget):
             continue
-        found = actions()
-        if not isinstance(found, (list, tuple)):
-            continue
-        for action in found:
-            if not isinstance(action, QAction):
-                continue
+        for action in _actions_on(widget):
             if mine and action.objectName() == mine:
                 continue
-            shortcut = action.shortcut()
-            if shortcut is None or shortcut.isEmpty():
-                continue
-            if _portable(shortcut) != target:
+            if _action_shortcut(action) != target:
                 continue
             label = str(action.text() or "").replace("&", "").strip()
             return label or str(action.objectName())

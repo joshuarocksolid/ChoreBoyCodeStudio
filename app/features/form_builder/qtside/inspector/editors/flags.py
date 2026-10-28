@@ -19,10 +19,27 @@ from app.features.form_builder.qtside.inspector.api import (
 from app.features.form_builder.qtside.inspector.editors._editor_kit import change_label, name_part, payload
 from app.features.form_builder.qtside.inspector.editors._enum_words import friendly, radio_groups
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
-from app.qt.QtCore import QTimer
+from app.qt.QtCore import QTimer, Qt
 from app.qt.QtWidgets import QButtonGroup, QCheckBox, QRadioButton, QWidget
 
 _Check = Tuple[str, QWidget]
+
+
+class _FlagCheck(QCheckBox):
+    """Enter keeps the popover. Space still toggles the box."""
+
+    def __init__(self, text: str, parent: QWidget, on_enter) -> None:  # type: ignore[no-untyped-def]
+        super().__init__(text, parent)
+        self._on_enter = on_enter
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        key = event.key()  # type: ignore[attr-defined]
+        keys = getattr(Qt, "Key", Qt)
+        if key in (getattr(keys, "Key_Return"), getattr(keys, "Key_Enter")):
+            self._on_enter()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
 
 
 class FlagsEditor:
@@ -98,7 +115,11 @@ class FlagsEditor:
         for name in enum.names:
             if name in grouped:
                 continue
-            box = QCheckBox(friendly(enum.type_name, self._host.qt_name, name), popover)
+            box = _FlagCheck(
+                friendly(enum.type_name, self._host.qt_name, name),
+                popover,
+                popover.done,
+            )
             box.setChecked(name in chosen)
             box.setToolTip(name)
             name_part(box, self._host, friendly(enum.type_name, self._host.qt_name, name))

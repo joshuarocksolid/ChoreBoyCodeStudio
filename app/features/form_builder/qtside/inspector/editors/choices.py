@@ -100,7 +100,10 @@ class _EnumBox(QComboBox):
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         key = event.key()  # type: ignore[attr-defined]
-        if key == qt_key("Key_Space") and not self.view().isVisible():
+        mods = event.modifiers()  # type: ignore[attr-defined]
+        alt = bool(mods & getattr(getattr(Qt, "KeyboardModifier", Qt), "AltModifier"))
+        opens = key == qt_key("Key_Space") or (alt and key == qt_key("Key_Down"))
+        if opens and not self.view().isVisible():
             self.showPopup()
             event.accept()  # type: ignore[attr-defined]
             return

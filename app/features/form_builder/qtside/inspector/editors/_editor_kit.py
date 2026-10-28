@@ -6,9 +6,9 @@ from typing import Optional
 
 from app.features.form_builder.engine.ui4.values import Value
 from app.features.form_builder.qtside.inspector.api import EditorHost, Mixed, RowValue, Unset, Written
-from app.qt.QtCore import QEvent, Qt
-from app.qt.QtGui import QColor
-from app.qt.QtWidgets import QLabel, QLineEdit, QWidget
+from app.qt.QtCore import QEvent, QObject, Qt
+from app.qt.QtGui import QColor, QKeySequence
+from app.qt.QtWidgets import QGridLayout, QLabel, QLineEdit, QWidget
 
 MINUS = "\u2212"
 
@@ -98,3 +98,68 @@ def event_type(name: str) -> object:
 
 def is_mixed(value: RowValue) -> bool:
     return isinstance(value, Mixed)
+
+
+class _YieldUndo(QObject):
+    """Let Edit > Undo reach the form. The field must not eat Ctrl+Z."""
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() != event_type("ShortcutOverride"):
+            return False
+        matches = getattr(event, "matches", None)
+        if not callable(matches):
+            return False
+        standard = getattr(QKeySequence, "StandardKey", QKeySequence)
+        if matches(getattr(standard, "Undo")) or matches(getattr(standard, "Redo")):
+            event.ignore()  # type: ignore[attr-defined]
+            return True
+        return False
+
+
+def yield_form_undo(widget: QWidget) -> None:
+    widget.installEventFilter(_YieldUndo(widget))
+
+
+class PairColumn(QWidget):
+    """Field beside an accessory, or above it when the column cannot hold both.
+
+    The reference string is the widest text the field must show. At that
+    width the field takes the whole column and the accessory moves under it.
+    """
+
+    def __init__(self, field: QWidget, extra: QWidget, reference: str, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._field = field
+        self._extra = extra
+        self._reference = reference
+        self._grid = QGridLayout(self)
+        self._grid.setContentsMargins(0, 0, 0, 0)
+        self._grid.setSpacing(4)
+        field.setParent(self)
+        extra.setParent(self)
+        self._stacked: Optional[bool] = None
+        self._apply(False)
+
+    def resizeEvent(self, event: object) -> None:  # noqa: N802
+        super().resizeEvent(event)  # type: ignore[arg-type]
+        self.relayout()
+
+    def relayout(self) -> None:
+        metrics = self._field.fontMetrics()
+        shown = str(self._field.text() or "")  # type: ignore[attr-defined]
+        sample = shown if metrics.horizontalAdvance(shown) > metrics.horizontalAdvance(self._reference) else self._reference
+        need = metrics.horizontalAdvance(sample) + 12
+        stacked = int(self.width()) < need + int(self._extra.sizeHint().width())
+        if stacked != self._stacked:
+            self._apply(stacked)
+
+    def _apply(self, stacked: bool) -> None:
+        self._stacked = stacked
+        while self._grid.count():
+            self._grid.takeAt(0)
+        if stacked:
+            self._grid.addWidget(self._field, 0, 0)
+            self._grid.addWidget(self._extra, 1, 0)
+        else:
+            self._grid.addWidget(self._field, 0, 0)
+            self._grid.addWidget(self._extra, 0, 1)

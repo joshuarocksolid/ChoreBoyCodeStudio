@@ -16,10 +16,16 @@ from app.features.form_builder.qtside.inspector.api import (
     ValueSpec,
     mark,
 )
-from app.features.form_builder.qtside.inspector.editors._editor_kit import change_label, name_part, payload
+from app.features.form_builder.qtside.inspector.editors._editor_kit import (
+    PairColumn,
+    change_label,
+    name_part,
+    payload,
+    yield_form_undo,
+)
 from app.features.form_builder.qtside.inspector.editors._number_box import IntBox, _SpinHooks
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover
-from app.qt.QtCore import QDate, QDateTime, QLocale, QTime, Qt
+from app.qt.QtCore import QDate, QDateTime, QEvent, QLocale, QObject, QTime, Qt
 from app.qt.QtWidgets import QCalendarWidget, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
 
 _DATE_REFUSAL = "Use a date like 10/28/2026."
@@ -48,13 +54,41 @@ class _Calendar(QCalendarWidget):
         super().__init__(parent)
         self._on_pick = on_pick
         self.setProperty("fbEnterStays", True)
+        self.setFocusPolicy(getattr(getattr(Qt, "FocusPolicy", Qt), "StrongFocus"))  # type: ignore[arg-type]
+        horizontal = getattr(QCalendarWidget, "HorizontalHeaderFormat", QCalendarWidget)
+        vertical = getattr(QCalendarWidget, "VerticalHeaderFormat", QCalendarWidget)
+        self.setHorizontalHeaderFormat(getattr(horizontal, "SingleLetterDayNames"))
+        self.setVerticalHeaderFormat(getattr(vertical, "NoVerticalHeader"))
+        for child in self.findChildren(QWidget):
+            child.installEventFilter(self)
 
-    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+    def _shift_month(self, delta: int) -> None:
+        self.setSelectedDate(self.selectedDate().addMonths(delta))
+
+    def _take_key(self, event: QEvent) -> bool:
         key = event.key()  # type: ignore[attr-defined]
         keys = getattr(Qt, "Key", Qt)
+        if key == getattr(keys, "Key_PageDown"):
+            self._shift_month(1)
+            event.accept()  # type: ignore[attr-defined]
+            return True
+        if key == getattr(keys, "Key_PageUp"):
+            self._shift_month(-1)
+            event.accept()  # type: ignore[attr-defined]
+            return True
         if key in (getattr(keys, "Key_Return"), getattr(keys, "Key_Enter")):
             self._on_pick()
             event.accept()  # type: ignore[attr-defined]
+            return True
+        return False
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if watched is self or event.type() != getattr(getattr(QEvent, "Type", QEvent), "KeyPress"):
+            return False
+        return self._take_key(event)
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        if self._take_key(event):  # type: ignore[arg-type]
             return
         super().keyPressEvent(event)  # type: ignore[arg-type]
 
@@ -81,17 +115,13 @@ class DateEditor:
         self._spec = spec
         self._host = host
         self._shown = ""
-        self._root = QWidget(parent)
-        layout = QHBoxLayout(self._root)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(4)
-        self._edit = _DateLine(self._root, self._open)
+        self._edit = _DateLine(parent, self._open)
+        yield_form_undo(self._edit)
         self._edit.editingFinished.connect(self._commit_line)
-        layout.addWidget(self._edit, 1)
-        self._open_button = QPushButton("▾", self._root)
+        self._open_button = QPushButton("\u25be", parent)
         self._open_button.setAutoDefault(False)
         self._open_button.clicked.connect(self._open)
-        layout.addWidget(self._open_button, 0)
+        self._root = PairColumn(self._edit, self._open_button, "12/31/2026 11:59 PM", parent)
         self._popover: Optional[RowPopover] = None
         self._calendar: Optional[_Calendar] = None
         self._hour: Optional[IntBox] = None
@@ -172,6 +202,8 @@ class DateEditor:
             name_part(self._minute, self._host, "minute")
             name_part(self._second, self._host, "second")
         popover.open_popover()
+        if self._calendar is not None:
+            self._calendar.setFocus()
 
     def _pick_date(self) -> None:
         if self._calendar is None or self._popover is None:
