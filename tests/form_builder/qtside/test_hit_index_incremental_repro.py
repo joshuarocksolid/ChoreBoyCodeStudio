@@ -7,16 +7,16 @@ from typing import Callable, Iterator, List, Tuple
 
 import pytest
 
-from app.qt.QtWidgets import QApplication
+from app.qt.QtWidgets import QApplication, QScrollArea, QWidget
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, SetLayoutStretch, SetProperty
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
-from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
+from app.features.form_builder.engine.ui4.values import NumberValue, SizeValue, StringValue
 from app.features.form_builder.qtside.canvas.geometry import HitIndexInvalidator, LiveGeometrySource
 from app.features.form_builder.qtside.realize import Realizer
-from tests.form_builder.qtside.support import opened
+from tests.form_builder.qtside.support import form, opened
 from tests.form_builder.qtside.test_geometry import NESTED
 
 pytestmark = pytest.mark.usefixtures("qapp")
@@ -216,3 +216,87 @@ def test_review_structural_fuzz_matches_a_full_rebuild(embedded: Tuple[FormSessi
         full = HitIndex(LiveGeometrySource(realizer))
         full.ensure_fresh()
         assert _full_table(index._entries) == _full_table(full._entries), (seed, step, trail[-6:])
+
+
+# Minimum heights are fixed pixels, so the scrollbar threshold does not depend on the font.
+DEFERRED_SCROLL = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <layout class="QVBoxLayout" name="formLayout">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <widget class="QWidget" name="first">
+      <attribute name="title"><string>One</string></attribute>
+     </widget>
+     <widget class="QWidget" name="second">
+      <attribute name="title"><string>Two</string></attribute>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="scroll">
+     <property name="widgetResizable"><bool>true</bool></property>
+     <widget class="QWidget" name="scrollContents">
+      <property name="minimumSize"><size><width>40</width><height>100</height></size></property>
+      <layout class="QVBoxLayout" name="scrollLayout">
+       <item><widget class="QPushButton" name="inside"><property name="text"><string>Go</string></property></widget></item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+  </layout>
+""",
+)
+
+
+def test_deferred_scrollbar_on_a_sibling_scroll_area_matches_a_full_rebuild() -> None:
+    """Growing a sibling can leave the scrollbar pending until the next layout.
+
+    The scroll area's rect stays put. The contents width changes by the bar.
+    """
+    with opened(DEFERRED_SCROLL) as (session, realizer):
+        root = realizer.root_widget
+        assert root is not None
+        host = QWidget()
+        host.resize(800, 800)
+        root.setParent(host)
+        host.show()
+        root.show()
+        QApplication.processEvents()
+        index = HitIndex(LiveGeometrySource(realizer))
+        subscription = session.log.subscribe(
+            HitIndexInvalidator(index).on_changeset, priority=PRIORITY_HIT_INDEX
+        )
+        try:
+            index.ensure_fresh()
+            session.log.execute(
+                SetProperty(session.document.by_name("tabs")[0], "minimumSize", SizeValue(10, 200))
+            )
+            QApplication.processEvents()
+            index.ensure_fresh()
+            scroll = realizer.widget_for(session.document.by_name("scroll")[0])
+            contents = realizer.widget_for(session.document.by_name("scrollContents")[0])
+            assert isinstance(scroll, QScrollArea)
+            assert contents is not None
+            assert not scroll.verticalScrollBar().isVisible()
+            assert contents.height() > scroll.viewport().height()
+            assert contents.width() == scroll.viewport().width()
+            session.log.execute(
+                SetProperty(session.document.by_name("tabs")[0], "currentIndex", NumberValue(1))
+            )
+            QApplication.processEvents()
+            assert scroll.verticalScrollBar().isVisible()
+            index.ensure_fresh()
+            _assert_full(realizer, index)
+        finally:
+            subscription.close()
+            root.setParent(None)
+            host.hide()
+            host.deleteLater()
+
+
+def _assert_full(realizer: Realizer, index: HitIndex) -> None:
+    full = HitIndex(LiveGeometrySource(realizer))
+    full.ensure_fresh()
+    assert _full_table(index._entries) == _full_table(full._entries)

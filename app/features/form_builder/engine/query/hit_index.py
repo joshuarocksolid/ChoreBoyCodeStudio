@@ -145,6 +145,9 @@ class HitIndex:
         self._scope: Optional[RefreshScope] = None
         self._last_visits = 0
         self._last_changed: Optional[Tuple[NodeId, ...]] = None
+        bind = getattr(source, "bind_index", None)
+        if bind is not None:
+            bind(self)
 
     def invalidate(self, reason: InvalidationReason, scope: Optional[RefreshScope] = None) -> None:
         """O(1) epoch bump. A named ``changeset`` scope refreshes only those entries.
