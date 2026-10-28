@@ -393,6 +393,9 @@ class InspectorPane(QWidget):
             self._dispatch_claimed(event)
             return True
         if _key(event) == _code(Qt.Key_Escape) and _mods(event) == 0 and self._esc() is EscAction.LEAVE:
+            # The "+ Add custom property" form closes on Esc before the inspector is left.
+            if self.properties.cancel_inline_form():
+                return True
             self._on_leave()
             return True
         return False

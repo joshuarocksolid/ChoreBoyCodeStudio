@@ -255,6 +255,12 @@ class ListEditor(QWidget):
             return
         self._emit()
 
+    def note_focus(self, index: int) -> None:
+        if index == self._focus_at or index >= len(self._texts):
+            return
+        self._focus_at = index
+        self._place()
+
     def note_hover(self, index: int, hovered: bool) -> None:
         row = self._row_for(index)
         if row is not None:
@@ -574,7 +580,14 @@ class _KeyFilter(QObject):
         self._editor = editor
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() != getattr(getattr(QEvent, "Type", QEvent), "KeyPress"):
+        kinds = getattr(QEvent, "Type", QEvent)
+        if event.type() == getattr(kinds, "FocusIn") and isinstance(watched, QLineEdit):
+            # A click puts focus in a row without the keys; the keys act on that row next.
+            row = watched.parentWidget()
+            if isinstance(row, _ListRow) and row.index >= 0:
+                self._editor.note_focus(row.index)
+            return False
+        if event.type() != getattr(kinds, "KeyPress"):
             return False
         focus = QApplication.focusWidget()
         if not isinstance(focus, QWidget):

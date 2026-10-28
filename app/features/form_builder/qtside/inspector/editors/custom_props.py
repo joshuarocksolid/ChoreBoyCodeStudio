@@ -193,6 +193,9 @@ class CustomPropertyAdder(QWidget):
         self._add.setObjectName("formBuilder.addCustomProperty")
         self._add.setAccessibleName("Add custom property")
         self._add.setFlat(True)
+        # Outside a dialog a push button ignores Return unless it is auto-default.
+        # K12 and keyboard users press Enter on "+ Add custom property".
+        self._add.setAutoDefault(True)
         self._form = QWidget(self)
         self._name = QLineEdit(self._form)
         self._name.setAccessibleName("Custom property name")
@@ -203,6 +206,8 @@ class CustomPropertyAdder(QWidget):
             self._type.addItem(label)
         self._ok = QPushButton("Add", self._form)
         self._cancel = QPushButton("Cancel", self._form)
+        self._ok.setAutoDefault(True)
+        self._cancel.setAutoDefault(True)
         self._error = QLabel(self._form)
         self._error.setObjectName("formBuilder.rowError")
         self._error.setWordWrap(True)
@@ -254,6 +259,16 @@ class CustomPropertyAdder(QWidget):
         self._form.hide()
         self._error.hide()
 
+    def cancel_if_focused(self) -> bool:
+        from app.qt.QtWidgets import QApplication
+
+        focus = QApplication.focusWidget()
+        if not self._form.isVisible() or focus is None or not self._form.isAncestorOf(focus):
+            return False
+        self.close_form()
+        self._add.setFocus()
+        return True
+
     def submit(self) -> None:
         name = self._name.text().strip()
         check = self._names
@@ -277,8 +292,16 @@ class CustomPropertyAdder(QWidget):
         from app.qt.QtCore import Qt
 
         key = getattr(event, "key", lambda: None)()
-        if key == getattr(getattr(Qt, "Key", Qt), "Key_Escape") and self._form.isVisible():
+        keys = getattr(Qt, "Key", Qt)
+        if key == getattr(keys, "Key_Escape") and self._form.isVisible():
             self.close_form()
+            self._add.setFocus()
+            getattr(event, "accept", lambda: None)()
+            return
+        enter = (getattr(keys, "Key_Return"), getattr(keys, "Key_Enter"))
+        if key in enter and self._form.isVisible() and self._type.hasFocus():
+            # Enter on the closed Type drop-down adds, like Enter in the Name field.
+            self.submit()
             getattr(event, "accept", lambda: None)()
             return
         super().keyPressEvent(event)  # type: ignore[arg-type]
