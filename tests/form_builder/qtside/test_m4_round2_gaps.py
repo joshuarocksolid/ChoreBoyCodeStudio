@@ -301,3 +301,58 @@ def test_a_dock_outside_a_main_window_says_it_shows_as_a_panel() -> None:
         assert row.reason == DOCK_PANEL_CAPTION
     finally:
         session.dispose()
+
+
+_TWO_DOCKS = form(
+    'class="QMainWindow" name="Main"',
+    """
+  <widget class="QWidget" name="centralwidget"/>
+  <widget class="QDockWidget" name="dockA">
+   <attribute name="dockWidgetArea"><number>1</number></attribute>
+   <widget class="QWidget" name="contentsA"/>
+  </widget>
+  <widget class="QDockWidget" name="dockB">
+   <property name="features"><set>QDockWidget::DockWidgetClosable</set></property>
+   <attribute name="dockWidgetArea"><number>2</number></attribute>
+   <widget class="QWidget" name="contentsB"/>
+  </widget>
+""",
+)
+
+
+def test_dock_feature_rows_start_on_and_change_one_bit() -> None:
+    """A fresh dock can close, float and move (UX-PRIN-001): the rows read the class default, not an empty set."""
+    from app.features.form_builder.engine.ui4.values import BoolValue, SetValue
+    from app.features.form_builder.qtside.inspector._live import live_classes
+    from app.features.form_builder.qtside.inspector.api import Mixed, Unset, Written
+
+    with opened(_TWO_DOCKS) as (session, realizer):
+        a = session.document.by_name("dockA")[0]
+        b = session.document.by_name("dockB")[0]
+
+        def rows(ids):
+            session.selection.set(ids, source=SelectionSource.CANVAS)
+            live = live_classes(realizer, session.document, ids, with_values=True)
+            body = project(session, default_catalog(), live=live).body
+            return {key: body.find(key) for key in ("canClose", "canFloat", "canMove")}
+
+        fresh = rows((a,))
+        for key in ("canClose", "canFloat", "canMove"):
+            assert fresh[key].value == Unset(BoolValue(True)), key
+        steps = len(session.log.entries())
+        for command in fresh["canFloat"].write.edit(BoolValue(False), None):
+            session.log.execute(command)
+        assert len(session.log.entries()) == steps + 1
+        entry = session.document.node(a).prop("features")
+        assert entry is not None and isinstance(entry.value, SetValue)
+        assert {name for _scope, name in entry.value.keys()} == {"DockWidgetClosable", "DockWidgetMovable"}
+        after = rows((a,))
+        assert after["canFloat"].value == Written(BoolValue(False))
+        assert after["canClose"].value == Unset(BoolValue(True))
+        for command in after["canFloat"].write.reset():
+            session.log.execute(command)
+        assert session.document.node(a).prop("features") is None
+
+        both = rows((a, b))
+        assert isinstance(both["canFloat"].value, Mixed)
+        assert both["canClose"].value == Unset(BoolValue(True))

@@ -95,6 +95,8 @@ class LiveProperty:
     element: str
     enum: Optional[EnumSpec] = None
     value: Optional[Value] = None
+    #: A flags property's value on a fresh widget of this class (the class default).
+    default: Optional[Value] = None
 
 @dataclass(frozen=True)
 class LiveClass:
@@ -748,7 +750,14 @@ def _flag_bit(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], source: F
 
 def _owner_flag(facts: Facts, node: Node, name: str) -> Tuple[SetValue, SetValue]:
     info = _table_property(facts, node, name, "property")
-    default = info.default if info is not None and isinstance(info.default, SetValue) else SetValue("")
+    live = _live_property(facts, node.id, name, "property")
+    if info is not None and isinstance(info.default, SetValue):
+        default = info.default
+    elif live is not None and isinstance(live.default, SetValue):
+        # A fresh QDockWidget can close, float and move: the bits start on.
+        default = live.default
+    else:
+        default = SetValue("")
     entry = node.prop(name)
     if entry is not None and isinstance(entry.value, SetValue):
         return entry.value, default
