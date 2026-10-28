@@ -10,6 +10,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, Value
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected, Services, rejection_text
+from app.features.form_builder.qtside.inspector.editors._popover import SummaryButton
 from app.features.form_builder.qtside.inspector.api import (
     NOT_SET_TEXT,
     Editor,
@@ -691,18 +692,16 @@ class _Row(QWidget):
         self._slot = QWidget(self)
         self._slot_layout = QVBoxLayout(self._slot)
         self._slot_layout.setContentsMargins(0, 0, 0, 0)
-        # The head is the changed bar and the label. A row is one line (label,
-        # then editor) or, for an editor that asks for it, two (the head, then
-        # the editor at full width). Until a row is first changed, the head's
-        # margin holds the bar's 2 px and the 6 px after it, so the columns line up.
-        self._head = QHBoxLayout()
-        self._head.setContentsMargins(_BAR_SLOT, 0, 0, 0)
-        self._head.setSpacing(6)
-        self._head.addWidget(self._label_col, 0)
+        # One line until an editor asks to stack. The nested head (bar + label)
+        # is built only then: a select of All properties builds dozens of rows,
+        # and that extra layout showed up in the profile. Until a row is first
+        # changed, the line's left margin holds the bar's 2 px and the 6 px
+        # after it, so the columns line up.
+        self._head: Optional[QHBoxLayout] = None
         self._line = QHBoxLayout()
-        self._line.setContentsMargins(0, 0, 0, 0)
+        self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
         self._line.setSpacing(6)
-        self._line.addLayout(self._head, 0)
+        self._line.addWidget(self._label_col, 0)
         self._line.addWidget(self._slot, 1)
         self._outer = QVBoxLayout(self)
         self._outer.setContentsMargins(0, 2, 0, 2)
@@ -717,10 +716,43 @@ class _Row(QWidget):
             bar.setMinimumHeight(18)
             # The bar stays shown once made and fbChanged picks its colour,
             # so the columns do not move when a row is reset.
-            self._head.setContentsMargins(0, 0, 0, 0)
-            self._head.insertWidget(0, bar, 0)
             self._bar = bar
+            self._seat_bar()
         return self._bar
+
+    def _seat_bar(self) -> None:
+        bar = self._bar
+        if bar is None:
+            return
+        if self._stacked:
+            head = self._ensure_head()
+            head.setContentsMargins(0, 0, 0, 0)
+            if head.indexOf(bar) < 0:
+                head.insertWidget(0, bar, 0)
+            return
+        self._line.setContentsMargins(0, 0, 0, 0)
+        if self._line.indexOf(bar) < 0:
+            self._line.insertWidget(0, bar, 0)
+
+    def _ensure_head(self) -> QHBoxLayout:
+        """The bar-and-label line, created the first time a row stacks."""
+        head = self._head
+        if head is not None:
+            return head
+        head = QHBoxLayout()
+        head.setSpacing(6)
+        head.setContentsMargins(0 if self._bar is not None else _BAR_SLOT, 0, 0, 0)
+        self._line.removeWidget(self._label_col)
+        if self._bar is not None:
+            self._line.removeWidget(self._bar)
+        head.addWidget(self._label_col, 0)
+        if self._bar is not None:
+            head.insertWidget(0, self._bar, 0)
+            head.setContentsMargins(0, 0, 0, 0)
+        self._line.setContentsMargins(0, 0, 0, 0)
+        self._line.insertLayout(0, head, 0)
+        self._head = head
+        return head
 
     def _qt_label(self) -> QLabel:
         if self._qt is None:
@@ -765,10 +797,29 @@ class _Row(QWidget):
 
     @property
     def row_label(self) -> str:
+        return self.label
+
+    @property
+    def label(self) -> str:
         view = self._view
         if view is None:
             return ""
         return view.label
+
+    @property
+    def qt_name(self) -> str:
+        view = self._view
+        if view is None:
+            return ""
+        return view.qt_name
+
+    @property
+    def row_widget(self) -> QWidget:
+        return self
+
+    def reset(self) -> None:
+        """Remove this property from the file. One undo step, outside the edit session."""
+        self._reset_clicked()
 
     def paint(self, view: Row, match_color: str, qt_names: bool = False) -> None:
         self.setObjectName("formBuilder.row.%s" % view.key)
@@ -792,6 +843,10 @@ class _Row(QWidget):
         if self._needs_new_editor(previous, view):
             self._invalid = False
             self._build_editor(view)
+        elif self._editor is not None and (previous is None or previous.label != view.label):
+            # A spared row keeps its editor. Rename only when the label changed,
+            # so a select does not walk every child of every row.
+            _name_editors(self._editor.widget, view.label)
         self._paint_value_match(view, match_color)
         if not self._invalid and self._editor is not None:
             self._editor.show(view.value)
@@ -820,6 +875,8 @@ class _Row(QWidget):
         if stacked == self._stacked:
             return
         self._stacked = stacked
+        if stacked:
+            self._ensure_head()
         direction = getattr(QBoxLayout, "Direction", QBoxLayout)
         self._line.setDirection(
             getattr(direction, "TopToBottom") if stacked else getattr(direction, "LeftToRight")
@@ -827,6 +884,8 @@ class _Row(QWidget):
         self._line.setSpacing(_STACK_GAP if stacked else 6)
         self._apply_label_width()
         self._place_reset()
+        if self._bar is not None:
+            self._seat_bar()
 
     def _place_reset(self) -> None:
         """The reset button sits on the label line when stacked, and after the editor when not."""
@@ -834,9 +893,10 @@ class _Row(QWidget):
         if button is None:
             return
         self._line.removeWidget(button)
-        self._head.removeWidget(button)
+        if self._head is not None:
+            self._head.removeWidget(button)
         if self._stacked:
-            self._head.addWidget(button, 0)
+            self._ensure_head().addWidget(button, 0)
         else:
             self._line.addWidget(button, 0)
 
@@ -934,7 +994,7 @@ class _Row(QWidget):
         self._editor = factory(view.spec, self, self._slot)
         _shrink(self._editor.widget)
         _name_editors(self._editor.widget, view.label)
-        _guard_editor(self._editor.widget, self)
+        _guard_editor(self._editor.widget)
         self._slot_layout.addWidget(self._editor.widget)
         self._editor.widget.show()
         self._sync_stacked()
@@ -1056,44 +1116,40 @@ def _focus_within(widget: QWidget) -> bool:
 
 
 class _EditorGuard(QObject):
-    """Installed on each widget a row's editor builds, so the rules hold for every editor.
+    """Installed on a spin box, a combo box or a slider.
 
     UX-PED-005: a wheel event over a field without keyboard focus is passed on
     (ignored, so the inspector scrolls) and does not change the value. Focus
-    leaving a field lets the row end its focus session (UX-PED-004).
+    leaving a field is one ``QApplication.focusChanged`` hook on ``Services``,
+    not a filter per widget.
     """
 
-    def __init__(self, target: QWidget, row: "_Row") -> None:
+    def __init__(self, target: QWidget) -> None:
         super().__init__(target)
-        self._row = row
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        kind = event.type()
-        if kind == _EVENT.Wheel:
-            if isinstance(watched, QWidget) and not _focus_within(watched):
-                # Returning True stops the child from handling it; the ignored event
-                # then travels on to the parents, so the inspector scrolls.
-                event.ignore()
-                return True
+        if event.type() != _EVENT.Wheel:
             return False
+        if isinstance(watched, QWidget) and not _focus_within(watched):
+            # Returning True stops the child from handling it; the ignored event
+            # then travels on to the parents, so the inspector scrolls.
+            event.ignore()
+            return True
         return False
 
 
 _WHEEL_KINDS = (QAbstractSpinBox, QComboBox, QAbstractSlider)
 
 
-def _guard_editor(root: QWidget, row: "_Row") -> None:
-    """Install the guard only where it can act: wheel-taking widgets and focusable ones.
+def _guard_editor(root: QWidget) -> None:
+    """Install the wheel guard only on widgets that change value from the wheel.
 
-    A filter runs in Python for every event its widget gets, so labels and
-    containers get none.
+    A filter runs in Python for every event its widget gets. Line edits,
+    labels and containers get none.
     """
-    no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
     for target in [root, *root.findChildren(QWidget)]:
-        wheel = isinstance(target, _WHEEL_KINDS)
-        if not wheel and target.focusPolicy() == no_focus:
-            continue
-        target.installEventFilter(_EditorGuard(target, row))
+        if isinstance(target, _WHEEL_KINDS):
+            target.installEventFilter(_EditorGuard(target))
 
 
 class _GroupHost:
@@ -1208,12 +1264,22 @@ def _lead(label: str) -> str:
 
 
 def _name_editors(root: QWidget, label: str) -> None:
-    """Name the editor and the line edit Qt uses as its focus proxy."""
-    root.setAccessibleName(label)
-    _name_line(root, label)
+    """Name the editor and the line edit Qt uses as its focus proxy.
+
+    A summary button already carries "{label}: {summary}". Rebinding sets the
+    row label and leaves the summary half alone.
+    """
+    if isinstance(root, SummaryButton):
+        root.set_row_label(label)
+    else:
+        root.setAccessibleName(label)
+        _name_line(root, label)
     lead = _lead(label)
     no_focus = getattr(getattr(Qt, "FocusPolicy", Qt), "NoFocus")
     for child in root.findChildren(QWidget):
+        if isinstance(child, SummaryButton):
+            child.set_row_label(label)
+            continue
         if child.accessibleName():
             _name_line(child, child.accessibleName())
             continue

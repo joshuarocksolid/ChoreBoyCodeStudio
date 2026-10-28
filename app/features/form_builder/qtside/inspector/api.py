@@ -241,6 +241,25 @@ class EditorHost(Protocol):
         """The builder chrome in effect (UX-TOK-005 tokens come from it)."""
         ...
 
+    @property
+    def label(self) -> str:
+        """The row's current label. A pooled editor reads this when it is shown again."""
+        ...
+
+    @property
+    def qt_name(self) -> str:
+        """The Qt property name of the row, or "" when the row has none."""
+        ...
+
+    @property
+    def row_widget(self) -> QWidget:
+        """The row widget the editor was built into."""
+        ...
+
+    def reset(self) -> None:
+        """Remove this property from the file. One undo step, outside the edit session."""
+        ...
+
     def invalid(self, message: str) -> None:
         """Text the editor cannot turn into a Value. Shown under the field. Nothing is written."""
         ...

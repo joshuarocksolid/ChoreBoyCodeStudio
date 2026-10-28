@@ -202,6 +202,23 @@ def test_set_label_names_the_step_from_its_first_write(qapp: QApplication) -> No
         session.dispose()
 
 
+def test_the_same_row_key_on_a_new_owner_is_a_new_step(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _type_and_commit(qapp, _text_editor(pane), "One")
+        phone = session.document.by_name("phone")[0]
+        session.selection.set((phone,), source=SelectionSource.CANVAS)
+        pane.flush()
+        _settle(qapp)
+        _type_and_commit(qapp, _text_editor(pane), "Two")
+        assert len(session.log.entries()) == 2
+        assert session.log.undo() is True
+        assert session.document.node(phone).prop("text") is None
+        assert _text_of(session, "email") == "One"
+    finally:
+        _close(window, pane, realizer, session)
+
+
 def test_revert_leaves_no_redo_entry(qapp: QApplication) -> None:
     del qapp
     session, realizer = realize(_FORM)

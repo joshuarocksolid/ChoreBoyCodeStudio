@@ -45,9 +45,9 @@ from app.features.form_builder.engine.commands.log import Checkpoint
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.inspector.catalog import Catalog
-from app.qt.QtCore import QEvent, QObject, QTimer
+from app.qt.QtCore import QTimer
 from app.qt.qt_compat import wrapper_is_valid
-from app.qt.QtWidgets import QAbstractSlider, QAbstractSpinBox, QApplication, QComboBox, QLayout, QWidget
+from app.qt.QtWidgets import QApplication, QLayout, QWidget
 
 if TYPE_CHECKING:
     from app.features.form_builder.qtside.theme.chrome import FormChrome
@@ -74,6 +74,7 @@ def rejection_text(result: Rejected) -> str:
         return "%s %s" % (result.code, result.message)
     return result.message
 
+
 class Services:
     def __init__(self, session: FormSession, catalog: Catalog, realizer: object = None) -> None:
         self._session = session
@@ -85,8 +86,11 @@ class Services:
         self._chrome: Optional["FormChrome"] = None
         self._settle_queued = False
         # One hook for every row (UX-PED-004): a row's session ends when focus
-        # lands outside it. A window deactivation (no new focus widget) or an open
-        # popup list does not end it. A selection change ends them all.
+        # lands outside it. No new focus widget means the window deactivated
+        # (ActiveWindowFocusReason). An open popup list (PopupFocusReason) does
+        # not end it either. A selection change ends them all, so the same row
+        # key on a new owner starts a new step. This is a signal, not an
+        # application event filter: a filter runs for every event in the process.
         self._app: Optional[QApplication] = None
         app = QApplication.instance()
         if isinstance(app, QApplication):
@@ -116,6 +120,8 @@ class Services:
 
     def _settle_inline(self) -> None:
         self._settle_queued = False
+        if QApplication.activePopupWidget() is not None:
+            return
         focus = QApplication.focusWidget()
         if focus is None:
             return
@@ -216,10 +222,6 @@ class Services:
             # A close that runs inside a log listener cannot write; the write is dropped.
             return Dropped()
 
-    def top_entry_has_token(self, token: str) -> bool:
-        entries = self._session.log.entries()
-        return bool(entries) and entries[-1].merge_token == token
-
     def rollback(self, checkpoint: Checkpoint, token: str) -> bool:
         if self._depth:
             return False
@@ -312,8 +314,15 @@ class EditSession:
         return stop
 
     def has_step(self) -> bool:
-        """True when this session's step is the top undo entry."""
-        return self._services.top_entry_has_token(self._token)
+        """True when any undo entry above this session's checkpoint carries its token.
+
+        A save splits the session into two entries. A foreign step on top used
+        to hide both, because only the top entry was checked, and Esc then kept
+        the writes. Rollback still refuses when a foreign token is in that range.
+        """
+        entries = self._services.session.log.entries()
+        above = entries[self._checkpoint.depth :]
+        return any(entry.merge_token == self._token for entry in above)
 
     def undo(self) -> bool:
         """Take back everything this session wrote, as one change set. See ``revert``.
