@@ -181,17 +181,14 @@ def test_unset_font_bold_writes_only_bold(qapp: QApplication) -> None:
         pane.flush()
         row = pane.findChild(QWidget, "formBuilder.row.font")
         assert row is not None
-        family = row.findChild(QComboBox)
-        size = row.findChild(QSpinBox)
-        bold = next(box for box in row.findChildren(QCheckBox) if box.text() == "Bold")
-        assert family is not None and size is not None
-        line = family.lineEdit()
-        assert line is not None
-        assert line.text() == ""
-        assert line.placeholderText() == "Default"
-        assert size.specialValueText() == "\u2014"
+        summary = row.findChild(QPushButton, "formBuilder.summary")
+        assert summary is not None
+        assert "Default" in summary.toolTip() or "Default" in summary.text()
+        summary.click()
+        qapp.processEvents()
+        bold = next(button for button in pane.window().findChildren(QToolButton) if button.accessibleName() == "Font: bold")
         bold.click()
-        pane.flush()
+        qapp.processEvents()
         stored = session.document.node(session.document.by_name("email")[0]).prop("font")
         assert stored is not None
         assert isinstance(stored.value, FontValue)
