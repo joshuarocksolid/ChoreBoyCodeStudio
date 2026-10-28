@@ -127,6 +127,7 @@ def uic_env(monkeypatch):  # type: ignore[no-untyped-def]
     monkeypatch.setenv("CBCS_FB_UIC", uic)
 
 
+@pytest.mark.parity("R3-121")
 def test_root_wizard_with_three_steps_reordered_and_one_deleted(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(WIZARD)
@@ -140,6 +141,7 @@ def test_root_wizard_with_three_steps_reordered_and_one_deleted(tmp_path: Path, 
     _oracle(path)
 
 
+@pytest.mark.parity("R3-121")
 def test_nested_wizard_with_three_steps_reordered_and_one_deleted(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(NESTED_WIZARD)
@@ -152,6 +154,7 @@ def test_nested_wizard_with_three_steps_reordered_and_one_deleted(tmp_path: Path
     _oracle(_save(tmp_path, "nested_wizard", write_ui(doc).text))
 
 
+@pytest.mark.parity("R3-128")
 def test_toolbox_insert_writes_a_label_and_no_title(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(TOOLBOX)
@@ -163,6 +166,7 @@ def test_toolbox_insert_writes_a_label_and_no_title(tmp_path: Path, qapp, uic_en
     _oracle(_save(tmp_path, "toolbox", text))
 
 
+@pytest.mark.parity("R3-127")
 def test_tab_insert_writes_a_title_and_no_label(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(TABS)
@@ -175,6 +179,7 @@ def test_tab_insert_writes_a_title_and_no_label(tmp_path: Path, qapp, uic_env) -
     _oracle(_save(tmp_path, "tabs", text))
 
 
+@pytest.mark.parity("R3-130")
 def test_mdi_window_insert_and_delete(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(MDI)
@@ -187,6 +192,7 @@ def test_mdi_window_insert_and_delete(tmp_path: Path, qapp, uic_env) -> None:  #
     _oracle(_save(tmp_path, "mdi", text))
 
 
+@pytest.mark.parity("R3-131")
 def test_dock_side_is_written_as_the_dock_area_number(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(DOCK)
@@ -196,3 +202,78 @@ def test_dock_side_is_written_as_the_dock_area_number(tmp_path: Path, qapp, uic_
     text = write_ui(doc).text
     assert '<attribute name="dockWidgetArea">' in text and "<number>8</number>" in text
     _oracle(_save(tmp_path, "dock", text))
+
+
+@pytest.mark.parity("R3-126")
+def test_stacked_insert_writes_no_title_and_keeps_the_current_page(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
+    del qapp, uic_env
+    log = open_log(STACKED)
+    doc = log.document
+    log.execute(InsertPage(doc.root.id, index=0))
+    text = write_ui(doc).text
+    assert "<attribute" not in text and "<string>Page" not in text
+    assert "page_3" in text
+    assert 'name="currentIndex"' in text and "<number>2</number>" in text  # still on page_b
+    _oracle(_save(tmp_path, "stacked", text))
+
+
+STACKED = _HEAD + (
+    ' <widget class="QStackedWidget" name="Form">\n'
+    ' <property name="currentIndex"><number>1</number></property>\n'
+    '  <widget class="QWidget" name="page_1"/>\n'
+    '  <widget class="QWidget" name="page_2"/>\n'
+    " </widget>\n"
+) + _TAIL
+
+
+def _qui_load(path: Path):  # type: ignore[no-untyped-def]
+    from PySide6.QtCore import QFile
+    from PySide6.QtUiTools import QUiLoader
+
+    file = QFile(str(path))
+    assert file.open(QFile.OpenModeFlag.ReadOnly)
+    try:
+        return QUiLoader().load(file)
+    finally:
+        file.close()
+
+
+@pytest.mark.parity("R3-127")
+@pytest.mark.parity("R3-128")
+@pytest.mark.parity("R3-130")
+def test_quiloader_reads_the_titles_order_and_start_page_the_builder_wrote(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
+    """Titles, order and the start page as Qt's own .ui loader reads them (UX-CONT-001)."""
+    del uic_env
+    from PySide6.QtWidgets import QMdiArea, QTabWidget, QToolBox, QWizard
+
+    log = open_log(TABS)
+    doc = log.document
+    log.execute(InsertPage(doc.root.id, index=0))
+    log.execute(SetProperty(doc.root.id, "currentIndex", NumberValue(1)))
+    tabs = _qui_load(_save(tmp_path, "q_tabs", write_ui(doc).text))
+    assert isinstance(tabs, QTabWidget)
+    assert [tabs.tabText(i) for i in range(tabs.count())] == ["Tab 1", "Settings"]
+    assert tabs.currentIndex() == 1 and tabs.currentWidget().objectName() == "tab_1"
+
+    log = open_log(TOOLBOX)
+    doc = log.document
+    log.execute(InsertPage(doc.root.id))
+    toolbox = _qui_load(_save(tmp_path, "q_toolbox", write_ui(doc).text))
+    assert isinstance(toolbox, QToolBox)
+    assert [toolbox.itemText(i) for i in range(toolbox.count())] == ["Settings", "Page 2"]
+
+    log = open_log(WIZARD)
+    doc = log.document
+    log.execute(InsertPage(doc.root.id))
+    wizard = _qui_load(_save(tmp_path, "q_wizard", write_ui(doc).text))
+    assert isinstance(wizard, QWizard)
+    titles = [wizard.page(page_id).title() for page_id in wizard.pageIds()]
+    assert titles == ["Step 1", "Step 2"]
+
+    log = open_log(MDI)
+    doc = log.document
+    log.execute(InsertPage(doc.by_name("mdiArea")[0]))
+    mdi = _qui_load(_save(tmp_path, "q_mdi", write_ui(doc).text))
+    area = mdi.findChild(QMdiArea, "mdiArea")
+    assert area is not None
+    assert sorted(sub.windowTitle() for sub in area.subWindowList()) == ["Notes", "Window 2"]
