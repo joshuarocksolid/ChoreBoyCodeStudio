@@ -116,6 +116,14 @@ _EMPTY_FORM = (
     "/ insert · Ctrl+Shift+G wrap · F2 rename",
 )
 _EMPTY_NESTED = "Drop widgets here"
+#: UX-CONT-009: the caption on an empty page container.
+_EMPTY_PAGE_CAPTIONS = {
+    "QTabWidget": "No pages. Use + or Pages > Insert page.",
+    "QToolBox": "No pages. Use + or Pages > Insert page.",
+    "QStackedWidget": "No pages. Use + or Pages > Insert page.",
+    "QWizard": "No steps. Use + or Pages > Insert page.",
+    "QMdiArea": "No windows. Use Pages > Add window.",
+}
 _EMPTY_PAGE = "Drop widgets on this page"
 _PAGE_PARENTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
 _PLUS = 12
@@ -245,6 +253,16 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         clipped = _clip(canvas, page)
         if clipped is not None:
             content.append(Obstacle(node.id, clipped))
+        if node.class_name in _EMPTY_PAGE_CAPTIONS and not node.child_widgets and node.id != document.root.id:
+            # A page container with no pages: a dashed frame and its caption. A drop makes the first page.
+            _empty_mark(
+                empties,
+                targets,
+                canvas,
+                OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                _EMPTY_PAGE_CAPTIONS[node.class_name],
+            )
+            continue
         if node.id == document.root.id or managed_container(document, node):
             continue
         if node.layout is not None:
