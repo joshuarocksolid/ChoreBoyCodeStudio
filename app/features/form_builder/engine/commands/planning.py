@@ -36,6 +36,7 @@ from app.features.form_builder.engine.commands.refs import (
     rewrite_spec_refs,
 )
 from app.features.form_builder.engine.query.name_policy import explain_name
+from app.features.form_builder.engine.query.pages import page_kind
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
 from app.features.form_builder.engine.logic.storage import (
     CBCS_LAYOUT_KEYS,
@@ -707,17 +708,34 @@ def move_page(doc: UiDocument, ctx: PlanContext, container: NodeId, from_index: 
     if from_index < 0 or from_index >= len(pages) or to_index < 0 or to_index >= len(pages):
         raise CommandRejected("That page position is outside the container.")
     page = pages[from_index]
-    current = _number_prop(widget, "currentIndex")
+    stored = _number_prop(widget, "currentIndex")
+    current = _effective_start(doc, container, stored, len(pages))
     order = list(range(len(pages)))
     moved = order.pop(from_index)
     order.insert(to_index, moved)
     if page.slot_index != to_index:
         ctx.do(MoveNodeOp(page.id, container, "children", to_index))
-    if current is not None and 0 <= current < len(order):
+    if current is not None:
         new_current = order.index(current)
-        if new_current != current:
+        if new_current != current or (stored is not None and stored != current):
             set_property(doc, ctx, container, "currentIndex", NumberValue(new_current))
     ctx.select((page.id,))
+
+
+def _effective_start(doc: UiDocument, container: NodeId, stored: Optional[int], count: int) -> Optional[int]:
+    """The page index Qt starts on, or None when the container keeps no start page.
+
+    A tab widget, toolbox or stacked widget without ``currentIndex`` starts on its
+    first page; a saved index outside the pages clamps, as Qt does (UX-CONT-006).
+    """
+    if count <= 0:
+        return None
+    if stored is None:
+        kind = page_kind(doc, container)
+        if kind is None or not kind.has_start_page:
+            return None
+        return 0
+    return min(max(stored, 0), count - 1)
 
 
 def set_items(

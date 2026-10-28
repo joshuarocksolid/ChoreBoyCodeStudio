@@ -67,7 +67,9 @@ class InsertPage(_CommandBase):
             raise CommandRejected("That page position is outside the container.")
         if self.existing and any(not doc.contains(node_id) for node_id in self.existing):
             raise CommandRejected("That object is no longer in the form.")
-        old_current = start_index(doc, self.container)
+        stored = start_index(doc, self.container)
+        # The page the file starts on, as Qt reads it (an index past the end clamps).
+        old_current = None if stored is None or count == 0 else min(max(stored, 0), count - 1)
         name = next_object_name(page_name_base(kind, count + 1), _taken_names(doc))
         title = _title_entry(kind, default_title(kind, index + 1))
         properties = (title,) if title is not None and title.kind == "property" else ()
@@ -83,8 +85,10 @@ class InsertPage(_CommandBase):
             doc, ctx, InContainer(self.container, index), Fragment((spec,)), False
         )
         page_id = ids[0]
-        if old_current is not None and old_current >= index and count > 0:
-            planning.set_property(doc, ctx, self.container, "currentIndex", NumberValue(old_current + 1))
+        if old_current is not None:
+            kept = old_current + 1 if old_current >= index else old_current
+            if kept != stored:
+                planning.set_property(doc, ctx, self.container, "currentIndex", NumberValue(kept))
         layout_id = planning.apply_layout_command(doc, ctx, page_id, "QVBoxLayout", (), None)
         if self.existing:
             planning.move_nodes(doc, ctx, self.existing, InBoxLayout(layout_id, 0))

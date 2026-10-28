@@ -56,6 +56,13 @@ KINDS = {
         + _titled("QWidget", "tab_c", "attribute", "title", "Gamma"),
         ' <property name="currentIndex"><number>1</number></property>\n',
     ),
+    # No saved currentIndex: Qt starts on the first page, and every command must keep that page.
+    "tab_implicit": _form(
+        "QTabWidget",
+        _titled("QWidget", "tab_a", "attribute", "title", "Alpha")
+        + _titled("QWidget", "tab_b", "attribute", "title", "Beta")
+        + _titled("QWidget", "tab_c", "attribute", "title", "Gamma"),
+    ),
     "toolbox": _form(
         "QToolBox",
         _titled("QWidget", "page_a", "attribute", "label", "Alpha")
@@ -276,3 +283,24 @@ def test_deleting_the_start_page_clamps_to_the_next_page() -> None:
     assert [p.object_name for p in pages(doc, container)] == ["page_a", "page_b"]
     assert doc.node(start_page(doc, container)).object_name == "page_b"  # type: ignore[arg-type]
     assert _stored_start(doc, container) == 1
+
+
+def test_moving_the_first_page_keeps_an_unsaved_start_page() -> None:
+    log = open_log(KINDS["tab_implicit"])
+    doc = log.document
+    container = doc.root.id
+    log.execute(MovePage(container, 0, 2))
+    assert [p.object_name for p in pages(doc, container)] == ["tab_b", "tab_c", "tab_a"]
+    assert doc.node(start_page(doc, container)).object_name == "tab_a"  # type: ignore[arg-type]
+
+
+def test_a_saved_index_past_the_last_page_keeps_its_clamped_page() -> None:
+    text = KINDS["tab"].replace("<number>1</number>", "<number>7</number>")
+    log = open_log(text)
+    doc = log.document
+    container = doc.root.id
+    assert doc.node(start_page(doc, container)).object_name == "tab_c"  # type: ignore[arg-type]
+    log.execute(InsertPage(container, index=3))
+    assert doc.node(start_page(doc, container)).object_name == "tab_c"  # type: ignore[arg-type]
+    log.execute(MovePage(container, 2, 0))
+    assert doc.node(start_page(doc, container)).object_name == "tab_c"  # type: ignore[arg-type]
