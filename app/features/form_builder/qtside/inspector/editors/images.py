@@ -378,6 +378,7 @@ class IconEditor(_PictureRow):
             grid_layout.setColumnStretch(column, 1)
         grid.hide()
         other.toggled.connect(grid.setVisible)
+        other.toggled.connect(lambda shown: other.setText("Other states \u25be" if shown else "Other states \u25b8"))
         other.toggled.connect(lambda _open: popover.place())
         layout.addWidget(other)
         layout.addWidget(grid)

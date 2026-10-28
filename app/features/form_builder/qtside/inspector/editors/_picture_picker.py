@@ -241,7 +241,12 @@ class PictureGrid(QWidget):
 
     def mouseMoveEvent(self, event: QEvent) -> None:  # noqa: N802
         picture = self._at(event)
-        self.setToolTip("" if picture is None else picture.resource_path)
+        if picture is None:
+            self.setToolTip("")
+        elif is_missing(picture):
+            self.setToolTip("%s\nCode Studio can't find %s." % (picture.resource_path, picture.disk_path))
+        else:
+            self.setToolTip(picture.resource_path)
         super().mouseMoveEvent(event)
 
     def _at(self, event: QEvent) -> Optional[QrcPicture]:
@@ -264,6 +269,7 @@ class PictureGrid(QWidget):
         text = token_color(chrome.text)
         muted = token_color(chrome.muted)
         accent = token_color(chrome.accent)
+        error = token_color(chrome.error)
         checker_a = token_color(chrome.fb.checker_a)
         checker_b = token_color(chrome.fb.checker_b)
         border = token_color(chrome.fb.swatch_border)
@@ -286,7 +292,8 @@ class PictureGrid(QWidget):
                 _THUMB,
             )
             _paint_checker(painter, thumb, checker_a, checker_b)
-            if not is_missing(picture):
+            missing = is_missing(picture)
+            if not missing:
                 pixmap = cached_thumbnail(picture.disk_path, _THUMB)
                 if not pixmap.isNull():
                     px = thumb.x() + (thumb.width() - pixmap.width()) // 2
@@ -297,7 +304,7 @@ class PictureGrid(QWidget):
             if slot.cell_index == self._selected:
                 painter.setPen(QPen(accent, 2))
                 painter.drawRect(rect.adjusted(1, 1, -2, -2))
-            painter.setPen(text)
+            painter.setPen(error if missing else text)
             name = QFontMetrics(self.font()).elidedText(
                 picture.file_name, _elide_mode("ElideMiddle"), _CELL_W - 4
             )

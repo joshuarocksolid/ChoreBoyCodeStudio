@@ -145,7 +145,7 @@ def _shoot(qapp: QApplication, folder: Path, tmp_path: Path, suffix: str) -> Non
                 pane.flush()
                 _fit_row(qapp, window, pane, width)
                 _open_row(pane, "formBuilder.row.pixmap", qapp)
-                caption = _search(qapp).parent().findChild(QLabel, "formBuilder.pictureNoResource")
+                caption = _popover(window).findChild(QLabel, "formBuilder.pictureNoResource")
                 assert caption is not None and caption.isVisible()
                 _grab(qapp, _popover(window), folder, "no-resource-%s-%s-%d" % (mode, suffix, width))
             finally:
@@ -156,12 +156,12 @@ def _shoot(qapp: QApplication, folder: Path, tmp_path: Path, suffix: str) -> Non
                 pane.flush()
                 _fit_row(qapp, window, pane, width)
                 _open_row(pane, "formBuilder.row.pixmap", qapp)
-                search = _search(qapp)
-                picker = search.parent()
+                opened = _popover(window)
+                picker = opened.findChild(PicturePicker)
                 assert isinstance(picker, PicturePicker)
                 picker.choose(str(outside))
                 qapp.processEvents()
-                done = search.window().findChild(QWidget, "formBuilder.popoverDone")
+                done = opened.findChild(QWidget, "formBuilder.popoverDone")
                 assert done is not None
                 done.click()
                 qapp.processEvents()
@@ -172,5 +172,18 @@ def _shoot(qapp: QApplication, folder: Path, tmp_path: Path, suffix: str) -> Non
                     scroll.ensureWidgetVisible(row)
                 qapp.processEvents()
                 _grab(qapp, row, folder, "file-path-warning-%s-%s-%d" % (mode, suffix, width))
+            finally:
+                _close(window, pane, realizer, session, qapp)
+            brushed = _form(
+                photo=":/icons/img00.png",
+                brush='<brush brushstyle="TexturePattern"><texture><pixmap>:/icons/img01.png</pixmap></texture></brush>',
+            )
+            window, pane, session, realizer = _pane(qapp, brushed, path, chrome=chrome)
+            try:
+                _select(session, "title")
+                pane.flush()
+                _fit_row(qapp, window, pane, width)
+                _open_row(pane, "formBuilder.row.brush", qapp)
+                _grab(qapp, _popover(window), folder, "brush-picture-%s-%s-%d" % (mode, suffix, width))
             finally:
                 _close(window, pane, realizer, session, qapp)
