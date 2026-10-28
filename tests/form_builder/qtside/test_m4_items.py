@@ -238,6 +238,52 @@ def test_item_tooltip_matches_uic(tmp_path) -> None:
     assert outcome[0] == "ok", outcome
 
 
+def test_inspector_items_row_opens_the_editor_and_another_selection_keeps(qapp) -> None:
+    """The Content Items row is not the status tip: no changed bar, no Reset, and it opens the editor."""
+    from app.qt.QtWidgets import QWidget
+    from tests.form_builder.qtside.test_m43d_text import _close, _pane, _select, _settle
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QComboBox" name="combo">
+   <property name="statusTip"><string>Pick a size</string></property>
+   <item><property name="text"><string>Small</string></property></item>
+   <item><property name="text"><string>Large</string></property></item>
+  </widget>
+  <widget class="QLabel" name="other"/>
+""",
+    )
+    window, pane, session, realizer = _pane(qapp, text)
+    try:
+        window.show()
+        _select(session, "combo")
+        _settle(qapp, pane)
+        button = next(item for item in pane.findChildren(QWidget, "formBuilder.itemsRow") if item.isVisible())
+        assert button.summary == "2 items: Small, Large"
+        row = button.parentWidget()
+        while row is not None and not row.objectName().startswith("formBuilder.row."):
+            row = row.parentWidget()
+        assert row is not None and row.objectName() == "formBuilder.row.items"
+        bar = row.findChild(QWidget, "formBuilder.rowChanged")
+        assert bar is None or bar.property("fbChanged") != "true"
+        reset = row.findChild(QWidget, "formBuilder.rowReset")
+        assert reset is None or not reset.isVisible()
+        button.click()
+        qapp.processEvents()
+        editor = next(item for item in window.findChildren(ItemEditor) if item.isVisible())
+        field = next(item for item in editor.findChildren(QLineEdit) if item.isVisible())
+        QTest.keyClicks(field, "Tiny ")
+        _select(session, "other")
+        qapp.processEvents()
+        qapp.processEvents()
+        assert not [item for item in window.findChildren(ItemEditor) if item.isVisible()]
+        assert session.log.undo_label() == "Edit items of combo"
+        assert [item.text_at(0) for item in load_draft(session.document, session.document.by_name("combo")[0]).items][0] == "Tiny Small"
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def test_list_item_details_read_and_flip_one_flag(qapp) -> None:
     """Details open on a checkable item, and a flag toggle keeps every other bit."""
     from app.qt.QtWidgets import QCheckBox, QComboBox, QWidget

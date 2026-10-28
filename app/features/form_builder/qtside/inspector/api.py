@@ -205,7 +205,16 @@ class FlagBit:
     name: str
     bit: str
 
-RowSource = Union[Prop, LayoutProp, CellAlignment, FlagBit, Note]
+@dataclass(frozen=True)
+class Summary:
+    """A row with no property behind it. Its editor reads and writes something else.
+
+    The Items row (UX-ITEM-001) shows a summary of the items and opens the item
+    editor. It is never "changed", has no Reset and no Qt name.
+    """
+
+
+RowSource = Union[Prop, LayoutProp, CellAlignment, FlagBit, Note, Summary]
 
 @dataclass(frozen=True)
 class RowSpec:

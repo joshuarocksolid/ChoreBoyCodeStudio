@@ -9,10 +9,10 @@ from app.features.form_builder.qtside.inspector.api import (
     EditorHost,
     EditorKey,
     GroupId,
-    Prop,
     Registrar,
     RowSpec,
     RowValue,
+    Summary,
 )
 from app.features.form_builder.qtside.inspector.editors._popover import SummaryButton
 from app.features.form_builder.qtside.items.editor import open_editor
@@ -31,7 +31,7 @@ def register(registrar: Registrar) -> None:
             group=GroupId.CONTENT,
             label="Items",
             help="The rows this widget shows.",
-            source=Prop("statusTip"),
+            source=Summary(),
             classes=_CLASSES,
             editor="items",
             after="toolTip",
