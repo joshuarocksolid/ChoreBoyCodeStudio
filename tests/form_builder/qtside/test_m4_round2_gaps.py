@@ -169,7 +169,8 @@ def test_container_rows_are_scoped_to_their_parent_class() -> None:
 
 @pytest.mark.xfail(
     strict=True,
-    reason="M4.0s owns inspector editor_key: a row cannot name EditorKey('dock_side'), so Dock side opens as a number",
+    reason="M4.3d adds RowSpec.editor; until then a row cannot name EditorKey('dock_side'), so Dock side opens "
+    "as a number. M4.2 then names the editor on the dockSide row",
 )
 def test_the_dock_side_row_selects_the_four_segment_editor() -> None:
     text = form(
@@ -192,6 +193,26 @@ def test_the_dock_side_row_selects_the_four_segment_editor() -> None:
         assert row.editor == EditorKey("dock_side")
     finally:
         session.dispose()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="M4.3d adds ValueSpec/RowSpec.choices; until then Starts on is the currentIndex number, not a drop-down "
+    "of page titles (UX-CONT-006). M4.2 then gives the startsOn row its choices",
+)
+def test_starts_on_is_a_drop_down_of_page_titles() -> None:
+    rows = {row.key: row for row in default_catalog().rows()}
+    assert getattr(rows["startsOn"], "choices", None) is not None
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="M4.3d adds the FlagBit row source; until then features is one flags row, not the Can close, Can float "
+    "and Can move check boxes (UX-CONT-012). M4.2 then registers the three rows",
+)
+def test_a_dock_has_can_close_can_float_and_can_move_rows() -> None:
+    labels = {row.label for row in default_catalog().rows() if "QDockWidget" in (row.classes or ())}
+    assert {"Can close", "Can float", "Can move"} <= labels
 
 
 def test_an_outline_page_caption_uses_the_container_word() -> None:
