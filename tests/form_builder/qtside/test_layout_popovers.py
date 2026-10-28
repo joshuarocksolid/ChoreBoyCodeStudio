@@ -233,6 +233,37 @@ def test_an_already_horizontal_splitter_says_nothing_to_change(tmp_path: Path) -
         _close(parent, surface)
 
 
+def test_a_menu_contributor_command_is_one_step_and_a_refusal_is_narrated(tmp_path: Path) -> None:
+    # MenuContext.run is the surface's run_menu_request (UX-CONT-020): M4.2's
+    # Pages menu sends engine commands, not layout requests.
+    from app.features.form_builder.engine.commands.base import CommandRejected
+    from app.features.form_builder.engine.commands.catalog import SetProperty
+    from app.features.form_builder.engine.ui4.values import StringValue
+
+    class _Refused(SetProperty):
+        def apply(self, doc, ctx):  # type: ignore[no-untyped-def, override]
+            raise CommandRejected("That page cannot go there.")
+
+    parent = QWidget()
+    parent.resize(800, 600)
+    surface = _open(parent, _SPLIT, tmp_path / "split.ui")
+    parent.show()
+    surface.show()
+    _flush()
+    try:
+        split = surface._session.document.by_name("split")[0]
+        before = len(surface._session.log.entries())
+        surface.run_menu_request(SetProperty(split, "toolTip", StringValue("Pages")))
+        _flush()
+        assert len(surface._session.log.entries()) == before + 1
+        surface.run_menu_request(_Refused(split, "toolTip", StringValue("No")))
+        _flush()
+        assert len(surface._session.log.entries()) == before + 1
+        assert "That page cannot go there." in surface.editor_status_sentence()
+    finally:
+        _close(parent, surface)
+
+
 def test_the_change_to_menu_follows_the_dark_theme(qapp: QApplication, tmp_path: Path) -> None:
     parent, surface = _shown(tmp_path, "theme")
     try:

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import TYPE_CHECKING, Literal, Mapping, NewType, Optional, Protocol, Sequence, Tuple, Union
+from typing import TYPE_CHECKING, Callable, Literal, Mapping, NewType, Optional, Protocol, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.ids import NodeId
@@ -11,11 +11,13 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import CStringValue, SetValue, StringValue, Value
 
 if TYPE_CHECKING:
+    from app.features.form_builder.qtside.theme.chrome import FormChrome
     from app.qt.QtWidgets import QLayout, QWidget
 
 class GroupId(str, Enum):
 
     CONTENT = "content"
+    PAGES = "pages"
     INPUT = "input"
     APPEARANCE = "appearance"
     SIZE = "size"
@@ -38,6 +40,7 @@ def _cover(order: Tuple["GroupId", ...]) -> Tuple["GroupId", ...]:
 GROUP_ORDER: Tuple["GroupId", ...] = _cover(
     (
         GroupId.CONTENT,
+        GroupId.PAGES,
         GroupId.INPUT,
         GroupId.APPEARANCE,
         GroupId.SIZE,
@@ -175,6 +178,11 @@ class RowSpec:
 
     ``order`` is a sort key inside the group. ``after`` names the row key this
     one sits immediately after. ``after`` is applied after ``order``.
+
+    ``parent_classes`` is a parent scope: when set, every owner's nearest parent
+    widget (layouts are skipped) must include one of them in its chain, else the
+    row is hidden. A dock side needs a main window parent; a page attribute needs
+    a tab widget, toolbox or wizard parent.
     """
 
     key: str
@@ -185,10 +193,71 @@ class RowSpec:
     classes: Tuple[str, ...] = ()
     order: Optional[int] = None
     after: str = ""
+    parent_classes: Tuple[str, ...] = ()
+
+class EditSession(Protocol):
+    """See ``_services.EditSession``: one focus visit or one popover, one undo step."""
+
+    @property
+    def token(self) -> str: ...
+
+    @property
+    def label(self) -> str: ...
+
+    @property
+    def closed(self) -> bool: ...
+
+    def set_label(self, label: str) -> None: ...
+
+    def run(self, commands: Sequence[Command]) -> object:
+        """Run commands inside this session's step. Returns a tuple of results, a rejection or a drop."""
+        ...
+
+    def has_step(self) -> bool: ...
+
+    def undo(self) -> bool: ...
+
+    def revert(self) -> bool: ...
+
+    def close(self) -> None: ...
+
+    def watch(self, on_change: Callable[[], None]) -> Callable[[], None]: ...
 
 class EditorHost(Protocol):
-    def commit(self, value: Value) -> None:
-        """Run the row's write. A rejection is shown under the field."""
+    def commit(self, value: Value, session: Optional[EditSession] = None) -> None:
+        """Run the row's write. Inside ``session``, it joins that session's one undo step.
+
+        Without a session, the row's focus session is used, so one focus visit is one step.
+        A rejection is shown under the field.
+        """
+        ...
+
+    def begin_session(self, label: str) -> EditSession:
+        """A session for a popover. Its writes are one undo step named ``label``; close it when the popover closes."""
+        ...
+
+    @property
+    def chrome(self) -> "FormChrome":
+        """The builder chrome in effect (UX-TOK-005 tokens come from it)."""
+        ...
+
+    @property
+    def label(self) -> str:
+        """The row's current label. A pooled editor reads this when it is shown again."""
+        ...
+
+    @property
+    def qt_name(self) -> str:
+        """The Qt property name of the row, or "" when the row has none."""
+        ...
+
+    @property
+    def row_widget(self) -> QWidget:
+        """The row widget the editor was built into."""
+        ...
+
+    def reset(self) -> None:
+        """Remove this property from the file. One undo step, outside the edit session."""
         ...
 
     def invalid(self, message: str) -> None:
@@ -252,12 +321,24 @@ class GroupBody(Protocol):
 class GroupBodyFactory(Protocol):
     def __call__(self, host: GroupHost, parent: QWidget) -> GroupBody: ...
 
+class GroupApplies(Protocol):
+    def __call__(self, document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+        """True when the group's body shows for ``owners``, even with no curated rows."""
+        ...
+
 class Registrar(Protocol):
     def editor(self, key: EditorKey, factory: EditorFactory, *, baseline: bool = False) -> None: ...
 
     def row(self, spec: RowSpec, *, baseline: bool = False) -> None: ...
 
-    def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None: ...
+    def group_body(
+        self,
+        group: GroupId,
+        factory: GroupBodyFactory,
+        *,
+        baseline: bool = False,
+        applies: Optional["GroupApplies"] = None,
+    ) -> None: ...
 
 def mark(widget: QWidget, value: RowValue) -> None:
     if isinstance(value, Mixed):
@@ -286,8 +367,10 @@ __all__ = [
     "EditorFactory",
     "EditorHost",
     "EditorKey",
+    "EditSession",
     "EnumSpec",
     "GroupBody",
+    "GroupApplies",
     "GroupBodyFactory",
     "GroupHost",
     "GroupId",

@@ -30,6 +30,11 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         focus_width=tokens.focus_border_width,
         search_match_bg=tokens.search_match_bg,
         selected=tokens.tree_selected_bg,
+        popup=tokens.popup_bg,
+        popup_border=tokens.popup_border,
+        glyph=tokens.icon_primary,
+        is_dark=tokens.is_dark,
+        is_high_contrast=tokens.is_high_contrast,
         layout=_ink(overlay.layout),
         gap=_ink(overlay.gap),
     )

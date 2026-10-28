@@ -244,7 +244,7 @@ def test_multi_select_edit_is_one_undo(qapp: QApplication) -> None:
     QTest.keyClicks(editor, "Both")
     QTest.keyClick(editor, Qt.Key_Return)
     pane.flush()
-    assert session.log.undo_label() == "Edit"
+    assert session.log.undo_label() == "Change text"
     assert len(session.log.entries()) == 1
     assert session.log.undo() is True
     assert session.log.undo() is False
