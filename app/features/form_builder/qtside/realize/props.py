@@ -85,6 +85,13 @@ def ordered_layout_metrics(
     return [by_name[name] for name in _METRIC_ORDER if name in by_name]
 
 
+#: (node id, property name) -> why the canvas widget did not take the value (UX-PED-009).
+Refusals = Dict[Tuple[int, str], str]
+
+REFUSED_BY_QT = "Qt refused this value."
+_NODE_ID = "_cbcsNodeId"
+
+
 def apply_entry(
     obj: object,
     entry: PropertyEntry,
@@ -92,8 +99,14 @@ def apply_entry(
     is_root: bool,
     resolve_path: Callable[[str], str],
     problems: List[str],
+    refusals: Optional[Refusals] = None,
 ) -> bool:
-    """Apply ``entry``. False when the value was skipped or rejected."""
+    """Apply ``entry``. False when the value was skipped or rejected.
+
+    With ``refusals``, a value Qt refuses (``setProperty`` returns False for a
+    real property, or the setter raises) is recorded under the object's node
+    id, and a value it takes clears that record.
+    """
     name = entry.name
     if name in _SKIP or is_logic_key(name) or name in CANVAS_OVERRIDES:
         return False
@@ -103,28 +116,72 @@ def apply_entry(
     try:
         if name == "geometry" and isinstance(value, (RectValue, RectFValue)):
             apply_geometry(obj, value, is_root)
-            return True
+            return _took(obj, name, refusals)
         if name in _MARGINS or name == "margin":
             _apply_margin(obj, name, int(_number(value)))
-            return True
+            return _took(obj, name, refusals)
         if isinstance(value, SizePolicyValue):
             _apply_size_policy(obj, value)
-            return True
+            return _took(obj, name, refusals)
         qvalue = to_qt(value, resolve_path)
         if qvalue is None:
             return False
         setter = _setter(obj, name)
         if setter is None:
-            obj.setProperty(name, qvalue)  # type: ignore[attr-defined]
-            return True
+            if not set_property_checked(obj, name, qvalue):
+                return _refuse(obj, name, REFUSED_BY_QT, refusals)
+            return _took(obj, name, refusals)
         try:
             setter(qvalue)
         except (TypeError, ValueError, OverflowError):
-            obj.setProperty(name, qvalue)  # type: ignore[attr-defined]
-        return True
+            if not set_property_checked(obj, name, qvalue):
+                return _refuse(obj, name, REFUSED_BY_QT, refusals)
+        return _took(obj, name, refusals)
     except (TypeError, ValueError, OverflowError, RuntimeError, AttributeError) as exc:
         problems.append("%s.%s: %s" % (_type_name(obj), name, exc))
-        return False
+        return _refuse(obj, name, str(exc) or REFUSED_BY_QT, refusals)
+
+
+def set_property_checked(obj: object, name: str, value: object) -> bool:
+    """``setProperty``; False only when ``name`` is a real Qt property that refused the value.
+
+    A name that is not a Q_PROPERTY becomes a dynamic property, which Qt also
+    reports as False; that is not a refusal.
+    """
+    taken = bool(obj.setProperty(name, value))  # type: ignore[attr-defined]
+    if taken:
+        return True
+    meta = obj.metaObject()  # type: ignore[attr-defined]
+    return meta.indexOfProperty(name) < 0
+
+
+def _took(obj: object, name: str, refusals: Optional[Refusals]) -> bool:
+    if refusals:
+        key = _refusal_key(obj, name)
+        if key is not None:
+            refusals.pop(key, None)
+    return True
+
+
+def _refuse(obj: object, name: str, reason: str, refusals: Optional[Refusals]) -> bool:
+    if refusals is not None:
+        key = _refusal_key(obj, name)
+        if key is not None:
+            refusals[key] = reason
+    return False
+
+
+def _refusal_key(obj: object, name: str) -> Optional[Tuple[int, str]]:
+    try:
+        raw = obj.property(_NODE_ID)  # type: ignore[attr-defined]
+    except (AttributeError, RuntimeError, TypeError):
+        return None
+    if raw is None:
+        return None
+    try:
+        return int(raw), name
+    except (TypeError, ValueError):
+        return None
 
 
 def to_qt(value: Value, resolve_path: Callable[[str], str]) -> object:

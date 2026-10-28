@@ -664,7 +664,14 @@ class _Structure(_LayoutSlots):
     def _apply_late(self, node: WidgetNode, widget: QWidget) -> None:
         current = node.prop("currentIndex")
         if current is not None and hasattr(widget, "setCurrentIndex"):
-            apply_entry(widget, current, is_root=False, resolve_path=self._resolve_path, problems=self._problems)
+            apply_entry(
+                widget,
+                current,
+                is_root=False,
+                resolve_path=self._resolve_path,
+                problems=self._problems,
+                refusals=self._refusals,
+            )
         sizes = node.prop("cbcsSplitterSizes")
         if sizes is not None and isinstance(widget, QSplitter):
             values = splitter_sizes(sizes.value)
@@ -1433,6 +1440,16 @@ class _Structure(_LayoutSlots):
     def _tag(self, obj: object, node_id: NodeId) -> None:
         obj.setProperty(NODE_ID_PROPERTY, int(node_id))  # type: ignore[attr-defined]
 
+    def _apply_entry(self, obj: object, entry: object, is_root: bool) -> bool:
+        return apply_entry(
+            obj,
+            entry,  # type: ignore[arg-type]
+            is_root=is_root,
+            resolve_path=self._resolve_path,
+            problems=self._problems,
+            refusals=self._refusals,
+        )
+
     def _apply_node_properties(self, node: object, obj: object, *, is_root: bool) -> None:
         entries = list(node.properties())  # type: ignore[attr-defined]
         deferred = ordered_layout_metrics(entries) if isinstance(node, LayoutNode) else ()
@@ -1440,10 +1457,10 @@ class _Structure(_LayoutSlots):
         for entry in entries:
             if entry.name in skip:
                 continue
-            if apply_entry(obj, entry, is_root=is_root, resolve_path=self._resolve_path, problems=self._problems):
+            if self._apply_entry(obj, entry, is_root):
                 self._patched += 1
         for entry in deferred:
-            if apply_entry(obj, entry, is_root=is_root, resolve_path=self._resolve_path, problems=self._problems):
+            if self._apply_entry(obj, entry, is_root):
                 self._patched += 1
 
     def _apply_stretches(self, node: LayoutNode, qlayout: QLayout) -> None:

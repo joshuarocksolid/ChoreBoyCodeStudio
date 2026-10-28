@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import enum
 import logging
 import os
 import time
@@ -54,10 +55,13 @@ from app.features.form_builder.engine.ui4.nodes import (
 )
 from app.features.form_builder.engine.ui4.spec import PropertyEntry
 from app.features.form_builder.qtside.realize.props import (
+    REFUSED_BY_QT,
+    Refusals,
     apply_entry,
     norm_qt,
     ordered_layout_metrics,
     path_under,
+    set_property_checked,
     text_of,
 )
 from app.features.form_builder.qtside.realize.slots import LayoutHints, _Mirror, collect_layout_hints
@@ -152,6 +156,8 @@ class Realizer(_Structure):
         self._morph_buddies: set = set()
         self._registered: List[object] = []
         self._problems: List[str] = []
+        # (node id, property) -> why Qt did not take the value (UX-PED-009).
+        self._refusals: Refusals = {}
         self._root: Optional[QWidget] = None
         # Live splitter sizes at the start of a preview, restored on Escape.
         self._splitter_at_preview: Dict[NodeId, List[int]] = {}
@@ -169,6 +175,7 @@ class Realizer(_Structure):
         self._destroy_tree()
         self._pool.clear()
         self._problems.clear()
+        self._refusals.clear()
         self._start_patch()
         if self._own_resources:
             self._register_resources()
@@ -329,6 +336,14 @@ class Realizer(_Structure):
         """Classes and properties that could not be applied during the last build."""
         return tuple(self._problems)
 
+    def refused(self, node_id: NodeId, name: str) -> Optional[str]:
+        """Why the canvas widget did not take the value of ``name``, or None when it did. O(1).
+
+        Set when Qt refuses a value (``setProperty`` returns False or the setter
+        raises); cleared when the property is next applied or the node is removed.
+        """
+        return self._refusals.get((int(node_id), name))
+
     def dispose(self) -> None:
         self._subscription.close()
         self._destroy_tree()
@@ -460,6 +475,7 @@ class Realizer(_Structure):
             is_root=obj is self._root,
             resolve_path=self._resolve_path,
             problems=self._problems,
+            refusals=self._refusals,
         ):
             self._patched += 1
 
@@ -525,13 +541,21 @@ class Realizer(_Structure):
                 is_root=obj is self._root,
                 resolve_path=self._resolve_path,
                 problems=self._problems,
+                refusals=self._refusals,
             )
             self._patched += 1
             return
         try:
-            obj.setProperty(name, fresh.property(name))  # type: ignore[attr-defined]
-            self._patched += 1
-        except (TypeError, RuntimeError, AttributeError):
+            value = fresh.property(name)  # type: ignore[attr-defined]
+            # PySide6 refuses an enum or flag object here; Qt takes its number.
+            if isinstance(value, enum.Enum):
+                value = enum_value(value)
+            if set_property_checked(obj, name, value):
+                self._refusals.pop((int(node.id), name), None)
+                self._patched += 1
+            else:
+                self._refusals[(int(node.id), name)] = REFUSED_BY_QT
+        except (TypeError, RuntimeError, AttributeError, ValueError):
             return
 
     def _apply_family(self, node: LayoutNode, layout: QLayout, name: str, entry: Optional[PropertyEntry]) -> None:
@@ -550,7 +574,14 @@ class Realizer(_Structure):
         for each in ordered_layout_metrics(node.properties(), name, entry):
             if each.name not in family:
                 continue
-            apply_entry(layout, each, is_root=False, resolve_path=self._resolve_path, problems=self._problems)
+            apply_entry(
+                layout,
+                each,
+                is_root=False,
+                resolve_path=self._resolve_path,
+                problems=self._problems,
+                refusals=self._refusals,
+            )
         self._patched += 1
 
     def _rename(self, node_id: NodeId, new: object = None) -> None:
@@ -691,6 +722,10 @@ class Realizer(_Structure):
             delete_now(action)
 
     def _wipe(self, node_id: NodeId) -> None:
+        if self._refusals:
+            gone = int(node_id)
+            for key in [key for key in self._refusals if key[0] == gone]:
+                del self._refusals[key]
         self._widgets.pop(node_id, None)
         self._layouts.pop(node_id, None)
         self._objects.pop(node_id, None)
@@ -870,6 +905,7 @@ class Realizer(_Structure):
                 is_root=True,
                 resolve_path=self._resolve_path,
                 problems=self._problems,
+                refusals=self._refusals,
             )
 
     def _destroy_tree(self) -> None:
