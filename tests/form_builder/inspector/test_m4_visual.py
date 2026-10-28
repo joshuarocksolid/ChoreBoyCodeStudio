@@ -41,6 +41,16 @@ from tests.form_builder.qtside.support import realize
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
 
+
+@pytest.fixture(autouse=True)
+def _private_recent_colours(tmp_path):
+    """Recent colours go to a scratch settings root, never the user's."""
+    from app.features.form_builder.integration.editor_memory import use_state_root
+
+    use_state_root(str(tmp_path))
+    yield
+    use_state_root(None)
+
 _CHROME = chrome_from_values(
     window="#f3f3f3",
     panel="#ffffff",
@@ -644,3 +654,169 @@ session.dispose()
     assert blobs[0] == blobs[1]
     assert "0,5" not in blobs[0]
     assert 'position="0.500000000000000"' in blobs[0]
+
+
+def test_palette_state_edit_writes_only_that_group(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        before = session.text()
+        _open_row(pane, "formBuilder.row.palette", qapp)
+        _widget("formBuilder.paletteStates").setChecked(True)
+        qapp.processEvents()
+        pane.flush()
+        # Showing the states changes no colour, so nothing is written.
+        assert session.text() == before
+        swatch = next(
+            widget
+            for widget in QApplication.allWidgets()
+            if widget.accessibleName() == "Palette: Disabled" and widget.isVisible()
+            and widget.parentWidget() is not None
+            and any(label.text() == "Window text" for label in widget.parentWidget().findChildren(QLabel))
+        )
+        QTest.mouseClick(swatch, Qt.MouseButton.LeftButton)
+        qapp.processEvents()
+        field = _widget("formBuilder.colorHex")
+        field.setText("#FF0000")
+        _press(field, Qt.Key.Key_Return)
+        qapp.processEvents()
+        _press(field, Qt.Key.Key_Escape)
+        qapp.processEvents()
+        _done(qapp)
+        stored = session.document.node(session.document.by_name("title")[0]).prop("palette")
+        assert stored is not None and isinstance(stored.value, PaletteValue)
+        assert [role.role for role in stored.value.disabled] == ["WindowText"]
+        assert stored.value.active == () and stored.value.inactive == ()
+        loaded = _load(session.text())
+        label = loaded.findChild(QLabel, "title")
+        assert label is not None
+        group = getattr(QPalette, "ColorGroup", QPalette)
+        disabled = label.palette().color(group.Disabled, _role("WindowText"))
+        active = label.palette().color(group.Active, _role("WindowText"))
+        assert (disabled.red(), disabled.green(), disabled.blue()) == (255, 0, 0)
+        assert (active.red(), active.green(), active.blue()) != (255, 0, 0)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_gradient_type_change_writes_that_types_geometry_and_sorted_stops(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.brush", qapp)
+        kind = _widget("formBuilder.gradientType")
+        assert isinstance(kind, QComboBox)
+        kind.setCurrentIndex(kind.findText("Radial"))
+        kind.activated.emit(kind.currentIndex())
+        qapp.processEvents()
+        bar = _widget("formBuilder.gradientBar")
+        bar.setFocus()
+        _press(bar, Qt.Key.Key_Insert)
+        qapp.processEvents()
+        _done(qapp)
+        stored = session.document.node(session.document.by_name("title")[0]).prop("brush")
+        assert stored is not None and isinstance(stored.value, BrushValue)
+        gradient = stored.value.gradient
+        assert isinstance(gradient, GradientValue)
+        assert (gradient.centralx, gradient.centraly, gradient.radius, gradient.focalx, gradient.focaly) == (
+            0.5, 0.5, 0.5, 0.5, 0.5,
+        )
+        assert gradient.startx is None and gradient.endx is None
+        positions = [stop.position for stop in gradient.stops]
+        assert positions == sorted(positions) and len(positions) == 3
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_brush_style_switch_refits_popover_and_patterns_draw_32_by_16(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.brush", qapp)
+        popover = _widget("formBuilder.rowPopover")
+        gradient_height = popover.height()
+        next(button for button in QApplication.allWidgets() if isinstance(button, QToolButton) and button.text() == "Pattern" and button.isVisible()).click()
+        qapp.processEvents()
+        # Leaving Gradient hides the stop bar and its fields; the popover shrinks
+        # to its content instead of spreading the gap between the rows.
+        assert popover.height() < gradient_height
+        assert popover.height() <= popover.sizeHint().height() + 1
+        choices = _widget("formBuilder.brushPattern")
+        assert isinstance(choices, QComboBox)
+        assert (choices.iconSize().width(), choices.iconSize().height()) == (32, 16)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def _luminance(colour: QColor) -> float:
+    def channel(value: int) -> float:
+        c = value / 255.0
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+
+    return 0.2126 * channel(colour.red()) + 0.7152 * channel(colour.green()) + 0.0722 * channel(colour.blue())
+
+
+def test_written_summaries_stay_readable_on_the_buttons_own_background(qapp: QApplication) -> None:
+    dark = chrome_from_values(
+        window="#1f2328",
+        panel="#262c33",
+        text="#e9ecef",
+        muted="#adb5bd",
+        faint="#8b949e",
+        border="#3d444d",
+        accent="#4c8dff",
+        row_hover="#2d333b",
+        input_bg="#1f2328",
+        error="#ff6b6b",
+        focus_width=1,
+    )
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        pane.apply_chrome(dark)
+        _select(session, "title")
+        pane.flush()
+        qapp.processEvents()
+        group = getattr(QPalette, "ColorRole", QPalette)
+        for name in ("color", "brush"):
+            row = pane.findChild(QWidget, "formBuilder.row." + name)
+            assert row is not None
+            summary = row.findChild(QPushButton, "formBuilder.summary")
+            assert summary is not None
+            text = _luminance(summary.palette().color(group.ButtonText))
+            back = _luminance(summary.palette().color(group.Button))
+            light, deep = max(text, back), min(text, back)
+            # A written value is never painted in a colour picked without
+            # knowing the button it sits on (WCAG AA for normal text).
+            assert (light + 0.05) / (deep + 0.05) >= 4.5, name
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_palette_summary_counts_one_colour_in_the_singular(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.palette", qapp)
+        roles = _widget("formBuilder.paletteRoles")
+        roles.setFocus()
+        _press(roles, Qt.Key.Key_Return)
+        qapp.processEvents()
+        field = _widget("formBuilder.colorHex")
+        field.setText("#1A7F37")
+        _press(field, Qt.Key.Key_Return)
+        qapp.processEvents()
+        _press(field, Qt.Key.Key_Escape)
+        qapp.processEvents()
+        _done(qapp)
+        pane.flush()
+        row = pane.findChild(QWidget, "formBuilder.row.palette")
+        assert row is not None
+        summary = row.findChild(QPushButton, "formBuilder.summary")
+        assert summary is not None
+        assert summary.toolTip() == "1 colour changed" or summary.text().startswith("1 colour changed")
+    finally:
+        _close(window, pane, realizer, session, qapp)

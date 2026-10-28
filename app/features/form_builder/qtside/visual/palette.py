@@ -27,7 +27,7 @@ from app.features.form_builder.qtside.visual.common import (
     begin_popover,
     owner_name,
     part_name,
-    refit,
+    refit_widget,
 )
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QColor, QFont, QPalette
@@ -97,6 +97,8 @@ def palette_summary(palette: Optional[PaletteValue], *, mixed: bool) -> str:
     count = 0 if palette is None else _changed_count(palette)
     if count == 0:
         return "Default"
+    if count == 1:
+        return "1 colour changed"
     return "%d colours changed" % count
 
 
@@ -202,11 +204,13 @@ class PaletteEditor:
         self._written = isinstance(value, Written) and isinstance(value.value, PaletteValue)
         self._palette = value.value if self._written else PaletteValue()  # type: ignore[assignment]
         self._roles = _index(self._palette)
-        self._per_state = _differs(self._roles)
+        if self._popover is None or self._popover.closed:
+            # While the popover is open the person's "Show each state" choice
+            # stands; a live re-show must not fold their state edit into all.
+            self._per_state = _differs(self._roles)
         text = palette_summary(self._palette if self._written else None, mixed=mixed)
         self._summary.set_summary(text)
-        faint = not self._written and not mixed
-        self._summary.setStyleSheet("color: %s;" % (self._host.chrome.faint if faint else self._host.chrome.text))
+        self._summary.show_state(value, self._host.chrome.faint)
 
     def consume_escape(self) -> bool:
         if self._confirming:
@@ -386,7 +390,7 @@ class PaletteEditor:
         self._brush_page.show()
         if form is not None:
             form.setFocus()
-        refit(self._popover)
+        refit_widget(self._brush_page)
 
     def _show_list(self) -> None:
         self._page = "list"
@@ -397,6 +401,8 @@ class PaletteEditor:
         self._list_page.show()
         self._fill_roles()
         self._roles_list.setFocus()
+        if self._popover is not None and not self._popover.closed:
+            refit_widget(self._list_page)
 
     def _brush_changed(self, brush: BrushValue) -> None:
         role = self._brush_role
@@ -424,7 +430,8 @@ class PaletteEditor:
                 for group in _GROUPS:
                     stored.setdefault(group, source)
                 self._roles[role] = stored
-        self._commit()
+        if self._roles:
+            self._commit()
         self._fill_roles()
 
     def _start_from(self) -> None:
@@ -436,7 +443,7 @@ class PaletteEditor:
         self._start_page.show()
         if self._start_picker is not None:
             self._start_picker.setFocus()
-        refit(self._popover)
+        refit_widget(self._start_page)
 
     def _hold_start(self, color: ColorValue) -> None:
         self._pending = color

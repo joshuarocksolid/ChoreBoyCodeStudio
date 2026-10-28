@@ -17,6 +17,16 @@ from tests.form_builder.qtside.support import realize
 
 pytestmark = [pytest.mark.unit, pytest.mark.usefixtures("qapp")]
 
+
+@pytest.fixture(autouse=True)
+def _private_recent_colours(tmp_path):
+    """Recent colours go to a scratch settings root, never the user's."""
+    from app.features.form_builder.integration.editor_memory import use_state_root
+
+    use_state_root(str(tmp_path))
+    yield
+    use_state_root(None)
+
 _CHROME = chrome_from_values(
     window="#f3f3f3",
     panel="#ffffff",

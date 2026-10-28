@@ -22,6 +22,7 @@ from app.features.form_builder.qtside.visual.common import (
     owner_name,
     part_name,
     refit,
+    refit_widget,
 )
 from app.qt.QtCore import Qt, QTimer
 from app.qt.QtGui import QFont, QFontDatabase
@@ -289,10 +290,7 @@ class FontEditor:
         self._font = value.value if self._written else FontValue()  # type: ignore[assignment]
         text = font_summary(self._font if self._written else None, mixed=mixed)
         self._summary.set_summary(text)
-        faint = not self._written and not mixed
-        self._summary.setStyleSheet(
-            "color: %s;" % (self._host.chrome.faint if faint else self._host.chrome.text)
-        )
+        self._summary.show_state(value, self._host.chrome.faint)
         if self._popover is not None and not self._popover.closed:
             self._push()
 
@@ -384,7 +382,7 @@ class FontEditor:
         more_form.addWidget(self._labeled("Hinting", self._hinting, "hintingpreference", box))
         box.hide()
         more.toggled.connect(box.setVisible)
-        more.toggled.connect(lambda _open: refit(self._popover))
+        more.toggled.connect(lambda _open: refit_widget(box))
         form.addWidget(more)
         form.addWidget(box)
         popover.body().addWidget(body)

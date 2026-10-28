@@ -38,7 +38,7 @@ from app.features.form_builder.qtside.visual.common import (
     token_color,
 )
 from app.features.form_builder.qtside.theme.chrome import FormChrome
-from app.qt.QtCore import QRect, Qt
+from app.qt.QtCore import QRect, QSize, Qt
 from app.qt.QtGui import QBrush, QColor, QIcon, QImage, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QButtonGroup,
@@ -86,6 +86,11 @@ _RADIAL_FIELDS = (
     ("focaly", "Focal Y"),
 )
 _CONICAL_FIELDS = (("centralx", "Centre X"), ("centraly", "Centre Y"), ("angle", "Angle"))
+_GEOMETRY_DEFAULTS = {
+    "LinearGradient": {"startx": 0.0, "starty": 0.0, "endx": 1.0, "endy": 0.0},
+    "RadialGradient": {"centralx": 0.5, "centraly": 0.5, "radius": 0.5, "focalx": 0.5, "focaly": 0.5},
+    "ConicalGradient": {"centralx": 0.5, "centraly": 0.5, "angle": 0.0},
+}
 
 
 def add_brush_style(key: str, label: str) -> None:
@@ -456,6 +461,7 @@ class BrushForm(QWidget):
         self._pattern = QComboBox(self)
         self._pattern.setObjectName("formBuilder.brushPattern")
         self._pattern.setAccessibleName(part_name("Brush", "pattern"))
+        self._pattern.setIconSize(QSize(32, 16))
         self._pattern.activated.connect(self._pattern_changed)
         layout.addWidget(self._pattern)
         self._gradient_box = QWidget(self)
@@ -566,8 +572,11 @@ class BrushForm(QWidget):
         else:
             self._extra.setText("Picture uses the picture picker.")
             self._apply_style_widgets()
+            refit_widget(self)
             return
         self._apply_style_widgets()
+        # Another style shows other parts; the popover fits them again.
+        refit_widget(self)
         self._emit()
 
     def _apply_style_widgets(self) -> None:
@@ -633,13 +642,26 @@ class BrushForm(QWidget):
                 self._refuse(NUMBER_REFUSAL)
                 values[name] = getattr(previous, name)
         kind = str(self._type.currentData() or "LinearGradient")
-        if kind == "LinearGradient" and values["startx"] is None:
-            values.update(startx=0.0, starty=0.0, endx=1.0, endy=0.0)
+        # Qt writes only the geometry of the gradient's type. A new type keeps
+        # the fields it shares with the old one (a centre) and starts the rest
+        # from its own defaults.
+        own = _GEOMETRY_DEFAULTS.get(kind, _GEOMETRY_DEFAULTS["LinearGradient"])
+        before = _GEOMETRY_DEFAULTS.get(previous.type or "LinearGradient", _GEOMETRY_DEFAULTS["LinearGradient"])
+        if kind != (previous.type or "LinearGradient"):
+            values = {name: (value if name in before else None) for name, value in values.items()}
+        for name in values:
+            if name not in own:
+                values[name] = None
+            elif values[name] is None:
+                values[name] = own[name]
+        # Stops are written in position order, as Qt keeps them, so the same
+        # stops are the same bytes whatever order they were added in.
+        stops = tuple(sorted(self._bar.stops(), key=lambda stop: stop.position))
         return GradientValue(
             type=kind,
             spread=str(self._spread.currentData() or "PadSpread"),
             coordinatemode=str(self._fill.currentData() or "ObjectBoundingMode"),
-            stops=self._bar.stops(),
+            stops=stops,
             **values,
         )
 
@@ -720,8 +742,7 @@ class BrushEditor:
         self._written = isinstance(value, Written) and isinstance(value.value, BrushValue)
         self._brush = value.value if self._written else BrushValue(brushstyle="NoBrush")  # type: ignore[assignment]
         self._summary.set_summary(brush_summary(self._brush if self._written else None, mixed=mixed))
-        faint = not self._written and not mixed
-        self._summary.setStyleSheet("color: %s;" % (self._host.chrome.faint if faint else self._host.chrome.text))
+        self._summary.show_state(value, self._host.chrome.faint)
         color = self._brush.color if self._written else None
         self._preview.set_color(color, hollow=not self._written and not mixed, mixed=mixed)
         if (

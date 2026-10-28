@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 from app.features.form_builder.engine.ui4.values import ColorValue
-from app.features.form_builder.qtside.inspector.api import EditorHost
+from app.features.form_builder.qtside.inspector.api import EditorHost, RowValue, Unset, mark
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
 from app.qt.QtCore import QEvent
 from app.qt.QtGui import QColor, QFontMetrics
@@ -94,6 +94,15 @@ class RowSummary(SummaryButton):
         super().set_summary(text)
         self._fit()
 
+    def show_state(self, value: RowValue, faint_colour: str) -> None:
+        """UX-PED-006: an unwritten value is faint. A written one keeps the
+        button's own text colour, which always fits the button's background.
+
+        ``fbState`` is set too, so the inspector sheet can style the states.
+        """
+        mark(self, value)
+        self.setStyleSheet("color: %s;" % faint_colour if isinstance(value, Unset) else "")
+
     def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._fit()
@@ -117,12 +126,22 @@ def refit(popover: Optional[RowPopover]) -> None:
 
 
 def refit_widget(widget: QWidget) -> None:
-    parent = widget.parentWidget()
-    while parent is not None:
-        if isinstance(parent, RowPopover):
-            refit(parent)
+    """Refit the popover that holds ``widget`` after its parts were shown or hidden.
+
+    Each parent layout caches its children's size hints until their layout
+    request runs, so the chain up to the popover is told to recompute first;
+    otherwise the popover sizes to the parts that were visible before.
+    """
+    current: Optional[QWidget] = widget
+    while current is not None:
+        layout = current.layout()
+        if layout is not None:
+            layout.invalidate()
+        current.updateGeometry()
+        if isinstance(current, RowPopover):
+            refit(current)
             return
-        parent = parent.parentWidget()
+        current = current.parentWidget()
 
 
 def begin_popover(

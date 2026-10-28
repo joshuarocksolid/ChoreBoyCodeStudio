@@ -64,8 +64,7 @@ class ColorEditor:
         self._color = value.value if self._written else None  # type: ignore[union-attr]
         text = colour_summary(self._color if isinstance(self._color, ColorValue) else None, mixed=self._mixed, unset=not self._written)
         self._summary.set_summary(text)
-        faint = not self._written and not self._mixed
-        self._summary.setStyleSheet("color: %s;" % (self._host.chrome.faint if faint else self._host.chrome.text))
+        self._summary.show_state(value, self._host.chrome.faint)
         self._swatch.set_color(
             self._color if isinstance(self._color, ColorValue) else None,
             hollow=not self._written and not self._mixed,
