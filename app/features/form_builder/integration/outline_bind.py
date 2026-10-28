@@ -105,9 +105,6 @@ def _expand(pane: Any, effect: Expand) -> bool:
 
 
 def _ask(pane: Any, effect: AskDelete) -> bool:
-    button = getattr(pane, "_delete_button", None)
-    if button is not None:
-        button.setText("Delete page" if effect.prose.startswith("Delete page") else "Delete")
     pane.show_delete(effect.prose, effect.ids)
     return True
 

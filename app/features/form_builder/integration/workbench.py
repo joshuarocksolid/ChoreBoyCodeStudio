@@ -1627,6 +1627,8 @@ class OutlinePane(QWidget):
         self._ask_ids = ids
         self._after_confirm = on_done
         self._confirm_text.setText(prose)
+        # UX-CONT-004: a page ask confirms with "Delete page"; every other ask with "Delete".
+        self._delete_button.setText("Delete page" if prose.startswith("Delete page") else "Delete")
         host = self._confirm_host(anchor)
         if self._confirm.parentWidget() is not host:
             self._confirm.setParent(host)

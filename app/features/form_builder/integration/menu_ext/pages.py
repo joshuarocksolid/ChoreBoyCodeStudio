@@ -128,9 +128,6 @@ def _delete(ctx: MenuContext, container: NodeId, index: int, asking: bool) -> No
     if surface is None:
         return
     outline = getattr(getattr(surface, "_workbench", None), "outline", None)
-    button = getattr(outline, "_delete_button", None)
-    if button is not None:
-        button.setText("Delete page")
     page = pages(ctx.session.document, container)[index]
     title = page_title(ctx.session.document, page.id) or page.object_name or "page"
     count = page_widget_count(ctx.session.document, page.id)

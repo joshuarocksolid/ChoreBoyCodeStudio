@@ -1140,3 +1140,16 @@ def test_random_edits_undo_and_redo_keep_the_outline_equal_to_the_form(qapp: QAp
                 if item is None or not item.childCount() or node in revealed:
                     continue
                 assert item.isExpanded() == was, "seed %d step %d node %d" % (seed, step, node)
+
+
+def test_the_confirm_button_names_what_this_ask_deletes(qapp: QApplication) -> None:
+    """A page ask says "Delete page"; the next widget ask, from any caller, says "Delete" again."""
+    with _opened(qapp, _email(), "delete-label") as (pane, session):
+        node = _show(pane, session, "email")
+        pane.show_delete("Delete page “Alpha” and the 2 widgets on it?", (node,))
+        qapp.processEvents()
+        delete = pane.findChild(QPushButton, "formBuilder.outlineDelete")
+        assert isinstance(delete, QPushButton) and delete.text() == "Delete page"
+        pane.show_delete(session.refs.ask_sentence(session.document, "email", ()), (node,))
+        qapp.processEvents()
+        assert delete.text() == "Delete"
