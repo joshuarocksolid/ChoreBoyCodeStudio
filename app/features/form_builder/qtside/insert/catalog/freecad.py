@@ -3,8 +3,9 @@
 Base classes and headers come from FreeCAD's own ``.ui`` files on the development
 Mac (``/Applications/FreeCAD.app/Contents/Resources/Mod``), counted there:
 QuantitySpinBox 18 files, InputField 6, FileChooser 2, IntSpinBox 2, DoubleSpinBox 2.
-ColorButton and UrlLabel appear in no ``.ui`` file in that install; their base
-classes and headers are marked UNVERIFIED in ``_FACTS`` and must be checked.
+ColorButton and UrlLabel appear in no ``.ui`` file in that install. Their base
+classes (QPushButton and QLabel) and the header ``Gui/Widgets.h`` were checked
+on FreeCAD 1.1.3.
 """
 
 from __future__ import annotations
@@ -30,10 +31,10 @@ _FACTS: Tuple[Tuple[str, str, str, str, str, bool, Tuple[str, ...], str, str], .
      "Gui/FileDialog.h", True, ("file", "path", "browse", "folder"), "fc_file",
      "A path with a Browse button. " + _NEEDS_FREECAD),
     ("Color button", "Gui::ColorButton", "colorButton", "QPushButton",
-     "Gui/ColorButton.h", False, ("colour", "color", "swatch"), "fc_color",
+     "Gui/Widgets.h", True, ("colour", "color", "swatch"), "fc_color",
      "A button that shows and picks a colour. " + _NEEDS_FREECAD),
     ("URL label", "Gui::UrlLabel", "urlLabel", "QLabel",
-     "Gui/UrlLabel.h", False, ("url", "link"), "fc_url",
+     "Gui/Widgets.h", True, ("url", "link"), "fc_url",
      "A label with a link that opens in a browser. " + _NEEDS_FREECAD),
     ("Integer spin box", "Gui::IntSpinBox", "intSpinBox", "QWidget",
      "Gui/SpinBox.h", True, ("integer", "whole number"), "fc_int",
