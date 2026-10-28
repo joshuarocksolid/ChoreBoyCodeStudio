@@ -78,6 +78,9 @@ class FormChrome:
     search_match_bg: str = ""
     # Background of a chosen item (a checked segment), under ``text``.
     selected: str = ""
+    # ov.layout and ov.gap, as ``#RRGGBB``, for layout and spacer glyphs.
+    layout: str = ""
+    gap: str = ""
 
     def __post_init__(self) -> None:
         if not self.search_match_bg:
@@ -171,6 +174,8 @@ def chrome_from_values(
     focus_width: int,
     search_match_bg: str = "",
     selected: str = "",
+    layout: str = "",
+    gap: str = "",
 ) -> FormChrome:
     return FormChrome(
         window=window,
@@ -187,4 +192,6 @@ def chrome_from_values(
         on_accent=on_accent_for(accent),
         search_match_bg=search_match_bg,
         selected=selected,
+        layout=layout,
+        gap=gap,
     )

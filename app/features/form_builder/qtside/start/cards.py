@@ -199,6 +199,14 @@ def _draw_from_table(painter: QPainter, chrome: FormChrome, x: int, y: int, widt
         painter.drawRect(x + width // 3 + 4, top, width - width // 3 - 4, row_h - 2)
 
 
+def _draw_wizard(painter: QPainter, chrome: FormChrome, x: int, y: int, width: int, height: int) -> None:
+    del chrome
+    painter.drawRect(x, y, width, height - 22)
+    button_y = y + height - 16
+    painter.drawRect(x + 8, button_y, 34, 14)
+    painter.drawRect(x + width - 42, button_y, 34, 14)
+
+
 def _draw_adopt(painter: QPainter, chrome: FormChrome, x: int, y: int, width: int, height: int) -> None:
     painter.drawRect(x + 8, y, width - 16, height)
     painter.fillRect(x + 16, y + 10, width // 2, 8, QColor(chrome.accent))
@@ -214,6 +222,7 @@ _WIREFRAMES = {
     "widget": _draw_blank,
     "main_window": _draw_main_window,
     "dialog": _draw_blank,
+    "wizard": _draw_wizard,
     "from_table": _draw_from_table,
     "adopt": _draw_adopt,
 }

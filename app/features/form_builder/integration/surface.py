@@ -671,6 +671,7 @@ class FormSurface(QWidget):
         self._selection_unsub()
         self._source_unsub()
         self._changes.close()
+        self._workbench.dispose()
         self._workbench.canvas_view().dispose()
         self._workbench.inspector.dispose()
         self._realizer.dispose()

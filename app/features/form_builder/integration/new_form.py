@@ -20,11 +20,13 @@ from app.features.form_builder.engine.project.recents import (
     recent_name,
     remember_form,
 )
+from app.features.form_builder.engine.project.names import class_name_for_stem
 from app.features.form_builder.engine.project.templates import first_useful_widget
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
 from app.features.form_builder.qtside.start.panel import NewFormPanel
+from app.features.form_builder.qtside.start.wizard import WIZARD_KEY, wizard_document
 from app.qt.qt_compat import exec_qt
 from app.shell.tab_content_providers import TabMatchContext, TabSurfaceRequest
 from app.shell.theme_tokens import ShellThemeTokens
@@ -32,6 +34,13 @@ from app.shell.theme_tokens import ShellThemeTokens
 NEW_FORM_PROVIDER_ID = "form-builder.new-form"
 NEW_FORM_BASENAME = "new-form.cbcs-tab"
 _ADOPT: Optional[Callable[[], None]] = None
+#: Window-kind search rows (UX-CAT-015) and the New form card each one focuses.
+WINDOW_KIND_CARDS = {
+    "window:main": "main_window",
+    "window:dialog": "dialog",
+    "window:widget": "widget",
+    "window:wizard": WIZARD_KEY,
+}
 
 
 def bind_adopt_entry(handler: Callable[[], None]) -> None:
@@ -120,7 +129,7 @@ def perform_create(
     return result
 
 
-def open_new_form_tab(window: object, directory: Optional[str] = None) -> None:
+def open_new_form_tab(window: object, directory: Optional[str] = None) -> Optional[object]:
     project = getattr(window, "_loaded_project", None)
     if project is None:
         QMessageBox.information(window, "New form", "Open a project first.")  # type: ignore[arg-type]
@@ -145,6 +154,18 @@ def open_new_form_tab(window: object, directory: Optional[str] = None) -> None:
         surface.set_directory(directory)
     if surface is not None:
         surface.focus_primary()
+    return surface
+
+
+def open_window_kind(window: object, kind_key: str) -> None:
+    """Insert search row "Dialog · new form" and friends: open New form with that card focused (UX-CAT-015)."""
+    card = WINDOW_KIND_CARDS.get(kind_key)
+    if card is None:
+        return
+    surface = open_new_form_tab(window)
+    focus = getattr(surface, "focus_card", None)
+    if callable(focus):
+        focus(card)
 
 
 def attach_new_form(window: object) -> None:
@@ -160,6 +181,7 @@ def attach_new_form(window: object) -> None:
         open_new_form_tab(window, directory)
 
     window._open_new_form = open_new_form  # type: ignore[attr-defined]
+    window._open_new_form_card = lambda key: open_window_kind(window, key)  # type: ignore[attr-defined]
 
 
 class RememberingFormTabProvider:
@@ -251,6 +273,9 @@ class NewFormSurface:
     def focus_primary(self) -> None:
         self._panel.focus_name()
 
+    def focus_card(self, key: str) -> None:
+        self._panel.focus_card(key)
+
     def release(self) -> None:
         return None
 
@@ -260,13 +285,24 @@ class NewFormSurface:
         self._panel.focus_name()
 
     def _create(self, key: str) -> None:
-        result = perform_create(
-            self._host(),
-            template=key,
-            stem=self._panel.stem(),
-            directory=self._panel.directory(),
-            first_widget=first_useful_widget(key),
-        )
+        if key == WIZARD_KEY:
+            # The Wizard card is finished .ui text; create_form canonicalises it (see qtside/start/wizard.py).
+            result = perform_create(
+                self._host(),
+                template="widget",
+                stem=self._panel.stem(),
+                directory=self._panel.directory(),
+                ui_text=wizard_document(class_name_for_stem(self._panel.stem().strip())),
+                first_widget=None,
+            )
+        else:
+            result = perform_create(
+                self._host(),
+                template=key,
+                stem=self._panel.stem(),
+                directory=self._panel.directory(),
+                first_widget=first_useful_widget(key),
+            )
         if result.refused:
             self._panel.show_status(result.refused)
             return
