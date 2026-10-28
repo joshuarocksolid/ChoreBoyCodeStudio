@@ -254,7 +254,8 @@ class SizePolicyEditor:
             self._button.set_summary("Mixed")
             return
         if policy is None:
-            policy = self._current
+            # Never the previous selection's policy: a pooled editor outlives it.
+            policy = SizePolicyValue("Preferred", "Preferred", 0, 0)
         self._current = policy
         self._button.set_summary(_policy_summary(policy))
 

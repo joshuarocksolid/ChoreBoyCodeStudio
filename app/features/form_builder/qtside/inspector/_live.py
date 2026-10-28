@@ -320,7 +320,27 @@ def _coerce(prop: LiveProperty, qt_prop: QMetaProperty, raw: object) -> Optional
         return _point_value(raw)
     if element == ColorValue.ELEMENT:
         return _color_value(raw)
+    if element == SizePolicyValue.ELEMENT:
+        return _size_policy_value(raw)
     return None
+
+
+def _size_policy_value(raw: object) -> Optional[SizePolicyValue]:
+    """A live QSizePolicy, so an unwritten row shows the class's policy, not Preferred."""
+    names = []
+    for getter in ("horizontalPolicy", "verticalPolicy"):
+        read = getattr(raw, getter, None)
+        if not callable(read):
+            return None
+        name = str(getattr(read(), "name", "") or "")
+        if not name:
+            return None
+        names.append(name)
+    horizontal = _call_int(raw, "horizontalStretch")
+    vertical = _call_int(raw, "verticalStretch")
+    if horizontal is None or vertical is None:
+        return None
+    return SizePolicyValue(names[0], names[1], horizontal, vertical)
 
 
 def _number(element: str, raw: object) -> Optional[Value]:

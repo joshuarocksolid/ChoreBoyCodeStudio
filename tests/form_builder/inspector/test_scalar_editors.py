@@ -687,14 +687,37 @@ def test_size_policy_summary_names_the_policy() -> None:
             combo = _popover().findChild(QComboBox)
             assert isinstance(combo, QComboBox)
             assert combo.findText("Minimum expanding") >= 0
-            combo.setCurrentIndex(combo.findText("Expanding"))
+            combo.setCurrentIndex(combo.findText("Minimum"))
             _events()
             done = _popover().findChild(QPushButton, "formBuilder.popoverDone")
             assert isinstance(done, QPushButton)
             done.click()
             _events()
             pane.flush()
-            assert "Expanding" in _xml(session)
+            assert 'hsizetype="Minimum" vsizetype="Fixed"' in _xml(session)
+        finally:
+            _close(window, pane)
+
+
+def test_unset_size_policy_shows_the_live_policy() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "caption")
+            assert _summary(_row(pane, "sizePolicy")).text().startswith("Preferred × Preferred")
+            _select(session, pane, "email")
+            assert _summary(_row(pane, "sizePolicy")).text().startswith("Expanding × Fixed")
+            before = _xml(session)
+            _summary(_row(pane, "sizePolicy")).click()
+            _events()
+            combos = _popover().findChildren(QComboBox)
+            assert [combo.currentData() for combo in combos[:2]] == ["Expanding", "Fixed"]
+            done = _popover().findChild(QPushButton, "formBuilder.popoverDone")
+            assert isinstance(done, QPushButton)
+            done.click()
+            _events()
+            pane.flush()
+            assert _xml(session) == before
         finally:
             _close(window, pane)
 
