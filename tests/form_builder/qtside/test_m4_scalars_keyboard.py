@@ -247,11 +247,12 @@ def test_k11_choices_and_numbers(tmp_path: Path, qapp: QApplication) -> None:
         # A rebuild drops focus on the inspector search, and that field eats Ctrl+Z.
         kb.press("Key_3", "Alt")
         for _ in range(40):
-            if kb.text() in (original, saved):
+            if not kb.session.log.can_undo():
                 break
             kb.press("Key_Z", "Control")
-        kb.check(kb.text() in (original, saved), "undo all returns to the original bytes or the saved file")
-        kb.check("Password" in kb.text() or kb.text() == original, "Password stays until undo crosses the save")
+        # The reopened tab's undo stack starts at the saved file.
+        kb.check(kb.text() == saved, "undo all returns to the bytes on disk at reopen")
+        kb.check(kb.text() != original and "Password" in kb.text(), "Password stays: undo does not cross the reopen")
         kb.done(guard)
     finally:
         _close(window, qapp, guard)
