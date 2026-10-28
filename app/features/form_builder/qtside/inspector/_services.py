@@ -85,6 +85,9 @@ class Services:
         self._inline_rows: Dict[str, "weakref.ReferenceType[QWidget]"] = {}
         self._chrome: Optional["FormChrome"] = None
         self._settle_queued = False
+        # Open popovers' close callbacks, so dispose closes them (keep) while the log is alive.
+        self._watchers: Dict[int, Callable[[], None]] = {}
+        self._watch_seq = 0
         # One hook for every row (UX-PED-004): a row's session ends when focus
         # lands outside it. No new focus widget means the window deactivated
         # (ActiveWindowFocusReason). An open popup list (PopupFocusReason) does
@@ -99,6 +102,9 @@ class Services:
         self._stop_selection = session.selection.subscribe(lambda _change: self.end_inline_sessions())
 
     def dispose(self) -> None:
+        for on_change in list(self._watchers.values()):
+            on_change()
+        self._watchers.clear()
         app = self._app
         if app is not None:
             try:
@@ -132,6 +138,14 @@ class Services:
                 self.end_inline_session(key)
             elif focus is not row and not row.isAncestorOf(focus):
                 self.end_inline_session(key)
+
+    def add_watcher(self, on_change: Callable[[], None]) -> int:
+        self._watch_seq += 1
+        self._watchers[self._watch_seq] = on_change
+        return self._watch_seq
+
+    def drop_watcher(self, key: int) -> None:
+        self._watchers.pop(key, None)
 
     def end_inline_sessions(self) -> None:
         for key in list(self._inline):
@@ -306,10 +320,12 @@ class EditSession:
 
         subscription = session.log.subscribe(foreign, priority=_WATCH_PRIORITY)
         stop_selection = session.selection.subscribe(lambda _change: on_change())
+        key = self._services.add_watcher(on_change)
 
         def stop() -> None:
             subscription.close()
             stop_selection()
+            self._services.drop_watcher(key)
 
         return stop
 

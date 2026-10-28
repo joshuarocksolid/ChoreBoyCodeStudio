@@ -527,6 +527,50 @@ def test_a_wheel_outside_the_popover_closes_it(qapp: QApplication) -> None:
         window.close()
 
 
+def test_a_wheel_over_the_popover_that_reaches_the_window_keeps_it_open(qapp: QApplication) -> None:
+    # An unused wheel over the popover propagates to its parent, the window.
+    host = _Host()
+    window = _window(400, 300)
+    row = _row(window, 20, 40, 236)
+    popover = RowPopover(row, host.services, row_label="Test row", session_label="Change test row")
+    popover.open_popover()
+    _settle(qapp)
+    try:
+        inside = popover.geometry().center()
+        event = QWheelEvent(
+            QPointF(inside),
+            QPointF(window.mapToGlobal(inside)),
+            QPoint(0, 0),
+            QPoint(0, -120),
+            _enum("MouseButton", "NoButton"),
+            _enum("KeyboardModifier", "NoModifier"),
+            _enum("ScrollPhase", "NoScrollPhase"),
+            False,
+        )
+        QApplication.sendEvent(window, event)
+        _settle(qapp)
+        assert not popover.closed
+    finally:
+        popover.done()
+        host.close()
+        window.close()
+
+
+def test_disposing_the_services_closes_an_open_popover(qapp: QApplication) -> None:
+    host = _Host()
+    window = _window(400, 300)
+    row = _row(window, 20, 40, 236)
+    popover = RowPopover(row, host.services, row_label="Test row", session_label="Change test row")
+    popover.open_popover()
+    _settle(qapp)
+    try:
+        host.services.dispose()
+        assert popover.closed
+    finally:
+        host.close()
+        window.close()
+
+
 class _Write:
     def edit(self, value: object, token: object) -> object:
         del value, token

@@ -457,7 +457,7 @@ class RowPopover(QFrame):
         if kind == _event("MouseButtonPress") and isinstance(watched, QWidget):
             return self._outside_press(watched, event)
         if kind == _event("Wheel") and isinstance(watched, QWidget):
-            return self._wheel(watched)
+            return self._wheel(watched, event)
         if kind in (_event("Hide"), _event("Destroy")) and isinstance(watched, QWidget):
             return self._lifetime(watched)
         if kind == _event("Resize") and watched is self.window():
@@ -539,11 +539,17 @@ class RowPopover(QFrame):
         event.accept()  # type: ignore[attr-defined]
         return True
 
-    def _wheel(self, target: QWidget) -> bool:
-        """Scrolling the inspector (or anything else in the window) closes and keeps."""
+    def _wheel(self, target: QWidget, event: QEvent) -> bool:
+        """Scrolling the inspector (or anything else in the window) closes and keeps.
+
+        A wheel over the popover that nothing in it takes propagates to the
+        window; the point is still inside the popover, so it stays open.
+        """
         if target is self or self.isAncestorOf(target):
             return False
         if target.window() is not self.window():
+            return False
+        if self.rect().contains(self.mapFromGlobal(event_global_pos(event))):
             return False
         self.done()
         return False
