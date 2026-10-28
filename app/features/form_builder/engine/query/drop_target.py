@@ -48,6 +48,7 @@ DropAction = Literal[
     "new_page",
     "auto_layout",
     "free",
+    "dock_side",
 ]
 WrapSide = Literal["before", "after", ""]
 FormRole = Literal["label", "field", "spanning", ""]
@@ -86,6 +87,8 @@ class DropHost:
     children: Tuple["DropHost", ...] = ()
     #: "tab" or "page". Empty for layouts.
     noun: str = ""
+    #: A main window: a dock widget dragged over it gets the four side bands (UX-CONT-012).
+    dock_zone: bool = False
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,8 @@ class DropPayload:
     colspan: int = 1
     snap: bool = True
     default_size: Tuple[int, int] = (80, 24)
+    #: The dragged widget is a dock widget (UX-CONT-012).
+    dock: bool = False
 
 
 @dataclass(frozen=True)
@@ -130,6 +135,8 @@ class AcceptedDrop:
     width: int = 0
     height: int = 0
     spring_id: Optional[NodeId] = None
+    #: For ``dock_side``: "Left", "Right", "Top" or "Bottom".
+    dock_side: str = ""
 
 
 @dataclass(frozen=True)
@@ -152,6 +159,12 @@ class NoDrop:
 DropTarget = Union[AcceptedDrop, RefusedDrop, NoDrop]
 
 
+DOCK_BAND_PX = 32
+DOCK_REFUSAL = "In a main window, a dock widget goes on one of its sides."
+_DOCK_ORDER = ("Left", "Right", "Top", "Bottom")
+_DOCK_LABEL = {"Left": "left side", "Right": "right side", "Top": "top", "Bottom": "bottom"}
+
+
 def resolve_drop(
     root: DropHost,
     pointer: Tuple[int, int],
@@ -162,6 +175,10 @@ def resolve_drop(
     """``min_band``: the leading insertion band of a list item, in form px.
     The canvas passes ``INSERT_BAND_SCREEN`` over the zoom so the band keeps
     its screen size below 100%."""
+    if payload.dock:
+        zone = _dock_zone_at(root, pointer)
+        if zone is not None:
+            return _resolve_dock(zone, pointer)
     found: List[Tuple[int, DropHost]] = []
     _gather(root, pointer, 0, found)
     found.sort(
@@ -218,6 +235,50 @@ def _candidate(host: DropHost, pointer: Tuple[int, int]) -> bool:
     if _contains(_grow(host.rect), pointer):
         return True
     return _contains(host.rect, pointer)
+
+
+def _dock_zone_at(root: DropHost, pointer: Tuple[int, int]) -> Optional[DropHost]:
+    found: List[Tuple[int, DropHost]] = []
+    _gather(root, pointer, 0, found)
+    zones = [host for _depth, host in found if host.dock_zone and _contains(host.rect, pointer)]
+    if not zones:
+        return None
+    return min(zones, key=lambda host: host.rect.width * host.rect.height)
+
+
+def _resolve_dock(host: DropHost, pointer: Tuple[int, int]) -> DropTarget:
+    """The four bands along the inside edges of a main window (UX-CONT-012).
+
+    The pointer picks the band whose outer edge it is nearest. The central
+    area inside the bands is refused.
+    """
+    rect = host.rect
+    band = DOCK_BAND_PX
+    central = Rect(rect.x + band, rect.y + band, rect.width - 2 * band, rect.height - 2 * band)
+    if _contains(central, pointer):
+        return _refuse(host, DOCK_REFUSAL, DropIndicator(central, dashed=True, role="problem"))
+    rects = {
+        "Left": Rect(rect.x, rect.y, band, rect.height),
+        "Right": Rect(rect.x + rect.width - band, rect.y, band, rect.height),
+        "Top": Rect(rect.x, rect.y, rect.width, band),
+        "Bottom": Rect(rect.x, rect.y + rect.height - band, rect.width, band),
+    }
+    distance = {
+        "Left": pointer[0] - rect.x,
+        "Right": rect.x + rect.width - pointer[0],
+        "Top": pointer[1] - rect.y,
+        "Bottom": rect.y + rect.height - pointer[1],
+    }
+    side = min(_DOCK_ORDER, key=lambda name: distance[name])
+    sentence = "Dock on the %s" % _DOCK_LABEL[side]
+    return _accept(
+        host,
+        "dock_side",
+        sentence,
+        sentence,
+        DropIndicator(rects[side], dashed=True),
+        dock_side=side,
+    )
 
 
 def _resolve_host(
@@ -651,6 +712,7 @@ def _accept(
     width: int = 0,
     height: int = 0,
     spring_id: Optional[NodeId] = None,
+    dock_side: str = "",
 ) -> AcceptedDrop:
     return AcceptedDrop(
         sentence,
@@ -674,6 +736,7 @@ def _accept(
         width,
         height,
         spring_id,
+        dock_side=dock_side,
     )
 
 
@@ -1021,7 +1084,7 @@ def _widget_host(
         if built is not None:
             children.append(built)
     kind: HostKind = "bare_free" if widget.child_widgets else "bare_empty"
-    return DropHost(widget.id, kind, name, rect, (), tuple(children))
+    return DropHost(widget.id, kind, name, rect, (), tuple(children), dock_zone=widget.class_name == "QMainWindow")
 
 
 def _layout_host(

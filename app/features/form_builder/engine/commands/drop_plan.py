@@ -19,6 +19,7 @@ from app.features.form_builder.engine.commands.catalog_ext.drop import (
     WrapWithNew,
 )
 from app.features.form_builder.engine.commands.placement import (
+    AsMainWindowPart,
     InBoxLayout,
     InContainer,
     InFormRow,
@@ -53,6 +54,10 @@ def commands_for(
         return ()
     action = target.action
     sources = payload.source_ids
+    if action == "dock_side":
+        if not sources:
+            return ()
+        return (MoveNodes(sources, AsMainWindowPart(target.host, "dock", target.dock_side)),)
     if action == "box":
         return _place(doc, InBoxLayout(target.host, target.index), sources, fragment, False)
     if action == "splitter":
