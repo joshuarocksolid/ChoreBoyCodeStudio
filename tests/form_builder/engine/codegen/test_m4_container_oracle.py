@@ -277,3 +277,18 @@ def test_quiloader_reads_the_titles_order_and_start_page_the_builder_wrote(tmp_p
     area = mdi.findChild(QMdiArea, "mdiArea")
     assert area is not None
     assert sorted(sub.windowTitle() for sub in area.subWindowList()) == ["Notes", "Window 2"]
+
+
+@pytest.mark.parametrize(
+    "text",
+    [TABS, TOOLBOX, WIZARD, NESTED_WIZARD, MDI, DOCK, STACKED],
+    ids=["tabs", "toolbox", "wizard", "nested_wizard", "mdi", "dock", "stacked"],
+)
+def test_saving_a_container_form_twice_gives_the_same_bytes(text: str) -> None:
+    """Every container kind: read, write, read, write is byte-identical (UX-CONT-001 storage)."""
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.ui4.reader import read_ui
+
+    once = write_ui(read_ui(text, allocator=IdAllocator()).document).text
+    twice = write_ui(read_ui(once, allocator=IdAllocator()).document).text
+    assert twice == once
