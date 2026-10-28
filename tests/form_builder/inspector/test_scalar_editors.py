@@ -614,6 +614,40 @@ def test_flags_escape_keeps_bytes_and_done_is_one_step() -> None:
             _close(window, pane)
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "M4.2: Realizer._reset_property falls back to setProperty(name, fresh.property(name)), "
+        "which PySide6 drops for a flags value, so a reverted textInteractionFlags stays on the "
+        "canvas label and the row's unwritten default shows the cancelled flag."
+    ),
+)
+def test_flags_escape_restores_the_canvas_widget() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "caption")
+            row = _row(pane, "textInteractionFlags")
+            _summary(row).click()
+            _events()
+            pop = _popover()
+            _flag(pop, "TextSelectableByMouse").setChecked(True)
+            QTest.qWait(50)
+            pop.setFocus()
+            QTest.keyClick(pop, _key("Key_Escape"))
+            QTest.qWait(50)
+            pane.flush()
+            label = realizer.widget_for(session.document.by_name("caption")[0])
+            assert isinstance(label, QLabel)
+            flags = getattr(Qt, "TextInteractionFlag", Qt)
+            assert label.textInteractionFlags() == getattr(flags, "LinksAccessibleByMouse")
+            _summary(_row(pane, "textInteractionFlags")).click()
+            _events()
+            assert not _flag(_popover(), "TextSelectableByMouse").isChecked()
+        finally:
+            _close(window, pane)
+
+
 @pytest.mark.parity("R3-168")
 def test_key_sequence_records_cancels_and_clears() -> None:
     with opened(_FORM) as (session, realizer):
