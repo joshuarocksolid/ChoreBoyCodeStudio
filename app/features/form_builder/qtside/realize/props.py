@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.qt import QtCore, QtGui, QtWidgets
 from app.qt.QtCore import QDate, QDateTime, QPoint, QRect, QSize, QTime, Qt, QUrl
-from app.qt.QtGui import QBrush, QColor, QFont, QIcon, QPalette, QPixmap
+from app.qt.QtGui import QBrush, QColor, QFont, QIcon, QImageReader, QPalette, QPixmap
 from app.qt.QtWidgets import QFrame, QSizePolicy
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.logic.storage import is_logic_key
@@ -580,10 +580,13 @@ def resolve_stored_picture(stored: str, base_dir: str, document: object) -> str:
 
 
 def _picture_reason(value: Value, resolve_path: Callable[[str], str], qvalue: object) -> Optional[str]:
-    del qvalue
+    if isinstance(value, ResourcePixmap) and isinstance(qvalue, QPixmap):
+        # Already decoded once: a null pixmap is a missing or unreadable file.
+        return "Code Studio can't find %s." % value.path if value.path and qvalue.isNull() else None
     for stored in _picture_paths(value):
         disk = resolve_path(stored)
-        if not disk or not os.path.isfile(disk) or QPixmap(disk).isNull():
+        # The header says whether Qt can read it; decoding it twice per apply would not.
+        if not disk or not os.path.isfile(disk) or not QImageReader(disk).canRead():
             return "Code Studio can't find %s." % stored
     return None
 
