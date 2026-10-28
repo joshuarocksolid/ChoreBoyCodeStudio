@@ -122,7 +122,7 @@ class KeyEditor:
         self._kick.setInterval(30)
         self._kick.timeout.connect(self._drain)
         self._pending: Optional[tuple] = None
-        self._clash_text: Optional[str] = None
+        self._clash_key: Optional[tuple] = None
         self.recording = False
         self._first = ""
         self._armed_text = ""
@@ -141,7 +141,7 @@ class KeyEditor:
         if not self.recording:
             self._edit.setText(text)
             self._edit.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else "None")
-        if text != self._clash_text:
+        if self._key_for(text) != self._clash_key:
             self._paint_clash(text)
 
     def is_dirty(self) -> bool:
@@ -224,13 +224,18 @@ class KeyEditor:
         self._paint_clash(text)
         self._host.commit(stored)
 
+    def _key_for(self, text: str) -> tuple:
+        # A spared row keeps this editor across selections, and another row can
+        # take or drop the same keys, so the owners and revision are part of it.
+        return (text, self._host.owner_ids(), self._host.document().revision)
+
     def _paint_clash(self, text: str) -> None:
-        self._clash_text = text
+        self._clash_key = self._key_for(text)
         if not text:
             self._warning.hide()
             self._warning.clear()
             return
-        other = _clash(self._host, text)
+        other = _shown_name(self._host, _clash(self._host, text))
         if not other:
             self._warning.hide()
             self._warning.clear()
@@ -276,7 +281,7 @@ def _owner_of(node: object) -> str:
     return ""
 
 
-def _shortcut_text(node: object, name: str) -> str:
+def _string_prop(node: object, name: str) -> str:
     prop = getattr(node, "prop", None)
     if not callable(prop):
         return ""
@@ -285,6 +290,19 @@ def _shortcut_text(node: object, name: str) -> str:
     if isinstance(value, (StringValue, CStringValue)) and value.text:
         return value.text
     return ""
+
+
+def _shown_name(host: EditorHost, owner: str) -> str:
+    """The owner's visible text ("Print"), else its object name."""
+    if not owner:
+        return ""
+    document = host.document()
+    for node_id in document.by_name(owner):
+        label = _string_prop(document.node(node_id), "text").replace("&&", "\0").replace("&", "")
+        label = label.replace("\0", "&").strip()
+        if label:
+            return label
+    return owner
 
 
 def _clash(host: EditorHost, text: str) -> str:
@@ -313,7 +331,7 @@ def _clash(host: EditorHost, text: str) -> str:
         if not other or other == mine:
             continue
         for prop_name in ("shortcut", "keySequence"):
-            if _same_keys(_shortcut_text(node, prop_name), target):
+            if _same_keys(_string_prop(node, prop_name), target):
                 return other
     return ""
 

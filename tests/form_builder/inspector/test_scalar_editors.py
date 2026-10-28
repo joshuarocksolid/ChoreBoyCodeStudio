@@ -1163,7 +1163,7 @@ def test_key_sequence_warns_for_this_form_only() -> None:
                 shown = field.text() if isinstance(field, QLineEdit) else ""
                 assert isinstance(warning, QLabel), (shown, _xml(session))
                 assert warning.isVisible(), (warning.text(), shown, _xml(session))
-                assert warning.text() == "actionPrint already uses Ctrl+Alt+P."
+                assert warning.text() == "Print already uses Ctrl+Alt+P."
                 assert "Ctrl+Alt+P" in _xml(session)
             finally:
                 _close(window, pane)
@@ -1315,3 +1315,37 @@ def test_project_locale_ignores_a_german_system_locale() -> None:
         assert _parse("date", "12/31/2026") == DateValue(2026, 12, 31)
     finally:
         QLocale.setDefault(previous)
+
+
+_TWO_KEYS = form(
+    'class="QWidget" name="Form"',
+    """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QKeySequenceEdit" name="keysA"><property name="keySequence"><string>Ctrl+Alt+P</string></property></widget></item>
+   <item><widget class="QKeySequenceEdit" name="keysB"><property name="keySequence"><string>Ctrl+Alt+P</string></property></widget></item>
+   <item><widget class="QKeySequenceEdit" name="keysC"><property name="keySequence"><string>Ctrl+Alt+Q</string></property></widget></item>
+  </layout>
+""",
+)
+
+
+def _shown_warning(pane: InspectorPane) -> str:
+    warning = _row(pane, "keySequence").findChild(QLabel, "formBuilder.rowWarning")
+    assert isinstance(warning, QLabel)
+    return warning.text() if warning.isVisible() else ""
+
+
+def test_key_clash_follows_the_selection() -> None:
+    # The row keeps its editor across selections; the warning must name the other owner.
+    with opened(_TWO_KEYS) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "keysA")
+            assert _shown_warning(pane) == "keysB already uses Ctrl+Alt+P."
+            _select(session, pane, "keysB")
+            assert _shown_warning(pane) == "keysA already uses Ctrl+Alt+P."
+            _select(session, pane, "keysC")
+            assert _shown_warning(pane) == ""
+        finally:
+            _close(window, pane)
+
