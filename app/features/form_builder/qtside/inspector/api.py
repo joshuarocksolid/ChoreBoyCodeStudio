@@ -295,6 +295,12 @@ class EditorHost(Protocol):
         """True when the inspector is showing Qt property names."""
         ...
 
+    def form_shortcuts(self) -> Mapping[str, str]:
+        """Shortcut text -> owning widget or action name, read from this form's
+        document only (``shortcut`` and ``keySequence``). Read-only and cached
+        per revision; a key-sequence editor uses it for its clash warning."""
+        ...
+
     @property
     def row_widget(self) -> QWidget:
         """The row widget the editor was built into."""

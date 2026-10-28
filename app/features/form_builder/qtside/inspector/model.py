@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 import os
+import weakref
 from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
@@ -25,6 +26,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import PropertyInfo, QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
+    ActionNode,
     ConnectionNode,
     LayoutItemNode,
     LayoutNode,
@@ -132,6 +134,42 @@ class PropertyWrite:
         if len(self.owners) == 1:
             return SetProperty(self.owners[0], self.name, value, kind=self.kind, merge_token=token)
         return SetPropertyMany(self.owners, self.name, value, kind=self.kind, merge_token=token)
+
+_SHORTCUT_PROPS = ("shortcut", "keySequence")
+_SHORTCUT_CACHE: "weakref.WeakKeyDictionary[UiDocument, Tuple[int, Mapping[str, str]]]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+def form_shortcuts(document: UiDocument) -> Mapping[str, str]:
+    """Shortcut text -> the object name that owns it, from this form's file only.
+
+    Reads every widget's and action's ``shortcut`` and ``keySequence``. The
+    first owner in document order wins. Cached per document revision (which
+    only moves forward), so a repaint does not walk the tree again.
+    """
+    cached = _SHORTCUT_CACHE.get(document)
+    if cached is not None and cached[0] == document.revision:
+        return cached[1]
+    found: Dict[str, str] = {}
+    for node in document.iter_preorder():
+        if isinstance(node, WidgetNode):
+            owner = node.object_name
+        elif isinstance(node, ActionNode):
+            owner = node.name
+        else:
+            continue
+        if not owner:
+            continue
+        for name in _SHORTCUT_PROPS:
+            entry = node.prop(name)
+            value = None if entry is None else entry.value
+            if isinstance(value, (StringValue, CStringValue)) and value.text:
+                found.setdefault(value.text, owner)
+    view: Mapping[str, str] = MappingProxyType(found)
+    _SHORTCUT_CACHE[document] = (document.revision, view)
+    return view
+
 
 def _bit_key(bit: str) -> Tuple[str, str]:
     parts = bit.split("::")

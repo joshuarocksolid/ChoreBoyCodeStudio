@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections import OrderedDict
-from typing import Callable, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.ids import NodeId
@@ -34,6 +34,7 @@ from app.features.form_builder.qtside.inspector.model import (
     BodyView,
     FormBody,
     GroupView,
+    form_shortcuts,
     value_text,
 )
 from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
@@ -947,6 +948,9 @@ class _Row(QWidget):
 
     def qt_names(self) -> bool:
         return self._qt_names
+
+    def form_shortcuts(self) -> Mapping[str, str]:
+        return form_shortcuts(self._services.session.document)
 
     def reset(self) -> None:
         """Remove this property from the file. One undo step, outside the edit session."""

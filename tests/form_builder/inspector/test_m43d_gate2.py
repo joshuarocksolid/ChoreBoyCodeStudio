@@ -6,7 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.form_builder.engine.ui4.values import SetValue
+from app.features.form_builder.engine.commands.catalog import SetProperty
+from app.features.form_builder.engine.ui4.values import SetValue, StringValue
 from app.features.form_builder.qtside.inspector.rich_html import Paragraph, Span, stable_html
 from app.qt.QtGui import QFont, QTextCursor
 from app.qt.QtTest import QTest
@@ -292,5 +293,51 @@ def test_refusal_captions_take_the_error_colour(qapp: QApplication) -> None:
         refusals = [label for label in row.findChildren(QLabel, "formBuilder.rowError") if label.isVisible()]
         assert refusals
         assert all(_foreground(label) == _CHROME.error.lower() for label in refusals)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+_SHORTCUTS = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QMainWindow" name="Form">
+  <widget class="QWidget" name="central">
+   <layout class="QVBoxLayout" name="v">
+    <item>
+     <widget class="QPushButton" name="okButton">
+      <property name="shortcut"><string>Ctrl+Return</string></property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QKeySequenceEdit" name="keys">
+      <property name="keySequence"><string>Alt+K</string></property>
+     </widget>
+    </item>
+   </layout>
+  </widget>
+  <action name="actionSave">
+   <property name="shortcut"><string>Ctrl+S</string></property>
+  </action>
+  <action name="actionNone"/>
+ </widget>
+</ui>
+"""
+
+
+def test_form_shortcuts_come_from_the_document(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _SHORTCUTS)
+    try:
+        _select(session, "okButton")
+        _expand_all(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.shortcut")
+        assert row is not None
+        found = row.form_shortcuts()
+        assert dict(found) == {"Ctrl+Return": "okButton", "Alt+K": "keys", "Ctrl+S": "actionSave"}
+        with pytest.raises(TypeError):
+            found["Ctrl+Q"] = "x"  # type: ignore[index]
+        button = session.document.by_name("okButton")[0]
+        session.log.execute(SetProperty(button, "shortcut", StringValue("Ctrl+O")))
+        assert dict(row.form_shortcuts())["Ctrl+O"] == "okButton"
+        assert "Ctrl+Return" not in row.form_shortcuts()
     finally:
         _close(window, pane, realizer, session, qapp)
