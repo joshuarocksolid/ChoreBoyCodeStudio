@@ -56,8 +56,9 @@ def test_pages_follows_content_in_the_group_order() -> None:
     assert GroupId.PAGES.title == "Pages"
 
 
-def test_pages_group_is_hidden_without_a_registered_body() -> None:
-    assert GroupId.PAGES not in _groups_of(default_catalog())
+def test_pages_group_shows_for_a_page_container() -> None:
+    """M4.4 fills the Pages slot. A tab widget shows the group."""
+    assert GroupId.PAGES in _groups_of(default_catalog())
 
 
 def test_pages_group_shows_when_its_body_applies() -> None:
