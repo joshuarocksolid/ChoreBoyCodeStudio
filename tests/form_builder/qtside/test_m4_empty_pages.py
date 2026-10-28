@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.form_builder.qtside.canvas.core.overlay import Caption, build_static
+from app.features.form_builder.engine.query.selection import SelectionState
+from app.features.form_builder.qtside.canvas.core.frame import Chip
+from app.features.form_builder.qtside.canvas.core.gesture import Idle
+from app.features.form_builder.qtside.canvas.core.overlay import Caption, FrameInputs, build_frame, build_static
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, hosts_from
 from app.features.form_builder.engine.query.drop_target import resolve_drop
 from tests.form_builder.qtside.test_canvas_core import _entry, _index, _nid, _opened, _view
@@ -27,14 +30,16 @@ EMPTY = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 @pytest.mark.parametrize(
-    ("cls", "name", "caption"),
+    ("cls", "name", "caption", "plus"),
     [
-        ("QTabWidget", "tabs", "No pages. Use + or Pages > Insert page."),
-        ("QWizard", "wizard", "No steps. Use + or Pages > Insert page."),
-        ("QMdiArea", "mdi", "No windows. Use Pages > Add window."),
+        ("QTabWidget", "tabs", "No pages. Use + or Pages > Insert page.", True),
+        ("QToolBox", "box", "No pages. Use + or Pages > Insert page.", True),
+        ("QStackedWidget", "stack", "No pages. Use + or Pages > Insert page.", True),
+        ("QWizard", "wizard", "No steps. Use + or Pages > Insert page.", True),
+        ("QMdiArea", "mdi", "No windows. Use Pages > Add window.", False),
     ],
 )
-def test_an_empty_page_container_draws_its_caption(cls, name, caption) -> None:  # type: ignore[no-untyped-def]
+def test_an_empty_page_container_draws_its_caption(cls, name, caption, plus) -> None:  # type: ignore[no-untyped-def]
     with _opened(EMPTY % (cls, name)) as session:
         view = _view()
         form = _nid(session, "Form")
@@ -43,6 +48,23 @@ def test_an_empty_page_container_draws_its_caption(cls, name, caption) -> None: 
         static = build_static(session.document, index, view)
         captions = [item.lines for item in static.items if isinstance(item, Caption)]
         assert (caption,) in captions
+        frame = build_frame(
+            static,
+            FrameInputs(
+                session.document,
+                SelectionState(),
+                Idle(),
+                view,
+                False,
+                {},
+                0,
+                None,
+                (),
+                lambda text: len(text) * 7,
+            ),
+        )
+        drawn = [item for item in frame.items if isinstance(item, Chip) and item.text == "+"]
+        assert bool(drawn) is plus
 
 
 def test_a_drop_on_an_empty_tab_widget_makes_the_first_page() -> None:

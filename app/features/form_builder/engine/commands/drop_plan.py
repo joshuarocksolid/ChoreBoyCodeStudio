@@ -218,12 +218,23 @@ def _rect_of(index: object, node: NodeId) -> Optional[Rect]:
     return rect if isinstance(rect, Rect) else None
 
 
+def _enter_docks_left(doc: UiDocument, payload: DropPayload) -> bool:
+    """True when Enter should add a new dock on the main window's left side."""
+    if not payload.dock:
+        return False
+    root = doc.root
+    return isinstance(root, WidgetNode) and root.class_name == "QMainWindow"
+
+
 def auto_target(
     doc: UiDocument,
     anchor: Optional[NodeId],
     payload: DropPayload,
 ) -> Optional[Union[AcceptedDrop, RefusedDrop]]:
     """The target Enter would use. None when there is nowhere to put it."""
+    if _enter_docks_left(doc, payload):
+        # Enter on Dock widget in a main-window form adds it on the left (UX-CONT-012).
+        return _blank("dock_side", doc.root.id, dock_side="Left")
     sentence = keyboard_refusal(doc, anchor, payload)
     if sentence is not None:
         host = anchor if anchor is not None and doc.contains(anchor) else doc.root.id

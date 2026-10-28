@@ -479,6 +479,9 @@ class CanvasController:
             elif effect.label == "Nudge":
                 merge_token = _nudge_token(effect.commands)
                 merge_within_s = 1.0
+            elif effect.commands and callable(getattr(effect.commands[0], "merge_window_s", None)):
+                merge_token = "press:%s" % (effect.commands[0].merge_key(),)
+                merge_within_s = float(effect.commands[0].merge_window_s())
             elif effect.label in ("Drop", "Move", "Edit text"):
                 merge_token = effect.token
                 merge_within_s = 30.0
@@ -1176,6 +1179,25 @@ class CanvasController:
         for port in ports:
             viewport.update(port)
 
+    def _shown_for_frame(self) -> Dict[NodeId, int]:
+        """The page chip follows the live MDI window, which Qt activates last."""
+        shown = dict(self._shown_page)
+        for node in self._session.document.iter_widgets():
+            if node.class_name != "QMdiArea":
+                continue
+            widget = self._realizer.widget_for(node.id)
+            if widget is None or not isinstance(widget, QMdiArea):
+                continue
+            windows = list(widget.subWindowList())
+            active = widget.activeSubWindow()
+            if active is None:
+                continue
+            try:
+                shown[node.id] = windows.index(active)
+            except ValueError:
+                continue
+        return shown
+
     def _rebuild(self, static: bool) -> None:
         view = self._stage.view_map()
         if static or self._static is None:
@@ -1198,7 +1220,7 @@ class CanvasController:
                 visible_scene_rect(self._view),
                 self._stage.dock_rect(),
                 self._preview_target(),
-                dict(self._shown_page),
+                self._shown_for_frame(),
                 knobs=self._knob_set(self._static, selection),
                 readout=self._readout,
             ),

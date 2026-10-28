@@ -201,7 +201,8 @@ def test_a_wizard_page_outside_a_wizard_is_refused() -> None:
         session.dispose()
 
 
-def test_a_dock_widget_in_a_main_window_central_area_is_refused() -> None:
+def test_enter_on_dock_widget_in_a_main_window_adds_it_on_the_left() -> None:
+    """UX-CONT-012: Enter on the Insert Dock widget entry docks left and selects it."""
     session = open_session(build_template_ui("main_window", "Shop"), "/tmp/cbcs-m41-dock.ui")
     try:
         commands = auto_commands(
@@ -210,7 +211,13 @@ def test_a_dock_widget_in_a_main_window_central_area_is_refused() -> None:
             DropPayload("widget"),
             fragment_for("QDockWidget"),
         )
-        assert commands == ()
+        assert len(commands) == 1
+        session.log.execute(commands[0])
+        docks = [node for node in session.document.iter_widgets() if node.class_name == "QDockWidget"]
+        assert len(docks) == 1
+        entry = docks[0].attr("dockWidgetArea")
+        assert entry is not None and getattr(entry.value, "value", None) == 1
+        assert session.selection.state.current == docks[0].id
     finally:
         session.dispose()
 

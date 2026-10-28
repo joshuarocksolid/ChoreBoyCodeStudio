@@ -545,8 +545,9 @@ class FormCanvas(QGraphicsView):
             preview.paint_cutoff(painter)
             preview.paint_wide_selection(painter)
         frame = controller.frame
-        paint_frame(painter, frame, self._palette, rect)
+        # The ghost sits under the chips, so a move drag does not wash out band labels.
         controller.paint_ghost(painter)
+        paint_frame(painter, frame, self._palette, rect)
 
     def sync_docked_chips(self, frame: OverlayFrame) -> None:
         """Dock chips when the frame is built, never from inside paint."""

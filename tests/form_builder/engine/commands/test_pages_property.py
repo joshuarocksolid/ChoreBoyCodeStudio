@@ -285,6 +285,29 @@ def test_deleting_the_start_page_clamps_to_the_next_page() -> None:
     assert _stored_start(doc, container) == 1
 
 
+def test_move_page_presses_inside_one_second_are_one_undo_step(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(
+        "app.features.form_builder.engine.commands.log.time.monotonic",
+        lambda: clock["now"],
+    )
+    from app.features.form_builder.integration.surface import _execute_press
+
+    log = open_log(KINDS["tab"])
+    doc = log.document
+    container = doc.root.id
+    _execute_press(log, MovePage(container, 0, 1))
+    clock["now"] = 1000.4
+    _execute_press(log, MovePage(container, 1, 2))
+    assert len(log.entries()) == 1
+    assert log.undo_label() == "Move page"
+    clock["now"] = 1002.0
+    _execute_press(log, MovePage(container, 2, 0))
+    assert len(log.entries()) == 2
+    assert log.undo()
+    assert len(log.entries()) == 1
+
+
 def test_moving_the_first_page_keeps_an_unsaved_start_page() -> None:
     log = open_log(KINDS["tab_implicit"])
     doc = log.document

@@ -1121,6 +1121,11 @@ def _dock_band_chips(
         )
 
 
+_PLUS_TABS = frozenset({"QTabWidget", "QToolBox"})
+_PLUS_CORNER = frozenset({"QStackedWidget", "QWizard"})
+_PLUS_EMPTY = frozenset({"QTabWidget", "QToolBox", "QStackedWidget", "QWizard"})
+
+
 def _plus_hits(
     items: List[Item],
     static: StaticLayer,
@@ -1134,19 +1139,55 @@ def _plus_hits(
     hits: List[Tuple[CanvasRect, Target]] = []
     hot = _plus_ids(gesture, shown)
     dragging = isinstance(gesture, Placing)
+    drawn: Set[NodeId] = set()
     for container, rects in groups.items():
         node = document.get(container)
-        if not isinstance(node, WidgetNode) or node.class_name != "QTabWidget":
+        if not isinstance(node, WidgetNode) or node.class_name not in _PLUS_TABS:
             continue
-        pages = {page.id for page in node.child_widgets}
-        if not dragging and container not in hot and not pages.intersection(hot):
+        if not _plus_wanted(node, container, hot, dragging):
             continue
         last = max(rects, key=lambda rect: rect.x + rect.width)
         side = max(last.height, 18)
         plus = CanvasRect(last.x + last.width + 4, last.y, side, side)
-        items.append(Chip(plus, "+", "select", None))
-        hits.append((plus, OnChip(AddPage(container))))
+        _draw_plus(items, hits, plus, container)
+        drawn.add(container)
+    for obstacle in static.placed:
+        node = document.get(obstacle.node)
+        if not isinstance(node, WidgetNode) or obstacle.node in drawn:
+            continue
+        if node.class_name in _PLUS_EMPTY and not node.child_widgets:
+            # The empty caption says "Use +", so the button is there with the caption.
+            side = 18
+            plus = CanvasRect(obstacle.rect.x + 8, obstacle.rect.y + 8, side, side)
+            _draw_plus(items, hits, plus, obstacle.node)
+            drawn.add(obstacle.node)
+            continue
+        if node.class_name not in _PLUS_CORNER or not node.child_widgets:
+            continue
+        if not _plus_wanted(node, obstacle.node, hot, dragging):
+            continue
+        side = 18
+        rect = obstacle.rect
+        plus = CanvasRect(rect.x + max(rect.width - side - 4, 0), rect.y + 4, side, side)
+        _draw_plus(items, hits, plus, obstacle.node)
     return hits
+
+
+def _plus_wanted(node: WidgetNode, container: NodeId, hot: Set[NodeId], dragging: bool) -> bool:
+    if dragging:
+        return True
+    pages = {page.id for page in node.child_widgets}
+    return container in hot or bool(pages.intersection(hot))
+
+
+def _draw_plus(
+    items: List[Item],
+    hits: List[Tuple[CanvasRect, Target]],
+    plus: CanvasRect,
+    container: NodeId,
+) -> None:
+    items.append(Chip(plus, "+", "select", None))
+    hits.append((plus, OnChip(AddPage(container))))
 
 
 def _plus_ids(gesture: Gesture, shown: SelectionState) -> Set[NodeId]:
