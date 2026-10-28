@@ -117,25 +117,28 @@ class LocaleEditor:
         )
         self._popover = popover
         body = popover.body()
-        self._filter = QLineEdit(popover)
-        self._filter.setPlaceholderText("Language")
-        name_part(self._filter, self._host, "language filter")
-        self._filter.textChanged.connect(self._apply_filter)
-        self._list = QListWidget(popover)
-        self._list.setMaximumHeight(220)
+        field = QLineEdit(popover)
+        self._filter = field
+        field.setPlaceholderText("Language")
+        name_part(field, self._host, "language filter")
+        field.textChanged.connect(self._apply_filter)
+        listing = QListWidget(popover)
+        self._list = listing
+        listing.setMaximumHeight(220)
         for key, label in _languages():
-            item = QListWidgetItem(label, self._list)
+            item = QListWidgetItem(label, listing)
             item.setData(getattr(Qt, "UserRole"), key)
             item.setToolTip(key)
-        self._list.currentItemChanged.connect(lambda _cur, _prev: self._language_picked())
-        self._countries = QComboBox(popover)
-        name_part(self._countries, self._host, "territory")
-        self._countries.currentIndexChanged.connect(self._country_picked)
+        listing.currentItemChanged.connect(lambda _cur, _prev: self._language_picked())
+        countries = QComboBox(popover)
+        self._countries = countries
+        name_part(countries, self._host, "territory")
+        countries.currentIndexChanged.connect(self._country_picked)
         body.addWidget(QLabel("Language", popover))
-        body.addWidget(self._filter)
-        body.addWidget(self._list)
+        body.addWidget(field)
+        body.addWidget(listing)
         body.addWidget(QLabel("Territory", popover))
-        body.addWidget(self._countries)
+        body.addWidget(countries)
         self._filling = True
         self._select_current()
         self._filling = False

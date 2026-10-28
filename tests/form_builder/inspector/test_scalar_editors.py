@@ -128,6 +128,20 @@ def _flag(pop: QWidget, qt_name: str) -> QCheckBox:
     raise AssertionError(qt_name)
 
 
+def _labeled(row: QWidget, text: str) -> QPushButton:
+    for button in row.findChildren(QPushButton):
+        if button.text() == text:
+            return button
+    raise AssertionError(text)
+
+
+def _named(root: QWidget, object_name: str) -> QPushButton:
+    for button in root.findChildren(QPushButton, object_name):
+        if button.isVisible():
+            return button
+    raise AssertionError(object_name)
+
+
 def _summary(row: QWidget) -> QPushButton:
     found = None
     for button in row.findChildren(QPushButton, "formBuilder.summary"):
@@ -472,11 +486,7 @@ def test_flags_escape_keeps_bytes_and_done_is_one_step() -> None:
             _flag(pop, "LinksAccessibleByMouse").setChecked(False)
             _flag(pop, "TextSelectableByMouse").setChecked(True)
             QTest.qWait(50)
-            done = None
-            for candidate in pop.findChildren(QPushButton, "formBuilder.popoverDone"):
-                if candidate.isVisible():
-                    done = candidate
-            assert isinstance(done, QPushButton)
+            done = _named(pop, "formBuilder.popoverDone")
             done.click()
             QTest.qWait(50)
             pane.flush()
@@ -494,12 +504,7 @@ def test_key_sequence_records_cancels_and_clears() -> None:
         try:
             _select(session, pane, "keys")
             row = _row(pane, "keySequence")
-            record = None
-            for button in row.findChildren(QPushButton):
-                if button.text() == "Record":
-                    record = button
-            texts = [button.text() for button in row.findChildren(QPushButton)]
-            assert isinstance(record, QPushButton), texts
+            record = _labeled(row, "Record")
             record.click()
             _events()
             field = row.findChild(QLineEdit)

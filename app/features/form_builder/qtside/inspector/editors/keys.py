@@ -132,7 +132,7 @@ class KeyEditor:
         self._kick = QTimer(self._root)
         self._kick.setInterval(30)
         self._kick.timeout.connect(self._drain)
-        self._pending = None
+        self._pending: Optional[tuple] = None
         self.recording = False
         self._first = ""
         self._armed_text = ""
@@ -172,7 +172,7 @@ class KeyEditor:
     def _drain(self) -> None:
         pending = self._pending
         self._pending = None
-        if pending is None or not self.recording:
+        if not isinstance(pending, tuple) or not self.recording:
             if not self.recording:
                 self._kick.stop()
             return
@@ -278,7 +278,10 @@ def _clash(host: EditorHost, text: str) -> str:
         actions = getattr(widget, "actions", None)
         if not callable(actions):
             continue
-        for action in actions():
+        found = actions()
+        if not isinstance(found, (list, tuple)):
+            continue
+        for action in found:
             if not isinstance(action, QAction):
                 continue
             if mine and action.objectName() == mine:

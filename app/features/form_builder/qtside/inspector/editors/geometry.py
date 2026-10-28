@@ -94,11 +94,11 @@ class _BoxEditor:
     def show(self, value: RowValue) -> None:
         mark(self._root, value)
         numbers = _components(value, [field.key for field in self._fields])
-        blank = isinstance(value, Mixed) or numbers is None
+        mixed = isinstance(value, Mixed)
         for index, field in enumerate(self._fields):
             name_part(field.box, self._host, field.key)
-            if blank:
-                field.box.show_blank("Mixed" if isinstance(value, Mixed) else "", can_reset=False)
+            if mixed or numbers is None:
+                field.box.show_blank("Mixed" if mixed else "", can_reset=False)
             else:
                 field.box.show_number(numbers[index], can_reset=False)
 
@@ -271,27 +271,31 @@ class SizePolicyEditor:
         )
         self._popover = popover
         body = popover.body()
-        self._horizontal = _policy_combo(popover, self._host.qt_name)
-        self._vertical = _policy_combo(popover, self._host.qt_name)
+        horizontal = _policy_combo(popover, self._host.qt_name)
+        vertical = _policy_combo(popover, self._host.qt_name)
+        self._horizontal = horizontal
+        self._vertical = vertical
         hooks_h = _SpinHooks(lambda _n: self._commit(), self._host.invalid, lambda: None, lambda: None)
         hooks_v = _SpinHooks(lambda _n: self._commit(), self._host.invalid, lambda: None, lambda: None)
-        self._horizontal_share = IntBox(_SHARE[0], _SHARE[1], popover, hooks_h)
-        self._vertical_share = IntBox(_SHARE[0], _SHARE[1], popover, hooks_v)
+        horizontal_share = IntBox(_SHARE[0], _SHARE[1], popover, hooks_h)
+        vertical_share = IntBox(_SHARE[0], _SHARE[1], popover, hooks_v)
+        self._horizontal_share = horizontal_share
+        self._vertical_share = vertical_share
         policy = self._current
-        _select_policy(self._horizontal, policy.hsizetype)
-        _select_policy(self._vertical, policy.vsizetype)
-        self._horizontal_share.show_number(policy.horstretch, can_reset=False)
-        self._vertical_share.show_number(policy.verstretch, can_reset=False)
-        self._horizontal.currentIndexChanged.connect(lambda _i: self._commit())
-        self._vertical.currentIndexChanged.connect(lambda _i: self._commit())
-        body.addWidget(_labeled(popover, "Horizontal", self._horizontal))
-        body.addWidget(_labeled(popover, "Vertical", self._vertical))
-        body.addWidget(_labeled(popover, "Horizontal share", self._horizontal_share))
-        body.addWidget(_labeled(popover, "Vertical share", self._vertical_share))
-        name_part(self._horizontal, self._host, "horizontal")
-        name_part(self._vertical, self._host, "vertical")
-        name_part(self._horizontal_share, self._host, "horizontal share")
-        name_part(self._vertical_share, self._host, "vertical share")
+        _select_policy(horizontal, policy.hsizetype)
+        _select_policy(vertical, policy.vsizetype)
+        horizontal_share.show_number(policy.horstretch, can_reset=False)
+        vertical_share.show_number(policy.verstretch, can_reset=False)
+        horizontal.currentIndexChanged.connect(lambda _i: self._commit())
+        vertical.currentIndexChanged.connect(lambda _i: self._commit())
+        body.addWidget(_labeled(popover, "Horizontal", horizontal))
+        body.addWidget(_labeled(popover, "Vertical", vertical))
+        body.addWidget(_labeled(popover, "Horizontal share", horizontal_share))
+        body.addWidget(_labeled(popover, "Vertical share", vertical_share))
+        name_part(horizontal, self._host, "horizontal")
+        name_part(vertical, self._host, "vertical")
+        name_part(horizontal_share, self._host, "horizontal share")
+        name_part(vertical_share, self._host, "vertical share")
         if self._can_reset:
             popover.set_reset(self._reset)
         popover.open_popover()
