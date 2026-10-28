@@ -1,7 +1,7 @@
 """Brush popover, pattern list and gradient bar (UX-PED-083, UX-PED-084).
 
-Picture (UX-PED-103) is not built. ``add_brush_style`` is the extension point
-M4.3c uses to add that segment.
+Picture (UX-PED-103) is a style segment plus ``set_brush_picture_page``. The
+page itself lives with the picture editors.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from app.features.form_builder.engine.ui4.values import (
     ColorValue,
     GradientStop,
     GradientValue,
+    ResourcePixmap,
 )
 from app.features.form_builder.qtside.inspector.api import (
     EditorHost,
@@ -100,6 +101,19 @@ def add_brush_style(key: str, label: str) -> None:
     _EXTRA_STYLES.append((key, label))
 
 
+# (parent, host, on_texture) -> widget with ``show_stored(ResourcePixmap | None)``.
+_PICTURE_PAGE: Optional[Callable[..., QWidget]] = None
+# (host, stored path, side) -> thumbnail; resolves ``:/`` and form-relative paths.
+_PICTURE_THUMB: Optional[Callable[..., QPixmap]] = None
+
+
+def set_brush_picture_page(factory: Callable[..., QWidget], thumbnail: Optional[Callable[..., QPixmap]] = None) -> None:
+    """Install the Picture page. The style segment alone has nowhere to put the picker."""
+    global _PICTURE_PAGE, _PICTURE_THUMB
+    _PICTURE_PAGE = factory
+    _PICTURE_THUMB = thumbnail
+
+
 def brush_style_keys() -> Tuple[str, ...]:
     return tuple(key for key, _label in _CORE_STYLES + tuple(_EXTRA_STYLES))
 
@@ -140,7 +154,7 @@ def brush_summary(brush: Optional[BrushValue], *, mixed: bool) -> str:
         kind = {"RadialGradient": "Radial", "ConicalGradient": "Conical"}.get(brush.gradient.type or "", "Linear")
         count = len(brush.gradient.stops)
         return "%s gradient, %d colours" % (kind, count)
-    if brush.texture is not None:
+    if brush.texture is not None or brush.brushstyle == "TexturePattern":
         return "Picture"
     style = brush.brushstyle or ""
     if style and style not in ("NoBrush", "SolidPattern"):
@@ -498,6 +512,10 @@ class BrushForm(QWidget):
         self._extra.setWordWrap(True)
         self._extra.hide()
         layout.addWidget(self._extra)
+        self._picture: Optional[QWidget] = None
+        if _PICTURE_PAGE is not None:
+            self._picture = _PICTURE_PAGE(self, self._host, self._picture_chosen)
+            layout.addWidget(self._picture)
         self._picker = ColorPicker(
             self,
             on_color=self._color_changed,
@@ -547,6 +565,8 @@ class BrushForm(QWidget):
         if style == "gradient":
             color = self._bar.current_color()
         self._picker.set_color(color or ColorValue(0, 0, 0))
+        if self._picture is not None and hasattr(self._picture, "show_stored"):
+            self._picture.show_stored(brush.texture)  # type: ignore[attr-defined]
         self._apply_style_widgets()
         self._pushing = False
 
@@ -569,6 +589,8 @@ class BrushForm(QWidget):
         elif key == "gradient":
             gradient = self._brush.gradient or _default_gradient()
             self._brush = BrushValue(brushstyle=_gradient_brushstyle(gradient), gradient=gradient)
+        elif key == "picture":
+            self._brush = BrushValue(brushstyle="TexturePattern", texture=self._brush.texture)
         else:
             self._extra.setText("Picture uses the picture picker.")
             self._apply_style_widgets()
@@ -584,7 +606,9 @@ class BrushForm(QWidget):
         self._pattern.setVisible(style == "pattern")
         self._gradient_box.setVisible(style == "gradient")
         self._picker.setVisible(style != "picture")
-        self._extra.setVisible(style == "picture")
+        if self._picture is not None:
+            self._picture.setVisible(style == "picture")
+        self._extra.setVisible(style == "picture" and self._picture is None)
 
     def _ensure_patterns(self) -> None:
         if self._pattern.count():
@@ -705,6 +729,13 @@ class BrushForm(QWidget):
         self._refusal.show()
         self._host.invalid(message)
 
+    def _picture_chosen(self, texture: Optional[ResourcePixmap]) -> None:
+        if self._pushing:
+            return
+        self._brush = BrushValue(brushstyle="TexturePattern", texture=texture)
+        self._apply_style_widgets()
+        self._emit()
+
     def _emit(self) -> None:
         if not self._pushing:
             self._on_change(self._brush)
@@ -786,16 +817,31 @@ class BrushEditor:
         if brush is None or mixed or _is_none(brush):
             self._preview.set_color(None, hollow=not mixed, mixed=mixed)
             return
-        fill = preview_brush(brush, 16)
+        thumb = _PICTURE_THUMB
+        host = self._host
+        picture = None if thumb is None else (lambda stored, side: thumb(host, stored, side))
+        fill = preview_brush(brush, 16, picture=picture)
         if fill is None:
             self._preview.set_color(brush.color or ColorValue(0, 0, 0))
             return
         self._preview.set_fill(fill)
 
 
-def preview_brush(brush: BrushValue, side: int) -> Optional[QBrush]:
-    """A QBrush that draws a pattern or gradient in a ``side`` px square, or None for solid."""
+def preview_brush(
+    brush: BrushValue, side: int, picture: Optional[Callable[[str, int], QPixmap]] = None
+) -> Optional[QBrush]:
+    """A QBrush that draws a pattern or gradient in a ``side`` px square, or None for solid.
+
+    ``picture`` turns a stored texture path into a thumbnail; without it a
+    texture previews empty (a ``:/`` path means nothing outside the form).
+    """
     style = _style_of(brush)
+    if style == "picture":
+        path = brush.texture.path if brush.texture is not None else ""
+        pixmap = picture(path, side) if path and picture is not None else QPixmap()
+        if pixmap.isNull():
+            return QBrush()
+        return QBrush(pixmap)
     if style == "pattern":
         color = _qcolor(brush.color or ColorValue(0, 0, 0))
         return QBrush(color, _brush_style(brush.brushstyle or "Dense4Pattern"))  # type: ignore[arg-type]

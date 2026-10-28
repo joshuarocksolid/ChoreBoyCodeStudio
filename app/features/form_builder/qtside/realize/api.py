@@ -16,6 +16,7 @@ from app.qt.QtWidgets import (
     QComboBox,
     QFormLayout,
     QGridLayout,
+    QLabel,
     QLayout,
     QListWidget,
     QMenu,
@@ -42,6 +43,7 @@ from app.features.form_builder.engine.events import (
 from app.features.form_builder.engine.commands.live import LiveProp, PropKey
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.storage import is_logic_key, splitter_sizes
+from app.features.form_builder.engine.project.pictures import label_text_hides_picture
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -60,7 +62,7 @@ from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     norm_qt,
     ordered_layout_metrics,
-    path_under,
+    resolve_stored_picture,
     set_property_checked,
     text_of,
 )
@@ -463,6 +465,7 @@ class Realizer(_Structure):
             return
         if entry is None:
             self._reset_property(node, obj, name)
+            self._settle_label(node, obj, name)
             return
         if name == "cbcsSplitterSizes":
             if isinstance(obj, QSplitter):
@@ -478,6 +481,26 @@ class Realizer(_Structure):
             refusals=self._refusals,
         ):
             self._patched += 1
+        self._settle_label(node, obj, name)
+
+    def _settle_label(self, node: Node, obj: object, name: str) -> None:
+        """QLabel text and pixmap clear each other: end on the one the running app shows."""
+        if name not in ("text", "pixmap") or not isinstance(obj, QLabel) or not isinstance(node, WidgetNode):
+            return
+        last = "text" if label_text_hides_picture(node) else "pixmap"
+        if last == name:
+            return
+        entry = node.prop(last)
+        if entry is None:
+            return
+        apply_entry(
+            obj,
+            entry,
+            is_root=obj is self._root,
+            resolve_path=self._resolve_path,
+            problems=self._problems,
+            refusals=self._refusals,
+        )
 
     def _patch_attribute(self, node: object, name: str) -> None:
         if not isinstance(node, WidgetNode) or node.parent_id is None:
@@ -972,7 +995,7 @@ class Realizer(_Structure):
             self._wipe(node_id)
 
     def _resolve_path(self, path: str) -> str:
-        return path_under(self._base_dir, path)
+        return resolve_stored_picture(path, self._base_dir, self._session.document)
 
 
 def _fresh_host() -> QWidget:

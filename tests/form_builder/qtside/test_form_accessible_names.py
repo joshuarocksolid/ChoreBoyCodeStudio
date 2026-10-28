@@ -141,8 +141,9 @@ def test_expanded_controls_carry_context_in_their_names(tmp_path: Path, qapp: QA
         assert _named(surface, "formBuilder.group.all") == "All properties group"
         icon = surface.findChild(QWidget, "formBuilder.row.icon")
         assert icon is not None
-        raw = next(button for button in icon.findChildren(QPushButton) if button.text() == "Raw XML")
-        assert raw.accessibleName() == "Icon: Raw XML"
+        summary = icon.findChild(QPushButton, "formBuilder.summary")
+        assert summary is not None
+        assert summary.accessibleName().startswith("icon:")
     finally:
         shutdown_main_window_for_test(window, qapp)
 
