@@ -104,3 +104,51 @@ def test_dropping_into_an_empty_scroll_area_makes_its_content_widget() -> None:
     assert log.undo()
     assert write_ui(doc).text == before
     assert len(doc.node(scroll).child_widgets) == 0  # type: ignore[attr-defined]
+
+
+def _wizard_page() -> Fragment:
+    spec = NodeSpec(
+        "widget",
+        None,
+        (("class_name", "QWizardPage"), ("object_name", "wizardPage")),
+        (PropertyEntry("property", "title", StringValue("Step 1")),),
+    )
+    return Fragment((spec,))
+
+
+def test_a_new_wizard_page_dropped_on_the_shown_step_becomes_the_next_step() -> None:
+    """The pointer is over the wizard's page, not its frame: the drop still goes into the wizard."""
+    log = open_log(FORM)
+    doc = log.document
+    rects = _rects(doc)
+    rects[nid(doc, "wizardPage_1")] = Rect(20, 130, 280, 110)
+    host = _widget_host(doc, rects, nid(doc, "Form"), "Form")
+    assert host is not None
+    payload = DropPayload("widget", wizard_page=True)
+    target = resolve_drop(host, (150, 180), payload)
+    assert isinstance(target, AcceptedDrop) and target.action == "wizard_step"
+    for command in commands_for(doc, target, payload, _wizard_page()):
+        log.execute(command)
+    wizard = doc.node(nid(doc, "wizard"))
+    steps = wizard.child_widgets  # type: ignore[attr-defined]
+    assert [child.object_name for child in steps] == ["wizardPage_1", "wizardPage_2"]
+    assert steps[1].class_name == "QWizardPage"
+    assert steps[1].prop("title").value.text == "Step 2"
+    assert steps[1].layout is not None and steps[1].layout.class_name == "QVBoxLayout"
+
+
+def test_enter_with_a_step_selected_inserts_the_wizard_page_after_it() -> None:
+    from app.features.form_builder.engine.commands.drop_plan import auto_commands
+
+    log = open_log(FORM)
+    doc = log.document
+    for command in auto_commands(doc, nid(doc, "wizard"), DropPayload("widget"), _wizard_page()):
+        log.execute(command)
+    first = nid(doc, "wizardPage_1")
+    commands = auto_commands(doc, first, DropPayload("widget"), _wizard_page())
+    assert commands
+    for command in commands:
+        log.execute(command)
+    steps = doc.node(nid(doc, "wizard")).child_widgets  # type: ignore[attr-defined]
+    assert [child.object_name for child in steps] == ["wizardPage_1", "wizardPage_3", "wizardPage_2"]
+    assert [child.prop("title").value.text for child in steps] == ["Step 1", "Step 2", "Step 2"]

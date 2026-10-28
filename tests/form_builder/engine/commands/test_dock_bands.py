@@ -84,3 +84,27 @@ def test_dropping_on_a_band_writes_the_side_as_the_attribute_number() -> None:
     assert entry is not None and getattr(entry.value, "value", None) == 2
     assert log.undo()
     assert getattr(doc.node(nid(doc, "dock")).attr("dockWidgetArea").value, "value", None) == 1  # type: ignore[union-attr]
+
+
+def test_a_new_dock_from_insert_lands_on_the_band_side() -> None:
+    """Dragging the Dock widget tile (a fragment, no source ids) onto the bottom band."""
+    from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
+
+    log = open_log(MAIN)
+    doc = log.document
+    payload = DropPayload("widget", dock=True)
+    target = resolve_drop(_host(doc), (200, 296), payload)
+    assert isinstance(target, AcceptedDrop) and target.dock_side == "Bottom"
+    fragment = Fragment((NodeSpec("widget", None, (("class_name", "QDockWidget"), ("object_name", "dockWidget"))),))
+    commands = commands_for(doc, target, payload, fragment)
+    assert commands
+    for command in commands:
+        log.execute(command)
+    docks = [
+        child
+        for child in doc.node(nid(doc, "Main")).child_widgets  # type: ignore[attr-defined]
+        if child.class_name == "QDockWidget" and child.object_name != "dock"
+    ]
+    assert len(docks) == 1
+    entry = docks[0].attr("dockWidgetArea")
+    assert entry is not None and getattr(entry.value, "value", None) == 8

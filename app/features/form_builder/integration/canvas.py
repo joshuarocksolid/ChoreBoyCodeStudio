@@ -21,6 +21,7 @@ from app.qt.QtWidgets import (
 )
 from app.qt.qt_compat import enum_value, event_pos, wrapper_is_valid
 
+from app.features.form_builder.engine.commands.drop_plan import flagged
 from app.features.form_builder.engine.events import PRIORITY_HIT_INDEX, PRIORITY_VIEWS
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import DropPayload, PayloadKind
@@ -53,6 +54,7 @@ from app.features.form_builder.qtside.canvas.core.palette import (
     MIME_FRAGMENT,
     MIME_INSERT,
     MIME_NODE,
+    fragment_for,
     tile_for,
 )
 from app.features.form_builder.qtside.canvas.core.place import payload_for
@@ -116,7 +118,8 @@ def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload,
         key = bytes(mime.data(MIME_INSERT)).decode("utf-8")
         tile = tile_for(key)
         kind = tile[1] if tile is not None else "widget"
-        return DropPayload(kind), key, None
+        # A dock shows the side bands and a wizard page looks for a wizard (UX-CONT-012, UX-CAT-014).
+        return flagged(DropPayload(kind), fragment_for(key)), key, None
     if mime.hasFormat(MIME_NODE):
         raw = bytes(mime.data(MIME_NODE)).decode("utf-8")
         ids = tuple(NodeId(int(part)) for part in raw.split(",") if part)
@@ -124,7 +127,7 @@ def _drop_payload(event: object, doc: UiDocument) -> Optional[Tuple[DropPayload,
     fragment = _fragment_mime(mime)
     if fragment is None:
         return None
-    return DropPayload(_fragment_kind(fragment)), "", fragment
+    return flagged(DropPayload(_fragment_kind(fragment)), fragment), "", fragment
 
 
 def _fragment_mime(mime: object) -> Optional[Fragment]:

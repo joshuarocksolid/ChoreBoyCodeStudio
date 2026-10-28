@@ -123,15 +123,7 @@ def _insert(session, key: str) -> None:  # type: ignore[no-untyped-def]
         pytest.param("QStackedWidget", marks=pytest.mark.parity("R3-81"), id="QStackedWidget"),
         pytest.param("QScrollArea", marks=pytest.mark.parity("R3-78"), id="QScrollArea"),
         pytest.param("QWizard", id="QWizard"),
-        pytest.param(
-            "QWizardPage",
-            id="QWizardPage",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="M4.2 owns the page commands: a wizard page dropped into a QWizard root is refused "
-                "('That container already has a layout.'); UX-CONT-013 insert-step is M4.2's",
-            ),
-        ),
+        pytest.param("QWizardPage", id="QWizardPage"),
         pytest.param("QMdiArea", marks=pytest.mark.parity("R3-84"), id="QMdiArea"),
         pytest.param("QDockWidget", marks=pytest.mark.parity("R3-85"), id="QDockWidget"),
         pytest.param("QLabel", marks=pytest.mark.parity("R3-102"), id="QLabel"),

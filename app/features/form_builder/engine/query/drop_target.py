@@ -301,11 +301,17 @@ def _resolve_wizard_step(root: DropHost, pointer: Tuple[int, int]) -> DropTarget
     holders = [host for _depth, host in found if _contains(host.rect, pointer)]
     if not holders:
         return NoDrop()
-    deepest = min(holders, key=lambda host: host.rect.width * host.rect.height)
-    if not deepest.wizard:
+    # The pointer is usually over the wizard's shown page, so look for the
+    # innermost wizard that holds it, not only at the deepest host.
+    wizards = [host for host in holders if host.wizard]
+    if not wizards:
+        deepest = min(holders, key=lambda host: host.rect.width * host.rect.height)
         return _refuse(deepest, WIZARD_REFUSAL, DropIndicator(deepest.rect, dashed=True, role="problem"))
+    wizard = min(wizards, key=lambda host: host.rect.width * host.rect.height)
     sentence = "New step"
-    return _accept(deepest, "wizard_step", sentence, sentence, DropIndicator(deepest.rect, dashed=True))
+    return _accept(
+        wizard, "wizard_step", sentence, sentence, DropIndicator(wizard.rect, dashed=True), index=len(wizard.slots)
+    )
 
 
 def _resolve_dock(host: DropHost, pointer: Tuple[int, int]) -> DropTarget:

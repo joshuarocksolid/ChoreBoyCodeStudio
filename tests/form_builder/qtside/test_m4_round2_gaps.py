@@ -203,3 +203,19 @@ def test_an_outline_page_caption_uses_the_container_word() -> None:
         primary="",
     )
     assert _row_caption(row).startswith("Tab ")
+
+
+@pytest.mark.parametrize(("key", "dock", "wizard_page"), [("QDockWidget", True, False), ("QWizardPage", False, True)])
+def test_an_insert_drag_carries_the_dock_and_wizard_page_flags(key: str, dock: bool, wizard_page: bool) -> None:
+    """UX-CONT-012: the bands appear for a dock dragged from Insert, not only for a move."""
+    from app.features.form_builder.integration.canvas import _drop_payload
+    from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT
+    from app.qt.QtCore import QByteArray, QMimeData
+
+    mime = QMimeData()
+    mime.setData(MIME_INSERT, QByteArray(key.encode("utf-8")))
+    found = _drop_payload(SimpleNamespace(mimeData=lambda: mime), None)
+    assert found is not None
+    payload, insert_key, _fragment = found
+    assert insert_key == key
+    assert (payload.dock, payload.wizard_page) == (dock, wizard_page)
