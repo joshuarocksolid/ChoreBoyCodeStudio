@@ -320,11 +320,34 @@ def reset_words(
 
 def clear_property(name: str) -> SizingWrite:
     """Reset one of minimumSize or maximumSize and leave the policy alone."""
+    return clear_shown_axes(name, width=True, height=True, current=None)
+
+
+def clear_shown_axes(
+    name: str,
+    *,
+    width: bool,
+    height: bool,
+    current: Optional[SizeValue],
+) -> SizingWrite:
+    """Clear only the axes a limit row is showing.
+
+    A Fixed axis is hidden on At least and At most. Clearing the whole
+    property would delete that axis's minimum and break the lock, so Reset
+    size would leave the matching maximum behind.
+    """
+    if name not in ("minimumSize", "maximumSize"):
+        raise ValueError(name)
+    empty = 0 if name == "minimumSize" else QWIDGET_SIZE_MAX
+    if not width and not height:
+        return SizingWrite(None, None, None, False, False, False)
+    pair = _pair(current, empty)
+    kept_w = empty if width else pair[0]
+    kept_h = empty if height else pair[1]
+    written = _size_or_none(kept_w, kept_h, empty)
     if name == "minimumSize":
-        return SizingWrite(None, None, None, False, True, False)
-    if name == "maximumSize":
-        return SizingWrite(None, None, None, False, False, True)
-    raise ValueError(name)
+        return SizingWrite(None, written, None, False, True, False)
+    return SizingWrite(None, None, written, False, False, True)
 
 
 def share_slots(document: UiDocument, node_id: NodeId) -> Tuple[Share, ...]:

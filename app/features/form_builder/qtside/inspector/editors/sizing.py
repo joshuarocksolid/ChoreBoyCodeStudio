@@ -25,7 +25,7 @@ from app.features.form_builder.engine.sizing import (
     AxisProjection,
     Share,
     SizingWrite,
-    clear_property,
+    clear_shown_axes,
     encode_axis,
     placed_freely,
     project_axis,
@@ -231,6 +231,7 @@ class SizeBody:
         if commands:
             self._host.run("Size", commands)
             return
+        self._note_default(axis, word)
         self._painting = True
         try:
             self._paint()
@@ -305,9 +306,43 @@ class SizeBody:
     def _clear_limit(self, name: str) -> None:
         if self._painting:
             return
-        commands = [from_write(node.id, clear_property(name)) for node in self._owners()]
+        owners = self._owners()
+        projections = [_project(self._host, node) for node in owners]
+        width_fixed = bool(projections) and all(pair[0].word == WORD_FIXED and pair[0].filled for pair in projections)
+        height_fixed = bool(projections) and all(pair[1].word == WORD_FIXED and pair[1].filled for pair in projections)
+        clear_w = not width_fixed
+        clear_h = not height_fixed
+        if not clear_w and not clear_h:
+            return
+        commands = [
+            from_write(
+                node.id,
+                clear_shown_axes(name, width=clear_w, height=clear_h, current=_size(node, name)),
+            )
+            for node in owners
+        ]
         if commands:
             self._host.run("Reset", commands)
+
+    def _note_default(self, axis: str, word: str) -> None:
+        owners = self._owners()
+        if len(owners) != 1:
+            return
+        viewed = _project(self._host, owners[0])[0 if axis == "h" else 1]
+        if viewed.filled or viewed.custom or viewed.word != word or not viewed.enabled:
+            return
+        phrase = class_phrase(owners[0].class_name)
+        article = "an" if phrase[:1].lower() in "aeiou" else "a"
+        self._say("%s is already the default for %s %s." % (word, article, phrase))
+
+    def _say(self, sentence: str) -> None:
+        widget: Optional[QWidget] = self.widget
+        while widget is not None:
+            narrate = getattr(widget, "narrate", None)
+            if callable(narrate):
+                narrate(sentence)
+                return
+            widget = widget.parentWidget()
 
     def _reset_words(self) -> None:
         if self._painting:
@@ -370,7 +405,7 @@ class _AxisRow:
             button.setCheckable(True)
             button.setProperty("fbSegment", "true")
             button.setToolTip(_TIPS[word])
-            button.setAccessibleName("%s %s" % (title, word))
+            button.setAccessibleName("%s: %s" % (title, word))
             button.setFocusPolicy(_strong())
             button.clicked.connect(guard(button, lambda chosen=word: on_word(axis, chosen)))
             self._buttons[word] = button

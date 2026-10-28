@@ -224,6 +224,14 @@ def _key_text(event: object) -> str:
     return normalize_form_shortcut(sequence.toString(QKeySequence.SequenceFormat.PortableText))
 
 
+def _typing(widget: object) -> bool:
+    """True when the widget is an editor that should receive the character."""
+    inherits = getattr(widget, "inherits", None)
+    if not callable(inherits):
+        return False
+    return bool(inherits("QLineEdit") or inherits("QTextEdit") or inherits("QPlainTextEdit"))
+
+
 class _ShellKeyGuard(QObject):
     """Keeps shell window keys that mean nothing here off the builder chrome.
 
@@ -400,6 +408,17 @@ class FormSurface(QWidget):
         self._rename_key = QShortcut(QKeySequence("F2"), self)
         self._rename_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._rename_key.activated.connect(self._rename_inert)
+        quiet: Tuple[Tuple[str, Callable[[], str]], ...] = (
+            ("F7", lambda: "Set a label's buddy in All properties > buddy."),
+            ("F8", self._tab_order_sentence),
+            ("Ctrl+Shift+R", lambda: "Run the form with F5."),
+        )
+        self._quiet_keys: list[QShortcut] = []
+        for key, sentence in quiet:
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+            shortcut.activated.connect(lambda say=sentence: self.narrate(say()))
+            self._quiet_keys.append(shortcut)
         self._widths_key = QShortcut(QKeySequence("Ctrl+K, W"), self)
         self._widths_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._widths_key.activated.connect(self._workbench.canvas.preview.toggle_widths)
@@ -989,6 +1008,18 @@ class FormSurface(QWidget):
     def zoom_changed(self, label: str) -> None:
         self._toolbar.zoom_label.setText(label)
 
+    def select_object(self, object_name: str) -> bool:
+        """Select ``object_name`` and put the keyboard on the canvas (UX-START-004)."""
+        if self._source.mode != "visual":
+            return False
+        found = self._session.document.by_name(object_name)
+        if not found:
+            return False
+        node = found[0]
+        self._session.selection.set((node,), current=node, source=SelectionSource.COMMAND)
+        self._workbench.canvas.setFocus()
+        return True
+
     def zoom_out(self) -> None:
         self._workbench.canvas.send(ZoomAsked(ZoomStep(-1)))
 
@@ -1109,8 +1140,35 @@ class FormSurface(QWidget):
         inspector.properties.setFocus()
 
     def _rename_inert(self) -> None:
+        if self._source.mode == "visual":
+            focus = QApplication.focusWidget()
+            canvas = self._workbench.canvas
+            on_canvas = focus is not None and (focus is canvas or canvas.isAncestorOf(focus))
+            current = self._session.selection.state.current
+            if on_canvas and current is not None and not _typing(focus):
+                self._workbench.outline.begin_rename(current, return_to=canvas)
+                return
         self._inert_note = "F2 renames the selected outline row."
         self._refresh_shell_status()
+
+    def _tab_order_sentence(self) -> str:
+        """F8 before the tab-order overlay exists. True for this form's file."""
+        if self._session.document.tabstops():
+            return "This form keeps its own tab order. It is listed under tabstops in the XML view."
+        return "Tab order follows the order of widgets in the outline."
+
+    def _insert_from_canvas(self) -> None:
+        if self._source.mode != "visual":
+            return
+        focus = QApplication.focusWidget()
+        canvas = self._workbench.canvas
+        if focus is not None and _typing(focus):
+            insert = getattr(focus, "insert", None)
+            if callable(insert):
+                insert("/")
+            return
+        on_canvas = focus is not None and (focus is canvas or canvas.isAncestorOf(focus))
+        self._workbench.outline.show_insert(return_to=canvas if on_canvas else None)
 
     def _run_outline_command(self, action_id: str) -> None:
         if action_id in _CLIPBOARD_IDS:
@@ -1305,11 +1363,13 @@ class FormSurface(QWidget):
 
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
         """Gestures behind canvas, outline, and inspector keys."""
-        return {
+        handlers: Dict[str, Callable[[], None]] = {
             command.command_id: lambda command_id=command.command_id: self.dispatch(command_id)
             for command in FORM_COMMANDS
             if request_for(command.command_id) is not None or command.command_id in SHORTCUT_COMMAND_IDS
         }
+        handlers["form.action.insert"] = self._insert_from_canvas
+        return handlers
 
     def _note_inert(self) -> None:
         self._inert_note = INERT_STATUS

@@ -11,6 +11,27 @@ from app.features.form_builder.qtside.inspector.model import Crumb, HeaderView, 
 from app.qt.QtCore import QEvent, Qt
 from app.qt.QtGui import QFont, QPainter, QPen, QResizeEvent
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QLineEdit, QSizePolicy, QVBoxLayout, QWidget
+from app.qt.qt_compat import enum_value
+
+
+class _CrumbLabel(QLabel):
+    """A link label that stays a tab stop without trapping Tab or Shift+Tab."""
+
+    def event(self, event: QEvent) -> bool:  # noqa: N802
+        kind = event.type()
+        if kind != QEvent.KeyPress and kind != QEvent.ShortcutOverride:
+            return bool(super().event(event))
+        key = int(enum_value(getattr(event, "key")()))
+        tab = int(enum_value(Qt.Key_Tab))
+        back = int(enum_value(Qt.Key_Backtab))
+        if key != tab and key != back:
+            return bool(super().event(event))
+        if kind == QEvent.KeyPress:
+            shift = int(enum_value(getattr(event, "modifiers")())) & int(enum_value(Qt.ShiftModifier))
+            QWidget.focusNextPrevChild(self, key == tab and not shift)
+        event.accept()
+        return True
+
 
 class Header(QWidget):
 
@@ -32,6 +53,7 @@ class Header(QWidget):
         self._name.setAccessibleName("Name")
         self._name.setFont(_title_font())
         self._name.editingFinished.connect(self._on_name_entered)
+        self._name.installEventFilter(self)
         # The class line and the crumbs change text on every select. Each sits
         # alone in a layout-less slot, so its updateGeometry stops at the slot
         # instead of re-laying out every parent up to the MainWindow.
@@ -42,12 +64,14 @@ class Header(QWidget):
         self._class.setWordWrap(False)
         self._class.setTextFormat(Qt.PlainText)
         self._crumbs_slot = _Slot(self, self._render_crumbs)
-        self._crumbs = QLabel(self._crumbs_slot)
+        self._crumbs = _CrumbLabel(self._crumbs_slot)
         self._crumbs_slot.hold(self._crumbs)
         self._crumbs.setObjectName("formBuilder.inspectorCrumbs")
         self._crumbs.setAccessibleName("Selection path")
         self._crumbs.setTextFormat(Qt.RichText)
-        self._crumbs.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        selectable = getattr(Qt, "TextSelectableByMouse")
+        links = getattr(Qt, "LinksAccessibleByMouse")
+        self._crumbs.setTextInteractionFlags(selectable | links)
         self._crumbs.setOpenExternalLinks(False)
         self._crumbs.setFocusPolicy(Qt.StrongFocus)
         self._crumbs.setSizePolicy(_ignored(), _preferred())
@@ -119,6 +143,18 @@ class Header(QWidget):
     def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802
         super().resizeEvent(event)
         self._render_crumbs()
+        self._fit_name()
+
+    def eventFilter(self, watched: object, event: QEvent) -> bool:  # noqa: N802
+        if watched is self._name and event.type() == QEvent.FocusIn:
+            if not self._invalid and self._name.text() != self._saved_name:
+                self._name.blockSignals(True)
+                self._name.setText(self._saved_name)
+                self._name.blockSignals(False)
+            self._name.setToolTip("")
+        elif watched is self._name and event.type() == QEvent.FocusOut:
+            self._fit_name()
+        return super().eventFilter(watched, event)  # type: ignore[arg-type]
 
     def _paint_many(self, view: ManyHeader) -> None:
         self._node = None
@@ -127,6 +163,7 @@ class Header(QWidget):
         self._name.blockSignals(True)
         self._name.setReadOnly(True)
         self._name.setText("%d selected" % view.count)
+        self._name.setToolTip("")
         self._name.blockSignals(False)
         self._glyph.set_kind("")
         self._set_class_text(view.kinds, view.kinds)
@@ -143,14 +180,36 @@ class Header(QWidget):
         self._glyph.set_kind(view.glyph)
         self._set_class_text("%s \u00b7 %s" % (view.friendly, view.qt_class), view.qt_class)
         if not self._invalid:
-            self._name.blockSignals(True)
-            self._name.setText(view.name)
-            if not self._name.hasFocus():
-                self._name.setCursorPosition(0)
-            self._name.blockSignals(False)
+            if self._name.hasFocus():
+                if self._name.text() != view.name:
+                    self._name.blockSignals(True)
+                    self._name.setText(view.name)
+                    self._name.blockSignals(False)
+            else:
+                self._fit_name()
             self._error.hide()
         self._crumbs_data = view.crumbs
         self._render_crumbs()
+
+    def _fit_name(self) -> None:
+        """Show a middle-elided name when the field is narrower than the text.
+
+        The stored name stays intact. Focus restores it before an edit can commit the ellipsis.
+        """
+        if self._invalid or self._name.hasFocus() or self._name.isReadOnly() or not self._saved_name:
+            return
+        width = int(self._name.contentsRect().width())
+        if width < 8:
+            return
+        shown = self._name.fontMetrics().elidedText(self._saved_name, Qt.ElideMiddle, width)
+        tip = self._saved_name if shown != self._saved_name else ""
+        if self._name.text() == shown and self._name.toolTip() == tip:
+            return
+        self._name.blockSignals(True)
+        self._name.setText(shown)
+        self._name.setToolTip(tip)
+        self._name.setCursorPosition(0)
+        self._name.blockSignals(False)
 
     def _apply_short(self, short: bool) -> None:
         if short == self._short:
@@ -177,12 +236,13 @@ class Header(QWidget):
         width = label.width()
         shown = full
         if width > 0:
-            # Too narrow for "Push button · QPushButton": keep the Qt class.
+            # Too narrow for "Push button · QPushButton": keep the Qt class whole.
+            # Eliding that class turns QPushButton into "QPushButt…".
             elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
             metrics = label.fontMetrics()
             shown = metrics.elidedText(full, elide, width)
             if shown != full and self._class_short:
-                shown = metrics.elidedText(self._class_short, elide, width)
+                shown = self._class_short
         if label.text() != shown:
             label.setText(shown)
         label.setToolTip(full if shown != full else "")

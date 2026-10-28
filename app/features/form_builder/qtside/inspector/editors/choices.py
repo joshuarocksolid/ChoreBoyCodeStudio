@@ -43,15 +43,15 @@ _VERTICAL = ("AlignTop", "AlignVCenter", "AlignBottom")
 _ALIGN_ALIASES = {"AlignLeading": "AlignLeft", "AlignTrailing": "AlignRight"}
 _SHORT_ALIGN = {
     "AlignHCenter": "Center",
-    "AlignVCenter": "Center",
+    "AlignVCenter": "Middle",
 }
 _ALIGN_TAILS = {
     "AlignLeft": "Left",
-    "AlignHCenter": "Horizontal center",
+    "AlignHCenter": "Center",
     "AlignRight": "Right",
     "AlignJustify": "Justify",
     "AlignTop": "Top",
-    "AlignVCenter": "Vertical center",
+    "AlignVCenter": "Middle",
     "AlignBottom": "Bottom",
 }
 
@@ -61,6 +61,18 @@ def _row_label(host: EditorHost) -> str:
     if isinstance(label, str) and label.strip():
         return label.strip()
     return "Alignment"
+
+
+def _align_name(host: EditorHost, name: str, shown: str) -> str:
+    """Row: Choice. The two center buttons stay distinct for a screen reader."""
+    row = _row_label(host)
+    if name == "AlignVCenter" and row == "Text alignment":
+        return "Vertical alignment: Middle"
+    if name == "AlignVCenter":
+        return "%s: Middle" % row
+    if name == "AlignHCenter":
+        return "%s: Center" % row
+    return "%s: %s" % (row, _ALIGN_TAILS.get(name, shown))
 # Layout policies are long Qt enumerator names. The combo shows a short label.
 # Item data stays the enumerator, which is what the document stores.
 _PLAIN_ENUM = {
@@ -240,7 +252,7 @@ class AlignmentEditor:
         for index, name in enumerate(names):
             button = QToolButton(row)
             button.setText(_SHORT_ALIGN.get(name, name.replace("Align", "")))
-            button.setAccessibleName("%s: %s" % (_row_label(self._host), _ALIGN_TAILS.get(name, button.text())))
+            button.setAccessibleName(_align_name(self._host, name, button.text()))
             button.setToolTip(name)
             button.setCheckable(True)
             button.setProperty("fbSegment", "true")

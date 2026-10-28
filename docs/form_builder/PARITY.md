@@ -94,9 +94,9 @@ M0.1, M0.2, M0.3, M0.4, M0.5, M0.6, M0.4b, M0.7, M0.8, M0.9, M1.0, M1.1d, M1.5, 
 | R3-36 | Lay out vertically | Layouts |  | S | M3.3 | done | qtside/test_layout_gestures.py::test_laying_out_free_widgets_puts_the_same_widgets_in_that_layout | Pain P-1 |
 | R3-37 | Lay out in a grid | Layouts |  | M | M3.3 | done | qtside/test_layout_gestures.py::test_laying_out_free_widgets_puts_the_same_widgets_in_that_layout | Pain P-1 |
 | R3-38 | Lay out in a form | Layouts |  | M | M3.3 | done | qtside/test_layout_gestures.py::test_laying_out_free_widgets_puts_the_same_widgets_in_that_layout | Pain P-1 |
-| R3-39 | Horizontal splitter | Layouts | a `widget class="QSplitter"` with children, not a `layout` element. | M | M3.3 | done | qtside/test_canvas_direct.py::test_a_knob_drop_survives_save_and_reload | Pain P-19 |
-| R3-40 | Vertical splitter | Layouts |  | M | M3.3 | done | qtside/test_canvas_direct.py::test_a_knob_drop_survives_save_and_reload | Pain P-19 |
-| R3-41 | Break layout | Layouts |  | M | M3.3 | done | engine/commands/test_catalog.py::test_break_layout_keeps_measured_geometry | Pain P-3, P-5 |
+| R3-39 | Horizontal splitter | Layouts | a `widget class="QSplitter"` with children, not a `layout` element. | M | M3.3 | done | qtside/test_layout_session.py::test_a_horizontal_splitter_grip_drag_survives_save_and_undo | Pain P-19 |
+| R3-40 | Vertical splitter | Layouts |  | M | M3.3 | done | qtside/test_layout_session.py::test_ctrl_4_creates_a_vertical_splitter | Pain P-19 |
+| R3-41 | Break layout | Layouts |  | M | M3.3 | done | qtside/test_layout_gestures.py::test_removing_a_nested_layout_keeps_every_rectangle | Pain P-3, P-5 |
 | R3-42 | Adjust size | Layouts |  | S | M3.3 | done | qtside/test_layout_gestures.py::test_adjust_size_fits_a_free_widget_to_its_content_in_one_step |  |
 | R3-43 | Simplify grid layout | Layouts | the remaining `item` row and column indexes. | M | M3.3 | done | engine/test_layout_actions.py::test_simplify_closes_a_row_gap_and_its_stretch_in_one_undoable_step |  |
 | R3-44 | Box and grid layout widgets in the widget box | Layouts |  | M | M3.3 | done | engine/test_drop_round2.py::test_a_layout_tile_drops_a_plain_widget_that_owns_the_layout | Pain P-4 |

@@ -22,6 +22,7 @@ from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import (  # noqa: E402
     QApplication,
     QListWidget,
+    QTabWidget,
     QTreeWidget,
     QTreeWidgetItem,
     QWidget,
@@ -344,5 +345,30 @@ def test_enter_on_an_insert_tile_inserts_the_widget(
         qapp.processEvents()
         assert len(surface.session.log.entries()) == before + 1  # type: ignore[attr-defined]
         assert _selected_name(surface) == "pushButton"
+    finally:
+        shutdown_main_window_for_test(window, qapp)
+
+
+def test_a_double_click_on_an_insert_tile_inserts_one_widget(tmp_path: Path, qapp: QApplication) -> None:
+    """M3.7: a double-click emitted itemDoubleClicked and itemActivated, and both inserted."""
+    _require()
+    window = _window(tmp_path)
+    try:
+        surface = _open(window, qapp, tmp_path / "invoice.ui", _FORM)
+        body = surface.findChild(QListWidget, "formBuilder.insertBody")  # type: ignore[attr-defined]
+        assert isinstance(body, QListWidget)
+        tabs = surface.findChild(QTabWidget, "formBuilder.leftTabs")  # type: ignore[attr-defined]
+        if isinstance(tabs, QTabWidget) and tabs.isVisible():
+            tabs.setCurrentIndex(1)
+        qapp.processEvents()
+        assert body.isVisible()
+        tile = next(body.item(i) for i in range(body.count()) if body.item(i).text() == "Button")
+        body.scrollToItem(tile)
+        qapp.processEvents()
+        pos = body.viewport().mapTo(window, body.visualItemRect(tile).center())
+        before = len(surface.session.log.entries())  # type: ignore[attr-defined]
+        QTest.mouseDClick(window.windowHandle(), _button(), _mod("NoModifier"), pos)
+        qapp.processEvents()
+        assert len(surface.session.log.entries()) == before + 1  # type: ignore[attr-defined]
     finally:
         shutdown_main_window_for_test(window, qapp)

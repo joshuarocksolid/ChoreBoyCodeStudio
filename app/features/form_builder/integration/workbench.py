@@ -11,6 +11,7 @@ from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tup
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeyEvent
 from app.qt.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -31,7 +32,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import event_pos
+from app.qt.qt_compat import enum_value, event_pos
 
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertFormRow
@@ -350,11 +351,11 @@ class FormToolbar(QWidget):
         self.tab_order = _tool(
             "Tab order",
             "formBuilder.tabOrder",
-            "Tab order is not available yet",
+            "Tab order. Press F8 to see where this form's order comes from.",
             self,
         )
         self.tab_order.setEnabled(False)
-        self.buddies = _tool("Buddies", "formBuilder.buddies", "Buddies are not available yet", self)
+        self.buddies = _tool("Buddies", "formBuilder.buddies", "Set a label's buddy in All properties > buddy.", self)
         self.buddies.setEnabled(False)
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
@@ -410,7 +411,7 @@ class FormToolbar(QWidget):
         row.addWidget(self.text_size)
         row.addWidget(self.two_widths)
 
-        self.preview = _tool("", "formBuilder.preview", "Preview is not available yet", self)
+        self.preview = _tool("", "formBuilder.preview", "Run the form with F5.", self)
         self.preview.setEnabled(False)
         row.addWidget(self.preview)
 
@@ -694,8 +695,9 @@ class OutlinePane(QWidget):
         # Rows share one height. Qt then skips a per-item height walk on scroll and reorder.
         self.tree.setUniformRowHeights(True)
         self.tree.setFocusPolicy(_strong())
-        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideMiddle")
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
         self.tree.setTextElideMode(elide)
+        self.tree.setIndentation(12)
         self._delegate = OutlineRowDelegate(self.tree)
         self.tree.setItemDelegate(self._delegate)
         triggers = getattr(self.tree, "EditTrigger", type(self.tree))
@@ -914,8 +916,17 @@ class OutlinePane(QWidget):
                 self.tree.clearSelection()
             else:
                 command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
-                flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
-                self.tree.setCurrentItem(item, 0, flags)
+                ids = () if self._session is None else self._session.selection.state.ids
+                if len(ids) > 1:
+                    flags = getattr(command, "Current") | getattr(command, "Rows")
+                    self.tree.setCurrentItem(item, 0, flags)
+                    for node in ids:
+                        row = self._rows.get(int(node))
+                        if row is not None and not row.isSelected():
+                            row.setSelected(True)
+                else:
+                    flags = getattr(command, "ClearAndSelect") | getattr(command, "Rows")
+                    self.tree.setCurrentItem(item, 0, flags)
             self._current_item = item
         finally:
             self.tree.setAutoScroll(scrolling)
@@ -1169,6 +1180,9 @@ class OutlinePane(QWidget):
             self._press = None
         elif kind == "MouseButtonPress":
             self._press = event_pos(event)
+            self._remember_click_mods(event)
+        elif kind == "MouseButtonRelease":
+            self._remember_click_mods(event)
         elif kind == "MouseMove" and self._press is not None:
             pos = event_pos(event)
             if abs(pos.x() - self._press.x()) + abs(pos.y() - self._press.y()) >= 8:
@@ -1239,7 +1253,114 @@ class OutlinePane(QWidget):
             return
         if self._renaming is not None and int(raw) != int(self._renaming):
             self.end_rename()
+        if self._mod_down("ShiftModifier"):
+            self._select_span(_previous, current)
+            return
+        if self._mod_down("ControlModifier") or self._mod_down("MetaModifier"):
+            self._toggle_row(current)
+            return
         self._on_pick(NodeId(int(raw)))
+
+    def _remember_click_mods(self, event: object) -> None:
+        mods = getattr(event, "modifiers", None)
+        self._click_mods = int(enum_value(mods())) if callable(mods) else 0
+
+    def _mod_down(self, name: str) -> bool:
+        mods = int(enum_value(QApplication.keyboardModifiers())) | int(self._click_mods)
+        return bool(mods & int(enum_value(getattr(Qt, name))))
+
+    def _select_span(self, previous: object, current: QTreeWidgetItem) -> None:
+        items = self._visible_items()
+        try:
+            start = items.index(previous) if isinstance(previous, QTreeWidgetItem) else 0
+            end = items.index(current)
+        except ValueError:
+            self._publish_tree_selection()
+            return
+        low, high = (start, end) if start <= end else (end, start)
+        chosen = items[low : high + 1]
+        self._blocked = True
+        try:
+            self.tree.clearSelection()
+            for item in chosen:
+                item.setSelected(True)
+            command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
+            flags = getattr(command, "Current") | getattr(command, "Rows")
+            self.tree.setCurrentItem(current, 0, flags)
+            self._current_item = current
+        finally:
+            self._blocked = False
+        self._publish_tree_selection()
+
+    def _toggle_row(self, current: QTreeWidgetItem) -> None:
+        session = self._session
+        if session is None:
+            return
+        role = int(getattr(Qt, "UserRole"))
+        raw = current.data(0, role)
+        if raw is None:
+            return
+        node = NodeId(int(raw))
+        ids = [item for item in session.selection.state.ids if int(item) != int(node)]
+        if len(ids) == len(session.selection.state.ids):
+            ids.append(node)
+        self._blocked = True
+        try:
+            self.tree.clearSelection()
+            for each in ids:
+                row = self._rows.get(int(each))
+                if row is not None:
+                    row.setSelected(True)
+            command = getattr(QItemSelectionModel, "SelectionFlag", QItemSelectionModel)
+            flags = getattr(command, "Current") | getattr(command, "Rows")
+            self.tree.setCurrentItem(current, 0, flags)
+            self._current_item = current
+        finally:
+            self._blocked = False
+        if ids:
+            session.selection.set(tuple(ids), current=node if node in ids else ids[-1], source=SelectionSource.OUTLINE)
+        else:
+            session.selection.set((), source=SelectionSource.OUTLINE)
+
+    def _visible_items(self) -> List[QTreeWidgetItem]:
+        found: List[QTreeWidgetItem] = []
+
+        def walk(item: QTreeWidgetItem) -> None:
+            if item.isHidden():
+                return
+            found.append(item)
+            if not item.isExpanded():
+                return
+            for index in range(item.childCount()):
+                child = item.child(index)
+                if child is not None:
+                    walk(child)
+
+        for index in range(self.tree.topLevelItemCount()):
+            top = self.tree.topLevelItem(index)
+            if top is not None:
+                walk(top)
+        return found
+
+    def _publish_tree_selection(self) -> None:
+        session = self._session
+        if session is None:
+            return
+        role = int(getattr(Qt, "UserRole"))
+        ids = []
+        for item in self.tree.selectedItems():
+            raw = item.data(0, role)
+            if raw is not None:
+                ids.append(NodeId(int(raw)))
+        if not ids:
+            return
+        current_item = self.tree.currentItem()
+        current = ids[-1]
+        if current_item is not None:
+            raw = current_item.data(0, role)
+            if raw is not None:
+                current = NodeId(int(raw))
+        session.selection.set(tuple(ids), current=current, source=SelectionSource.OUTLINE)
 
     def _mount_outline_tools(self) -> None:
         self._session: Optional[FormSession] = None
@@ -1252,6 +1373,9 @@ class OutlinePane(QWidget):
         self._filter_text = ""
         self._anchor: Optional[NodeId] = None
         self._renaming: Optional[NodeId] = None
+        self._return_focus: Optional[QWidget] = None
+        self._insert_return: Optional[QWidget] = None
+        self._click_mods = 0
         self._ask_ids: Tuple[NodeId, ...] = ()
         self._last_change: object = None
         self._log_sub: object = None
@@ -1402,7 +1526,7 @@ class OutlinePane(QWidget):
                 break
         self.focus_tree()
 
-    def begin_rename(self, node: NodeId) -> None:
+    def begin_rename(self, node: NodeId, *, return_to: Optional[QWidget] = None) -> None:
         forest = self._forest
         if forest is None:
             return
@@ -1413,6 +1537,8 @@ class OutlinePane(QWidget):
         self._confirm.hide()
         self._insert_pop.hide()
         self._release_rename_row()
+        if return_to is not None:
+            self._return_focus = return_to
         self._renaming = node
         session = self._session
         if session is not None:
@@ -1426,16 +1552,22 @@ class OutlinePane(QWidget):
         self._editor.setFocus()
         self._editor.selectAll()
 
-    def finish_rename(self) -> None:
+    def finish_rename(self) -> Optional[QWidget]:
         """Close the editor and clear the renaming state. Every way out of a rename ends here."""
         had_focus = self._editor.hasFocus()
+        target = self._return_focus
+        self._return_focus = None
         self._release_rename_row()
         self._renaming = None
         if had_focus:
             # Hiding a focused editor would hand focus to whatever Qt picks next.
-            self.tree.setFocus()
+            if target is not None:
+                target.setFocus()
+            else:
+                self.tree.setFocus()
         self._editor.hide()
         self._error.hide()
+        return target
 
     def end_rename(self) -> None:
         """Focus left the editor or the row changed: keep a valid name, drop an invalid one."""
@@ -1538,7 +1670,8 @@ class OutlinePane(QWidget):
         self._confirm.raise_()
         self._delete_button.setFocus()
 
-    def show_insert(self) -> None:
+    def show_insert(self, *, return_to: Optional[QWidget] = None) -> None:
+        self._insert_return = return_to
         self._fill_insert(matching_tiles(""))
         self._insert_pop.setGeometry(0, self.header.height(), self.width(), min(220, max(self.height() - self.header.height(), 80)))
         self._insert_pop.show()
@@ -1854,7 +1987,12 @@ class OutlinePane(QWidget):
         self._insert_pop.hide()
         if self._preview is not None:
             self._preview(None)
-        self.focus_tree()
+        target = self._insert_return
+        self._insert_return = None
+        if target is not None:
+            target.setFocus()
+        else:
+            self.focus_tree()
         return True
 
     def _claim_override(self, watched: QObject, event: QEvent) -> bool:
@@ -1969,6 +2107,14 @@ class OutlinePane(QWidget):
             self._preview(None)
         if self._place is not None and raw is not None:
             self._place(str(raw))
+        target = self._insert_return
+        self._insert_return = None
+        focus = QApplication.focusWidget()
+        if target is not None and focus is not None and target.isAncestorOf(focus) and focus is not target:
+            return
+        if target is not None:
+            target.setFocus()
+            return
         self.focus_tree()
 
     def _deliver_page_drop(self, pos: QPoint) -> bool:
@@ -2064,7 +2210,8 @@ class InsertPane(QWidget):
         self.body.setObjectName("formBuilder.insertBody")
         self.body.setAccessibleName("Insert")
         self.body.setFocusPolicy(_strong())
-        self.body.itemDoubleClicked.connect(self._activated)
+        # itemActivated covers a double-click on every platform. Connecting
+        # itemDoubleClicked as well inserted the widget twice per double-click.
         self.body.itemActivated.connect(self._activated)
         self.body.currentItemChanged.connect(lambda *_args: self._announce_preview())
         layout.addWidget(self.body, 1)
@@ -2700,6 +2847,11 @@ class FormWorkbench(QWidget):
             "QTreeWidget#formBuilder\\.structure:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.noticeText { color: %s; background: transparent; }"
             "QLabel#formBuilder\\.insertBody { color: %s; background: transparent; border: none; }"
+            "QListWidget#formBuilder\\.insertBody { background: %s; color: %s; border: 1px solid %s; }"
+            "QListWidget#formBuilder\\.insertBody::item:selected { background: %s; color: %s; }"
+            "QListWidget#formBuilder\\.insertBody:focus { border: %dpx solid %s; }"
+            "QLineEdit#formBuilder\\.insertFilter { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.insertFilter:focus { border: %dpx solid %s; }"
             "QWidget#formBuilder\\.sectionHeader { background: transparent; color: %s; border: none; }"
             "QWidget#formBuilder\\.sectionHeader:focus { border: %dpx solid %s; }"
             "QLabel#formBuilder\\.sectionTitle {"
@@ -2734,6 +2886,18 @@ class FormWorkbench(QWidget):
                 tokens.accent,
                 tokens.text_primary,
                 tokens.text_muted,
+                tokens.editor_bg,
+                tokens.text_primary,
+                tokens.border,
+                tokens.tree_selected_bg,
+                tokens.text_primary,
+                width,
+                tokens.accent,
+                tokens.editor_bg,
+                tokens.text_primary,
+                tokens.border,
+                width,
+                tokens.accent,
                 tokens.text_primary,
                 width,
                 tokens.accent,
@@ -2825,6 +2989,11 @@ class FormWorkbench(QWidget):
 
     def _place_from_outline(self, key: str) -> None:
         self._place_tile(key)
+        if self.outline._insert_return is not None:
+            return
+        focus = QApplication.focusWidget()
+        if focus is not None and focus is not self.canvas and self.canvas.isAncestorOf(focus):
+            return
         self.outline.focus_tree()
 
     def _preview_insert(self, key: Optional[str]) -> None:

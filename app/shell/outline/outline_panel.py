@@ -286,6 +286,8 @@ class OutlinePanel(QWidget):
         self._header.set_file_label("")
         if language == "python":
             self._empty_label.setText("Open a Python file to see its outline.")
+        elif language == "ui":
+            self._empty_label.setText("This form's outline is in the Outline tab.")
         else:
             self._empty_label.setText(f"No outline available for {language} files.")
         self._stack_layout.setCurrentWidget(self._empty_label)
