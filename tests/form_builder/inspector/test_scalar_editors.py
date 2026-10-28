@@ -26,6 +26,7 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
     QPushButton,
     QScrollArea,
     QSpinBox,
@@ -705,17 +706,34 @@ def test_locale_choice_is_written_as_qt_names() -> None:
         try:
             _select(session, pane, "email")
             row = _row(pane, "locale")
-            button = row.findChild(QPushButton, "formBuilder.summary")
-            assert isinstance(button, QPushButton)
-            button.click()
+            before = _xml(session)
+            _summary(row).click()
             _events()
             done = _popover().findChild(QPushButton, "formBuilder.popoverDone")
             assert isinstance(done, QPushButton)
             done.click()
             _events()
             pane.flush()
-            text = _xml(session)
-            assert 'language="' in text
+            assert _xml(session) == before
+            row = _row(pane, "locale")
+            _summary(row).click()
+            _events()
+            pop = _popover()
+            field = pop.findChild(QLineEdit)
+            assert isinstance(field, QLineEdit)
+            QTest.keyClicks(field, "French")
+            listing = pop.findChild(QListWidget)
+            assert isinstance(listing, QListWidget)
+            shown = [listing.item(i) for i in range(listing.count()) if not listing.item(i).isHidden()]
+            listing.setCurrentItem(shown[0])
+            _events()
+            done = _popover().findChild(QPushButton, "formBuilder.popoverDone")
+            assert isinstance(done, QPushButton)
+            done.click()
+            _events()
+            pane.flush()
+            assert '<locale language="French" country="France"/>' in _xml(session)
+            assert _summary(_row(pane, "locale")).text().startswith("French (France)")
         finally:
             _close(window, pane)
 

@@ -137,12 +137,11 @@ class LocaleEditor:
         body.addWidget(QLabel("Language", popover))
         body.addWidget(field)
         body.addWidget(listing)
-        body.addWidget(QLabel("Territory", popover))
+        body.addWidget(QLabel("Country or region", popover))
         body.addWidget(countries)
         self._filling = True
         self._select_current()
         self._filling = False
-        self._commit()
         if self._can_reset:
             popover.set_reset(self._reset)
         popover.open_popover()
@@ -183,7 +182,7 @@ class LocaleEditor:
         self._language = language
         territories = _territories(language)
         if not any(key == self._country for key, _label in territories) and territories:
-            self._country = territories[0][0]
+            self._country = _usual_territory(language, territories)
         combo.blockSignals(True)
         combo.clear()
         for key, label in territories:
@@ -225,6 +224,19 @@ class LocaleEditor:
 
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(LocaleValue.ELEMENT), LocaleEditor)
+
+
+def _usual_territory(language_key: str, territories: List[Tuple[str, str]]) -> str:
+    """The territory Qt picks for the bare language (English: United States), else the first."""
+    try:
+        usual = QLocale(_language(language_key))
+    except (AttributeError, TypeError):
+        return territories[0][0]
+    territory = usual.territory() if hasattr(usual, "territory") else usual.country()
+    key = str(getattr(territory, "name", "") or "")
+    if any(key == found for found, _label in territories):
+        return key
+    return territories[0][0]
 
 
 def _language_label(key: str) -> str:
