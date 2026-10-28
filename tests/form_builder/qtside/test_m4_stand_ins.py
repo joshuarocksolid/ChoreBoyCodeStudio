@@ -9,6 +9,7 @@ import sys
 import pytest
 
 from app.qt.QtGui import QOpenGLContext
+from app.qt.QtWidgets import QApplication
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.forms import FormScope
@@ -55,6 +56,9 @@ def test_gl_and_quick_views_are_drawn_as_labelled_stand_ins() -> None:
             assert not widget.grab().isNull()
         assert QOpenGLContext.currentContext() is None
         assert _qml_engines() == 0
+        names = {type(widget).__name__ for widget in QApplication.allWidgets()}
+        assert "QOpenGLWidget" not in names
+        assert "QQuickWidget" not in names
 
 
 @pytest.mark.parity("R3-122")

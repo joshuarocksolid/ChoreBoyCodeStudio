@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from app.qt import QtCore, QtGui, QtWidgets
 from app.qt.QtCore import QDate, QDateTime, QPoint, QRect, QSize, QTime, Qt, QUrl
 from app.qt.QtGui import QBrush, QColor, QFont, QIcon, QPalette, QPixmap
-from app.qt.QtWidgets import QSizePolicy
+from app.qt.QtWidgets import QFrame, QSizePolicy
 from app.qt.qt_compat import enum_value
 from app.features.form_builder.engine.logic.storage import is_logic_key
 from app.features.form_builder.engine.ui4.spec import PropertyEntry
@@ -114,6 +114,9 @@ def apply_entry(
     if isinstance(value, OpaqueValue):
         return False
     try:
+        if name == "orientation" and _is_line(obj):
+            _apply_line_orientation(obj, value)
+            return _took(obj, name, refusals)
         if name == "geometry" and isinstance(value, (RectValue, RectFValue)):
             apply_geometry(obj, value, is_root)
             return _took(obj, name, refusals)
@@ -140,6 +143,21 @@ def apply_entry(
     except (TypeError, ValueError, OverflowError, RuntimeError, AttributeError) as exc:
         problems.append("%s.%s: %s" % (_type_name(obj), name, exc))
         return _refuse(obj, name, str(exc) or REFUSED_BY_QT, refusals)
+
+
+def _is_line(obj: object) -> bool:
+    try:
+        return bool(obj.property("_cbcs_line"))  # type: ignore[attr-defined]
+    except (AttributeError, RuntimeError, TypeError):
+        return False
+
+
+def _apply_line_orientation(obj: object, value: object) -> None:
+    """Designer turns a line's orientation into the frame shape."""
+    text = str(getattr(value, "text", ""))
+    name = "VLine" if "Vertical" in text else "HLine"
+    shape = getattr(getattr(QFrame, "Shape", QFrame), name)
+    obj.setFrameShape(shape)  # type: ignore[attr-defined]
 
 
 def set_property_checked(obj: object, name: str, value: object) -> bool:

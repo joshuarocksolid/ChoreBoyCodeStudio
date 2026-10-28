@@ -20,7 +20,7 @@ from app.features.form_builder.qtside.canvas.core.frame import Chip, Fill
 from app.features.form_builder.qtside.canvas.core.gesture import PlaceAsked
 from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
-from app.features.form_builder.qtside.inspector.api import EditorKey
+from app.features.form_builder.qtside.inspector.api import EditorKey, LockedRow
 from app.features.form_builder.qtside.inspector.editors import default_catalog
 from app.features.form_builder.qtside.inspector.editors.dock_side import DOCK_SIDE, DockSideEditor
 from app.features.form_builder.qtside.inspector.api import Written
@@ -167,11 +167,6 @@ def test_container_rows_are_scoped_to_their_parent_class() -> None:
     assert default_catalog().editor(DOCK_SIDE) is DockSideEditor
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.3d adds RowSpec.editor; until then a row cannot name EditorKey('dock_side'), so Dock side opens "
-    "as a number. M4.2 then names the editor on the dockSide row",
-)
 def test_the_dock_side_row_selects_the_four_segment_editor() -> None:
     text = form(
         'class="QMainWindow" name="Main"',
@@ -195,21 +190,11 @@ def test_the_dock_side_row_selects_the_four_segment_editor() -> None:
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.3d adds ValueSpec/RowSpec.choices; until then Starts on is the currentIndex number, not a drop-down "
-    "of page titles (UX-CONT-006). M4.2 then gives the startsOn row its choices",
-)
 def test_starts_on_is_a_drop_down_of_page_titles() -> None:
     rows = {row.key: row for row in default_catalog().rows()}
     assert getattr(rows["startsOn"], "choices", None) is not None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.3d adds the FlagBit row source; until then features is one flags row, not the Can close, Can float "
-    "and Can move check boxes (UX-CONT-012). M4.2 then registers the three rows",
-)
 def test_a_dock_has_can_close_can_float_and_can_move_rows() -> None:
     labels = {row.label for row in default_catalog().rows() if "QDockWidget" in (row.classes or ())}
     assert {"Can close", "Can float", "Can move"} <= labels
@@ -240,3 +225,79 @@ def test_an_insert_drag_carries_the_dock_and_wizard_page_flags(key: str, dock: b
     payload, insert_key, _fragment = found
     assert insert_key == key
     assert (payload.dock, payload.wizard_page) == (dock, wizard_page)
+
+
+def test_a_group_box_shows_starts_switched_on_only_when_checkable() -> None:
+    from app.features.form_builder.qtside.inspector.api import GroupId
+    from app.features.form_builder.qtside.inspector._live import live_classes
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QGroupBox" name="box">
+   <property name="title"><string>Box</string></property>
+   <property name="checkable"><bool>true</bool></property>
+   <property name="checked"><bool>true</bool></property>
+  </widget>
+""",
+    )
+    with opened(text) as (session, realizer):
+        box = session.document.by_name("box")[0]
+        session.selection.set((box,), source=SelectionSource.CANVAS)
+        live = live_classes(realizer, session.document, (box,))
+        body = project(session, default_catalog(), live=live).body
+        labels = {row.label for row in body.group(GroupId.CONTENT).rows()}
+        assert "Starts switched on" in labels
+        assert "Checked" not in labels
+        align = body.group(GroupId.APPEARANCE).find("titleAlignment")
+        assert align is not None and align.label == "Title alignment"
+        assert [choice.label for choice in align.spec.choices] == ["Left", "Centre", "Right"]
+
+
+def test_a_line_shows_only_orientation_and_shadow() -> None:
+    from app.features.form_builder.qtside.inspector.api import GroupId
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="Line" name="line">
+   <property name="orientation"><enum>Qt::Horizontal</enum></property>
+  </widget>
+""",
+    )
+    with opened(text) as (session, realizer):
+        from app.features.form_builder.qtside.inspector._live import live_classes
+
+        line = session.document.by_name("line")[0]
+        session.selection.set((line,), source=SelectionSource.CANVAS)
+        live = live_classes(realizer, session.document, (line,))
+        labels = {
+            row.label
+            for row in project(session, default_catalog(), live=live).body.group(GroupId.APPEARANCE).rows()
+        }
+        assert {"Orientation", "Shadow"} <= labels
+        assert "Frame" not in labels
+        assert "Line width" not in labels
+        assert "Middle line width" not in labels
+
+
+def test_a_dock_outside_a_main_window_says_it_shows_as_a_panel() -> None:
+    from app.features.form_builder.qtside.inspector.editors.rows_containers import DOCK_PANEL_CAPTION
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QDockWidget" name="dock">
+   <widget class="QWidget" name="contents"/>
+  </widget>
+""",
+    )
+    session = open_session(text, "/tmp/cbcs-dock-panel.ui")
+    try:
+        dock = session.document.by_name("dock")[0]
+        session.selection.set((dock,), source=SelectionSource.CANVAS)
+        row = project(session, default_catalog()).body.find("dockPanel")
+        assert isinstance(row, LockedRow)
+        assert row.reason == DOCK_PANEL_CAPTION
+    finally:
+        session.dispose()

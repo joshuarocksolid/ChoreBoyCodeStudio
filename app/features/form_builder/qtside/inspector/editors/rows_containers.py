@@ -1,14 +1,31 @@
 """Curated rows for containers (UX-CONT-010, 012, 013, 014, 015, 018).
 
-Rows only. A page attribute or the dock side names its parent class, so a
-plain widget does not show it. Dock side's four-segment editor is registered
-separately. The row still binds through the property's own value editor until
-the inspector can pick an editor key per row.
+A page attribute or the dock side names its parent class, so a plain widget
+does not show it. Dock side names the four-segment editor. Starts on is a
+drop-down of the container's page titles. A dock outside a main window gets
+the Placement caption instead of Dock side.
 """
 
 from __future__ import annotations
 
-from app.features.form_builder.qtside.inspector.api import GroupId, Prop, Registrar, RowSpec
+from typing import Tuple
+
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query.pages import page_title, pages
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.engine.ui4.values import BoolValue, NumberValue, SetValue
+from app.features.form_builder.qtside.inspector.api import (
+    Choice,
+    FlagBit,
+    GroupId,
+    Note,
+    Prop,
+    Registrar,
+    RowSpec,
+)
+
+DOCK_PANEL_CAPTION = "Docks only in a main window. In this form it shows as a panel."
 
 _CONTENT = GroupId.CONTENT
 _APPEARANCE = GroupId.APPEARANCE
@@ -67,12 +84,39 @@ def register(registrar: Registrar) -> None:
             classes=("QGroupBox",),
         ),
         RowSpec(
+            "startsChecked",
+            _CONTENT,
+            "Starts switched on",
+            "The box starts checked. Unchecking it at run time turns off everything inside.",
+            Prop("checked"),
+            classes=("QGroupBox",),
+            visible=_group_starts_on,
+            after="checkable",
+        ),
+        RowSpec(
+            "titleAlignment",
+            _APPEARANCE,
+            "Title alignment",
+            "Where the title sits on the box's border.",
+            Prop("alignment"),
+            classes=("QGroupBox",),
+            choices=_title_alignments,
+        ),
+        RowSpec(
+            "orientation",
+            _APPEARANCE,
+            "Orientation",
+            "The line runs across or down. The frame shape follows it.",
+            Prop("orientation"),
+            classes=("Line",),
+        ),
+        RowSpec(
             "frameShadow",
             _APPEARANCE,
             "Shadow",
             "The edge look: plain, raised or sunken.",
             Prop("frameShadow"),
-            classes=("QFrame",),
+            classes=("QFrame", "Line"),
         ),
         RowSpec(
             "lineWidth",
@@ -81,6 +125,7 @@ def register(registrar: Registrar) -> None:
             "The width of the frame's edge, in pixels.",
             Prop("lineWidth"),
             classes=("QFrame",),
+            exclude_classes=("Line",),
         ),
         RowSpec(
             "midLineWidth",
@@ -89,6 +134,7 @@ def register(registrar: Registrar) -> None:
             "The width of the line in the middle of a raised or sunken edge.",
             Prop("midLineWidth"),
             classes=("QFrame",),
+            exclude_classes=("Line",),
         ),
         RowSpec(
             "dockSide",
@@ -98,6 +144,40 @@ def register(registrar: Registrar) -> None:
             Prop("dockWidgetArea", "attribute"),
             classes=("QDockWidget",),
             parent_classes=("QMainWindow",),
+            editor="dock_side",
+        ),
+        RowSpec(
+            "dockPanel",
+            _PLACEMENT,
+            "Panel",
+            DOCK_PANEL_CAPTION,
+            Note(DOCK_PANEL_CAPTION),
+            classes=("QDockWidget",),
+            visible=_dock_is_a_panel,
+        ),
+        RowSpec(
+            "canClose",
+            _CONTENT,
+            "Can close",
+            "The user can close this dock.",
+            FlagBit("features", "QDockWidget::DockWidgetClosable"),
+            classes=("QDockWidget",),
+        ),
+        RowSpec(
+            "canFloat",
+            _CONTENT,
+            "Can float",
+            "The user can drag this dock out of the window.",
+            FlagBit("features", "QDockWidget::DockWidgetFloatable"),
+            classes=("QDockWidget",),
+        ),
+        RowSpec(
+            "canMove",
+            _CONTENT,
+            "Can move",
+            "The user can drag this dock to another side.",
+            FlagBit("features", "QDockWidget::DockWidgetMovable"),
+            classes=("QDockWidget",),
         ),
         RowSpec(
             "allowedAreas",
@@ -114,6 +194,7 @@ def register(registrar: Registrar) -> None:
             "The page the form opens on. Switching pages on the canvas does not change this.",
             Prop("currentIndex"),
             classes=("QTabWidget", "QToolBox", "QStackedWidget"),
+            choices=_start_page_choices,
         ),
         RowSpec(
             "tabTitle",
@@ -158,3 +239,52 @@ def register(registrar: Registrar) -> None:
     )
     for spec in rows:
         registrar.row(spec, baseline=True)
+
+
+def _group_starts_on(document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+    """Starts switched on is shown only while Can be switched off is on."""
+    for owner in owners:
+        node = document.node(owner)
+        if not isinstance(node, WidgetNode):
+            return False
+        entry = node.prop("checkable")
+        if entry is None or not isinstance(entry.value, BoolValue) or not entry.value.value:
+            return False
+    return bool(owners)
+
+
+def _title_alignments(_document: UiDocument, _owners: Tuple[NodeId, ...]) -> Tuple[Choice, ...]:
+    return (
+        Choice("Left", SetValue("Qt::AlignLeft")),
+        Choice("Centre", SetValue("Qt::AlignHCenter")),
+        Choice("Right", SetValue("Qt::AlignRight")),
+    )
+
+
+def _start_page_choices(document: UiDocument, owners: Tuple[NodeId, ...]) -> Tuple[Choice, ...]:
+    """Page titles in order. A stacked page uses its object name."""
+    if len(owners) != 1:
+        return ()
+    found = pages(document, owners[0])
+    choices = []
+    for index, page in enumerate(found):
+        title = page_title(document, page.id) or page.object_name or "Page %d" % (index + 1)
+        choices.append(Choice(title, NumberValue(index)))
+    return tuple(choices)
+
+
+def _dock_is_a_panel(document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+    """A dock whose form is not a main window is a panel (UX-CONT-012)."""
+    if len(owners) != 1:
+        return False
+    node = document.node(owners[0])
+    if not isinstance(node, WidgetNode) or node.class_name != "QDockWidget":
+        return False
+    current = document.parent(owners[0])
+    while current is not None:
+        if isinstance(current, WidgetNode) and current.class_name == "QMainWindow":
+            return False
+        current = document.parent(current.id)
+    return True
+
+

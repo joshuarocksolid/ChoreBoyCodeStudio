@@ -10,7 +10,7 @@ from typing import List, Tuple
 
 from app.features.form_builder.engine.ui4.values import NumberValue
 from app.features.form_builder.qtside.inspector.api import EditorHost, EditorKey, Registrar, RowValue, Unset, Written, mark
-from app.qt.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
+from app.qt.QtWidgets import QButtonGroup, QGridLayout, QSizePolicy, QToolButton, QWidget
 
 DOCK_SIDE = EditorKey("dock_side")
 
@@ -29,20 +29,26 @@ class DockSideEditor:
         del spec
         self._host = host
         self._root = QWidget(parent)
-        layout = QHBoxLayout(self._root)
+        layout = QGridLayout(self._root)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setHorizontalSpacing(2)
+        layout.setVerticalSpacing(2)
         self._buttons: List[Tuple[int, QToolButton]] = []
         group = QButtonGroup(self._root)
         group.setExclusive(True)
-        for label, number in _SIDES:
+        policy = getattr(QSizePolicy, "Policy", QSizePolicy)
+        expanding = getattr(policy, "Expanding")
+        fixed = getattr(policy, "Fixed")
+        for index, (label, number) in enumerate(_SIDES):
             button = QToolButton(self._root)
             button.setText(label)
             button.setCheckable(True)
+            button.setProperty("fbSegment", "true")
+            button.setSizePolicy(expanding, fixed)
             button.setAccessibleName("Dock side: %s" % label)
             button.clicked.connect(self._commit)
             group.addButton(button)
-            layout.addWidget(button)
+            layout.addWidget(button, index // 2, index % 2)
             self._buttons.append((number, button))
 
     @property

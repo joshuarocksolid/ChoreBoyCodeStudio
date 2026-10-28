@@ -23,6 +23,7 @@ from app.qt.QtWidgets import (
     QMdiSubWindow,
     QComboBox,
     QDockWidget,
+    QFrame,
     QGridLayout,
     QLayout,
     QListWidget,
@@ -164,6 +165,9 @@ class _Structure(_LayoutSlots):
 
     def _widget_type(self, class_name: str) -> type:
         short = self._qt_class_name(class_name)
+        # Designer stores a line as class ``Line`` and uic builds a QFrame.
+        if short == "Line":
+            return QFrame
         cls = getattr(QtWidgets, short, None)
         if cls is None:
             cls = getattr(QtGui, short, None)
@@ -186,6 +190,12 @@ class _Structure(_LayoutSlots):
             widget = QWidget(parent)
         self._tag(widget, node.id)
         widget.setObjectName(node.object_name)
+        if node.class_name == "Line" and isinstance(widget, QFrame):
+            widget.setProperty("_cbcs_line", True)
+            shape = getattr(getattr(QFrame, "Shape", QFrame), "HLine")
+            shadow = getattr(getattr(QFrame, "Shadow", QFrame), "Sunken")
+            widget.setFrameShape(shape)
+            widget.setFrameShadow(shadow)
         widget.setFocusPolicy(Qt.NoFocus)
         widget.setAttribute(Qt.WA_TransparentForMouseEvents, True)
         if isinstance(widget, QMenuBar):

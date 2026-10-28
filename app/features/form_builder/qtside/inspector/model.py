@@ -62,6 +62,7 @@ from app.features.form_builder.qtside.inspector.api import (
     LayoutProp,
     LockedRow,
     Match,
+    Note,
     MatchWhere,
     Mixed,
     OpenRow,
@@ -432,6 +433,8 @@ def project(
 
 def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bool = True) -> Optional[Row]:
     source = spec.source
+    if isinstance(source, Note):
+        return LockedRow(spec.key, spec.label, "", spec.help, Unset(), source.text)
     if isinstance(source, FlagBit):
         return _flag_bit(facts, spec, owners, source)
     if isinstance(source, Prop):
@@ -579,6 +582,10 @@ def _node_body(
         if spec.classes and not all(_admits(facts, owner, spec.classes) for owner in owners):
             continue
         if spec.parent_classes and not all(_parent_admits(facts, owner, spec.parent_classes) for owner in owners):
+            continue
+        if spec.exclude_classes and any(_admits(facts, owner, spec.exclude_classes) for owner in owners):
+            continue
+        if spec.visible is not None and not spec.visible(facts.document, owners):
             continue
         row = bind(facts, spec, owners)
         if row is not None:
@@ -762,7 +769,8 @@ def _live_property(facts: Facts, owner: NodeId, name: str, kind: PropKind) -> Op
 def _table_property(facts: Facts, node: Node, name: str, kind: PropKind) -> Optional[PropertyInfo]:
     if kind != "property" or not isinstance(node, (WidgetNode, LayoutNode)):
         return None
-    return facts.classes.property_info(node.class_name, name)
+    class_name = "QFrame" if node.class_name == "Line" else node.class_name
+    return facts.classes.property_info(class_name, name)
 
 def _row_value(
     entries: Sequence[Optional[PropertyEntry]],
@@ -857,10 +865,16 @@ def _parent_admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> boo
     return False
 
 def _chain(facts: Facts, owner: NodeId) -> Tuple[str, ...]:
+    _name, qt_class = _name_and_class(facts.document.node(owner))
     live = facts.live.get(owner)
+    if qt_class == "Line":
+        # Designer stores a line as class ``Line``. Its properties are a QFrame's.
+        base = live.chain if live is not None else tuple(info.name for info in facts.classes.chain("QFrame"))
+        if "Line" in base:
+            return base
+        return ("Line",) + tuple(base)
     if live is not None:
         return live.chain
-    _name, qt_class = _name_and_class(facts.document.node(owner))
     return tuple(info.name for info in facts.classes.chain(qt_class)) or (qt_class,)
 
 def _name_and_class(node: Node) -> Tuple[str, str]:
