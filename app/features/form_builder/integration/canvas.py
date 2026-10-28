@@ -325,6 +325,15 @@ class FormCanvas(QGraphicsView):
         )
         return QRect(top_left.x(), top_left.y(), bottom_right.x() - top_left.x(), bottom_right.y() - top_left.y())
 
+    def tab_viewport_rect(self, node: NodeId) -> Optional[QRect]:
+        """The page's tab or toolbox header, in viewport coordinates."""
+        self._index.ensure_fresh()
+        view = self._stage.view_map()
+        for entry in self._index.title_entries():
+            if entry.kind == "page_tab" and entry.node == node:
+                return self._viewport_of_canvas(view.to_canvas(entry.rect))
+        return None
+
     def overlay_block_rects(self) -> Tuple[QRect, ...]:
         """Chips and captions in viewport coordinates. The toast stays off them."""
         rects: List[QRect] = []

@@ -23,6 +23,7 @@ from app.features.form_builder.engine.query.pages import (
 )
 from app.features.form_builder.engine.ui4.values import NumberValue
 from app.features.form_builder.integration.menu_ext import MenuContext
+from app.qt.QtCore import QRect
 from app.qt.QtWidgets import QWidget
 
 _NOUN = {"tab": "tab", "wizard": "step"}
@@ -135,7 +136,24 @@ def _delete(ctx: MenuContext, container: NodeId, index: int, asking: bool) -> No
     count = page_widget_count(ctx.session.document, page.id)
     noun = "widget" if count == 1 else "widgets"
     prose = "Delete page \u201c%s\u201d and the %d %s on it?" % (title, count, noun)
-    surface.ask_delete(prose, (page.id,))
+    anchor = None if ctx.source == "outline" else _tab_anchor(ctx, page.id)
+    if anchor is None or outline is None:
+        surface.ask_delete(prose, (page.id,))
+        return
+    outline.show_delete(prose, (page.id,), anchor, getattr(surface, "_focus_canvas", None))
+
+
+def _tab_anchor(ctx: MenuContext, page_id: NodeId) -> Optional[QRect]:
+    """The page tab in global coordinates, when the canvas has drawn one."""
+    canvas = _canvas(ctx)
+    locate = getattr(canvas, "tab_viewport_rect", None)
+    if canvas is None or locate is None:
+        return None
+    local = locate(page_id)
+    if local is None:
+        return None
+    viewport = canvas.viewport()
+    return QRect(viewport.mapToGlobal(local.topLeft()), local.size())
 
 
 def _show(ctx: MenuContext, container: NodeId, delta: int) -> None:

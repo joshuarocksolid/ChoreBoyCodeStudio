@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple
+from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple, cast
 
 from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
 from app.qt.QtGui import QFont, QFontMetrics, QPixmap
@@ -1250,15 +1250,43 @@ class CanvasController:
         self._open_inserted_page(changeset)
 
     def _open_inserted_page(self, changeset: ChangeSet) -> None:
-        """Insert page opens the title editor on the storage that container reads."""
+        """Insert page shows the new page and opens the title editor the container reads."""
         if changeset.label != "Insert page":
             return
         current = self._session.selection.state.current
-        if current is None or page_title_target(self._session.document, current) is None:
+        if current is None:
+            return
+        self._show_inserted(current)
+        if page_title_target(self._session.document, current) is None:
             return
         self._pending_page = current
         self._pending_edit = None
         QTimer.singleShot(0, self._open_edit_now)
+
+    def _show_inserted(self, page_id: NodeId) -> None:
+        """Keep the new page on screen. A later realize must not snap back to the old one."""
+        document = self._session.document
+        container = innermost_container(document, page_id)
+        if container is None:
+            return
+        index = next((item for item, page in enumerate(pages(document, container)) if page.id == page_id), None)
+        if index is None:
+            return
+        self._shown_page[container] = index
+        widget = self._realizer.widget_for(container)
+        if isinstance(widget, QWizard):
+            wizard = cast(QWizard, widget)
+            ids = list(wizard.pageIds())
+            if index < len(ids):
+                wizard.setCurrentId(ids[index])
+        elif isinstance(widget, QMdiArea):
+            area = cast(QMdiArea, widget)
+            windows = area.subWindowList()
+            if index < len(windows):
+                area.setActiveSubWindow(windows[index])
+        elif widget is not None and hasattr(widget, "setCurrentIndex"):
+            widget.setCurrentIndex(index)
+        self._index.invalidate("page_switch")
 
     def _on_selection(self, change: SelectionChange) -> None:
         self._announce_selection(change.after)
