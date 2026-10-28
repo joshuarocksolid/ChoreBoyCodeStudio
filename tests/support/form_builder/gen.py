@@ -38,6 +38,7 @@ from app.features.form_builder.engine.commands.catalog import (
     SetGeometry,
     SetLayoutCell,
     SetLayoutStretch,
+    SetProperty,
     SetLogic,
     SetProperty,
     SetPropertyMany,
@@ -587,6 +588,7 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
         raise AssertionError("seed %s %s" % (seed, failures[0]))
     if done < steps:
         raise AssertionError("seed %s stopped after %s steps" % (seed, done))
+    _checkpoint_probe(log, doc, seed)
     replayed = replay(source, log.entries())
     if replayed.fingerprint() != doc.fingerprint():
         raise AssertionError("replay mismatch seed %s" % (seed,))
@@ -603,6 +605,43 @@ def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
     doc.validate()
     if doc.fingerprint() != tip:
         raise AssertionError("redo-all mismatch seed %s" % (seed,))
+
+
+def _checkpoint_probe(log: Any, doc: UiDocument, seed: int) -> None:
+    """Rollback either refuses or restores bytes, redo tokens and dirty state."""
+    widget = next((node for node in doc.iter_preorder() if isinstance(node, WidgetNode)), None)
+    if widget is None:
+        return
+    command = SetProperty(widget.id, "toolTip", StringValue("probe-%s" % seed))
+
+    def snap() -> Tuple[str, Tuple[int, ...], bool]:
+        point = log.checkpoint()
+        return saved(doc), tuple(point.redo_tokens), log.is_dirty()
+
+    refused_at = log.checkpoint()
+    try:
+        with log.transaction("foreign", merge_token="foreign") as tx:
+            tx.execute(command)
+    except CommandRejected:
+        return
+    after_foreign = snap()
+    if log.rollback(refused_at, "probe"):
+        raise AssertionError("seed %s rollback accepted a foreign step" % seed)
+    if snap() != after_foreign:
+        raise AssertionError("seed %s refused rollback changed the log" % seed)
+    if log.can_undo() and log.undo_label() == "foreign":
+        log.undo()
+    point = log.checkpoint()
+    before = snap()
+    try:
+        with log.transaction("probe", merge_token="probe") as tx:
+            tx.execute(SetProperty(widget.id, "toolTip", StringValue("probe-keep-%s" % seed)))
+    except CommandRejected:
+        return
+    if not log.rollback(point, "probe"):
+        raise AssertionError("seed %s probe rollback refused" % seed)
+    if snap() != before:
+        raise AssertionError("seed %s probe rollback did not restore the checkpoint" % seed)
 
 
 def run_many(count: int, steps: int, *, start: int = 0) -> str:
