@@ -642,6 +642,13 @@ class _Structure(_LayoutSlots):
                 widget.addItem(_node_text(item))
             return
         if isinstance(widget, QTreeWidget):
+            headers = node.children("columns")
+            count = max(1, len(headers))
+            for item in items:
+                count = max(count, len(_column_texts(item)))
+            widget.setColumnCount(count)
+            if headers:
+                widget.setHeaderLabels([_column_texts(header)[0] for header in headers])
             widget.clear()
             for item in items:
                 widget.addTopLevelItem(_tree_item(item))
@@ -1534,10 +1541,16 @@ def _node_text(node: object) -> str:
 
 
 def _tree_item(node: object) -> object:
-    item = QTreeWidgetItem([_node_text(node)])
+    item = QTreeWidgetItem(list(_column_texts(node)))
     for child in node.children("subitems"):  # type: ignore[attr-defined]
         item.addChild(_tree_item(child))
     return item
+
+
+def _column_texts(node: object) -> Tuple[str, ...]:
+    from app.features.form_builder.engine.query.items import column_texts
+
+    return column_texts(node)
 
 
 def _remove_stack_page(widget: QWidget, index: int, page: QWidget) -> None:
