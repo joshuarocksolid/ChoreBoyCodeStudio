@@ -22,7 +22,8 @@ undo stack, the redo stack and the dirty state of the moment the session began.
 The log refuses when anything foreign landed (the stack below changed, an entry
 above carries another token, something was redone). A session therefore
 watches the log, and when any change set arrives that it did not make itself,
-it calls its owner to close and keep what was written.
+it calls its owner (on the next event-loop turn, so the owner's focus flush can
+still write) to close and keep what was written.
 """
 
 
@@ -316,7 +317,9 @@ class EditSession:
 
         def foreign(_change_set: object) -> None:
             if not self._own and not self._closed:
-                on_change()
+                # Deferred: a close flushes focus so a pending field commits into
+                # the session, and a log listener cannot write.
+                QTimer.singleShot(0, on_change)
 
         subscription = session.log.subscribe(foreign, priority=_WATCH_PRIORITY)
         stop_selection = session.selection.subscribe(lambda _change: on_change())

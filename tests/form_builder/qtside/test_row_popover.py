@@ -330,6 +330,38 @@ def test_click_outside_keeps_a_commit_that_waits_for_focus_out(qapp: QApplicatio
         window.close()
 
 
+def test_a_foreign_step_keeps_a_commit_that_waits_for_focus_out(qapp: QApplication) -> None:
+    host = _Host()
+    window = _window(400, 300)
+    row = _row(window, 20, 40, 236)
+    summary = SummaryButton("Test row", row)
+    summary.setGeometry(0, 0, 236, 24)
+    summary.show()
+    popover = RowPopover(row, host.services, row_label="Test row", session_label="Change test row", anchor=summary)
+    field = QLineEdit(popover)
+    popover.body().addWidget(field)
+    node = host.session.document.by_name("field")[0]
+    field.editingFinished.connect(
+        lambda: popover.session.run((SetProperty(node, "text", StringValue(field.text())),))
+    )
+    popover.open_popover()
+    _settle(qapp)
+    try:
+        field.setFocus()
+        _settle(qapp)
+        QTest.keyClicks(field, "Kept")
+        _settle(qapp)
+        host.session.log.execute(SetProperty(node, "toolTip", StringValue("foreign")))
+        _settle(qapp)
+        assert popover.closed
+        stored = host.session.document.node(node).prop("text")
+        assert stored is not None and isinstance(stored.value, StringValue)
+        assert stored.value.text == "Kept"
+    finally:
+        host.close()
+        window.close()
+
+
 def test_a_combo_popup_and_a_child_dialog_count_as_inside(qapp: QApplication) -> None:
     host = _Host()
     window = _window(400, 320)
