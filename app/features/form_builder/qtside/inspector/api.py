@@ -106,7 +106,7 @@ RowValue = Union[Unset, Written, Mixed]
 MIXED_TEXT = "Mixed"
 NOT_SET_TEXT = "\u2014"
 
-MatchWhere = Literal["label", "qt_name", "value"]
+MatchWhere = Literal["label", "qt_name", "value", "enum"]
 
 @dataclass(frozen=True)
 class Match:
@@ -130,6 +130,10 @@ class OpenRow:
     spec: ValueSpec
     editor: EditorKey
     write: RowWrite
+    #: Declaring class, shown on the Qt-name line when All properties is sorted.
+    origin: str = ""
+    #: A dynamic property (``stdset="0"``). The row offers rename, type and remove.
+    dynamic: bool = False
     match: Optional[Match] = None
 
     @property
@@ -144,6 +148,7 @@ class LockedRow:
     help: str
     value: RowValue
     reason: str
+    origin: str = ""
     match: Optional[Match] = None
 
     @property

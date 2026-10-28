@@ -218,6 +218,7 @@ class InspectorPane(QWidget):
             tab_order=self._memo.get,
             include_all=include_all,
             live_size=live_size,
+            sort_properties=self.properties.sorts_properties(),
         )
         with self._services.painting():
             self.properties.paint(pages.body)

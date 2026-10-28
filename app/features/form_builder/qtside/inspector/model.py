@@ -308,6 +308,7 @@ def project(
     tab_order: Optional[Callable[[], Tuple[str, ...]]] = None,
     include_all: bool = True,
     live_size: Optional[Tuple[int, int]] = None,
+    sort_properties: bool = False,
 ) -> Pages:
     document = session.document
     owners = inspected_ids(document, session.selection.state.ids)
@@ -318,7 +319,7 @@ def project(
             _behavior(facts, (document.root.id,)),
         )
     return Pages(
-        _node_body(facts, catalog, owners, search, include_all=include_all),
+        _node_body(facts, catalog, owners, search, include_all=include_all, sort_properties=sort_properties),
         _behavior(facts, owners),
     )
 
@@ -342,6 +343,7 @@ def read_property(
     kind: PropKind,
     *,
     curated: bool,
+    origin: str = "",
 ) -> Optional[Row]:
     nodes = [facts.document.node(owner) for owner in owners]
     entries = [_entry(node, name, kind) for node in nodes]
@@ -358,7 +360,11 @@ def read_property(
             return _locked(spec, name, value, SELECT_ONE_FOR_POSITION)
         write = GeometryWrite(next(iter(owners)))
     element, enum = _element(entries, lives, infos)
-    return _open_or_kept(facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write)
+    dynamic = any(entry is not None and entry.is_dynamic for entry in entries)
+    return _open_or_kept(
+        facts, spec, name, value, ValueSpec(element, enum), editor_key(name, element), write,
+        origin=origin, dynamic=dynamic and kind == "property",
+    )
 
 def filter_rows(rows: Sequence[Row], search: str) -> Tuple[Row, ...]:
     needle = search.strip().lower()
@@ -450,6 +456,7 @@ def _node_body(
     search: str,
     *,
     include_all: bool = True,
+    sort_properties: bool = False,
 ) -> NodeBody:
     curated: Dict[GroupId, List[Row]] = {}
     for spec in catalog.rows():
@@ -466,7 +473,7 @@ def _node_body(
             groups.append(GroupView(group, ()))
             continue
         if group is GroupId.ALL:
-            blocks = _all_blocks(facts, owners)
+            blocks = _all_blocks(facts, owners, sort=sort_properties)
         else:
             blocks = (Block("", tuple(curated.get(group, ()))),)
         kept = tuple(Block(block.title, filter_rows(block.rows, search)) for block in blocks)
@@ -487,31 +494,65 @@ def _layout_body(facts: Facts, catalog: Catalog, owners: Tuple[NodeId, ...]) -> 
     """A bare container still gets the Layout group, so its body can offer a layout."""
     return catalog.group_body(GroupId.LAYOUT) is not None and takes_layout(facts.document, owners)
 
-def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...]) -> Tuple[Block, ...]:
+def _all_blocks(facts: Facts, owners: Tuple[NodeId, ...], *, sort: bool = False) -> Tuple[Block, ...]:
     by_class: Dict[str, List[Row]] = {}
     listed = set()
     lives = [facts.live.get(owner) for owner in owners]
     first = lives[0]
     if first is not None and all(live is not None for live in lives):
         for prop in first.properties:
-            if prop.name in _HEADER_OWNED or any(live is None or live.find(prop.name) is None for live in lives):
+            if prop.name in _HEADER_OWNED or prop.name.startswith("cbcs"):
                 continue
-            row = read_property(facts, _all_spec(prop.name, "property"), owners, prop.name, "property", curated=False)
+            if any(live is None or live.find(prop.name) is None for live in lives):
+                continue
+            lead = facts.document.node(owners[0])
+            stored_prop = lead.prop(prop.name)
+            if stored_prop is not None and stored_prop.is_dynamic:
+                continue
+            row = read_property(
+                facts, _all_spec(prop.name, "property"), owners, prop.name, "property",
+                curated=False, origin=prop.declared_by,
+            )
             if row is not None:
                 by_class.setdefault(prop.declared_by, []).append(row)
                 listed.add(("property", prop.name))
+    attributes: List[Row] = []
     stored: List[Row] = []
+    custom: List[Row] = []
     lead = facts.document.node(owners[0])
     for entry in lead.properties() + lead.attributes():
         kind: PropKind = "attribute" if entry.kind == "attribute" else "property"
-        if (kind, entry.name) in listed or entry.name in _HEADER_OWNED:
+        if (kind, entry.name) in listed or entry.name in _HEADER_OWNED or entry.name.startswith("cbcs"):
             continue
-        row = read_property(facts, _all_spec(entry.name, kind), owners, entry.name, kind, curated=False)
-        if row is not None:
+        row = read_property(
+            facts, _all_spec(entry.name, kind), owners, entry.name, kind, curated=False,
+        )
+        if row is None:
+            continue
+        if kind == "property" and entry.is_dynamic:
+            if isinstance(row, OpenRow):
+                row = dataclasses.replace(row, dynamic=True)
+            custom.append(row)
+        elif kind == "attribute":
+            attributes.append(row)
+        else:
             stored.append(row)
+    if sort:
+        flat: List[Row] = []
+        for rows in by_class.values():
+            flat.extend(rows)
+        flat.extend(attributes)
+        flat.extend(stored)
+        flat.extend(custom)
+        flat.sort(key=lambda item: item.qt_name.lower())
+        return (Block("", tuple(flat)),) if flat else ()
     blocks = [Block(title, tuple(rows)) for title, rows in by_class.items()]
+    if attributes:
+        blocks.append(Block("Stored by the parent", tuple(attributes)))
     if stored:
         blocks.append(Block("In the file", tuple(stored)))
+    if custom:
+        blocks.append(Block("Custom properties", tuple(custom)))
     return tuple(blocks)
 
 def _all_spec(name: str, kind: PropKind) -> RowSpec:
@@ -539,13 +580,18 @@ def _open_or_kept(
     value_spec: ValueSpec,
     key: EditorKey,
     write: RowWrite,
+    *,
+    origin: str = "",
+    dynamic: bool = False,
 ) -> Row:
     if key not in facts.editors:
-        return _locked(spec, qt_name, value, KEPT_AS_IS)
-    return OpenRow(spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write)
+        return _locked(spec, qt_name, value, KEPT_AS_IS, origin)
+    return OpenRow(
+        spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write, origin, dynamic,
+    )
 
-def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str) -> LockedRow:
-    return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason)
+def _locked(spec: RowSpec, qt_name: str, value: RowValue, reason: str, origin: str = "") -> LockedRow:
+    return LockedRow(spec.key, spec.label, qt_name, spec.help, value, reason, origin)
 
 def _entry(node: Node, name: str, kind: PropKind) -> Optional[PropertyEntry]:
     return node.prop(name) if kind == "property" else node.attr(name)
@@ -620,6 +666,12 @@ def _match(row: Row, needle: str) -> Optional[Match]:
         start = text.lower().find(needle)
         if start >= 0:
             return Match(where, start, start + len(needle))
+    spec = getattr(row, "spec", None)
+    enum = None if spec is None else getattr(spec, "enum", None)
+    if enum is not None:
+        for name in enum.names:
+            if needle in name.lower():
+                return Match("enum", 0, 0)
     return None
 
 def _admits(facts: Facts, owner: NodeId, classes: Tuple[str, ...]) -> bool:
