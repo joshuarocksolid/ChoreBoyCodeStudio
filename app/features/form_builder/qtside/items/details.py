@@ -10,11 +10,13 @@ from app.qt.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdi
 
 _CHECK = ("Unchecked", "Checked", "Partly")
 _CHECK_QT = {"Unchecked": "Unchecked", "Checked": "Checked", "Partly": "PartiallyChecked"}
+# UX-ITEM-003 order: "User can check it" with "Starts", then Enabled,
+# Selectable, Editable.
 _FLAG_BITS = (
-    ("ItemIsSelectable", "Selectable"),
-    ("ItemIsEnabled", "Enabled"),
-    ("ItemIsEditable", "Editable"),
     ("ItemIsUserCheckable", "User can check it"),
+    ("ItemIsEnabled", "Enabled"),
+    ("ItemIsSelectable", "Selectable"),
+    ("ItemIsEditable", "Editable"),
 )
 
 
@@ -30,13 +32,14 @@ def build_details(
     panel.setObjectName("formBuilder.itemDetails")
     form = QFormLayout(panel)
     form.setContentsMargins(8, 4, 8, 4)
-    icon = QLabel("Icon")
+    # The picture picker is M4.3c (UX-PED-102). Until then the row shows the
+    # value and stays disabled.
+    icon = QLabel("None")
     icon.setObjectName("formBuilder.itemIcon")
     icon.setEnabled(False)
     form.addRow("Icon", icon)
     if kind == "list":
         _flags(form, current, on_value, panel)
-        _check_state(form, item, on_value, panel)
     tip = QLineEdit(panel)
     tip.setObjectName("formBuilder.itemTooltip")
     tip.setText(_string(item, "toolTip"))
@@ -51,27 +54,45 @@ def build_details(
     return panel
 
 
+# QListWidgetItem's own default: enabled, selectable, checkable, draggable.
+_DEFAULT_FLAGS = ("ItemIsSelectable", "ItemIsUserCheckable", "ItemIsEnabled", "ItemIsDragEnabled")
+
+
 def _flags(form: QFormLayout, current: Callable[[], Item], on_value: Callable[[str, Optional[Value]], None], parent: QWidget) -> None:
     item = current()
-    stored = _flags_of(item)
-    written = _prop(item, "flags") is not None
+    stored = _flag_names(item)
     for bit, label in _FLAG_BITS:
         box = QCheckBox(label, parent)
         box.setObjectName("formBuilder.itemFlag." + bit)
-        default_on = bit in ("ItemIsSelectable", "ItemIsEnabled")
-        box.setChecked(bit in stored if written else default_on)
+        box.setChecked(bit in stored)
         box.toggled.connect(lambda _checked=False, bit=bit, box=box: _toggle_flag(current(), bit, box.isChecked(), on_value))
         form.addRow("", box)
+        if bit == "ItemIsUserCheckable":
+            _check_state(form, item, on_value, parent)
 
 
 def _toggle_flag(item: Item, bit: str, on: bool, on_value: Callable[[str, Optional[Value]], None]) -> None:
-    bits = set(_flags_of(item) or ("ItemIsSelectable", "ItemIsEnabled"))
-    if on:
-        bits.add(bit)
+    """Flip one bit. Every other bit, and its spelling in the file, stays."""
+    entry = _prop(item, "flags")
+    value = getattr(entry, "value", None)
+    if isinstance(value, SetValue) and value.text.strip():
+        pieces = [piece.strip() for piece in value.text.split("|") if piece.strip()]
     else:
-        bits.discard(bit)
-    order = [name for name, _label in _FLAG_BITS if name in bits]
-    on_value("flags", SetValue("|".join(order)) if order else None)
+        pieces = list(_DEFAULT_FLAGS)
+    kept = [piece for piece in pieces if bit not in (name for _scope, name in SetValue(piece).keys())]
+    if on:
+        kept.append(bit)
+    if entry is None and sorted(kept) == sorted(_DEFAULT_FLAGS):
+        return
+    on_value("flags", SetValue("|".join(kept)) if kept else None)
+
+
+def _flag_names(item: Item) -> Tuple[str, ...]:
+    entry = _prop(item, "flags")
+    value = getattr(entry, "value", None)
+    if isinstance(value, SetValue) and value.text.strip():
+        return tuple(name for _scope, name in value.keys())
+    return _DEFAULT_FLAGS
 
 
 def _check_state(form: QFormLayout, item: Item, on_value: Callable[[str, Optional[Value]], None], parent: QWidget) -> None:
@@ -107,13 +128,5 @@ def _enum(item: Item, name: str) -> str:
     entry = _prop(item, name)
     value = getattr(entry, "value", None)
     if isinstance(value, EnumValue):
-        return value.name
+        return value.key()[1]
     return ""
-
-
-def _flags_of(item: Item) -> Tuple[str, ...]:
-    entry = _prop(item, "flags")
-    value = getattr(entry, "value", None)
-    if isinstance(value, SetValue) and value.text:
-        return tuple(part.strip() for part in value.text.split("|") if part.strip())
-    return ()
