@@ -180,7 +180,7 @@ def test_form_menu_enables_only_commands_that_exist(qapp, tmp_path: Path) -> Non
         assert form.menuAction().isVisible()
         assert registry.actions["form.action.viewXml"].isEnabled()
         assert registry.actions["form.action.viewXml"].shortcut().isEmpty()
-        assert not registry.actions["form.action.insert"].isEnabled()
+        assert registry.actions["form.action.insert"].isEnabled()
         for action in form.actions():
             label = action.text()
             assert "M2" not in label

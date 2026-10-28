@@ -128,20 +128,20 @@ def _edit(pane: Any, effect: EditName) -> bool:
 
 
 def _close(pane: Any, effect: CloseName) -> bool:
-    pane.finish_rename()
+    target = pane.finish_rename()
     if effect.new_name:
         try:
             pane.session().log.execute(Rename(effect.node, effect.new_name))
         except CommandRejected as rejected:
             pane.report(str(rejected))
             if effect.refocus:
-                pane.begin_rename(effect.node)
+                pane.begin_rename(effect.node, return_to=target)
                 pane.show_name_error(str(rejected))
             return True
     pane.note_edited()
     if effect.then_node is not None:
-        pane.begin_rename(effect.then_node)
-    elif effect.refocus:
+        pane.begin_rename(effect.then_node, return_to=target)
+    elif effect.refocus and target is None:
         pane.focus_tree()
     return True
 

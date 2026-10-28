@@ -284,7 +284,7 @@ class _KindRow:
         for kind_id in SEGMENTS:
             button = _KindButton(kind_id, self.widget)
             button.setObjectName("formBuilder.layout.kind.%s" % kind_id)
-            button.setAccessibleName("%s layout" % KINDS[kind_id].label)
+            button.setAccessibleName("Kind: %s" % KINDS[kind_id].label)
             button.setCheckable(True)
             button.setProperty("fbSegment", "true")
             button.setFocusPolicy(Qt.FocusPolicy.StrongFocus)

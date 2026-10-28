@@ -104,7 +104,7 @@ class FontEditor:
         fields = QHBoxLayout(row)
         fields.setContentsMargins(0, 0, 0, 0)
         self._family = QFontComboBox(row)
-        self._family.setMinimumContentsLength(10)
+        self._family.setMinimumContentsLength(0)
         self._family.setSizeAdjustPolicy(
             getattr(
                 getattr(QFontComboBox, "SizeAdjustPolicy", QFontComboBox),
@@ -119,15 +119,15 @@ class FontEditor:
             family_edit.setPlaceholderText("Default")
             family_edit.textEdited.connect(self._mark_family)
             family_edit.editingFinished.connect(self._commit_typed_family)
-        self._size = QSpinBox(row)
+        self._size = QSpinBox(self._root)
         self._size.setRange(0, 256)
         self._size.setSpecialValueText(NOT_SET_TEXT)
         self._shown_size = ""
         # Commit on Enter, focus-out or a step, not on every typed digit.
         self._size.setKeyboardTracking(False)
         fields.addWidget(self._family, 1)
-        fields.addWidget(self._size)
         layout.addWidget(row)
+        layout.addWidget(self._size)
         flags = QWidget(self._root)
         flag_row = QHBoxLayout(flags)
         flag_row.setContentsMargins(0, 0, 0, 0)
@@ -167,12 +167,24 @@ class FontEditor:
         if line is not None:
             line.blockSignals(True)
         if family:
-            self._family.setCurrentText(family)
+            self._family.setToolTip(family)
+            if self._family.currentText() != family:
+                self._family.setCurrentText(family)
         else:
-            self._family.setCurrentIndex(-1)
-            if line is not None:
-                line.clear()
-                line.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else "Default")
+            self._family.setToolTip("Default")
+            # An empty line keeps the placeholder. The combo's minimum width
+            # is "Default", so the placeholder is the word, not "De…".
+            if isinstance(value, Mixed):
+                if line is None or line.text() or line.placeholderText() != MIXED_TEXT:
+                    self._family.setCurrentIndex(-1)
+                    if line is not None:
+                        line.clear()
+                        line.setPlaceholderText(MIXED_TEXT)
+            elif line is None or line.text():
+                self._family.setCurrentIndex(-1)
+                if line is not None:
+                    line.clear()
+                    line.setPlaceholderText("Default")
         if point is None:
             self._size.setSpecialValueText(MIXED_TEXT if isinstance(value, Mixed) else NOT_SET_TEXT)
             self._size.setValue(0)

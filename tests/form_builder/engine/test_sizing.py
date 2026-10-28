@@ -16,6 +16,7 @@ from app.features.form_builder.engine.sizing import (
     ShareSlot,
     chip_axis,
     clear_property,
+    clear_shown_axes,
     effective_word,
     encode_axis,
     explain,
@@ -205,6 +206,57 @@ def test_fixed_then_reset_leaves_no_size_policy_or_lock() -> None:
     assert "sizePolicy" not in cleared
     assert "minimumSize" not in cleared
     assert "maximumSize" not in cleared
+
+
+def test_reset_at_least_keeps_a_fixed_height_until_reset_size() -> None:
+    log = open_log(BOX)
+    button = nid(log.document, "okButton")
+    locked = encode_axis(
+        axis="v",
+        word=WORD_FIXED,
+        pixels=120,
+        current_policy=None,
+        current_minimum=None,
+        current_maximum=None,
+        class_default_h="Preferred",
+        class_default_v="Preferred",
+    )
+    log.execute(from_write(button, locked))
+    node = log.document.get(button)
+    assert isinstance(node, WidgetNode)
+    minimum = node.prop("minimumSize")
+    assert minimum is not None and isinstance(minimum.value, SizeValue)
+    log.execute(
+        from_write(
+            button,
+            clear_shown_axes("minimumSize", width=True, height=False, current=minimum.value),
+        )
+    )
+    node = log.document.get(button)
+    assert isinstance(node, WidgetNode)
+    kept_min = node.prop("minimumSize")
+    kept_max = node.prop("maximumSize")
+    policy = node.prop("sizePolicy")
+    assert kept_min is not None and isinstance(kept_min.value, SizeValue)
+    assert kept_max is not None and isinstance(kept_max.value, SizeValue)
+    assert kept_min.value.height == 120
+    assert kept_max.value.height == 120
+    policy_value = None if policy is None else policy.value
+    assert isinstance(policy_value, SizePolicyValue)
+    log.execute(
+        from_write(
+            button,
+            reset_words(
+                current_policy=policy_value,
+                current_minimum=kept_min.value,
+                current_maximum=kept_max.value,
+            ),
+        )
+    )
+    text = write_ui(log.document).text
+    assert "minimumSize" not in text
+    assert "maximumSize" not in text
+    assert "sizePolicy" not in text
 
 
 def test_share_slots_follow_the_parent_layout() -> None:

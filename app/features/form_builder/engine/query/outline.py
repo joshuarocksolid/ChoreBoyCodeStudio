@@ -903,7 +903,7 @@ def layout_row(
 
     The caption is shown only when the whole name, the gap and the whole
     caption fit (UX-OUT-002). Otherwise the caption goes first and the name
-    takes the row; the name elides in the middle only when it alone does not
+    takes the row; the name elides at the end only when it alone does not
     fit. Without both measurements there is no caption, so nothing is clipped.
     """
     width = max(int(item_width), 0)

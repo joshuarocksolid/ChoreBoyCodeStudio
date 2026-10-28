@@ -311,7 +311,6 @@ def test_apply_layout_removes_geometry() -> None:
     assert len(doc.root.layout.items) == 2
 
 
-@pytest.mark.parity("R3-41")
 def test_break_layout_keeps_measured_geometry() -> None:
     log = open_log(BOX)
     doc = log.document

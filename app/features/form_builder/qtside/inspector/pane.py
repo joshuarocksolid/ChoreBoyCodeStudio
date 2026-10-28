@@ -228,7 +228,8 @@ class InspectorPane(QWidget):
         if isinstance(behavior, OneBehavior) and behavior.connections:
             title = "Behavior (%d)" % len(behavior.connections)
         index = self._tab_index.get(TabId.BEHAVIOR)
-        if index is not None:
+        # setTabText relays out the styled tab bar even for the same text.
+        if index is not None and self.tabs.tabText(index) != title:
             self.tabs.setTabText(index, title)
 
     def dispose(self) -> None:
@@ -278,6 +279,14 @@ class InspectorPane(QWidget):
             return False
         if not self._owns(watched):
             return False
+        if kind == QEvent.ShortcutOverride and _key(event) in (_code(Qt.Key_Tab), _code(Qt.Key_Backtab)):
+            # A deferred flush would rebuild the tab chain after this key, so
+            # Tab from a just-edited row leaves the form. Paint links the rows
+            # before Qt moves focus. Rebuilding a chain that is already current
+            # scrambles Shift+Tab.
+            if self._pending:
+                self.flush()
+            self.properties.ensure_tab_chain()
         if kind == QEvent.ShortcutOverride and self._override(event):
             event.accept()
             self._dispatch_claimed(event)

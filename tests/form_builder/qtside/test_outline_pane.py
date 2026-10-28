@@ -740,9 +740,77 @@ def test_row_boxes_stay_disjoint_at_236(qapp: QApplication) -> None:
         advance = pane.tree.fontMetrics().horizontalAdvance(item.text(0))
         assert advance > boxes.name[2]
         mode = pane.tree.textElideMode()
-        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideMiddle")
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
         assert enum_value(mode) == enum_value(elide)
+        assert pane.tree.indentation() == 12
         assert session.document.by_name(name)
+
+
+def _deep_label() -> str:
+    return form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QVBoxLayout" name="l0">
+   <item>
+    <widget class="QGroupBox" name="g1">
+     <layout class="QVBoxLayout" name="l1">
+      <item>
+       <widget class="QLabel" name="streetLabel">
+        <property name="text"><string>Street</string></property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+""",
+    )
+
+
+def test_a_depth_4_name_keeps_its_prefix_at_the_default_width(qapp: QApplication) -> None:
+    with _opened(qapp, _deep_label(), "deep", width=232, height=360) as (pane, _session):
+        pane.setFixedWidth(232)
+        qapp.processEvents()
+        item = _find_item(pane.tree, "streetLabel")
+        depth = 0
+        walker: Optional[QTreeWidgetItem] = item
+        while walker is not None and walker.parent() is not None:
+            depth += 1
+            walker = walker.parent()
+        assert depth >= 4
+        pane.tree.scrollToItem(item)
+        qapp.processEvents()
+        rect = pane.tree.visualItemRect(item)
+        metrics = pane.tree.fontMetrics()
+        name_px = metrics.horizontalAdvance("streetLabel")
+        boxes = layout_row(rect.width(), False, False, 0, name_px)
+        elide = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+        shown = metrics.elidedText("streetLabel", elide, boxes.name[2])
+        assert shown.startswith("streetLa") or shown == "streetLabel"
+        assert "streetLabel" in item.toolTip(0)
+        assert pane.tree.indentation() == 12
+
+
+def test_shift_click_extends_the_outline_selection(qapp: QApplication) -> None:
+    with _opened(qapp, _buttons(3), "shift") as (pane, session):
+        _click_row(pane, qapp, "field0")
+        rect = pane.tree.visualItemRect(_find_item(pane.tree, "field2"))
+        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+        QTest.mouseClick(pane.tree.viewport(), left, _mod("ShiftModifier"), rect.center())
+        qapp.processEvents()
+        chosen = {int(node) for node in session.selection.state.ids}
+        assert chosen == {int(_id(session, "field0")), int(_id(session, "field1")), int(_id(session, "field2"))}
+
+
+def test_ctrl_click_toggles_an_outline_row(qapp: QApplication) -> None:
+    with _opened(qapp, _buttons(3), "ctrl") as (pane, session):
+        _click_row(pane, qapp, "field0")
+        rect = pane.tree.visualItemRect(_find_item(pane.tree, "field2"))
+        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
+        QTest.mouseClick(pane.tree.viewport(), left, _mod("ControlModifier"), rect.center())
+        qapp.processEvents()
+        chosen = {int(node) for node in session.selection.state.ids}
+        assert chosen == {int(_id(session, "field0")), int(_id(session, "field2"))}
 
 
 def _tree_ids(tree: QTreeWidget) -> Tuple[int, ...]:

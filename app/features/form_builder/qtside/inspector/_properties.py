@@ -69,6 +69,10 @@ class PropertiesPage(QWidget):
         self._qt_store: object = None
         self._link_color = ""
         self._tab_key: Optional[Tuple[QWidget, ...]] = None
+        # Paint only marks the chain stale. Walking every stop costs ~2-3 ms
+        # per select with All properties open, so the pane relinks just before
+        # a Tab moves focus inside it or focus enters it (ensure_tab_chain).
+        self._chain_dirty = False
         self._search = QLineEdit(self)
         self._search.setObjectName("formBuilder.inspectorSearch")
         self._search.setPlaceholderText("Find a property")
@@ -162,7 +166,16 @@ class PropertiesPage(QWidget):
     def builds_all_properties(self) -> bool:
         return bool(self.search.strip()) or self._expanded.get(GroupId.ALL, False)
 
+    def ensure_tab_chain(self) -> None:
+        """Relink the stops if a paint changed them since the last link."""
+        if not self._chain_dirty:
+            return
+        self._chain_dirty = False
+        self._chain_tabs()
+
     def note_focus(self, focus: object) -> None:
+        if isinstance(focus, QWidget) and (focus is self or self.isAncestorOf(focus)):
+            self.ensure_tab_chain()
         self._form.note_focus(focus)
         for group in self._groups.values():
             group.note_focus(focus)
@@ -238,7 +251,7 @@ class PropertiesPage(QWidget):
             self._form.paint(body, self._match_color)
             for group in self._groups.values():
                 group.hide()
-            self._chain_tabs()
+            self._chain_dirty = True
             return
         self._form.hide()
         present = {view.group: view for view in body.groups}
@@ -251,7 +264,7 @@ class PropertiesPage(QWidget):
             group.show()
             expanded = True if searching else self._expanded[group_id]
             group.paint(view, expanded, searching, self._match_color, body.owners, self._show_qt)
-        self._chain_tabs()
+        self._chain_dirty = True
 
     def focus_search(self) -> None:
         self._search.setFocus()
