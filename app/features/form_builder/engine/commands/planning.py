@@ -1274,13 +1274,37 @@ def _move_part(doc: UiDocument, ctx: PlanContext, ids: Sequence[NodeId], placeme
     count = len(doc.node(placement.main_window).children("children"))
     index = 0 if placement.part == "central" else count
     place_nodes(doc, ctx, ids, placement.main_window, "children", index)
-    if placement.area and placement.part in ("toolbar", "dock"):
-        prop = "toolBarArea" if placement.part == "toolbar" else "dockWidgetArea"
+    if placement.area and placement.part == "dock":
+        number = dock_area_number(placement.area)
         for node_id in ids:
-            set_property(doc, ctx, node_id, prop, EnumValue(placement.area))
+            set_property(doc, ctx, node_id, "dockWidgetArea", NumberValue(number), kind="attribute")
+    elif placement.area and placement.part == "toolbar":
+        for node_id in ids:
+            set_property(doc, ctx, node_id, "toolBarArea", EnumValue(placement.area))
     if placement.break_before:
         for node_id in ids:
             set_property(doc, ctx, node_id, "toolBarBreak", BoolValue(True))
+
+
+#: Qt::DockWidgetArea as the number a .ui file stores in ``dockWidgetArea`` (UX-CONT-012).
+_DOCK_AREA_NUMBERS = {
+    "Left": 1,
+    "Right": 2,
+    "Top": 4,
+    "Bottom": 8,
+    "LeftDockWidgetArea": 1,
+    "RightDockWidgetArea": 2,
+    "TopDockWidgetArea": 4,
+    "BottomDockWidgetArea": 8,
+}
+
+
+def dock_area_number(area: str) -> int:
+    """The ``dockWidgetArea`` number for a side name. CommandRejected for any other text."""
+    number = _DOCK_AREA_NUMBERS.get(area.strip())
+    if number is None:
+        raise CommandRejected("That is not a dock side.")
+    return number
 
 
 def _shift_for_mode(doc: UiDocument, ctx: PlanContext, placement: InGridCell, moving: Sequence[NodeId]) -> None:

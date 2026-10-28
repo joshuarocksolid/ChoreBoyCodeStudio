@@ -133,7 +133,12 @@ def default_title(kind: PageKind, number: int) -> str:
 
 
 def page_name_base(kind: PageKind, number: int) -> str:
-    """The first name tried for a new page: ``tab_3``, ``page_3``, ``wizardPage_3``, ``subwindow_3``."""
+    """The first name tried for a new page: ``tab_3``, ``page_3``, ``wizardPage_3``, ``subwindow_3``.
+
+    The first page of a container is the bare prefix, as Designer names it (``tab``).
+    """
+    if number <= 1:
+        return kind.name_prefix
     return "%s_%d" % (kind.name_prefix, number)
 
 

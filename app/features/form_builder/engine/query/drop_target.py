@@ -1210,6 +1210,9 @@ def _pages_host(
     noun = "page" if widget.class_name in ("QToolBox", "QStackedWidget") else "tab"
     slots: List[SlotGeom] = []
     children: List[DropHost] = []
+    if kind == "pages" and not widget.child_widgets:
+        # No page yet: a drop anywhere in the container makes the first page (UX-CONT-009).
+        slots.append(SlotGeom(rect, 0, None, "", role="new_page"))
     for index, child in enumerate(widget.child_widgets):
         child_rect = rect_of.get(child.id, rect)
         role = "page" if kind == "pages" else "pane"
