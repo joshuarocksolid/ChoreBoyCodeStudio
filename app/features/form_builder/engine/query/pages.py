@@ -127,6 +127,32 @@ def page_widget_count(doc: UiDocument, page_id: NodeId) -> int:
     return sum(1 for node in doc.iter_preorder(page_id) if isinstance(node, WidgetNode)) - 1
 
 
+SCROLL_AREA = "QScrollArea"
+
+
+def scroll_area_of(doc: UiDocument, node_id: NodeId) -> Optional[NodeId]:
+    """The nearest scroll area at or above ``node_id``. None when there is none (UX-CONT-010)."""
+    current: Optional[NodeId] = node_id
+    while current is not None and doc.contains(current):
+        node = doc.node(current)
+        if isinstance(node, WidgetNode) and node.class_name == SCROLL_AREA:
+            return current
+        parent = doc.parent(current)
+        current = parent.id if parent is not None else None
+    return None
+
+
+def scroll_area_in_path(doc: UiDocument, path: Tuple[NodeId, ...]) -> Optional[NodeId]:
+    """The nearest scroll area in a hit path (deepest first, as the hit index gives it)."""
+    for node_id in path:
+        if not doc.contains(node_id):
+            continue
+        node = doc.node(node_id)
+        if isinstance(node, WidgetNode) and node.class_name == SCROLL_AREA:
+            return node_id
+    return None
+
+
 def default_title(kind: PageKind, number: int) -> str:
     """"Tab 3", "Page 3", "Step 3" or "Window 3" (UX-CONT-003)."""
     return "%s %d" % (kind.word, number)
@@ -147,6 +173,8 @@ __all__ = [
     "PageKind",
     "default_title",
     "innermost_container",
+    "scroll_area_in_path",
+    "scroll_area_of",
     "page_kind",
     "page_name_base",
     "page_title",

@@ -15,6 +15,7 @@ from app.features.form_builder.engine.commands.live import LiveProp, live_props
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
+from app.features.form_builder.engine.query.pages import scroll_area_in_path, scroll_area_of
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
@@ -492,6 +493,22 @@ class CanvasPressed:
 
 
 @dataclass(frozen=True)
+class ScrollContent:
+    """Scroll the content of the scroll area ``node`` by pixels (canvas only, UX-CONT-010)."""
+
+    node: NodeId
+    dx: int
+    dy: int
+
+
+@dataclass(frozen=True)
+class RevealInScroll:
+    """Scroll the scroll area around ``node`` until the widget is visible (canvas only)."""
+
+    node: NodeId
+
+
+@dataclass(frozen=True)
 class ShowPageStep:
     """Ctrl+PgDown (``delta`` 1) or Ctrl+PgUp (-1) on the innermost page container of ``node``.
 
@@ -520,7 +537,7 @@ class RunChipAction:
 ModelEffect = Union[Select, Toggle, Commit]
 ViewEffect = Union[Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal, Cursor, Tip]
 EditorEffect = Union[OpenEditor, CloseEditor]
-HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep]
+HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep, ScrollContent, RevealInScroll]
 Effect = Union[ModelEffect, ViewEffect, EditorEffect, HostEffect]
 
 
@@ -1132,9 +1149,23 @@ def _on_wheel(gesture: Gesture, event: Wheel, world: World) -> Step:
             return Step(gesture, (), True)
         direction = 1 if event.dy > 0 else -1
         return Step(gesture, (Zoom(ZoomStep(direction), event.port),))
+    area = _scroll_area_at(event.port, world)
+    if area is not None:
+        # Over a scroll area the wheel scrolls its content, not the canvas (UX-CONT-010).
+        if event.mods.shift:
+            return Step(gesture, (ScrollContent(area, -(event.dx + event.dy), 0),))
+        return Step(gesture, (ScrollContent(area, -event.dx, -event.dy),))
     if event.mods.shift:
         return Step(gesture, (ScrollBy(-(event.dx + event.dy), 0),))
     return Step(gesture, (ScrollBy(-event.dx, -event.dy),))
+
+
+def _scroll_area_at(port: PortPoint, world: World) -> Optional[NodeId]:
+    form = world.view.to_form(port)
+    hit = world.index.query(int(form.x), int(form.y))
+    if hit is None:
+        return None
+    return scroll_area_in_path(world.document, hit.path)
 
 
 def _on_focus(gesture: Gesture, event: Focus, world: World) -> Step:
@@ -1306,6 +1337,9 @@ def _commit_label(state: Union[Moving, PageResizing]) -> str:
 
 def _select_and_reveal(world: World, ids: Tuple[NodeId, ...], current: NodeId) -> Tuple[Effect, ...]:
     effects: Tuple[Effect, ...] = (Select(ids, current),)
+    if scroll_area_of(world.document, current) is not None:
+        # The scroll area moves the widget into view first; the canvas reveals it after that (UX-CONT-010).
+        return effects + (RevealInScroll(current),)
     rect = world.index.rect_of(current)
     if rect is not None:
         effects = effects + (Reveal(rect),)

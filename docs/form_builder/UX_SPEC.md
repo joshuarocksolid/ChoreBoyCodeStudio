@@ -1445,7 +1445,7 @@ An insert never writes a tab title as a toolbox label, or the reverse (R3 128). 
 | Start on this page | tab widget, toolbox, stacked, wizard | "Start on this page" (checked when it is the start page) |
 | Tile windows / Cascade windows | MDI area | canvas only, not saved |
 
-For a stacked widget, `{title}` is the page's object name. Items that cannot act stay visible and disabled with the reason as tooltip ("This is already the first page."). Shift+F10 opens the same menu by keyboard. The Pages submenu is the first item group, above the clipboard rows, when the clicked widget is a page or a page container.
+For a stacked widget, `{title}` is the page's object name. Items that cannot act stay visible and disabled with the reason as tooltip ("This is already the first page."). Wizards always start on their first step; "Start on this page" is not offered for a wizard. Shift+F10 opens the same menu by keyboard. The Pages submenu is the first item group, above the clipboard rows, when the clicked widget is a page or a page container.
 
 **UX-CONT-003** `M4.2` `[T]` Insert page before or after the shown page: the new page gets the container's next free name (`tab_3`, `page_3`, `wizardPage_3`, `subwindow_2`), the title "Tab {n}", "Page {n}", "Step {n}" or "Window {n}" (n is its 1-based position), and a vertical layout. It becomes the shown page and the selection. For a tab widget, toolbox or wizard, the in-place title editor opens with the title selected (UX-TEXT-002); Enter keeps the typed title, Esc keeps the default. Insert and title are one undo step "Insert page". The canvas "+" pseudo-tab (UX-PAGES-002) is "Insert page after" the last page. Focus stays where it was (canvas or outline), except while the title editor is open.
 

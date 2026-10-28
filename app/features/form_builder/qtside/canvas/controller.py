@@ -17,6 +17,7 @@ from app.qt.QtWidgets import (
     QApplication,
     QGraphicsOpacityEffect,
     QGraphicsView,
+    QScrollArea,
     QStackedWidget,
     QTabWidget,
     QToolBox,
@@ -83,7 +84,9 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PreviewPage,
     Reveal,
     RunChipAction,
+    RevealInScroll,
     ScrollBy,
+    ScrollContent,
     Select,
     ShowPageStep,
     Tip,
@@ -369,6 +372,12 @@ class CanvasController:
             return
         if isinstance(effect, ShowPageStep):
             self._show_page_step(effect.delta, effect.node)
+            return
+        if isinstance(effect, ScrollContent):
+            self._scroll_content(effect.node, effect.dx, effect.dy)
+            return
+        if isinstance(effect, RevealInScroll):
+            self._reveal_in_scroll(effect.node)
             return
         if isinstance(effect, HoverChanged):
             self._host.hover_changed(effect.node)
@@ -752,6 +761,31 @@ class CanvasController:
         self._shown_page[container] = nxt
         widget.setCurrentIndex(nxt)
         self._index.invalidate("page_switch")
+        self._request_frame()
+
+    def _scroll_content(self, node: NodeId, dx: int, dy: int) -> None:
+        """Wheel over a scroll area. One notch (120) is three single steps, as Qt does it (UX-CONT-010)."""
+        area = self._realizer.widget_for(node)
+        if not isinstance(area, QScrollArea):
+            return
+        for bar, delta in ((area.horizontalScrollBar(), dx), (area.verticalScrollBar(), dy)):
+            if delta:
+                bar.setValue(bar.value() + int(round(delta * bar.singleStep() / 40)))
+        self._index.invalidate("scroll")
+        self._request_frame()
+
+    def _reveal_in_scroll(self, node: NodeId) -> None:
+        """Selection inside a scroll area scrolls it so the widget is visible; the canvas then reveals it."""
+        widget = self._realizer.widget_for(node)
+        if widget is None:
+            return
+        parent = widget.parentWidget()
+        while parent is not None and not isinstance(parent, QScrollArea):
+            parent = parent.parentWidget()
+        if isinstance(parent, QScrollArea):
+            parent.ensureWidgetVisible(widget)
+        self._index.invalidate("scroll")
+        self._pending_reveal = node
         self._request_frame()
 
     def _show_page_step(self, delta: int, node: NodeId) -> None:
