@@ -234,8 +234,8 @@ def test_a_dock_widget_in_a_main_window_central_area_is_refused() -> None:
 @pytest.mark.oracle
 @pytest.mark.xfail(
     strict=True,
-    reason="M4.2 owns engine/codegen/**: a layout with no margins written, inside a plain QWidget, loads as 0 "
-    "in the generated module and 9 under uic",
+    reason="M4.2 owns engine/codegen/**: uic writes 0 margins for a plain QWidget holder inside a "
+    "non-container parent, our generator gives 9 (only does 0 when the object name starts with layoutWidget)",
 )
 def test_a_layout_without_written_margins_in_a_plain_widget_matches_uic(tmp_path: Path) -> None:
     _require_oracle()
