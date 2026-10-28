@@ -14,6 +14,7 @@ from app.features.form_builder.qtside.inspector._header import Header
 from app.features.form_builder.qtside.inspector._live import live_classes
 from app.features.form_builder.qtside.inspector._properties import PropertiesPage
 from app.features.form_builder.qtside.inspector._services import Services
+from app.features.form_builder.qtside.inspector.catalog import Catalog
 from app.features.form_builder.qtside.inspector.editors import default_catalog
 from app.features.form_builder.qtside.inspector.model import (
     EscAction,
@@ -65,11 +66,14 @@ class InspectorPane(QWidget):
         *,
         data_tab: bool,
         on_leave: Callable[[], None],
+        catalog: Optional[Catalog] = None,
         parent: Optional[QWidget] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.inspector")
-        self._services = Services(session, default_catalog(), realizer)
+        self._services = Services(
+            session, default_catalog() if catalog is None else catalog, realizer
+        )
         self._realizer = realizer
         self._on_leave = on_leave
         self._short = False
@@ -155,7 +159,7 @@ class InspectorPane(QWidget):
         self._services.set_chrome(chrome)
         self.setStyleSheet(_stylesheet(chrome))
         self.properties.apply_colors(
-            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted
+            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted, error=chrome.error
         )
         self.properties.set_match_color(chrome.search_match_bg)
         self.behavior.apply_colors(chrome.panel, chrome.text)
@@ -218,6 +222,7 @@ class InspectorPane(QWidget):
             tab_order=self._memo.get,
             include_all=include_all,
             live_size=live_size,
+            sort_properties=self.properties.sorts_properties(),
         )
         with self._services.painting():
             self.properties.paint(pages.body)
@@ -392,6 +397,9 @@ class InspectorPane(QWidget):
             self._dispatch_claimed(event)
             return True
         if _key(event) == _code(Qt.Key_Escape) and _mods(event) == 0 and self._esc() is EscAction.LEAVE:
+            # The "+ Add custom property" form closes on Esc before the inspector is left.
+            if self.properties.cancel_inline_form():
+                return True
             self._on_leave()
             return True
         return False
@@ -472,11 +480,13 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QLabel#formBuilder\\.inspectorClass, QLabel#formBuilder\\.rowQtName,"
         " QWidget#formBuilder\\.inspectorGlyph { color: %s; }"
         "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
-        " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"]"
+        " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"],"
+        " QPushButton#formBuilder\\.summary[fbState=\"unset\"]"
         " { color: %s; }"
         "QSpinBox[fbState=\"mixed\"], QDoubleSpinBox[fbState=\"mixed\"], QComboBox[fbState=\"mixed\"],"
         " QLineEdit[fbState=\"mixed\"], QFontComboBox[fbState=\"mixed\"], QCheckBox[fbState=\"mixed\"],"
-        " QListWidget[fbState=\"mixed\"] { color: %s; font-style: italic; }"
+        " QListWidget[fbState=\"mixed\"], QPushButton#formBuilder\\.summary[fbState=\"mixed\"]"
+        " { color: %s; font-style: italic; }"
         "QLabel#formBuilder\\.rowDefault, QLabel#formBuilder\\.rowMixed { color: %s; }"
         "QLabel#formBuilder\\.rowError, QLabel#formBuilder\\.inspectorNameError { color: %s; }"
         "QFrame#formBuilder\\.rowChanged { background: transparent; border: none; }"

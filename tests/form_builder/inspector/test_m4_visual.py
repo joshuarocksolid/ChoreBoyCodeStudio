@@ -545,7 +545,10 @@ def test_summaries_and_colour_square_fit_236(qapp: QApplication) -> None:
         scroll = pane.findChild(QScrollArea)
         if scroll is not None:
             assert scroll.horizontalScrollBar().maximum() == 0
-        summary = pane.findChild(QPushButton, "formBuilder.summary")
+        # The font row's summary: text rows also carry a hidden summary for multiline values.
+        font_row = pane.findChild(QWidget, "formBuilder.row.font")
+        assert font_row is not None
+        summary = font_row.findChild(QPushButton, "formBuilder.summary")
         assert summary is not None
         metrics = QFontMetrics(summary.font())
         for text in _REFERENCES:

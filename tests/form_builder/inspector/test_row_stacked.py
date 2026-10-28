@@ -116,7 +116,8 @@ def test_an_editor_that_never_stacks_keeps_the_side_by_side_row(qapp: QApplicati
         editor = row._editor.widget  # type: ignore[union-attr]
         assert row._stacked is False
         assert row._label_col.geometry().right() < editor.mapTo(row, editor.rect().topLeft()).x()
-        assert row._label_col.width() == row._label_px
+        # UX-PED-002: the label budget includes the changed-bar slot; the editor starts 8 px after it.
+        assert editor.mapTo(row, editor.rect().topLeft()).x() == row._label_px + 8
     finally:
         container.close()
         session.dispose()

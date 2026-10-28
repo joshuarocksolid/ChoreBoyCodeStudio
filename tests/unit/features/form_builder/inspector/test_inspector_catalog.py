@@ -14,7 +14,7 @@ from app.features.form_builder.qtside.inspector import editors
 from app.features.form_builder.qtside.inspector.api import EditorKey, GroupId
 from app.features.form_builder.qtside.inspector.catalog import RegistryConflict
 from app.features.form_builder.qtside.inspector.editors import load_catalog
-from app.features.form_builder.qtside.inspector.editors.scalars import TextEditor
+from app.features.form_builder.qtside.inspector.editors.text import StringEditor
 
 pytestmark = pytest.mark.unit
 
@@ -133,7 +133,7 @@ def test_a_later_package_overrides_baselines_without_editing_shared_files(
 
     assert catalog.editor(EditorKey("font")) is importlib.import_module(later.__name__ + ".m4_3b_font").FontStub
     assert catalog.group_body(GroupId.SIZE) is importlib.import_module(later.__name__ + ".m3_6_size").SizeBody
-    assert catalog.editor(EditorKey("string")) is TextEditor
+    assert catalog.editor(EditorKey("string")) is StringEditor
 
 def test_an_overriding_row_keeps_the_baseline_position(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     baseline = [spec.key for spec in load_catalog(editors).rows()]
