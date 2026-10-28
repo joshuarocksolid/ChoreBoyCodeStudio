@@ -31,9 +31,13 @@ class EntryDelegate(QStyledItemDelegate):
         self._chrome: Optional[FormChrome] = None
         self._icons = False
         self._width = 216
+        self._layout_ink = ""
+        self._gap_ink = ""
 
     def set_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
+        self._layout_ink = chrome.layout
+        self._gap_ink = chrome.gap
 
     def set_icons(self, icons: bool) -> None:
         self._icons = icons
@@ -42,13 +46,17 @@ class EntryDelegate(QStyledItemDelegate):
         self._width = max(width, 120)
 
     def sizeHint(self, option: QStyleOptionViewItem, index: object) -> QSize:  # noqa: N802
-        del option
         row = _row(index)
-        if row is None or row.kind in (SECTION, HEADER):
-            return QSize(self._width, HEADER_HEIGHT)
-        if self._is_tile(row):
+        if row is not None and self._is_tile(row):
             return QSize(TILE_WIDTH, TILE_HEIGHT)
-        return QSize(self._width, ROW_HEIGHT)
+        # ResizeMode.Adjust asks again on resize. A width cached before the
+        # view is shown stays at the 120 px floor and tiles sit beside headers.
+        width = _viewport_width(option)
+        if width <= 0:
+            width = self._width
+        if row is None or row.kind in (SECTION, HEADER):
+            return QSize(width, HEADER_HEIGHT)
+        return QSize(width, ROW_HEIGHT)
 
     def paint(self, painter: QPainter, option: QStyleOptionViewItem, index: object) -> None:  # type: ignore[override]
         row = _row(index)
@@ -104,10 +112,18 @@ class EntryDelegate(QStyledItemDelegate):
         return font
 
     def _glyph(self, painter: QPainter, name: str, x: int, y: int, size: int) -> None:
-        color = self._colors()[0]
+        color = self._glyph_ink(name)
         ratio = painter.device().devicePixelRatioF() if painter.device() is not None else 1.0
         pixmap = paint_glyph(name, color, size, float(ratio))
         painter.drawPixmap(x, y, pixmap)
+
+    def _glyph_ink(self, name: str) -> str:
+        """Layouts use ov.layout and spacers ov.gap (UX-ICON-005). Everything else uses the text colour."""
+        if name.startswith("layout_") and self._layout_ink:
+            return self._layout_ink
+        if name.startswith("spacer_") and self._gap_ink:
+            return self._gap_ink
+        return self._colors()[0]
 
     def _paint_header(self, painter: QPainter, option: QStyleOptionViewItem, row: Row) -> None:
         text, faint, _hover, _current, _match, _accent = self._colors()
@@ -161,32 +177,71 @@ class EntryDelegate(QStyledItemDelegate):
         caption_font = self._font(option, 11)
         left = rect.left() + 30
         right_text = _right_caption(row)
-        right_width = QFontMetrics(caption_font).horizontalAdvance(right_text) + 12 if right_text else 0
-        available = rect.right() - left - 8 - right_width
+        name, right_text = fitted_label(row.title, right_text, rect.width(), name_font, caption_font)
         painter.setFont(name_font)
         name_metrics = QFontMetrics(name_font)
-        name = name_metrics.elidedText(row.title, Qt.TextElideMode.ElideRight, max(available, 16))
         start, end = row.match
-        if start >= 0 and end <= len(row.title) and not name.endswith("…") or (start >= 0 and end <= len(name)):
+        # `and` binds tighter than `or`, so the elision check has to cover both arms.
+        if start >= 0 and end <= len(row.title) and (not name.endswith("…") or end <= len(name)):
             before = name_metrics.horizontalAdvance(name[:start])
             width_of = name_metrics.horizontalAdvance(name[start:end])
-            painter.fillRect(QRect(left + before, rect.top() + 3, width_of, rect.height() - 6), QColor(match_bg))
+            painter.fillRect(QRect(left + before, rect.top() + 3, max(width_of, 0), rect.height() - 6), QColor(match_bg))
         painter.setPen(QColor(text))
         name_width = name_metrics.horizontalAdvance(name)
         painter.drawText(QRect(left, rect.top(), name_width + 2, rect.height()),
                          int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), name)
-        room = available - name_width - 8
-        if row.description and not row.search and room >= _DESCRIPTION_ROOM * QFontMetrics(caption_font).averageCharWidth():
+        caption_metrics = QFontMetrics(caption_font)
+        room = rect.width() - 30 - name_width - 8 - 8
+        if row.description and not row.search and room >= _DESCRIPTION_ROOM * caption_metrics.averageCharWidth():
             painter.setFont(caption_font)
             painter.setPen(QColor(faint))
-            description = QFontMetrics(caption_font).elidedText(row.description, Qt.TextElideMode.ElideRight, room)
+            description = caption_metrics.elidedText(row.description, Qt.TextElideMode.ElideRight, room)
             painter.drawText(QRect(left + name_width + 8, rect.top(), room, rect.height()),
                              int(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter), description)
         if right_text:
             painter.setFont(caption_font)
             painter.setPen(QColor(faint))
+            right_width = caption_metrics.horizontalAdvance(right_text) + 12
             painter.drawText(QRect(rect.right() - right_width, rect.top(), right_width - 8, rect.height()),
                              int(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter), right_text)
+
+
+def fitted_label(
+    title: str,
+    caption: str,
+    rect_width: int,
+    name_font: QFont,
+    caption_font: QFont,
+) -> Tuple[str, str]:
+    """The friendly name keeps its letters. The category is hidden or cut first."""
+    available = rect_width - 30 - 8
+    if available < 16:
+        available = 16
+    name_metrics = QFontMetrics(name_font)
+    name_width = name_metrics.horizontalAdvance(title)
+    if not caption:
+        return name_metrics.elidedText(title, Qt.TextElideMode.ElideRight, available), ""
+    caption_metrics = QFontMetrics(caption_font)
+    caption_width = caption_metrics.horizontalAdvance(caption) + 12
+    if name_width + 8 + caption_width <= available:
+        return title, caption
+    if name_width <= available:
+        room = available - name_width - 8
+        if room < caption_metrics.averageCharWidth() * 3:
+            return title, ""
+        shown = caption_metrics.elidedText(caption, Qt.TextElideMode.ElideRight, room)
+        return title, shown
+    return name_metrics.elidedText(title, Qt.TextElideMode.ElideRight, available), ""
+
+
+def _viewport_width(option: QStyleOptionViewItem) -> int:
+    widget = option.widget
+    if widget is None or not hasattr(widget, "viewport"):
+        return 0
+    viewport = widget.viewport()
+    if viewport is None:
+        return 0
+    return int(viewport.width())
 
 
 def _row(index: object) -> Optional[Row]:

@@ -9,8 +9,9 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QSize, Qt
-from app.qt.QtGui import QAction, QActionGroup, QDrag, QKeyEvent, QMouseEvent
+from app.qt.QtGui import QAction, QActionGroup, QDrag, QIcon, QKeyEvent, QMouseEvent
 from app.qt.QtWidgets import (
+    QApplication,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -29,6 +30,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode
 from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT
+from app.features.form_builder.qtside.icons.glyphs import paint_glyph
 from app.features.form_builder.qtside.insert.catalog import load_catalog
 from app.features.form_builder.qtside.insert.catalog._custom import custom_entries
 from app.features.form_builder.qtside.insert.catalog._model import CATEGORY_ORDER, Entry
@@ -57,6 +59,7 @@ class InsertList(QListWidget):
     def __init__(self, pane: "InsertPane") -> None:
         super().__init__(pane)
         self._pane = pane
+        self._press_at: Optional[object] = None
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # type: ignore[override]
         key = event.key()
@@ -82,6 +85,7 @@ class InsertList(QListWidget):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
+        self._press_at = event.position().toPoint()
         item = self.itemAt(event.position().toPoint())
         row = _row_of(item)
         if row is not None and row.kind == HEADER and event.button() == Qt.MouseButton.LeftButton:
@@ -101,6 +105,13 @@ class InsertList(QListWidget):
 
     def mouseMoveEvent(self, event: QMouseEvent) -> None:  # type: ignore[override]
         if not event.buttons() & Qt.MouseButton.LeftButton:
+            super().mouseMoveEvent(event)
+            return
+        origin = self._press_at
+        if origin is None:
+            return
+        moved = event.position().toPoint() - origin  # type: ignore[operator]
+        if moved.manhattanLength() < QApplication.startDragDistance():
             super().mouseMoveEvent(event)
             return
         item = self.currentItem()
@@ -171,11 +182,12 @@ class InsertPane(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         self.header = PaneHeader("Insert", self, self._toggle)
-        self.search_button = self.header.add_extra("⌕", "Search widgets", "formBuilder.insertSearch", True)
+        self.search_button = self.header.add_extra("", "Search widgets", "formBuilder.insertSearch", True)
         self.search_button.clicked.connect(self._focus_filter)
-        self.more_button = self.header.add_extra("⋯", "More insert options", "formBuilder.insertMore", True)
+        self.more_button = self.header.add_extra("", "More insert options", "formBuilder.insertMore", True)
         self.more_button.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         self.more_button.setMenu(self._build_menu())
+        self._paint_header_glyphs()
         layout.addWidget(self.header)
         self.filter = _FilterEdit(self)
         self.filter.setObjectName("formBuilder.insertFilter")
@@ -257,7 +269,30 @@ class InsertPane(QWidget):
         self._chrome = chrome
         self._delegate.set_chrome(chrome)
         self._piece_box.apply_chrome(chrome)
+        self._paint_header_glyphs()
+        self.caption.setStyleSheet(
+            "color: %s; background: transparent;" % chrome.text
+        )
+        self.body.setStyleSheet(
+            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
+            "QListWidget::item:selected { background: %s; color: %s; }"
+            % (chrome.input, chrome.text, chrome.border, chrome.selected, chrome.text)
+        )
+        self.filter.setStyleSheet(
+            "QLineEdit { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit:focus { border: %dpx solid %s; }"
+            % (chrome.input, chrome.text, chrome.border, chrome.focus_width, chrome.accent)
+        )
         self.body.viewport().update()
+
+    def _paint_header_glyphs(self) -> None:
+        """Drawn search and more marks. A font fallback for ⌕ and ⋯ is unreadably small, and the menu arrow shows beside ⋯."""
+        color = self._chrome.text if self._chrome is not None else "black"
+        _header_glyph(self.search_button, "search", color)
+        _header_glyph(self.more_button, "more", color)
+        quiet = "QToolButton { background: transparent; border: none; padding: 0; }"
+        self.search_button.setStyleSheet(quiet)
+        self.more_button.setStyleSheet(quiet + "QToolButton::menu-indicator { image: none; width: 0px; }")
 
     # Custom widgets of this form ----------------------------------------------------
 
@@ -704,4 +739,14 @@ def _is_entry(item: Optional[QListWidgetItem]) -> bool:
 
 def _categories() -> Tuple[str, ...]:
     return CATEGORY_ORDER
+
+
+def _header_glyph(button: QToolButton, glyph: str, color: str) -> None:
+    reader = getattr(button, "devicePixelRatioF", None)
+    ratio = float(reader()) if callable(reader) else 1.0
+    button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
+    icon = QIcon()
+    icon.addPixmap(paint_glyph(glyph, color, 16, ratio))
+    button.setIcon(icon)
+    button.setIconSize(QSize(16, 16))
 

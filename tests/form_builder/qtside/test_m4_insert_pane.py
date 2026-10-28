@@ -7,16 +7,21 @@ from pathlib import Path
 
 import pytest
 
-from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory, InsertMemoryStore
+from app.features.form_builder.integration.insert_memory import (
+    InMemoryInsertMemory,
+    InsertMemoryStore,
+    LazyInsertMemory,
+)
 from app.features.form_builder.qtside.canvas.core.words import hover_sentence
 from app.features.form_builder.qtside.insert.catalog import load_catalog
-from app.features.form_builder.qtside.insert.delegate import ROW_ROLE
+from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, fitted_label
 from app.features.form_builder.qtside.insert.pane import InsertPane
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER
 from app.features.form_builder.qtside.inspector.words import class_words
 from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.qt.QtCore import Qt
-from app.qt.QtWidgets import QApplication, QWidget
+from app.qt.QtGui import QFont
+from app.qt.QtWidgets import QApplication, QListWidget, QWidget
 from tests.form_builder.qtside.support import open_session
 
 pytestmark = pytest.mark.usefixtures("qapp")
@@ -199,4 +204,71 @@ def test_the_canvas_status_sentence_uses_the_catalog_name(qapp: QApplication) ->
         assert "List widget" == load_catalog().friendly_for_class("QListWidget")
     finally:
         session.dispose()
+
+
+_REFERENCE_NAMES = (
+    "Vertical layout",
+    "Horizontal layout",
+    "Vertical spacer",
+    "Horizontal spacer",
+    "Vertical splitter",
+    "Horizontal splitter",
+)
+
+
+def test_a_236_px_row_shows_the_friendly_name_in_full(qapp: QApplication) -> None:
+    listing = QListWidget()
+    listing.setFixedWidth(236)
+    listing.show()
+    qapp.processEvents()
+    width = listing.viewport().width()
+    name_font = QFont(listing.font())
+    name_font.setPixelSize(12)
+    caption_font = QFont(listing.font())
+    caption_font.setPixelSize(11)
+    for title in _REFERENCE_NAMES:
+        shown, _caption = fitted_label(title, "Layouts and spacers", width, name_font, caption_font)
+        assert shown == title, title
+    listing.close()
+
+
+def test_icon_headers_and_the_next_tile_start_the_row_when_resized_before_show(qapp: QApplication) -> None:
+    memory = InMemoryInsertMemory()
+    memory.set_view("icons")
+    parent = QWidget()
+    pane = _pane(parent, memory)
+    pane.resize(320, 640)
+    pane._delegate.set_width(120)  # noqa: SLF001
+    pane.show()
+    qapp.processEvents()
+    rows = _rows(pane)
+    checked = 0
+    for index, row in enumerate(rows):
+        if row.kind != HEADER:
+            continue
+        header = pane.body.visualItemRect(pane.body.item(index))
+        assert header.x() <= 2, row.title
+        follower = next((later for later in range(index + 1, len(rows)) if rows[later].kind == ENTRY), None)
+        if follower is None:
+            continue
+        tile = pane.body.visualItemRect(pane.body.item(follower))
+        assert tile.x() <= 2, row.title
+        checked += 1
+    assert checked >= 1
+    pane.close()
+    parent.close()
+
+
+def test_two_workbenches_share_recent_view_and_folds(tmp_path: Path) -> None:
+    root = str(tmp_path)
+    first = LazyInsertMemory(lambda: root)
+    second = LazyInsertMemory(lambda: root)
+    first.note_used("QLabel")
+    assert second.recent() == ("QLabel",)
+    second.note_used("QComboBox")
+    assert first.recent() == ("QComboBox", "QLabel")
+    first.set_view("icons")
+    assert second.view() == "icons"
+    second.set_expanded("FreeCAD", True)
+    assert first.expanded_states()["FreeCAD"] is True
 

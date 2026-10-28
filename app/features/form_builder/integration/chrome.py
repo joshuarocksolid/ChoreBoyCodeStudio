@@ -1,10 +1,19 @@
 from __future__ import annotations
 
 from app.features.form_builder.qtside.theme.chrome import FormChrome, chrome_from_values
+from app.features.form_builder.qtside.theme.overlay import overlay_palette
 from app.shell.theme_tokens import ShellThemeTokens
 
 
+def _ink(color: str) -> str:
+    """``#RRGGBB`` from an overlay ``#RRGGBBAA`` string. ``QColor`` reads eight digits as ``#AARRGGBB``."""
+    if color.startswith("#") and len(color) >= 7:
+        return color[:7]
+    return color
+
+
 def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
+    overlay = overlay_palette(tokens.is_high_contrast)
     return chrome_from_values(
         window=tokens.window_bg,
         panel=tokens.panel_bg,
@@ -19,4 +28,6 @@ def chrome_for(tokens: ShellThemeTokens) -> FormChrome:
         focus_width=tokens.focus_border_width,
         search_match_bg=tokens.search_match_bg,
         selected=tokens.tree_selected_bg,
+        layout=_ink(overlay.layout),
+        gap=_ink(overlay.gap),
     )
