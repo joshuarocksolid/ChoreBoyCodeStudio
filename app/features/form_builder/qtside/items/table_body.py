@@ -6,7 +6,9 @@ from typing import TYPE_CHECKING, List, Optional, Tuple
 
 from app.features.form_builder.qtside.items.model import (
     Draft,
+    Origin,
     add_header,
+    headers_from_list,
     clear_cell,
     delete_header,
     move_header,
@@ -17,7 +19,7 @@ from app.features.form_builder.qtside.items.model import (
 from app.features.form_builder.qtside.inspector.editors._list_editor import ListEditor
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QGuiApplication
-from app.qt.QtWidgets import QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QAbstractItemView, QTabWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 if TYPE_CHECKING:
     from app.features.form_builder.qtside.items.editor import ItemEditor
@@ -27,6 +29,7 @@ class TableBody(QWidget):
     def __init__(self, editor: "ItemEditor") -> None:
         super().__init__(editor)
         self._editor = editor
+        self._before = (len(editor.draft.rows), len(editor.draft.columns))
         tabs = QTabWidget(self)
         self._cells = _Cells(editor, self)
         self._rows = _Axis(editor, "row", self)
@@ -34,6 +37,8 @@ class TableBody(QWidget):
         tabs.addTab(self._cells, "Cells")
         tabs.addTab(self._rows, "Rows")
         tabs.addTab(self._columns, "Columns")
+        # Each tab shows the draft as it is now: a paste in Cells can add rows.
+        tabs.currentChanged.connect(self._refresh)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(tabs)
@@ -41,7 +46,20 @@ class TableBody(QWidget):
     def focus_first(self) -> None:
         self._cells.focus_first()
 
+    def _refresh(self, _index: int) -> None:
+        self._cells.fill()
+        self._rows.refresh()
+        self._columns.refresh()
+
     def trimmed(self, draft: Draft) -> Draft:
+        """Drop the empty row and column opening an empty table added."""
+        for axis, before in (("row", self._before[0]), ("column", self._before[1])):
+            while True:
+                slot = draft.rows if axis == "row" else draft.columns
+                last = len(slot) - 1
+                if last < before or slot[last].text_at(0) or any(_int(cell, axis) == last for cell in draft.cells):
+                    break
+                draft = delete_header(draft, axis, last)
         return draft
 
 
@@ -51,6 +69,9 @@ class _Cells(QWidget):
         self._editor = editor
         self._grid = QTableWidget(self)
         self._grid.setObjectName("formBuilder.itemCells")
+        # Typing replaces the cell's text; F2 and double-click keep it (UX-ITEM-005).
+        triggers = QAbstractItemView.EditTrigger
+        self._grid.setEditTriggers(triggers.AnyKeyPressed | triggers.EditKeyPressed | triggers.DoubleClicked)
         self._filling = False
         self._grid.cellChanged.connect(self._changed)
         self._filter = _GridKeys(self)
@@ -142,14 +163,18 @@ class _GridKeys(QObject):
         if key == getattr(Qt, "Key_V") and ctrl:
             self._cells.paste()
             return True
-        text = event.text()  # type: ignore[attr-defined]
-        if text and not ctrl and key not in (getattr(Qt, "Key_Return"), getattr(Qt, "Key_Enter"), getattr(Qt, "Key_Tab")):
-            row = self._cells._grid.currentRow()
-            column = self._cells._grid.currentColumn()
-            if row >= 0 and column >= 0 and self._cells._grid.state() != getattr(QTableWidget, "EditingState", None):
-                self._cells._editor.replace(set_cell_text(self._cells._editor.draft, row, column, text))
-                self._cells.fill()
-                self._cells._grid.setCurrentCell(row, column)
+        grid = self._cells._grid
+        editing = grid.state() == getattr(QAbstractItemView.State, "EditingState")
+        if key in (getattr(Qt, "Key_Return"), getattr(Qt, "Key_Enter")) and not editing:
+            # Enter edits the cell keeping its text, like F2 (UX-ITEM-005).
+            item = grid.currentItem()
+            if item is None and grid.currentRow() >= 0 and grid.currentColumn() >= 0:
+                item = QTableWidgetItem("")
+                self._cells._filling = True
+                grid.setItem(grid.currentRow(), grid.currentColumn(), item)
+                self._cells._filling = False
+            if item is not None:
+                grid.editItem(item)
                 return True
         return False
 
@@ -160,7 +185,7 @@ class _Axis(QWidget):
         self._editor = editor
         self._axis = axis
         self._list = ListEditor(name=axis, parent=self)
-        self._list.set_on_texts(self._texts)
+        self._list.set_on_rows(self._rows)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._list)
@@ -170,13 +195,11 @@ class _Axis(QWidget):
         slot = self._editor.draft.rows if self._axis == "row" else self._editor.draft.columns
         self._list.set_texts(tuple(item.text_at(0) for item in slot))
 
-    def _texts(self, texts: Tuple[str, ...]) -> None:
-        draft = self._editor.draft
-        for index, text in enumerate(texts):
-            draft = set_header_text(draft, self._axis, index, text)
-        while len(_slot(draft, self._axis)) > len(texts):
-            draft = delete_header(draft, self._axis, len(_slot(draft, self._axis)) - 1)
-        self._editor.replace(draft)
+    def refresh(self) -> None:
+        self._fill()
+
+    def _rows(self, texts: Tuple[str, ...], origin: Origin) -> None:
+        self._editor.replace(headers_from_list(self._editor.draft, self._axis, texts, origin))
 
 
 def _slot(draft: Draft, axis: str) -> Tuple[object, ...]:

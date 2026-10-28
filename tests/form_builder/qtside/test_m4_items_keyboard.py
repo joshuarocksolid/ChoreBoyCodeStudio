@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """K14 item editors (UX_SPEC 12.3)."""
 
 from __future__ import annotations
@@ -6,7 +6,7 @@ from __future__ import annotations
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.canvas import FormCanvas
-from app.features.form_builder.qtside.items.model import MODEL_VIEW_SENTENCE
+from app.features.form_builder.qtside.items.model import MODEL_VIEW_SENTENCE, load_draft
 from app.qt.QtCore import Qt
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QLineEdit, QPushButton, QWidget
@@ -84,9 +84,11 @@ def test_k14_combo_then_tree_then_model_view_then_undo(qapp) -> None:
         assert editor is not None
         QTest.keyClick(editor.findChild(QLineEdit), Qt.Key.Key_Down)
         QTest.keyClick(editor.findChild(QLineEdit), Qt.Key.Key_Up, Qt.KeyboardModifier.AltModifier)
+        assert _texts(session, combo) == ["Medium", "Small", "Large"]
         QTest.keyClick(editor, Qt.Key.Key_Escape)
         assert _editor(parent) is None
         assert len(session.log.entries()) == 1
+        assert _texts(session, combo) == ["Small", "Medium", "Large"]
         tree = session.document.by_name("tree")[0]
         session.selection.set((tree,), current=tree, source=SelectionSource.CANVAS)
         _key(canvas, "Key_Return")
@@ -102,6 +104,9 @@ def test_k14_combo_then_tree_then_model_view_then_undo(qapp) -> None:
         done = editor.findChild(QPushButton, "formBuilder.itemEditorDone")
         assert done is not None
         done.click()
+        fruit = load_draft(session.document, tree).items
+        assert [item.text_at(0) for item in fruit] == ["Fruit"]
+        assert [item.text_at(0) for item in fruit[0].children] == ["Apple"]
         view = session.document.by_name("view")[0]
         session.selection.set((view,), current=view, source=SelectionSource.CANVAS)
         _key(canvas, "Key_Return")
@@ -112,6 +117,10 @@ def test_k14_combo_then_tree_then_model_view_then_undo(qapp) -> None:
         assert write_ui(session.document).text == original
         canvas.dispose()
         parent.deleteLater()
+
+
+def _texts(session, node):
+    return [item.text_at(0) for item in load_draft(session.document, node).items]
 
 
 def _reopen(parent, canvas, node, session):

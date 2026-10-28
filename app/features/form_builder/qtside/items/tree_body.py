@@ -8,10 +8,13 @@ from app.features.form_builder.qtside.items.model import (
     TREE_COLUMN_SENTENCE,
     Draft,
     Item,
+    Origin,
     add_header,
     add_sibling,
     delete_at,
     delete_header,
+    delete_row,
+    headers_from_list,
     flat_paths,
     item_at,
     move_header,
@@ -57,9 +60,22 @@ class TreeBody(QWidget):
         self._note = note
         layout.addWidget(note)
         self._columns.set_note(note)
+        # A column added or moved in Columns shows in Items at once.
+        self._tabs.currentChanged.connect(self._refresh)
+
+    def _refresh(self, _index: int) -> None:
+        self._items.rebuild()
+        self._columns.refresh()
 
     def focus_first(self) -> None:
         self._items.focus_first()
+
+    def trimmed(self, draft: Draft) -> Draft:
+        from dataclasses import replace
+
+        from app.features.form_builder.qtside.items.model import trim_blank_tail
+
+        return replace(draft, items=trim_blank_tail(draft.items))
 
 
 class _Items(QWidget):
@@ -111,6 +127,9 @@ class _Items(QWidget):
     def apply(self, draft: Draft, focus: Optional[Tuple[int, ...]] = None) -> None:
         self._editor.replace(draft)
         self.rebuild()
+        if not self._rows:
+            self.focus_first()
+            return
         if focus is not None:
             self._focus(focus)
 
@@ -134,7 +153,8 @@ class _Row(QWidget):
             edit = QLineEdit(item.text_at(column))
             edit.setObjectName("formBuilder.treeItem")
             edit.installEventFilter(host._filter)
-            edit.editingFinished.connect(lambda column=column, edit=edit, path=path: self._commit_text(path, column, edit.text()))
+            # Live: each keystroke reaches the canvas (UX-ITEM-007).
+            edit.textEdited.connect(lambda text, column=column, path=path: host._commit_text(path, column, text))
             row.addWidget(edit)
             self._fields.append(edit)
         if columns > _VISIBLE:
@@ -161,13 +181,16 @@ class _Keys(QObject):
         if row is None:
             return False
         if key in (getattr(Qt, "Key_Tab"), getattr(Qt, "Key_Backtab")) and ctrl:
-            self._items._editor.findChild(QPushButton)  # type: ignore[name-defined]
             done = self._items.window().findChild(QWidget, "formBuilder.itemEditorDone")
             if done is not None:
                 done.setFocus()
             return True
         if key in (getattr(Qt, "Key_Tab"), getattr(Qt, "Key_Backtab")):
             draft, path = (unnest if shift or key == getattr(Qt, "Key_Backtab") else nest)(self._items._editor.draft, row.path)
+            self._items.apply(draft, path)
+            return True
+        if key == getattr(Qt, "Key_Delete") and ctrl:
+            draft, path = delete_row(self._items._editor.draft, row.path)
             self._items.apply(draft, path)
             return True
         if key in (getattr(Qt, "Key_Return"), getattr(Qt, "Key_Enter")):
@@ -210,7 +233,7 @@ class _Columns(QWidget):
         self._editor = editor
         self._note: Optional[QLabel] = None
         self._list = ListEditor(name="Columns", parent=self)
-        self._list.set_on_texts(self._texts)
+        self._list.set_on_rows(self._rows)
         self._list.set_on_delete(self._delete)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -223,20 +246,23 @@ class _Columns(QWidget):
     def _fill(self) -> None:
         self._list.set_texts(tuple(item.text_at(0) for item in self._editor.draft.columns) or ("Name",))
 
-    def _texts(self, texts: Tuple[str, ...]) -> None:
-        draft = self._editor.draft
-        for index, text in enumerate(texts):
-            draft = set_header_text(draft, "column", index, text)
-        while len(draft.columns) > len(texts):
-            draft = delete_header(draft, "column", len(draft.columns) - 1)
-        self._editor.replace(draft)
+    def refresh(self) -> None:
+        self._fill()
+
+    def _rows(self, texts: Tuple[str, ...], origin: Origin) -> None:
+        if self._note is not None:
+            self._note.hide()
+        self._editor.replace(headers_from_list(self._editor.draft, "column", texts, origin))
 
     def _delete(self, index: int) -> None:
         if len(self._editor.draft.columns) <= 1:
             if self._note is not None:
                 self._note.show()
             return
-        self._editor.replace(delete_header(self._editor.draft, "column", index))
+        texts = tuple(item.text_at(0) for item in self._editor.draft.columns)
+        origin = tuple(at for at in range(len(texts)) if at != index)
+        kept = tuple(texts[at] for at in origin)
+        self._editor.replace(headers_from_list(self._editor.draft, "column", kept, origin))
         self._fill()
 
 

@@ -161,13 +161,26 @@ def set_text(draft: Draft, path: Tuple[int, ...], column: int, text: str) -> Dra
 
 
 def set_cell_text(draft: Draft, row: int, column: int, text: str) -> Draft:
+    """An emptied cell with nothing else on it leaves the file, as in Designer."""
     cells = list(draft.cells)
     found = _cell_index(cells, row, column)
     if found is None:
+        if not text:
+            return draft
         cells.append(Item(texts=(text,), fields=(("row", row), ("column", column))))
+    elif not text and _bare(cells[found]):
+        del cells[found]
     else:
         cells[found] = _set_column(cells[found], 0, text)
     return replace(draft, cells=tuple(cells))
+
+
+def _bare(cell: Item) -> bool:
+    base = cell.base
+    if base is None:
+        return True
+    others = [entry for entry in base.properties if entry.name != "text"]
+    return not others and not base.attributes and not base.children("opaque")
 
 
 def clear_cell(draft: Draft, row: int, column: int) -> Draft:
@@ -389,10 +402,8 @@ def _spec_with_earlier_texts(item: Item) -> NodeSpec:
         kind = "header"
     texts = item.texts or ("",)
     properties = _properties_with_texts(base, texts)
-    opaque_kept = tuple(child for child in base.children("opaque") if not _is_text_opaque(child))
-    earlier = tuple(_text_opaque(text) for text in texts[:-1])
+    opaque = _opaque_with_texts(base.children("opaque"), texts[:-1])
     slots_rest = tuple((name, kids) for name, kids in base.slots if name not in ("subitems", "opaque"))
-    opaque = earlier + opaque_kept
     slots: List[Tuple[str, Tuple[NodeSpec, ...]]] = list(slots_rest)
     if opaque:
         slots.append(("opaque", opaque))
@@ -401,6 +412,38 @@ def _spec_with_earlier_texts(item: Item) -> NodeSpec:
         slots.append(("subitems", children))
     fields = item.fields if item.fields else base.fields
     return NodeSpec(kind, item.id, fields, properties, base.attributes, tuple(slots), base.extra_attrs)
+
+
+def _opaque_with_texts(kept: Sequence[NodeSpec], earlier: Sequence[str]) -> Tuple[NodeSpec, ...]:
+    """Put the earlier column texts back where the file had them.
+
+    Each column's own properties (a column tooltip, say) follow that column's
+    text in the file, so the k-th stored text is rewritten in place and the
+    elements after it stay with it. New columns go at the end.
+    """
+    out: List[NodeSpec] = []
+    used = 0
+    for child in kept:
+        if not _is_text_opaque(child):
+            out.append(child)
+            continue
+        if used < len(earlier):
+            out.append(_retext_opaque(child, earlier[used]))
+            used += 1
+    out.extend(_text_opaque(text) for text in earlier[used:])
+    return tuple(out)
+
+
+def _retext_opaque(spec: NodeSpec, text: str) -> NodeSpec:
+    element = spec.field("element")
+    if not isinstance(element, OpaqueElement) or _opaque_text(element) == text:
+        return spec
+    children = tuple(
+        replace(child, children=(text,)) if isinstance(child, OpaqueElement) and child.tag == "string" else child
+        for child in element.children
+    )
+    fields = tuple((key, replace(element, children=children) if key == "element" else value) for key, value in spec.fields)
+    return replace(spec, fields=fields)
 
 
 def _text_opaque(text: str) -> NodeSpec:
@@ -492,3 +535,99 @@ def _grow_table(draft: Draft, rows: int, columns: int) -> Draft:
     while len(current.columns) < columns:
         current = add_header(current, "column", len(current.columns) - 1 if current.columns else -1)
     return current
+
+
+Origin = Tuple[Optional[int], ...]
+
+
+def rows_from_list(draft: Draft, texts: Sequence[str], origin: Origin) -> Draft:
+    """Combo or list items after a list-editor change. Each item keeps its details."""
+    old = draft.items
+    items = []
+    for text, source in zip(texts, origin):
+        if source is not None and 0 <= source < len(old):
+            items.append(_set_column(old[source], 0, text))
+        else:
+            items.append(Item(texts=(text,)))
+    return replace(draft, items=tuple(items))
+
+
+def headers_from_list(draft: Draft, axis: str, texts: Sequence[str], origin: Origin) -> Draft:
+    """Rows or columns after a list-editor change. Cells and column texts follow their header."""
+    old = draft.columns if axis == "column" else draft.rows
+    headers = []
+    for text, source in zip(texts, origin):
+        if source is not None and 0 <= source < len(old):
+            headers.append(_set_column(old[source], 0, text))
+        else:
+            headers.append(_set_column(_header(axis), 0, text))
+    new_at = {source: index for index, source in enumerate(origin) if source is not None}
+    shift = len(texts) - len(old)
+    if axis == "column":
+        draft = replace(draft, columns=tuple(headers), columns_stored=True)
+    else:
+        draft = replace(draft, rows=tuple(headers), rows_stored=True)
+    if tuple(origin) == tuple(range(len(old))):
+        return draft
+    if draft.kind == "tree" and axis == "column":
+        return replace(draft, items=_permute_columns(draft.items, origin))
+    cells = []
+    for cell in draft.cells:
+        at = _field_int(cell, axis)
+        if at < 0:
+            cells.append(cell)
+            continue
+        if at >= len(old):
+            cells.append(_with_field(cell, axis, at + shift))
+            continue
+        if at not in new_at:
+            continue
+        cells.append(_with_field(cell, axis, new_at[at]))
+    return replace(draft, cells=tuple(cells))
+
+
+def _permute_columns(items: Tuple[Item, ...], origin: Origin) -> Tuple[Item, ...]:
+    moved = []
+    for item in items:
+        texts = [item.text_at(source) if source is not None else "" for source in origin]
+        while len(texts) > max(1, len(item.texts)) and texts[-1] == "":
+            texts.pop()
+        moved.append(replace(item, texts=tuple(texts) or ("",), children=_permute_columns(item.children, origin)))
+    return tuple(moved)
+
+
+def _with_field(cell: Item, name: str, value: int) -> Item:
+    fields = tuple((key, value if key == name else old) for key, old in cell.fields)
+    return replace(cell, fields=fields)
+
+
+def delete_row(draft: Draft, path: Tuple[int, ...]) -> Tuple[Draft, Tuple[int, ...]]:
+    """Delete a tree row with its children. Focus goes to the row above, or the next one."""
+    parent, index = _parent_list(draft.items, path)
+    if index < 0 or index >= len(parent):
+        return draft, path
+    gone = delete_at(draft, path)
+    if index > 0:
+        return gone, path[:-1] + (index - 1,)
+    if len(parent) > 1:
+        return gone, path
+    return gone, path[:-1]
+
+
+def is_blank(item: Item) -> bool:
+    """No text, no children and nothing else on it: a row the user added and left empty."""
+    if any(text for text in item.texts) or item.children:
+        return False
+    base = item.base
+    if base is None:
+        return True
+    others = [entry for entry in base.properties if entry.name != "text"]
+    return not others and not base.attributes and not base.children("opaque")
+
+
+def trim_blank_tail(items: Tuple[Item, ...]) -> Tuple[Item, ...]:
+    """Drop empty rows at the end of each level, as Done does for a list."""
+    kept = [replace(item, children=trim_blank_tail(item.children)) for item in items]
+    while kept and is_blank(kept[-1]):
+        kept.pop()
+    return tuple(kept)

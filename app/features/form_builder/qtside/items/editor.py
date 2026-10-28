@@ -16,9 +16,10 @@ from app.features.form_builder.qtside.items.model import (
     load_draft,
 )
 from app.features.form_builder.qtside.items.place import seat_beside, seat_under
-from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QSize, Qt
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QSize, Qt, QTimer
 from app.qt.QtGui import QGuiApplication
 from app.qt.QtWidgets import (
+    QAbstractItemView,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -29,6 +30,8 @@ from app.qt.QtWidgets import (
 )
 
 _REGULAR = QSize(360, 320)
+# After the inspector's own watchers (UX-PED-004 sessions use 1000).
+_WATCH_PRIORITY = 1000
 _WIDE = QSize(480, 360)
 
 
@@ -89,6 +92,12 @@ class ItemEditor(QFrame):
         app = QGuiApplication.instance()
         if app is not None:
             app.installEventFilter(self._filter)
+        # UX-ITEM-007: another widget selected, an undo, or any step this
+        # editor did not make closes it and keeps what it wrote. The inspector
+        # opener has no canvas to tell it, so the editor watches for itself.
+        self._own = 0
+        self._log_watch = session.log.subscribe(self._foreign, priority=_WATCH_PRIORITY)
+        self._selection_watch = session.selection.subscribe(self._selection_changed)
 
     @property
     def draft(self) -> Draft:
@@ -146,27 +155,57 @@ class ItemEditor(QFrame):
 
     def _commit(self) -> None:
         items, rows, columns = commit_slots(self._draft)
-        self._session.log.execute(
-            SetItems(
-                self._draft.widget,
-                items,
-                rows,
-                columns,
-                merge_token=self._token,
-                widget_name=self._draft.name,
+        self._own += 1
+        try:
+            self._session.log.execute(
+                SetItems(
+                    self._draft.widget,
+                    items,
+                    rows,
+                    columns,
+                    merge_token=self._token,
+                    widget_name=self._draft.name,
+                )
             )
-        )
+        finally:
+            self._own -= 1
         fresh = load_draft(self._session.document, self._draft.widget)
         if fresh is not None:
             self._draft = fresh
+
+    def _foreign(self, _change_set: object) -> None:
+        if self._own or self._closed:
+            return
+        # Deferred: a log listener must not write. The draft may be stale now,
+        # so close without writing it again.
+        QTimer.singleShot(0, self._close_quietly)
+
+    def _close_quietly(self) -> None:
+        if not self._closed:
+            self._finish()
+
+    def _selection_changed(self, change: object) -> None:
+        current = getattr(getattr(change, "after", None), "current", None)
+        if current != self._draft.widget and not self._closed:
+            QTimer.singleShot(0, self.close_keep)
 
     def _finish(self) -> None:
         self._closed = True
         self._remember()
         self._detach()
         self.close()
+        # Each opening builds a new editor; do not keep closed ones around.
+        self.deleteLater()
 
     def _detach(self) -> None:
+        watch = getattr(self, "_log_watch", None)
+        if watch is not None:
+            watch.close()
+            self._log_watch = None
+        stop = getattr(self, "_selection_watch", None)
+        if stop is not None:
+            stop()
+            self._selection_watch = None
         app = QGuiApplication.instance()
         if app is not None and self._filter is not None:
             app.removeEventFilter(self._filter)
@@ -200,6 +239,9 @@ class _Escape(QObject):
             return False
         if not _inside(watched, self._editor):
             return False
+        if _cell_editing(watched):
+            # Esc in an open table cell cancels that cell, not the session.
+            return False
         self._editor.revert()
         return True
 
@@ -211,6 +253,16 @@ def _inside(watched: QObject, editor: QWidget) -> bool:
         if current is editor:
             return True
         seen.add(id(current))
+        parent = current.parent()
+        current = parent if isinstance(parent, QObject) else None
+    return False
+
+
+def _cell_editing(watched: QObject) -> bool:
+    current: Optional[QObject] = watched
+    while current is not None:
+        if isinstance(current, QAbstractItemView):
+            return current.state() == QAbstractItemView.State.EditingState
         parent = current.parent()
         current = parent if isinstance(parent, QObject) else None
     return False

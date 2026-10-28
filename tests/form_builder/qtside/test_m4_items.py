@@ -238,6 +238,145 @@ def test_item_tooltip_matches_uic(tmp_path) -> None:
     assert outcome[0] == "ok", outcome
 
 
+def _rows_ui(editor, object_name: str):
+    """Visible list-editor fields under the tab whose list has ``object_name`` rows."""
+    return [item for item in editor.findChildren(QLineEdit) if item.isVisible() and item.accessibleName().startswith(object_name)]
+
+
+def test_moving_or_deleting_a_header_or_item_keeps_its_data(qapp) -> None:
+    """A move or delete in a list carries each row's other data with it (cells, columns, details)."""
+    from app.qt.QtWidgets import QTabWidget, QTableWidget
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QTableWidget" name="sheet">
+   <row><property name="text"><string>r1</string></property></row>
+   <row><property name="text"><string>r2</string></property></row>
+   <row><property name="text"><string>r3</string></property></row>
+   <column><property name="text"><string>c1</string></property></column>
+   <column><property name="text"><string>c2</string></property></column>
+   <item row="0" column="0"><property name="text"><string>a0</string></property></item>
+   <item row="0" column="1"><property name="text"><string>b0</string></property></item>
+   <item row="1" column="0"><property name="text"><string>a1</string></property></item>
+   <item row="2" column="1"><property name="text"><string>b2</string></property></item>
+  </widget>
+  <widget class="QTreeWidget" name="tree">
+   <column><property name="text"><string>Name</string></property></column>
+   <column><property name="text"><string>Colour</string></property></column>
+   <column><property name="text"><string>Shape</string></property></column>
+   <item>
+    <property name="text"><string>Apple</string></property>
+    <property name="toolTip"><string>name tip</string></property>
+    <property name="text"><string>Red</string></property>
+    <property name="toolTip"><string>colour tip</string></property>
+    <property name="text"><string>Round</string></property>
+   </item>
+  </widget>
+  <widget class="QListWidget" name="choices">
+   <item><property name="text"><string>One</string></property><property name="toolTip"><string>first</string></property></item>
+   <item><property name="text"><string>Two</string></property></item>
+  </widget>
+""",
+    )
+    session = open_session(text)
+    original = write_ui(session.document).text
+    sheet = session.document.by_name("sheet")[0]
+    editor = open_editor(session, sheet, None)
+    assert editor is not None
+    tabs = editor.findChild(QTabWidget)
+    tabs.setCurrentIndex(2)
+    qapp.processEvents()
+    first = _rows_ui(editor, "column row 1")[0]
+    first.setFocus()
+    QTest.keyClick(first, Qt.Key.Key_Down, Qt.KeyboardModifier.AltModifier)
+    tabs.setCurrentIndex(1)
+    qapp.processEvents()
+    middle = _rows_ui(editor, "row row 2")[0]
+    middle.setFocus()
+    QTest.keyClick(middle, Qt.Key.Key_Delete, Qt.KeyboardModifier.ControlModifier)
+    tabs.setCurrentIndex(0)
+    qapp.processEvents()
+    grid = editor.findChild(QTableWidget, "formBuilder.itemCells")
+    shown = [[grid.item(r, c).text() if grid.item(r, c) else "" for c in range(grid.columnCount())] for r in range(grid.rowCount())]
+    assert shown == [["b0", "a0"], ["b2", ""]]
+    assert grid.horizontalHeaderItem(0).text() == "c2"
+    editor.close_keep()
+    assert session.log.undo_label() == "Edit items of sheet"
+
+    tree = session.document.by_name("tree")[0]
+    editor = open_editor(session, tree, None)
+    tabs = editor.findChild(QTabWidget)
+    tabs.setCurrentIndex(1)
+    qapp.processEvents()
+    shape = _rows_ui(editor, "Columns row 3")[0]
+    shape.setFocus()
+    QTest.keyClick(shape, Qt.Key.Key_Up, Qt.KeyboardModifier.AltModifier)
+    editor.close_keep()
+    draft = load_draft(session.document, tree)
+    assert [column.text_at(0) for column in draft.columns] == ["Name", "Shape", "Colour"]
+    assert draft.items[0].texts == ("Apple", "Round", "Red")
+    written = write_ui(session.document).text
+    apple = written[written.index("<string>Apple</string>"):]
+    # The colour tooltip still follows the colour text in the file.
+    assert apple.index("Red") < apple.index("colour tip")
+    assert apple.index("name tip") < apple.index("Round") < apple.index("Red")
+
+    choices = session.document.by_name("choices")[0]
+    editor = open_editor(session, choices, None)
+    one = _rows_ui(editor, "Items row 1")[0]
+    one.setFocus()
+    QTest.keyClick(one, Qt.Key.Key_Down, Qt.KeyboardModifier.AltModifier)
+    editor.close_keep()
+    items = load_draft(session.document, choices).items
+    assert [item.text_at(0) for item in items] == ["Two", "One"]
+    assert [entry.name for entry in items[1].base.properties] == ["text", "toolTip"]
+
+    while session.log.undo_label() is not None:
+        assert session.log.undo()
+    assert write_ui(session.document).text == original
+    session.dispose()
+
+
+def test_table_cells_type_over_edit_keep_and_escape_cancels_only_the_cell(qapp) -> None:
+    from app.qt.QtWidgets import QApplication, QTableWidget
+
+    session = open_session(_form())
+    sheet = session.document.by_name("sheet")[0]
+    from app.qt.QtWidgets import QWidget
+
+    host = QWidget()
+    host.resize(600, 500)
+    host.show()
+    editor = open_editor(session, sheet, host)
+    grid = editor.findChild(QTableWidget, "formBuilder.itemCells")
+    grid.setFocus()
+    qapp.processEvents()
+    for char in "Hello":
+        # Keys go where focus is, as typing does: the first one opens the cell.
+        QTest.keyClicks(QApplication.focusWidget(), char)
+        qapp.processEvents()
+    QTest.keyClick(QApplication.focusWidget(), Qt.Key.Key_Return)
+    qapp.processEvents()
+    assert load_draft(session.document, sheet).cells[0].text_at(0) == "Hello"
+    grid.setCurrentCell(0, 0)
+    grid.setFocus()
+    QTest.keyClick(grid, Qt.Key.Key_Return)
+    qapp.processEvents()
+    field = QApplication.focusWidget()
+    assert isinstance(field, QLineEdit) and field.text() == "Hello"
+    field.end(False)
+    QTest.keyClicks(field, " there")
+    QTest.keyClick(field, Qt.Key.Key_Escape)
+    qapp.processEvents()
+    assert editor.isVisible(), "Esc in a cell cancels the cell, not the session"
+    assert load_draft(session.document, sheet).cells[0].text_at(0) == "Hello"
+    editor.close_keep()
+    assert session.log.undo_label() == "Edit items of sheet"
+    host.close()
+    session.dispose()
+
+
 def test_inspector_items_row_opens_the_editor_and_another_selection_keeps(qapp) -> None:
     """The Content Items row is not the status tip: no changed bar, no Reset, and it opens the editor."""
     from app.qt.QtWidgets import QWidget

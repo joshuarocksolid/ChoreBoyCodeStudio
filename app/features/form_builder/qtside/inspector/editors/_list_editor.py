@@ -89,6 +89,7 @@ class ListEditor(QWidget):
         self._details_open = False
         self._details: Optional[QWidget] = None
         self._on_texts: Optional[Callable[[Tuple[str, ...]], None]] = None
+        self._on_rows: Optional[Callable[[Tuple[str, ...], Tuple[Optional[int], ...]], None]] = None
         self._on_edit: Optional[Callable[[int, str], None]] = None
         self._on_add: Optional[Callable[[int], None]] = None
         self._on_delete: Optional[Callable[[int], None]] = None
@@ -157,6 +158,14 @@ class ListEditor(QWidget):
 
     def set_on_texts(self, callback: Optional[Callable[[Tuple[str, ...]], None]]) -> None:
         self._on_texts = callback
+
+    def set_on_rows(self, callback: Optional[Callable[[Tuple[str, ...], Tuple[Optional[int], ...]], None]]) -> None:
+        """Items host. ``callback(texts, origin)`` instead of ``on_texts``.
+
+        ``origin[i]`` is the old index of new row ``i``, or None for a new row,
+        so a host can keep each row's other data with it across a move or delete.
+        """
+        self._on_rows = callback
 
     def set_on_edit(self, callback: Optional[Callable[[int, str], None]]) -> None:
         self._on_edit = callback
@@ -299,7 +308,7 @@ class ListEditor(QWidget):
     def note_hover(self, index: int, hovered: bool) -> None:
         row = self._row_for(index)
         if row is not None:
-            row.set_hover(hovered or index == self._focus_at)
+            row.set_hover(hovered or (index == self._focus_at and row.edit.hasFocus()))
 
     def begin_drag(self, index: int) -> None:
         self._drag_from = index
@@ -331,11 +340,13 @@ class ListEditor(QWidget):
                 delta -= 1
             self._on_move(source, delta)
             return
+        origin: List[Optional[int]] = list(range(len(self._texts)))
         item = self._texts.pop(source)
         insert = target if target < source else target - 1
         self._texts.insert(insert, item)
+        origin.insert(insert, origin.pop(source))
         self._focus_at = insert
-        self._emit()
+        self._emit(origin)
         self._place()
 
     def delete_clicked(self, index: int) -> None:
@@ -353,6 +364,8 @@ class ListEditor(QWidget):
         if self._focus_at >= top + _POOL:
             top = self._focus_at - _POOL + 1
         top = max(0, top)
+        # Rows below an open details panel move down by its height.
+        below = extra
         for slot, row in enumerate(self._pool):
             index = top + slot
             if index >= count:
@@ -360,14 +373,17 @@ class ListEditor(QWidget):
                 row.bind(-1, "", False, "")
                 continue
             row.show()
-            row.setGeometry(0, index * ROW_H, self._canvas.width() or self.width(), ROW_H)
+            y = index * ROW_H + (below if index > self._focus_at else 0)
+            row.setGeometry(0, y, self._canvas.width() or self.width(), ROW_H)
             row.bind(
                 index,
                 self._texts[index],
                 self._start == index,
                 "%s row %d" % (self._name, index + 1),
             )
-            row.set_hover(index == self._focus_at)
+            # × shows on hover and on real focus, not on the remembered row of
+            # a list that does not have focus (the Pages group at rest).
+            row.set_hover(index == self._focus_at and row.edit.hasFocus())
             policy = getattr(Qt, "FocusPolicy", Qt)
             strong = getattr(policy, "StrongFocus")
             click = getattr(policy, "ClickFocus")
@@ -410,7 +426,7 @@ class ListEditor(QWidget):
             adder(index)
             return
         self._texts.append("")
-        self._emit()
+        self._emit(list(range(len(self._texts) - 1)) + [None])
         self._focus_at = len(self._texts) - 1
         self._place()
         self.focus_row(self._focus_at)
@@ -422,6 +438,7 @@ class ListEditor(QWidget):
         if deleter is not None:
             deleter(index)
             return
+        origin: List[Optional[int]] = [at for at in range(len(self._texts)) if at != index]
         del self._texts[index]
         if self._texts:
             self._focus_at = min(index, len(self._texts) - 1)
@@ -429,7 +446,7 @@ class ListEditor(QWidget):
                 self._focus_at = index - 1
         else:
             self._focus_at = 0
-        self._emit()
+        self._emit(origin)
         self._place()
         if self._texts:
             row = self._row_for(self._focus_at)
@@ -447,9 +464,11 @@ class ListEditor(QWidget):
         if mover is not None:
             mover(index, delta)
             return
+        origin: List[Optional[int]] = list(range(len(self._texts)))
+        origin[index], origin[target] = origin[target], origin[index]
         self._texts[index], self._texts[target] = self._texts[target], self._texts[index]
         self._focus_at = target
-        self._emit()
+        self._emit(origin)
         self._place()
         self.focus_row(target)
 
@@ -467,9 +486,11 @@ class ListEditor(QWidget):
         adder = self._on_add
         if adder is not None:
             return False
+        origin: List[Optional[int]] = list(range(len(self._texts)))
+        origin[at:at] = [None] * len(lines)
         self._texts[at:at] = lines
         self._focus_at = at + len(lines) - 1
-        self._emit()
+        self._emit(origin)
         self._place()
         self.focus_row(self._focus_at)
         return True
@@ -514,7 +535,12 @@ class ListEditor(QWidget):
         if self._details is not None:
             self._details.hide()
 
-    def _emit(self) -> None:
+    def _emit(self, origin: Optional[List[Optional[int]]] = None) -> None:
+        rows = self._on_rows
+        if rows is not None:
+            kept = tuple(range(len(self._texts))) if origin is None else tuple(origin)
+            rows(tuple(self._texts), kept)
+            return
         callback = self._on_texts
         if callback is not None:
             callback(tuple(self._texts))
@@ -581,8 +607,13 @@ class _ListRow(QWidget):
         locked = self._editor._locked
         self.edit.setReadOnly(bool(locked is not None and index >= 0 and locked(index)))
         self.edit.setToolTip(text)
-        self._dot.setVisible(start)
+        # The dot keeps its column on every row once a list has a start page,
+        # so the titles line up.
+        self._dot.setVisible(self._editor._start is not None)
         self._dot.setText("\u25cf" if start else "")
+        if not self.edit.hasFocus():
+            # Long titles show their start and elide at the end (UX-CONT-019).
+            self.edit.setCursorPosition(0)
 
     def set_hover(self, shown: bool) -> None:
         self._delete.setVisible(shown and self.index >= 0)
@@ -644,6 +675,12 @@ class _KeyFilter(QObject):
             row = watched.parentWidget()
             if isinstance(row, _ListRow) and row.index >= 0:
                 self._editor.note_focus(row.index)
+                row.set_hover(True)
+            return False
+        if event.type() == getattr(kinds, "FocusOut") and isinstance(watched, QLineEdit):
+            row = watched.parentWidget()
+            if isinstance(row, _ListRow):
+                row.set_hover(row.underMouse())
             return False
         if event.type() != getattr(kinds, "KeyPress"):
             return False

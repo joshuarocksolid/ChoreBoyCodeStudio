@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Optional, Tuple
 
 from app.features.form_builder.engine.ui4.values import Value
 from app.features.form_builder.qtside.items.details import build_details
-from app.features.form_builder.qtside.items.model import Draft, Item, set_item_value
+from app.features.form_builder.qtside.items.model import Draft, Item, Origin, rows_from_list, set_item_value
 from app.features.form_builder.qtside.inspector.editors._list_editor import ListEditor
 from app.qt.QtWidgets import QVBoxLayout, QWidget
 
@@ -19,7 +19,7 @@ class ListBody(QWidget):
         super().__init__(editor)
         self._editor = editor
         self._list = ListEditor(name="Items", parent=self)
-        self._list.set_on_texts(self._texts)
+        self._list.set_on_rows(self._rows)
         self._list.set_on_revert(editor.revert)
         self._list.set_on_close(editor.close_keep)
         self._list.set_details(self._details)
@@ -40,17 +40,8 @@ class ListBody(QWidget):
 
         return replace(draft, items=tuple(items))
 
-    def _texts(self, texts: Tuple[str, ...]) -> None:
-        old = list(self._editor.draft.items)
-        items = []
-        for index, text in enumerate(texts):
-            if index < len(old):
-                items.append(_retitle(old[index], text))
-            else:
-                items.append(Item(texts=(text,)))
-        from dataclasses import replace
-
-        self._editor.replace(replace(self._editor.draft, items=tuple(items)))
+    def _rows(self, texts: Tuple[str, ...], origin: Origin) -> None:
+        self._editor.replace(rows_from_list(self._editor.draft, texts, origin))
 
     def _details(self, index: int) -> QWidget:
         def current() -> Item:
@@ -68,16 +59,6 @@ class ListBody(QWidget):
             show_more(self, current(), on_value)
 
         return build_details(self._editor.draft.kind, current, on_value, on_more, self)
-
-
-def _retitle(item: Item, text: str) -> Item:
-    from dataclasses import replace
-
-    texts = list(item.texts or ("",))
-    if not texts:
-        texts = [""]
-    texts[0] = text
-    return replace(item, texts=tuple(texts))
 
 
 def _blank(item: Item) -> bool:
