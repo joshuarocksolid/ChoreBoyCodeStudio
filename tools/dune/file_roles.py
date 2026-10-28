@@ -87,6 +87,16 @@ FILE_ROLES = (
         allowed_imports=(
             "app.features.form_builder.engine",
             "app.features.form_builder.qtside.canvas.core",
+            "app.features.form_builder.qtside.insert.catalog",
+        ),
+    ),
+    FileRole(
+        "form_builder.insert_catalog",
+        ("app/features/form_builder/qtside/insert/catalog/**",),
+        ("app", "PySide2", "PySide6", "shiboken2", "shiboken6"),
+        allowed_imports=(
+            "app.features.form_builder.engine",
+            "app.features.form_builder.qtside.insert.catalog",
         ),
     ),
     FileRole(

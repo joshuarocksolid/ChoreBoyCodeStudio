@@ -683,7 +683,7 @@ def test_activating_the_insert_row_places_the_widget(qapp: QApplication) -> None
     def place(key: str) -> None:
         session = holder["session"]
         assert isinstance(session, FormSession)
-        before = _class_count(session, key)
+        before = _node_count(session)
         commands = auto_commands(
             session.document,
             session.selection.state.current,
@@ -694,7 +694,7 @@ def test_activating_the_insert_row_places_the_widget(qapp: QApplication) -> None
         with session.log.transaction("Drop") as txn:
             for command in commands:
                 txn.execute(command)
-        holder["grew"] = _class_count(session, key) > before
+        holder["grew"] = _node_count(session) > before
 
     with _opened(qapp, _pair(), "insert-place", place=place) as (pane, session):
         holder["session"] = session
@@ -709,12 +709,9 @@ def test_activating_the_insert_row_places_the_widget(qapp: QApplication) -> None
         assert _focus(qapp) is pane.tree
 
 
-def _class_count(session: FormSession, class_name: str) -> int:
-    total = 0
-    for node in session.document.iter_preorder():
-        if isinstance(node, WidgetNode) and node.class_name == class_name:
-            total += 1
-    return total
+def _node_count(session: FormSession) -> int:
+    """Every node in the form. A catalog key is not always a Qt class (layouts are not widgets)."""
+    return sum(1 for _node in session.document.iter_preorder())
 
 
 def test_row_boxes_stay_disjoint_at_236(qapp: QApplication) -> None:
