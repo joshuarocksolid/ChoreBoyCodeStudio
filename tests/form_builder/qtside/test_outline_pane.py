@@ -673,6 +673,24 @@ def test_quick_insert_does_not_scroll_sideways_at_236(qapp: QApplication) -> Non
         listed = pane.findChild(QListWidget, "formBuilder.outlineInsertList")
         assert isinstance(listed, QListWidget)
         assert listed.horizontalScrollBar().maximum() == 0
+        from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, fitted_label
+        from app.qt.QtGui import QFont
+
+        name_font = QFont(listed.font())
+        name_font.setPixelSize(12)
+        caption_font = QFont(listed.font())
+        caption_font.setPixelSize(11)
+        width = listed.viewport().width()
+        titles = []
+        for index in range(listed.count()):
+            row = listed.item(index).data(ROW_ROLE)
+            if getattr(row, "kind", "") != "entry" or row.title not in ("Vertical layout", "Horizontal splitter"):
+                continue
+            # The category caption is the widest a row can carry; the name must still win.
+            shown, _caption = fitted_label(row.title, row.category, width, name_font, caption_font)
+            assert shown == row.title
+            titles.append(row.title)
+        assert titles
 
 
 def test_slash_opens_the_insert_list(qapp: QApplication) -> None:

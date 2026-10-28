@@ -239,7 +239,8 @@ def test_icon_headers_and_the_next_tile_start_the_row_when_resized_before_show(q
     pane = _pane(parent, memory)
     pane.resize(320, 640)
     pane._delegate.set_width(120)  # noqa: SLF001
-    pane.show()
+    # Show the parent: a pane shown under a hidden parent never lays out, so the glitch hides.
+    parent.show()
     qapp.processEvents()
     rows = _rows(pane)
     checked = 0
