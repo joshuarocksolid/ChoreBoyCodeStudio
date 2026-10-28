@@ -524,10 +524,20 @@ def _brush_picture_page(parent: QWidget, host: EditorHost, on_texture: OnTexture
     return BrushPicturePage(parent, host, on_texture)
 
 
+def _brush_thumbnail(host: EditorHost, stored: str, side: int) -> QPixmap:
+    form_dir = form_directory(host)
+    try:
+        index = index_for_document(host.document(), form_dir)
+    except (AttributeError, RuntimeError, TypeError, OSError):
+        return QPixmap()
+    disk, missing = lookup_stored(stored, form_dir, index)
+    return QPixmap() if missing else cached_thumbnail(disk, side)
+
+
 def register(registrar: Registrar) -> None:
     from app.features.form_builder.qtside.visual.brush import add_brush_style, set_brush_picture_page
 
     add_brush_style("picture", "Picture")
-    set_brush_picture_page(_brush_picture_page)
+    set_brush_picture_page(_brush_picture_page, _brush_thumbnail)
     registrar.editor(EditorKey(ResourcePixmap.ELEMENT), PixmapEditor)
     registrar.editor(EditorKey(IconSetValue.ELEMENT), IconEditor)

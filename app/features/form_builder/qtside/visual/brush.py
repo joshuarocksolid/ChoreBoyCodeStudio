@@ -103,12 +103,15 @@ def add_brush_style(key: str, label: str) -> None:
 
 # (parent, host, on_texture) -> widget with ``show_stored(ResourcePixmap | None)``.
 _PICTURE_PAGE: Optional[Callable[..., QWidget]] = None
+# (host, stored path, side) -> thumbnail; resolves ``:/`` and form-relative paths.
+_PICTURE_THUMB: Optional[Callable[..., QPixmap]] = None
 
 
-def set_brush_picture_page(factory: Callable[..., QWidget]) -> None:
+def set_brush_picture_page(factory: Callable[..., QWidget], thumbnail: Optional[Callable[..., QPixmap]] = None) -> None:
     """Install the Picture page. The style segment alone has nowhere to put the picker."""
-    global _PICTURE_PAGE
+    global _PICTURE_PAGE, _PICTURE_THUMB
     _PICTURE_PAGE = factory
+    _PICTURE_THUMB = thumbnail
 
 
 def brush_style_keys() -> Tuple[str, ...]:
@@ -814,19 +817,28 @@ class BrushEditor:
         if brush is None or mixed or _is_none(brush):
             self._preview.set_color(None, hollow=not mixed, mixed=mixed)
             return
-        fill = preview_brush(brush, 16)
+        thumb = _PICTURE_THUMB
+        host = self._host
+        picture = None if thumb is None else (lambda stored, side: thumb(host, stored, side))
+        fill = preview_brush(brush, 16, picture=picture)
         if fill is None:
             self._preview.set_color(brush.color or ColorValue(0, 0, 0))
             return
         self._preview.set_fill(fill)
 
 
-def preview_brush(brush: BrushValue, side: int) -> Optional[QBrush]:
-    """A QBrush that draws a pattern or gradient in a ``side`` px square, or None for solid."""
+def preview_brush(
+    brush: BrushValue, side: int, picture: Optional[Callable[[str, int], QPixmap]] = None
+) -> Optional[QBrush]:
+    """A QBrush that draws a pattern or gradient in a ``side`` px square, or None for solid.
+
+    ``picture`` turns a stored texture path into a thumbnail; without it a
+    texture previews empty (a ``:/`` path means nothing outside the form).
+    """
     style = _style_of(brush)
     if style == "picture":
         path = brush.texture.path if brush.texture is not None else ""
-        pixmap = QPixmap(path) if path else QPixmap()
+        pixmap = picture(path, side) if path and picture is not None else QPixmap()
         if pixmap.isNull():
             return QBrush()
         return QBrush(pixmap)
