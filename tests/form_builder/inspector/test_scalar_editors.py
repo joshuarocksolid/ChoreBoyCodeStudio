@@ -613,6 +613,37 @@ def test_key_sequence_records_cancels_and_clears() -> None:
             _close(window, pane)
 
 
+@pytest.mark.parametrize(
+    "key,mods,stored",
+    (
+        ("Key_Minus", ("Control",), "Ctrl+-"),
+        ("Key_PageDown", ("Control",), "Ctrl+PgDown"),
+        ("Key_Comma", ("Control",), "Ctrl+,"),
+    ),
+)
+def test_recorded_shortcut_is_text_qt_can_read(key: str, mods: Tuple[str, ...], stored: str) -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "keys")
+            row = _row(pane, "keySequence")
+            _labeled(row, "Record").click()
+            _events()
+            field = row.findChild(QLineEdit)
+            assert isinstance(field, QLineEdit)
+            field.setFocus()
+            QTest.qWait(50)
+            QTest.keyClick(field, _key(key), _mods(*mods))
+            QTest.qWait(1200)
+            _events()
+            pane.flush()
+            assert "<string>%s</string>" % stored in _xml(session)
+            portable = getattr(getattr(QKeySequence, "SequenceFormat", QKeySequence), "PortableText")
+            assert not QKeySequence.fromString(stored, portable).isEmpty()
+        finally:
+            _close(window, pane)
+
+
 def test_two_echo_modes_show_mixed_and_write_both() -> None:
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)

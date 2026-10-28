@@ -33,36 +33,6 @@ _WINDOW_MS = 1000
 _MODIFIER_KEYS = ("Key_Shift", "Key_Control", "Key_Alt", "Key_Meta")
 
 
-def _key_names() -> dict:
-    names = {}
-    enum = getattr(Qt, "Key", None)
-    items = []
-    if enum is not None and enum is not Qt:
-        try:
-            items = list(enum)
-        except TypeError:
-            items = []
-    if items:
-        for item in items:
-            name = str(getattr(item, "name", "") or "")
-            if name.startswith("Key_"):
-                name = name[4:]
-            if name:
-                names[int(item)] = name
-        return names
-    for name in dir(Qt):
-        if not name.startswith("Key_"):
-            continue
-        try:
-            names[int(getattr(Qt, name))] = name[4:]
-        except (TypeError, ValueError):
-            continue
-    return names
-
-
-_KEY_NAMES = _key_names()
-
-
 def _format() -> object:
     fmt = getattr(QKeySequence, "PortableText", None)
     if fmt is None:
@@ -75,27 +45,20 @@ def _portable(sequence: QKeySequence) -> str:
 
 
 def _chord_text(key: int, mods: int) -> str:
-    """Portable text without building a QKeySequence inside the key event."""
+    """The chord as Qt's portable text ("Ctrl+-", "Ctrl+PgDown"), so Qt reads it back.
+
+    Called from the drain timer, never inside the key event.
+    """
     if key in tuple(int(qt_key(name)) for name in _MODIFIER_KEYS):
         return ""
-    parts = []
-    control = int(enum_value(_mod("ControlModifier")))
-    alt = int(enum_value(_mod("AltModifier")))
-    shift = int(enum_value(_mod("ShiftModifier")))
-    meta = int(enum_value(_mod("MetaModifier")))
-    if mods & control:
-        parts.append("Ctrl")
-    if mods & alt:
-        parts.append("Alt")
-    if mods & shift:
-        parts.append("Shift")
-    if mods & meta:
-        parts.append("Meta")
-    name = _KEY_NAMES.get(key, "")
-    if not name:
+    if key <= 0 or key == int(qt_key("Key_unknown")):
         return ""
-    parts.append(name)
-    return "+".join(parts)
+    wanted = 0
+    for name in ("ControlModifier", "AltModifier", "ShiftModifier", "MetaModifier"):
+        bit = int(enum_value(_mod(name)))
+        if mods & bit:
+            wanted |= bit
+    return _portable(QKeySequence(int(key) | wanted))
 
 
 class _KeyField(QLineEdit):
