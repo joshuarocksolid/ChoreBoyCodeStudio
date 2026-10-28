@@ -70,7 +70,7 @@ class ItemsEditor:
         rect = self._button.rect()
         origin = self._button.mapToGlobal(rect.topLeft())
         anchor = QRect(origin, rect.size())
-        open_editor(session, owners[0], self._button.window(), under=anchor)
+        open_editor(session, owners[0], self._button.window(), under=anchor, chrome=self._host.chrome)
 
 
 def _session_of(host: object) -> object:

@@ -16,6 +16,7 @@ from app.features.form_builder.qtside.items.model import (
     load_draft,
 )
 from app.features.form_builder.qtside.items.place import seat_beside, seat_under
+from app.features.form_builder.qtside.theme.chrome import FormChrome, default_chrome
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QSize, Qt, QTimer
 from app.qt.QtGui import QGuiApplication
 from app.qt.QtWidgets import (
@@ -42,11 +43,12 @@ def open_editor(
     *,
     beside: Optional[QRect] = None,
     under: Optional[QRect] = None,
+    chrome: Optional[FormChrome] = None,
 ) -> Optional["ItemEditor"]:
     draft = load_draft(session.document, node)
     if draft is None:
         return None
-    editor = ItemEditor(session, draft, parent)
+    editor = ItemEditor(session, draft, parent, chrome=chrome)
     editor.seat(beside=beside, under=under)
     editor.show()
     editor.raise_()
@@ -55,10 +57,21 @@ def open_editor(
 
 
 class ItemEditor(QFrame):
-    def __init__(self, session: FormSession, draft: Draft, parent: Optional[QWidget] = None) -> None:
+    def __init__(
+        self,
+        session: FormSession,
+        draft: Draft,
+        parent: Optional[QWidget] = None,
+        *,
+        chrome: Optional[FormChrome] = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.itemEditor")
         self._session = session
+        self._chrome = chrome or default_chrome()
+        # Picture pickers find the form's folder by walking up to a widget
+        # whose ``_services.session`` has the form path (form_directory).
+        self._services = _FormFolder(session)
         self._draft = draft
         self._token = "items:%s:%s" % (int(draft.widget), id(self))
         self._checkpoint = session.log.checkpoint()
@@ -69,6 +82,7 @@ class ItemEditor(QFrame):
         if tool is not None and frameless is not None:
             self.setWindowFlags(tool | frameless)
         self.setMinimumSize(240, 180)
+        self._own_size: Optional[QSize] = None
         self.resize(self._remembered())
         column = QVBoxLayout(self)
         column.setContentsMargins(8, 8, 8, 8)
@@ -100,6 +114,14 @@ class ItemEditor(QFrame):
         self._selection_watch = session.selection.subscribe(self._selection_changed)
 
     @property
+    def session(self) -> FormSession:
+        return self._session
+
+    @property
+    def chrome(self) -> FormChrome:
+        return self._chrome
+
+    @property
     def draft(self) -> Draft:
         return self._draft
 
@@ -110,6 +132,18 @@ class ItemEditor(QFrame):
     def replace(self, draft: Draft) -> None:
         self._draft = draft
         self._commit()
+
+    def make_room(self, height: int) -> None:
+        """Grow before a row popover (the item icon) opens in this window.
+
+        A popover closes when its window resizes, so this runs before it
+        shows. The remembered size stays the user's own.
+        """
+        if self.height() >= height:
+            return
+        if self._own_size is None:
+            self._own_size = self.size()
+        self.resize(self.width(), height)
 
     def focus_first(self) -> None:
         focus = getattr(self._body, "focus_first", None)
@@ -217,7 +251,7 @@ class ItemEditor(QFrame):
         return _WIDE if self._wide else _REGULAR
 
     def _remember(self) -> None:
-        QSettings().setValue(self._size_key(), self.size())
+        QSettings().setValue(self._size_key(), self._own_size or self.size())
 
     def _size_key(self) -> str:
         return "formBuilder/itemEditor/wideSize" if self._wide else "formBuilder/itemEditor/size"
@@ -239,7 +273,8 @@ class _Escape(QObject):
             return False
         if not _inside(watched, self._editor):
             return False
-        if _cell_editing(watched):
+        if _cell_editing(watched) or _in_row_popover(watched):
+            # A row popover (the item icon) handles its own Esc.
             # Esc in an open table cell cancels that cell, not the session.
             return False
         self._editor.revert()
@@ -253,6 +288,21 @@ def _inside(watched: QObject, editor: QWidget) -> bool:
         if current is editor:
             return True
         seen.add(id(current))
+        parent = current.parent()
+        current = parent if isinstance(parent, QObject) else None
+    return False
+
+
+class _FormFolder:
+    def __init__(self, session: FormSession) -> None:
+        self.session = session
+
+
+def _in_row_popover(watched: QObject) -> bool:
+    current: Optional[QObject] = watched
+    while current is not None:
+        if current.objectName() == "formBuilder.rowPopover":
+            return True
         parent = current.parent()
         current = parent if isinstance(parent, QObject) else None
     return False

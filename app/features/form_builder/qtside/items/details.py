@@ -6,7 +6,7 @@ from typing import Callable, Optional, Tuple
 
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, StringValue, Value
 from app.features.form_builder.qtside.items.model import Item
-from app.qt.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLabel, QLineEdit, QToolButton, QWidget
+from app.qt.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLineEdit, QToolButton, QWidget
 
 _CHECK = ("Unchecked", "Checked", "Partly")
 _CHECK_QT = {"Unchecked": "Unchecked", "Checked": "Checked", "Partly": "PartiallyChecked"}
@@ -26,18 +26,16 @@ def build_details(
     on_value: Callable[[str, Optional[Value]], None],
     on_more: Callable[[], None],
     parent: QWidget,
+    icon_row: Optional[Callable[[QWidget], QWidget]] = None,
 ) -> QWidget:
     item = current()
     panel = QWidget(parent)
     panel.setObjectName("formBuilder.itemDetails")
     form = QFormLayout(panel)
     form.setContentsMargins(8, 4, 8, 4)
-    # The picture picker is M4.3c (UX-PED-102). Until then the row shows the
-    # value and stays disabled.
-    icon = QLabel("None")
-    icon.setObjectName("formBuilder.itemIcon")
-    icon.setEnabled(False)
-    form.addRow("Icon", icon)
+    if icon_row is not None:
+        # The inspector's icon editor (UX-PED-102), writing into this session.
+        form.addRow("Icon", icon_row(panel))
     if kind == "list":
         _flags(form, current, on_value, panel)
     tip = QLineEdit(panel)

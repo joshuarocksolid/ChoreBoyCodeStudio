@@ -58,7 +58,12 @@ class ListBody(QWidget):
 
             show_more(self, current(), on_value)
 
-        return build_details(self._editor.draft.kind, current, on_value, on_more, self)
+        def icon_row(parent: QWidget) -> QWidget:
+            from app.features.form_builder.qtside.items.icon_row import build_icon_row
+
+            return build_icon_row(self._editor, current, on_value, parent)
+
+        return build_details(self._editor.draft.kind, current, on_value, on_more, self, icon_row)
 
 
 def _blank(item: Item) -> bool:

@@ -68,26 +68,61 @@ def test_combo_session_is_one_step_and_escape_reverts(qapp) -> None:
     session.dispose()
 
 
-@pytest.mark.xfail(strict=True, reason="M4.3c owns the picture picker (UX-PED-102); the Icon row stays disabled until that lane lands")
-def test_icon_row_stays_disabled_until_m4_3c(qapp) -> None:
-    """The picture picker is M4.3c (UX-PED-102). This fails until that lane lands."""
-    del qapp
-    session = open_session(_form())
-    combo = session.document.by_name("combo")[0]
-    editor = open_editor(session, combo, None)
-    assert editor is not None
-    from app.qt.QtWidgets import QToolButton
+def test_item_icon_is_picked_in_the_session_and_matches_uic(qapp, tmp_path, monkeypatch) -> None:
+    """The item details Icon row is the inspector icon editor; a pick is part of the one item step."""
+    import os
 
-    more = editor.findChild(QToolButton)
-    # The disclosure is on the row. Open details with Alt+Right.
-    edit = editor.findChild(QLineEdit)
-    QTest.keyClick(edit, Qt.Key.Key_Right, Qt.KeyboardModifier.AltModifier)
-    icon = editor.findChild(type(editor), "formBuilder.itemIcon")
-    from app.qt.QtWidgets import QLabel
+    from app.qt.QtWidgets import QPushButton, QToolButton, QWidget
+    from tests.form_builder.engine.codegen.uic_compare import compare
+    from tests.form_builder.inspector.test_m43c_pictures import _UIC, _close, _pane, _press, _search, _seed, _select
 
-    icon = editor.findChild(QLabel, "formBuilder.itemIcon")
-    assert icon is not None and icon.isEnabled()
-    session.dispose()
+    _seed(tmp_path, ("save.png", "dot.png"))
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QListWidget" name="choices">
+   <item><property name="text"><string>Apple</string></property></item>
+  </widget>
+""",
+    ).replace("</ui>", '<resources><include location="app.qrc"/></resources>\n</ui>')
+    window, pane, session, realizer = _pane(qapp, text, str(tmp_path / "items.ui"))
+    try:
+        original = session.text()
+        _select(session, "choices")
+        pane.flush()
+        next(item for item in pane.findChildren(QWidget, "formBuilder.itemsRow") if item.isVisible()).click()
+        qapp.processEvents()
+        editor = next(item for item in window.findChildren(ItemEditor) if item.isVisible())
+        next(b for b in editor.findChildren(QToolButton) if b.accessibleName() == "Details of row 1").click()
+        qapp.processEvents()
+        icon = editor.findChild(QWidget, "formBuilder.itemIcon")
+        assert icon is not None
+        icon.findChild(QPushButton).click()
+        search = _search(qapp)
+        QTest.keyClicks(search, "dot")
+        _press(search, Qt.Key.Key_Down)
+        _press(search.parent().findChild(QWidget, "formBuilder.pictureGrid"), Qt.Key.Key_Return)
+        assert editor.isVisible(), "a pick keeps the item editor open"
+        # Esc in the icon popover closes that popover only; the pick stays.
+        icon = editor.findChild(QWidget, "formBuilder.itemIcon")
+        icon.findChild(QPushButton).click()
+        _press(_search(qapp), Qt.Key.Key_Escape)
+        assert editor.isVisible()
+        editor.close_keep()
+        qapp.processEvents()
+        saved = session.text()
+        assert "<normaloff>:/icons/dot.png</normaloff>" in saved
+        assert session.log.undo_label() == "Edit items of choices"
+        assert len(session.log.entries()) == 1
+        (tmp_path / "items.ui").write_text(saved, encoding="utf-8")
+        assert session.log.undo()
+        assert session.text() == original
+    finally:
+        _close(window, pane, realizer, session, qapp)
+    if os.path.isfile(_UIC):
+        monkeypatch.setenv("CBCS_FB_UIC", _UIC)
+        status, interesting, count, _total = compare(tmp_path / "items.ui")
+        assert status == "ok", (interesting, count)
 
 
 def test_pages_group_uses_the_menu_commands(qapp) -> None:
