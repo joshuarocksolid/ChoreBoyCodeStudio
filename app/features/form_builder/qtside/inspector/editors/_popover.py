@@ -12,7 +12,8 @@ focus-out commit joins the session, then closes the session. ``revert()``
 (Esc) does the same flush and then rolls the session back, so the document
 and the undo stack are as they were before the popover opened. Ctrl+Z
 (``QKeySequence.StandardKey.Undo``, not Ctrl+Shift+Z) outside a text field
-keeps, then undoes that one step. Enter inside a list (or a widget that sets
+keeps, then undoes that one step; with nothing written it is the form's
+Undo, and that step closes the popover. Enter inside a list (or a widget that sets
 ``fbEnterStays``) does not close. Tab inside a multi-line editor does not cycle.
 
 Focus: while open, focus stays in the popover; when it closes, focus goes to
@@ -512,7 +513,7 @@ class RowPopover(QFrame):
             if not self._enter_stays() and isinstance(QApplication.focusWidget(), _ENTER_COMMITS):
                 QTimer.singleShot(0, self._done_later)
             return False
-        if self._is_undo(event) and not self._in_text():
+        if self._is_undo(event) and not self._in_text() and self._session.has_step():
             self.undo_and_close()
             return True
         return False
@@ -524,7 +525,8 @@ class RowPopover(QFrame):
         key = event.key()  # type: ignore[attr-defined]
         mods = event.modifiers()  # type: ignore[attr-defined]
         accept = False
-        if self._is_undo(event) and not self._in_text():
+        if self._is_undo(event) and not self._in_text() and self._session.has_step():
+            # With nothing written, Ctrl+Z is the form's Undo; that foreign step closes the popover.
             accept = True
         elif key == _key("Key_Escape"):
             accept = True

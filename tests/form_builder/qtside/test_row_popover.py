@@ -392,6 +392,34 @@ def test_ctrl_shift_z_does_not_undo_the_session(qapp: QApplication) -> None:
         window.close()
 
 
+def test_ctrl_z_with_nothing_written_is_the_forms_undo(qapp: QApplication) -> None:
+    host = _Host()
+    window = _window(400, 300)
+    row = _row(window, 20, 40, 236)
+    log = host.session.log
+    node = host.session.document.by_name("field")[0]
+    log.execute(SetProperty(node, "text", StringValue("before")))
+    undo = QShortcut(QKeySequence(QKeySequence.StandardKey.Undo), window)
+    undo.activated.connect(log.undo)
+    popover = RowPopover(row, host.services, row_label="Test row", session_label="Change test row")
+    popover.open_popover()
+    _settle(qapp)
+    try:
+        done = popover.findChild(QPushButton, "formBuilder.popoverDone")
+        assert done is not None
+        done.setFocus()
+        _settle(qapp)
+        QTest.keyClick(done, _key("Key_Z"), _mods("ControlModifier"))
+        _settle(qapp)
+        assert not log.entries()
+        assert popover.closed
+    finally:
+        if not popover.closed:
+            popover.done()
+        host.close()
+        window.close()
+
+
 def test_enter_closes_a_spin_box_and_not_a_list(qapp: QApplication) -> None:
     host = _Host()
     window = _window(400, 300)
