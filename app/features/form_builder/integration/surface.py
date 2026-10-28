@@ -564,6 +564,19 @@ class FormSurface(QWidget):
         elif isinstance(outcome, Current):
             self.narrate("Nothing to change.")
 
+    def run_menu_request(self, request: object) -> None:
+        """``MenuContext.run``: an engine ``Command`` runs as one undo step (the log
+        listener toasts it) and a refusal is narrated; a layout request goes
+        through ``run_layout``."""
+        # ``Command`` is a Protocol; every engine command declares ``command_type``.
+        if getattr(type(request), "command_type", None) and callable(getattr(request, "apply", None)):
+            try:
+                self._session.log.execute(request)  # type: ignore[arg-type]
+            except CommandRejected as exc:
+                self.narrate(str(exc))
+            return
+        self.run_layout(request)
+
     def editor_status_sentence(self) -> str:
         state = self._session.selection.state
         mixed = mixed_parent_sentence(self._session.document, state.ids)
@@ -1126,7 +1139,7 @@ class FormSurface(QWidget):
             dispatch=self.dispatch,
             enabled=self._clipboard_enabled,
             sheet=self.layout_offers(),
-            run=self.run_layout,
+            run=self.run_menu_request,
             at=at,
             source=source,
             live=self._realizer.widget_for,

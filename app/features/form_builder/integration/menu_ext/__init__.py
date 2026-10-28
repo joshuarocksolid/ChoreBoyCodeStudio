@@ -50,8 +50,8 @@ class MenuContext:
 
     ``at`` is the click point (global). ``source`` is ``"canvas"`` or
     ``"outline"``. ``live`` returns the realized widget for a node. ``run``
-    sends a layout command through the surface, which toasts a change and
-    narrates a refusal.
+    takes an engine ``Command`` (one undo step) or a layout request and sends
+    it through the surface, which toasts a change and narrates a refusal.
     """
 
     menu: "QMenu"
