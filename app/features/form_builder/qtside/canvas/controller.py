@@ -222,6 +222,7 @@ class CanvasController:
         self._refused_at = 0.0
         self._refused_open = False
         self._shown_page: Dict[NodeId, int] = {}
+        self._mdi_cache: Optional[Tuple[object, int, Tuple[NodeId, ...]]] = None
         self._preview_key: Optional[str] = None
         self._pending_edit: Optional[Commit] = None
         self._pending_page: Optional[NodeId] = None
@@ -1182,10 +1183,8 @@ class CanvasController:
     def _shown_for_frame(self) -> Dict[NodeId, int]:
         """The page chip follows the live MDI window, which Qt activates last."""
         shown = dict(self._shown_page)
-        for node in self._session.document.iter_widgets():
-            if node.class_name != "QMdiArea":
-                continue
-            widget = self._realizer.widget_for(node.id)
+        for area_id in self._mdi_areas():
+            widget = self._realizer.widget_for(area_id)
             if widget is None or not isinstance(widget, QMdiArea):
                 continue
             windows = list(widget.subWindowList())
@@ -1193,10 +1192,21 @@ class CanvasController:
             if active is None:
                 continue
             try:
-                shown[node.id] = windows.index(active)
+                shown[area_id] = windows.index(active)
             except ValueError:
                 continue
         return shown
+
+    def _mdi_areas(self) -> Tuple[NodeId, ...]:
+        """MDI areas in the form. O(form) once per document revision, O(1) per frame."""
+        document = self._session.document
+        revision = document.revision
+        cached = self._mdi_cache
+        if cached is not None and cached[0] is document and cached[1] == revision:
+            return cached[2]
+        found = tuple(node.id for node in document.iter_widgets() if node.class_name == "QMdiArea")
+        self._mdi_cache = (document, revision, found)
+        return found
 
     def _rebuild(self, static: bool) -> None:
         view = self._stage.view_map()

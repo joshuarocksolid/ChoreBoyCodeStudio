@@ -100,3 +100,26 @@ def test_ctrl_page_down_shows_the_next_window_and_the_file_stays_the_same() -> N
         assert chips[0].tip == "Shows Todo \u00b7 starts on Notes"
         assert write_ui(session.document).text == before
         assert not session.log.is_dirty()
+
+
+def test_a_selection_frame_does_not_walk_the_form_for_mdi_areas(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The MDI chip reads the live window, but finding MDI areas is per revision, not per frame (speed)."""
+    with _canvas(MDI) as (session, canvas, _host):
+        notes = session.document.by_name("notes")[0]
+        todo = session.document.by_name("todo")[0]
+        session.selection.set((notes,), current=notes, source=SelectionSource.CANVAS)
+        _flush()
+        calls = [0]
+        document = session.document
+        original = type(document).iter_widgets
+
+        def counted(self, *args, **kwargs):
+            calls[0] += 1
+            return original(self, *args, **kwargs)
+
+        monkeypatch.setattr(type(document), "iter_widgets", counted)
+        session.selection.set((todo,), current=todo, source=SelectionSource.CANVAS)
+        _flush()
+        chips = [item for item in canvas.overlay().items if isinstance(item, Chip) and item.text.startswith("◀")]
+        assert chips
+        assert calls[0] == 0
