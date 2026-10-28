@@ -469,7 +469,11 @@ def _node_body(
             blocks = (Block("", tuple(curated.get(group, ()))),)
         kept = tuple(Block(block.title, filter_rows(block.rows, search)) for block in blocks)
         kept = tuple(block for block in kept if block.rows)
-        if kept or (group is GroupId.LAYOUT and not search and _layout_body(facts, catalog, owners)):
+        shown_body = not search and (
+            (group is GroupId.LAYOUT and _layout_body(facts, catalog, owners))
+            or catalog.body_applies(group, facts.document, owners)
+        )
+        if kept or shown_body:
             groups.append(GroupView(group, kept))
     return NodeBody(owners, tuple(groups))
 

@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 class GroupId(str, Enum):
 
     CONTENT = "content"
+    PAGES = "pages"
     INPUT = "input"
     APPEARANCE = "appearance"
     SIZE = "size"
@@ -38,6 +39,7 @@ def _cover(order: Tuple["GroupId", ...]) -> Tuple["GroupId", ...]:
 GROUP_ORDER: Tuple["GroupId", ...] = _cover(
     (
         GroupId.CONTENT,
+        GroupId.PAGES,
         GroupId.INPUT,
         GroupId.APPEARANCE,
         GroupId.SIZE,
@@ -252,12 +254,24 @@ class GroupBody(Protocol):
 class GroupBodyFactory(Protocol):
     def __call__(self, host: GroupHost, parent: QWidget) -> GroupBody: ...
 
+class GroupApplies(Protocol):
+    def __call__(self, document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+        """True when the group's body shows for ``owners``, even with no curated rows."""
+        ...
+
 class Registrar(Protocol):
     def editor(self, key: EditorKey, factory: EditorFactory, *, baseline: bool = False) -> None: ...
 
     def row(self, spec: RowSpec, *, baseline: bool = False) -> None: ...
 
-    def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None: ...
+    def group_body(
+        self,
+        group: GroupId,
+        factory: GroupBodyFactory,
+        *,
+        baseline: bool = False,
+        applies: Optional["GroupApplies"] = None,
+    ) -> None: ...
 
 def mark(widget: QWidget, value: RowValue) -> None:
     if isinstance(value, Mixed):
@@ -288,6 +302,7 @@ __all__ = [
     "EditorKey",
     "EnumSpec",
     "GroupBody",
+    "GroupApplies",
     "GroupBodyFactory",
     "GroupHost",
     "GroupId",

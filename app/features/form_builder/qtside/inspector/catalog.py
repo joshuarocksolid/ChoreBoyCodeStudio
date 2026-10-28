@@ -3,9 +3,12 @@ from __future__ import annotations
 
 from typing import Dict, FrozenSet, Generic, Hashable, List, Mapping, Optional, Sequence, Tuple, TypeVar
 
+from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.qtside.inspector.api import (
     EditorFactory,
     EditorKey,
+    GroupApplies,
     GroupBodyFactory,
     GroupId,
     Registrar,
@@ -48,6 +51,7 @@ class Registrations:
         self.editors: _Slots[EditorKey, EditorFactory] = _Slots("editor")
         self.rows: _Slots[str, RowSpec] = _Slots("row")
         self.bodies: _Slots[GroupId, GroupBodyFactory] = _Slots("group body")
+        self.applies: _Slots[GroupId, GroupApplies] = _Slots("group applies")
 
     def scope(self, module: str) -> Registrar:
         return _Scope(self, module)
@@ -57,6 +61,7 @@ class Registrations:
             _place_rows(tuple(self.rows.resolve().values())),
             self.editors.resolve(),
             self.bodies.resolve(),
+            self.applies.resolve(),
         )
 
 class _Scope:
@@ -70,8 +75,17 @@ class _Scope:
     def row(self, spec: RowSpec, *, baseline: bool = False) -> None:
         self._found.rows.add(spec.key, spec, self._module, baseline)
 
-    def group_body(self, group: GroupId, factory: GroupBodyFactory, *, baseline: bool = False) -> None:
+    def group_body(
+        self,
+        group: GroupId,
+        factory: GroupBodyFactory,
+        *,
+        baseline: bool = False,
+        applies: Optional[GroupApplies] = None,
+    ) -> None:
         self._found.bodies.add(group, factory, self._module, baseline)
+        if applies is not None:
+            self._found.applies.add(group, applies, self._module, baseline)
 
 def _place_rows(rows: Sequence[RowSpec]) -> Tuple[RowSpec, ...]:
     groups: Dict[GroupId, List[RowSpec]] = {}
@@ -114,10 +128,12 @@ class Catalog:
         rows: Tuple[RowSpec, ...],
         editors: Mapping[EditorKey, EditorFactory],
         bodies: Mapping[GroupId, GroupBodyFactory],
+        applies: Optional[Mapping[GroupId, GroupApplies]] = None,
     ) -> None:
         self._rows = rows
         self._editors = dict(editors)
         self._bodies = dict(bodies)
+        self._applies = dict(applies or {})
         self._editor_keys = frozenset(self._editors)
 
     def rows(self) -> Tuple[RowSpec, ...]:
@@ -131,3 +147,8 @@ class Catalog:
 
     def group_body(self, group: GroupId) -> Optional[GroupBodyFactory]:
         return self._bodies.get(group)
+
+    def body_applies(self, group: GroupId, document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+        """A group with no curated rows shows only when its body says it applies. Default False."""
+        applies = self._applies.get(group)
+        return applies is not None and bool(applies(document, owners))
