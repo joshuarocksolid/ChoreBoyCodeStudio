@@ -1,7 +1,7 @@
 """UX-CAT-007 search over the catalog. Pure: no Qt, no I/O.
 
-Matching ignores case, spaces and hyphens, and a leading "Q" when the query
-starts with a capital Q followed by a capital ("QComboBox", "QLin"). Each
+Matching ignores case, spaces and hyphens, and a leading "Q" ("QComboBox", "Q lin").
+A query that starts with Q is also tried without it, so "quantity" still matches. Each
 entry gets its best rank (1 to 8); ties go to category order, then catalog order.
 """
 
@@ -36,8 +36,9 @@ def normalise(text: str) -> str:
 
 
 def _query_forms(query: str) -> Tuple[str, ...]:
+    """The query as typed, and without a leading Q when it has one (both are tried; the better rank wins)."""
     forms = [normalise(query)]
-    if len(query) > 1 and query[0] == "Q" and query[1].isupper():
+    if len(query) > 1 and query[0] in "Qq":
         stripped = normalise(query[1:])
         if stripped and stripped not in forms:
             forms.append(stripped)

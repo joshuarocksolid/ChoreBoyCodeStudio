@@ -18,7 +18,9 @@ from app.features.form_builder.engine.ui4.writer import write_fragment
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.clipboard_actions import apply_command
 from app.features.form_builder.integration.toast import CommandToast, ToastNote
-from app.features.form_builder.integration.workbench import InsertPane
+from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory
+from app.features.form_builder.integration.workbench import _PieceOps
+from app.features.form_builder.qtside.insert.pane import InsertPane
 from app.features.form_builder.qtside.canvas.core.palette import MIME_FRAGMENT
 from app.shell.theme_tokens import tokens_from_palette
 from tests.form_builder.engine.commands._support import GRID, button_spec, cell_of
@@ -160,7 +162,7 @@ def _grab_pieces(qapp, tokens, out: Path, width: int, height: int, mode: str) ->
         shell.resize(width, height)
         row = QHBoxLayout(shell)
         row.setContentsMargins(0, 0, 0, 0)
-        pane = InsertPane(lambda _collapsed: None, shell)
+        pane = InsertPane(lambda _collapsed: None, shell, memory=InMemoryInsertMemory(), pieces=_PieceOps())
         host = _Host(session)
         canvas = FormCanvas(session, realizer, host, shell)
         pane.setMaximumWidth(280)
@@ -293,7 +295,7 @@ def _grab_two_pieces(qapp, tokens, out: Path, mode: str) -> None:  # type: ignor
         shell.resize(1400, 900)
         row = QHBoxLayout(shell)
         row.setContentsMargins(0, 0, 0, 0)
-        pane = InsertPane(lambda _collapsed: None, shell)
+        pane = InsertPane(lambda _collapsed: None, shell, memory=InMemoryInsertMemory(), pieces=_PieceOps())
         host = _Host(session)
         canvas = FormCanvas(session, realizer, host, shell)
         pane.setMaximumWidth(280)

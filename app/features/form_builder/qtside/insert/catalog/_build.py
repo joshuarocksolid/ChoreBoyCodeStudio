@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional, Sequence, Tuple
 
+from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.qtside.insert.catalog._model import WIDGET, Entry
 from app.features.form_builder.engine.ui4.values import (
@@ -53,6 +54,23 @@ def layout(class_name: str, object_name: str) -> NodeSpec:
 
 def vbox(object_name: str = "verticalLayout") -> NodeSpec:
     return layout("QVBoxLayout", object_name)
+
+
+def margins(value: int) -> Tuple[PropertyEntry, ...]:
+    """The four layout margins, as Designer writes them. Zero for a layout inside a layout widget."""
+    return tuple(
+        PropertyEntry("property", name, NumberValue(value))
+        for name in ("leftMargin", "topMargin", "rightMargin", "bottomMargin")
+    )
+
+
+def layout_with_margins(class_name: str, object_name: str, value: int) -> NodeSpec:
+    return NodeSpec(
+        "layout",
+        None,
+        (("class_name", class_name), ("object_name", object_name)),
+        margins(value),
+    )
 
 
 def widget(
@@ -137,12 +155,11 @@ def fragment(*nodes: NodeSpec, customwidgets: Sequence[NodeSpec] = ()) -> Fragme
 
 
 def declaration(class_name: str, extends: str, header: str) -> NodeSpec:
-    """A ``customwidget`` declaration as FreeCAD's own forms write it."""
-    return NodeSpec(
-        "customwidget",
-        None,
-        (("class_name", class_name), ("extends", extends), ("header", header)),
-    )
+    """A ``customwidget`` declaration as FreeCAD's own forms write it (``<header location="global">``)."""
+    fields = [("class_name", class_name), ("extends", extends)]
+    if header:
+        fields.append(("header", HeaderDecl(header, "global")))
+    return NodeSpec("customwidget", None, tuple(fields))
 
 
 

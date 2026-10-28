@@ -21,7 +21,9 @@ from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.clipboard_actions import apply_command, clipboard_has_fragment
 from app.features.form_builder.integration.context_menu import add_clipboard_actions
 from app.features.form_builder.integration.pieces import SavedPieceStore
-from app.features.form_builder.integration.workbench import InsertPane
+from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory
+from app.features.form_builder.integration.workbench import _PieceOps
+from app.features.form_builder.qtside.insert.pane import InsertPane
 from app.features.form_builder.qtside.canvas.core.palette import MIME_FRAGMENT
 from app.features.form_builder.qtside.inspector.editors.sizing import SizeBody
 from tests.form_builder.engine.commands._support import BOX, button_spec, nid
@@ -166,8 +168,8 @@ def test_two_insert_panes_share_saved_pieces(qapp, tmp_path: Path) -> None:  # t
     parent = QWidget()
     try:
         store = SavedPieceStore(str(tmp_path))
-        pane_a = InsertPane(lambda _collapsed: None, parent)
-        pane_b = InsertPane(lambda _collapsed: None, parent)
+        pane_a = InsertPane(lambda _collapsed: None, parent, memory=InMemoryInsertMemory(), pieces=_PieceOps())
+        pane_b = InsertPane(lambda _collapsed: None, parent, memory=InMemoryInsertMemory(), pieces=_PieceOps())
         pane_a.bind_pieces(store)
         pane_b.bind_pieces(store)
         pane_a.bind_session(first)
@@ -196,7 +198,7 @@ def test_enter_inserts_a_saved_piece(qapp, tmp_path: Path) -> None:  # type: ign
     parent = QWidget()
     pasted: List[str] = []
     try:
-        pane = InsertPane(lambda _collapsed: None, parent)
+        pane = InsertPane(lambda _collapsed: None, parent, memory=InMemoryInsertMemory(), pieces=_PieceOps())
         pane.bind_pieces(SavedPieceStore(str(tmp_path)))
         pane.bind_session(session)
         pane.set_paste(lambda: pasted.append("paste"))
@@ -224,7 +226,7 @@ def test_deleting_a_piece_offers_undo(qapp, tmp_path: Path) -> None:  # type: ig
     parent = QWidget()
     notes: List[tuple] = []
     try:
-        pane = InsertPane(lambda _collapsed: None, parent)
+        pane = InsertPane(lambda _collapsed: None, parent, memory=InMemoryInsertMemory(), pieces=_PieceOps())
         pane.bind_pieces(SavedPieceStore(str(tmp_path / "undo")))
         pane.bind_session(session)
         pane.set_notice(lambda sentence, undo: notes.append((sentence, undo)))

@@ -8,6 +8,7 @@ from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.qtside.insert.catalog._build import (
     attr,
     container,
+    layout_with_margins,
     enum,
     fragment,
     flag,
@@ -47,7 +48,8 @@ def _frame() -> Callable[[], Fragment]:
 
 def _plain_widget() -> Callable[[], Fragment]:
     def build() -> Fragment:
-        return fragment(container("QWidget", "widget"))
+        # Qt's default margins, written out: an unwritten margin loads as 0 in our generator (see the M4.2 repro).
+        return fragment(widget("QWidget", "widget", layout_spec=layout_with_margins("QVBoxLayout", "verticalLayout", 9)))
 
     return build
 

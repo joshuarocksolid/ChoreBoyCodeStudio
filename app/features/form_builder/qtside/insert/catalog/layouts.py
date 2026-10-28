@@ -7,7 +7,7 @@ from typing import Callable, Tuple
 from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.qtside.insert.catalog._build import (
     fragment,
-    layout,
+    layout_with_margins,
     orientation,
     spacer,
     widget,
@@ -24,7 +24,8 @@ CATEGORY = "Layouts and spacers"
 
 def _layout_widget(container: str, layout_class: str, layout_name: str) -> Callable[[], Fragment]:
     def build() -> Fragment:
-        return fragment(widget("QWidget", container, layout_spec=layout(layout_class, layout_name)))
+        inner = layout_with_margins(layout_class, layout_name, 0)
+        return fragment(widget("QWidget", container, layout_spec=inner))
 
     return build
 

@@ -674,7 +674,10 @@ def test_slash_opens_the_insert_list(qapp: QApplication) -> None:
         assert isinstance(pop, QFrame) and pop.isVisible()
         assert isinstance(listed, QListWidget)
         assert listed.count() > 0
-        assert _focus(qapp) is listed
+        # UX-CAT-013: the quick list has a search field, and typing goes there first.
+        search = pane.findChild(QLineEdit, "formBuilder.outlineInsertFilter")
+        assert isinstance(search, QLineEdit)
+        assert _focus(qapp) is search
 
 
 def test_activating_the_insert_row_places_the_widget(qapp: QApplication) -> None:
