@@ -17,6 +17,7 @@ from app.qt.QtWidgets import (
     QApplication,
     QGraphicsOpacityEffect,
     QGraphicsView,
+    QMdiArea,
     QScrollArea,
     QStackedWidget,
     QTabWidget,
@@ -31,6 +32,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import InsertFragment, InsertResult
 from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
 from app.features.form_builder.engine.query.pages import innermost_container, page_kind, page_title, pages, start_index
+from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.commands.drop_plan import auto_target, indicate_preview
 from app.features.form_builder.engine.sizing import chip_axis, project_axis
 from app.features.form_builder.engine.diagnostics import Severity
@@ -788,6 +790,35 @@ class CanvasController:
         self._pending_reveal = node
         self._request_frame()
 
+    def _show_window_step(self, area: QMdiArea, delta: int, document: UiDocument, container: NodeId) -> None:
+        """Show previous or next window (UX-CONT-011). Canvas only: the file does not change."""
+        windows = area.subWindowList()
+        if not windows:
+            return
+        current = area.activeSubWindow()
+        index = windows.index(current) if current in windows else 0
+        nxt = (index + delta) % len(windows)
+        area.setActiveSubWindow(windows[nxt])
+        self._index.invalidate("page_switch")
+        self._request_frame()
+        self._host.narrate("Showing window %d of %d" % (nxt + 1, len(windows)))
+
+    def tile_windows(self, container: NodeId) -> None:
+        """Tile the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
+        area = self._realizer.widget_for(container)
+        if isinstance(area, QMdiArea):
+            area.tileSubWindows()
+            self._index.invalidate("page_switch")
+            self._request_frame()
+
+    def cascade_windows(self, container: NodeId) -> None:
+        """Cascade the windows of an MDI area on the canvas. Not saved (UX-CONT-011)."""
+        area = self._realizer.widget_for(container)
+        if isinstance(area, QMdiArea):
+            area.cascadeSubWindows()
+            self._index.invalidate("page_switch")
+            self._request_frame()
+
     def _show_page_step(self, delta: int, node: NodeId) -> None:
         """Ctrl+PgDown and Ctrl+PgUp: show the next or previous page, wrapping (UX-CONT-007).
 
@@ -798,6 +829,9 @@ class CanvasController:
         if container is None or page_kind(document, container) is None:
             return
         widget = self._realizer.widget_for(container)
+        if isinstance(widget, QMdiArea):
+            self._show_window_step(widget, delta, document, container)
+            return
         if widget is None or not hasattr(widget, "count") or not hasattr(widget, "setCurrentIndex"):
             return
         count = int(widget.count())
