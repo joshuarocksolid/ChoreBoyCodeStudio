@@ -1,0 +1,165 @@
+"""Flag sets: a summary button and a popover of checks. One visit is one step."""
+
+from __future__ import annotations
+
+from typing import Dict, List, Optional, Sequence, Tuple
+
+from app.features.form_builder.engine.ui4.values import SetValue
+from app.features.form_builder.qtside.inspector.api import (
+    EditorHost,
+    EditorKey,
+    Mixed,
+    Registrar,
+    RowValue,
+    Unset,
+    ValueSpec,
+    Written,
+    mark,
+)
+from app.features.form_builder.qtside.inspector.editors._editor_kit import change_label, name_part, payload
+from app.features.form_builder.qtside.inspector.editors._enum_words import friendly, radio_groups
+from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
+from app.qt.QtCore import QTimer
+from app.qt.QtWidgets import QButtonGroup, QCheckBox, QRadioButton, QWidget
+
+_Check = Tuple[str, QWidget]
+
+
+class FlagsEditor:
+    def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
+        self._spec = spec
+        self._host = host
+        self._button = SummaryButton(host.label or "Flags", parent)
+        self._button.set_opener(self._open)
+        self._popover: Optional[RowPopover] = None
+        self._checks: List[_Check] = []
+        self._groups: Dict[str, Tuple[str, ...]] = {}
+        self._resetting = False
+        self._can_reset = False
+        self._chosen: Tuple[str, ...] = ()
+
+    @property
+    def widget(self) -> QWidget:
+        return self._button
+
+    def show(self, value: RowValue) -> None:
+        mark(self._button, value)
+        self._button.set_row_label(self._host.label or "Flags")
+        self._can_reset = isinstance(value, Written) or (isinstance(value, Unset) and value.default is not None)
+        if isinstance(value, Unset):
+            self._button.setStyleSheet("color: %s;" % self._host.chrome.faint)
+        else:
+            self._button.setStyleSheet("")
+        if isinstance(value, Mixed):
+            self._chosen = ()
+            self._button.set_summary("Mixed")
+            return
+        self._chosen = _tails(value)
+        self._button.set_summary(_summary(self._spec, self._host, self._chosen))
+
+    def _open(self) -> None:
+        enum = self._spec.enum
+        if enum is None or (self._popover is not None and not self._popover.closed):
+            return
+        popover = RowPopover(
+            self._host.row_widget,
+            self._host,
+            row_label=self._host.label or "Flags",
+            session_label=change_label(self._host.label),
+            qt_name=self._host.qt_name,
+            anchor=self._button,
+        )
+        self._popover = popover
+        self._checks = []
+        self._groups = {}
+        chosen = set(self._chosen)
+        groups = radio_groups(enum.type_name, enum.names)
+        grouped = {name for group in groups for name in group}
+        body = popover.body()
+        for index, group in enumerate(groups):
+            buttons = QButtonGroup(popover)
+            buttons.setExclusive(True)
+            none = QRadioButton("None", popover)
+            none.setChecked(not any(name in chosen for name in group))
+            name_part(none, self._host, "none")
+            none.clicked.connect(lambda _checked=False, group=group: self._radio(group, ""))
+            buttons.addButton(none)
+            body.addWidget(none)
+            for name in group:
+                button = QRadioButton(friendly(enum.type_name, self._host.qt_name, name), popover)
+                button.setChecked(name in chosen)
+                button.setToolTip(name)
+                name_part(button, self._host, friendly(enum.type_name, self._host.qt_name, name))
+                button.clicked.connect(lambda _checked=False, group=group, name=name: self._radio(group, name))
+                buttons.addButton(button)
+                body.addWidget(button)
+                self._checks.append((name, button))
+            self._groups["g%d" % index] = group
+        for name in enum.names:
+            if name in grouped:
+                continue
+            box = QCheckBox(friendly(enum.type_name, self._host.qt_name, name), popover)
+            box.setChecked(name in chosen)
+            box.setToolTip(name)
+            name_part(box, self._host, friendly(enum.type_name, self._host.qt_name, name))
+            box.toggled.connect(lambda checked, picked=name: self._mark(picked, bool(checked)))
+            body.addWidget(box)
+            self._checks.append((name, box))
+        if self._can_reset:
+            popover.set_reset(self._reset)
+        popover.open_popover()
+
+    def _mark(self, name: str, checked: bool) -> None:
+        chosen = [item for item in self._chosen if item != name]
+        if checked:
+            chosen.append(name)
+        self._chosen = tuple(chosen)
+        QTimer.singleShot(0, self._write)
+
+    def _radio(self, group: Sequence[str], picked: str) -> None:
+        chosen = [item for item in self._chosen if item not in group]
+        if picked:
+            chosen.append(picked)
+        self._chosen = tuple(chosen)
+        QTimer.singleShot(0, self._write)
+
+    def _write(self) -> None:
+        if self._resetting or self._popover is None or self._popover.closed or self._spec.enum is None:
+            return
+        self._host.commit(
+            self._host.enum_value(self._spec.enum, self._chosen),
+            session=self._popover.session,
+        )
+        self._button.set_summary(_summary(self._spec, self._host, self._chosen))
+
+    def _reset(self) -> None:
+        self._resetting = True
+        popover = self._popover
+        if popover is not None and popover.session.has_step():
+            popover.session.revert()
+        self._host.reset()
+        self._resetting = False
+
+
+def register(registrar: Registrar) -> None:
+    registrar.editor(EditorKey(SetValue.ELEMENT), FlagsEditor)
+
+
+def _tails(value: RowValue) -> Tuple[str, ...]:
+    found = payload(value)
+    if not isinstance(found, SetValue):
+        return ()
+    tails = []
+    for piece in found.text.split("|"):
+        name = piece.strip().split("::")[-1]
+        if name and name != "0":
+            tails.append(name)
+    return tuple(tails)
+
+
+def _summary(spec: ValueSpec, host: EditorHost, names: Sequence[str]) -> str:
+    enum = spec.enum
+    if enum is None or not names:
+        return "None"
+    type_name = enum.type_name
+    return ", ".join(friendly(type_name, host.qt_name, name) for name in names)
