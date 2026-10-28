@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """Round-2 gate: Mixed in the text popover, popover titles, rich-text sizes
 under a large app font, and the flag-bit seam with several owners."""
 
