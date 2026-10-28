@@ -179,7 +179,6 @@ def test_tab_insert_writes_a_title_and_no_label(tmp_path: Path, qapp, uic_env) -
     _oracle(_save(tmp_path, "tabs", text))
 
 
-@pytest.mark.parity("R3-130")
 def test_mdi_window_insert_and_delete(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(MDI)
@@ -192,7 +191,6 @@ def test_mdi_window_insert_and_delete(tmp_path: Path, qapp, uic_env) -> None:  #
     _oracle(_save(tmp_path, "mdi", text))
 
 
-@pytest.mark.parity("R3-131")
 def test_dock_side_is_written_as_the_dock_area_number(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     log = open_log(DOCK)
@@ -240,7 +238,6 @@ def _qui_load(path: Path):  # type: ignore[no-untyped-def]
 
 @pytest.mark.parity("R3-127")
 @pytest.mark.parity("R3-128")
-@pytest.mark.parity("R3-130")
 def test_quiloader_reads_the_titles_order_and_start_page_the_builder_wrote(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     """Titles, order and the start page as Qt's own .ui loader reads them (UX-CONT-001)."""
     del uic_env
