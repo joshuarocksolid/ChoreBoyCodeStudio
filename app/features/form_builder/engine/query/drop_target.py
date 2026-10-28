@@ -172,6 +172,45 @@ _DOCK_ORDER = ("Left", "Right", "Top", "Bottom")
 _DOCK_LABEL = {"Left": "left side", "Right": "right side", "Top": "top", "Bottom": "bottom"}
 
 
+def keyboard_refusal(
+    doc: UiDocument,
+    anchor: Optional[NodeId],
+    payload: DropPayload,
+) -> Optional[str]:
+    """UX-CAT-014. Enter has no pointer, so these two targets are refused outright.
+
+    A wizard page goes only into a wizard. A dock widget on a main window goes
+    on a side (the drag bands); the central area is not a keyboard target.
+    """
+    if payload.wizard_page and not _under_class(doc, anchor, "QWizard"):
+        return WIZARD_REFUSAL
+    if payload.dock and _central_area(doc, anchor):
+        return DOCK_REFUSAL
+    return None
+
+
+def _under_class(doc: UiDocument, anchor: Optional[NodeId], class_name: str) -> bool:
+    current = doc.get(anchor) if anchor is not None else doc.root
+    if current is None:
+        current = doc.root
+    seen = set()
+    while current is not None and current.id not in seen:
+        seen.add(current.id)
+        if isinstance(current, WidgetNode) and current.class_name == class_name:
+            return True
+        parent = doc.parent(current.id)
+        current = parent
+    return False
+
+
+def _central_area(doc: UiDocument, anchor: Optional[NodeId]) -> bool:
+    """True when a dock would land in a main window's central area (UX-CONT-012)."""
+    root = doc.root
+    if not isinstance(root, WidgetNode) or root.class_name != "QMainWindow":
+        return False
+    return not _under_class(doc, anchor, "QDockWidget")
+
+
 def resolve_drop(
     root: DropHost,
     pointer: Tuple[int, int],

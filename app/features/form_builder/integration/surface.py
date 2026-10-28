@@ -1033,7 +1033,13 @@ class FormSurface(QWidget):
 
     def ask_delete(self, prose: str, ids: Sequence[NodeId]) -> None:
         anchor, _bounds = self._place(ids)
-        self._workbench.outline.show_delete(prose, tuple(ids), anchor, self._focus_canvas)
+        canvas = self._workbench.canvas
+        viewport = canvas.viewport()
+        avoid = tuple(
+            QRect(viewport.mapToGlobal(rect.topLeft()), rect.size())
+            for rect in canvas.overlay_block_rects()
+        )
+        self._workbench.outline.show_delete(prose, tuple(ids), anchor, self._focus_canvas, avoid)
 
     def toast_place_hints(self) -> Tuple[QRect, Tuple[QRect, ...]]:
         """Viewport in this surface. Blocked rects end with the page.

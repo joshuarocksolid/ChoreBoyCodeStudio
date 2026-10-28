@@ -114,10 +114,14 @@ class InLayoutSlot:
 
 @dataclass(frozen=True)
 class InPageSlot:
-    """Page ``index`` of ``container``. Pages are few, so a page move refreshes them all."""
+    """Page ``index`` of ``container``. Pages are few, so a page move refreshes them all.
+
+    ``word`` is the container's outline noun (UX-CONT-001): Tab, Page, Step, Window.
+    """
 
     container: NodeId
     index: int
+    word: str = "Tab"
 
 
 @dataclass(frozen=True)
@@ -1572,7 +1576,12 @@ def _identity(
     slot: Slot
     if isinstance(parent_node, WidgetNode) and _page_host(doc, parent_node):
         kind = "page"
-        slot = InPageSlot(parent_node.id, _widget_index(parent_node, node.id))
+        info = page_kind(doc, parent_node.id)
+        slot = InPageSlot(
+            parent_node.id,
+            _widget_index(parent_node, node.id),
+            info.word if info is not None else "Tab",
+        )
     else:
         kind = "widget"
         slot = _bare_or_layout(doc, node, parent_node)

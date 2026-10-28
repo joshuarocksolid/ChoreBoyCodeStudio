@@ -1622,6 +1622,7 @@ class OutlinePane(QWidget):
         ids: Tuple[NodeId, ...],
         anchor: Optional[QRect] = None,
         on_done: Optional[Callable[[], None]] = None,
+        avoid: Tuple[QRect, ...] = (),
     ) -> None:
         self._ask_ids = ids
         self._after_confirm = on_done
@@ -1639,7 +1640,7 @@ class OutlinePane(QWidget):
         width = min(self._confirm.sizeHint().width(), limit)
         self._confirm.resize(width, min(self._confirm.sizeHint().height(), max(host.height() - margin, 48)))
         if anchor is not None:
-            self._place_confirm_global(anchor, host)
+            self._place_confirm_global(anchor, host, avoid)
         else:
             row = ids[0] if ids else self._current_node()
             item = None if row is None else self._rows.get(int(row))
@@ -2073,8 +2074,8 @@ class OutlinePane(QWidget):
         window = self.window()
         return window if isinstance(window, QWidget) else self
 
-    def _place_confirm_global(self, anchor: QRect, host: QWidget) -> None:
-        """Put the confirm under the canvas selection, or above it when the bottom is full."""
+    def _place_confirm_global(self, anchor: QRect, host: QWidget, avoid: Tuple[QRect, ...] = ()) -> None:
+        """Put the confirm under the tab, clear of the selection chip."""
         local = QRect(host.mapFromGlobal(anchor.topLeft()), anchor.size())
         width = self._confirm.width()
         height = self._confirm.height()
@@ -2088,7 +2089,25 @@ class OutlinePane(QWidget):
             y = max(8, min(below, host.height() - height - 8))
         x = min(max(local.x(), 8), max(host.width() - width - 8, 8))
         y = min(max(y, 8), max(host.height() - height - 8, 8))
-        self._confirm.move(x, y)
+        rect = QRect(x, y, width, height)
+        blocked = [QRect(host.mapFromGlobal(item.topLeft()), item.size()) for item in avoid]
+        for _step in range(6):
+            hit = next((block for block in blocked if rect.intersects(block)), None)
+            if hit is None:
+                break
+            dropped = hit.bottom() + 6
+            if dropped + rect.height() <= host.height() - 8 and dropped != rect.top():
+                rect.moveTop(dropped)
+                continue
+            shifted = hit.left() - rect.width() - 6
+            if shifted >= 8:
+                rect.moveLeft(shifted)
+                continue
+            rect.moveTop(max(8, hit.top() - rect.height() - 6))
+            break
+        rect.moveLeft(min(max(rect.left(), 8), max(host.width() - rect.width() - 8, 8)))
+        rect.moveTop(min(max(rect.top(), 8), max(host.height() - rect.height() - 8, 8)))
+        self._confirm.move(rect.topLeft())
 
     def _filter_edited(self, text: str) -> None:
         if self._filter.signalsBlocked():
@@ -2246,10 +2265,15 @@ def _leaves_for_good(event: object) -> bool:
 
 def _row_caption(row: object) -> str:
     if getattr(row, "kind", "") == "page":
-        # UX-OUT-007: the page number and its title ("Page 2 \u00b7 Settings").
+        # UX-CONT-001: "Tab 3 · Printing", "Step 2 · Payment", "Window 2 · Notes".
         slot = getattr(row, "slot", None)
-        number = "Page %d" % (slot.index + 1) if isinstance(slot, InPageSlot) else "Page"
+        if isinstance(slot, InPageSlot):
+            number = "%s %d" % (slot.word or "Tab", slot.index + 1)
+        else:
+            number = "Tab"
         title = str(getattr(row, "visible_text", "") or "")
+        if not title:
+            title = str(getattr(row, "primary", "") or "")
         return "%s \u00b7 %s" % (number, title) if title else number
     bits = []
     friendly = row.friendly  # type: ignore[attr-defined]
@@ -2660,7 +2684,7 @@ class FormWorkbench(QWidget):
             return
         entry = load_catalog().get(key)
         name = (entry.friendly if entry is not None else tile[2]).lower()
-        payload = DropPayload(tile[1])
+        payload = DropPayload(tile[1], dock=key == "QDockWidget", wizard_page=key == "QWizardPage")
         current = self._session.selection.state.current
         commands = auto_commands(self._session.document, current, payload, fragment)
         if not commands:

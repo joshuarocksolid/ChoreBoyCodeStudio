@@ -194,10 +194,6 @@ def test_the_dock_side_row_selects_the_four_segment_editor() -> None:
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.1 owns workbench._row_caption, which always says Page and cannot say Tab, Step or Window",
-)
 def test_an_outline_page_caption_uses_the_container_word() -> None:
     row = SimpleNamespace(
         kind="page",

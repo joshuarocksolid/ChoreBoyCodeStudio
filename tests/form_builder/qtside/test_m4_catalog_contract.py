@@ -195,10 +195,6 @@ def test_a_freecad_declaration_lands_once_per_form(key: str) -> None:
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.2 owns engine/query/drop_target.py: a wizard page on a plain form is not refused yet (UX-CAT-014)",
-)
 def test_a_wizard_page_outside_a_wizard_is_refused() -> None:
     session = open_session(build_template_ui("widget", "Form"), "/tmp/cbcs-m41-page.ui")
     try:
@@ -213,10 +209,6 @@ def test_a_wizard_page_outside_a_wizard_is_refused() -> None:
         session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M4.2 owns engine/query/drop_target.py: a dock widget in a main window's central area is not refused yet (UX-CAT-014)",
-)
 def test_a_dock_widget_in_a_main_window_central_area_is_refused() -> None:
     session = open_session(build_template_ui("main_window", "Shop"), "/tmp/cbcs-m41-dock.ui")
     try:

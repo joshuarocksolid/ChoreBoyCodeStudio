@@ -140,7 +140,23 @@ def _delete(ctx: MenuContext, container: NodeId, index: int, asking: bool) -> No
     if anchor is None or outline is None:
         surface.ask_delete(prose, (page.id,))
         return
-    outline.show_delete(prose, (page.id,), anchor, getattr(surface, "_focus_canvas", None))
+    outline.show_delete(
+        prose,
+        (page.id,),
+        anchor,
+        getattr(surface, "_focus_canvas", None),
+        _chip_blocks(ctx),
+    )
+
+
+def _chip_blocks(ctx: MenuContext) -> Tuple[QRect, ...]:
+    """Selection chips in global coordinates, so the confirm can sit clear of them."""
+    canvas = _canvas(ctx)
+    blocks = getattr(canvas, "overlay_block_rects", None)
+    if canvas is None or blocks is None:
+        return ()
+    viewport = canvas.viewport()
+    return tuple(QRect(viewport.mapToGlobal(rect.topLeft()), rect.size()) for rect in blocks())
 
 
 def _tab_anchor(ctx: MenuContext, page_id: NodeId) -> Optional[QRect]:

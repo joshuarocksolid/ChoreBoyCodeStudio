@@ -20,7 +20,7 @@ from app.features.form_builder.engine.query.drop_target import (
     NoDrop,
     RefusedDrop,
 )
-from app.features.form_builder.engine.query.pages import page_title, pages, start_page
+from app.features.form_builder.engine.query.pages import page_title, pages, scroll_area_of, start_page
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -162,6 +162,8 @@ class StaticLayer:
     splitters: Tuple[NodeId, ...] = ()
     #: Empty-layout marks keyed by the layout id. Drag lookup is O(1).
     host_marks: Dict[NodeId, CanvasRect] = field(default_factory=dict)
+    #: Canvas rect of the scroll area that owns this node. Strokes clip to it.
+    scroll_clips: Dict[NodeId, CanvasRect] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -221,6 +223,8 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
     tabs: List[Tuple[NodeId, CanvasRect]] = []
     stacks: List[Tuple[NodeId, CanvasRect, Tuple[str, ...], str]] = []
     splitters: List[NodeId] = []
+    widget_canvas: Dict[NodeId, CanvasRect] = {}
+    clips: Dict[NodeId, CanvasRect] = {}
 
     for node in document.iter_preorder():
         if node.id != document.root.id and not visible.get(node.id, False):
@@ -229,19 +233,26 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         if form_rect is None:
             continue
         canvas = view.to_canvas(form_rect)
+        limit = _scroll_limit(document, node.id, widget_canvas)
+        if isinstance(node, WidgetNode):
+            widget_canvas[node.id] = canvas
+        if limit is not None:
+            clips[node.id] = limit
+        paint = _clip(canvas, limit) if limit is not None else canvas
         if isinstance(node, LayoutNode):
             placed.append(Obstacle(node.id, canvas))
-            layouts.append(Stroke(canvas, "layout_faint", 1, "dashed", node=node.id))
+            if paint is not None:
+                layouts.append(Stroke(paint, "layout_faint", 1, "dashed", node=node.id))
             if _layout_filled(node):
                 continue
             if root_layout is not None and node.id == root_layout.id:
                 empties.append(Caption(canvas, _EMPTY_FORM))
                 targets.append((canvas, OnSpace(node.id, node.id)))
-            else:
+            elif paint is not None:
                 _empty_mark(
                     empties,
                     targets,
-                    canvas,
+                    paint,
                     OnSpace(node.id, node.id),
                     _drop_caption(document, node),
                 )
@@ -259,17 +270,20 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         if switch is not None:
             stacks.append((node.id, canvas, switch[0], switch[1]))
         clipped = _clip(canvas, page)
+        if limit is not None and clipped is not None:
+            clipped = _clip(clipped, limit)
         if clipped is not None:
             content.append(Obstacle(node.id, clipped))
         if node.class_name in _EMPTY_PAGE_CAPTIONS and not node.child_widgets and node.id != document.root.id:
             # A page container with no pages: a dashed frame and its caption. A drop makes the first page.
-            _empty_mark(
-                empties,
-                targets,
-                canvas,
-                OnWidget(node.id, positioning_of(document, node.id), "widget"),
-                _EMPTY_PAGE_CAPTIONS[node.class_name],
-            )
+            if paint is not None:
+                _empty_mark(
+                    empties,
+                    targets,
+                    paint,
+                    OnWidget(node.id, positioning_of(document, node.id), "widget"),
+                    _EMPTY_PAGE_CAPTIONS[node.class_name],
+                )
             continue
         if node.id == document.root.id or managed_container(document, node):
             continue
@@ -277,13 +291,14 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
             continue
         if node.child_widgets:
             unlaid.append(node.id)
-            bare.append(Stroke(canvas, "tab", 1, "dashed"))
-        elif effective_class(document, node) in _EMPTY_CONTAINER:
+            if paint is not None:
+                bare.append(Stroke(paint, "tab", 1, "dashed", node=node.id))
+        elif effective_class(document, node) in _EMPTY_CONTAINER and paint is not None:
             # The body stays a widget hit so a drag moves the container.
             _empty_mark(
                 empties,
                 targets,
-                canvas,
+                paint,
                 OnWidget(node.id, positioning_of(document, node.id), "widget"),
                 _drop_caption(document, node),
             )
@@ -320,6 +335,7 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
         tuple(stacks),
         tuple(splitters),
         marks,
+        clips,
     )
 
 
@@ -368,13 +384,13 @@ def shift_static(
             content.append(obstacle)
             continue
         seen.add(obstacle.node)
-        clipped = _clip(view.to_canvas(rect), page)
+        clipped = _clip_scroll(_clip(view.to_canvas(rect), page), layer.scroll_clips.get(obstacle.node))
         if clipped is not None:
             content.append(Obstacle(obstacle.node, clipped))
     for node, rect in updates.items():
         if node in seen:
             continue
-        clipped = _clip(view.to_canvas(rect), page)
+        clipped = _clip_scroll(_clip(view.to_canvas(rect), page), layer.scroll_clips.get(node))
         if clipped is not None:
             content.append(Obstacle(node, clipped))
     shifted_items: List[Item] = []
@@ -384,7 +400,10 @@ def shift_static(
         if rect is None:
             shifted_items.append(item)
             continue
-        shifted_items.append(replace(item, rect=view.to_canvas(rect)))
+        canvas = _clip_scroll(view.to_canvas(rect), layer.scroll_clips.get(node_id))
+        if canvas is None:
+            continue
+        shifted_items.append(replace(item, rect=canvas))
     return StaticLayer(
         layer.epoch,
         layer.view,
@@ -397,6 +416,7 @@ def shift_static(
         layer.stacks,
         layer.splitters,
         layer.host_marks,
+        layer.scroll_clips,
     )
 
 
@@ -724,11 +744,16 @@ def _drop_chip(
         return
     host = target.host if isinstance(target, (AcceptedDrop, RefusedDrop)) and target.host is not None else inputs.document.root.id
     role: Role = "problem" if isinstance(target, RefusedDrop) or target.indicator.role == "problem" else "select"
+    anchor = inputs.view.to_canvas(target.indicator.rect)
+    if isinstance(target, AcceptedDrop) and target.action == "dock_side":
+        # Beside the band's middle. below_left of the full-height band sits on the size readout.
+        mid = anchor.y + anchor.height // 2
+        anchor = CanvasRect(anchor.x, mid, max(anchor.width, 1), 1)
     _ask(
         faces,
         requests,
         ("drop", token),
-        inputs.view.to_canvas(target.indicator.rect),
+        anchor,
         _label_size(text, inputs.measure),
         LABEL_CORNERS,
         inputs.document,
@@ -873,6 +898,11 @@ def _requests(
             )
     for node_id in static.unlaid:
         rect = _shown_rect(static, inputs.view, document, inputs.gesture, node_id)
+        if rect is None:
+            continue
+        limit = static.scroll_clips.get(node_id)
+        if limit is not None:
+            rect = _clip(rect, limit)
         if rect is None:
             continue
         text = no_layout_text()
@@ -1272,6 +1302,26 @@ def _same_canvas(rect: CanvasRect, placed: CanvasRect, page: CanvasRect) -> bool
         return True
     clipped = _clip(placed, page)
     return clipped is not None and rect == clipped
+
+
+def _scroll_limit(
+    document: UiDocument,
+    node_id: NodeId,
+    widget_canvas: Mapping[NodeId, CanvasRect],
+) -> Optional[CanvasRect]:
+    """The scroll area's canvas rect, when ``node_id`` is inside one and not the area itself."""
+    area = scroll_area_of(document, node_id)
+    if area is None or area == node_id:
+        return None
+    return widget_canvas.get(area)
+
+
+def _clip_scroll(rect: Optional[CanvasRect], limit: Optional[CanvasRect]) -> Optional[CanvasRect]:
+    if rect is None:
+        return None
+    if limit is None:
+        return rect
+    return _clip(rect, limit)
 
 
 def _clip(rect: CanvasRect, page: CanvasRect) -> Optional[CanvasRect]:

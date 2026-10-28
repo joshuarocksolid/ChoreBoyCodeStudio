@@ -33,6 +33,7 @@ from app.features.form_builder.engine.query.drop_target import (
     DropPayload,
     DropTarget,
     RefusedDrop,
+    keyboard_refusal,
 )
 from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.query.tree import form_rows, grid_shape, is_page_container
@@ -106,10 +107,23 @@ def auto_commands(
     payload: DropPayload,
     fragment: Optional[Fragment],
 ) -> Tuple[Command, ...]:
+    payload = _limited(payload, fragment)
     target = auto_target(doc, anchor, payload)
     if target is None:
         return ()
     return commands_for(doc, target, payload, fragment)
+
+
+def _limited(payload: DropPayload, fragment: Optional[Fragment]) -> DropPayload:
+    """A palette fragment carries the class. The drag payload already has the flags."""
+    if fragment is None or not fragment.nodes:
+        return payload
+    class_name = str(fragment.nodes[0].field("class_name") or "")
+    if class_name == "QWizardPage" and not payload.wizard_page:
+        return replace(payload, wizard_page=True)
+    if class_name == "QDockWidget" and not payload.dock:
+        return replace(payload, dock=True)
+    return payload
 
 
 def indicate_preview(doc: UiDocument, index: object, target: AcceptedDrop) -> AcceptedDrop:
@@ -187,6 +201,17 @@ def auto_target(
     payload: DropPayload,
 ) -> Optional[Union[AcceptedDrop, RefusedDrop]]:
     """The target Enter would use. None when there is nowhere to put it."""
+    sentence = keyboard_refusal(doc, anchor, payload)
+    if sentence is not None:
+        host = anchor if anchor is not None and doc.contains(anchor) else doc.root.id
+        blank = Rect(0, 0, 1, 1)
+        return RefusedDrop(
+            sentence,
+            sentence,
+            host,
+            DropIndicator(blank, dashed=True, role="problem"),
+            blank,
+        )
     if payload.kind == "spacer":
         layout = _anchor_layout(doc, anchor)
         if isinstance(layout, LayoutNode) and layout.class_name == "QFormLayout":
