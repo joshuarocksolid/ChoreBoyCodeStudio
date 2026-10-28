@@ -580,6 +580,10 @@ def test_sort_and_search(qapp: QApplication) -> None:
         _settle(qapp, pane)
         echo = pane.findChild(QWidget, "formBuilder.row.echoMode")
         assert echo is not None and echo.isVisible()
+        search.setText("no echo")
+        _settle(qapp, pane)
+        echo = pane.findChild(QWidget, "formBuilder.row.echoMode")
+        assert echo is not None and echo.isVisible()
         search.setText("title")
         _select(session, "firstPage")
         _settle(qapp, pane)
@@ -685,11 +689,21 @@ def test_translation_matches_uic(qapp: QApplication, tmp_path: Path) -> None:
 <ui version="4.0">
  <class>Form</class>
  <widget class="QWidget" name="Form">
+  <property name="tags" stdset="0">
+   <stringlist comment="group" extracomment="shown"><string>Red</string></stringlist>
+  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <widget class="QLabel" name="titleLabel">
      <property name="text"><string comment="caption" extracomment="shown">Hello</string></property>
      <property name="toolTip"><string notr="true">Rest here</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QTabWidget" name="pages">
+     <widget class="QWidget" name="firstPage">
+      <attribute name="title"><string comment="tab">First</string></attribute>
+     </widget>
     </widget>
    </item>
   </layout>
@@ -758,7 +772,9 @@ def test_rich_lists_line_breaks_and_segments_keep_the_edit(qapp: QApplication) -
         QTest.keyClicks(formatted, "there")
         _named(popover, "Numbered list").click()
         qapp.processEvents()
-        written = session.document.node(session.document.by_name("richLabel")[0]).prop("text").value.text
+        written_value = session.document.node(session.document.by_name("richLabel")[0]).value("text")
+        assert isinstance(written_value, StringValue)
+        written = written_value.text
         assert "Hello<br />there" in written
         assert "<ol>" in written and "<li" in written
         _named(popover, "Source").click()
@@ -768,7 +784,9 @@ def test_rich_lists_line_breaks_and_segments_keep_the_edit(qapp: QApplication) -
         source.moveCursor(QTextCursor.End)
         QTest.keyClicks(source, " ")
         qapp.processEvents()
-        kept = session.document.node(session.document.by_name("richLabel")[0]).prop("text").value.text
+        kept_value = session.document.node(session.document.by_name("richLabel")[0]).value("text")
+        assert isinstance(kept_value, StringValue)
+        kept = kept_value.text
         assert "<ol>" in kept and "there" in kept
         steps = len(session.log.entries())
         done = popover.findChild(QWidget, "formBuilder.popoverDone")
