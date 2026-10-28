@@ -19,7 +19,7 @@ from app.features.form_builder.qtside.inspector.api import EditorHost
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 from app.features.form_builder.qtside.visual.common import token_color
 from app.qt.QtCore import QEvent, QObject, QRect, Qt
-from app.qt.QtGui import QColor, QFontMetrics, QPainter, QPen, QPixmap
+from app.qt.QtGui import QColor, QFontMetrics, QImageReader, QPainter, QPen, QPixmap
 from app.qt.QtWidgets import (
     QFileDialog,
     QFrame,
@@ -54,7 +54,9 @@ def form_directory(host: EditorHost) -> str:
         if isinstance(path, str) and path:
             return os.path.dirname(os.path.abspath(path))
         widget = widget.parentWidget()
-    return os.getcwd()
+    # An unsaved form has no folder. Never guess one (the process folder is
+    # not the form's); file paths are then stored absolute.
+    return ""
 
 
 def cached_thumbnail(disk_path: str, side: int) -> QPixmap:
@@ -69,15 +71,26 @@ def cached_thumbnail(disk_path: str, side: int) -> QPixmap:
     found = _THUMBS.get(key)
     if found is not None:
         return found
-    source = QPixmap(disk_path)
-    if source.isNull():
-        scaled = QPixmap()
-    else:
-        mode = getattr(getattr(Qt, "AspectRatioMode", Qt), "KeepAspectRatio")
-        smooth = getattr(getattr(Qt, "TransformationMode", Qt), "SmoothTransformation")
-        scaled = source.scaled(side, side, mode, smooth)
+    scaled = _read_scaled(disk_path, side)
     _THUMBS[key] = scaled
     return scaled
+
+
+def _read_scaled(disk_path: str, side: int) -> QPixmap:
+    """Decode at thumbnail size. A huge picture is never decoded whole for a 48 px cell."""
+    reader = QImageReader(disk_path)
+    size = reader.size()
+    if size.isValid() and size.width() > 0 and size.height() > 0:
+        if size.width() > side or size.height() > side:
+            reader.setScaledSize(size.scaled(side, side, getattr(getattr(Qt, "AspectRatioMode", Qt), "KeepAspectRatio")))
+    image = reader.read()
+    if image.isNull():
+        return QPixmap()
+    if image.width() > side or image.height() > side:
+        mode = getattr(getattr(Qt, "AspectRatioMode", Qt), "KeepAspectRatio")
+        smooth = getattr(getattr(Qt, "TransformationMode", Qt), "SmoothTransformation")
+        image = image.scaled(side, side, mode, smooth)
+    return QPixmap.fromImage(image)
 
 
 def _ask_file(parent: QWidget) -> str:
@@ -418,8 +431,7 @@ class PicturePicker(QWidget):
         self._scroll.setFrameShape(QFrame.NoFrame)
         self._scroll.setFocusPolicy(_focus("NoFocus"))  # type: ignore[arg-type]
         self._scroll.setWidget(self._grid)
-        self._scroll.setMinimumHeight(min(96, grid_height))
-        self._scroll.setMaximumHeight(grid_height)
+        self._grid_height = grid_height
         policy = getattr(QSizePolicy, "Policy", QSizePolicy)
         self._scroll.setSizePolicy(policy.Expanding, policy.Preferred)
         layout.addWidget(self._scroll)
@@ -474,6 +486,25 @@ class PicturePicker(QWidget):
         self._issue.setVisible(bool(self._index.issues))
         self._empty.setVisible(not self._locations)
         self._grid.set_pictures(self._index.pictures, self._search.text())
+        has_pictures = bool(self._index.pictures)
+        self._search.setVisible(has_pictures)
+        self._scroll.setVisible(has_pictures)
+        # A scroll area's own size hint is about one row. Size it to the grid
+        # (four columns fit the popover at every scale) up to the cap.
+        per_group: Dict[Tuple[str, str], int] = {}
+        for picture in self._index.pictures:
+            key = (picture.qrc_name, picture.prefix)
+            per_group[key] = per_group.get(key, 0) + 1
+        rows = sum((count + 3) // 4 for count in per_group.values())
+        needed = rows * _CELL_H + len(per_group) * _HEADER_H
+        self._scroll.setFixedHeight(max(_CELL_H + _HEADER_H, min(self._grid_height, needed)))
+
+    def focus_first(self) -> None:
+        """The search field, or "From a file…" when there is nothing to search."""
+        if self._index.pictures:
+            self._search.setFocus()
+        else:
+            self._file.setFocus()
 
     def focus_grid(self) -> None:
         if self._grid.count() == 0:

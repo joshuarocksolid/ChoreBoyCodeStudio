@@ -298,9 +298,16 @@ def test_no_resource_caption(qapp: QApplication, tmp_path: Path) -> None:
         _select(session, "photo")
         pane.flush()
         _open_row(pane, "formBuilder.row.pixmap", qapp)
-        caption = _search(qapp).parent().findChild(QLabel, "formBuilder.pictureNoResource")
-        assert caption is not None and caption.isVisible()
-        assert caption.text() == _NO_RESOURCE
+        captions = [
+            widget
+            for widget in QApplication.allWidgets()
+            if widget.objectName() == "formBuilder.pictureNoResource" and widget.isVisible()
+        ]
+        assert len(captions) == 1 and isinstance(captions[0], QLabel)
+        assert captions[0].text() == _NO_RESOURCE
+        # Nothing to search: focus starts on the one thing that works.
+        focused = QApplication.focusWidget()
+        assert focused is not None and focused.objectName() == "formBuilder.pictureFromFile"
     finally:
         _close(window, pane, realizer, session, qapp)
 

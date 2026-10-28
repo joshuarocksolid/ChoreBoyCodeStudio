@@ -274,7 +274,7 @@ class PixmapEditor(_PictureRow):
             picker.select_path(self._stored)
         popover.body().addWidget(picker)
         popover.open_popover()
-        picker.search.setFocus()
+        picker.focus_first()
 
     def _pick(self, stored: str) -> None:
         popover = self._popover
@@ -386,7 +386,7 @@ class IconEditor(_PictureRow):
         self._sync_open()
         popover.open_popover()
         if self._picker is not None:
-            self._picker.search.setFocus()
+            self._picker.focus_first()
 
     def _sync_open(self) -> None:
         theme = self._theme
