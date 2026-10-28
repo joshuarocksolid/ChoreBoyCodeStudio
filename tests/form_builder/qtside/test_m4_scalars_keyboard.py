@@ -234,7 +234,12 @@ def test_k11_choices_and_numbers(tmp_path: Path, qapp: QApplication) -> None:
         kb.press("Key_Return")
         kb.check("Press the keys" in _focus_text(kb), "Record asks for the keys")
         kb.press("Key_P", "Control", "Shift")
-        QTest.qWait(1200)
+        # The chord window is 1 s from when the drain timer reads the key. Under a
+        # loaded full run that timer can start late, so wait on the result.
+        for _ in range(40):
+            QTest.qWait(100)
+            if "Ctrl+Shift+P" in kb.text():
+                break
         kb.pump(8)
         kb.check("Ctrl+Shift+P" in kb.text(), "Ctrl+Shift+P is written")
         held = kb.text()
