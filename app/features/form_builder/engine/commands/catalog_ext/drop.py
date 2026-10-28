@@ -23,6 +23,21 @@ from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, Proper
 from app.features.form_builder.engine.ui4.values import StringValue
 
 
+# These widgets already show their own words, so a form row does not invent
+# a "New field:" label beside them (UX-FORML-002). They sit in the field cell.
+_SHOWS_OWN_TEXT = frozenset(
+    {
+        "QPushButton",
+        "QToolButton",
+        "QCheckBox",
+        "QRadioButton",
+        "QGroupBox",
+        "QDialogButtonBox",
+        "QCommandLinkButton",
+    }
+)
+
+
 def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if add is None:
@@ -48,6 +63,10 @@ class InsertFormRow(_CommandBase):
     def apply(self, doc: UiDocument, ctx: PlanContext) -> Tuple[NodeId, NodeId]:
         if (self.fragment is None) == (self.existing is None):
             raise CommandRejected("A new form row needs a widget.")
+        if self.existing is not None and not doc.contains(self.existing):
+            raise CommandRejected("That object is no longer in the form.")
+        if _shows_own_text(doc, self.fragment, self.existing):
+            return _insert_unlabeled_field(doc, ctx, self.layout, self.row, self.fragment, self.existing)
         label = NodeSpec(
             "widget",
             None,
@@ -237,6 +256,38 @@ class SpliceReading(_CommandBase):
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
         planning.splice_grid_reading(doc, ctx, self.layout, self.index, self.existing, self.fragment)
+
+
+def _shows_own_text(doc: UiDocument, fragment: Optional[Fragment], existing: Optional[NodeId]) -> bool:
+    if existing is not None:
+        node = doc.node(existing)
+        return isinstance(node, WidgetNode) and node.class_name in _SHOWS_OWN_TEXT
+    if fragment is None or not fragment.nodes:
+        return False
+    class_name = fragment.nodes[0].field("class_name")
+    return isinstance(class_name, str) and class_name in _SHOWS_OWN_TEXT
+
+
+def _insert_unlabeled_field(
+    doc: UiDocument,
+    ctx: PlanContext,
+    layout: NodeId,
+    row: int,
+    fragment: Optional[Fragment],
+    existing: Optional[NodeId],
+) -> Tuple[NodeId, NodeId]:
+    """The field cell only. Both returned ids are the field, since there is no label."""
+    placement = InFormRow(layout, row, "field", True)
+    if existing is not None:
+        planning.move_nodes(doc, ctx, (existing,), placement)
+        _clear_geometry(doc, ctx, existing)
+        field_id = existing
+    else:
+        assert fragment is not None
+        field_ids, _, _, _ = planning.insert_fragment(doc, ctx, placement, fragment, False)
+        field_id = field_ids[0]
+    ctx.select((field_id,), field_id)
+    return (field_id, field_id)
 
 
 def _clear_geometry(doc: UiDocument, ctx: PlanContext, node_id: NodeId) -> None:

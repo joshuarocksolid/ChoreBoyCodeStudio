@@ -22,7 +22,7 @@ from app.features.form_builder.engine.query.drop_target import (
 )
 from app.features.form_builder.engine.query.hit_index import Rect
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.spec import Fragment
+from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.engine.ui4.values import CStringValue, RectValue
 from tests.form_builder.engine.commands._support import button_spec, cell_of, nid, open_log, prop_text, saved
 
@@ -156,7 +156,8 @@ def test_a_new_form_row_creates_a_buddy_label_in_one_undo_step() -> None:
     before = saved(log.document)
     layout = log.document.root.layout
     assert layout is not None
-    outcome = log.execute(InsertFormRow(layout.id, 1, fragment=Fragment(nodes=(button_spec("go", "Go"),))))
+    line = NodeSpec("widget", None, (("class_name", "QLineEdit"), ("object_name", "go")), ())
+    outcome = log.execute(InsertFormRow(layout.id, 1, fragment=Fragment(nodes=(line,))))
     label_id, field_id = outcome.result
     label = log.document.node(label_id)
     field = log.document.node(field_id)

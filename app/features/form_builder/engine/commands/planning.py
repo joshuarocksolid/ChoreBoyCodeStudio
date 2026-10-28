@@ -46,9 +46,10 @@ from app.features.form_builder.engine.logic.storage import (
 from app.features.form_builder.engine.query.tree import (
     form_item_role,
     form_occupied_cells,
+    form_rows,
     is_page_container,
 )
-from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.document import UiDocument, next_object_name
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, Node, SpacerNode, WidgetNode
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.schema import SCHEMA, SlotsDecl
@@ -83,7 +84,9 @@ def insert_fragment(
     if isinstance(placement, InFormRow) and pair is None:
         role = _lone_form_role(fragment.nodes)
         if role is not None:
-            placement = InFormRow(placement.layout, placement.row, role, True)
+            # Keep the caller's insert_row. Forcing a new row here split a
+            # form-row insert: the field shifted the label onto the next row.
+            placement = InFormRow(placement.layout, placement.row, role, placement.insert_row)
     incoming = 1 if pair is not None else len(fragment.nodes)
     if pair is not None and isinstance(placement, InFormRow):
         dest = _form_pair_dest(doc, ctx, placement)
@@ -239,6 +242,11 @@ def wrap_nodes(
 ) -> NodeId:
     if not ids:
         raise CommandRejected("There is nothing to wrap.")
+    # Reject a gone id before any helper reads its parent. A transaction can
+    # hold a wrap of a node that an earlier command in it deleted.
+    for node_id in ids:
+        _require(doc, node_id)
+    ids = widgets_in_box_wrap(doc, ids, layout_class)
     ordered = _sort_ids(doc, [_require(doc, node_id).id for node_id in ids])
     carriers = []
     parents = set()
@@ -254,6 +262,9 @@ def wrap_nodes(
         raise CommandRejected("Wrap only works on siblings.")
     parent_id, slot = next(iter(parents))
     parent = doc.node(parent_id)
+    if isinstance(parent, LayoutNode) and parent.class_name in (_FORM, _GRID):
+        ordered = _sort_by_cell(doc, ordered)
+        carriers = [_item_carrier(doc, node_id) or node_id for node_id in ordered]
     anchor = _form_anchor(doc, parent, carriers)
     first = min(doc.node(carrier).slot_index for carrier in carriers)
     if container_class is None:
@@ -262,11 +273,12 @@ def wrap_nodes(
         layout = _alloc_layout(doc, ctx, layout_class)
         item = _alloc_item_holding(ctx, layout)
         ctx.do(InsertNodeOp(parent_id, slot, first, item))
-        place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0)  # type: ignore[arg-type]
+        place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0, keep_order=True)  # type: ignore[arg-type]
         _apply_named_cells(doc, ctx, layout.id, cells)  # type: ignore[arg-type]
         _finish_form_layout(doc, ctx, layout.id, bool(cells))  # type: ignore[arg-type]
+        _clear_box_cells(doc, ctx, layout.id, layout_class)  # type: ignore[arg-type]
         if anchor is not None:
-            _place_form_anchor(doc, ctx, parent_id, item.id, anchor)  # type: ignore[arg-type]
+            _place_wrapped_form_row(doc, ctx, parent_id, item.id, anchor, layout_class)  # type: ignore[arg-type]
         ctx.select((layout.id,))  # type: ignore[arg-type]
         return layout.id  # type: ignore[return-value]
     widget, layout = _alloc_container(doc, ctx, container_class, layout_class)
@@ -276,11 +288,12 @@ def wrap_nodes(
         ctx.do(InsertNodeOp(parent_id, slot, first, held))
     else:
         ctx.do(InsertNodeOp(parent_id, slot, first, widget))
-    place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0)  # type: ignore[arg-type]
+    place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0, keep_order=True)  # type: ignore[arg-type]
     _apply_named_cells(doc, ctx, layout.id, cells)  # type: ignore[arg-type]
     _finish_form_layout(doc, ctx, layout.id, bool(cells))  # type: ignore[arg-type]
+    _clear_box_cells(doc, ctx, layout.id, layout_class)  # type: ignore[arg-type]
     if anchor is not None and held is not None:
-        _place_form_anchor(doc, ctx, parent_id, held.id, anchor)  # type: ignore[arg-type]
+        _place_wrapped_form_row(doc, ctx, parent_id, held.id, anchor, layout_class)  # type: ignore[arg-type]
     ctx.select((widget.id,))  # type: ignore[arg-type]
     return widget.id  # type: ignore[return-value]
 
@@ -1017,11 +1030,18 @@ def place_nodes(
     parent: NodeId,
     slot: str,
     start_index: int,
+    keep_order: bool = False,
 ) -> None:
-    """Put ``ids`` in document order at ``start_index`` of the list the user saw."""
+    """Put ``ids`` at ``start_index``. Document order, unless ``keep_order`` is set."""
     if not ids:
         return
-    ordered = _sort_ids(doc, ids)
+    if keep_order:
+        ordered = []
+        for node_id in ids:
+            if node_id not in ordered:
+                ordered.append(node_id)
+    else:
+        ordered = _sort_ids(doc, ids)
     kids = [child.id for child in doc.node(parent).children(slot)]
     kid_set = set(kids)
     selected = [node_id for node_id in ordered if node_id in kid_set]
@@ -1815,16 +1835,23 @@ def _name_counts(specs: Sequence[NodeSpec]) -> Dict[str, int]:
 
 
 def _take_name(base: str, doc: UiDocument, chosen: set) -> str:
-    if base not in chosen and base not in doc.names():
-        chosen.add(base)
-        return base
-    suffix = 2
-    while True:
-        candidate = "%s_%s" % (base, suffix)
-        if candidate not in chosen and candidate not in doc.names():
-            chosen.add(candidate)
-            return candidate
-        suffix += 1
+    taken: object = doc.names()
+    if chosen:
+        taken = _ChosenNames(doc.names(), chosen)
+    name = next_object_name(base, taken)  # type: ignore[arg-type]
+    chosen.add(name)
+    return name
+
+
+class _ChosenNames:
+    """Names already on the form plus names picked earlier in this command."""
+
+    def __init__(self, existing: object, chosen: set) -> None:
+        self._existing = existing
+        self._chosen = chosen
+
+    def __contains__(self, item: object) -> bool:
+        return item in self._existing or item in self._chosen  # type: ignore[operator]
 
 
 def _check_name(
@@ -1983,16 +2010,134 @@ def _normalize_form_items(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) 
         _set_cell(doc, ctx, item_id, row, column, 1, colspan)
 
 
+def widgets_in_box_wrap(
+    doc: UiDocument, ids: Tuple[NodeId, ...], layout_class: str
+) -> Tuple[NodeId, ...]:
+    """The widgets a box wrap will contain, including form-row labels it carries."""
+    if layout_class not in _BOX:
+        return ids
+    return _with_form_labels(doc, ids)
+
+
+def _with_form_labels(doc: UiDocument, ids: Tuple[NodeId, ...]) -> Tuple[NodeId, ...]:
+    """Two or more form fields keep the first row's label and carry the later ones.
+
+    Reading order is row, then column. The first label stays in the label
+    column. Each later label is placed just before its field. A mix of
+    fields and other roles is left as the user selected it.
+    """
+    found: List[Tuple[int, int, NodeId, Optional[NodeId]]] = []
+    parent_id: Optional[NodeId] = None
+    for node_id in ids:
+        item = doc.parent(node_id)
+        if not isinstance(item, LayoutItemNode):
+            return ids
+        parent = doc.parent(item.id)
+        if not isinstance(parent, LayoutNode) or parent.class_name != _FORM:
+            return ids
+        if form_item_role(item.column, item.colspan) != "field":
+            return ids
+        if parent_id is None:
+            parent_id = parent.id
+        elif parent.id != parent_id:
+            return ids
+        label_content: Optional[NodeId] = None
+        for label_id, field_id, _spanning in form_rows(doc, parent.id):
+            if field_id != item.id or label_id is None:
+                continue
+            label_item = doc.node(label_id)
+            content = label_item.content if isinstance(label_item, LayoutItemNode) else None
+            if content is not None:
+                label_content = content.id
+        found.append((item.row or 0, item.column or 0, node_id, label_content))
+    if len({row for row, _column, _field, _label in found}) < 2:
+        return ids
+    found.sort()
+    ordered: List[NodeId] = [found[0][2]]
+    moved = False
+    for _row, _column, field_id, label_id in found[1:]:
+        if label_id is not None and label_id not in ordered:
+            ordered.append(label_id)
+            moved = True
+        if field_id not in ordered:
+            ordered.append(field_id)
+    if not moved:
+        return ids
+    return tuple(ordered)
+
+
+def _clear_box_cells(doc: UiDocument, ctx: PlanContext, layout_id: NodeId, layout_class: str) -> None:
+    """A box item is a sequence. It never keeps a grid or form cell."""
+    if layout_class not in _BOX:
+        return
+    _clear_cells(doc, ctx, layout_id)
+
+
+def _place_wrapped_form_row(
+    doc: UiDocument,
+    ctx: PlanContext,
+    layout_id: NodeId,
+    item_id: NodeId,
+    anchor: Tuple[int, str],
+    layout_class: str,
+) -> None:
+    row, role = anchor
+    if layout_class in _BOX:
+        # The first label keeps column 0. The box sits in the field cell.
+        column = 1 if role == "field" else 0
+        _set_cell(doc, ctx, item_id, row, column, 1, 1)
+    else:
+        _place_form_anchor(doc, ctx, layout_id, item_id, anchor)
+    _compact_form_rows(doc, ctx, layout_id)
+
+
 def _form_anchor(
     doc: UiDocument, parent: Node, carriers: Sequence[NodeId]
 ) -> Optional[Tuple[int, str]]:
     if not isinstance(parent, LayoutNode) or parent.class_name != _FORM or not carriers:
         return None
-    first_id = min(carriers, key=lambda carrier: doc.node(carrier).slot_index)
+    first_id = min(carriers, key=lambda carrier: _cell_key(doc, carrier))
     first = doc.node(first_id)
     if not isinstance(first, LayoutItemNode):
         return None
     return _form_rect(first)
+
+
+def _compact_form_rows(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) -> None:
+    """Renumber form rows so a wrap does not leave 0, 2, 3."""
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode):
+        return
+    used = sorted({item.row or 0 for item in layout.items})
+    mapping = {old: new for new, old in enumerate(used)}
+    for item in list(layout.items):
+        old = item.row or 0
+        new = mapping[old]
+        if new == old:
+            continue
+        _set_cell(doc, ctx, item.id, new, item.column or 0, item.rowspan or 1, item.colspan or 1)
+
+
+def _cell_key(doc: UiDocument, node_id: NodeId) -> Tuple[int, int, int]:
+    node = doc.get(node_id)
+    item = node if isinstance(node, LayoutItemNode) else None
+    if item is None:
+        parent = doc.parent(node_id)
+        item = parent if isinstance(parent, LayoutItemNode) else None
+    if isinstance(item, LayoutItemNode):
+        return (item.row or 0, item.column or 0, item.slot_index)
+    slot = node.slot_index if node is not None else 0
+    return (1 << 20, 1 << 20, slot)
+
+
+def _sort_by_cell(doc: UiDocument, ids: Sequence[NodeId]) -> List[NodeId]:
+    """Reading order for a form or a grid: row, then column (UX-WRAP-004)."""
+    unique: List[NodeId] = []
+    for node_id in ids:
+        if node_id not in unique:
+            unique.append(node_id)
+    unique.sort(key=lambda node_id: _cell_key(doc, node_id))
+    return unique
 
 
 def _place_form_anchor(

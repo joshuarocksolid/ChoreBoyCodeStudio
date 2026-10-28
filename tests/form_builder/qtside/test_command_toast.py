@@ -158,6 +158,49 @@ def _body(toast: QFrame) -> str:
     return label.text()
 
 
+def test_the_toast_sits_between_a_top_caption_and_a_bottom_selection() -> None:
+    from app.qt.QtCore import QRect, QSize
+
+    from app.features.form_builder.integration.toast import toast_origin
+
+    host = QRect(0, 0, 400, 300)
+    selection = QRect(0, 250, 400, 50)
+    caption = QRect(0, 0, 400, 40)
+    page = QRect(0, 0, 400, 300)
+    origin = toast_origin(host, 160, 32, (selection, caption, page))
+    toast = QRect(origin, QSize(160, 32))
+    assert not toast.intersects(selection)
+    assert not toast.intersects(caption)
+
+
+def test_the_toast_misses_a_chip_when_the_page_fills_the_view() -> None:
+    from app.qt.QtCore import QRect, QSize
+
+    from app.features.form_builder.integration.toast import toast_origin
+
+    host = QRect(0, 0, 400, 300)
+    selection = QRect(0, 150, 400, 150)
+    chip = QRect(220, 16, 160, 28)
+    page = QRect(0, 0, 400, 300)
+    origin = toast_origin(host, 160, 32, (selection, chip, page))
+    toast = QRect(origin, QSize(160, 32))
+    assert not toast.intersects(selection)
+    assert not toast.intersects(chip)
+
+
+def test_the_toast_moves_off_a_selection_in_the_bottom_right() -> None:
+    from app.qt.QtCore import QRect, QSize
+
+    from app.features.form_builder.integration.toast import toast_origin
+
+    host = QRect(0, 0, 400, 300)
+    selection = QRect(280, 240, 110, 50)
+    origin = toast_origin(host, 160, 32, (selection,))
+    toast = QRect(origin, QSize(160, 32))
+    assert not toast.intersects(selection)
+    assert origin.x() < 200
+
+
 def _close(parent: QWidget, surface: QWidget) -> None:
     surface.release()  # type: ignore[attr-defined]
     parent.deleteLater()

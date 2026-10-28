@@ -378,6 +378,7 @@ class FormSurface(QWidget):
         self._gesture_sentence = ""
         self._overlay_sentence = ""
         self._hover_sentence = ""
+        self._hover_node: Optional[NodeId] = None
         self._problem_timer = QTimer(self)
         self._problem_timer.setSingleShot(True)
         self._problem_timer.timeout.connect(self._flush_problems)
@@ -897,8 +898,10 @@ class FormSurface(QWidget):
 
     def _on_log(self, change_set: object) -> None:
         self._sync_toast(change_set)
+        self._rewrite_hover()
         if self._source.mode != "visual":
             self._refresh_undo_buttons()
+            self._refresh_shell_status()
             return
         current = self._session.selection.state.current
         self._workbench.refresh(current, change=change_set if isinstance(change_set, ChangeSet) else None)
@@ -906,6 +909,8 @@ class FormSurface(QWidget):
         self._refresh_undo_buttons()
         self._sync_shell_undo()
         self._refresh_save_state()
+        self._rewrite_hover()
+        self._refresh_shell_status()
         self._command_toast.place()
 
     def _sync_toast(self, change_set: object) -> None:
@@ -998,12 +1003,49 @@ class FormSurface(QWidget):
 
     def hover_changed(self, node: Optional[NodeId]) -> None:
         self._workbench.outline.set_hover(node)
-        if node is None:
-            self._hover_sentence = ""
-        else:
-            edits = enter_opens_editor(self._session.document, node)
-            self._hover_sentence = hover_sentence(self._session.document, node, edits)
+        self._hover_node = node
+        self._rewrite_hover()
         self._refresh_shell_status()
+
+    def _rewrite_hover(self) -> None:
+        node = self._hover_node
+        if node is None or not self._session.document.contains(node):
+            self._hover_node = None
+            self._hover_sentence = ""
+            return
+        edits = enter_opens_editor(self._session.document, node)
+        self._hover_sentence = hover_sentence(self._session.document, node, edits)
+
+    def ask_delete(self, prose: str, ids: Sequence[NodeId]) -> None:
+        anchor, _bounds = self._place(ids)
+        self._workbench.outline.show_delete(prose, tuple(ids), anchor, self._focus_canvas)
+
+    def toast_place_hints(self) -> Tuple[QRect, Tuple[QRect, ...]]:
+        """Viewport in this surface. Blocked rects end with the page.
+
+        The selection comes first, then the selection chip and caption rects.
+        ``toast_origin`` may cover the page and must leave the rest clear.
+        """
+        canvas = self._workbench.canvas
+        viewport = canvas.viewport()
+        origin = self.mapFromGlobal(viewport.mapToGlobal(QPoint(0, 0)))
+        host = QRect(origin, viewport.size())
+        blocked = []
+
+        def take(drawn: QRect) -> None:
+            if drawn.isNull() or drawn.width() <= 0 or drawn.height() <= 0:
+                return
+            blocked.append(QRect(self.mapFromGlobal(viewport.mapToGlobal(drawn.topLeft())), drawn.size()))
+
+        drawn = canvas.viewport_rect(self._session.selection.state.ids)
+        if drawn is not None:
+            take(drawn)
+        for rect in canvas.overlay_block_rects():
+            take(rect)
+        page = canvas.viewport_rect((self._session.document.root.id,))
+        if page is not None:
+            take(page)
+        return host, tuple(blocked)
 
     def zoom_changed(self, label: str) -> None:
         self._toolbar.zoom_label.setText(label)

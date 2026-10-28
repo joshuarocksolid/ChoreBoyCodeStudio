@@ -89,7 +89,7 @@ def _grab_form_editor(qapp, tokens, out: Path, width: int, height: int, mode: st
         canvas.apply_theme(tokens)
         email = _widget(canvas, "email")
         below = email.mapTo(canvas.page_widget(), QPoint(email.width() // 2, email.height() + 36))
-        _drag_widget_to(canvas, "go", below)
+        _drag_widget_to(canvas, "city", below)
         edits = [edit for edit in canvas.viewport().findChildren(type(email)) if edit.isVisible() and edit.text() == "New field:"]
         assert edits
         _paint_status(shell, tokens, "Drop. New field:")
@@ -257,7 +257,7 @@ def _form() -> str:
   <layout class="QFormLayout" name="formLayout">
    <item row="0" column="0"><widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property></widget></item>
    <item row="0" column="1"><widget class="QLineEdit" name="email"/></item>
-   <item row="1" column="1"><widget class="QPushButton" name="go"><property name="text"><string>Go</string></property></widget></item>
+   <item row="1" column="1"><widget class="QLineEdit" name="city"/></item>
   </layout>
 """,
     )

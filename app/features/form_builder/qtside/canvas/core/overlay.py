@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Turn
+from app.features.form_builder.engine.query.direct import EMPTY, KnobSet, Readout, Site, Turn
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, NoDrop, RefusedDrop
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
@@ -389,7 +389,8 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     items: List[Item] = []
     if not live:
         items.extend(static.items)
-        _sites(items, view, inputs.knobs, _focused_layouts(document, primary))
+        focused = _focused_layouts(document, primary)
+        _sites(items, view, inputs.knobs, focused)
     _hover(items, static, document, gesture)
     rects: Dict[NodeId, CanvasRect] = {}
     for node_id in shown.ids:
@@ -432,7 +433,10 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
     targets.extend(reversed(knob_hits))
     if not live:
-        targets.extend((view.to_canvas(site.hit), OnKnob(site.knob)) for site in inputs.knobs.sites)
+        targets.extend(
+            (view.to_canvas(site.hit), OnKnob(site.knob))
+            for site in _drawn_sites(inputs.knobs, _focused_layouts(document, primary))
+        )
     targets.extend(reversed(inert_hits))
     if not live:
         targets.extend(static.targets)
@@ -571,11 +575,6 @@ def _inert_handles(
     return hits
 
 
-# A direct child keeps the bars hittable, drawn as a hint. The layout and its
-# container draw them at full strength (UX-GAP-001, UX-PRIN-004).
-_HINT_ALPHA = 0.35
-
-
 def _focused_layouts(document: UiDocument, primary: Optional[NodeId]) -> Set[NodeId]:
     """Layouts drawn at full strength: the selected layout, or the selected container's layout."""
     if primary is None or not document.contains(primary):
@@ -588,16 +587,25 @@ def _focused_layouts(document: UiDocument, primary: Optional[NodeId]) -> Set[Nod
     return set()
 
 
+def _drawn_sites(knobs: KnobSet, focused: Set[NodeId]) -> List[Site]:
+    """Gap bars and margin bands exist only while their layout is selected (UX-GAP-001)."""
+    drawn = []
+    for site in knobs.sites:
+        if site.look in ("bar", "band") and site.knob.subject not in focused:
+            continue
+        drawn.append(site)
+    return drawn
+
+
 def _sites(items: List[Item], view: ViewMap, knobs: KnobSet, focused: Set[NodeId]) -> None:
     """Gap bars, margin bands and root-layout ticks. Grips draw only under the pointer."""
-    for site in knobs.sites:
-        alpha = 1.0 if site.knob.subject in focused else _HINT_ALPHA
+    for site in _drawn_sites(knobs, focused):
         if site.look == "bar":
-            items.append(Fill(_thin(view.to_canvas(site.mark), GAP_BAR), "gap", alpha))
+            items.append(Fill(_thin(view.to_canvas(site.mark), GAP_BAR), "gap", 1.0))
         elif site.look == "band":
             band = view.to_canvas(site.mark)
             if band.width > 0 and band.height > 0:
-                items.append(Fill(band, "gap_fill", alpha))
+                items.append(Fill(band, "gap_fill", 1.0))
     for tick in knobs.ticks:
         items.append(Stroke(view.to_canvas(tick.rect), "layout", 1.5, "solid", caps=True))
 

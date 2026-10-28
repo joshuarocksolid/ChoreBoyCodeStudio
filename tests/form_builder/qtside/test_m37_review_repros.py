@@ -1,6 +1,5 @@
 # pyright: reportAttributeAccessIssue=false
-"""M3.7 review repros: real main window, keys only. Each is a strict xfail
-that names the finding, so it turns red once the defect is fixed."""
+"""M3.7 review repros: real main window, keys only."""
 
 from __future__ import annotations
 
@@ -36,11 +35,6 @@ _ROWS = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 F-wrap-cells: Ctrl+1 on fields from two form rows writes row/column on the "
-    "new QHBoxLayout's items and leaves the second row's label alone on its row",
-)
 def test_wrapping_fields_of_two_form_rows_writes_clean_box_items(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
@@ -59,10 +53,6 @@ def test_wrapping_fields_of_two_form_rows_writes_clean_box_items(tmp_path: Path,
         _close(window, qapp, guard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 F-row-move: after a form-row insert selects label and field, Alt+Up does nothing and says nothing",
-)
 def test_alt_up_moves_a_row_just_inserted(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
@@ -90,10 +80,6 @@ def test_alt_up_moves_a_row_just_inserted(tmp_path: Path, qapp: QApplication) ->
         _close(window, qapp, guard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 F-status-layout: after Ctrl+1 the status bar describes the form, not the new layout (UX-FEED-005)",
-)
 def test_the_status_bar_names_a_selected_layout(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
@@ -104,6 +90,87 @@ def test_the_status_bar_names_a_selected_layout(tmp_path: Path, qapp: QApplicati
         assert kb.current() == "horizontalLayout"
         sentence = str(kb.surface.editor_status_sentence())  # type: ignore[attr-defined]
         assert sentence.startswith("horizontalLayout"), sentence
+    finally:
+        _close(window, qapp, guard)
+
+
+# M3.7d1 re-review. The rows are written out of order on purpose: Phone is
+# row 1 on screen but last in the file, the way an insert writes it.
+_ROWS_OUT_OF_ORDER = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>C</class>
+ <widget class="QWidget" name="C">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>300</height></rect></property>
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0"><widget class="QLabel" name="nameLabel"><property name="text"><string>Name</string></property><property name="buddy"><cstring>nameEdit</cstring></property></widget></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="nameEdit"/></item>
+   <item row="2" column="0"><widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property><property name="buddy"><cstring>emailEdit</cstring></property></widget></item>
+   <item row="2" column="1"><widget class="QLineEdit" name="emailEdit"/></item>
+   <item row="1" column="0"><widget class="QLabel" name="phoneLabel"><property name="text"><string>Phone</string></property><property name="buddy"><cstring>phoneEdit</cstring></property></widget></item>
+   <item row="1" column="1"><widget class="QLineEdit" name="phoneEdit"/></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def _box_names(text: str) -> list:
+    start = text.index('<layout class="QHBoxLayout"')
+    box = text[start : text.index("</layout>", start)]
+    return re.findall(r'<widget class="\w+" name="(\w+)"', box)
+
+
+def test_a_wrap_of_form_rows_keeps_the_rows_reading_order(tmp_path: Path, qapp: QApplication) -> None:
+    window, kb, guard = _session(tmp_path, qapp, _ROWS_OUT_OF_ORDER)
+    try:
+        kb.press("Key_3", "Alt")
+        _walk_to(kb, "phoneEdit")
+        kb.press("Key_Down", "Shift")
+        assert set(kb.selected()) == {"phoneEdit", "emailEdit"}, kb.history()
+        kb.press("Key_1", "Control")
+        text = kb.text()
+        names = _box_names(text)
+        assert names.index("phoneEdit") < names.index("emailEdit"), names
+        form_rows = [int(row) for row in re.findall(r'<item row="(\d+)"', text)]
+        assert form_rows, text
+        assert sorted(set(form_rows)) == list(range(max(form_rows) + 1)), form_rows
+    finally:
+        _close(window, qapp, guard)
+
+
+def test_a_wrap_of_form_rows_keeps_the_first_label_in_the_label_column(tmp_path: Path, qapp: QApplication) -> None:
+    window, kb, guard = _session(tmp_path, qapp, _ROWS)
+    try:
+        kb.press("Key_3", "Alt")
+        _walk_to(kb, "emailEdit")
+        kb.press("Key_Down", "Shift")
+        kb.press("Key_1", "Control")
+        text = kb.text()
+        assert re.search(r'<item row="(\d+)" column="0">\s*<widget class="QLabel" name="emailLabel"', text), text
+        assert re.search(r'<item row="\d+" column="1">\s*<layout class="QHBoxLayout"', text), text
+        assert _box_names(text) == ["emailEdit", "phoneLabel", "phoneEdit"], _box_names(text)
+    finally:
+        _close(window, qapp, guard)
+
+
+def test_a_button_inserted_into_a_form_has_no_field_label(tmp_path: Path, qapp: QApplication) -> None:
+    window, kb, guard = _session(tmp_path, qapp, _ROWS)
+    try:
+        kb.press("Key_1", "Alt")
+        _walk_to(kb, "phoneEdit", key="Key_Down")
+        kb.press("Key_Slash")
+        insert_list = kb.focus()
+        for _ in range(12):
+            item = insert_list.currentItem()  # type: ignore[union-attr]
+            if item is not None and item.text() == "Button":
+                break
+            kb.press("Key_Down")
+        kb.press("Key_Return")
+        if kb.focus_name() != "formBuilder.structure" and not kb.focus_in("formBuilder.canvas"):
+            kb.press("Key_Escape")
+        assert "New field:" not in kb.text(), kb.history()
     finally:
         _close(window, qapp, guard)
 

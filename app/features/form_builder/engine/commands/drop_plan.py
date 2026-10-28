@@ -122,6 +122,10 @@ def _preview_words(doc: UiDocument, target: AcceptedDrop) -> str:
         if target.index == 0:
             return "Goes at the start."
     if target.action == "form_row":
+        if target.row > 0:
+            name = _form_neighbour_name(doc, target.host, target.row - 1)
+            if name:
+                return "Goes on a new row after %s." % name
         return "Goes on a new row."
     if target.action == "form_cell":
         return "Goes in this cell."
@@ -329,23 +333,69 @@ def _layout_target(
     payload: DropPayload,
 ) -> AcceptedDrop:
     if layout.class_name == "QFormLayout":
-        return _form_auto(doc, layout, payload)
+        return _form_auto(doc, layout, anchor, payload)
     if layout.class_name == "QGridLayout":
         return _grid_auto(doc, layout, payload)
     index = _after(doc, layout, anchor)
     return _blank("box", layout.id, index=index)
 
 
-def _form_auto(doc: UiDocument, layout: LayoutNode, payload: DropPayload) -> AcceptedDrop:
+def _form_auto(
+    doc: UiDocument,
+    layout: LayoutNode,
+    anchor: Optional[NodeId],
+    payload: DropPayload,
+) -> AcceptedDrop:
     rows = form_rows(doc, layout.id)
     role = "label" if payload.kind == "label" else "field"
-    if rows:
-        _label, field, spanning = rows[-1]
+    row = _anchor_form_row(doc, layout, anchor)
+    if row is None:
+        row = len(rows)
+        if rows:
+            _label, field, spanning = rows[-1]
+            if spanning is None and field is None and role == "field":
+                return _blank("form_cell", layout.id, row=len(rows) - 1, role="field")
+            if spanning is None and _label is None and role == "label":
+                return _blank("form_cell", layout.id, row=len(rows) - 1, role="label")
+        return _blank("form_row", layout.id, row=row, role=role)
+    if row < len(rows):
+        label, field, spanning = rows[row]
         if spanning is None and field is None and role == "field":
-            return _blank("form_cell", layout.id, row=len(rows) - 1, role="field")
-        if spanning is None and _label is None and role == "label":
-            return _blank("form_cell", layout.id, row=len(rows) - 1, role="label")
+            return _blank("form_cell", layout.id, row=row, role="field")
+        if spanning is None and label is None and role == "label":
+            return _blank("form_cell", layout.id, row=row, role="label")
+        return _blank("form_row", layout.id, row=row + 1, role=role)
     return _blank("form_row", layout.id, row=len(rows), role=role)
+
+
+def _anchor_form_row(doc: UiDocument, layout: LayoutNode, anchor: Optional[NodeId]) -> Optional[int]:
+    """The form row the anchor sits on. None when the anchor is the layout itself."""
+    node = doc.get(anchor) if anchor is not None else None
+    if node is None or node.id == layout.id:
+        return None
+    item = node if isinstance(node, LayoutItemNode) else doc.parent(node.id)
+    if not isinstance(item, LayoutItemNode):
+        return None
+    parent = doc.parent(item.id)
+    if not isinstance(parent, LayoutNode) or parent.id != layout.id:
+        return None
+    return 0 if item.row is None else item.row
+
+
+def _form_neighbour_name(doc: UiDocument, layout_id: NodeId, row: int) -> str:
+    rows = form_rows(doc, layout_id)
+    if row < 0 or row >= len(rows):
+        return ""
+    label, field, spanning = rows[row]
+    for item_id in (field, label, spanning):
+        if item_id is None:
+            continue
+        item = doc.get(item_id)
+        content = item.content if isinstance(item, LayoutItemNode) else None
+        name = getattr(content, "object_name", "") or ""
+        if name:
+            return name
+    return ""
 
 
 def _grid_auto(doc: UiDocument, layout: LayoutNode, payload: DropPayload) -> AcceptedDrop:
@@ -456,23 +506,31 @@ def _plain(fragment: Fragment) -> Fragment:
 
 
 def nudge_commands(doc: UiDocument, ids: Tuple[NodeId, ...], direction: str) -> Tuple[Command, ...]:
+    commands, _reason = plan_nudge(doc, ids, direction)
+    return commands
+
+
+def plan_nudge(
+    doc: UiDocument, ids: Tuple[NodeId, ...], direction: str
+) -> Tuple[Tuple[Command, ...], str]:
+    """Move commands, or an empty tuple and the reason the move was refused."""
     if direction not in ("left", "right", "up", "down") or not ids:
-        return ()
+        return (), ""
     placed = []
     layout: Optional[LayoutNode] = None
     for node_id in ids:
         if not doc.contains(node_id):
-            return ()
+            return (), "That widget is no longer on the form."
         item = doc.parent(node_id)
         if not isinstance(item, LayoutItemNode):
-            return ()
+            return (), "That widget is not in a layout."
         parent = doc.parent(item.id)
         if not isinstance(parent, LayoutNode):
-            return ()
+            return (), "That widget is not in a layout."
         if layout is None:
             layout = parent
         elif parent.id != layout.id:
-            return ()
+            return (), "Those widgets are not in the same layout."
         placed.append((node_id, item))
     assert layout is not None
     if layout.class_name == "QFormLayout":
@@ -481,20 +539,21 @@ def nudge_commands(doc: UiDocument, ids: Tuple[NodeId, ...], direction: str) -> 
         return _nudge_grid(layout, placed, direction)
     vertical = layout.class_name != "QHBoxLayout"
     if vertical and direction in ("left", "right"):
-        return ()
+        return (), "This layout moves up or down."
     if not vertical and direction in ("up", "down"):
-        return ()
+        return (), "This layout moves left or right."
     forward = direction in ("down", "right")
     indexes = sorted(item.slot_index for _node, item in placed)
     if forward:
         start = indexes[-1] + 2
         if start > len(layout.items):
-            return ()
+            return (), "That is already at the end."
     else:
         if indexes[0] == 0:
-            return ()
+            return (), "That is already at the start."
         start = indexes[0] - 1
-    return (MoveNodes(tuple(node_id for node_id, _item in placed), InBoxLayout(layout.id, start)),)
+    moved = tuple(node_id for node_id, _item in placed)
+    return (MoveNodes(moved, InBoxLayout(layout.id, start)),), ""
 
 
 def _nudge_form(
@@ -502,21 +561,25 @@ def _nudge_form(
     layout: LayoutNode,
     placed: list,
     direction: str,
-) -> Tuple[Command, ...]:
+) -> Tuple[Tuple[Command, ...], str]:
     if direction not in ("up", "down"):
-        return ()
+        return (), "A form row moves up or down."
     rows = {0 if item.row is None else item.row for _node, item in placed}
     if len(rows) != 1:
-        return ()
+        return (), "Select one form row to move it."
     row = next(iter(rows))
     delta = -1 if direction == "up" else 1
     count = len(form_rows(doc, layout.id))
-    if row + delta < 0 or row + delta >= count:
-        return ()
-    return (SwapFormRows(layout.id, row, delta),)
+    if row + delta < 0:
+        return (), "That row is already at the top."
+    if row + delta >= count:
+        return (), "That row is already at the bottom."
+    return (SwapFormRows(layout.id, row, delta),), ""
 
 
-def _nudge_grid(layout: LayoutNode, placed: list, direction: str) -> Tuple[Command, ...]:
+def _nudge_grid(
+    layout: LayoutNode, placed: list, direction: str
+) -> Tuple[Tuple[Command, ...], str]:
     delta = {"left": (0, -1), "right": (0, 1), "up": (-1, 0), "down": (1, 0)}[direction]
     selected = {item.id for _node, item in placed}
     occupied = set()
@@ -530,7 +593,7 @@ def _nudge_grid(layout: LayoutNode, placed: list, direction: str) -> Tuple[Comma
         row = (0 if item.row is None else item.row) + delta[0]
         column = (0 if item.column is None else item.column) + delta[1]
         if row < 0 or column < 0 or (row, column) in occupied or (row, column) in destinations:
-            return ()
+            return (), "That cell is taken or past the edge."
         destinations.add((row, column))
         commands.append(
             SetLayoutCell(
@@ -541,7 +604,7 @@ def _nudge_grid(layout: LayoutNode, placed: list, direction: str) -> Tuple[Comma
                 1 if item.colspan is None else item.colspan,
             )
         )
-    return tuple(commands)
+    return tuple(commands), ""
 
 
 def _strip(spec: NodeSpec) -> NodeSpec:

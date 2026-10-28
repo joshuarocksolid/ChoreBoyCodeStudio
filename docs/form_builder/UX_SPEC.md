@@ -543,7 +543,7 @@ The spike's name chip sits above the selected widget and covers the field above 
 
 **UX-FORML-001** `M3.2` `[S T]` A form row has a label cell and a field cell. Over an empty cell of an existing row the cell is the target (dashed cell, chip "Field of row 3" or "Label of row 3"). Over an occupied cell the target is the line between rows nearest the pointer (chip "New row after Email").
 
-**UX-FORML-002** `M3.2` `[T]` Dropping a non-label widget into a new row creates the row with a label "New field:" as the field's buddy, places the widget in the field cell, and opens the in-place editor on the label with its text selected. Typing and Enter names the row. All of this is one undo step, and Esc in the editor keeps the label text "New field:". Dropping a label into a new row puts it in the label cell and leaves the field cell empty, ready for the next drop (UX-AUTO-003).
+**UX-FORML-002** `M3.2` `[T]` Dropping a non-label widget into a new row creates the row with a label "New field:" as the field's buddy, places the widget in the field cell, and opens the in-place editor on the label with its text selected. Typing and Enter names the row. All of this is one undo step, and Esc in the editor keeps the label text "New field:". Dropping a label into a new row puts it in the label cell and leaves the field cell empty, ready for the next drop (UX-AUTO-003). A push button, tool button, check box, radio button, command link, group box, or button box goes in the field cell with no label.
 
 **UX-FORML-003** `M3.2` `[T]` A widget dropped on the label cell of a row whose label is empty becomes the row's label even if it is not a `QLabel` (Qt allows any widget). A spacer cannot go in a form cell (UX-DND-005).
 

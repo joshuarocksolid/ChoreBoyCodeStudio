@@ -40,6 +40,7 @@ from app.features.form_builder.engine.clipboard import (
 )
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, InsertResult
+from app.features.form_builder.engine.commands.participants import default_registry
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -124,7 +125,7 @@ def apply_command(host: ClipboardHost, command_id: str) -> bool:
     elif command_id == "form.action.duplicate":
         _duplicate(host, session, ids)
     elif command_id in ("form.action.delete", "form.action.backspace"):
-        _delete(session, ids)
+        _delete(host, session, ids)
     elif command_id == "form.action.selectAll":
         _select_all(session)
     elif command_id == "form.action.selectAllSiblings":
@@ -174,11 +175,40 @@ def _duplicate(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId])
     _insert(host, session, ids, fragment, undo_label="Duplicate", copied=copied)
 
 
-def _delete(session: FormSession, ids: Sequence[NodeId]) -> None:
+def _delete(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
     targets = _deletable(session.document, ids)
     if not targets:
         return
+    sentence = _reference_sentence(session, targets)
+    ask = getattr(host, "ask_delete", None)
+    if sentence and ask is not None:
+        ask(sentence, tuple(targets))
+        return
     _execute_delete(session, targets)
+
+
+def _reference_sentence(session: FormSession, targets: Sequence[NodeId]) -> str:
+    """The outline's delete question. Empty when nothing else names these widgets."""
+    document = session.document
+    names = []
+    for node_id in targets:
+        node = document.get(node_id)
+        name = getattr(node, "object_name", "") or ""
+        if name and len(document.by_name(name)) > 1:
+            return ""
+        if name:
+            names.append(name)
+    prose = []
+    seen = set()
+    participants = default_registry().all()
+    for name in names:
+        if name in seen:
+            continue
+        seen.add(name)
+        sentence = session.refs.ask_sentence(document, name, participants)
+        if sentence:
+            prose.append(sentence)
+    return " ".join(prose)
 
 
 def _select_all(session: FormSession) -> None:

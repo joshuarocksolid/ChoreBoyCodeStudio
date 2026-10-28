@@ -9,7 +9,7 @@ import hashlib
 import json
 import os
 import sys
-from typing import Dict, FrozenSet, Iterator, List, Literal, Optional, Tuple
+from typing import Dict, FrozenSet, Iterable, Iterator, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
 from app.features.form_builder.engine.logic.storage import is_user_logic_key
@@ -26,6 +26,28 @@ from app.features.form_builder.engine.ui4.spec import NodeSpec
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, StringValue
 
 EnumStyle = Literal["short", "qualified"]
+
+
+def next_object_name(base: str, taken: Iterable[str]) -> str:
+    """``base`` if it is free, else the next free ``stem_N``.
+
+    ``email`` becomes ``email_2``. ``email_2`` becomes ``email_3``.
+    Membership uses ``in`` only, so a name set is not walked.
+    """
+    if base not in taken:
+        return base
+    head, sep, tail = base.rpartition("_")
+    if sep and head and tail.isdigit():
+        stem = head
+        suffix = int(tail) + 1
+    else:
+        stem = base
+        suffix = 2
+    while True:
+        candidate = "%s_%d" % (stem, suffix)
+        if candidate not in taken:
+            return candidate
+        suffix += 1
 
 _NAME_FIELDS = {
     "widget": "object_name",
@@ -163,16 +185,12 @@ class UiDocument:
         return self._names_view
 
     def unique_name(self, base: str) -> str:
-        """``base`` if free, else ``base_2``, ``base_3``... (Designer's rule). The
-        first free suffix wins. Deterministic. O(k) in the number of collisions."""
-        if base not in self._name_set:
-            return base
-        suffix = 2
-        while True:
-            candidate = "%s_%s" % (base, suffix)
-            if candidate not in self._name_set:
-                return candidate
-            suffix += 1
+        """``base`` if free, else the next free ``stem_N`` (Designer's rule).
+
+        A base that already ends in ``_N`` increments that suffix, so a copy of
+        ``emailEdit_2`` is ``emailEdit_3``, not ``emailEdit_2_2``.
+        """
+        return next_object_name(base, self._name_set)
 
     def form_class_name(self) -> str:
         """``<class>`` text, else the root widget's object name, else ``Form``."""

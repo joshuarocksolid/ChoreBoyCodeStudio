@@ -192,24 +192,24 @@ class Header(QWidget):
         self._render_crumbs()
 
     def _fit_name(self) -> None:
-        """Show a middle-elided name when the field is narrower than the text.
+        """Show the start of the name; the full name is the tooltip when it does not fit.
 
-        The stored name stays intact. Focus restores it before an edit can commit the ellipsis.
+        The field keeps the real name as its text. Writing an elided copy into
+        it would hand "okButt…ctName" to screen readers, copy and anything
+        that reads the field (UX-INSP-001, UX-INSP-003: the head stays visible).
         """
         if self._invalid or self._name.hasFocus() or self._name.isReadOnly() or not self._saved_name:
             return
-        width = int(self._name.contentsRect().width())
-        if width < 8:
-            return
-        shown = self._name.fontMetrics().elidedText(self._saved_name, Qt.ElideMiddle, width)
-        tip = self._saved_name if shown != self._saved_name else ""
-        if self._name.text() == shown and self._name.toolTip() == tip:
-            return
         self._name.blockSignals(True)
-        self._name.setText(shown)
-        self._name.setToolTip(tip)
+        if self._name.text() != self._saved_name:
+            self._name.setText(self._saved_name)
         self._name.setCursorPosition(0)
         self._name.blockSignals(False)
+        width = int(self._name.contentsRect().width())
+        fits = width < 8 or self._name.fontMetrics().horizontalAdvance(self._saved_name) <= width
+        tip = "" if fits else self._saved_name
+        if self._name.toolTip() != tip:
+            self._name.setToolTip(tip)
 
     def _apply_short(self, short: bool) -> None:
         if short == self._short:
