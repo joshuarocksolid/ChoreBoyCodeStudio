@@ -45,6 +45,7 @@ from app.features.form_builder.engine.project.templates import (
     template_for,
 )
 from app.features.form_builder.qtside.start.cards import CARD_WIDTH, StartCard
+from app.features.form_builder.qtside.start.wizard import WIZARD_CARD, WIZARD_KEY
 
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 
@@ -55,6 +56,22 @@ _GROUP_TITLES = (
 )
 _COLUMN_MAX = 960
 _CARD_GAP = 12
+
+
+def _catalog() -> Tuple[FormTemplate, ...]:
+    """Engine cards, with the Wizard card after Dialog (R3-121)."""
+    found = []
+    for spec in template_catalog():
+        found.append(spec)
+        if spec.key == "dialog":
+            found.append(WIZARD_CARD)
+    return tuple(found)
+
+
+def _template_for(key: str):  # type: ignore[no-untyped-def]
+    if key == WIZARD_KEY:
+        return WIZARD_CARD
+    return template_for(key)
 
 
 class NewFormPanel(QWidget):
@@ -127,6 +144,14 @@ class NewFormPanel(QWidget):
     def focus_name(self) -> None:
         self._name.setFocus()
         self._name.selectAll()
+
+    def focus_card(self, key: str) -> None:
+        """Window-kind rows (UX-CAT-015): the card is focused and the name row holds a free name."""
+        card = self._card_by_key.get(key)
+        if not self._name_touched:
+            self._apply_default_name()
+        if card is not None:
+            card.setFocus()
 
     def set_directory(self, directory: Optional[str]) -> None:
         if not directory:
@@ -261,7 +286,7 @@ class NewFormPanel(QWidget):
             cursor_row += step
 
     def _group_of(self, key: str) -> str:
-        spec = template_for(key)
+        spec = _template_for(key)
         if spec is None:
             return ""
         return spec.group
@@ -272,7 +297,7 @@ class NewFormPanel(QWidget):
         for group, _title in _GROUP_TITLES:
             cards = []
             for card in self._cards:
-                spec = template_for(card.key)
+                spec = _template_for(card.key)
                 if spec is not None and spec.group == group:
                     cards.append(card)
             for start in range(0, len(cards), columns):
@@ -373,7 +398,7 @@ class NewFormPanel(QWidget):
 
         self._grids: Dict[str, QWidget] = {}
         self._group_labels: List[QLabel] = []
-        catalog = template_catalog()
+        catalog = _catalog()
         for group, title in _GROUP_TITLES:
             label = QLabel(title, self._column)
             label.setObjectName("formBuilder.newForm.group." + group)
@@ -436,7 +461,7 @@ class NewFormPanel(QWidget):
                 widget.deleteLater()
             cards = []
             for card in self._cards:
-                spec = template_for(card.key)
+                spec = _template_for(card.key)
                 if spec is not None and spec.group == group:
                     cards.append(card)
             for start in range(0, len(cards), columns):
@@ -451,7 +476,7 @@ class NewFormPanel(QWidget):
                 layout.addWidget(row)
 
     def _on_card(self, key: str) -> None:
-        spec = template_for(key)
+        spec = _template_for(key)
         if spec is None:
             return
         if key == "from_table":
@@ -492,7 +517,7 @@ class NewFormPanel(QWidget):
         self._caption.setText(creation_caption(self.folder_display(), self.stem()))
         blocked = reason is not None
         for card in self._cards:
-            spec = template_for(card.key)
+            spec = _template_for(card.key)
             if spec is not None and spec.creates_immediately:
                 card.setEnabled(not blocked)
 
