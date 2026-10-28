@@ -16,6 +16,7 @@ from app.qt.QtWidgets import (
     QComboBox,
     QFormLayout,
     QGridLayout,
+    QLabel,
     QLayout,
     QListWidget,
     QMenu,
@@ -60,7 +61,7 @@ from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     norm_qt,
     ordered_layout_metrics,
-    path_under,
+    resolve_stored_picture,
     set_property_checked,
     text_of,
 )
@@ -478,6 +479,25 @@ class Realizer(_Structure):
             refusals=self._refusals,
         ):
             self._patched += 1
+            self._keep_label_picture(node, obj, name)
+
+    def _keep_label_picture(self, node: Node, obj: object, name: str) -> None:
+        """A later text edit must not wipe a pixmap QLabel.setText would clear."""
+        if name == "pixmap" or not isinstance(obj, QLabel) or not isinstance(node, WidgetNode):
+            return
+        if name != "text":
+            return
+        entry = node.prop("pixmap")
+        if entry is None:
+            return
+        apply_entry(
+            obj,
+            entry,
+            is_root=obj is self._root,
+            resolve_path=self._resolve_path,
+            problems=self._problems,
+            refusals=self._refusals,
+        )
 
     def _patch_attribute(self, node: object, name: str) -> None:
         if not isinstance(node, WidgetNode) or node.parent_id is None:
@@ -972,7 +992,7 @@ class Realizer(_Structure):
             self._wipe(node_id)
 
     def _resolve_path(self, path: str) -> str:
-        return path_under(self._base_dir, path)
+        return resolve_stored_picture(path, self._base_dir, self._session.document)
 
 
 def _fresh_host() -> QWidget:

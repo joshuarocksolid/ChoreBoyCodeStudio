@@ -30,6 +30,7 @@ from app.features.form_builder.engine.ui4.values import (
     EnumValue,
     FloatValue,
     FontValue,
+    ICON_STATES,
     IconSetValue,
     LocaleValue,
     LongLongValue,
@@ -129,17 +130,18 @@ def apply_entry(
         qvalue = to_qt(value, resolve_path)
         if qvalue is None:
             return False
+        reason = _picture_reason(value, resolve_path, qvalue)
         setter = _setter(obj, name)
         if setter is None:
             if not set_property_checked(obj, name, qvalue):
                 return _refuse(obj, name, REFUSED_BY_QT, refusals)
-            return _took(obj, name, refusals)
+            return _finish(obj, name, refusals, reason)
         try:
             setter(qvalue)
         except (TypeError, ValueError, OverflowError):
             if not set_property_checked(obj, name, qvalue):
                 return _refuse(obj, name, REFUSED_BY_QT, refusals)
-        return _took(obj, name, refusals)
+        return _finish(obj, name, refusals, reason)
     except (TypeError, ValueError, OverflowError, RuntimeError, AttributeError) as exc:
         problems.append("%s.%s: %s" % (_type_name(obj), name, exc))
         return _refuse(obj, name, str(exc) or REFUSED_BY_QT, refusals)
@@ -171,6 +173,12 @@ def set_property_checked(obj: object, name: str, value: object) -> bool:
         return True
     meta = obj.metaObject()  # type: ignore[attr-defined]
     return meta.indexOfProperty(name) < 0
+
+
+def _finish(obj: object, name: str, refusals: Optional[Refusals], reason: Optional[str]) -> bool:
+    if reason:
+        return _refuse(obj, name, reason, refusals)
+    return _took(obj, name, refusals)
 
 
 def _took(obj: object, name: str, refusals: Optional[Refusals]) -> bool:
@@ -233,7 +241,8 @@ def to_qt(value: Value, resolve_path: Callable[[str], str]) -> object:
     if isinstance(value, FontValue):
         return _font(value)
     if isinstance(value, ResourcePixmap):
-        return QPixmap(resolve_path(value.path))
+        disk = resolve_path(value.path) if value.path else ""
+        return QPixmap(disk) if disk else QPixmap()
     if isinstance(value, IconSetValue):
         return _icon(value, resolve_path)
     if isinstance(value, PaletteValue):
@@ -379,19 +388,45 @@ def _font(value: FontValue) -> QFont:
     return font
 
 
+_ICON_FILES = (
+    ("normaloff", "Normal", "Off"),
+    ("normalon", "Normal", "On"),
+    ("disabledoff", "Disabled", "Off"),
+    ("disabledon", "Disabled", "On"),
+    ("activeoff", "Active", "Off"),
+    ("activeon", "Active", "On"),
+    ("selectedoff", "Selected", "Off"),
+    ("selectedon", "Selected", "On"),
+)
+
+
 def _icon(value: IconSetValue, resolve_path: Callable[[str], str]) -> QIcon:
+    icon = QIcon()
     if value.theme:
-        icon = QIcon.fromTheme(value.theme)
-        if not icon.isNull():
-            return icon
-    path = ""
-    if value.normaloff is not None:
-        path = value.normaloff.path
-    elif value.text:
-        path = value.text
-    if not path:
-        return QIcon()
-    return QIcon(resolve_path(path))
+        themed = QIcon.fromTheme(value.theme)
+        if not themed.isNull():
+            icon = themed
+    added = False
+    for attr, mode_name, state_name in _ICON_FILES:
+        pixmap = getattr(value, attr)
+        path = pixmap.path if isinstance(pixmap, ResourcePixmap) else ""
+        if not path and attr == "normaloff" and value.text:
+            path = value.text
+        if not path:
+            continue
+        disk = resolve_path(path)
+        if not disk or not os.path.isfile(disk):
+            continue
+        icon.addFile(disk, QSize(), _icon_enum("Mode", mode_name), _icon_enum("State", state_name))
+        added = True
+    if added or (value.theme and not icon.isNull()):
+        return icon
+    return QIcon()
+
+
+def _icon_enum(group: str, name: str) -> object:
+    enum = getattr(QIcon, group, QIcon)
+    return getattr(enum, name)
 
 
 def _palette(value: PaletteValue) -> QPalette:
@@ -411,7 +446,10 @@ def _paint_group(palette: QPalette, group: object, roles: Tuple[ColorRole, ...])
 
 
 def _brush(value: BrushValue, resolve_path: Callable[[str], str]) -> QBrush:
-    del resolve_path
+    if value.texture is not None and value.texture.path:
+        disk = resolve_path(value.texture.path)
+        pixmap = QPixmap(disk) if disk else QPixmap()
+        return QBrush(pixmap)
     if value.color is not None:
         return QBrush(_color(value.color))
     return QBrush()
@@ -529,6 +567,42 @@ def _enum_name(value: object) -> str:
     if isinstance(name, str) and name:
         return name.split("::")[-1]
     return str(value).rsplit(".", 1)[-1]
+
+
+def resolve_stored_picture(stored: str, base_dir: str, document: object) -> str:
+    """A ``:/`` path becomes the image file from the form's ``.qrc``. Other paths stay on disk."""
+    from app.features.form_builder.engine.project.pictures import index_for_document, lookup_stored
+
+    if stored.startswith(":/"):
+        _disk, missing = lookup_stored(stored, base_dir, index_for_document(document, base_dir))
+        return "" if missing else _disk
+    return path_under(base_dir, stored)
+
+
+def _picture_reason(value: Value, resolve_path: Callable[[str], str], qvalue: object) -> Optional[str]:
+    del qvalue
+    for stored in _picture_paths(value):
+        disk = resolve_path(stored)
+        if not disk or not os.path.isfile(disk) or QPixmap(disk).isNull():
+            return "Code Studio can't find %s." % stored
+    return None
+
+
+def _picture_paths(value: Value) -> Tuple[str, ...]:
+    if isinstance(value, ResourcePixmap):
+        return (value.path,) if value.path else ()
+    if isinstance(value, IconSetValue):
+        found = []
+        for name in ICON_STATES:
+            pixmap = getattr(value, name)
+            if isinstance(pixmap, ResourcePixmap) and pixmap.path:
+                found.append(pixmap.path)
+        if not found and value.text:
+            found.append(value.text)
+        return tuple(found)
+    if isinstance(value, BrushValue) and value.texture is not None and value.texture.path:
+        return (value.texture.path,)
+    return ()
 
 
 def path_under(base_dir: str, path: str) -> str:

@@ -1463,10 +1463,17 @@ class _Structure(_LayoutSlots):
     def _apply_node_properties(self, node: object, obj: object, *, is_root: bool) -> None:
         entries = list(node.properties())  # type: ignore[attr-defined]
         deferred = ordered_layout_metrics(entries) if isinstance(node, LayoutNode) else ()
+        # QLabel.setText clears a pixmap set earlier. Pictures go last so the
+        # canvas keeps the image when the label also has text.
+        late = [entry for entry in entries if entry.name in ("pixmap", "icon", "windowIcon")]
         skip = {entry.name for entry in deferred}
+        skip.update(entry.name for entry in late)
         for entry in entries:
             if entry.name in skip:
                 continue
+            if self._apply_entry(obj, entry, is_root):
+                self._patched += 1
+        for entry in late:
             if self._apply_entry(obj, entry, is_root):
                 self._patched += 1
         for entry in deferred:
