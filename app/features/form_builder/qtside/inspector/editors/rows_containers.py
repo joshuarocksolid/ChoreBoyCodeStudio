@@ -1,9 +1,9 @@
-"""Curated rows for containers: scroll areas, wizard steps, group boxes and frames (UX-CONT-010, 013, 014, 015).
+"""Curated rows for containers (UX-CONT-010, 012, 013, 014, 015, 018).
 
-Rows only. Each row names a property the Qt class has; the value editors are
-the generic ones. The dock side control, "Starts on" and the page attribute
-rows need an editor or a parent scope that the registry does not have yet:
-see the M4.2 report.
+Rows only. A page attribute or the dock side names its parent class, so a
+plain widget does not show it. Dock side's four-segment editor is registered
+separately. The row still binds through the property's own value editor until
+the inspector can pick an editor key per row.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from app.features.form_builder.qtside.inspector.api import GroupId, Prop, Regist
 
 _CONTENT = GroupId.CONTENT
 _APPEARANCE = GroupId.APPEARANCE
+_PLACEMENT = GroupId.PLACEMENT
 
 
 def register(registrar: Registrar) -> None:
@@ -88,6 +89,71 @@ def register(registrar: Registrar) -> None:
             "The width of the line in the middle of a raised or sunken edge.",
             Prop("midLineWidth"),
             classes=("QFrame",),
+        ),
+        RowSpec(
+            "dockSide",
+            _PLACEMENT,
+            "Dock side",
+            "Which edge of the main window this dock sits on.",
+            Prop("dockWidgetArea", "attribute"),
+            classes=("QDockWidget",),
+            parent_classes=("QMainWindow",),
+        ),
+        RowSpec(
+            "allowedAreas",
+            _CONTENT,
+            "Allowed sides",
+            "The sides this dock may be moved to.",
+            Prop("allowedAreas"),
+            classes=("QDockWidget",),
+        ),
+        RowSpec(
+            "startsOn",
+            _CONTENT,
+            "Starts on",
+            "The page the form opens on. Switching pages on the canvas does not change this.",
+            Prop("currentIndex"),
+            classes=("QTabWidget", "QToolBox", "QStackedWidget"),
+        ),
+        RowSpec(
+            "tabTitle",
+            _CONTENT,
+            "Tab title",
+            "The text on this tab.",
+            Prop("title", "attribute"),
+            parent_classes=("QTabWidget",),
+        ),
+        RowSpec(
+            "tabTooltip",
+            _CONTENT,
+            "Tab tooltip",
+            "Shown when the pointer rests on this tab.",
+            Prop("toolTip", "attribute"),
+            parent_classes=("QTabWidget",),
+        ),
+        RowSpec(
+            "tabHelp",
+            _CONTENT,
+            "Tab help",
+            "Help text for this tab.",
+            Prop("whatsThis", "attribute"),
+            parent_classes=("QTabWidget",),
+        ),
+        RowSpec(
+            "pageLabel",
+            _CONTENT,
+            "Page label",
+            "The text on this toolbox page.",
+            Prop("label", "attribute"),
+            parent_classes=("QToolBox",),
+        ),
+        RowSpec(
+            "pageTooltip",
+            _CONTENT,
+            "Page tooltip",
+            "Shown when the pointer rests on this toolbox page.",
+            Prop("toolTip", "attribute"),
+            parent_classes=("QToolBox",),
         ),
     )
     for spec in rows:
