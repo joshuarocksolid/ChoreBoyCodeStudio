@@ -9,14 +9,15 @@ import os
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeyEvent
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
 from app.qt.QtWidgets import (
     QApplication,
+    QPlainTextEdit,
     QFrame,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
+    QListView,
     QListWidget,
     QListWidgetItem,
     QMenu,
@@ -71,30 +72,33 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PlaceHover,
 )
 from app.features.form_builder.qtside.canvas.core.palette import (
-    MIME_DESIGNER_FRAGMENT,
-    MIME_FRAGMENT,
     MIME_INSERT,
     MIME_NODE,
     fragment_for,
-    matching_tiles,
     tile_for,
 )
+from app.features.form_builder.engine.commands.drop_plan import auto_target
 from app.features.form_builder.engine.query.drop_target import (
     AcceptedDrop,
     DropPayload,
     NoDrop,
     OutlineRow,
+    RefusedDrop,
     blocked_ids,
     resolve_outline,
 )
+from app.features.form_builder.integration.insert_memory import LazyInsertMemory
+from app.features.form_builder.qtside.insert.catalog import load_catalog
+from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, EntryDelegate
+from app.features.form_builder.qtside.insert.header import PaneHeader
+from app.features.form_builder.qtside.insert.pane import InsertPane
+from app.features.form_builder.qtside.insert.rows import ENTRY, Row, quick_rows
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas, _drop_payload
 from app.features.form_builder.integration.clipboard_actions import publish_xml
 from app.features.form_builder.integration.pieces import (
-    SavedPiece,
-    SavedPieceStore,
     piece_for_ids,
     renamed_pieces,
     without_piece,
@@ -587,58 +591,6 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
     )
 
 
-class _Header(QWidget):
-    """Overline row. The row toggles the pane. The buttons on the right do not."""
-
-    def __init__(self, title: str, parent: QWidget, on_toggle: Callable[[], None]) -> None:
-        super().__init__(parent)
-        self.setObjectName("formBuilder.sectionHeader")
-        self.setAccessibleName(title)
-        self.setFocusPolicy(_strong())
-        self._on_toggle = on_toggle
-        row = QHBoxLayout(self)
-        row.setContentsMargins(12, 8, 12, 8)
-        row.setSpacing(4)
-        self.title = QLabel(title.upper(), self)
-        self.title.setObjectName("formBuilder.sectionTitle")
-        self.title.setAttribute(_transparent(), True)
-        row.addWidget(self.title, 1)
-        self.extra: List[QToolButton] = []
-
-    def add_extra(self, text: str, tip: str) -> QToolButton:
-        button = _tool(text, "formBuilder.sectionExtra", tip, self)
-        button.setEnabled(False)
-        button.setAccessibleName(tip)
-        button.setMinimumSize(24, 24)
-        layout = self.layout()
-        assert layout is not None
-        layout.addWidget(button)
-        self.extra.append(button)
-        return button
-
-    def mousePressEvent(self, event: object) -> None:  # noqa: N802
-        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
-        if getattr(event, "button", lambda: None)() == left:
-            pos = event_pos(event)
-            for button in self.extra:
-                if button.geometry().contains(pos):
-                    super().mousePressEvent(event)  # type: ignore[arg-type]
-                    return
-            self._on_toggle()
-            event.accept()  # type: ignore[attr-defined]
-            return
-        super().mousePressEvent(event)  # type: ignore[arg-type]
-
-    def keyPressEvent(self, event: object) -> None:  # noqa: N802
-        key = getattr(event, "key", lambda: None)()
-        keys = getattr(Qt, "Key", Qt)
-        if key in (getattr(keys, "Key_Return"), getattr(keys, "Key_Enter"), getattr(keys, "Key_Space")):
-            self._on_toggle()
-            event.accept()  # type: ignore[attr-defined]
-            return
-        super().keyPressEvent(event)  # type: ignore[arg-type]
-
-
 class OutlinePane(QWidget):
     """Read-only structure tree. Selection is written to the session."""
 
@@ -656,7 +608,7 @@ class OutlinePane(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
-        self.header = _Header("Outline", self, self._toggle)
+        self.header = PaneHeader("Outline", self, self._toggle)
         self._add_button = self.header.add_extra("+", "Insert a widget")
         self._add_button.setEnabled(True)
         self._add_button.clicked.connect(self._open_insert)
@@ -1169,6 +1121,8 @@ class OutlinePane(QWidget):
                 return True
             if watched is self._insert_list and self._on_insert_key(event):
                 return True
+            if watched is self._insert_filter and self._on_quick_filter_key(event):
+                return True
         if watched is not self.tree.viewport():
             return super().eventFilter(watched, event)
         kind = _event_kind(event)
@@ -1421,12 +1375,29 @@ class OutlinePane(QWidget):
         self._insert_pop = QFrame(self)
         self._insert_pop.setObjectName("formBuilder.outlineInsert")
         insert_layout = QVBoxLayout(self._insert_pop)
+        insert_layout.setContentsMargins(0, 0, 0, 0)
+        self._insert_filter = QLineEdit(self._insert_pop)
+        self._insert_filter.setObjectName("formBuilder.outlineInsertFilter")
+        self._insert_filter.setAccessibleName("Search widgets")
+        self._insert_filter.setPlaceholderText("Search widgets")
+        self._insert_filter.textChanged.connect(self._quick_filter_changed)
+        self._insert_filter.installEventFilter(self)
+        insert_layout.addWidget(self._insert_filter)
         self._insert_list = QListWidget(self._insert_pop)
         self._insert_list.setObjectName("formBuilder.outlineInsertList")
+        self._quick_delegate = EntryDelegate(self._insert_list)
+        self._quick_delegate.set_icons(False)
+        self._quick_delegate.set_width(200)
+        self._insert_list.setItemDelegate(self._quick_delegate)
+        # Rows are sized to the viewport and elide. A sideways bar clips the name.
+        scroll_off = getattr(getattr(Qt, "ScrollBarPolicy", Qt), "ScrollBarAlwaysOff")
+        self._insert_list.setHorizontalScrollBarPolicy(scroll_off)
+        self._insert_list.setResizeMode(QListView.ResizeMode.Adjust)
         self._insert_list.itemActivated.connect(self._activate_insert)
         self._insert_list.currentItemChanged.connect(lambda *_args: self._preview_insert_row())
         self._insert_list.installEventFilter(self)
         insert_layout.addWidget(self._insert_list)
+        self._quick_recent: Callable[[], Tuple[str, ...]] = lambda: ()
         self._insert_pop.hide()
         self._filter.installEventFilter(self)
 
@@ -1684,13 +1655,20 @@ class OutlinePane(QWidget):
         self._confirm.raise_()
         self._delete_button.setFocus()
 
+    def set_quick_recent(self, recent: Callable[[], Tuple[str, ...]]) -> None:
+        """The per-user recent list the quick insert shows first (UX-CAT-013)."""
+        self._quick_recent = recent
+
     def show_insert(self, *, return_to: Optional[QWidget] = None) -> None:
         self._insert_return = return_to
-        self._fill_insert(matching_tiles(""))
-        self._insert_pop.setGeometry(0, self.header.height(), self.width(), min(220, max(self.height() - self.header.height(), 80)))
+        self._insert_filter.clear()
+        self._fill_insert(self._quick_rows(""))
+        rows = min(self._insert_list.count(), 8)
+        height = min(max(rows * 24 + 12, 80), max(self.height() - self.header.height(), 80))
+        self._insert_pop.setGeometry(0, self.header.height(), self.width(), height)
         self._insert_pop.show()
         self._insert_pop.raise_()
-        self._insert_list.setFocus()
+        self._insert_filter.setFocus()
         self._preview_insert_row()
 
     def show_cue(self, effect: object) -> None:
@@ -1727,6 +1705,7 @@ class OutlinePane(QWidget):
         toast.show_note(note, self._undo_toast)
 
     def apply_colors(self, tokens: ShellThemeTokens) -> None:
+        self._quick_delegate.set_chrome(chrome_for(tokens))
         self._name_color = tokens.text_primary
         self._faint_color = tokens.text_muted
         self._error_color = tokens.diag_error_color
@@ -1777,6 +1756,29 @@ class OutlinePane(QWidget):
                 tokens.border,
                 width,
                 tokens.accent,
+            )
+        )
+        # The delegate paints theme text. An unstyled list stays white, so dark and
+        # high-contrast text disappears on it.
+        self._insert_pop.setStyleSheet(
+            "QFrame#formBuilder\\.outlineInsert { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.outlineInsertFilter { background: %s; color: %s; border: 1px solid %s; }"
+            "QLineEdit#formBuilder\\.outlineInsertFilter:focus { border: %dpx solid %s; }"
+            "QListWidget#formBuilder\\.outlineInsertList { background: %s; color: %s; border: none; }"
+            "QListWidget#formBuilder\\.outlineInsertList::item:selected { background: %s; color: %s; }"
+            % (
+                tokens.panel_bg,
+                tokens.text_primary,
+                tokens.border,
+                tokens.input_bg,
+                tokens.text_primary,
+                tokens.border,
+                width,
+                tokens.accent,
+                tokens.panel_bg,
+                tokens.text_primary,
+                tokens.tree_selected_bg,
+                tokens.text_primary,
             )
         )
         self.tree.viewport().update()
@@ -2022,7 +2024,7 @@ class OutlinePane(QWidget):
             return True
         if watched is self._filter and (gesture.command_id == "form.action.find" or gesture.key == "esc"):
             return True
-        if watched is self._insert_list and gesture.key in ("esc", "enter"):
+        if watched in (self._insert_list, self._insert_filter) and gesture.key in ("esc", "enter"):
             return True
         confirm = getattr(self, "_confirm", None)
         buttons = (confirm, getattr(self, "_delete_button", None), getattr(self, "_cancel_button", None))
@@ -2133,15 +2135,39 @@ class OutlinePane(QWidget):
         else:
             self._closed.add(node)
 
-    def _fill_insert(self, tiles: Sequence[Tuple[str, str, str]]) -> None:
+    def _quick_rows(self, query: str) -> Tuple[Row, ...]:
+        return quick_rows(load_catalog().entries, self._quick_recent(), query)
+
+    def _quick_filter_changed(self, text: str) -> None:
+        self._fill_insert(self._quick_rows(text.strip()))
+        self._preview_insert_row()
+
+    def _on_quick_filter_key(self, event: object) -> bool:
+        gesture = key_gesture(event)
+        if gesture.key == "down":
+            self._insert_list.setFocus()
+            return True
+        if gesture.key in ("enter", "esc"):
+            return self._on_insert_key(event)
+        return False
+
+    def _fill_insert(self, rows: Sequence[Row]) -> None:
         self._insert_list.clear()
         role = int(getattr(Qt, "UserRole"))
-        for tile in tiles:
-            item = QListWidgetItem(tile[2])
-            item.setData(role, tile[0])
+        first = -1
+        for row in rows:
+            item = QListWidgetItem("" if row.kind != ENTRY else row.title)
+            item.setData(int(ROW_ROLE), row)
+            if row.kind == ENTRY:
+                item.setData(role, row.key)
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+                if first < 0:
+                    first = self._insert_list.count()
+            else:
+                item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self._insert_list.addItem(item)
-        if self._insert_list.count():
-            self._insert_list.setCurrentRow(0)
+        if first >= 0:
+            self._insert_list.setCurrentRow(first)
 
     def _preview_insert_row(self) -> None:
         preview = self._preview
@@ -2156,6 +2182,8 @@ class OutlinePane(QWidget):
 
     def _activate_insert(self, item: QListWidgetItem) -> None:
         raw = item.data(int(getattr(Qt, "UserRole")))
+        if not raw:
+            return
         self._insert_pop.hide()
         if self._preview is not None:
             self._preview(None)
@@ -2234,452 +2262,25 @@ def _row_caption(row: object) -> str:
     return " ".join(bits)
 
 
-class InsertPane(QWidget):
-    def __init__(self, on_collapsed: Callable[[bool], None], parent: QWidget) -> None:
-        super().__init__(parent)
-        self._on_collapsed = on_collapsed
-        self._place: Optional[Callable[[str], None]] = None
-        self._preview: Optional[Callable[[Optional[str]], None]] = None
-        self._on_drag_finished: Optional[Callable[[], None]] = None
-        self.setObjectName("formBuilder.insert")
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
-        self.header = _Header("Insert", self, self._toggle)
-        search = self.header.add_extra("⌕", "Search widgets")
-        search.setEnabled(True)
-        search.clicked.connect(self._focus_filter)
-        layout.addWidget(self.header)
-        self.filter = QLineEdit(self)
-        self.filter.setObjectName("formBuilder.insertFilter")
-        self.filter.setAccessibleName("Search widgets")
-        self.filter.setPlaceholderText("Search widgets")
-        self.filter.textChanged.connect(self._refill)
-        layout.addWidget(self.filter)
-        self.caption = QLabel(self)
-        self.caption.setObjectName("formBuilder.insertCaption")
-        self.caption.setWordWrap(True)
-        layout.addWidget(self.caption)
-        self.body = _TileList(self, self._drag_finished)
-        self.body.setObjectName("formBuilder.insertBody")
-        self.body.setAccessibleName("Insert")
-        self.body.setFocusPolicy(_strong())
-        # itemActivated covers a double-click on every platform. Connecting
-        # itemDoubleClicked as well inserted the widget twice per double-click.
-        self.body.itemActivated.connect(self._activated)
-        self.body.currentItemChanged.connect(lambda *_args: self._announce_preview())
-        layout.addWidget(self.body, 1)
-        self._session: Optional[FormSession] = None
-        self._piece_store: Optional[SavedPieceStore] = None
-        self._pieces: Tuple[SavedPiece, ...] = ()
-        self._piece_unsub: Optional[Callable[[], None]] = None
-        self._notice: Optional[Callable[[str, Callable[[], None]], None]] = None
-        self._paste: Optional[Callable[[], None]] = None
-        self._piece_box = _PieceBox(self)
-        self.destroyed.connect(lambda *_args: self._drop_piece_sub())
-        layout.addWidget(self._piece_box)
-        self._collapsed = False
-        self._refill("")
-        self._refresh_pieces()
+class _PieceOps:
+    """Saved-piece operations for the Insert pane: the settings store and the clipboard stay here."""
 
-    def set_place(self, place: Callable[[str], None]) -> None:
-        self._place = place
+    def renamed(self, pieces: Sequence[object], index: int, name: str) -> Tuple[object, ...]:
+        return renamed_pieces(pieces, index, name)  # type: ignore[arg-type,return-value]
 
-    def set_preview(self, preview: Callable[[Optional[str]], None]) -> None:
-        self._preview = preview
+    def without(self, pieces: Sequence[object], index: int) -> Tuple[object, ...]:
+        return without_piece(pieces, index)  # type: ignore[arg-type,return-value]
 
-    def set_caption(self, text: str) -> None:
-        self.caption.setText(text)
+    def for_ids(self, document: object, ids: Sequence[NodeId], taken: Sequence[str]) -> Optional[object]:
+        return piece_for_ids(document, ids, taken)  # type: ignore[arg-type]
 
-    def set_drag_finished(self, done: Callable[[], None]) -> None:
-        self._on_drag_finished = done
-
-    def _drag_finished(self) -> None:
-        done = self._on_drag_finished
-        if done is not None:
-            done()
-
-    def _announce_preview(self) -> None:
-        preview = self._preview
-        if preview is None or not self.body.hasFocus():
-            return
-        item = self.body.currentItem()
-        key = None if item is None else item.data(getattr(Qt, "UserRole"))
-        preview(None if not key else str(key))
-
-    def _clear_preview(self) -> None:
-        preview = self._preview
-        if preview is not None:
-            preview(None)
-
-    def set_collapsed(self, collapsed: bool) -> None:
-        self._collapsed = collapsed
-        self.filter.setVisible(not collapsed)
-        self.body.setVisible(not collapsed)
-        self._refresh_pieces()
-
-    def bind_session(self, session: FormSession) -> None:
-        self._session = session
-
-    def set_paste(self, paste: Callable[[], None]) -> None:
-        self._paste = paste
-
-    def set_notice(self, notice: Callable[[str, Callable[[], None]], None]) -> None:
-        self._notice = notice
-
-    def bind_pieces(self, store: Optional[SavedPieceStore]) -> None:
-        self._drop_piece_sub()
-        self._piece_store = store
-        if store is not None:
-            self._pieces = store.load()
-            self._piece_unsub = store.subscribe(self._on_pieces_changed)
-        else:
-            self._pieces = ()
-        self._refresh_pieces()
-
-    def _drop_piece_sub(self) -> None:
-        unsub = self._piece_unsub
-        self._piece_unsub = None
-        if unsub is not None:
-            unsub()
-
-    def _on_pieces_changed(self) -> None:
-        store = self._piece_store
-        if store is None:
-            return
-        self._pieces = store.load()
-        self._refresh_pieces()
-
-    def save_selection(self, session: FormSession) -> None:
-        self._session = session
-        self._save_ids(session, session.selection.state.ids)
-
-    def save_node(self, node_id: NodeId) -> None:
-        session = self._session
-        if session is None or not session.document.contains(node_id):
-            return
-        selected = session.selection.state.ids
-        ids = selected if node_id in selected else (node_id,)
-        self._save_ids(session, ids)
-
-    def piece_at(self, index: int) -> Optional[SavedPiece]:
-        if index < 0 or index >= len(self._pieces):
-            return None
-        return self._pieces[index]
-
-    def rename_piece(self, index: int, name: str) -> None:
-        updated = renamed_pieces(self._pieces, index, name)
-        if updated == self._pieces:
-            return
-        self._pieces = updated
-        self._store_pieces()
-        self._refresh_pieces()
-
-    def delete_piece(self, index: int) -> None:
-        if index < 0 or index >= len(self._pieces):
-            return
-        removed = self._pieces[index]
-        updated = without_piece(self._pieces, index)
-        self._pieces = updated
-        self._store_pieces()
-        self._refresh_pieces()
-        notice = self._notice
-        if notice is None:
-            return
-
-        def undo(slot: int = index, piece: SavedPiece = removed) -> None:
-            self._restore_piece(slot, piece)
-
-        notice("Deleted %s." % removed.name, undo)
-
-    def insert_piece(self, index: int) -> None:
-        piece = self.piece_at(index)
-        if piece is None:
-            return
-        publish_xml(piece.xml)
-        paste = self._paste
-        if paste is not None:
-            paste()
-
-    def _restore_piece(self, index: int, piece: SavedPiece) -> None:
-        items = list(self._pieces)
-        slot = index if 0 <= index <= len(items) else len(items)
-        items.insert(slot, piece)
-        self._pieces = tuple(items)
-        self._store_pieces()
-        self._refresh_pieces()
-
-    def piece_menu(self, index: int) -> QMenu:
-        menu = QMenu(self)
-        rename = menu.addAction("Rename")
-        delete = menu.addAction("Delete")
-        rename.triggered.connect(lambda _checked=False, slot=index: self._prompt_rename(slot))
-        delete.triggered.connect(lambda _checked=False, slot=index: self.delete_piece(slot))
-        return menu
-
-    def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        self._piece_box.apply_theme(tokens)
-
-    def _save_ids(self, session: FormSession, ids: Sequence[NodeId]) -> None:
-        piece = piece_for_ids(session.document, ids, tuple(item.name for item in self._pieces))
-        if piece is None:
-            return
-        self._pieces = self._pieces + (piece,)
-        self._store_pieces()
-        self._refresh_pieces()
-
-    def _store_pieces(self) -> None:
-        store = self._piece_store
-        if store is not None:
-            store.replace(self._pieces)
-
-    def _refresh_pieces(self) -> None:
-        self._piece_box.fill(self._pieces)
-        self._piece_box.setVisible(not self._collapsed)
-        self._piece_box.list.setVisible(not self._collapsed and bool(self._pieces))
-
-    def _prompt_rename(self, index: int) -> None:
-        if index < 0 or index >= len(self._pieces):
-            return
-        text, ok = QInputDialog.getText(
-            self,
-            "Rename piece",
-            "Name:",
-            QLineEdit.Normal,
-            self._pieces[index].name,
-        )
-        if not ok:
-            return
-        self.rename_piece(index, str(text))
-
-    def _toggle(self) -> None:
-        self.set_collapsed(not self._collapsed)
-        self._on_collapsed(self._collapsed)
-
-    def _focus_filter(self) -> None:
-        self.filter.setFocus()
-        self.filter.selectAll()
-
-    def _refill(self, text: str) -> None:
-        self.body.clear()
-        role = getattr(Qt, "UserRole")
-        for key, _kind, label in matching_tiles(text):
-            item = QListWidgetItem(label)
-            item.setData(role, key)
-            self.body.addItem(item)
-
-    def _activated(self, item: QListWidgetItem) -> None:
-        key = item.data(getattr(Qt, "UserRole"))
-        if not key or self._place is None:
-            return
-        self._place(str(key))
+    def publish(self, xml: str) -> None:
+        publish_xml(xml)
 
 
-class _TileList(QListWidget):
-    def __init__(self, parent: QWidget, on_finished: Optional[Callable[[], None]] = None) -> None:
-        super().__init__(parent)
-        self._on_finished = on_finished
-
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        # Mac Qt does not emit itemActivated when Return is pressed.
-        enter = getattr(Qt, "Key_Return")
-        keypad = getattr(Qt, "Key_Enter")
-        if event.key() in (enter, keypad):
-            item = self.currentItem()
-            pane = self.parent()
-            if item is not None and isinstance(pane, InsertPane):
-                pane._activated(item)
-                return
-        super().keyPressEvent(event)
-
-    def focusInEvent(self, event: QEvent) -> None:  # noqa: N802
-        super().focusInEvent(event)
-        announce = getattr(self.parent(), "_announce_preview", None)
-        if announce is not None:
-            announce()
-
-    def focusOutEvent(self, event: QEvent) -> None:  # noqa: N802
-        super().focusOutEvent(event)
-        clear = getattr(self.parent(), "_clear_preview", None)
-        if clear is not None:
-            clear()
-
-    def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
-        buttons = getattr(event, "buttons", lambda: 0)()
-        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
-        if not buttons & left:
-            super().mouseMoveEvent(event)  # type: ignore[arg-type]
-            return
-        item = self.currentItem()
-        if item is None:
-            return
-        key = item.data(getattr(Qt, "UserRole"))
-        if not key:
-            return
-        drag = QDrag(self)
-        mime = QMimeData()
-        mime.setData(MIME_INSERT, str(key).encode("utf-8"))
-        drag.setMimeData(mime)
-        action = getattr(getattr(Qt, "DropAction", Qt), "CopyAction")
-        starter = getattr(drag, "exec", None)
-        if starter is None:
-            starter = getattr(drag, "exec_")
-        starter(action)
-        done = self._on_finished
-        if done is not None:
-            done()
-
-
-class _PieceBox(QWidget):
-    """Saved pieces under the insert list. The list stays hidden while empty."""
-
-    def __init__(self, pane: InsertPane) -> None:
-        super().__init__(pane)
-        self._pane = pane
-        self.setObjectName("formBuilder.savedPiecesBox")
-        self.setAcceptDrops(True)
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 4, 0, 0)
-        layout.setSpacing(0)
-        self.title = QLabel("Saved pieces", self)
-        self.title.setObjectName("formBuilder.sectionTitle")
-        layout.addWidget(self.title)
-        self.list = _PieceList(self)
-        self.list.setObjectName("formBuilder.savedPieces")
-        self.list.setAccessibleName("Saved pieces")
-        self.list.setFocusPolicy(_strong())
-        self.list.setAcceptDrops(True)
-        policy = getattr(getattr(Qt, "ContextMenuPolicy", Qt), "CustomContextMenu")
-        self.list.setContextMenuPolicy(policy)
-        self.list.customContextMenuRequested.connect(self._menu)
-        layout.addWidget(self.list)
-        self.list.hide()
-
-    def fill(self, pieces: Sequence[SavedPiece]) -> None:
-        self.list.clear()
-        role = getattr(Qt, "UserRole")
-        for index, piece in enumerate(pieces):
-            item = QListWidgetItem(piece.name)
-            item.setData(role, index)
-            item.setToolTip("Insert %s. Press Enter." % piece.name)
-            self.list.addItem(item)
-        self._fit()
-
-    def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        width = tokens.focus_border_width
-        self.list.setStyleSheet(
-            "QListWidget { background: %s; color: %s; border: 1px solid %s; }"
-            "QListWidget::item:selected { background: %s; color: %s; }"
-            "QListWidget:focus { border: %dpx solid %s; }"
-            % (
-                tokens.editor_bg,
-                tokens.text_primary,
-                tokens.border,
-                tokens.tree_selected_bg,
-                tokens.text_primary,
-                width,
-                tokens.accent,
-            )
-        )
-
-    def showEvent(self, event: QEvent) -> None:  # noqa: N802
-        super().showEvent(event)
-        self._fit()
-
-    def dragEnterEvent(self, event: object) -> None:  # noqa: N802
-        _accept_node(event)
-
-    def dragMoveEvent(self, event: object) -> None:  # noqa: N802
-        _accept_node(event)
-
-    def dropEvent(self, event: object) -> None:  # noqa: N802
-        node_id = _accept_node(event)
-        if node_id is not None:
-            self._pane.save_node(node_id)
-
-    def _fit(self) -> None:
-        count = self.list.count()
-        if count < 1:
-            return
-        row_h = self.list.sizeHintForRow(0)
-        if row_h < 1:
-            return
-        shown = count if count < 8 else 8
-        self.list.setFixedHeight(row_h * shown + self.list.frameWidth() * 2)
-
-    def _menu(self, pos: QPoint) -> None:
-        item = self.list.itemAt(pos)
-        if item is None:
-            return
-        raw = item.data(getattr(Qt, "UserRole"))
-        if raw is None:
-            return
-        self._pane.piece_menu(int(raw)).popup(self.list.mapToGlobal(pos))
-
-
-class _PieceList(QListWidget):
-    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
-        enter = getattr(Qt, "Key_Return")
-        keypad = getattr(Qt, "Key_Enter")
-        if event.key() in (enter, keypad):
-            item = self.currentItem()
-            raw = None if item is None else item.data(getattr(Qt, "UserRole"))
-            box = self.parent()
-            if raw is not None and isinstance(box, _PieceBox):
-                box._pane.insert_piece(int(raw))
-                return
-        super().keyPressEvent(event)
-
-    def mouseMoveEvent(self, event: object) -> None:  # noqa: N802
-        buttons = getattr(event, "buttons", lambda: 0)()
-        left = getattr(getattr(Qt, "MouseButton", Qt), "LeftButton")
-        if not buttons & left:
-            super().mouseMoveEvent(event)  # type: ignore[arg-type]
-            return
-        item = self.currentItem()
-        if item is None:
-            return
-        raw = item.data(getattr(Qt, "UserRole"))
-        if raw is None:
-            return
-        box = self.parent()
-        if not isinstance(box, _PieceBox):
-            return
-        piece = box._pane.piece_at(int(raw))
-        if piece is None:
-            return
-        drag = QDrag(self)
-        mime = QMimeData()
-        raw_xml = piece.xml.encode("utf-8")
-        mime.setData(MIME_FRAGMENT, raw_xml)
-        mime.setData(MIME_DESIGNER_FRAGMENT, raw_xml)
-        drag.setMimeData(mime)
-        action = getattr(getattr(Qt, "DropAction", Qt), "CopyAction")
-        starter = getattr(drag, "exec", None) or getattr(drag, "exec_")
-        starter(action)
-
-    def dragEnterEvent(self, event: object) -> None:  # noqa: N802
-        self.parent().dragEnterEvent(event)  # type: ignore[attr-defined]
-
-    def dragMoveEvent(self, event: object) -> None:  # noqa: N802
-        self.parent().dragMoveEvent(event)  # type: ignore[attr-defined]
-
-    def dropEvent(self, event: object) -> None:  # noqa: N802
-        self.parent().dropEvent(event)  # type: ignore[attr-defined]
-
-
-def _accept_node(event: object) -> Optional[NodeId]:
-    mime = getattr(event, "mimeData", lambda: None)()
-    if mime is None or not mime.hasFormat(MIME_NODE):
-        event.ignore()  # type: ignore[attr-defined]
-        return None
-    try:
-        node_id = NodeId(int(bytes(mime.data(MIME_NODE)).decode("utf-8").strip()))
-    except ValueError:
-        event.ignore()  # type: ignore[attr-defined]
-        return None
-    event.acceptProposedAction()  # type: ignore[attr-defined]
-    return node_id
+def _state_root_of(widget: QWidget) -> Optional[str]:
+    root = getattr(widget.window(), "_state_root", None)
+    return str(root) if root else None
 
 
 class _RailButton(QToolButton):
@@ -2765,7 +2366,14 @@ class FormWorkbench(QWidget):
 
         self._left_stack = QStackedWidget(self._splitter)
         self.outline = OutlinePane(on_pick, lambda collapsed: on_collapsed("outline", collapsed), self._left_stack)
-        self.insert = InsertPane(lambda collapsed: on_collapsed("insert", collapsed), self._left_stack)
+        self._insert_memory = LazyInsertMemory(lambda: _state_root_of(self))
+        self._return_to_insert = False
+        self.insert = InsertPane(
+            lambda collapsed: on_collapsed("insert", collapsed),
+            self._left_stack,
+            memory=self._insert_memory,
+            pieces=_PieceOps(),
+        )
         self.insert.bind_session(session)
         self._left_body = QWidget(self._left_stack)
         self._left_split = QSplitter(self._left_body)
@@ -2796,6 +2404,16 @@ class FormWorkbench(QWidget):
         self.insert.set_place(self._place_tile)
         self.insert.set_preview(self._preview_insert)
         self.insert.set_drag_finished(self._cancel_place)
+        self.insert.set_leave(self.canvas.setFocus)
+        application = QApplication.instance()
+        self._focus_hooked = False
+        if application is not None:
+            application.focusChanged.connect(self._on_focus_changed)
+            self._focus_hooked = True
+            self.destroyed.connect(self.dispose)
+        self.insert.set_report(self.outline.report)
+        self.insert.set_open_window(self._open_window_kind)
+        self.outline.set_quick_recent(self._insert_memory.recent)
         self.outline.attach(session, self._place_from_outline, self._preview_insert)
 
         self._right_stack = QStackedWidget(self._splitter)
@@ -2861,6 +2479,7 @@ class FormWorkbench(QWidget):
         else:
             self.outline.rebuild(document, selected)
         self.canvas.refresh_chip()
+        self.insert.refresh_custom()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
         self._drawer_listener = callback
@@ -2981,10 +2600,23 @@ class FormWorkbench(QWidget):
                 ),
             )
         )
-        self.insert.apply_theme(tokens)
+        self.insert.apply_chrome(chrome_for(tokens))
         self.canvas.apply_theme(tokens)
         self.inspector.apply_chrome(chrome_for(tokens))
         self.inspector.set_link_color(problems_link_color(tokens))
+
+    def dispose(self, *_args: object) -> None:
+        """Drop the focus watch. A closed form must not keep the application signal."""
+        if not self._focus_hooked:
+            return
+        self._focus_hooked = False
+        application = QApplication.instance()
+        if application is None:
+            return
+        try:
+            application.focusChanged.disconnect(self._on_focus_changed)
+        except (RuntimeError, TypeError):
+            return
 
     def open_left(self) -> None:
         self._open_drawer("left")
@@ -3026,20 +2658,64 @@ class FormWorkbench(QWidget):
         fragment = fragment_for(key)
         if tile is None or fragment is None:
             return
+        entry = load_catalog().get(key)
+        name = (entry.friendly if entry is not None else tile[2]).lower()
         payload = DropPayload(tile[1])
         current = self._session.selection.state.current
         commands = auto_commands(self._session.document, current, payload, fragment)
         if not commands:
+            self._report_refusal(payload, current)
             return
         try:
-            with self._session.log.transaction("Drop") as txn:
+            with self._session.log.transaction("Insert %s" % name) as txn:
                 for command in commands:
                     txn.execute(command)
         except CommandRejected:
+            self._report_refusal(payload, current)
             return
-        self.canvas.setFocus()
+        self._insert_memory.note_used(key)
+        self.insert.refresh_recent()
         if any(isinstance(command, InsertFormRow) for command in commands):
+            # UX-CAT-011: a keyboard insert's label editor hands focus back to the Insert tile when it closes.
+            self._return_to_insert = self._insert_has_focus()
+            self.canvas.setFocus()
             self.canvas.send(EditTextAsked())
+            return
+        if not self._insert_has_focus():
+            self.canvas.setFocus()
+
+    def _on_focus_changed(self, old: object, now: object) -> None:
+        """The label editor (a line or text box on the canvas) closed: return to the Insert tile once."""
+        if not self._return_to_insert:
+            return
+        if not isinstance(old, (QLineEdit, QPlainTextEdit)) or not self.canvas.isAncestorOf(old):
+            return
+        if now is not None and now is not self.canvas and not self.canvas.isAncestorOf(now):
+            return
+        self._return_to_insert = False
+        self.insert.focus_list()
+
+    def _insert_has_focus(self) -> bool:
+        focus = QApplication.focusWidget()
+        if focus is None:
+            return False
+        return focus is self.insert.body or focus is self.insert.filter or self.insert.isAncestorOf(focus)
+
+    def _report_refusal(self, payload: DropPayload, anchor: Optional[NodeId]) -> None:
+        """UX-CAT-011 and UX-CAT-014: a keyboard insert that cannot go here says why, and inserts nothing."""
+        target = auto_target(self._session.document, anchor, payload)
+        if isinstance(target, RefusedDrop):
+            self.outline.report(target.sentence)
+            return
+        if payload.kind == "spacer":
+            self.outline.report("A spacer can't go in a form row. Use a gap instead.")
+            return
+        self.outline.report("Nothing to insert here. Select a place first.")
+
+    def _open_window_kind(self, key: str) -> None:
+        opener = getattr(self.window(), "_open_new_form_card", None)
+        if callable(opener):
+            opener(key)
 
     def _place_from_outline(self, key: str) -> None:
         self._place_tile(key)

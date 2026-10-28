@@ -59,12 +59,7 @@ def test_alt_up_moves_a_row_just_inserted(tmp_path: Path, qapp: QApplication) ->
         kb.press("Key_1", "Alt")
         _walk_to(kb, "phoneEdit", key="Key_Down")
         kb.press("Key_Slash")
-        insert_list = kb.focus()
-        for _ in range(12):
-            item = insert_list.currentItem()  # type: ignore[union-attr]
-            if item is not None and item.text() == "Line edit":
-                break
-            kb.press("Key_Down")
+        kb.type("line edit")  # UX-CAT-013: the quick list filters by typing
         kb.press("Key_Return")
         kb.type("Fax")
         kb.press("Key_Return")
@@ -161,12 +156,7 @@ def test_a_button_inserted_into_a_form_has_no_field_label(tmp_path: Path, qapp: 
         kb.press("Key_1", "Alt")
         _walk_to(kb, "phoneEdit", key="Key_Down")
         kb.press("Key_Slash")
-        insert_list = kb.focus()
-        for _ in range(12):
-            item = insert_list.currentItem()  # type: ignore[union-attr]
-            if item is not None and item.text() == "Button":
-                break
-            kb.press("Key_Down")
+        kb.type("push button")  # UX-CAT-013: the quick list filters by typing
         kb.press("Key_Return")
         if kb.focus_name() != "formBuilder.structure" and not kb.focus_in("formBuilder.canvas"):
             kb.press("Key_Escape")

@@ -323,6 +323,7 @@ CBCS_FB_PY39=${py39}
 CBCS_FB_UIC=${uic}
 CBCS_FB_RCC=${rcc}
 CBCS_ARTIFACTS_DIR=${artifacts}
+npm_config_yes=true
 EOF
   cloud_as_root cp "$tmp" /etc/cbcs-cloud.env
   cloud_as_root chmod 644 /etc/cbcs-cloud.env
@@ -358,6 +359,17 @@ cloud_verify_runtimes() {
   local home prefix
   home="$(cloud_home)"
   prefix="${FREECAD_DEV_PREFIX:-${home}/opt/freecad}"
+  # AppImage publish writes /etc/cbcs-cloud.env before the conda prefix exists.
+  # Write it again once both trees are on disk so CBCS_FB_PY39 names the 3.9
+  # interpreter that can import PySide6.
+  if [[ -x /usr/local/bin/cbcs-fb-python \
+    && -x /usr/local/bin/cbcs-fb-uic \
+    && -x /usr/local/bin/cbcs-fb-rcc ]]; then
+    cloud_write_env_files \
+      /usr/local/bin/cbcs-fb-python \
+      /usr/local/bin/cbcs-fb-uic \
+      /usr/local/bin/cbcs-fb-rcc
+  fi
   # FreeCAD treats a long -c string as a filesystem path and fails with
   # "File name too long". Keep each probe to one short statement.
   cloud_log "FreeCAD 1.0 AppRun"

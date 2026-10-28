@@ -334,7 +334,7 @@ def test_enter_on_an_insert_tile_inserts_the_widget(
         tile = None
         for index in range(body.count()):
             item = body.item(index)
-            if item is not None and item.text() == "Button":
+            if item is not None and item.data(int(Qt.UserRole)) == "QPushButton":
                 tile = item
         assert tile is not None
         body.setCurrentItem(tile)
@@ -362,7 +362,7 @@ def test_a_double_click_on_an_insert_tile_inserts_one_widget(tmp_path: Path, qap
             tabs.setCurrentIndex(1)
         qapp.processEvents()
         assert body.isVisible()
-        tile = next(body.item(i) for i in range(body.count()) if body.item(i).text() == "Button")
+        tile = next(body.item(i) for i in range(body.count()) if body.item(i).data(int(Qt.UserRole)) == "QPushButton")
         body.scrollToItem(tile)
         qapp.processEvents()
         pos = body.viewport().mapTo(window, body.visualItemRect(tile).center())

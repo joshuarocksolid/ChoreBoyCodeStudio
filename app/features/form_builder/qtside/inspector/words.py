@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import Mapping, Optional, Sequence
+from typing import Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.qt_signals import signal_names
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
+from app.features.form_builder.qtside.insert.catalog import load_catalog
 
 @dataclass(frozen=True)
 class ClassWords:
@@ -15,56 +16,72 @@ class ClassWords:
     noun: str
     glyph: str
 
-_CLASS_WORDS: Mapping[str, ClassWords] = {
-    "QWidget": ClassWords("Widget", "widgets", "widget", "widget"),
-    "QDialog": ClassWords("Dialog", "dialogs", "dialog", "window"),
-    "QMainWindow": ClassWords("Main window", "main windows", "window", "window"),
-    "QPushButton": ClassWords("Push button", "push buttons", "button", "button"),
-    "QToolButton": ClassWords("Tool button", "tool buttons", "button", "button"),
-    "QCommandLinkButton": ClassWords("Command link", "command links", "button", "button"),
-    "QCheckBox": ClassWords("Check box", "check boxes", "check box", "checkbox"),
-    "QRadioButton": ClassWords("Radio button", "radio buttons", "radio button", "radio"),
-    "QLineEdit": ClassWords("Line edit", "line edits", "field", "field"),
-    "QTextEdit": ClassWords("Text edit", "text edits", "text box", "textbox"),
-    "QPlainTextEdit": ClassWords("Plain text edit", "plain text edits", "text box", "textbox"),
-    "QLabel": ClassWords("Label", "labels", "label", "label"),
-    "QComboBox": ClassWords("Combo box", "combo boxes", "combo box", "combo"),
-    "QSpinBox": ClassWords("Spin box", "spin boxes", "spin box", "number"),
-    "QDoubleSpinBox": ClassWords("Double spin box", "double spin boxes", "spin box", "number"),
-    "QSlider": ClassWords("Slider", "sliders", "slider", "slider"),
-    "QDial": ClassWords("Dial", "dials", "dial", "slider"),
-    "QDateEdit": ClassWords("Date edit", "date edits", "date field", "date"),
-    "QTimeEdit": ClassWords("Time edit", "time edits", "time field", "date"),
-    "QDateTimeEdit": ClassWords("Date and time edit", "date and time edits", "date field", "date"),
-    "QGroupBox": ClassWords("Group box", "group boxes", "group box", "group"),
-    "QFrame": ClassWords("Frame", "frames", "frame", "group"),
-    "QTabWidget": ClassWords("Tab widget", "tab widgets", "tab widget", "tabs"),
-    "QStackedWidget": ClassWords("Stacked widget", "stacked widgets", "stack", "tabs"),
-    "QScrollArea": ClassWords("Scroll area", "scroll areas", "scroll area", "group"),
-    "QListWidget": ClassWords("List widget", "list widgets", "list", "list"),
-    "QTableWidget": ClassWords("Table widget", "table widgets", "table", "table"),
-    "QTableView": ClassWords("Table view", "table views", "table", "table"),
-    "QTreeWidget": ClassWords("Tree widget", "tree widgets", "tree", "tree"),
-    "QTreeView": ClassWords("Tree view", "tree views", "tree", "tree"),
-    "QDialogButtonBox": ClassWords("Button box", "button boxes", "button box", "button"),
-    "QProgressBar": ClassWords("Progress bar", "progress bars", "progress bar", "progress"),
-    "QVBoxLayout": ClassWords("Vertical layout", "vertical layouts", "layout", "layout"),
-    "QHBoxLayout": ClassWords("Horizontal layout", "horizontal layouts", "layout", "layout"),
-    "QGridLayout": ClassWords("Grid layout", "grid layouts", "layout", "layout"),
-    "QFormLayout": ClassWords("Form layout", "form layouts", "layout", "layout"),
+
+# The friendly name comes from the Insert catalog (UX-CAT-001). These extras are the
+# plural, noun and inspector glyph that the catalog does not carry.
+_EXTRAS: Mapping[str, Tuple[str, str, str]] = {
+    "QWidget": ("widgets", "widget", "widget"),
+    "QDialog": ("dialogs", "dialog", "window"),
+    "QMainWindow": ("main windows", "window", "window"),
+    "QPushButton": ("push buttons", "button", "button"),
+    "QToolButton": ("tool buttons", "button", "button"),
+    "QCommandLinkButton": ("command links", "button", "button"),
+    "QCheckBox": ("check boxes", "check box", "checkbox"),
+    "QRadioButton": ("radio buttons", "radio button", "radio"),
+    "QLineEdit": ("line edits", "field", "field"),
+    "QTextEdit": ("text edits", "text box", "textbox"),
+    "QPlainTextEdit": ("plain text edits", "text box", "textbox"),
+    "QLabel": ("labels", "label", "label"),
+    "QComboBox": ("combo boxes", "combo box", "combo"),
+    "QSpinBox": ("spin boxes", "spin box", "number"),
+    "QDoubleSpinBox": ("double spin boxes", "spin box", "number"),
+    "QSlider": ("sliders", "slider", "slider"),
+    "QDial": ("dials", "dial", "slider"),
+    "QDateEdit": ("date edits", "date field", "date"),
+    "QTimeEdit": ("time edits", "time field", "date"),
+    "QDateTimeEdit": ("date and time edits", "date field", "date"),
+    "QGroupBox": ("group boxes", "group box", "group"),
+    "QFrame": ("frames", "frame", "group"),
+    "QTabWidget": ("tab widgets", "tab widget", "tabs"),
+    "QStackedWidget": ("stacked widgets", "stack", "tabs"),
+    "QScrollArea": ("scroll areas", "scroll area", "group"),
+    "QListWidget": ("list widgets", "list", "list"),
+    "QTableWidget": ("table widgets", "table", "table"),
+    "QTableView": ("table views", "table", "table"),
+    "QTreeWidget": ("tree widgets", "tree", "tree"),
+    "QTreeView": ("tree views", "tree", "tree"),
+    "QDialogButtonBox": ("button boxes", "button box", "button"),
+    "QProgressBar": ("progress bars", "progress bar", "progress"),
+    "QVBoxLayout": ("vertical layouts", "layout", "layout"),
+    "QHBoxLayout": ("horizontal layouts", "layout", "layout"),
+    "QGridLayout": ("grid layouts", "layout", "layout"),
+    "QFormLayout": ("form layouts", "layout", "layout"),
 }
 
 _CAMEL = re.compile(r"[A-Z]+(?=[A-Z][a-z])|[A-Z]?[a-z0-9]+|[A-Z]+")
 
+
+def _plural_of(noun: str) -> str:
+    return noun + ("es" if noun.endswith(("s", "x", "ch", "sh")) else "s")
+
+
 def class_words(qt_class: str) -> ClassWords:
-    known = _CLASS_WORDS.get(qt_class)
-    if known is not None:
-        return known
-    bare = qt_class[1:] if qt_class[:1] == "Q" and qt_class[1:2].isupper() else qt_class
-    parts = [part.lower() for part in _CAMEL.findall(bare)] or [qt_class.lower()]
-    noun = " ".join(parts)
-    plural = noun + ("es" if noun.endswith(("s", "x", "ch", "sh")) else "s")
-    return ClassWords(noun[:1].upper() + noun[1:], plural, noun, "widget")
+    """Friendly name from the catalog, else derived from the class name (UX-CAT-001)."""
+    friendly = load_catalog().friendly_for_class(qt_class)
+    extras = _EXTRAS.get(qt_class)
+    if friendly is None:
+        bare = qt_class[1:] if qt_class[:1] == "Q" and qt_class[1:2].isupper() else qt_class
+        parts = [part.lower() for part in _CAMEL.findall(bare)] or [qt_class.lower()]
+        noun = " ".join(parts)
+        friendly = noun[:1].upper() + noun[1:]
+        if extras is None:
+            return ClassWords(friendly, _plural_of(noun), noun, "widget")
+    if extras is None:
+        noun = friendly.lower()
+        return ClassWords(friendly, _plural_of(noun), noun, "widget")
+    plural, noun, glyph = extras
+    return ClassWords(friendly, plural, noun, glyph)
+
 
 @dataclass(frozen=True)
 class EventWords:

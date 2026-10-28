@@ -84,6 +84,9 @@ class FormChrome:
     glyph: str = ""
     is_dark: bool = False
     is_high_contrast: bool = False
+    # ov.layout and ov.gap, as ``#RRGGBB``, for layout and spacer glyphs.
+    layout: str = ""
+    gap: str = ""
 
     def __post_init__(self) -> None:
         if not self.search_match_bg:
@@ -268,6 +271,8 @@ def chrome_from_values(
     glyph: str = "",
     is_dark: bool = False,
     is_high_contrast: bool = False,
+    layout: str = "",
+    gap: str = "",
 ) -> FormChrome:
     return FormChrome(
         window=window,
@@ -289,4 +294,6 @@ def chrome_from_values(
         glyph=glyph,
         is_dark=is_dark,
         is_high_contrast=is_high_contrast,
+        layout=layout,
+        gap=gap,
     )

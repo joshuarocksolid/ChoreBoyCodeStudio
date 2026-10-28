@@ -7,9 +7,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     FREECAD_APPRUN=/opt/freecad/AppRun \
     CBCS_FB_APPRUN_11=/opt/freecad-1.1/AppRun \
     CBCS_FB_PY311=/usr/local/bin/cbcs-fb-python \
+    CBCS_FB_PY39=/home/ubuntu/opt/freecad/bin/python \
     CBCS_FB_UIC=/usr/local/bin/cbcs-fb-uic \
     CBCS_FB_RCC=/usr/local/bin/cbcs-fb-rcc \
     CBCS_ARTIFACTS_DIR=/home/ubuntu/cbcs_artifacts \
+    npm_config_yes=true \
     DISPLAY=:1
 
 RUN if ! id ubuntu >/dev/null 2>&1; then \
