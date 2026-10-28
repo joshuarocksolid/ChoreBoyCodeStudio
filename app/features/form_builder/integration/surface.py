@@ -408,16 +408,16 @@ class FormSurface(QWidget):
         self._rename_key = QShortcut(QKeySequence("F2"), self)
         self._rename_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._rename_key.activated.connect(self._rename_inert)
-        quiet = (
-            ("F7", "Set a label's buddy in All properties > buddy."),
-            ("F8", "Tab order follows the order of widgets in the outline."),
-            ("Ctrl+Shift+R", "Run the form with F5."),
+        quiet: Tuple[Tuple[str, Callable[[], str]], ...] = (
+            ("F7", lambda: "Set a label's buddy in All properties > buddy."),
+            ("F8", self._tab_order_sentence),
+            ("Ctrl+Shift+R", lambda: "Run the form with F5."),
         )
         self._quiet_keys: list[QShortcut] = []
         for key, sentence in quiet:
             shortcut = QShortcut(QKeySequence(key), self)
             shortcut.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
-            shortcut.activated.connect(lambda text=sentence: self.narrate(text))
+            shortcut.activated.connect(lambda say=sentence: self.narrate(say()))
             self._quiet_keys.append(shortcut)
         self._widths_key = QShortcut(QKeySequence("Ctrl+K, W"), self)
         self._widths_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
@@ -1150,6 +1150,12 @@ class FormSurface(QWidget):
                 return
         self._inert_note = "F2 renames the selected outline row."
         self._refresh_shell_status()
+
+    def _tab_order_sentence(self) -> str:
+        """F8 before the tab-order overlay exists. True for this form's file."""
+        if self._session.document.tabstops():
+            return "This form keeps its own tab order. It is listed under tabstops in the XML view."
+        return "Tab order follows the order of widgets in the outline."
 
     def _insert_from_canvas(self) -> None:
         if self._source.mode != "visual":

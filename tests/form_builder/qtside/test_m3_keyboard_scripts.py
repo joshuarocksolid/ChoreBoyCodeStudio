@@ -581,6 +581,10 @@ def test_k5_sizing(tmp_path: Path, qapp: QApplication) -> None:
             "F-crumb-trap",
             "Shift+Tab on the breadcrumb never leaves it (UX-A11Y-009)",
         )
+        kb.check(
+            kb.focus_name() == "formBuilder.inspectorName",
+            "Shift+Tab from the breadcrumb lands on the name field above it (UX-A11Y-009)",
+        )
         # Ctrl+Shift+Right twice on the canvas: Fixed width + 16 (UX-RESIZE-006).
         kb.press("Key_3", "Alt")
         kb.check(kb.current() == "saveButton" and kb.focus_in("formBuilder.canvas"), "Alt+3 back on the canvas")
