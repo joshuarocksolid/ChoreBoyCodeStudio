@@ -96,6 +96,9 @@ class ListEditor(QWidget):
         self._on_close: Optional[Callable[[], None]] = None
         self._on_revert: Optional[Callable[[], None]] = None
         self._on_tab: Optional[Callable[[bool], None]] = None
+        self._on_space: Optional[Callable[[int], None]] = None
+        self._on_focus: Optional[Callable[[int], None]] = None
+        self._locked: Optional[Callable[[int], bool]] = None
         self._drag_from: Optional[int] = None
         self._drop_at: Optional[int] = None
         self._hint = QLabel(_OPEN, self)
@@ -177,6 +180,28 @@ class ListEditor(QWidget):
         """``callback(backward)``. The host moves focus to its footer."""
         self._on_tab = callback
 
+    def set_on_space(self, callback: Optional[Callable[[int], None]]) -> None:
+        """Pages host. Space sets the start page instead of typing a space."""
+        self._on_space = callback
+
+    def set_on_focus(self, callback: Optional[Callable[[int], None]]) -> None:
+        """Called with the row index when focus lands on it."""
+        self._on_focus = callback
+
+    def set_read_only(self, locked: Optional[Callable[[int], bool]]) -> None:
+        """``locked(index)`` true makes that row's field read-only (stacked pages)."""
+        self._locked = locked
+        self._place()
+
+    def focused_index(self) -> int:
+        return self._focus_at
+
+    def toggle_details(self, index: int) -> None:
+        if index != self._focus_at:
+            self._close_details()
+            self.focus_row(index)
+        self._set_details_open(not self._details_open)
+
     def focus_row(self, index: int) -> None:
         if not self._texts:
             return
@@ -186,6 +211,9 @@ class ListEditor(QWidget):
         row = self._row_for(self._focus_at)
         if row is not None:
             row.edit.setFocus()
+        focus = self._on_focus
+        if focus is not None:
+            focus(self._focus_at)
 
     def row_count(self) -> int:
         return len(self._texts)
@@ -243,6 +271,10 @@ class ListEditor(QWidget):
             self._set_details_open(False)
             event.accept()  # type: ignore[attr-defined]
             return True
+        if key == _key("Key_Space") and not ctrl and not alt and self._on_space is not None:
+            self._on_space(self._focus_at)
+            event.accept()  # type: ignore[attr-defined]
+            return True
         return False
 
     def note_text(self, index: int, text: str) -> None:
@@ -260,6 +292,9 @@ class ListEditor(QWidget):
             return
         self._focus_at = index
         self._place()
+        focus = self._on_focus
+        if focus is not None:
+            focus(index)
 
     def note_hover(self, index: int, hovered: bool) -> None:
         row = self._row_for(index)
@@ -310,7 +345,8 @@ class ListEditor(QWidget):
         count = len(self._texts)
         empty = count == 0
         self._hint.setVisible(empty)
-        self._canvas.setFixedHeight(max(count, 1) * ROW_H + (ROW_H if self._details_open else 0))
+        extra = self._details_height()
+        self._canvas.setFixedHeight(max(count, 1) * ROW_H + extra)
         top = self._scroll.verticalScrollBar().value() // ROW_H
         if self._focus_at < top:
             top = self._focus_at
@@ -338,8 +374,15 @@ class ListEditor(QWidget):
             row.edit.setFocusPolicy(strong if index == self._focus_at else click)  # type: ignore[arg-type]
         if self._details is not None and self._details_open:
             y = (self._focus_at + 1) * ROW_H
-            self._details.setGeometry(0, y, self._canvas.width() or self.width(), ROW_H)
+            self._details.setGeometry(0, y, self._canvas.width() or self.width(), self._details_height())
             self._details.show()
+
+    def _details_height(self) -> int:
+        if self._details is None or not self._details_open:
+            return 0
+        hint = self._details.sizeHint().height()
+        minimum = self._details.minimumHeight()
+        return max(ROW_H, hint, minimum)
 
     def _row_for(self, index: int) -> Optional["_ListRow"]:
         for row in self._pool:
@@ -506,12 +549,18 @@ class _ListRow(QWidget):
         self._delete.setFixedSize(16, 16)
         self._delete.hide()
         self._delete.clicked.connect(self._clicked)
+        self._more = QToolButton(self)
+        self._more.setText("\u25b8")
+        self._more.setFixedSize(16, 16)
+        self._more.hide()
+        self._more.clicked.connect(self._toggle)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
         layout.addWidget(self._grip)
         layout.addWidget(self._dot)
         layout.addWidget(self.edit, 1)
+        layout.addWidget(self._more)
         layout.addWidget(self._delete)
         self.setFixedHeight(ROW_H)
         self.edit.textChanged.connect(self._typed)
@@ -527,6 +576,11 @@ class _ListRow(QWidget):
         self.edit.blockSignals(False)
         self.edit.setAccessibleName(accessible)
         self._delete.setAccessibleName("Delete row %d" % (index + 1) if index >= 0 else "Delete row")
+        self._more.setAccessibleName("Details of row %d" % (index + 1) if index >= 0 else "Details")
+        self._more.setVisible(index >= 0 and self._editor._details_factory is not None)
+        locked = self._editor._locked
+        self.edit.setReadOnly(bool(locked is not None and index >= 0 and locked(index)))
+        self.edit.setToolTip(text)
         self._dot.setVisible(start)
         self._dot.setText("\u25cf" if start else "")
 
@@ -550,6 +604,10 @@ class _ListRow(QWidget):
     def _clicked(self) -> None:
         if self.index >= 0:
             self._editor.delete_clicked(self.index)
+
+    def _toggle(self) -> None:
+        if self.index >= 0:
+            self._editor.toggle_details(self.index)
 
 
 class _Grip(QObject):
@@ -589,6 +647,8 @@ class _KeyFilter(QObject):
             return False
         if event.type() != getattr(kinds, "KeyPress"):
             return False
+        if isinstance(watched, QLineEdit) and self._editor.isAncestorOf(watched):
+            return self._editor.handle_key(event)
         focus = QApplication.focusWidget()
         if not isinstance(focus, QWidget):
             return False
