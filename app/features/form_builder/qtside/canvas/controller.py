@@ -29,6 +29,7 @@ from app.features.form_builder.engine.clipboard import dangling_sentence
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import InsertFragment, InsertResult
 from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
+from app.features.form_builder.engine.query.pages import innermost_container, page_kind, page_title, pages, start_index
 from app.features.form_builder.engine.commands.drop_plan import auto_target, indicate_preview
 from app.features.form_builder.engine.sizing import chip_axis, project_axis
 from app.features.form_builder.engine.diagnostics import Severity
@@ -84,6 +85,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     RunChipAction,
     ScrollBy,
     Select,
+    ShowPageStep,
     Tip,
     Toggle,
     World,
@@ -364,6 +366,9 @@ class CanvasController:
             return
         if isinstance(effect, Narrate):
             self._host.narrate(effect.sentence)
+            return
+        if isinstance(effect, ShowPageStep):
+            self._show_page_step(effect.delta, effect.node)
             return
         if isinstance(effect, HoverChanged):
             self._host.hover_changed(effect.node)
@@ -748,6 +753,35 @@ class CanvasController:
         widget.setCurrentIndex(nxt)
         self._index.invalidate("page_switch")
         self._request_frame()
+
+    def _show_page_step(self, delta: int, node: NodeId) -> None:
+        """Ctrl+PgDown and Ctrl+PgUp: show the next or previous page, wrapping (UX-CONT-007).
+
+        Only the shown page changes. The file's start page is untouched.
+        """
+        document = self._session.document
+        container = innermost_container(document, node)
+        if container is None or page_kind(document, container) is None:
+            return
+        widget = self._realizer.widget_for(container)
+        if widget is None or not hasattr(widget, "count") or not hasattr(widget, "setCurrentIndex"):
+            return
+        count = int(widget.count())
+        if count <= 0:
+            return
+        shown = self._shown_page.get(container, int(widget.currentIndex()))
+        nxt = (shown + delta) % count
+        self._shown_page[container] = nxt
+        widget.setCurrentIndex(nxt)
+        self._index.invalidate("page_switch")
+        self._request_frame()
+        page = pages(document, container)[nxt]
+        title = page_title(document, page.id) or page.object_name
+        sentence = "Showing page %d of %d: %s" % (nxt + 1, count, title)
+        start = start_index(document, container)
+        if start is not None and start != nxt:
+            sentence += " \u00b7 the file still starts on page %d" % (start + 1)
+        self._host.narrate(sentence)
 
     def _reapply_pages(self, changeset: ChangeSet) -> None:
         for node_id, _kind, name in changeset.property_dirty:

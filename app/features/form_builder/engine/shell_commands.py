@@ -280,6 +280,18 @@ FORM_COMMANDS: Tuple[FormCommand, ...] = (
         available=True,
         shell_action_id="shell.action.edit.redo",
     ),
+    _row(
+        "form.action.showNextPage",
+        "Show next page",
+        "Ctrl+PgDown",
+        _CANVAS_OUTLINE,
+    ),
+    _row(
+        "form.action.showPreviousPage",
+        "Show previous page",
+        "Ctrl+PgUp",
+        _CANVAS_OUTLINE,
+    ),
     _row("form.action.cut", "Cut", "Ctrl+X", _CANVAS_OUTLINE, available=True),
     _row("form.action.copy", "Copy", "Ctrl+C", _CANVAS_OUTLINE, available=True),
     _row("form.action.paste", "Paste", "Ctrl+V", _CANVAS_OUTLINE, available=True),

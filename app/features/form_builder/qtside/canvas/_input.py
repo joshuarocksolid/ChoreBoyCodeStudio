@@ -186,6 +186,10 @@ def _key_name(event: QKeyEvent) -> KeyName:
         return "zoom_fit"
     if key == _key_code("Key_Backtab") or (key == _key_code("Key_Tab") and mods.shift):
         return "backtab"
+    if mods.ctrl and key == _key_code("Key_PageDown"):
+        return "page_next"
+    if mods.ctrl and key == _key_code("Key_PageUp"):
+        return "page_previous"
     named: Dict[int, KeyName] = {
         _key_code("Key_Escape"): "escape",
         _key_code("Key_Return"): "enter",

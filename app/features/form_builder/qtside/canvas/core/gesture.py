@@ -95,13 +95,31 @@ KeyName = Literal[
     "zoom_out",
     "zoom_reset",
     "zoom_fit",
+    "page_next",
+    "page_previous",
     "other",
 ]
 _ARROWS = frozenset({"left", "right", "up", "down"})
 _NUDGE = {"left": (-1, 0), "right": (1, 0), "up": (0, -1), "down": (0, 1)}
 _ZOOM_KEYS = frozenset({"zoom_in", "zoom_out", "zoom_reset", "zoom_fit"})
+_PAGE_KEYS = frozenset({"page_next", "page_previous"})
 _CLAIMED = frozenset(
-    {"tab", "backtab", "left", "right", "up", "down", "enter", "space", "zoom_in", "zoom_out", "zoom_reset", "zoom_fit"}
+    {
+        "tab",
+        "backtab",
+        "left",
+        "right",
+        "up",
+        "down",
+        "enter",
+        "space",
+        "zoom_in",
+        "zoom_out",
+        "zoom_reset",
+        "zoom_fit",
+        "page_next",
+        "page_previous",
+    }
 )
 #: A key commit folds into the previous step with the same ``Commit.merge`` inside this window.
 KEY_MERGE_S = 1.0
@@ -474,6 +492,17 @@ class CanvasPressed:
 
 
 @dataclass(frozen=True)
+class ShowPageStep:
+    """Ctrl+PgDown (``delta`` 1) or Ctrl+PgUp (-1) on the innermost page container of ``node``.
+
+    The shown page changes on the canvas only (UX-CONT-006, UX-CONT-007).
+    """
+
+    delta: int
+    node: NodeId
+
+
+@dataclass(frozen=True)
 class Narrate:
     sentence: str
 
@@ -491,7 +520,7 @@ class RunChipAction:
 ModelEffect = Union[Select, Toggle, Commit]
 ViewEffect = Union[Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal, Cursor, Tip]
 EditorEffect = Union[OpenEditor, CloseEditor]
-HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction]
+HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep]
 Effect = Union[ModelEffect, ViewEffect, EditorEffect, HostEffect]
 
 
@@ -779,6 +808,11 @@ def _idle_key(gesture: Idle, event: Key, world: World) -> Step:
         return Step(PanArmed(), (HoverChanged(None), Cursor("open_hand")))
     if event.key in _ZOOM_KEYS:
         return Step(gesture, (_zoom_effect(event.key),))
+    if event.key in _PAGE_KEYS:
+        if world.selection.current is None:
+            return Step(gesture, (), False)
+        delta = 1 if event.key == "page_next" else -1
+        return Step(gesture, (ShowPageStep(delta, world.selection.current),))
     return Step(gesture, (), False)
 
 
