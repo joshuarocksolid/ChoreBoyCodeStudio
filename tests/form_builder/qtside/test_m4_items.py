@@ -457,3 +457,44 @@ def test_list_item_details_read_and_flip_one_flag(qapp) -> None:
     assert flags.value.text == "ItemIsSelectable|ItemIsDragEnabled|ItemIsUserCheckable|ItemIsEnabled|ItemIsEditable"
     host.close()
     session.dispose()
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "M4.4 follow-up: More properties (UX-ITEM-006) builds registry editors with a stub host. "
+        "Font and Flags fall back to bare labels, Background and Foreground are missing, the "
+        "translation disclosures open as top-level windows, and the panel overlaps the details."
+    ),
+)
+def test_more_properties_shows_a_real_editor_for_each_row(qapp) -> None:
+    from app.qt.QtWidgets import QApplication, QLabel, QToolButton, QWidget
+
+    text = form(
+        'class="QWidget" name="Form"',
+        '<widget class="QListWidget" name="choices"><item><property name="text"><string>A</string></property></item></widget>',
+    )
+    session = open_session(text)
+    host = QWidget()
+    host.show()
+    editor = open_editor(session, session.document.by_name("choices")[0], host)
+    field = next(item for item in editor.findChildren(QLineEdit) if item.isVisible())
+    QTest.keyClick(field, Qt.Key.Key_Right, Qt.KeyboardModifier.AltModifier)
+    before = {id(widget) for widget in QApplication.topLevelWidgets() if widget.isVisible()}
+    editor.findChild(QToolButton, "formBuilder.itemMore").click()
+    qapp.processEvents()
+    strays = [w for w in QApplication.topLevelWidgets() if w.isVisible() and id(w) not in before and w is not editor]
+    panel = editor.findChild(QWidget, "formBuilder.itemMorePanel")
+    labels = [label.text() for label in panel.findChildren(QLabel)]
+    try:
+        assert not strays, strays
+        for name in ("Background", "Foreground"):
+            assert name in labels
+        assert labels.count("Font") == 1 and labels.count("Flags") == 1, labels
+    finally:
+        for stray in strays:
+            stray.close()
+            stray.deleteLater()
+        editor.revert()
+        host.close()
+        session.dispose()
