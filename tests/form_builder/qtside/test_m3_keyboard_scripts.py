@@ -402,11 +402,6 @@ def _toast_text(kb: Kb) -> str:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 findings F-delete-confirm (canvas Delete skips the UX-OUT-012 confirm) and "
-    "F-names (a duplicate of emailEdit_2 is emailEdit_2_2). Drop this marker when both are fixed.",
-)
 def test_k3_clipboard(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp)
     try:

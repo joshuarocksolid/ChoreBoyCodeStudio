@@ -158,6 +158,19 @@ def _body(toast: QFrame) -> str:
     return label.text()
 
 
+def test_the_toast_moves_off_a_selection_in_the_bottom_right() -> None:
+    from app.qt.QtCore import QRect, QSize
+
+    from app.features.form_builder.integration.toast import toast_origin
+
+    host = QRect(0, 0, 400, 300)
+    selection = QRect(280, 240, 110, 50)
+    origin = toast_origin(host, 160, 32, (selection,))
+    toast = QRect(origin, QSize(160, 32))
+    assert not toast.intersects(selection)
+    assert origin.x() < 200
+
+
 def _close(parent: QWidget, surface: QWidget) -> None:
     surface.release()  # type: ignore[attr-defined]
     parent.deleteLater()

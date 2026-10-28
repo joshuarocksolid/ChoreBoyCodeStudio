@@ -115,7 +115,7 @@ def test_a_morph_that_drops_spans_writes_only_after_the_same_confirm() -> None:
 
     done = carry_out(doc, (layout,), ApplyKind(VERTICAL), {}, transact(log), confirmed=asked.text)
 
-    assert done == Done("Changed the layout and removed spans from 1 widget")
+    assert done == Done("Changed the layout to a vertical layout and removed spans from 1 widget.")
     assert len(log.entries()) == 1
     node = doc.node(layout)
     assert isinstance(node, LayoutNode) and node.class_name == "QVBoxLayout"

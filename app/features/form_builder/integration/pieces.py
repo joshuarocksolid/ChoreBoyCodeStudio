@@ -12,7 +12,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.clipboard import plain_names, selection_fragment
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.document import UiDocument, next_object_name
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_fragment
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.engine.ui4.writer import write_fragment
@@ -54,14 +54,8 @@ def payload_with_pieces(payload: Mapping[str, Any], pieces: Sequence[SavedPiece]
 
 
 def unique_piece_name(name: str, taken: Sequence[str]) -> str:
-    """``name``, then ``name_2``, then ``name_3``. The same suffix the engine uses."""
-    used = set(taken)
-    if name not in used:
-        return name
-    index = 2
-    while "%s_%d" % (name, index) in used:
-        index += 1
-    return "%s_%d" % (name, index)
+    """The engine's object-name suffix. ``email_2`` becomes ``email_3``."""
+    return next_object_name(name, taken)
 
 
 def piece_from_fragment(fragment: Fragment, taken: Sequence[str]) -> Optional[SavedPiece]:

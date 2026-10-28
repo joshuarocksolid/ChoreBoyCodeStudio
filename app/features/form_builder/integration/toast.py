@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, Qt, QTimer
+from app.qt.QtCore import QEvent, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QColor
 from app.qt.QtWidgets import (
     QFrame,
@@ -116,8 +116,43 @@ def undo_matches(note: ToastNote, entry: object) -> bool:
     return entry is not None and note.entry is entry
 
 
+def toast_origin(host: QRect, width: int, height: int, blocked: Sequence[QRect]) -> QPoint:
+    """Bottom-right of the viewport, then the corner that misses the selection."""
+    margin = 16
+
+    def spot(x: int, y: int) -> QPoint:
+        x = min(max(x, host.x()), max(host.x() + host.width() - width, host.x()))
+        y = min(max(y, host.y()), max(host.y() + host.height() - height, host.y()))
+        return QPoint(x, y)
+
+    spots = (
+        spot(host.x() + host.width() - width - margin, host.y() + host.height() - height - margin),
+        spot(host.x() + margin, host.y() + host.height() - height - margin),
+        spot(host.x() + host.width() - width - margin, host.y() + margin),
+        spot(host.x() + margin, host.y() + margin),
+    )
+
+    def hits(origin: QPoint, obstacles: Sequence[QRect]) -> bool:
+        rect = QRect(origin, QSize(width, height))
+        for block in obstacles:
+            if block.isNull() or block.width() <= 0 or block.height() <= 0:
+                continue
+            if rect.intersects(block):
+                return True
+        return False
+
+    for origin in spots:
+        if not hits(origin, blocked):
+            return origin
+    selection = blocked[:1]
+    for origin in spots:
+        if not hits(origin, selection):
+            return origin
+    return spots[0]
+
+
 class CommandToast(QFrame):
-    """Level-2 notice at the bottom centre of the form surface. It does not take focus."""
+    """Level-2 notice on the form surface, clear of the selection. It does not take focus."""
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
@@ -181,10 +216,15 @@ class CommandToast(QFrame):
         if parent is None:
             return
         self.adjustSize()
-        width = min(480, max(self.sizeHint().width(), 160), max(1, parent.width() - 16))
+        hints = getattr(parent, "toast_place_hints", None)
+        if hints is not None:
+            host, blocked = hints()
+        else:
+            host, blocked = parent.rect(), ()
+        width = min(480, max(self.sizeHint().width(), 160), max(1, host.width() - 16))
         height = max(self.sizeHint().height(), 32)
         self.resize(width, height)
-        self.move(max(0, (parent.width() - width) // 2), max(0, parent.height() - height - 16))
+        self.move(toast_origin(host, width, height, blocked))
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         fill = tokens.popup_bg or tokens.panel_bg

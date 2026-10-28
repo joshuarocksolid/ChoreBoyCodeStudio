@@ -10,7 +10,7 @@ from app.features.form_builder.engine.clipboard import selection_fragment
 from app.features.form_builder.engine.commands.catalog import InsertFragment, SetGeometry, SetProperty
 from app.features.form_builder.engine.commands.placement import InContainer
 from app.features.form_builder.engine.commands.catalog_ext.drop import InsertFormRow
-from app.features.form_builder.engine.commands.drop_plan import nudge_commands
+from app.features.form_builder.engine.commands.drop_plan import plan_nudge
 from app.features.form_builder.engine.commands.live import LiveProp, live_props
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.drop_target import AcceptedDrop, DropPayload, NoDrop, RefusedDrop
@@ -788,9 +788,10 @@ def _nudge(gesture: Idle, event: Key, world: World) -> Step:
     if not nodes:
         return Step(gesture, (), True)
     if any(not isinstance(positioning_of(world.document, node), Free) for node in nodes):
-        commands = nudge_commands(world.document, nodes, event.key)
+        commands, reason = plan_nudge(world.document, nodes, event.key)
         if not commands:
-            return Step(gesture, (), True)
+            effects = (Narrate(reason),) if reason else ()
+            return Step(gesture, effects, True)
         return Step(gesture, (Commit("Nudge", tuple(commands), world.fresh_token),))
     delta = _NUDGE.get(event.key)
     if delta is None:

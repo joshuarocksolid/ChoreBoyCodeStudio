@@ -132,6 +132,10 @@ def selection_sentence(document: UiDocument, current: Optional[NodeId], count: i
     if current is None or current == document.root.id:
         return _form_sentence(document)
     node = document.get(current)
+    if isinstance(node, LayoutNode):
+        name = node.object_name or "Layout"
+        phrase = _LAYOUT_PHRASE.get(node.class_name or "", node.class_name or "Layout")
+        return "%s · %s" % (name, phrase)
     if not isinstance(node, WidgetNode):
         return _form_sentence(document)
     name = node.object_name or "Widget"

@@ -1289,6 +1289,7 @@ class OutlinePane(QWidget):
         self._delete_button = delete
         self._cancel_button = cancel
         self._confirm.installEventFilter(self)
+        self._after_confirm = None
         buttons.addWidget(delete)
         buttons.addWidget(cancel)
         confirm_layout.addLayout(buttons)
@@ -1512,28 +1513,41 @@ class OutlinePane(QWidget):
         else:
             self._filter.setFocus()
 
-    def show_delete(self, prose: str, ids: Tuple[NodeId, ...]) -> None:
+    def show_delete(
+        self,
+        prose: str,
+        ids: Tuple[NodeId, ...],
+        anchor: Optional[QRect] = None,
+        on_done: Optional[Callable[[], None]] = None,
+    ) -> None:
         self._ask_ids = ids
+        self._after_confirm = on_done
         self._confirm_text.setText(prose)
+        host = self._confirm_host(anchor)
+        if self._confirm.parentWidget() is not host:
+            self._confirm.setParent(host)
         margin = 8
-        limit = max(self.width() - margin * 2, 64)
+        limit = max(host.width() - margin * 2, 64)
         self._confirm.setMaximumWidth(limit)
         self._confirm.setMinimumWidth(0)
         self._confirm_text.setMaximumWidth(max(limit - 16, 32))
-        self._confirm.setMaximumHeight(max(self.height() - margin, 48))
+        self._confirm.setMaximumHeight(max(host.height() - margin, 48))
         self._confirm.adjustSize()
         width = min(self._confirm.sizeHint().width(), limit)
-        self._confirm.resize(width, min(self._confirm.sizeHint().height(), max(self.height() - margin, 48)))
-        anchor = ids[0] if ids else self._current_node()
-        item = None if anchor is None else self._rows.get(int(anchor))
-        x = margin
-        y = self.header.height()
-        if item is not None:
-            rect = self.tree.visualItemRect(item)
-            origin = self.tree.viewport().mapTo(self, rect.topLeft())
-            x = origin.x()
-            y = origin.y() + rect.height()
-        self._place_confirm(x, y)
+        self._confirm.resize(width, min(self._confirm.sizeHint().height(), max(host.height() - margin, 48)))
+        if anchor is not None:
+            self._place_confirm_global(anchor, host)
+        else:
+            row = ids[0] if ids else self._current_node()
+            item = None if row is None else self._rows.get(int(row))
+            x = margin
+            y = self.header.height()
+            if item is not None:
+                rect = self.tree.visualItemRect(item)
+                origin = self.tree.viewport().mapTo(self, rect.topLeft())
+                x = origin.x()
+                y = origin.y() + rect.height()
+            self._place_confirm(x, y)
         self._confirm.show()
         self._confirm.raise_()
         self._delete_button.setFocus()
@@ -1903,6 +1917,35 @@ class OutlinePane(QWidget):
             y = min(max(y, 0), max(self.height() - height, 0))
         self._confirm.move(x, y)
 
+    def _confirm_host(self, anchor: Optional[QRect]) -> QWidget:
+        """The form surface, so a canvas confirm is not clipped to the outline."""
+        if anchor is None:
+            return self
+        widget = self.parentWidget()
+        while isinstance(widget, QWidget):
+            if hasattr(widget, "ask_delete"):
+                return widget
+            widget = widget.parentWidget()
+        window = self.window()
+        return window if isinstance(window, QWidget) else self
+
+    def _place_confirm_global(self, anchor: QRect, host: QWidget) -> None:
+        """Put the confirm under the canvas selection, or above it when the bottom is full."""
+        local = QRect(host.mapFromGlobal(anchor.topLeft()), anchor.size())
+        width = self._confirm.width()
+        height = self._confirm.height()
+        below = local.y() + local.height() + 4
+        above = local.y() - height - 4
+        if below + height <= host.height() - 8:
+            y = below
+        elif above >= 8:
+            y = above
+        else:
+            y = max(8, min(below, host.height() - height - 8))
+        x = min(max(local.x(), 8), max(host.width() - width - 8, 8))
+        y = min(max(y, 8), max(host.height() - height - 8, 8))
+        self._confirm.move(x, y)
+
     def _filter_edited(self, text: str) -> None:
         if self._filter.signalsBlocked():
             return
@@ -1925,9 +1968,16 @@ class OutlinePane(QWidget):
 
     def _answer_delete(self, accept: bool) -> None:
         ids = self._ask_ids
+        done = self._after_confirm
+        self._after_confirm = None
         self._confirm.hide()
+        if self._confirm.parentWidget() is not self:
+            self._confirm.setParent(self)
         self.consider(ConfirmGesture(ids, accept))
-        self.focus_tree()
+        if done is not None:
+            done()
+        else:
+            self.focus_tree()
 
     def _note_expanded(self, item: QTreeWidgetItem, expanded: bool) -> None:
         if self._blocked:

@@ -46,9 +46,10 @@ from app.features.form_builder.engine.logic.storage import (
 from app.features.form_builder.engine.query.tree import (
     form_item_role,
     form_occupied_cells,
+    form_rows,
     is_page_container,
 )
-from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.document import UiDocument, next_object_name
 from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, Node, SpacerNode, WidgetNode
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.schema import SCHEMA, SlotsDecl
@@ -83,7 +84,9 @@ def insert_fragment(
     if isinstance(placement, InFormRow) and pair is None:
         role = _lone_form_role(fragment.nodes)
         if role is not None:
-            placement = InFormRow(placement.layout, placement.row, role, True)
+            # Keep the caller's insert_row. Forcing a new row here split a
+            # form-row insert: the field shifted the label onto the next row.
+            placement = InFormRow(placement.layout, placement.row, role, placement.insert_row)
     incoming = 1 if pair is not None else len(fragment.nodes)
     if pair is not None and isinstance(placement, InFormRow):
         dest = _form_pair_dest(doc, ctx, placement)
@@ -239,6 +242,7 @@ def wrap_nodes(
 ) -> NodeId:
     if not ids:
         raise CommandRejected("There is nothing to wrap.")
+    ids = widgets_in_box_wrap(doc, ids, layout_class)
     ordered = _sort_ids(doc, [_require(doc, node_id).id for node_id in ids])
     carriers = []
     parents = set()
@@ -265,8 +269,9 @@ def wrap_nodes(
         place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0)  # type: ignore[arg-type]
         _apply_named_cells(doc, ctx, layout.id, cells)  # type: ignore[arg-type]
         _finish_form_layout(doc, ctx, layout.id, bool(cells))  # type: ignore[arg-type]
+        _clear_box_cells(doc, ctx, layout.id, layout_class)  # type: ignore[arg-type]
         if anchor is not None:
-            _place_form_anchor(doc, ctx, parent_id, item.id, anchor)  # type: ignore[arg-type]
+            _place_wrapped_form_row(doc, ctx, parent_id, item.id, anchor, layout_class)  # type: ignore[arg-type]
         ctx.select((layout.id,))  # type: ignore[arg-type]
         return layout.id  # type: ignore[return-value]
     widget, layout = _alloc_container(doc, ctx, container_class, layout_class)
@@ -279,8 +284,9 @@ def wrap_nodes(
     place_nodes(doc, ctx, carriers, layout.id, "layout_items", 0)  # type: ignore[arg-type]
     _apply_named_cells(doc, ctx, layout.id, cells)  # type: ignore[arg-type]
     _finish_form_layout(doc, ctx, layout.id, bool(cells))  # type: ignore[arg-type]
+    _clear_box_cells(doc, ctx, layout.id, layout_class)  # type: ignore[arg-type]
     if anchor is not None and held is not None:
-        _place_form_anchor(doc, ctx, parent_id, held.id, anchor)  # type: ignore[arg-type]
+        _place_wrapped_form_row(doc, ctx, parent_id, held.id, anchor, layout_class)  # type: ignore[arg-type]
     ctx.select((widget.id,))  # type: ignore[arg-type]
     return widget.id  # type: ignore[return-value]
 
@@ -1815,16 +1821,23 @@ def _name_counts(specs: Sequence[NodeSpec]) -> Dict[str, int]:
 
 
 def _take_name(base: str, doc: UiDocument, chosen: set) -> str:
-    if base not in chosen and base not in doc.names():
-        chosen.add(base)
-        return base
-    suffix = 2
-    while True:
-        candidate = "%s_%s" % (base, suffix)
-        if candidate not in chosen and candidate not in doc.names():
-            chosen.add(candidate)
-            return candidate
-        suffix += 1
+    taken: object = doc.names()
+    if chosen:
+        taken = _ChosenNames(doc.names(), chosen)
+    name = next_object_name(base, taken)  # type: ignore[arg-type]
+    chosen.add(name)
+    return name
+
+
+class _ChosenNames:
+    """Names already on the form plus names picked earlier in this command."""
+
+    def __init__(self, existing: object, chosen: set) -> None:
+        self._existing = existing
+        self._chosen = chosen
+
+    def __contains__(self, item: object) -> bool:
+        return item in self._existing or item in self._chosen  # type: ignore[operator]
 
 
 def _check_name(
@@ -1981,6 +1994,81 @@ def _normalize_form_items(doc: UiDocument, ctx: PlanContext, layout_id: NodeId) 
         plan.append((item_id, row, column, 1))
     for item_id, row, column, colspan in plan:
         _set_cell(doc, ctx, item_id, row, column, 1, colspan)
+
+
+def widgets_in_box_wrap(
+    doc: UiDocument, ids: Tuple[NodeId, ...], layout_class: str
+) -> Tuple[NodeId, ...]:
+    """The widgets a box wrap will contain, including form-row labels it carries."""
+    if layout_class not in _BOX:
+        return ids
+    return _with_form_labels(doc, ids)
+
+
+def _with_form_labels(doc: UiDocument, ids: Tuple[NodeId, ...]) -> Tuple[NodeId, ...]:
+    """Fields from two form rows take their labels into the box.
+
+    One field stays in its cell, so its row label still names that row.
+    A mix of fields and other roles is left as the user selected it.
+    """
+    extra: List[NodeId] = []
+    rows = set()
+    seen = set(ids)
+    for node_id in ids:
+        item = doc.parent(node_id)
+        if not isinstance(item, LayoutItemNode):
+            return ids
+        parent = doc.parent(item.id)
+        if not isinstance(parent, LayoutNode) or parent.class_name != _FORM:
+            return ids
+        if form_item_role(item.column, item.colspan) != "field":
+            return ids
+        rows.add((parent.id, 0 if item.row is None else item.row))
+        for label_id, field_id, _spanning in form_rows(doc, parent.id):
+            if field_id != item.id or label_id is None:
+                continue
+            label_item = doc.node(label_id)
+            content = label_item.content if isinstance(label_item, LayoutItemNode) else None
+            if content is not None and content.id not in seen:
+                extra.append(content.id)
+                seen.add(content.id)
+    if len(rows) < 2 or not extra:
+        return ids
+    return tuple(ids) + tuple(extra)
+
+
+def _clear_box_cells(doc: UiDocument, ctx: PlanContext, layout_id: NodeId, layout_class: str) -> None:
+    """A box item is a sequence. It never keeps a grid or form cell."""
+    if layout_class not in _BOX:
+        return
+    _clear_cells(doc, ctx, layout_id)
+
+
+def _place_wrapped_form_row(
+    doc: UiDocument,
+    ctx: PlanContext,
+    layout_id: NodeId,
+    item_id: NodeId,
+    anchor: Tuple[int, str],
+    layout_class: str,
+) -> None:
+    row = anchor[0]
+    if layout_class in _BOX and _form_row_clear(doc, layout_id, item_id, row):
+        _set_cell(doc, ctx, item_id, row, 0, 1, 2)
+        return
+    _place_form_anchor(doc, ctx, layout_id, item_id, anchor)
+
+
+def _form_row_clear(doc: UiDocument, layout_id: NodeId, item_id: NodeId, row: int) -> bool:
+    layout = doc.node(layout_id)
+    if not isinstance(layout, LayoutNode):
+        return False
+    for item in layout.items:
+        if item.id == item_id:
+            continue
+        if (0 if item.row is None else item.row) == row:
+            return False
+    return True
 
 
 def _form_anchor(

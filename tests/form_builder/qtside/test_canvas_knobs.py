@@ -249,7 +249,7 @@ def _kind(target: Target) -> str:
 @pytest.mark.parametrize(
     ("selected", "expected"),
     [
-        ("ok", {"pill", "size", "grip", "gap", "margin"}),
+        ("ok", {"pill", "size", "grip"}),
         ("verticalLayout", {"pill", "grip", "gap", "margin", "inert"}),
     ],
 )
@@ -270,8 +270,8 @@ def test_gap_bars_keep_their_screen_size_at_every_zoom(factor: float) -> None:
     with _opened(_stack()) as session:
         view = _view(factor)
         index = _index(session)
-        ok = _nid(session, "ok")
-        frame = _frame(session, index, view, SelectionState((ok,), ok))
+        layout = _nid(session, "verticalLayout")
+        frame = _frame(session, index, view, SelectionState((layout,), layout))
         bars = [item.rect for item in frame.items if isinstance(item, Fill) and item.role == "gap"]
         hits = [rect for rect, target in frame.targets if isinstance(target, OnKnob) and target.knob.key[0] == "gap"]
         assert len(bars) == 2 and len(hits) == 2
@@ -328,9 +328,8 @@ def test_a_gap_drag_previews_exactly_what_it_commits() -> None:
     with _opened(_stack()) as session:
         view = _view()
         index = _index(session)
-        ok = _nid(session, "ok")
         layout = _nid(session, "verticalLayout")
-        selection = SelectionState((ok,), ok)
+        selection = SelectionState((layout,), layout)
         frame = _frame(session, index, view, selection)
         world = _world(session, index, view, selection, frame)
         start = _on_first_gap(frame, view, layout)
@@ -351,9 +350,8 @@ def test_a_gap_drag_reads_its_number_beside_the_gap() -> None:
     with _opened(_stack()) as session:
         view = _view()
         index = _index(session)
-        ok = _nid(session, "ok")
         layout = _nid(session, "verticalLayout")
-        selection = SelectionState((ok,), ok)
+        selection = SelectionState((layout,), layout)
         frame = _frame(session, index, view, selection)
         world = _world(session, index, view, selection, frame)
         start = _on_first_gap(frame, view, layout)
@@ -367,9 +365,8 @@ def test_escape_ends_a_knob_drag_without_a_commit() -> None:
     with _opened(_stack()) as session:
         view = _view()
         index = _index(session)
-        ok = _nid(session, "ok")
         layout = _nid(session, "verticalLayout")
-        selection = SelectionState((ok,), ok)
+        selection = SelectionState((layout,), layout)
         frame = _frame(session, index, view, selection)
         world = _world(session, index, view, selection, frame)
         start = _centre(_knob_rect(frame, ("margin", layout, "top")))
@@ -400,9 +397,8 @@ def test_a_double_click_on_a_stored_gap_deletes_the_spacing() -> None:
     with _opened(_stack(spacing=6)) as session:
         view = _view()
         index = _index(session)
-        ok = _nid(session, "ok")
         layout = _nid(session, "verticalLayout")
-        selection = SelectionState((ok,), ok)
+        selection = SelectionState((layout,), layout)
         frame = _frame(session, index, view, selection)
         world = _world(session, index, view, selection, frame)
         result = _press(world, _centre(_knob_rect(frame, ("gap", layout, "v1"))), double=True)
@@ -449,7 +445,7 @@ def test_ctrl_arrow_resizes_when_no_handle_is_drawn() -> None:
         )
 
 
-def test_a_direct_child_draws_gap_bars_and_margin_bands_as_a_hint() -> None:
+def test_a_direct_child_draws_no_parent_gap_bars() -> None:
     with _opened(_stack()) as session:
         view = _view()
         index = _index(session)
@@ -463,12 +459,10 @@ def test_a_direct_child_draws_gap_bars_and_margin_bands_as_a_hint() -> None:
         def _bars(frame: OverlayFrame) -> List[Fill]:
             return [item for item in frame.items if isinstance(item, Fill) and item.role in ("gap", "gap_fill")]
 
-        faint = _bars(child)
-        assert faint
-        assert all(item.alpha == 0.35 for item in faint)
+        assert _bars(child) == []
         assert all(item.alpha == 1.0 for item in _bars(chosen))
         assert all(item.alpha == 1.0 for item in _bars(container))
-        assert any(isinstance(target, OnKnob) and target.knob.key[0] == "gap" for _rect, target in child.targets)
+        assert not any(isinstance(target, OnKnob) and target.knob.key[0] in ("gap", "margin") for _rect, target in child.targets)
         assert not any(isinstance(item, Chip) and item.text.endswith(" px") for item in child.items)
 
 

@@ -295,7 +295,7 @@ def test_a_gap_drag_is_one_undo_on_release() -> None:
         qlayout = realizer.layout_for(layout)
         assert qlayout is not None
         before = qlayout.spacing()
-        _click(canvas, "ok")
+        _select(session, "verticalLayout")
         start = _gap_point(canvas, ("gap", layout, "v0"))
         _press(canvas, start)
         _move(canvas, start + QPoint(0, 10))
@@ -317,7 +317,7 @@ def test_escape_restores_the_live_spacing() -> None:
         qlayout = realizer.layout_for(layout)
         assert qlayout is not None
         before = qlayout.spacing()
-        _click(canvas, "ok")
+        _select(session, "verticalLayout")
         start = _gap_point(canvas, ("gap", layout, "v0"))
         _press(canvas, start)
         _move(canvas, start + QPoint(0, 10))
@@ -335,7 +335,7 @@ def test_dragging_a_side_wins_over_a_stored_margin() -> None:
         assert qlayout is not None
         before = qlayout.contentsMargins()
         assert before.left() == before.top() == before.right() == before.bottom()
-        _click(canvas, "a")
+        _select(session, "verticalLayout")
         start = _knob_point(canvas, ("margin", layout, "left"))
         _press(canvas, start)
         _move(canvas, start + QPoint(6, 0))
@@ -368,7 +368,7 @@ def test_dragging_one_grid_axis_wins_over_stored_spacing() -> None:
         before_h = qlayout.horizontalSpacing()
         before_v = qlayout.verticalSpacing()
         assert before_h == before_v
-        _click(canvas, "a")
+        _select(session, "gridLayout")
         start = _knob_point(canvas, ("gap", layout, "h0"))
         _press(canvas, start)
         _move(canvas, start + QPoint(10, 0))
@@ -391,7 +391,7 @@ def test_a_gap_drag_starts_from_spacing_when_fixed_widgets_leave_spare_room() ->
         qlayout = realizer.layout_for(layout)
         assert qlayout is not None
         before = qlayout.spacing()
-        _click(canvas, "a")
+        _select(session, "verticalLayout")
         index = _fresh_index(realizer)
         survey = survey_live(realizer, index, session.document, survey_scope(session.document, layout, ()))
         facts = next(found for found in survey.layouts if found.layout == layout)
@@ -545,9 +545,11 @@ def test_repeated_ctrl_shift_arrows_are_one_undo() -> None:
 def test_a_knob_drop_survives_save_and_reload(text, select, key, delta, read, moved) -> None:
     with _shown(text) as (session, realizer, canvas):
         before = read(session, realizer)
-        if select is not None:
-            _click(canvas, select)
         kind, owner, detail = key
+        if kind in ("gap", "margin"):
+            _select(session, owner)
+        elif select is not None:
+            _click(canvas, select)
         knob: KnobKey = (kind, _id(session, owner), detail)
         start = _gap_point(canvas, knob) if kind == "gap" else _knob_point(canvas, knob)
         dx, dy = delta(session, realizer)
@@ -684,6 +686,13 @@ def _id(session: FormSession, name: str) -> NodeId:
     found = session.document.by_name(name)
     assert len(found) == 1
     return found[0]
+
+
+def _select(session: FormSession, name: str) -> None:
+    """Select a layout so its gap bars and margin bands are the ones on screen."""
+    node = _id(session, name)
+    session.selection.set((node,), current=node, source=SelectionSource.CANVAS)
+    _flush()
 
 
 def _click(canvas: FormCanvas, name: str) -> None:

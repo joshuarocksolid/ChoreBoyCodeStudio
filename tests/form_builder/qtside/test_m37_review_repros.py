@@ -36,11 +36,6 @@ _ROWS = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 F-wrap-cells: Ctrl+1 on fields from two form rows writes row/column on the "
-    "new QHBoxLayout's items and leaves the second row's label alone on its row",
-)
 def test_wrapping_fields_of_two_form_rows_writes_clean_box_items(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
@@ -59,10 +54,6 @@ def test_wrapping_fields_of_two_form_rows_writes_clean_box_items(tmp_path: Path,
         _close(window, qapp, guard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 F-row-move: after a form-row insert selects label and field, Alt+Up does nothing and says nothing",
-)
 def test_alt_up_moves_a_row_just_inserted(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
@@ -90,10 +81,6 @@ def test_alt_up_moves_a_row_just_inserted(tmp_path: Path, qapp: QApplication) ->
         _close(window, qapp, guard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7 F-status-layout: after Ctrl+1 the status bar describes the form, not the new layout (UX-FEED-005)",
-)
 def test_the_status_bar_names_a_selected_layout(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:

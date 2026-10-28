@@ -28,7 +28,7 @@ from app.features.form_builder.engine.commands.base import Command, CommandRejec
 from app.features.form_builder.engine.commands.catalog_ext.host_wrap import WrapFree, WrapSplitter, WrapTab
 from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing, from_write
 from app.features.form_builder.engine.commands.log import CommandLog
-from app.features.form_builder.engine.commands.planning import morph_renames
+from app.features.form_builder.engine.commands.planning import morph_renames, widgets_in_box_wrap
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.tree import (
     effective_class,
@@ -1016,7 +1016,10 @@ def _wrap(doc: UiDocument, ids: Tuple[NodeId, ...], kind: Kind, measured: Measur
             host, layout_class = "QWidget", shape.layout_class
         order, cells = _arrange(siblings.ids, layout_class, rects)
         command = WrapFree(siblings.ids, host, layout_class, geometry, order, cells)
-    sentence = "Wrapped %s in %s" % (_count(len(siblings.ids), "widget", "widgets"), kind.noun)
+    wrapped = siblings.ids
+    if isinstance(shape, LayoutShape):
+        wrapped = widgets_in_box_wrap(doc, siblings.ids, shape.layout_class)
+    sentence = "Wrapped %s in %s" % (_count(len(wrapped), "widget", "widgets"), kind.noun)
     return _Ready("Wrap", (command,), sentence)
 
 
@@ -1054,6 +1057,19 @@ def _arrange(
     return order, None
 
 
+def _morph_sentence(new_class: str, lost: int) -> str:
+    """Name the layout the morph produced. ``Changed the layout to a grid.``"""
+    kind_id = _KIND_OF_LAYOUT.get(new_class)
+    noun = KINDS[kind_id].noun if kind_id is not None else "the new layout"
+    sentence = "Changed the layout to %s" % noun
+    if lost:
+        sentence = "%s and removed spans from %s" % (
+            sentence,
+            _count(lost, "widget", "widgets"),
+        )
+    return sentence + "."
+
+
 def _morph(doc: UiDocument, layout: LayoutNode, new_class: str) -> _Plan:
     if layout.class_name == new_class:
         return Current()
@@ -1061,11 +1077,9 @@ def _morph(doc: UiDocument, layout: LayoutNode, new_class: str) -> _Plan:
     lost = spans_cleared(doc, layout.id, new_class)
     rows, other = _shift(layout, new_class)
     moved = rows + other
+    sentence = _morph_sentence(new_class, lost)
     if not lost and not moved:
-        return _Ready("Change layout", (command,), "Changed the layout")
-    sentence = "Changed the layout"
-    if lost:
-        sentence = "Changed the layout and removed spans from %s" % _count(lost, "widget", "widgets")
+        return _Ready("Change layout", (command,), sentence)
     ready = _Ready("Change layout", (command,), sentence)
     if lost and not moved:
         text = "Spans will be removed from %s." % _count(lost, "widget", "widgets")
