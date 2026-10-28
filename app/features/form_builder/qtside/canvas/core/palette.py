@@ -2,7 +2,7 @@
 
 A thin shim: the canvas, gesture and controller code keep calling ``tile_for``,
 ``matching_tiles`` and ``fragment_for``. The data lives in ``qtside/insert/catalog``
-(Qt-free) and the ranking in ``qtside/insert/search.py``.
+(Qt-free) and the ranking in ``qtside/insert/catalog/search.py``.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ from app.features.form_builder.engine.query.drop_target import PayloadKind
 from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.qtside.insert.catalog import load_catalog
 from app.features.form_builder.qtside.insert.catalog._model import WINDOW
-from app.features.form_builder.qtside.insert.search import search
+from app.features.form_builder.qtside.insert.catalog.search import search
 
 MIME_INSERT = "application/x-cbcs-insert"
 MIME_NODE = "application/x-cbcs-node"

@@ -37,7 +37,7 @@ from app.features.form_builder.qtside.insert.header import PaneHeader
 from app.features.form_builder.qtside.insert.pieces_box import PieceBox
 from app.features.form_builder.qtside.insert.ports import InsertMemoryPort, PieceOps
 from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER, Row, browse_rows, search_rows
-from app.features.form_builder.qtside.insert.search import search
+from app.features.form_builder.qtside.insert.catalog.search import search
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 ICONS_MIN_WIDTH = 216

@@ -10,7 +10,7 @@ from app.features.form_builder.qtside.insert.catalog._model import (
     WINDOW,
     Entry,
 )
-from app.features.form_builder.qtside.insert.search import Hit, normalise, search
+from app.features.form_builder.qtside.insert.catalog.search import Hit, normalise, search
 
 RECENT_TITLE = "Recently used"
 RECENT_LIMIT = 6

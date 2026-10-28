@@ -12,7 +12,7 @@ import pytest
 
 from app.features.form_builder.qtside.insert.catalog import load_catalog
 from app.features.form_builder.qtside.insert.rows import browse_rows, quick_rows, search_rows
-from app.features.form_builder.qtside.insert.search import search
+from app.features.form_builder.qtside.insert.catalog.search import search
 
 _CONFLICT = (
     "UX-CAT-007 table conflicts with rules (2)/(3): a friendly name that starts with or "
