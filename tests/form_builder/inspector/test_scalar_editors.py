@@ -747,6 +747,70 @@ def test_two_echo_modes_show_mixed_and_write_both() -> None:
             _close(window, pane)
 
 
+_PAIR_OF_LINES = form(
+    'class="QWidget" name="Form"',
+    """
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QLineEdit" name="first">
+    <property name="maxLength"><number>10</number></property>
+    <property name="minimumSize"><size><width>10</width><height>20</height></size></property>
+   </widget></item>
+   <item><widget class="QLineEdit" name="second">
+    <property name="maxLength"><number>20</number></property>
+    <property name="minimumSize"><size><width>30</width><height>40</height></size></property>
+   </widget></item>
+  </layout>
+""",
+)
+
+
+def _type_into(spin: QSpinBox, text: str) -> None:
+    spin.setFocus()
+    spin.lineEdit().selectAll()
+    QTest.keyClicks(spin.lineEdit(), text)
+    QTest.keyClick(spin.lineEdit(), _key("Key_Return"))
+    _events()
+
+
+def test_mixed_number_writes_the_typed_value_to_both() -> None:
+    with opened(_PAIR_OF_LINES) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "first")
+            _row(pane, "maxLength")
+            _select(session, pane, "first", "second")
+            spin = _row(pane, "maxLength").findChild(QSpinBox)
+            assert isinstance(spin, QSpinBox)
+            assert spin.lineEdit().text() == ""
+            _type_into(spin, "10")
+            pane.flush()
+            flat = "".join(_xml(session).split())
+            assert flat.count('<propertyname="maxLength"><number>10</number>') == 2
+        finally:
+            _close(window, pane)
+
+
+def test_mixed_size_keeps_both_heights_until_every_field_is_typed() -> None:
+    with opened(_PAIR_OF_LINES) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "first", "second")
+            spins = _row(pane, "minimumSize").findChildren(QSpinBox)
+            assert [spin.lineEdit().text() for spin in spins] == ["", ""]
+            assert [spin.lineEdit().placeholderText() for spin in spins] == ["Mixed", "Mixed"]
+            before = _xml(session)
+            _type_into(spins[0], "50")
+            pane.flush()
+            assert _xml(session) == before
+            spins = _row(pane, "minimumSize").findChildren(QSpinBox)
+            _type_into(spins[1], "60")
+            pane.flush()
+            flat = "".join(_xml(session).split())
+            assert flat.count("<size><width>50</width><height>60</height></size>") == 2
+        finally:
+            _close(window, pane)
+
+
 @pytest.mark.parity("R3-167")
 def test_size_policy_summary_names_the_policy() -> None:
     with opened(_FORM) as (session, realizer):

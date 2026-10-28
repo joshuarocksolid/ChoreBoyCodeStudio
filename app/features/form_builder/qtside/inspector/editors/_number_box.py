@@ -139,6 +139,7 @@ class IntBox(QSpinBox):
         self._can_reset = True
         self._hold: Optional[str] = None
         self._shown = ""
+        self._blank = False
         self.setSingleStep(1)
         self.setKeyboardTracking(False)
         self.setGroupSeparatorShown(False)
@@ -155,6 +156,7 @@ class IntBox(QSpinBox):
     def show_number(self, number: int, *, can_reset: bool) -> None:
         self._can_reset = can_reset
         self._hold = None
+        self._blank = False
         shown = int(number)
         low = max(_INT32[0], min(self._low, shown))
         high = min(_INT32[1], max(self._high, shown))
@@ -168,11 +170,25 @@ class IntBox(QSpinBox):
     def show_blank(self, placeholder: str, *, can_reset: bool) -> None:
         self._can_reset = can_reset
         self._hold = None
+        self._blank = True
         self.blockSignals(True)
         self.lineEdit().setPlaceholderText(placeholder)
         self.lineEdit().clear()
         self.blockSignals(False)
         self._shown = ""
+
+    def is_blank(self) -> bool:
+        """Mixed or no value: the field shows its placeholder, not a number."""
+        return self._blank and not self.lineEdit().text().strip()
+
+    def showEvent(self, event: object) -> None:  # noqa: N802
+        # A spin box refills its text from value() when it is shown, which
+        # turned "Mixed" into the last selection's number.
+        super().showEvent(event)  # type: ignore[arg-type]
+        if self._blank:
+            self.blockSignals(True)
+            self.lineEdit().clear()
+            self.blockSignals(False)
 
     def is_dirty(self) -> bool:
         return self.lineEdit().text() != self._shown
@@ -208,6 +224,7 @@ class IntBox(QSpinBox):
         return format_int(int(value))
 
     def _stepped(self, number: int) -> None:
+        self._blank = False
         self._shown = self.lineEdit().text()
         self._hooks.on_number(int(number))
 
@@ -234,7 +251,11 @@ class IntBox(QSpinBox):
             )
             self._hooks.on_close()
             return
+        # The typed number equals value(), so the spin sent no valueChanged:
+        # a Mixed or empty field typed to the number it last held.
+        self._blank = False
         self._shown = self.lineEdit().text()
+        self._hooks.on_number(int(parsed))
         self._hooks.on_close()
 
 
@@ -260,6 +281,7 @@ class RealBox(QDoubleSpinBox):
         self._can_reset = True
         self._hold: Optional[str] = None
         self._shown = ""
+        self._blank = False
         self.setDecimals(places)
         self.setSingleStep(1)
         self.setKeyboardTracking(False)
@@ -276,6 +298,7 @@ class RealBox(QDoubleSpinBox):
     def show_number(self, number: float, *, can_reset: bool) -> None:
         self._can_reset = can_reset
         self._hold = None
+        self._blank = False
         shown = float(number)
         low = -1e12 if shown >= -1e12 else shown
         high = 1e12 if shown <= 1e12 else shown
@@ -289,11 +312,25 @@ class RealBox(QDoubleSpinBox):
     def show_blank(self, placeholder: str, *, can_reset: bool) -> None:
         self._can_reset = can_reset
         self._hold = None
+        self._blank = True
         self.blockSignals(True)
         self.lineEdit().setPlaceholderText(placeholder)
         self.lineEdit().clear()
         self.blockSignals(False)
         self._shown = ""
+
+    def is_blank(self) -> bool:
+        """Mixed or no value: the field shows its placeholder, not a number."""
+        return self._blank and not self.lineEdit().text().strip()
+
+    def showEvent(self, event: object) -> None:  # noqa: N802
+        # A spin box refills its text from value() when it is shown, which
+        # turned "Mixed" into the last selection's number.
+        super().showEvent(event)  # type: ignore[arg-type]
+        if self._blank:
+            self.blockSignals(True)
+            self.lineEdit().clear()
+            self.blockSignals(False)
 
     def is_dirty(self) -> bool:
         return self.lineEdit().text() != self._shown
@@ -336,6 +373,7 @@ class RealBox(QDoubleSpinBox):
         return True
 
     def _stepped(self, number: float) -> None:
+        self._blank = False
         self._shown = self.lineEdit().text()
         self._hooks.on_number(float(number))
 
@@ -366,7 +404,9 @@ class RealBox(QDoubleSpinBox):
             )
             self._hooks.on_close()
             return
+        self._blank = False
         self._shown = self.lineEdit().text()
+        self._hooks.on_number(float(parsed))
         self._hooks.on_close()
 
 

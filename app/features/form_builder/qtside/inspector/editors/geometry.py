@@ -67,6 +67,7 @@ class _BoxEditor:
         self._session: Optional[EditSession] = None
         self._session_field = ""
         self._stacked = True
+        self._mixed = False
         unit = "" if real else "px"
         for key, title in fields:
             hooks = _SpinHooks(
@@ -95,6 +96,7 @@ class _BoxEditor:
         mark(self._root, value)
         numbers = _components(value, [field.key for field in self._fields])
         mixed = isinstance(value, Mixed)
+        self._mixed = mixed
         for index, field in enumerate(self._fields):
             name_part(field.box, self._host, field.key)
             if mixed or numbers is None:
@@ -153,10 +155,19 @@ class _BoxEditor:
         self._session_field = ""
 
     def _write(self, session: EditSession) -> None:
+        # A Mixed value has no number to keep in the fields left empty, so
+        # nothing is written until every field holds one.
+        if self._mixed and any(_blank(field.box) for field in self._fields):
+            return
         values = [_read(field.box) for field in self._fields]
         if any(item is None for item in values):
             return
         self._host.commit(_pack(self._real, [field.key for field in self._fields], values), session=session)
+
+
+def _blank(box: QWidget) -> bool:
+    is_blank = getattr(box, "is_blank", None)
+    return bool(is_blank()) if callable(is_blank) else False
 
 
 def _read(box: QWidget) -> Optional[float]:
