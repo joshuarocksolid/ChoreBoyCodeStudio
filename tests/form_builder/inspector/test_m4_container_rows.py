@@ -13,6 +13,7 @@ def _keys(catalog, cls: str) -> set:
     return {row.key for row in catalog.rows() if not row.classes or cls in row.classes}
 
 
+@pytest.mark.parity("R3-129")
 def test_scroll_area_rows_are_for_scroll_areas_only() -> None:
     catalog = default_catalog()
     keys = _keys(catalog, "QScrollArea")
@@ -29,6 +30,8 @@ def test_wizard_step_rows_are_for_wizard_pages_only() -> None:
     assert "stepTitle" not in _keys(catalog, "QWidget")
 
 
+@pytest.mark.parity("R3-124")
+@pytest.mark.parity("R3-125")
 def test_group_box_and_frame_rows_have_the_spec_labels() -> None:
     rows = {row.key: row for row in default_catalog().rows()}
     assert rows["checkable"].label == "Can be switched off"

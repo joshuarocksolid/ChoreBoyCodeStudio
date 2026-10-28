@@ -59,6 +59,7 @@ def _canvas(text: str) -> Iterator[Tuple[FormSession, FormCanvas, object]]:
             parent.deleteLater()
 
 
+@pytest.mark.parity("R3-130")
 def test_tile_and_cascade_arrange_the_windows_on_the_canvas_only() -> None:
     with _canvas(MDI) as (session, canvas, _host):
         area_id = session.document.by_name("mdi")[0]

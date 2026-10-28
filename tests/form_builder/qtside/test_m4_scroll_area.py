@@ -124,6 +124,7 @@ def _area_point(canvas: FormCanvas, name: str) -> QPoint:
     return area.viewport().mapTo(canvas.viewport(), area.viewport().rect().center())
 
 
+@pytest.mark.parity("R3-129")
 def test_wheel_over_a_scroll_area_scrolls_its_content_not_the_canvas() -> None:
     with _canvas(AREA) as (session, canvas, _host):
         root = canvas.page_widget()

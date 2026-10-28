@@ -70,6 +70,7 @@ def test_the_central_area_refuses_a_dock_with_the_spec_sentence() -> None:
     assert target.sentence == DOCK_REFUSAL == "In a main window, a dock widget goes on one of its sides."
 
 
+@pytest.mark.parity("R3-131")
 def test_dropping_on_a_band_writes_the_side_as_the_attribute_number() -> None:
     log = open_log(MAIN)
     doc = log.document
