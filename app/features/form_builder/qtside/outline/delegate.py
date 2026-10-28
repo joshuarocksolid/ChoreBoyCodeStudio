@@ -84,7 +84,7 @@ class OutlineRowDelegate(QStyledItemDelegate):
             _placed(option.rect, boxes.name),
             primary,
             name_color,
-            elide="middle",
+            elide="right",
         )
         if boxes.caption is not None and caption:
             # layout_row shows a caption only when it fits. Eliding is the guard so nothing is cut bare.

@@ -127,6 +127,7 @@ def test_registered_rows_use_portable_ctrl_text_and_the_form_category() -> None:
 
 def test_new_keys_stay_disabled_until_a_handler_exists() -> None:
     live = {
+        "form.action.insert",
         "form.action.zoomToFit",
         "form.action.editText",
         "form.action.cut",

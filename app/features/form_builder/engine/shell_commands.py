@@ -91,7 +91,14 @@ _CANVAS_OUTLINE = ("canvas", "outline")
 _FORM = ("form_tab",)
 
 FORM_COMMANDS: Tuple[FormCommand, ...] = (
-    _row("form.action.insert", "Insert widget\u2026", "/", _CANVAS_OUTLINE, menu=("Insert widget\u2026",)),
+    _row(
+        "form.action.insert",
+        "Insert widget\u2026",
+        "/",
+        _CANVAS_OUTLINE,
+        menu=("Insert widget\u2026",),
+        available=True,
+    ),
     _row(
         "form.action.goToWidget",
         "Go to widget\u2026",

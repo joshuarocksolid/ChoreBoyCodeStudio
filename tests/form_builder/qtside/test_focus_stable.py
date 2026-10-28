@@ -172,6 +172,7 @@ def _unexpected(
         allowed.add("formBuilder.inspectorName")
     if label == "rename" and home == "canvas":
         allowed.add("QLineEdit")
+        allowed.add("formBuilder.outlineRename")
     found = []
     for step, name in changes:
         if name not in allowed and name != home_name:
@@ -302,7 +303,13 @@ def _rename(surface: object, qapp: QApplication, home: str) -> None:
     assert canvas is not None
     QTest.keyClick(canvas, Qt.Key_F2)
     qapp.processEvents()
-    assert getattr(surface, "_inert_note", "") == "F2 renames the selected outline row."
+    editor = surface.findChild(QLineEdit, "formBuilder.outlineRename")  # type: ignore[attr-defined]
+    if editor is not None and qapp.focusWidget() is editor:
+        # Canvas F2 renames the current widget, then Esc returns to the canvas.
+        QTest.keyClick(editor, Qt.Key_Escape)
+        qapp.processEvents()
+    else:
+        assert getattr(surface, "_inert_note", "") == "F2 renames the selected outline row."
     button = canvas.page_widget().findChild(QWidget, "okButton")
     assert button is not None
     center = button.mapTo(canvas.page_widget(), button.rect().center())
