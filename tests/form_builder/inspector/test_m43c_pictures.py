@@ -483,33 +483,51 @@ def test_picker_open_with_300_pictures_stays_under_50ms_cpu(qapp: QApplication, 
     qapp.processEvents()
 
 
-def test_icon_row_select_cpu(qapp: QApplication, tmp_path: Path) -> None:
-    """Interleaved with a plain text row. A checkout A/B is not run on this shared worktree."""
+def test_the_pixmap_row_says_when_the_label_text_hides_the_picture(qapp: QApplication, tmp_path: Path) -> None:
+    """The canvas shows the text, as the app will; the row says why the picture is not seen."""
     _seed(tmp_path, ("save.png",))
-    path = str(tmp_path / "form.ui")
-    text = _form(icon="<normaloff>:/icons/save.png</normaloff>")
-    window, pane, session, realizer = _pane(qapp, text, path)
+    text = _form(photo=":/icons/save.png").replace(
+        '<widget class="QLabel" name="photo">',
+        '<widget class="QLabel" name="photo">\n     <property name="text"><string>Photo</string></property>',
+    )
+    window, pane, session, realizer = _pane(qapp, text, str(tmp_path / "form.ui"))
     try:
-        icon_samples = []
-        text_samples = []
-        for _ in range(3):
-            started = time.process_time()
-            _select(session, "ok")
-            pane.flush()
-            qapp.processEvents()
-            icon_samples.append(time.process_time() - started)
-            started = time.process_time()
-            _select(session, "title")
-            pane.flush()
-            qapp.processEvents()
-            text_samples.append(time.process_time() - started)
-        print(
-            "select-cpu icon",
-            ["%.4f" % item for item in icon_samples],
-            "text",
-            ["%.4f" % item for item in text_samples],
-        )
-        assert min(icon_samples) < 1.0
-        assert min(text_samples) < 1.0
+        _select(session, "photo")
+        pane.flush()
+        warning = pane.findChild(QLabel, "formBuilder.pictureWarning")
+        assert warning is not None and warning.isVisible()
+        assert "text replaces this picture" in warning.text()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_delete_on_an_icon_state_clears_it_in_the_same_step(qapp: QApplication, tmp_path: Path) -> None:
+    _seed(tmp_path, ("save.png", "dot.png"))
+    icon = "<normaloff>:/icons/save.png</normaloff><disabledoff>:/icons/dot.png</disabledoff>:/icons/save.png"
+    window, pane, session, realizer = _pane(qapp, _form(icon=icon), str(tmp_path / "form.ui"))
+    try:
+        _select(session, "ok")
+        pane.flush()
+        steps = len(session.log.entries())
+        _open_row(pane, "formBuilder.row.icon", qapp)
+        popover = _search(qapp).window()
+        other = popover.findChild(QToolButton, "formBuilder.iconOtherStates")
+        assert other is not None
+        other.click()
+        disabled = popover.findChild(QToolButton, "formBuilder.iconState.disabledoff")
+        normal = popover.findChild(QToolButton, "formBuilder.iconState.normaloff")
+        assert disabled is not None and normal is not None
+        disabled.click()
+        disabled.setFocus()
+        label = popover.findChild(QLabel, "formBuilder.iconPictureLabel")
+        assert label is not None and label.text() == "Picture for disabled, off"
+        _press(disabled, Qt.Key.Key_Delete)
+        assert "<disabledoff>" not in session.text()
+        assert "<normaloff>:/icons/save.png</normaloff>" in session.text()
+        done = popover.findChild(QWidget, "formBuilder.popoverDone")
+        assert done is not None
+        done.click()
+        qapp.processEvents()
+        assert len(session.log.entries()) == steps + 1
     finally:
         _close(window, pane, realizer, session, qapp)

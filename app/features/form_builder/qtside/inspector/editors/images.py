@@ -9,6 +9,7 @@ from app.features.form_builder.engine.project.pictures import (
     PictureIndex,
     file_name_of,
     index_for_document,
+    label_text_hides_picture,
     lookup_stored,
 )
 from app.features.form_builder.engine.ui4.values import (
@@ -41,7 +42,7 @@ from app.features.form_builder.qtside.inspector.editors._popover import RowPopov
 from app.features.form_builder.qtside.visual.color_picker import Swatch
 from app.features.form_builder.qtside.visual.common import RowSummary, begin_popover
 from app.qt.QtCore import QSize, Qt
-from app.qt.QtGui import QBrush, QPixmap
+from app.qt.QtGui import QBrush, QFontMetrics, QPixmap
 from app.qt.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
@@ -53,6 +54,8 @@ from app.qt.QtWidgets import (
 )
 
 _FILE_WARNING = "Loaded from a file path. A packaged app may not find it."
+_TEXT_HIDES = "The label's text replaces this picture when the app runs. Clear the text to show it."
+_MISSING_SUFFIX = " (missing)"
 _THEME_HELP = "Uses the desktop's icon with this name when there is one; otherwise the picture."
 _MODES = ("Normal", "Disabled", "Active", "Selected")
 _FLAGS = ("Off", "On")
@@ -68,11 +71,29 @@ def _missing_tip(stored: str) -> str:
     return "Code Studio can't find %s." % stored
 
 
+class _PictureSummary(RowSummary):
+    """File names elide in the middle, so the extension and "(missing)" stay visible."""
+
+    def _elide(self) -> None:
+        full = self.summary
+        if not full:
+            super()._elide()
+            return
+        metrics = QFontMetrics(self.font())
+        available = max(0, self.width() - 28)
+        suffix = _MISSING_SUFFIX if full.endswith(_MISSING_SUFFIX) else ""
+        name = full[: len(full) - len(suffix)] if suffix else full
+        room = max(0, available - metrics.horizontalAdvance(suffix))
+        shown = metrics.elidedText(name, getattr(getattr(Qt, "TextElideMode", Qt), "ElideMiddle"), room) + suffix
+        self.setText("%s \u25be" % shown)
+
+
 class _StateButton(QToolButton):
     """One icon state. The caption wraps, because four columns share 320 px."""
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent: QWidget, on_clear: Callable[[], None]) -> None:
         super().__init__(parent)
+        self._on_clear = on_clear
         self._caption = QLabel(self)
         self._caption.setWordWrap(True)
         self._caption.setAlignment(_align_center())
@@ -88,6 +109,15 @@ class _StateButton(QToolButton):
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         super().resizeEvent(event)  # type: ignore[arg-type]
         self._caption.setGeometry(self.rect().adjusted(2, 2, -2, -2))
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        key = event.key()  # type: ignore[attr-defined]
+        keys = getattr(Qt, "Key", Qt)
+        if key in (getattr(keys, "Key_Delete"), getattr(keys, "Key_Backspace")):
+            self._on_clear()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
 
     def sizeHint(self) -> QSize:  # noqa: N802
         return QSize(64, 36)
@@ -128,7 +158,7 @@ class _PictureRow:
         layout.setSpacing(6)
         self._swatch = Swatch(self._root, 16)
         self._swatch.set_tokens(host.chrome)
-        self._summary = RowSummary(host.label or kind, self._root)
+        self._summary = _PictureSummary(host.label or kind, self._root)
         self._summary.set_opener(self._open)
         layout.addWidget(self._swatch)
         layout.addWidget(self._summary, 1)
@@ -173,8 +203,28 @@ class _PictureRow:
             self._summary.setToolTip(self._stored)
         self._paint_thumb()
         file_path = bool(self._stored) and not self._stored.startswith(":/") and not self._missing
-        self._warning.setText(_FILE_WARNING if file_path else "")
-        self._warning.setVisible(file_path)
+        notes = [_FILE_WARNING] if file_path else []
+        if self._stored and not self._mixed and self._text_hides_picture():
+            notes.append(_TEXT_HIDES)
+        self._warning.setText("\n".join(notes))
+        self._warning.setVisible(bool(notes))
+
+    def _text_hides_picture(self) -> bool:
+        if self._kind != "Pixmap":
+            return False
+        try:
+            document = self._host.document()
+            owners = self._host.owner_ids()
+        except (AttributeError, RuntimeError, TypeError):
+            return False
+        for owner in owners:
+            try:
+                node = document.node(owner)
+            except KeyError:
+                continue
+            if label_text_hides_picture(node):
+                return True
+        return False
 
     def _paint_thumb(self) -> None:
         if self._mixed or not self._stored or self._missing:
@@ -243,11 +293,13 @@ class IconEditor(_PictureRow):
         self._theme: Optional[QLineEdit] = None
         self._states: Dict[str, QToolButton] = {}
         self._picker: Optional[PicturePicker] = None
+        self._picture_label: Optional[QLabel] = None
 
     def show(self, value: RowValue) -> None:
         if isinstance(value, Written) and isinstance(value.value, IconSetValue):
             self._icon = value.value
-        elif not isinstance(value, Mixed):
+        else:
+            # Mixed starts from an empty icon: a pick must not carry another selection's states.
             self._icon = IconSetValue()
         path = "" if isinstance(value, Mixed) else _icon_path(self._icon)
         label = ""
@@ -266,7 +318,9 @@ class IconEditor(_PictureRow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         picture = QLabel("Picture", body)
+        picture.setObjectName("formBuilder.iconPictureLabel")
         picture.setFocusPolicy(_focus("NoFocus"))  # type: ignore[arg-type]
+        self._picture_label = picture
         layout.addWidget(picture)
         self._picker = PicturePicker(
             body,
@@ -301,22 +355,26 @@ class IconEditor(_PictureRow):
         grid_layout = QGridLayout(grid)
         grid_layout.setContentsMargins(0, 0, 0, 0)
         self._states = {}
-        for column, mode in enumerate(_MODES):
+        for column, mode in enumerate(_MODES, start=1):
             header = QLabel(mode, grid)
             header.setFocusPolicy(_focus("NoFocus"))  # type: ignore[arg-type]
             grid_layout.addWidget(header, 0, column)
         for row, flag in enumerate(_FLAGS, start=1):
-            for column, mode in enumerate(_MODES):
+            side = QLabel(flag, grid)
+            side.setFocusPolicy(_focus("NoFocus"))  # type: ignore[arg-type]
+            grid_layout.addWidget(side, row, 0)
+            for column, mode in enumerate(_MODES, start=1):
                 attr = (mode + flag).lower()
-                button = _StateButton(grid)
+                button = _StateButton(grid, lambda name=attr: self._clear_state(name))
                 button.setObjectName("formBuilder.iconState." + attr)
                 button.setAccessibleName("Icon: %s %s" % (mode.lower(), flag.lower()))
+                button.setToolTip("Choose this state's picture above. Delete clears it.")
                 button.setCheckable(True)
                 button.setAutoExclusive(False)
                 button.clicked.connect(lambda _checked=False, name=attr: self._retarget(name))
                 self._states[attr] = button
                 grid_layout.addWidget(button, row, column)
-        for column in range(4):
+        for column in range(1, 5):
             grid_layout.setColumnStretch(column, 1)
         grid.hide()
         other.toggled.connect(grid.setVisible)
@@ -332,7 +390,7 @@ class IconEditor(_PictureRow):
 
     def _sync_open(self) -> None:
         theme = self._theme
-        if theme is None:
+        if theme is None or self._popover is None or self._popover.closed:
             return
         self._pushing = True
         shown = self._icon.theme or ""
@@ -349,9 +407,14 @@ class IconEditor(_PictureRow):
             )
             if path:
                 button.set_caption(file_name_of(path), chrome.text)
+            elif name == "normaloff":
+                button.set_caption("None", chrome.faint)
             else:
                 button.set_caption("Same as normal", chrome.faint)
             button.setChecked(name == self._target)
+        label = self._picture_label
+        if label is not None:
+            label.setText(_target_title(self._target))
         if self._picker is not None:
             current = getattr(self._icon, self._target)
             if isinstance(current, ResourcePixmap):
@@ -386,6 +449,15 @@ class IconEditor(_PictureRow):
         )
         self._commit()
 
+    def _clear_state(self, name: str) -> None:
+        if getattr(self._icon, name) is None:
+            return
+        self._icon = replace(self._icon, **{name: None})
+        if name == "normaloff":
+            self._icon = replace(self._icon, text=None)
+        self._target = name
+        self._commit()
+
     def _theme_changed(self, text: str) -> None:
         if self._pushing:
             return
@@ -404,6 +476,17 @@ class IconEditor(_PictureRow):
         label = (self._icon.theme or "") if not path else ""
         self.paint_stored(path, Written(self._icon), label=label)
         self._sync_open()
+
+
+def _target_title(target: str) -> str:
+    """ "Picture" for the normal off state, else which state the picker writes."""
+    if target == "normaloff":
+        return "Picture"
+    for mode in _MODES:
+        for flag in _FLAGS:
+            if (mode + flag).lower() == target:
+                return "Picture for %s, %s" % (mode.lower(), flag.lower())
+    return "Picture"
 
 
 def _icon_path(icon: IconSetValue) -> str:
