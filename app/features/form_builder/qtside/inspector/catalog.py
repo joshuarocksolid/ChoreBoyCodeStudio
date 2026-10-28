@@ -50,18 +50,21 @@ class Registrations:
     def __init__(self) -> None:
         self.editors: _Slots[EditorKey, EditorFactory] = _Slots("editor")
         self.rows: _Slots[str, RowSpec] = _Slots("row")
-        self.bodies: _Slots[GroupId, GroupBodyFactory] = _Slots("group body")
-        self.applies: _Slots[GroupId, GroupApplies] = _Slots("group applies")
+        # The factory and its applies predicate share one slot. An override
+        # replaces both, so a new body cannot keep the baseline's applies.
+        self.bodies: _Slots[GroupId, Tuple[GroupBodyFactory, Optional[GroupApplies]]] = _Slots("group body")
 
     def scope(self, module: str) -> Registrar:
         return _Scope(self, module)
 
     def freeze(self) -> Catalog:
+        slots = self.bodies.resolve()
+        applies = {group: pair[1] for group, pair in slots.items() if pair[1] is not None}
         return Catalog(
             _place_rows(tuple(self.rows.resolve().values())),
             self.editors.resolve(),
-            self.bodies.resolve(),
-            self.applies.resolve(),
+            {group: pair[0] for group, pair in slots.items()},
+            applies,
         )
 
 class _Scope:
@@ -83,9 +86,7 @@ class _Scope:
         baseline: bool = False,
         applies: Optional[GroupApplies] = None,
     ) -> None:
-        self._found.bodies.add(group, factory, self._module, baseline)
-        if applies is not None:
-            self._found.applies.add(group, applies, self._module, baseline)
+        self._found.bodies.add(group, (factory, applies), self._module, baseline)
 
 def _place_rows(rows: Sequence[RowSpec]) -> Tuple[RowSpec, ...]:
     groups: Dict[GroupId, List[RowSpec]] = {}

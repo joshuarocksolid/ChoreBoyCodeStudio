@@ -1104,7 +1104,7 @@ class FormSurface(QWidget):
             self._chip_anchor(node),
         )
 
-    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint]) -> None:
+    def open_context_menu(self, node: Optional[NodeId], at: Optional[QPoint], *, source: str = "canvas") -> None:
         if self._source.mode != "visual":
             return
         shown = self._context_menu
@@ -1127,6 +1127,9 @@ class FormSurface(QWidget):
             enabled=self._clipboard_enabled,
             sheet=self.layout_offers(),
             run=self.run_layout,
+            at=at,
+            source=source,
+            live=self._realizer.widget_for,
         )
         paint_menu(menu, chrome_for(self._tokens))
         if at is None:
@@ -1138,7 +1141,7 @@ class FormSurface(QWidget):
     def _open_outline_menu(self, node: NodeId, at: QPoint) -> None:
         if node not in self._session.selection.state.ids:
             self._on_outline_pick(node)
-        self.open_context_menu(node, at)
+        self.open_context_menu(node, at, source="outline")
 
     def _open_wrap_popover(self) -> None:
         sheet = self.layout_offers()

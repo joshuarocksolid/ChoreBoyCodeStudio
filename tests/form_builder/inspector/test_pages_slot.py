@@ -80,6 +80,13 @@ def test_pages_group_is_hidden_while_searching() -> None:
     assert GroupId.PAGES not in _groups_of(found.freeze(), search="zzz-no-such-row")
 
 
+def test_an_override_body_does_not_keep_the_baseline_applies() -> None:
+    found = Registrations()
+    found.scope("tests.base").group_body(GroupId.PAGES, _body, baseline=True, applies=lambda document, owners: True)
+    found.scope("tests.over").group_body(GroupId.PAGES, _body)
+    assert GroupId.PAGES not in _groups_of(found.freeze())
+
+
 def test_a_second_pages_applies_registration_is_a_conflict() -> None:
     from app.features.form_builder.qtside.inspector.catalog import RegistryConflict
 

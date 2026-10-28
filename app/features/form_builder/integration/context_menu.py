@@ -92,15 +92,30 @@ def build_context_menu(
     enabled: Optional[Callable[[str], bool]],
     sheet: OfferSheet,
     run: Callable[[object], None],
+    at: Optional[object] = None,
+    source: str = "canvas",
+    live: Optional[Callable[[NodeId], object]] = None,
 ) -> None:
     """The whole menu, in order: first, clipboard, structure, layout rows, last.
 
-    Each contributor group is followed by a separator only when it added a row.
+    ``first`` is followed by a separator when it added a row. Structure rows sit
+    with Change to and Remove layout, with no separator between them. ``last``
+    gets a leading separator.
     """
-    context = MenuContext(menu=menu, ids=ids, current=current, session=session, dispatch=dispatch)
+    context = MenuContext(
+        menu=menu,
+        ids=ids,
+        current=current,
+        session=session,
+        dispatch=dispatch,
+        at=at,  # type: ignore[arg-type]
+        source=source,
+        run=run,
+        **({"live": live} if live is not None else {}),  # type: ignore[arg-type]
+    )
     _run_group(menu, contributors, FIRST, context)
     add_clipboard_actions(menu, dispatch, enabled)
-    _run_group(menu, contributors, STRUCTURE, context)
+    _run_group(menu, contributors, STRUCTURE, context, trailing_separator=False)
     fill_context_menu(menu, sheet, run)
     _run_group(menu, contributors, LAST, context, leading_separator=True)
 
@@ -112,15 +127,18 @@ def _run_group(
     context: MenuContext,
     *,
     leading_separator: bool = False,
+    trailing_separator: bool = True,
 ) -> None:
     before = len(menu.actions())
     contributors.run(group, context)
     if len(menu.actions()) == before:
         return
-    if not leading_separator:
+    if leading_separator:
+        if before:
+            menu.insertSeparator(menu.actions()[before])
+        return
+    if trailing_separator:
         menu.addSeparator()
-    elif before:
-        menu.insertSeparator(menu.actions()[before])
 
 
 def _add(menu: QMenu, label: str, sheet: OfferSheet, request: object, run: Callable[[object], None]) -> None:

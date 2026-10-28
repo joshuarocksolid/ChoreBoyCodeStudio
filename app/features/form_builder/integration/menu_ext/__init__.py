@@ -13,6 +13,7 @@ order in which the modules registered them.
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 import sys
 from dataclasses import dataclass, field
@@ -20,10 +21,14 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
+from app.qt.QtCore import QPoint
+from app.qt.QtWidgets import QWidget
 
 if TYPE_CHECKING:
     from app.features.form_builder.engine.session import FormSession
     from app.qt.QtWidgets import QMenu
+
+logger = logging.getLogger(__name__)
 
 FIRST = "first"
 STRUCTURE = "structure"
@@ -31,15 +36,33 @@ LAST = "last"
 GROUPS: Tuple[str, ...] = (FIRST, STRUCTURE, LAST)
 
 
+def _no_widget(_node_id: NodeId) -> Optional[QWidget]:
+    return None
+
+
+def _no_command(_command: object) -> None:
+    return None
+
+
 @dataclass(frozen=True)
 class MenuContext:
-    """What a contributor gets for the menu being built."""
+    """What a contributor gets for the menu being built.
+
+    ``at`` is the click point (global). ``source`` is ``"canvas"`` or
+    ``"outline"``. ``live`` returns the realized widget for a node. ``run``
+    sends a layout command through the surface, which toasts a change and
+    narrates a refusal.
+    """
 
     menu: "QMenu"
     ids: Tuple[NodeId, ...]
     current: Optional[NodeId]
     session: "FormSession"
     dispatch: Callable[[str], None]
+    at: Optional[QPoint] = None
+    source: str = "canvas"
+    live: Callable[[NodeId], Optional[QWidget]] = _no_widget
+    run: Callable[[object], None] = _no_command
 
 
 Build = Callable[[MenuContext], None]
@@ -63,11 +86,20 @@ class MenuRegistry:
         return tuple(build for _module, build in self._builds[group])
 
     def run(self, group: str, context: MenuContext) -> int:
-        """Run every contributor of ``group``. Returns how many ran."""
-        builds = self.contributors(group)
-        for build in builds:
-            build(context)
-        return len(builds)
+        """Run every contributor of ``group``. Returns how many ran.
+
+        One contributor that raises is logged and skipped. The rest of the
+        menu, including Copy and Paste, still builds.
+        """
+        ran = 0
+        for build in self.contributors(group):
+            try:
+                build(context)
+            except Exception:
+                logger.exception("form builder context menu contributor failed")
+                continue
+            ran += 1
+        return ran
 
 
 class _ModuleScope:

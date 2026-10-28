@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import sys
 import textwrap
 from pathlib import Path
@@ -18,9 +19,11 @@ from app.features.form_builder.integration.menu_ext import (
     LAST,
     STRUCTURE,
     MenuContext,
+    MenuRegistry,
     load_menu_contributors,
 )
 from app.features.form_builder.qtside.theme.chrome import default_chrome
+from app.qt.QtCore import QPoint  # type: ignore[reportAttributeAccessIssue]
 from app.qt.QtWidgets import QMenu
 
 pytestmark = [pytest.mark.usefixtures("qapp"), pytest.mark.unit]
@@ -132,6 +135,64 @@ def test_full_menu_orders_groups_and_paints_the_contributed_submenu(probe: objec
     layout = texts.index("Remove layout…")
     assert first < texts.index("Beta first row") < clipboard < structure < layout
     assert texts[-1] == "Zeta last row"
+    actions = menu.actions()
+    follow = actions[actions.index(next(action for action in actions if action.text() == "Alpha pages")) + 1]
+    assert not follow.isSeparator()
+    assert follow.text().split("\t")[0] == "Remove layout…"
     paint_menu(menu, default_chrome())
     submenu = next(child for child in menu.findChildren(QMenu) if child.title() == "Alpha pages")
     assert submenu.styleSheet() == menu.styleSheet() != ""
+
+
+def test_a_failing_contributor_does_not_drop_the_rest(caplog: pytest.LogCaptureFixture) -> None:
+    registry = MenuRegistry()
+
+    def bad(ctx: MenuContext) -> None:
+        del ctx
+        raise RuntimeError("bad contributor")
+
+    def good(ctx: MenuContext) -> None:
+        ctx.menu.addAction("Still here")
+
+    registry.add(FIRST, bad)
+    registry.add(FIRST, good)
+    menu = QMenu()
+    context = MenuContext(menu=menu, ids=(), current=None, session=None, dispatch=lambda _command: None)  # type: ignore[arg-type]
+    with caplog.at_level(logging.ERROR):
+        assert registry.run(FIRST, context) == 1
+    assert _texts(menu) == ["Still here"]
+    assert "bad contributor" in caplog.text
+
+
+def test_context_carries_the_click_the_source_the_widget_and_the_command() -> None:
+    seen: dict = {}
+    registry = MenuRegistry()
+
+    def build(ctx: MenuContext) -> None:
+        seen["at"] = ctx.at
+        seen["source"] = ctx.source
+        seen["live"] = ctx.live(1)  # type: ignore[arg-type]
+        ctx.run("layout-command")
+        ctx.menu.addAction("Pages")
+
+    registry.add(STRUCTURE, build)
+    menu = QMenu()
+    point = QPoint(3, 4)
+    build_context_menu(
+        menu,
+        contributors=registry,
+        ids=(),
+        current=None,
+        session=None,  # type: ignore[arg-type]
+        dispatch=lambda _command: None,
+        enabled=None,
+        sheet=_empty_sheet(),
+        run=lambda command: seen.setdefault("ran", command),
+        at=point,
+        source="outline",
+        live=lambda node_id: node_id,  # type: ignore[arg-type, return-value]
+    )
+    assert seen["source"] == "outline"
+    assert seen["at"] == point
+    assert seen["live"] == 1
+    assert seen["ran"] == "layout-command"
