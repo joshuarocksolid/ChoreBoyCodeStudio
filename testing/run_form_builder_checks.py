@@ -33,7 +33,8 @@ OPT_IN = frozenset({"speed"})
 PERF_GATE_TIMEOUT_SECONDS = 30
 
 UNIT_MARKER = "not oracle and not perf and not performance and not soak"
-PYTEST_TIMEOUT_SECONDS = 300
+# The unit lane is ~1490 tests (~280 s at load 20 on the Mac after M3.7); keep headroom.
+PYTEST_TIMEOUT_SECONDS = 480
 FAST_SHARD_TIMEOUT_SECONDS = 400
 COMMAND_TIMEOUT_SECONDS = 180
 
