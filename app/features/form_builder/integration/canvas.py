@@ -32,6 +32,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
 from app.features.form_builder.qtside.canvas.core.frame import (
+    Caption,
     Chip,
     OnHandle,
     OnPageEdge,
@@ -323,6 +324,26 @@ class FormCanvas(QGraphicsView):
             QPointF(max(rect.x + rect.width for rect in drawn), max(rect.y + rect.height for rect in drawn))
         )
         return QRect(top_left.x(), top_left.y(), bottom_right.x() - top_left.x(), bottom_right.y() - top_left.y())
+
+    def overlay_block_rects(self) -> Tuple[QRect, ...]:
+        """Chips and captions in viewport coordinates. The toast stays off them."""
+        rects: List[QRect] = []
+        for item in self._controller.frame.items:
+            if isinstance(item, Caption) or (isinstance(item, Chip) and not item.docked):
+                rects.append(self._viewport_of_canvas(item.rect))
+        viewport = self.viewport()
+        for widget in self._stage.chrome_widgets():
+            origin = viewport.mapFromGlobal(widget.mapToGlobal(QPoint(0, 0)))
+            rects.append(QRect(origin, widget.size()))
+        for local in self._title.docked_view_rects():
+            origin = viewport.mapFromGlobal(self._title.mapToGlobal(local.topLeft()))
+            rects.append(QRect(origin, local.size()))
+        return tuple(rect for rect in rects if rect.width() > 0 and rect.height() > 0)
+
+    def _viewport_of_canvas(self, rect: CanvasRect) -> QRect:
+        top_left = self.mapFromScene(QPointF(rect.x, rect.y))
+        bottom_right = self.mapFromScene(QPointF(rect.x + rect.width, rect.y + rect.height))
+        return QRect(top_left, bottom_right).normalized()
 
     def page_widget(self) -> Optional[QWidget]:
         root = self._realizer.root_widget
@@ -712,6 +733,13 @@ class _PageTitle(QWidget):
 
     def docked(self) -> Tuple[Chip, ...]:
         return tuple(item for item, _x, _y in self._docked)
+
+    def docked_view_rects(self) -> Tuple[QRect, ...]:
+        """Where docked chips are painted, in this caption's coordinates."""
+        return tuple(
+            QRect(item.rect.x - dock_x, item.rect.y - dock_y, item.rect.width, item.rect.height)
+            for item, dock_x, dock_y in self._docked
+        )
 
     def paintEvent(self, _event: object) -> None:  # noqa: N802 - Qt override
         painter = QPainter(self)

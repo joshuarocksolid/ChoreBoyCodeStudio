@@ -117,7 +117,11 @@ def undo_matches(note: ToastNote, entry: object) -> bool:
 
 
 def toast_origin(host: QRect, width: int, height: int, blocked: Sequence[QRect]) -> QPoint:
-    """Bottom-right of the viewport, then the corner that misses the selection."""
+    """Bottom-right of the viewport, then a corner clear of the selection.
+
+    ``blocked`` is the selection, then chips and captions, then the page.
+    The page may be covered. The chip and the caption may not.
+    """
     margin = 16
 
     def spot(x: int, y: int) -> QPoint:
@@ -144,9 +148,20 @@ def toast_origin(host: QRect, width: int, height: int, blocked: Sequence[QRect])
     for origin in spots:
         if not hits(origin, blocked):
             return origin
-    selection = blocked[:1]
+    # The last rect is the page. Cover it before covering a chip or the selection.
+    must = blocked[:-1] if len(blocked) > 1 else blocked
+    step = max(8, height)
+    right = host.x() + host.width() - width - margin
+    left = host.x() + margin
+    floor = host.y() + margin
+    y = host.y() + host.height() - height - margin
+    while y >= floor:
+        for origin in (spot(right, y), spot(left, y)):
+            if not hits(origin, must):
+                return origin
+        y -= step
     for origin in spots:
-        if not hits(origin, selection):
+        if not hits(origin, must):
             return origin
     return spots[0]
 

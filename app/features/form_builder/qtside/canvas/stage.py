@@ -196,6 +196,13 @@ class Stage:
         minimum = root.minimumSize()
         return Size(max(minimum.width(), 1), max(minimum.height(), 1))
 
+    def chrome_widgets(self) -> Tuple[QWidget, ...]:
+        """The page caption, name chip, and size readout. The toast stays off them."""
+        widgets = [self._name, self._size, *self._extra]
+        if self._dock is not None and self._dock not in widgets:
+            widgets.append(self._dock)
+        return tuple(widget for widget in widgets if not widget.isHidden() and widget.width() > 0)
+
     def chrome_rects(self) -> Tuple[CanvasRect, ...]:
         scroll_x = self._view.horizontalScrollBar().value()
         scroll_y = self._view.verticalScrollBar().value()

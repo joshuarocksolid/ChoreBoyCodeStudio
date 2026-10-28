@@ -1002,18 +1002,30 @@ class FormSurface(QWidget):
         self._workbench.outline.show_delete(prose, tuple(ids), anchor, self._focus_canvas)
 
     def toast_place_hints(self) -> Tuple[QRect, Tuple[QRect, ...]]:
-        """Viewport in this surface, then the selection and the page."""
+        """Viewport in this surface. Blocked rects end with the page.
+
+        The selection comes first, then the selection chip and caption rects.
+        ``toast_origin`` may cover the page and must leave the rest clear.
+        """
         canvas = self._workbench.canvas
         viewport = canvas.viewport()
         origin = self.mapFromGlobal(viewport.mapToGlobal(QPoint(0, 0)))
         host = QRect(origin, viewport.size())
         blocked = []
-        ids = self._session.selection.state.ids
-        for group in (ids, (self._session.document.root.id,)):
-            drawn = canvas.viewport_rect(group)
-            if drawn is None:
-                continue
+
+        def take(drawn: QRect) -> None:
+            if drawn.isNull() or drawn.width() <= 0 or drawn.height() <= 0:
+                return
             blocked.append(QRect(self.mapFromGlobal(viewport.mapToGlobal(drawn.topLeft())), drawn.size()))
+
+        drawn = canvas.viewport_rect(self._session.selection.state.ids)
+        if drawn is not None:
+            take(drawn)
+        for rect in canvas.overlay_block_rects():
+            take(rect)
+        page = canvas.viewport_rect((self._session.document.root.id,))
+        if page is not None:
+            take(page)
         return host, tuple(blocked)
 
     def zoom_changed(self, label: str) -> None:
