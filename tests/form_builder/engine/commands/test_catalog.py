@@ -754,3 +754,18 @@ def test_shared_rename_skips_participants() -> None:
         assert probe.rows == []
     finally:
         _drop_probe(registry, probe)
+
+
+def test_a_wrap_of_a_node_deleted_earlier_in_the_transaction_is_a_plain_refusal() -> None:
+    """Generator seed 41: the wrap read a deleted node's parent and raised KeyError."""
+    log = open_log(BOX)
+    doc = log.document
+    button = nid(doc, "okButton")
+    before = doc.fingerprint()
+    with pytest.raises(CommandRejected) as caught:
+        with log.transaction("T") as tx:
+            tx.execute(DeleteNodes((button,)))
+            tx.execute(Wrap((button,), None, "QHBoxLayout"))
+    assert caught.value.error is None, caught.value.error
+    assert str(caught.value) == "That object is no longer in the form."
+    assert doc.fingerprint() == before

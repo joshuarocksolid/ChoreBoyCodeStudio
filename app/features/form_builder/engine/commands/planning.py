@@ -242,6 +242,10 @@ def wrap_nodes(
 ) -> NodeId:
     if not ids:
         raise CommandRejected("There is nothing to wrap.")
+    # Reject a gone id before any helper reads its parent. A transaction can
+    # hold a wrap of a node that an earlier command in it deleted.
+    for node_id in ids:
+        _require(doc, node_id)
     ids = widgets_in_box_wrap(doc, ids, layout_class)
     ordered = _sort_ids(doc, [_require(doc, node_id).id for node_id in ids])
     carriers = []
@@ -2025,8 +2029,6 @@ def _with_form_labels(doc: UiDocument, ids: Tuple[NodeId, ...]) -> Tuple[NodeId,
     found: List[Tuple[int, int, NodeId, Optional[NodeId]]] = []
     parent_id: Optional[NodeId] = None
     for node_id in ids:
-        if not doc.contains(node_id):
-            return ids
         item = doc.parent(node_id)
         if not isinstance(item, LayoutItemNode):
             return ids

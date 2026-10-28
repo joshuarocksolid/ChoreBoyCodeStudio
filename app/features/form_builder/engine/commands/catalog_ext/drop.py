@@ -63,6 +63,8 @@ class InsertFormRow(_CommandBase):
     def apply(self, doc: UiDocument, ctx: PlanContext) -> Tuple[NodeId, NodeId]:
         if (self.fragment is None) == (self.existing is None):
             raise CommandRejected("A new form row needs a widget.")
+        if self.existing is not None and not doc.contains(self.existing):
+            raise CommandRejected("That object is no longer in the form.")
         if _shows_own_text(doc, self.fragment, self.existing):
             return _insert_unlabeled_field(doc, ctx, self.layout, self.row, self.fragment, self.existing)
         label = NodeSpec(
@@ -257,7 +259,7 @@ class SpliceReading(_CommandBase):
 
 
 def _shows_own_text(doc: UiDocument, fragment: Optional[Fragment], existing: Optional[NodeId]) -> bool:
-    if existing is not None and doc.contains(existing):
+    if existing is not None:
         node = doc.node(existing)
         return isinstance(node, WidgetNode) and node.class_name in _SHOWS_OWN_TEXT
     if fragment is None or not fragment.nodes:
