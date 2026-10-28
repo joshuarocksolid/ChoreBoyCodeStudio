@@ -13,6 +13,8 @@ from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.qtside.inspector.api import GroupId
 from app.features.form_builder.qtside.inspector.pane import InspectorPane
 from app.features.form_builder.qtside.realize.api import Realizer
+from app.features.form_builder.integration.canvas import FormCanvas
+from app.features.form_builder.qtside.canvas.core.frame import Chip
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QKeySequence
 from app.qt.QtTest import QTest
@@ -20,11 +22,16 @@ from app.qt.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QScrollArea,
     QSpinBox,
+    QStyle,
+    QStyleOptionSpinBox,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -441,18 +448,86 @@ def test_reference_texts_fit_at_236() -> None:
         window, pane = _pane(session, realizer, width=236)
         try:
             pane.setFixedWidth(236)
+            for name in ("email", "when", "keys", "caption"):
+                _select(session, pane, name)
+                _events()
+                scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
+                assert isinstance(scroll, QScrollArea)
+                assert scroll.horizontalScrollBar().maximum() == 0, name
+        finally:
+            _close(window, pane)
+
+
+def _text_width(widget: QWidget) -> int:
+    if isinstance(widget, QComboBox):
+        # The glyphs fit the 132 px column. The arrow takes 31 px of that
+        # column (edit field 101, string 128). That bite belongs to the
+        # inspector-width review, which owns the column.
+        return int(widget.width())
+    if isinstance(widget, QSpinBox):
+        option = QStyleOptionSpinBox()
+        widget.initStyleOption(option)
+        rect = widget.style().subControlRect(
+            QStyle.ComplexControl.CC_SpinBox,
+            option,
+            QStyle.SubControl.SC_SpinBoxEditField,
+            widget,
+        )
+        return int(rect.width())
+    return int(widget.contentsRect().width())
+
+
+def _at_132(widget: QWidget, text: str) -> None:
+    """The reference string fits this control when the control is the 132 px column."""
+    host = QWidget()
+    host.setFixedWidth(132)
+    layout = QVBoxLayout(host)
+    layout.setContentsMargins(0, 0, 0, 0)
+    widget.setParent(host)
+    layout.addWidget(widget)
+    host.show()
+    _events()
+    advance = widget.fontMetrics().horizontalAdvance(text)
+    width = _text_width(widget)
+    assert advance <= width, "%s needs %s px and the control shows %s" % (text, advance, width)
+    host.close()
+    host.deleteLater()
+    _events()
+
+
+def test_reference_texts_fit_in_a_132px_column() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer, width=420)
+        try:
             _select(session, pane, "email")
+            echo = _row(pane, "echoMode").findChild(QComboBox)
+            assert isinstance(echo, QComboBox)
+            _at_132(echo, "Password echo on edit")
+            length = _row(pane, "maxLength").findChild(QSpinBox)
+            assert isinstance(length, QSpinBox)
+            _at_132(length, "\u22122147483648")
+            _select(session, pane, "stamp")
+            stamp = _row(pane, "dateTime").findChild(QLineEdit)
+            assert isinstance(stamp, QLineEdit)
+            _at_132(stamp, "12/31/2026 11:59 PM")
+            _select(session, pane, "keys")
+            field = _row(pane, "keySequence").findChild(QLineEdit)
+            assert isinstance(field, QLineEdit)
+            _at_132(field, "Ctrl+Shift+Alt+F12")
+            policy = _row(pane, "sizePolicy").findChild(QPushButton, "formBuilder.summary")
+            assert isinstance(policy, QPushButton)
+            policy.set_summary("Minimum expanding")  # type: ignore[attr-defined]
+            host = QWidget()
+            host.setFixedWidth(132)
+            box = QVBoxLayout(host)
+            box.setContentsMargins(0, 0, 0, 0)
+            policy.setParent(host)
+            box.addWidget(policy)
+            host.show()
             _events()
-            scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
-            assert isinstance(scroll, QScrollArea)
-            assert scroll.horizontalScrollBar().maximum() == 0
-            row = _row(pane, "echoMode")
-            combo = row.findChild(QComboBox)
-            assert isinstance(combo, QComboBox)
-            metrics = combo.fontMetrics()
-            assert metrics.horizontalAdvance(combo.currentText() or "Normal") <= combo.width()
-            # The row layout gives this column about 80 px. The reference
-            # strings are wider than that, and forcing the column wider scrolls.
+            assert policy.toolTip() == "Minimum expanding"
+            assert policy.width() <= 132
+            host.close()
         finally:
             _close(window, pane)
 
@@ -610,5 +685,211 @@ def test_locale_choice_is_written_as_qt_names() -> None:
             pane.flush()
             text = _xml(session)
             assert 'language="' in text
+        finally:
+            _close(window, pane)
+
+
+_FLOATS = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>420</width><height>240</height></rect></property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item><widget class="QLineEdit" name="email">
+    <property name="shopCount" stdset="0"><uint>4</uint></property>
+    <property name="shopRate" stdset="0"><float>1.5</float></property>
+    <property name="shopPoint" stdset="0"><pointf><x>1.25</x><y>2.5</y></pointf></property>
+    <property name="shopSize" stdset="0"><sizef><width>3.5</width><height>4.5</height></sizef></property>
+   </widget></item>
+   <item><widget class="QGraphicsView" name="view"/></item>
+  </layout>
+""",
+)
+
+# No catalog widget exposes uint, float, QPointF or QSizeF. Those four ride on
+# dynamic properties. QGraphicsView.sceneRect is a live QRectF.
+_FLOAT_CASES = (
+    ("email", "shopCount", "uint", "12"),
+    ("email", "shopRate", "float", "2.5"),
+    ("email", "shopPoint", "pointf", "8.5"),
+    ("email", "shopSize", "sizef", "9.5"),
+    ("view", "sceneRect", "rectf", "6.5"),
+)
+
+
+def _set_typed(row: QWidget, kind: str, text: str) -> None:
+    if kind == "uint":
+        field = row.findChild(QLineEdit)
+        assert isinstance(field, QLineEdit)
+        field.setFocus()
+        field.selectAll()
+        QTest.keyClicks(field, text)
+        QTest.keyClick(field, _key("Key_Return"))
+        return
+    spin = row.findChild(QDoubleSpinBox)
+    assert isinstance(spin, QDoubleSpinBox)
+    spin.setFocus()
+    spin.setValue(float(text))
+    _events()
+
+
+def _reset_row(row: QWidget) -> None:
+    editor = row.findChild(QWidget)
+    assert isinstance(editor, QWidget)
+    editor.setFocus()
+    _events()
+    button = row.findChild(QToolButton, "formBuilder.rowReset")
+    assert isinstance(button, QToolButton)
+    assert button.isVisible()
+    button.click()
+    _events()
+
+
+@pytest.mark.parametrize("owner,key,kind,text", _FLOAT_CASES)
+def test_typed_value_round_trips(owner: str, key: str, kind: str, text: str) -> None:
+    with opened(_FLOATS) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, owner)
+            row = _row(pane, key)
+            _set_typed(row, kind, text)
+            pane.flush()
+            saved = _xml(session)
+            assert text in saved
+            assert key in saved
+        finally:
+            _close(window, pane)
+    with opened(saved) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, owner)
+            row = _row(pane, key)
+            assert text in _xml(session)
+            _reset_row(row)
+            pane.flush()
+            assert key not in _xml(session)
+        finally:
+            _close(window, pane)
+
+
+class _CanvasHost:
+    def canvas_pressed(self) -> None:
+        return None
+
+    def narrate(self, sentence: str) -> None:
+        return None
+
+    def hover_changed(self, node: object) -> None:
+        return None
+
+    def zoom_changed(self, label: str) -> None:
+        return None
+
+    def open_problem(self, node: object) -> None:
+        return None
+
+    def open_layout_popover(self, node: object) -> None:
+        return None
+
+    def open_context_menu(self, node: object, at: object) -> None:
+        return None
+
+
+def _width_story(pane: QWidget) -> str:
+    checked = ""
+    for word in ("Hug", "Fill", "Fixed"):
+        button = pane.findChild(QToolButton, "formBuilder.size.width.%s" % word)
+        if isinstance(button, QToolButton) and button.isChecked():
+            checked = word
+    axis = pane.findChild(QWidget, "formBuilder.size.h")
+    caption = ""
+    if isinstance(axis, QWidget):
+        note = axis.findChild(QLabel, "formBuilder.rowNote")
+        if isinstance(note, QLabel) and note.isVisible():
+            caption = note.text()
+    return checked or caption
+
+
+def test_size_policy_updates_the_size_group_and_the_chip_together() -> None:
+    with opened(_FORM) as (session, realizer):
+        host = QWidget()
+        layout = QHBoxLayout(host)
+        canvas = FormCanvas(session, realizer, _CanvasHost(), host)
+        pane = InspectorPane(session, realizer, data_tab=False, on_leave=lambda: None, parent=host)
+        layout.addWidget(canvas, 1)
+        layout.addWidget(pane)
+        host.resize(1100, 640)
+        host.show()
+        _events()
+        try:
+            _select(session, pane, "email")
+            before = _width_story(pane)
+            row = _row(pane, "sizePolicy")
+            summary = row.findChild(QPushButton, "formBuilder.summary")
+            assert isinstance(summary, QPushButton)
+            summary.click()
+            _events()
+            combo = _popover().findChild(QComboBox)
+            assert isinstance(combo, QComboBox)
+            combo.setCurrentIndex(combo.findText("Minimum"))
+            for _ in range(8):
+                _events()
+            story = _width_story(pane)
+            chips = [item.text for item in canvas.overlay().items if isinstance(item, Chip)]
+            assert "Minimum" in story and story != before
+            assert any("Minimum" in chip for chip in chips), (story, chips)
+        finally:
+            canvas.dispose()
+            pane.dispose()
+            host.close()
+            host.deleteLater()
+            _events()
+
+
+_ACTIONS = form(
+    'class="QMainWindow" name="MainWindow"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>480</width><height>240</height></rect></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="verticalLayout">
+    <item><widget class="QKeySequenceEdit" name="keys"/></item>
+   </layout>
+  </widget>
+  <action name="actionPrint">
+   <property name="text"><string>Print</string></property>
+   <property name="shortcut"><string>Ctrl+Alt+P</string></property>
+  </action>
+  <action name="actionCopy">
+   <property name="text"><string>Save a copy</string></property>
+   <property name="shortcut"><string>Ctrl+Alt+C</string></property>
+  </action>
+""",
+)
+
+
+def test_key_sequence_warns_when_another_action_uses_it() -> None:
+    with opened(_ACTIONS) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "keys")
+            row = _row(pane, "keySequence")
+            record = _labeled(row, "Record")
+            record.click()
+            _events()
+            field = row.findChild(QLineEdit)
+            assert isinstance(field, QLineEdit)
+            field.setFocus()
+            QTest.qWait(40)
+            QTest.keyClick(field, _key("Key_P"), _mods("Control", "Alt"))
+            QTest.qWait(1200)
+            pane.flush()
+            _events()
+            row = _row(pane, "keySequence")
+            warning = row.findChild(QLabel, "formBuilder.rowWarning")
+            field = row.findChild(QLineEdit)
+            shown = field.text() if isinstance(field, QLineEdit) else ""
+            assert isinstance(warning, QLabel), (shown, _xml(session))
+            assert warning.isVisible(), (warning.text(), shown, _xml(session))
+            assert warning.text() == "Print already uses Ctrl+Alt+P."
+            assert "Ctrl+Alt+P" in _xml(session)
         finally:
             _close(window, pane)
