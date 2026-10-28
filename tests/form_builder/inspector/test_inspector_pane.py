@@ -226,8 +226,9 @@ def test_changed_marker_and_reset(qapp: QApplication) -> None:
     assert bar.property("fbChanged") == "false"
     _close(window, pane, realizer, session)
 
-@pytest.mark.parity("R3-147")
+@pytest.mark.parity("R3-147", "R3-19")
 def test_multi_select_edit_is_one_undo(qapp: QApplication) -> None:
+    """One inspector edit changes every selected widget in one undo step."""
     del qapp
     session, realizer = realize(_FORM)
     window = _shown(session, realizer)

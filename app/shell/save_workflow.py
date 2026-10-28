@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol, Sequence, cast
 
-from app.qt.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QFileDialog, QMessageBox, QWidget
 
 from app.core import constants
 from app.editors.editor_manager import EditorManager
@@ -284,6 +284,15 @@ class MainWindowSaveDocumentHost:
         if test_runner_workflow is not None:
             test_runner_workflow.refresh_discovery()
 
+    def retarget_open_path(self, source_path: str, destination_path: str) -> None:
+        # Save As copies: the old file keeps its breakpoints and history.
+        self._window._project_tree_action_coordinator.apply_path_move_updates(
+            source_path,
+            destination_path,
+            rewrite_imports=False,
+            carry_file_state=False,
+        )
+
 
 class SaveWorkflow:
     """Owns save, autosave-to-file, and style-on-save coordination."""
@@ -413,6 +422,46 @@ class SaveWorkflow:
         if active_tab is None:
             return False
         return self.save_tab(active_tab.file_path)
+
+    def handle_save_as_action(self) -> bool:
+        """Write the active tab under a new path. A form regenerates beside that path."""
+        active_tab = self._editor_manager().active_tab()
+        if active_tab is None:
+            return False
+        source = str(Path(active_tab.file_path).expanduser().resolve())
+        destination = self._ask_save_as_path(source)
+        if not destination:
+            return False
+        destination = str(Path(destination).expanduser().resolve())
+        if destination == source:
+            return self.save_tab(source)
+        if self._editor_manager().get_tab(destination) is not None:
+            QMessageBox.warning(
+                self._host.dialog_parent(),
+                "Save As",
+                "That file is already open.",
+            )
+            return False
+        retarget = getattr(self._host, "retarget_open_path", None)
+        if not callable(retarget):
+            return False
+        retarget(source, destination)
+        return self.save_tab(destination, check_stale_disk=False)
+
+    def _ask_save_as_path(self, file_path: str) -> str:
+        ui_form = file_path.lower().endswith(".ui")
+        name_filter = "UI forms (*.ui)" if ui_form else "All files (*)"
+        destination, _chosen = QFileDialog.getSaveFileName(
+            self._host.dialog_parent(),
+            "Save As",
+            file_path,
+            name_filter,
+        )
+        if not destination:
+            return ""
+        if ui_form and not destination.lower().endswith(".ui"):
+            destination = destination + ".ui"
+        return destination
 
     def handle_save_all_action(self) -> bool:
         any_failure = False

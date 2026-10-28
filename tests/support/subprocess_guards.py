@@ -34,9 +34,10 @@ def skip_unless_zip_available() -> None:
     zip_path = shutil.which("zip")
     if zip_path is None:
         pytest.skip("zip is not on PATH")
+    command = [zip_path, "-h"]
     try:
         subprocess.run(
-            [zip_path, "-h"],
+            command,
             check=True,
             timeout=8,
             capture_output=True,

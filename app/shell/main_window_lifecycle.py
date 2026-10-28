@@ -77,6 +77,10 @@ class MainWindowLifecycle:
 
     @staticmethod
     def begin_shutdown_teardown(window: Any) -> None:
+        # Form surfaces own parentless canvas timers and the in-place editor.
+        # Releasing them here, before Qt destroys the window, closes that
+        # editor while its view is still alive.
+        MainWindowLifecycle.release_open_surfaces(window)
         window._local_history_workflow.stop_autosave_timer()
         window._pending_project_tree_preview_path = None
         window._pending_realtime_lint_file_path = None
@@ -101,6 +105,18 @@ class MainWindowLifecycle:
         window._debug_inspector_workflow.clear_debug_execution_indicator()
         if window._debug_panel is not None:
             window._debug_panel.set_command_input_enabled(False)
+
+    @staticmethod
+    def release_open_surfaces(window: Any) -> None:
+        """Release open tab surfaces. Leaves the editor manager in place."""
+        workflow = getattr(window, "_editor_tab_workflow", None)
+        manager = getattr(window, "_editor_manager", None)
+        release = getattr(workflow, "release_tab_content", None)
+        open_paths = getattr(manager, "open_paths", None)
+        if not callable(release) or not callable(open_paths):
+            return
+        for path in list(open_paths()):
+            release(path)
 
     @staticmethod
     def drain_run_event_queue(window: Any) -> None:

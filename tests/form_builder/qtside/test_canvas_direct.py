@@ -430,7 +430,9 @@ def test_escape_and_undo_restore_splitter_sizes_when_panes_have_unequal_shares()
         assert _sizes(session, realizer, "split") == fresh
 
 
+@pytest.mark.parity("R3-18")
 def test_ctrl_arrow_resizes_by_one_pixel() -> None:
+    """UX-RESIZE-006. Ctrl+arrow resizes by 1 px. Designer uses Ctrl+arrow to move."""
     with _shown(STACK) as (session, realizer, canvas):
         ok = _id(session, "ok")
         _click(canvas, "ok")

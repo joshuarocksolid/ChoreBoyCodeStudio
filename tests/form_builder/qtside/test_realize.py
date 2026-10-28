@@ -60,7 +60,12 @@ from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.qtside.realize import tree as tree_module
 from app.features.form_builder.qtside.realize.tree import NODE_ID_PROPERTY
-from app.features.form_builder.engine.ui4.values import RectValue, StringValue
+from app.features.form_builder.engine.ui4.values import (
+    CursorShapeValue,
+    FontValue,
+    RectValue,
+    StringValue,
+)
 from app.features.form_builder.qtside.realize import Realizer
 from tests.form_builder.engine.commands._support import button_spec
 from tests.form_builder.qtside.support import form, open_session, opened, run_module
@@ -548,7 +553,8 @@ FAST_STEPS = 30
 FAST_SEEDS = 200
 SOAK_STEPS = 50
 SOAK_SEEDS = 5000
-PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 653, 662, 805, 806, 1219, 2019, 2283)
+# 3438 fails on a5a01299: QStatusBar height 20 vs 22 after AdjustSize. Not a regression.
+PINNED_SEEDS = (2, 4, 6, 7, 14, 15, 19, 28, 49, 547, 653, 662, 805, 806, 1219, 2019, 2283, 3438, 3661)
 PINNED_HASH_SEEDS = ("0", "1")
 # Allocator settings that overwrite freed memory, so a use-after-free crashes.
 SCRIBBLE_ENV = {"MallocScribble": "1", "MallocPreScribble": "1", "MALLOC_PERTURB_": "165"}
@@ -739,15 +745,109 @@ def test_signature_records_layout_items_and_container_state() -> None:
     )
     with opened(combo) as (session, realizer):
         combo_part = _part_for(realizer.signature(), _named(session, "combo"))
-        assert combo_part[9] == ("Alpha", "Beta")
+        assert combo_part[10] == ("Alpha", "Beta")
         stack_part = _part_for(realizer.signature(), _named(session, "stack"))
-        assert stack_part[8] == 1
+        assert stack_part[9] == 1
         assert isinstance(realizer.widget_for(_named(session, "stack")), QStackedWidget)
     with opened(_MAIN) as (session, realizer):
         menu = _part_for(realizer.signature(), _named(session, "menuFile"))
-        names = menu[10]
+        names = menu[11]
         assert isinstance(names, tuple)
         assert "actionNew" in names
+
+
+def test_font_and_cursor_edits_survive_undo_and_match_a_rebuild() -> None:
+    """QFont and QCursor stay in the signature without a memory address."""
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>200</width><height>80</height></rect></property>
+  <widget class="QPushButton" name="ok">
+   <property name="geometry"><rect><x>8</x><y>8</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>OK</string></property>
+  </widget>
+""",
+    )
+    with opened(text) as (session, realizer):
+        button = _named(session, "ok")
+        session.log.execute(SetProperty(button, "font", FontValue(family="Sans Serif", pointsize=12)))
+        session.log.execute(SetProperty(button, "cursor", CursorShapeValue("ArrowCursor")))
+        props = _part_for(realizer.signature(), button)[5]
+        assert isinstance(props, tuple)
+        font = next(item for item in props if item[0] == "font")
+        cursor = next(item for item in props if item[0] == "cursor")
+        assert "Sans Serif" in str(font[1])
+        assert "ArrowCursor" in str(cursor[1])
+        assert "at 0x" not in str(font[1])
+        assert "at 0x" not in str(cursor[1])
+        _same(realizer, session, "font and cursor")
+        assert session.log.undo()
+        assert session.log.undo()
+        _same(realizer, session, "font and cursor undone")
+        assert session.log.redo()
+        assert session.log.redo()
+        _same(realizer, session, "font and cursor redone")
+
+
+def test_z_order_moves_the_sibling_index_and_round_trips() -> None:
+    """R3-32. Stacking order is the sibling index, and undo puts it back."""
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>200</width><height>120</height></rect></property>
+  <widget class="QPushButton" name="back">
+   <property name="geometry"><rect><x>10</x><y>10</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>Back</string></property>
+  </widget>
+  <widget class="QPushButton" name="front">
+   <property name="geometry"><rect><x>30</x><y>20</y><width>80</width><height>28</height></rect></property>
+   <property name="text"><string>Front</string></property>
+  </widget>
+""",
+    )
+    with opened(text) as (session, realizer):
+        root = session.document.root.id
+        back = _named(session, "back")
+        front = _named(session, "front")
+        before = (
+            _part_for(realizer.signature(), back)[4],
+            _part_for(realizer.signature(), front)[4],
+        )
+        order = tuple(child.object_name for child in session.document.root.child_widgets)
+        session.log.execute(SetZOrder(root, tuple(reversed(order))))
+        after = (
+            _part_for(realizer.signature(), back)[4],
+            _part_for(realizer.signature(), front)[4],
+        )
+        assert after != before
+        root_widget = realizer.widget_for(root)
+        assert isinstance(root_widget, QWidget)
+        live = tuple(
+            child.objectName()
+            for child in root_widget.children()
+            if isinstance(child, QWidget) and child.objectName()
+        )
+        assert live == tuple(reversed(order))
+        _same(realizer, session, "z-order")
+        assert session.log.undo()
+        restored = (
+            _part_for(realizer.signature(), back)[4],
+            _part_for(realizer.signature(), front)[4],
+        )
+        assert restored == before
+        live_restored = tuple(
+            child.objectName()
+            for child in root_widget.children()
+            if isinstance(child, QWidget) and child.objectName()
+        )
+        assert live_restored == order
+        assert session.log.redo()
+        redone = (
+            _part_for(realizer.signature(), back)[4],
+            _part_for(realizer.signature(), front)[4],
+        )
+        assert redone == after
+        _same(realizer, session, "z-order redone")
 
 
 def test_rename_reads_the_document_not_the_event_value() -> None:

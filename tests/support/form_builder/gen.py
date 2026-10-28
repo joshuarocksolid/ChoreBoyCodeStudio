@@ -68,8 +68,15 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec
 from app.features.form_builder.engine.commands.catalog_ext.sizing import ApplySizing
-from app.features.form_builder.engine.ui4.values import RectValue, SizePolicyValue, SizeValue, StringValue
-from tests.form_builder.engine.commands._support import (
+from app.features.form_builder.engine.ui4.values import (
+    CursorShapeValue,
+    FontValue,
+    RectValue,
+    SizePolicyValue,
+    SizeValue,
+    StringValue,
+)
+from tests.support.form_builder.command_fixtures import (
     BOX,
     FREE,
     GRID,
@@ -78,7 +85,7 @@ from tests.form_builder.engine.commands._support import (
     button_spec,
     saved,
 )
-from tests.form_builder.engine.commands.test_events import ShadowTree
+from tests.support.form_builder.shadow import ShadowTree
 
 _LOG = logging.getLogger("app.features.form_builder")
 
@@ -435,7 +442,14 @@ def command_for(doc: UiDocument, rng: random.Random, step: int) -> Optional[Any]
             return WrapSplitter(chosen, rng.choice(["Qt::Horizontal", "Qt::Vertical"]), box)
         if roll == 45:
             return WrapTab(chosen, "Tab 1", box)
-        return WrapFree(chosen, rng.choice(["QWidget", "QGroupBox"]), rng.choice(["QVBoxLayout", "QGridLayout"]), box)
+        if roll == 46:
+            return WrapFree(chosen, rng.choice(["QWidget", "QGroupBox"]), rng.choice(["QVBoxLayout", "QGridLayout"]), box)
+    # A skipped roll becomes a font or cursor edit. No extra random draw, so
+    # every other roll keeps the sequence the pinned seeds already run.
+    if widget is not None and step % 11 == 0:
+        if roll % 2 == 0:
+            return SetProperty(widget.id, "font", FontValue(family="Sans Serif", pointsize=12))
+        return SetProperty(widget.id, "cursor", CursorShapeValue("ArrowCursor"))
     return None
 
 
@@ -457,7 +471,7 @@ def _fail_on_validation(seed: object, exc: CommandRejected) -> None:
 
 def run_sequence(seed: int, steps: int, *, text: Optional[str] = None) -> None:
     """One sequence. Failures name the seed."""
-    from tests.form_builder.engine.commands._support import open_log
+    from tests.support.form_builder.command_fixtures import open_log
 
     rng = random.Random(seed)
     source = text if text is not None else FORMS[seed % len(FORMS)]

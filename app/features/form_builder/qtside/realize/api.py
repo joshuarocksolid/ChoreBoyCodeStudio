@@ -6,7 +6,7 @@ import logging
 import os
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Sequence, Set, Tuple
+from typing import Dict, List, Optional, Sequence, Set, Tuple, cast
 
 from app.qt.QtCore import QObject, Qt, qRegisterResourceData, qUnregisterResourceData
 from app.qt.QtWidgets import (
@@ -751,6 +751,7 @@ class Realizer(_Structure):
             props.append((entry.name, norm_qt(widget.property(entry.name))))
         parent = widget.parentWidget()
         parent_id = _node_id(parent) if parent is not None else None
+        sibling_index = _sibling_index(self._session.document, node, widget)
         buddy_name = None
         if hasattr(widget, "buddy") and widget.buddy() is not None and wrapper_is_valid(widget.buddy()):
             buddy_name = widget.buddy().objectName()
@@ -764,6 +765,7 @@ class Realizer(_Structure):
             widget.objectName(),
             int(node.id),
             None if parent_id is None else int(parent_id),
+            sibling_index,
             tuple(props),
             buddy_name,
             pages,
@@ -1044,6 +1046,78 @@ def _document_object_name(node: object) -> str:
     if isinstance(object_name, str):
         return object_name
     return ""
+
+
+def _sibling_index(document: UiDocument, node: WidgetNode, widget: QWidget) -> int:
+    """Layout children use the cell. Free widgets use the live named-child order.
+
+    A patch and a fresh build both read the document for a cell, so that index
+    cannot see a z-order miss. Free widgets stack as named children of the
+    parent widget, and that live order is what a mismatch has to catch.
+    """
+    if node.parent_id is None:
+        return 0
+    parent = document.get(node.parent_id)
+    if isinstance(parent, LayoutItemNode):
+        return _layout_item_spot(document, parent)
+    if isinstance(parent, WidgetNode):
+        return _named_child_index(widget)
+    return 0
+
+
+def _named_child_index(widget: QWidget) -> int:
+    """Page index in a page container, else the stacking index among siblings.
+
+    The owner is the nearest realized ancestor. Qt puts unnamed internals
+    (a tab widget's stack, a tool box's scroll area) between a page and its
+    container. Windows such as menus are not stacked: they read -2 and do not
+    count among their siblings.
+    """
+    if widget.isWindow():
+        return -2
+    owner = widget.parentWidget()
+    while owner is not None and _node_id(owner) is None:
+        owner = owner.parentWidget()
+    if isinstance(owner, QWizard):
+        wizard = cast(QWizard, owner)
+        pages = [wizard.page(page_id) for page_id in wizard.pageIds()]
+        if widget in pages:
+            return pages.index(widget)
+    if isinstance(owner, (QTabWidget, QToolBox, QStackedWidget, QSplitter)):
+        # A splitter's pane order is indexOf; its child list order is not.
+        page = int(cast(QStackedWidget, owner).indexOf(widget))
+        if page >= 0:
+            return page
+    parent = widget.parentWidget()
+    if parent is None:
+        return 0
+    named = [
+        child
+        for child in parent.children()
+        if isinstance(child, QWidget) and not child.isWindow() and _node_id(child) is not None
+    ]
+    try:
+        return named.index(widget)
+    except ValueError:
+        return -1
+
+
+def _layout_item_spot(document: UiDocument, item: LayoutItemNode) -> int:
+    if item.parent_id is None:
+        return 0
+    layout = document.get(item.parent_id)
+    if not isinstance(layout, LayoutNode):
+        return 0
+    row = 0 if item.row is None else item.row
+    column = 0 if item.column is None else item.column
+    if layout.class_name == "QFormLayout":
+        return row * 3 + column
+    if layout.class_name == "QGridLayout":
+        return row * 1000 + column
+    for index, candidate in enumerate(layout.items):
+        if candidate.id == item.id:
+            return index
+    return -1
 
 
 def _current_index(widget: QWidget) -> Optional[int]:

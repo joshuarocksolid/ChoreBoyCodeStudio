@@ -78,13 +78,27 @@ def isolate_scene(scene: QGraphicsScene) -> None:
     scene.setFont(startup_font())
 
 
+def _fusion_for(widget: QWidget) -> QStyle:
+    """A Fusion style owned by ``widget``.
+
+    One shared style is deleted when a later stylesheet polish destroys the
+    widget that was last given it, and the next build then crashes in setStyle.
+    """
+    created = QStyleFactory.create(RUNTIME_STYLE_KEY)
+    if created is None:
+        raise RuntimeError("Qt did not provide the Fusion style")
+    created.setParent(widget)
+    return created
+
+
 def isolate_widget(widget: QWidget) -> None:
     """Pin one realized root to the runtime look.
 
-    Child widgets inherit this palette, font and style. A later shell theme
-    change updates the application, not widgets that already have their own.
+    Child widgets inherit the root's style, palette and font. The shell keeps
+    the application style sheet empty, so no QStyleSheetStyle wraps the form.
+    A later shell theme change updates the application, not this root.
     """
-    widget.setStyle(runtime_style())
+    widget.setStyle(_fusion_for(widget))
     widget.setPalette(QPalette(runtime_palette()))
     widget.setFont(startup_font())
 

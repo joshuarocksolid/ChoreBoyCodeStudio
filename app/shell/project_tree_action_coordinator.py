@@ -223,6 +223,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
         destination_path: str,
         *,
         rewrite_imports: bool = True,
+        carry_file_state: bool = True,
     ) -> None:
         self._project_tree_controller.apply_path_move_updates(
             source_path,
@@ -239,6 +240,7 @@ class ProjectTreeActionCoordinator(Generic[W]):
             migrate_buffer_state=self._migrate_buffer_state,
             remap_file_lineage=self._remap_file_lineage,
             rekey_tab_content=self._rekey_tab_content,
+            carry_file_state=carry_file_state,
         )
 
     def _refresh(self, tier: RefreshTier) -> None:

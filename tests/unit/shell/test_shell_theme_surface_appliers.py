@@ -2,19 +2,26 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.qt import QtWidgets as qt_widgets
-from app.qt.QtWidgets import QMainWindow
+from app.qt.QtCore import QPoint, Qt
+from app.qt.QtGui import QColor
+from app.qt.QtWidgets import QApplication, QLabel, QMainWindow, QToolTip, QWidget
+from app.qt.qt_compat import enum_value
 
 from app.shell.menus import MenuCallbacks, build_menu_stubs
 from app.shell.shell_theme_surface_appliers import (
     ShellThemeSurfaceRefs,
     apply_menu_bar_icons,
     build_main_window_shell_theme_callbacks,
+    set_app_tooltip_style_sheet,
 )
+from app.shell.style_sheet import build_app_tooltip_style_sheet, build_shell_style_sheet
 from app.shell.theme_tokens import ShellThemeTokens
 
 pytestmark = pytest.mark.unit
@@ -113,3 +120,49 @@ def test_apply_menu_bar_icons_delegates_to_apply_menu_icons(_ensure_qapp) -> Non
     run_action = registry.action("shell.action.run.run")
     assert run_action is not None
     assert not run_action.icon().isNull()
+
+
+def _shown_tip(app: QApplication, owner: QWidget, text: str) -> QWidget:
+    QToolTip.showText(owner.mapToGlobal(QPoint(4, 4)), text, owner)
+    for _ in range(5):
+        app.processEvents()
+    tips = [
+        widget
+        for widget in app.topLevelWidgets()
+        if widget.isVisible() and enum_value(widget.windowFlags()) & 0xFF == enum_value(Qt.ToolTip)
+    ]
+    assert len(tips) == 1
+    return tips[0]
+
+
+def test_shell_tooltips_keep_border_and_padding_without_an_application_sheet(_ensure_qapp) -> None:  # type: ignore[no-untyped-def]
+    """The window sheet styles every tip, the first and a reused one, on PySide2 and PySide6."""
+    app = QApplication.instance()
+    assert isinstance(app, QApplication)
+    saved = app.styleSheet()
+    tokens = replace(_theme_tokens(), popup_bg="#202830", popup_border="#FF0000", text_primary="#E6F0FA")
+    window = QMainWindow()
+    try:
+        app.setStyleSheet("")
+        window.setStyleSheet(build_shell_style_sheet(tokens))
+        set_app_tooltip_style_sheet(build_app_tooltip_style_sheet(tokens))
+        owner = QLabel("owner")
+        window.setCentralWidget(owner)
+        window.resize(300, 200)
+        window.show()
+        app.processEvents()
+        plain = QLabel("Hello tooltip")
+        plain_height = plain.sizeHint().height()
+        for text in ("Hello tooltip", "Hello again"):
+            tip = _shown_tip(app, owner, text)
+            image = tip.grab().toImage()
+            # 1 px border plus 4 px padding top and bottom.
+            assert tip.height() >= plain_height + 10, (text, tip.height(), plain_height)
+            assert QColor(image.pixel(0, tip.height() // 2)).name() == "#ff0000", text
+            QToolTip.hideText()
+            app.processEvents()
+        assert app.styleSheet() == ""
+    finally:
+        QToolTip.hideText()
+        window.deleteLater()
+        app.setStyleSheet(saved)

@@ -195,6 +195,12 @@ class _Structure(_LayoutSlots):
         return widget
 
     def _create_widget(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:
+        if parent is None and node is not self._session.document.root:
+            # A container page (splitter, tab, stack, scroll area, MDI,
+            # wizard) is inserted after it is built. Built parentless it is a
+            # window, and a window's layout pins its minimum size (QStatusBar
+            # does that in its constructor), which a patched copy never gets.
+            parent = self._nursery()
         widget = self._construct(node, parent)
         self._ensure_actions(node, widget)
         self._fill_widget(node, widget)
@@ -210,7 +216,7 @@ class _Structure(_LayoutSlots):
                 # ``parent`` None means the container reparents on insert, so
                 # a widget parked in place keeps its parent until then.
                 if parent is not None and pooled.parentWidget() is not parent:
-                    pooled.setParent(parent)
+                    _reparent(pooled, parent)
                 self._widgets[node.id] = pooled
                 self._objects[node.id] = pooled
                 self._apply_node_properties(node, pooled, is_root=pooled is self._root)
@@ -224,7 +230,7 @@ class _Structure(_LayoutSlots):
         if isinstance(current, QWidget) and current is not pooled:
             if wrapper_is_valid(current):
                 if parent is not None and current.parentWidget() is not parent:
-                    current.setParent(parent)
+                    _reparent(current, parent)
                 return current
             self._wipe(node.id)
         return self._create_widget(node, parent)
@@ -1055,8 +1061,8 @@ class _Structure(_LayoutSlots):
         """A hidden parent for a morph's new widget until a container takes it.
 
         A parentless widget is a window, and a window's layout pins its minimum
-        size when it activates (QStatusBar does that on construction). A fresh
-        build never makes form parts windows, so a patch must not either.
+        size when it activates (QStatusBar does that on construction). Neither
+        a build nor a patch makes a form part a window, even for a moment.
         """
         nursery = self._nursery_widget
         if nursery is None or not wrapper_is_valid(nursery):
@@ -1550,3 +1556,15 @@ def QSizePolicy_expanding() -> object:
 def QSizePolicy_minimum() -> object:
     policy = getattr(QSizePolicy, "Policy", QSizePolicy)
     return getattr(policy, "Minimum")
+
+
+def _reparent(widget: QWidget, parent: QWidget) -> None:
+    """Move ``widget`` under ``parent``. A menu stays a popup window.
+
+    ``setParent(parent)`` resets the window flags, so a moved QMenu would turn
+    into an inline child widget while a fresh build keeps it a popup.
+    """
+    if isinstance(widget, QMenu):
+        widget.setParent(parent, widget.windowFlags() | Qt.Popup)
+        return
+    widget.setParent(parent)

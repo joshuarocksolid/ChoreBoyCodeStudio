@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from app.qt.QtGui import QColor
-from app.qt.QtWidgets import QApplication
+from app.qt.QtGui import QColor, QFont, QPalette
+from app.qt.QtWidgets import QApplication, QToolTip
 
 from app.shell.icons import explorer_icon, search_icon, test_icon
 from app.shell.menu_icons import apply_menu_icons
@@ -56,10 +57,41 @@ def _tab_chrome_theme_applier(window: Any) -> Callable[[ShellThemeTokens], None]
     return None if coordinator is None else coordinator.apply_tab_chrome_theme
 
 
+_COLOR_DECL = re.compile(r"(?m)^\s*(background-color|color|border)\s*:\s*([^;]+);")
+
+
 def set_app_tooltip_style_sheet(style_sheet: str) -> None:
+    """Give tooltips the shell colours and font without an application style sheet.
+
+    The QSS rule itself lives in the main window sheet (``build_shell_style_sheet``).
+    The palette covers tips shown for widgets outside that window.
+    """
+    _apply_tooltip_palette(style_sheet)
+
+
+def _apply_tooltip_palette(style_sheet: str) -> None:
+    background, foreground = _tooltip_colors(style_sheet)
+    palette = QPalette(QToolTip.palette())
+    roles = getattr(QPalette, "ColorRole", QPalette)
+    if background:
+        palette.setColor(getattr(roles, "ToolTipBase"), QColor(background))
+    if foreground:
+        palette.setColor(getattr(roles, "ToolTipText"), QColor(foreground))
+    QToolTip.setPalette(palette)
     app = QApplication.instance()
-    if app is not None:
-        app.setStyleSheet(style_sheet)
+    if isinstance(app, QApplication):
+        QToolTip.setFont(QFont(app.font()))
+
+
+def _tooltip_colors(style_sheet: str) -> tuple:
+    background = ""
+    foreground = ""
+    for name, value in _COLOR_DECL.findall(style_sheet):
+        if name == "background-color":
+            background = value.strip()
+        elif name == "color":
+            foreground = value.strip()
+    return background, foreground
 
 
 def apply_editor_themes(refs: ShellThemeSurfaceRefs, tokens: ShellThemeTokens) -> None:
