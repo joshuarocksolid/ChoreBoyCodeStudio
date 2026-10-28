@@ -8,6 +8,7 @@ A missing or unreadable block is the default. ``memory.py`` is not touched.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Mapping, Optional, Tuple, Union
 
@@ -58,6 +59,19 @@ def payload_with_insert(payload: Mapping[str, Any], memory: InsertMemory) -> Dic
     section[INSERT_KEY] = block
     updated[SETTINGS_KEY] = section
     return updated
+
+
+_STORES: Dict[str, "InsertMemoryStore"] = {}
+
+
+def shared_store(state_root: str) -> "InsertMemoryStore":
+    """One store per settings root. Two open forms must see the same recent list."""
+    key = os.path.abspath(state_root)
+    found = _STORES.get(key)
+    if found is None:
+        found = InsertMemoryStore(state_root)
+        _STORES[key] = found
+    return found
 
 
 class InsertMemoryStore:
@@ -166,7 +180,7 @@ class LazyInsertMemory:
         root = self._root_of()
         if root:
             carried = self._inner.expanded_states() if self._inner is not None else {}
-            store = InsertMemoryStore(root)
+            store = shared_store(root)
             for category, expanded in carried.items():
                 store.set_expanded(category, expanded)
             self._inner = store
@@ -203,6 +217,7 @@ __all__ = [
     "InsertMemory",
     "InsertMemoryStore",
     "LazyInsertMemory",
+    "shared_store",
     "SETTINGS_KEY",
     "memory_from_payload",
     "payload_with_insert",
