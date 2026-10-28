@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """The realizer restores enum and flag defaults, and reports values Qt refuses (UX-PED-009)."""
 
 from __future__ import annotations
