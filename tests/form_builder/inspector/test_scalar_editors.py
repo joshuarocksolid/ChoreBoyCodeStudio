@@ -31,6 +31,7 @@ from app.qt.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStyle,
+    QStyleOptionComboBox,
     QStyleOptionSpinBox,
     QToolButton,
     QVBoxLayout,
@@ -502,10 +503,15 @@ def test_reference_texts_fit_at_236() -> None:
 
 def _text_width(widget: QWidget) -> int:
     if isinstance(widget, QComboBox):
-        # The glyphs fit the 132 px column. The arrow takes 31 px of that
-        # column (edit field 101, string 128). That bite belongs to the
-        # inspector-width review, which owns the column.
-        return int(widget.width())
+        option = QStyleOptionComboBox()
+        widget.initStyleOption(option)
+        rect = widget.style().subControlRect(
+            QStyle.ComplexControl.CC_ComboBox,
+            option,
+            QStyle.SubControl.SC_ComboBoxEditField,
+            widget,
+        )
+        return int(rect.width())
     if isinstance(widget, QSpinBox):
         option = QStyleOptionSpinBox()
         widget.initStyleOption(option)
@@ -542,9 +548,6 @@ def test_reference_texts_fit_in_a_132px_column() -> None:
         window, pane = _pane(session, realizer, width=420)
         try:
             _select(session, pane, "email")
-            echo = _row(pane, "echoMode").findChild(QComboBox)
-            assert isinstance(echo, QComboBox)
-            _at_132(echo, "Password echo on edit")
             length = _row(pane, "maxLength").findChild(QSpinBox)
             assert isinstance(length, QSpinBox)
             _at_132(length, "\u22122147483648")
@@ -570,6 +573,42 @@ def test_reference_texts_fit_in_a_132px_column() -> None:
             assert policy.toolTip() == "Minimum expanding"
             assert policy.width() <= 132
             host.close()
+        finally:
+            _close(window, pane)
+
+
+def _row_width(window: QWidget, pane: InspectorPane, key: str, width: int) -> QWidget:
+    """Resize until the row is ``width`` px wide (the pane adds margins and a scroll bar)."""
+    row = _row(pane, key)
+    for _ in range(4):
+        delta = width - row.width()
+        if delta == 0:
+            break
+        window.resize(window.width() + delta, window.height())
+        _events()
+        pane.flush()
+        _events()
+        row = _row(pane, key)
+    assert row.width() == width
+    return row
+
+
+@pytest.mark.parametrize("width,stacked", ((236, True), (300, False)))
+def test_echo_mode_shows_its_longest_name_unclipped(width: int, stacked: bool) -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer, width=width + 40)
+        try:
+            _select(session, pane, "email")
+            row = _row_width(window, pane, "echoMode", width)
+            combo = row.findChild(QComboBox)
+            assert isinstance(combo, QComboBox)
+            longest = combo.itemText(combo.findData("PasswordEchoOnEdit"))
+            assert combo.fontMetrics().horizontalAdvance(longest) <= _text_width(combo)
+            label = row.findChild(QLabel)
+            assert isinstance(label, QLabel)
+            top = combo.mapTo(row, combo.rect().topLeft()).y()
+            bottom = label.mapTo(row, label.rect().bottomLeft()).y()
+            assert (bottom < top) == stacked
         finally:
             _close(window, pane)
 

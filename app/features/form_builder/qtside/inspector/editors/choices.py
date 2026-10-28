@@ -23,7 +23,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Written,
     mark,
 )
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QSize, Qt
 from app.features.form_builder.qtside.inspector.editors._editor_kit import name_part, qt_key
 from app.features.form_builder.qtside.inspector.editors._enum_words import friendly
 from app.qt.QtWidgets import (
@@ -32,6 +32,8 @@ from app.qt.QtWidgets import (
     QGridLayout,
     QLabel,
     QSizePolicy,
+    QStyle,
+    QStyleOptionComboBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -95,6 +97,21 @@ _CURSORS = (
     "ClosedHandCursor",
 )
 
+# UX-PED-002: label 96 px and an 8 px gap before the editor column.
+_LABEL_AND_GAP = 104
+
+
+def _combo_need(combo: QComboBox) -> int:
+    """The width that shows the longest item beside the arrow, from the style."""
+    metrics = combo.fontMetrics()
+    longest = max((metrics.horizontalAdvance(combo.itemText(index)) for index in range(combo.count())), default=0)
+    option = QStyleOptionComboBox()
+    combo.initStyleOption(option)
+    contents = QSize(longest, metrics.height())
+    kind = getattr(getattr(QStyle, "ContentsType", QStyle), "CT_ComboBox")
+    return int(combo.style().sizeFromContents(kind, option, contents, combo).width())
+
+
 class _EnumBox(QComboBox):
     """Space opens the list. Up and Down on the closed list change the choice."""
 
@@ -133,6 +150,13 @@ class EnumEditor:
     @property
     def widget(self) -> QWidget:
         return self._box
+
+    def wants_stacked(self, width: int) -> bool:
+        """UX-PED-002: a drop-down whose longest name does not fit the column goes under its label."""
+        combo = self._box
+        if not isinstance(combo, QComboBox):
+            return False
+        return _combo_need(combo) > int(width) - _LABEL_AND_GAP
 
     def show(self, value: RowValue) -> None:
         text = _enum_text(value)
