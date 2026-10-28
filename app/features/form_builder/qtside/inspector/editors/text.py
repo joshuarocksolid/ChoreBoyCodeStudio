@@ -260,6 +260,9 @@ class StringEditor:
     def _change_attr(self, field: str, raw: object) -> None:
         _EXPANDED[(self._host.qt_name, self._host.label)] = self._translation.expanded()
         current = self._value or StringValue(self._shown)
+        # Leaving a field without typing (Tab through the panel) changes nothing.
+        if (getattr(current, field, None) or None) == (raw or None):
+            return
         updated = StringValue(
             current.text,
             raw if field == "notr" else current.notr,  # type: ignore[arg-type]

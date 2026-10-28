@@ -654,14 +654,6 @@ def test_flags_escape_keeps_bytes_and_done_is_one_step() -> None:
             _close(window, pane)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M4.2: Realizer._reset_property falls back to setProperty(name, fresh.property(name)), "
-        "which PySide6 drops for a flags value, so a reverted textInteractionFlags stays on the "
-        "canvas label and the row's unwritten default shows the cancelled flag."
-    ),
-)
 def test_flags_escape_restores_the_canvas_widget() -> None:
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)

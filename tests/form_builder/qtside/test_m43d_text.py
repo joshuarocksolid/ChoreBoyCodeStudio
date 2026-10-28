@@ -865,3 +865,25 @@ def test_editor_column_is_132_at_236_px(qapp: QApplication) -> None:
         assert scroll.horizontalScrollBar().maximum() == 0
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_leaving_untouched_translation_fields_writes_nothing(qapp: QApplication) -> None:
+    """Tab through an open Translation panel without typing: no step, no new property (K11 after K-text)."""
+    window, pane, session, realizer = _pane(qapp, _LABEL)
+    try:
+        _select(session, "nameEdit")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.text")
+        assert row is not None
+        toggle = row.findChild(QToolButton, "formBuilder.translationToggle")
+        assert toggle is not None
+        toggle.click()
+        before = write_ui(session.document).text
+        steps = len(session.log.entries())
+        for accessible in ("Translation: meaning", "Translation: note for the translator"):
+            _field(row, accessible).editingFinished.emit()
+        qapp.processEvents()
+        assert len(session.log.entries()) == steps
+        assert write_ui(session.document).text == before
+    finally:
+        _close(window, pane, realizer, session, qapp)
