@@ -45,7 +45,7 @@ from app.features.form_builder.qtside.inspector.rich_html import (
 from app.features.form_builder.qtside.inspector.translatable import shows_translation
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.qt_compat import exec_qt
-from app.qt.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from app.qt.QtGui import QColor, QFont, QSyntaxHighlighter, QTextCharFormat, QTextListFormat
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -151,6 +151,7 @@ class StringEditor:
         self._summary.hide()
         self._translation = TranslationDisclosure(self._box)
         self._translation.set_on_change(self._change_attr)
+        self._translation.set_on_toggle(self._remember_expanded)
         self._translation.hide()
         column = QVBoxLayout(self._box)
         column.setContentsMargins(0, 0, 0, 0)
@@ -211,7 +212,9 @@ class StringEditor:
 
     def _show_translation(self, value: RowValue) -> None:
         element = getattr(self._spec, "element", StringValue.ELEMENT)
-        if not shows_translation(self._host.qt_name, element):
+        if not shows_translation(self._host.qt_name, element) or isinstance(value, Mixed):
+            # Mixed: the owners' texts differ, and an attribute commit would
+            # write one text to all of them. Edit translations one widget at a time.
             self._translation.hide()
             return
         current = self._value
@@ -226,10 +229,9 @@ class StringEditor:
         key = (self._host.qt_name, self._host.label)
         if key in _EXPANDED:
             self._translation.set_expanded(_EXPANDED[key])
-        if isinstance(value, Mixed):
-            self._translation.set_values(
-                notr=None, comment=None, extracomment=None, ident=None, show_id=False
-            )
+
+    def _remember_expanded(self, expanded: bool) -> None:
+        _EXPANDED[(self._host.qt_name, self._host.label)] = expanded
 
     def _commit_line(self) -> None:
         text = self._edit.text()
@@ -289,6 +291,7 @@ class _TextBody:
         self._rich = rich
         self._dirty = False
         self._ready = False
+        self._mode = "plain"
         self._link_row: Optional[QWidget] = None
         layout = popover.body()
         self._plain = QPlainTextEdit()
@@ -376,10 +379,25 @@ class _TextBody:
     def _show_mode(self, mode: str) -> None:
         if mode == "formatted" and not self._rich and not looks_like_html(self._value.text):
             if not self._confirm():
+                self._formatted_button.setChecked(self._mode == "formatted")
                 return
             self._rich = True
             self._set_rich_format()
             self._formatted.setPlainText(self._plain.toPlainText() or self._value.text)
+        elif self._ready and mode != self._mode:
+            # Carry the latest written text into the segment being shown, so an
+            # edit made in Formatted is not lost by typing in a stale Source.
+            self._ready = False
+            current = self._value.text
+            if mode == "source":
+                self._source.setPlainText(current)
+            elif mode == "formatted":
+                if looks_like_html(current):
+                    self._formatted.setHtml(current)
+                else:
+                    self._formatted.setPlainText(current)
+            self._ready = True
+        self._mode = mode
         rich = mode in ("formatted", "source")
         self._bar.setVisible(rich or self._rich)
         self._tools.setVisible(mode == "formatted")
@@ -427,18 +445,9 @@ class _TextBody:
 
     def _list_style(self, numbered: bool) -> None:
         cursor = self._formatted.textCursor()
-        styles = getattr(QTextCursor, "ListStyle", None)
-        # QTextListFormat styles are on the cursor in both bindings.
-        style = getattr(cursor, "ListStyle", None)
-        disc = getattr(style, "ListDisc", None) if style is not None else None
-        decimal = getattr(style, "ListDecimal", None) if style is not None else None
-        if styles is not None:
-            disc = getattr(styles, "ListDisc", disc)
-            decimal = getattr(styles, "ListDecimal", decimal)
-        chosen = decimal if numbered else disc
-        if chosen is None:
-            return
-        cursor.createList(chosen)
+        styles = getattr(QTextListFormat, "Style", QTextListFormat)
+        cursor.createList(getattr(styles, "ListDecimal" if numbered else "ListDisc"))
+        self._formatted.setFocus()
 
     def _ask_link(self) -> None:
         if self._link_row is None:
@@ -469,9 +478,9 @@ class _TextBody:
     def _write(self) -> None:
         if not self._dirty:
             return
-        if self._source.isVisible():
+        if self._mode == "source":
             text = self._source.toPlainText()
-        elif self._formatted.isVisible():
+        elif self._mode == "formatted":
             text = stable_html(paragraphs_from_document(self._formatted.document()))
         else:
             text = self._plain.toPlainText()

@@ -100,7 +100,8 @@ def looks_like_html(text: str) -> bool:
 
 
 def _span(span: Span) -> str:
-    text = html.escape(span.text, quote=False).replace("\n", "<br />")
+    # Shift+Enter in the formatted editor stores U+2028; both are line breaks.
+    text = html.escape(span.text, quote=False).replace("\u2028", "\n").replace("\n", "<br />")
     styles: List[str] = []
     if span.bold:
         styles.append("font-weight:600")
@@ -149,10 +150,11 @@ def _list_kind(block: object) -> str:
     listed = text_list()
     if listed is None:
         return "p"
-    fmt = listed.format()
-    style = int(fmt.style())
-    # QTextListFormat.ListDecimal is 4. Disc and the other bullets are lists.
-    if style == 4:
+    style = listed.format().style()
+    raw = getattr(style, "value", style)
+    # QTextListFormat: Disc -1, Circle -2, Square -3 are bullets; Decimal -4
+    # and the alpha and roman styles (-5 … -8) are numbered.
+    if int(raw) <= -4:
         return "ol"
     return "ul"
 

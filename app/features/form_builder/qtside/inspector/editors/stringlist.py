@@ -41,6 +41,7 @@ class StringListEditor:
         del spec
         self._host = host
         self._value = StringListValue(())
+        self._mixed = False
         self._popover: Optional[RowPopover] = None
         self._button = SummaryButton(host.label, parent)
         self._button.set_opener(self._open)
@@ -51,6 +52,7 @@ class StringListEditor:
 
     def show(self, value: RowValue) -> None:
         self._value = _value_of(value)
+        self._mixed = isinstance(value, Mixed)
         text = "Mixed" if isinstance(value, Mixed) else summarize(self._value.items)
         self._button.set_row_label(self._host.label)
         self._button.set_summary(text)
@@ -73,7 +75,7 @@ class StringListEditor:
         editor.set_on_close(popover.done)
         editor.set_on_revert(popover.revert)
         popover.body().addWidget(editor)
-        if shows_translation(self._host.qt_name, StringListValue.ELEMENT):
+        if not self._mixed and shows_translation(self._host.qt_name, StringListValue.ELEMENT):
             disclosure = TranslationDisclosure()
             names = getattr(self._host, "qt_names", None)
             disclosure.set_values(

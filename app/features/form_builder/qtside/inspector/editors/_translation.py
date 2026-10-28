@@ -32,6 +32,7 @@ class TranslationDisclosure(QWidget):
         super().__init__(parent)
         self.setObjectName("formBuilder.translation")
         self._on_change: Optional[Callable[[str, object], None]] = None
+        self._on_toggle: Optional[Callable[[bool], None]] = None
         self._show_id = False
         self._painting = False
         self._expanded = False
@@ -75,6 +76,10 @@ class TranslationDisclosure(QWidget):
 
     def set_on_change(self, callback: Optional[Callable[[str, object], None]]) -> None:
         self._on_change = callback
+
+    def set_on_toggle(self, callback: Optional[Callable[[bool], None]]) -> None:
+        """Told when the user opens or closes the disclosure, so the host can remember it."""
+        self._on_toggle = callback
 
     def set_values(
         self,
@@ -121,6 +126,9 @@ class TranslationDisclosure(QWidget):
 
     def _toggle_body(self) -> None:
         self.set_expanded(self._toggle.isChecked())
+        callback = self._on_toggle
+        if callback is not None:
+            callback(self._expanded)
 
     def _commit_translate(self) -> None:
         if self._painting:
