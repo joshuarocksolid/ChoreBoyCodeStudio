@@ -129,6 +129,25 @@ CBCS_APPRUN=/opt/freecad-1.1/AppRun CBCS_QT_API=pyside6 ./run_dev.sh --probe
 
 Qt6 `uic` and `rcc` on that image are `/usr/local/bin/cbcs-fb-uic` and `/usr/local/bin/cbcs-fb-rcc`. The matching interpreter is `/usr/local/bin/cbcs-fb-python`. See `AGENTS.md` for the env file those paths are exported from.
 
+## Form builder lanes on Cursor Cloud
+
+`.cursor/environment.json` runs `bash scripts/cloud_setup_screenshot_runtime.sh` on install. The same command is safe to run again. It leaves FreeCAD 1.1 at `/opt/freecad-1.1` (Python 3.11, PySide6 6.8.3) and a conda Python 3.9 at `~/opt/freecad` that also imports PySide6 6.8.3.
+
+A non-login shell loads the pinned paths from `/etc/cbcs-cloud.env`.
+
+```bash
+set -a
+. /etc/cbcs-cloud.env
+set +a
+export QT_QPA_PLATFORM=offscreen
+export PYTHONPATH="${CBCS_ARTIFACTS_DIR}/vendor_py311${PYTHONPATH:+:$PYTHONPATH}"
+"$CBCS_FB_PY311" -m pytest tests/form_builder/engine -q
+"$CBCS_FB_PY311" -m pytest tests/unit/features/form_builder -q
+python3 testing/run_form_builder_checks.py --only syntax-py39 pyright dune unit-py311
+```
+
+`CBCS_FB_PY311` is `/usr/local/bin/cbcs-fb-python`. `CBCS_FB_PY39` is `~/opt/freecad/bin/python`, the conda interpreter that imports PySide6. The gate reads those two variables. Put `vendor_py311` on `PYTHONPATH` so that interpreter can import pytest. The env file sets `npm_config_yes` so the gate's `npx pyright@1.1.410` install does not wait for a prompt.
+
 ## Overrides
 
 | Variable | Purpose |
