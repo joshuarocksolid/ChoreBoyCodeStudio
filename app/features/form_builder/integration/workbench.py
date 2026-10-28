@@ -351,7 +351,7 @@ class FormToolbar(QWidget):
         self.tab_order = _tool(
             "Tab order",
             "formBuilder.tabOrder",
-            "Tab order follows the order of widgets in the outline.",
+            "Tab order. Press F8 to see where this form's order comes from.",
             self,
         )
         self.tab_order.setEnabled(False)
