@@ -198,6 +198,6 @@ def test_k9_insert_by_words(tmp_path: Path, qapp: QApplication) -> None:
             session.log.undo()
             undone += 1
         assert session.text() == original
-        assert 3 <= undone <= 6
+        assert undone == 4
     finally:
         shutdown_main_window_for_test(window, qapp)
