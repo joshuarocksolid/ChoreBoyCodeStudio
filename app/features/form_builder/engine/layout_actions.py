@@ -34,6 +34,7 @@ from app.features.form_builder.engine.query.tree import (
     effective_class,
     form_item_role,
     form_occupied_cells,
+    form_rows,
     is_container,
     is_page_container,
     visual_children,
@@ -1019,7 +1020,17 @@ def _wrap(doc: UiDocument, ids: Tuple[NodeId, ...], kind: Kind, measured: Measur
     wrapped = siblings.ids
     if isinstance(shape, LayoutShape):
         wrapped = widgets_in_box_wrap(doc, siblings.ids, shape.layout_class)
-    sentence = "Wrapped %s in %s" % (_count(len(wrapped), "widget", "widgets"), kind.noun)
+    extra = len(wrapped) - len(siblings.ids)
+    if extra > 0:
+        sentence = _side_by_side(doc, siblings.ids)
+        if not sentence:
+            sentence = "Wrapped %s in %s and moved %s with them" % (
+                _count(len(siblings.ids), "widget", "widgets"),
+                kind.noun,
+                _count(extra, "label", "labels"),
+            )
+    else:
+        sentence = "Wrapped %s in %s" % (_count(len(wrapped), "widget", "widgets"), kind.noun)
     return _Ready("Wrap", (command,), sentence)
 
 
@@ -1342,6 +1353,48 @@ def _entry_text(entry: object) -> str:
         return ""
     text = getattr(getattr(entry, "value", None), "text", None)
     return text.strip() if isinstance(text, str) else ""
+
+
+def _side_by_side(doc: UiDocument, ids: Tuple[NodeId, ...]) -> str:
+    """Name the fields the user selected, in reading order. ``Put phone and email side by side.``"""
+    ordered = sorted(ids, key=lambda node_id: _form_cell_key(doc, node_id))
+    names: List[str] = []
+    for node_id in ordered:
+        spoken = _spoken_field(doc, node_id)
+        if spoken and spoken not in names:
+            names.append(spoken)
+    if len(names) < 2:
+        return ""
+    return "Put %s side by side." % _listed(names)
+
+
+def _form_cell_key(doc: UiDocument, node_id: NodeId) -> Tuple[int, int, int]:
+    item = doc.parent(node_id)
+    if isinstance(item, LayoutItemNode):
+        return (item.row or 0, item.column or 0, item.slot_index)
+    return (1 << 20, 1 << 20, 0)
+
+
+def _spoken_field(doc: UiDocument, node_id: NodeId) -> str:
+    item = doc.parent(node_id)
+    if isinstance(item, LayoutItemNode):
+        parent = doc.parent(item.id)
+        if isinstance(parent, LayoutNode) and parent.class_name == "QFormLayout":
+            for label_id, field_id, _span in form_rows(doc, parent.id):
+                if field_id != item.id or label_id is None:
+                    continue
+                label_item = doc.node(label_id)
+                content = label_item.content if isinstance(label_item, LayoutItemNode) else None
+                text = _entry_text(content.prop("text")) if isinstance(content, WidgetNode) else ""
+                if text:
+                    return text.rstrip(":").strip().lower()
+    node = doc.node(node_id)
+    own = _visible_label(doc, node)
+    if own:
+        return own.rstrip(":").strip().lower()
+    if isinstance(node, WidgetNode) and node.object_name:
+        return node.object_name
+    return ""
 
 
 def _count(number: int, one: str, many: str) -> str:

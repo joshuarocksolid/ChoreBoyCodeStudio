@@ -1,6 +1,5 @@
 # pyright: reportAttributeAccessIssue=false
-"""M3.7 review repros: real main window, keys only. Each is a strict xfail
-that names the finding, so it turns red once the defect is fixed."""
+"""M3.7 review repros: real main window, keys only."""
 
 from __future__ import annotations
 
@@ -123,11 +122,6 @@ def _box_names(text: str) -> list:
     return re.findall(r'<widget class="\w+" name="(\w+)"', box)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7d1 re-review R1: a wrap orders form-row widgets by file order, so Phone (row 2 on "
-    "screen) lands after Email",
-)
 def test_a_wrap_of_form_rows_keeps_the_rows_reading_order(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS_OUT_OF_ORDER)
     try:
@@ -136,17 +130,16 @@ def test_a_wrap_of_form_rows_keeps_the_rows_reading_order(tmp_path: Path, qapp: 
         kb.press("Key_Down", "Shift")
         assert set(kb.selected()) == {"phoneEdit", "emailEdit"}, kb.history()
         kb.press("Key_1", "Control")
-        names = _box_names(kb.text())
+        text = kb.text()
+        names = _box_names(text)
         assert names.index("phoneEdit") < names.index("emailEdit"), names
+        form_rows = [int(row) for row in re.findall(r'<item row="(\d+)"', text)]
+        assert form_rows, text
+        assert sorted(set(form_rows)) == list(range(max(form_rows) + 1)), form_rows
     finally:
         _close(window, qapp, guard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7d1 re-review R2: the wrapped row spans both columns, so its field no longer lines "
-    "up with the other fields. Keep the first row's label in the label cell.",
-)
 def test_a_wrap_of_form_rows_keeps_the_first_label_in_the_label_column(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
@@ -162,11 +155,6 @@ def test_a_wrap_of_form_rows_keeps_the_first_label_in_the_label_column(tmp_path:
         _close(window, qapp, guard)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M3.7d1 re-review R3: a button inserted into a form layout gets a 'New field:' label, and "
-    "wrapping two such buttons gives [New field:, Save, New field:, Cancel]",
-)
 def test_a_button_inserted_into_a_form_has_no_field_label(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _session(tmp_path, qapp, _ROWS)
     try:
