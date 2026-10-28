@@ -2064,7 +2064,8 @@ class InsertPane(QWidget):
         self.body.setObjectName("formBuilder.insertBody")
         self.body.setAccessibleName("Insert")
         self.body.setFocusPolicy(_strong())
-        self.body.itemDoubleClicked.connect(self._activated)
+        # itemActivated covers a double-click on every platform. Connecting
+        # itemDoubleClicked as well inserted the widget twice per double-click.
         self.body.itemActivated.connect(self._activated)
         self.body.currentItemChanged.connect(lambda *_args: self._announce_preview())
         layout.addWidget(self.body, 1)
