@@ -845,8 +845,12 @@ def test_editor_column_is_132_at_236_px(qapp: QApplication) -> None:
         _settle(qapp, pane)
         scroll = pane.findChild(QScrollArea, "formBuilder.inspectorScroll")
         assert scroll is not None
-        row = pane.findChild(QWidget, "formBuilder.row.echoMode")
+        # Echo mode stacks its drop-down under the label at 236 (UX-PED-002),
+        # so the column is measured on a row that stays side by side.
+        row = pane.findChild(QWidget, "formBuilder.row.maxLength")
         assert row is not None
+        stacked = pane.findChild(QWidget, "formBuilder.row.echoMode")
+        assert stacked is not None
         width = 400
         for _attempt in range(20):
             window.resize(width, 760)
@@ -857,6 +861,7 @@ def test_editor_column_is_132_at_236_px(qapp: QApplication) -> None:
         assert row.width() == 236
         editor = row._editor.widget
         assert editor.width() == 132
+        assert stacked._editor.widget.width() >= 132
         assert scroll.horizontalScrollBar().maximum() == 0
     finally:
         _close(window, pane, realizer, session, qapp)
