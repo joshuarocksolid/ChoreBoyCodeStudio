@@ -45,7 +45,7 @@ from app.features.form_builder.qtside.inspector.rich_html import (
 )
 from app.features.form_builder.qtside.inspector.translatable import shows_translation
 from app.qt.QtCore import QEvent, QObject, QRect, QSize, Qt
-from app.qt.qt_compat import exec_qt
+from app.qt.qt_compat import enum_value, exec_qt
 from app.qt.QtGui import (
     QColor,
     QFont,
@@ -83,6 +83,7 @@ _EXPANDED: dict = {}
 _NO_WIDGET = "No widget called \u201c%s\u201d on this form."
 _MAKE_RICH = "Make this text formatted? It is stored as HTML."
 _LIMIT = "This text has formatting the editor can't keep."
+_STATE_TOOLS = ("Bold", "Italic", "Underline", "Bulleted list", "Numbered list")
 
 
 def _key(name: str) -> object:
@@ -416,7 +417,8 @@ class _TextBody:
         button = QPushButton(glyph)
         button.setAccessibleName(name)
         button.setToolTip(name)
-        button.setCheckable(True)
+        # Only the states the cursor can report light up (B, I, U, lists).
+        button.setCheckable(name in _STATE_TOOLS)
         button.setProperty("fbGlyph", "true")
         fixed = getattr(getattr(QSizePolicy, "Policy", QSizePolicy), "Fixed")
         button.setSizePolicy(fixed, fixed)
@@ -504,6 +506,11 @@ class _TextBody:
         self._bold.setChecked(bool(font.bold()) or int(font.weight()) >= 600)
         self._italic.setChecked(bool(font.italic()))
         self._underline.setChecked(bool(font.underline()))
+        current = self._formatted.textCursor().currentList()
+        style = enum_value(current.format().style()) if current is not None else None
+        styles = getattr(QTextListFormat, "Style", QTextListFormat)
+        self._bullets.setChecked(style == enum_value(getattr(styles, "ListDisc")))
+        self._numbers.setChecked(style == enum_value(getattr(styles, "ListDecimal")))
 
     def _load_html(self, text: str) -> None:
         """Show file HTML at the app font size.
@@ -551,6 +558,7 @@ class _TextBody:
         cursor = self._formatted.textCursor()
         styles = getattr(QTextListFormat, "Style", QTextListFormat)
         cursor.createList(getattr(styles, "ListDecimal" if numbered else "ListDisc"))
+        self._sync_checks()
         self._formatted.setFocus()
 
     def _ask_link(self) -> None:

@@ -207,3 +207,32 @@ def test_choice_dropdown_says_mixed_when_owners_differ(qapp: QApplication) -> No
         assert combo.property("fbState") == "mixed"
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_rich_text_bar_lights_only_the_state_of_the_cursor(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp, _rich_form(stable_html((Paragraph((Span("Hello"),)),))))
+    try:
+        _select(session, "richLabel")
+        _settle(qapp, pane)
+        row = pane.findChild(QWidget, "formBuilder.row.text")
+        assert row is not None
+        summary = row.findChild(QWidget, "formBuilder.summary")
+        assert summary is not None
+        summary.click()
+        qapp.processEvents()
+        popover = _popover(window)
+
+        def button(name: str):
+            return next(item for item in popover.findChildren(QWidget) if item.accessibleName() == name)
+
+        button("Larger").click()
+        button("Link").click()
+        qapp.processEvents()
+        assert not button("Larger").isChecked()
+        assert not button("Link").isChecked()
+        button("Bulleted list").click()
+        qapp.processEvents()
+        assert button("Bulleted list").isChecked()
+        assert not button("Numbered list").isChecked()
+    finally:
+        _close(window, pane, realizer, session, qapp)
