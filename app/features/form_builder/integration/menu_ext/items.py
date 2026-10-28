@@ -13,7 +13,8 @@ def register(registry: object) -> None:
     add = getattr(registry, "add", None)
     if add is None:
         return
-    add("last", build)
+    # The widget's own main action leads the menu, above the clipboard rows.
+    add("first", build)
 
 
 def build(ctx: MenuContext) -> None:
