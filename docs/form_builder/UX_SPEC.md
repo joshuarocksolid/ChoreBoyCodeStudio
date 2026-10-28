@@ -1231,7 +1231,7 @@ The lane split, owned files and parity rows are in `PLAN.md` (M4 table and "M4 l
 
 #### 13.1.1 Rules every M4 clause shares
 
-**UX-TOK-005** `M4.0s` `[S A]` New builder tokens for M4. They live in `qtside/theme/` like every builder colour (UX-TOK-001). Form-surface tokens (drawn on the canvas) are the same in light and dark chrome, like UX-TOK-003.
+**UX-TOK-005** `M4.0s, M4.2` `[S A]` New builder tokens for M4. They live in `qtside/theme/` like every builder colour (UX-TOK-001). M4.0s adds the `fb.*` chrome tokens; M4.2 adds the `ov.*` form-surface tokens it draws. Form-surface tokens (drawn on the canvas) are the same in light and dark chrome, like UX-TOK-003.
 
 | Token | Source or light | Dark | HC light | HC dark | Use |
 | --- | --- | --- | --- | --- | --- |
