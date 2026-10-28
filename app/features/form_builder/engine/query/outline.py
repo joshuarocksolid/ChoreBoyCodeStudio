@@ -12,6 +12,8 @@ from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tup
 
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, MoveNodes, MovePage, SetProperty
+from app.features.form_builder.engine.commands.catalog_ext.pages import DeletePage
+from app.features.form_builder.engine.query.pages import page_kind, page_title, page_widget_count, pages
 from app.features.form_builder.engine.commands.catalog_ext.drop import AdoptIntoBox
 from app.features.form_builder.engine.commands.drop_plan import auto_target, commands_for, nudge_commands
 from app.features.form_builder.engine.commands.placement import InBoxLayout, InContainer
@@ -38,7 +40,7 @@ from app.features.form_builder.engine.ui4.nodes import (
 )
 from app.features.form_builder.engine.ui4.values import BoolValue, CStringValue, NumberValue, StringValue
 
-PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
+PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox", "QWizard", "QMdiArea"})
 
 _NOWHERE = "Nothing above to nest into."
 _KEEP_PAGE = "A page stays inside its container."
@@ -953,7 +955,7 @@ def plan(
     if isinstance(gesture, InsertGesture):
         return OpenInsert(gesture.after)
     if isinstance(gesture, ConfirmGesture):
-        return _plan_confirm(forest, gesture)
+        return _plan_confirm(doc, forest, gesture)
     if isinstance(gesture, DropGesture):
         return _plan_drop(doc, forest, gesture)
     return Idle()
@@ -1058,9 +1060,12 @@ def _plan_filter(forest: OutlineForest, gesture: FilterGesture) -> Effect:
     return FilterSet(gesture.text, False, None)
 
 
-def _plan_confirm(forest: OutlineForest, gesture: ConfirmGesture) -> Effect:
+def _plan_confirm(doc: UiDocument, forest: OutlineForest, gesture: ConfirmGesture) -> Effect:
     if not gesture.accept:
         return Idle()
+    page_commands = _page_delete_commands(doc, gesture.ids)
+    if page_commands is not None:
+        return Commit(page_commands, "Delete page", _page_delete_toast(doc, gesture.ids))
     return Commit((DeleteNodes(gesture.ids),), "Delete", _toast(forest, gesture.ids))
 
 
@@ -1077,6 +1082,9 @@ def _plan_delete(
     ids = tuple(node for node in ids if node != doc.root.id)
     if not ids:
         return Flash(focus, _KEEP_FORM)
+    page_effect = _plan_page_delete(doc, world, ids)
+    if page_effect is not None:
+        return page_effect
     names = []
     for node in ids:
         row = forest.row(node)
@@ -1440,6 +1448,54 @@ def _drop_flash(forest: OutlineForest, gesture: DropGesture, prose: str) -> Effe
     if node is None or forest.row(node) is None:
         return Idle()
     return Flash(node, prose or "That drop does not land.")
+
+
+def _plan_page_delete(doc: UiDocument, world: OutlineWorld, ids: Tuple[NodeId, ...]) -> Optional[Effect]:
+    """A page deletes with DeletePage. Widgets on it ask first (UX-CONT-004)."""
+    commands = _page_delete_commands(doc, ids)
+    if commands is None or len(ids) != 1:
+        return None
+    page_id = ids[0]
+    title = page_title(doc, page_id) or "page"
+    count = page_widget_count(doc, page_id)
+    if count <= 0:
+        return Commit(commands, "Delete page", _page_delete_toast(doc, ids))
+    noun = "widget" if count == 1 else "widgets"
+    prose = "Delete page \u201c%s\u201d and the %d %s on it?" % (title, count, noun)
+    extra = []
+    for node in doc.iter_preorder(page_id):
+        if not isinstance(node, WidgetNode) or not node.object_name or node.id == page_id:
+            continue
+        sentence = world.index.ask_sentence(doc, node.object_name, world.participants)
+        if sentence:
+            extra.append(sentence)
+    if extra:
+        prose = "%s %s" % (prose, " ".join(extra))
+    return AskDelete(prose, ids)
+
+
+def _page_delete_commands(doc: UiDocument, ids: Sequence[NodeId]) -> Optional[Tuple[Command, ...]]:
+    """DeletePage for a selection that is only pages. None when any id is not a page."""
+    if not ids:
+        return None
+    commands = []
+    for node_id in ids:
+        parent = doc.parent(node_id)
+        if parent is None or page_kind(doc, parent.id) is None:
+            return None
+        found = pages(doc, parent.id)
+        index = next((position for position, page in enumerate(found) if page.id == node_id), None)
+        if index is None:
+            return None
+        commands.append(DeletePage(parent.id, index))
+    return tuple(commands)
+
+
+def _page_delete_toast(doc: UiDocument, ids: Sequence[NodeId]) -> str:
+    if len(ids) != 1:
+        return "Deleted %d pages \u00b7 Undo" % len(ids)
+    title = page_title(doc, ids[0]) or "page"
+    return "Deleted page \u201c%s\u201d \u00b7 Undo" % title
 
 
 def _toast(forest: OutlineForest, ids: Sequence[NodeId]) -> str:
