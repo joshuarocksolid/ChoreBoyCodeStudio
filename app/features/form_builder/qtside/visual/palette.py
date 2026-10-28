@@ -241,6 +241,8 @@ class PaletteEditor:
         self._states = QCheckBox("Show each state", self._list_page)
         self._states.setObjectName("formBuilder.paletteStates")
         self._states.setAccessibleName(part_name("Palette", "show each state"))
+        # The popover sheet styles labels, not check boxes; keep its text on the popover's colours.
+        self._states.setStyleSheet("color: %s;" % self._host.chrome.text)
         self._states.setChecked(self._per_state)
         self._states.toggled.connect(self._toggle_states)
         self._start = QPushButton("Start from a colour\u2026", self._list_page)

@@ -820,3 +820,48 @@ def test_palette_summary_counts_one_colour_in_the_singular(qapp: QApplication) -
         assert summary.toolTip() == "1 colour changed" or summary.text().startswith("1 colour changed")
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_brush_row_swatch_paints_the_gradient(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        qapp.processEvents()
+        row = pane.findChild(QWidget, "formBuilder.row.brush")
+        assert row is not None
+        swatch = next(child for child in row.findChildren(QWidget) if child.width() == 16 and child.height() == 16)
+        image = swatch.grab().toImage()
+        ratio = image.width() // 16 or 1
+        left = QColor(image.pixel(3 * ratio, 8 * ratio))
+        right = QColor(image.pixel(12 * ratio, 8 * ratio))
+        # The written brush runs black to white, left to right (UX-PED-083).
+        assert left.lightness() < 110 < right.lightness()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_popover_check_boxes_read_on_the_dark_popover(qapp: QApplication) -> None:
+    dark = chrome_from_values(
+        window="#1f2328", panel="#262c33", text="#e9ecef", muted="#adb5bd", faint="#8b949e",
+        border="#3d444d", accent="#4c8dff", row_hover="#2d333b", input_bg="#1f2328",
+        error="#ff6b6b", focus_width=1,
+    )
+    from app.qt.QtWidgets import QCheckBox
+
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        pane.apply_chrome(dark)
+        _select(session, "title")
+        pane.flush()
+        role = getattr(QPalette, "ColorRole", QPalette)
+        panel = QColor("#262c33")
+        for row, text in (("formBuilder.row.font", "Kerning"), ("formBuilder.row.palette", "Show each state")):
+            _open_row(pane, row, qapp)
+            box = next(w for w in QApplication.allWidgets() if isinstance(w, QCheckBox) and w.text() == text)
+            ink = box.palette().color(role.WindowText)
+            light, deep = sorted((_luminance(ink), _luminance(panel)), reverse=True)
+            assert (light + 0.05) / (deep + 0.05) >= 4.5, text
+            _done(qapp)
+    finally:
+        _close(window, pane, realizer, session, qapp)

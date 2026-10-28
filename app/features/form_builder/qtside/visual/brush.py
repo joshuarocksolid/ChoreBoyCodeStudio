@@ -743,8 +743,7 @@ class BrushEditor:
         self._brush = value.value if self._written else BrushValue(brushstyle="NoBrush")  # type: ignore[assignment]
         self._summary.set_summary(brush_summary(self._brush if self._written else None, mixed=mixed))
         self._summary.show_state(value, self._host.chrome.faint)
-        color = self._brush.color if self._written else None
-        self._preview.set_color(color, hollow=not self._written and not mixed, mixed=mixed)
+        self._paint_preview(self._brush if self._written else None, mixed=mixed)
         if (
             self._form is not None
             and self._popover is not None
@@ -780,8 +779,41 @@ class BrushEditor:
         self._written = True
         self._host.commit(brush, session=popover.session)
         self._summary.set_summary(brush_summary(brush, mixed=False))
-        self._preview.set_color(brush.color, hollow=False, mixed=False)
+        self._paint_preview(brush, mixed=False)
         popover.set_reset(self._host.reset)
+
+    def _paint_preview(self, brush: Optional[BrushValue], *, mixed: bool) -> None:
+        if brush is None or mixed or _is_none(brush):
+            self._preview.set_color(None, hollow=not mixed, mixed=mixed)
+            return
+        fill = preview_brush(brush, 16)
+        if fill is None:
+            self._preview.set_color(brush.color or ColorValue(0, 0, 0))
+            return
+        self._preview.set_fill(fill)
+
+
+def preview_brush(brush: BrushValue, side: int) -> Optional[QBrush]:
+    """A QBrush that draws a pattern or gradient in a ``side`` px square, or None for solid."""
+    style = _style_of(brush)
+    if style == "pattern":
+        color = _qcolor(brush.color or ColorValue(0, 0, 0))
+        return QBrush(color, _brush_style(brush.brushstyle or "Dense4Pattern"))  # type: ignore[arg-type]
+    if style == "gradient" and brush.gradient is not None:
+        from app.qt.QtGui import QConicalGradient, QLinearGradient, QRadialGradient
+
+        gradient = brush.gradient
+        kind = gradient.type or "LinearGradient"
+        if kind == "RadialGradient":
+            qt_gradient: object = QRadialGradient(side / 2.0, side / 2.0, side / 2.0)
+        elif kind == "ConicalGradient":
+            qt_gradient = QConicalGradient(side / 2.0, side / 2.0, gradient.angle or 0.0)
+        else:
+            qt_gradient = QLinearGradient(0, 0, side, 0)
+        for stop in gradient.stops:
+            qt_gradient.setColorAt(max(0.0, min(1.0, stop.position)), _qcolor(stop.color))  # type: ignore[attr-defined]
+        return QBrush(qt_gradient)  # type: ignore[arg-type]
+    return None
 
 
 def _gradient_brushstyle(gradient: GradientValue) -> str:

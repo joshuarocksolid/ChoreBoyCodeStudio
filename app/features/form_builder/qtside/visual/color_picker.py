@@ -63,6 +63,7 @@ class Swatch(QWidget):
         self._border = QColor(0, 0, 0)
         self._checker_a = QColor(255, 255, 255)
         self._checker_b = QColor(211, 216, 223)
+        self._fill: Optional[QBrush] = None
 
     def set_tokens(self, chrome: FormChrome) -> None:
         tokens = chrome.fb
@@ -74,13 +75,24 @@ class Swatch(QWidget):
 
     def set_color(self, color: Optional[ColorValue], *, hollow: bool = False, mixed: bool = False) -> None:
         self._color = color
+        self._fill = None
         self._hollow = hollow
         self._mixed = mixed
+        self.update()
+
+    def set_fill(self, fill: Optional[QBrush]) -> None:
+        """Paint a pattern or gradient brush instead of a flat colour (UX-PED-083)."""
+        self._fill = fill
+        self._hollow = fill is None
+        self._mixed = False
         self.update()
 
     def paintEvent(self, _event: object) -> None:  # noqa: N802
         painter = QPainter(self)
         rect = self.rect().adjusted(0, 0, -1, -1)
+        if self._fill is not None:
+            _paint_checker(painter, self.rect(), self._checker_a, self._checker_b)
+            painter.fillRect(self.rect(), self._fill)
         if not self._hollow and self._color is not None and _has_alpha(self._color):
             _paint_checker(painter, self.rect(), self._checker_a, self._checker_b)
         if not self._hollow and self._color is not None:

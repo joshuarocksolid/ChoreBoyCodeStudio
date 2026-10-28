@@ -368,6 +368,8 @@ class FontEditor:
         kerning = QCheckBox("Kerning", box)
         self._kerning = kerning
         kerning.setAccessibleName(part_name(_ROW, "kerning"))
+        # The popover sheet styles labels, not check boxes; keep its text on the popover's colours.
+        kerning.setStyleSheet("color: %s;" % self._host.chrome.text)
         kerning.clicked.connect(self._kerning_clicked)
         self._smoothing = self._choice(box, "smoothing", "Smoothing", _SMOOTHING)
         self._hinting = self._choice(box, "hinting", "Hinting", _HINTING)
