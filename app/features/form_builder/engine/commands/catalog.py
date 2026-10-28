@@ -262,9 +262,13 @@ class SetProperty(_CommandBase):
     kind: Literal["property", "attribute"] = "property"
     stdset: Optional[str] = None
     merge_token: Optional[str] = None
+    #: A plain undo name for callers that know what the property means ("Change start page").
+    undo_label: str = ""
 
     @property
     def label(self) -> str:
+        if self.undo_label:
+            return self.undo_label
         return "Reset" if self.value is None else "Edit"
 
     def merge_key(self) -> Optional[Hashable]:

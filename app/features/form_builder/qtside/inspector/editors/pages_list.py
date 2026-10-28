@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 from app.features.form_builder.engine.commands.catalog import MovePage, SetProperty
-from app.features.form_builder.engine.commands.catalog_ext.pages import DeletePage, InsertPage
+from app.features.form_builder.engine.commands.catalog_ext.pages import START_PAGE_LABEL, DeletePage, InsertPage
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.pages import (
     page_kind,
@@ -57,6 +57,7 @@ class PagesBody:
         row.addWidget(cancel)
         self._confirm.hide()
         self._pending: Optional[object] = None
+        self._visit = 0
         add = QToolButton(self._widget)
         add.setText("+ Add page")
         add.setObjectName("formBuilder.pagesAdd")
@@ -105,14 +106,15 @@ class PagesBody:
         if page is None or kind is None or kind.title_home is None:
             return
         storage, name = kind.title_home
-        command = SetProperty(page.id, name, StringValue(text), storage, merge_token="page-title:%s" % int(page.id))
+        token = "page-title:%s:%d" % (int(page.id), self._visit)
+        command = SetProperty(page.id, name, StringValue(text), storage, merge_token=token, undo_label="Change title")
         self._execute(command)
 
     def _space(self, index: int) -> None:
         kind = page_kind(self._host.document, self._owner())
         if kind is None or not kind.has_start_page:
             return
-        self._run(SetProperty(self._owner(), "currentIndex", NumberValue(index)))
+        self._run(SetProperty(self._owner(), "currentIndex", NumberValue(index), undo_label=START_PAGE_LABEL))
 
     def _delete(self, index: int) -> None:
         page = self._page(index)
@@ -137,6 +139,8 @@ class PagesBody:
             self._run(command)
 
     def _focus(self, index: int) -> None:
+        # A new visit to a row starts a new undo step for its title (UX-PED-004).
+        self._visit += 1
         live = self._host.live(self._owner())
         if live is None:
             return

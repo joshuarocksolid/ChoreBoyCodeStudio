@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """Item editor sessions, pages group, and the model-view sentence."""
 
 from __future__ import annotations
@@ -140,7 +140,7 @@ def test_pages_group_uses_the_menu_commands(qapp) -> None:
     assert any(label == MovePage(owner, 0, 1).label for label, _name in host.labels)
     row = _edit()
     QTest.keyClick(row, Qt.Key.Key_Space)
-    assert any(label == "Edit" and name == "SetProperty" for label, name in host.labels), host.labels
+    assert ("Change start page", "SetProperty") in host.labels, host.labels
     row = _edit()
     QTest.keyClick(row, Qt.Key.Key_Delete, Qt.KeyboardModifier.ControlModifier)
     assert any(label == DeletePage(owner, 0).label for label, _name in host.labels)
@@ -236,3 +236,4 @@ def test_item_tooltip_matches_uic(tmp_path) -> None:
 
     outcome = compare(path)
     assert outcome[0] == "ok", outcome
+
