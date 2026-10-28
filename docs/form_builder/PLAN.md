@@ -243,23 +243,56 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 
 ### M4. Widgets, containers and properties
 
+Spec: `UX_SPEC.md` §13.1 (version 2, M4.0). Refined 2026-10-28: the property editors split into four lanes, a small seam lane goes first for the inspector popover and the context menu, and the review closes the milestone. R3 113–119 move to M5.1 and R3 123 to M5.4 (their editing surfaces are built there; UX §13.1.7).
+
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M4.1 | Widget catalog: all 54 widget-box entries and the classes outside the default box (incl. `QWizard`), with drawn icons, search and categories | G, O-UX | R3 57–123 done |
-| M4.2 | Containers: tab, stacked and toolbox pages; scroll area; MDI; dock widgets; wizard pages; group box; frame. Page operations from canvas, outline and inspector | G, O-UX | R3 124–133 done |
-| M4.3a | Property editors, scalar types: bool, numbers, enum, flags, string (translatable with comment and disambiguation), string list, char, size/point/rect, size policy, key sequence, date/time, URL, locale; property search; dynamic properties UI | G, O-UX + O-logic | Matching R3 rows done. Pain 18 |
-| M4.3b | Property editors: font, color, brush/gradient, palette, cursor | G, O-UX | Matching R3 rows done |
-| M4.3c | Property editors: pixmap and icon sets (resource-aware) | G, O-UX | Matching R3 rows done; R3 145–171 complete |
-| M4.4 | Item editors: list, tree, table and combo items; columns and rows | G, O-UX | R3 172–173 done |
+| M4.0 | UX spec for M4 (§13.1 v2), lane split and first-wave briefs | O-spec | Spec branch merged |
+| M4.0s | Seams: the row popover shell and popover sessions, `commit(value, session)` and session-scoped undo merging, the wheel rule, the Pages group slot in the inspector, the context-menu contributor registry (`integration/menu_ext/`) | G, O-logic | UX-TOK-005, PED-002 … 005, CONT-020 pass their tests; later lanes register without editing shared files |
+| M4.1 | Widget catalog and Insert: one catalog (friendly names everywhere), categories, glyphs, search with synonyms and ranking, Recently used, icon and list views, quick insert on the same search, window kinds and the Wizard New form card, FreeCAD and Your widgets categories | G, O-UX | R3 57–109, 111, 112, 120, 133 done. K9 passes |
+| M4.2 | Containers and pages: page commands (insert before and after, delete, move, start page) from canvas, outline and menu; shown page vs start page; scroll area, MDI, dock sides, wizard; group box and frame rows; stand-ins for OpenGL and Qt Quick | G, O-UX + O-logic | R3 110, 121, 122, 124–132 done. K10 passes |
+| M4.3a | Property editors, scalars: bool, numbers, enum, flags, char, size/point/rect, size policy, key sequence, date and time, locale | G, O-UX + O-logic | R3 151–154, 158, 166–169, 171 done. Pain 18. K11 passes |
+| M4.3b | Property editors: font, colour, brush and gradient, palette, cursor | G, O-UX + O-logic | R3 159–163 done. K13 passes |
+| M4.3c | Property editors: pictures and icon sets (resource-aware), picture brushes | G, O-UX | R3 164–165 done. K15 passes |
+| M4.3d | Text, translations and the Properties tab: text and multi-line popover, Translation disclosure, rich text, string lists and the shared list editor, C strings, URLs, custom (dynamic) properties, attributes in All properties, sort A–Z | G, O-UX + O-logic | R3 148–150, 155–157, 170, 172 done. K12 passes |
+| M4.4 | Item editors (combo, list, tree, table; columns and rows) and the inspector Pages group | G, O-UX + O-logic | R3 173 done. K14 passes |
+| M4.5 | Review of M4 as a whole: heuristic, keyboard-only (K9–K15 together) and the persona walkthrough (UX §12.6); speed rows for UX-M4-007 in the harness; fix lanes as needed | O-UX + G | APPROVE. Ledger: every M4 row done |
+
+#### M4 lanes
+
+Paths are relative to `app/features/form_builder/` unless they start with `tests/`, `tools/` or `docs/`. A lane owns the files it creates and the files listed. Two lanes never edit the same file; when a lane needs a change in a file it does not own, it writes a strict `xfail` repro in its own test file and reports it. `engine/codegen/**` is M4.2's in wave 1; any other lane that finds a generator bug reports it with a repro. `tests/form_builder/perf/harness.py` is M4.5's.
+
+| Lane | Owns | Must not touch | Closes |
+| --- | --- | --- | --- |
+| M4.0s | `qtside/inspector/api.py`, `qtside/inspector/_properties.py` (commit and session plumbing, the Pages group slot only), `qtside/inspector/_services.py`, new `qtside/inspector/editors/_popover.py`, `qtside/theme/` (UX-TOK-005 tokens), new `integration/menu_ext/`, `integration/context_menu.py`, `integration/surface.py` (the context-menu hook only) | every other inspector, canvas and insert file | no R3 rows (enables PED, CONT-019, CONT-020) |
+| M4.1 | new `qtside/insert/catalog/` (Qt-free data), `qtside/insert/*.py` (pane, search, recent, tiles), `qtside/icons/**`, `qtside/canvas/core/palette.py`, the friendly-name tables in `qtside/inspector/words.py`, `qtside/canvas/core/words.py` and `qtside/outline/friendly.py` (delegate to the catalog), `integration/workbench.py` (the `InsertPane` move and the quick-insert list only), `integration/new_form.py`, `qtside/start/**`, new `integration/insert_memory.py`, `dune.yaml` (a file role for the Qt-free catalog) | `qtside/canvas/**` except `core/palette.py` and `core/words.py`, `qtside/realize/**`, `engine/**` | R3 57–109, 111, 112, 120, 133 (57 rows) |
+| M4.2 | `engine/commands/catalog_ext/drop.py`, new `engine/commands/catalog_ext/pages.py`, `engine/commands/planning.py` (page helpers), new `engine/query/pages.py`, `engine/query/drop_target.py`, `engine/shell_commands.py`, `engine/codegen/**` (container fixes), `qtside/canvas/**` except `core/palette.py` and `core/words.py`, `qtside/realize/**`, `integration/canvas.py`, new `integration/menu_ext/pages.py` (after M4.0s), new `qtside/inspector/editors/rows_containers.py` | `integration/workbench.py`, `qtside/insert/**`, any other inspector file | R3 110, 121, 122, 124–132 (12 rows) |
+| M4.3a | `qtside/inspector/editors/scalars.py`, `choices.py`, `geometry.py`, new `editors/numbers.py`, `editors/flags.py`, `editors/dates.py`, `editors/locale.py`, `editors/keys.py`, `editors/_enum_words.py` (names are the lane's choice; new modules only register overrides) | `api.py`, `_properties.py`, `model.py`, `visual.py`, `raw.py`, every M4.3d module | R3 151–154, 158, 166–169, 171 (10 rows), pain 18 |
+| M4.3d | `qtside/inspector/_properties.py`, `model.py`, `api.py` (after M4.0s), `pane.py`, `_services.py` (after M4.0s), new `editors/text.py`, `editors/_translation.py`, `editors/_list_editor.py`, `editors/stringlist.py`, `editors/url.py`, `editors/custom_props.py` | the M4.3a modules, `visual.py`, `raw.py`'s registrations | R3 148–150, 155–157, 170, 172 (8 rows) |
+| M4.3b | `qtside/inspector/editors/visual.py`, new `editors/_color_picker.py`, `editors/brush.py`, `editors/palette.py`, `editors/cursor.py`, new `integration/editor_memory.py` (recent colours) | `choices.py` (its cursor editor stays as the baseline), `_properties.py`, `model.py` | R3 159–163 (5 rows) |
+| M4.3c | new `qtside/inspector/editors/images.py`, `editors/_picture_picker.py`, `qtside/realize/props.py` (pictures from `.qrc` on disk), a read-only `.qrc` reader under `engine/project/` | `engine/codegen/resources.py` (report gaps), `_properties.py` | R3 164, 165 (2 rows) |
+| M4.4 | new `qtside/items/` (item editor), new `qtside/inspector/editors/pages_list.py` (Pages group body), `engine/commands/catalog.py` (`SetItems` merge key only) and `planning.set_items`, `qtside/canvas/core/text.py` and the canvas Enter and double-click routing for item widgets, `qtside/realize/api.py` (`_item_texts` for trees), new `integration/menu_ext/items.py` | `_list_editor.py` (reuse; changes go back to M4.3d's owner through the orchestrator) | R3 173 (1 row) |
+| M4.5 | `tests/form_builder/perf/harness.py` (M4 rows), `tests/form_builder/qtside/test_m4_keyboard_scripts.py` (K9–K15 run together), review repros | product files only through fix lanes | ledger audit: 95 M4 rows |
+
+**Order and dependencies.**
+
+1. Wave 1 starts at once with three lanes: **M4.0s**, **M4.1**, **M4.2**. M4.2 builds its engine, canvas and outline parts first and adds `integration/menu_ext/pages.py` after M4.0s merges.
+2. When M4.0s merges: **M4.3a** and **M4.3d** start (both need the popover and sessions).
+3. Wave 2, as lanes free up: **M4.3b** (after M4.0s), **M4.3c** (after M4.0s and M4.2, which owns `qtside/realize/**` in wave 1), **M4.4** (after M4.2 and M4.3d: it needs the canvas and the list editor).
+4. **M4.5** after every lane has merged.
+
+Merge order inside a wave follows readiness; a lane rebases on `feat/form-builder` before its gate. Expected size: M4.0s ~500 net lines; M4.1, M4.2, M4.3d ~1,500 each; M4.3a, M4.3b ~1,200; M4.3c, M4.4 ~1,000.
+
+**Review gates.** Each lane's PR lists the UX clause ids it implements and runs its K script. O-UX gates every lane (screenshots per UX §12.2 "M4 states", light, dark and both high contrast themes, 100% and 200%, the inspector states also at 236 px). O-logic gates M4.0s (session undo, merge tokens, registry order), M4.2 (page commands, start page, dock area attributes, generated code for wizards), M4.3a (pain 18 and value round-trips), M4.3b (palette and gradient serialization and determinism), M4.3d (translation attributes, dynamic properties in generated code, rich-text determinism) and M4.4 (`SetItems` merge and replay). One Opus gate runs at a time; M4.0s's gate goes first because two lanes wait on it.
 
 ### M5. Main windows, resources, styling, custom widgets, templates
 
 | WP | Work | Who | Done when |
 | --- | --- | --- | --- |
-| M5.1 | Main window: inline "Type here" menus and submenus, toolbars, status bar, dock areas, action editor, dragging actions onto menus and toolbars (pain 17), action and button groups | G, O-UX | R3 134–144 done |
+| M5.1 | Main window: inline "Type here" menus and submenus, toolbars, status bar, dock areas (M4.2 already docks to a side), action editor, dragging actions onto menus and toolbars (pain 17), action and button groups | G, O-UX | R3 113–119 and 134–144 done |
 | M5.2 | Resources: `.qrc` browser and editor, icon pickers that accept only resources (pain 9), `*_rc.py` generation | G, O-UX | R3 174–175 done |
 | M5.3 | Style: theme roles, plus a style sheet editor with syntax check, a resource picker and selector-match highlighting (pain 8) | G, O-UX | R3 176 done |
-| M5.4 | Custom widgets: promotion dialog using Python module paths, sized stand-ins, real class in preview, a custom widget registry, and a security note | G, O-UX + O-logic | R3 194–198 done. Pain 7 |
+| M5.4 | Custom widgets: promotion dialog using Python module paths, sized stand-ins, real class in preview, a custom widget registry, and a security note | G, O-UX + O-logic | R3 123 and 194–198 done. Pain 7 |
 | M5.5a | Preview in styles and device profiles, save image and print, View Code | G, O-UX | R3 177–181 done |
 | M5.5b | Form settings: layout default, layout/pixmap functions, includes, export macro, translation options, legacy defaults | G, O-UX | R3 185–193 done |
 | M5.5c | Templates (built-in and save-as-template) and Start screen v2 | G, O-UX | R3 182–184 done |
@@ -340,7 +373,7 @@ Legend: **G** = Grok implements; **O-spec** = Opus writes the spec; **O-UX** / *
 - M1.0 must be approved before any other M1 code merges. Then M1.1a lands first. M1.1b, M1.1c and M1.2 follow in parallel, then M1.3, M1.4 and M1.5.
 - M2.0 (shell seam) can start right after M1.0, because it doesn't depend on the engine. M2.1–M2.4 follow, and M2.5 is a separate lane once the IPC contract is approved.
 - M3.1a lands first, then M3.1 and M3.1b. M3.2–M3.6 then split by directory into 2–3 lanes.
-- M4.1, M4.2, M4.3a–c and M4.4 run in parallel, each registering through the M3.1b registry.
+- M4 runs in two waves (see "M4 lanes"): M4.0s, M4.1 and M4.2 at once; M4.3a and M4.3d once M4.0s merges; then M4.3b, M4.3c and M4.4. Editors register through the M3.1b registry and context-menu rows through `integration/menu_ext/`, so lanes never edit each other's files.
 - M5.x runs as 2–3 parallel lanes.
 - M6.0, M6.0b and M7.1 (the pure language, no UI) can start during M5.
 - M8.1 can start during M7.

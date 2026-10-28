@@ -1,7 +1,9 @@
 # Form builder: UX specification
 
 Version 1 (work package M0.9). Author: Opus, lead UX designer. Date: 2026-10-21.
-Status: draft for approval. Binding for M2 (shell integration) and M3 (canvas and layout editing). Sections 13.1–13.2 (M4, M5) give the structure and the key decisions only, and will be deepened before those milestones start.
+Status: draft for approval. Binding for M2 (shell integration) and M3 (canvas and layout editing). Section 13.2 (M5) gives the structure and the key decisions only, and will be deepened before that milestone starts.
+
+Version 2 (work package M4.0, 2026-10-28, Opus). Section 13.1 is now the full M4 specification (areas CAT, CONT, PED, ITEM, plus UX-TOK-005 and UX-ICON-005), binding for M4. Section 12 gains the M4 screenshot states, keyboard scripts K9–K15, checks and the M4 persona walkthrough.
 
 Inputs: `PLAN.md` (§1 fixed decisions, §2a O-UX gate, M2–M5), `SPIKE_DESIGN.md`, `research/P_user_pain_points.md`, `research/R3_designer_parity_checklist.md` ("Where Designer's UX is weak"), `research/A_market_survey.md` ("Patterns the best builders share"), `LOGIC_DESIGN.md` §2, the spike on `feat/form-builder-spike` (README, DESIGN, decisions.tsv, the 22 screenshots, plus five extra offscreen captures of the spike at 1100×640 and 1366×768), and the CBCS shell on `feat/form-builder` (`app/shell/theme_tokens.py`, `theme_dark_chrome_presets.py`, `style_sheet_sections_*.py`, `shortcut_preferences.py`, the menu builders, `status_bar.py`, `features/markdown/markdown_editor_pane.py`).
 
@@ -37,7 +39,12 @@ PRs list the clause ids they implement. The O-UX gate checks those clauses one b
 | OVL | Overlays (tab order, buddies, connections) | 8 |
 | FEED, COPY | Feedback, errors, copy | 9 |
 | A11Y | Accessibility | 10 |
-| M4, M5 | Later milestones (structure) | 13 |
+| CAT | Insert catalog and search | 13.1.2 |
+| CONT | Containers and pages | 13.1.3 |
+| PED | Property editors | 13.1.4 |
+| ITEM | Item editors | 13.1.5 |
+| M4 | M4 shared rules (M4-005 … 007; M4-001 … 004 withdrawn in v2) | 13.1.1 |
+| M5 | Later milestones (structure) | 13.2 |
 
 ### 0.3 Words used in this spec
 
@@ -306,6 +313,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | (no key) | menu | Remove layout… (Designer's Break layout; Designer's Ctrl+0 is zoom here) | new |
 | Ctrl+= / Ctrl+- / Ctrl+0 | form tab | Canvas zoom in / out / 100% | shell (Zoom) |
 | Ctrl+9 | form tab | Zoom to fit | new |
+| Ctrl+PgDown / Ctrl+PgUp | canvas, outline | Show the next / previous page of the innermost page container (canvas only, not saved; UX-CONT-007) | new (M4.2) |
 | Ctrl+wheel | canvas | Zoom around the pointer | new |
 | Ctrl+Shift+V | form tab | Design / XML | shell (toggle source view) |
 | Ctrl+Shift+R | form tab | Preview | new |
@@ -629,7 +637,7 @@ The spike's name chip sits above the selected widget and covers the field above 
 
 **UX-TEXT-003** `M3.1` `[T]` Enter commits; Esc cancels; clicking elsewhere commits; Tab commits and opens the editor on the next text widget in outline order (so a row of labels can be typed in one go). Shift+Enter inserts a newline only where the property allows it (word-wrapped labels, plain text). One undo step per commit.
 
-**UX-TEXT-004** `M3.1` `[T]` For widgets whose text is a list (combo box items, list widget items), Enter opens the item editor (M4.4) instead.
+**UX-TEXT-004** `M3.1` `[T]` For widgets whose text is a list (combo box items, list widget items), Enter opens the item editor (M4.4) instead. From M4 this covers tree and table widgets too (UX-ITEM-001).
 
 ### 5.17 Wrap, unwrap, morph, remove layout
 
@@ -988,7 +996,7 @@ Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, genera
 | 15 | No completion of widget names | OUT-010 (rename carries to code); completion itself is M1.4 | M1.4, M3.5 |
 | 16 | Signal mode hides new connections | INSP-013, EMPTY-005, OVL-009 | M3.1b, M6.1 |
 | 17 | Menus and toolbars refuse dragged controls | M5-001 | M5.1 |
-| 18 | Enum properties don't commit | INSP-009, FEED-007 | M4.3a |
+| 18 | Enum properties don't commit | INSP-009, FEED-007, PED-001, PED-009, PED-022 | M4.3a |
 | 19 | Splitter can't nest, handle doesn't move | SPLIT-001, SPLIT-002, SPLIT-003 | M3.2, M3.3 |
 | 20 | Tab order sticks; new widgets append; page reorder is a thin target | OVL-002, OVL-004 … OVL-006, PAGES-004, OUT-007, GRID-004 | M3.5, M5.6 |
 | 21 | One grid drag moves untouched cells | GRIDL-001 … GRIDL-004, DND-002 | M3.2 |
@@ -1103,6 +1111,40 @@ Tab sizes: **L** = 1440 × 860 tab, **C** = 1080 × 600 tab inside the CBCS shel
 | `focus-outline`, `focus-canvas`, `focus-inspector` | Focus rings | A11Y-002, A11Y-003 |
 | `preview-crash` | Preview stopped toast and Problems row | RUN-003 |
 
+**M4 states** (added in v2). Each is required at L and C, in light, dark and both high contrast themes, and the inspector states also at the minimum inspector width (236 px content).
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `insert-icons`, `insert-list` (C) | Insert pane with Recently used and all categories, each view | CAT-003 … 006, ICON-005 |
+| `insert-search-synonym` | "dropdown" typed, Combo box first with “dropdown” caption | CAT-007, CAT-008 |
+| `insert-search-empty` | No match | CAT-009 |
+| `insert-window-kinds` | "wizard" typed: widget results then "Wizard · new form" | CAT-015 |
+| `quick-insert-recent` | `/` with an empty query, Recently used first | CAT-013 |
+| `insert-refused-wizard-page` | Wizard page dragged over a group box | CAT-014 |
+| `pages-menu` | Context menu with Pages ▸ open on a tab page | CONT-002 |
+| `page-delete-confirm` | Delete page popover listing widgets | CONT-004 |
+| `page-shown-vs-start` | Tab widget showing page 2, starting on page 1, status sentence | CONT-006, CONT-007 |
+| `pages-empty` | Tab widget with no pages | CONT-009 |
+| `scroll-area-scrolled` | Scroll area scrolled to a selected widget at the bottom | CONT-010 |
+| `mdi-windows` | MDI area with two windows and its switcher | CONT-011 |
+| `dock-bands` (main window) | Dock widget dragged: four side bands, Left hot | CONT-012 |
+| `wizard-canvas` | Wizard with step switcher; inspector step title rows | CONT-013 |
+| `stand-ins` | OpenGL widget and Qt Quick view stand-ins | CONT-017 |
+| `inspector-pages` (236 px) | Pages group of a tab widget | CONT-019, PED-044 |
+| `inspector-min-width-all` (236 px) | A line edit, a label, a spin box and a date edit selected in turn: every row unclipped, stacked rows where required | PED-002 |
+| `popover-flags`, `popover-size-policy`, `popover-date`, `popover-locale` | Each popover open from its row | PED-003, PED-023, PED-026, PED-028, PED-029 |
+| `enum-unknown` | An enum value from a newer Qt shown as kept | PED-022 |
+| `keyseq-recording`, `keyseq-clash` | Recorder active; clash warning | PED-027 |
+| `text-translation` | Translation disclosure open, "Not translated" tag on another row | PED-041 |
+| `rich-text`, `rich-text-source` | Rich text popover, both segments | PED-042 |
+| `stringlist-popover` | List editor with 5 rows, one being dragged | PED-043, PED-044 |
+| `custom-props`, `custom-prop-add-error` | Custom properties block; a refused name | PED-060, PED-061 |
+| `all-props-sorted` | Sort A–Z on | PED-064 |
+| `font-popover` (236 px) | Font popover with More open | PED-080 |
+| `colour-popover`, `gradient-popover`, `palette-popover`, `palette-role-brush` | The visual editors | PED-081 … 085 |
+| `picture-picker`, `icon-states`, `picture-missing` | Picker with a resource grid; icon states; a missing file | PED-100 … 104 |
+| `items-combo`, `items-list-details`, `items-tree`, `items-table`, `items-model-view` | Item editors; the model-view status sentence | ITEM-001 … 008 |
+
 ### 12.3 Keyboard scripts
 
 Each script starts with focus in the form tab and uses only keys. The PR runs the scripts that touch its clauses.
@@ -1115,6 +1157,16 @@ Each script starts with focus in the form tab and uses only keys. The PR runs th
 - **K6 Overlays.** F8: tab-order overlay; Esc: closed. In the form inspector, reorder the tab list with Alt+Down; "Use reading order". F7, then use the inspector Buddy field to pair a label; Esc.
 - **K7 Text.** Select a button, Enter, type, Tab (next text widget's editor opens), type, Enter. Undo twice: both texts restored.
 - **K8 Views.** Ctrl+9 fit, Ctrl+= twice, Ctrl+0; Ctrl+Shift+V to XML, edit a title, Ctrl+Shift+V back: the title changed in one undo step; Ctrl+Shift+R: preview opens; Esc closes it; F5: runs the project.
+
+**M4 scripts** (added in v2). Same rules as K1–K8: keys only, start with focus in the form tab, and every script ends with Undo back to the original bytes unless it says otherwise. The lane named after each script owns its test; M4.5 runs them all together.
+
+- **K9 Insert by words** (`M4.1`). Open a form-layout form, select its last field. Alt+2; type "dropdown": focus moves to the filter and Combo box is the first result with “dropdown” beside it. Enter: a combo box is inserted as a new form row and the label editor opens; type "Size", Enter: focus is back on the Insert result list. Esc: the filter clears and focus stays in Insert; Recently used shows Combo box first. Ctrl+Down twice, Enter: the first entry of that category is inserted after the combo. Esc (filter empty): focus returns to the canvas. Press `/`: the quick-insert list starts with Recently used; type "tabs", Enter: a tab widget with two pages is inserted and focus returns to the canvas. Assert after each insert: one undo step, named "Insert …". Undo four times: original bytes.
+- **K10 Pages** (`M4.2`). Ctrl+R, "tabWidget", Enter. Shift+F10, open Pages, "Insert page after": a third page is shown and selected, its title editor open; type "Printing", Enter. Ctrl+PgUp: page 2 shown; the status bar says it still starts on page 1; the file has not changed (dirty state unchanged). Shift+F10, Pages, "Start on this page": `currentIndex` is 1 in the XML. Alt+1, Down to the "Printing" page row, Alt+Up: it moves before page 2. Delete on a page that has a widget: the confirm opens; Esc: nothing deleted; Delete, Enter on [Delete page]: deleted, toast shown, focus still in the outline. Undo five times: original bytes.
+- **K11 Choices and numbers** (`M4.3a`). Select a line edit. Alt+4, Ctrl+F, type "echo": Echo mode is the only curated row; Tab to it, Alt+Down, choose "Password", Enter. Esc clears the search. Ctrl+S, close the tab, reopen the form, select the same line edit: Echo mode reads "Password" in Strong (pain 18). Tab to Maximum length, type 40, Enter, Up three times: 43, and Undo once restores the value from before the visit (one visit is one step); Redo. Tab away and back, Up once: 44; Undo once: 43 (a second visit is its own step). Select a label, open All properties, reach Text interaction, Enter: the flags popover opens; Space on "Select with mouse", Esc: nothing changed; Enter, Space, Enter: changed, one step. Select a date edit: Date row, type "12/31/2026", Enter; Alt+Down, PageDown, Enter: January 31, 2027 written. Select a key sequence edit: Record, press Ctrl+Shift+P: "Ctrl+Shift+P" written; Record, Esc: unchanged. Undo all: original bytes.
+- **K12 Text, translations and custom properties** (`M4.3d`). Select a label; Alt+4; in Text type "Total:", Enter. Tab to "Translation ▸", Enter: it opens; Space on "Translate this text": the XML gains `notr="true"` and the row's caption says "Not translated"; Tab to "Note for the translator", type "Shown on receipts", Enter. End of All properties: Tab to "+ Add custom property", Enter, type "requiredRole", Tab, choose "Text", Enter: the row appears and its editor has focus; type "manager", Enter: the XML has `<property name="requiredRole" stdset="0">`. Type an invalid name in a second add ("2nd"): the refusal shows and Enter does nothing; Esc. Open the Text popover of a rich label, Formatted, select a word, Ctrl+B, Done: the HTML has bold; run the same steps twice and compare bytes. Undo all: original bytes.
+- **K13 Font, colour and palette** (`M4.3b`). Select a label; Font row, Enter: the popover opens with focus on Family; type "Sans", Enter on the first match; Tab to Size, Up twice; Tab to Bold, Space; Done: one undo step "Change font of …", the summary lists only the parts set. Palette row, Enter; Down to "Window text", Enter: the brush editor opens; Tab to Hex, type "#1A7F37", Enter; Esc: back to the palette list; Esc: closed and reverted; repeat and press Done: kept, one step. Undo all: original bytes.
+- **K14 Items** (`M4.4`). Select a combo box; Enter: the item editor opens with focus in its first row; type "Small", Enter, "Medium", Enter, "Large", Enter, Enter: closed, three items, one undo step "Edit items of …", focus back on the canvas. Enter; Down; Alt+Up: "Medium" first; Esc: the order is back to Small, Medium, Large and no step was added. Select a tree widget; Enter; type "Fruit", Enter, "Apple", Tab: Apple is under Fruit; Done. Select a list view; Enter: no popover, the status sentence of UX-ITEM-008. Undo all: original bytes.
+- **K15 Pictures** (`M4.3c`). In a form that includes a `.qrc`, select a push button; Icon row, Enter; type "save" in the search; arrows to the first match, Enter: icon written as a resource path, one step. Open again, "Other states ▸", pick a Disabled picture; Esc: reverted. Undo all: original bytes.
 
 ### 12.4 Interaction traces
 
@@ -1135,6 +1187,17 @@ A trace is a JSON-lines file with one object per step: `{"t": ms, "event": "pres
 | Edit-path speed within PLAN budgets, recorded with machine load | PRIN-007 |
 | No hex colour literals outside `qtside/theme/` | TOK-001 |
 | No user-visible string contains a milestone name, "phase", or an internal id (string table scan, development stubs excepted) | COPY-002, EMPTY-006 |
+| Every catalog entry inserts a fragment that `QUiLoader` loads, that our generator and `uic` build into the same tree, and that saves twice to the same bytes | CAT-001, CAT-002 |
+| Insert search returns the expected first result for every pair in the UX-CAT-007 table | CAT-007 |
+| Every catalog glyph is non-blank and differs from every other entry's glyph | ICON-005 |
+| No inspector row clips or scrolls sideways at 236, 264 and 420 px content width, for every editor of the reference form | PED-002 |
+| Every ui4 value class has a registered editor other than the raw one, except the two deferred or kept rows of UX-PED-001 | PED-001 |
+| A popover session is one undo step; Esc leaves the document bytes and the undo stack exactly as before it opened; focus returns to the row | PED-003, PED-004, ITEM-007 |
+| The wheel over an unfocused field changes nothing | PED-005 |
+| Rich text and gradients written on macOS and on Linux, under `C` and `de_DE`, are the same bytes | PED-042, PED-084 |
+| Echo mode set, saved, reopened: still Password; an uneditable property is byte-identical after save (P-18) | PED-009 |
+| After realizing a form with an OpenGL widget and a Qt Quick view, no GL context or QML engine exists | CONT-017 |
+| Each page container writes its title where its loader reads it; a toolbox insert never writes `title` | CONT-001 |
 
 ### 12.6 Persona walkthroughs
 
@@ -1143,21 +1206,520 @@ M3.7 runs two walkthroughs on a launched build and records step counts and every
 - **Shop owner, never used a form builder.** Make a "Customer" form with name, phone, email and notes, and Save and Cancel buttons; make Notes grow with the window; put phone and email side by side; preview with larger text; save and run. Pass: finished without the manual, no dialog dismissed by guessing, no step that needed Undo to escape.
 - **Qt Designer veteran.** Open a FreeCAD corpus form, select a nested layout, morph it to a grid with Ctrl+5, fix a buddy, reorder tab order, set a splitter's sizes, check XML. Pass: no Designer habit is blocked without an on-screen alternative named at that moment.
 
+M4.5 runs one walkthrough on a launched build, after every M4 lane has merged, and records step counts and every hesitation:
+
+- **Shop owner, M4 tasks.** Starting from a blank dialog, build a "Shop settings" form: a tab widget with the tabs "General" and "Printing" (rename the two default tabs; add a third "Extras" and then delete it); on General, a shop name field, a currency drop-down with USD, CAD and EUR, an opening date, an "Open on Sundays" tick box and a number of tills (1 to 9); on Printing, a receipt note with several lines, a bigger bold font for the receipt header label, a dark green header colour, a logo picture from the project's resources, and copies (1 to 5); make the currency drop-down start on CAD; set Echo mode of a PIN field to Password; save, reopen and preview. The owner searches with their own words ("dropdown", "tick box", "number", "date", "picture", "tabs"). **Pass:** every widget found by the first or second word tried; no "Kept as is" row met on any property touched; no popover closed by guessing; no step that needed Undo to escape; reopen shows every value set. **Record:** steps per task, every search word tried and its first result, every time Esc or Undo was used, and every sentence that confused.
+
+The veteran's M4 checks are K9–K15 plus three spot checks the reviewer does by hand on a FreeCAD corpus form: add a dynamic property and see `setProperty` in `ui_*.py`; edit a palette role and compare with Designer's resave; reorder tree widget columns.
+
 ---
 
 ## 13. Later milestones: structure and key decisions
 
-These sections fix the decisions that M2–M3 must leave room for. Each will be expanded into full clauses before its milestone's first brief.
+Section 13.1 is the full M4 specification (version 2). Section 13.2 fixes the decisions M2–M4 must leave room for; it will be expanded into full clauses before M5's first brief.
 
 ### 13.1 M4: widgets, containers and properties
 
-**UX-M4-001 Insert palette (M4.1).** Categories in this order: Layouts and spacers, Text and numbers, Choices, Buttons, Dates and times, Lists and tables, Containers, Display, FreeCAD, Your widgets. Search matches friendly names, Qt class names and synonyms ("textbox" → Line edit, "dropdown" → Combo box, "checkbox" → Check box). A "Recently used" row of up to 6 tiles leads. Tile tooltips show the friendly name, the Qt class and one sentence. Classes outside Designer's default box (including `QWizard`) are in the same catalog, not hidden.
+Version 2 (work package M4.0, 2026-10-28). Binding for M4. It replaces the four short decisions that stood here in version 1:
 
-**UX-M4-002 Containers (M4.2).** Pages are first-class on the canvas (UX-PAGES), in the outline (UX-OUT-007) and in the inspector ("Pages" list: add, rename, reorder, delete). Scroll areas show their full content on the canvas with a "Scrolls at run time" chip; dock widgets and MDI areas show drop zones; wizard pages behave like tab pages with a page strip.
+- **UX-M4-001** Withdrawn in v2. Replaced by the CAT clauses (13.1.2) and UX-ICON-005.
+- **UX-M4-002** Withdrawn in v2. Replaced by the CONT clauses (13.1.3). One change: a scroll area is drawn at its real size and scrolls on the canvas; its content is not expanded (UX-CONT-010, UX-PRIN-001).
+- **UX-M4-003** Withdrawn in v2. Replaced by the PED clauses (13.1.4).
+- **UX-M4-004** Withdrawn in v2. Replaced by the ITEM clauses (13.1.5).
 
-**UX-M4-003 Property editors (M4.3a–c).** Scalars edit inline in the row. Compound types open a popover anchored to the row: font, colour (swatch, hex, palette roles), brush and gradient, palette, size policy (raw, for veterans), key sequence (recorder with conflict warning against the app's other actions), date and time, URL, locale, cursor. Translatable strings get a "Translation" disclosure (comment, disambiguation, "Don't translate"). String lists use a list popover. Dynamic properties: "+ Add custom property" at the end of All properties. Every editor commits on choice or Enter and keeps the changed/reset model.
+The lane split, owned files and parity rows are in `PLAN.md` (M4 table and "M4 lanes"). Every clause names the lane that builds it. Copy in quotes is the exact on-screen text; `{name}` marks a value filled in at run time.
 
-**UX-M4-004 Item editors (M4.4).** Items edit in a popover anchored to the widget on the canvas (Enter on a combo, list, tree or table; UX-TEXT-004): one row per item, Enter adds the next, Alt+Up/Down and drag reorder, icon and flags per item behind a row disclosure. Table and tree columns and rows use a two-pane variant.
+#### 13.1.1 Rules every M4 clause shares
+
+**UX-TOK-005** `M4.0s` `[S A]` New builder tokens for M4. They live in `qtside/theme/` like every builder colour (UX-TOK-001). Form-surface tokens (drawn on the canvas) are the same in light and dark chrome, like UX-TOK-003.
+
+| Token | Source or light | Dark | HC light | HC dark | Use |
+| --- | --- | --- | --- | --- | --- |
+| `fb.tile_hover` | alias `fb.row_hover` | alias | alias | alias | Insert tile and list-row hover |
+| `fb.tile_current` | alias `fb.row_selected` | alias | alias | alias | Current Insert tile, current list-editor row |
+| `fb.glyph` | shell `icon_primary` | shell | shell | shell | Catalog glyphs (UX-ICON-005) |
+| `fb.match` | shell `search_match_bg` | shell | shell | shell | Matched letters in Insert search, property search, item filter |
+| `fb.swatch_border` | alias `fb.border` | alias `fb.border` | `#000000` | `#FFFFFF` | 1 px border of every colour swatch and thumbnail |
+| `fb.checker_a` / `fb.checker_b` | `#FFFFFF` / `#D3D8DF` | `#3C434A` / `#262C33` | `#FFFFFF` / `#000000` | `#000000` / `#FFFFFF` | 4 px checkerboard under transparent colours and images |
+| `fb.handle` | `fb.panel` fill, 1.5 px `fb.text` border | same | `#FFFFFF`, 2 px `#000000` | `#000000`, 2 px `#FFFFFF` | Gradient stops, colour-square cursor |
+| `fb.handle_current` | 2 px `fb.accent` border | same | 2 px `#0000C0` | 2 px `#7CB7FF` | Selected gradient stop |
+| `ov.stand_in_fill` / `ov.stand_in_line` / `ov.stand_in_text` | `#F4F4F4` / `#8A8A8A` dashed 1 px / `#3C3C3C` | same | `#FFFFFF` / `#000000` solid 2 px / `#000000` | same as HC light | Canvas stand-ins (UX-CONT-017). Form surface, so not chrome-dependent |
+| `ov.dock_band` | `ov.drop_fill` with a 1 px dashed `ov.select` edge | same | `#0000C0` at 15% with a 2 px edge | same | Dock-side drop bands (UX-CONT-012) |
+
+**UX-M4-005** `all M4` `[C]` Copy for M4 follows section 9.5. In addition: on-screen text never contains a lane or milestone id, an engine command name, `stdset`, `notr`, `iconset`, `cstring` or any other ui4 element name. Those words may appear only in the Qt-name line (UX-INSP-005), in All properties with "Qt names" on, and in the XML view.
+
+**UX-M4-006** `all M4` `[T]` Undo names. Every M4 command and session has a plain name, used by Edit > Undo ("Undo Insert combo box") and by the toast's Undo. The table in 13.1.6 lists them. A popover session or an item-editor session is one undo step (UX-PED-004, UX-ITEM-007).
+
+**UX-M4-007** `all M4` `[A]` Speed. Every M4 edit path stays inside the PLAN budgets: one keystroke in Insert search ≤ 16 ms with the whole catalog; opening any popover ≤ 50 ms; each live change from a popover (drag in a colour square, a gradient stop, a font size step) ≤ 16 ms on the 300-widget reference form; opening the item editor on a 500-item list ≤ 50 ms and each keystroke in it ≤ 16 ms. The speed rows are added to the harness by M4.5; each lane measures its own path with a local script and reports CPU p50 and p95.
+
+#### 13.1.2 The Insert catalog (CAT)
+
+**UX-CAT-001** `M4.1` `[A]` One catalog. Every insertable class has exactly one catalog entry with: friendly name, Qt class, category, default object name, default content, one-sentence description, synonyms and glyph. The Insert pane, quick insert (`/`), the outline's friendly-class column, canvas chips and status sentences, the inspector header and the "Change to" menu read friendly names from the catalog. No other table of friendly class names remains (today there are three: `qtside/inspector/words.py`, `qtside/canvas/core/words.py`, `qtside/canvas/core/palette.py`, and they disagree: "List" against "List widget"). A class that is not in the catalog (a custom or unknown class) gets a friendly name derived from its class name, as `class_words` does today. Catalog modules import no Qt, so the canvas core can build a fragment without Qt (dune file role, not a test).
+
+**UX-CAT-002** `M4.1` `[S A]` Categories, in this order, and their entries in this order. "Content" is what one insert writes beyond the class and the object name. Every container gets a vertical layout (UX-AUTO-001). Default object names follow Designer (`lineEdit`, `pushButton`, `tabWidget`), with the suffix rule for repeats (`lineEdit_2`). Default texts are plain words, not Designer's (`Button`, not `PushButton`).
+
+| Category | Friendly name | Qt class | Content | Description (tooltip sentence) |
+| --- | --- | --- | --- | --- |
+| Layouts and spacers | Vertical layout | `QWidget` + `QVBoxLayout` | name `verticalLayoutWidget` | Stacks widgets from top to bottom. |
+| | Horizontal layout | `QWidget` + `QHBoxLayout` | `horizontalLayoutWidget` | Puts widgets side by side. |
+| | Grid layout | `QWidget` + `QGridLayout` | `gridLayoutWidget` | Rows and columns, like a table. |
+| | Form layout | `QWidget` + `QFormLayout` | `formLayoutWidget` | Labels on the left, fields on the right. |
+| | Horizontal splitter | `QSplitter` | orientation Horizontal, no panes | Side-by-side panes the user can resize. |
+| | Vertical splitter | `QSplitter` | orientation Vertical, no panes | Stacked panes the user can resize. |
+| | Horizontal spacer | spacer | Horizontal, Expanding, 40 × 20 | Empty space that pushes its neighbours apart. |
+| | Vertical spacer | spacer | Vertical, Expanding, 20 × 40 | Empty space that pushes its neighbours up or down. |
+| Text and numbers | Line edit | `QLineEdit` | — | One line of text the user can type. |
+| | Text edit | `QTextEdit` | — | Several lines of text, with formatting. |
+| | Plain text edit | `QPlainTextEdit` | — | Several lines of plain text, such as notes. |
+| | Spin box | `QSpinBox` | — | A whole number with up and down arrows. |
+| | Double spin box | `QDoubleSpinBox` | — | A number with decimals, such as a price. |
+| | Horizontal slider | `QSlider` | orientation Horizontal | Pick a number by dragging a handle. |
+| | Vertical slider | `QSlider` | orientation Vertical | Pick a number by dragging a handle up or down. |
+| | Dial | `QDial` | — | Pick a number by turning a knob. |
+| | Horizontal scroll bar | `QScrollBar` | orientation Horizontal | Scrolls something your code draws. |
+| | Vertical scroll bar | `QScrollBar` | orientation Vertical | Scrolls something your code draws. |
+| | Key sequence edit | `QKeySequenceEdit` | — | Records a keyboard shortcut the user presses. |
+| Choices | Combo box | `QComboBox` | — | Pick one item from a drop-down list. |
+| | Font combo box | `QFontComboBox` | — | Pick one of the fonts on the computer. |
+| | Check box | `QCheckBox` | text "Check box" | On or off, with a label. |
+| | Radio button | `QRadioButton` | text "Radio button" | Pick one of several options. |
+| Buttons | Push button | `QPushButton` | text "Button" | Runs an action when clicked. |
+| | Tool button | `QToolButton` | text "…" | A small button, often with only an icon. |
+| | Command link | `QCommandLinkButton` | text "Command link" | A large button with a title and a description. |
+| | Button box | `QDialogButtonBox` | standard buttons OK and Cancel | OK, Cancel and other standard buttons, in the order the desktop expects. |
+| Dates and times | Date edit | `QDateEdit` | — | A date the user types or picks. |
+| | Time edit | `QTimeEdit` | — | A time of day. |
+| | Date and time edit | `QDateTimeEdit` | — | A date with a time. |
+| | Calendar | `QCalendarWidget` | — | A month grid to pick a day. |
+| Lists and tables | List widget | `QListWidget` | — | A list of rows you type here. |
+| | Tree widget | `QTreeWidget` | one column, header "Name" | Rows that fold open, typed here. |
+| | Table widget | `QTableWidget` | — | A grid of cells you type here. |
+| | List view | `QListView` | — | A list your code fills from a model. |
+| | Tree view | `QTreeView` | — | A tree your code fills from a model. |
+| | Table view | `QTableView` | — | A table your code fills from a model. |
+| | Column view | `QColumnView` | — | Columns that drill down, filled by your code. |
+| | Undo view | `QUndoView` | — | Shows the steps of an undo stack from your code. |
+| Containers | Group box | `QGroupBox` | title "Group box", vertical layout | A titled frame around related widgets. |
+| | Frame | `QFrame` | Styled panel, Raised, vertical layout | A plain border around a group of widgets. |
+| | Widget | `QWidget` | vertical layout | An empty area that holds a layout. |
+| | Tab widget | `QTabWidget` | pages `tab`, `tab_2`, titles "Tab 1", "Tab 2", each with a vertical layout | Pages the user switches with tabs. |
+| | Toolbox | `QToolBox` | pages `page`, `page_2`, labels "Page 1", "Page 2", vertical layouts | Pages stacked like drawers; one is open at a time. |
+| | Stacked widget | `QStackedWidget` | pages `page`, `page_2`, vertical layouts | Pages your code switches; one shows at a time. |
+| | Scroll area | `QScrollArea` | content follows the area's size; contents `scrollAreaWidgetContents` with a vertical layout | Scrolls content that is bigger than the space. |
+| | Wizard | `QWizard` | pages `wizardPage`, `wizardPage_2`, titles "Step 1", "Step 2", vertical layouts | Steps with Back and Next buttons. |
+| | Wizard page | `QWizardPage` | title "Step {n}", vertical layout | One step of a wizard. Goes only into a wizard. |
+| | MDI area | `QMdiArea` | no windows | Several small windows inside one area. |
+| | Dock widget | `QDockWidget` | contents `dockWidgetContents` with a vertical layout | A panel that docks to a side of a main window. |
+| Display | Label | `QLabel` | text "Label" | Text or a picture. |
+| | Text browser | `QTextBrowser` | — | Formatted text with links, read only. |
+| | Horizontal line | `Line` | orientation Horizontal | A thin line that separates groups. |
+| | Vertical line | `Line` | orientation Vertical | A thin upright line that separates groups. |
+| | Progress bar | `QProgressBar` | value 24 | Shows how far a task has got. |
+| | LCD number | `QLCDNumber` | — | Digits in a calculator-style display. |
+| | Graphics view | `QGraphicsView` | — | A drawing surface your code fills. |
+| | OpenGL widget | `QOpenGLWidget` | — | 3D drawing from your code. The canvas shows a placeholder. |
+| | Qt Quick view | `QQuickWidget` | — | A Qt Quick scene from your code. The canvas shows a placeholder. |
+| FreeCAD | Quantity spin box, Input field, File chooser, Color button, URL label, Integer spin box, Double spin box (FreeCAD) | `Gui::QuantitySpinBox`, `Gui::InputField`, `Gui::FileChooser`, `Gui::ColorButton`, `Gui::UrlLabel`, `Gui::IntSpinBox`, `Gui::DoubleSpinBox` | a `customwidget` declaration with the base class and header FreeCAD's own forms use | One sentence each, ending "Needs FreeCAD's window at run time." |
+| Your widgets | one tile per class in this form's custom widget declarations | the declared class | the declaration | "Your class {class}, based on {base}." |
+
+The FreeCAD entries' base classes and headers are taken from FreeCAD's own `.ui` files on the development machine (the classes FreeCAD forms use most: Quantity spin box 75 uses, Input field 27). Preference variants (`Gui::Pref*`) are not listed; they still open, round-trip and draw as their base class.
+
+**UX-CAT-003** `M4.1` `[S]` The Insert pane, top to bottom: the header ("INSERT", ⌕ search, ⋯ menu), the filter field (placeholder "Search widgets"), "RECENTLY USED" (UX-CAT-006), then the categories, then "Saved pieces" (UX-CLIP-006). The ⋯ menu holds "Show as icons", "Show as list" (a radio pair), "Expand all", "Collapse all" and "Clear recently used". Nothing else is in the header.
+
+**UX-CAT-004** `M4.1` `[S]` Two views (R3 133). **Icons**: a grid of 64 × 60 px tiles, the 20 px glyph centred 8 px from the top, the friendly name under it in Caption, centred, at most two lines, elided at the end, with the full name in the tooltip. **List**: 24 px rows, a 16 px glyph, the friendly name in Body, the description in Caption `fb.faint` after it when the row has room for at least 12 more characters. The default is Icons when the left pane is at least 216 px wide and List below that (UX-RESP-002), as many columns as fit. "Show as icons" or "Show as list" overrides the default, per user. Search results always use List (UX-CAT-008). Tiles and rows: hover `fb.tile_hover`, current `fb.tile_current`, keyboard focus a 2 px `fb.accent` ring (UX-A11Y-002). A tile never shows a scroll bar inside itself; the pane scrolls.
+
+**UX-CAT-005** `M4.1` `[S]` Each category has a 24 px header: chevron, the category name in Overline (`fb.muted`), and the entry count in `fb.faint` ("CONTAINERS 11"). Click or Enter toggles it; Left collapses and Right expands when the header has focus. Collapsed state is kept per user. FreeCAD starts collapsed. While the filter has text, every category is shown expanded and the remembered state is untouched. "Your widgets" is absent when the form declares no custom widget.
+
+**UX-CAT-006** `M4.1` `[S T]` "RECENTLY USED" shows up to 6 entries, most recent first, as tiles or rows in the current view. An entry joins when it is inserted from Insert (click, Enter, drag) or from quick insert, and moves to the front when used again. The list is per user, across forms and projects, stored in the settings under `form_builder.insert.recent` (catalog keys, never object names). It is hidden while it is empty and while the filter has text. "Clear recently used" empties it at once with no confirm (it is a convenience, not work).
+
+**UX-CAT-007** `M4.1` `[A]` Search matches, case-insensitively and ignoring spaces, hyphens and a leading "Q", against: the friendly name, the Qt class, the synonyms and the description. Results rank by the best match, then by category order, then by catalog order: (1) friendly name equals the query; (2) friendly name starts with it; (3) a word of the friendly name starts with it; (4) a synonym equals it; (5) a synonym starts with it; (6) the Qt class starts with it ("QLin", "lineedit"); (7) the friendly name or Qt class contains it; (8) a word of the description starts with it. Each entry appears once, at its best rank. Synonyms (catalog data; the lane may add, never remove):
+
+| Query words | Lead result (and others it also finds) |
+| --- | --- |
+| textbox, text box, textfield, input, entry, field | Line edit |
+| textarea, memo, multiline, notes, paragraph | Plain text edit (Text edit) |
+| dropdown, drop down, select, picklist, choice, combo | Combo box |
+| checkbox, tick, tickbox, toggle, yes no | Check box |
+| radio, option | Radio button |
+| button, btn, command | Push button (Tool button, Command link, Button box) |
+| ok cancel, dialog buttons, buttons | Button box |
+| number, integer, whole number, counter, numeric | Spin box |
+| decimal, float, money, currency, price, amount | Double spin box |
+| date, datepicker, day | Date edit (Calendar, Date and time edit) |
+| time, clock | Time edit |
+| datetime, timestamp | Date and time edit |
+| calendar, month | Calendar |
+| slider, range, track bar | Horizontal slider (Vertical slider) |
+| knob | Dial |
+| progress, loading, percent | Progress bar |
+| table, spreadsheet, cells | Table widget (Table view) |
+| grid | Grid layout (Table widget) |
+| list, listbox | List widget (List view) |
+| tree, hierarchy, folders | Tree widget (Tree view) |
+| tabs, tab, notebook, pages | Tab widget (Toolbox, Stacked widget) |
+| wizard, steps, assistant | Wizard (Wizard page) |
+| panel, box, group, fieldset, container | Group box (Frame, Widget) |
+| scroll | Scroll area (scroll bars) |
+| label, caption, static text, title | Label |
+| image, picture, photo, logo, icon | Label (a picture is a label's Picture property) |
+| line, separator, divider, rule | Horizontal line (Vertical line) |
+| space, gap, stretch, spring, spacer | Horizontal spacer (Vertical spacer) |
+| shortcut, hotkey | Key sequence edit |
+| html, browser, link, help text | Text browser |
+| lcd, digits, display | LCD number |
+| font | Font combo box |
+| split, splitter, resizable panes | Horizontal splitter (Vertical splitter) |
+| dock, side panel | Dock widget |
+| mdi, windows | MDI area |
+| quantity, unit, length | Quantity spin box |
+
+The test is a table of (query, expected first result) pairs taken from this table plus "lin" → Line edit, "QComboBox" → Combo box, "push" → Push button, "tab" → Tab widget, "date" → Date edit.
+
+**UX-CAT-008** `M4.1` `[S]` While the filter has text, the pane shows one flat result list in List view: glyph, friendly name with the matched letters on `fb.match`, and on the right in `fb.faint` Caption the category, or the synonym that matched in quotes ("“dropdown”") when the match came from a synonym. The first result is current, so Enter inserts it at once. The caption above the list (UX-AUTO-004) says where it will go: "Goes right after shopName."
+
+**UX-CAT-009** `M4.1` `[S]` No match: the list area shows "Nothing called “{query}”. Try text, list or date." (UX-EMPTY-004) and a [Clear] link. Enter does nothing; the status bar says "Nothing to insert. Change the search or press Esc."
+
+**UX-CAT-010** `M4.1` `[K]` Keyboard in the Insert pane (focus on a tile or row):
+
+| Key | Action |
+| --- | --- |
+| Arrow keys | Move between tiles (Icons: in two dimensions; List: Up and Down). Left and Right on a category header collapse and expand it |
+| Ctrl+Down / Ctrl+Up | First tile of the next / previous category |
+| Home / End | First / last tile |
+| Enter | Insert the current entry where the preview shows (UX-AUTO-003, UX-AUTO-004) |
+| A printable character | Moves focus to the filter and types the character there |
+| Esc | In the filter: clear it (focus stays). In the list with an empty filter: focus returns to the canvas |
+| Down in the filter | Focus moves to the first result or tile |
+| Alt+2 | Focus Insert (already in UX-KEY-004) |
+
+To insert somewhere else, select the target first (Alt+1 and the outline, or the canvas), then Alt+2: the preview line shows the new place (UX-AUTO-004).
+
+**UX-CAT-011** `M4.1` `[T K]` Inserting: click-and-drag places by pointer (UX-DND); double-click or Enter inserts without a pointer (UX-AUTO-003). After a keyboard insert, focus stays in the Insert pane so several widgets can be inserted in a row, each after the one before it (the selection follows the new widget). When the insert opens the form-row label editor (UX-FORML-002), focus goes to that editor and comes back to the same Insert tile after Enter or Esc in it. After a drag, focus goes to the canvas (UX-DND-007). Each insert is one undo step named "Insert {friendly name in lower case}" ("Undo Insert combo box").
+
+**UX-CAT-012** `M4.1` `[S A]` A tile's tooltip has three lines: the friendly name (Strong), the Qt class in `fb.faint`, the description. Accessible names: tiles "Insert {friendly name in lower case}" ("Insert combo box"); category headers "{Category}, {n} widgets, collapsed" or "expanded"; the filter "Search widgets"; results "Insert combo box, Choices".
+
+**UX-CAT-013** `M4.1` `[S K]` Quick insert (`/`, the outline's +, and the canvas `/`) uses the same search, ranking and synonyms. With an empty query it lists Recently used first, under a faint "Recently used" caption, then every entry by category. It shows at most 8 rows before scrolling. Rows: glyph, friendly name, category on the right. Enter inserts and closes it, Esc closes it, and focus returns to where `/` was pressed (UX-OUT-013).
+
+**UX-CAT-014** `M4.1` `[T]` Context-limited entries are never hidden or greyed. They are refused at the target, with the indicator in `ov.problem` (UX-DND-005) and these sentences:
+
+| Entry | Refused where | Sentence |
+| --- | --- | --- |
+| Wizard page | anywhere but a wizard | "A wizard page can only go into a wizard." |
+| Dock widget | a main window's central area | "In a main window, a dock widget goes on one of its sides." |
+| Spacer | a form layout cell | "A spacer can't go in a form row. Use a gap instead." (existing UX-DND-005 case) |
+| Any container | inside itself | "A widget can't go inside itself." (existing) |
+
+A keyboard insert of a refused entry inserts nothing, and the status bar shows the sentence.
+
+**UX-CAT-015** `M4.1` `[S T]` Window kinds. Searching "main window", "dialog", "widget form" or "wizard" also lists, after the widget results, rows for the four window kinds: "Main window · new form", "Dialog · new form", "Widget · new form", "Wizard · new form", with the glyph of the kind. Enter opens the New form tab with that card focused and the name row filled with a free name. A window cannot go inside a form, so these rows never insert. The New form tab gains a fourth blank card, **Wizard**, which creates a `QWizard` root with two pages ("Step 1", "Step 2"), each with a vertical layout (R3 121).
+
+**UX-CAT-016** `M4.1` `[S]` FreeCAD widgets draw on the canvas as their Qt base class (the realizer already uses the declared base). The FreeCAD category header has the tooltip "These widgets come from FreeCAD. In an app that runs without FreeCAD's window, each one is the plain Qt widget it is based on." Inserting one adds its `customwidget` declaration once per form.
+
+**UX-ICON-005** `M4.1` `[S A]` Every catalog entry has its own glyph, painted on the 16 px grid at 16 and 20 px (UX-ICON-001, UX-ICON-002), in `fb.glyph`, with layouts in `ov.layout` and spacers in `ov.gap` (UX-ICON-003). Each glyph looks like a miniature of the widget: a button is a pill, a line edit a box with a caret, a combo a box with a chevron, a check box a ticked square, a radio a dotted circle, a slider a line with a knob, a dial a circle with a pointer, a spin box a box with up and down ticks, a date a calendar page, a time a clock, a list three lines with bullets, a tree indented lines, a table a 3 × 3 grid, a tab widget a folder tab, a toolbox stacked bars, a stacked widget two offset cards, a scroll area a box with a scroll thumb, a wizard a box with "<  >", an MDI area two overlapping windows, a dock a window with a side panel, a group box a box with a gap in its top edge for a title, a label "Aa", a line a single rule, a progress bar a half-filled bar, an LCD "88", OpenGL and Qt Quick a cube and a ring. Each window kind reuses the page-card glyph with a mark. Two entries share a glyph only when they differ only by orientation and the glyph is rotated. A test paints every glyph and fails when two different entries paint the same pixels, or a glyph is blank.
+
+#### 13.1.3 Containers and pages (CONT)
+
+**UX-CONT-001** `M4.2` `[A]` Page containers and where a page's title lives. The builder writes each page the way the container's loader reads it:
+
+| Container | A page is | Title stored as | Shown in the outline as |
+| --- | --- | --- | --- |
+| Tab widget | a child widget | attribute `title` (also `toolTip`, `whatsThis`, `icon`) | "Tab 2 · Settings" |
+| Toolbox | a child widget | attribute `label` (also `toolTip`, `icon`) | "Page 2 · Settings" |
+| Stacked widget | a child widget | no title | "Page 2 · {object name}" |
+| Wizard | a `QWizardPage` child | properties `title` and `subTitle` | "Step 2 · Payment" |
+| MDI area | a child widget, shown in a subwindow | property `windowTitle` | "Window 2 · Notes" |
+
+An insert never writes a tab title as a toolbox label, or the reverse (R3 128). Today's `InsertPage` writes `title` and "Tab {n}" for every container; M4.2 fixes it.
+
+**UX-CONT-002** `M4.2` `[S K]` Page commands. On the canvas and in the outline, the context menu of a page container, of one of its pages, or of any widget inside a page has a **Pages** submenu (contributed through the context-menu seam, UX-CONT-020). It acts on the innermost page container and its shown page:
+
+| Item | Shown for | Copy |
+| --- | --- | --- |
+| Insert page before | all but MDI | "Insert page before “{title}”" ("Insert tab before…", "Insert step before…" for tab widgets and wizards) |
+| Insert page after | all but MDI | "Insert page after “{title}”" |
+| Add window | MDI area | "Add window" |
+| Delete page | all | "Delete page “{title}”…" (with "…" only when it will ask, UX-CONT-004) |
+| Move left / Move right | tab widget | "Move tab left", "Move tab right" |
+| Move up / Move down | toolbox, stacked, wizard, MDI | "Move page up", "Move page down" |
+| Show previous / Show next | all | "Show previous page   Ctrl+PgUp", "Show next page   Ctrl+PgDown" |
+| Start on this page | tab widget, toolbox, stacked, wizard | "Start on this page" (checked when it is the start page) |
+| Tile windows / Cascade windows | MDI area | canvas only, not saved |
+
+For a stacked widget, `{title}` is the page's object name. Items that cannot act stay visible and disabled with the reason as tooltip ("This is already the first page."). Shift+F10 opens the same menu by keyboard. The Pages submenu is the first item group, above the clipboard rows, when the clicked widget is a page or a page container.
+
+**UX-CONT-003** `M4.2` `[T]` Insert page before or after the shown page: the new page gets the container's next free name (`tab_3`, `page_3`, `wizardPage_3`, `subwindow_2`), the title "Tab {n}", "Page {n}", "Step {n}" or "Window {n}" (n is its 1-based position), and a vertical layout. It becomes the shown page and the selection. For a tab widget, toolbox or wizard, the in-place title editor opens with the title selected (UX-TEXT-002); Enter keeps the typed title, Esc keeps the default. Insert and title are one undo step "Insert page". The canvas "+" pseudo-tab (UX-PAGES-002) is "Insert page after" the last page. Focus stays where it was (canvas or outline), except while the title editor is open.
+
+**UX-CONT-004** `M4.2` `[T]` Delete page. A page with no widgets is deleted at once; toast "Deleted page “Tab 3” · Undo". A page with widgets asks first, in a popover anchored to the page's tab (canvas) or row (outline): "Delete page “Settings” and the 4 widgets on it?" [Delete page] [Cancel], Enter on the focused button, Esc cancels. References to widgets on the page are listed as in UX-OUT-012. After delete, the next page (else the previous one) is shown and selected. One undo step "Delete page". Deleting the last page is allowed; the container then shows UX-CONT-009.
+
+**UX-CONT-005** `M4.2` `[T K]` Move page. Besides the existing drag and Alt+arrow gestures (UX-PAGES-004, UX-OUT-007), the Pages menu items move the shown page one place. Each move is one undo step "Move page"; presses within 1 s merge (UX-NUDGE-001). The start page stays the same page (CONTRACTS `MovePage`).
+
+**UX-CONT-006** `M4.2` `[S T]` Shown page and start page are different things. The **shown** page is the one the canvas displays; it is never saved. Clicking a tab title, a toolbox header, the stacked switcher arrows (UX-PAGES-003), a wizard or MDI switcher chip, selecting a widget on a hidden page, Ctrl+PgUp or Ctrl+PgDown all change the shown page only. The **start** page is `currentIndex`, saved in the file, changed only by "Start on this page" or the inspector row "Starts on" (a drop-down of page titles, Content group). The page chip of a container whose shown page is not its start page reads "Shows {title} · starts on {title}" in its tooltip. This differs from Designer, which saves whatever page was showing; it keeps an accidental click from changing the file.
+
+**UX-CONT-007** `M4.2` `[K]` Ctrl+PgDown and Ctrl+PgUp, with focus in the canvas or the outline and the selection inside or on a page container, show the next or previous page of the innermost one (they wrap). The status bar says "Showing page 2 of 3: Settings · the file still starts on page 1" when the shown page differs from the start page, else "Showing page 2 of 3: Settings". Add both keys to UX-KEY-004 (context canvas, outline; status new; checked against the shell table: free).
+
+**UX-CONT-008** `M4.2` `[T K]` Page titles. Enter on a selected page row in the outline, on a selected tab title or toolbox header on the canvas, or on a wizard page opens the title editor (UX-TEXT-001; a wizard page edits its `title`). F2 still renames the page's object name. A stacked page has no title: Enter on it selects its first child (UX-SEL-005).
+
+**UX-CONT-009** `M4.2` `[S]` A page container with no pages draws, inside its own rectangle, a dashed `ov.layout_faint` outline and the Caption "No pages. Use + or Pages > Insert page." (wizard: "No steps…"; MDI: "No windows. Use Pages > Add window."). A drop on it creates the first page with the widget inside (UX-PAGES-002 rule).
+
+**UX-CONT-010** `M4.2` `[S T]` Scroll area. The canvas draws it at its real size with its real scroll bars (truth first, UX-PRIN-001). The wheel over a scroll area on the canvas scrolls its content (Shift+wheel horizontally) without moving the canvas; Ctrl+wheel still zooms. Selecting a widget inside it, by any means, scrolls the area so the widget is visible (canvas only, never saved). A drag held over the area's top or bottom 16 px for 400 ms scrolls it by one step per 100 ms, so a drop can reach any place. Drops go into the content widget's layout. A scroll area without a content widget (older files) gets `scrollAreaWidgetContents` with a vertical layout on the first drop, one undo step. Curated rows: "Content follows the area's size" (`widgetResizable`, help: "On: the content stretches to fill the area and scrolls only when it can't shrink further. Off: the content keeps its own size."), "Scroll bars" with "Horizontal" and "Vertical" drop-downs (As needed, Always, Never).
+
+**UX-CONT-011** `M4.2` `[S T]` MDI area. Each child widget is a window and is drawn in a real subwindow on the canvas. "Add window" adds `subwindow` with the title "Window {n}" and a vertical layout, shown, selected, with the title editor open. Show previous and Show next bring a window to the front (canvas only); a switcher chip "◀ 2 / 3 ▶" sits by the area like the stacked one. Tile and Cascade arrange the windows on the canvas only and are not saved. The subwindow frames' buttons do nothing on the canvas. Delete removes the window and its content (UX-CONT-004 rules).
+
+**UX-CONT-012** `M4.2` `[S T K]` Dock widget. In a main window, a dock widget belongs on a side. While a dock widget is dragged over a main-window form (from Insert or a move), four 32 px `ov.dock_band` bands appear along the inside edges of the page: "Left side", "Right side", "Top", "Bottom" (chips placed by the solver). The pointer picks the nearest band; the drop writes the dock's side (attribute `dockWidgetArea`, the number Qt uses) and the canvas shows it docked. The central area is a refused target (UX-CAT-014). The inspector shows "Dock side" as a four-segment control (Left, Right, Top, Bottom) in Placement, and "Can close", "Can float", "Can move" check boxes (`features`) and "Allowed sides" (flags popover) in Content. Outside a main window, a dock widget sits in the layout like any container, and its inspector Placement caption says "Docks only in a main window. In this form it shows as a panel." Keyboard: the Dock side control, and Alt+arrows do not move docks between sides.
+
+**UX-CONT-013** `M4.2` `[S T]` Wizard. A wizard's pages are `QWizardPage` widgets. The canvas draws the real wizard with its Back, Next and Cancel buttons, which do nothing on the canvas; a switcher chip "◀ Step 2 of 3 ▶" changes the shown page. Insert step before and after, delete, move and "Start on this page" follow CONT-002 to CONT-006. A wizard page's Content group shows "Step title" (`title`, translatable) and "Step subtitle" (`subTitle`, translatable). The form can be a wizard (the New form card, UX-CAT-015) or contain one. Generated code builds the same pages in the same order; the uic oracle covers a root wizard and a nested one.
+
+**UX-CONT-014** `M4.2` `[S]` Group box rows (Content and Appearance): "Title" (exists), "Can be switched off" (`checkable`, help: "Adds a check box to the title. Unchecking it turns off everything inside."), "Starts switched on" (`checked`, shown only when Can be switched off is on), "Flat" (exists), "Title alignment" (Left, Centre, Right).
+
+**UX-CONT-015** `M4.2` `[S]` Frame rows (Appearance): "Frame" (`frameShape`: No frame, Box, Panel, Styled panel, Horizontal line, Vertical line, Windows panel), "Shadow" (`frameShadow`: Plain, Raised, Sunken), "Line width", "Middle line width". A `Line` widget shows only "Orientation" and "Shadow"; its shape follows its orientation, as Designer writes it.
+
+**UX-CONT-016** `M4.2` `[T]` A page is a container (R3 132). Selecting a page (its outline row, or its empty area on the canvas) and pressing Ctrl+1 … Ctrl+6 lays out that page; a page without a layout shows the "No layout" marker (UX-FRAME-003). The same holds for a scroll area's content widget, a dock's content widget and an MDI window.
+
+**UX-CONT-017** `M4.2` `[S A]` Stand-ins. An OpenGL widget, a Qt Quick view, and any class the realizer can't build safely in the editor (it would need a GL context, a QML engine, or user code) is drawn as a stand-in: an `ov.stand_in_fill` rectangle with a dashed `ov.stand_in_line` border, at least 80 × 24 px (UX-RUN-004), and centred 11 px `ov.stand_in_text`: "{friendly name} · drawn by your code" (two lines when narrower than the text). The stand-in has the widget's size policy and size hint, so the layout is the same as at run time. The editor never creates an OpenGL context or a QML engine (test: no `QOpenGLContext` or `QQmlEngine` exists after realizing a form that has both).
+
+**UX-CONT-018** `M4.2` `[S]` Page attributes are curated rows on the page widget, in Content: tab widget pages "Tab title", "Tab tooltip", "Tab help" (`whatsThis`), "Tab icon" (shown from M4.3c); toolbox pages "Page label", "Page tooltip", "Page icon"; each written as an attribute (UX-PED-063). They are registered from a new rows module; the shared rows file is not edited.
+
+**UX-CONT-019** `M4.4` `[S K T]` Inspector **Pages** group, for a tab widget, toolbox, stacked widget, wizard and MDI area, directly after Content. It is the list editor (UX-PED-044) over the pages: one row per page showing its title (stacked: object name, read-only, with "Page {n}" before it), a "Starts on" marker (a filled dot) on the start page's row, and a + button "Add page". Keys as the list editor: Enter on the last row adds a page after it; Alt+Up and Alt+Down move; Ctrl+Delete deletes (asking per UX-CONT-004); typing edits the title. Moving the current row shows that page on the canvas. Space on a row makes it the start page. Each action is the same command as the Pages menu, with the same undo step. At 236 px the group is full width (UX-PED-002 stacked rows); titles elide at the end with the full title in the tooltip.
+
+**UX-CONT-020** `M4.0s` `[A]` Context-menu seam. Lanes add context-menu rows without editing `integration/surface.py` or `integration/context_menu.py`: modules in `integration/menu_ext/` are discovered in sorted name order and each exposes `register(registry)`; a contributor receives the menu, the selection and the command dispatcher, and may add a submenu or rows in one of three groups: "first" (above the clipboard rows), "structure" (with Change to and Remove layout) and "last". M4.2 adds Pages; M4.4 adds "Edit items…".
+
+#### 13.1.4 Property editors (PED)
+
+##### Shared rules
+
+**UX-PED-001** `M4.0s` `[A]` Every value type has an editor; none is left as raw XML except the style sheet until M5.3 (pain 18). Owner lanes:
+
+| Value (ui4 element) | Editor | Inline or popover | Lane |
+| --- | --- | --- | --- |
+| `bool` | check box | inline | M4.3a |
+| `number`, `uint`, `longlong`, `ulonglong`, `float`, `double` | spin field | inline | M4.3a |
+| `enum` | drop-down of friendly names | inline | M4.3a |
+| `set` (flags) | summary + check-box popover; alignment keeps its segments | popover | M4.3a |
+| `char` | one-character field | inline | M4.3a |
+| `size`, `sizef`, `point`, `pointf`, `rect`, `rectf` | one field per line | stacked inline | M4.3a |
+| `sizepolicy` | summary + popover | popover | M4.3a |
+| key sequence (`string` named `shortcut`, `keySequence`) | recorder | inline | M4.3a |
+| `date`, `time`, `datetime` | typed field + calendar popover | inline + popover | M4.3a |
+| `locale` | summary + popover | popover | M4.3a |
+| `string` | text field; multi-line and rich text in a popover; Translation disclosure | inline + popover | M4.3d |
+| `stringlist` | summary + list popover | popover | M4.3d |
+| `cstring` | text field | inline | M4.3d |
+| `url` | text field + Translation disclosure | inline | M4.3d |
+| `font` | summary + popover | popover | M4.3b |
+| `color` | swatch + popover | popover | M4.3b |
+| `brush` (and gradients) | swatch + popover | popover | M4.3b |
+| `palette` | summary + large popover | popover | M4.3b |
+| `cursor`, `cursorShape` | drop-down | inline | M4.3b |
+| `pixmap` | thumbnail + picker popover | popover | M4.3c |
+| `iconset` | thumbnail + picker popover | popover | M4.3c |
+| style sheet (`string` named `styleSheet`) | raw text, "Kept as is" editing as today | inline | M5.3 (deferred) |
+| anything else (an element from a newer Qt) | read-only raw value with "Kept as is" (UX-INSP-009) | — | M4.3d keeps it |
+
+A test walks every ui4 value class and fails when one has no registered editor other than the raw one, except the two rows marked deferred and kept.
+
+**UX-PED-002** `M4.0s` `[S A]` Width budget. The narrowest inspector content width is **236 px** (the 264 px pane minimum, less padding and the scroll bar). There the row is label 96 px + gap 8 + editor column 132 px. Every inline editor shows its reference value unclipped in 132 px: "Password echo on edit", "Minimum expanding", "−2147483648", "12/31/2026 11:59 PM" and "Ctrl+Shift+Alt+F12" are the reference texts. An editor that cannot fit uses the **stacked row**: the label on its own line, the editor full width (236 px) under it. Size, point and rect fields and the date-and-time field are stacked below 300 px content width and side by side above it. Summary buttons (fonts, colours, flags, lists, pictures) stay in the editor column and elide their text at the end, with the full text in the tooltip. Nothing in the inspector scrolls sideways at any width (test at 236, 264 and 420 px).
+
+**UX-PED-003** `M4.0s` `[S K T]` The row popover. A compound value opens in a popover anchored to its row:
+
+- Level 2 (UX-ELEV-001), `fb.popup` fill, 1 px `fb.popup_border`, 6 px radius, 12 px padding. Width is the inspector content width, at least 236 and at most 320 px; the large editors (palette, gradient, item lists, tables) are 320–480 px wide and grow to the left over the canvas. It opens below the row, or above when there is no room below, and never covers its own row.
+- Header: the row label in Title and the Qt name in `fb.faint` Caption. Footer, when the editor needs one: [Reset] at the left (only when the value is written), [Done] at the right (primary).
+- Open: Enter, Space or Alt+Down on the row's summary button, or a click on it. Focus goes to the popover's first field.
+- Tab and Shift+Tab cycle inside the popover; they do not leave it.
+- Close and keep: Done, Enter in a one-line field, or a click outside the popover. Close and revert: Esc, which undoes everything this popover changed and leaves no undo step. Ctrl+Z in a field undoes the field's typing first; elsewhere in the popover, Ctrl+Z closes it and keeps the change, then undoes it as one step.
+- On close, focus returns to the row's summary button. Nothing else (toasts, regeneration, Problems) takes focus while it is open (UX-PRIN-006).
+- Changing the selection, switching tabs, or a structural command closes it and keeps the changes.
+- Accessible name of the popover: "{Row label} editor"; the summary button: "{Row label}: {summary}".
+
+**UX-PED-004** `M4.0s` `[T A]` Commit and undo. Inline fields commit on Enter, on focus out and on a choice; Esc reverts uncommitted text (existing `is_dirty`). A **session** is the time a field keeps focus, or a popover stays open. Every change in one session to one property merges into one undo step named for the property ("Undo Change maximum length", "Undo Change font of titleLabel"); spin-arrow steps, drags in a colour square and gradient stop moves merge the same way. A popover session that touches several properties (palette roles, a font's parts) is still one step. Each change applies to the canvas live, inside the edit budget (UX-M4-007). The seam gives editors `commit(value, session=...)` and a popover session object with `revert()`; the existing per-row merge token ends when the session ends, so two separate visits to one row are two undo steps.
+
+**UX-PED-005** `M4.0s` `[T]` The mouse wheel never changes a value in a field that does not have keyboard focus; it scrolls the inspector. With focus, the wheel steps a number field by one step and a drop-down by one item, and the session rule merges the steps.
+
+**UX-PED-006** `M4.3a, M4.3b, M4.3c, M4.3d` `[S]` Unwritten values. Every editor shows the class default in `fb.faint` (UX-INSP-007): a faint number, a faint drop-down text, a summary like "Default (9 pt)" for fonts, a hollow swatch with "Default" for colours, "None" for images and shortcuts, "—" for limits without a default. Writing a value makes the text `fb.text` and the label Strong with the accent bar (UX-INSP-006). Reset deletes the property, one undo step "Reset {label}".
+
+**UX-PED-007** `M4.3a, M4.3b, M4.3c, M4.3d` `[S T]` Multi-select (UX-INSP-011). Every editor has a Mixed look: an empty field with the placeholder "Mixed" in italic `fb.faint`, a partly checked check box, a drop-down whose text is "Mixed", a swatch with a diagonal line, a summary "Mixed". A commit writes the new value to every owner that has the property, as one step; owners without it are skipped and the caption says "Not applied to {n} widgets that lack this property." (exists).
+
+**UX-PED-008** `M4.3a, M4.3b, M4.3c, M4.3d` `[S]` Refusals appear under the field in `fb.error` Caption (UX-FEED-007), keep the typed text, and block Enter until fixed or Esc. The sentences are in 13.1.6.
+
+**UX-PED-009** `M4.3a` `[S T]` Pain 18. A chosen value is written at once and stays written: the row is Strong, and save writes it. If Qt refuses the value on the canvas widget (the realizer reports it), the value stays in the file and the row's caption says, in `fb.warning`: "Saved in the file. The canvas can't show this value." Save never drops a value. P-18 test: set Echo mode to Password, save, close, reopen: the row shows Password and the XML has `QLineEdit::Password`; a property whose type has no editor is byte-identical after save.
+
+**UX-PED-010** `M4.3a, M4.3b, M4.3c, M4.3d` `[A]` Accessible names of editor parts follow "Row: part" (as M3.7d2 did for segments): "Maximum size: width", "Font: bold", "Colour: hex", "Date: open calendar". A test walks every editor built for the reference form and fails on an empty accessible name.
+
+##### Scalars (M4.3a)
+
+**UX-PED-020** `M4.3a` `[S K]` Bool: a check box with no text, aligned to the editor column's left. Space toggles; the toggle commits at once.
+
+**UX-PED-021** `M4.3a` `[S K T]` Numbers: a spin field, right-aligned, tabular figures, with the unit after it when there is one ("px", "pt", "%"). The range comes from the curated row (Maximum length 0–32767), else from the Qt type. Up and Down step by one step (Shift: ×10), PageUp and PageDown by ten steps. Decimals: for `double` and `float`, as many as the property needs, at most 6, with trailing zeros dropped on show; the decimal mark is the project locale's (en_US: "."). Typing a value out of range shows "Use a number from {min} to {max}." Typing a non-number shows "Type a number, like 12." Clearing the field resets the property (deletes it) when the property has a default; otherwise it shows "Type a number, like 12."
+
+**UX-PED-022** `M4.3a` `[S K T]` Enum: a drop-down of friendly names, in Qt's enumerator order. Friendly names come from a table (Echo mode: "Normal", "No echo", "Password", "Password while typing"; Frame: as UX-CONT-015; others by splitting the enumerator into words: `MinimumExpanding` → "Minimum expanding"). Each item's tooltip is the Qt name. A value the table doesn't know (a newer Qt, a plugin enum) is shown as the first item in italic, "{Qt name} (kept as is)", and stays written until the user picks another. Choosing commits (pain 18). Keys: Alt+Down or Space opens; Up and Down on the closed drop-down change the value and commit, merged into one step (UX-PED-004); typing letters jumps to the next match.
+
+**UX-PED-023** `M4.3a` `[S K T]` Flags: a summary button listing the set names, friendly, joined by ", " ("Left, Vertically centred"), "None" when empty, elided at the end with the full list in the tooltip. Its popover lists one check box per flag; flag groups that exclude each other (horizontal alignment, vertical alignment) are radio groups with a "None" choice. Each toggle applies live; the session is one step. Space toggles the focused flag. The alignment rows keep their segmented controls from M3.7d2.
+
+**UX-PED-024** `M4.3a` `[S]` Char: a 32 px field that takes exactly one character. With "Qt names" on, the code point shows after it in `fb.faint` ("U+00B7"). More than one character shows "Type one character."
+
+**UX-PED-025** `M4.3a` `[S]` Size, point and rect (and their float forms): one labelled field per line ("Width", "Height" / "X", "Y" / "X", "Y", "Width", "Height") with "px" after integer fields, stacked below 300 px content width (UX-PED-002) and in pairs above it. Each field commits on its own (one step per field). Float forms show 2 decimals.
+
+**UX-PED-026** `M4.3a` `[S T]` Size policy (the raw row in All properties and the curated "Size policy" row): summary "{horizontal} × {vertical}" with shares when set ("Expanding × Fixed · share 1 : 0"). The popover: "Horizontal" and "Vertical" drop-downs of the seven policies with friendly names and one-line help each (Fixed: "Exactly its size hint." Minimum: "Can grow; never smaller than its size hint." Maximum: "Can shrink; never larger than its size hint." Preferred: "Its size hint, but can grow or shrink." Expanding: "Takes all the room it can." Minimum expanding: "Takes all the room it can; never smaller than its size hint." Ignored: "Ignores its size hint; takes the room it's given."), then "Horizontal share" and "Vertical share" (0–255). Changes are live and one step. The Size group's words (UX-SIZE) and the chip update in the same frame (UX-SIZE-008).
+
+**UX-PED-027** `M4.3a` `[S K T]` Key sequence: a field showing the sequence in portable text ("Ctrl+Shift+P"), or the placeholder "None", and a [Record] button (UX-COPY-006). Record (or Enter on the field) shows "Press the keys…" with a 2 px `fb.accent` border; the next key combination is captured; a second combination within 1 s makes a two-step shortcut ("Ctrl+K, Ctrl+S"); then recording stops and the value commits. Esc while recording cancels and keeps the old value. Backspace alone while recording clears the shortcut ("None") and commits. If another action in this form already has the same shortcut, the caption warns, in `fb.warning`: "{actionName} already uses {keys}." The value is written anyway. The string's translation attributes are kept as they were.
+
+**UX-PED-028** `M4.3a` `[S K T]` Date and time: a typed field in the project locale's short format with a four-digit year ("10/28/2026", "2:30:00 PM", "10/28/2026 2:30 PM") and a ▾ button that opens a popover: a calendar for dates (arrows move by day, PageUp and PageDown by month, Ctrl+PageUp and Ctrl+PageDown by year, Enter picks and closes) and Hour, Minute, Second fields for times. Typed text commits on Enter or focus out; an unreadable date shows "Use a date like 10/28/2026." and an unreadable time "Use a time like 2:30 PM." Date ranges (minimum and maximum dates) use the same editor.
+
+**UX-PED-029** `M4.3a` `[S K]` Locale: a summary "{Language} ({Country})" ("English (United States)"); unwritten shows "Same as the app" in `fb.faint`. The popover has "Language" (a drop-down that filters as you type) and "Country or region" (only the territories Qt pairs with that language). Stored as the `language` and `country` names Qt writes.
+
+##### Text, translations and lists (M4.3d)
+
+**UX-PED-040** `M4.3d` `[S K T]` Text. One-line properties edit in the row's field. Properties that allow several lines (a word-wrapped label's text, `plainText`, tooltips, What's this, status tips longer than the field) show the first line with "↵" where a line break is, and a ▾ button that opens a text popover: a plain multi-line editor (Body, the runtime font family), where Enter adds a line and Ctrl+Enter or [Done] keeps it, Esc reverts. One step per session, named for the property.
+
+**UX-PED-041** `M4.3d` `[S K T]` Translation. Every string that generated code puts in `retranslateUi` (the translatable properties and attributes: texts, titles, tooltips, status tips, What's this, accessible names and descriptions, placeholders, window titles, page titles and labels, item texts, URL strings) has a "Translation ▸" disclosure in Caption `fb.muted` on its caption line. Expanded, it shows: a "Translate this text" check box (off writes `notr="true"`); "Meaning" (`comment`, help: "Tells translators which meaning is meant when the same words mean different things, like “Open” a file or “Open” the shop."); "Note for the translator" (`extracomment`); and, when the file has one or Qt names are on, "Translation id" (`id`). Each field commits on its own (one step each). A string that will not be translated shows "Not translated" in `fb.faint` at the end of its caption line, so a veteran sees it without opening the disclosure. A string that is not translatable (style sheet, input mask, object references) has no disclosure. Editing the text keeps the attributes as they were. The disclosure state is per row and remembered for the session.
+
+**UX-PED-042** `M4.3d` `[S K T A]` Rich text (R3 172). For a label whose text format is Rich, or Automatic with text that is already HTML, and for the `html` of a text edit or text browser, the text popover has a two-segment control **Formatted | Source**. Formatted is an editor with a bar: Bold (Ctrl+B), Italic (Ctrl+I), Underline (Ctrl+U), Link… (no key; it asks "Link address" in a field under the bar), Bulleted list, Numbered list, and Text size (Smaller, Normal, Larger). Source shows the HTML in the code editor style with XML highlighting. Plain mode turns into Formatted only when the user picks Formatted ("Make this text formatted? It is stored as HTML." [Make formatted] [Cancel]). The HTML written is generated against the runtime default font and a fixed document setup, never the editor's own font, so the same edit gives the same bytes on macOS and Linux (test runs the edit under both and under the `C` and `de_DE` locales, CONTRACTS §8.3).
+
+**UX-PED-043** `M4.3d` `[S K T]` String list: a summary "{n} items: {first}, {second}…" ("3 items: Red, Green, Blue"), "No items" when empty, elided at the end. The popover is the list editor (UX-PED-044) with a Translation disclosure at its foot that applies to the whole list (the attributes live on the `stringlist`). One step per session.
+
+**UX-PED-044** `M4.3d` `[S K T A]` The list editor, shared by string lists, the Pages group (UX-CONT-019) and the item editors (UX-ITEM). One row per entry, 24 px: a drag grip, the text field, and a × button (accessible "Delete row {n}") shown on hover and focus.
+
+| Key | Action |
+| --- | --- |
+| Typing | Edits the focused row's text |
+| Enter | Keeps the row and moves to the next row; on the last row, adds a new empty row and moves to it. Enter on an empty last row closes the editor and keeps the session |
+| Up / Down | Previous / next row |
+| Alt+Up / Alt+Down | Move the row up / down |
+| Ctrl+Delete | Delete the row (the next row gets focus, else the previous) |
+| Backspace in an empty row | Delete the row and move to the end of the previous row |
+| Ctrl+V with several lines | Paste one row per line, after the focused row |
+| Esc | Close and revert the session |
+| Tab / Shift+Tab | Leave the list to the footer buttons and back |
+| Alt+Right / Alt+Left | Open / close the row's details, where rows have them (items, UX-ITEM-003) |
+
+Rows reorder by dragging the grip, with a 2 px insertion line and an 8 px hit band (UX-GRID-004). An empty list shows "No items yet. Type one and press Enter." in `fb.faint`. 500 rows open within 50 ms (UX-M4-007). Accessible name of each field: "{List name} row {n}".
+
+**UX-PED-045** `M4.3d` `[S]` C string: a plain text field with no Translation disclosure. Rows that name another object (the buddy) are M5.6 pickers; until then they are text fields that refuse a name that isn't on the form: "No widget called “{name}” on this form."
+
+**UX-PED-046** `M4.3d` `[S]` URL: a text field showing the address. An address with no scheme gets the caption, in `fb.warning`, "This doesn't look like a web or file address." and is written anyway. The Translation disclosure applies to the inner string (R3 170).
+
+##### The Properties tab (M4.3d)
+
+**UX-PED-060** `M4.3d` `[S]` Custom properties (R3 149). Under All properties, a block "Custom properties" lists the selection's dynamic properties (written with `stdset="0"`), each a normal row: its name as the label (no friendly name), the editor for its type, Reset, and a ⋯ row menu with "Rename…", "Change type ▸" and "Remove". Code Studio's own logic keys (names starting with `cbcs`) are not listed here (M6 shows them in Behavior). The block is shown even when empty, with only the add button, so the feature can be found.
+
+**UX-PED-061** `M4.3d` `[S K T]` "+ Add custom property" is a text button at the end of the block. It opens an inline form in the block: "Name" field, "Type" drop-down (Text, Number, Decimal number, True or false, Date, Time, Date and time, Colour, Font, Size, Point, Rectangle, List of text, Address (URL), Shortcut), and [Add] [Cancel]. Enter in the Name field adds; Esc cancels. The new property gets its type's empty value (empty text, 0, false, today's date, black, the default font, 0 × 0…), is written, and focus moves into its editor. One step "Add custom property {name}". With several widgets selected it is added to all of them.
+
+Name refusals: "Names use letters, digits and _, and can't start with a digit." / "{Class} already has a property called {name}. Pick another name." / "This widget already has a custom property called {name}." / "Names starting with cbcs are kept for Code Studio."
+
+**UX-PED-062** `M4.3d` `[T]` Rename is a remove plus an add of the same value, one step "Rename custom property". Change type converts the value when it can (number to text, text to number when it reads as one) and otherwise asks: "{name} can't be turned into {type}. Its value will be cleared." [Change type] [Cancel]. Remove deletes it, one step, toast "Removed custom property {name} · Undo". Reset on a custom property is the same as Remove and says so in its tooltip.
+
+**UX-PED-063** `M4.3d` `[S]` Properties and attributes (R3 150). All properties lists Qt properties grouped by declaring class, then "Stored by the parent" for attributes (page titles, labels, dock side, toolbar area, button group), then "In the file" for anything else written that the live widget doesn't have, then Custom properties. An attribute row edits the attribute, never a property of the same name. With Qt names on, attribute rows show "(attribute)" after the Qt name.
+
+**UX-PED-064** `M4.3d` `[S]` The inspector ⋯ menu gains "Sort all properties A–Z" (a check item, per user, off by default). On, All properties is one alphabetical list by Qt name with each row's declaring class in `fb.faint` on its Qt-name line; group headers go away (R3 148). Curated groups are never re-sorted.
+
+**UX-PED-065** `M4.3d` `[S]` Property search (UX-INSP-012) also matches custom property names, attribute names and the friendly words of enum and flag values ("password" finds Echo mode).
+
+##### Font, colour, brush, palette, cursor (M4.3b)
+
+**UX-PED-080** `M4.3b` `[S K T]` Font: a summary of only the written parts, in the order family, size, style ("Sans Serif, 12 pt, Bold"), or "Default ({size} pt)" in `fb.faint`. The summary is drawn in the plain inspector font, never in the chosen font. The popover:
+
+- "Family": a drop-down that filters as you type, with "Default (the app's font)" first, then the families installed here. A family is shown in its own face only in the drop-down list. Caption: "The computer that runs your app needs this font too."
+- "Size": a spin field in points (1–200) with presets in its drop-down (8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48).
+- Style toggles Bold, Italic, Underline, Strikeout as four 24 px toggle buttons with glyphs "B", "I", "U", "S" (accessible "Font: bold" …).
+- "More ▸": "Weight" (Thin … Black), "Kerning", "Smoothing" (Default, Prefer smooth, No smoothing), "Hinting" (Default, None, Vertical, Full).
+
+Each part is written only when set; each set part has its own ↺ in the popover that unsets that part. Changes are live; one step per session. This replaces today's 50 px family combo that clipped to "De…" (ticket I5b).
+
+**UX-PED-081** `M4.3b` `[S K A]` The colour picker, used by the colour row, brushes, gradient stops and palette roles: a saturation-value square 200 × 140 px with an `fb.handle` ring, a hue strip 200 × 12 px, an alpha strip (shown only where alpha is stored) over the `fb.checker` pattern, a "Hex" field ("#1A7F37", or "#1A7F3780" with alpha), "More ▸" with Red, Green, Blue (0–255) and Alpha (0–100 %) fields, and a row of up to 12 recent colours (per user, most recent first). Keys: in the square, arrows move by 1 (Shift: 10); in the strips, Left and Right. Typing a hex value commits on Enter; a bad one shows "Use a colour like #1A7F37." Dragging is live within the edit budget and one step per session. At 236 px the square shrinks to 212 × 120.
+
+**UX-PED-082** `M4.3b` `[S]` Colour row: a 16 × 16 swatch (1 px `fb.swatch_border`, the checkerboard under transparency) and the hex text, plus "{n} %" when alpha is below 100. Unwritten: a hollow swatch and "Default" in `fb.faint`.
+
+**UX-PED-083** `M4.3b` `[S K T]` Brush: summary swatch (the brush painted 16 × 16) and "Solid #1A7F37", "Pattern: Dense 4, #000000", "Linear gradient, 3 colours", "No brush". The popover has a "Style" segmented control: **None | Solid | Pattern | Gradient** (and **Picture** from M4.3c, UX-PED-103). Solid embeds the colour picker. Pattern shows a drop-down of the Qt patterns, each drawn as a 32 × 16 preview, with friendly names ("Dense 1 (darkest)" … "Dense 7 (lightest)", "Horizontal lines", "Vertical lines", "Cross", "Diagonal lines /", "Diagonal lines \\", "Diagonal cross"), and a colour.
+
+**UX-PED-084** `M4.3b` `[S K T A]` Gradient (inside the brush popover, 320–480 px wide): "Type" (Linear, Radial, Conical); a 24 px gradient bar with stop handles (`fb.handle`, current `fb.handle_current`); the colour picker for the current stop; "Spread" (Pad, Repeat, Reflect); "Fill" ("Stretch to the widget", "Use pixel positions", "Stretch to the screen" for the three coordinate modes; default the first); and "More ▸" with the geometry fields of the type (Linear: start X, Y, end X, Y; Radial: centre X, Y, radius, focal X, Y; Conical: centre X, Y, angle), as fractions 0–1 in "Stretch to the widget" mode. Bar keys: Left and Right pick the previous and next stop; Alt+Left and Alt+Right move the current stop by 1 % (Shift: 10 %); Insert adds a stop halfway to the next one; Delete removes the current stop (at least 2 stay: "A gradient needs at least two colours."). Click on the bar adds a stop with the colour under the pointer; drag moves; drag a stop off the bar by 24 px removes it. Every change is live, one step per session. The written gradient is the same bytes for the same stops on macOS and Linux (CONTRACTS §8.3).
+
+**UX-PED-085** `M4.3b` `[S K T]` Palette: summary "Default" or "{n} colours changed". The popover (320 px, up to 480 px tall, scrolls) lists the roles in this order with friendly names: Window, Window text, Base (field background), Alternate base, Text, Placeholder text, Button, Button text, Bright text, Highlight, Highlighted text, Link, Visited link, Tooltip background, Tooltip text, Light, Midlight, Mid, Dark, Shadow. Each role row has one swatch "All states". "Show each state" (a check box at the top) splits each row into three swatches: Active, Inactive, Disabled. Enter or a click on a swatch opens the brush editor in place inside the popover with a "‹ Palette" back button (Esc goes back first, a second Esc closes). A written role has a Strong label and a ↺. "Start from a colour…" sets every role from one button colour the way Qt derives a palette, as one step, after a confirm when roles are already set: "Replace the {n} colours you set?" [Replace] [Cancel]. Only changed roles are written; the three state groups are written as Qt requires. One step per session, named "Change palette of {name}".
+
+**UX-PED-086** `M4.3b` `[S K]` Cursor: a drop-down with friendly names in this order: Arrow, Pointing hand, Text (I-beam), Wait, Busy (arrow and wait), Cross, Up arrow, Resize left–right, Resize up–down, Resize diagonal ⟋, Resize diagonal ⟍, Move, Split horizontal, Split vertical, Not allowed, What's this, Open hand, Closed hand, Drag copy, Drag move, Drag link, Blank. Tooltips give the Qt names. A legacy integer `cursor` is shown by its name and kept until changed; a change writes `cursorShape`.
+
+##### Pictures and icons (M4.3c)
+
+**UX-PED-100** `M4.3c` `[S K T]` The picture picker, used by pixmap and icon rows and picture brushes. A popover (320 px) with a "Search pictures" field and a grid of 56 × 64 px cells (48 px thumbnail on the checkerboard, file name under it, elided in the middle). It lists every image file in the `.qrc` files this form includes (`<resources>`), grouped by `.qrc` file and prefix, with the resource path in each tooltip (":/icons/save.png"). Arrows move in the grid, Enter picks and closes, Esc reverts. Below the grid: "From a file…" (a file dialog) and, when the form includes no `.qrc`, the Caption "This form uses no resource file yet. Pictures from files may be missing when the app is packaged." Picking a file outside resources writes its path relative to the form and shows, in `fb.warning` on the row, "Loaded from a file path. A packaged app may not find it." Adding the file to a resource file is M5.2 (deferred, pain 9).
+
+**UX-PED-101** `M4.3c` `[S]` Picture row (pixmap): a 16 × 16 thumbnail (1 px `fb.swatch_border`) and the file name; unwritten "None" in `fb.faint`; a missing file "{name} (missing)" in `fb.error` with the tooltip "Code Studio can't find {path}." The canvas shows the picture as the app would (the realizer reads resources from the `.qrc` on disk).
+
+**UX-PED-102** `M4.3c` `[S K T]` Icon (icon set): summary thumbnail and name. The popover: "Picture" (the normal, off state; the picker), "Theme icon name" (field, help: "Uses the desktop's icon with this name when there is one; otherwise the picture."), and "Other states ▸": a 4 × 2 grid of small picker cells — Normal, Disabled, Active, Selected, each Off and On — with "Same as normal" shown faint where unset. A legacy `resource` attribute is kept as it was. One step per session.
+
+**UX-PED-103** `M4.3c` `[S]` A brush's **Picture** style (texture) uses the picture picker inside the brush popover.
+
+**UX-PED-104** `M4.3c` `[S]` Every image on the canvas that cannot be loaded is drawn as the class would draw an empty picture, never as a crash or a broken-image icon, and the row says why (UX-PED-101).
+
+#### 13.1.5 Item editors (ITEM)
+
+**UX-ITEM-001** `M4.4` `[K T]` The items of a combo box, list widget, tree widget and table widget are edited in the item editor. It opens with: Enter on the selected widget on the canvas (UX-TEXT-004; for a tree and a table too); "Edit items…" in the context menu; or the "Items" row in the Content group, whose summary reads "{n} items: {first}, {second}…" (tree: "{n} rows in {m} columns"; table: "{rows} × {columns}, {n} cells filled"). Double-click on these widgets on the canvas opens it as well (they have no text to edit in place).
+
+**UX-ITEM-002** `M4.4` `[S]` From the canvas, the editor is a popover anchored beside the widget, placed like a chip (UX-CHIP-002 order, never covering the widget being edited), 360 × 320 px by default (tree and table 480 × 360), resizable from its bottom-right grip, size remembered per user. From the inspector row it anchors to the row (UX-PED-003). It is a level 2 surface with a header "Items of {name}" and [Done] at the foot.
+
+**UX-ITEM-003** `M4.4` `[S K T]` Combo box and list widget: the list editor (UX-PED-044) over the items' texts. Each row has a ▸ disclosure that shows the item's details: "Icon" (the picture picker, UX-PED-102), and for list widget items "User can check it" with "Starts" (Unchecked, Checked, Partly), "Enabled", "Selectable", "Editable", "Tooltip", and "More properties ▸" (UX-ITEM-006). Alt+Right opens the focused row's details and Alt+Left closes them (Ctrl+Left and Ctrl+Right stay word moves in the field). The combo's "Starts on" (`currentIndex`) is an inspector row, not part of the editor.
+
+**UX-ITEM-004** `M4.4` `[S K T]` Tree widget: two tabs, **Items | Columns**. Columns is a list editor of the header texts (at least one column: "A tree needs at least one column."). Items is a tree-shaped list editor: each row has one field per column (up to 3 visible; more scroll sideways inside the editor); Tab nests the row under the previous row and Shift+Tab moves it out one level (the outline's grammar, UX-OUT-004); Ctrl+Tab and Ctrl+Shift+Tab leave the list. Left at the start of a field moves to the previous column's field, Right at the end to the next. Enter on the last row adds a sibling. Alt+Up and Alt+Down move a row among its siblings, with its children.
+
+**UX-ITEM-005** `M4.4` `[S K T]` Table widget: three tabs, **Cells | Rows | Columns**. Rows and Columns are list editors of the header texts; their count is the table's row and column count ("Rows" adding a row adds a table row). Cells is a grid: arrow keys move, typing replaces the cell's text, Enter or F2 edits the cell keeping its text, Delete clears the cell, Ctrl+V of tab-separated text fills from the current cell. A cell's details (the UX-ITEM-003 list) open with Alt+Right.
+
+**UX-ITEM-006** `M4.4` `[S]` "More properties" of an item, row or column header shows a short property list using the same editors as the inspector (UX-PED): Text, Tooltip, Status tip, What's this, Font, Background, Foreground, Text alignment, Check state, Flags. It reuses the inspector's editor registry; no item-only editors exist.
+
+**UX-ITEM-007** `M4.4` `[T A]` Every change is live on the canvas. One editor session is one undo step, "Edit items of {name}" (`SetItems` with a merge key per widget and session). Esc reverts the session and leaves no step. Closing keeps it. Selecting another widget or a structural command closes it and keeps.
+
+**UX-ITEM-008** `M4.4` `[S]` Model-based views (List, Tree, Table and Column view, Undo view) have no items in the file. Enter or double-click on one says, in the status bar: "This view gets its rows from your code. To type rows here, change it to a list widget (Change to)." No popover opens.
+
+**UX-ITEM-009** `M4.4` `[S]` The outline's text column shows the first items for item widgets ("Combo box “Small, Medium, …”"), and the canvas signature check covers tree item texts (ticket M4b), so a realize patch that drops a tree item is caught.
+
+#### 13.1.6 Copy tables
+
+**Undo names** (UX-M4-006):
+
+| Action | Undo name |
+| --- | --- |
+| Insert from the catalog | "Insert {friendly name}" ("Insert combo box") |
+| Insert page / step / window | "Insert page" |
+| Delete page | "Delete page" |
+| Move page | "Move page" |
+| Start on this page | "Change start page" |
+| Dock side | "Dock to the {side}" |
+| A field or popover session on one property | "Change {label in lower case}" ("Change echo mode") |
+| A popover session on a font, palette or icon | "Change font of {name}", "Change palette of {name}", "Change icon of {name}" |
+| Translation fields | "Change translation of {label in lower case}" |
+| Add / rename / remove custom property | "Add custom property {name}", "Rename custom property", "Remove custom property {name}" |
+| Item editor session | "Edit items of {name}" |
+| Reset | "Reset {label in lower case}" |
+
+**Refusals and warnings** (every sentence a lane may show for M4; a new one needs a spec change):
+
+| Where | Sentence | Colour |
+| --- | --- | --- |
+| Insert target | "A wizard page can only go into a wizard." / "In a main window, a dock widget goes on one of its sides." | status + `ov.problem` |
+| Insert search, Enter with no result | "Nothing to insert. Change the search or press Esc." | status |
+| Page commands | "This is already the first page." / "This is already the last page." | tooltip |
+| Number | "Use a number from {min} to {max}." / "Type a number, like 12." | `fb.error` |
+| Char | "Type one character." | `fb.error` |
+| Date / time | "Use a date like 10/28/2026." / "Use a time like 2:30 PM." | `fb.error` |
+| Colour | "Use a colour like #1A7F37." | `fb.error` |
+| Gradient | "A gradient needs at least two colours." | `fb.error` |
+| Tree columns | "A tree needs at least one column." | `fb.error` |
+| Custom property names | the four sentences in UX-PED-061 | `fb.error` |
+| Object reference | "No widget called “{name}” on this form." | `fb.error` |
+| Shortcut clash | "{actionName} already uses {keys}." | `fb.warning` |
+| URL | "This doesn't look like a web or file address." | `fb.warning` |
+| Canvas can't show | "Saved in the file. The canvas can't show this value." | `fb.warning` |
+| File path picture | "Loaded from a file path. A packaged app may not find it." | `fb.warning` |
+| Model views | "This view gets its rows from your code. To type rows here, change it to a list widget (Change to)." | status |
+
+#### 13.1.7 Deferred from M4, with owners
+
+| Item | Owner |
+| --- | --- |
+| Main-window parts in the catalog (menu bar, toolbar, status bar), menus, actions, action groups, button groups (R3 113–119) | M5.1 |
+| Promotion and a project-wide "Your widgets" registry (R3 123) | M5.4 |
+| Adding a picture to a resource file, resource-only pictures, the Problems fix for file paths (pain 9) | M5.2 |
+| Style sheet editor (the `styleSheet` row stays raw) | M5.3 |
+| Buddy and tab-order pickers (object-reference rows stay text fields) | M5.6 |
+| Speed harness rows for the M4 paths (UX-M4-007) | M4.5 |
+| Drops and moves inside the wide copy of Two widths | M9.5 (unchanged) |
+| Items for model-based views | Won't do: the model lives in user code (UX-ITEM-008) |
 
 ### 13.2 M5: main windows, resources, styling, custom widgets, templates
 
