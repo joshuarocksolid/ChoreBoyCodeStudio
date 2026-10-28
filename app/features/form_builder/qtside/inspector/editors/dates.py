@@ -62,18 +62,21 @@ class _Calendar(QCalendarWidget):
         for child in self.findChildren(QWidget):
             child.installEventFilter(self)
 
-    def _shift_month(self, delta: int) -> None:
-        self.setSelectedDate(self.selectedDate().addMonths(delta))
+    def _shift(self, delta: int, *, years: bool) -> None:
+        date = self.selectedDate()
+        self.setSelectedDate(date.addYears(delta) if years else date.addMonths(delta))
 
     def _take_key(self, event: QEvent) -> bool:
         key = event.key()  # type: ignore[attr-defined]
         keys = getattr(Qt, "Key", Qt)
+        control = getattr(getattr(Qt, "KeyboardModifier", Qt), "ControlModifier")
+        years = bool(event.modifiers() & control)  # type: ignore[attr-defined]
         if key == getattr(keys, "Key_PageDown"):
-            self._shift_month(1)
+            self._shift(1, years=years)
             event.accept()  # type: ignore[attr-defined]
             return True
         if key == getattr(keys, "Key_PageUp"):
-            self._shift_month(-1)
+            self._shift(-1, years=years)
             event.accept()  # type: ignore[attr-defined]
             return True
         if key in (getattr(keys, "Key_Return"), getattr(keys, "Key_Enter")):

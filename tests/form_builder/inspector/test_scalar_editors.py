@@ -407,6 +407,47 @@ def test_bad_date_and_time_are_refused() -> None:
             _close(window, pane)
 
 
+@pytest.mark.parametrize(
+    "keys,written",
+    (
+        ((("Key_PageDown", ()),), "<year>2027</year><month>1</month><day>31</day>"),
+        ((("Key_PageDown", ("Control",)),), "<year>2027</year><month>12</month><day>31</day>"),
+        ((("Key_PageUp", ("Control",)),), "<year>2025</year><month>12</month><day>31</day>"),
+    ),
+)
+def test_calendar_pages_by_month_and_by_year(keys: Tuple[Tuple[str, Tuple[str, ...]], ...], written: str) -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "when")
+            edit = _row(pane, "date").findChild(QLineEdit)
+            assert isinstance(edit, QLineEdit)
+            edit.setFocus()
+            edit.selectAll()
+            QTest.keyClicks(edit, "12/31/2026")
+            QTest.keyClick(edit, _key("Key_Return"))
+            _events()
+            pane.flush()
+            edit = _row(pane, "date").findChild(QLineEdit)
+            assert isinstance(edit, QLineEdit)
+            edit.setFocus()
+            QTest.keyClick(edit, _key("Key_Down"), _mods("Alt"))
+            _events()
+            for name, mods in keys:
+                focus = QApplication.focusWidget()
+                assert isinstance(focus, QWidget)
+                QTest.keyClick(focus, _key(name), _mods(*mods))
+                _events()
+            focus = QApplication.focusWidget()
+            assert isinstance(focus, QWidget)
+            QTest.keyClick(focus, _key("Key_Return"))
+            _events()
+            pane.flush()
+            assert written in "".join(_xml(session).split())
+        finally:
+            _close(window, pane)
+
+
 _FREE = form(
     'class="QWidget" name="Form"',
     """
