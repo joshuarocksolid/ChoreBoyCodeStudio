@@ -178,6 +178,11 @@ class RowSpec:
 
     ``order`` is a sort key inside the group. ``after`` names the row key this
     one sits immediately after. ``after`` is applied after ``order``.
+
+    ``parent_classes`` is a parent scope: when set, every owner's nearest parent
+    widget (layouts are skipped) must include one of them in its chain, else the
+    row is hidden. A dock side needs a main window parent; a page attribute needs
+    a tab widget, toolbox or wizard parent.
     """
 
     key: str
@@ -188,6 +193,7 @@ class RowSpec:
     classes: Tuple[str, ...] = ()
     order: Optional[int] = None
     after: str = ""
+    parent_classes: Tuple[str, ...] = ()
 
 class EditSession(Protocol):
     """See ``_services.EditSession``: one focus visit or one popover, one undo step."""
