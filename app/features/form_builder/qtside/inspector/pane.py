@@ -278,6 +278,13 @@ class InspectorPane(QWidget):
             return False
         if not self._owns(watched):
             return False
+        if kind == QEvent.ShortcutOverride and _key(event) in (_code(Qt.Key_Tab), _code(Qt.Key_Backtab)):
+            # A deferred flush would rebuild the tab chain after this key, so
+            # Tab from a just-edited row leaves the form. Paint links the rows
+            # before Qt moves focus. Rebuilding a chain that is already current
+            # scrambles Shift+Tab.
+            if self._pending:
+                self.flush()
         if kind == QEvent.ShortcutOverride and self._override(event):
             event.accept()
             self._dispatch_claimed(event)

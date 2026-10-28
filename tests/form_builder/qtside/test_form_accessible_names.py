@@ -104,8 +104,8 @@ def test_expanded_controls_carry_context_in_their_names(tmp_path: Path, qapp: QA
         assert _check_names(surface, "Italic") == {"Font: Italic"}
         assert _tool_names(surface) >= {
             "Alignment in cell: Left",
-            "Alignment in cell: Horizontal center",
-            "Alignment in cell: Vertical center",
+            "Alignment in cell: Center",
+            "Alignment in cell: Middle",
             "Alignment in cell: Right",
             "Alignment in cell: Justify",
             "Alignment in cell: Top",
@@ -115,8 +115,8 @@ def test_expanded_controls_carry_context_in_their_names(tmp_path: Path, qapp: QA
         _settle(qapp)
         assert _tool_names(surface) >= {
             "Text alignment: Left",
-            "Text alignment: Horizontal center",
-            "Text alignment: Vertical center",
+            "Text alignment: Center",
+            "Vertical alignment: Middle",
             "Text alignment: Right",
             "Text alignment: Justify",
             "Text alignment: Top",
