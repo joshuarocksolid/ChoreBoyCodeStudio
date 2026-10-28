@@ -343,12 +343,26 @@ class RowPopover(QFrame):
         )
         field_sel = ", ".join("%s %s" % (frame, kind) for kind in fields)
         focus_sel = ", ".join("%s %s:focus" % (frame, kind) for kind in fields)
+        state_kinds = (
+            "QLineEdit",
+            "QComboBox",
+            "QSpinBox",
+            "QDoubleSpinBox",
+            "QFontComboBox",
+            "QCheckBox",
+        )
+        unset_sel = ", ".join('%s %s[fbState="unset"]' % (frame, kind) for kind in state_kinds)
+        mixed_sel = ", ".join(
+            '%s %s[fbState="mixed"]' % (frame, kind) for kind in state_kinds + ("QListWidget",)
+        )
         self.setStyleSheet(
             "%(frame)s { background: %(fill)s; border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
             "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
             "%(frame)s QLabel#formBuilder\\.popoverTitle { color: %(text)s; font-size: 13px; font-weight: 600; }"
             "%(frame)s QLabel#formBuilder\\.popoverQtName { color: %(faint)s; font-size: 11px; font-weight: 400; }"
             "%(fields)s { background: %(input)s; color: %(text)s; border: 1px solid %(line)s; }"
+            "%(unset)s { color: %(faint)s; }"
+            "%(mixed)s { color: %(faint)s; font-style: italic; }"
             "%(focused)s { border: %(focus)dpx solid %(accent)s; }"
             "%(frame)s QPushButton { color: %(text)s; background: %(input)s; border: 1px solid %(line)s;"
             " border-radius: 4px; padding: 6px 10px; }"
@@ -358,6 +372,8 @@ class RowPopover(QFrame):
             % {
                 "frame": frame,
                 "fields": field_sel,
+                "unset": unset_sel,
+                "mixed": mixed_sel,
                 "focused": focus_sel,
                 "fill": tokens.popup,
                 "frame_px": frame_px,
