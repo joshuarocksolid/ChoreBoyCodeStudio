@@ -919,6 +919,12 @@ class _Row(QWidget):
     def row_widget(self) -> QWidget:
         return self
 
+    @property
+    def is_custom(self) -> bool:
+        """A custom (dynamic) property row. Its popover title is the name alone."""
+        view = self._view
+        return isinstance(view, OpenRow) and bool(view.dynamic)
+
     def document(self) -> UiDocument:
         return self._services.session.document
 

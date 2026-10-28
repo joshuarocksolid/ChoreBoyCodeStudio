@@ -218,10 +218,13 @@ class RowPopover(QFrame):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(PADDING, PADDING, PADDING, PADDING)
         outer.setSpacing(8)
-        title = QLabel(popover_title(row_label, qt_name), self)
+        # A custom property's name is its label (UX-PED-060): no friendly
+        # words, and no second copy of the name as the caption.
+        custom = bool(getattr(row, "is_custom", False))
+        title = QLabel(row_label if custom else popover_title(row_label, qt_name), self)
         title.setObjectName("formBuilder.popoverTitle")
         outer.addWidget(title)
-        if qt_name:
+        if qt_name and not (custom and qt_name == row_label):
             qt = QLabel(qt_name, self)
             qt.setObjectName("formBuilder.popoverQtName")
             outer.addWidget(qt)

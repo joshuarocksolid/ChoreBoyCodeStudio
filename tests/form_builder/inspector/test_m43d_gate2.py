@@ -58,9 +58,9 @@ def _rich_form(html: str) -> str:
 
 
 def _popover(window: QWidget) -> QWidget:
-    popover = window.findChild(QWidget, "formBuilder.rowPopover")
-    assert popover is not None
-    return popover
+    shown = [item for item in window.findChildren(QWidget, "formBuilder.rowPopover") if item.isVisible()]
+    assert shown
+    return shown[-1]
 
 
 def _value(session, name: str, prop: str):
@@ -90,7 +90,7 @@ def test_mixed_text_popover_shows_mixed(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
-def test_popover_title_is_friendly_when_the_label_is_the_qt_name(qapp: QApplication) -> None:
+def test_popover_titles_for_all_properties_and_custom_rows(qapp: QApplication) -> None:
     window, pane, session, realizer = _pane(qapp, _LIST)
     try:
         _select(session, "Form")
@@ -104,12 +104,30 @@ def test_popover_title_is_friendly_when_the_label_is_the_qt_name(qapp: QApplicat
         popover = _popover(window)
         title = popover.findChild(QLabel, "formBuilder.popoverTitle")
         caption = popover.findChild(QLabel, "formBuilder.popoverQtName")
-        assert title is not None and caption is not None
-        assert title.text() == "Tags"
-        assert caption.text() == "tags"
+        assert title is not None and caption is None
+        assert title.text() == "tags"
         box = QCheckBox("Probe", popover)
         box.ensurePolished()
         assert box.palette().color(box.foregroundRole()).name().lower() == _CHROME.text.lower()
+        done = popover.findChild(QWidget, "formBuilder.popoverDone")
+        assert done is not None
+        done.click()
+        qapp.processEvents()
+
+        rows = [
+            row for row in pane.findChildren(QWidget, "formBuilder.row.font")
+            if any(label.text() == "font" for label in row.findChildren(QLabel))
+        ]
+        assert rows
+        button = rows[-1].findChild(QWidget, "formBuilder.summary")
+        assert button is not None
+        button.click()
+        qapp.processEvents()
+        popover = _popover(window)
+        title = popover.findChild(QLabel, "formBuilder.popoverTitle")
+        caption = popover.findChild(QLabel, "formBuilder.popoverQtName")
+        assert title is not None and caption is not None
+        assert (title.text(), caption.text()) == ("Font", "font")
     finally:
         _close(window, pane, realizer, session, qapp)
 
