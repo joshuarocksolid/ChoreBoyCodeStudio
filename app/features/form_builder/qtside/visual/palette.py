@@ -27,6 +27,7 @@ from app.features.form_builder.qtside.visual.common import (
     begin_popover,
     owner_name,
     part_name,
+    refit,
 )
 from app.qt.QtCore import QEvent, QObject, Qt
 from app.qt.QtGui import QColor, QFont, QPalette
@@ -245,33 +246,25 @@ class PaletteEditor:
         list_layout.addWidget(self._roles_list, 1)
         list_layout.addWidget(self._start)
         self._brush_page = QWidget(self._stack)
-        brush_layout = QVBoxLayout(self._brush_page)
-        brush_layout.setContentsMargins(0, 0, 0, 0)
+        self._brush_layout = QVBoxLayout(self._brush_page)
+        self._brush_layout.setContentsMargins(0, 0, 0, 0)
         back = QPushButton("\u2039 Palette", self._brush_page)
         back.setAccessibleName(part_name("Palette", "back"))
         back.clicked.connect(self._show_list)
-        self._brush_form = BrushForm(self._brush_page, self._host, self._brush_changed)
-        brush_layout.addWidget(back)
-        brush_layout.addWidget(self._brush_form)
+        self._brush_layout.addWidget(back)
+        self._brush_form = None
         self._start_page = QWidget(self._stack)
-        start_layout = QVBoxLayout(self._start_page)
-        start_layout.setContentsMargins(0, 0, 0, 0)
+        self._start_layout = QVBoxLayout(self._start_page)
+        self._start_layout.setContentsMargins(0, 0, 0, 0)
         start_back = QPushButton("\u2039 Palette", self._start_page)
         start_back.setAccessibleName(part_name("Palette", "back"))
         start_back.clicked.connect(self._show_list)
-        self._start_picker = ColorPicker(
-            self._start_page,
-            on_color=self._hold_start,
-            on_invalid=self._host.invalid,
-            row="Colour",
-        )
-        self._start_picker.set_tokens(self._host.chrome)
+        self._start_layout.addWidget(start_back)
+        self._start_picker = None
         use = QPushButton("Use this colour", self._start_page)
         use.setAccessibleName(part_name("Palette", "use this colour"))
         use.clicked.connect(self._apply_start)
-        start_layout.addWidget(start_back)
-        start_layout.addWidget(self._start_picker)
-        start_layout.addWidget(use)
+        self._start_layout.addWidget(use)
         self._confirm = QWidget(self._stack)
         confirm_layout = QVBoxLayout(self._confirm)
         self._confirm_label = QLabel(self._confirm)
@@ -358,17 +351,42 @@ class PaletteEditor:
         _label, role = _ROLES[row]
         self._open_brush(role, "all" if not self._per_state else group)
 
+    def _ensure_brush(self) -> None:
+        if self._brush_form is not None:
+            return
+        form = BrushForm(self._brush_page, self._host, self._brush_changed)
+        self._brush_form = form
+        self._brush_layout.addWidget(form)
+
+    def _ensure_start(self) -> None:
+        if self._start_picker is not None:
+            return
+        picker = ColorPicker(
+            self._start_page,
+            on_color=self._hold_start,
+            on_invalid=self._host.invalid,
+            row="Colour",
+        )
+        picker.set_tokens(self._host.chrome)
+        self._start_picker = picker
+        self._start_layout.insertWidget(1, picker)
+
     def _open_brush(self, role: str, group: str) -> None:
         self._page = "brush"
         self._brush_role = role
         self._brush_group = group
+        self._ensure_brush()
         current = self._brush_for(role, group) or BrushValue(brushstyle="NoBrush")
-        self._brush_form.set_brush(current)
+        form = self._brush_form
+        if form is not None:
+            form.set_brush(current)
         self._list_page.hide()
         self._start_page.hide()
         self._confirm.hide()
         self._brush_page.show()
-        self._brush_form.setFocus()
+        if form is not None:
+            form.setFocus()
+        refit(self._popover)
 
     def _show_list(self) -> None:
         self._page = "list"
@@ -411,11 +429,14 @@ class PaletteEditor:
 
     def _start_from(self) -> None:
         self._page = "start"
+        self._ensure_start()
         self._list_page.hide()
         self._brush_page.hide()
         self._confirm.hide()
         self._start_page.show()
-        self._start_picker.setFocus()
+        if self._start_picker is not None:
+            self._start_picker.setFocus()
+        refit(self._popover)
 
     def _hold_start(self, color: ColorValue) -> None:
         self._pending = color

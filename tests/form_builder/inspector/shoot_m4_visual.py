@@ -21,9 +21,19 @@ _WIDTHS = (236, 300)
 
 
 def _grab(widget: QWidget, path: str, scale: int) -> None:
+    if widget.width() < 1 or widget.height() < 1:
+        return
     image = widget.grab()
+    if image.isNull():
+        image = QPixmap(widget.size())
+        image.fill()
+        widget.render(image)
+    if image.isNull():
+        return
     if scale == 2 and image.devicePixelRatio() < 1.5:
-        image = image.scaled(image.width() * 2, image.height() * 2)
+        scaled = image.scaled(image.width() * 2, image.height() * 2)
+        if not scaled.isNull():
+            image = scaled
     folder = os.path.dirname(path)
     os.makedirs(folder, exist_ok=True)
     image.save(path)

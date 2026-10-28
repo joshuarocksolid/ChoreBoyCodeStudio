@@ -19,7 +19,7 @@ from app.features.form_builder.qtside.visual.common import (
 )
 from app.features.form_builder.qtside.theme.chrome import ChromeTokens, FormChrome
 from app.qt.QtCore import QPoint, QRect, Qt
-from app.qt.QtGui import QColor, QImage, QPainter, QPen
+from app.qt.QtGui import QBrush, QColor, QImage, QLinearGradient, QPainter, QPen
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -114,9 +114,12 @@ class _Plane(QWidget):
 
     def paintEvent(self, _event: object) -> None:  # noqa: N802
         painter = QPainter(self)
+        self._draw(painter)
+        painter.end()
+
+    def _draw(self, painter: QPainter) -> None:
         if not self._image.isNull():
             painter.drawImage(0, 0, self._image)
-        painter.end()
 
     def mousePressEvent(self, event: object) -> None:  # noqa: N802
         if getattr(event, "button", lambda: None)() != _button("LeftButton"):
@@ -152,6 +155,30 @@ class _Plane(QWidget):
 
 
 class _Square(_Plane):
+    """The saturation/value plane. The ring is drawn on top of a cached image."""
+
+    def __init__(self, parent: QWidget, name: str, on_point: Callable[[int, int, bool, bool], None]) -> None:
+        super().__init__(parent, name, on_point)
+        self._handle_at: Optional[tuple] = None
+        self._handle_color = QColor(255, 255, 255)
+        self._handle_px = 1.5
+
+    def set_handle(self, x: int, y: int, color: QColor, px: float) -> None:
+        self._handle_at = (x, y)
+        self._handle_color = color
+        self._handle_px = px
+        self.update()
+
+    def _draw(self, painter: QPainter) -> None:
+        super()._draw(painter)
+        if self._handle_at is None:
+            return
+        pen = QPen(self._handle_color)
+        pen.setWidthF(self._handle_px)
+        painter.setPen(pen)
+        painter.setBrush(QBrush())
+        painter.drawEllipse(QPoint(self._handle_at[0], self._handle_at[1]), 6, 6)
+
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
         key = event.key()  # type: ignore[attr-defined]
         step = 10 if event.modifiers() & _modifier("ShiftModifier") else 1  # type: ignore[attr-defined]
@@ -219,6 +246,8 @@ class ColorPicker(QWidget):
         self._handle = QColor(255, 255, 255)
         self._handle_px = 1.5
         self._pushing = False
+        self._base_key: Optional[tuple] = None
+        self._hue_key: Optional[int] = None
         self._build()
 
     def _build(self) -> None:
@@ -444,36 +473,26 @@ class ColorPicker(QWidget):
         self._paint_alpha()
 
     def _paint_handle_only(self) -> None:
-        self._paint_square()
+        self._place_handle()
 
-    def _paint_square(self) -> None:
+    def _place_handle(self) -> None:
         width, height = self._square_w, self._square_h
-        image = QImage(width, height, _image_format("Format_RGB32"))  # type: ignore[arg-type]
-        hue = self._hue % 360
-        for y in range(height):
-            value = int(round((height - 1 - y) * 255 / max(1, height - 1)))
-            for x in range(width):
-                sat = int(round(x * 255 / max(1, width - 1)))
-                image.setPixelColor(x, y, QColor.fromHsv(hue, sat, value))
-        painter = QPainter(image)
         handle_x = int(round(self._sat * (width - 1) / 255))
         handle_y = int(round((255 - self._val) * (height - 1) / 255))
-        pen = QPen(self._handle)
-        pen.setWidthF(self._handle_px)
-        painter.setPen(pen)
-        painter.drawEllipse(QPoint(handle_x, handle_y), 6, 6)
-        painter.end()
-        self._square.set_image(image)
+        self._square.set_handle(handle_x, handle_y, self._handle, self._handle_px)
+
+    def _paint_square(self) -> None:
+        key = (self._square_w, self._square_h, self._hue % 360)
+        if key != self._base_key:
+            self._base_key = key
+            self._square.set_image(_sv_image(self._square_w, self._square_h, self._hue % 360))
+        self._place_handle()
 
     def _paint_hue(self) -> None:
-        width = self._square_w
-        image = QImage(width, 12, _image_format("Format_RGB32"))  # type: ignore[arg-type]
-        for x in range(width):
-            hue = int(round(x * 359 / max(1, width - 1)))
-            color = QColor.fromHsv(hue, 255, 255)
-            for y in range(12):
-                image.setPixelColor(x, y, color)
-        self._hue_strip.set_image(image)
+        if self._hue_key == self._square_w:
+            return
+        self._hue_key = self._square_w
+        self._hue_strip.set_image(_hue_image(self._square_w))
 
     def _paint_alpha(self) -> None:
         if not self._show_alpha:
@@ -491,6 +510,35 @@ class ColorPicker(QWidget):
             painter.fillRect(x, 0, 1, 12, column)
         painter.end()
         self._alpha_strip.set_image(image)
+
+
+def _sv_image(width: int, height: int, hue: int) -> QImage:
+    """Saturation across, value down. One hue fill plus two gradients, not a pixel loop."""
+    image = QImage(width, height, _image_format("Format_RGB32"))  # type: ignore[arg-type]
+    painter = QPainter(image)
+    painter.fillRect(0, 0, width, height, QColor.fromHsv(hue % 360, 255, 255))
+    fade = QLinearGradient(0, 0, width, 0)
+    fade.setColorAt(0.0, QColor(255, 255, 255))
+    fade.setColorAt(1.0, QColor(255, 255, 255, 0))
+    painter.fillRect(0, 0, width, height, fade)
+    shade = QLinearGradient(0, 0, 0, height)
+    shade.setColorAt(0.0, QColor(0, 0, 0, 0))
+    shade.setColorAt(1.0, QColor(0, 0, 0))
+    painter.fillRect(0, 0, width, height, shade)
+    painter.end()
+    return image
+
+
+def _hue_image(width: int) -> QImage:
+    image = QImage(width, 12, _image_format("Format_RGB32"))  # type: ignore[arg-type]
+    painter = QPainter(image)
+    strip = QLinearGradient(0, 0, width, 0)
+    stops = (0, 60, 120, 180, 240, 300, 359)
+    for hue in stops:
+        strip.setColorAt(hue / 359.0, QColor.fromHsv(hue, 255, 255))
+    painter.fillRect(0, 0, width, 12, strip)
+    painter.end()
+    return image
 
 
 def colour_summary(color: Optional[ColorValue], *, mixed: bool, unset: bool) -> str:

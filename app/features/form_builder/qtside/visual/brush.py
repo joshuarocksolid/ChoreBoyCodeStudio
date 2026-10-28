@@ -456,8 +456,6 @@ class BrushForm(QWidget):
         self._pattern = QComboBox(self)
         self._pattern.setObjectName("formBuilder.brushPattern")
         self._pattern.setAccessibleName(part_name("Brush", "pattern"))
-        for label, stored in _PATTERNS:
-            self._pattern.addItem(QIcon(_pattern_icon(stored)), label, stored)
         self._pattern.activated.connect(self._pattern_changed)
         layout.addWidget(self._pattern)
         self._gradient_box = QWidget(self)
@@ -529,6 +527,7 @@ class BrushForm(QWidget):
         for key, button in self._style_buttons.items():
             button.setChecked(key == style)
         if brush.brushstyle in dict((name, label) for label, name in _PATTERNS):
+            self._ensure_patterns()
             index = self._pattern.findData(brush.brushstyle)
             if index >= 0:
                 self._pattern.setCurrentIndex(index)
@@ -557,6 +556,7 @@ class BrushForm(QWidget):
             color = self._brush.color or ColorValue(0, 0, 0)
             self._brush = BrushValue(brushstyle="SolidPattern", color=color)
         elif key == "pattern":
+            self._ensure_patterns()
             color = self._brush.color or ColorValue(0, 0, 0)
             stored = self._pattern.currentData() or "Dense4Pattern"
             self._brush = BrushValue(brushstyle=str(stored), color=color)
@@ -577,9 +577,16 @@ class BrushForm(QWidget):
         self._picker.setVisible(style != "picture")
         self._extra.setVisible(style == "picture")
 
+    def _ensure_patterns(self) -> None:
+        if self._pattern.count():
+            return
+        for label, stored in _PATTERNS:
+            self._pattern.addItem(QIcon(_pattern_icon(stored)), label, stored)
+
     def _pattern_changed(self, _index: int) -> None:
         if self._pushing:
             return
+        self._ensure_patterns()
         color = self._brush.color or ColorValue(0, 0, 0)
         self._brush = BrushValue(brushstyle=str(self._pattern.currentData()), color=color)
         self._emit()

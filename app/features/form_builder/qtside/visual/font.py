@@ -160,6 +160,17 @@ class _FamilyDelegate(QStyledItemDelegate):
         super().paint(painter, option, index)  # type: ignore[arg-type]
 
 
+_FAMILY_NAMES: Optional[List[str]] = None
+
+
+def _family_names() -> List[str]:
+    """QFontDatabase.families is expensive the first time. Keep one list per process."""
+    global _FAMILY_NAMES
+    if _FAMILY_NAMES is None:
+        _FAMILY_NAMES = [name for name in QFontDatabase.families() if name]
+    return _FAMILY_NAMES
+
+
 class _FamilyBox(QComboBox):
     def __init__(self, parent: QWidget, on_pick: object) -> None:
         super().__init__(parent)
@@ -182,7 +193,7 @@ class _FamilyBox(QComboBox):
 
     def _fill(self, needle: str) -> None:
         if not self._all:
-            self._all = [name for name in QFontDatabase.families() if name]
+            self._all = list(_family_names())
         self.blockSignals(True)
         self.clear()
         self.addItem("Default (the app's font)")
