@@ -1,7 +1,7 @@
 """New form tab: virtual tab, create flow, and the adopt hook M2.4 binds.
 
-The form tab does not expose a selection method yet. ``select_created_widget``
-calls ``select_object`` when that method appears.
+After create, ``select_created_widget`` selects the template's first input
+through ``FormSurface.select_object`` and focuses the canvas (UX-START-004).
 """
 
 from __future__ import annotations
@@ -60,10 +60,10 @@ def recent_entries(project_root: str, fs: OsFileSystem) -> tuple:
 
 
 def select_created_widget(surface: object, object_name: Optional[str]) -> bool:
-    """Select ``object_name`` when the form tab grows ``select_object``.
+    """Select ``object_name`` on the new form tab (UX-START-004).
 
-    The form tab has no selection API yet, so the new form opens with the
-    root in place (UX-START-004).
+    False when the tab has no ``select_object`` or no such widget; the form
+    then opens with the root in place.
     """
     if surface is None or not object_name:
         return False

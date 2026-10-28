@@ -989,6 +989,18 @@ class FormSurface(QWidget):
     def zoom_changed(self, label: str) -> None:
         self._toolbar.zoom_label.setText(label)
 
+    def select_object(self, object_name: str) -> bool:
+        """Select ``object_name`` and put the keyboard on the canvas (UX-START-004)."""
+        if self._source.mode != "visual":
+            return False
+        found = self._session.document.by_name(object_name)
+        if not found:
+            return False
+        node = found[0]
+        self._session.selection.set((node,), current=node, source=SelectionSource.COMMAND)
+        self._workbench.canvas.setFocus()
+        return True
+
     def zoom_out(self) -> None:
         self._workbench.canvas.send(ZoomAsked(ZoomStep(-1)))
 
