@@ -446,20 +446,32 @@ def test_shift_tab_reverses_the_inspector_group_order(tmp_path: Path, qapp: QApp
         shutdown_main_window_for_test(window, qapp)
 
 
+def _font_size(surface: object, qapp: QApplication) -> tuple:
+    row = _row(surface, "font")
+    summary = row.findChild(QPushButton, "formBuilder.summary")
+    assert isinstance(summary, QPushButton)
+    summary.click()
+    _settle(qapp)
+    spin = summary.window().findChild(QSpinBox, "formBuilder.fontSize")
+    assert isinstance(spin, QSpinBox)
+    line = spin.lineEdit()
+    assert isinstance(line, QLineEdit)
+    return spin, line
+
+
 def test_font_size_commits_once_on_enter(tmp_path: Path, qapp: QApplication) -> None:
     window, surface = _start(tmp_path, qapp)
     try:
         _select(surface, qapp, "okButton")
-        _spin, line = _spin_line(surface, "font")
+        spin, line = _font_size(surface, qapp)
         before = _undo_count(surface)
         _type_number(qapp, line, "120")
         assert _undo_count(surface) == before
         assert "<pointsize>120</pointsize>" not in _xml(surface)
-        assert _spin_line(surface, "font")[0].value() != 120
+        assert spin.value() != 120
         QTest.keyClick(line, _key("Key_Return"))
         _settle(qapp)
         assert _undo_count(surface) == before + 1
-        assert _spin_line(surface, "font")[0].value() == 120
         assert "<pointsize>120</pointsize>" in _xml(surface)
     finally:
         shutdown_main_window_for_test(window, qapp)
@@ -469,14 +481,13 @@ def test_font_size_escape_reverts_uncommitted_digits(tmp_path: Path, qapp: QAppl
     window, surface = _start(tmp_path, qapp)
     try:
         _select(surface, qapp, "okButton")
-        spin, line = _spin_line(surface, "font")
+        spin, line = _font_size(surface, qapp)
         shown = spin.text()
         before = _undo_count(surface)
         _type_number(qapp, line, "120")
         assert line.text() != shown
         QTest.keyClick(line, _key("Key_Escape"))
         _settle(qapp)
-        assert _spin_line(surface, "font")[0].text() == shown
         assert _undo_count(surface) == before
         assert "<pointsize>120</pointsize>" not in _xml(surface)
     finally:

@@ -100,8 +100,15 @@ def test_expanded_controls_carry_context_in_their_names(tmp_path: Path, qapp: QA
         _settle(qapp)
         assert _named(surface, "formBuilder.group.content") == "Content group"
         assert _named(surface, "formBuilder.group.appearance") == "Appearance group"
-        assert _check_names(surface, "Bold") == {"Font: Bold"}
-        assert _check_names(surface, "Italic") == {"Font: Italic"}
+        font = surface.findChild(QWidget, "formBuilder.row.font")
+        assert font is not None
+        summary = font.findChild(QPushButton, "formBuilder.summary")
+        assert summary is not None
+        summary.click()
+        _settle(qapp)
+        names = _tool_names(summary.window())
+        assert "Font: bold" in names
+        assert "Font: italic" in names
         assert _tool_names(surface) >= {
             "Alignment in cell: Left",
             "Alignment in cell: Center",
