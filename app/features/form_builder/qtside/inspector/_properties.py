@@ -72,6 +72,7 @@ class PropertiesPage(QWidget):
         self._match_color = ""
         self._expanded: Dict[GroupId, bool] = {group: group is not GroupId.ALL for group in GROUP_ORDER}
         self._label_width = _LABEL_WIDE
+        self._compact = False
         self._show_qt = False
         self._sort = False
         self._pending_focus = ""
@@ -159,7 +160,16 @@ class PropertiesPage(QWidget):
         self._search_changed(self._search.text())
 
     def set_compact(self, compact: bool) -> None:
-        width = _LABEL_COMPACT if compact else _LABEL_WIDE
+        self._compact = bool(compact)
+        self._apply_label_budget()
+
+    def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().resizeEvent(event)
+        self._apply_label_budget()
+
+    def _apply_label_budget(self) -> None:
+        narrow = self._scroll.viewport().width() - 16 < _NARROW_ROW
+        width = _LABEL_COMPACT if (self._compact or narrow) else _LABEL_WIDE
         if width == self._label_width:
             return
         self._label_width = width
@@ -170,10 +180,16 @@ class PropertiesPage(QWidget):
     def set_group_expanded(self, group: object, expanded: bool) -> None:
         if not isinstance(group, GroupId):
             return
+        changed = self._expanded.get(group) != expanded
         self._expanded[group] = expanded
         widget = self._groups.get(group)
-        if widget is not None:
-            widget.set_checked(expanded)
+        if widget is None:
+            return
+        widget.set_checked(expanded)
+        if changed:
+            # Same path as a click: All properties needs a rebuild to build its
+            # rows, and other groups repaint, so the body is not left hidden.
+            widget.apply_expanded(expanded)
 
     def builds_all_properties(self) -> bool:
         return bool(self.search.strip()) or self._expanded.get(GroupId.ALL, False)
@@ -200,6 +216,12 @@ class PropertiesPage(QWidget):
         sort_reader = getattr(store, "sort_properties", None)
         sorting = bool(sort_reader()) if callable(sort_reader) else False
         self._sort_action.setChecked(sorting)
+
+    def cancel_inline_form(self) -> bool:
+        """Close the custom-property form when focus is in it. True when it closed."""
+        adder = self._groups[GroupId.ALL]._adder
+        cancel = getattr(adder, "cancel_if_focused", None)
+        return bool(cancel()) if callable(cancel) else False
 
     def sorts_properties(self) -> bool:
         return self._sort
@@ -617,6 +639,11 @@ class _Group(QWidget):
 
         return explain_name(self._services.session.document, self._owners, name)
 
+    def apply_expanded(self, expanded: bool) -> None:
+        if self._searching:
+            return
+        self._toggled(expanded)
+
     def _toggled(self, checked: bool) -> None:
         if self._searching:
             self._toggle.setChecked(True)
@@ -718,6 +745,11 @@ class _Group(QWidget):
 _BAR_SLOT = 8
 _UNBOUNDED = 16777215
 _STACK_GAP = 2
+# UX-PED-002: label 96 + gap 8 + editor. The label budget holds the changed
+# bar's slot, so the editor column is the row width less 104 at 236 px.
+_ROW_GAP = 8
+# Below this row width the label uses the compact budget, whatever the window density.
+_NARROW_ROW = 300
 
 class _Row(QWidget):
 
@@ -752,7 +784,7 @@ class _Row(QWidget):
         self._label_col = QWidget(self)
         self._label_px = _LABEL_WIDE
         self._stacked = False
-        self._label_col.setFixedWidth(_LABEL_WIDE)
+        self._label_col.setFixedWidth(_LABEL_WIDE - _BAR_SLOT)
         self._column = QVBoxLayout(self._label_col)
         self._column.setContentsMargins(0, 0, 0, 0)
         self._column.setSpacing(0)
@@ -768,7 +800,7 @@ class _Row(QWidget):
         self._head: Optional[QHBoxLayout] = None
         self._line = QHBoxLayout()
         self._line.setContentsMargins(_BAR_SLOT, 0, 0, 0)
-        self._line.setSpacing(6)
+        self._line.setSpacing(_ROW_GAP)
         self._line.addWidget(self._label_col, 0)
         self._line.addWidget(self._slot, 1)
         self._outer = QVBoxLayout(self)
@@ -792,15 +824,14 @@ class _Row(QWidget):
         bar = self._bar
         if bar is None:
             return
-        if self._stacked:
-            head = self._ensure_head()
-            head.setContentsMargins(0, 0, 0, 0)
-            if head.indexOf(bar) < 0:
-                head.insertWidget(0, bar, 0)
-            return
-        self._line.setContentsMargins(0, 0, 0, 0)
-        if self._line.indexOf(bar) < 0:
-            self._line.insertWidget(0, bar, 0)
+        # The bar and its 6 px sit in the head in both directions, so the
+        # label starts at _BAR_SLOT whatever the row gap is.
+        head = self._ensure_head()
+        head.setContentsMargins(0, 0, 0, 0)
+        if self._line.indexOf(bar) >= 0:
+            self._line.removeWidget(bar)
+        if head.indexOf(bar) < 0:
+            head.insertWidget(0, bar, 0)
 
     def _ensure_head(self) -> QHBoxLayout:
         """The bar-and-label line, created the first time a row stacks."""
@@ -951,7 +982,7 @@ class _Row(QWidget):
             self._label_col.setMinimumWidth(0)
             self._label_col.setMaximumWidth(_UNBOUNDED)
         else:
-            self._label_col.setFixedWidth(self._label_px)
+            self._label_col.setFixedWidth(max(0, self._label_px - _BAR_SLOT))
 
     def _sync_stacked(self) -> None:
         """Stack the label over the editor when the editor asks for it at this width (UX-PED-002)."""
@@ -967,7 +998,7 @@ class _Row(QWidget):
         self._line.setDirection(
             getattr(direction, "TopToBottom") if stacked else getattr(direction, "LeftToRight")
         )
-        self._line.setSpacing(_STACK_GAP if stacked else 6)
+        self._line.setSpacing(_STACK_GAP if stacked else _ROW_GAP)
         self._apply_label_width()
         self._place_reset()
         if self._bar is not None:

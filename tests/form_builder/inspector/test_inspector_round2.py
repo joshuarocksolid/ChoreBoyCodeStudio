@@ -303,9 +303,11 @@ def test_the_property_page_does_not_scroll_sideways(qapp: QApplication) -> None:
         assert enum_value(editor.sizePolicy().horizontalPolicy()) == enum_value(ignored)
         label = next(item for item in row.findChildren(QLabel) if item.text() == "Text")
         assert label.parentWidget() is not None
-        assert label.parentWidget().width() == 104
+        # UX-PED-002: the label budget (changed-bar slot + label) is 104 wide, 96 compact,
+        # and the editor column starts 8 px after it.
+        assert label.parentWidget().width() + 8 == 104
         pane.set_compact(True)
-        assert label.parentWidget().width() == 96
+        assert label.parentWidget().width() + 8 == 96
         window.resize(236, 640)
         pane.set_group_expanded(GroupId.SIZE, True)
         pane.flush()
