@@ -70,7 +70,8 @@ from app.features.form_builder.integration.clipboard_actions import (
     apply_command,
     clipboard_has_fragment,
 )
-from app.features.form_builder.integration.context_menu import add_clipboard_actions, fill_context_menu, paint_menu
+from app.features.form_builder.integration.context_menu import build_context_menu, paint_menu
+from app.features.form_builder.integration.menu_ext import default_registry
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
 from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
 from app.features.form_builder.integration.content_source import (
@@ -1116,8 +1117,17 @@ class FormSurface(QWidget):
             selection.set((node,), current=node, source=SelectionSource.CANVAS)
         menu = QMenu(self)
         menu.setObjectName("formBuilder.contextMenu")
-        add_clipboard_actions(menu, self.dispatch, self._clipboard_enabled)
-        fill_context_menu(menu, self.layout_offers(), self.run_layout)
+        build_context_menu(
+            menu,
+            contributors=default_registry(),
+            ids=selection.state.ids,
+            current=selection.state.current,
+            session=self._session,
+            dispatch=self.dispatch,
+            enabled=self._clipboard_enabled,
+            sheet=self.layout_offers(),
+            run=self.run_layout,
+        )
         paint_menu(menu, chrome_for(self._tokens))
         if at is None:
             subject, bounds = self._place(selection.state.ids)

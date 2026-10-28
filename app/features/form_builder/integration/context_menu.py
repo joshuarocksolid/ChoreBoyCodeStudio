@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from app.qt.QtWidgets import QMenu
 
+from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.layout_actions import (
     LOCKS,
     ChangeTo,
@@ -15,6 +16,8 @@ from app.features.form_builder.engine.layout_actions import (
     RemoveLayout,
     gate,
 )
+from app.features.form_builder.integration.menu_ext import FIRST, LAST, STRUCTURE, MenuContext, MenuRegistry
+from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.qtside.theme.chrome import FormChrome, menu_style
 
 
@@ -76,6 +79,48 @@ def fill_context_menu(menu: QMenu, sheet: OfferSheet, run: Callable[[object], No
     sizes.setToolTipsVisible(True)
     for which, label in LOCKS:
         _add(sizes, label, sheet, LockSize(which), run)
+
+
+def build_context_menu(
+    menu: QMenu,
+    *,
+    contributors: MenuRegistry,
+    ids: Tuple[NodeId, ...],
+    current: Optional[NodeId],
+    session: FormSession,
+    dispatch: Callable[[str], None],
+    enabled: Optional[Callable[[str], bool]],
+    sheet: OfferSheet,
+    run: Callable[[object], None],
+) -> None:
+    """The whole menu, in order: first, clipboard, structure, layout rows, last.
+
+    Each contributor group is followed by a separator only when it added a row.
+    """
+    context = MenuContext(menu=menu, ids=ids, current=current, session=session, dispatch=dispatch)
+    _run_group(menu, contributors, FIRST, context)
+    add_clipboard_actions(menu, dispatch, enabled)
+    _run_group(menu, contributors, STRUCTURE, context)
+    fill_context_menu(menu, sheet, run)
+    _run_group(menu, contributors, LAST, context, leading_separator=True)
+
+
+def _run_group(
+    menu: QMenu,
+    contributors: MenuRegistry,
+    group: str,
+    context: MenuContext,
+    *,
+    leading_separator: bool = False,
+) -> None:
+    before = len(menu.actions())
+    contributors.run(group, context)
+    if len(menu.actions()) == before:
+        return
+    if not leading_separator:
+        menu.addSeparator()
+    elif before:
+        menu.insertSeparator(menu.actions()[before])
 
 
 def _add(menu: QMenu, label: str, sheet: OfferSheet, request: object, run: Callable[[object], None]) -> None:
