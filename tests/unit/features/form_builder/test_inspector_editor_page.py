@@ -147,7 +147,7 @@ def test_all_properties_show_the_class_value_not_the_canvas_override(tmp_path: P
         combo = policy.findChild(QComboBox)
         box = tracking.findChild(QCheckBox)
         assert combo is not None and box is not None
-        assert combo.currentText() == "StrongFocus"
+        assert combo.currentText() == "Strong focus"
         # Qt's own QLineEdit constructor turns tracking on, so the class value
         # comes from a fresh line edit rather than a constant.
         fresh = QLineEdit()

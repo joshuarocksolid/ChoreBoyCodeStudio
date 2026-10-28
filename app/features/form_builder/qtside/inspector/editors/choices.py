@@ -24,15 +24,17 @@ from app.features.form_builder.qtside.inspector.api import (
     Written,
     mark,
 )
-from app.qt.QtCore import Qt
+from app.qt.QtCore import QSize, Qt
+from app.features.form_builder.qtside.inspector.editors._editor_kit import name_part, qt_key
+from app.features.form_builder.qtside.inspector.editors._enum_words import friendly
 from app.qt.QtWidgets import (
     QButtonGroup,
     QComboBox,
     QGridLayout,
     QLabel,
-    QListWidget,
-    QListWidgetItem,
     QSizePolicy,
+    QStyle,
+    QStyleOptionComboBox,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -74,34 +76,6 @@ def _align_name(host: EditorHost, name: str, shown: str) -> str:
     if name == "AlignHCenter":
         return "%s: Center" % row
     return "%s: %s" % (row, _ALIGN_TAILS.get(name, shown))
-# Layout policies are long Qt enumerator names. The combo shows a short label.
-# Item data stays the enumerator, which is what the document stores.
-_PLAIN_ENUM = {
-    "SetDefaultConstraint": "Default",
-    "SetNoConstraint": "None",
-    "SetMinimumSize": "Minimum",
-    "SetFixedSize": "Fixed",
-    "SetMaximumSize": "Maximum",
-    "SetMinAndMaxSize": "Min and max",
-    "FieldsStayAtSizeHint": "Stay at hint",
-    "ExpandingFieldsGrow": "Expanding",
-    "AllNonFixedFieldsGrow": "All but fixed",
-    "DontWrapRows": "Don't wrap",
-    "WrapLongRows": "Long rows",
-    "WrapAllRows": "All rows",
-}
-
-
-def _fill_enum(combo: QComboBox, names: Tuple[str, ...]) -> None:
-    for name in names:
-        label = _PLAIN_ENUM.get(name, name)
-        combo.addItem(label)
-        index = combo.count() - 1
-        combo.setItemData(index, name)
-        if label != name:
-            combo.setItemData(index, name, Qt.ToolTipRole)
-
-
 _CURSORS = (
     "ArrowCursor",
     "UpArrowCursor",
@@ -124,6 +98,36 @@ _CURSORS = (
     "ClosedHandCursor",
 )
 
+# UX-PED-002: label 96 px and an 8 px gap before the editor column.
+_LABEL_AND_GAP = 104
+
+
+def _combo_need(combo: QComboBox) -> int:
+    """The width that shows the longest item beside the arrow, from the style."""
+    metrics = combo.fontMetrics()
+    longest = max((metrics.horizontalAdvance(combo.itemText(index)) for index in range(combo.count())), default=0)
+    option = QStyleOptionComboBox()
+    combo.initStyleOption(option)
+    contents = QSize(longest, metrics.height())
+    kind = getattr(getattr(QStyle, "ContentsType", QStyle), "CT_ComboBox")
+    return int(combo.style().sizeFromContents(kind, option, contents, combo).width())
+
+
+class _EnumBox(QComboBox):
+    """Space opens the list. Up and Down on the closed list change the choice."""
+
+    def keyPressEvent(self, event: object) -> None:  # noqa: N802
+        key = event.key()  # type: ignore[attr-defined]
+        mods = event.modifiers()  # type: ignore[attr-defined]
+        alt = bool(mods & getattr(getattr(Qt, "KeyboardModifier", Qt), "AltModifier"))
+        opens = key == qt_key("Key_Space") or (alt and key == qt_key("Key_Down"))
+        if opens and not self.view().isVisible():
+            self.showPopup()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        super().keyPressEvent(event)  # type: ignore[arg-type]
+
+
 class EnumEditor:
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
@@ -141,14 +145,27 @@ class EnumEditor:
         if spec.enum is None:
             self._box = QLabel(parent)
             return
-        combo = QComboBox(parent)
-        _fill_enum(combo, spec.enum.names)
+        combo = _EnumBox(parent)
+        type_name = spec.enum.type_name
+        for name in spec.enum.names:
+            label = friendly(type_name, host.qt_name, name)
+            combo.addItem(label)
+            index = combo.count() - 1
+            combo.setItemData(index, name)
+            combo.setItemData(index, name, Qt.ToolTipRole)  # type: ignore[attr-defined]
         combo.currentIndexChanged.connect(self._commit)
         self._box = combo
 
     @property
     def widget(self) -> QWidget:
         return self._box
+
+    def wants_stacked(self, width: int) -> bool:
+        """UX-PED-002: a drop-down whose longest name does not fit the column goes under its label."""
+        combo = self._box
+        if not isinstance(combo, QComboBox):
+            return False
+        return _combo_need(combo) > int(width) - _LABEL_AND_GAP
 
     def show(self, value: RowValue) -> None:
         if self._choices:
@@ -185,68 +202,50 @@ class EnumEditor:
         combo = self._box
         assert isinstance(combo, QComboBox)
         mark(combo, value)
+        name_part(combo, self._host, "choice")
         combo.blockSignals(True)
-        names = self._enum.names
+        self._drop_kept(combo)
         tail = text.split("::")[-1] if text else ""
-        index = names.index(tail) if tail in names else -1
+        index = _index_of(combo, tail)
+        if index < 0 and tail and not isinstance(value, Mixed):
+            combo.insertItem(0, "%s (kept as is)" % tail)
+            combo.setItemData(0, tail)
+            combo.setItemData(0, tail, Qt.ToolTipRole)  # type: ignore[attr-defined]
+            font = combo.font()
+            font.setItalic(True)
+            combo.setItemData(0, font, Qt.FontRole)  # type: ignore[attr-defined]
+            combo.setProperty("fbKept", tail)
+            index = 0
         combo.setCurrentIndex(index)
         if index < 0:
-            if isinstance(value, Mixed):
-                placeholder = MIXED_TEXT
-            elif text:
-                placeholder = text
-            else:
-                placeholder = NOT_SET_TEXT
-            combo.setPlaceholderText(placeholder)
+            combo.setPlaceholderText(MIXED_TEXT if isinstance(value, Mixed) else NOT_SET_TEXT)
         else:
             combo.setPlaceholderText("")
         combo.blockSignals(False)
 
+    def _drop_kept(self, combo: QComboBox) -> None:
+        kept = combo.property("fbKept")
+        if not kept:
+            return
+        if combo.itemData(0) == kept:
+            combo.removeItem(0)
+        combo.setProperty("fbKept", "")
+
     def _commit(self, index: int) -> None:
         if self._enum is None or index < 0:
             return
-        self._host.commit(self._host.enum_value(self._enum, (self._enum.names[index],)))
+        combo = self._box
+        assert isinstance(combo, QComboBox)
+        name = combo.itemData(index)
+        if not isinstance(name, str) or not name:
+            return
+        self._host.commit(self._host.enum_value(self._enum, (name,)))
 
     def _commit_choice(self, index: int) -> None:
         if index < 0 or index >= len(self._choices):
             return
         self._host.commit(self._choices[index].value)
 
-class SetEditor:
-
-    def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
-        self._host = host
-        self._enum = spec.enum
-        self._list = QListWidget(parent)
-        if spec.enum is not None:
-            for name in spec.enum.names:
-                item = QListWidgetItem(name, self._list)
-                item.setFlags(item.flags() | _item_checkable())
-        self._list.itemChanged.connect(self._commit)
-
-    @property
-    def widget(self) -> QWidget:
-        return self._list
-
-    def show(self, value: RowValue) -> None:
-        mark(self._list, value)
-        chosen = set(_flag_tails(_set_text(value)))
-        self._list.blockSignals(True)
-        for index in range(self._list.count()):
-            item = self._list.item(index)
-            item.setCheckState(_checked() if item.text() in chosen else _unchecked())
-        self._list.blockSignals(False)
-
-    def _commit(self, _item: QListWidgetItem) -> None:
-        enum = self._enum
-        if enum is None:
-            return
-        names = [
-            self._list.item(index).text()
-            for index in range(self._list.count())
-            if enum_value(self._list.item(index).checkState()) == enum_value(_checked())
-        ]
-        self._host.commit(self._host.enum_value(enum, names))
 
 class AlignmentEditor:
 
@@ -338,7 +337,6 @@ class CursorEditor:
 
 def register(registrar: Registrar) -> None:
     registrar.editor(EditorKey(EnumValue.ELEMENT), EnumEditor, baseline=True)
-    registrar.editor(EditorKey(SetValue.ELEMENT), SetEditor, baseline=True)
     registrar.editor(ALIGNMENT, AlignmentEditor, baseline=True)
     for element in (CursorShapeValue.ELEMENT, CursorValue.ELEMENT):
         registrar.editor(EditorKey(element), CursorEditor, baseline=True)
@@ -385,13 +383,10 @@ def _cursor_name(value: RowValue) -> str:
         return ""
     return ""
 
-def _item_checkable() -> object:
-    item_flag = getattr(Qt, "ItemIsUserCheckable")
-    enabled = getattr(Qt, "ItemIsEnabled")
-    return item_flag | enabled
-
-def _checked() -> object:
-    return getattr(Qt, "Checked")
-
-def _unchecked() -> object:
-    return getattr(Qt, "Unchecked")
+def _index_of(combo: QComboBox, tail: str) -> int:
+    if not tail:
+        return -1
+    for index in range(combo.count()):
+        if combo.itemData(index) == tail:
+            return index
+    return -1
