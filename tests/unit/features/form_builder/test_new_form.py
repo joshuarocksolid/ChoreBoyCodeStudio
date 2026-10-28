@@ -109,7 +109,7 @@ def test_arrow_keys_follow_each_groups_grid(tmp_path: Path, qapp: object) -> Non
     assert app.focusWidget() is panel.card("from_table")
     panel.card("dialog").setFocus()
     QTest.keyClick(panel.card("dialog"), Qt.Key_Right)
-    assert app.focusWidget() is panel.card("dialog")
+    assert app.focusWidget() is panel.card("wizard")
     QTest.keyClick(panel.card("main_window"), Qt.Key_Down)
     assert app.focusWidget() is panel.card("adopt")
     panel.close()
