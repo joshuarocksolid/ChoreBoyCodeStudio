@@ -96,28 +96,3 @@ def test_a_stand_in_paints_the_spec_colours(high_contrast: bool) -> None:
     assert max(darkest.red(), darkest.green(), darkest.blue()) <= (0x10 if high_contrast else 0x50)
     holder.deleteLater()
 
-
-def test_a_stand_in_on_a_high_contrast_canvas_uses_the_high_contrast_tokens(qapp) -> None:  # type: ignore[no-untyped-def]
-    from app.features.form_builder.integration.canvas import FormCanvas
-    from app.qt.QtWidgets import QWidget
-    from app.shell.theme_tokens import tokens_from_palette
-    from tests.form_builder.qtside.test_m4_pages_canvas import _Host
-    from tests.form_builder.qtside.test_m4_scroll_area import _flush
-
-    with opened(STAND) as (session, realizer):
-        parent = QWidget()
-        parent.resize(900, 700)
-        canvas = FormCanvas(session, realizer, _Host(), parent)
-        canvas.resize(900, 700)
-        parent.show()
-        _flush()
-        canvas.apply_theme(tokens_from_palette(qapp.palette(), force_mode="high_contrast_dark"))
-        _flush()
-        gl = realizer.widget_for(session.document.by_name("glView")[0])
-        assert isinstance(gl, StandInWidget)
-        image = gl.grab().toImage()
-        fill = image.pixelColor(gl.width() // 2, 3)
-        assert (fill.red(), fill.green(), fill.blue()) == (255, 255, 255)
-        canvas.dispose()
-        parent.deleteLater()
-        _flush()

@@ -56,19 +56,10 @@ class StandInWidget(QWidget):
 
     @property
     def _palette(self) -> OverlayPalette:
-        return OVERLAY_HIGH_CONTRAST if self._forced_contrast or self._canvas_contrast() else OVERLAY
-
-    def _canvas_contrast(self) -> bool:
-        """True when the form canvas showing this widget is in high contrast (its viewport property)."""
-        proxy = self.window().graphicsProxyWidget()
-        scene = proxy.scene() if proxy is not None else None
-        if scene is None:
-            return False
-        for view in scene.views():
-            port = view.viewport()
-            if port is not None and bool(port.property("formBuilderHighContrast")):
-                return True
-        return False
+        # The page must match a clean application under every shell theme
+        # (UX-ISO-001/002), so the canvas never switches a stand-in to the
+        # high-contrast tokens; only an explicit flag does.
+        return OVERLAY_HIGH_CONTRAST if self._forced_contrast else OVERLAY
 
     def text(self) -> str:
         return "%s · drawn by your code" % self._friendly
