@@ -12,11 +12,11 @@ Select a widget. In Appearance, after Font, the Text colour and Background rows 
 Appearance > Style sheet > Edit…, the canvas menu's "Edit style sheet…", or Form > Style sheet of the form….
 
 * The drawer sits under the canvas. Type a rule such as `QPushButton#okButton { background: #1A7F37; }`; 300 ms after you stop typing the canvas shows it.
-* The status says "Looks right" or names the first problem and its line. Click it to jump there. A sheet Qt can't read leaves the last good one on the canvas.
+* The status says "Looks right" or names the first problem and its line. Click it to jump there. A sheet Qt can't read leaves the last good one on the canvas. A problem Qt lets through (a missing `;`, a property or state Qt doesn't know) is shown as a warning, and the sheet still applies.
 * A chip beside each rule counts the widgets it styles. "No match" is only a note: the form still saves. While the caret is in a rule, those widgets are outlined on the canvas.
 * Insert > Colour…, Picture…, Gradient…, Font… and "Rule for this widget" put text at the caret.
 * Esc or Done closes the drawer and keeps the text. One visit is one undo step, "Change style sheet of {name}".
 * Problems lists a sheet Qt can't read (FB033) and rules that match nothing (FB034); each has an "Edit style sheet" button.
 
 ## The form's look
-With the form selected, Accent colour (selections, progress bars and links) and Text size (8 to 24 pt) set the root palette's Highlight and Link roles and the root font. Every widget that doesn't set its own size follows Text size.
+Select the form (click the backdrop around it, or its name in the outline). The inspector's Look group has Accent colour (selections, progress bars and links) and Text size (8 to 24 pt); they set the root palette's Highlight and Link roles and the root font. Every widget that doesn't set its own size follows Text size.

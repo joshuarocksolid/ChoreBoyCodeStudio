@@ -2,8 +2,8 @@
 
 The drawer switches this layer on with ``canvas.show_layer("style_matches", ids)``
 where ``ids`` is a tuple of node ids, and off with ``hide_layer``. The mark is
-``ov.select`` drawn dashed, 2 px outside the widget (1.5 px; 2 px in high
-contrast). ``ov.style_match`` is that colour until the theme module names it.
+``ov.style_match`` drawn dashed, 2 px outside the widget (1.5 px; 2 px in high
+contrast).
 """
 
 from __future__ import annotations
@@ -40,7 +40,7 @@ def build(static: StaticLayer, inputs: FrameInputs, state: Hashable) -> LayerOut
 
 
 def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
-    raw = palette.overlay.select
+    raw = palette.overlay.style_match
     text = raw[1:] if raw.startswith("#") else raw
     color = QColor(int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
     pen = QPen(color)
