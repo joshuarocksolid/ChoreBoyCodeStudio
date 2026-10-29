@@ -33,6 +33,16 @@ OPT_IN = frozenset({"speed"})
 PERF_GATE_TIMEOUT_SECONDS = 30
 
 UNIT_MARKER = "not oracle and not perf and not performance and not soak"
+# Form-builder tests that live with the shell and feature unit suites. The
+# fast shard needs /opt/freecad/AppRun, so these would otherwise never run here.
+TEST_PATHS = (
+    "tests/form_builder",
+    "tests/unit/features/form_builder",
+    "tests/unit/shell/test_form_package_dialog.py",
+    "tests/unit/shell/test_form_run_routing.py",
+    "tests/unit/shell/test_form_status_sentence.py",
+    "tests/unit/shell/test_form_tab_shell_keys.py",
+)
 # The unit lane is ~1490 tests (~280 s at load 20 on the Mac after M3.7); keep headroom.
 PYTEST_TIMEOUT_SECONDS = 480
 FAST_SHARD_TIMEOUT_SECONDS = 400
@@ -408,7 +418,7 @@ def _pytest_counts(text: str) -> tuple[str, dict[str, int]]:
 def _pytest_payload(vendor: Path, marker: str, *, vendor_first: bool, pin_vendor: bool = False) -> str:
     # os._exit skips the Shiboken destructor, which segfaults if Python
     # wrappers outlive Qt. Flush first so a captured pipe keeps the summary.
-    args = ["-q", "--tb=line", "tests/form_builder", "-m", marker]
+    args = ["-q", "--tb=line", *TEST_PATHS, "-m", marker]
     if vendor_first:
         path_setup = "sys.path.insert(0, {repo!r});sys.path.insert(0, {vendor!r});"
     else:
