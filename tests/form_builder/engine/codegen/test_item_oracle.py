@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """Item contents (tooltips and one other property each) match ``uic -g python``.
 
 The tree is nested and has several columns, so a later item must not land on
