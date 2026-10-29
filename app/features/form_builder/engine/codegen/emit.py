@@ -2234,7 +2234,8 @@ def _format_import(module: str, names: Sequence[str]) -> str:
 
 
 def _render_method(method: Method) -> str:
-    lines = ["    def %s(self):" % method.name, "        # %s" % method.source_ref.replace("\n", " ")]
+    params = ", " + method.params if method.params else ""
+    lines = ["    def %s(self%s):" % (method.name, params), "        # %s" % method.source_ref.replace("\n", " ")]
     body = method.body.strip("\n")
     if not body:
         lines.append("        pass")

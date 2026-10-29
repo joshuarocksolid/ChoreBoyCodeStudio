@@ -1,0 +1,2 @@
+# Fixture bytes are the test: CRLF in sale_window.py must survive any core.autocrlf.
+* -text

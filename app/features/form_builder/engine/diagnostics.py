@@ -67,6 +67,10 @@ class DiagnosticLocation:
     or a connection index ``("connections", 3)``.
     ``span``: (start, end) character offsets inside a formula string.
     ``line``: 1-based XML line from the reader or the last serialization; 0 = unknown.
+    ``code_path`` and ``code_line`` (M6.0s): the project-relative path and 1-based
+    line of a problem that lives in your code (a missing method, a syntax error in
+    the window file). ``""`` and 0 when the problem is in the form. The Problems
+    bridge sends them; a double-click on the row opens that code.
     """
 
     node_id: Optional[NodeId] = None
@@ -75,6 +79,8 @@ class DiagnosticLocation:
     rule_path: Tuple[RulePathPart, ...] = ()
     span: Optional[Tuple[int, int]] = None
     line: int = 0
+    code_path: str = ""
+    code_line: int = 0
 
 
 @dataclass(frozen=True)
@@ -225,13 +231,18 @@ class DiagnosticsStore:
 
 def to_problem_detail(diagnostic: FormDiagnostic) -> Mapping[str, str]:
     """The ``CodeDiagnostic.detail`` mapping the Problems bridge sends to the shell:
-    ``fb_key``, ``fb_object``, ``fb_property``, ``fb_rule_path`` (JSON), ``fb_source``.
+    ``fb_key``, ``fb_object``, ``fb_property``, ``fb_rule_path`` (JSON), ``fb_source``,
+    and ``fb_code_path`` / ``fb_code_line`` only when the location names code.
     Never contains the session-local node id."""
     location = diagnostic.location
-    return {
+    detail = {
         "fb_key": diagnostic.key,
         "fb_object": location.object_name or "",
         "fb_property": location.property or "",
         "fb_rule_path": json.dumps(list(location.rule_path), separators=(",", ":"), ensure_ascii=True),
         "fb_source": diagnostic.source,
     }
+    if location.code_path:
+        detail["fb_code_path"] = location.code_path
+        detail["fb_code_line"] = str(max(1, location.code_line))
+    return detail
