@@ -9,12 +9,15 @@ package is absent.
 from __future__ import annotations
 
 import importlib
+import logging
 import pkgutil
 from dataclasses import dataclass
 from typing import List, Protocol, Tuple
 
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
 from app.features.form_builder.engine.ui4.document import UiDocument
+
+logger = logging.getLogger(__name__)
 
 #: Helper id -> source, emitted once, in this order, when an expander asks.
 HELPER_TABLE: Tuple[Tuple[str, str], ...] = ()
@@ -94,7 +97,16 @@ def load_expanders() -> Tuple[LogicExpander, ...]:
     if not search:
         return ()
     for info in pkgutil.iter_modules(search):
-        module = importlib.import_module(package + "." + info.name)
+        full = package + "." + info.name
+        try:
+            module = importlib.import_module(full)
+        except Exception as exc:
+            # A module that can't load adds nothing; the form still generates (CONTRACTS 9.4).
+            from app.features.form_builder.engine.contributors import FAILURES
+
+            FAILURES[full] = "expander: %s: %s" % (type(exc).__name__, exc)
+            logger.exception("expander %s failed to load", full)
+            continue
         expander = getattr(module, "EXPANDER", None)
         if expander is None or not hasattr(expander, "contribute"):
             continue

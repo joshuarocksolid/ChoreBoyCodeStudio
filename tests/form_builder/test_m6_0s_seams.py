@@ -13,7 +13,7 @@ import pytest
 
 from app.features.form_builder.engine import contributors
 from app.features.form_builder.engine.codegen.api import generate_form_module
-from app.features.form_builder.engine.codegen.logic_hooks import Contribution, Method
+from app.features.form_builder.engine.codegen.logic_hooks import Contribution, Method, load_expanders
 from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.diagnostics import DiagnosticLocation, FormDiagnostic, Severity
 from app.features.form_builder.engine.ids import IdAllocator
@@ -91,6 +91,9 @@ def test_every_m6_seam_loads_its_product_modules_without_a_failure(qapp) -> None
     activate_ext.load_activators(activate_ext)
     overlay_ext.load_overlay_kinds(overlay_ext)
     behavior_ext.load_sections(behavior_ext)
+    load_expanders()
+    handlers.set_service(None)
+    handlers.service()
     assert {name: why for name, why in contributors.FAILURES.items() if name.startswith("app.")} == {}
 
 
@@ -192,6 +195,58 @@ def test_a_missing_window_file_is_created_and_a_stale_plan_or_outside_path_is_re
     assert not bridge.open_at(str(outside), 3)
 
 
+def test_a_closed_file_is_never_written_through_a_link_a_swapped_folder_or_a_foreign_encoding(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root, window = _project(tmp_path)
+    bridge = CodeBridge(str(root), _Port({}))
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # A link inside the project to a file inside it: the target changes, the link stays a link.
+    link = root / "forms" / "alias.py"
+    link.symlink_to(window)
+    before = window.read_bytes()
+    assert bridge.apply(str(link), BridgeEdit(0, 0, "# a\r\n")).ok
+    assert link.is_symlink() and window.read_bytes() == b"# a\r\n" + before
+    window.write_bytes(before)
+    # A folder swapped for a link out of the project after the path check: nothing lands outside.
+    real_makedirs = os.makedirs
+
+    def swap(directory: str, exist_ok: bool = False) -> None:
+        if directory.endswith("late"):
+            os.symlink(str(outside), directory)
+        real_makedirs(directory, exist_ok=exist_ok)
+
+    monkeypatch.setattr(code_bridge.os, "makedirs", swap)
+    swapped = bridge.apply(str(root / "late" / "w.py"), BridgeEdit(0, 0, "x = 1\n"))
+    assert not swapped.ok and swapped.reason == code_bridge.OUTSIDE and list(outside.iterdir()) == []
+    monkeypatch.setattr(code_bridge.os, "makedirs", real_makedirs)
+    # Latin-1 is refused untouched; a UTF-8 BOM is kept.
+    latin = root / "forms" / "latin.py"
+    latin.write_bytes(b"# -*- coding: latin-1 -*-\nname = '\xe9'\n")
+    refused = bridge.apply(str(latin), BridgeEdit(0, 0, "# x\n"))
+    assert not refused.ok and refused.reason == code_bridge.NOT_UTF8
+    assert latin.read_bytes() == b"# -*- coding: latin-1 -*-\nname = '\xe9'\n"
+    bom = root / "forms" / "bom.py"
+    bom.write_bytes(b"\xef\xbb\xbfx = '\xc3\xa9'\n")
+    assert bridge.apply(str(bom), BridgeEdit(0, 0, "# \U0001f600\n")).ok
+    assert bom.read_bytes() == b"\xef\xbb\xbf# \xf0\x9f\x98\x80\nx = '\xc3\xa9'\n"
+    # Another program saving between the read and the rename wins: nothing is replaced.
+    real_read = code_bridge._read_at
+    calls: List[int] = []
+
+    def racing(dir_fd: int, name: str):  # type: ignore[no-untyped-def]
+        calls.append(1)
+        if len(calls) == 2:
+            window.write_bytes(b"theirs\r\n")
+        return real_read(dir_fd, name)
+
+    monkeypatch.setattr(code_bridge, "_read_at", racing)
+    raced = bridge.apply(str(window), BridgeEdit(0, 0, "# mine\r\n"))
+    assert not raced.ok and raced.reason == code_bridge.CHANGED and window.read_bytes() == b"theirs\r\n"
+    assert [p.name for p in window.parent.iterdir() if p.name.endswith(".tmp")] == []
+
+
 def test_an_open_tab_gets_one_edit_and_is_saved_only_when_it_was_clean(tmp_path: Path) -> None:
     root, window = _project(tmp_path)
     text = window.read_bytes().decode("utf-8").replace("\r\n", "\n")
@@ -287,9 +342,18 @@ def test_handler_service_is_found_in_handlers_code_without_editing_this_module(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     package = make_package(
-        tmp_path, monkeypatch, "m6_handlers_probe", {"handlers_code": "class S:\n    pass\n\nSERVICE = S()\n"}
+        tmp_path,
+        monkeypatch,
+        "m6_handlers_probe",
+        {"handlers_code": "class S:\n    pass\n\nSERVICE = S()\n", "broken_code": "raise RuntimeError('lane bug')\n"},
     )
     try:
+        # A code half that fails to import is recorded and the default steps-only service is used.
+        monkeypatch.setattr(handlers, "CODE_MODULE", "m6_handlers_probe.broken_code")
+        monkeypatch.setattr(handlers, "_CODE_LOOKED", False)
+        monkeypatch.setattr(handlers, "_CODE", None)
+        assert isinstance(handlers.service(), handlers.DefaultHandlerService)
+        assert contributors.FAILURES.pop("m6_handlers_probe.broken_code").startswith("handler service: RuntimeError")
         monkeypatch.setattr(handlers, "CODE_MODULE", "m6_handlers_probe.handlers_code")
         monkeypatch.setattr(handlers, "_CODE_LOOKED", False)
         monkeypatch.setattr(handlers, "_CODE", None)
@@ -399,4 +463,5 @@ def test_the_m6_fixture_project_reads_clean_and_keeps_its_bytes() -> None:
             session.dispose()
     window = (FIXTURE / "forms" / "sale_window.py").read_bytes()
     assert window.count(b"\r\n") == window.count(b"\n") > 10
+    assert window.endswith(b"\r\n") and window.splitlines()[-1].lstrip().startswith(b"#")  # the trailing comment
     ast.parse(window.decode("utf-8"))

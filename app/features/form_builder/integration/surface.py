@@ -683,14 +683,15 @@ class FormSurface(QWidget):
         )
 
     def reveal(self, line: int, detail: Optional[Mapping[str, str]]) -> bool:
+        if detail and detail.get("fb_code_path") and not detail.get("fb_object"):
+            # A row about code only (UX-CODE-014): open the code; never fall back to the XML view.
+            return self._reveal_code(detail)
         if detail and self._toolbar.xml.isChecked():
             # Apply the XML first: it replaces the document and every id.
             self._on_design()
             if self._toolbar.xml.isChecked():
                 return False
         node_id = self._node_for_detail(detail)
-        if node_id is None and self._reveal_code(detail):
-            return True
         if node_id is not None:
             self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
             if self._session.selection.state.current != node_id:
@@ -710,7 +711,7 @@ class FormSurface(QWidget):
         return True
 
     def _reveal_code(self, detail: Optional[Mapping[str, str]]) -> bool:
-        """A Problems row that names code (``fb_code_path``, M6.0s) opens it when no widget is named."""
+        """A Problems row that names code (``fb_code_path``) and no widget (M6.0s) opens that code."""
         if not detail:
             return False
         relative = detail.get("fb_code_path") or ""

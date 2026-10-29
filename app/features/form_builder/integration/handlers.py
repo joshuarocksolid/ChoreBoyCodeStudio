@@ -22,8 +22,9 @@ form tab (``surface``):
 Discovery: ``service()`` returns the service set with ``set_service``; when none
 was set it imports ``integration.handlers_code`` if that module exists and uses
 its ``SERVICE``; else the default. M6.2b ships that module and edits nothing
-here. A module that fails to import is logged and the default is used, so a
-bug in the code half never stops plain steps.
+here. A module that fails to import is logged, recorded in
+``engine/contributors.FAILURES`` and the default is used, so a bug in the
+code half never stops plain steps.
 """
 
 from __future__ import annotations
@@ -116,6 +117,14 @@ _CODE: Optional[HandlerService] = None
 _CODE_LOOKED = False
 
 
+def _failed(exc: BaseException) -> None:
+    # Recorded like every other M6 seam (engine/contributors.FAILURES), so the seam test fails on it.
+    from app.features.form_builder.engine.contributors import FAILURES
+
+    FAILURES[CODE_MODULE] = "handler service: %s: %s" % (type(exc).__name__, exc)
+    logger.exception("handlers_code could not be imported")
+
+
 def set_service(service: Optional[HandlerService]) -> Optional[HandlerService]:
     """Install ``service`` (None restores discovery). Returns the previous one."""
     global _SET
@@ -137,9 +146,9 @@ def service() -> HandlerService:
                 _CODE = found
         except ModuleNotFoundError as exc:
             if exc.name != CODE_MODULE:
-                logger.exception("handlers_code could not be imported")
-        except Exception:
-            logger.exception("handlers_code could not be imported")
+                _failed(exc)
+        except Exception as exc:
+            _failed(exc)
     return _CODE if _CODE is not None else _DEFAULT
 
 

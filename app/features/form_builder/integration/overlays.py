@@ -756,7 +756,8 @@ class OverlayModes:
         if gesture.can_start(self._session.document, node) and node is not None:
             self._link_source = node
             self._link_candidate = None
-            self._link_pointer = (pos.x(), pos.y())
+            scene = self._canvas.mapToScene(pos)
+            self._link_pointer = (int(scene.x()), int(scene.y()))
             self._announce()
             self._push()
         else:
