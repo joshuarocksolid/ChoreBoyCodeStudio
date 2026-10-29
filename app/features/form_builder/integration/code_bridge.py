@@ -58,9 +58,16 @@ WRITE_FAILED = "Code Studio couldn't write that file: %s"
 
 
 class TextEditLike(Protocol):
-    start: int
-    end: int
-    text: str
+    """Read-only so a frozen ``TextEdit`` satisfies it."""
+
+    @property
+    def start(self) -> int: ...
+
+    @property
+    def end(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
 
 
 @dataclass(frozen=True)
