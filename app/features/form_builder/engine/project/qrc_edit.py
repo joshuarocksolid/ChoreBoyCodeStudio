@@ -311,14 +311,15 @@ def rename_picture_uses(
 
     ``renamed`` maps old ``:/`` paths to new ones (``renamed_resources``). Each
     form is written whole (``.ui`` and its Python), so a run shows the picture.
-    Returns the forms written. A form open in a tab sees the file change on disk
-    as any outside change. Saving the ``.qrc`` again after Undo maps the names
-    back the same way.
+    Returns the forms written. The written ``.ui`` paths are reported so a clean
+    open tab can reload. A tab with unsaved edits is left for the prompt.
+    Saving the ``.qrc`` again after Undo maps the names back the same way.
     """
     from app.features.form_builder.engine.commands.catalog import SetProperty
     from app.features.form_builder.engine.project.adoption import scope_for
     from app.features.form_builder.engine.project.packaging import save_form_now
     from app.features.form_builder.engine.project.picture_adopt import with_picture
+    from app.features.form_builder.engine.project.written_files import note_written_files
     from app.features.form_builder.engine.session import FormSession
     from app.features.form_builder.engine.ui4.values import ResourcePixmap
     from app.features.form_builder.engine.ui4.writer import write_ui
@@ -352,6 +353,7 @@ def rename_picture_uses(
         if new_text == text:
             continue
         files.write_text(ui_path, new_text)
+        note_written_files((ui_path,))
         save_form_now(root, ui_path, files)
         written.append(ui_path)
     return tuple(written)

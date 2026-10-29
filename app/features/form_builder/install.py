@@ -55,6 +55,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         attach_new_form,
         bind_adopt_entry,
     )
+    from app.features.form_builder.engine.project.written_files import set_written_file_listener
     from app.features.form_builder.engine.shell_commands import shortcut_rows
     from app.features.form_builder.integration.keys_ext import extra_shortcut_rows
     from app.features.form_builder.integration.form_menu import register_form_menu
@@ -63,6 +64,21 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     from app.shell.shortcut_preferences import ShortcutCommand, register_shortcut_commands
 
     window = ctx.w
+
+    def _note_written(paths: object) -> None:
+        from app.qt.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is None:
+            return
+        for widget in app.topLevelWidgets():
+            workflow = getattr(widget, "_external_file_change_workflow", None)
+            note = getattr(workflow, "note_own_writes", None)
+            if callable(note):
+                note(paths)
+                return
+
+    set_written_file_listener(_note_written)
 
     def save_form(ui_path: str) -> str:
         project = getattr(window, "_loaded_project", None)

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Callable, Dict, Optional
 
+from app.features.form_builder.engine.commands.catalog import SetProperty
 from app.features.form_builder.engine.project.fs import ProjectOpError
 from app.features.form_builder.engine.project.picture_adopt import adopt_raw_picture
 from app.features.form_builder.engine.project.pictures import (
@@ -64,6 +65,7 @@ from app.qt.QtWidgets import (
 _FILE_WARNING = "Loaded from a file path. A packaged app may not find it."
 _ADOPT = "Add to project pictures"
 _TEXT_HIDES = "The label's text replaces this picture when the app runs. Clear the text to show it."
+_CLEAR_TEXT = "Clear text"
 _MISSING_SUFFIX = " (missing)"
 _THEME_HELP = "Uses the desktop's icon with this name when there is one; otherwise the picture."
 _MODES = ("Normal", "Disabled", "Active", "Selected")
@@ -194,6 +196,17 @@ class _PictureRow:
         self._adopt.clicked.connect(self._adopt_clicked)
         self._adopt.hide()
         notes_layout.addWidget(self._adopt, 0, getattr(Qt, "AlignmentFlag", Qt).AlignLeft)
+        # The label's text hides the picture: one Tab stop under the note removes the text.
+        self._clear_text = QPushButton(_CLEAR_TEXT, self._notes)
+        self._clear_text.setObjectName("formBuilder.pictureClearText")
+        self._clear_text.setAccessibleName("Picture: clear the label's text")
+        self._clear_text.setFlat(True)
+        self._clear_text.setCursor(getattr(Qt, "CursorShape", Qt).PointingHandCursor)
+        self._clear_text.setStyleSheet(self._adopt.styleSheet())
+        self._clear_text.setAutoDefault(True)
+        self._clear_text.clicked.connect(self._clear_text_clicked)
+        self._clear_text.hide()
+        notes_layout.addWidget(self._clear_text, 0, getattr(Qt, "AlignmentFlag", Qt).AlignLeft)
         self._notes.hide()
         self._stored = ""
         self._missing = False
@@ -232,11 +245,13 @@ class _PictureRow:
         self._paint_thumb()
         file_path = bool(self._stored) and not self._stored.startswith(":/") and not self._missing
         notes = [_FILE_WARNING] if file_path else []
-        if self._stored and not self._mixed and self._text_hides_picture():
+        hidden = bool(self._stored) and not self._mixed and bool(self._text_hiding_owners())
+        if hidden:
             notes.append(_TEXT_HIDES)
         self._warning.setText("\n".join(notes))
         self._warning.setVisible(bool(notes))
         self._adopt.setVisible(file_path and self._can_adopt())
+        self._clear_text.setVisible(hidden)
         self._notes.setVisible(bool(notes))
 
     def _can_adopt(self) -> bool:
@@ -288,22 +303,38 @@ class _PictureRow:
         notices.remember(plan.label, plan.notice)
         announce(self._host, plan.notice)
 
-    def _text_hides_picture(self) -> bool:
+    def _text_hiding_owners(self) -> list:
+        """The selected labels whose text replaces their picture when the app runs."""
         if self._kind != "Pixmap":
-            return False
+            return []
         try:
             document = self._host.document()
             owners = self._host.owner_ids()
         except (AttributeError, RuntimeError, TypeError):
-            return False
+            return []
+        found = []
         for owner in owners:
             try:
                 node = document.node(owner)
             except KeyError:
                 continue
             if label_text_hides_picture(node):
-                return True
-        return False
+                found.append(owner)
+        return found
+
+    def _clear_text_clicked(self) -> None:
+        """Remove the text of the labels it hides the picture of. Its own undo step, so Undo brings the text back
+        without taking the picture with it: the picture was the user's last edit, the text is theirs to decide on."""
+        owners = self._text_hiding_owners()
+        if not owners:
+            return
+        commands = tuple(SetProperty(owner, "text", None, undo_label=_CLEAR_TEXT) for owner in owners)
+        session = self._host.begin_session(_CLEAR_TEXT)
+        try:
+            session.run(commands)
+        finally:
+            session.close()
+        announce(self._host, "Cleared the label's text \u00b7 Undo")
 
     def _paint_thumb(self) -> None:
         if self._mixed or not self._stored or self._missing:

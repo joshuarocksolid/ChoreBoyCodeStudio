@@ -22,8 +22,10 @@ from app.features.form_builder.engine.project.recents import (
 )
 from app.features.form_builder.engine.project.names import class_name_for_stem
 from app.features.form_builder.engine.project import user_templates as ut
+from app.features.form_builder.engine.project.qrc_write import default_qrc_path
 from app.features.form_builder.engine.project.template_use import create_from_template
 from app.features.form_builder.engine.project.templates import first_useful_widget
+from app.features.form_builder.engine.project.written_files import note_written_files
 from app.features.form_builder.integration import settings_page, template_store
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.provider import FormTabProvider
@@ -122,6 +124,8 @@ def perform_create(
         )
     if result.refused or result.scope is None:
         return result
+    if saved_template is not None:
+        note_written_files((default_qrc_path(root),))
     ui_path = result.scope.ui_path
     try:
         remember_form(root, ui_path, fs)

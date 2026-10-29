@@ -17,7 +17,7 @@ from __future__ import annotations
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, Qt, Signal
-from app.qt.QtGui import QColor, QTextCursor, QTextFormat
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QTextCursor, QTextFormat
 from app.qt.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -31,6 +31,7 @@ from app.qt.QtWidgets import (
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 OPEN_FILE = "Open file"
+MIN_POINTS = 8.0
 
 
 def header_text(module_file: str) -> str:
@@ -64,6 +65,7 @@ class CodeViewPanel(QFrame):
         self._marked: Tuple[int, ...] = ()
         self._error = ""
         self._marking = False
+        self._base_points = 0.0
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -86,7 +88,7 @@ class CodeViewPanel(QFrame):
         self.editor.setObjectName("formBuilder.codeViewBody")
         self.editor.setReadOnly(True)
         self.editor.setAccessibleName("Generated Python")
-        self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.WidgetWidth)
         outer.addWidget(self.editor, 1)
         self.setFocusProxy(self.editor)
         self._escape = _EscapeFilter(self)
@@ -94,6 +96,49 @@ class CodeViewPanel(QFrame):
             target.installEventFilter(self._escape)
         self.editor.cursorPositionChanged.connect(self._cursor_moved)
         self.editor.viewport().installEventFilter(self._escape)
+
+    def readable_width(self, chars: int) -> int:
+        """Pixels the split needs to show ``chars`` characters of a code line at the smallest font ``fit_font`` uses."""
+        font = QFont(self.editor.font())
+        font.setPointSizeF(min(MIN_POINTS, font.pointSizeF()))
+        return self._width_for(chars, QFontMetrics(font).horizontalAdvance("M"))
+
+    def _width_for(self, chars: int, advance: int) -> int:
+        gutter = 0
+        width_of = getattr(self.editor, "line_number_area_width", None)
+        if callable(width_of):
+            try:
+                gutter = int(width_of())
+            except Exception:  # noqa: BLE001
+                gutter = 0
+        bar = self.editor.verticalScrollBar().sizeHint().width()
+        return advance * chars + gutter + bar + 24
+
+    def fit_font(self, chars: int, available: int) -> int:
+        """Shrink the code font (down to ``MIN_POINTS``) until ``chars`` characters fit in ``available`` px.
+
+        Returns the characters that fit. Lines longer than that wrap.
+        """
+        font = QFont(self.editor.font())
+        base = self._base_points or font.pointSizeF()
+        self._base_points = base
+        points = base
+        while True:
+            font.setPointSizeF(points)
+            advance = QFontMetrics(font).horizontalAdvance("M")
+            if self._width_for(chars, advance) <= available or points <= MIN_POINTS:
+                break
+            points = max(MIN_POINTS, points - 0.5)
+        if abs(points - self.editor.font().pointSizeF()) > 0.01:
+            self.editor.setFont(font)
+        return max(0, (available - self._width_for(0, 0)) // max(1, advance))
+
+    def restore_font(self) -> None:
+        if self._base_points:
+            font = QFont(self.editor.font())
+            font.setPointSizeF(self._base_points)
+            self.editor.setFont(font)
+            self._base_points = 0.0
 
     # ---- content
 

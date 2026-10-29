@@ -226,3 +226,36 @@ class TabContentProviderRegistry:
     def apply_all_themes(self, tokens: "ShellThemeTokens") -> None:
         for _file_path, surface in self.surfaces():
             surface.apply_theme(tokens)
+
+
+def focus_primary_surface(registry: object, file_path: str, *, force: bool = False) -> None:
+    """Focus the open tab's main widget when the surface provides one.
+
+    ``force`` is for the open itself. A later activation leaves focus alone when
+    it is already inside that surface, so closing another tab does not pull the
+    keyboard off the canvas.
+    """
+    if registry is None or not file_path:
+        return
+    finder = getattr(registry, "surface_for_path", None)
+    if not callable(finder):
+        return
+    surface = finder(file_path)
+    if surface is None:
+        return
+    if not force and _focus_is_inside(surface):
+        return
+    focus = getattr(surface, "focus_primary", None)
+    if callable(focus):
+        focus()
+
+
+def _focus_is_inside(surface: object) -> bool:
+    from app.qt.QtWidgets import QApplication, QWidget
+
+    current = QApplication.focusWidget()
+    widget_getter = getattr(surface, "widget", None)
+    widget = widget_getter() if callable(widget_getter) else None
+    if not isinstance(current, QWidget) or not isinstance(widget, QWidget):
+        return False
+    return current is widget or widget.isAncestorOf(current)

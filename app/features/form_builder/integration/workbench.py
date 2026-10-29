@@ -3247,14 +3247,16 @@ class FormWorkbench(QWidget):
             self._under_listener(self._under_height)
 
     def open_beside_canvas(
-        self, key: str, widget: QWidget, *, share: float = 0.45, min_canvas: int = 360
+        self, key: str, widget: QWidget, *, share: float = 0.45, min_canvas: int = 360, readable: int = 0
     ) -> bool:
         """The split at the right of the canvas (UX-PREV-004). One at a time.
 
         It takes ``share`` of the canvas row, or less down to ``BESIDE_MIN``, so
         the canvas keeps ``min_canvas`` px. When the row is still too narrow (a
         1366 px ChoreBoy screen), the Outline pane and then the inspector go to
-        their rails while the split is open and come back when it closes.
+        their rails while the split is open and come back when it closes. With
+        ``readable`` (px), a step that gives the split that much wins over an
+        earlier one that merely fits.
         Returns False, and opens nothing, when even that does not fit; the
         caller says why in its own words.
         """
@@ -3270,6 +3272,7 @@ class FormWorkbench(QWidget):
             min_canvas=min_canvas,
             left_gain=max(0, left_gain),
             right_gain=max(0, right_gain),
+            readable=readable,
         )
         if fit is None:
             return False
@@ -3285,6 +3288,11 @@ class FormWorkbench(QWidget):
         widget.show()
         row.setSizes([width - fit.beside - row.handleWidth(), fit.beside])
         return True
+
+    def beside_width(self) -> int:
+        """Width in px of the split beside the canvas, 0 when none is open."""
+        sizes = self._canvas_row.sizes()
+        return int(sizes[1]) if self._beside_widget is not None and len(sizes) > 1 else 0
 
     def beside_rails(self) -> Tuple[bool, bool]:
         """Which panes (Outline, inspector) are on their rails because the split is open."""

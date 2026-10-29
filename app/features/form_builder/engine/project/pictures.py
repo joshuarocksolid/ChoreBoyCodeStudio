@@ -48,6 +48,11 @@ def dialog_filter() -> str:
 # (absolute qrc path, mtime_ns) -> parsed document or a problem sentence.
 _CACHE: Dict[Tuple[str, int], object] = {}
 
+# (absolute qrc path, mtime_ns, project root) -> {disk path: stays inside the project}.
+# ``inside_project`` resolves symlinks (a ``realpath`` per picture), so a warm open reuses
+# the answers while the ``.qrc`` is unchanged.
+_INSIDE: Dict[Tuple[str, int, str], Dict[str, bool]] = {}
+
 
 @dataclass(frozen=True)
 class QrcPicture:
@@ -78,6 +83,7 @@ class PictureIndex:
 
 def clear_picture_cache() -> None:
     _CACHE.clear()
+    _INSIDE.clear()
 
 
 def resource_locations(document: object) -> Tuple[str, ...]:
@@ -119,13 +125,18 @@ def load_pictures(locations: Sequence[str], base_dir: str, project_root: str = "
             continue
         folder = os.path.dirname(qrc_path)
         name = os.path.basename(qrc_path)
+        inside = _inside_memo(qrc_path, project_root) if project_root else None
         for entry in parsed.files:
             relative = (entry.path or "").replace("\\", "/").strip()
             if not relative:
                 continue
             disk = os.path.normpath(os.path.join(folder, relative))
-            if project_root and not _inside(disk, project_root):
-                continue
+            if inside is not None:
+                allowed = inside.get(disk)
+                if allowed is None:
+                    allowed = inside[disk] = _inside(disk, project_root)
+                if not allowed:
+                    continue
             if not _is_image(relative, disk):
                 continue
             alias = entry.alias.strip() if isinstance(entry.alias, str) and entry.alias.strip() else ""
@@ -253,6 +264,20 @@ def _cached_document(path: str) -> object:
         return issue
     _CACHE[key] = document
     return document
+
+
+def _inside_memo(qrc_path: str, project_root: str) -> Dict[str, bool]:
+    try:
+        mtime = os.stat(qrc_path).st_mtime_ns
+    except OSError:
+        return {}
+    key = (os.path.abspath(qrc_path), mtime, os.path.abspath(project_root))
+    memo = _INSIDE.get(key)
+    if memo is None:
+        for stale in [k for k in _INSIDE if k[0] == key[0]]:
+            del _INSIDE[stale]
+        memo = _INSIDE[key] = {}
+    return memo
 
 
 def _inside(path: str, project_root: str) -> bool:

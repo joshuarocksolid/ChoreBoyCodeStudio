@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, Iterable, Protocol, cast
 
 from app.qt.QtWidgets import QDialog, QFileDialog, QMessageBox, QWidget
 
@@ -278,6 +278,49 @@ class ExternalFileChangeWorkflow:
     def set_editor_manager(self, editor_manager: EditorManager) -> None:
         self._editor_manager = editor_manager
         self._editor_sync.set_editor_manager(editor_manager)
+
+    def note_own_writes(self, file_paths: Iterable[str]) -> None:
+        """Record writes this app just made. See ``note_own_write``."""
+        for file_path in file_paths:
+            self.note_own_write(str(file_path))
+
+    def note_own_write(self, file_path: str) -> ExternalFileChangeOutcome:
+        """A write this app just made.
+
+        A clean open tab reloads from disk and the poller does not ask.
+        A tab with unsaved edits is left alone, so the next poll still asks.
+        A closed path is ignored. A change this app did not report still asks.
+        """
+        tab_state = self._editor_manager.get_tab(file_path)
+        if tab_state is None or tab_state.virtual_tab:
+            return ExternalFileChangeOutcome.SKIPPED
+        path = tab_state.file_path
+        current_mtime = self._editor_manager.current_disk_mtime(path)
+        if current_mtime is None:
+            return ExternalFileChangeOutcome.SKIPPED
+        disk_content = self._read_disk_text(path)
+        if disk_content is None:
+            return ExternalFileChangeOutcome.SKIPPED
+        if disk_content == tab_state.current_content:
+            tab_state.mark_saved(last_known_mtime=current_mtime, saved_text=disk_content)
+            self._host.refresh_save_action_states()
+            self._host.refresh_conflict_presentation(path)
+            return ExternalFileChangeOutcome.CONTENT_ALREADY_MATCHES
+        if tab_state.is_dirty:
+            return ExternalFileChangeOutcome.SKIPPED
+        if not self._editor_sync.apply_disk_content(
+            path,
+            disk_content,
+            source=EditorDiskSyncSource.TOOL_REFRESH,
+            last_known_mtime=current_mtime,
+        ):
+            return ExternalFileChangeOutcome.SKIPPED
+        self._host.refresh_save_action_states()
+        self._host.refresh_conflict_presentation(path)
+        self._host.update_editor_status_for_path(path)
+        if path.lower().endswith(".py"):
+            self._host.render_lint_diagnostics_for_file(path, trigger="tab_change")
+        return ExternalFileChangeOutcome.RELOADED
 
     def check_and_handle(self, file_path: str, *, force: bool = False) -> ExternalFileChangeOutcome:
         if file_path in self._prompting:

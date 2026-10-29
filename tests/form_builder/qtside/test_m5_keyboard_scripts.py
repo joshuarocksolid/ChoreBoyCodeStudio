@@ -563,11 +563,6 @@ def _quick_open(shop: Shop, words: str) -> None:
     kb.pump(12)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=Findings,
-    reason="F-k17-qrc-focus: opening resources.qrc from Quick Open leaves focus off the pictures grid (the shell never calls focus_primary)",
-)
 def test_k17_pictures(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> None:
     script = Script(shop, "K17")
     kb = script.kb
@@ -649,11 +644,9 @@ def test_k17_pictures(shop: Shop, monkeypatch: pytest.MonkeyPatch) -> None:
     kb.check(editor is not None, "Quick Open opened resources.qrc as a tab; focus %s" % kb.focus_name())
     kb.surface = editor
     kb.check(hasattr(editor, "grid"), "Ctrl+P, resources.qrc, Enter opens the resource editor")
-    kb.soft(
+    kb.check(
         kb.focus() is editor.grid,
-        "F-k17-qrc-focus",
-        "Quick Open of resources.qrc leaves focus on %s, not the pictures grid, so the script's arrow keys have no picture to move to "
-        "(qtside/resources/editor.py focus_primary)" % kb.focus_name(),
+        "Quick Open of resources.qrc leaves focus on %s, not the pictures grid" % kb.focus_name(),
     )
     for _ in range(14):
         if kb.focus() is editor.grid:
@@ -1114,11 +1107,6 @@ def test_k21_form_settings(shop: Shop) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=Findings,
-    reason="F-k22-duplicate-picture: New Form from a template adds a second pictures/logo.png entry when the qrc lists that file under an alias",
-)
 def test_k22_templates(shop: Shop) -> None:
     script = Script(shop, "K22")
     kb = script.kb

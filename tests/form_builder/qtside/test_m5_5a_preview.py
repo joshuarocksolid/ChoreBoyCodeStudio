@@ -27,7 +27,7 @@ from app.features.form_builder.qtside.preview.launch import (  # noqa: E402
     repo_root,
 )
 from app.features.form_builder.qtside.preview.pool import PreviewPool  # noqa: E402
-from app.qt.QtGui import QImage  # noqa: E402
+from app.qt.QtGui import QFont, QImage  # noqa: E402
 from app.qt.QtTest import QTest  # noqa: E402
 from app.qt.QtWidgets import QApplication, QDialog, QMenu, QPushButton, QWidgetAction  # noqa: E402
 from tests.form_builder.qtside.test_m3_keyboard_scripts import Kb, _close, _key, _NoMouse, _session  # noqa: E402
@@ -258,6 +258,9 @@ def test_print_paints_the_picture_centred_on_one_pdf_page(tmp_path: Path, qapp: 
     try:
         image = image_export.canvas_image(kb.surface)
         assert image is not None and not image.isNull()
+        page = kb.surface.page_widget()
+        assert (image.width(), image.height()) == (page.width(), page.height()), "one pixel per logical pixel (R3 180)"
+        assert image.devicePixelRatio() == 1.0
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
         printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
@@ -312,18 +315,21 @@ def test_the_code_split_follows_the_form_and_the_selection(tmp_path: Path, qapp:
         # and comes back when the split closes. The canvas keeps 360 px.
         window.resize(1366, 768)
         kb.pump()
+        # A fixed-pitch face of ordinary width, so the count does not depend on the host's fallback font.
+        editor = view.panel.editor if view.panel is not None else view._ensure().editor
+        editor.setFont(QFont("Courier", 10))
         assert view.open() and workbench.beside_canvas_key() == "code"
-        assert workbench.beside_rails()[0]
-        assert surface._gesture_sentence in (
-            "The Outline is on the left rail while the code is open.",
-            "The Outline and the inspector are on their rails while the code is open.",
-        )
+        assert workbench.beside_rails() == (True, True), "readable code needs the inspector on its rail too"
+        assert surface._gesture_sentence == "The Outline and the inspector are on their rails while the code is open."
         kb.pump()
         canvas_width, code_width = workbench._canvas_row.sizes()[:2]
         assert canvas_width >= 360 - 8 and code_width >= 300 - 8, (canvas_width, code_width)
+        shown = editor.viewport().width() // editor.fontMetrics().horizontalAdvance("M")
+        assert shown >= 60, "about 60 characters of a code line are visible at 1366 (%d)" % shown
         view.close()
         kb.pump()
         assert workbench.beside_rails() == (False, False) and workbench._plan.left_docked
+        assert workbench._plan.inspector_docked, "the inspector comes back when the code closes"
         # Too narrow even with both panes on their rails: refused with the spec's sentence.
         window.resize(640, 600)
         kb.pump()

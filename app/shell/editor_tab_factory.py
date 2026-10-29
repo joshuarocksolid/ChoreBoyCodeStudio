@@ -22,6 +22,7 @@ from app.shell.tab_content_providers import (
     TabMatchContext,
     TabSurface,
     TabSurfaceRequest,
+    focus_primary_surface,
 )
 
 
@@ -121,6 +122,12 @@ class EditorTabFactory:
                     window._editor_tabs_widget.setCurrentIndex(existing_index)
             if revealed:
                 window._editor_tab_workflow.refresh_tab_presentation(opened_result.tab.file_path)
+                if not opened_result.tab.is_preview:
+                    focus_primary_surface(
+                        window._tab_content_registry,
+                        opened_result.tab.file_path,
+                        force=True,
+                    )
             window._refresh_save_action_states()
             window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
             return True
@@ -221,6 +228,8 @@ class EditorTabFactory:
         window._editor_tab_workflow.handle_editor_tab_changed(tab_index)
         window._refresh_save_action_states()
         window._editor_tab_workflow.update_editor_status_for_path(opened_result.tab.file_path)
+        if not opened_result.tab.is_preview:
+            focus_primary_surface(window._tab_content_registry, opened_result.tab.file_path, force=True)
         if started_at is not None:
             window._logger.info(
                 "File open telemetry: file=%s elapsed_ms=%.2f",

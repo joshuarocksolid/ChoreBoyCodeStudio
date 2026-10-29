@@ -52,12 +52,22 @@ def print_available() -> bool:
 
 
 def canvas_image(surface: Any) -> Optional[QImage]:
-    """The canvas page at 100%: the realized form, with no overlay, chip or placeholder drawn over it."""
+    """The canvas page at 100%: the realized form, with no overlay, chip or placeholder drawn over it.
+
+    One pixel per logical pixel: a 480 x 520 page is a 480 x 520 picture, also on a
+    screen whose scale is 200% (``QWidget.grab`` would give 960 x 1040 device pixels).
+    """
     page = surface.page_widget()
     if page is None:
         return None
-    image = page.grab().toImage()
-    return None if image.isNull() else image
+    size = page.size()
+    if size.isEmpty():
+        return None
+    image = QImage(size, QImage.Format.Format_ARGB32_Premultiplied)
+    image.setDevicePixelRatio(1.0)
+    image.fill(Qt.GlobalColor.transparent)
+    page.render(image)
+    return image
 
 
 def png_bytes(image: QImage) -> bytes:

@@ -51,8 +51,7 @@ class _Provider:
         return self.surface
 
 
-def test_opening_a_markdown_surface_does_not_focus_it(qapp: object) -> None:
-    del qapp
+def _open_markdown(*, preview: bool) -> tuple[_Surface, list[str], str]:
     tabs = QTabWidget()
     registry = TabContentProviderRegistry()
     provider = _Provider()
@@ -80,17 +79,27 @@ def test_opening_a_markdown_surface_does_not_focus_it(qapp: object) -> None:
         display_name="README.md",
         original_content="# hi\n",
         current_content="# hi\n",
-        is_preview=True,
+        is_preview=preview,
     )
     opened = OpenedTabResult(tab=tab, was_already_open=False)
-
     opened_ok = EditorTabFactory(window)._materialize_opened_editor_tab(  # type: ignore[arg-type]
         opened,
         started_at=None,
         restore_draft=False,
     )
-
     assert opened_ok is True
     assert provider.surface is not None
-    assert provider.surface.focused == 0
-    assert presented == [tab.file_path]
+    return provider.surface, presented, tab.file_path
+
+
+def test_opening_a_markdown_surface_does_not_focus_it(qapp: object) -> None:
+    del qapp
+    surface, presented, file_path = _open_markdown(preview=True)
+    assert surface.focused == 0
+    assert presented == [file_path]
+
+
+def test_opening_a_permanent_surface_focuses_its_primary_widget(qapp: object) -> None:
+    del qapp
+    surface, _presented, _file_path = _open_markdown(preview=False)
+    assert surface.focused == 1

@@ -30,6 +30,7 @@ from app.features.form_builder.engine.project.save import (
     resource_destination,
     write_generated,
 )
+from app.features.form_builder.engine.project.written_files import note_written_files
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 CONNECTIONS_FILENAME = "cbcs_connections.py"
@@ -129,6 +130,7 @@ def adopt_pictures_now(
             fixed += 1
         if fixed:
             files.write_text(ui_path, write_ui(session.document).text)
+            note_written_files((ui_path,))
     finally:
         session.dispose()
     if fixed:
