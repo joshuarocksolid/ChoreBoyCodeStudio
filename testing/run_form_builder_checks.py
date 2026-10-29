@@ -42,6 +42,7 @@ TEST_PATHS = (
     "tests/unit/shell/test_form_run_routing.py",
     "tests/unit/shell/test_form_status_sentence.py",
     "tests/unit/shell/test_form_tab_shell_keys.py",
+    "tests/unit/tools/test_form_builder_parity.py",
 )
 # The unit lane is ~2650 tests after M5 (~300 s on a quiet Mac, ~700 s at load 30
 # with several lanes running); keep headroom so a loaded machine is not a failure.
