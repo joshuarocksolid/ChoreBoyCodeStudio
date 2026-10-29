@@ -411,18 +411,9 @@ def test_the_insert_pane_shows_your_widgets_from_the_registry_and_the_form(tmp_p
 
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M5.6 owns canvas/core/overlay.py: an empty own-class stand-in (a QWidget or QFrame base, so a container "
-        "like Designer's) gets the centred 'Drop widgets here' caption on top of its own 'Card · from widgets.card' "
-        "(shots_m5.4/own-class-canvas-stand-in-*). It should stay a drop target but mark it with the plus glyph, "
-        "not the caption."
-    ),
-)
 def test_an_empty_stand_in_keeps_its_drop_target_without_a_caption_over_its_name(tmp_path: Path) -> None:
     from app.features.form_builder.integration.canvas import FormCanvas
-    from app.features.form_builder.qtside.canvas.core.frame import Caption
+    from app.features.form_builder.qtside.canvas.core.frame import Caption, Glyph
     from app.qt.QtWidgets import QApplication
     from tests.form_builder.qtside.test_m37a_canvas import _Host
 
@@ -438,7 +429,9 @@ def test_an_empty_stand_in_keeps_its_drop_target_without_a_caption_over_its_name
         card = _id(session, "card")
         overlay = canvas.overlay()
         assert any(getattr(target, "node", None) == card for _rect, target in overlay.targets), "still a drop target"
+        # The stand-in's own "Card · from widgets.card" is the only words in the middle; a plus marks the drop.
         assert not [i for i in overlay.items if isinstance(i, Caption) and i.lines == ("Drop widgets here",)]
+        assert [i for i in overlay.items if isinstance(i, Glyph) and i.name == "plus"]
     finally:
         canvas.dispose()
         parent.deleteLater()

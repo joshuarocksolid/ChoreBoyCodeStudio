@@ -25,7 +25,8 @@ from app.features.form_builder.engine.query.pages import page_title, pages, scro
 from app.features.form_builder.engine.query.hit_index import GeoEntry, HitIndex, Rect
 from app.features.form_builder.engine.query.selection import SelectionState
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutNode, SpacerNode, WidgetNode
+from app.features.form_builder.engine.project.custom_widgets import entry_from_declaration
+from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, LayoutNode, SpacerNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import EnumValue
 from app.features.form_builder.qtside.canvas.core.chips import (
     BADGE_CORNERS,
@@ -101,6 +102,8 @@ EMPTY_MIN_HEIGHT = 32
 EMPTY_CAPTION_MIN_WIDTH = 120
 
 # A childless one of these is an empty container. A button or a label is not.
+#: Bases whose own classes the realizer draws as a stand-in (``realize.stand_in.PLAIN_BASES``).
+_STAND_IN_BASES = frozenset({"QWidget", "QFrame"})
 _EMPTY_CONTAINER = frozenset({"QWidget", "QFrame", "QGroupBox", "QDialog", "QScrollArea"})
 
 LABEL_HEIGHT = 18
@@ -350,12 +353,14 @@ def build_static(document: UiDocument, index: HitIndex, view: ViewMap) -> Static
                 bare.append(Stroke(paint, "tab", 1, "dashed", node=node.id))
         elif effective_class(document, node) in _EMPTY_CONTAINER and paint is not None:
             # The body stays a widget hit so a drag moves the container.
+            # An own-class stand-in already names itself in the middle ("Card · from widgets.card"):
+            # it stays a drop target, marked with the plus glyph instead of a second caption.
             _empty_mark(
                 empties,
                 targets,
                 paint,
                 OnWidget(node.id, positioning_of(document, node.id), "widget"),
-                _drop_caption(document, node),
+                None if _draws_stand_in(document, node) else _drop_caption(document, node),
             )
 
     for obstacle in placed:
@@ -635,16 +640,29 @@ def _drop_caption(document: UiDocument, node: object) -> str:
     return _EMPTY_NESTED
 
 
+def _draws_stand_in(document: UiDocument, node: WidgetNode) -> bool:
+    """True when the realizer draws ``node`` as an own-class stand-in (a project class on a plain
+    QWidget or QFrame, UX-CUST-007), which carries its own centred caption."""
+    declared = document.custom_widget(node.class_name)
+    if not isinstance(declared, CustomWidgetNode) or declared.extends not in _STAND_IN_BASES:
+        return False
+    return node.id != document.root.id and entry_from_declaration(declared) is not None
+
+
 def _empty_mark(
     items: List[Item],
     targets: List[Tuple[CanvasRect, Target]],
     canvas: CanvasRect,
     target: Target,
-    caption: str = _EMPTY_NESTED,
+    caption: Optional[str] = _EMPTY_NESTED,
 ) -> None:
     mark = _at_least(canvas, EMPTY_MIN_WIDTH, EMPTY_MIN_HEIGHT)
     items.append(Stroke(mark, "layout_faint", 1, "dashed"))
-    if mark.width >= EMPTY_CAPTION_MIN_WIDTH:
+    if caption is None:
+        # The middle already holds the widget's own words: the plus sits in the top-right corner.
+        corner = CanvasRect(mark.x + max(0, mark.width - _PLUS - 4), mark.y + 4, _PLUS, _PLUS)
+        items.append(Glyph(corner, "plus", "layout_faint"))
+    elif mark.width >= EMPTY_CAPTION_MIN_WIDTH:
         items.append(Caption(mark, (caption,)))
     else:
         items.append(Glyph(_centred(mark, _PLUS, _PLUS), "plus", "layout_faint"))
