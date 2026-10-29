@@ -32,6 +32,7 @@ from app.qt.QtCore import QPointF, QRectF, Qt
 from app.qt.QtGui import QColor, QFont, QPainter, QPen
 
 NAME = "tab_order"
+_SEATED: Optional[Tuple[Hashable, Dict[Hashable, object]]] = None
 BADGE = 16
 HINT_HEIGHT = 18
 HINT_PAD = 12
@@ -67,31 +68,37 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     viewport = getattr(inputs, "viewport", None) or page.grown(400)
     measure = getattr(inputs, "measure")
     content: Tuple[Obstacle, ...] = getattr(static, "content")
-    requests: List[ChipRequest] = []
     ids: Dict[str, NodeId] = {}
-    for number, name in enumerate(state.order, 1):
+    for name in state.order:
         found = document.by_name(name)
-        if not found or found[0] not in placed:
-            continue
-        ids[name] = found[0]
-        requests.append(
-            ChipRequest(("n", number), placed[found[0]], CanvasSize(BADGE, BADGE), _CORNERS, ancestors(document, found[0]))
-        )
-    hint: Optional[ChipRequest] = None
+        if found and found[0] in placed:
+            ids[name] = found[0]
+    chrome = tuple(getattr(inputs, "chrome", ()))
+    # Seats depend on where the stops are, not on their numbers, so a click that only renumbers reuses them.
+    key = (getattr(static, "epoch"), view, tuple(sorted(ids)), viewport, chrome)
+    global _SEATED
+    if _SEATED is None or _SEATED[0] != key:
+        requests = [
+            ChipRequest(name, placed[node], CanvasSize(BADGE, BADGE), _CORNERS, ancestors(document, node))
+            for name, node in ids.items()
+        ]
+        _SEATED = (key, {seat.key: seat for seat in place_chips(requests, content, chrome, page, viewport, None)})
+    seated = dict(_SEATED[1])
     if state.hover and state.hover in ids:
         text = hint_text(state.assigned + 1)
         size = CanvasSize(int(measure(text)) + HINT_PAD, HINT_HEIGHT)
-        hint = ChipRequest(("hint", 0), placed[ids[state.hover]], size, _HINT_CORNERS, ancestors(document, ids[state.hover]))
-    chrome = tuple(getattr(inputs, "chrome", ()))
-    seats = place_chips(requests + ([hint] if hint is not None else []), content, chrome, page, viewport, None)
-    seated = {seat.key: seat for seat in seats}
+        node = ids[state.hover]
+        hint = ChipRequest("\0hint", placed[node], size, _HINT_CORNERS, ancestors(document, node))
+        taken = chrome + tuple(seat.rect for seat in seated.values())
+        for seat in place_chips([hint], content, taken, page, viewport, None):
+            seated[seat.key] = seat
     badges: List[LayerItem] = []
     centres: List[Tuple[int, int]] = []
     for number, name in enumerate(state.order, 1):
         if name not in ids:
             continue
         target = placed[ids[name]]
-        seat = seated.get(("n", number))
+        seat = seated.get(name)
         if seat is None:
             rect = corner_rect(target, CanvasSize(BADGE, BADGE), "above_left")
             leader: Optional[Leader] = None
@@ -119,7 +126,7 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
             )
         )
     items.extend(badges)
-    seat = seated.get(("hint", 0))
+    seat = seated.get("\0hint")
     if seat is not None and state.hover in ids:
         items.append(Chip(seat.rect, hint_text(state.assigned + 1), "tab", None))
     return LayerOutput(tuple(items))  # type: ignore[arg-type]

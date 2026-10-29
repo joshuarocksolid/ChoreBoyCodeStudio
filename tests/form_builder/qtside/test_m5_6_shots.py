@@ -140,6 +140,7 @@ def _shoot(qapp: QApplication, folder: Path, suffix: str, tmp_path: Path) -> Non
         modes.open("buddies")
         modes.set_buddy(document.by_name("nameLabel")[0], "nameEdit")
         modes.set_buddy(document.by_name("emailLabel")[0], "emailEdit")
+        status.setText("")
         _grab(qapp, host, folder, "overlay-buddies-%s" % tag)
         modes.start_link(document.by_name("phoneLabel")[0])
         modes._candidate = "phoneEdit"

@@ -31,8 +31,8 @@ logger = logging.getLogger(__name__)
 TAB_ORDER = "tab_order"
 BUDDIES = "buddies"
 
-TAB_SENTENCE = "Click the fields in the order Tab should visit them. Shift+click continues from one."
-BUDDY_SENTENCE = "Drag from a label to its field, or pick a label and press Enter."
+TAB_SENTENCE = "Click fields in the order Tab should visit them."
+BUDDY_SENTENCE = "Drag from a label to its field."
 RESET_LABEL = "Reset to reading order"
 PAIR_LABEL = "Pair labels automatically"
 _DRAG_START = 6
