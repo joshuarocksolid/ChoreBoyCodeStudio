@@ -46,7 +46,7 @@ def entries() -> Tuple[Entry, ...]:
     return (
         _entry("QLineEdit", "Line edit", "QLineEdit", "lineEdit",
                "One line of text the user can type.",
-               ("textbox", "textfield", "input", "entry", "field"), "line_edit"),
+               ("textbox", "textfield", "input", "entry", "field", "text", "name", "password", "pin code"), "line_edit"),
         _entry("QTextEdit", "Text edit", "QTextEdit", "textEdit",
                "Several lines of text, with formatting.",
                ("richtext", "rich text", "formatted text"), "text_edit"),

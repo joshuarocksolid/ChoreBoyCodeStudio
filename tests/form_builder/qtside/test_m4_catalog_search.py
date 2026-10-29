@@ -16,6 +16,10 @@ _TABLE = (
     ("input", "Line edit"),
     ("entry", "Line edit"),
     ("field", "Line edit"),
+    ("name", "Line edit"),
+    ("text field", "Line edit"),
+    ("password", "Line edit"),
+    ("text", "Line edit"),
     ("textarea", "Plain text edit"),
     ("memo", "Plain text edit"),
     ("multiline", "Plain text edit"),
@@ -133,6 +137,13 @@ _TABLE = (
     ("tab", "Tab widget"),
     ("date", "Date edit"),
 )
+
+def test_a_pin_search_also_offers_the_line_edit() -> None:
+    catalog = load_catalog()
+    names = [hit.entry.friendly for hit in search(catalog.entries, catalog.windows, "pin")]
+    assert "Line edit" in names[:2]
+    assert "Spin box" in names
+
 
 def _lead(query: str) -> str:
     catalog = load_catalog()
