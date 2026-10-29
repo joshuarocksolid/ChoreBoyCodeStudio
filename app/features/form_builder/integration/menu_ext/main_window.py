@@ -70,7 +70,7 @@ def _remove(ctx: MenuContext, node: WidgetNode) -> None:
             question = ask(parent, None, lambda: (subject, bounds))
             if not question(
                 NeedsConfirm(
-                    "Remove the menu bar and its %d menus? Actions stay in the Actions list." % count,
+                    _remove_bar_question(count),
                     "Remove menu bar",
                 )
             ):
@@ -114,3 +114,9 @@ def _widget_actions(ctx: MenuContext, node: WidgetNode) -> None:
         item.triggered.connect(
             lambda checked, name=info.name: ctx.run(SetWidgetAction(node.id, name, bool(checked), node.object_name))
         )
+
+
+def _remove_bar_question(count: int) -> str:
+    """UX-MAIN-002. "its menu" for one, "its 3 menus" for more."""
+    menus = "its menu" if count == 1 else "its %d menus" % count
+    return "Remove the menu bar and %s? Actions stay in the Actions list." % menus
