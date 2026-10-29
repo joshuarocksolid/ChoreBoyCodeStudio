@@ -2,8 +2,11 @@
 
 ``engine/ui4/data/qt_classes.json`` (the class table) is not in the tree yet,
 so a type selector would match nothing. This map is the Qt class hierarchy for
-the widgets a form can hold; when the class table has the class, its chain is
-used instead. A promoted widget (``<customwidget>``) resolves through its base.
+the widgets a form can hold, used only while the class table is empty; once the
+table is loaded its chains are the only source. A promoted widget
+(``<customwidget>``) resolves through its base. Designer's ``Line`` is a
+``QFrame`` at run time (uic and codegen write ``QFrame``), so Qt never matches
+``Line`` as a type selector and neither does this.
 """
 
 from __future__ import annotations
@@ -97,14 +100,18 @@ def stock_chain(class_name: str) -> Tuple[str, ...]:
 
 def widget_chain(document: UiDocument, node: WidgetNode, table: Optional[QtClassTable] = None) -> Tuple[str, ...]:
     """The classes a widget is, own class first: ``MyEdit, QLineEdit, QWidget, QObject``."""
-    names: List[str] = [node.class_name]
-    start = node.class_name
+    own = "QFrame" if node.class_name == "Line" else node.class_name
+    names: List[str] = [own]
+    start = own
     custom = document.custom_widget(node.class_name)
     if isinstance(custom, CustomWidgetNode) and custom.extends:
         start = custom.extends.split("::")[-1]
     shared = table if table is not None else QtClassTable.shared()
-    known = tuple(info.name for info in shared.chain(start))
-    for name in known or stock_chain(start):
+    if shared.class_info("QWidget") is None:
+        chain = stock_chain(start)
+    else:
+        chain = tuple(info.name for info in shared.chain(start))
+    for name in chain:
         if name not in names:
             names.append(name)
     if "QWidget" not in names:

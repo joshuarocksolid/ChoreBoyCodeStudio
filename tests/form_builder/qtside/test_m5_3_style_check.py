@@ -143,6 +143,7 @@ _FORM = """<?xml version="1.0" encoding="UTF-8"?>
    <item><widget class="QPushButton" name="saveButton"/></item>
    <item><widget class="QLineEdit" name="nameEdit"/></item>
    <item><widget class="QToolButton" name="moreButton"/></item>
+   <item><widget class="Line" name="rule"><property name="minimumSize"><size><width>0</width><height>8</height></size></property></widget></item>
   </layout>
  </widget>
 </ui>
@@ -168,6 +169,7 @@ _SELECTORS = [
     "#okButton, #saveButton",
     "QLineEdit, QToolButton",
     "QFrame QLabel, #saveButton",
+    "Line",
 ]
 
 

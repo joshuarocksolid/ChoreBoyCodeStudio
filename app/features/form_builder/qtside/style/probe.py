@@ -9,6 +9,7 @@ widget is polished so Qt parses it. Qt reports an unreadable sheet as
 from __future__ import annotations
 
 import logging
+import sys
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
@@ -46,11 +47,19 @@ def ask_qt(text: str) -> Optional[QtVerdict]:
     if probe is None:
         return None
     seen: List[str] = []
+    previous: Optional[Callable[..., None]] = None
 
-    def handler(_mode: object, _context: object, message: str) -> None:
-        seen.append(message)
+    def handler(mode: object, context: object, message: str) -> None:
+        if _UNREADABLE in message or message.startswith(_UNKNOWN):
+            seen.append(message)
+            return
+        # Not the probe's: hand it on, so the probe never swallows anyone else's warning.
+        if previous is not None:
+            previous(mode, context, message)
+        else:
+            sys.stderr.write(message + "\n")
 
-    previous: Optional[Callable[..., None]] = qInstallMessageHandler(handler)
+    previous = qInstallMessageHandler(handler)
     try:
         probe.setStyleSheet("")
         probe.setStyleSheet(text)
