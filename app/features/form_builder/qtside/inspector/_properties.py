@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import dataclasses
 import logging
-import weakref
 from collections import OrderedDict
 from types import ModuleType
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
@@ -155,15 +154,6 @@ def load_form_groups(*packages: ModuleType) -> FormGroupRegistry:
 
 
 _FORM_GROUPS: Optional[FormGroupRegistry] = None
-#: Pages bound to the settings store, so Settings > Form designer reaches inspectors already open.
-_BOUND_PAGES: "weakref.WeakSet[PropertiesPage]" = weakref.WeakSet()
-
-
-def reread_qt_names() -> None:
-    """Every open inspector reads "Show Qt names" again (after the Settings dialog saved it)."""
-    for page in list(_BOUND_PAGES):
-        if wrapper_is_valid(page) and page._qt_store is not None:
-            page.bind_qt_names(page._qt_store)
 
 
 def default_form_groups() -> FormGroupRegistry:
@@ -344,7 +334,9 @@ class PropertiesPage(QWidget):
 
     def bind_qt_names(self, store: object) -> None:
         self._qt_store = store
-        _BOUND_PAGES.add(self)
+        remember = getattr(store, "remember_reader", None)
+        if callable(remember):
+            remember(self)
         reader = getattr(store, "qt_names", None)
         shown = bool(reader()) if callable(reader) else False
         self._qt_names_action.setChecked(shown)

@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """M5.R review repros on the canvas (UX-OVL-003)."""
 
 from __future__ import annotations

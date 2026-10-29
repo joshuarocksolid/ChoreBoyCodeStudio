@@ -1,11 +1,11 @@
+# pyright: reportAttributeAccessIssue=false
 """M5.R review repros: Settings reaches an inspector that is already open."""
 
 from __future__ import annotations
 
 import pytest
 
-from app.features.form_builder.integration.memory import WorkbenchMemoryStore
-from app.features.form_builder.qtside.inspector._properties import reread_qt_names
+from app.features.form_builder.integration.memory import WorkbenchMemoryStore, reread_qt_names
 from app.qt.QtWidgets import QApplication, QLabel, QWidget
 from tests.form_builder.inspector.test_inspector_round2 import _close, _pane, _select
 

@@ -48,6 +48,7 @@ from app.qt.QtWidgets import (
 from app.features.form_builder.engine.project import user_templates as ut
 from app.features.form_builder.integration import insert_memory, template_store
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.integration.memory import reread_qt_names
 from app.features.form_builder.qtside.theme.chrome import link_ink
 from app.persistence.settings_service import SettingsService
 from app.shell.settings_pages import SettingsPage, register_settings_page
@@ -273,8 +274,6 @@ def _apply(page: QWidget, payload: Dict[str, Any]) -> Mapping[str, Any]:
     # The Insert pane caches its state; it reads "Insert shows" again after the shell saves.
     insert_memory.forget_cached()
     # Open inspectors read "Show Qt names" again once the shell has saved the payload.
-    from app.features.form_builder.qtside.inspector._properties import reread_qt_names
-
     QTimer.singleShot(0, reread_qt_names)
     return page.write_into(payload)
 
