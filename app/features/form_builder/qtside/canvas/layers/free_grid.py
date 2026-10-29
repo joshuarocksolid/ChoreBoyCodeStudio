@@ -48,8 +48,9 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     down = state.down * factor
     if across < MIN_GAP_PX or down < MIN_GAP_PX:
         return LayerOutput()
-    shown = {obstacle.node: obstacle.rect for obstacle in getattr(static, "content")}
-    whole = {obstacle.node: obstacle.rect for obstacle in getattr(static, "placed")}
+    # A title strip is a second obstacle of the same node: only the body counts.
+    shown = {obstacle.node: obstacle.rect for obstacle in getattr(static, "content") if not obstacle.band}
+    whole = {obstacle.node: obstacle.rect for obstacle in getattr(static, "placed") if not obstacle.band}
     items: List[LayerItem] = []
     for node_id in getattr(static, "unlaid"):
         clipped = shown.get(node_id)

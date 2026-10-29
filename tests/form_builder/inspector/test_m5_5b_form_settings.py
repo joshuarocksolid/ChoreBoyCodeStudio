@@ -334,3 +334,28 @@ def test_every_row_has_an_accessible_name(qapp) -> None:  # type: ignore[no-unty
                         assert control.accessibleName().startswith("Form setting:"), control.objectName()
     finally:
         close(window, pane, realizer, session, qapp)
+
+
+def test_the_form_menu_item_comes_from_the_contributor_registry() -> None:
+    from app.features.form_builder.integration.form_menu_ext import default_registry
+
+    found = [(module, item) for module, item in default_registry().items() if item.command_id == "form.action.formSettings"]
+    assert [(m.rsplit(".", 1)[-1], item.path) for m, item in found] == [("form_settings", ("Form settings…",))]
+
+
+def test_reveal_selects_the_form_opens_code_and_focuses_author(qapp, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.qtside.inspector.editors.form_settings import reveal
+    from tests.form_builder.qtside.test_m5_5b_canvas import _open_big
+
+    host, surface = _open_big(tmp_path / "till.ui", free_form())
+    try:
+        surface.session.selection.set((surface.session.document.by_name("payButton")[0],), source=SelectionSource.PROGRAM)
+        qapp.processEvents()
+        assert reveal(surface) is True
+        assert surface.session.selection.state.ids == ()
+        focus = qapp.focusWidget()
+        assert focus is not None and focus.objectName() == "formBuilder.formSetting.author.edit"
+        assert surface.workbench.inspector.findChild(QToolButton, "formBuilder.group.code").isChecked()
+    finally:
+        surface.release()
+        host.close()

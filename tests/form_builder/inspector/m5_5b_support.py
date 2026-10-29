@@ -37,9 +37,15 @@ def free_form(attrs: str = "", extra: str = "") -> str:
         HEAD % attrs
         + """ <class>Till</class>
  <widget class="QWidget" name="Till">
+  <property name="geometry">
+   <rect><x>0</x><y>0</y><width>480</width><height>320</height></rect>
+  </property>
   <layout class="QVBoxLayout" name="verticalLayout">
    <item>
     <widget class="QGroupBox" name="receipt">
+     <property name="minimumSize">
+      <size><width>240</width><height>160</height></size>
+     </property>
      <widget class="QPushButton" name="payButton">
       <property name="geometry">
        <rect><x>16</x><y>24</y><width>80</width><height>24</height></rect>

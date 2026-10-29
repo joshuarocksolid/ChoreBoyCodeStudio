@@ -121,7 +121,7 @@ class _Button(QPushButton):
 class SettingRow(QWidget):
     """The shell of one row: bar, label, editor slot, Reset and a caption line."""
 
-    def __init__(self, body: "_Body", key: str, label: str, caption: str = "") -> None:
+    def __init__(self, body: "_Body", key: str, label: str, caption: str = "", *, stacked: bool = False) -> None:
         super().__init__(body.root)
         self.body = body
         self.key = key
@@ -142,13 +142,18 @@ class SettingRow(QWidget):
         line.addWidget(self._bar, 0)
         self._label = QLabel(label, self)
         self._label.setWordWrap(True)
-        self._label.setFixedWidth(_LABEL_W)
-        line.addWidget(self._label, 0, Qt.AlignmentFlag.AlignTop)
+        if stacked:
+            # A wide editor (the include lines) gets the full row, under its label (UX-PED-002).
+            line.addWidget(self._label, 1, Qt.AlignmentFlag.AlignTop)
+        else:
+            self._label.setFixedWidth(_LABEL_W)
+            line.addWidget(self._label, 0, Qt.AlignmentFlag.AlignTop)
         self.slot = QWidget(self)
         self.slot_layout = QVBoxLayout(self.slot)
         self.slot_layout.setContentsMargins(0, 0, 0, 0)
         self.slot_layout.setSpacing(2)
-        line.addWidget(self.slot, 1)
+        if not stacked:
+            line.addWidget(self.slot, 1)
         self._reset = QToolButton(self)
         self._reset.setObjectName("formBuilder.rowReset")
         self._reset.setProperty("fbFlat", "true")
@@ -160,9 +165,12 @@ class SettingRow(QWidget):
         self._reset.hide()
         line.addWidget(self._reset, 0, Qt.AlignmentFlag.AlignTop)
         outer.addLayout(line)
+        if stacked:
+            outer.addWidget(self.slot)
         self._note = QLabel(caption, self)
         self._note.setObjectName("formBuilder.rowNote")
         self._note.setWordWrap(True)
+        self._note.setContentsMargins(8, 0, 0, 0)
         self._note.setVisible(bool(caption))
         outer.addWidget(self._note)
         self._caption = caption
@@ -464,7 +472,7 @@ class _IncludesRow(SettingRow):
     """"Extra includes": one line each with Local or Global and a name (``includes``)."""
 
     def __init__(self, body: "_Body") -> None:
-        super().__init__(body, "includes", "Extra includes", CAPTION_INCLUDES)
+        super().__init__(body, "includes", "Extra includes", CAPTION_INCLUDES, stacked=True)
         self._lines: Tuple[Tuple[str, str], ...] = ()
         self.column = QWidget(self)
         self.column_layout = QVBoxLayout(self.column)
