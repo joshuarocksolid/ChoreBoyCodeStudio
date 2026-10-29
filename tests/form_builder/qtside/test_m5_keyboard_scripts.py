@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import runpy
 import sys
 import time
@@ -142,6 +143,8 @@ class Shop:
     findings: Dict[str, List[str]] = field(default_factory=dict)
     wall: Dict[str, float] = field(default_factory=dict)
     prompts: List[str] = field(default_factory=list)
+    #: Keys pressed (and texts typed) per script: the persona walkthrough's step counts.
+    steps: Dict[str, int] = field(default_factory=dict)
 
     def surface_for(self, path: Path) -> object:
         surface = self.window._tab_content_registry.surface_for_path(str(path))  # noqa: SLF001
@@ -191,6 +194,11 @@ def shop(tmp_path_factory: pytest.TempPathFactory, qapp: QApplication) -> Iterat
     (folder / "broken.py").write_text(_BROKEN, encoding="utf-8")
     # Templates and the preview options live in the isolated state dir, not the user's.
     template_store.use_state_root(str(state.resolve()))
+    # M5.R persona walkthrough: CBCS_FB_PERSONA_THEME picks the shell theme (light, high_contrast_dark ...).
+    theme = os.environ.get("CBCS_FB_PERSONA_THEME", "")
+    if theme:
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "settings.json").write_text(json.dumps({"theme": {"mode": theme}}), encoding="utf-8")
     window = MainWindow(state_root=str(state.resolve()))
     _project(window, root)
     window.resize(1400, 900)
@@ -250,16 +258,40 @@ class Script:
         self.kb.findings = []
         self.kb.log = []
         self.started = time.monotonic()
+        _SHOTS[:] = [name, 0]
 
     def finish(self) -> None:
         self.shop.wall[self.name] = time.monotonic() - self.started
+        self.shop.steps[self.name] = sum(1 for line in self.kb.log if not line.startswith(("FINDING", "RELOAD")))
         self.shop.findings[self.name] = list(self.kb.findings)
         print("%s keys:\n%s" % (self.name, self.kb.history()))
         if self.kb.findings:
             raise Findings("%s findings:\n%s" % (self.name, "\n".join(self.kb.findings)))
 
 
+#: The running script and how many shots it took (CBCS_FB_SCREENSHOT_DIR only).
+_SHOTS: List[object] = ["", 0]
+
+
+def _shot(kb: Kb) -> None:
+    """Grab the window before an undo-all, the state the script built (persona walkthrough evidence)."""
+    folder = os.environ.get("CBCS_FB_SCREENSHOT_DIR") or ""
+    if not folder:
+        return
+    _SHOTS[1] = int(_SHOTS[1]) + 1  # type: ignore[call-overload]
+    theme = os.environ.get("CBCS_FB_PERSONA_THEME", "") or "default"
+    scale = os.environ.get("QT_SCALE_FACTOR", "1")
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    kb.pump()
+    window = kb.window if hasattr(kb, "window") else None
+    if window is None:
+        return
+    name = "m5r_%s_%d_%s_%sx.png" % (str(_SHOTS[0]).lower(), _SHOTS[1], theme, scale)
+    window.grab().save(str(Path(folder) / name))
+
+
 def undo_all(kb: Kb, limit: int = 60) -> None:
+    _shot(kb)
     kb.press("Key_3", "Alt")
     for _ in range(limit):
         if not kb.session.log.can_undo():
@@ -1337,6 +1369,7 @@ def test_k23_tab_order_and_buddies(shop: Shop) -> None:
 
 
 def test_the_scripts_used_no_mouse_and_every_form_ends_at_its_baseline(shop: Shop) -> None:
+    print("steps per script: %s; reload prompts: %s" % (shop.steps, [Path(p).name for p in shop.prompts]))
     kb = shop.kb
     ran = sorted(shop.wall)
     assert ran == ["K%d" % n for n in range(16, 24)], "every script ran: %s" % ran

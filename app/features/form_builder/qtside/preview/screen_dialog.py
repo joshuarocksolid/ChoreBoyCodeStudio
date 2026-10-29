@@ -22,6 +22,7 @@ from app.features.form_builder.engine.preview_options import (
     clean_profile,
     name_is_built_in,
 )
+from app.features.form_builder.qtside.theme.chrome import FormChrome, edge_on, field_qss
 from app.qt.QtCore import Qt
 from app.qt.QtWidgets import (
     QDialog,
@@ -37,7 +38,12 @@ from app.qt.QtWidgets import (
 class ScreenDialog(QDialog):
     """Collects one ``ScreenProfile``. ``open()`` it; ``on_done`` gets the profile when the user adds it."""
 
-    def __init__(self, parent: QWidget, on_done: Callable[[ScreenProfile], None]) -> None:
+    def __init__(
+        self,
+        parent: QWidget,
+        on_done: Callable[[ScreenProfile], None],
+        chrome: Optional[FormChrome] = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.screenDialog")
         self.setWindowTitle(ADD_SCREEN.rstrip("…"))
@@ -80,8 +86,35 @@ class ScreenDialog(QDialog):
         self.name.textChanged.connect(lambda _text: self._sync())
         self.accepted.connect(self._finish)
         self._sync()
+        if chrome is not None:
+            self._apply_chrome(chrome)
         self.setTabOrder(self.name, self.width_box)
         self.name.setFocus(Qt.OtherFocusReason)
+
+    def _apply_chrome(self, chrome: FormChrome) -> None:
+        """The shell theme: a top-level dialog does not inherit the main window's sheet."""
+        edge = edge_on(chrome, chrome.window)
+        self.setStyleSheet(
+            "QDialog#formBuilder\\.screenDialog { background: %(window)s; color: %(text)s; }"
+            "QDialog#formBuilder\\.screenDialog QLabel { color: %(text)s; }"
+            "QDialog#formBuilder\\.screenDialog QPushButton {"
+            " background: %(panel)s; color: %(text)s; border: 1px solid %(edge)s; border-radius: 4px; padding: 3px 12px; }"
+            "QDialog#formBuilder\\.screenDialog QPushButton:default {"
+            " background: %(accent)s; color: %(on_accent)s; border: 1px solid %(accent)s; }"
+            "QDialog#formBuilder\\.screenDialog QPushButton:disabled { color: %(muted)s; background: %(panel)s; border: 1px dashed %(muted)s; }"
+            "QDialog#formBuilder\\.screenDialog QPushButton:focus { border: %(focus)dpx solid %(accent)s; }"
+            % {
+                "window": chrome.window,
+                "panel": chrome.panel,
+                "text": chrome.text,
+                "muted": chrome.muted,
+                "edge": edge,
+                "accent": chrome.accent,
+                "on_accent": chrome.on_accent,
+                "focus": max(1, chrome.focus_width),
+            }
+            + field_qss(chrome, "QDialog#formBuilder\\.screenDialog")
+        )
 
     def _spin(self, name: str, label: str, low: int, high: int, value: int, suffix: str) -> QSpinBox:
         box = QSpinBox(self)

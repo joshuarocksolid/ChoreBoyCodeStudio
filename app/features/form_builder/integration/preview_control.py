@@ -132,9 +132,13 @@ class PreviewControl:
 
     def add_screen_dialog(self) -> Any:
         """Ask for a new screen (Name, Width, Height, Font, Font size, Scale); on Add, remember it and use it."""
+        from app.features.form_builder.integration.chrome import chrome_for
         from app.features.form_builder.qtside.preview.screen_dialog import ScreenDialog
 
-        dialog = ScreenDialog(self._surface.window(), self.add_profile)
+        window = self._surface.window()
+        tokens = getattr(window, "current_theme_tokens", None)
+        chrome = chrome_for(tokens()) if callable(tokens) else None
+        dialog = ScreenDialog(window, self.add_profile, chrome)
         dialog.open()
         return dialog
 
