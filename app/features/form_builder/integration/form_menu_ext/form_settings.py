@@ -12,8 +12,10 @@ from typing import Any
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.integration.form_menu_ext import FormMenuItem
 from app.features.form_builder.qtside.inspector import TabId
-from app.features.form_builder.qtside.inspector.editors.form_settings import CODE
 from app.qt.QtWidgets import QLineEdit, QWidget
+
+#: The Code group's key (``qtside/inspector/editors/form_settings.py``).
+_CODE_GROUP = "code"
 
 
 def reveal(surface: Any) -> bool:
@@ -24,7 +26,7 @@ def reveal(surface: Any) -> bool:
     workbench.focus_inspector_tab(TabId.PROPERTIES)
     inspector = workbench.inspector
     inspector.flush()
-    inspector.set_group_expanded(CODE, True)
+    inspector.set_group_expanded(_CODE_GROUP, True)
     inspector.flush()
     body = inspector.findChild(QWidget, "formBuilder.formSettings.code")
     target = body.findChild(QLineEdit, "formBuilder.formSetting.author.edit") if body is not None else None
