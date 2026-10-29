@@ -17,7 +17,7 @@ from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QHeaderView, QLineEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 
 
-#: Widest a Keys, Where or In Qt Designer column grows before its text wraps.
+#: Widest a Keys, Where or In Qt Designer column grows before its text is elided.
 _MAX_SIDE_COLUMN = 200
 
 
@@ -42,10 +42,11 @@ class KeysPage(QWidget):
         self.table.setColumnCount(len(COLUMNS))
         self.table.setHeaderLabels(list(COLUMNS))
         self.table.setRootIsDecorated(False)
-        # "Where Designer's keys went" rows carry a sentence: it wraps in the stretched
-        # "What it does" column instead of widening the page into a sideways scroll.
-        self.table.setUniformRowHeights(False)
-        self.table.setWordWrap(True)
+        # "Where Designer's keys went" rows carry a sentence: the stretched "What it does"
+        # column elides it (full text in the tooltip) instead of widening the page into a
+        # sideways scroll. Wrapping instead cost ~15 ms a filter keystroke (budget 16).
+        self.table.setUniformRowHeights(True)
+        self.table.setTextElideMode(Qt.TextElideMode.ElideRight)
         self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         header = self.table.header()
         header.setStretchLastSection(False)
@@ -84,6 +85,7 @@ class KeysPage(QWidget):
             for row in group.rows:
                 item = QTreeWidgetItem(head, [row.keys, row.what, row.where, row.designer])
                 item.setData(0, Qt.ItemDataRole.UserRole, row.command_id)
+                item.setToolTip(1, row.what)
             head.setExpanded(True)
         for index in (0, 2, 3):
             self.table.resizeColumnToContents(index)

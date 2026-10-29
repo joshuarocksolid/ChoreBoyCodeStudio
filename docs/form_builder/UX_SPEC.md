@@ -2181,6 +2181,7 @@ The `ast` read does not follow imports and caches by path and mtime.
 | F4 before M6 | "Connections are in the Behavior tab. Alt+4 goes there." | status |
 | Tab order overlay | "Press Enter to make {name} number {n}." | status |
 | Buddy overlay | "Choose the field for “{label text}”, then press Enter." | status |
+| Tab order overlay, a numbered field clicked again | "{name} is number {n}." | status |
 | Tab order banner | "Click fields in the order Tab should visit them." | overlay banner |
 | Buddies banner | "Drag from a label to its field." | overlay banner |
 | Pair labels | "Paired {n} labels" ("Paired 1 label") | status |
