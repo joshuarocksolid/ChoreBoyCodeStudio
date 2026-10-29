@@ -148,3 +148,15 @@ def test_pairing_sets_only_labels_without_a_buddy_and_counts_them() -> None:
     assert q.buddy_of(doc, nid(doc, "phoneLabel")) == "phoneEdit"
     log.undo()
     assert saved(doc) == original
+
+
+def test_a_button_box_is_one_stop_and_a_widget_that_cannot_tab_is_not_a_stop() -> None:
+    form = ROWS.replace(
+        '<item row="3" column="0" colspan="2"><widget class="QLabel" name="note">',
+        '<item row="3" column="0" colspan="2"><widget class="QDialogButtonBox" name="buttonBox"/></item>\n   <item row="4" column="0" colspan="2"><widget class="QLabel" name="note">',
+    ).replace(
+        '<widget class="QLineEdit" name="phoneEdit"/>',
+        '<widget class="QLineEdit" name="phoneEdit"><property name="focusPolicy"><enum>Qt::NoFocus</enum></property></widget>',
+    )
+    doc = open_log(form).document
+    assert reading_order(doc) == ("nameEdit", "emailEdit", "buttonBox")

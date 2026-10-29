@@ -854,6 +854,7 @@ class FormSurface(QWidget):
         self._commit_xml()
 
     def _show_xml(self) -> None:
+        self._modes.close()
         editor = self._ensure_editor()
         if self._source.mode != "xml":
             editor.blockSignals(True)

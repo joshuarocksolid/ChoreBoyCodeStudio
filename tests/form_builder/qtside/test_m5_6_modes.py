@@ -283,3 +283,22 @@ def test_pair_labels_pairs_each_form_row_in_one_step_and_says_how_many(tmp_path:
         assert kb.text() == original
     finally:
         _close(window, qapp, guard)
+
+
+def test_undo_with_the_overlay_open_starts_the_numbering_again(tmp_path: Path, qapp: QApplication) -> None:
+    window, kb, guard = _open(tmp_path, qapp)
+    try:
+        modes = kb.surface.modes
+        modes.open("tab_order")
+        modes.assign("phoneEdit")
+        assert kb.session.document.tabstops() == ("phoneEdit", "nameEdit", "emailEdit")
+        kb.session.log.undo()
+        assert kb.session.document.tabstops() is None
+        assert modes.picked == ()
+        modes.assign("emailEdit")
+        assert kb.session.document.tabstops() == ("emailEdit", "nameEdit", "phoneEdit")
+        kb.surface._toolbar.xml.click()
+        kb.pump()
+        assert modes.active == "", "View XML closes the overlay"
+    finally:
+        _close(window, qapp, guard)

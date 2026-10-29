@@ -226,6 +226,13 @@ class OverlayModes:
         if changeset.replaced or changeset.added or changeset.removed or changeset.structure_dirty:
             self.close()
             return
+        if changeset.origin != "do":
+            # An undo or redo (Ctrl+Z with the overlay open) moved the order under the session.
+            self._picked = []
+            document = self._session.document
+            self._base = effective_tab_order(document)
+            saved = document.tabstops()
+            self._orig = None if saved is None else tuple(saved)
         self._push()
         self._announce()
 
