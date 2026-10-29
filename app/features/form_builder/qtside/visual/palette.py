@@ -136,16 +136,31 @@ def palette_from_button(color: ColorValue) -> PaletteValue:
 
 
 class _RoleList(QListWidget):
-    def __init__(self, parent: QWidget, on_open: object) -> None:
+    def __init__(self, parent: QWidget, on_open: object, on_column: object = None) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.paletteRoles")
         self.setAccessibleName(part_name("Palette", "roles"))
         self._on_open = on_open
+        self._on_column = on_column
+        self.column = 0
         self.setProperty("fbEnterStays", True)
+        self.currentRowChanged.connect(lambda _row: self._moved())
+
+    def _moved(self) -> None:
+        if callable(self._on_column):
+            self._on_column(self.column)
 
     def keyPressEvent(self, event: object) -> None:  # noqa: N802
-        if event.key() in (_key("Key_Return"), _key("Key_Enter")):  # type: ignore[attr-defined]
-            self._on_open("all" if not self.property("perState") else "active")
+        key = event.key()  # type: ignore[attr-defined]
+        per_state = bool(self.property("perState"))
+        if per_state and key in (_key("Key_Left"), _key("Key_Right")):
+            step = 1 if key == _key("Key_Right") else -1
+            self.column = max(0, min(len(_GROUPS) - 1, self.column + step))
+            self._moved()
+            event.accept()  # type: ignore[attr-defined]
+            return
+        if key in (_key("Key_Return"), _key("Key_Enter")):
+            self._on_open(_GROUPS[self.column] if per_state else "all")
             event.accept()  # type: ignore[attr-defined]
             return
         super().keyPressEvent(event)  # type: ignore[arg-type]
@@ -194,6 +209,7 @@ class PaletteEditor:
         self._filter: Optional[_EscFilter] = None
         self._roles: Dict[str, Dict[str, BrushValue]] = {}
         self._confirming = False
+        self._swatches: Dict[Tuple[int, str], Swatch] = {}
 
     @property
     def widget(self) -> QWidget:
@@ -237,7 +253,7 @@ class PaletteEditor:
         self._list_page = QWidget(self._stack)
         list_layout = QVBoxLayout(self._list_page)
         list_layout.setContentsMargins(0, 0, 0, 0)
-        self._roles_list = _RoleList(self._list_page, self._open_current)
+        self._roles_list = _RoleList(self._list_page, self._open_current, self._mark_column)
         self._states = QCheckBox("Show each state", self._list_page)
         self._states.setObjectName("formBuilder.paletteStates")
         self._states.setAccessibleName(part_name("Palette", "show each state"))
@@ -304,6 +320,7 @@ class PaletteEditor:
     def _fill_roles(self) -> None:
         self._roles_list.clear()
         self._roles_list.setProperty("perState", self._per_state)
+        self._swatches = {}
         for label, role in _ROLES:
             item = QListWidgetItem(self._roles_list)
             row = QWidget(self._roles_list)
@@ -318,7 +335,8 @@ class PaletteEditor:
             layout.addWidget(name, 1)
             if self._per_state:
                 for group, caption in _STATE_LABELS:
-                    layout.addWidget(self._swatch(row, role, group, caption))
+                    self._swatches[(len(self._swatches) // len(_GROUPS), group)] = swatch = self._swatch(row, role, group, caption)
+                    layout.addWidget(swatch)
             else:
                 layout.addWidget(self._swatch(row, role, "all", "All states"))
             reset = QToolButton(row)
@@ -332,6 +350,14 @@ class PaletteEditor:
             self._roles_list.addItem(item)
             self._roles_list.setItemWidget(item, row)
         self._roles_list.setCurrentRow(0)
+        self._mark_column(self._roles_list.column)
+
+    def _mark_column(self, column: int) -> None:
+        """Ring the swatch Enter would open: the current role's state column (Left and Right move it)."""
+        current = self._roles_list.currentRow()
+        wanted = _GROUPS[column] if self._per_state and 0 <= column < len(_GROUPS) else ""
+        for (row, group), swatch in self._swatches.items():
+            swatch.set_mark(self._host.chrome.accent if row == current and group == wanted else None)
 
     def _swatch(self, parent: QWidget, role: str, group: str, caption: str) -> Swatch:
         swatch = Swatch(parent, 16)

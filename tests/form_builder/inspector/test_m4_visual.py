@@ -729,6 +729,35 @@ def test_palette_state_edit_writes_only_that_group(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
+def test_palette_disabled_state_is_reachable_with_arrow_keys(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.palette", qapp)
+        _widget("formBuilder.paletteStates").setChecked(True)
+        qapp.processEvents()
+        roles = _widget("formBuilder.paletteRoles")
+        roles.setFocus()
+        _press(roles, Qt.Key.Key_Right)
+        _press(roles, Qt.Key.Key_Right)
+        _press(roles, Qt.Key.Key_Return)
+        qapp.processEvents()
+        field = _widget("formBuilder.colorHex")
+        field.setText("#FF0000")
+        _press(field, Qt.Key.Key_Return)
+        qapp.processEvents()
+        _press(field, Qt.Key.Key_Escape)
+        qapp.processEvents()
+        _done(qapp)
+        stored = session.document.node(session.document.by_name("title")[0]).prop("palette")
+        assert stored is not None and isinstance(stored.value, PaletteValue)
+        assert [role.role for role in stored.value.disabled] == ["Window"]
+        assert stored.value.active == () and stored.value.inactive == ()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def test_gradient_type_change_writes_that_types_geometry_and_sorted_stops(qapp: QApplication) -> None:
     window, pane, session, realizer = _pane(qapp)
     try:
