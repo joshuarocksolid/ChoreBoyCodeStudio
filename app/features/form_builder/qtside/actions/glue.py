@@ -126,6 +126,10 @@ class MenuEditGlue(QObject):
         self._timer.start()
 
     @property
+    def canvas(self) -> QWidget:
+        return self._canvas
+
+    @property
     def editor(self) -> MenuEditor:
         return self._editor
 

@@ -32,7 +32,7 @@ def _pump() -> None:
 
 
 def _viewport_point(glue: MenuEditGlue, rect, fx: float = 0.5, fy: float = 0.5) -> QPoint:
-    ox, oy, factor = glue._page_to_viewport()
+    ox, oy, factor = glue._page_to_viewport() or (0, 0, 1.0)
     return QPoint(int(ox + (rect.x + rect.width * fx) * factor), int(oy + (rect.y + rect.height * fy) * factor))
 
 

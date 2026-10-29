@@ -2836,9 +2836,8 @@ class FormWorkbench(QWidget):
             sentence = str(refusal)
             doc = self._session.document
             if not q_actions.is_main_window(doc):
-                from app.features.form_builder.qtside.inspector.words import class_words
-
-                sentence = "%s This form is a %s." % (sentence, class_words(q_actions.root_class(doc)).friendly.lower())
+                friendly = load_catalog().friendly_for_class(q_actions.root_class(doc)) or "widget"
+                sentence = "%s This form is a %s." % (sentence, friendly.lower())
             self.outline.report(sentence)
 
     def _place_from_outline(self, key: str) -> None:

@@ -32,13 +32,19 @@ def unregister_mime_hook(hook: MimeHook) -> None:
         _HOOKS.remove(hook)
 
 
-def hook_for(mime: object) -> Optional[MimeHook]:
-    for hook in _HOOKS:
+def hook_for(mime: object, canvas: object = None) -> Optional[MimeHook]:
+    """The hook for ``mime`` on ``canvas``. A hook with a ``canvas`` attribute answers only for that canvas."""
+    for hook in reversed(_HOOKS):
+        owner = getattr(hook, "canvas", None)
+        if owner is not None and canvas is not None and owner is not canvas:
+            continue
         if hook.accepts(mime):
             return hook
     return None
 
 
-def leave_all() -> None:
+def leave_all(canvas: object = None) -> None:
     for hook in tuple(_HOOKS):
-        hook.leave()
+        owner = getattr(hook, "canvas", None)
+        if owner is None or canvas is None or owner is canvas:
+            hook.leave()

@@ -282,7 +282,7 @@ class FormCanvas(QGraphicsView):
         return file_drops.local_paths(event.mimeData())  # type: ignore[attr-defined]
 
     def _hook_at(self, event: object) -> "Optional[Tuple[mime_hooks.MimeHook, Tuple[int, int], bool]]":
-        hook = mime_hooks.hook_for(event.mimeData())  # type: ignore[attr-defined]
+        hook = mime_hooks.hook_for(event.mimeData(), self)  # type: ignore[attr-defined]
         if hook is None:
             return None
         pos = event_pos(event)
@@ -347,7 +347,7 @@ class FormCanvas(QGraphicsView):
 
     def dragLeaveEvent(self, event: object) -> None:  # noqa: N802
         del event
-        mime_hooks.leave_all()
+        mime_hooks.leave_all(self)
         if self._controller.placing():
             self._controller.post(PlaceHover(CanvasPoint(0, 0), True, None, True))
 
