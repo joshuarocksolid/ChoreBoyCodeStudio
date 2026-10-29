@@ -177,7 +177,10 @@ def _set_includes(doc: UiDocument, ctx: PlanContext, lines: Tuple[IncludeLine, .
             if node.field("text") != text:
                 # A different header: the old line's "in the declaration or the implementation" hint does not carry over.
                 planning.set_field(doc, ctx, node.id, "impldecl", None)
-            planning.set_field(doc, ctx, node.id, "location", location)
+            stored = node.field("location")
+            if (stored if stored in ("local", "global") else "global") != location:
+                # A line with no location reads as Global: it keeps its bytes until the place changes.
+                planning.set_field(doc, ctx, node.id, "location", location)
             planning.set_field(doc, ctx, node.id, "text", text)
             continue
         spec = NodeSpec("include", None, (("location", location), ("text", text)))

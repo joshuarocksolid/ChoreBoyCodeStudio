@@ -170,6 +170,10 @@ def test_include_lines_keep_the_bytes_of_lines_that_did_not_change() -> None:
     assert '<include location="global">map</include>' in text and '<include location="local">more.h</include>' in text
     log.execute(SetFormField("includes", ()))
     assert "<include " not in saved(log.document)
+    # A line with no location reads as Global and keeps its bytes while another line changes.
+    bare = open_log(FULL.replace('<include location="global">vector</include>', "<include>vector</include>"))
+    bare.execute(SetFormField("includes", (("local", "other.h"), ("global", "vector"))))
+    assert "<include>vector</include>" in saved(bare.document)
 
 
 def test_the_grid_defaults_are_shown_and_snapping_at_8_px() -> None:
