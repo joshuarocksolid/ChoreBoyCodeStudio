@@ -35,6 +35,9 @@ class OverlayPalette:
     dock_band: str
     #: High contrast raises every stroke to 2 px.
     min_stroke: float
+    #: "Type here" placeholders on menu bars, menus and toolbars (UX-TOK-006, ``ov.type_here``).
+    #: The dashed box is ``layout_faint``; ``menu_drop`` is the ``select`` line.
+    type_here_text: str = "#6B6B6BFF"
 
 
 OVERLAY = OverlayPalette(
@@ -71,6 +74,7 @@ OVERLAY_HIGH_CONTRAST = OverlayPalette(
     stand_in_text="#000000FF",
     dock_band="#0000C026",
     min_stroke=2.0,
+    type_here_text="#2A2A2AFF",
 )
 
 
