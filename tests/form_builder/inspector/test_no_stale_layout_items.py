@@ -57,8 +57,11 @@ def test_repainting_the_inspector_holds_no_new_layout_items() -> None:
             # Before the fix every repaint wrapped every inspector layout item
             # (thousands per tour), and a later object came back as a stale
             # QWidgetItem inside tour(). A few wrappers per class remain from
-            # code outside the tab chain; see the M3.7 ticket.
-            assert _held_items() - before <= 2 * len(ids)
+            # code outside the tab chain; see the M3.7 ticket. With the class table
+            # filled in, every class shows its unset rows too (about 1.8 wrappers per
+            # class per tour instead of 1), so the allowance is 5 per class over the
+            # two tours.
+            assert _held_items() - before <= 5 * len(ids)
         finally:
             pane.dispose()
             pane.deleteLater()

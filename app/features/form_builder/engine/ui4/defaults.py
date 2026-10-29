@@ -23,6 +23,8 @@ JSON shape (version 1)::
              "designable": true, "stored": true, "volatile": false,
              "enum": null, "notify": null}
           ],
+          "defaults": {"sizePolicy": {...}},  # inherited properties whose default this
+                                          # class changes (value json, or null for none)
           "signals": ["clicked(bool)", "pressed()", ...],   # own, normalised signatures
           "slots": ["showMenu()", ...],
           "default_signal": "clicked()"   # Designer's double-click default, or null
@@ -45,7 +47,7 @@ from __future__ import annotations
 
 import json
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -123,6 +125,7 @@ class QtClassTable:
         signals: Dict[str, Tuple[str, ...]],
         slots: Dict[str, Tuple[str, ...]],
         enums: Dict[str, EnumInfo],
+        overrides: Optional[Dict[str, Dict[str, Optional[Value]]]] = None,
     ) -> None:
         self._qt_version = qt_version
         self._classes = classes
@@ -130,6 +133,8 @@ class QtClassTable:
         self._signals = signals
         self._slots = slots
         self._enums = enums
+        self._overrides = overrides or {}
+        self._resolved: Dict[str, Tuple[PropertyInfo, ...]] = {}
         self._by_name: Dict[Tuple[str, str], Optional[PropertyInfo]] = {}
 
     @classmethod
@@ -164,12 +169,32 @@ class QtClassTable:
         return tuple(found)
 
     def properties(self, class_name: str) -> Tuple[PropertyInfo, ...]:
-        """All properties across the chain, ``rank`` order."""
+        """All properties across the chain, ``rank`` order. A subclass that changes
+        an inherited default (``QLineEdit`` is an I-beam) shows its own default."""
+        cached = self._resolved.get(class_name)
+        if cached is not None:
+            return cached
+        chain = self.chain(class_name)
         collected: List[PropertyInfo] = []
-        for info in reversed(self.chain(class_name)):
-            collected.extend(self._properties.get(info.name, ()))
+        taken = set()
+        # A class that declares a property again (QDialog.modal, QDockWidget.windowTitle,
+        # QGridLayout.spacing) owns its position: Designer writes it there.
+        for info in chain:
+            for item in self._properties.get(info.name, ()):
+                if item.name not in taken:
+                    taken.add(item.name)
+                    collected.append(item)
         collected.sort(key=lambda item: (item.rank, item.name))
-        return tuple(collected)
+        if any(self._overrides.get(info.name) for info in chain):
+            for index, item in enumerate(collected):
+                for info in chain:
+                    changed = self._overrides.get(info.name)
+                    if changed is not None and item.name in changed:
+                        collected[index] = replace(item, default=changed[item.name])
+                        break
+        result = tuple(collected)
+        self._resolved[class_name] = result
+        return result
 
     def property_info(self, class_name: str, name: str) -> Optional[PropertyInfo]:
         """O(1) after first lookup for the class."""
@@ -188,13 +213,15 @@ class QtClassTable:
     def property_rank(self, class_name: str, name: str, *, dynamic: bool) -> Tuple[int, int, str]:
         """Sort key for inserting a new ``<property>`` entry: ``(group, rank, name)``.
         group 0 = known Qt property (rank from the table), 1 = other dynamic
-        property, 2 = ``cbcs*`` logic property (rank from
-        ``engine.logic.storage.LOGIC_PROPERTY_ORDER``). Unknown non-dynamic names
-        sort in group 1 by name."""
+        property, 2 = ``cbcs*`` logic property. A name the table knows ranks as a
+        Qt property even when the entry says ``stdset="0"``: Designer writes that
+        for any property whose setter is not ``set<Name>`` (``isWrapping``). So
+        ``dynamic`` only matters for names the table does not know, which sort in
+        group 1 by name."""
         if name.startswith("cbcs"):
             return (2, 0, name)
         info = self.property_info(class_name, name)
-        if info is not None and not dynamic:
+        if info is not None:
             return (0, info.rank, name)
         return (1, 0, name)
 
@@ -244,6 +271,7 @@ def _load() -> QtClassTable:
     signals: Dict[str, Tuple[str, ...]] = {}
     slots: Dict[str, Tuple[str, ...]] = {}
     supers: Dict[str, Optional[str]] = {}
+    overrides: Dict[str, Dict[str, Optional[Value]]] = {}
     for name, body in classes_raw.items():
         if not isinstance(name, str) or not isinstance(body, dict):
             continue
@@ -285,8 +313,35 @@ def _load() -> QtClassTable:
                 )
             )
         properties[name] = tuple(own)
+        changed = body.get("defaults")
+        if isinstance(changed, dict) and changed:
+            overrides[name] = {
+                key: value_from_json(item) if isinstance(item, dict) else None
+                for key, item in changed.items()
+                if isinstance(key, str)
+            }
         signals[name] = tuple(item for item in body.get("signals") or () if isinstance(item, str))
         slots[name] = tuple(item for item in body.get("slots") or () if isinstance(item, str))
+    # ``rank`` counts across the chain: every property of the super classes
+    # comes before the class's own, as in Designer's property sheet.
+    offsets: Dict[str, int] = {}
+
+    def offset_of(class_name: str) -> int:
+        known = offsets.get(class_name)
+        if known is not None:
+            return known
+        offsets[class_name] = 0
+        parent = supers.get(class_name)
+        total = 0
+        if isinstance(parent, str) and parent in properties:
+            total = offset_of(parent) + len(properties[parent])
+        offsets[class_name] = total
+        return total
+
+    for name in list(properties):
+        base = offset_of(name)
+        if base:
+            properties[name] = tuple(replace(item, rank=item.rank + base) for item in properties[name])
     for name, info in classes.items():
         chain = [name]
         current = supers.get(name)
@@ -319,4 +374,5 @@ def _load() -> QtClassTable:
         signals,
         slots,
         enums,
+        overrides,
     )

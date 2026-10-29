@@ -619,7 +619,7 @@ def set_property(
         ctx.do(SetPropertyOp(owner, kind, name, entry, None))
         return
     entries = node.properties() if kind == "property" else node.attributes()
-    index = _rank_index(ctx, node, entries, name, new_stdset == "0")
+    index = _rank_index(ctx, node, entries, name, new_stdset == "0", doc)
     ctx.do(SetPropertyOp(owner, kind, name, entry, index))
 
 
@@ -635,7 +635,7 @@ def set_property_many(
     skipped = []
     for owner in owners:
         node = _require(doc, owner)
-        if not _accepts_property(ctx, node, name, kind):
+        if not _accepts_property(ctx, node, name, kind, stdset):
             skipped.append(owner)
             continue
         set_property(doc, ctx, owner, name, value, kind, stdset)
@@ -1688,9 +1688,12 @@ def _holds_content(node: Node) -> bool:
     return False
 
 
-def _accepts_property(ctx: PlanContext, node: Node, name: str, kind: str) -> bool:
-    existing = node.prop(name) if kind == "property" else node.attr(name)
-    if existing is not None:
+def _accepts_property(ctx: PlanContext, node: Node, name: str, kind: str, stdset: Optional[str] = None) -> bool:
+    """Whether a multi-select edit applies to ``node``. A class that has no such Qt
+    property skips it, but a custom property (``stdset="0"``) goes anywhere."""
+    if kind != "property" or stdset == "0":
+        return True
+    if node.prop(name) is not None:
         return True
     class_name = _owner_class(node)
     if ctx.classes.class_info(class_name) is None:
@@ -2008,8 +2011,15 @@ def _base_methods(ctx: PlanContext) -> FrozenSet[str]:
     return frozenset(found)
 
 
-def _rank_index(ctx: PlanContext, node: Node, entries: Tuple[PropertyEntry, ...], name: str, dynamic: bool) -> int:
-    class_name = _owner_class(node)
+def _rank_index(
+    ctx: PlanContext,
+    node: Node,
+    entries: Tuple[PropertyEntry, ...],
+    name: str,
+    dynamic: bool,
+    doc: Optional[UiDocument] = None,
+) -> int:
+    class_name = _table_class(ctx, node, doc)
     key = ctx.classes.property_rank(class_name, name, dynamic=dynamic)
     for index, entry in enumerate(entries):
         other = ctx.classes.property_rank(class_name, entry.name, dynamic=entry.stdset == "0")
@@ -2023,7 +2033,23 @@ def _owner_class(node: Node) -> str:
         value = node.field("class_name")
         if isinstance(value, str):
             return value
+    if node.kind == "action":
+        return "QAction"
+    if node.kind == "actiongroup":
+        return "QActionGroup"
     return ""
+
+
+def _table_class(ctx: PlanContext, node: Node, doc: Optional[UiDocument]) -> str:
+    """The class whose property sheet applies: a promoted widget uses its base."""
+    class_name = _owner_class(node)
+    if doc is None or not class_name or ctx.classes.class_info(class_name) is not None:
+        return class_name
+    custom = doc.custom_widget(class_name)
+    extends = custom.field("extends") if custom is not None else None
+    if isinstance(extends, str) and ctx.classes.class_info(extends) is not None:
+        return extends
+    return class_name
 
 
 def _form_role(role: str) -> Tuple[int, int]:
