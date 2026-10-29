@@ -1,4 +1,4 @@
-"""Size, point, rect and size policy. Below 300 px each field is on its own line."""
+"""Size, point, rect and size policy. Below 300 px, or when two fields do not fit, each field is on its own line."""
 
 from __future__ import annotations
 
@@ -38,6 +38,18 @@ from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 _PAIR = 300
+
+
+def _pair_width(fields: Sequence["_Field"]) -> int:
+    """Width of the first two fields side by side, from their own size hints."""
+    sample = list(fields)[:2]
+    if len(sample) < 2:
+        return 0
+    widths = []
+    for field in sample:
+        unit = field.unit.sizeHint().width() + 4 if field.unit is not None else 0
+        widths.append(field.title.sizeHint().width() + 4 + field.box.sizeHint().width() + unit)
+    return widths[0] + widths[1] + 8
 _INT_RANGE = (-2147483648, 2147483647)
 _SHARE = (0, 255)
 
@@ -88,7 +100,11 @@ class _BoxEditor:
         return self._root
 
     def wants_stacked(self, width: int) -> bool:
-        stacked = int(width) < _PAIR
+        # 300 px is the normal-text budget (UX-PED-002). Wider rows still
+        # stack when the two fields' own hints do not fit, so a device
+        # scale that grows the text relative to the row stacks too.
+        needed = _pair_width(self._fields)
+        stacked = int(width) < _PAIR or (needed > 0 and needed > int(width))
         self._apply(stacked)
         return stacked
 
@@ -257,10 +273,7 @@ class SizePolicyEditor:
         self._can_reset = isinstance(value, Written) or (
             isinstance(value, Unset) and value.default is not None
         )
-        if isinstance(value, Unset):
-            self._button.setStyleSheet("color: %s;" % self._host.chrome.faint)
-        else:
-            self._button.setStyleSheet("")
+        mark(self._button, value)
         if isinstance(value, Mixed):
             self._button.set_summary("Mixed")
             return

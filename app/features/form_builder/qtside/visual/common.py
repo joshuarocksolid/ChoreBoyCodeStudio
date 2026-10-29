@@ -101,7 +101,8 @@ class RowSummary(SummaryButton):
         ``fbState`` is set too, so the inspector sheet can style the states.
         """
         mark(self, value)
-        self.setStyleSheet("color: %s;" % faint_colour if isinstance(value, Unset) else "")
+        # A colour-only sheet on the button drops the frame the inspector paints.
+        del faint_colour
 
     def resizeEvent(self, event: QEvent) -> None:  # noqa: N802
         super().resizeEvent(event)

@@ -133,6 +133,26 @@ def friendly(type_name: str, prop_name: str, enumerator: str) -> str:
     return split_words(enumerator)
 
 
+_DOCK_SIDES = (
+    ("LeftDockWidgetArea", "Left"),
+    ("RightDockWidgetArea", "Right"),
+    ("TopDockWidgetArea", "Top"),
+    ("BottomDockWidgetArea", "Bottom"),
+)
+
+
+def dock_area_summary(names: Sequence[str]) -> str:
+    """Allowed sides. All four read "All sides"; otherwise "Left, Right"."""
+    chosen = set(names)
+    if not chosen or chosen == {"NoDockWidgetArea"}:
+        return "None"
+    sides = {name for name, _word in _DOCK_SIDES}
+    if "AllDockWidgetAreas" in chosen or sides <= chosen:
+        return "All sides"
+    words = [word for name, word in _DOCK_SIDES if name in chosen]
+    return ", ".join(words) if words else "None"
+
+
 def radio_groups(type_name: str, names: Sequence[str]) -> Tuple[Tuple[str, ...], ...]:
     """Horizontal and vertical alignment exclude each other. Other flags do not."""
     if "Alignment" not in type_name:

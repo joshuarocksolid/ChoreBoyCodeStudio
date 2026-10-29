@@ -1469,7 +1469,7 @@ For a stacked widget, `{title}` is the page's object name. Items that cannot act
 
 **UX-CONT-013** `M4.2` `[S T]` Wizard. A wizard's pages are `QWizardPage` widgets. The canvas draws the real wizard with its Back, Next and Cancel buttons, which do nothing on the canvas; a switcher chip "◀ Step 2 of 3 ▶" changes the shown page. Insert step before and after, delete, move and "Start on this page" follow CONT-002 to CONT-006. A wizard page's Content group shows "Step title" (`title`, translatable) and "Step subtitle" (`subTitle`, translatable). The form can be a wizard (the New form card, UX-CAT-015) or contain one. Generated code builds the same pages in the same order; the uic oracle covers a root wizard and a nested one.
 
-**UX-CONT-014** `M4.2` `[S]` Group box rows (Content and Appearance): "Title" (exists), "Can be switched off" (`checkable`, help: "Adds a check box to the title. Unchecking it turns off everything inside."), "Starts switched on" (`checked`, shown only when Can be switched off is on), "Flat" (exists), "Title alignment" (Left, Centre, Right).
+**UX-CONT-014** `M4.2` `[S]` Group box rows (Content and Appearance): "Title" (exists), "Can be switched off" (`checkable`, help: "Adds a check box to the title. Unchecking it turns off everything inside."), "Starts switched on" (`checked`, shown only when Can be switched off is on), "Flat" (exists), "Title alignment" (Left, Centre, Right). A phrase that does not fit the 96 px column stacks onto its own line (UX-PED-002), so the words are not cut off. A single long name still elides, with the full name in the tooltip.
 
 **UX-CONT-015** `M4.2` `[S]` Frame rows (Appearance): "Frame" (`frameShape`: No frame, Box, Panel, Styled panel, Horizontal line, Vertical line, Windows panel), "Shadow" (`frameShadow`: Plain, Raised, Sunken), "Line width", "Middle line width". A `Line` widget shows only "Orientation" and "Shadow"; its shape follows its orientation, as Designer writes it.
 
@@ -1685,7 +1685,7 @@ Each part is written only when set; each set part has its own ↺ in the popover
 | Translation fields | "Change translation of {label in lower case}" |
 | Add / rename / remove custom property | "Add custom property {name}", "Rename custom property", "Remove custom property {name}" |
 | Item editor session | "Edit items of {name}" |
-| Reset | "Reset {label in lower case}" |
+| Reset | "Reset {label}" ("Reset Tooltip") |
 
 **Refusals and warnings** (every sentence a lane may show for M4; a new one needs a spec change):
 

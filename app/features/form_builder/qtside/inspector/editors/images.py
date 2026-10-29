@@ -26,6 +26,7 @@ from app.features.form_builder.qtside.inspector.api import (
     RowValue,
     ValueSpec,
     Written,
+    set_style_flag,
 )
 from app.features.form_builder.qtside.inspector.editors._editor_kit import (
     change_label,
@@ -196,8 +197,8 @@ class _PictureRow:
         text = label or displayed_name(self._stored, self._missing and bool(self._stored), mixed=self._mixed)
         self._summary.set_summary(text)
         self._summary.show_state(value, self._host.chrome.faint)
+        set_style_flag(self._summary, "fbIssue", "missing" if self._missing and self._stored else "")
         if self._missing and self._stored:
-            self._summary.setStyleSheet("color: %s;" % self._host.chrome.error)
             self._summary.setToolTip(_missing_tip(self._stored))
         elif self._stored:
             self._summary.setToolTip(self._stored)

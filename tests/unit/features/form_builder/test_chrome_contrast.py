@@ -11,6 +11,10 @@ from app.core import constants  # noqa: E402
 from app.features.form_builder.qtside.theme.chrome import (  # noqa: E402
     PAGE_TITLE_FILL,
     PAGE_TITLE_GLYPH,
+    control_qss,
+    edge_on,
+    field_qss,
+    link_ink,
     on_accent_for,
 )
 from app.features.form_builder.integration.chrome import chrome_for  # noqa: E402
@@ -39,10 +43,63 @@ def _luminance(color: str) -> float:
     return 0.2126 * _channel(red) + 0.7152 * _channel(green) + 0.0722 * _channel(blue)
 
 
+def _assert_pseudo_on_every_selector(sheet: str, accent: str) -> None:
+    """A focus border belongs only on selectors that name :focus."""
+    for block in sheet.split("}"):
+        if "{" not in block or accent not in block or "solid" not in block:
+            continue
+        selectors = block.split("{", 1)[0]
+        for part in selectors.split(","):
+            assert ":focus" in part, part
+
+
 def _contrast(foreground: str, background: str) -> float:
     lighter = max(_luminance(foreground), _luminance(background))
     darker = min(_luminance(foreground), _luminance(background))
     return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_unchecked_indicator_and_field_border_clear_three_to_one(qapp) -> None:  # type: ignore[no-untyped-def]
+    """An empty box and a field edge stay visible on the panel in every theme."""
+    modes = (
+        "light",
+        "dark",
+        constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
+        constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+    )
+    for mode in modes:
+        tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
+        built = chrome_for(tokens)
+        edge = edge_on(built, built.panel)
+        ratio = _contrast(edge, built.panel)
+        assert ratio >= 3.0, "indicator edge in %s is %.2f" % (mode, ratio)
+        field_edge = edge_on(built, built.input)
+        field_ratio = _contrast(field_edge, built.input)
+        assert field_ratio >= 3.0, "field border in %s is %.2f" % (mode, field_ratio)
+        floor = 7.0 if built.is_high_contrast else 4.5
+        ink = link_ink(built)
+        ink_ratio = _contrast(ink, built.panel)
+        assert ink_ratio >= floor, "disclosure ink in %s is %.2f" % (mode, ink_ratio)
+        disabled_ratio = _contrast(built.muted, built.input or built.panel)
+        assert disabled_ratio >= 4.5, "disabled field text in %s is %.2f" % (mode, disabled_ratio)
+        sheet = _stylesheet(built)
+        assert edge in sheet and "QCheckBox::indicator" in sheet
+        fields = field_qss(built, "QFrame#formBuilder\\.itemEditor")
+        assert field_edge in fields
+        links = control_qss(built)
+        assert ink in links
+        assert "formBuilder\\.translationToggle:focus" in links
+        assert "formBuilder\\.itemMore:focus" in links
+        assert "formBuilder\\.pagesAdd:focus" in links
+        assert "formBuilder\\.addCustomProperty:focus" in links
+        assert "translationToggle, QToolButton#formBuilder\\.itemMore:focus" not in links
+        _assert_pseudo_on_every_selector(fields, built.accent)
+        if built.is_high_contrast:
+            assert "dashed" in fields
+            assert "dashed" in sheet
+            assert "underline" in links
+        else:
+            assert "text-decoration: none" in links
 
 
 def test_chrome_text_and_accent_clear_the_contrast_targets(qapp) -> None:  # type: ignore[no-untyped-def]
@@ -94,6 +151,12 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
             ("checked segment border", chrome_for(tokens).accent, chrome_for(tokens).selected, 3.0),
             ("why paragraph", chrome_for(tokens).muted, chrome_for(tokens).row_hover, text_floor),
             ("outlined size segment", chrome_for(tokens).accent, chrome_for(tokens).input, 3.0),
+            (
+                "disabled field text",
+                chrome_for(tokens).muted,
+                chrome_for(tokens).input,
+                4.5,
+            ),
         )
         for name, foreground, background, floor in pairs:
             ratio = _contrast(foreground, background)

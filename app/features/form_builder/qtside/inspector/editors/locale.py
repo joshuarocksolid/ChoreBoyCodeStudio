@@ -14,6 +14,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Unset,
     ValueSpec,
     Written,
+    mark,
 )
 from app.features.form_builder.qtside.inspector.editors._editor_kit import change_label, name_part, payload
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
@@ -124,10 +125,7 @@ class LocaleEditor:
         self._button.set_row_label(self._host.label or "Locale")
         self._can_reset = isinstance(value, Written) or (isinstance(value, Unset) and value.default is not None)
         found = payload(value)
-        if isinstance(value, Unset):
-            self._button.setStyleSheet("color: %s;" % self._host.chrome.faint)
-        else:
-            self._button.setStyleSheet("")
+        mark(self._button, value)
         if isinstance(value, Mixed):
             self._button.set_summary("Mixed")
             return

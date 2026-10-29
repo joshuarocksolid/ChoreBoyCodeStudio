@@ -221,6 +221,7 @@ def test_changed_marker_and_reset(qapp: QApplication) -> None:
     assert session.document.node(phone).prop("text") is not None
     reset.click()
     pane.flush()
+    assert session.log.undo_label() == "Reset Text"
     assert session.document.node(phone).prop("text") is None
     # The bar keeps its 2 px slot and turns transparent, so the row does not shift.
     assert bar.property("fbChanged") == "false"

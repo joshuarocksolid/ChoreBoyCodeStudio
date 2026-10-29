@@ -18,7 +18,11 @@ from app.features.form_builder.qtside.inspector.api import (
     mark,
 )
 from app.features.form_builder.qtside.inspector.editors._editor_kit import change_label, name_part, payload
-from app.features.form_builder.qtside.inspector.editors._enum_words import friendly, radio_groups
+from app.features.form_builder.qtside.inspector.editors._enum_words import (
+    dock_area_summary,
+    friendly,
+    radio_groups,
+)
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover, SummaryButton
 from app.qt.qt_compat import enum_value
 from app.qt.QtCore import QTimer, Qt
@@ -65,10 +69,7 @@ class FlagsEditor:
         mark(self._button, value)
         self._button.set_row_label(self._host.label or "Flags")
         self._can_reset = isinstance(value, Written) or (isinstance(value, Unset) and value.default is not None)
-        if isinstance(value, Unset):
-            self._button.setStyleSheet("color: %s;" % self._host.chrome.faint)
-        else:
-            self._button.setStyleSheet("")
+        mark(self._button, value)
         if isinstance(value, Mixed):
             self._chosen = ()
             self._button.set_summary("Mixed")
@@ -256,5 +257,7 @@ def _summary(spec: ValueSpec, host: EditorHost, names: Sequence[str]) -> str:
     enum = spec.enum
     if enum is None or not names:
         return "None"
+    if enum.type_name == "DockWidgetArea":
+        return dock_area_summary(names)
     type_name = enum.type_name
     return ", ".join(friendly(type_name, host.qt_name, name) for name in names)
