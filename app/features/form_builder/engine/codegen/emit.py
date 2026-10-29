@@ -10,7 +10,7 @@ from __future__ import annotations
 import keyword
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Dict, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.codegen.api_types import CodegenOptions
@@ -45,6 +45,8 @@ from app.features.form_builder.engine.codegen.qtmap import (
     widget_basename,
 )
 from app.features.form_builder.engine.diagnostic_codes import fb5xx as _fb5xx
+from app.features.form_builder.engine.logic.codec import without_step_hints
+from app.features.form_builder.engine.logic.storage import signal_of_property
 from app.features.form_builder.engine.diagnostics import (
     CODES,
     DiagnosticLocation,
@@ -1341,16 +1343,17 @@ class _Emitter:
             self.add(line)
 
     def _apply(self, node: Node, ref: str, prop: PropertyEntry, *, copy_hfw: bool) -> str:
-        lines, expr = self._lower(prop.value, ref, copy_hfw=copy_hfw and prop.name == "sizePolicy" and not prop.is_dynamic)
+        value = _value_for_python(prop)
+        lines, expr = self._lower(value, ref, copy_hfw=copy_hfw and prop.name == "sizePolicy" and not prop.is_dynamic)
         for line in lines:
             self.add(line)
-        if prop.name in _KEY_SEQUENCE and isinstance(prop.value, (StringValue, CStringValue)):
+        if prop.name in _KEY_SEQUENCE and isinstance(value, (StringValue, CStringValue)):
             expr = "QKeySequence(%s)" % expr
             self.note_class("QKeySequence")
         if prop.is_dynamic or prop.name == "cbcsSplitterSizes":
             # PySide's setProperty takes a signed 64-bit integer. An unsigned
             # 64-bit max raises OverflowError and setupUi stops.
-            if isinstance(prop.value, ULongLongValue) and prop.value.value > 9223372036854775807:
+            if isinstance(value, ULongLongValue) and value.value > 9223372036854775807:
                 return ""
             return "%s.setProperty(%s, %s)" % (ref, py_string(prop.name), expr)
         # The name becomes part of a method name, so a keyword is fine (setClass)
@@ -1992,6 +1995,17 @@ def _plain_text(value: Value) -> str:
     if isinstance(value, CStringValue):
         return value.text
     return ""
+
+
+def _value_for_python(prop: PropertyEntry) -> Value:
+    """The value codegen writes. Slot ``hints`` never reach the module."""
+    value = prop.value
+    if not prop.is_dynamic or not isinstance(value, StringValue) or signal_of_property(prop.name) is None:
+        return value
+    stripped = without_step_hints(value.text)
+    if stripped == value.text:
+        return value
+    return replace(value, text=stripped)
 
 
 def _translated(value: Value) -> bool:

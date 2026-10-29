@@ -33,16 +33,26 @@ class EventStep:
     args: int = 0
     when: Optional[str] = None
     enabled: bool = True
+    hints: Tuple[Tuple[str, int, int], ...] = ()
     raw: object = None
 
     @property
     def plain(self) -> bool:
-        """Storable as a native ``<connection>``: a ``slot`` or ``call`` with no condition, turned on."""
+        """Storable as a native ``<connection>``: a ``slot`` or ``call`` with no condition, turned on.
+
+        A valid ``hints`` map is not an unknown key, so it still counts.
+        """
         return self.verb in PLAIN_VERBS and self.when is None and self.enabled and self.raw is None
 
 
-def slot_step(target: str, slot: str, *, enabled: bool = True) -> EventStep:
-    return EventStep("slot", target=target, slot=slot, enabled=enabled)
+def slot_step(
+    target: str,
+    slot: str,
+    *,
+    enabled: bool = True,
+    hints: Tuple[Tuple[str, int, int], ...] = (),
+) -> EventStep:
+    return EventStep("slot", target=target, slot=slot, enabled=enabled, hints=hints)
 
 
 def call_step(method: str, args: int = 0, *, enabled: bool = True) -> EventStep:
@@ -75,6 +85,17 @@ def write_list(steps: Sequence[EventStep], signal: Optional[str] = None, extra: 
 WriteError = _codec.LogicWriteError
 
 
+def _hints_of(step: Any) -> Tuple[Tuple[str, int, int], ...]:
+    raw = step.field("hints")
+    if not isinstance(raw, _codec.JsonObject):
+        return ()
+    points = []
+    for key, item in raw.pairs:
+        if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], int) and isinstance(item[1], int):
+            points.append((str(key), item[0], item[1]))
+    return tuple(points)
+
+
 def _from_codec(step: Any) -> EventStep:
     verb = str(step.verb)
     when = step.when if isinstance(step.when, str) else None
@@ -83,7 +104,14 @@ def _from_codec(step: Any) -> EventStep:
         if verb == "slot":
             target, slot = step.field("target"), step.field("slot")
             if isinstance(target, str) and isinstance(slot, str):
-                return EventStep("slot", target=target, slot=slot, when=when, enabled=enabled)
+                return EventStep(
+                    "slot",
+                    target=target,
+                    slot=slot,
+                    when=when,
+                    enabled=enabled,
+                    hints=_hints_of(step),
+                )
         if verb == "call":
             method, args = step.field("method"), step.field("args", 0)
             if isinstance(method, str) and isinstance(args, int) and not isinstance(args, bool):
@@ -95,5 +123,7 @@ def _to_codec(step: EventStep) -> Any:
     if step.raw is not None:
         return step.raw
     if step.verb == "slot":
-        return _codec.slot_step(step.target, step.slot, when=step.when, enabled=step.enabled)
+        return _codec.slot_step(
+            step.target, step.slot, when=step.when, enabled=step.enabled, hints=step.hints
+        )
     return _codec.call_step(step.method, step.args or None, when=step.when, enabled=step.enabled)

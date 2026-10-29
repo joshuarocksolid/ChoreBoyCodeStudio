@@ -45,13 +45,22 @@ _MAX_FLOAT_CHARS = 400
 
 #: The verbs this build types, with their fields in written order (CONTRACTS 15.3).
 TYPED_VERBS = {
-    "slot": ("target", "slot"),
+    "slot": ("target", "slot", "hints"),
     "call": ("method", "args"),
 }
 _REQUIRED_FIELDS = {
     "slot": ("target", "slot"),
     "call": ("method",),
 }
+
+#: Designer ``<hint>`` points are int32, and a step list keeps at most this many.
+HINT_COORD_MIN = -2147483648
+HINT_COORD_MAX = 2147483647
+MAX_HINT_POINTS = 64
+_HINT_TYPE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+#: ``(type, x, y)`` in ``<hint>`` order. Empty means the step has no ``hints`` key.
+HintPoints = Tuple[Tuple[str, int, int], ...]
 
 JsonValue = Union[None, bool, int, float, str, "JsonObject", Tuple["JsonValue", ...]]
 Pairs = Tuple[Tuple[str, JsonValue], ...]
@@ -112,7 +121,10 @@ class Step:
 
     @property
     def is_plain(self) -> bool:
-        """A typed step with no ``when`` and not turned off: it can be a native connection."""
+        """A typed step with no ``when`` and not turned off: it can be a native connection.
+
+        A valid ``hints`` map on a ``slot`` step does not count against this.
+        """
         return self.is_typed and self.when is None and self.enabled is not False
 
     def field(self, name: str, default: JsonValue = None) -> JsonValue:
@@ -122,8 +134,78 @@ class Step:
         return default
 
 
-def slot_step(target: str, slot: str, *, when: Optional[str] = None, enabled: bool = True, unknown: Pairs = ()) -> Step:
-    return Step("slot", when, enabled, (("target", target), ("slot", slot)), unknown)
+def slot_step(
+    target: str,
+    slot: str,
+    *,
+    when: Optional[str] = None,
+    enabled: bool = True,
+    unknown: Pairs = (),
+    hints: HintPoints = (),
+) -> Step:
+    fields: List[Tuple[str, JsonValue]] = [("target", target), ("slot", slot)]
+    if hints:
+        checked = checked_hint_points(hints)
+        if checked is None:
+            raise LogicWriteError('"hints" must be identifier points in int32 range')
+        fields.append(("hints", _hint_object(checked)))
+    return Step("slot", when, enabled, tuple(fields), unknown)
+
+
+def _valid_hint_type(text: object) -> bool:
+    return isinstance(text, str) and 0 < len(text) <= 64 and _HINT_TYPE.match(text) is not None
+
+
+def _valid_hint_coord(value: object) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and HINT_COORD_MIN <= value <= HINT_COORD_MAX
+
+
+def checked_hint_points(points: Sequence[Tuple[object, ...]]) -> Optional[HintPoints]:
+    """``points`` when every item is a hint this schema stores, else None."""
+    if len(points) > MAX_HINT_POINTS:
+        return None
+    seen = set()
+    clean: List[Tuple[str, int, int]] = []
+    for item in points:
+        if len(item) != 3:
+            return None
+        kind, x, y = item
+        if not isinstance(kind, str) or not isinstance(x, int) or isinstance(x, bool):
+            return None
+        if not isinstance(y, int) or isinstance(y, bool):
+            return None
+        if not _valid_hint_type(kind) or kind in seen:
+            return None
+        if not HINT_COORD_MIN <= x <= HINT_COORD_MAX or not HINT_COORD_MIN <= y <= HINT_COORD_MAX:
+            return None
+        seen.add(kind)
+        clean.append((kind, x, y))
+    return tuple(clean)
+
+
+def _hint_object(points: HintPoints) -> JsonObject:
+    return JsonObject(tuple((kind, (x, y)) for kind, x, y in points))
+
+
+def _parse_hint_map(value: JsonValue) -> None:
+    if not isinstance(value, JsonObject):
+        raise _Refused(1, '"hints" must be an object')
+    if len(value.pairs) > MAX_HINT_POINTS:
+        raise _Refused(1, '"hints" has too many points')
+    seen = set()
+    for key, item in value.pairs:
+        if not _valid_hint_type(key):
+            raise _Refused(1, '"hints" type must be an identifier')
+        if key in seen:
+            raise _Refused(1, "the hint %r is there twice" % (key,))
+        seen.add(key)
+        if (
+            not isinstance(item, tuple)
+            or len(item) != 2
+            or not _valid_hint_coord(item[0])
+            or not _valid_hint_coord(item[1])
+        ):
+            raise _Refused(1, '"hints" point must be two whole numbers')
 
 
 def call_step(
@@ -339,6 +421,10 @@ def _step_from_object(obj: JsonObject) -> Step:
             # A typed step with a condition it can't read must not pass for a plain step
             # (it would become a native connection and the condition would be lost).
             raise _Refused(1, '"when" must be text and "enabled" true or false')
+        elif key == "hints" and verb == "slot":
+            _parse_hint_map(value)
+            if isinstance(value, JsonObject) and value.pairs:
+                rest.append((key, value))
         else:
             rest.append((key, value))
     if schema is None:
@@ -414,6 +500,28 @@ def _step_object(step: Step) -> JsonObject:
     pairs.extend(step.fields)
     pairs.extend(step.unknown)
     return JsonObject(tuple(pairs))
+
+
+def without_step_hints(text: str) -> str:
+    """Step-list text with slot ``hints`` removed. Unreadable text is returned as given.
+
+    Generated Python uses this so a list with hints and the same list without them
+    emit the same module. The ``.ui`` property is left as stored.
+    """
+    read = parse_steps(text)
+    if read.error is not None:
+        return text
+    stripped: List[Step] = []
+    changed = False
+    for step in read.steps:
+        fields = tuple(pair for pair in step.fields if pair[0] != "hints")
+        if len(fields) != len(step.fields):
+            changed = True
+            step = Step(step.verb, step.when, step.enabled, fields, step.unknown)
+        stripped.append(step)
+    if not changed:
+        return text
+    return write_steps(tuple(stripped), read.signal, read.extra)
 
 
 def write_steps(
