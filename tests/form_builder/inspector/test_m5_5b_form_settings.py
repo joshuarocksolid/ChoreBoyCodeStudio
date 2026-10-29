@@ -344,7 +344,7 @@ def test_the_form_menu_item_comes_from_the_contributor_registry() -> None:
 
 
 def test_reveal_selects_the_form_opens_code_and_focuses_author(qapp, tmp_path) -> None:  # type: ignore[no-untyped-def]
-    from app.features.form_builder.qtside.inspector.editors.form_settings import reveal
+    from app.features.form_builder.integration.form_menu_ext.form_settings import reveal
     from tests.form_builder.qtside.test_m5_5b_canvas import _open_big
 
     host, surface = _open_big(tmp_path / "till.ui", free_form())

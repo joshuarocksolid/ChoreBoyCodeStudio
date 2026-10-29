@@ -32,7 +32,6 @@ from app.features.form_builder.engine.commands.catalog_ext.form_fields import (
     include_lines,
     lower_label,
 )
-from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.schema import LayoutDefault, LayoutFunction
 from app.features.form_builder.qtside.inspector.api import GroupBody, GroupHost, Registrar, set_style_flag
@@ -806,31 +805,3 @@ def register_form_groups(registry: object) -> None:
     registry.add(  # type: ignore[attr-defined]
         FREE, "Free placement", lambda host, parent: FreeBody(host, parent), order=170, applies=_applies_free
     )
-
-
-# --------------------------------------------------------------------------- Form > Form settings...
-
-
-def reveal(surface: object) -> bool:
-    """Select the form, open the inspector, open Code and focus Author (UX-FSET-001). True when focus landed."""
-    from app.features.form_builder.qtside.inspector.pane import TabId
-
-    session = surface.session  # type: ignore[attr-defined]
-    workbench = surface.workbench  # type: ignore[attr-defined]
-    session.selection.clear(source=SelectionSource.PROGRAM)
-    opener = getattr(workbench, "_focus_inspector_tab", None)
-    if callable(opener):
-        opener(TabId.PROPERTIES)
-    inspector = workbench.inspector
-    inspector.flush()
-    toggle = inspector.findChild(QToolButton, "formBuilder.group.%s" % CODE)
-    if toggle is not None and not toggle.isChecked():
-        toggle.click()
-    inspector.flush()
-    body = inspector.findChild(QWidget, "formBuilder.formSettings.%s" % CODE)
-    target = body.findChild(QLineEdit, "formBuilder.formSetting.author.edit") if body is not None else None
-    if target is None:
-        return False
-    target.setFocus()
-    target.selectAll()
-    return True

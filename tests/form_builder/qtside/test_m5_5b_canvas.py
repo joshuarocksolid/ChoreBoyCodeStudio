@@ -107,7 +107,7 @@ def test_the_dot_grid_follows_the_form_settings(qapp, tmp_path: Path) -> None:  
         session = surface.session
         assert canvas.layer_state(NAME) == FreeGrid(8, 8)
         found = _drawn(canvas)
-        assert len(found) == 1 and found[0].data[0] > 0
+        assert len(found) == 1 and found[0].data[0] > 0  # type: ignore[index]  # pyright: ignore[reportIndexIssue]
         session.log.execute(SetFormGrid("across", 16))
         session.log.execute(SetFormGrid("down", 4))
         assert canvas.layer_state(NAME) == FreeGrid(16, 4)
@@ -141,7 +141,7 @@ def test_the_dots_skip_children_and_paint_inside_the_container(qapp, tmp_path: P
     host, surface = _open_big(tmp_path / "till.ui", free_form())
     try:
         found = _drawn(surface.workbench.canvas)[0]
-        across, down, left, top, holes = found.data
+        across, down, left, top, holes = found.data  # pyright: ignore[reportGeneralTypeIssues]
         assert len(holes) == 2 and holes[0][2] > 0
         fill, dot = theme.backdrop_fill(False, False)
         palette = theme.CanvasPalette(
