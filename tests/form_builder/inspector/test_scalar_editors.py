@@ -1253,7 +1253,7 @@ def test_unset_dates_locale_and_scene_rect_show_a_default() -> None:
             _select(session, pane, "email")
             locale = _summary(_row(pane, "locale"))
             assert "(" in locale.text()
-            assert locale.styleSheet()
+            assert locale.property("fbState") == "unset"
         finally:
             _close(window, pane)
     with opened(_FLOATS) as (session, realizer):

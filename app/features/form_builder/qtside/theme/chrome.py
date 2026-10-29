@@ -8,6 +8,7 @@ tokens and pass theme flags. This module does not import the shell.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional, Tuple
 
 PAGE_TITLE_HEIGHT = 22
@@ -249,6 +250,163 @@ def _luminance(color: str) -> float:
         channels.append(channel / 12.92 if channel <= 0.03928 else ((channel + 0.055) / 1.055) ** 2.4)
     red, green, blue = channels
     return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def edge_on(chrome: FormChrome, background: str) -> str:
+    """A 1 px edge that clears 3:1 on ``background``.
+
+    High contrast borders already do. A pale border on a near-same fill does not,
+    so the control uses the text colour, which the theme already keeps readable.
+    """
+    if _contrast(chrome.border, background) >= 3.0:
+        return chrome.border
+    return chrome.text
+
+
+def link_ink(chrome: FormChrome) -> str:
+    """Disclosure text. Accent when it clears the text floor, otherwise body text."""
+    floor = 7.0 if chrome.is_high_contrast else 4.5
+    if _contrast(chrome.accent, chrome.panel) >= floor:
+        return chrome.accent
+    return chrome.text
+
+
+def _check_image(chrome: FormChrome) -> str:
+    name = "check-light.svg" if chrome.on_accent == "#FFFFFF" else "check-dark.svg"
+    return Path(__file__).resolve().with_name(name).as_posix()
+
+
+def _under(ancestor: str, selector: str) -> str:
+    """Prefix each comma-separated selector when a sheet is scoped to one frame."""
+    if not ancestor:
+        return selector
+    return ", ".join("%s %s" % (ancestor, part.strip()) for part in selector.split(","))
+
+
+def control_qss(chrome: FormChrome, ancestor: str = "") -> str:
+    """Summary buttons, empty check boxes, and disclosure links.
+
+    A stylesheet rule on ``QCheckBox`` or ``QPushButton`` drops the native
+    frame. These rules paint the frame from the chrome tokens. ``ancestor``
+    scopes them under one frame so a broader child rule cannot win.
+    """
+    edge = edge_on(chrome, chrome.panel)
+    fill = chrome.panel
+    disabled = chrome.muted if _contrast(chrome.muted, fill) >= 3.0 else edge
+    check = _check_image(chrome)
+    focus = chrome.focus_width if chrome.focus_width > 0 else 1
+    ink = link_ink(chrome)
+    summary = _under(ancestor, "QPushButton#formBuilder\\.summary")
+    box = _under(ancestor, "QCheckBox")
+    links = _under(
+        ancestor,
+        "QToolButton#formBuilder\\.translationToggle, QToolButton#formBuilder\\.itemMore",
+    )
+    return (
+        "%(summary)s {"
+        " color: %(text)s; background: %(input)s; border: 1px solid %(edge)s;"
+        " border-radius: 4px; padding: 2px 8px; text-align: left; }"
+        "%(summary)s:focus { border: %(focus)dpx solid %(accent)s; }"
+        "%(summary)s[fbIssue=\"missing\"] { color: %(error)s; }"
+        "%(box)s { spacing: 6px; background: transparent; }"
+        "%(box)s::indicator {"
+        " width: 13px; height: 13px; border: 1px solid %(edge)s; background: %(fill)s; image: none; }"
+        "%(box)s::indicator:checked {"
+        " background: %(accent)s; border: 1px solid %(edge)s; image: url(%(check)s); }"
+        "%(box)s::indicator:disabled {"
+        " border: 1px solid %(disabled)s; background: %(fill)s; image: none; }"
+        "%(box)s::indicator:checked:disabled {"
+        " background: %(accent)s; border: 1px solid %(disabled)s; image: url(%(check)s); }"
+        "%(links)s {"
+        " color: %(ink)s; background: transparent; border: none; padding: 0px; text-align: left; }"
+        "%(links)s:focus { border: %(focus)dpx solid %(accent)s; }"
+        % {
+            "summary": summary,
+            "box": box,
+            "links": links,
+            "text": chrome.text,
+            "input": chrome.input,
+            "edge": edge,
+            "focus": focus,
+            "accent": chrome.accent,
+            "error": chrome.error,
+            "fill": fill,
+            "disabled": disabled,
+            "check": check,
+            "ink": ink,
+        }
+    )
+
+
+def field_qss(chrome: FormChrome, ancestor: str = "") -> str:
+    """Line edits and combos outside the inspector sheet (the item editor)."""
+    background = chrome.input or chrome.panel
+    edge = edge_on(chrome, background)
+    focus = chrome.focus_width if chrome.focus_width > 0 else 1
+    kinds = _under(
+        ancestor,
+        "QLineEdit, QComboBox, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QFontComboBox",
+    )
+    line = _under(ancestor, "QLineEdit")
+    return (
+        "%(kinds)s { background: %(input)s; color: %(text)s; border: 1px solid %(edge)s; }"
+        "%(kinds)s:disabled { color: %(muted)s; }"
+        "%(line)s { padding: 1px 4px; }"
+        "%(kinds)s:focus { border: %(focus)dpx solid %(accent)s; }"
+        % {
+            "kinds": kinds,
+            "line": line,
+            "input": background,
+            "text": chrome.text,
+            "muted": chrome.muted,
+            "edge": edge,
+            "focus": focus,
+            "accent": chrome.accent,
+        }
+    )
+
+
+def item_editor_qss(chrome: FormChrome) -> str:
+    """Level-2 popover frame for the item editor (UX-ITEM-002, UX-ELEV-001)."""
+    frame_px = 2 if chrome.is_high_contrast else 1
+    edge = chrome.text if chrome.is_high_contrast else (chrome.popup_border or chrome.border)
+    fill = chrome.popup or chrome.panel
+    name = "QFrame#formBuilder\\.itemEditor"
+    frame = (
+        "%(name)s { background: %(fill)s; color: %(text)s;"
+        " border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
+        "%(name)s QWidget { background: transparent; color: %(text)s; }"
+        "%(name)s QLabel { color: %(text)s; background: transparent; border: none; }"
+        "%(name)s QAbstractScrollArea { background: transparent; border: none; }"
+        "%(name)s QPushButton#formBuilder\\.itemEditorDone {"
+        " color: %(on_accent)s; background: %(accent)s; border: none;"
+        " border-radius: 4px; padding: 6px 10px; font-weight: 600; }"
+        % {
+            "name": name,
+            "fill": fill,
+            "text": chrome.text,
+            "frame_px": frame_px,
+            "edge": edge,
+            "on_accent": chrome.on_accent,
+            "accent": chrome.accent,
+        }
+    )
+    return frame + field_qss(chrome, name) + control_qss(chrome, name)
+
+
+def apply_level2_shadow(widget: object, chrome: FormChrome) -> None:
+    """UX-ELEV-001 level 2. High contrast uses the 2 px border and no shadow."""
+    from app.qt.QtGui import QColor
+    from app.qt.QtWidgets import QGraphicsDropShadowEffect
+
+    if chrome.is_high_contrast:
+        widget.setGraphicsEffect(None)  # type: ignore[attr-defined]
+        return
+    shadow = QGraphicsDropShadowEffect(widget)  # type: ignore[arg-type]
+    shadow.setBlurRadius(24)
+    shadow.setOffset(0, 8)
+    shadow.setColor(QColor(0, 0, 0, 41))
+    widget.setGraphicsEffect(shadow)  # type: ignore[attr-defined]
 
 
 def chrome_from_values(

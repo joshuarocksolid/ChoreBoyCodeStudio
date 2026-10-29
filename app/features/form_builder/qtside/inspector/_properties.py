@@ -11,6 +11,7 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, Value
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.editors._popover import SummaryButton
+from app.features.form_builder.qtside.theme.chrome import FormChrome, control_qss
 from app.features.form_builder.qtside.inspector.api import (
     NOT_SET_TEXT,
     Editor,
@@ -237,7 +238,14 @@ class PropertiesPage(QWidget):
         self._on_search()
 
     def apply_colors(
-        self, panel: str, text: str, faint: str, hover: str = "", caption: str = "", error: str = ""
+        self,
+        panel: str,
+        text: str,
+        faint: str,
+        hover: str = "",
+        caption: str = "",
+        error: str = "",
+        chrome: Optional[FormChrome] = None,
     ) -> None:
         """The scroll viewport does not inherit the inspector stylesheet."""
         self.setStyleSheet(
@@ -278,6 +286,7 @@ class PropertiesPage(QWidget):
             # This sheet's bare QLabel rule is nearer than the pane's, so the
             # refusal colour (UX-PED-008) is repeated here.
             "QLabel#formBuilder\\.rowError, QLabel#formBuilder\\.inspectorNameError { color: %s; }"
+            "%s"
             % (
                 panel,
                 text,
@@ -293,6 +302,7 @@ class PropertiesPage(QWidget):
                 panel,
                 faint,
                 error or text,
+                control_qss(chrome) if chrome is not None else "",
             )
         )
 
@@ -1007,11 +1017,23 @@ class _Row(QWidget):
         else:
             self._label_col.setFixedWidth(max(0, self._label_px - _BAR_SLOT))
 
+    def _label_needs_line(self) -> bool:
+        """A phrase that does not fit the 96 px column stacks (UX-PED-002).
+
+        A single long name, such as ``inputMethodHints``, still elides. The
+        tooltip keeps the full name.
+        """
+        view = self._view
+        if view is None or not view.label or " " not in view.label:
+            return False
+        budget = max(0, self._label_px - _BAR_SLOT)
+        return self._label.fontMetrics().horizontalAdvance(view.label) > budget
+
     def _sync_stacked(self) -> None:
         """Stack the label over the editor when the editor asks for it at this width (UX-PED-002)."""
         editor = self._editor
         wants = getattr(editor, "wants_stacked", None)
-        stacked = bool(callable(wants) and wants(self.width()))
+        stacked = bool(callable(wants) and wants(self.width())) or self._label_needs_line()
         if stacked == self._stacked:
             return
         self._stacked = stacked
@@ -1022,6 +1044,7 @@ class _Row(QWidget):
             getattr(direction, "TopToBottom") if stacked else getattr(direction, "LeftToRight")
         )
         self._line.setSpacing(_STACK_GAP if stacked else _ROW_GAP)
+        self._label.setWordWrap(stacked)
         self._apply_label_width()
         self._place_reset()
         if self._bar is not None:
@@ -1134,10 +1157,11 @@ class _Row(QWidget):
             self._announce("Removed custom property %s \u00b7 Undo" % view.qt_name)
             return
         produced = view.write.reset()
+        words = _reset_words(view.label)
         if isinstance(produced, tuple):
-            self._services.execute_all("Reset", produced)
+            self._services.execute_all(words, produced)
         else:
-            self._services.execute(produced)
+            self._services.execute_all(words, (produced,))
 
     def _needs_new_editor(self, previous: Optional[Row], view: OpenRow) -> bool:
         if self._editor is None or not isinstance(previous, OpenRow):
@@ -1194,10 +1218,15 @@ class _Row(QWidget):
             return
         if view.match is not None and view.match.where == "label":
             return
-        width = self._label.width()
+        width = self.width() - _BAR_SLOT if self._stacked else self._label.width()
         if width <= 0:
             return
         full = view.label
+        if self._stacked:
+            if self._label.text() != full:
+                self._label.setText(full)
+            self._label.setToolTip(_tip(view))
+            return
         mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
         elided = self._label.fontMetrics().elidedText(full, mode, width)
         if self._label.text() != elided:
@@ -1422,6 +1451,13 @@ class _Row(QWidget):
             style.polish(caption)
         caption.setText(text)
         caption.show()
+
+def _reset_words(label: str) -> str:
+    """UX-PED-006. The row label stays as written: "Reset Tooltip"."""
+    if not label:
+        return "Reset"
+    return "Reset %s" % label
+
 
 def _change_label(label: str) -> str:
     """The undo name of a row's own edit: "Change maximum length"."""

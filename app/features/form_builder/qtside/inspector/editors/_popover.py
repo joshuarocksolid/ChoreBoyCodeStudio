@@ -25,6 +25,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Callable, List, Optional
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
+from app.features.form_builder.qtside.theme.chrome import apply_level2_shadow, control_qss
 from app.qt.QtGui import QColor, QFontMetrics, QKeySequence, QPalette
 from app.qt.QtWidgets import (
     QAbstractItemView,
@@ -33,7 +34,6 @@ from app.qt.QtWidgets import (
     QApplication,
     QComboBox,
     QFrame,
-    QGraphicsDropShadowEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -57,9 +57,6 @@ LARGE_MAX_WIDTH = 480
 GAP = 4
 PADDING = 12
 ARROW = "▾"
-_ELEVATION_BLUR = 24
-_ELEVATION_OFFSET_Y = 8
-_ELEVATION_ALPHA = 41  # 16 % of black
 
 
 def _key(name: str) -> object:
@@ -331,14 +328,7 @@ class RowPopover(QFrame):
 
     def apply_chrome_shadow(self) -> None:
         """UX-ELEV-001 level 2: a soft shadow. High contrast has none (a 2 px border instead)."""
-        if self._chrome.is_high_contrast:
-            self.setGraphicsEffect(None)
-            return
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(_ELEVATION_BLUR)
-        shadow.setOffset(0, _ELEVATION_OFFSET_Y)
-        shadow.setColor(QColor(0, 0, 0, _ELEVATION_ALPHA))
-        self.setGraphicsEffect(shadow)
+        apply_level2_shadow(self, self._chrome)
 
     def _apply_style(self) -> None:
         tokens = self._chrome.fb
@@ -379,6 +369,7 @@ class RowPopover(QFrame):
             '%s %s[fbState="mixed"]' % (frame, kind) for kind in state_kinds + ("QListWidget",)
         )
         self.setStyleSheet(
+            (
             "%(frame)s { background: %(fill)s; border: %(frame_px)dpx solid %(edge)s; border-radius: 6px; }"
             "%(frame)s QScrollArea { background: %(input)s; border: none; }"
             "%(frame)s QLabel { color: %(text)s; background: transparent; border: none; }"
@@ -416,6 +407,8 @@ class RowPopover(QFrame):
                 "on_accent": self._chrome.on_accent,
                 "focus": focus,
             }
+            )
+            + control_qss(self._chrome)
         )
         self.apply_chrome_shadow()
 

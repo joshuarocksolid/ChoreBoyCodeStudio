@@ -484,12 +484,48 @@ def test_list_item_details_read_and_flip_one_flag(qapp) -> None:
     qapp.processEvents()
     starts = editor.findChild(QComboBox, "formBuilder.itemCheckState")
     assert starts is not None and starts.currentText() == "Checked"
+    checkable = editor.findChild(QCheckBox, "formBuilder.itemFlag.ItemIsUserCheckable")
+    assert checkable is not None and checkable.isChecked() and starts.isEnabled()
     editable = editor.findChild(QCheckBox, "formBuilder.itemFlag.ItemIsEditable")
     assert editable is not None and not editable.isChecked()
     editable.click()
     editor.close_keep()
     flags = next(entry for entry in load_draft(session.document, choices).items[0].base.properties if entry.name == "flags")
     assert flags.value.text == "ItemIsSelectable|ItemIsDragEnabled|ItemIsUserCheckable|ItemIsEnabled|ItemIsEditable"
+    host.close()
+    session.dispose()
+
+
+def test_starts_is_off_until_the_user_can_check_the_item(qapp) -> None:
+    from app.qt.QtWidgets import QCheckBox, QComboBox, QWidget
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QListWidget" name="choices">
+   <item>
+    <property name="text"><string>Apple</string></property>
+    <property name="flags"><set>ItemIsSelectable|ItemIsEnabled</set></property>
+   </item>
+  </widget>
+""",
+    )
+    session = open_session(text)
+    choices = session.document.by_name("choices")[0]
+    host = QWidget()
+    host.show()
+    editor = open_editor(session, choices, host)
+    field = next(item for item in editor.findChildren(QLineEdit) if item.isVisible())
+    QTest.keyClick(field, Qt.Key.Key_Right, Qt.KeyboardModifier.AltModifier)
+    qapp.processEvents()
+    starts = editor.findChild(QComboBox, "formBuilder.itemCheckState")
+    checkable = editor.findChild(QCheckBox, "formBuilder.itemFlag.ItemIsUserCheckable")
+    assert starts is not None and checkable is not None
+    assert not checkable.isChecked()
+    assert not starts.isEnabled()
+    checkable.click()
+    qapp.processEvents()
+    assert starts.isEnabled()
     host.close()
     session.dispose()
 

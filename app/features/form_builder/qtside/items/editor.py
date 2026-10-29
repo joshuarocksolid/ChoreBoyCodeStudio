@@ -16,7 +16,12 @@ from app.features.form_builder.qtside.items.model import (
     load_draft,
 )
 from app.features.form_builder.qtside.items.place import seat_beside, seat_under
-from app.features.form_builder.qtside.theme.chrome import FormChrome, default_chrome
+from app.features.form_builder.qtside.theme.chrome import (
+    FormChrome,
+    apply_level2_shadow,
+    default_chrome,
+    item_editor_qss,
+)
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QSize, Qt, QTimer
 from app.qt.QtGui import QColor, QGuiApplication, QPalette
 from app.qt.QtWidgets import (
@@ -133,6 +138,11 @@ class ItemEditor(QFrame):
         palette.setColor(QPalette.ButtonText, QColor(chrome.text))
         self.setPalette(palette)
         self.setAutoFillBackground(True)
+        styled = getattr(Qt, "WA_StyledBackground", None)
+        if styled is not None:
+            self.setAttribute(styled, True)
+        self.setStyleSheet(item_editor_qss(chrome))
+        apply_level2_shadow(self, chrome)
 
     @property
     def draft(self) -> Draft:

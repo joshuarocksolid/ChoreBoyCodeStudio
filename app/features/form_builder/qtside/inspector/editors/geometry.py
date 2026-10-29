@@ -1,4 +1,4 @@
-"""Size, point, rect and size policy. Below 300 px each field is on its own line."""
+"""Size, point, rect and size policy. Below 300 px, or at larger text, each field is on its own line."""
 
 from __future__ import annotations
 
@@ -38,6 +38,19 @@ from app.qt.QtCore import Qt
 from app.qt.QtWidgets import QComboBox, QGridLayout, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 _PAIR = 300
+
+
+def _pair_limit(widget: QWidget) -> int:
+    """Side by side only while two fields fit. Larger text stacks X and Y.
+
+    The 300 px rule is the normal-text budget (UX-PED-002). At 200% a
+    ``Height`` field is about twice as wide, so the budget grows with the font.
+    """
+    metrics = widget.fontMetrics()
+    if metrics.height() <= 18:
+        return _PAIR
+    one = metrics.horizontalAdvance("Height") + metrics.height() * 5 + 24
+    return max(_PAIR, one * 2 + 96)
 _INT_RANGE = (-2147483648, 2147483647)
 _SHARE = (0, 255)
 
@@ -88,7 +101,7 @@ class _BoxEditor:
         return self._root
 
     def wants_stacked(self, width: int) -> bool:
-        stacked = int(width) < _PAIR
+        stacked = int(width) < _pair_limit(self._root)
         self._apply(stacked)
         return stacked
 
@@ -257,10 +270,7 @@ class SizePolicyEditor:
         self._can_reset = isinstance(value, Written) or (
             isinstance(value, Unset) and value.default is not None
         )
-        if isinstance(value, Unset):
-            self._button.setStyleSheet("color: %s;" % self._host.chrome.faint)
-        else:
-            self._button.setStyleSheet("")
+        mark(self._button, value)
         if isinstance(value, Mixed):
             self._button.set_summary("Mixed")
             return

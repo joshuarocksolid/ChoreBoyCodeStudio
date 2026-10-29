@@ -11,6 +11,10 @@ from app.core import constants  # noqa: E402
 from app.features.form_builder.qtside.theme.chrome import (  # noqa: E402
     PAGE_TITLE_FILL,
     PAGE_TITLE_GLYPH,
+    control_qss,
+    edge_on,
+    field_qss,
+    link_ink,
     on_accent_for,
 )
 from app.features.form_builder.integration.chrome import chrome_for  # noqa: E402
@@ -43,6 +47,33 @@ def _contrast(foreground: str, background: str) -> float:
     lighter = max(_luminance(foreground), _luminance(background))
     darker = min(_luminance(foreground), _luminance(background))
     return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_unchecked_indicator_and_field_border_clear_three_to_one(qapp) -> None:  # type: ignore[no-untyped-def]
+    """An empty box and a field edge stay visible on the panel in every theme."""
+    modes = (
+        "light",
+        "dark",
+        constants.UI_THEME_MODE_HIGH_CONTRAST_LIGHT,
+        constants.UI_THEME_MODE_HIGH_CONTRAST_DARK,
+    )
+    for mode in modes:
+        tokens = tokens_from_palette(qapp.palette(), force_mode=mode)
+        built = chrome_for(tokens)
+        edge = edge_on(built, built.panel)
+        ratio = _contrast(edge, built.panel)
+        assert ratio >= 3.0, "indicator edge in %s is %.2f" % (mode, ratio)
+        field_edge = edge_on(built, built.input)
+        field_ratio = _contrast(field_edge, built.input)
+        assert field_ratio >= 3.0, "field border in %s is %.2f" % (mode, field_ratio)
+        floor = 7.0 if built.is_high_contrast else 4.5
+        ink = link_ink(built)
+        ink_ratio = _contrast(ink, built.panel)
+        assert ink_ratio >= floor, "disclosure ink in %s is %.2f" % (mode, ink_ratio)
+        sheet = _stylesheet(built)
+        assert edge in sheet and "QCheckBox::indicator" in sheet
+        assert field_edge in field_qss(built)
+        assert ink in control_qss(built)
 
 
 def test_chrome_text_and_accent_clear_the_contrast_targets(qapp) -> None:  # type: ignore[no-untyped-def]

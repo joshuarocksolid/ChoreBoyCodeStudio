@@ -26,7 +26,12 @@ from app.features.form_builder.qtside.inspector.model import (
     tab_order_stale,
 )
 from app.features.form_builder.qtside.realize import Realizer
-from app.features.form_builder.qtside.theme.chrome import LAYOUT_CONFIRM_NAME, FormChrome, popover_style
+from app.features.form_builder.qtside.theme.chrome import (
+    LAYOUT_CONFIRM_NAME,
+    FormChrome,
+    control_qss,
+    popover_style,
+)
 from app.qt.QtCore import QEvent, QObject, QTimer, Qt
 from app.qt.QtGui import QKeyEvent, QKeySequence, QShowEvent
 from app.qt.QtWidgets import (
@@ -159,7 +164,13 @@ class InspectorPane(QWidget):
         self._services.set_chrome(chrome)
         self.setStyleSheet(_stylesheet(chrome))
         self.properties.apply_colors(
-            chrome.panel, chrome.text, chrome.faint, chrome.row_hover, caption=chrome.muted, error=chrome.error
+            chrome.panel,
+            chrome.text,
+            chrome.faint,
+            chrome.row_hover,
+            caption=chrome.muted,
+            error=chrome.error,
+            chrome=chrome,
         )
         self.properties.set_match_color(chrome.search_match_bg)
         self.behavior.apply_colors(chrome.panel, chrome.text)
@@ -534,7 +545,7 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.row_hover,
             popover_style(LAYOUT_CONFIRM_NAME, chrome),
         )
-    )
+    ) + control_qss(chrome)
 
 def _inside(pane: QWidget, focus: object) -> bool:
     return isinstance(focus, QWidget) and (focus is pane or pane.isAncestorOf(focus))

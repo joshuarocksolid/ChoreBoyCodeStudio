@@ -94,7 +94,9 @@ def _flags(form: QFormLayout, current: Callable[[], Item], on_value: Callable[[s
         box.toggled.connect(lambda _checked=False, bit=bit, box=box: _toggle_flag(current(), bit, box.isChecked(), on_value))
         form.addRow("", box)
         if bit == "ItemIsUserCheckable":
-            _check_state(form, item, on_value, parent)
+            starts = _check_state(form, item, on_value, parent)
+            starts.setEnabled(box.isChecked())
+            box.toggled.connect(lambda checked, combo=starts: combo.setEnabled(bool(checked)))
 
 
 def _toggle_flag(item: Item, bit: str, on: bool, on_value: Callable[[str, Optional[Value]], None]) -> None:
@@ -121,7 +123,7 @@ def _flag_names(item: Item) -> Tuple[str, ...]:
     return _DEFAULT_FLAGS
 
 
-def _check_state(form: QFormLayout, item: Item, on_value: Callable[[str, Optional[Value]], None], parent: QWidget) -> None:
+def _check_state(form: QFormLayout, item: Item, on_value: Callable[[str, Optional[Value]], None], parent: QWidget) -> QComboBox:
     combo = QComboBox(parent)
     combo.setObjectName("formBuilder.itemCheckState")
     combo.addItems(_CHECK)
@@ -131,6 +133,7 @@ def _check_state(form: QFormLayout, item: Item, on_value: Callable[[str, Optiona
             combo.setCurrentIndex(index)
     combo.currentTextChanged.connect(lambda text: on_value("checkState", EnumValue(_CHECK_QT.get(text, text))))
     form.addRow("Starts", combo)
+    return combo
 
 
 def _toggle_more(panel: QWidget, button: QToolButton, on_more: Callable[[QWidget], None]) -> None:

@@ -286,7 +286,9 @@ def test_a_missing_pixmap_row_uses_the_error_colour(qapp: QApplication, tmp_path
         assert summary.summary == "gone.png (missing)"
         assert " (" not in summary.accessibleName()
         assert summary.toolTip() == "Code Studio can't find :/icons/gone.png."
-        assert "#b00020" in summary.styleSheet()
+        assert summary.property("fbIssue") == "missing"
+        content = pane.findChild(QWidget, "formBuilder.inspectorContent")
+        assert content is not None and "#b00020" in content.styleSheet()
     finally:
         _close(window, pane, realizer, session, qapp)
 
