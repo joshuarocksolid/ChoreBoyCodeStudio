@@ -1,6 +1,7 @@
 """Compare one .ui file: our setupUi widget tree against uic -g python."""
 from __future__ import annotations
 
+import gc
 import hashlib
 import os
 import re
@@ -1233,6 +1234,11 @@ def _close_widgets() -> None:
             app.processEvents()
         except RuntimeError:
             pass
+    # Wrappers of the destroyed widgets can sit in reference cycles until the
+    # collector runs. If that happens while the next file's widgets are being
+    # built, a stale wrapper whose C++ address was reused releases the new
+    # widget (a form lost its nameEdit 1 time in ~100). Collect them now.
+    gc.collect()
 
 
 def _exc_text(exc: BaseException) -> str:

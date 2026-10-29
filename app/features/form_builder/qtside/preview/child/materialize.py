@@ -18,7 +18,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from app.features.form_builder.engine.ipc.protocol import LoadForm
 from app.qt.QtCore import QBuffer, QIODevice
 from app.qt.QtUiTools import QUiLoader
-from app.qt.QtWidgets import QWidget
+from app.qt.QtWidgets import QDialog, QMainWindow, QWidget
 
 from app.features.form_builder.qtside.preview.child.modules import make_stub
 
@@ -54,8 +54,7 @@ class FormMaterializer:
         exec(compile(source, module.__file__, "exec"), module.__dict__)
         ui_cls = _ui_class(module)
         if ui_cls is not None:
-            host = QWidget()
-            ui_cls().setupUi(host)
+            host = _host_for(ui_cls, source)
             _ensure_size(host)
             host.show()
             return host
@@ -130,6 +129,32 @@ class _PromotedLoader(QUiLoader):
         if name:
             widget.setObjectName(name)
         return widget
+
+
+def _host_for(ui_cls: type, source: str) -> QWidget:
+    """The window ``setupUi`` fills: a main window for ``setCentralWidget``, a dialog for ``accept``, else a widget.
+
+    The generated class does not name its root class, so the module's own calls say what it needs
+    (a QMainWindow form calls ``setCentralWidget`` and ``setMenuBar`` on the window; a dialog's
+    button box connects to its ``accept`` and ``reject``). The others are tried when the first fails.
+    """
+    if "setCentralWidget(" in source or ".setMenuBar(" in source or ".setStatusBar(" in source:
+        order: Tuple[type, ...] = (QMainWindow, QDialog, QWidget)
+    elif ".accept)" in source or ".reject)" in source or ".setSizeGripEnabled(" in source or ".setModal(" in source:
+        order = (QDialog, QWidget, QMainWindow)
+    else:
+        order = (QWidget, QDialog, QMainWindow)
+    error: Optional[AttributeError] = None
+    for kind in order:
+        host = kind()
+        try:
+            ui_cls().setupUi(host)
+            return host
+        except AttributeError as exc:
+            error = exc
+            host.deleteLater()
+    assert error is not None
+    raise error
 
 
 def _ui_class(module: types.ModuleType) -> Optional[type]:

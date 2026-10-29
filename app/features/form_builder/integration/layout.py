@@ -146,6 +146,52 @@ def _fit_canvas(
     return left, inspector
 
 
+BESIDE_MIN = 300
+
+
+@dataclass(frozen=True)
+class BesideFit:
+    """How a split beside the canvas fits (UX-PREV-004).
+
+    ``beside`` is its width in px; ``rail_left`` and ``rail_right`` say which
+    docked panes go to their rails while it is open.
+    """
+
+    beside: int
+    rail_left: bool = False
+    rail_right: bool = False
+
+
+def fit_beside(
+    row: int,
+    handle: int,
+    *,
+    share: float = 0.45,
+    min_canvas: int = CANVAS_MIN,
+    min_beside: int = BESIDE_MIN,
+    left_gain: int = 0,
+    right_gain: int = 0,
+) -> "BesideFit | None":
+    """Fit a split of ``share`` of the canvas row (at least ``min_beside``), keeping ``min_canvas`` for the canvas.
+
+    When the row is too narrow for both, the
+    Outline pane goes to its rail (``left_gain`` px back), then the inspector
+    (``right_gain``). None when even that leaves too little room.
+    """
+    steps = [(False, False)]
+    if left_gain > 0:
+        steps.append((True, False))
+    if right_gain > 0:
+        steps.append((left_gain > 0, True))
+    for rail_left, rail_right in steps:
+        width = row + (left_gain if rail_left else 0) + (right_gain if rail_right else 0)
+        room = width - handle - min_canvas
+        if room < min_beside:
+            continue
+        return BesideFit(max(min_beside, min(int(width * share), room)), rail_left, rail_right)
+    return None
+
+
 def _clamp(value: int, low: int, high: int) -> int:
     if value < low:
         return low
@@ -155,6 +201,8 @@ def _clamp(value: int, low: int, high: int) -> int:
 
 
 __all__ = [
+    "BESIDE_MIN",
+    "BesideFit",
     "CANVAS_MIN",
     "COMPACT_INSPECTOR",
     "COMPACT_LEFT",
@@ -171,5 +219,6 @@ __all__ = [
     "RAIL_WIDTH",
     "TOOLBAR_HEIGHT",
     "WorkbenchMemory",
+    "fit_beside",
     "plan_workbench",
 ]

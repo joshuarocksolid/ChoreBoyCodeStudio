@@ -109,8 +109,15 @@ def security_sentence(classes: Tuple[OwnClass, ...]) -> str:
     )
 
 
-def build_load_form(session: Any, path: str, view_id: str, *, request_id: str = "") -> LoadForm:
-    """The preview request for the open, unsaved form."""
+def build_load_form(
+    session: Any,
+    path: str,
+    view_id: str,
+    *,
+    request_id: str = "",
+    appearance: Optional[Appearance] = None,
+) -> LoadForm:
+    """The preview request for the open, unsaved form. ``appearance`` is the user's style and screen (M5.5a)."""
     document = session.document
     root = project_root_of(session)
     scope = session.scope
@@ -130,7 +137,7 @@ def build_load_form(session: Any, path: str, view_id: str, *, request_id: str = 
         ui_xml=None if source is not None else write_ui(document).text,
         project_root=root,
         sys_path=(root,) if root else (),
-        appearance=Appearance(),
+        appearance=appearance if appearance is not None else Appearance(),
         keep_values=False,
         revision=int(document.revision),
         promoted=promoted_for(document, root),
@@ -214,6 +221,8 @@ class PreviewNotices:
         self._failures: List[StandIn] = []
         self._unsubscribe: Optional[Callable[[], None]] = None
         self.last_response: Optional[Response] = None
+        #: M5.5a: the user's preview style and screen for a form path (``preview_control``).
+        self.appearance_provider: Optional[Callable[[str], Appearance]] = None
 
     @property
     def view_id(self) -> str:
@@ -233,8 +242,15 @@ class PreviewNotices:
                 self._security_note(root, classes)
             else:
                 self._say(OUTSIDE_PROJECT)
-        message = build_load_form(self._session, path, self._view_id)
+        provider = self.appearance_provider
+        message = build_load_form(
+            self._session, path, self._view_id, appearance=provider(path) if provider is not None else None
+        )
         return pool.request(message, self._on_response)
+
+    def pool(self) -> Any:
+        """The preview pool this form tab talks to."""
+        return self._pool_or_shared()
 
     def close(self) -> None:
         if self._unsubscribe is not None:

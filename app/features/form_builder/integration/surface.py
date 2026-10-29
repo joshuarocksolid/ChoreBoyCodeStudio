@@ -409,6 +409,10 @@ class FormSurface(QWidget):
         self._toolbar.tab_order.clicked.connect(lambda _checked=False: self._modes.toggle(TAB_ORDER))
         self._toolbar.buddies.clicked.connect(lambda _checked=False: self._modes.toggle(BUDDIES))
         self._toolbar.attach_preview(self._workbench.canvas.preview)
+        options = getattr(self, "preview_control", None)
+        if options is not None:
+            # M5.5a: the control was made when the workbench was built; Style, Screen and the Preview button join the toolbar.
+            self._toolbar.attach_preview_options(options, self.preview_form)
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
         self._layout_popover: Optional[QWidget] = None
@@ -453,13 +457,12 @@ class FormSurface(QWidget):
         self._rename_key = QShortcut(QKeySequence("F2"), self)
         self._rename_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._rename_key.activated.connect(self._rename_inert)
-        quiet: Tuple[Tuple[str, Callable[[], str]], ...] = (("Ctrl+Shift+R", lambda: "Run the form with F5."),)
+        # Ctrl+Shift+R is Preview (M5.5a): the same path as F5 on a form outside a project.
         self._quiet_keys: list[QShortcut] = []
-        for key, sentence in quiet:
-            shortcut = QShortcut(QKeySequence(key), self)
-            shortcut.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
-            shortcut.activated.connect(lambda say=sentence: self.narrate(say()))
-            self._quiet_keys.append(shortcut)
+        preview_key = QShortcut(QKeySequence("Ctrl+Shift+R"), self)
+        preview_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+        preview_key.activated.connect(self.preview_form)
+        self._quiet_keys.append(preview_key)
         self._widths_key = QShortcut(QKeySequence("Ctrl+K, W"), self)
         self._widths_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._widths_key.activated.connect(self._workbench.canvas.preview.toggle_widths)
@@ -503,11 +506,32 @@ class FormSurface(QWidget):
         return run_open_form(self, workflow)
 
     def request_preview(self, path: str) -> None:
-        # The preview window is a later slice. F5 records the request here.
+        """F5 on a form outside a project, and Ctrl+Shift+R. The listener is ``PreviewControl.preview``."""
         self._preview_request = path
         listener = self._preview_listener
         if callable(listener):
             listener(path)
+
+    def preview_form(self) -> None:
+        """Preview this form, unsaved edits included (UX-PREV-005)."""
+        if self._released:
+            return
+        self.request_preview(self._path)
+
+    def toggle_code_view(self) -> bool:
+        """Open or close the Python code split beside the canvas (UX-PREV-004). True when it is open."""
+        view = getattr(self._workbench, "code_view", None)
+        return bool(view.toggle()) if view is not None else False
+
+    def save_image(self) -> None:
+        from app.features.form_builder.integration import image_export
+
+        image_export.save_image(self)
+
+    def print_image(self) -> None:
+        from app.features.form_builder.integration import image_export
+
+        image_export.print_form(self)
 
     def content_source(self) -> FormContentSource:
         return self._source
