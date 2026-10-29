@@ -265,6 +265,11 @@ class PropertiesPage(QWidget):
     def focus_tab_order(self) -> None:
         self._form.focus_tab_order()
 
+    def note_tab_order(self) -> None:
+        """Tab stops changed. Repaint the form's list and leave the property rows alone."""
+        if self._form.isVisible():
+            self._form.refresh_tab_order()
+
     def set_match_color(self, color: str) -> None:
         self._match_color = color
 
@@ -623,6 +628,9 @@ class _FormSection(QWidget):
     def focus_tab_order(self) -> None:
         """Form > Overlays > Tab order list… (UX-MODE-003)."""
         self._tab_body.focus_list()
+
+    def refresh_tab_order(self) -> None:
+        self._tab_body.show(())
 
     def note_focus(self, focus: object) -> None:
         self._window.note_focus(focus)

@@ -24,6 +24,7 @@ from app.features.form_builder.qtside.inspector.model import (
     inspected_ids,
     project_header,
     tab_order_stale,
+    tabstops_only,
 )
 from app.features.form_builder.qtside.realize import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
@@ -336,6 +337,9 @@ class InspectorPane(QWidget):
 
     def _on_log(self, changeset: ChangeSet) -> None:
         self._memo.invalidate(changeset)
+        if tabstops_only(changeset):
+            self.properties.note_tab_order()
+            return
         self._paint_header()
         self._schedule()
 

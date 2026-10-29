@@ -17,7 +17,7 @@ from app.features.form_builder.engine.commands.catalog import (
     SetProperty,
     SetPropertyMany,
 )
-from app.features.form_builder.engine.events import ChangeSet, PropertyChanged
+from app.features.form_builder.engine.events import ChangeSet, FieldChanged, PropertyChanged
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.layout_actions import takes_layout
 from app.features.form_builder.engine.project.forms import FormScope
@@ -604,6 +604,14 @@ _LEAVES_TAB_ORDER = (PropertyChanged,)
 
 def tab_order_stale(changeset: ChangeSet) -> bool:
     return any(not isinstance(change, _LEAVES_TAB_ORDER) for change in changeset.changes)
+
+
+def tabstops_only(changeset: ChangeSet) -> bool:
+    """A tab-order write. The property rows did not change, so the inspector can skip them."""
+    changes = changeset.changes
+    if not changes:
+        return False
+    return all(isinstance(change, FieldChanged) and change.field == "tabstops" for change in changes)
 
 def files_line(scope: FormScope) -> str:
     ui_name = os.path.basename(scope.ui_path)
