@@ -1,20 +1,18 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
 """The style sheet check agrees with Qt's own parser, and the selector matcher with Qt's own styling."""
 
 from __future__ import annotations
 
-from typing import List, Tuple
+from typing import List
 
 import pytest
 
-from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.style.check import QT_CANT_READ, check_sheet
 from app.features.form_builder.engine.style.properties import KNOWN_PROPERTIES
 from app.features.form_builder.engine.style.selectors import StyleIndex, match_sheet
 from app.features.form_builder.engine.style.sheet import parse_sheet
 from app.features.form_builder.qtside.style.probe import ask_qt, qt_reads
-from app.qt.QtCore import QCoreApplication, qInstallMessageHandler
-from app.qt.QtGui import QColor
+from app.qt.QtCore import qInstallMessageHandler
 from app.qt.QtWidgets import QApplication, QLabel
 from tests.form_builder.qtside.support import opened
 

@@ -8,12 +8,12 @@ descendants only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
-from app.features.form_builder.engine.style.sheet import Rule, Sheet
-from app.features.form_builder.engine.style.tokenizer import COMMENT, DELIM, HASH, IDENT, NUMBER, STRING, WS, tokenize
+from app.features.form_builder.engine.style.sheet import Sheet
+from app.features.form_builder.engine.style.tokenizer import COMMENT, DELIM, HASH, IDENT, WS, tokenize
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.style.classes import effective_class, widget_chain

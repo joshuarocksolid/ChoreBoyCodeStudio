@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
 """Style sheet engine: places in problems, selector matches, and the text edits behind Text colour."""
 
 from __future__ import annotations
@@ -167,3 +167,30 @@ def test_colours_read_back() -> None:
     assert parse_color("rgb(1, 2, 3)") == (1, 2, 3)
     assert parse_color("red") == (255, 0, 0)
     assert parse_color("notacolour") is None
+
+
+_SHEETS = _FORM.replace(
+    '<widget class="QWidget" name="Form">',
+    '<widget class="QWidget" name="Form"><property name="styleSheet"><string>#okButton { margin: 1px; }\n'
+    "QLabel { color: #fff; }</string></property>",
+).replace(
+    '<widget class="QPushButton" name="okButton">',
+    '<widget class="QPushButton" name="okButton"><property name="styleSheet"><string>#okButton { color: #1A7F37; }</string></property>',
+)
+
+
+def test_a_rename_rewrites_every_selector_that_names_the_widget_in_the_same_undo_step() -> None:
+    from app.features.form_builder.engine.commands.catalog import Rename
+    from tests.form_builder.engine.commands._support import nid, open_log, saved
+
+    log = open_log(_SHEETS)
+    document = log.document
+    before = saved(document)
+    log.execute(Rename(nid(document, "okButton"), "acceptButton"))
+    root_sheet = document.root.value("styleSheet").text
+    own_sheet = document.node(nid(document, "acceptButton")).value("styleSheet").text
+    assert root_sheet == "#acceptButton { margin: 1px; }\nQLabel { color: #fff; }"
+    assert own_sheet == "#acceptButton { color: #1A7F37; }"
+    assert log.undo()
+    assert document.root.value("styleSheet").text.startswith("#okButton")
+    assert saved(document) == before

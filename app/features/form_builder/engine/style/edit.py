@@ -9,7 +9,7 @@ never rewrites text it did not understand.
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
+from typing import List, Mapping, Optional, Tuple
 
 from app.features.form_builder.engine.style.colors import Rgb, hex_text, parse_color
 from app.features.form_builder.engine.style.sheet import Declaration, Rule, Sheet, parse_sheet
@@ -152,22 +152,31 @@ def _line_span(text: str, start: int, end: int) -> Tuple[int, int]:
     return first, last
 
 
-def rename_selector(text: str, old: str, new: str) -> str:
-    """Rewrite ``#old`` in every selector (never in a value such as ``#fff``)."""
-    if "#" + old not in text:
+def rename_selectors(text: str, mapping: Mapping[str, str]) -> str:
+    """Rewrite ``#old`` to ``#new`` in every selector (never in a value such as ``#fff``)."""
+    if not any("#" + old in text for old in mapping):
         return text
     sheet = parse_sheet(text)
-    spans: List[Tuple[int, int]] = []
-    for rule in sheet.rules:
-        spans.append((rule.start, rule.open))
+    spans: List[Tuple[int, int]] = [(rule.start, rule.open) for rule in sheet.rules]
     if not spans:
         return text
     tokens, _problems = tokenize(text)
     hits = [
         token
         for token in tokens
-        if token.kind == HASH and token.text == "#" + old and any(first <= token.start < last for first, last in spans)
+        if token.kind == HASH
+        and token.text[1:] in mapping
+        and any(first <= token.start < last for first, last in spans)
     ]
     for token in reversed(hits):
-        text = text[: token.start] + "#" + new + text[token.end :]
+        text = text[: token.start] + "#" + mapping[token.text[1:]] + text[token.end :]
     return text
+
+
+def rename_selector(text: str, old: str, new: str) -> str:
+    return rename_selectors(text, {old: new})
+
+
+def mentions_selector(text: str, name: str) -> bool:
+    """True when ``#name`` is in a selector of the sheet."""
+    return rename_selectors(text, {name: name + "\u0000"}) != text

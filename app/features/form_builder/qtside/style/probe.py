@@ -34,8 +34,9 @@ def _widget() -> Optional[QWidget]:
     if QApplication.instance() is None:
         return None
     if _PROBE is None:
-        _PROBE = QWidget()
-        _PROBE.setObjectName("formBuilder.styleProbe")
+        made = QWidget()
+        made.setObjectName("formBuilder.styleProbe")
+        _PROBE = made
     return _PROBE
 
 
