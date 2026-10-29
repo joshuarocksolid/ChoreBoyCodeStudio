@@ -110,6 +110,12 @@ class ListEditor(QWidget):
         self._scroll.setFrameShape(getattr(QFrame, "NoFrame"))
         self._canvas = QWidget()
         self._scroll.setWidget(self._canvas)
+        # The host's panel shows through: an auto-filled viewport paints the
+        # default palette, which is light in a dark theme.
+        self._scroll.setObjectName("formBuilder.listScroll")
+        self._scroll.setStyleSheet("QScrollArea#formBuilder\\.listScroll { background: transparent; border: none; }")
+        self._scroll.viewport().setAutoFillBackground(False)
+        self._canvas.setAutoFillBackground(False)
         self._line = QFrame(self._canvas)
         self._line.setObjectName("formBuilder.listInsert")
         self._line.setFixedHeight(_LINE)

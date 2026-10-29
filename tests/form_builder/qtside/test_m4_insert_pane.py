@@ -170,6 +170,25 @@ def test_a_filter_with_no_match_says_so_and_offers_clear(tmp_path: Path, qapp: Q
     assert pane.empty.isHidden()
 
 
+def test_enter_after_a_query_with_no_match_inserts_nothing(qapp: QApplication) -> None:
+    """UX-CAT-009: Enter with no match inserts nothing, not the last query's result, and says why."""
+    del qapp
+    pane = _pane(QWidget(), InMemoryInsertMemory())
+    placed: list = []
+    said: list = []
+    pane.set_place(placed.append)
+    pane.set_report(said.append)
+    pane.filter.setText("date")
+    QApplication.processEvents()
+    pane.activate_current()
+    assert placed == ["QDateEdit"]
+    pane.filter.setText("datezzqq")
+    QApplication.processEvents()
+    pane.activate_current()
+    assert placed == ["QDateEdit"]
+    assert said == ["Nothing to insert. Change the search or press Esc."]
+
+
 def test_your_widgets_follow_the_document(qapp: QApplication) -> None:
     del qapp
     parent = QWidget()

@@ -1540,7 +1540,7 @@ A test walks every ui4 value class and fails when one has no registered editor o
 
 **UX-PED-008** `M4.3a, M4.3b, M4.3c, M4.3d` `[S]` Refusals appear under the field in `fb.error` Caption (UX-FEED-007), keep the typed text, and block Enter until fixed or Esc. The sentences are in 13.1.6.
 
-**UX-PED-009** `M4.3a` `[S T]` Pain 18. A chosen value is written at once and stays written: the row is Strong, and save writes it. If Qt refuses the value on the canvas widget (the realizer reports it), the value stays in the file and the row's caption says, in `fb.warning`: "Saved in the file. The canvas can't show this value." Save never drops a value. P-18 test: set Echo mode to Password, save, close, reopen: the row shows Password and the XML has `QLineEdit::Password`; a property whose type has no editor is byte-identical after save.
+**UX-PED-009** `M4.3a` `[S T]` Pain 18. A chosen value is written at once and stays written: the row is Strong, and save writes it. If Qt refuses the value on the canvas widget (the realizer reports it), the value stays in the file and the row's caption says, in `fb.warning`: "Saved in the file. The canvas can't show this value." Save never drops a value. P-18 test: set Echo mode to Password, save, close, reopen: the row shows Password and the XML has `QLineEdit::EchoMode::Password` (Designer 6's spelling; the older `QLineEdit::Password` reads the same); a property whose type has no editor is byte-identical after save.
 
 **UX-PED-010** `M4.3a, M4.3b, M4.3c, M4.3d` `[A]` Accessible names of editor parts follow "Row: part" (as M3.7d2 did for segments): "Maximum size: width", "Font: bold", "Colour: hex", "Date: open calendar". A test walks every editor built for the reference form and fails on an empty accessible name.
 

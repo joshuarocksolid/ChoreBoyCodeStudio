@@ -770,6 +770,7 @@ class _Emitter:
         text_name: str,
         label_attr: str,
     ) -> None:
+        icon_name = "setItemIcon" if add_name == "addItem" else "setTabIcon"
         label = self._attr_expr(child, label_attr)
         if label is None or label[0]:
             self.add("%s.%s(%s, %s)" % (parent_ref, add_name, child_ref, py_string("")))
@@ -785,8 +786,12 @@ class _Emitter:
             self.lines.extend(lines)
             for line in lines:
                 self._note(line)
-            self.add("%s.setTabIcon(%s.indexOf(%s), %s)" % (parent_ref, parent_ref, child_ref, expr))
-        for attr_name, method in (("toolTip", "setTabToolTip"), ("whatsThis", "setTabWhatsThis")):
+            self.add("%s.%s(%s.indexOf(%s), %s)" % (parent_ref, icon_name, parent_ref, child_ref, expr))
+        # QToolBox has item tooltips but no item help; uic writes setItemToolTip only.
+        tips = (("toolTip", "setTabToolTip"), ("whatsThis", "setTabWhatsThis"))
+        if add_name == "addItem":
+            tips = (("toolTip", "setItemToolTip"),)
+        for attr_name, method in tips:
             tip = self._attr_expr(child, attr_name)
             if tip is None:
                 continue

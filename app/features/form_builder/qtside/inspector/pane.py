@@ -43,7 +43,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.qt.qt_compat import enum_value
+from app.qt.qt_compat import enum_value, wrapper_is_valid
 
 class TabId(str, Enum):
 
@@ -184,8 +184,11 @@ class InspectorPane(QWidget):
             )
         window = self.window()
         for popover in window.findChildren(QWidget, "formBuilder.rowPopover") if window is not None else ():
+            # A popover left open on a closed tab outlives its row; skip it.
             row = getattr(popover, "row", None)
-            if row is not None and self.isAncestorOf(row):
+            if getattr(popover, "closed", False) or row is None or not wrapper_is_valid(row):
+                continue
+            if self.isAncestorOf(row):
                 popover.restyle(chrome)  # type: ignore[attr-defined]
         self._schedule()
 

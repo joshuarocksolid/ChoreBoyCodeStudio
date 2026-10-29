@@ -142,3 +142,31 @@ def _key(canvas, name: str) -> None:
     app = QApplication.instance()
     if app is not None:
         app.processEvents()
+
+
+def test_a_command_that_moves_the_selection_closes_the_item_editor_cleanly(qapp, caplog) -> None:
+    """Deleting the widget whose items are open closes the editor after the command, not inside its listeners."""
+    from app.features.form_builder.engine.commands.catalog import DeleteNodes
+
+    host = _Host()
+    with opened(_FORM) as (session, realizer):
+        parent = QWidget()
+        parent.resize(800, 600)
+        canvas = FormCanvas(session, realizer, host, parent)
+        parent.show()
+        combo = session.document.by_name("combo")[0]
+        session.selection.set((combo,), current=combo, source=SelectionSource.CANVAS)
+        canvas.setFocus()
+        _key(canvas, "Key_Return")
+        editor = _editor(parent)
+        assert editor is not None
+        edit = editor.findChild(QLineEdit)
+        QTest.keyClicks(edit, "Small")
+        QTest.keyClick(edit, Qt.Key.Key_Return)
+        before = _texts(session, combo)
+        session.log.execute(DeleteNodes((combo,)))
+        qapp.processEvents()
+        assert _editor(parent) is None
+        assert not [record for record in caplog.records if "listener failed" in record.getMessage()]
+        session.log.undo()
+        assert _texts(session, combo) == before
