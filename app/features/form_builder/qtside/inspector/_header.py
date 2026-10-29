@@ -180,7 +180,10 @@ class Header(QWidget):
         self._saved_name = view.name
         self._name.setReadOnly(False)
         self._glyph.set_kind(view.glyph)
-        self._set_class_text("%s \u00b7 %s" % (view.friendly, view.qt_class), view.qt_class)
+        if view.class_line:
+            self._set_class_text(view.class_line, view.qt_line)
+        else:
+            self._set_class_text("%s \u00b7 %s" % (view.friendly, view.qt_class), view.qt_class)
         if not self._invalid:
             if self._name.hasFocus():
                 if self._name.text() != view.name:

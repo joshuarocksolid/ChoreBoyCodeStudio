@@ -49,7 +49,23 @@ class InsertFragment(_CommandBase):
 
     @property
     def label(self) -> str:
-        return self.undo_label or self._label_text
+        return self.undo_label or self._own_class_label() or self._label_text
+
+    def _own_class_label(self) -> str:
+        """"Insert TillDisplay" for the tile of a class of the project (UX-CUST-006): one top widget whose
+        class the fragment declares with a local (Python module) header."""
+        if len(self.fragment.nodes) != 1:
+            return ""
+        class_name = self.fragment.nodes[0].field("class_name")
+        for declared in self.fragment.customwidgets:
+            header = declared.field("header")
+            if (
+                declared.field("class_name") == class_name
+                and isinstance(class_name, str)
+                and getattr(header, "location", None) == "local"
+            ):
+                return "Insert %s" % class_name
+        return ""
 
     def apply(self, doc: UiDocument, ctx: PlanContext) -> "InsertResult":
         ids, renames, conflicts, dangling = planning.insert_fragment(

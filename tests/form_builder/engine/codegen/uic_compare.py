@@ -167,7 +167,20 @@ def _install_import_stubs(source: str) -> None:
             setattr(parent, imported, type(imported, (_QWidget,), {}))
 
 
+#: Only a function call: ``QLabel.setMargin(3)`` is a real PySide6 method and stays.
+_SET_MARGIN = re.compile(r"\.setMargin\(([A-Za-z_][\w.]*\(\))\)$", re.M)
+
+
+def _legacy_set_margin(source: str) -> str:
+    """uic 6.8 still writes ``layout.setMargin(fn())`` for ``<layoutfunction margin>``. PySide6's QLayout has no
+    setMargin, so uic's own module fails there. Only uic's text gets the Qt 5 meaning (all four sides): a
+    setMargin call in our generated code still fails the comparison, as it would fail the user's form."""
+    return _SET_MARGIN.sub(r".setContentsMargins(*[\1] * 4)", source)
+
+
 def _load(source: str, name: str):
+    if name.startswith("uic_"):
+        source = _legacy_set_margin(source)
     module = types.ModuleType(name)
     module.__file__ = name + ".py"
     # id-based forms call qtTrId. uic 6.8.3 does not import it.

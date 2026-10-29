@@ -1,17 +1,17 @@
 # pyright: reportAttributeAccessIssue=false
 """The form settings the generator must honour, against ``uic -g python`` (UX-FSET-005, R3-186, R3-187, R3-188, R3-191).
 
-``layoutdefault`` matches the Designer tool for layouts that sit on a widget. Four things
-do not match yet, and ``engine/codegen/emit.py`` is M5.4's file in the M5 lanes table, so each
-is a strict xfail here: a nested layout takes the default margin (uic leaves it alone),
-``layoutfunction`` and ``pixmapfunction`` are ignored, and ``idbasedtr`` writes
-``translate(context, id)`` where uic 6.8 writes ``qtTrId(id)``.
+``layoutdefault``, ``layoutfunction``, ``pixmapfunction`` and ``idbasedtr`` match uic 6.8, with one
+deliberate difference: uic writes ``setMargin(fn())`` for a margin function, which PySide6's QLayout
+doesn't have, so the generated code sets all four sides from one call and the test compares the
+running result instead of the text.
 """
 
 from __future__ import annotations
 
 import importlib.util
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -90,6 +90,10 @@ def _save(tmp_path: Path, attrs: str, extra: str, text: str = _FORM) -> Path:
 
 
 def _ours(path: Path) -> List[str]:
+    return [line.strip() for line in _ours_text(path).splitlines()]
+
+
+def _ours_text(path: Path) -> str:
     data = path.read_bytes()
     document = read_ui(data.decode("utf-8"), allocator=IdAllocator()).document
     scope = FormScope(
@@ -102,7 +106,7 @@ def _ours(path: Path) -> List[str]:
     )
     generated = generate_form_module(document, scope=scope, source_bytes=data)
     assert generated.text is not None
-    return [line.strip() for line in generated.text.splitlines()]
+    return generated.text
 
 
 def _uic(path: Path) -> List[str]:
@@ -127,7 +131,6 @@ def test_layoutdefault_sets_the_same_gaps_as_uic(tmp_path: Path, default: str) -
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: a nested layout gets the default margin, uic gives it none")
 def test_layoutdefault_margin_skips_nested_layouts_like_uic(tmp_path: Path) -> None:
     _need_uic()
     path = _save(tmp_path, "", ' <layoutdefault margin="2"/>\n')
@@ -135,7 +138,6 @@ def test_layoutdefault_margin_skips_nested_layouts_like_uic(tmp_path: Path) -> N
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: idbasedtr writes translate(context, id), uic writes qtTrId(id)")
 def test_idbasedtr_writes_qttrid_like_uic(tmp_path: Path) -> None:
     _need_uic()
     path = _save(tmp_path, ' idbasedtr="true"', "", _FORM.replace("<string>Pay</string>", '<string id="pay_id">Pay</string>'))
@@ -145,18 +147,64 @@ def test_idbasedtr_writes_qttrid_like_uic(tmp_path: Path) -> None:
     assert ours == theirs
 
 
+def _layouts_after_setup(source: str, legacy_set_margin: bool) -> dict:
+    """Run a generated module with ``spacing_for`` and ``margin_for`` defined: each layout's gaps and margins."""
+    from PySide6.QtWidgets import QApplication, QLayout, QWidget
+
+    QApplication.instance() or QApplication([])
+    if legacy_set_margin:
+        # uic 6.8's setMargin(fn()) is Qt 5 only; give uic's text alone the Qt 5 meaning (all four sides).
+        source = re.sub(r"\.setMargin\(([A-Za-z_][\w.]*\(\))\)$", r".setContentsMargins(*[\1] * 4)", source, flags=re.M)
+    calls: List[str] = []
+
+    def margin_for() -> int:
+        calls.append("margin")
+        return 9
+
+    namespace = {"__name__": "generated", "spacing_for": lambda: 5, "margin_for": margin_for}
+    exec(compile(source, "generated.py", "exec"), namespace)
+    ui = next(value for key, value in namespace.items() if key.startswith("Ui_") and isinstance(value, type))()
+    form = QWidget()
+    ui.setupUi(form)
+    found: dict = {}
+    for layout in form.findChildren(QLayout):
+        margins = layout.contentsMargins()
+        found[layout.objectName()] = (layout.spacing(), (margins.left(), margins.top(), margins.right(), margins.bottom()))
+    found["margin_for calls"] = len(calls)
+    form.deleteLater()
+    return found
+
+
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: layoutfunction is not generated (UX-FSET-005)")
 def test_layoutfunction_calls_the_named_functions_like_uic(tmp_path: Path) -> None:
+    """Same gaps and margins as uic's module once it runs. uic 6.8 writes setMargin(fn()), which PySide6's
+    QLayout doesn't have, so our code calls the function once and sets all four sides (UX-FSET-005)."""
     _need_uic()
     path = _save(tmp_path, "", ' <layoutfunction spacing="spacing_for" margin="margin_for"/>\n')
-    theirs = _spacing_lines(_uic(path))
-    assert any("spacing_for()" in line for line in theirs)
-    assert _spacing_lines(_ours(path)) == theirs
+    theirs_text = subprocess.run([_UIC, "-g", "python", str(path)], capture_output=True, text=True).stdout
+    assert any("spacing_for()" in line for line in _spacing_lines(_uic(path)))
+    ours_lines = _ours(path)
+    assert not [line for line in ours_lines if ".setMargin(" in line], "PySide6's QLayout has no setMargin"
+    ours = _layouts_after_setup(_ours_text(path), legacy_set_margin=False)
+    assert ours == _layouts_after_setup(theirs_text, legacy_set_margin=True)
+    assert ours["verticalLayout"] == (5, (9, 9, 9, 9))
+
+
+def test_a_layoutfunction_that_is_not_a_name_is_never_copied_into_the_code(tmp_path: Path) -> None:
+    path = _save(tmp_path, "", ' <layoutfunction margin="__import__(\'os\').getcwd" spacing="spacing_for"/>\n')
+    data = path.read_bytes()
+    document = read_ui(data.decode("utf-8"), allocator=IdAllocator()).document
+    scope = FormScope(
+        kind="project", ui_path=str(path), project_root=str(path.parent),
+        generated_path=str(path.with_name("ui_till.py")), window_path=str(path.with_name("till_window.py")),
+        module_name="ui_till",
+    )
+    generated = generate_form_module(document, scope=scope, source_bytes=data)
+    assert "__import__" not in (generated.text or "")
+    assert any(d.code == "FB502" and "layout function" in d.message for d in generated.diagnostics)
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: pixmapfunction is not generated (UX-FSET-005)")
 def test_pixmapfunction_wraps_picture_paths_like_uic(tmp_path: Path) -> None:
     _need_uic()
     extra = ' <pixmapfunction>load_picture</pixmapfunction>\n'

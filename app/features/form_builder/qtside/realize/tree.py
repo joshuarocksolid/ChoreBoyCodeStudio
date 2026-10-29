@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import importlib
 from functools import partial
-from typing import Dict, List, Optional, Set, Tuple, Union
+from typing import Callable, Dict, List, Optional, Set, Tuple, Union
 
 from app.qt import QtGui, QtWidgets
 from app.qt.QtCore import QObject, Qt
@@ -66,7 +66,17 @@ from app.features.form_builder.engine.logic.storage import splitter_sizes
 from app.features.form_builder.engine.project.pictures import label_text_hides_picture
 from app.features.form_builder.engine.ui4.values import EnumValue, SizeValue
 from app.features.form_builder.qtside.realize.forced import CANVAS_OVERRIDES
-from app.features.form_builder.qtside.realize.stand_in import StandInWidget, stand_in_name
+from app.features.form_builder.engine.project.custom_widgets import (
+    RegistryEntry,
+    entry_from_declaration,
+    stand_in_size,
+)
+from app.features.form_builder.qtside.realize.stand_in import (
+    PLAIN_BASES,
+    StandInWidget,
+    own_class_stand_in,
+    stand_in_name,
+)
 from app.features.form_builder.qtside.realize.props import (
     apply_entry,
     apply_geometry,
@@ -158,12 +168,28 @@ def _toplevel_menu_bar_ids() -> Set[int]:
 class _Structure(_LayoutSlots):
     """Methods mixed into ``Realizer``. Attributes live on the realizer."""
 
+    #: The project registry's entry for a class name, for a stand-in's size (UX-CUST-007).
+    #: The workbench sets it for a form in a project; None keeps the declaration's size hint.
+    own_class_lookup: Optional[Callable[[str], Optional[RegistryEntry]]] = None
+
     def _qt_class_name(self, class_name: str) -> str:
         doc = self._session.document
         for node in doc.ui.children("customwidgets"):
             if isinstance(node, CustomWidgetNode) and node.class_name == class_name and node.extends:
                 return node.extends.split("::")[-1]
         return class_name.split("::")[-1]
+
+    def _own_class_facts(self, node: WidgetNode) -> Optional[Tuple[str, Tuple[int, int]]]:
+        """``(module, size)`` when ``node`` uses a project class based on a plain QWidget or QFrame."""
+        doc = self._session.document
+        declared = doc.custom_widget(node.class_name)
+        if not isinstance(declared, CustomWidgetNode) or declared.extends not in PLAIN_BASES:
+            return None
+        entry = entry_from_declaration(declared)
+        if entry is None or node.id == doc.root.id:
+            return None
+        known = self.own_class_lookup(node.class_name) if self.own_class_lookup is not None else None
+        return entry.module, stand_in_size(declared, known)
 
     def _widget_type(self, class_name: str) -> type:
         short = self._qt_class_name(class_name)
@@ -180,9 +206,14 @@ class _Structure(_LayoutSlots):
 
     def _construct(self, node: WidgetNode, parent: Optional[QWidget]) -> QWidget:
         friendly = stand_in_name(self._qt_class_name(node.class_name))
+        own = self._own_class_facts(node)
         if friendly is not None:
             # Never build these in the editor: no GL context, no QML engine (UX-CONT-017).
             cls: type = partial(StandInWidget, friendly=friendly)  # type: ignore[assignment]
+        elif own is not None:
+            # Your own class on a plain QWidget or QFrame has no look the editor may borrow:
+            # a sized stand-in with its name and module (UX-CUST-007). The module is never imported.
+            cls = partial(own_class_stand_in, class_name=node.class_name, module=own[0], size=own[1])  # type: ignore[assignment]
         else:
             cls = self._widget_type(node.class_name)
         try:

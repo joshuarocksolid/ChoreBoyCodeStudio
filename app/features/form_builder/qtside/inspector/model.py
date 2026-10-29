@@ -293,6 +293,9 @@ class OneHeader:
     crumbs: Tuple[Crumb, ...]
     #: For an action: the menus and toolbars it is on, as links (UX-MAIN-012). None for other nodes.
     used_in: Optional[Tuple[Crumb, ...]] = None
+    #: A widget that uses your own class (UX-CUST-007): the whole class line, and its Qt name line.
+    class_line: str = ""
+    qt_line: str = ""
 
 @dataclass(frozen=True)
 class ManyHeader:
@@ -419,7 +422,15 @@ def project_header(session: FormSession) -> HeaderView:
         used_in = _used_in(document, node)
     elif isinstance(node, ActionGroupNode):
         crumbs = ()
-    return OneHeader(node.id, name, words.friendly, qt_class, words.glyph, crumbs, used_in)
+    class_line = qt_line = ""
+    if isinstance(node, WidgetNode):
+        declared = document.custom_widget(node.class_name)
+        base = declared.field("extends") if declared is not None else None
+        if isinstance(base, str) and base:
+            class_line = "%s \u00b7 your class, based on %s" % (node.class_name, class_words(base).friendly)
+            qt_line = "%s (%s)" % (node.class_name, base)
+            words = class_words(base)
+    return OneHeader(node.id, name, words.friendly, qt_class, words.glyph, crumbs, used_in, class_line, qt_line)
 
 def _used_in(document: UiDocument, node: ActionNode) -> Tuple[Crumb, ...]:
     """Where an action is used, one link per menu or toolbar (each selects that host)."""
