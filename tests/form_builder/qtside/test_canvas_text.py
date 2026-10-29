@@ -85,7 +85,7 @@ def test_enter_writes_one_undo_step() -> None:
         _flush()
         assert _button(canvas).text() == "Save"
         assert _stored(session) == "Save"
-        assert session.log.undo_label() == "Edit text"
+        assert session.log.undo_label() == "Change text"
         assert session.log.undo()
         _flush()
         assert _button(canvas).text() == "OK"
@@ -195,7 +195,7 @@ def test_a_click_elsewhere_commits_the_text() -> None:
         _flush()
         assert _button(canvas).text() == "Save"
         assert _stored(session) == "Save"
-        assert session.log.undo_label() == "Edit text"
+        assert session.log.undo_label() == "Change text"
         assert _visible_edit(canvas) is None
         canvas.dispose()
         parent.deleteLater()

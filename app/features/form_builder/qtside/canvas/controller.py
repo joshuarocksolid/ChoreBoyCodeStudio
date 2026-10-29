@@ -496,7 +496,7 @@ class CanvasController:
             elif effect.commands and callable(getattr(effect.commands[0], "merge_window_s", None)):
                 merge_token = "press:%s" % (effect.commands[0].merge_key(),)
                 merge_within_s = float(effect.commands[0].merge_window_s())
-            elif effect.label in ("Drop", "Move", "Edit text"):
+            elif effect.label in ("Drop", "Move", "Change text"):
                 merge_token = effect.token
                 merge_within_s = 30.0
             applied: List[Tuple[object, object]] = []

@@ -57,7 +57,7 @@ def test_enter_on_a_page_edits_its_title_and_one_undo_step_restores_it(page, kin
         QTest.keyClick(edit, _qt_key("Key_Return"))
         _flush()
         assert _stored(session, page, kind, prop) == "Printing"
-        assert session.log.undo_label() == "Edit text"
+        assert session.log.undo_label() == "Change text"
         assert session.log.undo()
         assert _stored(session, page, kind, prop) == original
         assert _visible_edit(canvas) is None
