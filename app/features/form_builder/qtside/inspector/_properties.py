@@ -1369,7 +1369,8 @@ class _Row(QWidget):
     def _show_locked(self, view: LockedRow, match_color: str) -> None:
         self._clear_slot()
         self._editor = None
-        text = value_text(view.value) or NOT_SET_TEXT
+        # A caption row (no label, no value) shows its sentence only, without a dash above it.
+        text = value_text(view.value) or (NOT_SET_TEXT if view.label else "")
         label = QLabel(self._slot)
         _shrink(label)
         label.setObjectName(_value_name(view.value))

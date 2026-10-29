@@ -30,7 +30,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Summary,
 )
 from app.features.form_builder.qtside.inspector.api import Unset, Written, mark
-from app.qt.QtWidgets import QButtonGroup, QComboBox, QHBoxLayout, QSizePolicy, QToolButton, QWidget
+from app.qt.QtWidgets import QButtonGroup, QComboBox, QGridLayout, QSizePolicy, QToolButton, QWidget
 
 STATUS_BAR_CAPTION = (
     "Status tips of actions and widgets show here while the pointer is on them. "
@@ -112,14 +112,16 @@ class ToolbarSideEditor:
         del spec
         self._host = host
         self._root = QWidget(parent)
-        row = QHBoxLayout(self._root)
+        # Two by two, as the Dock side control: four labels do not fit one line at 236 px.
+        row = QGridLayout(self._root)
         row.setContentsMargins(0, 0, 0, 0)
-        row.setSpacing(2)
+        row.setHorizontalSpacing(2)
+        row.setVerticalSpacing(2)
         group = QButtonGroup(self._root)
         group.setExclusive(True)
         policy = getattr(QSizePolicy, "Policy", QSizePolicy)
         self._buttons: List[Tuple[str, QToolButton]] = []
-        for side in _SIDE_NAMES:
+        for number, side in enumerate(_SIDE_NAMES):
             button = QToolButton(self._root)
             button.setText(side)
             button.setCheckable(True)
@@ -128,7 +130,7 @@ class ToolbarSideEditor:
             button.setAccessibleName("Toolbar side: %s" % side)
             button.clicked.connect(self._commit)
             group.addButton(button)
-            row.addWidget(button)
+            row.addWidget(button, number // 2, number % 2)
             self._buttons.append((side, button))
 
     @property

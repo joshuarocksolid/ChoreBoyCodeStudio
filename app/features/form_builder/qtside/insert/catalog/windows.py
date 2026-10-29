@@ -56,5 +56,8 @@ def register(registry: Registry) -> None:
     registry.family("QMainWindow", "Main window")
     registry.family("QDialog", "Dialog")
     registry.family("QWizard", "Wizard")
+    registry.family("QMenuBar", "Menu bar")
+    registry.family("QToolBar", "Toolbar")
+    registry.family("QStatusBar", "Status bar")
     for entry in entries():
         registry.add(entry)
