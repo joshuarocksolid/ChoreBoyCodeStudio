@@ -31,6 +31,7 @@ from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
+from app.features.form_builder.qtside.canvas import file_drops
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
 from app.features.form_builder.qtside.canvas.core.frame import (
     Caption,
@@ -274,7 +275,16 @@ class FormCanvas(QGraphicsView):
         if controller is not None:
             controller.refresh_overlay()
 
+    def _file_drop(self, event: object) -> Tuple[str, ...]:
+        """Desktop files, when a handler wants them (M5.2)."""
+        if not file_drops.has_handlers():
+            return ()
+        return file_drops.local_paths(event.mimeData())  # type: ignore[attr-defined]
+
     def dragEnterEvent(self, event: object) -> None:  # noqa: N802
+        if self._file_drop(event):
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+            return
         payload = _drop_payload(event, self._session.document)
         if payload is None:
             event.ignore()  # type: ignore[attr-defined]
@@ -288,6 +298,9 @@ class FormCanvas(QGraphicsView):
         self._controller.post(PlaceAsked(at, body, key, fragment))
 
     def dragMoveEvent(self, event: object) -> None:  # noqa: N802
+        if self._file_drop(event):
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+            return
         if _drop_payload(event, self._session.document) is None:
             event.ignore()  # type: ignore[attr-defined]
             return
@@ -295,6 +308,14 @@ class FormCanvas(QGraphicsView):
         self._controller.post(PlaceHover(_drop_point(event, self), _drop_snap(event)))
 
     def dropEvent(self, event: object) -> None:  # noqa: N802
+        paths = self._file_drop(event)
+        if paths:
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+            target = self.node_at(event_pos(event)) or self._session.document.root.id
+            sentence = file_drops.dispatch(target, paths)
+            if sentence:
+                self._host.narrate(sentence)
+            return
         if _drop_payload(event, self._session.document) is None:
             event.ignore()  # type: ignore[attr-defined]
             return
