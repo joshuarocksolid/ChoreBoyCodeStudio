@@ -141,6 +141,10 @@ CATALOG_STROKES: Dict[str, Tuple[Stroke, ...]] = {
     "fc_int": (_box(2, 4, 14, 12), _line(5.5, 6, 5.5, 10), _line(8.5, 6, 8.5, 10), _line(4, 7, 10, 7), _line(4, 9, 10, 9)),
     "fc_double": (_box(2, 4, 14, 12), _line(4, 8, 6, 8), _line(9, 10, 10, 10), _line(11.5, 6, 11.5, 10)),
     "custom": (_box(2, 2, 14, 14), _line(5, 8, 11, 8), _line(8, 5, 8, 11)),
+    # The three main-window parts Insert search offers (UX-MAIN-002).
+    "part_menubar": (_box(2, 3, 14, 13), _line(2, 6, 14, 6), _line(4, 4.5, 6, 4.5), _line(8, 4.5, 10, 4.5)),
+    "part_toolbar": (_box(2, 4, 14, 8), _box(4, 5.5, 6, 6.5), _box(8, 5.5, 10, 6.5), _line(2, 11, 14, 11)),
+    "part_statusbar": (_box(2, 3, 14, 13), _line(2, 10, 14, 10), _line(4, 11.5, 8, 11.5)),
     "window_main": _card(_page_card_mark_main()),
     "window_dialog": _card(_page_card_mark_dialog()),
     "window_widget": _card(_page_card_mark_widget()),
