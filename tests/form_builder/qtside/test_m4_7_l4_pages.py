@@ -7,7 +7,7 @@ import pytest
 
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.qt.QtTest import QTest
-from tests.form_builder.qtside.support import opened
+from tests.form_builder.qtside.support import form, opened
 from tests.form_builder.qtside.test_canvas_text import _canvas, _flush, _open, _qt_key
 from tests.form_builder.qtside.test_m4_title_editor import PAGES
 
@@ -63,3 +63,30 @@ def test_deleting_an_empty_page_from_the_menu_names_its_title(tmp_path) -> None:
         assert not any(page.object_name in text for text in texts), texts
     finally:
         _close(parent, surface)
+
+
+def test_closing_the_new_row_label_editor_selects_the_field() -> None:
+    from tests.form_builder.qtside.test_drop import _drag_widget_to, _key, _shown, _widget
+    from app.qt.QtCore import QPoint
+    from app.qt.QtWidgets import QLineEdit
+
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QFormLayout" name="formLayout">
+   <item row="0" column="0"><widget class="QLabel" name="emailLabel"><property name="text"><string>Email</string></property></widget></item>
+   <item row="0" column="1"><widget class="QLineEdit" name="email"/></item>
+   <item row="1" column="1"><widget class="QLineEdit" name="city"/></item>
+  </layout>
+""",
+    )
+    with _shown(text) as (session, canvas, _host):
+        email = _widget(canvas, "email")
+        below = email.mapTo(canvas.page_widget(), QPoint(email.width() // 2, email.height() + 30))
+        _drag_widget_to(canvas, "city", below)
+        state = session.selection.state
+        assert len(state.ids) == 2  # the label and its field, while the label editor is open
+        edits = [edit for edit in canvas.viewport().findChildren(QLineEdit) if edit.isVisible()]
+        QTest.keyClick(edits[0], _key("Key_Return"))
+        _flush()
+        assert session.selection.state.ids == (session.document.by_name("city")[0],)
