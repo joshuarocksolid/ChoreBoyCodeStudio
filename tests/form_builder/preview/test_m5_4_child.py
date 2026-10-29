@@ -136,6 +136,25 @@ def test_a_good_class_next_to_a_failing_one_in_the_same_module_still_imports(pro
     assert fake.Good is good and fake.Bad is bad
 
 
+def test_a_stand_in_module_never_shadows_the_real_one_on_the_next_load(project: Path) -> None:
+    """The flagged fake module lives for one load. A module that was already loaded (here the standard
+    library's ``json``) is put back as the same object, and an edited project module is imported fresh."""
+    import json
+
+    cls, error = modules.install_promoted(PromotedClass("NotInJson", "json", "QLabel"))
+    assert cls._cbcs_stub is True and error is not None
+    assert sys.modules["json"] is not json and sys.modules["json"].NotInJson is cls
+    assert sys.modules["json"].dumps is json.dumps
+    _write(project, "shopw.fixme", "raise RuntimeError('not yet')\n")
+    modules.install_promoted(PromotedClass("Fixed", "shopw.fixme", "QLabel"))
+    modules.purge_project_modules(str(project))
+    assert sys.modules["json"] is json
+    _write(project, "shopw.fixme", "from PySide6.QtWidgets import QLabel\n\nclass Fixed(QLabel):\n    pass\n")
+    fixed, error = modules.install_promoted(PromotedClass("Fixed", "shopw.fixme", "QLabel"))
+    assert error is None and not getattr(fixed, "_cbcs_stub", False)
+    assert getattr(sys.modules["shopw"], "_cbcs_stub_module", False) is False
+
+
 def test_no_module_means_a_stand_in_and_an_import_never_happens(project: Path) -> None:
     cls, error = modules.install_promoted(PromotedClass("Anything", "", "QPushButton"))
     assert cls._cbcs_stub is True and error is None
@@ -289,6 +308,82 @@ def test_a_form_outside_a_project_sends_no_module_and_says_so(tmp_path: Path) ->
         assert surface.said[-1] == "Preview shows stand-ins for your own classes, because this form isn't in a project."
         assert surface._notice.shown == []
         assert not [d for d in session.diagnostics.all() if d.code == "FB602"]
+    finally:
+        notices.close()
+        pool.shutdown()
+        session.dispose()
+
+
+_WEDGES = {
+    # The in-child time limit can't fire: SIGALRM is blocked and the sleep never comes back to Python.
+    "blocks_signals": """\
+        import signal
+        import time
+        from PySide6.QtWidgets import QLabel
+
+        class Spinner(QLabel):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                signal.pthread_sigmask(signal.SIG_BLOCK, {signal.SIGALRM})
+                time.sleep(60)
+        """,
+    # No exception to catch: the process is gone.
+    "os_exit": """\
+        import os
+        from PySide6.QtWidgets import QLabel
+
+        class Spinner(QLabel):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                os._exit(7)
+        """,
+}
+
+
+@pytest.mark.slow
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("wedge", sorted(_WEDGES))
+def test_a_class_that_wedges_or_kills_the_child_never_takes_the_editor_down(tmp_path: Path, wedge: str) -> None:
+    """CONTRACTS 10.3 still covers what the in-child limit can't: the host kills a wedged child (request
+    timeout, or missed pings) or sees it exit, reports FB601, restarts it, and the fixed class then loads."""
+    if wedge == "blocks_signals" and not hasattr(__import__("signal"), "pthread_sigmask"):
+        pytest.skip("no pthread_sigmask")
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.engine.session import FormSession
+    from app.qt.QtWidgets import QApplication
+
+    root = tmp_path / "shop"
+    _write(root, "shopw.till", "from PySide6.QtWidgets import QLabel\n\nclass TillDisplay(QLabel):\n    pass\n")
+    _write(root, "shopw.spin", _WEDGES[wedge])
+    (root / "forms").mkdir()
+    path = str(root / "forms" / "till.ui")
+    scope = FormScope(
+        kind="project", ui_path=path, project_root=str(root), generated_path=str(root / "forms" / "ui_till.py"),
+        window_path=str(root / "forms" / "till_window.py"), module_name="forms.ui_till",
+    )
+    session = FormSession.open(_SHOP, path=path, scope=scope)
+    pool = PreviewPool(
+        command=python_preview_command(current_runtime_python(), repo_root()),
+        config=DirectorConfig(
+            backoff=(0.0, 0.2, 0.2, 0.2), handshake_timeout=20.0, request_timeout=5.0, shutdown_grace=0.4,
+            ping_interval=30.0, prewarm=True,
+        ),
+        root=repo_root(),
+    )
+    notices = preview_notice.PreviewNotices(_surface(), session, pool)
+    qapp = QApplication.instance()
+    try:
+        notices.preview(path)
+        assert _pump(qapp, lambda: notices.last_response is not None, 40.0), pool.status()
+        assert not notices.last_response.ok
+        assert _pump(qapp, lambda: pool.status().crashes_in_window >= 1, 10.0), pool.status()
+        _write(root, "shopw.spin", "from PySide6.QtWidgets import QLabel\n\nclass Spinner(QLabel):\n    pass\n")
+        assert _pump(qapp, lambda: pool.status().state == "ready", 40.0), pool.status()
+        notices.last_response = None
+        notices.preview(path)
+        assert _pump(qapp, lambda: notices.last_response is not None, 40.0), pool.status()
+        assert notices.last_response.ok, notices.last_response.detail
+        assert notices.last_response.result["stubs"] == []
     finally:
         notices.close()
         pool.shutdown()

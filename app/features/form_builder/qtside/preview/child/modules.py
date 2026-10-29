@@ -53,6 +53,8 @@ def make_stub(class_name: str, extends: str) -> type:
 CLASS_SECONDS = 3.0
 LOAD_SECONDS = 8.0
 _STUB_MODULE = "_cbcs_stub_module"
+#: On a stub module: the real module it hid for this load, put back by the next purge.
+_HIDDEN_MODULE = "_cbcs_hidden_module"
 _spent = 0.0
 
 
@@ -64,26 +66,34 @@ def purge_project_modules(root: Optional[str]) -> List[str]:
     """Drop ``sys.modules`` entries whose file lives under ``root``, and the stub modules of the last load."""
     global _spent
     _spent = 0.0
-    dropped: List[str] = [
-        name for name, module in list(sys.modules.items()) if getattr(module, _STUB_MODULE, False) is True
-    ]
-    for name in dropped:
-        sys.modules.pop(name, None)
+    dropped: List[str] = []
+    for name, module in list(sys.modules.items()):
+        if getattr(module, _STUB_MODULE, False) is not True:
+            continue
+        dropped.append(name)
+        hidden = getattr(module, _HIDDEN_MODULE, None)
+        if isinstance(hidden, types.ModuleType):
+            # A module that was already loaded (the standard library, or a project module the
+            # pass below drops anyway) comes back as it was, never a second copy of it.
+            sys.modules[name] = hidden
+        else:
+            sys.modules.pop(name, None)
     if not root:
         return dropped
     real = os.path.realpath(root)
     prefix = real + os.sep
+    project: List[str] = []
     for name, module in list(sys.modules.items()):
         filename = getattr(module, "__file__", None)
         if not isinstance(filename, str):
             continue
         path = os.path.realpath(filename)
         if path == real or path.startswith(prefix):
-            dropped.append(name)
-    for name in dropped:
+            project.append(name)
+    for name in project:
         sys.modules.pop(name, None)
     importlib.invalidate_caches()
-    return dropped
+    return dropped + [name for name in project if name not in dropped]
 
 
 def replace_sys_path(previous: Sequence[str], entries: Sequence[str]) -> List[str]:
@@ -137,7 +147,7 @@ def install_promoted(spec: PromotedClass) -> Tuple[type, Optional[BaseException]
                 raise TypeError("%s is not a class" % spec.class_name)
             _trial(cls)
         return cls, None
-    except (Exception, SystemExit) as exc:
+    except BaseException as exc:  # noqa: B036 - user code may raise SystemExit or KeyboardInterrupt
         stub = make_stub(spec.class_name, spec.extends)
         _stand_in_module(spec.header_module, spec.class_name, stub)
         return stub, _located(exc)
@@ -212,6 +222,8 @@ def _stand_in_module(module_name: str, class_name: str, stub: type) -> None:
                 setattr(fake, key, value)
     setattr(fake, class_name, stub)
     setattr(fake, _STUB_MODULE, True)
+    if existing is not None:
+        setattr(fake, _HIDDEN_MODULE, existing)
     sys.modules[module_name] = fake
 
 
