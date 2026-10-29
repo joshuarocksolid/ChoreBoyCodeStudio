@@ -39,7 +39,7 @@ class KeysPage(QWidget):
         self.table.setHeaderLabels(list(COLUMNS))
         self.table.setRootIsDecorated(False)
         self.table.setUniformRowHeights(True)
-        self.table.setAlternatingRowColors(True)
+        self.table.setAlternatingRowColors(False)
         column = QVBoxLayout(self)
         column.setContentsMargins(12, 12, 12, 12)
         column.setSpacing(8)

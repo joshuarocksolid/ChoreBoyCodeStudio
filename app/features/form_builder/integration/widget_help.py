@@ -73,7 +73,9 @@ def show_keys_page(surface: Any = None) -> Optional[QWidget]:
             "QWidget#formBuilder\\.keysPage { background: %s; color: %s; }"
             "QTreeWidget#formBuilder\\.keysTable, QLineEdit#formBuilder\\.keysFilter {"
             " background: %s; color: %s; border: 1px solid %s; }"
-            % (chrome.panel, chrome.panel, chrome.text, chrome.input, chrome.text, chrome.border)
+            "QTreeWidget#formBuilder\\.keysTable::item { background: transparent; color: %s; }"
+            "QTreeWidget#formBuilder\\.keysTable QHeaderView::section { background: %s; color: %s; border: none; padding: 3px 6px; }"
+            % (chrome.panel, chrome.panel, chrome.text, chrome.input, chrome.text, chrome.border, chrome.text, chrome.panel, chrome.text)
         )
     setattr(holder, "_form_keys_dialog", dialog)
     dialog.show()
