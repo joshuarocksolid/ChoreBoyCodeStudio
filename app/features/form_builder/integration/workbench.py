@@ -2404,6 +2404,7 @@ class FormWorkbench(QWidget):
         self.outline = OutlinePane(on_pick, lambda collapsed: on_collapsed("outline", collapsed), self._left_stack)
         self._insert_memory = LazyInsertMemory(lambda: _state_root_of(self))
         self._return_to_insert = False
+        self._field_after_label: Optional[NodeId] = None
         self.insert = InsertPane(
             lambda collapsed: on_collapsed("insert", collapsed),
             self._left_stack,
@@ -2714,6 +2715,9 @@ class FormWorkbench(QWidget):
         if any(isinstance(command, InsertFormRow) for command in commands):
             # UX-CAT-011: a keyboard insert's label editor hands focus back to the Insert tile when it closes.
             self._return_to_insert = self._insert_has_focus()
+            state = self._session.selection.state
+            others = [node for node in state.ids if node != state.current]
+            self._field_after_label = others[0] if len(others) == 1 and state.current is not None else None
             self.canvas.setFocus()
             self.canvas.send(EditTextAsked())
             return
@@ -2722,11 +2726,19 @@ class FormWorkbench(QWidget):
 
     def _on_focus_changed(self, old: object, now: object) -> None:
         """The label editor (a line or text box on the canvas) closed: return to the Insert tile once."""
-        if not self._return_to_insert:
+        if not self._return_to_insert and self._field_after_label is None:
             return
         if not isinstance(old, (QLineEdit, QPlainTextEdit)) or not self.canvas.isAncestorOf(old):
             return
         if now is not None and now is not self.canvas and not self.canvas.isAncestorOf(now):
+            return
+        field = self._field_after_label
+        self._field_after_label = None
+        if field is not None and self._session.document.contains(field):
+            # The new row's label editor closed: the field is the selection, not the label and field pair,
+            # so the inspector shows the field's own rows.
+            self._session.selection.set((field,), current=field, source=SelectionSource.CANVAS)
+        if not self._return_to_insert:
             return
         self._return_to_insert = False
         self.insert.focus_list()

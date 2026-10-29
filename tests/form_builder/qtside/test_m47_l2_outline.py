@@ -105,3 +105,33 @@ def test_a_page_titled_like_its_number_is_not_repeated(qapp: QApplication) -> No
         pane.note_edited()
         qapp.processEvents()
         assert _caption(pane, session, "tab_3") == "Tab 3"
+
+
+def test_closing_a_new_rows_label_editor_selects_the_field(qapp: QApplication, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from app.qt.QtTest import QTest
+    from app.qt.QtWidgets import QWidget
+    from tests.form_builder.qtside.test_m4_insert_keyboard import _FORM
+    from tests.form_builder.qtside.test_m4_pages_keyboard import _flush
+    from tests.unit.features.form_builder.test_workbench import _open
+
+    parent = QWidget()
+    parent.resize(1100, 760)
+    surface = _open(parent, _FORM, tmp_path / "row.ui")
+    surface.resize(1100, 760)
+    parent.show()
+    surface.show()
+    _flush()
+    session = surface._session
+    surface.select_object("notesEdit")
+    _flush()
+    surface._workbench._place_tile("QComboBox")
+    _flush()
+    editor = QApplication.focusWidget()
+    QTest.keyClicks(editor, "Size")
+    QTest.keyClick(editor, Qt.Key.Key_Return)
+    _flush()
+    state = session.selection.state
+    assert [session.document.node(node).object_name for node in state.ids] == ["comboBox"]
+    surface.release()
+    parent.deleteLater()
+    _flush()
