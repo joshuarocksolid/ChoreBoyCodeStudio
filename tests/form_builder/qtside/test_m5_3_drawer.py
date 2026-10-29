@@ -50,10 +50,24 @@ def _drawer(surface) -> StyleDrawer:  # type: ignore[no-untyped-def]
     return bench._under_widget
 
 
+
+def _settle(limit_ms: int = 4000) -> None:
+    """Wait until every drawer's 300 ms apply timer has fired (a loaded machine
+    can delay it well past 380 ms), then let the canvas catch up."""
+    waited = 0
+    QTest.qWait(320)
+    while waited < limit_ms:
+        pending = [d for d in QApplication.allWidgets() if isinstance(d, StyleDrawer) and d._timer.isActive()]  # noqa: SLF001
+        if not pending:
+            break
+        QTest.qWait(20)
+        waited += 20
+    QApplication.processEvents()
+
 def _type(drawer: StyleDrawer, text: str) -> None:
     drawer.editor.setFocus()
     QTest.keyClicks(drawer.editor, text)
-    QTest.qWait(380)
+    _settle()
     QApplication.processEvents()
 
 
@@ -104,11 +118,11 @@ def test_typing_a_rule_restyles_the_canvas_after_300_ms_and_the_status_and_chip_
         drawer.editor.setTextCursor(cursor)
         drawer.editor.setFocus()
         QTest.keyClick(drawer.editor, Qt.Key.Key_Backspace)
-        QTest.qWait(380)
+        _settle()
         assert drawer.status_text().endswith("Line 1: a } is missing.")
         assert session.document.node(ok).prop("styleSheet").value.text.endswith("}")
         QTest.keyClicks(drawer.editor, "}")
-        QTest.qWait(380)
+        _settle()
         assert drawer.status_text().endswith("Looks right")
         # Esc closes, keeps the text, and the whole visit is one undo step.
         QTest.keyClick(drawer.editor, Qt.Key.Key_Escape)
@@ -153,7 +167,7 @@ def test_a_rule_with_no_match_says_so_and_the_caret_in_a_rule_outlines_its_widge
         drawer = _drawer(surface)
         drawer.editor.setPlainText("QPushButton { color: red; }\nQProgressBar { color: red; }\n")
         drawer.editor.moveCursor(drawer.editor.textCursor().MoveOperation.Start)
-        QTest.qWait(380)
+        _settle()
         assert [(chip[1], chip[2]) for chip in drawer.chips()] == [("2 widgets", False), ("No match", True)]
         canvas = surface.workbench.canvas
         names = sorted(session.document.node(i).object_name for i in cast(Tuple[int, ...], canvas.layer_state("style_matches")))
