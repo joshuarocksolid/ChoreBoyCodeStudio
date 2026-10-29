@@ -124,6 +124,7 @@ from app.features.form_builder.integration.layout import (
 )
 from app.features.form_builder.integration.outline_bind import key_gesture, perform
 from app.features.form_builder.integration.toast import CommandToast, ToastNote, undo_matches
+from app.features.form_builder.integration.overlay_ext import default_registry as overlay_kinds
 from app.features.form_builder.qtside.inspector import InspectorPane, TabId
 from app.features.form_builder.qtside.outline.delegate import (
     CAPTION,
@@ -395,6 +396,15 @@ class FormToolbar(QWidget):
         self.buddies.setCheckable(True)
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
+        # Registered overlay kinds (integration/overlay_ext, M6.0s) add a toggle after Buddies.
+        self.overlay_toggles: Dict[str, QToolButton] = {}
+        for kind in overlay_kinds().kinds():
+            if kind.toggle is None:
+                continue
+            toggle = _tool(kind.toggle.label, "formBuilder.overlay.%s" % kind.kind, kind.toggle.tooltip, self)
+            toggle.setCheckable(True)
+            self.overlay_toggles[kind.kind] = toggle
+            row.addWidget(toggle)
 
         self.undo = _tool("", "formBuilder.undo", "Undo (Ctrl+Z)", self)
         self.redo = _tool("", "formBuilder.redo", "Redo (Ctrl+Shift+Z)", self)
@@ -656,6 +666,7 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
         "overflow",
     )
     selectors = ["QToolButton#formBuilder\\.%s" % name for name in names]
+    selectors += ["QToolButton#formBuilder\\.overlay\\.%s" % kind.kind for kind in overlay_kinds().kinds() if kind.toggle]
     faint = tokens.gutter_text or tokens.text_primary
     # Disabled Aa and Widths were gutter ink, which sits on the 4.5:1 floor in dark.
     # text_muted clears that floor, and 7:1 in high contrast.

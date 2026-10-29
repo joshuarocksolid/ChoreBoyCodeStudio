@@ -86,9 +86,17 @@ def page_chip_label(document: UiDocument, fallback_name: str) -> str:
     return "%s · %s" % (name, phrase)
 
 
-def hover_sentence(document: UiDocument, node: NodeId, double_click_edits: bool) -> str:
+def hover_sentence(document: UiDocument, node: NodeId, double_click_edits: bool, claimed: Optional[str] = None) -> str:
+    """``claimed`` is a double-click contributor's hover words (``integration/activate_ext``, M6.0s).
+
+    It wins over text editing: the double-click goes to the contributor, and the
+    sentence says so after "click to select".
+    """
     found = document.get(node)
-    action = "double-click to edit text" if double_click_edits else "click to select"
+    if claimed:
+        action = "click to select · %s" % claimed
+    else:
+        action = "double-click to edit text" if double_click_edits else "click to select"
     return "%s · %s · %s" % (_name(found), _friendly(document, found), action)
 
 

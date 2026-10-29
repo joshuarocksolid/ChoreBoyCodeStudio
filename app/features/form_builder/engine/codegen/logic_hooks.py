@@ -36,11 +36,14 @@ class Method:
     """One generated method on the Ui class. ``name`` starts with ``cbcs_`` or
     ``_cbcs_`` (LOGIC_DESIGN 7.9). ``source_ref`` names the rule it came from
     (``"lineTotalLabel:cbcsValue"``) and is written as the block's first comment
-    so tracebacks map back ("Open rule" links)."""
+    so tracebacks map back ("Open rule" links). ``params`` is what follows
+    ``self`` in the ``def`` line (``"*args"`` for a step list, CONTRACTS 15.6);
+    empty by default."""
 
     name: str
     body: str
     source_ref: str
+    params: str = ""
 
 
 @dataclass(frozen=True)

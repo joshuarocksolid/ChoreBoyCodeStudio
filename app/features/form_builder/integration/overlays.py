@@ -1,10 +1,13 @@
-"""The Tab order and Buddies overlays of one form tab (UX-OVL-001 .. 008, UX-MODE-001 .. 004).
+"""The Tab order and Buddies overlays of one form tab (UX-OVL-001 .. 008, UX-MODE-001 .. 004),
+and the host for every kind registered in ``overlay_ext`` (M6.0s).
 
 Overlays are never sticky: Esc, F3, Done, a structural change and a tab switch
 close them. Only one is open at a time. The marks are canvas layers
 (``qtside/canvas/layers/tab_order.py`` and ``buddies.py``); this module owns
 the state, the clicks and keys the canvas hands over while an overlay is open,
-and the commands they run.
+and the commands they run. A registered kind (``overlay_ext``) gets the same
+life cycle and, when it has a link gesture, the generic press-drag and
+Enter-arrows-Enter link described there; Tab order and Buddies keep their own code.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from app.features.form_builder.engine.query import tab_stops as q
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.query.tree import effective_tab_order, takes_tab_focus
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
+from app.features.form_builder.integration.overlay_ext import LinkView, OverlayKind, default_registry as overlay_kinds
 from app.features.form_builder.qtside.canvas.layers.buddies import BuddyState
 from app.features.form_builder.qtside.canvas.layers.tab_order import TabOrderState
 from app.qt.QtCore import QEvent, QPoint, Qt
@@ -102,6 +106,13 @@ class OverlayModes:
         self._press_node: Optional[NodeId] = None
         self._dragging = False
         self._unlink: Optional[NodeId] = None
+        # A registered kind's link gesture (overlay_ext).
+        self._spec: Optional[OverlayKind] = None
+        self._link_source: Optional[NodeId] = None
+        self._link_candidate: Optional[NodeId] = None
+        self._link_pointer: Optional[Tuple[int, int]] = None
+        self._link_press: Optional[QPoint] = None
+        self._link_dragging = False
         self._metrics = LabelMetrics(surface.realizer, lambda: self._session.document)
         self._changes = self._session.log.subscribe(self._on_change, priority=PRIORITY_VIEWS)
         self._selection = self._session.selection.subscribe(self._on_selection)
@@ -141,7 +152,8 @@ class OverlayModes:
             self.open(kind)
 
     def open(self, kind: str) -> bool:
-        if kind not in (TAB_ORDER, BUDDIES) or not self._surface.can_use_overlays():
+        spec = overlay_kinds().get(kind)
+        if (kind not in (TAB_ORDER, BUDDIES) and spec is None) or not self._surface.can_use_overlays():
             return False
         if self._kind == kind:
             return True
@@ -155,9 +167,21 @@ class OverlayModes:
         self._candidate = ""
         self._pointer = None
         self._unlink = None
+        self._spec = spec
+        self._reset_link()
         canvas = self._canvas
         canvas.set_claimer(self.claim)
-        if kind == TAB_ORDER:
+        if spec is not None:
+            action = spec.banner_action
+            canvas.show_banner(
+                spec.glyph or spec.kind,
+                spec.title,
+                spec.banner_text,
+                action[0] if action else "",
+                (lambda: action[1](self._surface)) if action else None,
+                self.close,
+            )
+        elif kind == TAB_ORDER:
             document = self._session.document
             self._base = effective_tab_order(document)
             saved = document.tabstops()
@@ -176,9 +200,12 @@ class OverlayModes:
         if not self._kind:
             return
         kind = self._kind
+        layer = self._spec.layer if self._spec is not None else kind
         self._kind = ""
+        self._spec = None
+        self._reset_link()
         canvas = self._canvas
-        canvas.hide_layer(kind)
+        canvas.hide_layer(layer)
         canvas.set_claimer(None)
         canvas.hide_banner()
         self._picked = []
@@ -194,6 +221,11 @@ class OverlayModes:
         """Esc: cancel a link in progress, else close the overlay. False when none is open."""
         if not self._kind:
             return False
+        if self._spec is not None and self._link_source is not None:
+            self._reset_link()
+            self._push()
+            self._announce()
+            return True
         if self._kind == BUDDIES and self._active is not None:
             self._active = None
             self._candidate = ""
@@ -212,7 +244,11 @@ class OverlayModes:
     # ------------------------------------------------------------------ marks
 
     def _push(self) -> None:
-        if self._kind == TAB_ORDER:
+        spec = self._spec
+        if spec is not None:
+            view = LinkView(self._link_source, self._link_candidate, self._link_pointer, self._link_dragging)
+            self._canvas.show_layer(spec.layer, spec.state(view))
+        elif self._kind == TAB_ORDER:
             order = effective_tab_order(self._session.document)
             self._canvas.show_layer(TAB_ORDER, TabOrderState(order, len(self._picked), self._hover))
         elif self._kind == BUDDIES:
@@ -238,6 +274,10 @@ class OverlayModes:
 
     def _on_selection(self, _change: object) -> None:
         if self._kind:
+            if self._spec is not None and self._link_source is not None and not self._link_dragging:
+                # The keyboard route: the selected widget is the receiver.
+                self._link_candidate = self._session.selection.state.current
+                self._push()
             self._announce()
 
     def _announce(self) -> None:
@@ -248,6 +288,9 @@ class OverlayModes:
         node = document.get(current) if current is not None else None
         name = node.object_name if isinstance(node, WidgetNode) else ""
         sentence = ""
+        if self._spec is not None:
+            self._surface.set_overlay_status(self._link_sentence(name))
+            return
         if self._kind == TAB_ORDER:
             if name and isinstance(node, WidgetNode) and takes_tab_focus(node):
                 if name in self._picked:
@@ -385,6 +428,8 @@ class OverlayModes:
             return False
         kind = enum_value(event.type())
         kinds = getattr(QEvent, "Type", QEvent)
+        if self._spec is not None:
+            return self._claim_registered(event, kind, kinds)
         if kind in (enum_value(kinds.KeyPress), enum_value(kinds.ShortcutOverride)) and isinstance(event, QKeyEvent):
             return self._claim_key(event, kind == enum_value(kinds.ShortcutOverride))
         if isinstance(event, QMouseEvent):
@@ -587,3 +632,169 @@ class OverlayModes:
             if left <= pos.x() <= left + 16 and abs(pos.y() - centre_y) <= 8:
                 return label
         return None
+
+
+    # --------------------------------------------------- registered kinds (M6.0s)
+
+    @property
+    def link_source(self) -> Optional[NodeId]:
+        """The widget a link is being made from, or None."""
+        return self._link_source
+
+    def _reset_link(self) -> None:
+        self._link_source = None
+        self._link_candidate = None
+        self._link_pointer = None
+        self._link_press = None
+        self._link_dragging = False
+
+    def _link_sentence(self, current_name: str) -> str:
+        spec = self._spec
+        gesture = spec.link if spec is not None else None
+        if gesture is None:
+            return ""
+        document = self._session.document
+        if self._link_source is not None:
+            source = document.get(self._link_source)
+            name = source.object_name if isinstance(source, WidgetNode) else ""
+            return gesture.start_status(name) if gesture.start_status else ""
+        if current_name and gesture.hover_status:
+            return gesture.hover_status(current_name)
+        return ""
+
+    def start_registered_link(self, source: NodeId) -> bool:
+        """Begin a link from ``source`` (Enter, or a press). False when the kind has no link or it can't start there."""
+        spec = self._spec
+        gesture = spec.link if spec is not None else None
+        if gesture is None or not gesture.can_start(self._session.document, source):
+            return False
+        self._link_source = source
+        self._link_candidate = None
+        self._announce()
+        self._push()
+        return True
+
+    def finish_registered_link(self, target: Optional[NodeId]) -> bool:
+        """End the link on ``target`` (None means the page background, so the form). Calls ``link``."""
+        spec = self._spec
+        gesture = spec.link if spec is not None else None
+        source = self._link_source
+        if gesture is None or source is None:
+            return False
+        document = self._session.document
+        resolved = gesture.target_of(document, target)
+        self._reset_link()
+        self._push()
+        self._announce()
+        gesture.link(self._surface, source, resolved)
+        return True
+
+    def _claim_registered(self, event: QEvent, kind: int, kinds: Any) -> bool:
+        spec = self._spec
+        if spec is None or spec.link is None:
+            return False
+        if kind in (enum_value(kinds.KeyPress), enum_value(kinds.ShortcutOverride)) and isinstance(event, QKeyEvent):
+            return self._claim_registered_key(event, kind == enum_value(kinds.ShortcutOverride))
+        if isinstance(event, QMouseEvent):
+            if kind in (enum_value(kinds.MouseButtonPress), enum_value(kinds.MouseButtonDblClick)):
+                return self._claim_registered_press(event)
+            if kind == enum_value(kinds.MouseMove):
+                return self._claim_registered_move(event)
+            if kind == enum_value(kinds.MouseButtonRelease):
+                return self._claim_registered_release(event)
+        return False
+
+    def _claim_registered_key(self, event: QEvent, override: bool) -> bool:
+        assert isinstance(event, QKeyEvent)
+        keys = Qt.Key
+        key = enum_value(event.key())
+        modifiers = enum_value(event.modifiers())
+        if modifiers & (
+            enum_value(Qt.KeyboardModifier.ControlModifier)
+            | enum_value(Qt.KeyboardModifier.AltModifier)
+            | enum_value(Qt.KeyboardModifier.ShiftModifier)
+        ):
+            return False
+        enter = key in (enum_value(keys.Key_Return), enum_value(keys.Key_Enter))
+        home = key == enum_value(keys.Key_Home) and self._link_source is not None
+        escape = key == enum_value(keys.Key_Escape)
+        mine = enter or home or escape
+        if not mine:
+            return False
+        if override:
+            return True
+        if escape:
+            self.escape()
+            return True
+        root = self._session.document.root.id
+        if home:
+            self._session.selection.set((root,), current=root, source=SelectionSource.CANVAS)
+            self._link_candidate = root
+            self._push()
+            return True
+        current = self._session.selection.state.current
+        if self._link_source is None:
+            if current is not None:
+                self.start_registered_link(current)
+            return True
+        self.finish_registered_link(current)
+        return True
+
+    def _claim_registered_press(self, event: QMouseEvent) -> bool:
+        if not self._left(event):
+            return False
+        pos = self._position(event)
+        node = self._canvas.node_at(pos)
+        spec = self._spec
+        gesture = spec.link if spec is not None else None
+        if gesture is None:
+            return False
+        if node is not None:
+            self._session.selection.set((node,), current=node, source=SelectionSource.CANVAS)
+        self._link_press = pos
+        self._link_dragging = False
+        if gesture.can_start(self._session.document, node) and node is not None:
+            self._link_source = node
+            self._link_candidate = None
+            self._link_pointer = (pos.x(), pos.y())
+            self._announce()
+            self._push()
+        else:
+            self._link_source = None
+        return True
+
+    def _claim_registered_move(self, event: QMouseEvent) -> bool:
+        if self._link_press is None or self._link_source is None:
+            return False
+        pos = self._position(event)
+        if (pos - self._link_press).manhattanLength() >= _DRAG_START:
+            self._link_dragging = True
+        if not self._link_dragging:
+            return True
+        scene = self._canvas.mapToScene(pos)
+        self._link_pointer = (int(scene.x()), int(scene.y()))
+        spec = self._spec
+        gesture = spec.link if spec is not None else None
+        if gesture is not None:
+            self._link_candidate = gesture.target_of(self._session.document, self._canvas.node_at(pos))
+        self._push()
+        return True
+
+    def _claim_registered_release(self, event: QMouseEvent) -> bool:
+        if not self._left(event):
+            return False
+        pressed = self._link_press is not None
+        self._link_press = None
+        if not pressed:
+            return True
+        if self._link_source is not None and self._link_dragging:
+            self.finish_registered_link(self._canvas.node_at(self._position(event)))
+        else:
+            # A plain click keeps the link open for the keyboard route only when it began with Enter.
+            self._link_dragging = False
+            self._link_pointer = None
+            if self._link_source is not None and self._link_candidate is None:
+                self._link_source = None
+            self._push()
+            self._announce()
+        return True

@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
-from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Mapping, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QKeySequence, QTextCursor
@@ -311,6 +311,25 @@ class FormSurface(QWidget):
         return self._session
 
     @property
+    def code_bridge(self) -> Any:
+        """The window's code bridge (M6.0s, ``integration/code_bridge.py``), made on first use."""
+        from app.features.form_builder.integration.code_bridge import bridge_for
+
+        return bridge_for(self.window(), self._request.project_root or "")
+
+    def activation_claim(self, document: Any, node: NodeId) -> Optional[str]:
+        """Hover words when a double-click contributor claims ``node`` (M6.0s); the canvas asks on hover and double-click."""
+        from app.features.form_builder.integration.activate_ext import default_registry as activators
+
+        return activators().claim(document, node)
+
+    def activate_node(self, node: NodeId) -> None:
+        """Run the double-click contributor that claims ``node`` (M6.0s)."""
+        from app.features.form_builder.integration.activate_ext import default_registry as activators
+
+        activators().activate(self, node)
+
+    @property
     def workbench(self) -> FormWorkbench:
         """The tab's workbench: left sections, the canvas, the drawer and split slots (M5.0s)."""
         return self._workbench
@@ -408,6 +427,8 @@ class FormSurface(QWidget):
         self._modes = OverlayModes(self)
         self._toolbar.tab_order.clicked.connect(lambda _checked=False: self._modes.toggle(TAB_ORDER))
         self._toolbar.buddies.clicked.connect(lambda _checked=False: self._modes.toggle(BUDDIES))
+        for overlay_kind, toggle in self._toolbar.overlay_toggles.items():
+            toggle.clicked.connect(lambda _checked=False, kind=overlay_kind: self._modes.toggle(kind))
         self._toolbar.attach_preview(self._workbench.canvas.preview)
         options = getattr(self, "preview_control", None)
         if options is not None:
@@ -668,6 +689,8 @@ class FormSurface(QWidget):
             if self._toolbar.xml.isChecked():
                 return False
         node_id = self._node_for_detail(detail)
+        if node_id is None and self._reveal_code(detail):
+            return True
         if node_id is not None:
             self._session.selection.set((node_id,), source=SelectionSource.PROGRAM)
             if self._session.selection.state.current != node_id:
@@ -685,6 +708,20 @@ class FormSurface(QWidget):
             self._toolbar.xml.setChecked(True)
         editor.go_to_line(line)
         return True
+
+    def _reveal_code(self, detail: Optional[Mapping[str, str]]) -> bool:
+        """A Problems row that names code (``fb_code_path``, M6.0s) opens it when no widget is named."""
+        if not detail:
+            return False
+        relative = detail.get("fb_code_path") or ""
+        root = self._request.project_root or ""
+        if not relative or not root:
+            return False
+        try:
+            line = int(detail.get("fb_code_line") or 1)
+        except ValueError:
+            line = 1
+        return bool(self.code_bridge.open_at(os.path.join(root, relative), line))
 
     def preview_problem(self, detail: Optional[Mapping[str, str]], line: int = 0) -> bool:
         """A single click on a Problems row. ``line`` is the row's own line number."""
@@ -1116,7 +1153,8 @@ class FormSurface(QWidget):
             self._hover_sentence = ""
             return
         edits = enter_opens_editor(self._session.document, node)
-        self._hover_sentence = hover_sentence(self._session.document, node, edits)
+        claimed = self.activation_claim(self._session.document, node)
+        self._hover_sentence = hover_sentence(self._session.document, node, edits, claimed)
 
     def ask_delete(self, prose: str, ids: Sequence[NodeId]) -> None:
         anchor, _bounds = self._place(ids)
@@ -1375,6 +1413,8 @@ class FormSurface(QWidget):
     def sync_overlay_toggles(self, active: str) -> None:
         self._toolbar.tab_order.setChecked(active == TAB_ORDER)
         self._toolbar.buddies.setChecked(active == BUDDIES)
+        for kind, toggle in self._toolbar.overlay_toggles.items():
+            toggle.setChecked(active == kind)
         self._sync_drawer_escape()
 
     def style_banner(self) -> None:
@@ -2001,6 +2041,7 @@ class FormSurface(QWidget):
             self._toolbar.xml,
             self._toolbar.tab_order,
             self._toolbar.buddies,
+            *self._toolbar.overlay_toggles.values(),
             self._toolbar.undo,
             self._toolbar.redo,
             self._toolbar.zoom_out,
