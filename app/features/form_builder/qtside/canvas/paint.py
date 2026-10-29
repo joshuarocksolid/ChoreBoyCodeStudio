@@ -19,7 +19,9 @@ from app.features.form_builder.qtside.canvas.core.frame import (
     Spring,
     Stroke,
 )
+from app.features.form_builder.qtside.canvas.core.overlay import LayerItem
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
+from app.features.form_builder.qtside.canvas.layers import paint_layer_item
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
 
 _CHIP_RADIUS = 4.0
@@ -50,6 +52,9 @@ def _paint_one(painter: QPainter, item: Item, palette: CanvasPalette) -> None:
         _stroke(painter, item, palette)
         return
     if isinstance(item, Fill):
+        if isinstance(item, LayerItem):
+            paint_layer_item(painter, item, palette, _fill)
+            return
         _fill(painter, item, palette)
         return
     if isinstance(item, Spring):
