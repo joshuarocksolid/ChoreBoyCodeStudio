@@ -116,8 +116,12 @@ def _merge_pictures(
     for resource in wanted:
         source = os.path.join(info.folder, PICTURES_FOLDER, resource[len(":/%s/" % PICTURES_FOLDER):])
         if not os.path.isfile(source):
-            raise ProjectOpError("The template is missing the picture %s." % os.path.basename(source))
+            # The form already pointed at a picture that was missing when the template was saved.
+            wanted = [item for item in wanted if item != resource]
+            continue
         sources.append(source)
+    if not sources:
+        return text, []
     outcome = add_pictures(root, qrc, sources, fs)
     mapping: Dict[str, str] = dict(zip(wanted, outcome.resource_paths))
     edited = rewritten_form(text, rewrite=mapping, includes=(include_location(ui_path, outcome.qrc_path),))

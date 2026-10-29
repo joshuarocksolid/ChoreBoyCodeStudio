@@ -91,7 +91,7 @@ def _template_for(key: str):  # type: ignore[no-untyped-def]
 
 def _user_spec(info: TemplateInfo) -> FormTemplate:
     """The card record of a saved template. It creates at once, like the built-in cards."""
-    return FormTemplate(info.card_key, info.title, info.description, GROUP_YOURS, info.root_class or "QWidget", True, None)
+    return FormTemplate(info.card_key, info.title, info.description, GROUP_YOURS, info.root_class or "QWidget", not info.error, None)
 
 
 class NewFormPanel(QWidget):
@@ -481,6 +481,8 @@ class NewFormPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # The cards and fields take focus and the area scrolls them into view; the area itself is no Tab stop.
+        scroll.setFocusPolicy(Qt.NoFocus)
         outer.addWidget(scroll)
         self._scroll = scroll
         host = QWidget()

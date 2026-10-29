@@ -134,7 +134,8 @@ def perform_create(
     if registry is not None:
         surface = registry.surface_for_path(os.path.abspath(ui_path))
         if saved_template is not None:
-            chosen = None
+            # UX-TMPL-003: the root is selected. Its object name is the class name the stem gives.
+            chosen = class_name_for_stem(stem.strip())
         else:
             chosen = first_widget if ui_text is not None else first_useful_widget(template)
         select_created_widget(surface, chosen)

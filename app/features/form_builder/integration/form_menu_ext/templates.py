@@ -90,7 +90,7 @@ def save_now(surface: Any, name: str, description: str, scope: str, *, replace: 
             project_root=root,
             name=name,
             description=description,
-            ui_text=session.text,
+            ui_text=session.text(),
             ui_path=str(session.path),
             thumbnail=thumbnail_png(surface),
             replace=replace,
