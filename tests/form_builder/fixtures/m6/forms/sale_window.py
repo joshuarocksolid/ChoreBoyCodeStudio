@@ -1,3 +1,4 @@
+# pyright: reportMissingImports=false
 from PySide6.QtWidgets import QDialog
 
 from forms.ui_sale import Ui_Sale

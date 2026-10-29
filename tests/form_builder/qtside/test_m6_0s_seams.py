@@ -113,7 +113,8 @@ def test_a_section_added_from_a_new_file_shows_in_order_with_its_predicate_and_t
         host = pane.behavior
         # Order 5, then the M3 list standing in for Events at 30; the form-only section is hidden, the broken one never shown.
         assert host.shown_sections() == ["probe.top", "connections"]
-        assert host.section_widget("probe.top").painted >= 1
+        top = host.section_widget("probe.top")
+        assert top is not None and top.painted >= 1
         add = next(button for button in pane.findChildren(QPushButton) if "Add connection" in button.text())
         assert add.isVisibleTo(window)
         layout = host.layout()
@@ -301,7 +302,7 @@ def test_a_registered_overlay_opens_like_the_built_in_ones_and_one_is_open_at_a_
     try:
         assert modes.open("nonsense") is False
         assert modes.open("probe") is True and modes.active == "probe"
-        assert canvas.banner[:3] == ("buddy", "Probe", "Drag from a widget to the widget it should act on.")
+        assert canvas.banner is not None and canvas.banner[:3] == ("buddy", "Probe", "Drag from a widget to the widget it should act on.")
         assert "probe_layer" in canvas.layers and canvas.claimer == modes.claim and synced[-1] == "probe"
         assert modes.open("buddies") is True and modes.active == "buddies"
         assert "probe_layer" not in canvas.layers
@@ -326,7 +327,7 @@ def test_link_by_keyboard_start_pick_receiver_home_for_the_form_and_esc_cancels_
         assert modes.claim(_key(Qt.Key.Key_Return)) is True and modes.link_source == ok
         assert status[-1] == "from ok" and links == []
         session.selection.set((email,), current=email, source=SelectionSource.CANVAS)
-        assert canvas.layers["probe_layer"].candidate == email  # the selected widget is the receiver
+        assert canvas.layers["probe_layer"].candidate == email  # type: ignore[attr-defined]  # the selected widget is the receiver
         assert modes.claim(_key(Qt.Key.Key_Return)) is True
         assert links == [(ok, email)] and modes.link_source is None
         # Home picks the form.

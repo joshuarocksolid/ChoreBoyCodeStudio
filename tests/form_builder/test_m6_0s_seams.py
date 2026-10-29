@@ -360,11 +360,11 @@ def test_a_problem_in_code_carries_its_file_and_line_to_the_row() -> None:
     rows = {
         row.message: row for row in problems_bridge.code_diagnostics_for_form("/p/forms/sale.ui", (in_code, in_form))
     }
-    row = rows["sale_window.py can't be read."]
-    assert row.detail["fb_code_path"] == "forms/sale_window.py" and row.detail["fb_code_line"] == "7"
-    assert row.detail["location_label"] == "sale_window.py:7"
-    plain = rows["saveButton: x"]
-    assert "fb_code_path" not in plain.detail and plain.detail["location_label"] == "saveButton"
+    code_row = dict(rows["sale_window.py can't be read."].detail or {})
+    assert code_row["fb_code_path"] == "forms/sale_window.py" and code_row["fb_code_line"] == "7"
+    assert code_row["location_label"] == "sale_window.py:7"
+    plain = dict(rows["saveButton: x"].detail or {})
+    assert "fb_code_path" not in plain and plain["location_label"] == "saveButton"
 
 
 def test_double_click_on_a_code_row_opens_the_code_only_when_no_widget_is_named(tmp_path: Path) -> None:
