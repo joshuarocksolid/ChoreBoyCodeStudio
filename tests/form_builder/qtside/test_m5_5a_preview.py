@@ -111,7 +111,7 @@ def test_the_aa_menu_lists_styles_and_screens_with_the_caption_and_remembers_a_p
         screen_menu = _submenu(menu, "Screen")
         for sub in (style_menu, screen_menu):
             first = sub.actions()[0]
-            assert first.isSeparator() and first.text() == CAPTION
+            assert first.defaultWidget().text() == CAPTION and not first.isEnabled(), "the caption is words, never a choice"
         styles = [a for a in style_menu.actions() if a.isCheckable()]
         assert styles[0].text() == "Fusion · as on ChoreBoy" and styles[0].isChecked()
         assert [a.text() for a in styles[1:]]  # every other style the runtime reports, by name

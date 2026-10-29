@@ -34,6 +34,7 @@ from app.qt.QtWidgets import (
     QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 from app.qt.qt_compat import enum_value, event_pos
 
@@ -535,8 +536,8 @@ class FormToolbar(QWidget):
         """Style and Screen in the Aa menu (UX-PREV-001, R3 178 and 179), and the Preview button (UX-WB-003).
 
         Both submenus start with the caption that says the canvas never changes (D21). They are
-        rebuilt each time the menu opens, so the styles the preview runtime reported and the
-        user's screens are always current.
+        built each time the menu opens (not when the tab opens, so no settings are read until then), so the
+        styles the preview runtime reported and the user's screens are always current.
         """
         menu = self.text_size.menu()
         if menu is None:
@@ -558,7 +559,6 @@ class FormToolbar(QWidget):
                 _fill_screen_menu(screen_menu, control)
 
         menu.aboutToShow.connect(rebuild)
-        rebuild()
 
     def set_compact(self, compact: bool) -> None:
         self.tab_order.setText("" if compact else "Tab order")
@@ -649,12 +649,32 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
     )
 
 
+def _add_caption(menu: QMenu, text: str) -> None:
+    """A line of words at the top of a menu that is never a choice: shown in every style, skipped by the arrow keys.
+
+    ``addSection`` shows its words only in some styles (not in macOS or Windows), and the caption has to be
+    readable wherever the preview runs.
+    """
+    label = QLabel(text, menu)
+    label.setObjectName("formBuilder.menuCaption")
+    label.setWordWrap(True)
+    label.setFixedWidth(280)
+    label.setContentsMargins(12, 6, 12, 6)
+    label.setAccessibleName(text)
+    action = QWidgetAction(menu)
+    action.setObjectName("formBuilder.menuCaptionAction")
+    action.setDefaultWidget(label)
+    menu.addAction(action)
+    action.setEnabled(False)
+    label.setEnabled(True)
+
+
 def _fill_style_menu(menu: QMenu, control: Any) -> None:
     """Fusion first (checked by default), then every style the preview runtime reports."""
     from app.features.form_builder.engine.preview_options import CAPTION, style_label
 
     menu.clear()
-    menu.addSection(CAPTION)
+    _add_caption(menu, CAPTION)
     group = QActionGroup(menu)
     group.setExclusive(True)
     chosen = control.choices.style.lower()
@@ -672,7 +692,7 @@ def _fill_screen_menu(menu: QMenu, control: Any) -> None:
     from app.features.form_builder.engine.preview_options import ADD_SCREEN, CAPTION
 
     menu.clear()
-    menu.addSection(CAPTION)
+    _add_caption(menu, CAPTION)
     group = QActionGroup(menu)
     group.setExclusive(True)
     chosen = control.current_profile().name
