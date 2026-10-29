@@ -39,6 +39,10 @@ def test_an_action_shows_its_rows_the_places_it_is_used_and_a_group_drop_down(qa
                     "action.checkable", "action.enabled", "action.visible", "action.shortcutContext", "action.group"):
             assert key in rows, (key, rows)
         assert "action.checked" not in rows  # only while "Can be ticked" is on
+        assert "action.statusTipNote" not in rows
+        tip = pane.findChild(QWidget, "formBuilder.row.action.statusTip")
+        captions = [label.text() for label in tip.findChildren(QLabel)]
+        assert "Shows in the status bar while the pointer is on it." in captions
         header = pane.findChild(QLabel, "formBuilder.inspectorCrumbs")
         assert header.text().startswith("Used in ") and "File" in header.text()
         # Text writes through; the object name stays.

@@ -29,10 +29,11 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
     if not isinstance(state, PaintState) or not state.items:
         return LayerOutput()
     view = getattr(static, "view")
+    font = (state.font_family, state.font_point_size, state.font_pixel_size)
     items = []
     for item in state.items:
         rect = view.to_canvas(Rect(item.x, item.y, item.width, item.height))
-        items.append(LayerItem(rect=rect, role="layout_faint", layer=NAME, data=(item, view.factor)))
+        items.append(LayerItem(rect=rect, role="layout_faint", layer=NAME, data=(item, view.factor) + font))
     return LayerOutput(tuple(items))
 
 
@@ -43,19 +44,35 @@ def _color(text: str) -> QColor:
     return QColor("#" + text)
 
 
+def menu_font(
+    base: QFont, factor: float, family: str, point_size: float, pixel_size: int
+) -> QFont:
+    """The form's font at this zoom. A missing size keeps the old 12 px times zoom."""
+    font = QFont(family) if family else QFont(base)
+    if point_size > 0:
+        font.setPointSizeF(max(1.0, float(point_size) * float(factor)))
+    elif pixel_size > 0:
+        font.setPixelSize(max(8, int(round(int(pixel_size) * float(factor)))))
+    else:
+        font.setPixelSize(max(8, int(round(12 * float(factor)))))
+    return font
+
+
 def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
     data = item.data
-    if not isinstance(data, tuple) or len(data) != 2:
+    if not isinstance(data, tuple) or len(data) < 2:
         return
-    spec, factor = data
+    spec, factor = data[0], data[1]
+    family = data[2] if len(data) > 2 and isinstance(data[2], str) else ""
+    point_size = float(data[3]) if len(data) > 3 and isinstance(data[3], (int, float)) else 0.0
+    pixel_size = int(data[4]) if len(data) > 4 and isinstance(data[4], int) else 0
     if not isinstance(spec, PaintItem):
         return
     over = palette.overlay
     box = QRectF(item.rect.x, item.rect.y, item.rect.width, item.rect.height)
     painter.save()
     try:
-        font = QFont(painter.font())
-        font.setPixelSize(max(8, int(round(12 * float(factor)))))
+        font = menu_font(painter.font(), float(factor), family, point_size, pixel_size)
         painter.setFont(font)
         ink = _color(over.stand_in_text)
         if spec.kind == "hint":
@@ -117,8 +134,12 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
             return
         if spec.kind == "caption":
             painter.setPen(_color(over.type_here_text))
-            font.setPixelSize(max(8, int(round(10 * float(factor)))))
-            painter.setFont(font)
+            smaller = QFont(font)
+            if smaller.pointSizeF() > 0:
+                smaller.setPointSizeF(max(1.0, smaller.pointSizeF() * 10.0 / 12.0))
+            else:
+                smaller.setPixelSize(max(8, int(round(smaller.pixelSize() * 10.0 / 12.0))))
+            painter.setFont(smaller)
             painter.drawText(box, int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), spec.text)
     finally:
         painter.restore()

@@ -24,6 +24,7 @@ from app.features.form_builder.qtside.inspector.model import (
     inspected_ids,
     project_header,
     tab_order_stale,
+    tabstops_only,
 )
 from app.features.form_builder.qtside.realize import Realizer
 from app.features.form_builder.qtside.theme.chrome import (
@@ -336,6 +337,9 @@ class InspectorPane(QWidget):
 
     def _on_log(self, changeset: ChangeSet) -> None:
         self._memo.invalidate(changeset)
+        if tabstops_only(changeset):
+            self.properties.note_tab_order()
+            return
         self._paint_header()
         self._schedule()
 
@@ -502,7 +506,8 @@ def _stylesheet(chrome: FormChrome) -> str:
         " border: %dpx solid %s; }"
         "QLabel { color: %s; background: transparent; }"
         "QCheckBox { color: %s; background: transparent; }"
-        "QLabel#formBuilder\\.inspectorClass, QLabel#formBuilder\\.rowQtName,"
+        "QLabel#formBuilder\\.inspectorClass { color: %s; }"
+        "QLabel#formBuilder\\.rowQtName,"
         " QWidget#formBuilder\\.inspectorGlyph { color: %s; }"
         "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
         " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"],"
@@ -536,6 +541,7 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.border,
             width,
             chrome.accent,
+            chrome.text,
             chrome.text,
             chrome.text,
             chrome.muted,

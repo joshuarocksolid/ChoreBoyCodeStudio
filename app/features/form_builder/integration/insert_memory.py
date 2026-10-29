@@ -74,6 +74,12 @@ def shared_store(state_root: str) -> "InsertMemoryStore":
     return found
 
 
+def forget_cached() -> None:
+    """Every shared store reads the settings file again on its next ``load``."""
+    for store in _STORES.values():
+        store.forget()
+
+
 class InsertMemoryStore:
     """Load and save one user's Insert state. Implements ``qtside.insert.ports.InsertMemoryPort``."""
 
@@ -89,42 +95,61 @@ class InsertMemoryStore:
                 self._memory = InsertMemory()
         return self._memory
 
-    def _save(self, memory: InsertMemory) -> None:
-        self._memory = memory
+    def _change(self, change: Callable[[InsertMemory], InsertMemory]) -> None:
+        """Apply ``change`` to the Insert state as it is in the file now, not as this store last saw it.
+
+        Settings > Form designer writes ``insert.view`` from another service, so
+        a change made from the cached state would put the old view back.
+        """
+        made: Dict[str, InsertMemory] = {}
+
+        def updater(payload: Dict[str, Any]) -> Dict[str, Any]:
+            made["memory"] = change(memory_from_payload(payload))
+            return payload_with_insert(payload, made["memory"])
+
         try:
-            self._service.update_global(lambda payload: payload_with_insert(payload, memory))
+            self._service.update_global(updater)
         except OSError:
-            return
+            made["memory"] = change(self.load())
+        self._memory = made["memory"]
+
+    def forget(self) -> None:
+        """Read the file again on the next ``load`` (after another writer changed it)."""
+        self._memory = None
 
     def recent(self) -> Tuple[str, ...]:
         return self.load().recent
 
     def note_used(self, key: str) -> None:
-        current = self.load()
         if not key:
             return
-        moved = (key,) + tuple(item for item in current.recent if item != key)
-        self._save(InsertMemory(moved[:RECENT_LIMIT], current.view, current.expanded))
+
+        def used(memory: InsertMemory) -> InsertMemory:
+            moved = (key,) + tuple(item for item in memory.recent if item != key)
+            return InsertMemory(moved[:RECENT_LIMIT], memory.view, memory.expanded)
+
+        self._change(used)
 
     def clear_recent(self) -> None:
-        current = self.load()
-        self._save(InsertMemory((), current.view, current.expanded))
+        self._change(lambda memory: InsertMemory((), memory.view, memory.expanded))
 
     def view(self) -> str:
         return self.load().view
 
     def set_view(self, view: str) -> None:
-        current = self.load()
-        self._save(InsertMemory(current.recent, view if view in VIEWS else "", current.expanded))
+        chosen = view if view in VIEWS else ""
+        self._change(lambda memory: InsertMemory(memory.recent, chosen, memory.expanded))
 
     def expanded_states(self) -> Dict[str, bool]:
         return dict(self.load().expanded)
 
     def set_expanded(self, category: str, expanded: bool) -> None:
-        current = self.load()
-        states = dict(current.expanded)
-        states[category] = bool(expanded)
-        self._save(InsertMemory(current.recent, current.view, states))
+        def toggled(memory: InsertMemory) -> InsertMemory:
+            states = dict(memory.expanded)
+            states[category] = bool(expanded)
+            return InsertMemory(memory.recent, memory.view, states)
+
+        self._change(toggled)
 
 
 class InMemoryInsertMemory:

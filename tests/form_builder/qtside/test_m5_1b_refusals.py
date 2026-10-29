@@ -14,6 +14,7 @@ from app.features.form_builder.engine.query.drop_target import (
     DropPayload,
     RefusedDrop,
     central_redirect,
+    cover_parts,
     hosts_from,
     resolve_drop,
 )
@@ -47,6 +48,26 @@ def test_a_widget_dragged_over_a_toolbar_a_menu_bar_or_a_status_bar_is_refused_w
         assert isinstance(result, RefusedDrop), key
         assert result.sentence == PART_REFUSALS[kind]
         assert result.indicator.role == "problem"
+
+
+def test_a_widget_dragged_over_a_painted_open_menu_is_refused_like_a_menu_bar() -> None:
+    session = _window()
+    doc = session.document
+    parts = q.parts(doc)
+    rects = {
+        doc.root.id: Rect(0, 0, 600, 400),
+        parts["menubar"][0].id: Rect(0, 0, 600, 24),
+        parts["central"][0].id: Rect(0, 56, 600, 320),
+    }
+    root = hosts_from(doc, rects)
+    point = (50, 100)
+    open_drop = resolve_drop(root, point, DropPayload("widget"))
+    assert not isinstance(open_drop, RefusedDrop)
+    covered = cover_parts(root, ((parts["menubar"][0].id, "menu", Rect(40, 80, 180, 120)),))
+    result = resolve_drop(covered, point, DropPayload("widget"))
+    assert isinstance(result, RefusedDrop)
+    assert result.sentence == PART_REFUSALS["menu"]
+    assert result.indicator.role == "problem"
 
 
 def test_a_keyboard_insert_with_a_toolbar_selected_goes_to_the_central_area_and_says_so() -> None:

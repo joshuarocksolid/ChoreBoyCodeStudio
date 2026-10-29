@@ -4,10 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.features.form_builder.engine.layout_actions import NeedsConfirm
 from app.features.form_builder.engine.query import actions as q
 from app.features.form_builder.integration.workbench_ext import LeftSection
 from app.features.form_builder.qtside.actions.pane import ActionsPane
-from app.qt.QtWidgets import QMessageBox
+from app.features.form_builder.qtside.layout_gestures import ask
+from app.qt.QtCore import QPoint, QRect
+from app.qt.QtWidgets import QTreeWidget, QWidget
 
 
 def _shown(session: Any) -> bool:
@@ -17,14 +20,24 @@ def _shown(session: Any) -> bool:
 
 
 def _confirm(parent: Any, sentence: str, ok: str) -> bool:
-    box = QMessageBox(parent)
-    box.setIcon(QMessageBox.Icon.Question)
-    box.setText(sentence)
-    accept = box.addButton(ok, QMessageBox.ButtonRole.AcceptRole)
-    cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-    box.setDefaultButton(cancel)
-    box.exec()
-    return box.clickedButton() is accept
+    """The same anchored confirm the layout tools use, beside the selected row."""
+    if not isinstance(parent, QWidget):
+        return False
+
+    def place() -> tuple:
+        tree = parent.findChild(QTreeWidget)
+        item = tree.currentItem() if tree is not None else None
+        if tree is not None and item is not None:
+            local = tree.visualItemRect(item)
+            origin = tree.viewport().mapToGlobal(local.topLeft())
+            subject = QRect(origin, local.size())
+        else:
+            origin = parent.mapToGlobal(QPoint(0, 0))
+            subject = QRect(origin, parent.size())
+        window = parent.window() or parent
+        return subject, window.frameGeometry()
+
+    return ask(parent, None, place)(NeedsConfirm(sentence, ok))
 
 
 def _build(workbench: Any) -> ActionsPane:

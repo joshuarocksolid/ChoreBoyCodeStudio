@@ -791,6 +791,21 @@ The PR body for any logic WP lists: the invariants touched, the seeds and case c
 
 ---
 
+## 14. Per-user settings keys (M5.5c)
+
+The form builder's per-user choices live in the `form_builder` object of the global settings file (`settings.json` in the Code Studio settings folder). Settings > Form designer (UX-TMPL-006, `integration/settings_page.py`) writes the first six; lanes read them with the defaults below, treating a missing or wrongly typed value as the default.
+
+| Key | Values | Default (absent) | Read by |
+| --- | --- | --- | --- |
+| `preview_style` | a `QStyleFactory` style name | Fusion, as on ChoreBoy | M5.5a preview (UX-PREV-001) |
+| `preview_screen` | `small` (1024 × 600), `full_hd` (1920 × 1080) | the ChoreBoy screen, 1366 × 768 | M5.5a preview (UX-PREV-001) |
+| `preview_prewarm` | bool | `true` | preview process start (§10.3) |
+| `insert.view` | `icons`, `list` | Automatic | Insert pane (UX-M5 Insert) |
+| `qt_names` | bool | `false` | inspector (UX-INSP-005) |
+| `template_scope` | `user`, `project` | `user` ("All my projects") | Save as template (UX-TMPL-001) |
+
+Other lanes keep their own keys in the same object (`workbench`, `insert.recent`, …). Writing rules (MUST): every write goes through `SettingsService.update_global` with an updater that changes only its own keys. `update_global` re-reads the file before applying the updater, so a builder write and a shell write never drop each other's keys, whichever `SettingsService` instance makes them. Settings dialog pages register with `app/shell/settings_pages.py` (`SettingsPage(key, title, build, apply)`): the dialog builds them from the payload it opened with and, after OK, passes them the re-read payload it is about to save, so the page's keys and the shell's are one write.
+
 ## Appendix A. Spike: kept, replaced, dropped
 
 | Spike element | Verdict | Production |

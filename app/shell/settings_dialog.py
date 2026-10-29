@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any, Mapping
 
 from app.qt.QtWidgets import (
     QAbstractItemView,
@@ -42,6 +43,7 @@ from app.shell.settings_dialog_general import (
 )
 from app.shell.settings_dialog_handlers import SettingsDialogHandlersMixin
 from app.shell.settings_dialog_state import GeneralTabState
+from app.shell.settings_pages import apply_built_pages, build_registered_pages
 from app.shell.settings_dialog_tables import (
     finalize_keybindings_columns,
     finalize_linter_columns,
@@ -115,6 +117,7 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         python_tooling_runtime_details: str = UNKNOWN_SETTINGS_COPY.runtime_details,
         python_tooling_config_text: str = UNKNOWN_SETTINGS_COPY.config_text,
         python_tooling_config_details: str = UNKNOWN_SETTINGS_COPY.config_details,
+        global_settings_payload: Mapping[str, Any] | None = None,
     ) -> None:  # type: ignore[no-untyped-def]
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -231,6 +234,11 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
         build_syntax_tab(self, tabs)
         build_linter_tab(self, tabs, snapshot, project_snapshot)
         build_files_tab(self, tabs, snapshot)
+        # Feature pages need the real payload to fill from; without one they are left out
+        # rather than shown with defaults that OK would then save over the user's values.
+        self._feature_pages = (
+            build_registered_pages(tabs, global_settings_payload) if global_settings_payload is not None else []
+        )
 
         self._validation_banner_label = QLabel(self)
         self._validation_banner_label.setObjectName("shell.settingsDialog.validationBanner")
@@ -240,6 +248,10 @@ class SettingsDialog(SettingsDialogHandlersMixin, QDialog):
 
         build_buttons_row(self, layout)
         apply_initial_scope(self, initial_scope)
+
+    def apply_feature_pages(self, global_payload: Mapping[str, Any]) -> dict[str, Any]:
+        """``global_payload`` with the keys of the pages features registered (``app.shell.settings_pages``)."""
+        return apply_built_pages(self._feature_pages, global_payload)
 
     def reveal_completion_mode_control(self) -> None:
         """Show the General tab scrolled to the code completion control, with focus on it."""

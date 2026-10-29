@@ -29,8 +29,14 @@ class PaintItem:
     opens: bool = False
     current: bool = False
     selected: bool = False
+    #: The menu or toolbar this box belongs to. Zero when the item is not a host.
+    host: int = 0
 
 
 @dataclass(frozen=True)
 class PaintState:
     items: Tuple[PaintItem, ...] = ()
+    #: The form root's font, so painted menus match the page rather than a fixed 12 px.
+    font_family: str = ""
+    font_point_size: float = 0.0
+    font_pixel_size: int = 0

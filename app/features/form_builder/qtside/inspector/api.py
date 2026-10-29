@@ -146,6 +146,8 @@ class OpenRow:
     origin: str = ""
     #: A dynamic property (``stdset="0"``). The row offers rename, type and remove.
     dynamic: bool = False
+    #: A sentence drawn under this row. Empty rows keep the tooltip only.
+    note: str = ""
     match: Optional[Match] = None
 
     @property
@@ -246,6 +248,8 @@ class RowSpec:
     exclude_classes: Tuple[str, ...] = ()
     #: When set, the row is shown only when this returns true.
     visible: Optional[Callable[[UiDocument, Tuple[NodeId, ...]], bool]] = None
+    #: Drawn under the row, the way a field caption sits under its editor.
+    note: str = ""
 
 class EditSession(Protocol):
     """See ``_services.EditSession``: one focus visit or one popover, one undo step."""

@@ -35,12 +35,13 @@ from app.features.form_builder.qtside.theme.style_tokens import INSERT_COLOUR, o
 from app.features.form_builder.qtside.style.verdict import check_text
 from app.features.form_builder.qtside.theme.chrome import FormChrome, default_chrome
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
-from app.qt.QtGui import QColor, QFont, QPainter, QPen, QTextCursor
+from app.qt.QtGui import QColor, QFont, QKeyEvent, QKeySequence, QPainter, QPen, QTextCursor
 from app.qt.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMenu,
     QPlainTextEdit,
     QPushButton,
@@ -49,6 +50,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from app.qt.qt_compat import enum_value
 
 APPLY_MS = 300
 HEADER_HEIGHT = 32
@@ -171,6 +173,39 @@ class _Gutter(QWidget):
         super().mousePressEvent(event)  # type: ignore[arg-type]
 
 
+def _is_find(event: QKeyEvent) -> bool:
+    sequence = QKeySequence(int(enum_value(event.modifiers())) | int(enum_value(event.key())))
+    found = QKeySequence(QKeySequence.Find)
+    return found.matches(sequence) == QKeySequence.ExactMatch
+
+
+class _FindBar(QWidget):
+    """A find line for the drawer's editor. Ctrl+F outside the drawer does not open it."""
+
+    def __init__(self, drawer: "StyleDrawer") -> None:
+        super().__init__(drawer)
+        self.setObjectName("formBuilder.styleFind")
+        self._drawer = drawer
+        row = QHBoxLayout(self)
+        row.setContentsMargins(8, 4, 8, 4)
+        row.setSpacing(6)
+        self.edit = QLineEdit(self)
+        self.edit.setObjectName("formBuilder.styleFindEdit")
+        self.edit.setPlaceholderText("Find")
+        self.edit.setAccessibleName("Find in style sheet")
+        self.edit.returnPressed.connect(self._drawer.find_next)
+        self.edit.installEventFilter(self)
+        row.addWidget(self.edit, 1)
+        self.hide()
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.KeyPress and isinstance(event, QKeyEvent) and event.key() == Qt.Key.Key_Escape:
+            self.hide()
+            self._drawer.editor.setFocus()
+            return True
+        return False
+
+
 class _EscapeFilter(QObject):
     def __init__(self, drawer: "StyleDrawer") -> None:
         super().__init__(drawer)
@@ -254,6 +289,8 @@ class StyleDrawer(QFrame):
         row.addWidget(self._insert)
         row.addWidget(self._done)
         outer.addWidget(header)
+        self._find = _FindBar(self)
+        outer.addWidget(self._find)
 
         body = QWidget(self)
         body_row = QHBoxLayout(body)
@@ -281,6 +318,35 @@ class StyleDrawer(QFrame):
     @property
     def editor(self) -> QPlainTextEdit:
         return self._editor
+
+    def event(self, event: QEvent) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.ShortcutOverride and isinstance(event, QKeyEvent) and _is_find(event):
+            event.accept()
+            self.open_find()
+            return True
+        return super().event(event)
+
+    def open_find(self) -> None:
+        """Ctrl+F while focus is in the drawer. Elsewhere in the form tab is unchanged."""
+        showing = self._find.isVisible() and self._find.edit.text()
+        self._find.show()
+        self._find.edit.setFocus()
+        if showing:
+            self.find_next()
+        else:
+            self._find.edit.selectAll()
+
+    def find_next(self) -> None:
+        text = self._find.edit.text()
+        if not text:
+            return
+        editor = self._editor
+        if editor.find(text):
+            return
+        cursor = editor.textCursor()
+        cursor.movePosition(QTextCursor.MoveOperation.Start)
+        editor.setTextCursor(cursor)
+        editor.find(text)
 
     @property
     def target(self) -> Optional[NodeId]:
@@ -312,6 +378,8 @@ class StyleDrawer(QFrame):
             "QToolButton#formBuilder\\.styleInsert, QPushButton#formBuilder\\.styleDone, QComboBox#formBuilder\\.styleScope {"
             " color: %(text)s; background: %(input)s; border: 1px solid %(border)s; border-radius: 3px; padding: 2px 10px; }"
             "QToolButton#formBuilder\\.styleInsert::menu-indicator { image: none; width: 0px; }"
+            "QWidget#formBuilder\\.styleFind { background: %(panel)s; border-bottom: 1px solid %(border)s; }"
+            "QLineEdit#formBuilder\\.styleFindEdit { background: %(input)s; color: %(text)s; border: 1px solid %(border)s; }"
             "QPlainTextEdit#formBuilder\\.styleEditor { background: %(input)s; color: %(text)s; border: none; }"
             % {
                 "panel": chrome.panel,
