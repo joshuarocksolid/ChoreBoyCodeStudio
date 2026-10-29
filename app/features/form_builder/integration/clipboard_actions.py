@@ -42,6 +42,8 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, InsertResult
 from app.features.form_builder.engine.commands.participants import default_registry
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query import actions as action_query
+from app.features.form_builder.engine.query.drop_target import CENTRAL_NOTE, central_redirect
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -175,7 +177,15 @@ def _duplicate(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId])
     _insert(host, session, ids, fragment, undo_label="Duplicate", copied=copied)
 
 
+CENTRAL_REFUSAL = "The central area belongs to the window. Delete what's inside it instead."
+
+
 def _delete(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
+    document = session.document
+    central = [part.id for part in action_query.parts(document)["central"]] if action_query.is_main_window(document) else []
+    if len(ids) == 1 and ids[0] in central:
+        host.narrate(CENTRAL_REFUSAL)  # UX-MAIN-014, from the outline and the Edit menu too
+        return
     targets = _deletable(session.document, ids)
     if not targets:
         return
@@ -240,6 +250,11 @@ def _insert(
     copied: Optional[Sequence[Optional[CopiedBox]]] = None,
 ) -> None:
     document = session.document
+    # UX-MAIN-016: with a toolbar, menu or status bar selected, widgets land in the central area.
+    central = central_redirect(document, ids[0] if ids else None)
+    redirected = central is not None and all(spec.kind == "widget" for spec in fragment.nodes)
+    if central is not None and redirected:
+        ids = [central]
     count = pasted_widget_count(fragment)
     known = {id(spec): box for spec, box in zip(fragment.nodes, copied or ()) if box is not None}
 
@@ -262,7 +277,9 @@ def _insert(
     result = outcome.result
     if outcome.noop or not isinstance(result, InsertResult):
         return
-    if undo_label == "Duplicate":
+    if redirected:
+        host.narrate(CENTRAL_NOTE)
+    elif undo_label == "Duplicate":
         host.narrate(duplicate_sentence(document, ids))
     else:
         host.narrate(paste_sentence(document, ids, count))

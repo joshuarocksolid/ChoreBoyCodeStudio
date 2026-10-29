@@ -99,15 +99,10 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
                 painter.setPen(ink)
             area = box.adjusted(8, 0, -8, 0)
             if spec.kind == "edit":
-                if spec.selected and text:
-                    width = painter.fontMetrics().horizontalAdvance(text) + 4
-                    painter.fillRect(QRectF(area.left(), box.top() + 3, width, box.height() - 6), _color(over.select))
-                    painter.setPen(_color(over.chip_text))
-                painter.drawText(area, int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
-                if not spec.selected:
-                    caret = area.left() + painter.fontMetrics().horizontalAdvance(text) + 1
-                    painter.setPen(QPen(ink, 1.0))
-                    painter.drawLine(int(caret), int(box.top() + 4), int(caret), int(box.bottom() - 4))
+                # The text, caret and selection are a frameless line edit on top (qtside/actions/glue.py).
+                painter.setPen(QPen(_color(over.select), max(1.0, over.min_stroke)))
+                painter.setBrush(_color(over.stand_in_fill))
+                painter.drawRect(box.adjusted(0.5, 0.5, -0.5, -0.5))
                 return
             painter.drawText(area, int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft), text)
             if spec.extra:
@@ -116,6 +111,9 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
             if spec.opens:
                 painter.setPen(ink)
                 painter.drawText(area, int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight), "▸")
+            return
+        if spec.kind == "drop":
+            painter.fillRect(box, _color(over.select))
             return
         if spec.kind == "caption":
             painter.setPen(_color(over.type_here_text))

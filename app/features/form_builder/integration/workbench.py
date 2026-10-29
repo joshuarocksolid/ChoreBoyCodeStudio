@@ -80,12 +80,14 @@ from app.features.form_builder.qtside.canvas.core.palette import (
 )
 from app.features.form_builder.engine.commands.drop_plan import auto_target
 from app.features.form_builder.engine.query.drop_target import (
+    CENTRAL_NOTE,
     AcceptedDrop,
     DropPayload,
     NoDrop,
     OutlineRow,
     RefusedDrop,
     blocked_ids,
+    central_redirect,
     resolve_outline,
 )
 from app.features.form_builder.integration.insert_memory import LazyInsertMemory
@@ -99,6 +101,7 @@ from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas, _drop_payload
 from app.features.form_builder.integration.clipboard_actions import publish_xml
+from app.features.form_builder.engine.query import actions as q_actions
 from app.features.form_builder.integration.workbench_ext import LeftSection, WorkbenchSlots, default_slots
 from app.features.form_builder.integration.pieces import (
     piece_for_ids,
@@ -2750,6 +2753,7 @@ class FormWorkbench(QWidget):
         name = in_sentence(entry.friendly if entry is not None else tile[2])
         payload = DropPayload(tile[1], dock=key == "QDockWidget", wizard_page=key == "QWizardPage")
         current = self._session.selection.state.current
+        redirected = central_redirect(self._session.document, current) is not None
         commands = auto_commands(self._session.document, current, payload, fragment)
         if not commands:
             self._report_refusal(payload, current)
@@ -2763,6 +2767,8 @@ class FormWorkbench(QWidget):
             return
         self._insert_memory.note_used(key)
         self.insert.refresh_recent()
+        if redirected:
+            self.outline.report(CENTRAL_NOTE)
         if any(isinstance(command, InsertFormRow) for command in commands):
             # UX-CAT-011: a keyboard insert's label editor hands focus back to the Insert tile when it closes.
             self._return_to_insert = self._insert_has_focus()
@@ -2812,9 +2818,27 @@ class FormWorkbench(QWidget):
         self.outline.report("Nothing to insert here. Select a place first.")
 
     def _open_window_kind(self, key: str) -> None:
+        if key.startswith("part:"):
+            self._add_main_window_part(key[len("part:"):])
+            return
         opener = getattr(self.window(), "_open_new_form_card", None)
         if callable(opener):
             opener(key)
+
+    def _add_main_window_part(self, part: str) -> None:
+        """Insert search rows "Menu bar · add to this window" ... (UX-MAIN-002): this form, not New form."""
+        from app.features.form_builder.engine.commands.base import CommandRejected
+        from app.features.form_builder.engine.commands.catalog_ext.main_window import AddMainWindowPart
+
+        try:
+            self._session.log.execute(AddMainWindowPart(part))
+        except CommandRejected as refusal:
+            sentence = str(refusal)
+            doc = self._session.document
+            if not q_actions.is_main_window(doc):
+                friendly = load_catalog().friendly_for_class(q_actions.root_class(doc)) or "widget"
+                sentence = "%s This form is a %s." % (sentence, friendly.lower())
+            self.outline.report(sentence)
 
     def _place_from_outline(self, key: str) -> None:
         self._place_tile(key)

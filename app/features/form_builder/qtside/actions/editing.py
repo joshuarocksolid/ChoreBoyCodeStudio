@@ -154,6 +154,15 @@ class MenuEditor:
         self._env.say(GRAMMAR)
         return True
 
+    def click(self, host: NodeId, slot: int) -> bool:
+        """A click on a title, entry, button or "Type here" starts editing there (UX-MAIN-004)."""
+        if not self.start(host):
+            return False
+        level = self.levels[-1]
+        level.slot = max(0, slot)
+        self._focus_selection()
+        return True
+
     def leave(self) -> None:
         self.levels = []
         self.editor = None
@@ -368,6 +377,44 @@ class MenuEditor:
             self._refresh_reuse()
             return True
         return True
+
+    def set_text(self, text: str) -> None:
+        """The in-place line edit changed the text (typing, paste, composition, a selection replaced)."""
+        editor = self.editor
+        if editor is None or editor.text == text:
+            return
+        editor.text = text
+        editor.selected = False
+        editor.reuse_open = True
+        self._refresh_reuse()
+
+    def reuse_phrase(self) -> str:
+        """The current reuse row as a sentence for assistive tech: ``New action “Pri”, 1 of 2``."""
+        editor = self.editor
+        if editor is None or not editor.reuse_open:
+            return ""
+        rows = self._reuse_rows()
+        if not rows:
+            return ""
+        current = editor.reuse_index if editor.reuse_index is not None else self._default_reuse()
+        current = max(0, min(len(rows) - 1, current))
+        return "%s, %d of %d" % (rows[current].label, current + 1, len(rows))
+
+    def focus_phrase(self) -> str:
+        """The focused entry as a sentence: ``File menu, entry Quit``; empty when editing is off."""
+        if not self.levels:
+            return ""
+        level = self.levels[-1]
+        entries = self._entries(level)
+        where = q.host_phrase(self._env.document, level.host) if level.host is not None else "new submenu"
+        if level.slot < len(entries):
+            entry = entries[level.slot]
+            what = "separator" if entry.kind == "separator" else "entry %s" % q.plain_text(entry.text or entry.name)
+        elif level.slot == len(entries):
+            what = "Type here"
+        else:
+            what = "Add separator"
+        return "Menu editing. %s, %s." % (where, what)
 
     def _reuse_rows(self) -> Tuple[ReuseRow, ...]:
         editor = self.editor
