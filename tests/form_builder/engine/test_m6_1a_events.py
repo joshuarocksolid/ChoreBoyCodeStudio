@@ -706,9 +706,9 @@ def test_the_intents_register_through_the_intents_package() -> None:
 def test_a_list_the_codec_cannot_write_is_refused_as_fb401() -> None:
     log = open_log(form())
     before = saved(log.document)
-    raw = read_list('[{"do": "message", "n": 1}]').steps[0]
-    assert raw.raw is not None
-    nan = type(raw.raw)(raw.raw.verb, None, True, (("n", float("nan")),), ())
+    from app.features.form_builder.engine.logic.codec import Step
+
+    nan = Step("message", None, True, (("n", float("nan")),), ())
     with pytest.raises(CommandRejected) as caught:
         log.execute(SetEventSteps("clearButton", "clicked", (CLEAR, EventStep("message", raw=nan))))
     assert caught.value.code == "FB401" and saved(log.document) == before
