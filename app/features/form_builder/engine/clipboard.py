@@ -18,6 +18,8 @@ from app.features.form_builder.engine.commands.placement import (
 )
 from app.features.form_builder.engine.commands.refs import NAME_FIELD
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.logic.codec import read_marker
+from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
 from app.features.form_builder.engine.query.tree import (
     form_item_role,
     form_rows,
@@ -35,6 +37,10 @@ from app.features.form_builder.engine.ui4.nodes import (
 from app.features.form_builder.engine.ui4.schema import SCHEMA
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import CStringValue, NumberValue, RectValue, StringValue
+
+#: The attribute a copied top-level element carries: its source form's logic version (CONTRACTS 15.8).
+#: Readers of a plain ``.ui`` ignore it; ``InsertFragment`` reads it and strips it.
+FRAGMENT_LOGIC_ATTR = "cbcslogicversion"
 
 _COPYABLE = frozenset({"widget", "layout", "spacer", "action", "actiongroup", "buttongroup"})
 _PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
@@ -78,6 +84,7 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
     specs = tuple(_without_ids(doc.node(node_id).to_spec()) for node_id in roots)
     names = set(_listed_names(specs))
     specs = tuple(_without_outside_buddies(spec, names) for spec in specs)
+    specs = _with_logic_version(doc, specs)
     connections = [
         _without_ids(node.to_spec())
         for node in doc.connections()
@@ -87,6 +94,71 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
         nodes=specs,
         connections=tuple(connections),
         customwidgets=_custom_widgets(doc, specs),
+    )
+
+
+def _with_logic_version(doc: UiDocument, specs: Tuple[NodeSpec, ...]) -> Tuple[NodeSpec, ...]:
+    """Carry the form's logic version on each copied top-level element, when the form has a marker.
+
+    A marker that can't be read travels as one past the supported version, which makes the
+    paste target read-only exactly as the source is (UX D20)."""
+    entry = doc.root.prop("cbcsLogic")
+    if entry is None or not specs:
+        return specs
+    marker = read_marker(entry)
+    version = marker.version if marker.readable and marker.version is not None else SUPPORTED_LOGIC_VERSION + 1
+    return tuple(
+        NodeSpec(
+            kind=spec.kind,
+            id=spec.id,
+            fields=spec.fields,
+            properties=spec.properties,
+            attributes=spec.attributes,
+            slots=spec.slots,
+            extra_attrs=tuple(pair for pair in spec.extra_attrs if pair[0] != FRAGMENT_LOGIC_ATTR)
+            + ((FRAGMENT_LOGIC_ATTR, str(version)),),
+        )
+        for spec in specs
+    )
+
+
+def fragment_logic_version(fragment: Fragment) -> Optional[int]:
+    """The highest logic version any element of ``fragment`` carries, or None."""
+    found: Optional[int] = None
+    for top in fragment.nodes:
+        for spec in top.iter_subtree():
+            for name, text in spec.extra_attrs:
+                if name != FRAGMENT_LOGIC_ATTR:
+                    continue
+                try:
+                    version = int(text)
+                except ValueError:
+                    version = SUPPORTED_LOGIC_VERSION + 1
+                found = version if found is None else max(found, version)
+    return found
+
+
+def _without_version_attr(spec: NodeSpec) -> NodeSpec:
+    return NodeSpec(
+        kind=spec.kind,
+        id=spec.id,
+        fields=spec.fields,
+        properties=spec.properties,
+        attributes=spec.attributes,
+        slots=tuple((name, tuple(_without_version_attr(child) for child in kids)) for name, kids in spec.slots),
+        extra_attrs=tuple(pair for pair in spec.extra_attrs if pair[0] != FRAGMENT_LOGIC_ATTR),
+    )
+
+
+def without_logic_version(fragment: Fragment) -> Fragment:
+    """``fragment`` with the version attribute removed everywhere, so it never reaches a form."""
+    if fragment_logic_version(fragment) is None:
+        return fragment
+    return Fragment(
+        nodes=tuple(_without_version_attr(spec) for spec in fragment.nodes),
+        connections=fragment.connections,
+        customwidgets=fragment.customwidgets,
+        resources=fragment.resources,
     )
 
 
