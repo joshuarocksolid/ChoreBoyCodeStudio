@@ -98,3 +98,15 @@ def test_selecting_a_widget_on_a_hidden_page_from_the_outline_shows_that_page() 
         assert write_ui(session.document).text == before, "showing a page never writes the file"
         canvas.dispose()
         parent.deleteLater()
+
+
+def test_a_picture_cell_keeps_the_number_that_tells_files_apart() -> None:
+    """The picker elided "img_012.png" to "img…png", so every numbered file read the same."""
+    from app.features.form_builder.qtside.inspector.editors._picture_picker import cell_name
+    from app.qt.QtGui import QFont, QFontMetrics
+
+    metrics = QFontMetrics(QFont())
+    for name in ("img_012.png", "receipt_logo_large_0042.png"):
+        shown = cell_name(metrics, name, 52)
+        assert metrics.horizontalAdvance(shown) <= 52
+        assert name.rsplit(".", 1)[0][-2:] in shown, shown

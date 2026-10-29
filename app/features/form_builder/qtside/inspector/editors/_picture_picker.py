@@ -111,6 +111,17 @@ def _focus(name: str) -> object:
     return getattr(getattr(Qt, "FocusPolicy", Qt), name)
 
 
+def cell_name(metrics: QFontMetrics, file_name: str, width: int) -> str:
+    """A grid cell's caption. Numbered files differ at the end ("img_012.png"),
+    so a long name drops its extension first, then elides from the left."""
+    if metrics.horizontalAdvance(file_name) <= width:
+        return file_name
+    stem = file_name.rsplit(".", 1)[0] if "." in file_name[1:] else file_name
+    if metrics.horizontalAdvance(stem) <= width:
+        return stem
+    return metrics.elidedText(stem, _elide_mode("ElideLeft"), width)
+
+
 def _elide_mode(name: str) -> object:
     return getattr(getattr(Qt, "TextElideMode", Qt), name)
 
@@ -305,9 +316,7 @@ class PictureGrid(QWidget):
                 painter.setPen(QPen(accent, 2))
                 painter.drawRect(rect.adjusted(1, 1, -2, -2))
             painter.setPen(error if missing else text)
-            name = QFontMetrics(self.font()).elidedText(
-                picture.file_name, _elide_mode("ElideMiddle"), _CELL_W - 4
-            )
+            name = cell_name(QFontMetrics(self.font()), picture.file_name, _CELL_W - 4)
             painter.drawText(
                 QRect(slot.x, thumb.bottom() + 1, _CELL_W, 14),
                 _align("AlignHCenter", "AlignTop"),
