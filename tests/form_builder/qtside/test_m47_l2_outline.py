@@ -135,3 +135,45 @@ def test_closing_a_new_rows_label_editor_selects_the_field(qapp: QApplication, t
     surface.release()
     parent.deleteLater()
     _flush()
+
+
+def test_outline_item_text_screenshots(qapp: QApplication, tmp_path) -> None:  # type: ignore[no-untyped-def]
+    """Skips unless CBCS_FB_SCREENSHOT_DIR is set. Light and high-contrast dark, outline with item text."""
+    import os
+    from pathlib import Path
+
+    from app.qt.QtWidgets import QTreeWidget, QWidget
+    from app.shell.theme_tokens import tokens_from_palette
+    from tests.form_builder.qtside.test_m4_pages_keyboard import _flush
+    from tests.unit.features.form_builder.test_workbench import _open
+
+    folder = os.environ.get("CBCS_FB_SCREENSHOT_DIR")
+    if not folder:
+        pytest.skip("CBCS_FB_SCREENSHOT_DIR is not set")
+    out = Path(folder)
+    out.mkdir(parents=True, exist_ok=True)
+    parent = QWidget()
+    parent.resize(1280, 800)
+    surface = _open(parent, _COMBO, tmp_path / "items.ui")
+    surface.resize(1280, 800)
+    parent.show()
+    surface.show()
+    _flush()
+    session = surface._session
+    combo = _id(session, "size")
+    draft = load_draft(session.document, combo)
+    assert draft is not None
+    extra = tuple(replace(draft.items[0], texts=(word,), id=None) for word in ("Large", "Huge"))
+    items, _rows, _cols = commit_slots(replace(draft, items=draft.items + extra))
+    session.log.execute(SetItems(combo, items, None, None, merge_token="shot", widget_name="size"))
+    _flush()
+    for mode in ("light", "high_contrast_dark"):
+        surface.apply_theme(tokens_from_palette(qapp.palette(), force_mode=mode))
+        _flush()
+        tree = surface.findChild(QTreeWidget, "formBuilder.structure")
+        assert tree is not None
+        tree.window().grab().save(str(out / ("outline-item-text-%s.png" % mode)), "PNG")
+        surface.grab().save(str(out / ("outline-item-text-%s-full.png" % mode)), "PNG")
+    surface.release()
+    parent.deleteLater()
+    _flush()
