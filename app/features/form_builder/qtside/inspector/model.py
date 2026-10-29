@@ -768,6 +768,7 @@ def _open_or_kept(
         return _locked(spec, qt_name, value, KEPT_AS_IS, origin)
     return OpenRow(
         spec.key, spec.label, qt_name, spec.help, value, value_spec, key, write, origin, dynamic,
+        note=spec.note,
     )
 
 def _flag_bit(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], source: FlagBit) -> Optional[Row]:

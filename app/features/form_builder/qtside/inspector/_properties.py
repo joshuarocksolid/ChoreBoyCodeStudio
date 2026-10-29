@@ -1221,6 +1221,10 @@ class _Row(QWidget):
         if not self._invalid and self._editor is not None:
             self._editor.show(view.value)
             self._show_canvas_refusal(view)
+        if isinstance(view, OpenRow) and not self._invalid:
+            refused = self._caption is not None and self._caption.isVisible() and self._caption.text() == CANVAS_REFUSED_TEXT
+            if not refused:
+                self._set_caption(view.note, error=False)
         self._elide_label()
         self._sync_reset()
 

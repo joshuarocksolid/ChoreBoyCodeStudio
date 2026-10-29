@@ -86,8 +86,10 @@ def _action_rows() -> Tuple[RowSpec, ...]:
         RowSpec("action.icon", _CONTENT, "Icon", "A small picture beside the text.", Prop("icon"), classes=on),
         RowSpec("action.shortcut", _CONTENT, "Shortcut", "A key that runs it.", Prop("shortcut"), classes=on),
         RowSpec("action.toolTip", _CONTENT, "Tooltip", "Shown when the pointer rests on it.", Prop("toolTip"), classes=on),
-        RowSpec("action.statusTip", _CONTENT, "Status tip", STATUS_TIP_CAPTION, Prop("statusTip"), classes=on),
-        RowSpec("action.statusTipNote", _CONTENT, "", STATUS_TIP_CAPTION, Note(STATUS_TIP_CAPTION), classes=on, after="action.statusTip"),
+        RowSpec(
+            "action.statusTip", _CONTENT, "Status tip", STATUS_TIP_CAPTION, Prop("statusTip"),
+            classes=on, note=STATUS_TIP_CAPTION,
+        ),
         RowSpec("action.whatsThis", _CONTENT, "Help text", "Help shown by the What's This tool.", Prop("whatsThis"), classes=on),
         RowSpec("action.checkable", _INPUT, "Can be ticked", "It shows a tick that the user switches on and off.", Prop("checkable"), classes=on),
         RowSpec("action.checked", _INPUT, "Starts ticked", "Whether the tick starts on.", Prop("checked"), classes=on, visible=_ticked),
