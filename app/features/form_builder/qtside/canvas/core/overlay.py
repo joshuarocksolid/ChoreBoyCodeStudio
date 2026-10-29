@@ -496,7 +496,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     dim = any(layer.name in MODE_LAYERS for layer in inputs.layers)
     if not live:
         shown_static = _without_refused_hint(static.items, view, inputs)
-        items.extend(_dimmed(shown_static) if dim else shown_static)
+        items.extend(shown_static)
         focused = _focused_layouts(document, primary)
         _sites(items, view, inputs.knobs, focused)
     if not dim:
@@ -531,6 +531,10 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     _paint_dock_bands(items, static, inputs)
     _anchor_ticks(items, static, document, primary)
     plus_hits = _plus_hits(items, static, document, gesture, shown)
+    # Selection strokes and knob ticks are added after the static layer. Dim
+    # them once here, then let the overlay's own marks stay at full strength.
+    if dim:
+        items[:] = _dimmed(items)
     layer_targets = _run_layers(items, static, inputs) if inputs.layers else ()
 
     faces, requests = _requests(static, inputs, shown, rects)
