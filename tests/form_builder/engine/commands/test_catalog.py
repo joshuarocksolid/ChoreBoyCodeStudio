@@ -66,6 +66,7 @@ from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import (
     CStringValue,
+    EnumValue,
     NumberValue,
     RectValue,
     SizeValue,
@@ -336,13 +337,82 @@ def test_morph_vbox_to_grid_uses_one_column() -> None:
     assert cell_of(doc, "label") == (1, 0)
 
 
-def test_morph_widget_keeps_properties_when_the_class_table_is_empty() -> None:
+def test_morph_widget_keeps_the_properties_the_new_class_has() -> None:
     log = open_log(BOX)
     doc = log.document
     dropped = log.execute(MorphWidget(nid(doc, "okButton"), "QLabel")).result
     assert dropped == ()
     assert doc.node(nid(doc, "okButton")).field("class_name") == "QLabel"
     assert prop_text(doc, "okButton") == "OK"
+
+
+_LEGACY_MARGIN = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>Form</class>
+ <widget class="QWidget" name="Form">
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <property name="spacing">
+    <number>6</number>
+   </property>
+   <property name="margin"%s>
+    <number>9</number>
+   </property>
+   <item>
+    <widget class="QLabel" name="label"/>
+   </item>
+   <item>
+    <widget class="QWidget" name="plain"/>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+@pytest.mark.parametrize("stdset", ["", ' stdset="0"'])
+def test_morph_layout_keeps_the_legacy_margin_and_spacing(stdset: str) -> None:
+    log = open_log(_LEGACY_MARGIN % stdset)
+    doc = log.document
+    assert doc.root.layout is not None
+    log.execute(MorphLayout(doc.root.layout.id, "QGridLayout"))
+    layout = doc.root.layout
+    assert layout is not None and layout.class_name == "QGridLayout"
+    names = [entry.name for entry in layout.properties()]
+    assert "margin" in names and "spacing" in names
+
+
+def test_new_layout_properties_go_where_designer_writes_them() -> None:
+    log = open_log(_LEGACY_MARGIN % ' stdset="0"')
+    doc = log.document
+    assert doc.root.layout is not None
+    layout_id = doc.root.layout.id
+    log.execute(SetProperty(layout_id, "leftMargin", NumberValue(3)))
+    log.execute(SetProperty(layout_id, "sizeConstraint", EnumValue("QLayout::SizeConstraint::SetFixedSize")))
+    names = [entry.name for entry in doc.node(layout_id).properties()]
+    assert names == ["spacing", "sizeConstraint", "margin", "leftMargin"]
+
+
+def test_a_custom_property_edit_never_overwrites_a_real_qt_property() -> None:
+    log = open_log(_LEGACY_MARGIN % "")
+    doc = log.document
+    label = nid(doc, "label")
+    log.execute(SetProperty(label, "text", StringValue("real")))
+    plain = nid(doc, "plain")
+    log.execute(SetPropertyMany((plain, label), "text", StringValue("dyn"), stdset="0"))
+    entry = doc.node(label).prop("text")
+    assert entry is not None and entry.value == StringValue("real") and entry.stdset != "0"
+
+
+def test_a_page_attribute_is_not_written_on_a_widget_that_is_not_a_page() -> None:
+    log = open_log(_LEGACY_MARGIN % "")
+    doc = log.document
+    log.execute(
+        SetPropertyMany((nid(doc, "plain"), nid(doc, "label")), "title", StringValue("T"), kind="attribute")
+    )
+    assert doc.node(nid(doc, "plain")).attr("title") is None
+    assert doc.node(nid(doc, "label")).attr("title") is None
 
 
 def test_simplify_grid_closes_an_empty_row() -> None:

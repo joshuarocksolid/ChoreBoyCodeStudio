@@ -115,18 +115,41 @@ def _live() -> Dict[str, object]:
     return {"text": proc.stdout}
 
 
+def _comparable(table: Dict[str, object], defaults_too: bool) -> Dict[str, object]:
+    """What two dumps of the same Qt must agree on. A volatile default is not
+    compared, and default values only when the platform is the same."""
+    classes = table["classes"]
+    assert isinstance(classes, dict)
+    found: Dict[str, object] = {}
+    for name, body in classes.items():
+        entry = {key: body[key] for key in ("super", "module", "flags", "signals", "slots", "default_signal")}
+        props = []
+        for item in body["properties"]:
+            kept = {key: item[key] for key in ("name", "kind", "designable", "stored", "enum", "notify")}
+            kept["volatile"] = item["volatile"]
+            if defaults_too and not item["volatile"]:
+                kept["default"] = item["default"]
+            props.append(kept)
+        entry["properties"] = props
+        if defaults_too:
+            entry["defaults"] = {key: value for key, value in body["defaults"].items() if value is not None}
+        found[name] = entry
+    found["$enums"] = table["enums"]
+    return found
+
+
 def _first_difference(have: Dict[str, object], want: Dict[str, object]) -> Optional[str]:
-    have_classes = have["classes"]
-    want_classes = want["classes"]
-    assert isinstance(have_classes, dict) and isinstance(want_classes, dict)
-    for name in sorted(set(have_classes) | set(want_classes)):
-        if name not in have_classes:
+    for name in sorted(set(have) | set(want)):
+        if name not in have:
             return "%s is missing from the committed table" % name
-        if name not in want_classes:
+        if name not in want:
             return "%s is not a class in the running Qt" % name
-        left, right = have_classes[name], want_classes[name]
+        left, right = have[name], want[name]
         if left == right:
             continue
+        if name == "$enums":
+            return "the enum table differs"
+        assert isinstance(left, dict) and isinstance(right, dict)
         for key in sorted(set(left) | set(right)):
             if key == "properties":
                 mine = {item["name"]: item for item in left[key]}
@@ -138,12 +161,12 @@ def _first_difference(have: Dict[str, object], want: Dict[str, object]) -> Optio
                     return "%s property order differs" % name
             elif left.get(key) != right.get(key):
                 return "%s.%s differs" % (name, key)
-    if have.get("enums") != want.get("enums"):
-        return "the enum table differs"
     return None
 
 
 def test_the_committed_table_matches_the_running_qt() -> None:
+    """Skips on another Qt. Default values are compared only on the same platform
+    (the committed table is the Linux one); everything else is compared always."""
     text = str(_live()["text"])
     live = json.loads(text)
     committed = json.loads(_DATA.read_text(encoding="utf-8"))
@@ -153,6 +176,10 @@ def test_the_committed_table_matches_the_running_qt() -> None:
         )
     if live["missing_modules"] != committed["missing_modules"]:
         pytest.skip("this Qt lacks %s" % (live["missing_modules"],))
-    difference = _first_difference(committed, live)
+    same_platform = live["platform"] == committed["platform"]
+    difference = _first_difference(
+        _comparable(committed, same_platform), _comparable(live, same_platform)
+    )
     assert difference is None, difference
-    assert text == _DATA.read_text(encoding="utf-8"), "same data, different bytes: rerun the dump"
+    if same_platform:
+        assert text == _DATA.read_text(encoding="utf-8"), "same data, different bytes: rerun the dump"

@@ -2,6 +2,7 @@
  "format":1,
  "qt_version":"6.8.3",
  "pyside_version":"6.8.3",
+ "platform":"linux",
  "style":"Fusion",
  "missing_modules":[],
  "classes":{
@@ -187,10 +188,10 @@
    "slots":["setSelectedDate(QDate)","setDateRange(QDate,QDate)","setCurrentPage(int,int)","setGridVisible(bool)","setNavigationBarVisible(bool)","showNextMonth()","showPreviousMonth()","showNextYear()","showPreviousYear()","showSelectedDate()","showToday()"],
    "default_signal":null,
    "properties":[
-    {"name":"selectedDate","kind":"date","default":{"kind":"date","year":2026,"month":10,"day":29},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
+    {"name":"selectedDate","kind":"date","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null},
     {"name":"minimumDate","kind":"date","default":{"kind":"date","year":-4714,"month":11,"day":25},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"maximumDate","kind":"date","default":{"kind":"date","year":9999,"month":12,"day":31},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
-    {"name":"firstDayOfWeek","kind":"enum","default":{"kind":"enum","text":"Qt::DayOfWeek::Sunday"},"designable":true,"stored":true,"volatile":false,"enum":"Qt::DayOfWeek","notify":null},
+    {"name":"firstDayOfWeek","kind":"enum","default":null,"designable":true,"stored":true,"volatile":true,"enum":"Qt::DayOfWeek","notify":null},
     {"name":"gridVisible","kind":"bool","default":{"kind":"bool","value":false},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"selectionMode","kind":"enum","default":{"kind":"enum","text":"QCalendarWidget::SelectionMode::SingleSelection"},"designable":true,"stored":true,"volatile":false,"enum":"QCalendarWidget::SelectionMode","notify":null},
     {"name":"horizontalHeaderFormat","kind":"enum","default":{"kind":"enum","text":"QCalendarWidget::HorizontalHeaderFormat::ShortDayNames"},"designable":true,"stored":true,"volatile":false,"enum":"QCalendarWidget::HorizontalHeaderFormat","notify":null},
@@ -241,7 +242,7 @@
    "super":"QWidget",
    "module":"QtWidgets",
    "flags":["widget"],
-   "defaults":{"sizePolicy":{"kind":"sizepolicy","hsizetype":"Preferred","vsizetype":"Fixed","horstretch":0,"verstretch":0},"focusPolicy":{"kind":"enum","text":"Qt::FocusPolicy::TabFocus"}},
+   "defaults":{"sizePolicy":{"kind":"sizepolicy","hsizetype":"Preferred","vsizetype":"Fixed","horstretch":0,"verstretch":0},"focusPolicy":{"kind":"enum","text":"Qt::FocusPolicy::WheelFocus"}},
    "signals":["editTextChanged(QString)","activated(int)","textActivated(QString)","highlighted(int)","textHighlighted(QString)","currentIndexChanged(int)","currentTextChanged(QString)"],
    "slots":["clear()","clearEditText()","setEditText(QString)","setCurrentIndex(int)","setCurrentText(QString)"],
    "default_signal":"currentIndexChanged(int)",
@@ -306,12 +307,12 @@
     {"name":"minimumDate","kind":"date","default":{"kind":"date","year":1752,"month":9,"day":14},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"maximumTime","kind":"time","default":{"kind":"time","hour":23,"minute":59,"second":59},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"minimumTime","kind":"time","default":{"kind":"time","hour":0,"minute":0,"second":0},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
-    {"name":"currentSection","kind":"enum","default":{"kind":"enum","text":"QDateTimeEdit::Section::MonthSection"},"designable":true,"stored":true,"volatile":false,"enum":"QDateTimeEdit::Section","notify":null},
-    {"name":"displayedSections","kind":"set","default":{"kind":"set","text":"QDateTimeEdit::Section::AmPmSection|QDateTimeEdit::Section::DateSections_Mask|QDateTimeEdit::Section::HourSection|QDateTimeEdit::Section::MinuteSection"},"designable":true,"stored":true,"volatile":false,"enum":"QDateTimeEdit::Section","notify":null},
+    {"name":"currentSection","kind":"enum","default":null,"designable":true,"stored":true,"volatile":true,"enum":"QDateTimeEdit::Section","notify":null},
+    {"name":"displayedSections","kind":"set","default":null,"designable":true,"stored":true,"volatile":true,"enum":"QDateTimeEdit::Section","notify":null},
     {"name":"displayFormat","kind":"string","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null},
     {"name":"calendarPopup","kind":"bool","default":{"kind":"bool","value":false},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"currentSectionIndex","kind":"number","default":{"kind":"number","value":0},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
-    {"name":"sectionCount","kind":"number","default":{"kind":"number","value":6},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
+    {"name":"sectionCount","kind":"number","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null},
     {"name":"timeSpec","kind":"enum","default":{"kind":"enum","text":"Qt::TimeSpec::LocalTime"},"designable":true,"stored":true,"volatile":false,"enum":"Qt::TimeSpec","notify":null},
     {"name":"timeZone","kind":"other","default":null,"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null}
    ]
@@ -326,7 +327,7 @@
    "default_signal":null,
    "properties":[
     {"name":"wrapping","kind":"bool","default":{"kind":"bool","value":false},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
-    {"name":"notchSize","kind":"number","default":{"kind":"number","value":1},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
+    {"name":"notchSize","kind":"number","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null},
     {"name":"notchTarget","kind":"double","default":{"kind":"double","value":"3.700000000000000"},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"notchesVisible","kind":"bool","default":{"kind":"bool","value":false},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null}
    ]
@@ -367,7 +368,7 @@
    "slots":[],
    "default_signal":null,
    "properties":[
-    {"name":"floating","kind":"bool","default":{"kind":"bool","value":true},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":"topLevelChanged(bool)"},
+    {"name":"floating","kind":"bool","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":"topLevelChanged(bool)"},
     {"name":"features","kind":"set","default":{"kind":"set","text":"QDockWidget::DockWidgetFeature::DockWidgetClosable|QDockWidget::DockWidgetFeature::DockWidgetFloatable|QDockWidget::DockWidgetFeature::DockWidgetMovable"},"designable":true,"stored":true,"volatile":false,"enum":"QDockWidget::DockWidgetFeature","notify":"featuresChanged(QDockWidget::DockWidgetFeatures)"},
     {"name":"allowedAreas","kind":"set","default":{"kind":"set","text":"Qt::DockWidgetArea::AllDockWidgetAreas|Qt::DockWidgetArea::DockWidgetArea_Mask"},"designable":true,"stored":true,"volatile":false,"enum":"Qt::DockWidgetArea","notify":"allowedAreasChanged(Qt::DockWidgetAreas)"},
     {"name":"windowTitle","kind":"string","default":{"kind":"string","text":""},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null}
@@ -397,7 +398,7 @@
    "super":"QDialog",
    "module":"QtWidgets",
    "flags":["widget"],
-   "defaults":{"modal":{"kind":"bool","value":true},"windowModality":{"kind":"enum","text":"Qt::WindowModality::ApplicationModal"}},
+   "defaults":{},
    "signals":[],
    "slots":["showMessage(QString)","showMessage(QString,QString)"],
    "default_signal":null,
@@ -412,7 +413,7 @@
    "slots":[],
    "default_signal":null,
    "properties":[
-    {"name":"viewMode","kind":"enum","default":{"kind":"enum","text":"QFileDialog::ViewMode::List"},"designable":true,"stored":true,"volatile":false,"enum":"QFileDialog::ViewMode","notify":null},
+    {"name":"viewMode","kind":"enum","default":null,"designable":true,"stored":true,"volatile":true,"enum":"QFileDialog::ViewMode","notify":null},
     {"name":"fileMode","kind":"enum","default":{"kind":"enum","text":"QFileDialog::FileMode::AnyFile"},"designable":true,"stored":true,"volatile":false,"enum":"QFileDialog::FileMode","notify":null},
     {"name":"acceptMode","kind":"enum","default":{"kind":"enum","text":"QFileDialog::AcceptMode::AcceptOpen"},"designable":true,"stored":true,"volatile":false,"enum":"QFileDialog::AcceptMode","notify":null},
     {"name":"defaultSuffix","kind":"string","default":{"kind":"string","text":""},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
@@ -434,7 +435,7 @@
    "super":"QComboBox",
    "module":"QtWidgets",
    "flags":["widget"],
-   "defaults":{"focusPolicy":{"kind":"enum","text":"Qt::FocusPolicy::WheelFocus"},"editable":{"kind":"bool","value":true},"count":null,"currentText":null,"currentIndex":null},
+   "defaults":{"editable":{"kind":"bool","value":true},"count":null,"currentText":null,"currentIndex":null},
    "signals":["currentFontChanged(QFont)"],
    "slots":["setCurrentFont(QFont)"],
    "default_signal":null,
@@ -489,7 +490,7 @@
     {"name":"lineWidth","kind":"number","default":{"kind":"number","value":1},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"midLineWidth","kind":"number","default":{"kind":"number","value":0},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"frameWidth","kind":"number","default":{"kind":"number","value":0},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
-    {"name":"frameRect","kind":"rect","default":{"kind":"rect","x":0,"y":0,"width":640,"height":480},"designable":false,"stored":true,"volatile":false,"enum":null,"notify":null}
+    {"name":"frameRect","kind":"rect","default":null,"designable":false,"stored":true,"volatile":true,"enum":null,"notify":null}
    ]
   },
   "QGraphicsView":{
@@ -655,6 +656,7 @@
     {"name":"spacing","kind":"number","default":null,"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"contentsMargins","kind":"other","default":null,"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
     {"name":"sizeConstraint","kind":"enum","default":null,"designable":true,"stored":true,"volatile":false,"enum":"QLayout::SizeConstraint","notify":null},
+    {"name":"margin","kind":"number","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null,"extra":true},
     {"name":"leftMargin","kind":"number","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null,"extra":true},
     {"name":"topMargin","kind":"number","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null,"extra":true},
     {"name":"rightMargin","kind":"number","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null,"extra":true},
@@ -807,7 +809,7 @@
    "default_signal":null,
    "properties":[
     {"name":"defaultUp","kind":"bool","default":{"kind":"bool","value":false},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
-    {"name":"nativeMenuBar","kind":"bool","default":{"kind":"bool","value":false},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null}
+    {"name":"nativeMenuBar","kind":"bool","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null}
    ]
   },
   "QMessageBox":{
@@ -1112,7 +1114,7 @@
    "super":"QWidget",
    "module":"QtWidgets",
    "flags":["widget","container","main_window_part"],
-   "defaults":{"minimumSize":null,"minimumWidth":{"kind":"number","value":3},"minimumHeight":null},
+   "defaults":{"minimumSize":null,"minimumWidth":null,"minimumHeight":null},
    "signals":["messageChanged(QString)"],
    "slots":["showMessage(QString,int)","showMessage(QString)","clearMessage()"],
    "default_signal":null,
@@ -1254,7 +1256,7 @@
    "super":"QDateTimeEdit",
    "module":"QtWidgets",
    "flags":["widget"],
-   "defaults":{"maximumDateTime":{"kind":"datetime","hour":23,"minute":59,"second":59,"year":2000,"month":1,"day":1},"minimumDateTime":{"kind":"datetime","hour":0,"minute":0,"second":0,"year":2000,"month":1,"day":1},"maximumDate":{"kind":"date","year":2000,"month":1,"day":1},"minimumDate":{"kind":"date","year":2000,"month":1,"day":1},"currentSection":{"kind":"enum","text":"QDateTimeEdit::Section::HourSection"},"displayedSections":{"kind":"set","text":"QDateTimeEdit::Section::AmPmSection|QDateTimeEdit::Section::HourSection|QDateTimeEdit::Section::MinuteSection"},"sectionCount":{"kind":"number","value":3},"timeSpec":{"kind":"enum","text":"Qt::TimeSpec::UTC"}},
+   "defaults":{"maximumDateTime":{"kind":"datetime","hour":23,"minute":59,"second":59,"year":2000,"month":1,"day":1},"minimumDateTime":{"kind":"datetime","hour":0,"minute":0,"second":0,"year":2000,"month":1,"day":1},"maximumDate":{"kind":"date","year":2000,"month":1,"day":1},"minimumDate":{"kind":"date","year":2000,"month":1,"day":1},"currentSection":{"kind":"enum","text":"QDateTimeEdit::Section::HourSection"},"timeSpec":{"kind":"enum","text":"Qt::TimeSpec::UTC"}},
    "signals":["userTimeChanged(QTime)"],
    "slots":[],
    "default_signal":"timeChanged(QTime)",
@@ -1276,7 +1278,7 @@
     {"name":"orientation","kind":"enum","default":{"kind":"enum","text":"Qt::Orientation::Horizontal"},"designable":true,"stored":true,"volatile":false,"enum":"Qt::Orientation","notify":"orientationChanged(Qt::Orientation)"},
     {"name":"iconSize","kind":"size","default":{"kind":"size","width":24,"height":24},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":"iconSizeChanged(QSize)"},
     {"name":"toolButtonStyle","kind":"enum","default":{"kind":"enum","text":"Qt::ToolButtonStyle::ToolButtonIconOnly"},"designable":true,"stored":true,"volatile":false,"enum":"Qt::ToolButtonStyle","notify":"toolButtonStyleChanged(Qt::ToolButtonStyle)"},
-    {"name":"floating","kind":"bool","default":{"kind":"bool","value":true},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null},
+    {"name":"floating","kind":"bool","default":null,"designable":true,"stored":true,"volatile":true,"enum":null,"notify":null},
     {"name":"floatable","kind":"bool","default":{"kind":"bool","value":true},"designable":true,"stored":true,"volatile":false,"enum":null,"notify":null}
    ]
   },

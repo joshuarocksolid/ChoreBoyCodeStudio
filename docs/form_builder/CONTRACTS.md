@@ -186,8 +186,8 @@ Volatile defaults (font, palette, geometry, sizeHint and anything else that depe
 Rules the dump and the loader follow, all checked against the Designer-resaved corpus:
 
 - `rank` counts across the class chain (QObject first). A class that declares a property again (`QDialog.modal`, `QDockWidget.windowTitle`, `QGridLayout.spacing`) owns that property's position, because Designer writes it there.
-- Designer's sheet has properties Qt's meta-object lacks: the four layout margins and `QLabel.buddy`. The dump lists them after the class's own properties with `"extra": true` and no default. A grid or form layout declares `spacing` again so it follows the margins; box layouts write it before them.
-- A subclass that changes an inherited default lists it in `"defaults"` (for example `QLineEdit.cursor`). A default that differs under another style or font is `volatile` and has none.
+- Designer's sheet has properties Qt's meta-object lacks: the legacy layout `margin` (uic still honours it), the four layout margins and `QLabel.buddy`. The dump lists them after the class's own properties with `"extra": true` and no default. A grid or form layout declares `spacing` again so it follows the margins; box layouts write it before them.
+- A subclass that changes an inherited default lists it in `"defaults"` (for example `QLineEdit.cursor`). The committed table is dumped on Linux (the ChoreBoy platform) and records `platform`. The dump runs three passes (Fusion/en_US, Windows/de_DE with a bigger font, and every widget built with a parent). A default that differs between passes, depends on the clock, locale, installed fonts or platform is `volatile` and has none.
 - A name the table knows ranks as a Qt property even when the entry says `stdset="0"`. Designer writes that for any property whose setter is not `set<Name>` (`isWrapping`).
 
 A test re-runs the dump against the running Qt and fails on any difference, naming the class and property (§13). If FreeCAD moves to a new Qt minor version, the JSON is regenerated in its own PR.

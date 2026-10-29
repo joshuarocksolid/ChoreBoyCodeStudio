@@ -635,7 +635,7 @@ def set_property_many(
     skipped = []
     for owner in owners:
         node = _require(doc, owner)
-        if not _accepts_property(ctx, node, name, kind, stdset):
+        if not _accepts_property(ctx, doc, node, name, kind, stdset):
             skipped.append(owner)
             continue
         set_property(doc, ctx, owner, name, value, kind, stdset)
@@ -1688,15 +1688,39 @@ def _holds_content(node: Node) -> bool:
     return False
 
 
-def _accepts_property(ctx: PlanContext, node: Node, name: str, kind: str, stdset: Optional[str] = None) -> bool:
-    """Whether a multi-select edit applies to ``node``. A class that has no such Qt
-    property skips it, but a custom property (``stdset="0"``) goes anywhere."""
-    if kind != "property" or stdset == "0":
+#: Attributes a tab or toolbox page carries for its parent.
+_PAGE_ATTRIBUTES = frozenset({"title", "label", "icon", "toolTip", "whatsThis"})
+
+
+def _accepts_property(
+    ctx: PlanContext,
+    doc: UiDocument,
+    node: Node,
+    name: str,
+    kind: str,
+    stdset: Optional[str] = None,
+) -> bool:
+    """Whether a multi-select edit applies to ``node``.
+
+    A class that has no such Qt property skips the edit. A custom property
+    (``stdset="0"``) goes anywhere, unless the name is a real Qt property of the
+    node (or of the base of a promoted widget), which it must not overwrite. A page
+    attribute only goes on a page of a tab widget or toolbox."""
+    if kind != "property":
+        if name in _PAGE_ATTRIBUTES and node.attr(name) is None:
+            parent = doc.parent(node.id)
+            return isinstance(parent, WidgetNode) and parent.class_name in ("QTabWidget", "QToolBox")
         return True
-    if node.prop(name) is not None:
+    existing = node.prop(name)
+    class_name = _table_class(ctx, node, doc)
+    known = ctx.classes.class_info(class_name) is not None
+    if stdset == "0":
+        if existing is not None:
+            return existing.stdset == "0"
+        return not (known and ctx.classes.property_info(class_name, name) is not None)
+    if existing is not None:
         return True
-    class_name = _owner_class(node)
-    if ctx.classes.class_info(class_name) is None:
+    if not known:
         return True
     return ctx.classes.property_info(class_name, name) is not None
 

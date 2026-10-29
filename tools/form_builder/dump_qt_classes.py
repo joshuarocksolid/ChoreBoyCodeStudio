@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportUnknownMemberType=false
 """Write the Qt class table the form builder reads (CONTRACTS.md section 2.5).
 
 Run under FreeCAD 1.1's PySide6 with QT_QPA_PLATFORM=offscreen, from the repo root::
@@ -25,6 +26,7 @@ engine's number formatting.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
@@ -104,6 +106,7 @@ DEFAULT_SIGNALS = {
 #: (the most derived declaration decides the position).
 DESIGNER_EXTRA = {
     "QLayout": (
+        ("margin", "number"),
         ("leftMargin", "number"),
         ("topMargin", "number"),
         ("rightMargin", "number"),
@@ -137,6 +140,12 @@ STATE_PROPERTIES = frozenset(
         "focus",
         "layoutDirection",
         "locale",
+        # The calendar opens on today.
+        "selectedDate",
+        # Follows the frame width, which follows the style.
+        "frameRect",
+        # The platform decides whether the menu bar lives in the system menu bar.
+        "nativeMenuBar",
     }
 )
 
@@ -385,13 +394,17 @@ def _text(raw: Any) -> str:
         return str(raw)
 
 
-def _locale_text(cls: type, name: str) -> bool:
-    """Text a spin box or date editor shows is formatted with the locale."""
+def _machine_dependent(cls: type, name: str) -> bool:
+    """Defaults that follow the locale, the installed fonts or the platform."""
     from PySide6 import QtWidgets
 
-    return name in ("text", "displayFormat") and issubclass(
+    if name in ("text", "displayFormat") and issubclass(
         cls, (QtWidgets.QAbstractSpinBox, QtWidgets.QDateTimeEdit)
-    )
+    ):
+        return True
+    if issubclass(cls, QtWidgets.QFontComboBox) and name in ("count", "currentText", "currentIndex"):
+        return True
+    return issubclass(cls, QtWidgets.QFileDialog) and name == "viewMode"
 
 
 # ----------------------------------------------------------------------------
@@ -400,6 +413,8 @@ def _locale_text(cls: type, name: str) -> bool:
 
 
 _KEPT: List[Any] = []
+#: Parent for the widgets the parented pass builds (None: no parent).
+_PARENT: Optional[Any] = None
 
 
 def _keep(item: Any) -> Any:
@@ -415,6 +430,11 @@ def _instance(cls: type) -> Optional[Any]:
     """
     from PySide6 import QtWidgets
 
+    if _PARENT is not None and issubclass(cls, QtWidgets.QWidget):
+        try:
+            return cls(_PARENT)
+        except Exception:
+            pass
     try:
         return cls()
     except Exception:
@@ -457,12 +477,18 @@ class _Collector:
         """class name -> property name -> default JSON (None when unknown)."""
         found: Dict[str, Dict[str, Optional[object]]] = {}
         for name, cls in self.classes.items():
+            if os.environ.get("CBCS_DUMP_TRACE"):
+                sys.stderr.write("class %s\n" % name)
+                sys.stderr.flush()
             obj = _instance(cls)
             table: Dict[str, Optional[object]] = {}
             meta = cls.staticMetaObject
             for index in range(meta.propertyCount()):
                 prop = meta.property(index)
                 kind = _kind_of(prop)
+                if os.environ.get("CBCS_DUMP_TRACE"):
+                    sys.stderr.write("  %s\n" % prop.name())
+                    sys.stderr.flush()
                 if obj is None:
                     table[str(prop.name())] = None
                     continue
@@ -529,6 +555,22 @@ def _order(classes: Dict[str, type]) -> List[str]:
     return ordered
 
 
+def _reject_today(classes: Dict[str, object]) -> None:
+    """A default that is today's date would fail tomorrow: it has to be volatile."""
+    from PySide6.QtCore import QDate
+
+    today = QDate.currentDate()
+    wanted = (today.year(), today.month(), today.day())
+    for name, body in classes.items():
+        assert isinstance(body, dict)
+        found = [(item["name"], item["default"]) for item in body["properties"]]
+        found.extend(body["defaults"].items())
+        for prop, default in found:
+            if isinstance(default, dict) and default.get("kind") in ("date", "datetime"):
+                if (default["year"], default["month"], default["day"]) == wanted:
+                    raise SystemExit("%s.%s defaults to today; mark it volatile" % (name, prop))
+
+
 def build() -> Dict[str, object]:
     from PySide6 import QtCore, QtWidgets
     import PySide6
@@ -536,17 +578,31 @@ def build() -> Dict[str, object]:
     app = QtWidgets.QApplication.instance() or QtWidgets.QApplication(["dump_qt_classes"])
     classes, missing = _classes()
 
-    # Pass A is the reference; pass B (other style, other font) finds what varies.
+    # Pass A is the reference. Pass B (other style, font and locale) and pass C (every
+    # widget built with a parent) find what varies: those defaults are volatile.
+    global _PARENT
+    from PySide6.QtCore import QLocale
     from PySide6.QtGui import QFont
 
-    app.setStyle("Fusion")
-    app.setFont(QFont("Helvetica", 10))
+    base_font = QFont(app.font())
+
+    def settle(style: str, size: int, locale: str) -> None:
+        # Only the size changes: some Linux Qt builds crash on a missing family
+        # once the default locale is set.
+        font = QFont(base_font)
+        font.setPointSize(size)
+        app.setStyle(style)
+        app.setFont(font)
+        QLocale.setDefault(QLocale(locale))
+
+    settle("Fusion", 10, "en_US")
     first = _Collector(classes).defaults()
-    app.setStyle("Windows")
-    app.setFont(QFont("Courier", 17))
+    settle("Windows", 17, "de_DE")
     second = _Collector(classes).defaults()
-    app.setStyle("Fusion")
-    app.setFont(QFont("Helvetica", 10))
+    settle("Fusion", 10, "en_US")
+    _PARENT = _keep(QtWidgets.QWidget())
+    third = _Collector(classes).defaults()
+    _PARENT = None
 
     enums: Dict[str, Dict[str, object]] = {}
     out_classes: Dict[str, object] = {}
@@ -566,12 +622,12 @@ def build() -> Dict[str, object]:
             pname = str(prop.name())
             kind = _kind_of(prop)
             reading = first[name].get(pname)
-            varies = reading != second[name].get(pname)
+            varies = reading != second[name].get(pname) or reading != third[name].get(pname)
             volatile = (
                 varies
                 or pname in STATE_PROPERTIES
                 or kind in VOLATILE_KINDS
-                or _locale_text(cls, pname)
+                or _machine_dependent(cls, pname)
             )
             default = None if volatile else reading
             enum_type: Optional[str] = None
@@ -642,12 +698,14 @@ def build() -> Dict[str, object]:
             "default_signal": DEFAULT_SIGNALS.get(name),
         }
         out_classes[name] = body
+    _reject_today(out_classes)
     # Sub-classes inherit a default signal from the nearest family entry in the
     # engine; the table lists it only on the family class itself.
     return {
         "format": FORMAT_VERSION,
         "qt_version": QtCore.qVersion(),
         "pyside_version": PySide6.__version__,
+        "platform": sys.platform,
         "style": "Fusion",
         "missing_modules": missing,
         "classes": out_classes,
@@ -667,7 +725,7 @@ def _line(value: object) -> str:
 def render(table: Dict[str, object]) -> str:
     """Stable text: one class per block, one property per line."""
     out = ["{\n"]
-    for key in ("format", "qt_version", "pyside_version", "style", "missing_modules"):
+    for key in ("format", "qt_version", "pyside_version", "platform", "style", "missing_modules"):
         out.append(" %s:%s,\n" % (_line(key), _line(table[key])))
     out.append(' "classes":{\n')
     classes = table["classes"]
@@ -715,4 +773,8 @@ def main(argv: List[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    code = main(sys.argv[1:])
+    # Qt widgets built here crash some Linux builds during interpreter teardown.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)

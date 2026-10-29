@@ -213,13 +213,20 @@ class QtClassTable:
     def property_rank(self, class_name: str, name: str, *, dynamic: bool) -> Tuple[int, int, str]:
         """Sort key for inserting a new ``<property>`` entry: ``(group, rank, name)``.
         group 0 = known Qt property (rank from the table), 1 = other dynamic
-        property, 2 = ``cbcs*`` logic property. A name the table knows ranks as a
+        property, 2 = ``cbcs*`` logic property (rank from
+        ``engine.logic.storage.LOGIC_PROPERTY_ORDER``). A name the table knows ranks as a
         Qt property even when the entry says ``stdset="0"``: Designer writes that
         for any property whose setter is not ``set<Name>`` (``isWrapping``). So
         ``dynamic`` only matters for names the table does not know, which sort in
         group 1 by name."""
         if name.startswith("cbcs"):
-            return (2, 0, name)
+            # Imported here: the logic package imports this one.
+            from app.features.form_builder.engine.logic.storage import LOGIC_PROPERTY_ORDER
+
+            if name in LOGIC_PROPERTY_ORDER:
+                return (2, LOGIC_PROPERTY_ORDER.index(name), name)
+            # Other cbcs names keep the order they were written in (no name tie-break).
+            return (2, len(LOGIC_PROPERTY_ORDER), "")
         info = self.property_info(class_name, name)
         if info is not None:
             return (0, info.rank, name)
