@@ -44,6 +44,7 @@ class Header(QWidget):
         self._invalid = False
         self._short = False
         self._crumbs_data: Tuple[Crumb, ...] = ()
+        self._used_in: Optional[Tuple[Crumb, ...]] = None
         self._class_full = ""
         self._class_short = ""
         self._link_color = ""
@@ -168,6 +169,7 @@ class Header(QWidget):
         self._glyph.set_kind("")
         self._set_class_text(view.kinds, view.kinds)
         self._crumbs_data = ()
+        self._used_in = None
         self._crumbs_slot.hide()
         self._error.hide()
 
@@ -189,6 +191,7 @@ class Header(QWidget):
                 self._fit_name()
             self._error.hide()
         self._crumbs_data = view.crumbs
+        self._used_in = view.used_in
         self._render_crumbs()
 
     def _fit_name(self) -> None:
@@ -271,7 +274,25 @@ class Header(QWidget):
             source=SelectionSource.INSPECTOR,
         )
 
+    def _render_used_in(self, hosts: Tuple[Crumb, ...]) -> None:
+        """An action's header line: "Used in File menu and Main toolbar", each a link (UX-MAIN-012)."""
+        style = ' style="color:%s"' % self._link_color if self._link_color else ""
+        links = ['<a href="%d"%s>%s</a>' % (int(crumb.node), style, _escape(crumb.label)) for crumb in hosts]
+        if not links:
+            text = "Not used"
+        elif len(links) == 1:
+            text = "Used in %s" % links[0]
+        else:
+            text = "Used in %s and %s" % (", ".join(links[:-1]), links[-1])
+        self._crumbs.setToolTip("Used in " + " and ".join(crumb.label for crumb in hosts) if hosts else "Not used")
+        if self._crumbs.text() != text:
+            self._crumbs.setText(text)
+        self._crumbs_slot.show()
+
     def _render_crumbs(self) -> None:
+        if self._used_in is not None:
+            self._render_used_in(self._used_in)
+            return
         crumbs = self._crumbs_data
         if len(crumbs) <= 1:
             self._crumbs_slot.hide()

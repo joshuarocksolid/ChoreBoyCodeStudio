@@ -31,10 +31,18 @@ INSERT_BAND_SCREEN = 8
 SNAP = 8
 
 HostKind = Literal[
-    "vbox", "hbox", "grid", "form", "splitter", "pages", "bare_empty", "bare_free", "scroll_empty"
+    "vbox", "hbox", "grid", "form", "splitter", "pages", "bare_empty", "bare_free", "scroll_empty", "part"
 ]
 PayloadKind = Literal["widget", "label", "spacer"]
 WIZARD_REFUSAL = "A wizard page can only go into a wizard."
+#: UX-MAIN-016. The main-window parts that hold actions, never widgets.
+PART_KIND = {"QToolBar": "toolbar", "QMenuBar": "menu", "QMenu": "menu", "QStatusBar": "status"}
+PART_REFUSALS = {
+    "toolbar": "A toolbar holds actions. Make an action, or put the widget in the window.",
+    "menu": "Menus hold actions. Type a menu entry instead.",
+    "status": "A status bar can't hold widgets from the form. It shows messages from your code.",
+}
+CENTRAL_NOTE = "Inserted in the central area."
 DropAction = Literal[
     "box",
     "wrap",
@@ -184,6 +192,26 @@ def keyboard_refusal(
     """
     if payload.wizard_page and not _under_class(doc, anchor, "QWizard"):
         return WIZARD_REFUSAL
+    return None
+
+
+def central_redirect(doc: UiDocument, anchor: Optional[NodeId]) -> Optional[NodeId]:
+    """UX-MAIN-016. A keyboard insert or a paste with a toolbar, menu, menu bar or status bar
+    selected goes into the central area instead. None when the anchor is not one of those."""
+    root = doc.root
+    if anchor is None or not doc.contains(anchor) or root.class_name != "QMainWindow":
+        return None
+    node = doc.get(anchor)
+    while node is not None and node.id != root.id:
+        parent = doc.parent(node.id)
+        if parent is not None and parent.id == root.id:
+            break
+        node = parent
+    if not isinstance(node, WidgetNode) or node.class_name not in PART_KIND or node.id == root.id:
+        return None
+    for child in root.child_widgets:
+        if child.class_name not in PART_KIND and child.class_name != "QDockWidget":
+            return child.id
     return None
 
 
@@ -366,6 +394,8 @@ def _resolve_host(
         )
     if host.kind == "bare_free":
         return _resolve_free(host, pointer, payload)
+    if host.kind == "part":
+        return _refuse(host, PART_REFUSALS.get(host.noun, PART_REFUSALS["menu"]), DropIndicator(host.rect, dashed=True, role="problem"))
     if host.kind == "scroll_empty":
         sentence = "Into the scroll area · makes its content"
         return _accept(host, "scroll_content", sentence, sentence, DropIndicator(_inset(host.rect, 4), dashed=True))
@@ -1132,6 +1162,8 @@ def _widget_host(
     if rect is None:
         return None
     name = widget.object_name or fallback_name
+    if widget.class_name in PART_KIND and widget.id != doc.root.id:
+        return DropHost(widget.id, "part", name, rect, noun=PART_KIND[widget.class_name])
     layout = widget.layout
     if layout is not None:
         return _layout_host(doc, rect_of, layout, name, rect)

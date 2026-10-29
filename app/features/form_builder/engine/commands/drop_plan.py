@@ -34,6 +34,7 @@ from app.features.form_builder.engine.query.drop_target import (
     DropPayload,
     DropTarget,
     RefusedDrop,
+    central_redirect,
     keyboard_refusal,
 )
 from app.features.form_builder.engine.query.hit_index import Rect
@@ -232,6 +233,9 @@ def auto_target(
     payload: DropPayload,
 ) -> Optional[Union[AcceptedDrop, RefusedDrop]]:
     """The target Enter would use. None when there is nowhere to put it."""
+    central = central_redirect(doc, anchor)
+    if central is not None:
+        anchor = central  # UX-MAIN-016: never into a toolbar, menu or status bar
     if _enter_docks_left(doc, payload):
         # Enter on Dock widget in a main-window form adds it on the left (UX-CONT-012).
         return _blank("dock_side", doc.root.id, dock_side="Left")

@@ -422,8 +422,15 @@ class PropertiesPage(QWidget):
             self._chain_dirty = True
             return
         self._form.hide()
+        # The form's own groups (Look, Button groups, Pictures) also show with the root widget
+        # selected: the canvas and the outline select the root widget when the user picks the form.
+        document = self._services.session.document
+        on_root = tuple(body.owners) == (document.root.id,)
         for box in self._form_groups:
-            box.hide()
+            if on_root:
+                box.paint(document)
+            else:
+                box.hide()
         present = {view.group: view for view in body.groups}
         for group_id in GROUP_ORDER:
             group = self._groups[group_id]
@@ -696,6 +703,7 @@ class _FormGroup(QWidget):
                 self._host.set_frame((document.root.id,), False)
                 self._custom = self._spec.factory(self._host, self._body)
                 self._body_layout.addWidget(self._custom.widget)
+                self._custom.widget.show()
             self._host.set_frame((document.root.id,), False)
             self._custom.show(())
         except Exception:
@@ -1361,7 +1369,8 @@ class _Row(QWidget):
     def _show_locked(self, view: LockedRow, match_color: str) -> None:
         self._clear_slot()
         self._editor = None
-        text = value_text(view.value) or NOT_SET_TEXT
+        # A caption row (no label, no value) shows its sentence only, without a dash above it.
+        text = value_text(view.value) or (NOT_SET_TEXT if view.label else "")
         label = QLabel(self._slot)
         _shrink(label)
         label.setObjectName(_value_name(view.value))
