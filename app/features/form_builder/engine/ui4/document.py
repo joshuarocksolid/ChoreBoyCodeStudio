@@ -12,6 +12,7 @@ import sys
 from typing import Dict, FrozenSet, Iterable, Iterator, List, Literal, Optional, Tuple
 
 from app.features.form_builder.engine.ids import DOCUMENT_ID, NodeId
+from app.features.form_builder.engine.logic.codec import read_marker
 from app.features.form_builder.engine.logic.storage import is_user_logic_key
 from app.features.form_builder.engine.ui4.nodes import (
     CustomWidgetNode,
@@ -298,19 +299,9 @@ class UiDocument:
         return style
 
     def logic_version(self) -> Optional[int]:
-        """``cbcsLogic`` on the root, or None."""
-        entry = self.root.prop("cbcsLogic")
-        if entry is None or not isinstance(entry.value, StringValue):
-            return None
-        try:
-            payload = json.loads(entry.value.text)
-        except json.JSONDecodeError:
-            return None
-        if isinstance(payload, dict):
-            version = payload.get("version")
-            if isinstance(version, int) and not isinstance(version, bool):
-                return version
-        return None
+        """The version ``cbcsLogic`` on the root says, or None when there is no marker or it
+        can't be read (CONTRACTS 15.2; ``marker_read_only`` tells those two apart)."""
+        return read_marker(self.root.prop("cbcsLogic")).version
 
     def fingerprint(self) -> str:
         """sha256 hex of a canonical encoding of the whole tree INCLUDING ids.

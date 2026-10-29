@@ -9,7 +9,12 @@ from dataclasses import fields, is_dataclass
 from functools import cmp_to_key
 from typing import Dict, FrozenSet, Iterable, List, Optional, Sequence, Set, Tuple, Union
 
-from app.features.form_builder.engine.clipboard import connections_for_paste, free_holder
+from app.features.form_builder.engine.clipboard import (
+    connections_for_paste,
+    fragment_logic_version,
+    free_holder,
+    without_logic_version,
+)
 from app.features.form_builder.engine.commands.base import CommandRejected, PlanContext
 from app.features.form_builder.engine.commands.ops import (
     InsertNodeOp,
@@ -38,10 +43,18 @@ from app.features.form_builder.engine.commands.refs import (
 from app.features.form_builder.engine.query.name_policy import explain_name
 from app.features.form_builder.engine.query.pages import page_kind
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.engine.logic.codec import (
+    canonical_logic_text,
+    marker_read_only,
+    read_marker,
+    same_logic,
+)
+from app.features.form_builder.engine.logic.refs import opaque_mentions
 from app.features.form_builder.engine.logic.storage import (
     CBCS_LAYOUT_KEYS,
     SUPPORTED_LOGIC_VERSION,
     is_logic_key,
+    is_user_logic_key,
     logic_version_text,
 )
 from app.features.form_builder.engine.query.tree import (
@@ -81,6 +94,9 @@ def insert_fragment(
     fragment: Fragment,
     auto_layout: bool,
 ) -> Tuple[Tuple[NodeId, ...], Tuple[Tuple[str, str], ...], Tuple[str, ...], Tuple[str, ...]]:
+    logic_before = doc.logic_property_count()
+    source_version = fragment_logic_version(fragment)
+    fragment = without_logic_version(fragment)
     pair = _form_pair_indexes(fragment.nodes) if isinstance(placement, InFormRow) else None
     if isinstance(placement, InFormRow) and pair is None:
         role = _lone_form_role(fragment.nodes)
@@ -135,8 +151,14 @@ def insert_fragment(
                 seen_dangling.add(end)
                 dangling.append(end)
     renames = tuple(mapping.items())
+    if source_version is not None and source_version > SUPPORTED_LOGIC_VERSION and _fragment_has_logic(fragment):
+        # Pasted behavior from a newer build is kept as copied: raise the marker first, so the
+        # logic participants see read-only logic and leave the copied text alone (UX D20).
+        _raise_logic_marker(doc, ctx, source_version)
     if renames:
         _participant_renames(ctx, doc, renames, scope)
+    if doc.logic_property_count() != logic_before:
+        _sync_logic_marker(doc, ctx)
     from app.features.form_builder.engine.commands.catalog_ext.tab_order import join_order
 
     join_order(doc, ctx, scope)
@@ -171,6 +193,7 @@ def delete_nodes(doc: UiDocument, ctx: PlanContext, ids: Tuple[NodeId, ...]) -> 
             final_targets.append(node_id)
     if not final_targets:
         return ()
+    logic_before = doc.logic_property_count()
     anchor = doc.node(final_targets[0])
     parent = doc.parent(final_targets[0])
     siblings = list(parent.children(anchor.parent_slot or "")) if parent is not None and anchor.parent_slot else []
@@ -202,6 +225,8 @@ def delete_nodes(doc: UiDocument, ctx: PlanContext, ids: Tuple[NodeId, ...]) -> 
             continue
         for op in delete_ops(doc, tuple(gone)):
             ctx.do(op)
+    if doc.logic_property_count() != logic_before:
+        _sync_logic_marker(doc, ctx)
     if selection:
         ctx.select(selection)
     return tuple(codes)
@@ -597,7 +622,13 @@ def set_property(
     value: Optional[Value],
     kind: str = "property",
     stdset: Optional[str] = None,
+    *,
+    logic_checked: bool = False,
 ) -> None:
+    """``logic_checked``: the caller (``set_logic``, the marker rules) already applied the FB402
+    rule. Any other write of a ``cbcs*`` logic key is refused while logic is read-only (15.7)."""
+    if kind == "property" and not logic_checked and is_logic_key(name):
+        require_logic_writable(doc)
     node = _require(doc, owner)
     _ensure(value)
     existing = node.prop(name) if kind == "property" else node.attr(name)
@@ -650,6 +681,19 @@ def rename_node(doc: UiDocument, ctx: PlanContext, node_id: NodeId, new_name: st
     if new_name == old:
         return ()
     _check_name(doc, new_name, current=old, base_methods=_base_methods(ctx))
+    if len(doc.by_name(old)) <= 1 and _newer_logic_uses(doc, old):
+        raise CommandRejected(
+            "%s is used by behavior from a newer version of Code Studio, so it can't be renamed here." % (old,),
+            code="FB402",
+        )
+    if _newer_logic_uses(doc, new_name):
+        # The newer text already names ``new_name`` (a widget it expects, or one since deleted):
+        # taking that name would silently change what that behavior acts on.
+        raise CommandRejected(
+            "%s is used by behavior from a newer version of Code Studio, so no widget can take that name here."
+            % (new_name,),
+            code="FB402",
+        )
     set_field(doc, ctx, node_id, NAME_FIELD[node.kind], new_name)
     if node.id == doc.root.id and doc.ui.field("class_name") == old:
         set_field(doc, ctx, doc.ui.id, "class_name", new_name)
@@ -904,6 +948,7 @@ def add_connection(
     slot: str,
     index: Optional[int],
 ) -> NodeId:
+    require_logic_writable(doc)
     spec = allocate_spec(ctx, _connection_spec(sender, signal, receiver, slot))
     count = len(doc.ui.children("connections"))
     at = count if index is None else index
@@ -921,6 +966,7 @@ def edit_connection(
     receiver: Optional[str],
     slot: Optional[str],
 ) -> None:
+    require_logic_writable(doc)
     node = _require(doc, node_id)
     if node.kind != "connection":
         raise CommandRejected("That object is not a connection.")
@@ -935,6 +981,7 @@ def edit_connection(
 
 
 def move_connection(doc: UiDocument, ctx: PlanContext, node_id: NodeId, to_index: int) -> None:
+    require_logic_writable(doc)
     node = _require(doc, node_id)
     if node.kind != "connection":
         raise CommandRejected("That object is not a connection.")
@@ -980,6 +1027,7 @@ def set_form_slots(
     signals: Optional[Tuple[str, ...]],
     slots: Optional[Tuple[str, ...]],
 ) -> None:
+    require_logic_writable(doc)
     if signals is None and slots is None:
         set_field(doc, ctx, doc.ui.id, "form_slots", None)
         return
@@ -1100,17 +1148,38 @@ def replace_document_text(
         ctx.select((doc.root.id,), doc.root.id)
 
 
+LOGIC_READ_ONLY_MESSAGE = "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here."
+
+
+def require_logic_writable(doc: UiDocument) -> None:
+    """Refuse with FB402 while the form's logic is newer than this build or its marker can't be read."""
+    if marker_read_only(doc.root.prop("cbcsLogic")):
+        raise CommandRejected(LOGIC_READ_ONLY_MESSAGE, code="FB402")
+
+
 def set_logic(doc: UiDocument, ctx: PlanContext, owner: NodeId, key: str, text: Optional[str]) -> None:
     if key in CBCS_LAYOUT_KEYS or key == "cbcsLogic" or not is_logic_key(key):
         raise CommandRejected("That key is not a logic property.")
-    version = doc.logic_version()
-    if version is not None and version > SUPPORTED_LOGIC_VERSION:
-        raise CommandRejected("This form's logic is from a newer version.", code="FB402")
-    _require(doc, owner)
+    require_logic_writable(doc)
+    node = _require(doc, owner)
+    if text is not None:
+        canonical = canonical_logic_text(key, text)
+        if canonical.error is not None:
+            line, message = canonical.error
+            raise CommandRejected(
+                "%s can't be read (line %d): %s." % (key, line, message),
+                code="FB401",
+            )
+        text = canonical.text
     if text is None:
-        set_property(doc, ctx, owner, key, None, stdset="0")
+        set_property(doc, ctx, owner, key, None, stdset="0", logic_checked=True)
     else:
-        set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0")
+        existing = node.prop(key)
+        if existing is not None and isinstance(existing.value, StringValue) and same_logic(key, existing.value.text, text):
+            # Same meaning as what is stored: keep the stored bytes (CONTRACTS 15.4 rule 7).
+            pass
+        else:
+            set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0", logic_checked=True)
     _sync_logic_marker(doc, ctx)
 
 
@@ -1726,7 +1795,11 @@ def _accepts_property(
 
 
 def _sync_logic_marker(doc: UiDocument, ctx: PlanContext) -> None:
+    """The marker follows the logic properties (CONTRACTS 15.2): added with the first, removed with
+    the last. A marker of a newer build, or one that can't be read, is never touched."""
     existing = doc.root.prop("cbcsLogic")
+    if marker_read_only(existing):
+        return
     if doc.logic_property_count() > 0:
         if existing is None:
             set_property(
@@ -1736,10 +1809,47 @@ def _sync_logic_marker(doc: UiDocument, ctx: PlanContext) -> None:
                 "cbcsLogic",
                 StringValue(logic_version_text(), notr=True),
                 stdset="0",
+                logic_checked=True,
             )
         return
     if existing is not None:
-        set_property(doc, ctx, doc.root.id, "cbcsLogic", None)
+        set_property(doc, ctx, doc.root.id, "cbcsLogic", None, logic_checked=True)
+
+
+def _fragment_has_logic(fragment: Fragment) -> bool:
+    """Does any pasted element carry a logic property (a step list, formula, check ...)? Plain
+    widgets from a newer form leave the target's marker alone (UX D20)."""
+    return any(
+        entry.kind == "property" and is_user_logic_key(entry.name)
+        for top in fragment.nodes
+        for spec in top.iter_subtree()
+        for entry in spec.properties
+    )
+
+
+def _raise_logic_marker(doc: UiDocument, ctx: PlanContext, version: int) -> None:
+    """Make the marker say ``version`` when pasted behavior is newer (UX D20). Never lowers a marker."""
+    existing = doc.root.prop("cbcsLogic")
+    current = read_marker(existing)
+    if existing is not None and (not current.readable or (current.version or 0) >= version):
+        return
+    set_property(
+        doc, ctx, doc.root.id, "cbcsLogic", StringValue(logic_version_text(version), notr=True), stdset="0", logic_checked=True
+    )
+
+
+def _newer_logic_uses(doc: UiDocument, name: str) -> bool:
+    """While logic is read-only: does any ``cbcs*`` text or connection mention ``name``?"""
+    if not marker_read_only(doc.root.prop("cbcsLogic")):
+        return False
+    for node in doc.iter_preorder():
+        if node.kind == "connection" and name in (node.field("sender"), node.field("receiver")):
+            return True
+        for entry in node.properties():
+            if is_user_logic_key(entry.name) and isinstance(entry.value, StringValue):
+                if opaque_mentions(entry.value.text, name):
+                    return True
+    return False
 
 
 def _participant_renames(

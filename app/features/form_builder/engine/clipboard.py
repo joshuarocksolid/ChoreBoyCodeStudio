@@ -18,6 +18,8 @@ from app.features.form_builder.engine.commands.placement import (
 )
 from app.features.form_builder.engine.commands.refs import NAME_FIELD
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.logic.codec import read_marker
+from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION, logic_version_text
 from app.features.form_builder.engine.query.tree import (
     form_item_role,
     form_rows,
@@ -35,6 +37,13 @@ from app.features.form_builder.engine.ui4.nodes import (
 from app.features.form_builder.engine.ui4.schema import SCHEMA
 from app.features.form_builder.engine.ui4.spec import Fragment, NodeSpec, PropertyEntry
 from app.features.form_builder.engine.ui4.values import CStringValue, NumberValue, RectValue, StringValue
+
+#: The dynamic property each copied top-level element carries: its source form's logic version,
+#: in the marker's own text (CONTRACTS 15.2, 15.8). A property, not an XML attribute: Qt's ui4
+#: reader (Designer, uic, ``QUiLoader``) refuses any unknown attribute ("Unexpected attribute"),
+#: while an unknown dynamic property is harmless everywhere. Per element, so it survives the
+#: fragment rebuilds of placement, duplicate and drop. ``InsertFragment`` reads and strips it.
+FRAGMENT_LOGIC_PROPERTY = "cbcsLogic"
 
 _COPYABLE = frozenset({"widget", "layout", "spacer", "action", "actiongroup", "buttongroup"})
 _PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox"})
@@ -78,6 +87,7 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
     specs = tuple(_without_ids(doc.node(node_id).to_spec()) for node_id in roots)
     names = set(_listed_names(specs))
     specs = tuple(_without_outside_buddies(spec, names) for spec in specs)
+    specs = _with_logic_version(doc, specs)
     connections = [
         _without_ids(node.to_spec())
         for node in doc.connections()
@@ -87,6 +97,76 @@ def selection_fragment(doc: UiDocument, ids: Sequence[NodeId]) -> Fragment:
         nodes=specs,
         connections=tuple(connections),
         customwidgets=_custom_widgets(doc, specs),
+    )
+
+
+def _with_logic_version(doc: UiDocument, specs: Tuple[NodeSpec, ...]) -> Tuple[NodeSpec, ...]:
+    """Carry the form's logic version on each copied top-level element, when the form has a marker.
+
+    A marker that can't be read travels as one past the supported version, which makes the
+    paste target read-only exactly as the source is (UX D20)."""
+    entry = doc.root.prop("cbcsLogic")
+    if entry is None or not specs:
+        return specs
+    marker = read_marker(entry)
+    version = marker.version if marker.readable and marker.version is not None else SUPPORTED_LOGIC_VERSION + 1
+    carried = PropertyEntry("property", FRAGMENT_LOGIC_PROPERTY, StringValue(logic_version_text(version), notr=True), "0")
+    return tuple(_replace_properties(spec, _without_carrier(spec.properties) + (carried,)) for spec in specs)
+
+
+def _without_carrier(properties: Tuple[PropertyEntry, ...]) -> Tuple[PropertyEntry, ...]:
+    return tuple(entry for entry in properties if not (entry.kind == "property" and entry.name == FRAGMENT_LOGIC_PROPERTY))
+
+
+def _replace_properties(spec: NodeSpec, properties: Tuple[PropertyEntry, ...]) -> NodeSpec:
+    return NodeSpec(
+        kind=spec.kind,
+        id=spec.id,
+        fields=spec.fields,
+        properties=properties,
+        attributes=spec.attributes,
+        slots=spec.slots,
+        extra_attrs=spec.extra_attrs,
+    )
+
+
+def fragment_logic_version(fragment: Fragment) -> Optional[int]:
+    """The highest logic version any element of ``fragment`` carries, or None.
+    A carrier that can't be read counts as newer than this build."""
+    found: Optional[int] = None
+    for top in fragment.nodes:
+        # Whole subtrees: placement may wrap a copied layout or spacer in a new holder widget.
+        for entry in (item for spec in top.iter_subtree() for item in spec.properties):
+            if entry.kind != "property" or entry.name != FRAGMENT_LOGIC_PROPERTY:
+                continue
+            marker = read_marker(entry)
+            version = marker.version if marker.readable and marker.version is not None else SUPPORTED_LOGIC_VERSION + 1
+            found = version if found is None else max(found, version)
+    return found
+
+
+def _strip_carrier(spec: NodeSpec) -> NodeSpec:
+    return NodeSpec(
+        kind=spec.kind,
+        id=spec.id,
+        fields=spec.fields,
+        properties=_without_carrier(spec.properties),
+        attributes=spec.attributes,
+        slots=tuple((name, tuple(_strip_carrier(child) for child in kids)) for name, kids in spec.slots),
+        extra_attrs=spec.extra_attrs,
+    )
+
+
+def without_logic_version(fragment: Fragment) -> Fragment:
+    """``fragment`` with the carrier removed everywhere, so it never reaches a form (only the root
+    of a form holds ``cbcsLogic``, and the root is never copied)."""
+    if fragment_logic_version(fragment) is None:
+        return fragment
+    return Fragment(
+        nodes=tuple(_strip_carrier(spec) for spec in fragment.nodes),
+        connections=fragment.connections,
+        customwidgets=fragment.customwidgets,
+        resources=fragment.resources,
     )
 
 

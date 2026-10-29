@@ -25,7 +25,7 @@ from app.features.form_builder.engine.events import (
     FieldChanged,
 )
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
-from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
+from app.features.form_builder.engine.logic.codec import marker_read_only
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.ref_index import RefIndex
 from app.features.form_builder.engine.query.connections import missing_connection_diagnostics
@@ -145,10 +145,9 @@ class FormSession:
         return self._serializer.text(self._document)
 
     def logic_read_only(self) -> bool:
-        """True when ``cbcsLogic`` is newer than this build understands (FB402)."""
+        """True when ``cbcsLogic`` is newer than this build understands, or can't be read (FB402)."""
         self._live()
-        version = self._document.logic_version()
-        return version is not None and version > SUPPORTED_LOGIC_VERSION
+        return marker_read_only(self._document.root.prop("cbcsLogic"))
 
     def set_path(self, new_path: str, scope: Optional[FormScope] = None) -> None:
         """Rename or move the file. The document is unchanged."""
