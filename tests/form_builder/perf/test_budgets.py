@@ -36,7 +36,8 @@ def mac_report() -> SpeedReport:
 
 
 @pytest.mark.perf
-@pytest.mark.timeout(60)
+# The first test pays for the module fixture: the whole harness, M5 rows included (~50 s idle).
+@pytest.mark.timeout(240)
 def test_realistic_300_read_and_write_meet_section_12(mac_report: SpeedReport) -> None:
     read = _row(mac_report, "read_ui", 300)
     write = _row(mac_report, "write_ui", 300)

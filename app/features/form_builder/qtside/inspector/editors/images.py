@@ -190,6 +190,7 @@ class _PictureRow:
             "QPushButton { color: %s; text-decoration: underline; text-align: left; border: none; padding: 0; }"
             % host.chrome.accent
         )
+        self._adopt.setAutoDefault(True)
         self._adopt.clicked.connect(self._adopt_clicked)
         self._adopt.hide()
         notes_layout.addWidget(self._adopt, 0, getattr(Qt, "AlignmentFlag", Qt).AlignLeft)

@@ -77,6 +77,10 @@ class BuddyEditor:
             self._combo.addItem(current + _MISSING, current)
         index = 0 if current is None else self._combo.findData(current)
         self._combo.setCurrentIndex(max(0, index))
+        edit = self._combo.lineEdit()
+        if edit is not None:
+            # Show the start of "phoneEdit · Line edit", not its tail, in a narrow row.
+            edit.setCursorPosition(0)
         self._combo.blockSignals(False)
 
     def is_dirty(self) -> bool:

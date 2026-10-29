@@ -179,6 +179,11 @@ class MenuEditGlue(QObject):
         if self._editor.active:
             if not (key.name or key.text):
                 return False
+            # The editor uses no Ctrl or Alt key but Alt+arrows; the rest (Alt+5, Ctrl+S) stay shell keys.
+            if (key.ctrl or key.alt) and not (key.alt and key.name in ("Left", "Right", "Up", "Down")):
+                # A shortcut fires on the override and no key press follows, so look once events settle.
+                QTimer.singleShot(0, self._leave_if_focus_left)
+                return False
             if kind == QEvent.Type.ShortcutOverride:
                 event.accept()
                 return True
@@ -379,6 +384,17 @@ class MenuEditGlue(QObject):
                 token = self._line_token
                 QTimer.singleShot(0, lambda: self._keep_on_focus_loss(token))
         return False
+
+    def _leave_if_focus_left(self) -> None:
+        """A shell key that moved focus out of the canvas (Alt+5) ends the editing, as Esc would."""
+        if not self._editor.active:
+            return
+        focus = QApplication.focusWidget()
+        canvas = self._canvas
+        if focus is None or focus is canvas or canvas.isAncestorOf(focus):
+            return
+        self._editor.leave()
+        self.refresh()
 
     def _keep_on_focus_loss(self, token: object) -> None:
         """Clicking away keeps the text, as Enter does (UX-MAIN-006)."""

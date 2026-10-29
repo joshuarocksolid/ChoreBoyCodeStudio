@@ -8,6 +8,7 @@ change there shows without a restart; writes go through ``update_global``.
 
 from __future__ import annotations
 
+import weakref
 from typing import Any, List, Mapping, Optional, Tuple
 
 from app.features.form_builder.integration.layout import WorkbenchMemory
@@ -242,6 +243,10 @@ class WorkbenchMemoryStore:
         except OSError:
             return
 
+    def remember_reader(self, reader: object) -> None:
+        """An inspector page that reads "Show Qt names" from this store; ``reread_qt_names`` reaches it."""
+        _QT_NAME_READERS[reader] = self
+
     def qt_names(self) -> bool:
         try:
             return qt_names_from_payload(self._service.load_global(force_refresh=True))
@@ -267,6 +272,21 @@ class WorkbenchMemoryStore:
             return
 
 
+
+#: Open inspector pages and the store each reads, so Settings > Form designer reaches them.
+_QT_NAME_READERS: "weakref.WeakKeyDictionary[object, WorkbenchMemoryStore]" = weakref.WeakKeyDictionary()
+
+
+def reread_qt_names() -> None:
+    """Every open inspector reads "Show Qt names" again (after the Settings dialog saved it)."""
+    for reader, store in list(_QT_NAME_READERS.items()):
+        bind = getattr(reader, "bind_qt_names", None)
+        if callable(bind):
+            try:
+                bind(store)
+            except RuntimeError:  # a page whose Qt object is already gone
+                continue
+
 __all__ = [
     "PREVIEW_KEY",
     "SCREEN_KEY",
@@ -281,6 +301,7 @@ __all__ = [
     "payload_with_memory",
     "payload_with_preview",
     "payload_with_qt_names",
+    "reread_qt_names",
     "payload_with_sort_properties",
     "preview_from_payload",
     "qt_names_from_payload",

@@ -445,6 +445,7 @@ def _collect(
     rows.extend(_surface_speed_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_m4_rows(samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_m5_rows(samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
     rows.append(
@@ -2622,12 +2623,17 @@ KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 
 KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
 KNOWN_M45_MISS = "known M4 miss; M4.5 fix list"
 KNOWN_M45_POINTS: frozenset = frozenset()
+KNOWN_M5_MISS = "known M5 miss; M5.R fix list"
+#: Empty since M5.R cached the tab-order seats and flow-line crossings (assign was ~47 ms).
+KNOWN_M5_POINTS: frozenset = frozenset()
 
 
 def _known_miss(row: Row) -> Row:
     """Report a documented miss as "known miss" instead of "fail"; the budget stays."""
     if row.point in KNOWN_M94_POINTS:
         row = _with_detail(row, KNOWN_M94_MISS)
+    elif row.point in KNOWN_M5_POINTS:
+        row = _with_detail(row, KNOWN_M5_MISS)
     else:
         assert row.point in KNOWN_M45_POINTS, row.point
         row = _with_detail(row, KNOWN_M45_MISS)
@@ -2718,6 +2724,151 @@ def _m4_rows(samples: int, warmup: int, enforce_absolute: bool, wall_on: bool) -
         finally:
             teardown()
     return rows
+
+
+# UX-M5-009: the M5 paths (menus, pictures, style sheet, own class, View code, preview, Start, keys, overlays).
+# Built in tests/form_builder/perf/m5_paths.py; these are the rows it adds.
+M5_POINTS: Tuple[str, ...] = (
+    "m5 menu Type here keystroke",
+    "m5 toolbar reuse list keystroke",
+    "m5 open menu on canvas",
+    "m5 commit menu entry",
+    "m5 drop action on toolbar",
+    "m5 drop action on menu",
+    "m5 actions filter keystroke",
+    "m5 picture picker first index",
+    "m5 open picture picker warm",
+    "m5 add 1 MB picture",
+    "m5 open own class popover",
+    "m5 own class module check",
+    "m5 start with 20 templates",
+    "m5 style sheet keystroke",
+    "m5 style sheet check and matches",
+    "m5 style sheet apply to canvas",
+    "m5 view code refresh",
+    "m5 open form designer keys",
+    "m5 keys page filter keystroke",
+    "m5 open tab order overlay",
+    "m5 assign tab order number",
+    "m5 open buddies overlay",
+    "m5 preview change screen warm",
+    "m5 preview change style warm",
+)
+
+
+def _m5_rows(
+    samples: int,
+    warmup: int,
+    enforce_absolute: bool,
+    wall_on: bool,
+    only: Sequence[str] = (),
+) -> List[Row]:
+    """The UX-M5-009 rows. ``only`` limits the run to the named groups (m5_paths.GROUPS keys)."""
+    try:
+        m5 = importlib.import_module("tests.form_builder.perf.m5_paths")
+    except ImportError as exc:
+        return [Row(point, None, None, None, None, "-", "skip", str(exc)) for point in M5_POINTS]
+    rows: List[Row] = []
+    for group in m5.GROUPS:
+        if only and group.key not in only:
+            continue
+        try:
+            specs, teardown = group.build()
+        except Exception as exc:  # a fixture that cannot be built skips its rows, with the reason
+            rows.extend(
+                Row(point, widgets, None, None, None, _ms_budget(budget), "skip", "could not build: %r" % (exc,))
+                for point, widgets, budget in group.names
+            )
+            continue
+        try:
+            built = {spec.point for spec in specs}
+            for spec in specs:
+                try:
+                    row, dist = _timed(
+                        spec.point,
+                        spec.widgets,
+                        spec.fn,
+                        spec.budget_ms,
+                        samples=samples,
+                        warmup=warmup,
+                        enforce_absolute=enforce_absolute,
+                        wall_on=wall_on,
+                        prepare=spec.prepare,
+                        cleanup=spec.cleanup,
+                    )
+                    if spec.wall:
+                        row = _wall_row(row, dist, spec.budget_ms, enforce_absolute and wall_on)
+                    row = _with_detail(row, spec.note) if spec.note else row
+                    if spec.point in KNOWN_M5_POINTS:
+                        row = _known_miss(row)
+                except Exception as exc:  # a scenario that cannot run is a failed row, not a crash
+                    row = Row(
+                        spec.point,
+                        spec.widgets,
+                        None,
+                        None,
+                        None,
+                        _ms_budget(spec.budget_ms),
+                        "fail",
+                        "could not measure: %r" % (exc,),
+                    )
+                rows.append(row)
+            rows.extend(
+                Row(point, widgets, None, None, None, _ms_budget(budget), "skip", "not built: the fixture has no such step")
+                for point, widgets, budget in group.names
+                if point not in built
+            )
+        finally:
+            try:
+                teardown()
+            except Exception as exc:  # teardown trouble is noted, never hides the rows
+                rows.append(Row("m5 %s teardown" % group.key, None, None, None, None, "-", "reported", repr(exc)))
+    return rows
+
+
+def _wall_row(row: Row, dist: Distribution, budget_ms: float, enforced: bool) -> Row:
+    """A row for a step that waits on another process: p50 and p95 are wall milliseconds."""
+    p50 = dist.wall_p50 * 1000.0
+    p95 = dist.wall_p95 * 1000.0
+    if enforced:
+        verdict = "pass" if p95 <= budget_ms else "fail"
+        note = "wall time"
+    else:
+        verdict = "reported"
+        note = "wall time, budget not enforced (load average or non-mac profile)"
+    return Row(row.point, row.widgets, row.samples, p50, p95, row.budget, verdict, _join(note, row.detail))
+
+
+def run_m5_speed(*, samples: int = 15, warmup: int = 3, only: Sequence[str] = ()) -> SpeedReport:
+    """Only the M5 rows, in the report shape ``format_table`` prints (``m5_paths`` CLI)."""
+    load_start = _read_load()
+    previous = os.environ.get("CBCS_FB_VALIDATE")
+    os.environ["CBCS_FB_VALIDATE"] = "0"
+    try:
+        wall_on = wall_policy(load_start, load_start)[0]
+        rows = tuple(_m5_rows(samples, warmup, True, wall_on, only))
+    finally:
+        if previous is None:
+            os.environ.pop("CBCS_FB_VALIDATE", None)
+        else:
+            os.environ["CBCS_FB_VALIDATE"] = previous
+    load_end = _read_load()
+    enforced, wall = wall_policy(load_start, load_end)
+    if not enforced:
+        rows = tuple(_drop_wall_failures(row) for row in rows)
+    return SpeedReport(
+        profile="mac",
+        interpreter=sys.version.split()[0],
+        qt_version=raw_qt.qt_version(),
+        load_start=load_start,
+        load_end=load_end,
+        wall=wall,
+        samples=samples,
+        warmup=warmup,
+        cpu_tolerance=CPU_TOLERANCE,
+        cpus=_cpu_count(),
+        rows=rows,
+    )
 
 
 def _surface_speed_rows(

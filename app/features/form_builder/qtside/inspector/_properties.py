@@ -334,6 +334,9 @@ class PropertiesPage(QWidget):
 
     def bind_qt_names(self, store: object) -> None:
         self._qt_store = store
+        remember = getattr(store, "remember_reader", None)
+        if callable(remember):
+            remember(self)
         reader = getattr(store, "qt_names", None)
         shown = bool(reader()) if callable(reader) else False
         self._qt_names_action.setChecked(shown)
