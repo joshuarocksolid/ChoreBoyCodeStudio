@@ -1707,6 +1707,11 @@ def _visible_text(node: Node) -> str:
     return _attr(node, "title")
 
 
+def visible_text(node: Node) -> str:
+    """The text a person sees on a widget (or a page's tab title), for pickers."""
+    return _visible_text(node) or _prop(node, "placeholderText")
+
+
 def _hidden(node: Node) -> bool:
     entry = node.prop("visible")
     return entry is not None and isinstance(entry.value, BoolValue) and not entry.value.value

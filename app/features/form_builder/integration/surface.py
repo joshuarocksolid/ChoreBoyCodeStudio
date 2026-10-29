@@ -64,6 +64,8 @@ from app.features.form_builder.integration.chrome_text import (
     undo_menu_text,
 )
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.engine.query.outline import visible_text
+from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.features.form_builder.engine.clipboard import command_enabled
 from app.features.form_builder.integration.clipboard_actions import (
     SHORTCUT_COMMAND_IDS,
@@ -96,6 +98,7 @@ from app.features.form_builder.integration.toast import (
     undo_matches,
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
+from app.features.form_builder.integration.go_to_widget import GoToWidgetPicker
 from app.features.form_builder.integration.wrap_popover import WrapPopover
 from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
@@ -1096,6 +1099,32 @@ class FormSurface(QWidget):
         node = found[0]
         self._session.selection.set((node,), current=node, source=SelectionSource.COMMAND)
         self._workbench.canvas.setFocus()
+        return True
+
+    def go_to_widget(self) -> bool:
+        """Ctrl+R: open the Go to widget picker. False when this tab is not showing."""
+        if self._released or not self.isVisible():
+            return False
+        if self._source.mode != "visual":
+            self.show_plain("Switch to Design to go to a widget.")
+            return True
+        picker = getattr(self, "_goto_picker", None)
+        if picker is not None:
+            try:
+                if picker.isVisible():
+                    picker.search.setFocus()
+                    return True
+            except RuntimeError:
+                pass
+        document = self._session.document
+        entries = [
+            (node.object_name, visible_text(node), friendly_of(node.class_name))
+            for node in document.iter_widgets()
+            if node.object_name
+        ]
+        picker = GoToWidgetPicker(self, entries, chrome_for(self._tokens), self.select_object)
+        self._goto_picker = picker
+        picker.open_in(QRect(self.mapToGlobal(QPoint(0, 0)), self.size()))
         return True
 
     def zoom_out(self) -> None:

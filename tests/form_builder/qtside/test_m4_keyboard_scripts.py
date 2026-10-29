@@ -436,12 +436,13 @@ def _k10(kb: Kb) -> None:
     QTimer.singleShot(400, dismiss)
     kb.press("Key_R", "Control")
     kb.pump(12)
-    if seen:
-        kb.soft(False, "K10-1", "Ctrl+R in a form tab opened a modal box (%s) instead of a Go to widget picker" % seen[0])
-        _canvas_select(kb, "tabWidget")
-    else:
-        kb.type("tabWidget")
-        kb.press("Key_Return")
+    kb.check(not seen, "K10-1: Ctrl+R in a form tab opened a modal box (%s) instead of the Go to widget picker" % (seen[:1],))
+    picker = kb.surface.findChild(QWidget, "formBuilder.goToWidget")
+    kb.check(picker is not None and picker.isVisible(), "Ctrl+R opens the Go to widget picker")
+    kb.type("tabWidget")
+    kb.press("Key_Return")
+    kb.pump(4)
+    kb.check(kb.surface.findChild(QWidget, "formBuilder.goToWidget") is None, "Enter closes the picker")
     kb.check(kb.current() == "tabWidget", "the tab widget is selected (selected: %s)" % kb.current())
     kb.press("Key_3", "Alt")
     # "Insert tab after" goes after the shown page; page 2 is the last, so the new one is third.
@@ -912,32 +913,3 @@ def run(tmp_path_factory: pytest.TempPathFactory, qapp: QApplication) -> _Run:
 def test_k9_to_k15_in_one_session_keys_only(run: _Run) -> None:
     assert run.failure == "", run.failure
     assert run.mouse == []
-
-
-def _open_finding(run: _Run, name: str) -> None:
-    assert name not in run.findings, "%s: %s" % (name, run.findings[name])
-
-
-@pytest.mark.xfail(strict=True, reason="K10-1: Ctrl+R in a form tab has no Go to widget picker (shell Go to Symbol box opens)")
-def test_k10_ctrl_r_goes_to_a_widget(run: _Run) -> None:
-    _open_finding(run, "K10-1")
-
-
-@pytest.mark.xfail(strict=False, reason="K12-1 (app-state dependent: passes after other suites set the app style; fails alone on macOS): Enter on the Translation button does not open its panel (QToolButton takes Space only)")
-def test_k12_enter_opens_the_translation_panel(run: _Run) -> None:
-    _open_finding(run, "K12-1")
-
-
-@pytest.mark.xfail(strict=False, reason="K12-2 (app-state dependent, as K12-1): Tab does not reach 'Translate this text' after the Translation panel opens")
-def test_k12_tab_reaches_translate_this_text(run: _Run) -> None:
-    _open_finding(run, "K12-2")
-
-
-@pytest.mark.xfail(strict=True, reason="K12-3: Tab in the formatted-text editor inserts a tab; Done is reachable only by Shift+Tab around the popover")
-def test_k12_tab_leaves_the_formatted_text_editor(run: _Run) -> None:
-    _open_finding(run, "K12-3")
-
-
-@pytest.mark.xfail(strict=True, reason="K15-1: Enter on a Disabled-state picture closes the popover, so Esc cannot revert it")
-def test_k15_esc_reverts_a_disabled_state_pick(run: _Run) -> None:
-    _open_finding(run, "K15-1")

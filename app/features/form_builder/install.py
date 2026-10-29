@@ -73,6 +73,15 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     def adopt(ui_path: str) -> None:
         adopt_from_tree(window, ui_path)
 
+    def go_to_widget() -> bool:
+        """Ctrl+R in a form tab. False lets the shell run Go to Symbol."""
+        from app.features.form_builder.integration.surface import FormSurface
+
+        surface = getattr(window, "_form_undo_surface", None)
+        if not isinstance(surface, FormSurface) or not surface.isVisible():
+            return False
+        return surface.go_to_widget()
+
     window._tab_content_registry.register(RememberingFormTabProvider())
     attach_new_form(window)
     bind_adopt_entry(lambda: adopt_from_start(window))
@@ -89,6 +98,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         {
             "_form_builder_save_form": save_form,
             "_form_builder_adopt_form": adopt,
+            "_form_builder_go_to_widget": go_to_widget,
             "_form_builder_start_entries": START_ENTRIES,
         },
     )
