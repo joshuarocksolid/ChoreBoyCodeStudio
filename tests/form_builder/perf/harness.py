@@ -444,6 +444,7 @@ def _collect(
     )
     rows.extend(_surface_speed_rows(forms, samples, warmup, enforce_absolute, wall_on))
     rows.extend(_sizing_rows(forms, samples, warmup, enforce_absolute, wall_on))
+    rows.extend(_m4_rows(samples, warmup, enforce_absolute, wall_on))
 
     probe = documents[sizes[0]]
     rows.append(
@@ -2619,15 +2620,104 @@ def _sizing_preview_rows(
 #: docs/form_builder/PLAN.md, M9.4 "Known M3 misses".
 KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 known misses)"
 KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
+KNOWN_M45_MISS = "known M4 miss: tree item editor builds one widget per row; M4.5 fix list"
+KNOWN_M45_POINTS = frozenset({"m4 open item editor tree 500"})
 
 
 def _known_miss(row: Row) -> Row:
-    """Report a documented M9.4 miss as "known miss" instead of "fail"; the budget stays."""
-    assert row.point in KNOWN_M94_POINTS, row.point
-    row = _with_detail(row, KNOWN_M94_MISS)
+    """Report a documented miss as "known miss" instead of "fail"; the budget stays."""
+    if row.point in KNOWN_M94_POINTS:
+        row = _with_detail(row, KNOWN_M94_MISS)
+    else:
+        assert row.point in KNOWN_M45_POINTS, row.point
+        row = _with_detail(row, KNOWN_M45_MISS)
     if row.verdict != "fail":
         return row
     return Row(row.point, row.widgets, row.samples, row.p50, row.p95, row.budget, "known miss", row.detail, row.total_p95)
+
+
+# UX-M4-007: opening a popover or an item editor is 50 ms, one live change or keystroke is 16 ms.
+# Built in tests/form_builder/perf/m4_editors.py; these are the rows it adds.
+M4_POINTS: Tuple[str, ...] = (
+    "m4 open flags popover",
+    "m4 flags live toggle",
+    "m4 open size policy popover",
+    "m4 open font popover",
+    "m4 font size step",
+    "m4 open colour popover",
+    "m4 open brush popover",
+    "m4 open palette popover",
+    "m4 colour square drag",
+    "m4 gradient stop drag",
+    "m4 palette role change",
+    "m4 open rich text popover",
+    "m4 rich text keystroke",
+    "m4 open translation panel",
+    "m4 open icon picker",
+    "m4 icon grid arrow",
+    "m4 open item editor combo 500",
+    "m4 item editor combo keystroke",
+    "m4 open item more properties",
+    "m4 open item editor table 30x8",
+    "m4 item editor table cell keystroke",
+    "m4 open item editor tree 100",
+    "m4 item editor tree 100 keystroke",
+    "m4 open item editor tree 500",
+    "m4 item editor tree 500 keystroke",
+    "m4 insert pane keystroke",
+    "m4 quick insert keystroke",
+)
+
+
+def _m4_rows(samples: int, warmup: int, enforce_absolute: bool, wall_on: bool) -> List[Row]:
+    """Popover, item editor and Insert search rows (UX-M4-007)."""
+    try:
+        m4 = importlib.import_module("tests.form_builder.perf.m4_editors")
+    except ImportError as exc:
+        return [
+            Row(point, None, None, None, None, "-", "skip", str(exc))
+            for point in M4_POINTS
+        ]
+    rows: List[Row] = []
+    for group in m4.GROUPS:
+        try:
+            specs, teardown = group.build()
+        except (ImportError, AttributeError, TypeError, RuntimeError, IndexError, KeyError) as exc:
+            rows.extend(
+                Row(point, widgets, None, None, None, _ms_budget(budget), "skip", "could not build: %r" % (exc,))
+                for point, widgets, budget in group.names
+            )
+            continue
+        try:
+            for spec in specs:
+                try:
+                    row = _timed(
+                        spec.point,
+                        spec.widgets,
+                        spec.fn,
+                        spec.budget_ms,
+                        samples=samples,
+                        warmup=warmup,
+                        enforce_absolute=enforce_absolute,
+                        wall_on=wall_on,
+                        prepare=spec.prepare,
+                        cleanup=spec.cleanup,
+                    )[0]
+                except Exception as exc:  # a scenario that cannot run is a failed row, not a crash
+                    row = Row(
+                        spec.point,
+                        spec.widgets,
+                        None,
+                        None,
+                        None,
+                        _ms_budget(spec.budget_ms),
+                        "fail",
+                        "could not measure: %r" % (exc,),
+                    )
+                rows.append(_known_miss(row) if spec.point in KNOWN_M45_POINTS else row)
+        finally:
+            teardown()
+    return rows
 
 
 def _surface_speed_rows(

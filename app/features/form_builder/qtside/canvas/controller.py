@@ -1406,8 +1406,37 @@ class CanvasController:
         if change.after.current is not None:
             self._raise_mdi_window(change.after.current)
         if change.source in REVEAL_SOURCES and change.after.current is not None:
+            self._show_pages_holding(change.after.current)
             self._pending_reveal = change.after.current
         self._request_frame()
+
+    def _show_pages_holding(self, node_id: NodeId) -> None:
+        """A widget selected outside the canvas on a hidden page brings its page into view.
+
+        Canvas only, like a click on the tab (UX-CONT-006): the start page in the file stays.
+        """
+        document = self._session.document
+        if not document.contains(node_id):
+            return
+        for ancestor in (node_id,) + tuple(document.ancestors(node_id)):
+            parent = document.parent(ancestor)
+            if parent is None or page_kind(document, parent.id) is None:
+                continue
+            found = pages(document, parent.id)
+            index = next((item for item, page in enumerate(found) if page.id == ancestor), None)
+            if index is None or index == self._shown_index(parent.id):
+                continue
+            self._show_inserted(ancestor)
+
+    def _shown_index(self, container: NodeId) -> Optional[int]:
+        shown = self._shown_page.get(container)
+        if shown is not None:
+            return shown
+        widget = self._realizer.widget_for(container)
+        current = getattr(widget, "currentIndex", None)
+        if callable(current) and not isinstance(widget, QWizard):
+            return int(current())
+        return None
 
     def _raise_mdi_window(self, node_id: NodeId) -> None:
         """Bring the subwindow that holds the selection to the front.

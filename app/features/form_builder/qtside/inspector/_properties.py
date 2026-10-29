@@ -11,6 +11,7 @@ from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, Value
 from app.features.form_builder.qtside.inspector._services import Dropped, Rejected, Services, rejection_text
 from app.features.form_builder.qtside.inspector.editors._popover import SummaryButton
+from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
 from app.features.form_builder.qtside.theme.chrome import FormChrome, control_qss
 from app.features.form_builder.qtside.inspector.api import (
     NOT_SET_TEXT,
@@ -1440,17 +1441,20 @@ class _Row(QWidget):
         """UX-PED-009: the value stays in the file even when the canvas widget refuses it."""
         refused = any(self._services.refused(owner, view.qt_name) for owner in self.owner_ids())
         if refused:
-            self._set_caption(CANVAS_REFUSED_TEXT, error=False)
+            self._set_caption(CANVAS_REFUSED_TEXT, error=False, warning=True)
         elif self._caption is not None and self._caption.text() == CANVAS_REFUSED_TEXT:
             self._set_caption("", error=False)
 
-    def _set_caption(self, text: str, *, error: bool) -> None:
+    def _set_caption(self, text: str, *, error: bool, warning: bool = False) -> None:
         if not text:
             if self._caption is not None:
                 self._caption.hide()
                 self._caption.clear()
+                self._caption.setStyleSheet("")
             return
         caption = self._caption_label()
+        # UX-PED-009 names fb.warning for the canvas refusal; other notes keep the row-note rule.
+        caption.setStyleSheet("color: %s;" % warning_color(self._services.chrome) if warning else "")
         name = "formBuilder.rowError" if error else "formBuilder.rowNote"
         if caption.objectName() != name:
             # A new object name does not restyle the label by itself.
