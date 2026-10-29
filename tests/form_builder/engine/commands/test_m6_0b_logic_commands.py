@@ -365,6 +365,31 @@ def test_paste_with_unreadable_or_newer_versions_makes_the_target_read_only() ->
     assert doc.root.prop("cbcsLogic") is None
 
 
+def test_paste_from_a_newer_form_raises_the_target_only_when_logic_comes_along() -> None:
+    source = open_log(form(marker='{"version":2}'))
+    src_doc = source.document
+    # Plain widgets (no cbcs* logic in the pasted subtree): the target's marker stays as it was.
+    for marker in ("", '{"version":1}'):
+        target = open_log(form(marker=marker))
+        doc = target.document
+        before_marker = doc.root.prop("cbcsLogic")
+        fragment = selection_fragment(src_doc, (nid(src_doc, "other"), nid(src_doc, "nameError")))
+        assert fragment_logic_version(fragment) == 2
+        target.execute(InsertFragment(paste_placement(doc, (nid(doc, "total"),)), fragment))
+        assert doc.root.prop("cbcsLogic") == before_marker
+        assert not doc.root.prop("cbcsLogic") or "2" not in doc.root.prop("cbcsLogic").value.text  # type: ignore[union-attr]
+    # A widget with a cbcsOn* list: raised to 2 in the same entry, one undo takes it all back.
+    target = open_log(form(marker='{"version":1}'))
+    doc = target.document
+    start = saved(doc)
+    fragment = selection_fragment(src_doc, (nid(src_doc, "clearButton"),))
+    target.execute(InsertFragment(paste_placement(doc, (nid(doc, "total"),)), fragment))
+    assert doc.root.prop("cbcsLogic").value == StringValue('{"version":2}', notr=True)  # type: ignore[union-attr]
+    assert nid(doc, "clearButton_2")
+    assert target.undo()
+    assert saved(doc) == start and not target.can_undo()
+
+
 def test_paste_of_a_marker_that_cannot_be_read_counts_as_newer() -> None:
     source = open_log(form(marker="what"))
     target = open_log(form(marker=""))

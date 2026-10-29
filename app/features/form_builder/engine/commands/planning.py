@@ -151,7 +151,7 @@ def insert_fragment(
                 seen_dangling.add(end)
                 dangling.append(end)
     renames = tuple(mapping.items())
-    if source_version is not None and source_version > SUPPORTED_LOGIC_VERSION:
+    if source_version is not None and source_version > SUPPORTED_LOGIC_VERSION and _fragment_has_logic(fragment):
         # Pasted behavior from a newer build is kept as copied: raise the marker first, so the
         # logic participants see read-only logic and leave the copied text alone (UX D20).
         _raise_logic_marker(doc, ctx, source_version)
@@ -1814,6 +1814,17 @@ def _sync_logic_marker(doc: UiDocument, ctx: PlanContext) -> None:
         return
     if existing is not None:
         set_property(doc, ctx, doc.root.id, "cbcsLogic", None, logic_checked=True)
+
+
+def _fragment_has_logic(fragment: Fragment) -> bool:
+    """Does any pasted element carry a logic property (a step list, formula, check ...)? Plain
+    widgets from a newer form leave the target's marker alone (UX D20)."""
+    return any(
+        entry.kind == "property" and is_user_logic_key(entry.name)
+        for top in fragment.nodes
+        for spec in top.iter_subtree()
+        for entry in spec.properties
+    )
 
 
 def _raise_logic_marker(doc: UiDocument, ctx: PlanContext, version: int) -> None:
