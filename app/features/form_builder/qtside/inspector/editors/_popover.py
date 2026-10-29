@@ -182,6 +182,11 @@ _MULTILINE = (QPlainTextEdit, QTextEdit)
 _ENTER_COMMITS = (QLineEdit, QAbstractSpinBox)
 
 
+def _keeps_tab(widget: object) -> bool:
+    """A multi-line box that types a tab. One that hands Tab on (tabChangesFocus) cycles with the popover."""
+    return isinstance(widget, _MULTILINE) and not widget.tabChangesFocus()
+
+
 class RowPopover(QFrame):
     """A popover over a row. ``body`` takes the editor's fields; the footer has Reset and Done."""
 
@@ -557,7 +562,7 @@ class RowPopover(QFrame):
             self.revert()
             return True
         if key in (_key("Key_Tab"), _key("Key_Backtab")):
-            if bool(mods & _modifier("ControlModifier")) or isinstance(QApplication.focusWidget(), _MULTILINE):
+            if bool(mods & _modifier("ControlModifier")) or _keeps_tab(QApplication.focusWidget()):
                 return False
             self._cycle(backward=key == _key("Key_Backtab") or bool(mods & _modifier("ShiftModifier")))
             return True
@@ -584,8 +589,8 @@ class RowPopover(QFrame):
         elif key == _key("Key_Escape"):
             accept = True
         elif key in (_key("Key_Tab"), _key("Key_Backtab")):
-            accept = not bool(mods & _modifier("ControlModifier")) and not isinstance(
-                QApplication.focusWidget(), _MULTILINE
+            accept = not bool(mods & _modifier("ControlModifier")) and not _keeps_tab(
+                QApplication.focusWidget()
             )
         elif key in (_key("Key_Return"), _key("Key_Enter")):
             accept = not self._enter_stays()

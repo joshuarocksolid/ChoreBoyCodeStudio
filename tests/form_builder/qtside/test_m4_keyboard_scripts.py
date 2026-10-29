@@ -937,6 +937,5 @@ def test_k12_tab_leaves_the_formatted_text_editor(run: _Run) -> None:
     _open_finding(run, "K12-3")
 
 
-@pytest.mark.xfail(strict=True, reason="K15-1: Enter on a Disabled-state picture closes the popover, so Esc cannot revert it")
 def test_k15_esc_reverts_a_disabled_state_pick(run: _Run) -> None:
     _open_finding(run, "K15-1")
