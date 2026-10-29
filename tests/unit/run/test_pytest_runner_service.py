@@ -117,7 +117,7 @@ def test_run_pytest_project_invokes_subprocess_and_parses_failures(
         command = list(args[0])
         assert command[0] == "/opt/freecad/AppRun"
         assert command[1] == "-c"
-        assert "pytest.main(['-q', '-rA', '--import-mode=importlib', '-p', 'no:cacheprovider'])" in command[2]
+        assert "pytest.main(['-q', '-rA', '--import-mode=importlib', '--ignore=cbcs/form_builder', '-p', 'no:cacheprovider'])" in command[2]
         return subprocess.CompletedProcess(
             args=args[0],
             returncode=1,
@@ -174,7 +174,7 @@ def test_run_pytest_target_includes_target_argument(
 
     assert result.return_code == 0
     assert captured_command[:8] == ["/usr/bin/python3", "-m", "pytest", "-q", "-rA", "--import-mode=importlib", "-p", "no:cacheprovider"]
-    assert captured_command[-1] == str(target.resolve())
+    assert captured_command[-2:] == [str(target.resolve()), "--ignore=cbcs/form_builder"]
 
 
 def test_run_pytest_args_passes_through_explicit_pytest_arguments(
@@ -215,6 +215,7 @@ def test_run_pytest_args_passes_through_explicit_pytest_arguments(
         "-p",
         "no:cacheprovider",
         "tests/test_sample.py::test_ok",
+        "--ignore=cbcs/form_builder",
     ]
 
 
@@ -277,7 +278,7 @@ def test_run_pytest_project_includes_import_mode_for_apprun_payload(
 
     assert captured_command[0] == "/opt/freecad/AppRun"
     assert captured_command[1] == "-c"
-    assert "pytest.main(['-q', '-rA', '--import-mode=importlib', '-p', 'no:cacheprovider'])" in captured_command[2]
+    assert "pytest.main(['-q', '-rA', '--import-mode=importlib', '--ignore=cbcs/form_builder', '-p', 'no:cacheprovider'])" in captured_command[2]
 
 
 def test_select_pytest_runtime_prefers_env_override_before_apprun(
