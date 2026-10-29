@@ -933,7 +933,6 @@ def test_k12_tab_reaches_translate_this_text(run: _Run) -> None:
     _open_finding(run, "K12-2")
 
 
-@pytest.mark.xfail(strict=True, reason="K12-3: Tab in the formatted-text editor inserts a tab; Done is reachable only by Shift+Tab around the popover")
 def test_k12_tab_leaves_the_formatted_text_editor(run: _Run) -> None:
     _open_finding(run, "K12-3")
 

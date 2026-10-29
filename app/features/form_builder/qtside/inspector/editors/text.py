@@ -337,6 +337,8 @@ class _TextBody:
         self._formatted.setFont(display)
         self._formatted.document().setDefaultFont(display)
         self._formatted.setAccessibleName("%s: formatted text" % host.label)
+        # Tab leaves the editor for the next control (Done); Ctrl+Tab still types a tab.
+        self._formatted.setTabChangesFocus(True)
         self._source = QPlainTextEdit()
         self._source.setAccessibleName("%s: HTML source" % host.label)
         self._source.setFont(display)
