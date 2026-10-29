@@ -23,6 +23,7 @@ from app.features.form_builder.engine.codegen.names import header_module
 from app.features.form_builder.engine.codegen.window_template import plan_stub, render_window_class
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.project.forms import FormScope, classify_form
+from app.features.form_builder.engine.project.window_file import read_window
 from app.features.form_builder.engine.ui4.reader import read_ui
 
 _UI = """<?xml version="1.0" encoding="UTF-8"?>
@@ -680,12 +681,26 @@ def test_window_stub_is_inserted_once() -> None:
     ast.parse(source, feature_version=(3, 9))
     assert "class InvoiceWindow(QDialog):" in source
     assert "from forms.ui_invoice import Ui_Invoice" in source
-    plan = plan_stub(source, class_name="InvoiceWindow", method_name="on_save", params=("checked",), decorator=None)
+    read = read_window("/proj", "forms/invoice_window.py", text=source)
+    plan = plan_stub(
+        read,
+        method_name="save_invoice",
+        params=("checked",),
+        sender="saveButton",
+        event_words="clicked",
+    )
     updated = source[: plan.edit.start] + plan.edit.text + source[plan.edit.end :]
     ast.parse(updated)
-    assert "def on_save(self, checked):" in updated
+    assert "def save_invoice(self, checked):" in updated
+    assert '"""Runs when saveButton is clicked."""' in updated
     with pytest.raises(ValueError):
-        plan_stub(updated, class_name="InvoiceWindow", method_name="on_save", params=(), decorator=None)
+        plan_stub(
+            read_window("/proj", "forms/invoice_window.py", text=updated),
+            method_name="save_invoice",
+            params=(),
+            sender="saveButton",
+            event_words="clicked",
+        )
 
 
 def test_classify_form_matches_forms_dir_and_adopted(tmp_path: Path) -> None:
