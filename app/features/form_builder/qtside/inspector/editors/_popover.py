@@ -22,7 +22,7 @@ the summary button, whatever closed it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
 from app.features.form_builder.qtside.theme.chrome import apply_level2_shadow, control_qss
@@ -116,6 +116,8 @@ class SummaryButton(QPushButton):
         self._row_label = row_label
         self._full = ""
         self._opener: Optional[Callable[[], None]] = None
+        self._elided_for: Optional[Tuple[str, int]] = None
+        self._named_for: Optional[Tuple[str, str]] = None
         self.setMinimumWidth(0)
         self.clicked.connect(self._open)
         self.set_summary("")
@@ -129,10 +131,16 @@ class SummaryButton(QPushButton):
         self._name()
 
     def set_summary(self, text: str) -> None:
-        self._full = text
-        self.setToolTip(text)
+        if text != self._full or self._elided_for is None:
+            self._full = text
+            self.setToolTip(text)
         self._elide()
         self._name()
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() in (_event("FontChange"), _event("StyleChange")):
+            self._elided_for = None
 
     def set_opener(self, opener: Optional[Callable[[], None]]) -> None:
         self._opener = opener
@@ -158,11 +166,18 @@ class SummaryButton(QPushButton):
 
     def _elide(self) -> None:
         available = max(0, self.width() - 28)
+        # Eliding measures the text; skip it when neither the text nor the width changed.
+        if self._elided_for == (self._full, available):
+            return
+        self._elided_for = (self._full, available)
         shown = QFontMetrics(self.font()).elidedText(self._full, _elide_right(), available) if self._full else ""
         self.setText(("%s %s" % (shown, ARROW)).strip() if self._full else ARROW)
 
     def _name(self) -> None:
         summary = self._full or "Default"
+        if self._named_for == (self._row_label, summary):
+            return
+        self._named_for = (self._row_label, summary)
         self.setAccessibleName("%s: %s" % (self._row_label, summary))
 
 
