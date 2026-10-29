@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>DesignerMade</class>
+ <widget class="QWidget" name="DesignerMade">
+  <property name="geometry">
+   <rect>
+    <x>0</x>
+    <y>0</y>
+    <width>320</width>
+    <height>200</height>
+   </rect>
+  </property>
+  <property name="windowTitle">
+   <string>Made in Designer</string>
+  </property>
+  <property name="cbcsLogic" stdset="0">
+   <string notr="true">{&quot;version&quot;:1}</string>
+  </property>
+  <layout class="QVBoxLayout" name="verticalLayout">
+   <item>
+    <widget class="QLineEdit" name="searchEdit"/>
+   </item>
+   <item>
+    <widget class="QPushButton" name="goButton">
+     <property name="text">
+      <string>Go</string>
+     </property>
+     <property name="cbcsOnClicked" stdset="0">
+      <string notr="true">[
+  {&quot;do&quot;: &quot;call&quot;, &quot;method&quot;: &quot;run_search&quot;}
+]</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="resetButton">
+     <property name="text">
+      <string>Reset</string>
+     </property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QCheckBox" name="wholeWords">
+     <property name="text">
+      <string>Whole words</string>
+     </property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections>
+  <connection>
+   <sender>resetButton</sender>
+   <signal>clicked()</signal>
+   <receiver>searchEdit</receiver>
+   <slot>clear()</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>160</x>
+     <y>120</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>160</x>
+     <y>30</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>goButton</sender>
+   <signal>clicked()</signal>
+   <receiver>searchEdit</receiver>
+   <slot>setFocus()</slot>
+  </connection>
+  <connection>
+   <sender>wholeWords</sender>
+   <signal>toggled(bool)</signal>
+   <receiver>verticalLayout</receiver>
+   <slot>invalidate()</slot>
+  </connection>
+ </connections>
+</ui>

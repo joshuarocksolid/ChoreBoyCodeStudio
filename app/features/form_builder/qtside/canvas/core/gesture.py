@@ -503,6 +503,13 @@ class CloseEditor:
 
 
 @dataclass(frozen=True)
+class Activate:
+    """A double-click a contributor claimed (``integration/activate_ext``, M6.0s). The host runs it."""
+
+    node: NodeId
+
+
+@dataclass(frozen=True)
 class CanvasPressed:
     pass
 
@@ -552,7 +559,9 @@ class RunChipAction:
 ModelEffect = Union[Select, Toggle, Commit]
 ViewEffect = Union[Preview, PreviewPage, EndPreview, Zoom, ScrollBy, Reveal, Cursor, Tip]
 EditorEffect = Union[OpenEditor, CloseEditor, OpenItems]
-HostEffect = Union[CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep, ScrollContent, RevealInScroll]
+HostEffect = Union[
+    CanvasPressed, Narrate, HoverChanged, RunChipAction, ShowPageStep, ScrollContent, RevealInScroll, Activate
+]
 Effect = Union[ModelEffect, ViewEffect, EditorEffect, HostEffect]
 
 
@@ -561,6 +570,10 @@ class Step:
     gesture: Gesture
     effects: Tuple[Effect, ...] = ()
     consumed: bool = True
+
+
+def no_claim(_document: UiDocument, _node: NodeId) -> Optional[str]:
+    return None
 
 
 @dataclass(frozen=True)
@@ -574,6 +587,8 @@ class World:
     fresh_token: str
     #: Class default size policies for the primary. The keyboard resize uses these.
     defaults: Tuple[str, str] = ("Preferred", "Preferred")
+    #: Double-click contributors (M6.0s): hover words when one claims the node, else None. Pure.
+    claims: Callable[[UiDocument, NodeId], Optional[str]] = no_claim
 
 
 def needs_fresh_geometry(gesture: Gesture, event: Event) -> bool:
@@ -678,6 +693,11 @@ def _idle_press(gesture: Idle, event: Press, world: World) -> Step:
     if isinstance(target, OnKnob):
         return _knob_press(target.knob, event, world)
     if event.double and isinstance(target, OnWidget):
+        if target.site == "widget" and world.claims(world.document, target.node) is not None:
+            return Step(
+                gesture,
+                (CanvasPressed(), HoverChanged(None), Select((target.node,), target.node), Activate(target.node)),
+            )
         kind = items_target(world.document, target.node)
         if kind == "model":
             from app.features.form_builder.qtside.canvas.core.text import MODEL_VIEW_SENTENCE
@@ -1420,7 +1440,8 @@ def _hover_readout(world: World, target: Target) -> Tuple[Optional[NodeId], Curs
         return None, "pointing", message
     if isinstance(target, OnWidget):
         edits = text_target(world.document, target.node, target.site) is not None
-        return target.node, "arrow", hover_sentence(world.document, target.node, edits)
+        claimed = world.claims(world.document, target.node) if target.site == "widget" else None
+        return target.node, "arrow", hover_sentence(world.document, target.node, edits, claimed)
     if isinstance(target, OnSpace):
         found = world.document.get(target.select)
         if isinstance(found, LayoutNode):

@@ -670,7 +670,14 @@ class ReplaceDocument(_CommandBase):
 
 @dataclass(frozen=True)
 class SetLogic(_CommandBase):
-    """Set or clear one cbcs logic property and keep the root version marker."""
+    """Set or clear one cbcs logic property and keep the root version marker (CONTRACTS 15, M6.0b).
+
+    ``text`` goes through the logic codec: a step list or JSON property is stored as canonical
+    text (CONTRACTS 15.4), text the codec can't read is rejected with FB401, and a list with no
+    items removes the property (``text`` None does too). Text that means what is already stored
+    leaves the stored bytes alone. Rejected with FB402 while the form's logic is read-only (15.7).
+    ``cbcsLogic`` follows the logic properties (15.2) and is never written by this command.
+    """
 
     command_type: ClassVar[str] = "set_logic"
     _label_text: ClassVar[str] = "Edit logic"

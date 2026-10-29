@@ -33,7 +33,7 @@ P23_TEST = (
 )
 
 WP_RULES: Tuple[Tuple[int, int, str], ...] = (
-    (1, 1, "M5.6"), (2, 7, "M6.1"), (8, 12, "M5.6"),
+    (1, 1, "M5.6"), (2, 2, "M6.1c"), (3, 5, "M6.1b"), (6, 7, "M6.2b"), (8, 12, "M5.6"),
     (13, 16, "M2.2"), (17, 22, "M3.1"), (23, 27, "M3.4"), (28, 29, "M3.1b"),
     (30, 31, "M3.1"), (32, 33, "M3.4"), (34, 34, "M3.1"), (35, 56, "M3.3"),
     (57, 123, "M4.1"), (124, 133, "M4.2"), (134, 144, "M5.1"),
@@ -50,10 +50,10 @@ WP_RULES: Tuple[Tuple[int, int, str], ...] = (
 )
 
 PAIN_WP: Mapping[int, str] = {
-    1: "M3.2", 2: "M3.6", 3: "M3.4", 4: "M3.2", 5: "M3.3", 6: "M6.2", 7: "M5.4",
+    1: "M3.2", 2: "M3.6", 3: "M3.4", 4: "M3.2", 5: "M3.3", 6: "M6.2b", 7: "M5.4",
     8: "M5.3", 9: "M5.2", 10: "M2.4", 11: "M2.5", 12: "M3.6", 13: "M5.6", 14: "M3.3",
-    15: "M1.4", 16: "M6.1", 17: "M5.1", 18: "M4.3a", 19: "M3.3", 20: "M3.5", 21: "M3.2",
-    22: "M6.2", 23: "M1.3", 24: "M1.2", 25: "M3.5",
+    15: "M1.4", 16: "M6.1b", 17: "M5.1", 18: "M4.3a", 19: "M3.3", 20: "M3.5", 21: "M3.2",
+    22: "M6.2a", 23: "M1.3", 24: "M1.2", 25: "M3.5",
 }
 
 LOGIC: Tuple[Tuple[str, str, str, str, str], ...] = (
@@ -66,15 +66,15 @@ LOGIC: Tuple[Tuple[str, str, str, str, str], ...] = (
     ("L-invoice-sqlite-lines", "Invoice bound to SQLite with navigation and lines", "scenario", "LOGIC_DESIGN.md §7.7", "M8.3b"),
     ("L-logic-storage", "Dynamic-property codec, schema v1, canonical JSON", "feature", "LOGIC_DESIGN.md §6.1-6.3", "M6.0b"),
     ("L-logic-references", "Rename, copy, paste, delete keep references", "feature", "LOGIC_DESIGN.md §6.4, §2.13", "M6.0b"),
-    ("L-events-list", "Events list and step lists", "feature", "LOGIC_DESIGN.md §2.2-2.4", "M6.1"),
-    ("L-signal-slot-picker", "Friendly signal and slot picker", "feature", "LOGIC_DESIGN.md §3.1", "M6.1"),
-    ("L-canvas-overlay", "Canvas logic overlay and arrows", "feature", "LOGIC_DESIGN.md §2.7", "M6.1"),
-    ("L-handler-naming", "Handler naming", "feature", "LOGIC_DESIGN.md §3.2", "M6.2"),
-    ("L-stub-and-jump", "Stub insertion and jump to code", "feature", "LOGIC_DESIGN.md §3.3", "M6.2"),
-    ("L-signature-checks", "Signature and @Slot checks", "feature", "LOGIC_DESIGN.md §3.4", "M6.2"),
-    ("L-runtime-connect", "How level 2 connects at run time", "feature", "LOGIC_DESIGN.md §3.5", "M6.2"),
-    ("L-connect-slots-by-name", "connectSlotsByName checks", "feature", "LOGIC_DESIGN.md §3.6", "M6.2"),
-    ("L-design-time-errors", "Design-time errors (FB codes in Problems)", "feature", "LOGIC_DESIGN.md §2.9", "M6.2"),
+    ("L-events-list", "Events list and step lists", "feature", "LOGIC_DESIGN.md §2.2-2.4", "M6.1b"),
+    ("L-signal-slot-picker", "Friendly signal and slot picker", "feature", "LOGIC_DESIGN.md §3.1", "M6.1b"),
+    ("L-canvas-overlay", "Canvas logic overlay and arrows", "feature", "LOGIC_DESIGN.md §2.7", "M6.1c"),
+    ("L-handler-naming", "Handler naming", "feature", "LOGIC_DESIGN.md §3.2", "M6.2a"),
+    ("L-stub-and-jump", "Stub insertion and jump to code", "feature", "LOGIC_DESIGN.md §3.3", "M6.2b"),
+    ("L-signature-checks", "Signature and @Slot checks", "feature", "LOGIC_DESIGN.md §3.4", "M6.2a"),
+    ("L-runtime-connect", "How level 2 connects at run time", "feature", "LOGIC_DESIGN.md §3.5", "M6.1a"),
+    ("L-connect-slots-by-name", "connectSlotsByName checks", "feature", "LOGIC_DESIGN.md §3.6", "M6.2a"),
+    ("L-design-time-errors", "Design-time errors (FB codes in Problems)", "feature", "LOGIC_DESIGN.md §2.9", "M6.2b"),
     ("L-expression-language", "Grammar, types, coercion, names, blanks", "feature", "LOGIC_DESIGN.md §4.1-4.6", "M7.1"),
     ("L-window-method-calls", "window.method() from a formula", "feature", "LOGIC_DESIGN.md §4.7", "M7.1"),
     ("L-function-library", "Function library", "feature", "LOGIC_DESIGN.md §4.8", "M7.1"),

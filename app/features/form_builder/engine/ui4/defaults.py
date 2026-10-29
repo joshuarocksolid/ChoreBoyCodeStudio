@@ -214,17 +214,18 @@ class QtClassTable:
         """Sort key for inserting a new ``<property>`` entry: ``(group, rank, name)``.
         group 0 = known Qt property (rank from the table), 1 = other dynamic
         property, 2 = ``cbcs*`` logic property (rank from
-        ``engine.logic.storage.LOGIC_PROPERTY_ORDER``). A name the table knows ranks as a
+        ``engine.logic.storage.logic_rank``). A name the table knows ranks as a
         Qt property even when the entry says ``stdset="0"``: Designer writes that
         for any property whose setter is not ``set<Name>`` (``isWrapping``). So
         ``dynamic`` only matters for names the table does not know, which sort in
         group 1 by name."""
         if name.startswith("cbcs"):
             # Imported here: the logic package imports this one.
-            from app.features.form_builder.engine.logic.storage import LOGIC_PROPERTY_ORDER
+            from app.features.form_builder.engine.logic.storage import LOGIC_PROPERTY_ORDER, logic_rank
 
-            if name in LOGIC_PROPERTY_ORDER:
-                return (2, LOGIC_PROPERTY_ORDER.index(name), name)
+            rank = logic_rank(name)
+            if rank is not None:
+                return (2, rank, name)
             # Other cbcs names keep the order they were written in (no name tie-break).
             return (2, len(LOGIC_PROPERTY_ORDER), "")
         info = self.property_info(class_name, name)

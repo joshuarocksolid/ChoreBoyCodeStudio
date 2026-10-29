@@ -73,7 +73,13 @@ def code_diagnostics_for_form(
         obj = location.object_name or ""
         line = location.line if location.line > 0 else 1
         detail = dict(to_problem_detail(item))
-        detail["location_label"] = obj if obj else "Ln %d" % line
+        code_path = location.code_path
+        if obj:
+            detail["location_label"] = obj
+        elif code_path:
+            detail["location_label"] = "%s:%d" % (os.path.basename(code_path), max(1, location.code_line))
+        else:
+            detail["location_label"] = "Ln %d" % line
         detail["source_label"] = "Form"
         fixes = fixes_for(item, registry)
         if fixes:
