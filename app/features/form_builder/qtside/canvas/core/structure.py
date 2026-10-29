@@ -82,9 +82,14 @@ def positioning_of(document: UiDocument, node: NodeId) -> Positioning:
     return Root()
 
 
+# Main-window parts hold menus and actions, never a layout (UX-MAIN-016): no "No layout" frame.
+_BARS = frozenset({"QMenuBar", "QMenu", "QToolBar", "QStatusBar"})
+
+
 def managed_container(document: UiDocument, node: WidgetNode) -> bool:
     """Tab widgets, splitters and the rest keep pages without a layout slot."""
-    return effective_class(document, node) in _MANAGED
+    found = effective_class(document, node)
+    return found in _MANAGED or found in _BARS
 
 
 def effective_selection(document: UiDocument, state: SelectionState) -> SelectionState:

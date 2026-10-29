@@ -27,7 +27,7 @@ from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.spec import NodeSpec
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.qt.QtCore import QEvent, QPoint, Qt, QTimer
-from app.qt.QtGui import QKeyEvent
+from app.qt.QtGui import QColor, QKeyEvent
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -78,6 +78,7 @@ class ActionsPane(QWidget):
         self._confirm = confirm
         self._icons = False
         self._rows: Dict[int, QTreeWidgetItem] = {}
+        self._faint = ""
         self._building = False
         self.setObjectName("formBuilder.actions")
         self.setAccessibleName("Actions")
@@ -135,6 +136,39 @@ class ActionsPane(QWidget):
         self.refresh()
 
     # ------------------------------------------------------------ plumbing
+    def apply_theme(self, tokens: object) -> None:
+        """The look of the Outline and Insert sections, from the shell tokens (light, dark, both high contrast)."""
+
+        def token(name: str, fallback: str = "") -> str:
+            value = getattr(tokens, name, "") or fallback
+            return str(value)
+
+        width = int(getattr(tokens, "focus_border_width", 1) or 1)
+        self.setStyleSheet(
+            "QWidget#formBuilder\\.actions { background: %(panel)s; color: %(text)s; }"
+            "QLabel#formBuilder\\.actions\\.title { color: %(muted)s; background: transparent;"
+            " font-size: 10px; font-weight: 600; letter-spacing: 0.5px; }"
+            "QLineEdit { background: %(edit)s; color: %(text)s; border: 1px solid %(border)s; }"
+            "QLineEdit:focus { border: %(width)dpx solid %(accent)s; }"
+            "QToolButton { background: transparent; color: %(text)s; border: none; min-width: 24px; min-height: 24px; }"
+            "QToolButton:focus { border: %(width)dpx solid %(accent)s; }"
+            "QTreeWidget#formBuilder\\.actions\\.list { background: %(edit)s; color: %(text)s; border: 1px solid %(border)s; }"
+            "QTreeWidget#formBuilder\\.actions\\.list::item:selected { background: %(selected)s; color: %(text)s; }"
+            "QTreeWidget#formBuilder\\.actions\\.list:focus { border: %(width)dpx solid %(accent)s; }"
+            % {
+                "panel": token("panel_bg"),
+                "text": token("text_primary"),
+                "muted": token("text_muted", token("text_primary")),
+                "edit": token("editor_bg", token("panel_bg")),
+                "border": token("border"),
+                "accent": token("accent"),
+                "selected": token("tree_selected_bg", token("accent")),
+                "width": width,
+            }
+        )
+        self._faint = token("text_muted")
+        self.refresh()
+
     def dispose(self) -> None:
         self._timer.stop()
         self._sub.close()
@@ -193,6 +227,10 @@ class ActionsPane(QWidget):
         item.setText(0, q.plain_text(info.text) or info.name)
         item.setText(1, info.shortcut)
         item.setText(2, info.used_line)
+        if self._faint:
+            # Shortcut and used-in line are fb.faint (UX-MAIN-010).
+            for column in (1, 2):
+                item.setForeground(column, QColor(self._faint))
         item.setData(0, _ID_ROLE, int(info.id))
         item.setData(0, _KIND_ROLE, "action")
         item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)

@@ -529,6 +529,11 @@ class FormSurface(QWidget):
         )
         self._toolbar.apply_theme(tokens)
         self._workbench.apply_theme(tokens)
+        # Left sections from the workbench slots get no tokens from the workbench; the Actions section is M5.1's.
+        actions = self._workbench.section_widget("actions")
+        theme = getattr(actions, "apply_theme", None)
+        if callable(theme):
+            theme(tokens)
         self._paint_banner()
         self._toolbar.set_save(
             self._toolbar.save_state.text(),
