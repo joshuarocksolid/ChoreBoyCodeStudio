@@ -7,10 +7,10 @@ through ``FormSurface.select_object`` and focuses the canvas (UX-START-004).
 from __future__ import annotations
 
 import os
-from typing import Callable, Optional, Sequence
+from typing import Callable, Dict, Optional, Sequence
 
 from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QMessageBox, QWidget
+from app.qt.QtWidgets import QInputDialog, QLineEdit, QMessageBox, QWidget
 
 from app.features.form_builder.engine.project.create import CreateResult, create_form
 from app.features.form_builder.engine.project.fs import OsFileSystem, ProjectOpError
@@ -21,7 +21,10 @@ from app.features.form_builder.engine.project.recents import (
     remember_form,
 )
 from app.features.form_builder.engine.project.names import class_name_for_stem
+from app.features.form_builder.engine.project import user_templates as ut
+from app.features.form_builder.engine.project.template_use import create_from_template
 from app.features.form_builder.engine.project.templates import first_useful_widget
+from app.features.form_builder.integration import settings_page, template_store
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.integration.provider import FormTabProvider
 from app.features.form_builder.qtside.dialogs.from_table import FromTableDialog, locale_date_format
@@ -91,21 +94,32 @@ def perform_create(
     directory: str,
     ui_text: Optional[str] = None,
     first_widget: Optional[str] = None,
+    saved_template: Optional[ut.TemplateInfo] = None,
 ) -> CreateResult:
-    """Write the form with ``create_form``, then open the ``.ui`` tab."""
+    """Write the form with ``create_form``, then open the ``.ui`` tab.
+
+    ``saved_template`` makes the form from a template the user saved
+    (UX-TMPL-003): the root takes the name, its pictures are merged into the
+    project, and the Workbench opens with the root selected.
+    """
     project = getattr(window, "_loaded_project", None)
     if project is None:
         return CreateResult((), (), None, "Open a project first.")
     root = os.path.abspath(project.project_root)
     fs = OsFileSystem()
-    result = create_form(
-        root,
-        stem,
-        fs,
-        template=template,
-        directory=directory,
-        ui_text=ui_text,
-    )
+    notices: tuple = ()
+    if saved_template is not None:
+        made = create_from_template(root, saved_template, stem, fs, directory=directory)
+        result, notices = made.result, made.notices
+    else:
+        result = create_form(
+            root,
+            stem,
+            fs,
+            template=template,
+            directory=directory,
+            ui_text=ui_text,
+        )
     if result.refused or result.scope is None:
         return result
     ui_path = result.scope.ui_path
@@ -119,8 +133,14 @@ def perform_create(
     registry = getattr(window, "_tab_content_registry", None)
     if registry is not None:
         surface = registry.surface_for_path(os.path.abspath(ui_path))
-        chosen = first_widget if ui_text is not None else first_useful_widget(template)
+        if saved_template is not None:
+            chosen = None
+        else:
+            chosen = first_widget if ui_text is not None else first_useful_widget(template)
         select_created_widget(surface, chosen)
+        say = getattr(surface, "show_plain", None)
+        if notices and callable(say):
+            say(notices[0])
     tree = getattr(window, "_project_tree_ui_workflow", None)
     refresh = getattr(tree, "refresh_project_tree_from_disk", None)
     if callable(refresh):
@@ -180,6 +200,7 @@ def attach_new_form(window: object) -> None:
     def open_new_form(directory: Optional[str] = None) -> None:
         open_new_form_tab(window, directory)
 
+    settings_page.install()
     window._open_new_form = open_new_form  # type: ignore[attr-defined]
     window._open_new_form_card = lambda key: open_window_kind(window, key)  # type: ignore[attr-defined]
 
@@ -227,6 +248,7 @@ class NewFormSurface:
     def __init__(self, request: TabSurfaceRequest, window: object) -> None:
         self._request = request
         self._window = window
+        self._saved: Dict[str, ut.TemplateInfo] = {}
         root = request.project_root or os.getcwd()
         preferred = os.path.join(root, "forms")
         self._panel = NewFormPanel(
@@ -240,6 +262,8 @@ class NewFormSurface:
         self._panel.from_table_requested.connect(self._from_table)
         self._panel.adopt_requested.connect(self._adopt)
         self._panel.open_recent_requested.connect(self._open_recent)
+        self._panel.template_action_requested.connect(self._template_action)
+        self._reload_templates()
         self._reload_recents()
 
     def widget(self) -> QWidget:
@@ -285,7 +309,16 @@ class NewFormSurface:
         self._panel.focus_name()
 
     def _create(self, key: str) -> None:
-        if key == WIZARD_KEY:
+        saved = self._saved.get(key)
+        if saved is not None:
+            result = perform_create(
+                self._host(),
+                template="widget",
+                stem=self._panel.stem(),
+                directory=self._panel.directory(),
+                saved_template=saved,
+            )
+        elif key == WIZARD_KEY:
             # The Wizard card is finished .ui text; create_form canonicalises it (see qtside/start/wizard.py).
             result = perform_create(
                 self._host(),
@@ -307,6 +340,47 @@ class NewFormSurface:
             self._panel.show_status(result.refused)
             return
         self._reload_recents()
+
+    def _project_root(self) -> Optional[str]:
+        return self._request.project_root or None
+
+    def _reload_templates(self) -> None:
+        found = template_store.load_templates(self._project_root())
+        self._saved = {info.card_key: info for info in found}
+        self._panel.set_user_templates(found)
+
+    def _template_action(self, action: str, key: str) -> None:
+        """Rename, change the description or delete a saved template (UX-TMPL-004)."""
+        info = self._saved.get(key)
+        if info is None:
+            return
+        state, root = template_store.state_root(), self._project_root()
+        try:
+            if action == "delete":
+                if not ask_delete_template(self._panel, info.title):
+                    return
+                ut.delete_template(info, state_root=state, project_root=root)
+            elif action == "rename":
+                name = ask_text(self._panel, "Rename template", "Name", info.name)
+                if name is None:
+                    return
+                ut.rename_template(info, name, state_root=state, project_root=root)
+            elif action == "describe":
+                text = ask_text(self._panel, "Change description", "Description", info.description)
+                if text is None:
+                    return
+                ut.change_description(info, text)
+            else:
+                return
+        except ut.TemplateExists as exc:
+            self._panel.show_status('A template named "%s" already exists.' % exc.existing.name)
+            return
+        except ProjectOpError as exc:
+            self._panel.show_status(str(exc))
+            return
+        self._panel.show_status("")
+        self._reload_templates()
+        self._panel.focus_card_near(key)
 
     def _from_table(self) -> None:
         root = self._request.project_root or os.getcwd()
@@ -367,6 +441,26 @@ class NewFormSurface:
 
     def _host(self) -> object:
         return self._window
+
+
+def ask_delete_template(parent: QWidget, name: str) -> bool:
+    """UX-TMPL-004: [Delete template] [Cancel]. Cancel is the default, so Enter alone never deletes."""
+    box = QMessageBox(parent)
+    box.setIcon(QMessageBox.Icon.Question)
+    box.setWindowTitle("Delete template")
+    box.setText("Delete the template \u201c%s\u201d? Forms made from it don't change." % name)
+    delete = box.addButton("Delete template", QMessageBox.ButtonRole.DestructiveRole)
+    cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+    box.setDefaultButton(cancel)
+    box.setEscapeButton(cancel)
+    exec_qt(box)
+    return box.clickedButton() is delete
+
+
+def ask_text(parent: QWidget, title: str, label: str, value: str) -> Optional[str]:
+    """One line of text for Rename… and Change description…, or None when cancelled."""
+    text, accepted = QInputDialog.getText(parent, title, label, QLineEdit.EchoMode.Normal, value)
+    return text if accepted else None
 
 
 def _close_start_tab(window: object, project_root: str) -> None:

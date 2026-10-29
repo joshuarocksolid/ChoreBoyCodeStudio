@@ -95,7 +95,10 @@ def test_arrow_keys_move_between_cards(tmp_path: Path, qapp: object) -> None:
     QTest.keyClick(panel.card("data_entry"), Qt.Key_Right)
     assert app.focusWidget() is panel.card("list_detail")
     assert panel.columns() == 4
+    # Five templates wrap to a second row at four columns (M5.5c adds the side-buttons dialog).
     QTest.keyClick(panel.card("data_entry"), Qt.Key_Down)
+    assert app.focusWidget() is panel.card("dialog_buttons_right")
+    QTest.keyClick(panel.card("dialog_buttons_right"), Qt.Key_Down)
     assert app.focusWidget() is panel.card("widget")
     panel.close()
     del qapp

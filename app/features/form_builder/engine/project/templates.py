@@ -19,6 +19,8 @@ from app.features.form_builder.engine.project.form_xml import (
 GROUP_TEMPLATES = "templates"
 GROUP_BLANK = "blank"
 GROUP_FROM_EXISTING = "from_existing"
+#: Templates the user saved (UX-TMPL-004). The first group on Start, shown when there is one.
+GROUP_YOURS = "yours"
 
 
 @dataclass(frozen=True)
