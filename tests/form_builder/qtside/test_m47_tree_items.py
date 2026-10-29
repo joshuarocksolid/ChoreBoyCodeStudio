@@ -74,3 +74,35 @@ def test_tree_columns_past_the_third_are_reachable_and_editable(qapp) -> None:
     assert load_draft(session.document, tree).items[0].texts[-1] == "fifth"
     assert len(load_draft(session.document, tree).items[0].texts) == 5
     session.dispose()
+
+
+def test_typing_in_a_new_column_keeps_the_column_two_tooltip_on_column_two(qapp) -> None:
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QTreeWidget" name="tree">
+   <column><property name="text"><string>A</string></property></column>
+   <column><property name="text"><string>B</string></property></column>
+   <column><property name="text"><string>C</string></property></column>
+   <item>
+    <property name="text"><string>Apple</string></property>
+    <property name="toolTip"><string>name tip</string></property>
+    <property name="text"><string>Red</string></property>
+    <property name="toolTip"><string>colour tip</string></property>
+   </item>
+  </widget>""",
+    )
+    session = open_session(text)
+    tree = session.document.by_name("tree")[0]
+    editor = open_editor(session, tree, None)
+    fields = _fields(editor)
+    fields[2].setFocus()
+    QTest.keyClicks(fields[2], "Round")
+    # Another keystroke in the same session must not move it either.
+    QTest.keyClicks(fields[2], "s")
+    editor.close_keep()
+    written = write_ui(session.document).text
+    apple = written[written.index("<string>Apple</string>"):]
+    assert apple.index("name tip") < apple.index("Red") < apple.index("colour tip") < apple.index("Rounds")
+    assert load_draft(session.document, tree).items[0].texts == ("Apple", "Red", "Rounds")
+    session.dispose()
