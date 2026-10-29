@@ -401,6 +401,11 @@ def _list_entry(layout: QrcLayout, prefix: str, relative: str) -> Tuple[QrcLayou
     group = groups[index]
     found = next((e for e in group.entries if e.path == relative and not e.alias), None)
     if found is None:
+        # The file is already listed under an alias: that entry is its resource path
+        # (a second entry would give the same file two names).
+        aliased = next((e for e in group.entries if e.path == relative and e.alias and e.alias.strip()), None)
+        if aliased is not None:
+            return layout, resource_path(wanted.strip("/"), aliased.alias.strip(), aliased.path)
         entry = QrcEntry(relative)
         groups[index] = replace(group, entries=group.entries + (entry,))
     else:
