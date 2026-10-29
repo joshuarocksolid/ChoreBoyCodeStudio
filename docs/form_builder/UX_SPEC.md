@@ -7,6 +7,8 @@ Version 2 (work package M4.0, 2026-10-28, Opus). Section 13.1 is now the full M4
 
 Version 3 (work package M5.0, 2026-10-29, Opus). Section 13.2 is now the full M5 specification (areas MAIN, RES, STYLE, CUST, PREV, FSET, TMPL, MODE, plus UX-TOK-006 and the shared rules UX-M5-007 … 010), binding for M5, with 25 design decisions in 13.2.1. Section 12 gains the M5 screenshot states, keyboard scripts K16–K23, checks and the M5 persona walkthrough. UX-KEY-004 gains the M5 keys; UX-START-007 is amended by UX-TMPL-004.
 
+Version 4 (work package M6.0, 2026-10-29, Opus). Section 13.3 is the full M6 specification (areas BEH, PICK, ARR, CODE, LST, plus UX-TOK-007 and the shared rules UX-M6-001 … 006), binding for M6, with 24 design decisions in 13.3.1. Section 12 gains the M6 screenshot states, keyboard scripts K24–K26, checks and the M6 persona walkthroughs. UX-KEY-004 gains the M6 keys and UX-KEY-005 is resolved; UX-INSP-013, UX-EMPTY-005 and UX-OVL-009 are replaced (13.3.7).
+
 Inputs: `PLAN.md` (§1 fixed decisions, §2a O-UX gate, M2–M5), `SPIKE_DESIGN.md`, `research/P_user_pain_points.md`, `research/R3_designer_parity_checklist.md` ("Where Designer's UX is weak"), `research/A_market_survey.md` ("Patterns the best builders share"), `LOGIC_DESIGN.md` §2, the spike on `feat/form-builder-spike` (README, DESIGN, decisions.tsv, the 22 screenshots, plus five extra offscreen captures of the spike at 1100×640 and 1366×768), and the CBCS shell on `feat/form-builder` (`app/shell/theme_tokens.py`, `theme_dark_chrome_presets.py`, `style_sheet_sections_*.py`, `shortcut_preferences.py`, the menu builders, `status_bar.py`, `features/markdown/markdown_editor_pane.py`).
 
 ---
@@ -55,6 +57,12 @@ PRs list the clause ids they implement. The O-UX gate checks those clauses one b
 | FSET | Form settings | 13.2.7 |
 | TMPL | Templates, Start v2 and settings | 13.2.8 |
 | MODE | One editing mode, overlays and keys | 13.2.9 |
+| M6 | M6 shared rules (M6-001 … 006) | 13.3.1 |
+| BEH | The Behavior tab and the Events list | 13.3.2 |
+| PICK | The event and step pickers | 13.3.3 |
+| ARR | Logic on the canvas: badges, arrows, Connections overlay | 13.3.4 |
+| CODE | Calling your code: names, methods, go to code, checks | 13.3.5 |
+| LST | Logic storage the person can see | 13.3.6 |
 
 ### 0.3 Words used in this spec
 
@@ -333,12 +341,20 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | F3 | form tab | Leave overlay (same as Esc; Designer's "Edit widgets") | new |
 | F7 | form tab | Buddies overlay (toggle) | new |
 | F8 | form tab | Tab order overlay (toggle) | new |
-| F4 | form tab | Connections overlay (M6; Designer parity) | new |
+| F4 | form tab | Connections overlay (toggle, UX-ARR-006; Designer parity) | new (M6.1c) |
 | Alt+1 / Alt+2 / Alt+3 / Alt+4 | form tab | Focus Outline / Insert / Canvas / Inspector | new |
 | Alt+5 | form tab | Focus Actions (UX-MAIN-010) | new (M5.1) |
 | Enter | canvas, a selected menu bar, menu or toolbar | Start menu editing (UX-MAIN-004); inside it the keys of UX-MAIN-004 and UX-MAIN-005 | new (M5.1) |
 | Ctrl+K, C | form tab | View Python code beside the canvas (toggle, UX-PREV-004) | new (M5.5a, shell chord prefix) |
 | F1 | canvas, outline, inspector | Help card for the selected widget (UX-MODE-007) | new (M5.6) |
+| Alt+B | form tab | Behavior tab of the inspector, first row focused (UX-BEH-003; 13.3.1 D22) | new (M6.1b) |
+| Ctrl+Shift+E | form tab | Add an event: Behavior tab with the event picker open (UX-PICK-001) | new (M6.1b) |
+| Ctrl+Shift+L | form tab | Show all connections on the canvas (toggle, UX-ARR-005) | new (M6.1c) |
+| F12 | form tab | Go to code (UX-CODE-009) | shell (Go to Definition, same idea; M6.2b) |
+| Shift+F12 | form tab | Find every use of the widget (M7.8). Until then: nothing in a form tab | shell (Find References) |
+| Up, Down, Enter, Delete, Space, Alt+Up / Alt+Down, Ctrl+D, Ctrl+. | Events list | Move, edit, delete, turn off or on, move a step, duplicate, first fix (UX-BEH-009) | new (M6.1b, `kind="qt"`) |
+| Enter, Home | Connections overlay | Start a link; pick the form as receiver (UX-ARR-008) | new (M6.1c, `kind="qt"`) |
+| Double-click | canvas, buttons, check boxes, radio buttons, button boxes, actions | Go to code for the default event, making it the first time (UX-CODE-003, 13.3.1 D8) | new (M6.2b) |
 | Enter / Shift+Enter / Backspace | tab-order overlay | Next number / continue from here / undo the last number (UX-MODE-002) | new (M5.6) |
 | Shift+F10, Menu key | canvas, outline | Context menu for the selection | Qt standard |
 | Ctrl+K, W | form tab | Two-widths view (toggle) | new (shell chord prefix) |
@@ -346,7 +362,7 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | Shift+F2 | any | Stop (shell). Not used for rename in the form (the spike and LOGIC_DESIGN §2.12 used it) | shell |
 | Ctrl+Shift+F | any | Find in Files (shell), which gains a "Forms" result group (M7.8) | shell |
 
-**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Try mode is Ctrl+Shift+R (not Ctrl+R); "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B.
+**UX-KEY-005** `M6.0` `[A]` LOGIC_DESIGN §2.12 keys are adopted with three changes forced by the shell table: Try mode is Ctrl+Shift+R (not Ctrl+R); "search this form's logic" is Ctrl+F in the form tab (not Ctrl+Shift+F); rename is F2 (not Shift+F2). Ctrl+Shift+E, Ctrl+Shift+L, Ctrl+Space, Ctrl+., Ctrl+Enter, F12 and Shift+F12 are adopted unchanged (none collide). Alt+B (focus Behavior tab) is adopted only if no shell menu title uses the mnemonic B; otherwise it becomes Alt+4 then B. *Resolved in v4 (13.3.1 D22):* no shell menu uses B, so Alt+B is adopted; Shift+F12 waits for M7.8; Ctrl+Space and Ctrl+Enter belong to M7's formula editor; Ctrl+. also runs a row's first fix in the Events list.
 
 **UX-KEY-006** `M3.1` `[S]` The canvas's first focus in a session shows a one-time status sentence: "Tab moves between widgets. Alt+4 goes to the inspector, Alt+1 to the outline."
 
@@ -1000,7 +1016,7 @@ Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, genera
 | 3 | Paste refused inside a layout | CLIP-002, CLIP-003, CLIP-004, MOVE-002 | M3.4 |
 | 4 | Nested layouts shrink to a line | EMPTY-002, EMPTY-003, DND-008, BOX-003, FRAME-001, OUT-005 | M3.2, M3.5 |
 | 5 | Break layout is required and resizes siblings | WRAP-002, WRAP-003, WRAP-004, WRAP-007 | M3.3 |
-| 6 | Edits in `ui_*.py` disappear | GEN-001, GEN-002, GEN-003 | M2.3 |
+| 6 | Edits in `ui_*.py` disappear | GEN-001, GEN-002, GEN-003; the window file is only ever added to: CODE-005, CODE-006, CODE-008 | M2.3, M6.2b |
 | 7 | Promotion stores a C++ header, draws the base class | RUN-004, CUST-001 … CUST-011 | M5.4 |
 | 8 | Style sheet on the canvas differs from the app | ISO-001, ISO-002, ISO-004, STYLE-001 … STYLE-009 | M2.3, M5.3 |
 | 9 | Icon shows in the designer, gone at run time | RES-001 … RES-007 (the P-9 test is amended: packaging, not Save, is blocked; 13.2.1 D3) | M5.2 |
@@ -1010,13 +1026,13 @@ Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, genera
 | 13 | Modes and a dated canvas | PRIN-005, OVL-001 … OVL-003, INSP-013, MODE-001, section 2 | M3, M5.6 |
 | 14 | Spacers stick, disagree with preview | GAP-001 … GAP-005, FRAME-002, SIZE-005, WRAP-009 | M3.3 |
 | 15 | No completion of widget names | OUT-010 (rename carries to code); completion itself is M1.4 | M1.4, M3.5 |
-| 16 | Signal mode hides new connections | INSP-013, EMPTY-005, OVL-009 | M3.1b, M6.1 |
+| 16 | Signal mode hides new connections | INSP-013, BEH-003, BEH-016, BEH-018, ARR-006 | M3.1b, M6.1b, M6.1c |
 | 17 | Menus and toolbars refuse dragged controls | MAIN-004 … MAIN-011, MAIN-016 | M5.1 |
 | 18 | Enum properties don't commit | INSP-009, FEED-007, PED-001, PED-009, PED-022 | M4.3a |
 | 19 | Splitter can't nest, handle doesn't move | SPLIT-001, SPLIT-002, SPLIT-003 | M3.2, M3.3 |
 | 20 | Tab order sticks; new widgets append; page reorder is a thin target | OVL-002, OVL-004 … OVL-006, MODE-002, MODE-003, PAGES-004, OUT-007, GRID-004 | M3.5, M5.6 |
 | 21 | One grid drag moves untouched cells | GRIDL-001 … GRIDL-004, DND-002 | M3.2 |
-| 22 | `connectSlotsByName` misses a slot | PROB-001, PROB-002 (FB codes from M6.2) | M6.2 |
+| 22 | `connectSlotsByName` misses a slot | PROB-001, PROB-002, CODE-011, CODE-012, CODE-014 | M6.2a, M6.2b |
 | 23 | Huge forms freeze | PRIN-007, MOTION-001, FEED-006, DND-008 (cached slot geometry), section 12.5 speed evidence | M3.1, M9.4 |
 | 24 | Undo writes a non-widget z-order | OUT-006 (outline order is the real child order); engine fix in M1.2 | M1.2 |
 | 25 | Rename steals the keyboard | PRIN-006, OUT-008, OUT-009, INSP-001, FEED-002, FEED-004 | M3.5 |
@@ -1029,7 +1045,7 @@ Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, genera
 | 2 | Hug, fill and fixed | SIZE-001 … SIZE-004 |
 | 3 | A gap you can select | GAP-001, GAP-002 |
 | 4 | Anchors drawn on the window | GAP-004 |
-| 5 | Double-click opens the handler; undo removes an empty one | TEXT-001 (switch at M6.2), LOGIC_DESIGN §2.13 |
+| 5 | Double-click opens the handler; undo removes an empty one | TEXT-001, CODE-003, CODE-008 (13.3.1 D8) |
 | 6 | The hierarchy can reparent | OUT-004, OUT-005 |
 | 7 | Column sizes are numbers | GRIDL-006, INSP-004 (Layout group) |
 | 8 | A modifier key for small steps | RESIZE-007, GAP-002, SPLIT-002 |
@@ -1194,6 +1210,29 @@ Tab sizes: **L** = 1440 × 860 tab, **C** = 1080 × 600 tab inside the CBCS shel
 | `buddy-dropdown`, `buddy-overlay-keys` | Buddy drop-down; overlay link in progress | MODE-004, OVL-007 |
 | `keys-page`, `widget-help-card` | Form designer keys filtered; the F1 card | MODE-005, MODE-007 |
 
+**M6 states** (added in v4). Same rules as the M5 states: L and C, light, dark and both high contrast themes, 100% and 200%, and inspector states also at 236 px. Fixture: the M6 shop project (`tests/form_builder/fixtures/m6/`, K24).
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `behavior-empty` (236 px) | A push button with no events: the sentence, [+ When…] and the double-click caption | BEH-013 |
+| `events-list` (236 px) | Two events, three steps, one turned off, one call step with its place link, one row with a problem badge | BEH-003 … 005, BEH-008, BEH-019 |
+| `events-by-name` | A group with a method connected by name, and FB206 on another | BEH-006, CODE-012 |
+| `events-two-places` | FB404's header note and [Merge] | BEH-007, LST-005 |
+| `events-from-others` | From other widgets section on a line edit | BEH-015 |
+| `form-behavior` (C) | Form selected: root events, All events on this form filtered, Your methods with a "not used" and a "not in" row | BEH-016, BEH-017 |
+| `event-picker`, `event-picker-more` | Common events; More events with Show events from QWidget ticked | PICK-001, PICK-002 |
+| `step-picker`, `step-picker-target`, `step-picker-slots` | Do this / Your code / Everything else; the target page; slots with greyed incompatible ones and their reasons | PICK-003 … 006 |
+| `method-page`, `method-page-refused` | The method page with the name selected and "My method receives…"; the window-file-can't-be-read line | PICK-007, CODE-002 |
+| `canvas-badges-arrows` | Badges on four widgets; the selected button's arrows, a `{ }` chip and a form chip, one label chip | ARR-001 … 004, TOK-007 |
+| `canvas-show-all` | Show all connections on a 30-connection form | ARR-005 |
+| `connections-overlay`, `connections-link-drag` | The overlay banner; a link dragged over a receiver | ARR-006, ARR-007 |
+| `code-tab-new-method` | The window file after double-click: caret on `pass`, `pass` selected | CODE-004, CODE-005, CODE-007 |
+| `problems-fb2xx` | Problems with FB201, FB202, FB206, FB208 and FB209 rows | CODE-011, CODE-014 |
+| `form-settings-connect-by-name` (236 px) | The Code group with Connect methods by name | CODE-013 |
+| `newer-logic` (236 px) | FB402 notice bar over read-only Events | LST-001 |
+| `event-unreadable` | FB401 and FB403 rows | LST-002, LST-003 |
+| `preview-stand-in-status` | Preview open, status "Preview: … would call …" | CODE-016 |
+
 ### 12.3 Keyboard scripts
 
 Each script starts with focus in the form tab and uses only keys. The PR runs the scripts that touch its clauses.
@@ -1227,6 +1266,12 @@ Each script starts with focus in the form tab and uses only keys. The PR runs th
 - **K21 Form settings** (`M5.5b`). Form > Form settings…: Code is expanded and Author has focus. Type "Shop", Enter. Tab to Default gaps, Space, Tab, type 6, Enter. Tab to Translation's Translate by ID, Space. Open the fixture with a free container and an `stdsetdef` attribute: Free placement, Step across 16, Enter; select a free widget, Alt+Right: it moves 16 px. Older file setting, Tab to [Remove], Enter. Undo all: original bytes.
 - **K22 Templates** (`M5.5c`). With K16's window plus K17's logo label, Form > Save as template…: type "Shop window", Tab, type "Till and receipts", Enter: the template folder holds `form.ui`, `template.json`, `thumbnail.png`, `pictures/logo.png`. File > New Form…: "Your templates" is the first group; type "back_office" in the name row, Tab to the Shop window card, Enter: `forms/back_office.ui` exists with the root renamed, its picture resolves through `forms/resources.qrc`, and the Workbench is open. File > New Form…, Tab to the card, Shift+F10, "Delete template…", Enter on [Delete template]: the folder is gone and `back_office.ui` is unchanged.
 - **K23 Tab order and buddies** (`M5.6`). In a form with three labels and three fields: F8; Tab to nameEdit, Enter (1), Tab, Enter (2), Shift+Tab twice, Shift+Enter, Tab twice, Enter: the order continues from the first. Backspace undoes the last number. Esc: the overlay closes. Alt+4, Tab order group: Alt+Down on row 1; "Use reading order", Enter: `tabstops` is gone. F7; select the Email label, Enter, Tab to emailEdit, Enter: `buddy` is `emailEdit`. Esc. Select phoneLabel; Buddy drop-down, type "phone", Enter. F1: the help card opens; Esc. Help > Form designer keys: type "wrap": the first row is Ctrl+Shift+G. Undo all: original bytes.
+
+**M6 scripts** (added in v4). Same rules as K1–K23. The lane named after each script owns its test; M6.R runs them all together. The fixture project `tests/form_builder/fixtures/m6/` holds `forms/sale.ui` (a dialog `Sale` with `nameEdit`, `phoneEdit`, `clearButton` "Clear", `printButton` "Print receipt", `saveButton` "Save", `cancelButton` "Cancel" and a `QDialogButtonBox` already connected to `accept()` and `reject()`), its `forms/sale_window.py` (class `SaleWindow` with one method and a trailing comment, CRLF line endings), and `forms/designer_made.ui` (Designer connections with `<hints>`, a layout connection, an event stored in two places).
+
+- **K24 Events list** (`M6.1b`). Open `sale.ui`. Ctrl+R, "cancelButton", Enter; Alt+B: the Behavior tab shows "Nothing happens yet when Cancel is clicked." Ctrl+Shift+E: the event picker opens with "clicked" current; Enter: the step picker; type "close", Enter: the row "Close this form" is current and the XML has one `<connection>` cancelButton `clicked()` → Sale `close()`; one step "Add Close this form to Cancel clicked". Ctrl+R, "clearButton", Enter, Alt+B, Ctrl+Shift+E, Enter; type "clear", Enter (the target page), type "name", Enter: "Clear Name (nameEdit)". Down to "+ Then…", Enter, type "focus", Enter, type "name", Enter: step 2 "Move focus to Name". Alt+Up on step 2: it is step 1, and only those two `<connection>` elements swapped. Space on step 1: " (off)", the XML has no clearButton connection and has `cbcsOnClicked` with two steps, the root has `cbcsLogic`. Space again: back to two native connections in that order, no `cbcsOnClicked`, no `cbcsLogic`. Ctrl+D on step 2, Delete on the copy. Select the form (Esc until the form), Alt+B: All events on this form lists five rows (Cancel's one, Clear's two, the button box's two); type "clear" in its filter: Clear's two rows. Ctrl+R, "nameEdit", Enter, Alt+B: From other widgets shows "When Clear is clicked: Clear Name". Assert after each step: one undo step with its 13.3.8 name, the new row visible and focused (P-16). Undo all: the original bytes.
+- **K25 Connections overlay** (`M6.1c`). F4: the banner shows; select phoneEdit by Tab; Enter; Tab to nameEdit… (Shift+Tab to nameEdit), Enter: the event picker for phoneEdit opens at nameEdit; type "enter", Enter; the step picker is on "Everything Name can do" with setFocus() among the first rows; type "focus", Enter: the step exists and an arrow phoneEdit → nameEdit is in the layer's items. Esc: the overlay closes; Alt+B on phoneEdit lists "When Enter is pressed: Move focus to Name". Ctrl+Shift+L: the status says "Showing all 3 connections. Ctrl+Shift+L hides them." (the button box's two and the new one); Ctrl+Shift+L again. F4, Home with saveButton selected after Enter: the link targets the form; Esc twice: nothing written. Open `designer_made.ui`, Ctrl+S without an edit: identical bytes (hints and the layout connection kept). Undo all on `sale.ui`: original bytes.
+- **K26 Call your code** (`M6.2b`). In `sale.ui`, Ctrl+R, "printButton", Enter; Shift+F10, "Write code for “clicked”", Enter: the method page has `print_receipt` selected; Enter: `sale_window.py` is the current tab, the caret is on `pass` with it selected, the file is the original text plus exactly the UX-CODE-004 lines (CRLF kept) after the class's trailing comment, the tab is saved; the form has the `<connection>` printButton `clicked()` → Sale `print_receipt()` and `<slot>print_receipt()</slot>`. Ctrl+P, "sale.ui", Enter (back to the form tab); Ctrl+Z: the connection, the declaration and the method are gone and the window file has its original bytes; Ctrl+Shift+Z: all three are back. In the code tab type `self.close()` over `pass`, Ctrl+S; Ctrl+P, "sale.ui", Enter; Ctrl+Z: the step goes, the method stays, the toast says it stays. Ctrl+Shift+Z. F12 with printButton selected: the code tab shows the method with the caret on its first body line. In the code tab rename the method to `print_reciept`, Ctrl+S: Problems has FB201 for printButton with "Use print_reciept"; Ctrl+P, "sale.ui", Enter, Alt+B, Down to the call step, Ctrl+. runs it: the step calls `print_reciept` and FB201 is gone. Add `def on_saveButton_clickd(self): pass` with `@Slot()`, Ctrl+S: FB208 suggests clicked. Ctrl+P, "sale.ui", Enter; Form > Form settings…, Tab to Connect methods by name, Space: `connectslotsbyname="false"` and FB211 on any `on_` method. Ctrl+Shift+R: Preview opens; Space on printButton in Preview: the editor status says "Preview: Print receipt clicked would call print_reciept() in sale_window.py." Undo all on the form: original bytes; the window file holds only the person's own edits.
 
 ### 12.4 Interaction traces
 
@@ -1277,6 +1322,20 @@ A trace is a JSON-lines file with one object per step: `{"t": ms, "event": "pres
 | A template made from a form and used again gives the same widget tree under the new name, with every picture resolving | TMPL-002, TMPL-003 |
 | The keys page lists every registered form command and nothing that isn't bound | MODE-005 |
 | Every M5 key added to UX-KEY-004 passes UX-KEY-001 | KEY-001, MODE-006 |
+| After any random sequence of Events-list commands, every event whose steps are all plain is native connections only, every other event is one step list only, and undo-all gives the original bytes | LST-004, M6-002 |
+| A Designer-made file with hints, a layout connection and a two-places event saves unchanged; after an edit to one event only that event's elements change | LST-004, LST-008, D7 |
+| Step-list and marker text is canonical (CONTRACTS §15.4): write(parse(text)) == text for canonical input, and parse(write(x)) == x for random step lists with unknown keys | LST-009 |
+| A form with logic version 2, or an unreadable marker, opens with every logic property and connection written back byte-identical after layout edits | LST-001 |
+| Rename and paste rewrite step targets and formula tokens and nothing else (strings, attribute names after `.`, other forms) | LST-006, LST-007 |
+| Every intent and every picker slot the engine marks compatible connects in PySide6 6.8 without error and the slot runs when the signal is emitted; every incompatible one is refused by Qt's rule | PICK-004, PICK-006 |
+| The pickers and the code checks never import a project module (import hook) | PICK-011, CODE-010 |
+| Method insertion over the fixture set changes exactly the method's lines at one line boundary; undo restores the bytes; a file that fails D11's limits is never written | CODE-005, CODE-006, CODE-008 |
+| The pre-scan refuses a file with a 100,000-term expression line, and the editor process survives reading it (Python 3.9 AppRun lane) | D11 |
+| Suggested names are valid, unique, never start with `on_` and never shadow a base-class method, for every widget of the corpus | CODE-001 |
+| Each FB2xx row appears for its fixture and disappears when the cause is fixed; no FB201–FB213 row is shown while FB209 is | CODE-011 |
+| A form whose events call your methods previews without an exception | CODE-016 |
+| Generated code for step lists is 3.9-parseable, and running it under PySide6 calls the steps in list order, skips turned-off steps and passes the declared number of values | LST-004, CODE-004 |
+| Every M6 key added to UX-KEY-004 passes UX-KEY-001 | M6-004 |
 
 ### 12.6 Persona walkthroughs
 
@@ -1296,6 +1355,11 @@ M5.R runs one walkthrough on a launched build, after every M5 lane has merged, a
 - **Shop owner, M5 tasks.** The owner's nephew has put `widgets/till_display.py` (a `TillDisplay` label that shows a running total) in the shop project and a `logo.png` on the desktop. Starting from File > New Form…, build a "Shop window": a main window with a **File** menu (New sale, Print receipt, a separator, Quit) and a **Help** menu (About); a toolbar with New sale and Print receipt, reusing the menu's actions, each with a picture; a keyboard shortcut for New sale; the status bar kept; in the central area a header label showing the shop logo (from `logo.png`, so the project gets its first pictures file), a heading in the shop's dark green, either through the label's Text colour row or a style sheet rule; the till total label changed to "TillDisplay from widgets.till_display"; preview, and see the real total widget. Then save the window as a template "Shop window" and start a new form "Back office" from that template; preview it and check the logo and the till total came along. The owner names things in their own words ("menu", "logo", "green", "my nephew's widget", "template"). **Pass:** the logo is in place without the owner ever opening a `.qrc` or seeing the word "resource"; the green is set from the Appearance group or the style sheet drawer, without All properties; the toolbar buttons are made by reusing the menu's actions (drag or the reuse list), not by typing them again; the till widget is found through "Use my own class" or Insert's Your widgets; the template appears first on New form; no step needed Undo to escape and no dialog was dismissed by guessing. **Record:** steps per task, every search word and its first result, every Esc and Undo, every sentence that confused, and whether the owner noticed the security info bar and understood it.
 
 The veteran's M5 checks are K16–K23 plus three spot checks by hand: open a Designer-made main window from the corpus and move a menu, add a toolbar, resave and diff with Designer's resave; promote a widget with a C++ header and see FB504; open View code and compare it with `uic -g python` output.
+
+M6.R runs two walkthroughs on a launched build, after every M6 lane has merged, and records step counts and every hesitation:
+
+- **Shop owner, M6 tasks.** The owner opens the "Sale" dialog of the shop project (the K24 fixture, without its events). Tasks: (1) make **Cancel** close the window; (2) make **Enter** in Name jump to Phone; (3) make **Clear** empty both fields; (4) wire **Print receipt** to code so the nephew can fill it in later: the owner should end with an empty `print_receipt` method in `sale_window.py` and say who will write it; (5) undo task 4 and do it again; (6) make **Save** usable only after Name is filled. The owner names things in their own words ("when I press", "close", "jump to", "empty", "print"). **Pass:** tasks 1–3 done from the Behavior tab or the canvas without All slots; task 4 by double-click or "Write code for…" without typing a method name; task 5 leaves the window file exactly as before task 4; no step needed Undo to escape and no dialog was dismissed by guessing. **Task 6 is the M7.2 hook, not a pass condition:** M6 has no rule for it (D4). Record where the owner looked first (Behavior tab, Properties' Enabled row, the step picker's filter), every word typed into a filter, whether they tried a connection that would not do what they meant, and whether anything on screen suggested it worked when it didn't. M7.0 uses this record to place the State section and the rule intents.
+- **Qt developer, M6 tasks.** Open `designer_made.ui`: confirm in the Events lists and in All events on this form that every Designer connection is there, then F4 and connect `applyButton` to the form's new method `apply_changes` by dragging; write `@Slot() def on_okButton_clicked(self)` by hand and see it listed as running by its name; misspell one `on_` method and see FB208; connect `toggled` to a method with two required parameters and see FB202; F12 between form and code; turn off Connect methods by name and see FB211; turn one step off and read the `cbcsOnClicked` text in View XML; save and open the file in Qt Designer 6.8 (FreeCAD's bundle): the plain events are drawn in its signals and slots mode and the turned-off one is a dynamic property. **Pass:** no Designer habit is blocked without an on-screen alternative named at that moment (UX §12.6 M3 rule), the Designer resave of an untouched file diffs to nothing CBCS cares about, and the generated `ui_*.py` reads as the developer predicted when asked before opening View code.
 
 ---
 
@@ -2216,6 +2280,455 @@ The `ast` read does not follow imports and caches by path and mtime.
 | Corner radius as a theme role | Not offered: use the style sheet (D5) |
 | The shell's Ctrl+F find bar inside the style sheet drawer (UX-STYLE-002); in a form tab Ctrl+F is the inspector filter, so the key needs focus routing to the drawer's editor | M5.R (found at the M5.3 gate) |
 
+### 13.3 M6: events and your code (logic levels 1 and 2)
+
+Version 4 (work package M6.0, 2026-10-29). Binding for M6. It turns UX-INSP-013, UX-INSP-014, UX-EMPTY-005, UX-OVL-009, UX-KEY-005 and the M6.2 note in UX-TEXT-001 into full clauses (areas BEH, PICK, ARR, CODE, LST, plus UX-TOK-007 and the shared rules UX-M6-001 … 006). It is the on-screen half of LOGIC_DESIGN §2.1–2.3, §2.7, §2.9, §2.12, §2.13 and §3 for levels 1 and 2. The storage, command and handler contracts are in CONTRACTS.md §15 and §16; the changes this version makes to LOGIC_DESIGN are listed at its end ("Changes recorded by M6.0").
+
+**Scope.** Level 1: a widget drives another widget (or the form). Level 2: a widget calls a method you write in `<name>_window.py`. State rules, checks, formulas, the no-code step vocabulary, form events and Try mode are M7; the Data tab is M8. Where M6 leaves room for them, the clause names the registry M7 fills. M6 never shows a row, section or menu item it can't fill (UX-COPY-002).
+
+The lane split, owned files and parity rows are in `PLAN.md` ("M6 lanes"). Clauses that earlier versions tagged `M6.1` or `M6.2` (UX-OVL-009, UX-TEXT-001's note, CONTRACTS §3.5 owners) are built by the lanes named here. Copy in quotes is the exact on-screen text; `{name}` is filled in at run time. The M6 screenshot states, keyboard scripts K24–K26, automated checks and persona walkthroughs are in section 12 under "M6".
+
+**Words.** In this section a **sender** is the widget, action or form whose event it is; an **event** is one of the sender's Qt signals, shown in words ("When clicked"); a **step** is one thing that happens, in run order; a **plain step** is a Qt slot on a widget or the form, or a call to one of your methods, with no condition and turned on; **your method** is a method of the window class in `<name>_window.py`; the **window file** is that file.
+
+#### 13.3.1 Decisions and shared rules
+
+**Decisions.** Each open question from the M6 brief, the answer, and why. A lane that wants a different answer asks the orchestrator first; it is not a gate finding.
+
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| D1 | Where does the Events list live? | In the inspector's **Behavior** tab, for the selected sender (widget, action, or the form itself), as the Events section of LOGIC_DESIGN §2.1. With the form selected the tab also lists every event on the form (Designer's Signal/Slot Editor table, R3 5) and the methods the form names (R3 6). There is no separate panel in M6; M7.8's Logic panel becomes the form-wide home later (UX-BEH-001, 016, 017) | One place to look per widget (LOGIC P1). The inspector already follows the selection and has the count badge and a key (Alt+B). Designer's table hidden behind a mode is pain 16 |
+| D2 | How are steps stored: native `<connections>` or a step list? | Per event. When every step of an event is a plain step, the event is saved as one `<connection>` per step, in list order. Otherwise all steps of that event are one `cbcsOn<Signal>` step list. The builder converts both ways inside the same undo step and the person never chooses (UX-LST-004, CONTRACTS §15.6) | Qt Designer, uic and `QUiLoader` see the common case. CBCS never splits one event across two storages, so the run order is the list order |
+| D3 | What needs a step list in M6? | Only a step that is turned off (UX-BEH-008). Conditions and no-code steps arrive with M7.1 and M7.4 and use the same list. M6 adds two step verbs to schema v1, `slot` and `call` (CONTRACTS §15.3) | M6 proves the conversion and the codec end to end before M7 depends on them. "Off" is the one M6 need a native connection can't store |
+| D4 | "Enable this field while that box is checked" | Not offered as an intent in M6. The intents are a registry (`engine/logic/intents/`); M7.2 adds rule intents to it and the step picker shows them without a change to M6 files. A plain `toggled(bool)` → `setEnabled(bool)` connection can still be made from "Everything {target} can do" | A rule needs formulas and refresh (LOGIC Decision 2). Offering it now would store something that does nothing when the app runs |
+| D5 | When are arrows drawn on the canvas? | For the selected widget, only while the Behavior tab is the current inspector tab or the Connections overlay is open; for every widget with Show all connections (Ctrl+Shift+L). The `>` badge marks every widget that has events, whenever Design is shown (UX-ARR-001 … 005) | UX-PRIN-004: structure appears where you look. Arrows across fields while laying out repeat the M3 chip fault. LOGIC §2.7's one-widget default is kept |
+| D6 | What is F4? | The **Connections** overlay, Designer's signals and slots mode (R3 2), opened and closed like F7 and F8. Drag (or Enter, arrows, Enter) from a sender to a receiver opens the same pickers. The canvas has no mode state (UX-MODE-001) | Designer parity for veterans, with the Buddies overlay's gesture vocabulary |
+| D7 | Designer's draggable connection points (`<hints>`) | Kept and written back unchanged. Dropped only when that connection's sender or receiver changes. Arrows are routed automatically and have no handles | Hints only change Designer's drawing; keeping them gives a zero-diff Designer resave |
+| D8 | What does double-click do? | On push, tool and command-link buttons, check boxes, radio buttons, button boxes, and actions (a menu entry on the canvas or a row in the Actions section), double-click goes to the code for the default event (LOGIC §2.2 table), creating it the first time. Enter stays the text gesture (UX-TEXT-001). Every other widget keeps its M3–M5 double-click | The Delphi and VB6 gesture (delighter 5). Widgets with no meaningful event keep text editing |
+| D9 | What if `<name>_window.py` doesn't exist? | For a form that generates (in `forms/` or adopted), making a method first writes the window file exactly as Save would (`render_window_class`), then adds the method. Undo removes the method and keeps the file. For a form that doesn't generate, "Call a new method" and double-click say why and offer "Adopt this form…" (UX-CODE-017) | The file is what the next Save creates anyway. Deleting a file on Undo is riskier than keeping a correct one |
+| D10 | How is a method added without clobbering user code? | As whole lines after the last line of the window class (its last method or statement, plus the indented comments that follow it), never inside a line. Indentation, tabs, blank-line spacing and line endings follow the file. Nothing else in the file changes, ever. Undo removes the method only while its text is exactly what was inserted. A file that can't be read safely, isn't valid Python, or has no window class is never edited (UX-CODE-005, 006, 008) | LOGIC P6 and pain 6. Line-boundary edits avoid the byte-versus-character trap of `ast` column offsets (the current `plan_stub` computes a character offset from a UTF-8 byte column) |
+| D11 | How is user code read safely? | Never imported. The M5.4 file rules (a regular file inside the project, at most 1 MB, a symlink out of the project refused, decoded by its coding cookie), then a linear `tokenize` pre-scan that refuses a logical line of more than 2,000 tokens or brackets nested deeper than 100, and only then `ast.parse` of the whole file. Cached by path, mtime and size, or by text hash for an open tab. An open tab's text is what is checked (CONTRACTS §16.1) | The M5.4 gate saw one crafted line overflow the C stack inside `ast.parse` on Python 3.9 and kill the process. The pre-scan bounds the tree depth, so the read is safe on every runtime the editor runs on. Checking the tab's text matches what the person sees |
+| D12 | When do code checks run? | On form open, form save, window-file save, after a builder edit to the window file, and after any event edit (against the cached reading). Never per keystroke in the code tab. A syntax error pauses the window-file checks behind one Info row (FB209) instead of a flood of FB201 | LOGIC §3.4. Problems stays steady while someone types |
+| D13 | `@Slot` and `on_` names | Stubs never get `@Slot`. Suggested names never start with `on_` | LOGIC §3.3 and §3.6 |
+| D14 | Connect slots by name | Stays on by default. Turning it off is a row "Connect methods by name" in the form's Code group (R3 7). Methods it connects are shown in the Events list, read-only | LOGIC §3.6 |
+| D15 | Severities of FB203 and FB402 | FB203 (the method is still empty) is Info, not Warning. FB402 (newer logic version) is Warning, not Error | A method the person just made is not a problem. FB402 loses nothing and can't be fixed in this build |
+| D16 | Form events ("When the form opens") and pseudo-events ("current row changed") | M7.4 and M8. In M6 the form's Behavior tab lists the root's real Qt signals only | They need generated setup code and the step vocabulary |
+| D17 | Preview of a form whose events call your methods | Preview never runs your window class. Each method the form names becomes a stand-in that does nothing, and the editor's status bar says what would have run (UX-CODE-016) | Today a form-slot connection makes `setupUi` raise in Preview, because the preview host has no such method. Try mode (M7.6) keeps a log; Preview just says it |
+| D18 | Renaming your method | Not in M6. A method renamed in code gives FB201 with the fix "Use {method}" when the class has an unconnected method with a close name. A rename that changes the code and the form together is M7.8 | Changing user code beyond the stub needs the shell's refactor preview; the fix covers the common slip |
+| D19 | Shift+F12 (find every use) | M7.8. M6 ships F12 only | It searches rules too |
+| D20 | Pasting widgets copied from a form with a newer logic version | The target form's logic version is raised to the newer one, so its logic becomes read-only (FB402), and the toast says so (UX-LST-010) | Nothing is dropped or misread (LOGIC §6.5 forward compatibility) |
+| D21 | Property order on save | Properties keep the order they were read in. Only a property CBCS changes is rewritten as canonical text; a new one is placed by rank (CONTRACTS §2.5). A save never re-sorts a Designer-ordered file | The Designer-resave zero-diff oracle and byte-stable saves of untouched files. This amends LOGIC §6.5's "the next CBCS save re-canonicalises" |
+| D22 | Alt+B | Adopted: no shell menu title uses B (&File, &Edit, &View, F&orm, &Tools, &Run, &Help). It selects the Behavior tab and focuses its first row | UX-KEY-005's condition is met |
+| D23 | Layouts and spacers as senders or receivers | Not offered. A drag that ends on a layout or spacer connects to the widget that holds the layout; one that starts on a spacer does nothing. Existing layout connections in a file are kept, listed in the form's event table, and generate as uic does | Designer allows layout endpoints (R3 2), but layouts have no events and almost no slots a form uses. Keeping them round-trips the file |
+| D24 | Step lists for an overloaded event | The UI shows one event per signal name ("When clicked" covers `clicked()` and `clicked(bool)`). Native storage picks the overload with the fewest arguments that the step needs; a step list connects the overload with the most arguments, so any step can use a prefix of its values (CONTRACTS §15.6) | Designer lists overloads twice; owners shouldn't have to choose |
+
+**UX-M6-001** `all M6` `[C]` Copy for M6 follows section 9.5, UX-M4-005 and UX-M5-007. In addition, on-screen text says "event" (never "signal" outside tooltips, the Qt-names line and the "MORE EVENTS" list's Qt column), "step", "method" for your code, "window file" only in captions ("Code Studio adds methods to the window file, shop_window.py."), and never "slot" for a method (the word appears only in the Qt column and the tooltip "Qt calls these slots."). Behavior is spelled the US way (UX-COPY-001); LOGIC_DESIGN's "behaviour" is not on screen. Every sentence a lane may show is in the 13.3.8 tables; a new one needs a spec change.
+
+**UX-M6-002** `all M6` `[T]` Undo names. Every M6 command has a plain name, listed in 13.3.8, used by Edit > Undo and toast Undo. A picker session that ends in a choice is one step. A storage conversion is part of the step that caused it and is never a step of its own. Making a method is one step on the form's undo stack plus one edit in the window file's tab (UX-CODE-008). Files written outside the `.ui` (the window file) say so on screen when Undo can't take them back.
+
+**UX-M6-003** `all M6` `[A]` Speed. CPU p50 and p95 on the 300-widget reference form with 120 events (80 native connections, 40 step lists) and a 2,000-line window file of 150 methods, recorded with machine load. M6.R adds the rows to the harness; each lane measures its own path with a local script and reports it.
+
+| Path | Budget (p95) |
+| --- | --- |
+| Select a widget with 20 events: Behavior tab filled | ≤ 16 ms |
+| A keystroke in the event picker (a class with 60 events) or the step picker (300 possible targets) | ≤ 16 ms |
+| Commit a step (`SetEventSteps` with a storage conversion), command to repainted canvas, outline and inspector | ≤ 16 ms; the command alone ≤ 2 ms |
+| Arrows for a selection with 10 connections; Show all with 120 events | ≤ 4 ms; ≤ 16 ms per frame |
+| Open the Connections overlay; a link drag frame | ≤ 50 ms; ≤ 16 ms |
+| Read the window file: pre-scan plus `ast` of 100 KB / of 1 MB / a cached reading | ≤ 30 ms / ≤ 250 ms (idle, never on the edit path) / ≤ 1 ms |
+| All code checks against a cached reading | ≤ 5 ms |
+| Double-click to a new method with the caret in the code tab: tab already open / file not open | ≤ 80 ms / ≤ 200 ms |
+| F12 to an existing method: tab open / not open | ≤ 30 ms / ≤ 150 ms |
+| Parse and write a 50-step list (codec) | ≤ 1 ms |
+| Rename a widget referenced by 40 events and 60 logic properties | ≤ 3 ms (O(form) is allowed for Rename, CONTRACTS §12) |
+| Save with 40 step lists (generate included) | ≤ 60 ms |
+
+**UX-M6-004** `all M6` `[A K]` M6 keys are registered from lane files in `integration/keys_ext/` (UX-KEY-002) and listed in UX-KEY-004; UX-KEY-001 covers them; Form designer keys (UX-MODE-005) shows them. Keys used only inside the Events list or a picker are registered with `kind="qt"` in their focus context, as M5.6 did for overlay keys.
+
+**UX-M6-005** `all M6` `[A K]` Accessibility. Every event header, step row, picker item and table row has an accessible name that reads as a sentence: "When clicked, step 1 of 2: Clear Name (nameEdit)", "When clicked, step 2 of 2: Call print_receipt in shop_window.py line 42", "Event, clicked, Qt signal clicked()". A turned-off step adds ", turned off"; a step with a problem adds ", problem: {message}". Focus is always visible on rows (UX-A11Y-002). Every task in this section has a keyboard path (K24–K26).
+
+**UX-M6-006** `M6.1b, M6.1c, M6.2b` `[S A]` The Form menu (UX-M5-010) gains, from lane files in `integration/form_menu_ext/`: after Go to widget…, "Add event…" (Ctrl+Shift+E) and "Go to code" (F12); in Overlays ▸, "Connections" (F4) after Buddies, and "Show all connections" (Ctrl+Shift+L, a check item). UX-SHELL-004's "Connections in M6" is this item.
+
+**UX-TOK-007** `M6.1c` `[S A]` New builder tokens for M6, in `qtside/theme/overlay.py` (UX-TOK-001). Same in light and dark chrome (UX-TOK-003).
+
+| Token | Normal | High contrast (both) | Use |
+| --- | --- | --- | --- |
+| `ov.connect` | `#4338CA` 1.5 px | `#1E1B8A` 2 px | Arrows of the selected widget, the link line while dragging |
+| `ov.connect_faint` | `#4338CA` at 35% alpha, 1 px | `#1E1B8A` at 60%, 1.5 px | Other arrows under Show all connections |
+| `ov.code` | `#15803D` | `#00553A` | The `{ }` chip of a call into your code |
+| `ov.logic_badge` | fill `#4B5563`, text `ov.chip_text` | fill `#000000` | The `>` badge of a widget with events |
+
+#### 13.3.2 The Behavior tab and the Events list (BEH)
+
+**UX-BEH-001** `M6.0s` `[S A]` The Behavior tab body is built from registered sections (`qtside/inspector/behavior_ext/`), each with an order, a predicate on the selection and a widget: State 10 and Checks 20 (M7.2, M7.3, not registered in M6), Events 30, From other widgets 35, All events on this form 40 (form only), Your methods 50 (form only). Sections show in that order; a section with nothing to show for the selection is hidden, except Events (UX-BEH-013). A lane adds a section from its own file. The M3 Connections list (UX-INSP-013) is withdrawn when M6.1b's Events section registers.
+
+**UX-BEH-002** `M6.1b` `[S]` The tab's top line (fixed, above the sections) is the sender's display name and object name, as LOGIC §2.1: "Save · saveButton" ("Shop window · ShopWindow" for the form; an action's text for an action). The display name comes from the buddy label's text, then the widget's own text, then the object name, with `&` removed. Kind (LOGIC §4.3) is M7.
+
+**UX-BEH-003** `M6.1b` `[S K]` The **Events** section. Overline "EVENTS" with a [+ When…] button at its right (Ctrl+Shift+E). Then one group per event in run order of first connection: a header row "When {event words}" (13.3.8 table; with Qt names on, `clicked()` under it in `fb.faint`) with a ⋯ button; under it numbered step rows (24 px, the number in `fb.faint`); and under the group's last step a "+ Then…" row, shown while any row of that group is current or hovered. Rows never clip at 236 px (UX-PED-002); long text elides in the middle of the target's display name only, with the full sentence as the tooltip.
+
+**UX-BEH-004** `M6.1b` `[S C]` Step row text. A plain step reads as a sentence from the 13.3.8 "Step words" table ("Clear Name (nameEdit)", "Close this form", "Call print_receipt()"); a Qt slot with no entry reads "{target display name} ({object}) · {slot words}" with the Qt signature in `fb.faint`. Targets are named by display name then object name in `fb.faint`. A step whose target is missing reads "{object} (missing)" in `fb.error` (FB405).
+
+**UX-BEH-005** `M6.1b, M6.2b` `[S T]` A call step shows its place in your code at the right of the row: "shop_window.py:42" as a link (click or Enter on it, F12 on the row: UX-CODE-009). When the method isn't in the window class the place reads "not in shop_window.py" in `fb.warning`, the row carries the problem badge (UX-BEH-019), and Ctrl+. runs "Create method" (UX-CODE-003). When the window file can't be checked (FB209, FB210) the place reads "not checked" in `fb.faint` with the reason as its tooltip.
+
+**UX-BEH-006** `M6.2b` `[S]` A method that Qt connects by name (`on_{object}_{signal}`, UX-CODE-012) is a read-only row in that event's group, after the plain steps: "on_okButton_clicked() runs by its name" with its place link. It has no number, can't be moved, turned off or deleted from here; its context menu has "Go to code" and "Why does it run?" (status: "Qt runs methods named on_{object}_{event} by themselves, because Connect methods by name is on."). With Connect methods by name off, the row is not shown and FB211 explains.
+
+**UX-BEH-007** `M6.1b` `[S A]` The order shown is the order Qt runs things: native connections in file order, then methods connected by name, then the step list (CONTRACTS §15.6). An event that has both native connections and a step list (made in Qt Designer) shows both groups, the native ones first, under the header note "This event is stored in two places." in `fb.warning` with a [Merge] button (FB404, UX-LST-005).
+
+**UX-BEH-008** `M6.1b` `[S K T]` Turn off and on. Space on a step row, or its context menu "Turn off" / "Turn on", toggles the step. A turned-off step keeps its number, reads in `fb.faint` with " (off)" appended, and generates nothing. Turning a native step off converts its event to a step list; turning the last off step on again converts it back when every step is plain (D2, D3). One step "Turn off {step words}" / "Turn on {step words}". Methods connected by name can't be turned off here (UX-BEH-006).
+
+**UX-BEH-009** `M6.1b` `[K]` Keys in the Events section: Up and Down move between header and step rows; Enter on a step opens the step picker on it (UX-PICK-010); Enter on a header opens the event picker to change the event of all its steps; Enter on "+ Then…" opens the step picker to add; Delete deletes the row (a header deletes the event and its steps); Alt+Up and Alt+Down move a step inside its event; Ctrl+D duplicates a step after itself; Space turns a step off or on; F12 goes to code (UX-CODE-009); Ctrl+. runs the row's first fix; Shift+F10 or the Menu key opens the row's context menu (Turn off or on, Duplicate, Move up, Move down, Delete, and for a call step Go to code). Esc leaves the list to the canvas. These are registered as `kind="qt"` keys in the context "behavior_list" (UX-M6-004).
+
+**UX-BEH-010** `M6.1b` `[T]` Deleting the last step of an event removes the event. Deleting a call step never touches the window file; when the method is then used by nothing, the toast says "Removed the step. print_receipt() is still in shop_window.py. · Undo". One step "Delete {step words}" / "Delete the {event words} event".
+
+**UX-BEH-011** `M6.1b` `[T]` Steps move only inside their event. Alt+Up on the first step, or Alt+Down on the last, does nothing and says "That is the first step." / "That is the last step." A move of native steps reorders those `<connection>` elements only (CONTRACTS `MoveConnection`); no other connection in the file moves. One step "Move {step words}".
+
+**UX-BEH-012** `M6.1b` `[T]` Ctrl+D duplicates a step right after it (one step "Duplicate {step words}"). A duplicated call step calls the same method; it never makes a second method.
+
+**UX-BEH-013** `M6.1b` `[S]` Empty state (replaces UX-EMPTY-005). A sender with no events shows, under the EVENTS overline, "Nothing happens yet when {display name} is {default event words}." ("Nothing happens yet when Save is clicked."; for a sender with no default event "Nothing happens yet for {display name}.") and the [+ When…] button. Under it, for widgets that double-click to code (D8), the Caption "Double-click it on the form to write code for it."
+
+**UX-BEH-014** `M6.1b` `[S]` With several widgets selected, the tab shows "Select one widget to see what it does." and nothing else. With a layout or spacer selected: "Layouts and spacers don't have events. Select a widget." (D23).
+
+**UX-BEH-015** `M6.1b` `[S K]` **From other widgets** (shown when another sender's step targets this widget): Overline "FROM OTHER WIDGETS", rows "When Clear is clicked: Clear Name" in sentence form, read-only. Enter or click selects that sender and makes the step current in its Events list.
+
+**UX-BEH-016** `M6.1b` `[S K T]` **All events on this form** (form selected; R3 5, the Signal/Slot Editor table). Overline "ALL EVENTS ON THIS FORM {n}", a filter field (placeholder "Search events"; matches display names, object names, event words, step words, method names), then one row per step grouped by sender in outline order: "{sender display name} · When {event words} → {step words}". A connection whose sender or receiver is missing (FB014) reads "{object} (missing) · …" in `fb.error`. Enter selects the sender and focuses that row in its Events list; Delete deletes the step (same step names as UX-BEH-010); an empty table shows "No events on this form yet." The form's own events (its root's signals, D16) show above this table in the normal Events section.
+
+**UX-BEH-017** `M6.2b` `[S K T]` **Your methods** (form selected; R3 6). Overline "YOUR METHODS · {window file}". One row per method the form names (in `<slots>`, native connections to the form, and call steps), in name order: "print_receipt() · Print receipt clicked · line 42", "close_shift() · not used · line 60", "export_day() · not in shop_window.py" (`fb.warning`). Methods of the window class that the form doesn't name are not listed. Enter on a row goes to code; Delete on a row whose method no step uses removes its `<slots>` declaration (one step "Remove method declaration {name}"; the code is never touched; a used one says "{name} is used by {n} steps. Delete those steps first."). Signals the form declares (`<slots><signal>`) are listed read-only under "SIGNALS YOUR FORM DECLARES". The Caption under the overline: "Code Studio adds methods to {window file} and never changes the rest of it."
+
+**UX-BEH-018** `M6.1b` `[T A]` Pain 16. Every new event or step is scrolled into view, selected and focused in the Events list the moment it is committed, whatever added it (picker, canvas link, double-click, paste). The P-16 test adds a connection on a sender whose Events list is taller than the inspector and asserts the new row is fully visible without a scroll by the test.
+
+**UX-BEH-019** `M6.1b` `[S]` A row with a problem carries the 12 px problem badge at its right (UX-PROB-004 glyph), its message as tooltip and in the status bar while current. Problems double-click lands on that row (UX-CODE-014).
+
+**UX-BEH-020** `M6.1b` `[S]` The Behavior tab's count badge (UX-INSP-002) is the number of events with at least one step, plus events with a method connected by name. It updates in the same frame as the change.
+
+#### 13.3.3 The event and step pickers (PICK)
+
+**UX-PICK-001** `M6.1b` `[S K T]` The **event picker** ("When…"): a level-2 popover, 320 px wide, anchored under [+ When…], under a header row being changed, or at the receiver end of a canvas link (UX-ARR-007). Title "When… ({display name} · {friendly class})". A filter field, focused, placeholder "Type to find an event". Then "COMMON" (UX-PICK-002), "MORE EVENTS" (every other signal of the class chain below `QWidget`, alphabetical, each "{event words}" with the Qt signature in `fb.faint`; a signal with no words entry shows the signal name only), and a check box "Show events from QWidget and QObject" (R3 3), remembered per user. Picking an event that already has steps adds to it. Picking opens the step picker at once (LOGIC §2.2).
+
+**UX-PICK-002** `M6.1a` `[A]` Common events and the default event per class come from one Qt-free table (`engine/logic/events_catalog.py`), LOGIC §2.2 minus pseudo-events and form events (D16), with the words of 13.3.8. Own classes use their base class's row plus the registry's declared signals (UX-CUST-006). A test checks every signal named in the table against the class table (`qt_classes.json`).
+
+**UX-PICK-003** `M6.1b` `[S K]` The **step picker** ("Then…"): same popover rules. Title "Then… (When {display name} is {event words})". A filter field, then up to three sections:
+- "DO THIS": the intents for this sender (UX-PICK-004), in table order;
+- "YOUR CODE": "Call a new method…" and, under it, each method of the window class that this event can call (UX-PICK-007), "Call print_receipt()";
+- "EVERYTHING ELSE": "A widget's own action…" (opens the target page, then UX-PICK-006).
+
+The filter searches all three, the target names inside intents, and the Qt slot names.
+
+**UX-PICK-004** `M6.1a` `[A]` M6 intents (LOGIC §3.1 without the rule intents, D4). Registered in `engine/logic/intents/` (Qt-free), each producing one or two plain steps:
+
+| Sender | Intent (picker text) | Steps it adds |
+| --- | --- | --- |
+| Any button, action | "Close this form" | `clicked()` (action: `triggered()`) → form `close()` |
+| Any button, action, on a dialog | "Accept (OK)" / "Cancel" | → form `accept()` / `reject()` |
+| Any button, action | "Clear a field…" | → `{field}.clear()` (fields that have `clear()`) |
+| Any button, action | "Move focus to…" | → `{field}.setFocus()` |
+| `QCheckBox` | "Check another box the same way…" | `toggled(bool)` → `{box}.setChecked(bool)` |
+| `QLineEdit` | "Go to the next field when Enter is pressed…" | `returnPressed()` → `{field}.setFocus()` (the target page starts on the next field in tab order) |
+| `QComboBox` | "Show the matching page of…" | `currentIndexChanged(int)` → `{tabs or stack}.setCurrentIndex(int)` |
+| `QSlider`, `QSpinBox`, `QDial` | "Keep another one in step…" | two steps: this `valueChanged(int)` → `{other}.setValue(int)` and the other's `valueChanged(int)` → this `setValue(int)`; one undo step "Keep {a} and {b} in step" |
+| `QDialogButtonBox` | "OK accepts, Cancel closes" | `accepted()` → `accept()` and `rejected()` → `reject()` (Designer's template) |
+
+An intent whose event differs from the one being edited is offered only from [+ When…] (it picks its own event); from "+ Then…" only intents of the current event are listed. An intent that needs a target opens the target page (UX-PICK-005). A registry entry may be a rule intent (M7.2); M6 registers none.
+
+**UX-PICK-005** `M6.1b` `[S K]` The target page lists the form's widgets that fit the intent or slot ("Name (nameEdit) · Line edit"), in reading order, the form first when it fits ("This form (ShopWindow)"), filtered by display name, object name and friendly class words. Its title names what is being chosen: "Clear which field?", "Move focus to which field?", "Which widget?". Left (with an empty filter) or Backspace on an empty filter goes back.
+
+**UX-PICK-006** `M6.1a, M6.1b` `[S K A]` "Everything {target} can do": the target's slots from the class table (own classes: the registry and `<customwidget><slots>`), each in words when 13.3.8 has them, with the Qt signature in `fb.faint`, and the check box "Show actions from QWidget and QObject" (R3 3). Only compatible slots can be picked: a slot's parameters must be a prefix of one overload of the event's signal, with the same types (Qt's rule, CONTRACTS §15.6). An incompatible slot is greyed with its reason as a second line: "Needs {type words}; {event words} sends nothing." or "Needs {type words}; {event words} sends {type words}." The engine computes compatibility; the picker never asks Qt.
+
+**UX-PICK-007** `M6.1b, M6.2b` `[S K]` "Call a new method…" opens the method page: a name field with the suggested name selected (UX-CODE-001), its check line under it (UX-CODE-002), and, when the event sends a value, the check box "My method receives {value words}" ("My method receives whether it's checked", "… the new text", "… the new number", "… the new date"), off by default (LOGIC §3.3). Enter makes the method (UX-CODE-003). "METHODS IN {window file}" lists the class's existing methods this event can call (a method whose required parameters are at most the event's values); one already used by this event is marked "already here". When methods can't be listed, the section shows one line instead: "{window file} can't be read: {reason}" / "{window file} has no class that calls self.ui.setupUi(self)." / "This form isn't in a project, so it has no window file." (with the link "Adopt this form…", UX-CODE-017).
+
+**UX-PICK-008** `M6.1b` `[K]` Picker keys: typing filters; Up and Down move (crossing section headers); Enter picks or opens a page; Right opens a page too; Left or Backspace on an empty filter goes back one page; Tab reaches the check boxes; Esc goes back one page, and on the first page closes the picker and writes nothing. Focus returns to the row or button that opened it, or to the canvas after a canvas link.
+
+**UX-PICK-009** `M6.1b` `[T]` One picker session that ends in a choice is one undo step, named for what it added or changed (13.3.8). Esc anywhere leaves the document bytes and the undo stack as they were (UX-PED-004's rule, tested the same way).
+
+**UX-PICK-010** `M6.1b` `[K T]` Editing a step (Enter on its row, double-click on its arrow) opens the step picker on the page that made it, with the current choice current; picking another replaces the step in place (one step "Change {old step words} to {new step words}"). Editing a header changes the event of all its steps, keeping only steps compatible with the new event; the confirm lists the others: "{n} steps can't run on {event words} and will be removed." [Change event] [Cancel].
+
+**UX-PICK-011** `M6.1a` `[A]` The pickers never import or run project code. Own-class signals and slots come only from declarations (UX-CUST-011). A test runs every picker over a project with promoted classes under the import hook of CONTRACTS §13 and asserts no project module loaded.
+
+**UX-PICK-012** `M6.1b` `[S]` A filter with no match shows "Nothing matches “{text}”." and keeps the "A widget's own action…" row, so the full Qt list is one Enter away.
+
+#### 13.3.4 Logic on the canvas: badges, arrows and the Connections overlay (ARR)
+
+**UX-ARR-001** `M6.1c` `[S A]` A widget or the form with at least one event carries a 12 px `ov.logic_badge` "›" badge, placed by the chip solver at an outside corner (top-right first, UX-CHIP-002), never over content. It is drawn in Design whenever no other overlay is open, hidden below 50% zoom, and not drawn in Preview, Save image or Print. Hover: "{n} events: When clicked, When toggled" (at most three names, then "and {k} more"). Click selects the widget and shows the Behavior tab.
+
+**UX-ARR-002** `M6.1c` `[S]` Arrows (D5). For the selected sender: one arrow per plain step whose receiver is another widget; plus incoming arrows from other senders whose steps target it, dashed. A step list's steps are drawn like native ones; a turned-off step is not drawn.
+
+**UX-ARR-003** `M6.1c` `[S A]` An arrow is a 1.5 px `ov.connect` line from the midpoint of the sender's edge that faces the receiver to the receiver's facing edge, a gentle curve (control points one third along, offset 12 px), ending in a 6 px arrowhead 2 px outside the receiver. Arrows are drawn above the form and below chips; they never cover a chip or badge, and they bow around other arrows' endpoints. When the step's row is current in the Events list, or the arrow is hovered, its label chip shows at the curve's midpoint, placed by the chip solver: "clicked → clear()".
+
+**UX-ARR-004** `M6.1c` `[S T]` Calls into your code draw as a short line from the sender to an `ov.code` chip "{ } print_receipt()" placed by the chip solver beside the sender; the form's own slots (`close()`, `accept()`, `reject()`) draw to a form chip "{form name} · accept()" in the gutter next to the sender, the place of Designer's ground symbol. Clicking the `{ }` chip goes to code (UX-CODE-009).
+
+**UX-ARR-005** `M6.1c` `[S K]` **Show all connections** (Ctrl+Shift+L, Form > Overlays ▸, a toggle per tab, not saved) draws every step's arrow on the form in `ov.connect_faint`, the selected sender's in `ov.connect`. The status bar says "Showing all {n} connections. Ctrl+Shift+L hides them." It stays on while the person selects and edits, and turns off with the tab.
+
+**UX-ARR-006** `M6.1c` `[S K]` **Connections overlay** (F4, D6; replaces UX-OVL-009). A toggle in the tab toolbar after Buddies, opened and closed by the UX-OVL-001 … 003 rules (one overlay at a time, banner, Esc, F3, Done, structural commands and tab switches close it). Banner: "Drag from a widget to the widget it should act on. Drop on the form's background to act on the form." While it is open, every step's arrow is drawn (as Show all) and badges are hidden.
+
+**UX-ARR-007** `M6.1c` `[S T]` In the overlay, a press on a widget and a drag draws an `ov.connect` line from it to the pointer; the widget under the pointer gets the `ov.select` outline, the page background highlights the form. A drop on a widget opens the event picker for the sender at the drop point, then the step picker already on "Everything {receiver} can do" with the receiver's compatible slots first (the intents that fit this pair listed above them). A drop on the background targets the form. A drop on a layout or spacer targets its owning widget (D23); a press on a spacer or on nothing starts nothing. A drop on the sender itself targets the sender. Esc during the drag cancels; nothing is written until a slot is picked.
+
+**UX-ARR-008** `M6.1c` `[K]` Overlay keys (the Buddies overlay's grammar, UX-MODE-004): with the overlay open, arrows and Tab select as usual; Enter on the selected widget starts a link from it (status "Choose the widget for {sender display name} to act on, then press Enter. Home picks the form."); arrows or Tab select the receiver; Home selects the form; Enter opens the pickers as in UX-ARR-007; Esc cancels the link. Deleting and editing steps by keyboard is done in the Events list (Alt+B).
+
+**UX-ARR-009** `M6.1c` `[T]` In the overlay or with arrows shown, clicking an arrow selects its sender and makes the step current in the Events list; Delete then deletes that step (R3 4); double-click on an arrow opens the step picker on it (UX-PICK-010; R3 3's "double-click a connection").
+
+**UX-ARR-010** `M6.1c` `[S]` Hover sentences in the status bar: on a widget in the overlay "{display name} · drag to another widget to connect"; on an arrow "When {sender} is {event words}: {step words}. Click to select, Delete to remove."; on a `{ }` chip "Calls print_receipt() in shop_window.py. Click to go to the code."
+
+**UX-ARR-011** `M6.1c` `[A]` The §12.5 chip check covers badges and arrow label chips in every M6 tour state, and arrows never end inside a chip. The badge and arrows layers are `qtside/canvas/layers/` modules (M5.0s registry); with no event on the form the frame cost is the registry's empty test.
+
+#### 13.3.5 Calling your code (CODE)
+
+**UX-CODE-001** `M6.2a` `[A]` Suggested method names (LOGIC §3.2, refined), computed by one Qt-free function:
+
+| Rule | Example |
+| --- | --- |
+| A button or action with text: the words of its text, `&` and punctuation removed, in `snake_case`. A single word gets the form's name added, without a trailing "window", "dialog" or "form" | "Save" on Invoice → `save_invoice`; "Print receipt" → `print_receipt`; "&New sale" → `new_sale` |
+| Any other sender: its object name's stem (a trailing class word removed: Button, Btn, Check, CheckBox, Radio, Edit, LineEdit, Combo, ComboBox, Spin, SpinBox, Slider, Dial, Box, Date, Tabs, List, View, Action) in `snake_case`, plus the event's short word (13.3.8) | `discountCheck` toggled → `discount_toggled`; `customerCombo` choice changed → `customer_changed` |
+| No usable words (no text, a stem of one character, or nothing ASCII) | `{object name in snake_case}_{short word}` |
+| Never starts with `on_` (D13); such a name gets `do_` in front | text "On hold" → `do_on_hold` |
+| Never shadows a method of the window's Qt base class (LOGIC FB204's list, from the stock class); such a name gets the form's name added | "Close" on Invoice → `close_invoice`; "Print" → `print_invoice` |
+| Unique in the window class and the form's `<slots>`: `_2`, `_3` … | `print_receipt_2` |
+| ASCII letters, digits and `_`; starts with a letter; at most 40 characters, cut at a word boundary; not a Python keyword; never starts with `cbcs` | |
+
+**UX-CODE-002** `M6.2b` `[S]` The method name field's check line, updated as the person types: "Adds print_receipt() to ShopWindow in shop_window.py." (`fb.muted`); "Use a method name like print_receipt: letters, digits and _, starting with a letter." (`fb.error`, blocks); "{name} is a method of {Qt base class}, so it would replace it. Try {suggestion}." (`fb.error`, blocks; FB204's meaning); "Methods named on_… also run by their name. Pick another name." (`fb.error`, blocks); "ShopWindow already has {name}. This event will call it." (`fb.muted`, Enter connects without adding code).
+
+**UX-CODE-003** `M6.2b` `[T]` **Making a method** (double-click, the canvas or outline context menu "Write code for “{event words}”", "Call a new method…" in the step picker, the Create method fix). One gesture:
+1. read the window file (UX-CODE-010) and plan the method (UX-CODE-005); if the plan is refused, nothing changes and the status says why (13.3.8 "Refusals");
+2. add the method to the window file (UX-CODE-007);
+3. in one form transaction, add the call step to the event (native or step list, D2) and the `<slots>` declaration `print_receipt()` (with "My method receives…" ticked: `print_receipt(bool)` and so on);
+4. open the window file at the new method (UX-CODE-007).
+If step 3 fails, step 2 is taken back by the UX-CODE-008 rule. The form step is named "Write code for {display name} {event words}" ("Write code for Print receipt clicked"). A double-click or "Write code for…" on an event whose code exists goes to it instead (UX-CODE-009): a method is made once.
+
+**UX-CODE-004** `M6.2a` `[A]` The method text, with the file's indentation unit `{i}` (four spaces when the class has no methods):
+
+```python
+{i}def print_receipt(self):
+{i}{i}"""Runs when printButton is clicked."""
+{i}{i}pass
+```
+
+With "My method receives…" ticked the parameter is named by the event: `checked` (toggled), `text` (textChanged, textEdited), `index` (currentIndexChanged, activated, currentChanged), `value` (valueChanged), `date`, `time`, `date_time`, `item` (itemActivated), `button` (button box clicked), else `value`. The docstring uses the object name and the event words of 13.3.8 ("Runs when discountCheck is checked or unchecked."). No decorator (D13). The text is ASCII except the object name as written.
+
+**UX-CODE-005** `M6.2a` `[A]` Where the method goes (D10): after the last line of the window class body, where the body's last line is its last statement's last line, extended over the comment lines indented deeper than the `class` line that follow it, and never past a line indented at or left of the `class` line. It is inserted as whole lines: one blank line before it when the class's methods are separated by one blank line or the class has one method; two when the class mostly uses two; a newline at the end. The file's line ending (LF or CRLF, the first line's) and indentation characters (spaces or tabs, from the first indented line of the class) are used. When the class body is only `pass` or a docstring, the method goes after it and the `pass` stays.
+
+**UX-CODE-006** `M6.2a, M6.2b` `[A T]` Never clobbering (pain 6). A test inserts into every file of a fixture set (CRLF, tabs, a non-ASCII comment before the class, a class ending in a comment, a decorator on the last method, nested classes, two classes, a file without a trailing newline, a coding cookie) and asserts that the result is the original text with exactly the method's lines added at one line boundary. The window file is refused, with a sentence and no change, when: it can't be read under D11's rules ("{file} can't be read, so Code Studio won't change it: {reason}."); it isn't valid Python ("Fix the error on line {n} of {file} first, so Code Studio can find where to add {name}."); it has no window class (UX-CODE-010); it isn't UTF-8 or ASCII text ("{file} isn't UTF-8 text, so Code Studio won't change it."); or writing fails ("Code Studio couldn't change {file}: {reason}.").
+
+**UX-CODE-007** `M6.2b` `[T]` The method is added through the code bridge (`integration/code_bridge.py`, M6.0s): when the window file is open in a tab, as one edit of that tab's document, so it is in the tab's own undo; otherwise written to disk atomically, marked as the editor's own write (no reload prompt, M5.8a's seam). A tab that had no unsaved changes is saved after the edit; a tab with unsaved changes keeps them unsaved (the person's own unsaved work is never saved for them). Then the window file's tab is shown with the caret on the new method's `pass` line and `pass` selected, so typing replaces it; the method's `def` line sits in the top third of the view. Focus goes to the code tab: the person asked to write code.
+
+**UX-CODE-008** `M6.2a, M6.2b` `[T]` Undo and redo (LOGIC §2.13). Undo of the form step removes the call step and the declaration it added, and removes the method from the window file only when the method's current text (its `def` line to its last line, line endings ignored) still hashes to the text inserted; then the blank lines added before it go too if they are still blank. Otherwise the method stays and the toast says "Removed the step. {name}() has your code in it, so it stays in {file}." Redo puts the step back, and puts the method back when the class has no method of that name (planned again against the current text); if it can't, the step comes back and FB201 shows. Ctrl+Z in the code tab undoes only the text there; the step stays and FB201 offers "Create method". A window file the gesture created (D9) stays after Undo.
+
+**UX-CODE-009** `M6.2b` `[S K T]` **Go to code.** F12, or Enter on a place link, or a click on a `{ }` chip, or double-click on a D8 widget with code, opens the window file at the method: the tab is reused or opened, the caret goes to the first line of the body after the docstring, the `def` line sits in the top third. F12 with a step row current goes to that step's method; with a widget selected on the canvas, to the method of its default event, then of its first event with one; with the form selected, to the window class line. When there is nothing to go to, the status says "{display name} has no code yet. Double-click it, or press Ctrl+Shift+E to add an event." / "print_receipt() isn't in {file} yet. Press Ctrl+. to create it."
+
+**UX-CODE-010** `M6.2a` `[A]` The window class is the first top-level class in the window file that has a method calling `<x>.setupUi(self)` where `<x>` is assigned `Ui_{FormClass}()` in the class or is `self.ui`; else the class named `{FormClass}Window` (what `render_window_class` writes); else none (FB210). The reader follows a base class into another project file named by a `from … import …` at the top of the window file, up to three files deep, with the same rules (D11); a base it can't read leaves its methods unknown (FB212).
+
+**UX-CODE-011** `M6.2a` `[A]` Code checks (LOGIC §3.4 and §3.6, with D12 and D15). Each produces one Problems row and a row badge:
+
+| Code | Severity | When | Fix |
+| --- | --- | --- | --- |
+| FB201 | Error | A step or native connection to the form calls a method the window class doesn't have (and the base Qt class has no such slot) | "Create method"; and "Use {method}" when an unconnected method differs by at most two letters |
+| FB202 | Error | The method needs more values than the event sends (required parameters beyond `self` > the signal's arguments, no `*args`) | "Go to code" |
+| FB203 | Info | The method's body is only `pass` and a docstring | "Go to code" |
+| FB204 | Error | A method the form declares has the name of a method of the window's Qt base class | "Go to code" |
+| FB205 | Warning | A method a step calls is also named `on_{object}_{signal}` for that event, so it runs twice | "Go to code" |
+| FB206 | Warning | A method named `on_{object}_{signal}` for a real widget and signal has no `@Slot`, or its `@Slot` types match no overload of that signal, so Qt won't connect it | "Go to code" |
+| FB208 | Warning | A method named `on_{x}_{y}` where `{x}` is a widget and `{y}` is not one of its events, or `{x}` is not a widget and differs from one by at most two letters | "Go to code" |
+| FB209 | Info | The window file couldn't be read or has a syntax error, so code isn't checked | "Go to code" (to the error line when there is one) |
+| FB210 | Warning | The window file has no window class (UX-CODE-010) | "Go to code" |
+| FB211 | Info | Connect methods by name is off and the class has `on_{object}_{signal}` methods for this form | "Turn on Connect methods by name" (one step) |
+| FB212 | Info | A method comes from a base class Code Studio can't read, so it isn't checked | none |
+| FB213 | Error | A method a step calls is a `@staticmethod`, `@classmethod` or `@property` | "Go to code" |
+
+The pain 22 test: a misspelled signal (`on_okButton_clickd`) is FB208; `@Slot() def on_okButton_clicked(self)` for a real `QPushButton` gives no row. A check never reports code it couldn't read: during FB209 no FB201–FB213 row is shown.
+
+**UX-CODE-012** `M6.2a, M6.2b` `[A S]` Connected by name. With Connect methods by name on, each window-class method `on_{object}_{signal}` whose object is a widget, action or the form and whose signal is one of its events, with a matching `@Slot`, is listed in that event's group (UX-BEH-006) and drawn as a `{ }` chip with arrows on. The generated code keeps uic's `QMetaObject.connectSlotsByName` call (CONTRACTS §9.3).
+
+**UX-CODE-013** `M6.2b` `[S T]` The form's **Code** group (UX-FSET-002) gains the first row "Connect methods by name" (check box, on by default; R3 7), with the caption "Methods named on_{widget}_{event} with @Slot run without a step. Qt Designer calls this Connect slots by name." Unticking writes `connectslotsbyname="false"` (Designer writes the attribute only when false); ticking removes it. One step "Change form setting: connect methods by name".
+
+**UX-CODE-014** `M6.2b` `[T]` Problems rows (UX-PROB-001) for FB2xx name the sender when there is a step ("printButton: print_receipt is not defined in ShopWindow (shop_window.py).") and the method otherwise ("on_okButton_clickd: …"). Double-click on a row with a step selects the sender, shows the Behavior tab and makes the step current (UX-PROB-002); on a row with only a method it goes to code at that method; FB209 goes to the error line. The rows clear when the cause is gone at the next check (D12).
+
+**UX-CODE-015** `M6.2b` `[T]` F5 (UX-RUN-001) from a form tab, when the form's window file is open with unsaved changes, asks first: "Save {file} before running? It has code this form calls." [Save and run] [Run without saving] [Cancel]. Without this, a method still only in the editor makes `setupUi` raise when the app starts.
+
+**UX-CODE-016** `M6.2b` `[S T]` Preview (D17). The preview host gets a stand-in for every method the form names (`<slots>`, native connections to the form, call steps), taking any arguments and doing nothing; the editor's status bar shows "Preview: {display name} {event words} would call {method}() in {file}." each time one runs ("Preview: {method}() in {file} would run." when several events call it). Preview never imports the window file (CONTRACTS §10.4).
+
+**UX-CODE-017** `M6.2b` `[S]` A form that doesn't generate (outside the project, or in the project but not in `forms/` and not adopted): "Call a new method…" shows "This form isn't in a project, so it has no window file." or "This form isn't in forms/, so Code Studio doesn't write Python for it." with the link "Adopt this form…" (the M1.4/M2 adopt flow); double-click on a D8 widget opens the event picker for its default event instead, with the same sentence in the status bar. Plain steps work as on any form.
+
+**UX-CODE-018** `M6.0s, M6.2b` `[S]` Hover on a D8 widget (UX-HOV-002): "{object} · {friendly class} · click to select · double-click to write code" before it has code, "… · double-click to go to its code" after. Enter still edits its text (UX-TEXT-001).
+
+#### 13.3.6 Logic storage the person can see (LST)
+
+**UX-LST-001** `M6.0b, M6.1b` `[S T]` FB402 (a form saved by a newer Code Studio, logic version above 1, or a version marker that can't be read). The Behavior tab shows a notice bar above its sections: "This form's behavior was saved by a newer version of Code Studio. You can read it here but not change it. Layout edits still work." Event and step rows are read-only (no + When…, + Then…, Delete, Space, pickers); double-click on a D8 widget goes to existing code only; every refused gesture says "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here." Renaming a widget whose name any `cbcs*` text contains is refused with "{name} is used by behavior from a newer version of Code Studio, so it can't be renamed here." Every logic property and native connection is written back unchanged (the O-logic round-trip test). The Problems row is a Warning (D15).
+
+**UX-LST-002** `M6.0b, M6.1b` `[S]` FB401 (a step list that isn't valid JSON or isn't a list of steps). Its event shows one row "This event can't be read (line {n}). It is kept as it is and does nothing when the form runs." in `fb.error` with the fix "Open as text", which switches the tab to View XML with the caret on that property (UX-XML-001; `cbcs*` keys are not in Custom properties, UX-PED-060). Nothing is rewritten until the person edits it there.
+
+**UX-LST-003** `M6.0b, M6.1b` `[S]` FB403 (a step with a verb this build doesn't know). The step reads "A step Code Studio can't edit ({verb})" in `fb.warning`, read-only, and the whole event generates nothing, so its run order is never silently changed. Other steps of that event stay editable; editing them keeps the unknown step in place.
+
+**UX-LST-004** `M6.1a` `[A T]` Conversion is invisible and exact (D2). After any Events-list edit, an event whose steps are all plain is native `<connection>` elements in list order, with every unchanged connection element (and its `<hints>`) kept; otherwise it is one step list and that event has no native connection left. View XML shows the result. Undo of the edit restores the previous bytes exactly (CONTRACTS §3.9 invariant 3).
+
+**UX-LST-005** `M6.1a, M6.1b` `[S T]` FB404 (an event stored in two places, made in Qt Designer). [Merge] moves the native connections into the step list, at its front (they ran first), in one step "Merge the {event words} event"; when every step is then plain, the event becomes native connections only. Until merged, both generate, in the order UX-BEH-007 shows.
+
+**UX-LST-006** `M6.0b, M6.1b` `[T]` Rename (LOGIC §2.13, §6.4). Renaming a widget updates its connections, every step target, the error-label and formula references (M6.0b's token rule, CONTRACTS §15.8) and the step-list property names stay as they are, in the same undo step. The status says "Renamed {old} to {new}. Updated {n} events." when any event changed. A method name is never renamed by a widget rename.
+
+**UX-LST-007** `M6.0b, M6.1b` `[T]` Paste and delete. A pasted widget brings its events; steps that target other pasted widgets point at the copies, others keep their targets. The toast: "Pasted {n} widgets. {k} steps now act on the copies; {m} still act on {name}." when both kinds exist. A step whose target isn't on the form (paste from another form) is FB405. Delete asks first when other widgets' steps target the widget, in UX-OUT-012's confirm, which lists each step in words ("nameEdit is used by: Clear clicked (Clear Name), 1 step of Phone Enter is pressed (Move focus to Name)") and adds, when any of them is in a step list, "Steps saved in a step list will show as broken." [Delete] [Cancel]. Native connections go with the widget (CONTRACTS `DeleteNodes`); step-list steps stay and show FB405.
+
+**UX-LST-008** `M6.0b` `[A]` What a Qt Designer user sees (LOGIC §6.5). Plain events are ordinary connections: Designer's signals and slots mode draws them and its Signal/Slot Editor lists them; methods are declared in `<slots>`, so Designer's Configure Connection dialog offers them on the form. Turned-off steps and later no-code steps are dynamic properties (`cbcsOnClicked`, a JSON list) Designer shows in its property editor as text, and the form root has `cbcsLogic`. A Designer resave keeps them (corpus findings), possibly in another order or without `notr`; CBCS reads either. A connection added in Designer to an event that has a step list gives FB404. `QUiLoader` builds the layout and runs widget-to-widget connections; calls into your code are inert there ("No such slot", harmless, LOGIC §3.5).
+
+**UX-LST-009** `M6.0b` `[A]` Determinism the person can rely on: saving an unchanged form gives identical bytes; adding one step to a step list is a one-line diff; reordering two steps is a two-line diff; a Designer-ordered file keeps its order when saved (D21).
+
+**UX-LST-010** `M6.0b` `[T]` Pasting widgets from a form with a newer logic version (D20) raises this form's version and shows the toast "The pasted widgets have behavior from a newer version of Code Studio, so this form's behavior is now read-only here. · Undo". Undo takes both back.
+
+#### 13.3.7 Amendments to earlier clauses
+
+| Clause | Change in v4 |
+| --- | --- |
+| UX-INSP-013 | Withdrawn in v4 when M6.1b's Events section registers (UX-BEH-001). Its pain-16 rule continues as UX-BEH-018 |
+| UX-INSP-014 | Bound by 13.3.2: in M6 only Events (and the form-only sections) show; State and Checks register in M7 |
+| UX-EMPTY-005 | Replaced by UX-BEH-013 |
+| UX-OVL-009 | Replaced by UX-ARR-006 … 010 |
+| UX-TEXT-001 | The M6.2 switch happens as D8 describes; Enter is unchanged |
+| UX-HOV-002 | Gains UX-CODE-018's words |
+| UX-KEY-004 | Gains the M6 rows (section 3.6); F4's row changes from "Connections overlay (M6; Designer parity)" to the overlay of UX-ARR-006 |
+| UX-KEY-005 | Resolved: Alt+B adopted (D22); Ctrl+Space, Ctrl+Enter and Ctrl+. in formulas are M7; Ctrl+. in the Events list runs a row's first fix (M6) |
+| UX-MODE-006 | R3 212's Code Studio column becomes "F4 (Connections overlay)" |
+| UX-SHELL-004, UX-M5-010 | Form menu items of UX-M6-006 |
+| UX-FSET-002 | Code group gains "Connect methods by name" first (UX-CODE-013) |
+
+#### 13.3.8 Copy tables
+
+**Event words** (event headers "When {words}", picker items, docstrings "Runs when {object} is {words}.", and the short word for method names):
+
+| Signal | Header and picker words | Docstring words | Short word |
+| --- | --- | --- | --- |
+| `clicked` | "clicked" | "clicked" | `clicked` |
+| `pressed` / `released` | "pressed" / "released" | same | `pressed` / `released` |
+| `toggled` | "checked or unchecked" | "checked or unchecked" | `toggled` |
+| `editingFinished` | "editing is finished" (header "When editing is finished") | "finished editing" | `done` |
+| `returnPressed` | "Enter is pressed" | "given Enter" | `enter` |
+| `textChanged` / `textEdited` | "the text changes" / "the text is typed" | "changed" | `text_changed` / `typed` |
+| `currentIndexChanged` | "the choice changes" | "changed" | `changed` |
+| `activated` (combo box) | "a choice is picked" | "picked" | `picked` |
+| `valueChanged` | "the value changes" | "changed" | `changed` |
+| `dateChanged`, `timeChanged`, `dateTimeChanged` | "the date changes", "the time changes", "the date or time changes" | "changed" | `changed` |
+| `currentChanged` (tabs, stack) | "the page changes" | "switched to another page" | `page_changed` |
+| `itemActivated` | "an item is opened" | "opened" | `opened` |
+| `currentRowChanged` | "another row is chosen" | "moved to another row" | `row_changed` |
+| `accepted` / `rejected` (button box, dialog) | "OK is pressed" / "Cancel is pressed" | "accepted" / "cancelled" | `ok` / `cancel` |
+| `clicked(QAbstractButton*)` (button box) | "any of its buttons is clicked" | "clicked" | `button_clicked` |
+| `triggered` (action) | "chosen" | "chosen" | the action's text rule (UX-CODE-001) |
+| `finished` (dialog) | "it closes" | "closed" | `closed` |
+| any other | the signal name, as Qt writes it | the signal name | the signal name in `snake_case` |
+
+Header sentences use "When {display name} is {words}" in the step picker title and "When {words}" in the list ("When OK is pressed"); "When Enter is pressed" and the like keep their own verb.
+
+**Value words** ("My method receives {words}"): bool "whether it's checked"; QString "the new text"; int "the new number" (index signals: "the number of the new choice"; tabs: "the number of the new page"); double "the new number"; QDate "the new date"; QTime "the new time"; QDateTime "the new date and time"; QAbstractButton* "the button that was clicked". **Type words** (UX-PICK-006 reasons): bool "yes or no", int "a whole number", double "a number", QString "text", QDate "a date", other types their Qt name.
+
+**Step words** (UX-BEH-004):
+
+| Step | Words |
+| --- | --- |
+| form `close()` / `accept()` / `reject()` | "Close this form" / "Accept (OK)" / "Cancel" |
+| `{w}.clear()` | "Clear {w}" |
+| `{w}.setFocus()` | "Move focus to {w}" |
+| `{w}.setChecked(bool)` | "Check or uncheck {w} the same way" |
+| `{w}.toggle()` / `click()` | "Toggle {w}" / "Click {w}" |
+| `{w}.setCurrentIndex(int)` | "Show the matching page of {w}" (tabs, stack) / "Choose the matching item of {w}" (combo) |
+| `{w}.setValue(int)` | "Set {w} to the same value" |
+| `{w}.setEnabled(bool)` / `setDisabled(bool)` | "Enable {w} to match" / "Disable {w} to match" |
+| `{w}.setVisible(bool)` / `show()` / `hide()` | "Show {w} to match" / "Show {w}" / "Hide {w}" |
+| `{w}.setText(QString)` | "Copy the text into {w}" |
+| `{w}.selectAll()` / `undo()` / `redo()` / `copy()` / `paste()` / `cut()` | "Select all in {w}" / "Undo in {w}" / … |
+| `{w}.update()` / `repaint()` / `raise_()` / `lower()` | "Redraw {w}" / "Redraw {w}" / "Bring {w} to the front" / "Send {w} to the back" |
+| call | "Call {method}()" |
+| method connected by name | "{method}() runs by its name" |
+| unknown verb (FB403) | "A step Code Studio can't edit ({verb})" |
+| a slot with no entry | "{w} · {slot name}" |
+
+`{w}` is "{display name} ({object})", the object name in `fb.faint`.
+
+**Undo names** (UX-M6-002):
+
+| Action | Undo name |
+| --- | --- |
+| Add steps from a picker | "Add {step words} to {sender} {event words}" ("Add Clear Name to Clear clicked") |
+| Add with an intent of two steps | "Keep {a} and {b} in step", "Make OK accept and Cancel close" |
+| Change a step / an event | "Change {old step words} to {new step words}", "Change the event to {event words}" |
+| Delete | "Delete {step words}", "Delete the {event words} event" |
+| Move, duplicate | "Move {step words}", "Duplicate {step words}" |
+| Turn off / on | "Turn off {step words}", "Turn on {step words}" |
+| Canvas link | "Connect {sender} to {receiver}" |
+| Merge | "Merge the {event words} event" |
+| Make a method | "Write code for {display name} {event words}" |
+| Remove a method declaration | "Remove method declaration {name}" |
+| Connect by name setting | "Change form setting: connect methods by name" |
+
+**Status sentences, refusals and toasts** (every sentence an M6 lane may show; the clauses above hold the confirms):
+
+| Where | Sentence | Colour |
+| --- | --- | --- |
+| Empty Events | "Nothing happens yet when {display name} is {event words}." / "Nothing happens yet for {display name}." | `fb.muted` |
+| Empty Events, D8 widget | "Double-click it on the form to write code for it." | Caption |
+| Several selected | "Select one widget to see what it does." | `fb.muted` |
+| Layout or spacer selected | "Layouts and spacers don't have events. Select a widget." | `fb.muted` |
+| Move past the ends | "That is the first step." / "That is the last step." | status |
+| Step deleted, method kept | "Removed the step. {method}() is still in {file}. · Undo" | toast |
+| No picker match | "Nothing matches “{text}”." | `fb.muted` |
+| Incompatible slot | "Needs {type words}; {event words} sends nothing." / "Needs {type words}; {event words} sends {type words}." | `fb.faint` |
+| Change of event drops steps | "{n} steps can't run on {event words} and will be removed." | confirm |
+| Two places | "This event is stored in two places." | `fb.warning` |
+| Show all on | "Showing all {n} connections. Ctrl+Shift+L hides them." | status |
+| Connections banner | "Drag from a widget to the widget it should act on. Drop on the form's background to act on the form." | overlay banner |
+| Overlay link by keys | "Choose the widget for {sender} to act on, then press Enter. Home picks the form." | status |
+| Overlay hover | "{display name} · drag to another widget to connect" | status |
+| Arrow hover | "When {sender} is {event words}: {step words}. Click to select, Delete to remove." | status |
+| `{ }` hover | "Calls {method}() in {file}. Click to go to the code." | status |
+| Badge hover | "{n} events: When {a}, When {b}{ and {k} more}" ("1 event: When clicked") | tooltip |
+| Name check | the five lines of UX-CODE-002 | as listed |
+| Method plan refused | the five sentences of UX-CODE-006 | status |
+| No window class | "{file} has no class that calls self.ui.setupUi(self)." | status / picker line |
+| Form doesn't generate | "This form isn't in a project, so it has no window file." / "This form isn't in forms/, so Code Studio doesn't write Python for it." | picker line / status |
+| Method kept on Undo | "Removed the step. {method}() has your code in it, so it stays in {file}." | toast |
+| Nothing to go to | "{display name} has no code yet. Double-click it, or press Ctrl+Shift+E to add an event." / "{method}() isn't in {file} yet. Press Ctrl+. to create it." | status |
+| By-name explanation | "Qt runs methods named on_{object}_{event} by themselves, because Connect methods by name is on." | status |
+| F5 with unsaved window file | "Save {file} before running? It has code this form calls." | confirm |
+| Preview stand-in | "Preview: {display name} {event words} would call {method}() in {file}." / "Preview: {method}() in {file} would run." | status |
+| Rename updated events | "Renamed {old} to {new}. Updated {n} events." ("1 event") | status |
+| Paste | "Pasted {n} widgets. {k} steps now act on the copies; {m} still act on {name}." | toast |
+| Newer logic | "This form's behavior was saved by a newer version of Code Studio. You can read it here but not change it. Layout edits still work." | notice bar |
+| Newer logic, refused gesture | "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here." | status |
+| Newer logic, rename | "{name} is used by behavior from a newer version of Code Studio, so it can't be renamed here." | status |
+| Newer logic pasted | "The pasted widgets have behavior from a newer version of Code Studio, so this form's behavior is now read-only here. · Undo" | toast |
+| Event can't be read (FB401) | "This event can't be read (line {n}). It is kept as it is and does nothing when the form runs." | `fb.error` |
+| Unknown step (FB403) | "A step Code Studio can't edit ({verb})" | `fb.warning` |
+| Your methods caption | "Code Studio adds methods to {file} and never changes the rest of it." | Caption |
+| Declaration in use | "{name} is used by {n} steps. Delete those steps first." | status |
+| Connect by name caption | "Methods named on_{widget}_{event} with @Slot run without a step. Qt Designer calls this Connect slots by name." | Caption |
+
+**FB codes and messages** (CONTRACTS §7.2 gains FB208–FB213 and FB403–FB405 through the lanes' `engine/diagnostic_codes/` modules; FB201–FB206 and FB401–FB402 keep LOGIC §2.9's numbers and meanings):
+
+| Code | Message |
+| --- | --- |
+| FB201 | "{method} is not defined in {class} ({file})." |
+| FB202 | "{method}(self, {params}) needs {n} values, but {event words} sends {m}. It would fail every time." |
+| FB203 | "{method} is still empty (pass)." |
+| FB204 | "The method name {method} would replace {base class}'s own {method}." |
+| FB205 | "{method} also runs by its name, so it would run twice." |
+| FB206 | "{method} has no @Slot(), so Qt won't run it by its name." / "{method}'s @Slot({types}) doesn't match {object}'s {signal}, so Qt won't run it by its name." |
+| FB208 | "{method} looks like a method Qt runs by its name, but {object} has no event {signal}. Did you mean {suggestion}?" / "… but there is no widget {object}. Did you mean {suggestion}?" |
+| FB209 | "{file} has an error on line {n}, so the code this form calls isn't checked." / "{file} can't be read, so the code this form calls isn't checked: {reason}." |
+| FB210 | "{file} has no class that calls self.ui.setupUi(self), so methods can't be added or checked." |
+| FB211 | "Connect methods by name is off, so {method} won't run by itself." |
+| FB212 | "{method} comes from {base}, which Code Studio can't read, so it isn't checked." |
+| FB213 | "{method} is a {staticmethod / class method / property}, so Qt can't call it for an event." |
+| FB401 | "{property} on {object} can't be read (line {n}). It is kept as it is and does nothing." |
+| FB402 | "This form's behavior was saved by a newer version of Code Studio (version {v}). It is shown read-only and kept as it is." |
+| FB403 | "{object} {event words} has a step Code Studio can't edit ({verb}). The event does nothing until it's edited in a newer version." |
+| FB404 | "{object} {event words} is stored in two places: Qt Designer connections and a Code Studio step list." |
+| FB405 | "Step {n} of {object} {event words} acts on {target}, which isn't on this form." |
+
+#### 13.3.9 Deferred from M6, with owners
+
+| Item | Owner |
+| --- | --- |
+| State and Checks sections, rule intents ("Enable … only when"), the steer from `toggled → setEnabled` to a rule (LOGIC §2.14) | M7.2 (registers in `behavior_ext/` and `engine/logic/intents/`) |
+| Conditions on steps ("only if"), the step vocabulary (message, ask, set, open form…) | M7.1, M7.4 |
+| Form events and pseudo-events (D16) | M7.4, M8.2 |
+| Try mode and its log (Ctrl+Shift+R stays Preview) | M7.6 |
+| "In your code" connections found by parsing `self.ui.x.signal.connect(...)` | M7.8 |
+| Shift+F12, logic search, renaming a method in code and form together (D18, D19) | M7.8 |
+| The Logic panel and "Read as text" | M7.8 |
+| Dragging Designer's connection hint points (D7) | Not offered: hints round-trip unchanged |
+
 ---
 
 ## 14. Heuristic review of the spike build
@@ -2257,6 +2770,11 @@ What the spike gets right and this spec keeps: whole-card click targets on Start
 | SPIKE_DESIGN §6 F2 edits text on the canvas | Enter edits text; F2 renames everywhere | Same meaning as the shell's Rename Symbol; TEXT-001 |
 | SPIKE_DESIGN §7 Behavior/Data stubs say "arrives in the logic phase" | No milestone text in user builds; Data hidden until M8 | EMPTY-006 |
 | SPIKE_DESIGN §2 sizing "Auto" state | Outlined default word with a caption; three words only | SIZE-002, SIZE-003 |
+| LOGIC_DESIGN §2.7: a selected widget always draws its relationships | Arrows only with the Behavior tab current, in the Connections overlay, or with Show all | 13.3.1 D5, PRIN-004 |
+| LOGIC_DESIGN §2.12: F4 enters a connection-drawing mode | F4 toggles the Connections overlay | 13.3.1 D6, MODE-001 |
+| LOGIC_DESIGN §2.9: FB203 Warning, FB402 Error | FB203 Info, FB402 Warning | 13.3.1 D15 |
+| LOGIC_DESIGN §6.5: the next CBCS save re-canonicalises | Only edited properties are rewritten; read order is kept | 13.3.1 D21 |
+| LOGIC_DESIGN §2.1: the Behavior tab shows State, Checks and Events | M6 shows Events (and the form-only sections); State and Checks register in M7 | 13.3.1 D4, BEH-001 |
 
 ---
 
@@ -2289,3 +2807,8 @@ Results (ChoreBoyExp slot, FreeCAD 1.1.1, Python 3.11.14, PySide6 / Qt 6.8.3, pr
 - Which styles `QStyleFactory.keys()` lists in the preview runtime (UX-PREV-001 shows whatever it lists).
 - That files dragged from the ChoreBoy file manager reach the editor as local file URLs (UX-RES-003 is a "should" until confirmed).
 - That the Code Studio settings folder is writable for `form_templates/` (UX-TMPL-002).
+
+### 16.4 Facts M6 lanes check on the ChoreBoy VM (not owner decisions)
+
+- That PySide6 on ChoreBoy (FreeCAD 1.1.1, PySide6 6.8.3) calls a plain Python method with as many of a signal's values as it accepts, as LOGIC_DESIGN §3.3 measured on macOS (UX-CODE-004 relies on it; if not, stubs always take the event's values). M6.2b runs the probe.
+- That the window file opened by double-click takes focus and shows the caret in a CBCS-run session on the VM (UX-CODE-007).

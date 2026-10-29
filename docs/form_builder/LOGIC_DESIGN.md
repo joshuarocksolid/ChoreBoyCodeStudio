@@ -1769,3 +1769,21 @@ PostgreSQL waits until the SQLite save path is boring. The SQL shape is the same
 2. **Try mode on PostgreSQL: write, then roll back** (owner's choice over read-only). Mitigations to design in: short transactions, a visible "Try mode: changes will be rolled back" banner, a statement timeout, and a warning that row locks can briefly block other users.
 3. **Locale: US English by default** ($1,234.50, MM/DD/YYYY), with a per-project setting.
 4. **Users are a real mix**, so the point-and-click builder for conditions and calculated values ships in **phase 2**, alongside typed formulas.
+
+## Changes recorded by M6.0 (2026-10-29)
+
+The M6 spec (UX_SPEC §13.3, version 4) and CONTRACTS §15–16 change this design in the places below. Where this document and those disagree, they win; the sections above are left as written so the reasoning stays readable.
+
+| Section | Was | Now | Why |
+| --- | --- | --- | --- |
+| §6.1 `cbcsLogic` | `<number>1</number>` | `<string notr="true">{"version":1}</string>`, as the engine writes since M1.2. Readers also accept `<number>` and a bare integer string; an unreadable marker makes logic read-only (CONTRACTS §15.2) | The writer, reader, tests and the Designer-resave corpus already use the string form, and an object leaves room for more fields |
+| §4.12, §6.2 step verbs | No verb for a plain Qt slot or for passing values to a method | `{"do": "slot", "target", "slot"}` and `"args"` on `call` (CONTRACTS §15.3) | A step list must be able to hold every plain step, so turning a step off or adding a condition never loses it |
+| §2.3 storage | Plain lists native, others a step list | The same rule per event, with the overload choice and minimal-diff rules of CONTRACTS §15.6; M6 needs a list only for a step that is turned off | One event never sits in two storages unless Designer made it so (FB404) |
+| §6.3, §6.5 canonical order | "The next CBCS save re-canonicalises" | Read order is kept; only properties CBCS edits are rewritten canonically (UX D21) | Designer-resave zero diff and byte-stable saves of untouched files |
+| §2.1 Behavior tab | State, Checks, Events | M6 shows Events plus the form-only sections; State and Checks register in M7 (UX-BEH-001) | No empty sections a build can't fill |
+| §2.7 overlay | Relationships drawn whenever a widget is selected; F4 a drawing mode | Arrows with the Behavior tab current, in the Connections overlay (F4, an overlay) or with Show all (UX D5, D6) | Structure appears where you look; one editing mode |
+| §2.9 severities | FB203 Warning, FB402 Error | FB203 Info, FB402 Warning; new FB208–FB213, FB403–FB405 (UX-CODE-011, UX §13.3.8) | A fresh stub is not a problem; FB402 loses nothing |
+| §2.12 keys | Alt+B conditional; Shift+F12 in phase 1 | Alt+B adopted; Shift+F12 with M7.8 (UX D19, D22) | No shell menu uses B; find-all needs rules |
+| §2.13, §3.3 stubs | Appended after the last method by offsets; `ast` of the whole file | Whole-line insertion after the class's last line, the file's own style, a `tokenize` pre-scan before `ast` (UX D10, D11; CONTRACTS §16.1–16.3); a window file the gesture created stays after Undo (UX D9) | `ast` columns are UTF-8 byte offsets; the M5.4 gate found a crafted line that crashes `ast.parse` on 3.9 |
+| §2.10, §3.5 Preview | — | Preview gives each method the form names a do-nothing stand-in and says what would run (UX D17) | A form-slot connection made `setupUi` raise in Preview |
+| §2.2 form events and pseudo-events | Phase 1 | M7.4 and M8 (UX D16) | They need the step vocabulary and generated setup |
