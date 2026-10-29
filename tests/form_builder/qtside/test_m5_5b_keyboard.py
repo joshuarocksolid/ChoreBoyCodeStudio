@@ -3,7 +3,7 @@
 
 One main-window form tab on a form with a container that has no layout and an
 ``stdsetdef`` attribute. A filter fails the run on any spontaneous mouse event.
-The Alt+Right step is a strict xfail below: the canvas key code is M5.6's.
+The Alt+Right step runs after [Remove] so focus need not come back to the settings.
 """
 
 from __future__ import annotations
@@ -92,6 +92,17 @@ def test_k21_form_settings(tmp_path: Path, qapp: object) -> None:
         kb.press("Key_Return")
         kb.check("stdsetdef" not in kb.text(), "the older file setting is removed")
         kb.check(added() == 6 and kb.session.log.undo_label() == "Remove older file setting", "one step for Remove")
+        # Select a free widget on the canvas and Alt+Right: it moves one 16 px step.
+        kb.press("Key_3", "Alt")
+        kb.check(kb.focus_in("formBuilder.canvas"), "Alt+3 focuses the canvas")
+        for _ in range(12):
+            if kb.current() == "payButton":
+                break
+            kb.press("Key_Tab")
+        kb.check(kb.current() == "payButton", "Tab reaches payButton")
+        kb.press("Key_Right", "Alt")
+        kb.check("<x>32</x>" in kb.text(), "Alt+Right moves payButton 16 px (16 -> 32)")
+        kb.check(added() == 7 and kb.session.log.undo_label() == "Nudge", "one step for the nudge")
         for _ in range(added()):
             kb.session.log.undo()
         kb.check(kb.text() == original, "Undo all restores the original bytes")

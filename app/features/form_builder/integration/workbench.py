@@ -316,6 +316,29 @@ class NoticeBar(QFrame):
     def dismiss(self) -> None:
         self.hide()
 
+    def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        """Body text on the panel, like the rest of the tab: 4.5:1, 7:1 in high contrast.
+
+        The bar is the surface's child, not the workbench's, so the workbench sheet never reached it.
+        """
+        self.setStyleSheet(
+            "QFrame#formBuilder\\.notice { background: %s; border: 1px solid %s; }"
+            "QLabel#formBuilder\\.noticeText { color: %s; background: transparent; border: none; }"
+            "QPushButton#formBuilder\\.noticeButton {"
+            " color: %s; background: %s; border: 1px solid %s; padding: 2px 8px; }"
+            "QPushButton#formBuilder\\.noticeButton:focus { border: %dpx solid %s; }"
+            % (
+                tokens.panel_bg,
+                tokens.border,
+                tokens.text_primary,
+                tokens.text_primary,
+                tokens.input_bg,
+                tokens.border,
+                tokens.focus_border_width,
+                tokens.accent,
+            )
+        )
+
 
 class FormToolbar(QWidget):
     """36 px bar. Design | XML replaces the single View XML toggle."""
@@ -362,15 +385,10 @@ class FormToolbar(QWidget):
         self._divider.setFixedHeight(18)
         row.addWidget(self._divider)
 
-        self.tab_order = _tool(
-            "Tab order",
-            "formBuilder.tabOrder",
-            "Tab order. Press F8 to see where this form's order comes from.",
-            self,
-        )
-        self.tab_order.setEnabled(False)
-        self.buddies = _tool("Buddies", "formBuilder.buddies", "Set a label's buddy in All properties > buddy.", self)
-        self.buddies.setEnabled(False)
+        self.tab_order = _tool("Tab order", "formBuilder.tabOrder", "Tab order (F8)", self)
+        self.tab_order.setCheckable(True)
+        self.buddies = _tool("Buddies", "formBuilder.buddies", "Buddies (F7)", self)
+        self.buddies.setCheckable(True)
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
 
