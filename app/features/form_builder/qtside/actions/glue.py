@@ -25,8 +25,8 @@ from app.features.form_builder.qtside.actions.paint_model import (
 )
 from app.features.form_builder.qtside.canvas.layers.menu_edit import NAME as LAYER
 from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
-from app.qt.QtGui import QFontMetrics, QKeyEvent
-from app.qt.QtWidgets import QApplication, QMenuBar, QToolBar, QWidget
+from app.qt.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPalette
+from app.qt.QtWidgets import QApplication, QLineEdit, QMenuBar, QToolBar, QWidget
 
 CENTRAL_REFUSAL = "The central area belongs to the window. Delete what's inside it instead."
 
@@ -51,6 +51,23 @@ def key_of(event: QKeyEvent) -> Key:
     ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
     text = "" if name else event.text()
     return Key(name, text, alt=alt, ctrl=ctrl)
+
+
+#: Keys the line edit hands to the ``MenuEditor``. Everything else (caret, selection, paste,
+#: input methods) is the line edit's own.
+_EDITOR_KEYS = ("Enter", "Tab", "Escape", "Up", "Down")
+
+
+class _EditLine(QLineEdit):
+    """The in-place editor: a frameless line edit that sits where the layer paints its box."""
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setFrame(False)
+        self.setObjectName("formBuilder.menuEditLine")
+        self.setAccessibleName("Menu text")
+        self.setTextMargins(5, 0, 3, 0)
+        self.setAttribute(Qt.WidgetAttribute.WA_MacShowFocusRect, False)
 
 
 class MenuEditGlue(QObject):
@@ -82,6 +99,9 @@ class MenuEditGlue(QObject):
 
         self._sub = session.log.subscribe(self._on_change, priority=PRIORITY_DIAGNOSTICS + 1)
         self._diagnostics: Tuple[object, ...] = ()
+        self._line: Optional[_EditLine] = None
+        self._line_token: object = None
+        self._syncing = False
         self._timer.start()
 
     @property
@@ -91,6 +111,7 @@ class MenuEditGlue(QObject):
     def dispose(self) -> None:
         self._timer.stop()
         self._sub.close()
+        self._drop_line()
         for widget in self._watched:
             try:
                 widget.removeEventFilter(self)
@@ -107,6 +128,8 @@ class MenuEditGlue(QObject):
         return started
 
     def eventFilter(self, watched: object, event: object) -> bool:  # noqa: N802
+        if watched is self._line and self._line is not None:
+            return self._line_event(event)
         kind = getattr(event, "type")()
         if kind not in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride):
             return False
@@ -138,6 +161,129 @@ class MenuEditGlue(QObject):
             return True
         return False
 
+    # ----------------------------------------------------------- line edit
+    def _line_event(self, event: object) -> bool:
+        kind = getattr(event, "type")()
+        if kind in (QEvent.Type.KeyPress, QEvent.Type.ShortcutOverride) and isinstance(event, QKeyEvent):
+            key = key_of(event)
+            if key.name in _EDITOR_KEYS and not key.ctrl and not key.alt:
+                if kind == QEvent.Type.ShortcutOverride:
+                    event.accept()
+                    return True
+                self._editor.handle(key)
+                self.refresh()
+                return True
+            return False
+        if kind == QEvent.Type.FocusOut and not self._syncing:
+            reason = getattr(event, "reason")()
+            if reason in (Qt.FocusReason.MouseFocusReason, Qt.FocusReason.OtherFocusReason, Qt.FocusReason.BacktabFocusReason):
+                token = self._line_token
+                QTimer.singleShot(0, lambda: self._keep_on_focus_loss(token))
+        return False
+
+    def _keep_on_focus_loss(self, token: object) -> None:
+        """Clicking away keeps the text, as Enter does (UX-MAIN-006)."""
+        if token is not self._line_token or self._editor.editor is None or self._line is None:
+            return
+        if self._line.hasFocus():
+            return
+        self._editor.handle(Key("Enter"))
+        self.refresh()
+
+    def _drop_line(self) -> None:
+        line, self._line, self._line_token = self._line, None, None
+        if line is None:
+            return
+        self._syncing = True
+        try:
+            line.removeEventFilter(self)
+            line.hide()
+            line.setParent(None)
+            line.deleteLater()
+        finally:
+            self._syncing = False
+
+    def _page_to_viewport(self) -> Optional[Tuple[int, int, float]]:
+        """Origin of the page in viewport pixels and the zoom factor."""
+        root = getattr(self._realizer, "root_widget", None)
+        node = getattr(self._session.document, "root", None)
+        rect_of = getattr(self._canvas, "viewport_rect", None)
+        if root is None or node is None or rect_of is None or root.width() <= 0:
+            return None
+        rect = rect_of((node.id,))
+        if rect is None:
+            return None
+        return rect.x(), rect.y(), rect.width() / float(root.width())
+
+    def _ink(self) -> QColor:
+        palette = getattr(self._canvas, "_palette", None)
+        text = getattr(getattr(palette, "overlay", None), "stand_in_text", None)
+        if isinstance(text, str) and text.startswith("#") and len(text) >= 7:
+            return QColor("#" + text[1:7])
+        return QApplication.palette().color(QPalette.ColorRole.Text)
+
+    def _sync_line(self, state: PaintState) -> None:
+        """Keep one frameless ``QLineEdit`` on the layer's "edit" box while a title or entry is typed."""
+        spec = next((item for item in state.items if item.kind == "edit"), None)
+        editor = self._editor.editor
+        mapped = self._page_to_viewport() if spec is not None and editor is not None else None
+        if spec is None or editor is None or mapped is None:
+            if self._line is not None:
+                had_focus = self._line.hasFocus()
+                self._drop_line()
+                if had_focus:
+                    getattr(self._canvas, "viewport")().setFocus()
+            return
+        ox, oy, factor = mapped
+        viewport = getattr(self._canvas, "viewport")()
+        fresh = self._line is None
+        if fresh:
+            self._line = _EditLine(viewport)
+            self._line.installEventFilter(self)
+            self._line.textEdited.connect(self._on_line_edited)
+        line = self._line
+        assert line is not None
+        self._syncing = True
+        try:
+            font = QFont(QApplication.font())
+            font.setPixelSize(max(8, int(round(12 * factor))))
+            line.setFont(font)
+            pal = line.palette()
+            pal.setColor(QPalette.ColorRole.Text, self._ink())
+            pal.setColor(QPalette.ColorRole.Base, QColor(0, 0, 0, 0))
+            line.setPalette(pal)
+            line.setStyleSheet("QLineEdit { background: transparent; border: 0; }")
+            line.setGeometry(
+                int(round(ox + spec.x * factor)),
+                int(round(oy + spec.y * factor)),
+                max(8, int(round(spec.width * factor))),
+                max(8, int(round(spec.height * factor))),
+            )
+            if fresh or self._line_token is not editor:
+                self._line_token = editor
+                line.setText(editor.text)
+                line.show()
+                line.raise_()
+                line.setFocus(Qt.FocusReason.OtherFocusReason)
+                if editor.selected:
+                    line.selectAll()
+            elif line.text() != editor.text:
+                line.setText(editor.text)
+            line.setAccessibleDescription(self._editor.reuse_phrase())
+        finally:
+            self._syncing = False
+
+    def _on_line_edited(self, text: str) -> None:
+        self._editor.set_text(text)
+        self.refresh()
+
+    def _describe_focus(self) -> None:
+        phrase = self._editor.focus_phrase()
+        for widget in (self._canvas, getattr(self._canvas, "viewport")()):
+            setter = getattr(widget, "setAccessibleDescription", None)
+            if setter is not None:
+                setter(phrase)
+
     def _is_central_area(self) -> bool:
         """UX-MAIN-014: the central widget of a main window is selected on its own."""
         state = self._session.selection.state
@@ -167,6 +313,8 @@ class MenuEditGlue(QObject):
             if any(not doc.contains(host) for host in hosts):
                 self._editor.leave()
         state = self._build_state()
+        self._sync_line(state)
+        self._describe_focus()
         show = getattr(self._canvas, "show_layer", None)
         hide = getattr(self._canvas, "hide_layer", None)
         if show is None or hide is None:
