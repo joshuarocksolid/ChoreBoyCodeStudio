@@ -193,6 +193,9 @@ class ItemEditor(QFrame):
     def close_keep(self) -> None:
         if self._closed:
             return
+        if not self._session.document.contains(self._draft.widget):
+            self._finish()
+            return
         trim = getattr(self._body, "trimmed", None)
         if callable(trim):
             self._draft = trim(self._draft)

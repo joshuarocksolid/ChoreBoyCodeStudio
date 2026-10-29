@@ -1405,8 +1405,10 @@ class CanvasController:
     def _on_selection(self, change: SelectionChange) -> None:
         editor = getattr(self, "_items_editor", None)
         if editor is not None and (change.after.current is None or change.after.current != editor.draft.widget):
-            editor.close_keep()
+            # A command's selection change arrives inside its change listeners,
+            # where the editor's closing commit cannot run; close once it returns.
             self._items_editor = None
+            QTimer.singleShot(0, editor.close_keep)
         self._announce_selection(change.after)
         if change.after.current is not None:
             self._raise_mdi_window(change.after.current)
