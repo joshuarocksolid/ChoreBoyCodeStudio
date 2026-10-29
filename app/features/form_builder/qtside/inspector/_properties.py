@@ -1230,9 +1230,14 @@ class _Row(QWidget):
             self._editor.show(view.value)
             self._show_canvas_refusal(view)
         if isinstance(view, OpenRow) and not self._invalid:
-            refused = self._caption is not None and self._caption.isVisible() and self._caption.text() == CANVAS_REFUSED_TEXT
-            if not refused:
+            # isVisible() is false while a parent is still hidden, so the canvas
+            # refusal caption is kept by its text. An empty note still clears a
+            # caption left on a reused row.
+            current = "" if self._caption is None else self._caption.text()
+            if view.note:
                 self._set_caption(view.note, error=False)
+            elif current != CANVAS_REFUSED_TEXT:
+                self._set_caption("", error=False)
         self._elide_label()
         self._sync_reset()
 
