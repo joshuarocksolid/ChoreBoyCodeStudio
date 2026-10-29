@@ -75,6 +75,7 @@ from app.features.form_builder.qtside.realize.tree import (
     _Structure,
     _grid_extent,
     _node_id,
+    settle_page_index,
 )
 from app.features.form_builder.qtside.theme.runtime import isolate_widget
 
@@ -482,6 +483,8 @@ class Realizer(_Structure):
             refusals=self._refusals,
         ):
             self._patched += 1
+        if name == "currentIndex" and isinstance(obj, QWidget):
+            settle_page_index(obj, entry)
         self._settle_label(node, obj, name)
 
     def _settle_label(self, node: Node, obj: object, name: str) -> None:
