@@ -282,7 +282,7 @@ Owner WP in brackets. The stub `commands/catalog.py` has the fields and full sem
 | `AddConnection`, `EditConnection`, `MoveConnection` [M6.1] | fields | Signatures are normalised the way Designer writes them | connection | — |
 | `SetTabStops` [M5.6] | names or None | None removes the element | — | — |
 | `SetBuddy` [M5.6] | label_widget, target | Sets the `buddy` cstring | — | — |
-| `SetButtonGroup` [M5.6] | buttons, group or None | Creates the group, or removes it once it's empty | — | — |
+| `SetButtonGroup` [M5.1] | buttons, group or None | Creates the group, or removes it once it's empty | — | — |
 | `SetFormSlots` [M6.2] | signals, slots | `<slots>` | — | — |
 | `Promote`, `SetCustomWidget` [M5.4] | ids, class_name, declaration | Demoting removes declarations nobody uses | — | — |
 | `SetResourceIncludes` [M5.2] | locations | — | — | — |
