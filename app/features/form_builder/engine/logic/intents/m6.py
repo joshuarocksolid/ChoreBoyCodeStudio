@@ -55,7 +55,7 @@ class IntentSpec:
     target_title: str = ""
 
 
-def _event_of(intent: IntentSpecSpec, sender_chain: Tuple[str, ...]) -> str:
+def _event_of(intent: IntentSpec, sender_chain: Tuple[str, ...]) -> str:
     if intent.event == "clicked" and "QAction" in sender_chain:
         return "triggered"
     return intent.event
