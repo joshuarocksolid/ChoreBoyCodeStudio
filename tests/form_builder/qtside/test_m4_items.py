@@ -68,6 +68,22 @@ def test_combo_session_is_one_step_and_escape_reverts(qapp) -> None:
     session.dispose()
 
 
+def test_the_file_never_holds_the_blank_row_the_editor_keeps_for_typing(qapp) -> None:
+    session = open_session(_form())
+    combo = session.document.by_name("combo")[0]
+    editor = open_editor(session, combo, None)
+    assert editor is not None
+    edit = editor.findChild(QLineEdit)
+    QTest.keyClicks(edit, "Small")
+    QTest.keyClick(edit, Qt.Key.Key_Return)
+    assert len([e for e in editor.findChildren(QLineEdit) if e.isVisible()]) >= 2
+    saved = load_draft(session.document, combo)
+    assert [item.text_at(0) for item in saved.items] == ["Small"]
+    editor.close_keep()
+    assert len(session.log.entries()) == 1
+    session.dispose()
+
+
 def test_item_icon_is_picked_in_the_session_and_matches_uic(qapp, tmp_path, monkeypatch) -> None:
     """The item details Icon row is the inspector icon editor; a pick is part of the one item step."""
     import os

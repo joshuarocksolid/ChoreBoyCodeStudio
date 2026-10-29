@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional
+from dataclasses import replace
+from typing import Optional, Tuple
 
 from app.features.form_builder.engine.commands.catalog import SetItems
 from app.features.form_builder.engine.ids import NodeId
@@ -11,6 +12,7 @@ from app.features.form_builder.qtside.items.model import (
     ITEM_CLASSES,
     MODEL_VIEW_SENTENCE,
     Draft,
+    Item,
     commit_slots,
     kind_of,
     load_draft,
@@ -214,7 +216,12 @@ class ItemEditor(QFrame):
         super().closeEvent(event)
 
     def _commit(self) -> None:
-        items, rows, columns = commit_slots(self._draft)
+        # The file never holds the empty row the editor keeps for typing, so a
+        # save mid-edit writes no blank item. The draft keeps it.
+        full = self._draft
+        trim = getattr(self._body, "trimmed", None)
+        live = trim(full) if callable(trim) else full
+        items, rows, columns = commit_slots(live)
         self._own += 1
         try:
             self._session.log.execute(
@@ -231,7 +238,12 @@ class ItemEditor(QFrame):
             self._own -= 1
         fresh = load_draft(self._session.document, self._draft.widget)
         if fresh is not None:
-            self._draft = fresh
+            self._draft = replace(
+                fresh,
+                items=_restore(fresh.items, live.items, full.items),
+                rows=_restore(fresh.rows, live.rows, full.rows),
+                columns=_restore(fresh.columns, live.columns, full.columns),
+            )
 
     def _foreign(self, _change_set: object) -> None:
         if self._own or self._closed:
@@ -281,6 +293,18 @@ class ItemEditor(QFrame):
 
     def _size_key(self) -> str:
         return "formBuilder/itemEditor/wideSize" if self._wide else "formBuilder/itemEditor/size"
+
+
+def _restore(fresh: Tuple[Item, ...], live: Tuple[Item, ...], full: Tuple[Item, ...]) -> Tuple[Item, ...]:
+    """``fresh`` (read back from the file) with the blank rows trimmed from ``full`` put back."""
+    kept = [
+        replace(item, children=_restore(item.children, live[index].children, full[index].children))
+        if index < len(live) and index < len(full)
+        else item
+        for index, item in enumerate(fresh)
+    ]
+    kept.extend(full[len(live):])
+    return tuple(kept)
 
 
 class _Escape(QObject):
