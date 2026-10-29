@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.resources import read_qrc
 
-_EXTENSIONS = frozenset(
+IMAGE_EXTENSIONS = frozenset(
     {
         ".png",
         ".jpg",
@@ -33,6 +33,17 @@ _EXTENSIONS = frozenset(
         ".icns",
     }
 )
+
+def is_image_name(name: str) -> bool:
+    """True when the file name ends in a picture type Qt reads."""
+    return os.path.splitext(name)[1].lower() in IMAGE_EXTENSIONS
+
+
+def dialog_filter() -> str:
+    """The file dialog filter for "Add picture..." (the same list the picker accepts)."""
+    patterns = " ".join("*" + ext for ext in sorted(IMAGE_EXTENSIONS))
+    return "Pictures (%s)" % patterns
+
 
 # (absolute qrc path, mtime_ns) -> parsed document or a problem sentence.
 _CACHE: Dict[Tuple[str, int], object] = {}
@@ -239,7 +250,7 @@ def _cached_document(path: str) -> object:
 
 
 def _is_image(relative: str, disk_path: str) -> bool:
-    if os.path.splitext(relative)[1].lower() in _EXTENSIONS:
+    if os.path.splitext(relative)[1].lower() in IMAGE_EXTENSIONS:
         return True
     if not os.path.isfile(disk_path):
         return False
@@ -270,3 +281,137 @@ def _header_is_image(path: str) -> bool:
         return True
     folded = head.lstrip().lower()
     return folded.startswith(b"<svg") or b"<svg" in folded
+
+
+_GENERATED_FOLDERS = frozenset({"cbcs", "build", "dist"})
+
+
+@dataclass(frozen=True)
+class ProjectPictures:
+    """The picker's two sections (UX-RES-001).
+
+    ``mine`` holds the pictures of the ``.qrc`` files the form includes;
+    ``others`` the pictures of every other ``.qrc`` under the project root.
+    ``qrc_files`` lists every ``.qrc`` as a project-relative path.
+    """
+
+    mine: PictureIndex
+    others: PictureIndex
+    qrc_files: Tuple[str, ...]
+
+    def find(self, stored: str) -> Optional[QrcPicture]:
+        key = canon_resource(stored)
+        return self.mine.by_path.get(key) or self.others.by_path.get(key)
+
+
+def project_qrc_files(project_root: str, files: object = None) -> Tuple[str, ...]:
+    """Project-relative ``.qrc`` paths, without ``cbcs/`` and generated folders."""
+    from app.features.form_builder.engine.project.project_files import ProjectFileIndex
+
+    index = files if files is not None else ProjectFileIndex(project_root)
+    found = index.files(".qrc")  # type: ignore[attr-defined]
+    return tuple(rel for rel in found if rel.split("/", 1)[0] not in _GENERATED_FOLDERS)
+
+
+def project_pictures(
+    locations: Sequence[str],
+    base_dir: str,
+    project_root: str,
+    files: object = None,
+) -> ProjectPictures:
+    """This form's pictures, then every other picture in the project."""
+    mine = load_pictures(locations, base_dir)
+    if not project_root:
+        return ProjectPictures(mine, PictureIndex((), (), {}), ())
+    qrcs = project_qrc_files(project_root, files)
+    included = {
+        os.path.normcase(os.path.normpath(loc if os.path.isabs(loc) else os.path.join(base_dir, loc)))
+        for loc in locations
+    }
+    others = [
+        os.path.join(os.path.abspath(project_root), *rel.split("/"))
+        for rel in qrcs
+        if os.path.normcase(os.path.normpath(os.path.join(os.path.abspath(project_root), *rel.split("/")))) not in included
+    ]
+    return ProjectPictures(mine, load_pictures(others, base_dir), qrcs)
+
+
+@dataclass(frozen=True)
+class RawPicture:
+    """A picture or icon state that holds a file path instead of a ``:/`` resource path."""
+
+    node_id: object
+    object_name: str
+    property_name: str
+    #: ``""`` for a plain pixmap, else the icon state (``normaloff`` ...) or ``text``.
+    state: str
+    path: str
+
+
+def raw_pictures(document: object) -> Tuple[RawPicture, ...]:
+    """Every pixmap and icon state of ``document`` that stores a file path."""
+    from app.features.form_builder.engine.ui4.values import ICON_STATES, IconSetValue, ResourcePixmap
+
+    found: List[RawPicture] = []
+    for node in document.iter_preorder():  # type: ignore[attr-defined]
+        for entry in node.properties():
+            value = entry.value
+            name = getattr(node, "object_name", "") or ""
+            if isinstance(value, ResourcePixmap):
+                if _is_raw(value.path):
+                    found.append(RawPicture(node.id, name, entry.name, "", value.path))
+            elif isinstance(value, IconSetValue):
+                seen = set()
+                for state in ICON_STATES:
+                    pixmap = getattr(value, state)
+                    if isinstance(pixmap, ResourcePixmap) and _is_raw(pixmap.path) and pixmap.path not in seen:
+                        seen.add(pixmap.path)
+                        found.append(RawPicture(node.id, name, entry.name, state, pixmap.path))
+                if value.text and _is_raw(value.text) and value.text not in seen:
+                    found.append(RawPicture(node.id, name, entry.name, "text", value.text))
+    return tuple(found)
+
+
+def _is_raw(path: str) -> bool:
+    return bool(path) and not path.startswith(":/")
+
+
+def missing_listed(qrc_path: str) -> Tuple[str, ...]:
+    """The entries of one ``.qrc`` whose file is not on disk, as written in the file."""
+    parsed = _cached_document(qrc_path)
+    if isinstance(parsed, QrcIssue):
+        return ()
+    folder = os.path.dirname(qrc_path)
+    gone: List[str] = []
+    for entry in parsed.files:
+        relative = (entry.path or "").replace("\\", "/").strip()
+        if relative and not os.path.isfile(os.path.join(folder, relative)) and relative not in gone:
+            gone.append(relative)
+    return tuple(gone)
+
+
+__all__ = [
+    "IMAGE_EXTENSIONS",
+    "PictureIndex",
+    "ProjectPictures",
+    "QrcIssue",
+    "QrcPicture",
+    "RawPicture",
+    "canon_resource",
+    "clear_picture_cache",
+    "dialog_filter",
+    "file_name_of",
+    "index_for_document",
+    "is_image_name",
+    "is_missing",
+    "label_text_hides_picture",
+    "load_pictures",
+    "lookup_stored",
+    "missing_listed",
+    "project_pictures",
+    "project_qrc_files",
+    "raw_pictures",
+    "resource_locations",
+    "resource_path",
+    "stored_for_file",
+]

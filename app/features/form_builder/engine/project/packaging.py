@@ -23,11 +23,16 @@ from app.features.form_builder.engine.project.fs import (
     inside_project,
     relative_posix,
 )
-from app.features.form_builder.engine.project.save import resource_destination, write_generated
+from app.features.form_builder.engine.project.picture_checks import raw_picture_message
+from app.features.form_builder.engine.project.pictures import raw_pictures
+from app.features.form_builder.engine.project.save import (
+    project_ui_files,
+    resource_destination,
+    write_generated,
+)
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 CONNECTIONS_FILENAME = "cbcs_connections.py"
-_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git", "vendor", "node_modules"})
 
 FileRole = str
 FileState = str
@@ -80,15 +85,7 @@ def save_form_now(
 
 
 def _ui_files(root: str) -> List[str]:
-    found: List[str] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(
-            name for name in dirnames if name not in _SKIP_DIRS and not name.startswith(".")
-        )
-        for name in sorted(filenames):
-            if name.endswith(".ui"):
-                found.append(os.path.join(dirpath, name))
-    return found
+    return list(project_ui_files(root))
 
 
 def _rows_for_form(
@@ -129,7 +126,25 @@ def _rows_for_form(
             fs,
         )
     )
+    rows.extend(_picture_rows(document, ui_rel))
     return rows, mentions
+
+
+def _picture_rows(document: object, ui_rel: str) -> List[GeneratedFile]:
+    """A packaging error for each pixmap or icon that stores a file path (UX-RES-005)."""
+    rows: List[GeneratedFile] = []
+    for item in raw_pictures(document):
+        name = item.object_name or "A widget"
+        rows.append(
+            GeneratedFile(
+                relative_path=item.path,
+                role="picture",
+                state="raw_path",
+                source_relative=ui_rel,
+                message=raw_picture_message(name, item.path),
+            )
+        )
+    return rows
 
 
 def _module_row(

@@ -84,6 +84,8 @@ def _issue_for_file(project_root: str, item: GeneratedFile) -> RuntimeIssue | No
     ui_path = ""
     if item.source_relative:
         ui_path = _abs(project_root, item.source_relative)
+    if item.state == "raw_path":
+        return _picture_path_issue(item, ui_path)
     fixable = item.role in {"ui_module", "resource"} and item.state in {"stale", "missing"}
     if item.state == "missing":
         issue_id = "package.form.missing"
@@ -126,6 +128,33 @@ def _issue_for_file(project_root: str, item: GeneratedFile) -> RuntimeIssue | No
         next_steps=next_steps,
         help_topic="packaging_backup",
         evidence=evidence,
+    )
+
+
+def _picture_path_issue(item: GeneratedFile, ui_path: str) -> RuntimeIssue:
+    """A picture stored as a file path (UX-RES-005). Save is never blocked; packaging is."""
+    return RuntimeIssue(
+        issue_id="package.form.picture_path",
+        workflow="package",
+        severity="blocking",
+        title="A picture uses a file path",
+        summary=item.message,
+        why_it_happened=(
+            "The packaged app does not carry the picture file, so the picture or icon is blank when it runs."
+        ),
+        next_steps=["Open the form, select the widget and choose Add to project pictures."],
+        help_topic="packaging_backup",
+        evidence={
+            "ui_path": ui_path,
+            "ui_relative": item.source_relative,
+            "picture_path": item.relative_path,
+            "source_file": item.source_relative,
+            "line_number": 1,
+            "report_row": item.message,
+            "role": item.role,
+            "fix_action": "add_pictures",
+            "fix_label": "Add to project pictures",
+        },
     )
 
 
