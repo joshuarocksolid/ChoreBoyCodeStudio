@@ -28,6 +28,7 @@ from app.qt.QtWidgets import (
     QTabWidget,
     QToolBar,
     QToolBox,
+    QTreeWidget,
     QWidget,
     QWizard,
 )
@@ -1208,7 +1209,19 @@ def _item_texts(widget: QWidget) -> Tuple[object, ...]:
                 cell = widget.item(row, column)
                 texts.append((row, column, "" if cell is None else cell.text()))
         return tuple(texts)
+    if isinstance(widget, QTreeWidget):
+        return tuple(_tree_signature(widget.topLevelItem(index)) for index in range(widget.topLevelItemCount()))
     return ()
+
+
+def _tree_signature(item: object) -> Tuple[object, ...]:
+    columns = int(item.columnCount()) if hasattr(item, "columnCount") else 1  # type: ignore[attr-defined]
+    texts = tuple(item.text(index) for index in range(max(columns, 1)))  # type: ignore[attr-defined]
+    children = tuple(
+        _tree_signature(item.child(index))  # type: ignore[attr-defined]
+        for index in range(int(item.childCount()))  # type: ignore[attr-defined]
+    )
+    return (texts, children)
 
 
 def _nested_under(obj: object, root: QWidget) -> bool:

@@ -39,6 +39,12 @@ def register(registry: object) -> None:
     add(FillScrollArea)
 
 
+#: Undo name for "Start on this page" (UX_SPEC 13.1.6). The start page is
+#: ``SetProperty currentIndex`` on the container, run by the Pages menu and the
+#: inspector Pages group alike.
+START_PAGE_LABEL = "Change start page"
+
+
 @dataclass(frozen=True)
 class InsertPage(_CommandBase):
     """Insert a page at ``index`` (default: after the last page).
@@ -215,4 +221,4 @@ def _clear_geometry(doc: UiDocument, ctx: PlanContext, node_id: NodeId) -> None:
         planning.set_property(doc, ctx, node_id, "geometry", None)
 
 
-__all__ = ["DeletePage", "FillScrollArea", "InsertPage", "register"]
+__all__ = ["START_PAGE_LABEL", "DeletePage", "FillScrollArea", "InsertPage", "register"]

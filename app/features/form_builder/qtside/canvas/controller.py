@@ -89,6 +89,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Placing,
     Narrate,
     OpenEditor,
+    OpenItems,
     Press,
     Preview,
     PreviewPage,
@@ -388,6 +389,9 @@ class CanvasController:
             self._queued_target = effect.target
             QTimer.singleShot(0, self._open_queued)
             return
+        if isinstance(effect, OpenItems):
+            self._open_items(effect.node)
+            return
         if isinstance(effect, CloseEditor):
             self._editor.close(True)
             return
@@ -556,6 +560,19 @@ class CanvasController:
         self._gesture = Editing(target, token)
         self._editor.open(target, self._stage.view_map())
         self._request_frame()
+
+    def _open_items(self, node: NodeId) -> None:
+        from app.features.form_builder.qtside.items.editor import open_editor
+
+        previous = getattr(self, "_items_editor", None)
+        if previous is not None:
+            previous.close_keep()
+        widget = self._realizer.widget_for(node)
+        beside = None
+        if widget is not None:
+            rect = widget.rect()
+            beside = QRect(widget.mapToGlobal(rect.topLeft()), rect.size())
+        self._items_editor = open_editor(self._session, node, self._view.viewport(), beside=beside)
 
     def _open_queued(self) -> None:
         target = self._queued_target
@@ -1321,6 +1338,10 @@ class CanvasController:
         self._index.invalidate("page_switch")
 
     def _on_selection(self, change: SelectionChange) -> None:
+        editor = getattr(self, "_items_editor", None)
+        if editor is not None and (change.after.current is None or change.after.current != editor.draft.widget):
+            editor.close_keep()
+            self._items_editor = None
         self._announce_selection(change.after)
         if change.source in REVEAL_SOURCES and change.after.current is not None:
             self._pending_reveal = change.after.current

@@ -1665,6 +1665,20 @@ def _direct_row_ids(doc: UiDocument, parent_id: Optional[NodeId]) -> Tuple[NodeI
 
 
 def _visible_text(node: Node) -> str:
+    if isinstance(node, WidgetNode) and node.class_name in ("QComboBox", "QListWidget", "QTreeWidget", "QTableWidget"):
+        from app.features.form_builder.engine.query.items import column_texts
+
+        texts = []
+        for child in node.children("items"):
+            columns = column_texts(child)
+            if columns and columns[0]:
+                texts.append(columns[0])
+        if not texts:
+            return ""
+        shown = ", ".join(texts[:3])
+        if len(texts) > 3:
+            shown += ", \u2026"
+        return shown
     for key in ("text", "title", "windowTitle", "plainText"):
         text = _prop(node, key)
         if text:

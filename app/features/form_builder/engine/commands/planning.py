@@ -748,11 +748,98 @@ def set_items(
 ) -> None:
     _require(doc, widget)
     if items is not None:
-        _replace_slot(doc, ctx, widget, "items", items)
+        _sync_item_slot(doc, ctx, widget, "items", items)
     if rows is not None:
-        _replace_slot(doc, ctx, widget, "rows", rows)
+        _sync_item_slot(doc, ctx, widget, "rows", rows)
     if columns is not None:
-        _replace_slot(doc, ctx, widget, "columns", columns)
+        _sync_item_slot(doc, ctx, widget, "columns", columns)
+
+
+def _sync_item_slot(
+    doc: UiDocument,
+    ctx: PlanContext,
+    parent: NodeId,
+    slot: str,
+    specs: Tuple[NodeSpec, ...],
+) -> None:
+    """Patch items in place when the tree of ids is unchanged.
+
+    A keystroke in a long list then writes one property. A structural edit
+    (add, delete, move, nest) still replaces the slot.
+    """
+    current = tuple(doc.node(parent).children(slot))
+    if _item_patchable(current, specs):
+        for node, spec in zip(current, specs):
+            _patch_item(doc, ctx, node, spec)
+        return
+    _replace_slot(doc, ctx, parent, slot, specs)
+
+
+def _item_patchable(nodes: Tuple[object, ...], specs: Tuple[NodeSpec, ...]) -> bool:
+    if len(nodes) != len(specs):
+        return False
+    for node, spec in zip(nodes, specs):
+        if spec.id != node.id or spec.kind != node.kind:  # type: ignore[attr-defined]
+            return False
+        if _repeated(spec.properties) or _repeated(spec.attributes):
+            return False
+        if dict(node.to_spec().fields) != dict(spec.fields):  # type: ignore[attr-defined]
+            return False
+        if _opaque_signature(node) != _opaque_signature_spec(spec):
+            return False
+        if not _entries_keep_extras(node, spec):
+            return False
+        if node.kind == "item" and not _item_patchable(  # type: ignore[attr-defined]
+            node.children("subitems"), spec.children("subitems")  # type: ignore[attr-defined]
+        ):
+            return False
+    return True
+
+
+def _repeated(entries: Tuple[PropertyEntry, ...]) -> bool:
+    names = [entry.name for entry in entries]
+    return len(names) != len(set(names))
+
+
+def _opaque_signature(node: object) -> Tuple[object, ...]:
+    return tuple((child.anchor, child.element) for child in node.opaque())  # type: ignore[attr-defined]
+
+
+def _opaque_signature_spec(spec: NodeSpec) -> Tuple[object, ...]:
+    return tuple((child.field("anchor"), child.field("element")) for child in spec.children("opaque"))
+
+
+def _entries_keep_extras(node: object, spec: NodeSpec) -> bool:
+    for entry in spec.properties:
+        existing = node.prop(entry.name)  # type: ignore[attr-defined]
+        if existing is not None and existing.extra_attrs != entry.extra_attrs:
+            return False
+    for entry in spec.attributes:
+        existing = node.attr(entry.name)  # type: ignore[attr-defined]
+        if existing is not None and existing.extra_attrs != entry.extra_attrs:
+            return False
+    return True
+
+
+def _patch_item(doc: UiDocument, ctx: PlanContext, node: object, spec: NodeSpec) -> None:
+    _patch_entries(doc, ctx, node, spec.properties, "property")
+    _patch_entries(doc, ctx, node, spec.attributes, "attribute")
+    for key, value in spec.fields:
+        if node.field(key) != value:  # type: ignore[attr-defined]
+            set_field(doc, ctx, node.id, key, value)  # type: ignore[attr-defined]
+    if node.kind == "item":  # type: ignore[attr-defined]
+        for child, child_spec in zip(node.children("subitems"), spec.children("subitems")):  # type: ignore[attr-defined]
+            _patch_item(doc, ctx, child, child_spec)
+
+
+def _patch_entries(doc: UiDocument, ctx: PlanContext, node: object, wanted: Tuple[PropertyEntry, ...], kind: str) -> None:
+    by_name = {entry.name: entry for entry in wanted}
+    existing = node.properties() if kind == "property" else node.attributes()  # type: ignore[attr-defined]
+    for entry in existing:
+        if entry.name not in by_name:
+            set_property(doc, ctx, node.id, entry.name, None, kind)  # type: ignore[attr-defined]
+    for entry in wanted:
+        set_property(doc, ctx, node.id, entry.name, entry.value, kind, entry.stdset)  # type: ignore[attr-defined]
 
 
 def create_action(
@@ -1723,7 +1810,12 @@ def _replace_slot(
     for child in list(doc.node(parent).children(slot)):
         ctx.do(RemoveNodeOp(child.id))
     for index, spec in enumerate(specs):
-        ctx.do(InsertNodeOp(parent, slot, index, allocate_spec(ctx, spec)))
+        ctx.do(InsertNodeOp(parent, slot, index, allocate_spec(ctx, _without_ids(spec))))
+
+
+def _without_ids(spec: NodeSpec) -> NodeSpec:
+    slots = tuple((name, tuple(_without_ids(child) for child in kids)) for name, kids in spec.slots)
+    return NodeSpec(spec.kind, None, spec.fields, spec.properties, spec.attributes, slots, spec.extra_attrs)
 
 
 def _insert_spec(doc: UiDocument, ctx: PlanContext, parent: NodeId, slot: str, spec: NodeSpec) -> NodeSpec:

@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Callable, Optional, Tuple
 
 from app.features.form_builder.engine.commands.catalog import MovePage, SetProperty
-from app.features.form_builder.engine.commands.catalog_ext.pages import DeletePage, InsertPage
+from app.features.form_builder.engine.commands.catalog_ext.pages import START_PAGE_LABEL, DeletePage, InsertPage
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query.pages import (
     PageKind,
@@ -104,7 +104,7 @@ def build(ctx: MenuContext) -> None:
         elif start == shown:
             action.setToolTip("This page is already the start page.")
         else:
-            action.triggered.connect(lambda _checked=False: ctx.run(SetProperty(container, "currentIndex", NumberValue(shown))))
+            action.triggered.connect(lambda _checked=False: ctx.run(SetProperty(container, "currentIndex", NumberValue(shown), undo_label=START_PAGE_LABEL)))
     if kind.kind == "mdi":
         _item(menu, "Tile windows", count > 1, "" if count > 1 else only, lambda: _arrange(ctx, container, "tile"))
         _item(menu, "Cascade windows", count > 1, "" if count > 1 else only, lambda: _arrange(ctx, container, "cascade"))

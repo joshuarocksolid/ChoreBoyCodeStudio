@@ -63,6 +63,7 @@ from app.features.form_builder.qtside.inspector.api import (
     LockedRow,
     Match,
     Note,
+    Summary,
     MatchWhere,
     Mixed,
     OpenRow,
@@ -437,6 +438,8 @@ def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bo
     source = spec.source
     if isinstance(source, Note):
         return LockedRow(spec.key, spec.label, "", spec.help, Unset(), source.text)
+    if isinstance(source, Summary):
+        return OpenRow(spec.key, spec.label, "", spec.help, Unset(), ValueSpec("summary"), EditorKey(spec.editor), _NoWrite(owners))
     if isinstance(source, FlagBit):
         return _flag_bit(facts, spec, owners, source)
     if isinstance(source, Prop):
@@ -448,6 +451,23 @@ def bind(facts: Facts, spec: RowSpec, owners: Tuple[NodeId, ...], *, curated: bo
             return None
         return read_property(facts, spec, ids, source.name, "property", curated=curated)
     return _cell_alignment(facts, spec, owners)
+
+class _NoWrite:
+    """A summary row writes through its own editor, never through the row.
+
+    ``owners`` is how the row host tells its editor which widgets it shows.
+    """
+
+    def __init__(self, owners: Tuple[NodeId, ...]) -> None:
+        self.owners = owners
+
+    def edit(self, value: Value, token: Optional[str]) -> Tuple[Command, ...]:
+        del value, token
+        return ()
+
+    def reset(self) -> Tuple[Command, ...]:
+        return ()
+
 
 def read_property(
     facts: Facts,
