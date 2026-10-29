@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import replace
-from typing import Dict, FrozenSet, List, Optional, Protocol, Tuple, cast
+from typing import Dict, FrozenSet, Hashable, List, Optional, Protocol, Tuple, cast
 
 from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
 from app.qt.QtGui import QFont, QFontMetrics, QPixmap
@@ -113,7 +113,9 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
 from app.features.form_builder.qtside.canvas.core.palette import tile_for
 from app.features.form_builder.qtside.canvas.core.place import resolve_at
 from app.features.form_builder.qtside.canvas.core.space import CanvasPoint, CanvasRect, FormPoint
+from app.features.form_builder.qtside.canvas import layers as canvas_layers
 from app.features.form_builder.qtside.canvas.core.overlay import (
+    ActiveLayer,
     FrameInputs,
     StaticLayer,
     build_frame,
@@ -244,6 +246,8 @@ class CanvasController:
         self._chip_font_key: Optional[Tuple[str, int, int]] = None
         self._chip_widths: Dict[str, int] = {}
         self._readout: Optional[Readout] = None
+        self._layer_states: Dict[str, Hashable] = {}
+        self._layers: Tuple[ActiveLayer, ...] = ()
         self._linger = QTimer()
         self._linger.setSingleShot(True)
         self._linger.timeout.connect(self._end_readout)
@@ -1265,6 +1269,7 @@ class CanvasController:
                 knobs=self._knob_set(self._static, selection),
                 readout=self._readout,
                 refusals=self._refusal_tips(),
+                layers=self._layers,
             ),
         )
         self._sync_refusal_access()
@@ -1348,6 +1353,34 @@ class CanvasController:
     def refresh_overlay(self) -> None:
         if self._closed:
             return
+        self._request_frame()
+
+    def show_layer(self, name: str, state: Hashable = True) -> None:
+        """Switch canvas layer ``name`` on for this canvas, or give it a new ``state`` (M5.0s).
+
+        The layer's ``build`` gets ``state`` on every frame. Showing a name
+        nobody registered does nothing.
+        """
+        if name in self._layer_states and self._layer_states[name] == state:
+            return
+        self._layer_states[name] = state
+        self._resolve_layers()
+
+    def hide_layer(self, name: str) -> None:
+        if name not in self._layer_states:
+            return
+        del self._layer_states[name]
+        self._resolve_layers()
+
+    def layer_state(self, name: str) -> Optional[Hashable]:
+        """The state ``name`` was shown with, or None when it is off."""
+        return self._layer_states.get(name)
+
+    def _resolve_layers(self) -> None:
+        resolved = canvas_layers.default_registry().resolve(self._layer_states) if self._layer_states else ()
+        if resolved == self._layers:
+            return
+        self._layers = resolved
         self._request_frame()
 
     def _before_realize(self, changeset: ChangeSet) -> None:

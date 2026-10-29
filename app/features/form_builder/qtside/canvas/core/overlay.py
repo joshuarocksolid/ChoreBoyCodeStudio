@@ -8,6 +8,7 @@ frame. Neither reads Qt.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field, replace
 from typing import Callable, Dict, Hashable, List, Literal, Mapping, Optional, Sequence, Set, Tuple, Union
 
@@ -92,6 +93,8 @@ from app.features.form_builder.qtside.canvas.core.structure import (
 )
 from app.features.form_builder.qtside.canvas.core.words import chip_text, no_layout_text
 
+logger = logging.getLogger(__name__)
+
 #: UX-EMPTY-002 canvas-only minimum for an empty layout or container mark.
 EMPTY_MIN_WIDTH = 48
 EMPTY_MIN_HEIGHT = 32
@@ -139,6 +142,46 @@ _PLUS = 12
 _TITLES = frozenset({"page_tab", "menu_title", "title_band"})
 _BANDS = frozenset({"page_tab", "title_band"})
 _DESCENDS = frozenset({"widget", "layout"})
+
+
+@dataclass(frozen=True)
+class LayerItem(Fill):
+    """An item a canvas layer paints itself (M5.0s).
+
+    It is a ``Fill`` to everything that does not know layers: it has a rect
+    and a role, so damage tracking and hit counting work unchanged. The
+    painter sees ``layer`` and calls that layer's own paint function; ``data``
+    is what that function needs and must be hashable.
+    """
+
+    layer: str = ""
+    data: Hashable = None
+
+
+@dataclass(frozen=True)
+class LayerOutput:
+    """What one layer adds to a frame: items in paint order, and hit targets."""
+
+    items: Tuple[Item, ...] = ()
+    targets: Tuple[Tuple[CanvasRect, Target], ...] = ()
+
+
+#: ``(static layer, frame inputs, state) -> LayerOutput``. Qt-free, like the
+#: rest of this module. ``state`` is what the layer was switched on with.
+OverlayLayer = Callable[["StaticLayer", "FrameInputs", Hashable], LayerOutput]
+
+
+@dataclass(frozen=True)
+class ActiveLayer:
+    """A layer switched on for one canvas, with the state it was switched on with.
+
+    ``state`` is the layer's own per-canvas input (the node ids a style rule
+    matches, say), hashable so two frames compare equal when nothing changed.
+    """
+
+    name: str
+    build: OverlayLayer
+    state: Hashable = True
 
 
 @dataclass(frozen=True)
@@ -200,6 +243,9 @@ class FrameInputs:
     #: One tooltip per widget whose live value Qt refused. Empty on a normal
     #: frame, so a selection change does not walk the form to look for them.
     refusals: Tuple[Tuple[NodeId, str], ...] = ()
+    #: Canvas layers switched on for this canvas, in paint order. The empty
+    #: tuple costs one truth test per frame (M5.0s).
+    layers: Tuple[ActiveLayer, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -473,6 +519,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     _paint_dock_bands(items, static, inputs)
     _anchor_ticks(items, static, document, primary)
     plus_hits = _plus_hits(items, static, document, gesture, shown)
+    layer_targets = _run_layers(items, static, inputs) if inputs.layers else ()
 
     faces, requests = _requests(static, inputs, shown, rects)
     fixed = tuple(hit for hit, _target in knob_hits + inert_hits) + inputs.chrome
@@ -480,6 +527,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
     seats = place_chips(requests, static.content, fixed, page, viewport, inputs.dock)
     chip_hits, chip_rows = _seat_items(items, seats, faces, inputs.dock is not None)
     targets: List[Tuple[CanvasRect, Target]] = []
+    targets.extend(layer_targets)
     targets.extend(reversed(plus_hits))
     targets.extend(reversed(chip_hits))
     targets.extend((pill.rect, OnPageEdge(pill.at)) for pill in reversed(grabbers))
@@ -499,6 +547,26 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         tuple(chip_rows),
         inputs.dock,
     )
+
+
+def _run_layers(
+    items: List[Item], static: StaticLayer, inputs: FrameInputs
+) -> Tuple[Tuple[CanvasRect, Target], ...]:
+    """Append each active layer's items above the built-in marks, below the chips.
+
+    Layer targets win over every built-in target. A layer that raises is
+    logged and skipped: it can lose its own marks, never the canvas.
+    """
+    targets: List[Tuple[CanvasRect, Target]] = []
+    for layer in inputs.layers:
+        try:
+            output = layer.build(static, inputs, layer.state)
+        except Exception:
+            logger.exception("canvas layer %s failed", layer.name)
+            continue
+        items.extend(output.items)
+        targets.extend(output.targets)
+    return tuple(targets)
 
 
 def frame_basis(
