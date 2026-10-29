@@ -190,6 +190,11 @@ class InspectorPane(QWidget):
                 continue
             if self.isAncestorOf(row):
                 popover.restyle(chrome)  # type: ignore[attr-defined]
+        from app.features.form_builder.qtside.items.editor import ItemEditor
+
+        for items in window.findChildren(ItemEditor) if window is not None else ():
+            if not items.isHidden():
+                items.restyle(chrome)
         self._schedule()
 
     def focus_tab(self, tab: TabId) -> None:

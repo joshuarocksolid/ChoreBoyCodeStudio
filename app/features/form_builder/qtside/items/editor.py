@@ -146,6 +146,16 @@ class ItemEditor(QFrame):
         self.setStyleSheet(item_editor_qss(chrome))
         apply_level2_shadow(self, chrome)
 
+    def restyle(self, chrome: FormChrome) -> None:
+        """A live theme switch: repaint this window with the new tokens."""
+        self._chrome = chrome
+        self._paint_chrome()
+        for child in self.findChildren(QWidget):
+            style = child.style()
+            style.unpolish(child)
+            style.polish(child)
+        self.update()
+
     @property
     def draft(self) -> Draft:
         return self._draft

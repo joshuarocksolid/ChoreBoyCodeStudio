@@ -106,6 +106,30 @@ def test_row_details_stay_left_of_the_scrollbar(qapp) -> None:
         session.dispose()
 
 
+def test_an_open_item_editor_restyles_on_a_theme_switch(qapp) -> None:
+    from app.core import constants
+    from app.features.form_builder.integration.chrome import chrome_for
+    from app.qt.QtGui import QPalette
+    from app.qt.QtWidgets import QWidget
+    from app.shell.theme_tokens import tokens_from_palette
+    from tests.form_builder.inspector.test_m43c_pictures import _close, _pane, _select
+
+    text = form('class="QWidget" name="Form"', '<widget class="QListWidget" name="choices"/>')
+    window, pane, session, realizer = _pane(qapp, text, "/tmp/cbcs-form.ui")
+    try:
+        _select(session, "choices")
+        pane.flush()
+        next(item for item in pane.findChildren(QWidget, "formBuilder.itemsRow") if item.isVisible()).click()
+        qapp.processEvents()
+        editor = next(item for item in window.findChildren(ItemEditor) if item.isVisible())
+        dark = chrome_for(tokens_from_palette(QPalette(), force_mode=constants.UI_THEME_MODE_HIGH_CONTRAST_DARK))
+        pane.apply_chrome(dark)
+        assert editor.chrome is dark
+        assert dark.panel in editor.styleSheet()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def test_item_icon_is_picked_in_the_session_and_matches_uic(qapp, tmp_path, monkeypatch) -> None:
     """The item details Icon row is the inspector icon editor; a pick is part of the one item step."""
     import os
