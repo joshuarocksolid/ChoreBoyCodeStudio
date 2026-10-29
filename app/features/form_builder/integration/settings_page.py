@@ -18,25 +18,23 @@ global settings file, next to the workbench widths:
 The page reads them on ``load`` and writes them on ``apply`` in one update
 that keeps every other key.
 
-How it gets into the dialog. The shell has no settings-page registration yet,
-so ``install`` watches for the settings dialog (object name
-``shell.settingsDialog``) and adds a "Form designer" tab to it when it shows,
-then applies the page after the dialog is accepted (a tick later, so the
-shell's own save of the dialog's snapshot has finished and does not overwrite
-the page's keys). A real registration seam in the shell replaces ``install``.
+How it gets into the dialog. ``install`` registers the page with the shell's
+settings-page registry (``app.shell.settings_pages``). The dialog builds the
+page from the global payload it opened with, and after OK hands the page the
+payload it is about to save (re-read from disk, with its own values in); the
+page writes its keys into that payload and the shell saves once. Nothing races
+the shell's save.
 """
 
 from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional, cast
 
-from app.qt.QtCore import QEvent, QObject, Qt, QTimer
+from app.qt.QtCore import Qt
 from app.qt.QtGui import QShowEvent
 from app.qt.QtWidgets import (
-    QApplication,
     QCheckBox,
     QComboBox,
-    QDialog,
     QFormLayout,
     QLabel,
     QPushButton,
@@ -52,10 +50,10 @@ from app.features.form_builder.integration import template_store
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.theme.chrome import link_ink
 from app.persistence.settings_service import SettingsService
+from app.shell.settings_pages import SettingsPage, register_settings_page
 from app.shell.theme_tokens import tokens_from_palette
 
 SETTINGS_KEY = "form_builder"
-DIALOG_NAME = "shell.settingsDialog"
 TAB_TITLE = "Form designer"
 KEYBOARD_FILTER = "Form designer"
 
@@ -119,7 +117,13 @@ def _put(target: Dict[str, Any], key: str, value: Optional[Any]) -> None:
 class FormDesignerSettingsPage(QWidget):
     """The page. ``load`` fills it from the settings file; ``apply`` writes it back."""
 
-    def __init__(self, parent: Optional[QWidget] = None, *, service: Optional[SettingsService] = None) -> None:
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        *,
+        service: Optional[SettingsService] = None,
+        payload: Optional[Mapping[str, Any]] = None,
+    ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.settingsPage")
         self._service = service
@@ -173,7 +177,10 @@ class FormDesignerSettingsPage(QWidget):
         self.keyboard_link.clicked.connect(self.show_keyboard_shortcuts)
         column.addWidget(self.keyboard_link, 0, Qt.AlignmentFlag.AlignLeft)
         column.addStretch(1)
-        self.load()
+        if payload is None:
+            self.load()
+        else:
+            self.set_values(values_from_payload(payload))
 
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
         super().showEvent(event)
@@ -214,8 +221,12 @@ class FormDesignerSettingsPage(QWidget):
             payload = {}
         self.set_values(values_from_payload(payload))
 
+    def write_into(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        """``payload`` with the page's values written (what the settings dialog saves after OK)."""
+        return payload_with_values(payload, self.values())
+
     def apply(self) -> None:
-        """Write the page's values, keeping every other settings key."""
+        """Write the page's values to the settings file on its own, keeping every other key."""
         values = self.values()
         try:
             self._settings().update_global(lambda payload: payload_with_values(payload, values))
@@ -251,35 +262,19 @@ class FormDesignerSettingsPage(QWidget):
         combo.setCurrentIndex(max(0, index))
 
 
-def attach_to_dialog(dialog: QDialog, *, service: Optional[SettingsService] = None) -> Optional[FormDesignerSettingsPage]:
-    """Add the "Form designer" tab to a settings dialog once, and apply it after the dialog is accepted."""
-    tabs = cast(Optional[QTabWidget], getattr(dialog, "_tabs_widget", None))
-    if tabs is None:
-        return None
-    if dialog.property("formBuilder.settingsPageAttached"):
-        return None
-    dialog.setProperty("formBuilder.settingsPageAttached", True)
-    page = FormDesignerSettingsPage(tabs, service=service)
-    tabs.addTab(page, TAB_TITLE)
-    dialog.accepted.connect(lambda: QTimer.singleShot(0, page.apply))
-    return page
+def _build(parent: QWidget, payload: Mapping[str, Any]) -> QWidget:
+    return FormDesignerSettingsPage(parent, payload=payload)
 
 
-class _DialogWatcher(QObject):
-    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
-        if event.type() == QEvent.Type.Show and isinstance(watched, QDialog) and watched.objectName() == DIALOG_NAME:
-            attach_to_dialog(watched)
-        return False
+def _apply(page: QWidget, payload: Dict[str, Any]) -> Mapping[str, Any]:
+    if isinstance(page, FormDesignerSettingsPage):
+        return page.write_into(payload)
+    return payload
 
 
-_WATCHER: Optional[_DialogWatcher] = None
+PAGE = SettingsPage(key=SETTINGS_KEY, title=TAB_TITLE, build=_build, apply=_apply)
 
 
 def install() -> None:
-    """Watch for the settings dialog until the shell has a registration for pages. Safe to call twice."""
-    global _WATCHER
-    app = QApplication.instance()
-    if app is None or _WATCHER is not None:
-        return
-    _WATCHER = _DialogWatcher(app)
-    app.installEventFilter(_WATCHER)
+    """Register the page with the shell's Settings dialog. Safe to call twice."""
+    register_settings_page(PAGE)

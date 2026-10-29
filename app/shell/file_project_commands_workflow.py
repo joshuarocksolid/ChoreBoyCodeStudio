@@ -491,6 +491,7 @@ class FileProjectCommandsWorkflow:
             python_tooling_runtime_details=python_tooling_copy.runtime_details,
             python_tooling_config_text=python_tooling_copy.config_text,
             python_tooling_config_details=python_tooling_copy.config_details,
+            global_settings_payload=global_settings_payload,
             initial_scope=(
                 SETTINGS_SCOPE_PROJECT
                 if focus_completion_mode
@@ -506,6 +507,12 @@ class FileProjectCommandsWorkflow:
 
         selected_scope = dialog.selected_scope
         updated_snapshot = dialog.snapshot()
+        # Read the file again: other writers (the form builder's memory, layout and
+        # run history) may have saved keys while the dialog was open, and merging into
+        # the payload read before it opened would drop them.
+        global_settings_payload = settings_service.load_global(force_refresh=True)
+        if project_root is not None:
+            project_settings_payload = settings_service.load_project(project_root, force_refresh=True)
         merged_global_settings, merged_project_settings = merge_editor_settings_snapshot_for_scope(
             scope=selected_scope,
             global_settings_payload=global_settings_payload,
@@ -514,6 +521,7 @@ class FileProjectCommandsWorkflow:
             global_snapshot=dialog.global_scope_snapshot(),
             project_snapshot=dialog.project_scope_snapshot(),
         )
+        merged_global_settings = dialog.apply_feature_pages(merged_global_settings)
         if merged_global_settings != global_settings_payload:
             settings_service.save_global(merged_global_settings)
         if project_root is not None and merged_project_settings != project_settings_payload:

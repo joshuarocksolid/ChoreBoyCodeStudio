@@ -20,7 +20,6 @@ from app.features.form_builder.integration import settings_page
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.dialogs.save_template import SaveTemplatePopover
 from app.features.form_builder.qtside.start.panel import NewFormPanel
-from app.persistence.settings_service import SettingsService
 from app.qt.QtCore import QPoint
 from app.qt.QtGui import QColor, QPainter, QPixmap
 from app.qt.QtWidgets import QApplication, QWidget
@@ -141,9 +140,9 @@ def _shoot(qapp: QApplication, folder: Path, tmp_path: Path, scale: int) -> None
         popover.grab().save(str(folder / ("save-template-%s-%d.png" % (mode, scale))))
         popover.close()
         host.close()
-        service = SettingsService(state_root=str((tmp_path / ("settings-" + mode)).resolve()))
-        dialog = SettingsDialog(EditorSettingsSnapshot(), tokens=tokens)
-        page = settings_page.attach_to_dialog(dialog, service=service)
+        settings_page.install()
+        dialog = SettingsDialog(EditorSettingsSnapshot(), tokens=tokens, global_settings_payload={})
+        page = dialog._tabs_widget.widget(dialog._tabs_widget.count() - 1)
         dialog._tabs_widget.setCurrentWidget(page)
         dialog.resize(860, 520)
         dialog.show()

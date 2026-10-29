@@ -11,7 +11,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 
 from app.features.form_builder.integration import settings_page, template_store
 from app.persistence.settings_service import SettingsService
-from app.qt.QtWidgets import QApplication, QDialog, QTabWidget
+from app.qt.QtWidgets import QTabWidget
 from app.shell.settings_dialog import SettingsDialog
 from app.shell.settings_models import EditorSettingsSnapshot
 from app.shell.shortcut_preferences import ShortcutCommand, clear_extra_shortcut_commands, register_shortcut_commands
@@ -78,58 +78,48 @@ def test_save_as_template_starts_with_the_page_choice(tmp_path: Path) -> None:
         template_store.use_state_root(None)
 
 
-def test_the_page_joins_the_settings_dialog_and_applies_after_ok(tmp_path: Path, qapp: QApplication) -> None:
-    service = _service(tmp_path)
-    dialog = SettingsDialog(EditorSettingsSnapshot())
-    page = settings_page.attach_to_dialog(dialog, service=service)
-    assert page is not None and settings_page.attach_to_dialog(dialog, service=service) is None
+def _dialog_with_page(payload: dict) -> "tuple[SettingsDialog, settings_page.FormDesignerSettingsPage]":
+    settings_page.install()
+    dialog = SettingsDialog(EditorSettingsSnapshot(), global_settings_payload=payload)
     tabs = dialog._tabs_widget
     assert isinstance(tabs, QTabWidget) and tabs.tabText(tabs.count() - 1) == "Form designer"
-    page.qt_names.setChecked(True)
-    dialog.accept()
-    for _ in range(4):
-        qapp.processEvents()
-    assert service.load_global(force_refresh=True)["form_builder"]["qt_names"] is True
+    page = tabs.widget(tabs.count() - 1)
+    assert isinstance(page, settings_page.FormDesignerSettingsPage)
+    return dialog, page
+
+
+def test_the_shell_dialog_builds_the_page_from_its_payload_and_saves_it_with_its_own(tmp_path: Path) -> None:
+    """The page's keys go into the one payload the shell saves after OK; the shell's own values and other builder keys stay."""
+    dialog, page = _dialog_with_page({"form_builder": {"qt_names": True, "workbench": {"left": 300}}})
+    assert page.qt_names.isChecked()
+    page.template_combo.setCurrentIndex(page.template_combo.findData("project"))
+    saved = dialog.apply_feature_pages({"theme_mode": "dark", "form_builder": {"qt_names": True, "workbench": {"left": 300}}})
+    assert saved["theme_mode"] == "dark"
+    assert saved["form_builder"]["workbench"] == {"left": 300}
+    assert (saved["form_builder"]["qt_names"], saved["form_builder"]["template_scope"]) == (True, "project")
+    dialog.close()
+
+
+def test_the_dialog_leaves_feature_pages_out_without_a_payload() -> None:
+    """Without the payload the page would show defaults and OK would save them over the user's choices."""
+    settings_page.install()
+    dialog = SettingsDialog(EditorSettingsSnapshot())
+    tabs = dialog._tabs_widget
+    assert "Form designer" not in [tabs.tabText(i) for i in range(tabs.count())]
+    dialog.close()
 
 
 def test_the_keyboard_link_opens_the_keyboard_tab_filtered_to_form_designer(tmp_path: Path) -> None:
     register_shortcut_commands((ShortcutCommand("form.action.probe5_5c", "Insert widget\u2026", "", "Form designer"),))
     try:
-        dialog = SettingsDialog(EditorSettingsSnapshot())
-        _check_keyboard_link(dialog, tmp_path)
+        dialog, page = _dialog_with_page({})
+        dialog._tabs_widget.setCurrentIndex(0)
+        page.keyboard_link.click()
+        assert dialog._tabs_widget.currentIndex() == dialog._keybindings_tab_index
+        assert dialog._shortcut_search_input.text() == "Form designer"
+        row = dialog._shortcut_rows["form.action.probe5_5c"]
+        assert not dialog._shortcut_table.isRowHidden(row), "the filter leaves the Form designer rows showing"
+        other = dialog._shortcut_rows["shell.action.file.save"]
+        assert dialog._shortcut_table.isRowHidden(other)
     finally:
         clear_extra_shortcut_commands()
-
-
-def _check_keyboard_link(dialog: SettingsDialog, tmp_path: Path) -> None:
-    page = settings_page.attach_to_dialog(dialog, service=_service(tmp_path))
-    dialog._tabs_widget.setCurrentIndex(0)
-    page.keyboard_link.click()
-    assert dialog._tabs_widget.currentIndex() == dialog._keybindings_tab_index
-    assert dialog._shortcut_search_input.text() == "Form designer"
-    row = dialog._shortcut_rows["form.action.probe5_5c"]
-    assert not dialog._shortcut_table.isRowHidden(row), "the filter leaves the Form designer rows showing"
-    other = dialog._shortcut_rows["shell.action.file.save"]
-    assert dialog._shortcut_table.isRowHidden(other)
-
-
-def test_the_shells_dialog_gets_the_tab_when_it_shows(tmp_path: Path, qapp: QApplication) -> None:
-    settings_page.install()
-    dialog = SettingsDialog(EditorSettingsSnapshot())
-    assert isinstance(dialog, QDialog) and dialog.objectName() == settings_page.DIALOG_NAME
-    dialog.show()
-    for _ in range(3):
-        qapp.processEvents()
-    tabs = dialog._tabs_widget
-    assert [tabs.tabText(i) for i in range(tabs.count())][-1] == "Form designer"
-    dialog.close()
-
-
-@pytest.mark.xfail(
-    strict=True,
-    reason="Owner: shell (settings dialog). No settings-page registration exists; settings_page.install() watches for the dialog until one does.",
-)
-def test_the_shell_registers_settings_pages_itself() -> None:
-    import importlib
-
-    importlib.import_module("app.shell.settings_pages")
