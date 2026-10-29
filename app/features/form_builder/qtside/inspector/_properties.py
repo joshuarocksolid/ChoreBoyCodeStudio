@@ -997,6 +997,7 @@ class _Row(QWidget):
         self._place_caption()
         if not self._invalid and self._editor is not None:
             self._editor.show(view.value)
+            self._show_canvas_refusal(view)
         self._elide_label()
         self._sync_reset()
 
@@ -1435,6 +1436,14 @@ class _Row(QWidget):
             self._fallback = None
         self._editor = None
 
+    def _show_canvas_refusal(self, view: Row) -> None:
+        """UX-PED-009: the value stays in the file even when the canvas widget refuses it."""
+        refused = any(self._services.refused(owner, view.qt_name) for owner in self.owner_ids())
+        if refused:
+            self._set_caption(CANVAS_REFUSED_TEXT, error=False)
+        elif self._caption is not None and self._caption.text() == CANVAS_REFUSED_TEXT:
+            self._set_caption("", error=False)
+
     def _set_caption(self, text: str, *, error: bool) -> None:
         if not text:
             if self._caption is not None:
@@ -1451,6 +1460,9 @@ class _Row(QWidget):
             style.polish(caption)
         caption.setText(text)
         caption.show()
+
+CANVAS_REFUSED_TEXT = "Saved in the file. The canvas can't show this value."
+
 
 def _reset_words(label: str) -> str:
     """UX-PED-006. The row label stays as written: "Reset Tooltip"."""

@@ -171,6 +171,11 @@ class Services:
     def set_chrome(self, chrome: "FormChrome") -> None:
         self._chrome = chrome
 
+    def refused(self, node_id: NodeId, name: str) -> bool:
+        """Whether the canvas widget did not take the saved value of ``name`` (UX-PED-009)."""
+        finder = getattr(self._realizer, "refused", None)
+        return finder is not None and finder(node_id, name) is not None
+
     def live(self, node_id: NodeId) -> Optional[QWidget]:
         realizer = self._realizer
         if realizer is None:
