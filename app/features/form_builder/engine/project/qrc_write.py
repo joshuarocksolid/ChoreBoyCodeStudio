@@ -42,6 +42,8 @@ DEFAULT_QRC = "forms/resources.qrc"
 PICTURES_FOLDER = "pictures"
 DEFAULT_PREFIX = "/"
 NOT_A_PICTURE = "Only pictures can go here."
+#: A picture is compiled into the form's ``*_rc.py``; past this it is not a picture for a form.
+MAX_PICTURE_BYTES = 16 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -88,6 +90,8 @@ class AddOutcome:
     written: Tuple[str, ...]
     #: The layout after the add. With ``write=False`` it is only in memory.
     layout: "QrcLayout" = QrcLayout()
+    #: True when the rewrite dropped comments or parts ``rcc`` does not read.
+    dropped_parts: bool = False
 
 
 def new_layout() -> QrcLayout:
@@ -307,6 +311,7 @@ def add_pictures(
         copied=tuple(copied),
         written=written,
         layout=layout,
+        dropped_parts=bool(write and existed and original.lossy and _changed(journal, qrc)),
     )
 
 
@@ -356,6 +361,36 @@ def resource_of(group: QrcGroup, entry: QrcEntry) -> str:
     return resource_path(group.prefix.strip("/"), entry.alias or "", entry.path)
 
 
+def renamed_resources(before: QrcLayout, after: QrcLayout) -> Dict[str, str]:
+    """``{old :/ path: new :/ path}`` for the pictures whose name changed between two layouts.
+
+    An entry is the same picture when its group (prefix and language) and file
+    path are the same and it is the only such entry on both sides. A rename
+    counts only when the old path no longer names anything in ``after``, so a
+    picture that is still reachable under its old name is left alone.
+    """
+    def keyed(layout: QrcLayout) -> Dict[Tuple[str, str, str], List[str]]:
+        found: Dict[Tuple[str, str, str], List[str]] = {}
+        for group in layout.groups:
+            for entry in group.entries:
+                key = (normalize_prefix(group.prefix), group.lang or "", entry.path)
+                found.setdefault(key, []).append(resource_of(group, entry))
+        return found
+
+    old_keys = keyed(before)
+    new_keys = keyed(after)
+    still = {path for paths in new_keys.values() for path in paths}
+    mapping: Dict[str, str] = {}
+    for key, olds in old_keys.items():
+        news = new_keys.get(key, [])
+        if len(olds) != 1 or len(news) != 1:
+            continue
+        old, new = olds[0], news[0]
+        if old != new and old not in still:
+            mapping[old] = new
+    return mapping
+
+
 def _list_entry(layout: QrcLayout, prefix: str, relative: str) -> Tuple[QrcLayout, str]:
     wanted = normalize_prefix(prefix)
     groups = list(layout.groups)
@@ -398,6 +433,11 @@ def _place(
                 return "%s/%s" % (PICTURES_FOLDER, candidate), None
             number += 1
             continue
+        if _case_clash(target, candidate, files, pending):
+            # ``Logo.png`` beside ``logo.png``: one file on macOS and Windows,
+            # two on ChoreBoy. Never reuse or write either; take the next name.
+            number += 1
+            continue
         if not files.is_file(target):
             return "%s/%s" % (PICTURES_FOLDER, candidate), target
         try:
@@ -408,7 +448,28 @@ def _place(
         number += 1
 
 
+def _case_clash(target: str, candidate: str, files: OsFileSystem, pending: Dict[str, bytes]) -> bool:
+    """True when the folder holds (or this call wrote) a name that differs from ``candidate`` only in case."""
+    folder = os.path.dirname(target)
+    folded = candidate.casefold()
+    names = [os.path.basename(path) for path in pending if os.path.dirname(path) == folder]
+    try:
+        if files.is_dir(folder):
+            names.extend(files.listdir(folder))
+    except OSError:
+        pass
+    return any(name != candidate and name.casefold() == folded for name in names)
+
+
 def _read_source(source: str, files: OsFileSystem) -> bytes:
+    try:
+        if os.path.getsize(source) > MAX_PICTURE_BYTES:
+            raise ProjectOpError(
+                "%s is larger than %d MB, too big to carry in a form's pictures."
+                % (os.path.basename(source), MAX_PICTURE_BYTES // (1024 * 1024))
+            )
+    except OSError:
+        pass
     try:
         return files.read_bytes(source)
     except OSError as exc:
@@ -463,6 +524,7 @@ __all__ = [
     "parse_qrc",
     "read_layout",
     "remove_entries",
+    "renamed_resources",
     "render_qrc",
     "resource_of",
     "set_alias",

@@ -241,11 +241,6 @@ def test_a_file_path_icon_gets_a_fix_link_and_the_fix_is_one_step(qapp: QApplica
         _close(window, pane, realizer, session, qapp)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="integration/toast.py (no M5 lane owns it; orchestrator): notice_sentence() does not ask "
-    "qtside.resources.notices, so the step 'Add picture x' toasts without Undo and without the sentence",
-)
 def test_the_toast_for_add_picture_carries_the_sentence_and_undo() -> None:
     from app.features.form_builder.integration.toast import notice_sentence
     from app.features.form_builder.qtside.resources import notices

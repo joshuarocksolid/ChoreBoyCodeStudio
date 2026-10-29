@@ -217,3 +217,53 @@ def test_a_missing_file_is_drawn_with_the_word_missing(qapp: QApplication, tmp_p
         assert missing_listed(str(root / "forms" / "resources.qrc")) == ("pictures/logo.png",)
     finally:
         surface.release()
+
+
+def test_edit_menu_undo_names_and_runs_the_tabs_step_and_goes_off_when_the_tab_hides(
+    qapp: QApplication, tmp_path: Path
+) -> None:
+    from app.qt.QtWidgets import QAction, QMainWindow
+
+    class _Registry:
+        def __init__(self, window: QWidget) -> None:
+            self.actions = {
+                "shell.action.edit.undo": QAction("Undo", window),
+                "shell.action.edit.redo": QAction("Redo", window),
+            }
+
+        def action(self, action_id: str) -> QAction:
+            return self.actions[action_id]
+
+    class _Window(QMainWindow):
+        def __init__(self) -> None:
+            super().__init__()
+            self.registry = _Registry(self)
+
+        def menu_registry(self) -> _Registry:
+            return self.registry
+
+    window = _Window()
+    root = _shop(tmp_path)
+    path = root / "forms" / "resources.qrc"
+    request = _Request(
+        str(path), path.read_text(encoding="utf-8"), window,
+        tokens_from_palette(QPalette(), force_mode="light"), _Editor, lambda _p: None, str(root),
+    )
+    surface = FormTabProvider().create_surface(request)
+    window.setCentralWidget(surface)
+    window.show()
+    qapp.processEvents()
+    undo = window.registry.action("shell.action.edit.undo")
+    try:
+        assert not undo.isEnabled()
+        surface.rename("x.png")
+        assert undo.isEnabled() and undo.text() == "Undo Rename logo.png"
+        undo.trigger()
+        assert not surface.content_source().is_dirty() and not undo.isEnabled()
+        assert window.registry.action("shell.action.edit.redo").text() == "Redo Rename logo.png"
+        surface.rename("x.png")
+        surface.hide()
+        assert not undo.isEnabled() and undo.text() == "Undo"
+    finally:
+        surface.release()
+        window.close()

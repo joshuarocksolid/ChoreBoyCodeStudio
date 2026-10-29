@@ -149,6 +149,13 @@ def _label(outcome: AddOutcome) -> str:
 
 
 def _notice(outcome: AddOutcome) -> str:
+    sentence = _added(outcome)
+    if outcome.dropped_parts:
+        sentence += " Comments in %s were not kept." % os.path.basename(outcome.qrc_relative)
+    return sentence
+
+
+def _added(outcome: AddOutcome) -> str:
     if len(outcome.file_names) == 1:
         name = outcome.file_names[0]
         if outcome.qrc_created and outcome.qrc_relative == DEFAULT_QRC:

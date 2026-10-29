@@ -109,6 +109,14 @@ def test_picker_sections_put_this_forms_pictures_first_and_skip_tool_folders(tmp
     assert [p.qrc_name for p in shown.others.pictures] == ["more.qrc"]
     assert shown.qrc_files == ("assets/more.qrc", "forms/resources.qrc")
     assert shown.find(":/pictures/pay.png") is not None
+    # A hand-written entry that leaves the project is never listed (or read for a thumbnail).
+    (tmp_path / "secret.png").write_bytes(PNG)
+    (root / "assets" / "more.qrc").write_text(
+        '<RCC><qresource prefix="/"><file>../../secret.png</file></qresource></RCC>', encoding="utf-8"
+    )
+    clear_picture_cache()
+    shown = project_pictures(("resources.qrc",), str(root / "forms"), str(root))
+    assert shown.others.pictures == ()
 
 
 def test_adding_a_raw_path_is_one_undo_step_and_undo_keeps_the_files(tmp_path: Path) -> None:

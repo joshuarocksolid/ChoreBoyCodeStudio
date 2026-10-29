@@ -54,6 +54,12 @@ def remove_prompt(forms: int, qrc_name: str) -> str:
     return "%d %s this picture. Remove it from %s anyway?" % (forms, noun, qrc_name)
 
 
+def rename_note(forms: int, qrc_name: str) -> str:
+    """UX-RES-004: said in Rename when forms use the picture. Saving the file updates them."""
+    noun = "form uses" if forms == 1 else "forms use"
+    return "%d %s this picture. Saving %s updates them to the new name." % (forms, noun, qrc_name)
+
+
 def used_sentence(use_path: str, count: int) -> str:
     noun = "place" if count == 1 else "places"
     return "%s is used in %d %s." % (use_path, count, noun)
@@ -305,9 +311,11 @@ class QrcSurface(QWidget):
         name = self._grid.selected_name()
         if not name:
             return
-        text, accepted = QInputDialog.getText(
-            self, "Rename picture", "Name in code (leave empty for the file name)", text=name
-        )
+        prompt = "Name in code (leave empty for the file name)"
+        forms = self.forms_using_selected()
+        if forms:
+            prompt += "\n" + rename_note(forms, os.path.basename(self._source.path))
+        text, accepted = QInputDialog.getText(self, "Rename picture", prompt, text=name)
         if accepted:
             self.rename(text)
 
@@ -319,6 +327,13 @@ class QrcSurface(QWidget):
         name = self._grid.selected_name()
         self._source.apply("Rename %s" % name, set_alias(self._source.layout, cell[0], cell[1], alias))
         self._grid.select(cell)
+
+    def forms_using_selected(self) -> int:
+        """How many saved forms use the selected picture."""
+        resource = self._grid.selected_resource()
+        if not resource or not self._source.project_root:
+            return 0
+        return len({path for path, _use in uses_of(self._source.project_root, self._source.path, (resource,))})
 
     def remove_selected(self, confirm: Optional[Callable[[int], bool]] = None) -> bool:
         """Remove the selected picture from this file (the file on disk stays)."""
@@ -463,6 +478,8 @@ class QrcSurface(QWidget):
         notice = self._source.notice
         if notice:
             self._say(notice, error=True)
+        elif self._source.mode == "pictures" and (self._source.info or self._source.lossy_note):
+            self._say(self._source.info or self._source.lossy_note, error=False)
 
     def _say(self, text: str, *, error: bool = False) -> None:
         self._banner.setText(text)
@@ -478,4 +495,4 @@ class QrcSurface(QWidget):
         self._banner.setStyleSheet("QLabel { color: %s; }" % color)
 
 
-__all__ = ["QrcSurface", "remove_prompt", "used_sentence"]
+__all__ = ["QrcSurface", "remove_prompt", "rename_note", "used_sentence"]

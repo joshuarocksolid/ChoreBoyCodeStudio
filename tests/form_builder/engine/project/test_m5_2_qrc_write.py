@@ -179,3 +179,51 @@ def test_rewrite_resource_modules_updates_every_form_that_includes_the_qrc(tmp_p
     assert rc.read_bytes() != first and b"mark.png" not in first
     assert not (root / "forms" / "ui_till.py").exists()
     assert os.path.getsize(rc) > 0
+
+
+def test_a_name_that_differs_only_in_case_is_a_clash_on_every_file_system(tmp_path: Path) -> None:
+    # ChoreBoy is case-sensitive and macOS is not; the copy must give one answer on both.
+    root = _project(tmp_path)
+    qrc = str(root / "forms" / "resources.qrc")
+    add_pictures(str(root), qrc, [_source(tmp_path, "Logo.png")])
+    same_bytes = _source(tmp_path / "other", "logo.png")
+    outcome = add_pictures(str(root), qrc, [same_bytes])
+    assert outcome.resource_paths == (":/pictures/logo_2.png",)
+    assert sorted(os.listdir(root / "forms" / "pictures")) == ["Logo.png", "logo_2.png"]
+
+
+def test_renaming_a_picture_and_saving_updates_the_forms_that_use_it_and_undo_maps_back(tmp_path: Path) -> None:
+    from app.features.form_builder.engine.project.qrc_edit import QrcEditSource
+
+    root = _project(tmp_path)
+    qrc = root / "forms" / "resources.qrc"
+    add_pictures(str(root), str(qrc), [_source(tmp_path)])
+    form = (
+        '<ui version="4.0"><class>Till</class><widget class="QWidget" name="Till">'
+        '<widget class="QLabel" name="logo"><property name="pixmap">'
+        '<pixmap resource="resources.qrc">:/pictures/logo.png</pixmap></property></widget>'
+        '<widget class="QPushButton" name="pay"><property name="icon"><iconset resource="resources.qrc">'
+        "<normaloff>:/pictures/logo.png</normaloff></iconset></property></widget></widget>"
+        '<resources><include location="resources.qrc"/></resources></ui>'
+    )
+    till = root / "forms" / "till.ui"
+    till.write_text(form, encoding="utf-8")
+    source = QrcEditSource(qrc.read_text(encoding="utf-8"), str(qrc), str(root))
+
+    def save() -> None:
+        text = source.current_text()
+        qrc.write_text(text, encoding="utf-8")
+        source.mark_saved(text)
+        source.after_save()
+
+    source.apply("Rename logo.png", set_alias(source.layout, 0, 0, "brand.png"))
+    assert ":/pictures/logo.png" in till.read_text(encoding="utf-8")  # nothing on disk before Save
+    save()
+    ui = till.read_text(encoding="utf-8")
+    assert ":/pictures/logo.png" not in ui and ui.count(":/brand.png") == 2
+    assert 'resource="resources.qrc"' in ui
+    assert ":/brand.png" in (root / "forms" / "ui_till.py").read_text(encoding="utf-8")
+    assert source.info == "Updated 1 form to the new picture name."
+    source.undo()
+    save()
+    assert till.read_text(encoding="utf-8").count(":/pictures/logo.png") == 2

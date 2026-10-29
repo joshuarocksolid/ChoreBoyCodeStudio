@@ -97,11 +97,13 @@ def index_for_document(document: object, base_dir: str) -> PictureIndex:
     return load_pictures(resource_locations(document), base_dir)
 
 
-def load_pictures(locations: Sequence[str], base_dir: str) -> PictureIndex:
+def load_pictures(locations: Sequence[str], base_dir: str, project_root: str = "") -> PictureIndex:
     """Images in each ``.qrc``, plus a sentence for each file that will not parse.
 
     Listing does not stat every image. Callers ask ``is_missing`` for the ones
-    they show.
+    they show. With ``project_root``, an entry whose file would be outside the
+    project (``../../home/x.png``, or a symlink that leaves it) is not listed,
+    so nothing outside the project is read for a thumbnail.
     """
     pictures: List[QrcPicture] = []
     issues: List[QrcIssue] = []
@@ -119,9 +121,13 @@ def load_pictures(locations: Sequence[str], base_dir: str) -> PictureIndex:
         name = os.path.basename(qrc_path)
         for entry in parsed.files:
             relative = (entry.path or "").replace("\\", "/").strip()
-            if not relative or not _is_image(relative, os.path.join(folder, relative)):
+            if not relative:
                 continue
             disk = os.path.normpath(os.path.join(folder, relative))
+            if project_root and not _inside(disk, project_root):
+                continue
+            if not _is_image(relative, disk):
+                continue
             alias = entry.alias.strip() if isinstance(entry.alias, str) and entry.alias.strip() else ""
             prefix = (entry.prefix or "").replace("\\", "/").strip().strip("/")
             resource = resource_path(prefix, alias, relative)
@@ -249,6 +255,12 @@ def _cached_document(path: str) -> object:
     return document
 
 
+def _inside(path: str, project_root: str) -> bool:
+    from app.features.form_builder.engine.project.fs import inside_project
+
+    return inside_project(path, project_root)
+
+
 def _is_image(relative: str, disk_path: str) -> bool:
     if os.path.splitext(relative)[1].lower() in IMAGE_EXTENSIONS:
         return True
@@ -320,7 +332,7 @@ def project_pictures(
     files: object = None,
 ) -> ProjectPictures:
     """This form's pictures, then every other picture in the project."""
-    mine = load_pictures(locations, base_dir)
+    mine = load_pictures(locations, base_dir, project_root)
     if not project_root:
         return ProjectPictures(mine, PictureIndex((), (), {}), ())
     qrcs = project_qrc_files(project_root, files)
@@ -333,7 +345,7 @@ def project_pictures(
         for rel in qrcs
         if os.path.normcase(os.path.normpath(os.path.join(os.path.abspath(project_root), *rel.split("/")))) not in included
     ]
-    return ProjectPictures(mine, load_pictures(others, base_dir), qrcs)
+    return ProjectPictures(mine, load_pictures(others, base_dir, project_root), qrcs)
 
 
 @dataclass(frozen=True)

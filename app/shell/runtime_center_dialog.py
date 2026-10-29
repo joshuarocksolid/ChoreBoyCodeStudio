@@ -47,6 +47,13 @@ PACKAGING_HELP_TEXT = "Click Copy Details and post them to the LibrePy group."
 APPRUN_NOTE = "Calls to /opt/freecad/AppRun are allowed and are not listed."
 
 
+
+#: Packaging fix actions the footer button runs, and the window callback for each.
+_FIX_CALLBACKS = {
+    "save_form": "_form_builder_save_form",
+    "add_pictures": "_form_builder_add_pictures",
+}
+
 class RuntimeCenterDialog(QDialog):
     """Drill-down surface for startup/runtime/project explanation."""
 
@@ -266,15 +273,18 @@ class RuntimeCenterDialog(QDialog):
         fix = ""
         if issue is not None and self._presentation == "packaging":
             fix = str(issue.evidence.get("fix_action") or "")
-        visible = fix == "save_form" and self._save_form_callback() is not None
+        visible = fix in _FIX_CALLBACKS and self._save_form_callback(fix) is not None
         button.setVisible(visible)
         if visible and issue is not None:
             button.setText(str(issue.evidence.get("fix_label") or "Save the form now"))
 
-    def _save_form_callback(self) -> Optional[Callable[..., object]]:
+    def _save_form_callback(self, fix: str = "save_form") -> Optional[Callable[..., object]]:
+        name = _FIX_CALLBACKS.get(fix)
+        if name is None:
+            return None
         widget: QWidget | None = self.parentWidget()
         while widget is not None:
-            callback = getattr(widget, "_form_builder_save_form", None)
+            callback = getattr(widget, name, None)
             if callable(callback):
                 return callback
             widget = widget.parentWidget()
@@ -286,7 +296,8 @@ class RuntimeCenterDialog(QDialog):
             return
         issue = self._issues_by_row[row]
         ui_path = str(issue.evidence.get("ui_path") or "")
-        saver = self._save_form_callback()
+        fix = str(issue.evidence.get("fix_action") or "")
+        saver = self._save_form_callback(fix)
         if saver is None or not ui_path:
             return
         message = saver(ui_path)
@@ -301,7 +312,7 @@ class RuntimeCenterDialog(QDialog):
             item
             for item in self._report.issues
             if not (
-                item.evidence.get("fix_action") == "save_form"
+                item.evidence.get("fix_action") == fix
                 and str(item.evidence.get("ui_path") or "") == ui_path
             )
         ]
