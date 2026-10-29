@@ -80,12 +80,14 @@ from app.features.form_builder.qtside.canvas.core.palette import (
 )
 from app.features.form_builder.engine.commands.drop_plan import auto_target
 from app.features.form_builder.engine.query.drop_target import (
+    CENTRAL_NOTE,
     AcceptedDrop,
     DropPayload,
     NoDrop,
     OutlineRow,
     RefusedDrop,
     blocked_ids,
+    central_redirect,
     resolve_outline,
 )
 from app.features.form_builder.integration.insert_memory import LazyInsertMemory
@@ -2751,6 +2753,7 @@ class FormWorkbench(QWidget):
         name = in_sentence(entry.friendly if entry is not None else tile[2])
         payload = DropPayload(tile[1], dock=key == "QDockWidget", wizard_page=key == "QWizardPage")
         current = self._session.selection.state.current
+        redirected = central_redirect(self._session.document, current) is not None
         commands = auto_commands(self._session.document, current, payload, fragment)
         if not commands:
             self._report_refusal(payload, current)
@@ -2764,6 +2767,8 @@ class FormWorkbench(QWidget):
             return
         self._insert_memory.note_used(key)
         self.insert.refresh_recent()
+        if redirected:
+            self.outline.report(CENTRAL_NOTE)
         if any(isinstance(command, InsertFormRow) for command in commands):
             # UX-CAT-011: a keyboard insert's label editor hands focus back to the Insert tile when it closes.
             self._return_to_insert = self._insert_has_focus()

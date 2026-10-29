@@ -112,6 +112,9 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
                 painter.setPen(ink)
                 painter.drawText(area, int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight), "▸")
             return
+        if spec.kind == "drop":
+            painter.fillRect(box, _color(over.select))
+            return
         if spec.kind == "caption":
             painter.setPen(_color(over.type_here_text))
             font.setPixelSize(max(8, int(round(10 * float(factor)))))

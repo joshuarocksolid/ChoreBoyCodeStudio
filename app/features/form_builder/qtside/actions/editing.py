@@ -154,6 +154,15 @@ class MenuEditor:
         self._env.say(GRAMMAR)
         return True
 
+    def click(self, host: NodeId, slot: int) -> bool:
+        """A click on a title, entry, button or "Type here" starts editing there (UX-MAIN-004)."""
+        if not self.start(host):
+            return False
+        level = self.levels[-1]
+        level.slot = max(0, slot)
+        self._focus_selection()
+        return True
+
     def leave(self) -> None:
         self.levels = []
         self.editor = None

@@ -31,7 +31,7 @@ from app.features.form_builder.engine.ui4.spec import Fragment
 from app.features.form_builder.engine.query.hit_index import HitIndex
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.chrome_text import page_title_text
-from app.features.form_builder.qtside.canvas import file_drops
+from app.features.form_builder.qtside.canvas import file_drops, mime_hooks
 from app.features.form_builder.qtside.canvas.controller import CanvasController, CanvasHost
 from app.features.form_builder.qtside.canvas.core.frame import (
     Caption,
@@ -281,7 +281,20 @@ class FormCanvas(QGraphicsView):
             return ()
         return file_drops.local_paths(event.mimeData())  # type: ignore[attr-defined]
 
+    def _hook_at(self, event: object) -> "Optional[Tuple[mime_hooks.MimeHook, Tuple[int, int], bool]]":
+        hook = mime_hooks.hook_for(event.mimeData())  # type: ignore[attr-defined]
+        if hook is None:
+            return None
+        pos = event_pos(event)
+        copy = bool(enum_value(event.modifiers()) & enum_value(Qt.KeyboardModifier.ControlModifier))  # type: ignore[attr-defined]
+        return hook, (pos.x(), pos.y()), copy
+
     def dragEnterEvent(self, event: object) -> None:  # noqa: N802
+        hooked = self._hook_at(event)
+        if hooked is not None:
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+            hooked[0].hover(event.mimeData(), hooked[1], hooked[2])  # type: ignore[attr-defined]
+            return
         if self._file_drop(event):
             event.acceptProposedAction()  # type: ignore[attr-defined]
             return
@@ -298,6 +311,11 @@ class FormCanvas(QGraphicsView):
         self._controller.post(PlaceAsked(at, body, key, fragment))
 
     def dragMoveEvent(self, event: object) -> None:  # noqa: N802
+        hooked = self._hook_at(event)
+        if hooked is not None:
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+            hooked[0].hover(event.mimeData(), hooked[1], hooked[2])  # type: ignore[attr-defined]
+            return
         if self._file_drop(event):
             event.acceptProposedAction()  # type: ignore[attr-defined]
             return
@@ -308,6 +326,11 @@ class FormCanvas(QGraphicsView):
         self._controller.post(PlaceHover(_drop_point(event, self), _drop_snap(event)))
 
     def dropEvent(self, event: object) -> None:  # noqa: N802
+        hooked = self._hook_at(event)
+        if hooked is not None:
+            event.acceptProposedAction()  # type: ignore[attr-defined]
+            hooked[0].drop(event.mimeData(), hooked[1], hooked[2])  # type: ignore[attr-defined]
+            return
         paths = self._file_drop(event)
         if paths:
             event.acceptProposedAction()  # type: ignore[attr-defined]
@@ -324,6 +347,7 @@ class FormCanvas(QGraphicsView):
 
     def dragLeaveEvent(self, event: object) -> None:  # noqa: N802
         del event
+        mime_hooks.leave_all()
         if self._controller.placing():
             self._controller.post(PlaceHover(CanvasPoint(0, 0), True, None, True))
 
