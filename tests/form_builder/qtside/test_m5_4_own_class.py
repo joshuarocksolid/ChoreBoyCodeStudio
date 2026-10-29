@@ -408,3 +408,4 @@ def test_the_insert_pane_shows_your_widgets_from_the_registry_and_the_form(tmp_p
         pane.deleteLater()
         realizer.dispose()
         session.dispose()
+

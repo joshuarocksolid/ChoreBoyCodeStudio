@@ -372,6 +372,7 @@ class OwnClassPopover(QFrame):
             lambda _checked=False, item=entry: self._forget(item)
         )
         more.setMenu(menu)
+        more.setStyleSheet("QToolButton::menu-indicator { image: none; width: 0px; }")
         more.setPopupMode(getattr(QToolButton, "ToolButtonPopupMode", QToolButton).InstantPopup)
         layout.addWidget(more, 0)
         return row
@@ -422,6 +423,12 @@ class OwnClassPopover(QFrame):
         expected = self._editing.extends if self._editing is not None else self._base
         check = cw.check_module(self._port.project_root, module, class_name, expected)
         self._state = check.state
+        if not class_name or (not module and check.state == cw.BAD_MODULE):
+            # Nothing typed yet: no line, and [Use] waits.
+            self._check.setText("")
+            self._use.setText("Save" if self._editing is not None else ("Use %s" % class_name if class_name else "Use"))
+            self._use.setEnabled(False)
+            return
         sentence = cw.check_sentence(
             check, class_name, module, class_words(expected).friendly, lambda name: class_words(name).friendly
         )
