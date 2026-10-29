@@ -6,14 +6,19 @@ method stubs on request.
 
 from __future__ import annotations
 
-import ast
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
-from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.codegen.literals import py_string
 from app.features.form_builder.engine.codegen.names import check_cpp_name, python_class_stem
 from app.features.form_builder.engine.codegen.qtmap import base_qt_class, class_module
+from app.features.form_builder.engine.project.forms import FormScope
+from app.features.form_builder.engine.project.handler_names import docstring_words, signal_name
+from app.features.form_builder.engine.project.window_file import (
+    WindowRead,
+    file_label,
+    method_source_hash,
+)
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import ConnectionNode, CustomWidgetNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
@@ -90,8 +95,10 @@ def render_window_class(doc: UiDocument, *, scope: FormScope) -> str:
     status = _startup_status(doc)
     if status:
         lines.append("        self.statusBar().showMessage(%s)" % py_string(status))
-    for name in _handler_names(doc):
-        lines.extend(["", "    def %s(self):" % name, "        pass"])
+    for name, sender, signal in _handler_names(doc):
+        lines.append("")
+        for line in _method_lines("    ", name, (), sender, docstring_words(signal), "\n"):
+            lines.append(line.rstrip("\r\n"))
     return "\n".join(lines) + "\n"
 
 
@@ -106,18 +113,23 @@ def _startup_status(doc: UiDocument) -> str:
     return ""
 
 
-def _handler_names(doc: UiDocument) -> Tuple[str, ...]:
-    """Slots the form connects to itself, skipping methods the base class already has."""
+def _handler_names(doc: UiDocument) -> Tuple[Tuple[str, str, str], ...]:
+    """Slots the form connects to itself, skipping methods the base class already has.
+
+    Each item is the method name, the sender's object name and the signal.
+    """
     receiver = doc.root.object_name or ""
-    names: list[str] = []
+    found: list[Tuple[str, str, str]] = []
+    seen = set()
     for node in doc.connections():
         if not isinstance(node, ConnectionNode) or node.receiver != receiver:
             continue
-        slot = node.slot.split("(", 1)[0].strip()
-        if not slot.isidentifier() or slot in _INHERITED_SLOTS or slot in names:
+        slot = signal_name(node.slot)
+        if not slot.isidentifier() or slot in _INHERITED_SLOTS or slot in seen:
             continue
-        names.append(slot)
-    return tuple(names)
+        seen.add(slot)
+        found.append((slot, node.sender, node.signal))
+    return tuple(found)
 
 
 @dataclass(frozen=True)
@@ -131,82 +143,184 @@ class TextEdit:
 
 @dataclass(frozen=True)
 class StubPlan:
-    """``edit``: where to insert. ``stub_text``: exactly what is inserted; its
-    sha256 is kept by the M6.2 compound command so undo removes the stub only
-    while the method's current text still hashes the same."""
+    """A whole-line insertion. ``stub_hash`` covers the ``def`` line through the
+    last line of the method, with line endings normalised to LF.
+
+    ``blank_lines`` is how many empty lines were inserted before ``def``.
+    ``opened_line`` is true when the file had no trailing newline and the edit
+    adds one so the method starts on its own line. Pass both back to
+    ``plan_unstub`` so undo restores the bytes.
+    """
 
     edit: TextEdit
     stub_text: str
     method_name: str
+    stub_hash: str
+    blank_lines: int
+    opened_line: bool = False
 
 
-def _line_offset(source: str, line: int, column: int) -> int:
-    lines = source.splitlines(keepends=True)
-    total = 0
-    for index in range(line - 1):
-        total += len(lines[index])
-    return total + column
+def method_lines(
+    indent: str,
+    method_name: str,
+    params: Tuple[str, ...],
+    sender: str,
+    event_words: str,
+    ending: str,
+) -> Tuple[str, ...]:
+    """The three lines of UX-CODE-004, without a leading blank line."""
+    return tuple(_method_lines(indent, method_name, params, sender, event_words, ending))
 
 
-def _indent_at(source: str, line: int) -> str:
-    lines = source.splitlines()
-    if line < 1 or line > len(lines):
-        return "    "
-    text = lines[line - 1]
-    return text[: len(text) - len(text.lstrip(" \t"))]
+def _method_lines(
+    indent: str,
+    method_name: str,
+    params: Tuple[str, ...],
+    sender: str,
+    event_words: str,
+    ending: str,
+) -> list:
+    arguments = "self"
+    if params:
+        arguments = "self, " + ", ".join(params)
+    safe_sender = sender.replace('"""', "").replace("\n", "").replace("\r", "")
+    safe_words = event_words.replace('"""', "").replace("\n", "").replace("\r", "")
+    unit = indent + indent
+    body = [
+        "%sdef %s(%s):" % (indent, method_name, arguments),
+        '%s"""Runs when %s is %s."""' % (unit, safe_sender, safe_words),
+        "%spass" % unit,
+    ]
+    return [line + ending for line in body]
 
 
 def plan_stub(
-    window_source: str,
+    read: WindowRead,
     *,
-    class_name: str,
     method_name: str,
     params: Tuple[str, ...],
-    decorator: Optional[str],
+    sender: str,
+    event_words: str,
 ) -> StubPlan:
-    """Parse ``window_source`` with ``ast`` (never execute it) and append a method.
+    """Where to insert ``method_name``. ValueError carries a UX-CODE-006 sentence.
 
-    ValueError when the source is not Python, the class is missing, or the
-    method already exists.
+    The edit is empty-width and starts at a line boundary. Nothing outside the
+    inserted lines changes.
     """
-    try:
-        tree = ast.parse(window_source)
-    except SyntaxError as exc:
-        raise ValueError("The window file is not valid Python.") from exc
-    target = None
-    for node in tree.body:
-        if isinstance(node, ast.ClassDef) and node.name == class_name:
-            target = node
-            break
-    if target is None:
-        raise ValueError("The window file has no class %s." % class_name)
-    last_method = None
-    for node in target.body:
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if node.name == method_name:
-                raise ValueError("The method %s already exists." % method_name)
-            last_method = node
-    if last_method is not None and last_method.end_lineno is not None:
-        indent = _indent_at(window_source, last_method.lineno)
-        start = _line_offset(window_source, last_method.end_lineno, last_method.end_col_offset or 0)
-    elif target.end_lineno is not None:
-        indent = _indent_at(window_source, target.lineno) + "    "
-        start = _line_offset(window_source, target.end_lineno, target.end_col_offset or 0)
-    else:
-        raise ValueError("The window file has no class %s." % class_name)
-    arg_text = ""
-    if params:
-        arg_text = ", " + ", ".join(params)
-    lines = ["", ""]
-    if decorator:
-        rendered = decorator if decorator.startswith("@") else "@" + decorator
-        lines.append("%s%s" % (indent, rendered))
-    lines.append("%sdef %s(self%s):" % (indent, method_name, arg_text))
-    lines.append("%s    pass" % indent)
-    lines.append("")
-    stub = "\n".join(lines)
-    return StubPlan(
-        edit=TextEdit(start=start, end=start, text=stub),
-        stub_text=stub,
-        method_name=method_name,
+    label = file_label(read.relative)
+    _refuse_unless_readable(read, label, method_name)
+    facts = read.facts
+    window = facts.window if facts is not None else None
+    if window is None:
+        raise ValueError(
+            "%s has no class that calls self.ui.setupUi(self)." % label
+        )
+    for method in window.methods:
+        if method.name == method_name:
+            raise ValueError(
+                "%s already has %s. This event will call it." % (window.name, method_name)
+            )
+    source = _source_of(read)
+    if source is None:
+        raise ValueError(
+            "%s can't be read, so Code Studio won't change it: the file is missing."
+            % label
+        )
+    raw = source.splitlines(keepends=True)
+    ending = window.line_ending
+    start, opened = _insertion_offset(source, raw, window.last_line)
+    blanks = window.blank_line_style
+    body = "".join(
+        _method_lines(window.indent_unit, method_name, params, sender, event_words, ending)
     )
+    prefix = ending if opened else ""
+    inserted = prefix + (ending * blanks) + body
+    method_text = "".join(
+        _method_lines(window.indent_unit, method_name, params, sender, event_words, "\n")
+    )
+    return StubPlan(
+        edit=TextEdit(start=start, end=start, text=inserted),
+        stub_text=inserted,
+        method_name=method_name,
+        stub_hash=method_source_hash(method_text),
+        blank_lines=blanks,
+        opened_line=opened,
+    )
+
+
+def plan_unstub(
+    read: WindowRead,
+    method_name: str,
+    stub_hash: str,
+    blank_lines: int,
+    opened_line: bool = False,
+) -> Optional[TextEdit]:
+    """Remove the method when its text still hashes to ``stub_hash``.
+
+    Blank lines before it go too, while they are still blank. ``opened_line``
+    also drops the newline that was added so a file without one gets it back.
+    """
+    facts = read.facts
+    window = facts.window if facts is not None else None
+    if read.status != "ok" or window is None:
+        return None
+    method = next((item for item in window.methods if item.name == method_name), None)
+    if method is None or method.source_hash != stub_hash:
+        return None
+    source = _source_of(read)
+    if source is None:
+        return None
+    raw = source.splitlines(keepends=True)
+    if method.line < 1 or method.end_line > len(raw):
+        return None
+    first = method.line
+    removed = 0
+    while removed < blank_lines and first > 1 and raw[first - 2].strip() == "":
+        first -= 1
+        removed += 1
+    start = _offset_of(raw, first)
+    end = _offset_of(raw, method.end_line + 1)
+    if opened_line and start > 0 and source[start - 1] in ("\n", "\r"):
+        start -= 2 if start >= 2 and source[start - 2 : start] == "\r\n" else 1
+    if start < 0 or end < start or end > len(source):
+        return None
+    return TextEdit(start=start, end=end, text="")
+
+
+def _refuse_unless_readable(read: WindowRead, label: str, method_name: str) -> None:
+    if read.status == "ok":
+        return
+    if read.status == "syntax_error":
+        raise ValueError(
+            "Fix the error on line %s of %s first, so Code Studio can find where to add %s."
+            % (read.line or 1, label, method_name)
+        )
+    if read.reason == "it isn't UTF-8 text":
+        raise ValueError("%s isn't UTF-8 text, so Code Studio won't change it." % label)
+    reason = read.reason or "it can't be read"
+    raise ValueError(
+        "%s can't be read, so Code Studio won't change it: %s." % (label, reason)
+    )
+
+
+def _source_of(read: WindowRead) -> Optional[str]:
+    if isinstance(read.source, str):
+        return read.source
+    return None
+
+
+def _offset_of(raw: list, line_number: int) -> int:
+    """Character offset of the start of a 1-based line. Past the end is the length."""
+    total = 0
+    limit = min(line_number - 1, len(raw))
+    for index in range(limit):
+        total += len(raw[index])
+    return total
+
+
+def _insertion_offset(source: str, raw: list, last_line: int) -> Tuple[int, bool]:
+    """The line after the class, and whether the file is missing a final newline."""
+    if last_line < len(raw):
+        return _offset_of(raw, last_line + 1), False
+    opened = bool(source) and not source.endswith("\n")
+    return len(source), opened
