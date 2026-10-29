@@ -129,6 +129,9 @@ def apply_entry(
             return _took(obj, name, refusals)
         qvalue = to_qt(value, resolve_path)
         if qvalue is None:
+            if isinstance(value, (EnumValue, SetValue)):
+                # A name this Qt does not know (a newer enum). The file keeps it (UX-PED-009).
+                return _refuse(obj, name, REFUSED_BY_QT, refusals)
             return False
         reason = _picture_reason(value, resolve_path, qvalue)
         setter = _setter(obj, name)
