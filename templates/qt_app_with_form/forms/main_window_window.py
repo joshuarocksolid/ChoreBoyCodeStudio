@@ -11,4 +11,5 @@ class MainWindowWindow(QMainWindow):
         self.statusBar().showMessage(u"Ready")
 
     def save_clicked(self):
+        """Runs when saveButton is clicked."""
         pass

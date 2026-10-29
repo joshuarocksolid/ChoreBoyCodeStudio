@@ -58,9 +58,16 @@ WRITE_FAILED = "Code Studio couldn't write that file: %s"
 
 
 class TextEditLike(Protocol):
-    start: int
-    end: int
-    text: str
+    """Read-only so a frozen ``TextEdit`` satisfies it."""
+
+    @property
+    def start(self) -> int: ...
+
+    @property
+    def end(self) -> int: ...
+
+    @property
+    def text(self) -> str: ...
 
 
 @dataclass(frozen=True)
@@ -70,6 +77,11 @@ class BridgeEdit:
     start: int
     end: int
     text: str
+
+
+def bridge_edit(edit: TextEditLike) -> BridgeEdit:
+    """Copy a stub edit into a ``BridgeEdit``. ``opened_line`` stays in the undo memo."""
+    return BridgeEdit(int(edit.start), int(edit.end), str(edit.text))
 
 
 @dataclass(frozen=True)
