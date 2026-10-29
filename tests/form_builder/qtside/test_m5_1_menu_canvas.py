@@ -31,6 +31,7 @@ def _pump() -> None:
         app.processEvents()
 
 
+@pytest.mark.parity("R3-135", "R3-136")
 def test_enter_on_the_menu_bar_types_a_menu_and_the_layer_shows_it_open() -> None:
     said = []
     with opened(build_template_ui("main_window", "shop_window")) as (session, realizer):
@@ -67,6 +68,28 @@ def test_enter_on_the_menu_bar_types_a_menu_and_the_layer_shows_it_open() -> Non
         QTest.keyClick(target, Qt.Key.Key_Escape)
         assert not glue.editor.active
         assert [d.code for d in session.diagnostics.all() if d.code == "FB036"] == []
+        glue.dispose()
+        canvas.dispose()
+        parent.deleteLater()
+
+
+@pytest.mark.parity("R3-143")
+def test_delete_on_the_central_area_refuses_with_a_sentence() -> None:
+    said = []
+    with opened(build_template_ui("main_window", "shop_window")) as (session, realizer):
+        parent = QWidget()
+        parent.resize(900, 700)
+        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas.resize(900, 700)
+        parent.show()
+        _pump()
+        glue = MenuEditGlue(session, realizer, canvas, said.append, said.append, lambda s, o: True, parent)
+        canvas.setFocus()
+        central = session.document.by_name("centralwidget")[0]
+        session.selection.set((central,), source=SelectionSource.PROGRAM)
+        QTest.keyClick(canvas.viewport(), Qt.Key.Key_Delete)
+        assert said[-1] == "The central area belongs to the window. Delete what's inside it instead."
+        assert "centralwidget" in session.document.names()
         glue.dispose()
         canvas.dispose()
         parent.deleteLater()

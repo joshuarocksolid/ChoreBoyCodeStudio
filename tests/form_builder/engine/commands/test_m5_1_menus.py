@@ -16,6 +16,7 @@ from app.features.form_builder.engine.commands.catalog_ext.actions import (
     GroupActions,
     MakeButtonGroup,
     NewAction,
+    PasteActions,
     SetActionGroup,
     SetWidgetAction,
     UngroupActions,
@@ -80,6 +81,35 @@ def _build_shop(log):  # type: ignore[no-untyped-def]
     log.execute(AddEntry(tool, 0, action="actionPrint_receipt"))
     del root, status
     return doc, bar, file_menu, tool
+
+
+@pytest.mark.parity("R3-134", "R3-138")
+def test_parts_are_added_and_removed_with_their_menus_and_actions_kept() -> None:
+    log, _ = _log()
+    doc, bar, file_menu, tool = _build_shop(log)
+    status = doc.by_name("statusbar")[0]
+    before = len(q.list_actions(doc))
+    log.execute(RemoveMainWindowPart.for_part(doc, bar))
+    assert "menubar" not in doc.names() and "menuFile" not in doc.names()
+    assert len(q.list_actions(doc)) == before  # actions stay in the Actions list (UX-MAIN-002)
+    assert log.undo_label() == "Remove menu bar"
+    log.execute(RemoveMainWindowPart.for_part(doc, tool))
+    log.execute(RemoveMainWindowPart.for_part(doc, status))
+    assert [w.class_name for w in doc.root.child_widgets] == ["QWidget"]
+    log.undo()
+    log.undo()
+    log.undo()
+    assert "menuFile" in doc.names() and "statusbar" in doc.names()
+
+
+@pytest.mark.parity("R3-139")
+def test_actions_paste_with_the_suffix_rule_and_without_a_dangling_menu() -> None:
+    log, _ = _log()
+    doc, bar, file_menu, tool = _build_shop(log)
+    specs = tuple(doc.node(i).to_spec() for i in (doc.by_name("actionQuit")[0], doc.by_name("actionNew_sale")[0]))
+    made = log.execute(PasteActions(specs)).result
+    assert [doc.node(i).field("name") for i in made] == ["actionQuit_2", "actionNew_sale_2"]
+    assert log.undo_label() == "Paste 2 actions"
 
 
 def test_a_main_window_part_is_refused_on_other_forms() -> None:
@@ -150,6 +180,7 @@ def test_renaming_a_menu_and_an_entry_writes_the_title_and_the_text() -> None:
     assert q.plain_text("Save && close &As") == "Save & close As"
 
 
+@pytest.mark.parity("R3-141", "R3-118")
 def test_a_widget_action_and_action_groups_round_trip_through_undo() -> None:
     log, _ = _log()
     doc, bar, file_menu, tool = _build_shop(log)
@@ -168,6 +199,7 @@ def test_a_widget_action_and_action_groups_round_trip_through_undo() -> None:
     assert "actionLeft" not in doc.names() and not q.entries(doc, button)
 
 
+@pytest.mark.parity("R3-119", "R3-142")
 def test_button_groups_do_not_reorder_the_buttons() -> None:
     log, _ = _log()
     doc = log.document
@@ -191,6 +223,7 @@ def test_fb036_and_fb037_name_unused_actions_and_widgets_in_bars() -> None:
     assert codes == [("FB036", "actionLonely")]
 
 
+@pytest.mark.parity("R3-134")
 def test_the_blank_main_window_template_has_menubar_central_and_status_bar() -> None:
     text = build_template_ui("main_window", "shop_window")
     log = open_log(text)
@@ -217,10 +250,7 @@ def uic_env(monkeypatch):  # type: ignore[no-untyped-def]
     monkeypatch.setenv("CBCS_FB_UIC", uic)
 
 
-@pytest.mark.parity("R3-113")
-@pytest.mark.parity("R3-114")
-@pytest.mark.parity("R3-115")
-@pytest.mark.parity("R3-137")
+@pytest.mark.parity("R3-113", "R3-114", "R3-115", "R3-116", "R3-117", "R3-118", "R3-119", "R3-137", "R3-142", "R3-144")
 def test_the_k16_window_matches_uic(tmp_path: Path, qapp, uic_env) -> None:  # type: ignore[no-untyped-def]
     del qapp, uic_env
     uic = _load_helper("cbcs_uic_compare_m51", _HERE.parents[1] / "engine" / "codegen" / "uic_compare.py")

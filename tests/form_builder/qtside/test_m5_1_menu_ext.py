@@ -18,6 +18,7 @@ from tests.unit.features.form_builder.test_workbench import _open
 pytestmark = [pytest.mark.usefixtures("qapp"), pytest.mark.unit]
 
 
+@pytest.mark.parity("R3-135", "R3-138", "R3-144")
 def test_main_window_items_are_offered_only_where_they_apply(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     host = QWidget()
     surface = _open(host, _MAIN, tmp_path / "shop.ui")

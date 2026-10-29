@@ -28,6 +28,8 @@ from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.QtGui import QFontMetrics, QKeyEvent
 from app.qt.QtWidgets import QApplication, QMenuBar, QToolBar, QWidget
 
+CENTRAL_REFUSAL = "The central area belongs to the window. Delete what's inside it instead."
+
 _NAMES = {
     Qt.Key.Key_Left: "Left",
     Qt.Key.Key_Right: "Right",
@@ -64,6 +66,7 @@ class MenuEditGlue(QObject):
     ) -> None:
         super().__init__(parent)
         self._session = session
+        self._say = say
         self._realizer = realizer
         self._canvas = canvas
         self._editor = MenuEditor(SessionEnv(session, say, toast, confirm))
@@ -119,6 +122,12 @@ class MenuEditGlue(QObject):
             self._editor.handle(key)
             self.refresh()
             return True
+        if key.name == "Delete" and not key.alt and not key.ctrl and self._is_central_area():
+            if kind == QEvent.Type.ShortcutOverride:
+                event.accept()
+                return True
+            self._say(CENTRAL_REFUSAL)
+            return True
         if key.name == "Enter" and not key.alt and not key.ctrl and self._startable() is not None:
             if kind == QEvent.Type.ShortcutOverride:
                 event.accept()
@@ -128,6 +137,15 @@ class MenuEditGlue(QObject):
                 self.start(node)
             return True
         return False
+
+    def _is_central_area(self) -> bool:
+        """UX-MAIN-014: the central widget of a main window is selected on its own."""
+        state = self._session.selection.state
+        doc = self._session.document
+        if len(state.ids) != 1 or state.current is None or not q.is_main_window(doc):
+            return False
+        found = doc.get(state.current)
+        return found is not None and any(found.id == part.id for part in q.parts(doc)["central"])
 
     def _startable(self) -> Optional[NodeId]:
         state = self._session.selection.state

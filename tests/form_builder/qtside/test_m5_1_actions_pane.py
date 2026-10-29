@@ -24,6 +24,7 @@ _MAIN = (
 )
 
 
+@pytest.mark.parity("R3-139")
 def test_alt_5_focuses_the_actions_section_and_rows_say_where_actions_are_used(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
     host = QWidget()
     surface = _open(host, _MAIN, tmp_path / "shop.ui")
