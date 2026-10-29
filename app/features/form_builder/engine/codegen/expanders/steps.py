@@ -103,18 +103,25 @@ def _generates(parsed: StepList) -> bool:
 def _selector(
     doc: UiDocument, classes: QtClassTable, node: Node, signal_name: str, parsed: StepList
 ) -> str:
-    """``[types]`` when the list means an overload other than PySide's default (the widest)."""
-    if parsed.signal is None:
-        return ""
+    """``[types]`` when the list's overload is not the one ``widget.signal`` means in PySide6.
+
+    A list is on the overload with the most arguments unless it names another
+    (CONTRACTS 15.3). PySide's bare name is the one with the fewest, so a ``clicked``
+    list connects as ``clicked[bool]`` and its handler receives ``checked``.
+    """
     class_name, declared = compat.node_class(doc, classes, node)
     overloads = compat.overloads_of(compat.signals_of(classes, class_name, declared), signal_name)
-    widest = compat.widest_overload(overloads)
-    _name, params = compat.split_signature(parsed.signal)
-    if widest is not None and widest[1] == params:
+    if parsed.signal is not None:
+        chosen = compat.split_signature(parsed.signal)[1]
+    else:
+        widest = compat.widest_overload(overloads)
+        chosen = widest[1] if widest is not None else ()
+    default = compat.pyside_default(overloads)
+    if default is not None and default[1] == chosen:
         return ""
-    if not params or any(item not in _PY_TYPES for item in params):
+    if not chosen or any(item not in _PY_TYPES for item in chosen):
         return ""
-    return "[%s]" % ", ".join(_PY_TYPES[item] for item in params)
+    return "[%s]" % ", ".join(_PY_TYPES[item] for item in chosen)
 
 
 def _body(

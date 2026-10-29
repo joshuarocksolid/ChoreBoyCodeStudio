@@ -102,6 +102,20 @@ def widest_overload(overloads: Sequence[Tuple[str, Tuple[str, ...]]]) -> Optiona
     return best
 
 
+def pyside_default(overloads: Sequence[Tuple[str, Tuple[str, ...]]]) -> Optional[Tuple[str, Tuple[str, ...]]]:
+    """The overload ``widget.signal`` means in PySide6: the one with the fewest arguments.
+
+    Observed on every overloaded signal of the class table (``clicked``, ``triggered``,
+    ``destroyed``): ``button.clicked`` is ``clicked()``, and a handler connected to it
+    receives no ``checked``. The first of equals; ``None`` for no overloads.
+    """
+    best = None
+    for item in overloads:
+        if best is None or len(item[1]) < len(best[1]):
+            best = item
+    return best
+
+
 def narrowest_covering(
     overloads: Sequence[Tuple[str, Tuple[str, ...]]],
     slot_params: Sequence[str],
