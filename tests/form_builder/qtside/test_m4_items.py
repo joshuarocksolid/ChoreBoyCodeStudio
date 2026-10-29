@@ -494,14 +494,6 @@ def test_list_item_details_read_and_flip_one_flag(qapp) -> None:
     session.dispose()
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M4.4 follow-up: More properties (UX-ITEM-006) builds registry editors with a stub host. "
-        "Font and Flags fall back to bare labels, Background and Foreground are missing, the "
-        "translation disclosures open as top-level windows, and the panel overlaps the details."
-    ),
-)
 def test_more_properties_shows_a_real_editor_for_each_row(qapp) -> None:
     from app.qt.QtWidgets import QApplication, QLabel, QToolButton, QWidget
 
@@ -533,3 +525,41 @@ def test_more_properties_shows_a_real_editor_for_each_row(qapp) -> None:
         editor.revert()
         host.close()
         session.dispose()
+
+
+def test_table_cell_alt_right_opens_details_and_tooltip_is_one_undo_step(qapp) -> None:
+    """Alt+Right on a cell opens the shared item details; Alt+Left closes them."""
+    from app.qt.QtWidgets import QTableWidget, QWidget
+
+    session = open_session(_form())
+    sheet = session.document.by_name("sheet")[0]
+    host = QWidget()
+    host.resize(700, 640)
+    host.show()
+    editor = open_editor(session, sheet, host)
+    assert editor is not None
+    grid = editor.findChild(QTableWidget, "formBuilder.itemCells")
+    assert grid is not None
+    grid.setFocus()
+    qapp.processEvents()
+    QTest.keyClick(grid, Qt.Key.Key_Right, Qt.KeyboardModifier.AltModifier)
+    qapp.processEvents()
+    details = editor.findChild(QWidget, "formBuilder.itemDetails")
+    tip = editor.findChild(QLineEdit, "formBuilder.itemTooltip")
+    assert details is not None and details.isVisible()
+    assert tip is not None and tip.isVisible()
+    tip.setFocus()
+    QTest.keyClicks(tip, "Cell tip")
+    QTest.keyClick(tip, Qt.Key.Key_Return)
+    qapp.processEvents()
+    grid.setFocus()
+    QTest.keyClick(grid, Qt.Key.Key_Left, Qt.KeyboardModifier.AltModifier)
+    qapp.processEvents()
+    assert not details.isVisible()
+    editor.close_keep()
+    saved = write_ui(session.document).text
+    assert "<string>Cell tip</string>" in saved
+    assert session.log.undo_label() == "Edit items of sheet"
+    assert len(session.log.entries()) == 1
+    host.close()
+    session.dispose()

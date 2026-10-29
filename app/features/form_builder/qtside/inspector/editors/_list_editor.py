@@ -286,6 +286,23 @@ class ListEditor(QWidget):
             return True
         return False
 
+    def refit_details(self) -> None:
+        """The open details grew or shrank (More properties). Rows below follow."""
+        if self._details_open:
+            self._place()
+
+    def note_external_text(self, index: int, text: str) -> None:
+        """A details field wrote this row's text. The field keeps it, and details stay open."""
+        if index < 0 or index >= len(self._texts):
+            return
+        self._texts[index] = text
+        row = self._row_for(index)
+        if row is None or row.edit.text() == text:
+            return
+        row.edit.blockSignals(True)
+        row.edit.setText(text)
+        row.edit.blockSignals(False)
+
     def note_text(self, index: int, text: str) -> None:
         if index < 0 or index >= len(self._texts) or self._texts[index] == text:
             return

@@ -262,7 +262,31 @@ def unnest(draft: Draft, path: Tuple[int, ...]) -> Tuple[Draft, Tuple[int, ...]]
 
 
 def set_item_value(draft: Draft, path: Tuple[int, ...], name: str, value: Optional[Value]) -> Draft:
-    return replace(draft, items=_map_items(draft.items, path, lambda item: _with_value(item, name, value)))
+    return replace(draft, items=_map_items(draft.items, path, lambda item: _with_named(item, name, value)))
+
+
+def set_cell_value(draft: Draft, row: int, column: int, name: str, value: Optional[Value]) -> Draft:
+    """Write one property of the cell at ``row``, ``column``. An empty new cell is not stored."""
+    cells = list(draft.cells)
+    found = _cell_index(cells, row, column)
+    if found is None:
+        if value is None:
+            return draft
+        cell = Item(texts=("",), fields=(("row", row), ("column", column)))
+        cells.append(_with_named(cell, name, value))
+    else:
+        cells[found] = _with_named(cells[found], name, value)
+    return replace(draft, cells=tuple(cells))
+
+
+def set_header_value(draft: Draft, axis: str, index: int, name: str, value: Optional[Value]) -> Draft:
+    slot = list(draft.columns if axis == "column" else draft.rows)
+    while len(slot) <= index:
+        slot.append(_header(axis))
+    slot[index] = _with_named(slot[index], name, value)
+    if axis == "column":
+        return replace(draft, columns=tuple(slot), columns_stored=True)
+    return replace(draft, rows=tuple(slot), rows_stored=True)
 
 
 def set_header_text(draft: Draft, axis: str, index: int, text: str) -> Draft:
@@ -467,6 +491,14 @@ def _set_column(item: Item, column: int, text: str) -> Item:
         texts.append("")
     texts[column] = text
     return replace(item, texts=tuple(texts))
+
+
+def _with_named(item: Item, name: str, value: Optional[Value]) -> Item:
+    updated = _with_value(item, name, value)
+    if name == "text":
+        text = value.text if isinstance(value, StringValue) else ""
+        updated = _set_column(updated, 0, text)
+    return updated
 
 
 def _with_value(item: Item, name: str, value: Optional[Value]) -> Item:

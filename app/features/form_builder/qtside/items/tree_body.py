@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from app.features.form_builder.engine.ui4.values import StringValue, Value
+from app.features.form_builder.qtside.items.details import item_details
 from app.features.form_builder.qtside.items.model import (
     TREE_COLUMN_SENTENCE,
     Draft,
@@ -21,6 +23,7 @@ from app.features.form_builder.qtside.items.model import (
     move_sibling,
     nest,
     set_header_text,
+    set_header_value,
     set_text,
     unnest,
 )
@@ -235,6 +238,7 @@ class _Columns(QWidget):
         self._list = ListEditor(name="Columns", parent=self)
         self._list.set_on_rows(self._rows)
         self._list.set_on_delete(self._delete)
+        self._list.set_details(self._details)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._list)
@@ -253,6 +257,21 @@ class _Columns(QWidget):
         if self._note is not None:
             self._note.hide()
         self._editor.replace(headers_from_list(self._editor.draft, "column", texts, origin))
+
+    def _details(self, index: int) -> QWidget:
+        def current() -> Item:
+            columns = self._editor.draft.columns
+            if index < 0 or index >= len(columns):
+                return Item(texts=("",))
+            return columns[index]
+
+        def on_value(name: str, value: Optional[Value]) -> None:
+            self._editor.replace(set_header_value(self._editor.draft, "column", index, name, value))
+            if name == "text":
+                text = value.text if isinstance(value, StringValue) else ""
+                self._list.note_external_text(index, text)
+
+        return item_details(self._editor, "header", current, on_value, self)
 
     def _delete(self, index: int) -> None:
         if len(self._editor.draft.columns) <= 1:

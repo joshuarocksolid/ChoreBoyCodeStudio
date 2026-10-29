@@ -4,8 +4,11 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, List, Optional, Tuple
 
+from app.features.form_builder.engine.ui4.values import StringValue, Value
+from app.features.form_builder.qtside.items.details import item_details
 from app.features.form_builder.qtside.items.model import (
     Draft,
+    Item,
     Origin,
     add_header,
     headers_from_list,
@@ -14,7 +17,9 @@ from app.features.form_builder.qtside.items.model import (
     move_header,
     paste_cells,
     set_cell_text,
+    set_cell_value,
     set_header_text,
+    set_header_value,
 )
 from app.features.form_builder.qtside.inspector.editors._list_editor import ListEditor
 from app.qt.QtCore import QEvent, QObject, Qt
@@ -73,6 +78,7 @@ class _Cells(QWidget):
         triggers = QAbstractItemView.EditTrigger
         self._grid.setEditTriggers(triggers.AnyKeyPressed | triggers.EditKeyPressed | triggers.DoubleClicked)
         self._filling = False
+        self._details: Optional[QWidget] = None
         self._grid.cellChanged.connect(self._changed)
         self._filter = _GridKeys(self)
         self._grid.installEventFilter(self._filter)
@@ -136,6 +142,55 @@ class _Cells(QWidget):
         self._editor.replace(paste_cells(self._editor.draft, row, column, grid))
         self.fill()
 
+    def open_details(self) -> None:
+        """The focused cell's UX-ITEM-003 details (UX-ITEM-005)."""
+        self.close_details()
+        row = self._grid.currentRow()
+        column = self._grid.currentColumn()
+        if row < 0 or column < 0:
+            return
+
+        def current() -> Item:
+            for cell in self._editor.draft.cells:
+                if _int(cell, "row") == row and _int(cell, "column") == column:
+                    return cell
+            return Item(texts=("",), fields=(("row", row), ("column", column)))
+
+        def on_value(name: str, value: Optional[Value]) -> None:
+            self._editor.replace(set_cell_value(self._editor.draft, row, column, name, value))
+            if name != "text":
+                return
+            text = value.text if isinstance(value, StringValue) else ""
+            self._filling = True
+            item = self._grid.item(row, column)
+            if item is None:
+                self._grid.setItem(row, column, QTableWidgetItem(text))
+            else:
+                item.setText(text)
+            self._filling = False
+
+        details = item_details(self._editor, "list", current, on_value, self)
+        self._details = details
+        layout = self.layout()
+        if isinstance(layout, QVBoxLayout):
+            layout.addWidget(details)
+        details.show()
+        self._editor.make_room(self._editor.height() + details.sizeHint().height())
+
+    def close_details(self) -> None:
+        details = self._details
+        self._details = None
+        if details is None:
+            return
+        layout = self.layout()
+        if layout is not None:
+            layout.removeWidget(details)
+        details.hide()
+        details.deleteLater()
+
+    def details_open(self) -> bool:
+        return self._details is not None and self._details.isVisible()
+
     def clear_current(self) -> None:
         row = self._grid.currentRow()
         column = self._grid.currentColumn()
@@ -157,14 +212,21 @@ class _GridKeys(QObject):
         key = event.key()  # type: ignore[attr-defined]
         mods = event.modifiers()  # type: ignore[attr-defined]
         ctrl = bool(mods & getattr(Qt, "ControlModifier"))
+        alt = bool(mods & getattr(Qt, "AltModifier"))
+        grid = self._cells._grid
+        editing = grid.state() == getattr(QAbstractItemView.State, "EditingState")
+        if key == getattr(Qt, "Key_Right") and alt and not ctrl and not editing:
+            self._cells.open_details()
+            return True
+        if key == getattr(Qt, "Key_Left") and alt and not ctrl and self._cells.details_open():
+            self._cells.close_details()
+            return True
         if key == getattr(Qt, "Key_Delete") and not ctrl:
             self._cells.clear_current()
             return True
         if key == getattr(Qt, "Key_V") and ctrl:
             self._cells.paste()
             return True
-        grid = self._cells._grid
-        editing = grid.state() == getattr(QAbstractItemView.State, "EditingState")
         if key in (getattr(Qt, "Key_Return"), getattr(Qt, "Key_Enter")) and not editing:
             # Enter edits the cell keeping its text, like F2 (UX-ITEM-005).
             item = grid.currentItem()
@@ -186,6 +248,7 @@ class _Axis(QWidget):
         self._axis = axis
         self._list = ListEditor(name=axis, parent=self)
         self._list.set_on_rows(self._rows)
+        self._list.set_details(self._details)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._list)
@@ -200,6 +263,23 @@ class _Axis(QWidget):
 
     def _rows(self, texts: Tuple[str, ...], origin: Origin) -> None:
         self._editor.replace(headers_from_list(self._editor.draft, self._axis, texts, origin))
+
+    def _details(self, index: int) -> QWidget:
+        axis = self._axis
+
+        def current() -> Item:
+            slot = self._editor.draft.rows if axis == "row" else self._editor.draft.columns
+            if index < 0 or index >= len(slot):
+                return Item(texts=("",))
+            return slot[index]
+
+        def on_value(name: str, value: Optional[Value]) -> None:
+            self._editor.replace(set_header_value(self._editor.draft, axis, index, name, value))
+            if name == "text":
+                text = value.text if isinstance(value, StringValue) else ""
+                self._list.note_external_text(index, text)
+
+        return item_details(self._editor, "header", current, on_value, self)
 
 
 def _slot(draft: Draft, axis: str) -> Tuple[object, ...]:

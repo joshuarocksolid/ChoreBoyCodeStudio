@@ -2,11 +2,17 @@
 
 from __future__ import annotations
 
-from typing import Callable, Optional, Tuple
+from typing import TYPE_CHECKING, Callable, Optional, Tuple
 
 from app.features.form_builder.engine.ui4.values import EnumValue, SetValue, StringValue, Value
 from app.features.form_builder.qtside.items.model import Item
-from app.qt.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLineEdit, QToolButton, QWidget
+from app.qt.QtWidgets import QCheckBox, QComboBox, QFormLayout, QLineEdit, QTableWidget, QToolButton, QWidget
+
+if TYPE_CHECKING:
+    from app.features.form_builder.qtside.items.editor import ItemEditor
+
+_MORE_CLOSED = "More properties \u25b8"
+_MORE_OPEN = "More properties \u25be"
 
 _CHECK = ("Unchecked", "Checked", "Partly")
 _CHECK_QT = {"Unchecked": "Unchecked", "Checked": "Checked", "Partly": "PartiallyChecked"}
@@ -20,11 +26,33 @@ _FLAG_BITS = (
 )
 
 
+def item_details(
+    editor: "ItemEditor",
+    kind: str,
+    current: Callable[[], Item],
+    on_value: Callable[[str, Optional[Value]], None],
+    parent: QWidget,
+) -> QWidget:
+    """The UX-ITEM-003 details, including More properties. One panel for every caller."""
+
+    def on_more(host: QWidget) -> None:
+        from app.features.form_builder.qtside.items.more import show_more
+
+        show_more(host, editor, current, on_value, lambda: _set_more_open(host, False, focus_row=True))
+
+    def icon_row(host: QWidget) -> QWidget:
+        from app.features.form_builder.qtside.items.icon_row import build_icon_row
+
+        return build_icon_row(editor, current, on_value, host)
+
+    return build_details(kind, current, on_value, on_more, parent, icon_row)
+
+
 def build_details(
     kind: str,
     current: Callable[[], Item],
     on_value: Callable[[str, Optional[Value]], None],
-    on_more: Callable[[], None],
+    on_more: Callable[[QWidget], None],
     parent: QWidget,
     icon_row: Optional[Callable[[QWidget], QWidget]] = None,
 ) -> QWidget:
@@ -44,9 +72,9 @@ def build_details(
     tip.editingFinished.connect(lambda: on_value("toolTip", StringValue(tip.text()) if tip.text() else None))
     form.addRow("Tooltip", tip)
     more = QToolButton(panel)
-    more.setText("More properties \u25b8")
+    more.setText(_MORE_CLOSED)
     more.setObjectName("formBuilder.itemMore")
-    more.clicked.connect(on_more)
+    more.clicked.connect(lambda: _toggle_more(panel, more, on_more))
     form.addRow("", more)
     panel.setMinimumHeight(panel.sizeHint().height())
     return panel
@@ -103,6 +131,62 @@ def _check_state(form: QFormLayout, item: Item, on_value: Callable[[str, Optiona
             combo.setCurrentIndex(index)
     combo.currentTextChanged.connect(lambda text: on_value("checkState", EnumValue(_CHECK_QT.get(text, text))))
     form.addRow("Starts", combo)
+
+
+def _toggle_more(panel: QWidget, button: QToolButton, on_more: Callable[[QWidget], None]) -> None:
+    existing = panel.findChild(QWidget, "formBuilder.itemMorePanel")
+    if existing is None:
+        on_more(panel)
+        _set_more_open(panel, True, focus_row=False)
+        return
+    _set_more_open(panel, not existing.isVisible(), focus_row=False)
+
+
+def _set_more_open(details: QWidget, open_: bool, *, focus_row: bool) -> None:
+    panel = details.findChild(QWidget, "formBuilder.itemMorePanel")
+    if panel is not None:
+        panel.setVisible(open_)
+    button = details.findChild(QToolButton, "formBuilder.itemMore")
+    if button is not None:
+        button.setText(_MORE_OPEN if open_ else _MORE_CLOSED)
+    _refit(details)
+    if not open_ and focus_row:
+        _return_focus(details)
+
+
+def _refit(widget: QWidget) -> None:
+    """The list editor positions details by size hint, so it has to measure again."""
+    current: Optional[QWidget] = widget
+    while current is not None:
+        layout = current.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+        current.updateGeometry()
+        refit = getattr(current, "refit_details", None)
+        if callable(refit):
+            refit()
+            return
+        grow = getattr(current, "make_room", None)
+        if callable(grow):
+            grow(max(current.height(), widget.sizeHint().height() + 220))
+            return
+        current = current.parentWidget()
+
+
+def _return_focus(details: QWidget) -> None:
+    current: Optional[QWidget] = details.parentWidget()
+    while current is not None:
+        focus_row = getattr(current, "focus_row", None)
+        focused = getattr(current, "focused_index", None)
+        if callable(focus_row) and callable(focused):
+            focus_row(focused())
+            return
+        current = current.parentWidget()
+    window = details.window()
+    grid = window.findChild(QTableWidget, "formBuilder.itemCells") if window is not None else None
+    if grid is not None:
+        grid.setFocus()
 
 
 def _prop(item: Item, name: str) -> Optional[object]:

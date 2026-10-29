@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Optional, Tuple
 
-from app.features.form_builder.engine.ui4.values import Value
-from app.features.form_builder.qtside.items.details import build_details
+from app.features.form_builder.engine.ui4.values import StringValue, Value
+from app.features.form_builder.qtside.items.details import item_details
 from app.features.form_builder.qtside.items.model import Draft, Item, Origin, rows_from_list, set_item_value
 from app.features.form_builder.qtside.inspector.editors._list_editor import ListEditor
 from app.qt.QtWidgets import QVBoxLayout, QWidget
@@ -52,18 +52,11 @@ class ListBody(QWidget):
 
         def on_value(name: str, value: Optional[Value]) -> None:
             self._editor.replace(set_item_value(self._editor.draft, (index,), name, value))
+            if name == "text":
+                text = value.text if isinstance(value, StringValue) else ""
+                self._list.note_external_text(index, text)
 
-        def on_more() -> None:
-            from app.features.form_builder.qtside.items.more import show_more
-
-            show_more(self, current(), on_value)
-
-        def icon_row(parent: QWidget) -> QWidget:
-            from app.features.form_builder.qtside.items.icon_row import build_icon_row
-
-            return build_icon_row(self._editor, current, on_value, parent)
-
-        return build_details(self._editor.draft.kind, current, on_value, on_more, self, icon_row)
+        return item_details(self._editor, self._editor.draft.kind, current, on_value, self)
 
 
 def _blank(item: Item) -> bool:

@@ -18,7 +18,7 @@ from app.features.form_builder.qtside.items.model import (
 from app.features.form_builder.qtside.items.place import seat_beside, seat_under
 from app.features.form_builder.qtside.theme.chrome import FormChrome, default_chrome
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSettings, QSize, Qt, QTimer
-from app.qt.QtGui import QGuiApplication
+from app.qt.QtGui import QColor, QGuiApplication, QPalette
 from app.qt.QtWidgets import (
     QAbstractItemView,
     QFrame,
@@ -69,6 +69,7 @@ class ItemEditor(QFrame):
         self.setObjectName("formBuilder.itemEditor")
         self._session = session
         self._chrome = chrome or default_chrome()
+        self._paint_chrome()
         # Picture pickers find the form's folder by walking up to a widget
         # whose ``_services.session`` has the form path (form_directory).
         self._services = _FormFolder(session)
@@ -120,6 +121,18 @@ class ItemEditor(QFrame):
     @property
     def chrome(self) -> FormChrome:
         return self._chrome
+
+    def _paint_chrome(self) -> None:
+        chrome = self._chrome
+        palette = self.palette()
+        palette.setColor(QPalette.Window, QColor(chrome.panel))
+        palette.setColor(QPalette.WindowText, QColor(chrome.text))
+        palette.setColor(QPalette.Base, QColor(chrome.input))
+        palette.setColor(QPalette.Text, QColor(chrome.text))
+        palette.setColor(QPalette.Button, QColor(chrome.panel))
+        palette.setColor(QPalette.ButtonText, QColor(chrome.text))
+        self.setPalette(palette)
+        self.setAutoFillBackground(True)
 
     @property
     def draft(self) -> Draft:
