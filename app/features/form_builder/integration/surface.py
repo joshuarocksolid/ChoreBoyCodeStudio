@@ -18,6 +18,7 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMenu,
+    QMessageBox,
     QPushButton,
     QTreeWidget,
     QShortcut,
@@ -34,6 +35,7 @@ from app.features.form_builder.engine.commands.catalog import ReplaceDocument
 from app.features.form_builder.engine.commands.log import Subscription
 from app.features.form_builder.engine.events import PRIORITY_VIEWS, ChangeSet
 from app.features.form_builder.engine.ids import IdAllocator, NodeId
+from app.features.form_builder.qtside.actions.glue import MenuEditGlue
 from app.features.form_builder.engine.layout_actions import (
     Current,
     Done,
@@ -391,6 +393,15 @@ class FormSurface(QWidget):
         self._stack.addWidget(self._workbench)
         self._workbench.outline.set_status(self.narrate)
         self._workbench.outline.run_command = self._run_outline_command
+        self._menu_edit = MenuEditGlue(
+            session,
+            self._realizer,
+            self._workbench.canvas_view(),
+            self.narrate,
+            self.show_plain,
+            self._confirm_removal,
+            self,
+        )
         layout.addWidget(self._stack, 1)
         self._toolbar.attach_preview(self._workbench.canvas.preview)
         self._command_toast = CommandToast(self)
@@ -709,6 +720,7 @@ class FormSurface(QWidget):
                 app.focusChanged.disconnect(self._on_focus_changed)
             except (RuntimeError, TypeError):
                 pass
+        self._menu_edit.dispose()
         self._clear_shell_undo()
         self._selection_unsub()
         self._source_unsub()
@@ -1031,6 +1043,17 @@ class FormSurface(QWidget):
     def _piece_notice(self, sentence: str, undo: Callable[[], None]) -> None:
         note = ToastNote(sentence, "Undo", "", 0)
         self._command_toast.show_note(note, lambda _note: undo())
+
+    def _confirm_removal(self, sentence: str, ok: str) -> bool:
+        """The confirm of UX-MAIN-004: [ok] [Cancel]. Cancel is the default."""
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setText(sentence)
+        accept = box.addButton(ok, QMessageBox.ButtonRole.AcceptRole)
+        cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(cancel)
+        box.exec()
+        return box.clickedButton() is accept
 
     def show_plain(self, sentence: str) -> None:
         if not sentence:
