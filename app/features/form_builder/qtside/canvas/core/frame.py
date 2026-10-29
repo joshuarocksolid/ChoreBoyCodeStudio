@@ -90,6 +90,7 @@ class Badge:
 class Caption:
     rect: CanvasRect
     lines: Tuple[str, ...]
+    role: Role = "layout"
 
 
 @dataclass(frozen=True)

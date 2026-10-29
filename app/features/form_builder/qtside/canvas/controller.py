@@ -18,6 +18,7 @@ from app.qt.QtWidgets import (
     QGraphicsOpacityEffect,
     QGraphicsView,
     QMdiArea,
+    QMdiSubWindow,
     QScrollArea,
     QStackedWidget,
     QTabWidget,
@@ -1250,6 +1251,7 @@ class CanvasController:
                 self._shown_for_frame(),
                 knobs=self._knob_set(self._static, selection),
                 readout=self._readout,
+                refusals=self._realizer.refusal_marks(),
             ),
         )
 
@@ -1343,9 +1345,43 @@ class CanvasController:
             editor.close_keep()
             self._items_editor = None
         self._announce_selection(change.after)
+        if change.after.current is not None:
+            self._raise_mdi_window(change.after.current)
         if change.source in REVEAL_SOURCES and change.after.current is not None:
             self._pending_reveal = change.after.current
         self._request_frame()
+
+    def _raise_mdi_window(self, node_id: NodeId) -> None:
+        """Bring the subwindow that holds the selection to the front.
+
+        Canvas only. The file and the undo stack stay as they were (UX-CONT-006).
+        """
+        widget = self._realizer.widget_for(node_id)
+        if not isinstance(widget, QWidget):
+            return
+        sub = widget if isinstance(widget, QMdiSubWindow) else None
+        current: Optional[QWidget] = widget
+        while sub is None and current is not None:
+            parent = current.parentWidget()
+            if isinstance(parent, QMdiSubWindow):
+                sub = parent
+                break
+            current = parent
+        if sub is None:
+            return
+        area = sub.mdiArea()
+        if area is None or area.activeSubWindow() is sub:
+            return
+        area.setActiveSubWindow(sub)
+        windows = area.subWindowList()
+        try:
+            index = windows.index(sub)
+        except ValueError:
+            return
+        area_id = self._realizer.node_for(area)
+        if area_id is not None:
+            self._shown_page[area_id] = index
+        self._index.invalidate("page_switch")
 
     def _announce_selection(self, state: SelectionState) -> None:
         shown = effective_selection(self._session.document, state)

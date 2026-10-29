@@ -195,6 +195,9 @@ class FrameInputs:
     knobs: KnobSet = EMPTY
     #: What a landed knob commit still reads. The controller clears it.
     readout: Optional[Readout] = None
+    #: Widgets whose live value Qt refused. Empty on a normal frame, so a
+    #: selection change does not walk the form to look for them.
+    refusals: Tuple[Tuple[NodeId, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -437,6 +440,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
         items.extend(static.items)
         focused = _focused_layouts(document, primary)
         _sites(items, view, inputs.knobs, focused)
+    _refusal_captions(items, static, inputs)
     _hover(items, static, document, gesture)
     rects: Dict[NodeId, CanvasRect] = {}
     for node_id in shown.ids:
@@ -526,6 +530,23 @@ def _spacer_axis(node: SpacerNode) -> Literal["horizontal", "vertical"]:
     if isinstance(value, EnumValue) and value.key()[1] == "Vertical":
         return "vertical"
     return "horizontal"
+
+
+def _refusal_captions(items: List[Item], static: StaticLayer, inputs: FrameInputs) -> None:
+    """One small caption per widget that refused a value. O(refusals), or O(1) when none."""
+    marks = inputs.refusals
+    if not marks:
+        return
+    located = {obstacle.node: obstacle.rect for obstacle in static.placed}
+    for node_id, text in marks:
+        rect = located.get(node_id)
+        if rect is None or not text:
+            continue
+        width = min(rect.width, inputs.measure(text) + 8)
+        height = min(rect.height, 16)
+        if width < 1 or height < 1:
+            continue
+        items.append(Caption(CanvasRect(rect.x, rect.y, max(1, int(width)), max(1, int(height))), (text,), "problem"))
 
 
 def _drop_caption(document: UiDocument, node: object) -> str:

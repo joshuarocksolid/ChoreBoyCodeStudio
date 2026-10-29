@@ -348,6 +348,20 @@ class Realizer(_Structure):
         """
         return self._refusals.get((int(node_id), name))
 
+    def refusal_marks(self) -> Tuple[Tuple[NodeId, str], ...]:
+        """One caption per widget that refused a property. O(1) when nothing was refused."""
+        refusals = self._refusals
+        if not refusals:
+            return ()
+        grouped: Dict[int, List[str]] = {}
+        for (node_int, _name), message in refusals.items():
+            lines = grouped.get(node_int)
+            if lines is None:
+                grouped[node_int] = [message]
+            elif message not in lines:
+                lines.append(message)
+        return tuple((NodeId(node_int), " ".join(lines)) for node_int, lines in grouped.items())
+
     def dispose(self) -> None:
         self._subscription.close()
         self._destroy_tree()
