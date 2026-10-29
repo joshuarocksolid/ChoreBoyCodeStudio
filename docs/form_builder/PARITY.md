@@ -486,7 +486,7 @@ M0.1, M0.2, M0.3, M0.4, M0.5, M0.6, M0.4b, M0.7, M0.8, M0.9, M1.0, M1.1d, M1.5, 
 | L-stub-and-jump | Stub insertion and jump to code | feature | LOGIC_DESIGN.md §3.3 | M6.2b | todo |  |
 | L-signature-checks | Signature and @Slot checks | feature | LOGIC_DESIGN.md §3.4 | M6.2a | done | engine/project/test_m6_2a_checks.py::test_fb201_a_missing_method_and_its_clean_twin (+4) |
 | L-runtime-connect | How level 2 connects at run time | feature | LOGIC_DESIGN.md §3.5 | M6.1a | todo |  |
-| L-connect-slots-by-name | connectSlotsByName checks | feature | LOGIC_DESIGN.md §3.6 | M6.2a | done | engine/project/test_m6_2a_checks.py::test_fb205_a_name_that_also_auto_connects_and_its_clean_twin (+3) |
+| L-connect-slots-by-name | connectSlotsByName checks | feature | LOGIC_DESIGN.md §3.6 | M6.2a | done | engine/project/test_m6_2a_checks.py::test_fb205_a_name_that_also_auto_connects_and_its_clean_twin (+4) |
 | L-design-time-errors | Design-time errors (FB codes in Problems) | feature | LOGIC_DESIGN.md §2.9 | M6.2b | todo |  |
 | L-expression-language | Grammar, types, coercion, names, blanks | feature | LOGIC_DESIGN.md §4.1-4.6 | M7.1 | todo |  |
 | L-window-method-calls | window.method() from a formula | feature | LOGIC_DESIGN.md §4.7 | M7.1 | todo |  |
