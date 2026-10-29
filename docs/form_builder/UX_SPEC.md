@@ -148,6 +148,7 @@ The neutral-gray dark chrome palette substitutes its own surfaces through the sa
 | `ov.tab` | `#B45309` | `#7A3E00` | 4.4:1 / 7.3:1 | tab-order badges and flow line |
 | `ov.buddy` | `#047857` | `#00553A` | 4.8:1 / 7.7:1 | buddy links |
 | `ov.problem` | `#C81E1E` | `#9C0000` | 5.0:1 / ≥ 7:1 | invalid drop, problem badge |
+| `ov.style_match` | `#0E7490` | `#00546A` | 4.7:1 / 7.4:1 | dashed outline of the widgets the style sheet rule under the caret styles (UX-STYLE-005, M5.3) |
 | `ov.chip_text` | `#FFFFFF` | `#FFFFFF` | ≥ 4.6:1 on every chip fill above | chip labels |
 
 **UX-TOK-004** `M3.1` `[S]` Overlay strokes are drawn *outside* the widget rectangle they describe (a 2 px selection stroke sits 1 px outside the widget's edge), so the widget's own border and text stay visible. HC raises every overlay stroke to 2 px minimum.
@@ -1972,7 +1973,7 @@ While an entry has focus, the selection is its action: the inspector shows it, s
 
 **UX-STYLE-003** `M5.3` `[T A]` Live apply. 300 ms after the last keystroke, a valid text is set on the canvas widget (a `SetProperty styleSheet` in the drawer's session; UX-ISO-004: it applies exactly as at run time). An invalid text keeps the last valid one on the canvas and shows the error; the canvas is never left half-styled. Only the edited widget and its descendants are re-polished.
 
-**UX-STYLE-004** `M5.3` `[S A]` Checking (D11). The status reads "Looks right" (`fb.ok`, ✓ glyph) or the first problem with its place: "Line 3: a } is missing.", "Line 5: “colr” isn't a property Qt knows.", "Line 8: a ; is missing after the value." A click on the status moves the caret there. Errors from the engine tokenizer (unbalanced braces, brackets or quotes, a declaration without a colon, a stray character) mark the sheet invalid. An unknown property name or pseudo-state is a warning (the sheet still applies; Qt skips that line). Then Qt's parser decides: the text is set on a hidden probe widget with a message handler; if Qt reports it can't parse the sheet and the tokenizer found nothing, the status reads "Qt can't read this style sheet." with no line. Qt's verdict is final in both directions. No subprocess and no external tool is used.
+**UX-STYLE-004** `M5.3` `[S A]` Checking (D11). The status reads "Looks right" (`fb.ok`, ✓ glyph) or the first problem with its place: "Line 3: a } is missing.", "Line 5: “colr” isn't a property Qt knows.", "Line 8: a ; is missing after the value." A click on the status moves the caret there. Errors from the engine tokenizer (unbalanced braces, brackets, parentheses or quotes, a stray closing mark) mark the sheet invalid. A problem Qt tolerates is a warning and the sheet still applies: an unknown property name (Qt skips that line), an unknown pseudo-state (Qt's rule then matches nothing, and the match chip says "No match"), a declaration without a colon, a missing `;`, an unclosed `/*` inside a rule (amended at the M5.3 gate: each case was checked against Qt's parser on the corpus in `test_m5_3_style_check.py`). Then Qt's parser decides: the text is set on a hidden probe widget with a message handler; if Qt reports it can't parse the sheet and the tokenizer found nothing, the status reads "Qt can't read this style sheet." with no line. Qt's verdict is final in both directions. No subprocess and no external tool is used.
 
 **UX-STYLE-005** `M5.3` `[S A]` Selector matches (pain 8). The engine matcher evaluates each rule's selectors against the document: type selectors match the class and its subclasses (stock classes from the class table, own classes through their base, UX-CUST), `.Class` only the exact class, `#name`, `Type#name`, `[property="value"]` against the stored value, `*`, descendant and `>` child combinators, and comma lists. A selector in a widget's own sheet matches only that widget and its descendants, as Qt cascades. Pseudo-states (`:hover`, `:checked`, `:disabled` …) and sub-controls (`::indicator`) match their widget; the count chip adds "· when hovered", "· when checked". While the caret is inside a rule, the canvas outlines its matched widgets in `ov.style_match` and the status bar says "This rule styles saveButton, cancelButton and 1 more." Hover on a count chip lists the names; a click selects them. A rule with no match keeps its "No match" chip and can be saved (FB034 Info).
 
@@ -1984,12 +1985,14 @@ While an entry has focus, the selection is its action: the inspector shows it, s
 
 **UX-STYLE-009** `M5.3` `[A]` Preview and run use the same text through the generated module (no editor-only styling), so what the canvas shows is what the app shows (pain 8). The pain test: a `QPushButton#okButton` rule colours that button on the canvas, in Preview and after reopening.
 
-**UX-STYLE-010** `M5.3` `[S T]` Curated colour rows (D4), in Appearance directly after Font, for the classes below. Each is a colour row (UX-PED-082). **Background** writes one palette role in all three state groups and nothing else; Reset removes that role (and the `autoFillBackground` this row set). Background on a label, group box, frame, plain widget or the form also writes `autoFillBackground` true in the same step, because Qt paints no background otherwise. **Text colour** writes a `color` declaration in the widget's own style sheet, because on ChoreBoy FreeCAD's application style sheet overrides palette text roles (§16.3): when the widget's sheet is empty or holds only declarations, the row adds or replaces `color: #RRGGBB;` there; when it holds rules, the row adds or replaces a `#objectName { color: #RRGGBB; }` rule, and a rename rewrites that selector in the same step. Reset removes only that declaration (and the rule or sheet if it is left empty). The table's "Text colour writes" column names the palette role the canvas uses to read back a colour set in Designer; the row shows that colour with the caption "Set by the palette. ChoreBoy shows its own text colour; pick a colour here to override it." and writes the style sheet declaration when changed.
+**UX-STYLE-010** `M5.3` `[S T]` Curated colour rows (D4), in Appearance directly after Font, for the classes below. Each is a colour row (UX-PED-082). **Background** writes one palette role in all three state groups and nothing else; Reset removes that role (and the `autoFillBackground` this row set). Background on a label, group box, frame, plain widget, check box, radio button, command link or the form also writes `autoFillBackground` true in the same step, because Qt paints no background otherwise (a check box and a radio button fill from the Button role, as `QAbstractButton` sets it as the background role; amended at the M5.3 gate after the per-class pixel check under Fusion). **Text colour** writes a `color` declaration in the widget's own style sheet, because on ChoreBoy FreeCAD's application style sheet overrides palette text roles (§16.3): when the widget's sheet is empty or holds only declarations, the row adds or replaces `color: #RRGGBB;` there; when it holds rules, the row adds or replaces a `#objectName { color: #RRGGBB; }` rule, and a rename rewrites that selector in the same step. Reset removes only that declaration (and the rule or sheet if it is left empty). The table's "Text colour writes" column names the palette role the canvas uses to read back a colour set in Designer; the row shows that colour with the caption "Set by the palette. ChoreBoy shows its own text colour; pick a colour here to override it." and writes the style sheet declaration when changed.
 
 | Class | Text colour writes | Background writes |
 | --- | --- | --- |
-| Label, check box, radio button, group box, frame, plain widget, the form | Window text | Window (+ fill background) |
-| Push button, tool button, command link | Button text | Button |
+| Label, group box, frame, plain widget, the form | Window text | Window (+ fill background) |
+| Check box, radio button | Window text | Button (+ fill background) |
+| Push button, tool button | Button text | Button |
+| Command link | Button text | Button (+ fill background) |
 | Line edit, text edit, plain text edit, spin boxes, date and time edits, list, tree and table widgets and views | Text | Base |
 | Combo box | Button text (Text when editable) | Button (Base when editable) |
 
@@ -2162,7 +2165,12 @@ The `ast` read does not follow imports and caches by path and mtime.
 | FB035 | "{Class} comes from {module}, which isn't in this project." | `fb.warning` |
 | FB036 | "The action {text} isn't on any menu, toolbar or widget." | Info |
 | FB037 | "{name} is inside a {toolbar or status bar}. It won't show where you see it here." | `fb.warning` |
-| Style check | "Looks right" / "Line {n}: a } is missing." / "Line {n}: a ; is missing after the value." / "Line {n}: “{word}” isn't a property Qt knows." / "Qt can't read this style sheet." | `fb.ok` / `fb.error` / `fb.error` / `fb.warning` / `fb.error` |
+| Style check | "Looks right" / "Line {n}: a {mark} is missing." ({mark} is `}`, `{`, `)`, `(`, `]`, `[` or a quote) / "Line {n}: a ; is missing after the value." / "Line {n}: a : is missing after “{word}”." / "Line {n}: a */ is missing." / "Line {n}: a { is missing." (a selector with no body at the end) / "Line {n}: “{word}” isn't a property Qt knows." / "Line {n}: “{word}” isn't a state Qt knows." / "Qt can't read this style sheet." | `fb.ok` / `fb.error` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.warning` / `fb.error`; any line finding is `fb.warning` when Qt reads the sheet (UX-STYLE-004) |
+| Style sheet row, sheet Qt can't read | "Can't be read" (summary) and, on Text colour, "The style sheet can't be read, so it can't be changed here." | `fb.warning` |
+| Style match chip | "1 widget" / "{n} widgets", then " · when {state} and {state}" / "No match" | `fb.muted` / `fb.warning` |
+| Text colour from the palette | "Set by the palette. ChoreBoy shows its own text colour; pick a colour here to override it." | Caption |
+| Palette editor text role | "ChoreBoy's theme sets text colours, so this has no effect when the app runs. Use Text colour in Appearance." | `fb.warning` |
+| Look group captions | "Colour of selections, progress bars and links." / "Every widget that doesn't set its own size follows this." | Caption |
 | Colour row overridden | "The style sheet sets this colour, so this one has no effect." | `fb.warning` |
 | Style matches | "This rule styles {a}, {b} and {n} more." | status |
 | Own class check | the seven lines of UX-CUST-003 | as listed |
@@ -2185,6 +2193,7 @@ The `ast` read does not follow imports and caches by path and mtime.
 | Drops and moves inside the wide copy of Two widths | M9.5 (unchanged) |
 | Task-menu, member-sheet and property-sheet plugin extensions | Not offered: they need plugin code in the editor (UX-CUST-011) |
 | Corner radius as a theme role | Not offered: use the style sheet (D5) |
+| The shell's Ctrl+F find bar inside the style sheet drawer (UX-STYLE-002); in a form tab Ctrl+F is the inspector filter, so the key needs focus routing to the drawer's editor | M5.R (found at the M5.3 gate) |
 
 ---
 

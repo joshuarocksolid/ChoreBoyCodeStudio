@@ -20,6 +20,7 @@ from app.features.form_builder.qtside.inspector.api import (
     Written,
 )
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover
+from app.features.form_builder.qtside.style.palette_note import text_role_note
 from app.features.form_builder.qtside.visual.brush import BrushForm
 from app.features.form_builder.qtside.visual.color_picker import ColorPicker, Swatch
 from app.features.form_builder.qtside.visual.common import (
@@ -324,9 +325,14 @@ class PaletteEditor:
         for label, role in _ROLES:
             item = QListWidgetItem(self._roles_list)
             row = QWidget(self._roles_list)
-            layout = QHBoxLayout(row)
+            stacked = QVBoxLayout(row)
+            stacked.setContentsMargins(0, 0, 0, 0)
+            stacked.setSpacing(0)
+            line = QWidget(row)
+            stacked.addWidget(line)
+            layout = QHBoxLayout(line)
             layout.setContentsMargins(4, 2, 4, 2)
-            name = QLabel(label, row)
+            name = QLabel(label, line)
             written = role in self._roles and any(self._roles[role].values())
             if written:
                 font = QFont(name.font())
@@ -335,11 +341,14 @@ class PaletteEditor:
             layout.addWidget(name, 1)
             if self._per_state:
                 for group, caption in _STATE_LABELS:
-                    self._swatches[(len(self._swatches) // len(_GROUPS), group)] = swatch = self._swatch(row, role, group, caption)
+                    self._swatches[(len(self._swatches) // len(_GROUPS), group)] = swatch = self._swatch(line, role, group, caption)
                     layout.addWidget(swatch)
             else:
-                layout.addWidget(self._swatch(row, role, "all", "All states"))
-            reset = QToolButton(row)
+                layout.addWidget(self._swatch(line, role, "all", "All states"))
+            note = text_role_note(row, role, written, self._host.chrome)
+            if note is not None:
+                stacked.addWidget(note)
+            reset = QToolButton(line)
             reset.setText("\u21ba")
             reset.setAccessibleName(part_name("Palette", "reset " + label.split(" (", 1)[0]))
             reset.setFocusPolicy(_focus("NoFocus"))  # type: ignore[arg-type]
