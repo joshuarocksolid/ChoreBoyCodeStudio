@@ -45,6 +45,7 @@ PAGE_HOSTS = frozenset({"QTabWidget", "QStackedWidget", "QToolBox", "QWizard", "
 _NOWHERE = "Nothing above to nest into."
 _KEEP_PAGE = "A page stays inside its container."
 _KEEP_FORM = "The form itself can't be deleted."
+_ITEM_HOSTS = ("QComboBox", "QListWidget", "QTreeWidget", "QTableWidget")
 _CAPTION_PROPS = frozenset({"text", "title", "windowTitle", "plainText", "visible"})
 _CAPTION_ATTRS = frozenset({"title", "label"})
 _CLIPBOARD = frozenset(
@@ -510,18 +511,29 @@ def patch_captions(
     return forest
 
 
-def captions_touched(change_set: ChangeSet) -> Tuple[NodeId, ...]:
-    """Ids whose outline caption may have changed. Renames included."""
+def captions_touched(change_set: ChangeSet, doc: Optional[UiDocument] = None) -> Tuple[NodeId, ...]:
+    """Ids whose outline caption may have changed. Renames included.
+
+    With ``doc``, a text edit on an item or header counts for the widget row that
+    holds it, so a combo or list caption follows its items (UX-ITEM-009).
+    """
     found: List[NodeId] = []
     for owner, kind, name in change_set.property_dirty:
         if kind == "property" and name in _CAPTION_PROPS:
-            found.append(owner)
+            found.append(_caption_owner(doc, owner))
         elif kind == "attribute" and name in _CAPTION_ATTRS:
-            found.append(owner)
+            found.append(_caption_owner(doc, owner))
     for change in change_set.changes:
         if isinstance(change, FieldChanged) and change.field in ("object_name", "name"):
             found.append(change.node)
     return tuple(dict.fromkeys(found))
+
+
+def _caption_owner(doc: Optional[UiDocument], owner: NodeId) -> NodeId:
+    if doc is None or not doc.contains(owner) or _is_row(doc.node(owner)):
+        return owner
+    held = _row_owner(doc, owner)
+    return owner if held is None or held is _GONE else held  # type: ignore[return-value]
 
 
 def structure_touched(change_set: ChangeSet) -> bool:
@@ -531,13 +543,13 @@ def structure_touched(change_set: ChangeSet) -> bool:
     return any(isinstance(change, FieldChanged) and change.field in _ORDER_FIELDS for change in change_set.changes)
 
 
-def outline_mode(change_set: ChangeSet) -> str:
+def outline_mode(change_set: ChangeSet, doc: Optional[UiDocument] = None) -> str:
     """``rebuild``, ``structure``, ``captions`` or ``keep`` for one ChangeSet."""
     if change_set.replaced:
         return "rebuild"
     if structure_touched(change_set):
         return "structure"
-    if captions_touched(change_set) or change_set.renamed:
+    if captions_touched(change_set, doc) or change_set.renamed:
         return "captions"
     return "keep"
 
@@ -584,12 +596,21 @@ def patch_structure(
     patcher = _Patcher(forest, doc, problems, friendly_of)
     if not patcher.run(work):
         return None
-    for node in captions_touched(change_set):
+    for node in dict.fromkeys(
+        list(captions_touched(change_set, doc))
+        + [owner for owner in work if owner is not None and _item_host(doc, owner)]
+    ):
         patcher.retitle(node)
     return patcher.commit()
 
 
 _GONE = object()
+
+
+def _item_host(doc: UiDocument, node_id: NodeId) -> bool:
+    """A widget whose caption lists its items: adding or removing one changes the caption."""
+    node = doc.get(node_id)
+    return isinstance(node, WidgetNode) and node.class_name in _ITEM_HOSTS
 
 
 def _dirty_parents(doc: UiDocument, change_set: ChangeSet) -> List[NodeId]:
@@ -1665,7 +1686,7 @@ def _direct_row_ids(doc: UiDocument, parent_id: Optional[NodeId]) -> Tuple[NodeI
 
 
 def _visible_text(node: Node) -> str:
-    if isinstance(node, WidgetNode) and node.class_name in ("QComboBox", "QListWidget", "QTreeWidget", "QTableWidget"):
+    if isinstance(node, WidgetNode) and node.class_name in _ITEM_HOSTS:
         from app.features.form_builder.engine.query.items import column_texts
 
         texts = []
@@ -1675,8 +1696,8 @@ def _visible_text(node: Node) -> str:
                 texts.append(columns[0])
         if not texts:
             return ""
-        shown = ", ".join(texts[:3])
-        if len(texts) > 3:
+        shown = ", ".join(texts[:2])
+        if len(texts) > 2:
             shown += ", \u2026"
         return shown
     for key in ("text", "title", "windowTitle", "plainText"):
