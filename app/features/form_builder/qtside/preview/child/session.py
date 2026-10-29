@@ -37,8 +37,8 @@ from app.features.form_builder.engine.ipc.protocol import (
     decode_line,
 )
 from app.features.form_builder.engine.ipc.timing import IDLE_EXIT_SECONDS
-from app.qt.QtCore import QBuffer, QIODevice
-from app.qt.QtGui import QPixmap
+from app.qt.QtCore import QBuffer, QEvent, QIODevice, QObject, Qt
+from app.qt.QtGui import QFont, QPixmap
 from app.qt.QtWidgets import QApplication, QStyleFactory, QWidget
 
 from app.features.form_builder.qtside.preview.child.materialize import FormMaterializer
@@ -61,6 +61,32 @@ class _View:
         self.widget = widget
         self.revision = revision
         self.scale = scale
+        #: The size the form asked for, before a screen profile clamped it.
+        self.natural = (widget.width(), widget.height())
+        self.screen: tuple = ()
+
+
+class _UserClose(QObject):
+    """Esc on a preview window closes it, and a closed window tells the editor (UX-PREV-004, K20).
+
+    One filter on the application: a key press goes to the focused widget, which can be any
+    child of the window. A popup (an open combo list) is its own window, so Esc still closes only the popup.
+    """
+
+    def __init__(self, session: "ChildSession") -> None:
+        super().__init__()
+        self._session = session
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        kind = event.type()
+        event_type = getattr(QEvent, "Type", QEvent)
+        if kind == event_type.KeyPress and isinstance(watched, QWidget):
+            if event.key() == Qt.Key_Escape and not event.modifiers():  # type: ignore[attr-defined]
+                if self._session.close_window_of(watched):
+                    return True
+        elif kind == event_type.Close and isinstance(watched, QWidget):
+            self._session.window_closed(watched)
+        return False
 
 
 class ChildSession:
@@ -84,6 +110,9 @@ class ChildSession:
         if size <= 0:
             size = float(font.pointSize() if font.pointSize() > 0 else 12)
         self._base_point_size = size
+        self._base_font = QFont(font)
+        self._user_close = _UserClose(self)
+        app.installEventFilter(self._user_close)
 
     @property
     def exit_code(self) -> int:
@@ -232,6 +261,7 @@ class ChildSession:
             self._apply_appearance(message.appearance)
             scale = float(message.appearance.scale)
             self._replace_view(message.view_id, built.widget, message.revision, scale)
+            self._dress(message.view_id, message.appearance, first=True)
         except Exception:
             self._writer.send(
                 Response(
@@ -258,6 +288,7 @@ class ChildSession:
                     "texts": texts,
                     "bases": bases,
                     "stubs": list(stubs),
+                    **self._look(message.view_id),
                 },
             )
         )
@@ -298,7 +329,10 @@ class ChildSession:
             return
         self._apply_appearance(message.appearance)
         view.scale = float(message.appearance.scale)
-        self._writer.send(Response(request_id=message.request_id, ok=True, result={"view_id": message.view_id}))
+        self._dress(message.view_id, message.appearance, first=False)
+        result = {"view_id": message.view_id}
+        result.update(self._look(message.view_id))
+        self._writer.send(Response(request_id=message.request_id, ok=True, result=result))
 
     def _try_start(self, message: TryStart) -> None:
         """Run the module. Database plans are stored and not executed here."""
@@ -387,15 +421,71 @@ class ChildSession:
         self._last_view_change = time.monotonic()
 
     def _apply_appearance(self, appearance: object) -> None:
+        """Style and font are the application's, so every open window follows (no restart)."""
         style_name = getattr(appearance, "style", "") or ""
-        if style_name:
+        if style_name and self._app.style().objectName().lower() != style_name.lower():
             style = QStyleFactory.create(style_name)
             if style is not None:
                 self._app.setStyle(style)
-        scale = getattr(appearance, "font_scale", 1.0) or 1.0
-        font = self._app.font()
-        font.setPointSizeF(max(1.0, self._base_point_size * float(scale)))
+        scale = float(getattr(appearance, "font_scale", 1.0) or 1.0)
+        font = QFont(self._base_font)
+        family = getattr(appearance, "font_family", None)
+        if family:
+            font.setFamily(str(family))
+        size = getattr(appearance, "font_point_size", None)
+        base = float(size) if size else self._base_point_size
+        font.setPointSizeF(max(1.0, base * scale))
         self._app.setFont(font)
+
+    def _dress(self, view_id: str, appearance: object, *, first: bool) -> None:
+        """The window title, and its size clamped to the profile's screen (UX-PREV-001)."""
+        view = self._views.get(view_id)
+        if view is None:
+            return
+        title = getattr(appearance, "title", None)
+        if title:
+            view.widget.setWindowTitle(str(title))
+        width = getattr(appearance, "screen_width", None)
+        height = getattr(appearance, "screen_height", None)
+        zoom = float(getattr(appearance, "scale", 1.0) or 1.0)
+        screen = (int(width), int(height), zoom) if width and height else ()
+        if screen == view.screen and not first:
+            return
+        view.screen = screen
+        natural_width, natural_height = view.natural
+        if screen:
+            natural_width = min(natural_width, max(1, int(screen[0] / zoom)))
+            natural_height = min(natural_height, max(1, int(screen[1] / zoom)))
+        view.widget.resize(natural_width, natural_height)
+
+    def _look(self, view_id: str) -> Dict[str, object]:
+        """What the editor shows back: the styles this runtime has, and how the window came out."""
+        view = self._views.get(view_id)
+        look: Dict[str, object] = {"styles": list(QStyleFactory.keys()), "style": self._app.style().objectName()}
+        if view is not None:
+            look["title"] = view.widget.windowTitle()
+            look["size"] = [view.widget.width(), view.widget.height()]
+            look["font"] = self._app.font().family()
+        return look
+
+    def close_window_of(self, widget: QWidget) -> bool:
+        """Close the preview window that holds ``widget`` (Esc). False when it is not one of ours."""
+        top = widget.window()
+        for view in self._views.values():
+            if view.widget is top:
+                top.close()
+                return True
+        return False
+
+    def window_closed(self, widget: QWidget) -> None:
+        """A preview window was closed by the user: forget it and tell the editor."""
+        for view_id, view in list(self._views.items()):
+            if view.widget is widget:
+                self._views.pop(view_id)
+                widget.deleteLater()
+                self._last_view_change = time.monotonic()
+                self._writer.send(ViewClosed(view_id=view_id, reason="user"))
+                return
 
     def _widget_error(self, view_id: str, class_name: str, error: BaseException) -> ErrorReport:
         return ErrorReport(

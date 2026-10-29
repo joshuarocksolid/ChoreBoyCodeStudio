@@ -37,13 +37,24 @@ class Appearance:
     """``palette``: ``"runtime"`` (Fusion standard palette; the default) or a
     ``values.value_to_json`` palette. ``style``: Qt style key, default ``Fusion``.
     ``scale``: zoom for screenshots only. ``font_scale``: S/M/L text-size preview
-    as a multiplier. ``device_profile``: M5.5a profile name or None."""
+    as a multiplier. ``device_profile``: M5.5a profile name or None.
+
+    M5.5a added optional fields (no version bump; receivers ignore unknown
+    ones): ``title`` is the window title; ``font_family`` and ``font_point_size``
+    are the screen profile's font (None keeps the runtime font);
+    ``screen_width`` and ``screen_height`` are the profile's screen in device
+    pixels, which the window size is clamped to (divided by ``scale``)."""
 
     palette: object = "runtime"
     style: str = "Fusion"
     scale: float = 1.0
     font_scale: float = 1.0
     device_profile: Optional[str] = None
+    title: Optional[str] = None
+    font_family: Optional[str] = None
+    font_point_size: Optional[float] = None
+    screen_width: Optional[int] = None
+    screen_height: Optional[int] = None
 
 
 @dataclass(frozen=True)

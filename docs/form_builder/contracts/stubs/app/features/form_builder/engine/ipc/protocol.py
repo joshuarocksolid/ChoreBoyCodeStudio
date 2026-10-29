@@ -46,6 +46,11 @@ class Appearance:
     scale: float = 1.0
     font_scale: float = 1.0
     device_profile: Optional[str] = None
+    title: Optional[str] = None
+    font_family: Optional[str] = None
+    font_point_size: Optional[float] = None
+    screen_width: Optional[int] = None
+    screen_height: Optional[int] = None
 
 
 @dataclass(frozen=True)

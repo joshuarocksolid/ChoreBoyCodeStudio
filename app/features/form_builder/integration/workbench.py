@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
 from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
 from app.qt.QtWidgets import (
+    QActionGroup,
     QApplication,
     QPlainTextEdit,
     QFrame,
@@ -530,6 +531,32 @@ class FormToolbar(QWidget):
         delayed = getattr(getattr(QToolButton, "ToolButtonPopupMode", QToolButton), "DelayedPopup")
         self.two_widths.setPopupMode(delayed)
 
+    def attach_preview_options(self, control: object, on_preview: Callable[[], None]) -> None:
+        """Style and Screen in the Aa menu (UX-PREV-001, R3 178 and 179), and the Preview button (UX-WB-003).
+
+        Both submenus start with the caption that says the canvas never changes (D21). They are
+        rebuilt each time the menu opens, so the styles the preview runtime reported and the
+        user's screens are always current.
+        """
+        menu = self.text_size.menu()
+        if menu is None:
+            return
+        self.preview.setEnabled(True)
+        self.preview.setToolTip("Preview (Ctrl+Shift+R)")
+        self.preview.setAccessibleName("Preview")
+        self.preview.clicked.connect(lambda _checked=False: on_preview())
+        style_menu = menu.addMenu("Style")
+        style_menu.setObjectName("formBuilder.previewStyleMenu")
+        screen_menu = menu.addMenu("Screen")
+        screen_menu.setObjectName("formBuilder.previewScreenMenu")
+
+        def rebuild() -> None:
+            _fill_style_menu(style_menu, control)
+            _fill_screen_menu(screen_menu, control)
+
+        menu.aboutToShow.connect(rebuild)
+        rebuild()
+
     def set_compact(self, compact: bool) -> None:
         self.tab_order.setText("" if compact else "Tab order")
         self.buddies.setText("" if compact else "Buddies")
@@ -617,6 +644,46 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
             "QLabel#formBuilder\\.saveState { color: %s; background: transparent; border: none; }" % faint,
         )
     )
+
+
+def _fill_style_menu(menu: QMenu, control: Any) -> None:
+    """Fusion first (checked by default), then every style the preview runtime reports."""
+    from app.features.form_builder.integration.preview_options import CAPTION, style_label
+
+    menu.clear()
+    menu.addSection(CAPTION)
+    group = QActionGroup(menu)
+    group.setExclusive(True)
+    chosen = control.choices.style.lower()
+    for name in control.styles():
+        action = menu.addAction(style_label(name))
+        action.setCheckable(True)
+        action.setChecked(name.lower() == chosen)
+        action.setObjectName("formBuilder.previewStyle.%s" % name)
+        group.addAction(action)
+        action.triggered.connect(lambda _checked=False, value=name: control.set_style(value))
+
+
+def _fill_screen_menu(menu: QMenu, control: Any) -> None:
+    """The built-in and the user's screens, then Add a screen\u2026."""
+    from app.features.form_builder.integration.preview_options import ADD_SCREEN, CAPTION
+
+    menu.clear()
+    menu.addSection(CAPTION)
+    group = QActionGroup(menu)
+    group.setExclusive(True)
+    chosen = control.current_profile().name
+    for profile in control.profiles:
+        action = menu.addAction(profile.label)
+        action.setCheckable(True)
+        action.setChecked(profile.name == chosen)
+        action.setObjectName("formBuilder.previewScreen.%s" % profile.name)
+        group.addAction(action)
+        action.triggered.connect(lambda _checked=False, value=profile.name: control.set_screen(value))
+    menu.addSeparator()
+    add = menu.addAction(ADD_SCREEN)
+    add.setObjectName("formBuilder.previewScreenAdd")
+    add.triggered.connect(lambda _checked=False: control.add_screen_dialog())
 
 
 class OutlinePane(QWidget):
@@ -2607,6 +2674,9 @@ class FormWorkbench(QWidget):
         self._place_under()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
+        code_view = getattr(self, "code_view", None)
+        if code_view is not None:
+            code_view.apply_theme(tokens)
         self.outline.set_hover_fill(tokens.tree_hover_bg)
         self.outline.set_drop_color(tokens.accent)
         self.outline.apply_colors(tokens)
