@@ -149,6 +149,8 @@ def test_builder_pairs_include_neutral_gray_and_the_page_title(qapp) -> None:  #
             ("alignment segment", chrome_for(tokens).text, chrome_for(tokens).input, text_floor),
             ("checked alignment segment", chrome_for(tokens).text, chrome_for(tokens).selected, text_floor),
             ("checked segment border", chrome_for(tokens).accent, chrome_for(tokens).selected, 3.0),
+            ("go to widget detail", chrome_for(tokens).muted, chrome_for(tokens).panel, text_floor),
+            ("go to widget detail, selected row", chrome_for(tokens).muted, chrome_for(tokens).selected, 4.5),
             ("why paragraph", chrome_for(tokens).muted, chrome_for(tokens).row_hover, text_floor),
             ("outlined size segment", chrome_for(tokens).accent, chrome_for(tokens).input, 3.0),
             (

@@ -931,3 +931,51 @@ def test_insert_rail_opens_the_short_drawer(qapp, tmp_path: Path) -> None:  # ty
     assert "QPushButton" in kind.text()
     surface.release()
     host.close()
+
+
+def test_go_to_widget_picker_selects_a_widget_and_closes(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.qt.QtCore import Qt as _Qt
+    from app.qt.QtTest import QTest
+
+    text = _FORM.replace(
+        "  </layout>",
+        '   <item><widget class="QLineEdit" name="nameEdit"><property name="placeholderText"><string>Your name</string></property></widget></item>\n  </layout>',
+        1,
+    )
+    out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)
+    out.mkdir(parents=True, exist_ok=True)
+    host = QWidget()
+    surface = _open(host, text, tmp_path / "pick.ui")
+    host.resize(900, 600)
+    surface.resize(900, 600)
+    host.show()
+    surface.show()
+    qapp.processEvents()
+    try:
+        for mode in ("light", "high_contrast_dark"):
+            surface.apply_theme(tokens_from_palette(qapp.palette(), force_mode=mode))
+            assert surface.go_to_widget()
+            picker = surface.findChild(QFrame, "formBuilder.goToWidget")
+            assert picker is not None and picker.isVisible()
+            search = picker.findChild(QLineEdit, "formBuilder.goToWidgetSearch")
+            assert search is not None
+            picker.grab().save(str(out / ("go-to-widget-%s-all.png" % mode)))
+            QTest.keyClicks(search, "edit")
+            assert picker.names() == ["nameEdit"]  # type: ignore[attr-defined]
+            picker.grab().save(str(out / ("go-to-widget-%s-filtered.png" % mode)))
+            search.clear()
+            QTest.keyClick(search, _Qt.Key.Key_Down)
+            QTest.keyClick(search, _Qt.Key.Key_Return)
+            qapp.processEvents()
+            assert surface.session.selection.state.current is not None
+            node = surface.session.document.get(surface.session.selection.state.current)
+            assert getattr(node, "object_name", "") == "okButton"
+            surface.go_to_widget()
+            again = surface.findChild(QFrame, "formBuilder.goToWidget")
+            assert again is not None
+            QTest.keyClick(again.findChild(QLineEdit, "formBuilder.goToWidgetSearch"), _Qt.Key.Key_Escape)
+            qapp.processEvents()
+            assert surface.findChild(QFrame, "formBuilder.goToWidget") is None
+    finally:
+        surface.release()
+        host.close()

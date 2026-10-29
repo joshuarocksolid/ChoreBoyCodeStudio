@@ -1666,7 +1666,7 @@ Each part is written only when set; each set part has its own ↺ in the popover
 
 **UX-ITEM-008** `M4.4` `[S]` Model-based views (List, Tree, Table and Column view, Undo view) have no items in the file. Enter or double-click on one says, in the status bar: "This view gets its rows from your code. To type rows here, change it to a list widget (Change to)." No popover opens.
 
-**UX-ITEM-009** `M4.4` `[S]` The outline's text column shows the first items for item widgets ("Combo box “Small, Medium, …”"), and the canvas signature check covers tree item texts (ticket M4b), so a realize patch that drops a tree item is caught.
+**UX-ITEM-009** `M4.4` `[S]` The outline's text column shows the first two items for item widgets, without the class word so it fits a narrow outline ("size “Small, Medium, …”"), and the canvas signature check covers tree item texts (ticket M4b), so a realize patch that drops a tree item is caught.
 
 #### 13.1.6 Copy tables
 

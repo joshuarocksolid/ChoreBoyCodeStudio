@@ -83,6 +83,10 @@ class SymbolNavigationWorkflow:
 
     def handle_goto_symbol_in_file_action(self) -> None:
         parent = self._host.dialog_parent()
+        # A feature tab (the form builder) can claim the key for its own picker.
+        claim = getattr(parent, "_form_builder_go_to_widget", None)
+        if callable(claim) and claim():
+            return
         editor_manager = self._host.editor_manager()
         active_tab = editor_manager.active_tab()
         if active_tab is None:
