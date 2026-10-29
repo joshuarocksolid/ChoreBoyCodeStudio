@@ -258,9 +258,11 @@ def _blank(root_class: str):
 
 def _main_window(class_name: str) -> str:
     inner = (
+        '  <widget class="QMenuBar" name="menubar"/>\n'
         '  <widget class="QWidget" name="centralwidget">\n'
         '   <layout class="QVBoxLayout" name="verticalLayout"/>\n'
         "  </widget>\n"
+        '  <widget class="QStatusBar" name="statusbar"/>\n'
     )
     return form_document(class_name, "QMainWindow", inner)
 
