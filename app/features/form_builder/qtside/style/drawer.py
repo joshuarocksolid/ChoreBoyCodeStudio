@@ -31,7 +31,7 @@ from app.features.form_builder.engine.style.sheet import Sheet
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.style import insert as insert_text
-from app.features.form_builder.qtside.style.tokens import ok_color
+from app.features.form_builder.qtside.theme.style_tokens import INSERT_COLOUR, ok_color
 from app.features.form_builder.qtside.style.verdict import check_text
 from app.features.form_builder.qtside.theme.chrome import FormChrome, default_chrome
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
@@ -595,7 +595,7 @@ class StyleDrawer(QFrame):
         text = self._editor.toPlainText()
         cursor = self._editor.textCursor()
         span = insert_text.colour_span_at(text, cursor.position()) if not cursor.hasSelection() else None
-        start = text[span[0] : span[1]] if span else "#1A7F37"
+        start = text[span[0] : span[1]] if span else INSERT_COLOUR
         chosen = ask_colour(self, self.chrome(), start)
         if not chosen:
             return

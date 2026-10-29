@@ -169,6 +169,6 @@ class _Controller:
             self._workbench.canvas.setFocus()
 
     def _pick_picture(self, parent: QWidget) -> str:
-        from app.features.form_builder.integration.workbench_ext._style_picture import pick_picture
+        from app.features.form_builder.qtside.style.picture import pick_picture
 
         return pick_picture(self._session, self._chrome(), parent)

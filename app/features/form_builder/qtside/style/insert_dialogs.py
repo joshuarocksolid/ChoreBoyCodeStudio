@@ -8,6 +8,7 @@ from app.features.form_builder.engine.style.colors import hex_text, parse_color
 from app.features.form_builder.engine.ui4.values import ColorValue
 from app.features.form_builder.qtside.style import insert as insert_text
 from app.features.form_builder.qtside.theme.chrome import FormChrome
+from app.features.form_builder.qtside.theme.style_tokens import GRADIENT_FIRST, GRADIENT_SECOND, INSERT_COLOUR
 from app.features.form_builder.qtside.visual.color_picker import ColorPicker
 from app.qt.QtWidgets import (
     QDialog,
@@ -41,17 +42,17 @@ class _ColourDialog(QDialog):
         self.chosen = hex_text(color.red, color.green, color.blue)
 
 
-def ask_colour(parent: Optional[QWidget], chrome: FormChrome, start: str = "#1A7F37") -> str:
+def ask_colour(parent: Optional[QWidget], chrome: FormChrome, start: str = INSERT_COLOUR) -> str:
     dialog = _ColourDialog(parent, chrome, "Colour", start)
     return dialog.chosen if dialog.exec() else ""
 
 
 def ask_gradient(parent: Optional[QWidget], chrome: FormChrome) -> str:
     """Two colours, top to bottom (or left to right)."""
-    first = _ColourDialog(parent, chrome, "Gradient: first colour", "#FFFFFF")
+    first = _ColourDialog(parent, chrome, "Gradient: first colour", GRADIENT_FIRST)
     if not first.exec():
         return ""
-    second = _ColourDialog(parent, chrome, "Gradient: second colour", "#1A7F37")
+    second = _ColourDialog(parent, chrome, "Gradient: second colour", GRADIENT_SECOND)
     if not second.exec():
         return ""
     return insert_text.gradient_text(first.chosen, second.chosen)

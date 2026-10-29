@@ -1,6 +1,6 @@
 """Edits to the text of a style sheet that keep everything else as typed (UX-STYLE-010). Qt-free.
 
-The Text colour row writes ``color: #RRGGBB;``: into the widget's own sheet
+The Text colour row writes a ``color`` declaration: into the widget's own sheet
 when that sheet is empty or holds only declarations, and into a
 ``#objectName { ... }`` rule when the sheet has rules. Every function returns
 new text; a sheet Qt cannot read is refused (``StyleEditRefused``) so the row
@@ -153,7 +153,7 @@ def _line_span(text: str, start: int, end: int) -> Tuple[int, int]:
 
 
 def rename_selectors(text: str, mapping: Mapping[str, str]) -> str:
-    """Rewrite ``#old`` to ``#new`` in every selector (never in a value such as ``#fff``)."""
+    """Rewrite ``#old`` to ``#new`` in every selector (never in a colour value)."""
     if not any("#" + old in text for old in mapping):
         return text
     sheet = parse_sheet(text)

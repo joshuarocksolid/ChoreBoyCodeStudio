@@ -3,7 +3,7 @@
 The Text colour row writes ``#okButton { color: ... }`` into a sheet that has
 rules. When ``okButton`` is renamed, every ``#okButton`` in a selector of any
 style sheet in the form becomes ``#newName`` in the same undo step. A hex
-colour in a value (``#fff``) is never touched.
+colour in a value is never touched.
 """
 
 from __future__ import annotations

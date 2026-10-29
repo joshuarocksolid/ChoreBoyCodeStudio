@@ -1,7 +1,7 @@
 """Font editor registration. The popover lives in ``qtside.visual``.
 
 The summary gains the Text colour swatch when the widget's own style sheet sets
-one (UX-STYLE-011): "Sans Serif, 14 pt, Bold · ■ #1A7F37".
+one (UX-STYLE-011): "Sans Serif, 14 pt, Bold, then a square and the colour as hex".
 """
 
 from __future__ import annotations

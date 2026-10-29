@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportOptionalSubscript=false
 """FB033 and FB034: a sheet Qt can't read, a rule that matches nothing, and the Edit style sheet button."""
 
 from __future__ import annotations
