@@ -235,6 +235,22 @@ def test_pixmap_from_a_resource_round_trips(qapp: QApplication, tmp_path: Path, 
         assert status == "ok", (interesting, count)
 
 
+def test_the_label_picture_row_is_called_picture(qapp: QApplication, tmp_path: Path) -> None:
+    _seed(tmp_path, ("save.png",))
+    window, pane, session, realizer = _pane(qapp, _form(), str(tmp_path / "form.ui"))
+    try:
+        _select(session, "photo")
+        pane.flush()
+        summary = _open_row(pane, "formBuilder.row.pixmap", qapp)
+        popover = summary.window().findChild(QWidget, "formBuilder.rowPopover")
+        assert popover is not None
+        title = popover.findChild(QLabel, "formBuilder.popoverTitle")
+        assert title is not None and title.text() == "Picture"
+        assert summary.accessibleName().startswith("Picture")
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def test_pixmap_from_a_file_warns_and_esc_reverts(qapp: QApplication, tmp_path: Path) -> None:
     _seed(tmp_path, ("save.png",))
     outside = tmp_path / "side.png"
