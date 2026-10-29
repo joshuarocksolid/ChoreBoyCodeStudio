@@ -29,6 +29,8 @@ class PaintItem:
     opens: bool = False
     current: bool = False
     selected: bool = False
+    #: The menu or toolbar this box belongs to. Zero when the item is not a host.
+    host: int = 0
 
 
 @dataclass(frozen=True)

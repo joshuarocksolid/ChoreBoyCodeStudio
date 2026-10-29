@@ -15,7 +15,9 @@ from app.features.form_builder.engine.query.drop_target import (
     DropTarget,
     PayloadKind,
     blocked_ids,
+    cover_parts,
     hosts_from,
+    painted_parts,
     resolve_drop,
 )
 from app.features.form_builder.engine.query.hit_index import HitIndex, Rect
@@ -63,6 +65,7 @@ def resolve_at(
     else:
         geometry = _rects(doc, index)
         host = _tree(doc, index, geometry)
+    host = cover_parts(host, painted_parts(id(doc)))
     factor = float(getattr(index, "screen_factor", 1.0) or 1.0)
     target = resolve_drop(
         host,
