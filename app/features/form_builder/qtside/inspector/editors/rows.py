@@ -30,7 +30,8 @@ _ROWS: Tuple[RowSpec, ...] = (
         "Faint text shown while the field is empty.",
         Prop("placeholderText"),
     ),
-    RowSpec("title", _CONTENT, "Title", "The caption on the box's border.", Prop("title")),
+    # A menu has its own Title row (rows_actions.py); two would list it twice.
+    RowSpec("title", _CONTENT, "Title", "The caption on the box's border.", Prop("title"), exclude_classes=("QMenu",)),
     RowSpec(
         "checked",
         _CONTENT,

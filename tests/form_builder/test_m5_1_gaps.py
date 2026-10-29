@@ -13,7 +13,6 @@ from tests.form_builder.qtside.support import open_session
 pytestmark = pytest.mark.unit
 
 
-@pytest.mark.xfail(strict=True, reason="UX-MAIN-012: the inspector shows an action. Owner: qtside/inspector/model.py (no M5 lane owns it).")
 def test_the_inspector_accepts_an_action_as_an_owner() -> None:
     session = open_session(build_template_ui("main_window", "shop_window"))
     action = session.log.execute(NewAction("Open")).result
