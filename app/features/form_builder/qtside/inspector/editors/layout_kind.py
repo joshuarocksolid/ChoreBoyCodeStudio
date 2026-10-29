@@ -39,6 +39,7 @@ from app.features.form_builder.qtside.inspector.api import (
 from app.features.form_builder.qtside.layout_gestures import ask, measure, perform
 from app.qt.QtCore import QPoint, QRect, QSize, Qt
 from app.qt.QtGui import QPainter, QPaintEvent, QPalette
+from app.qt.qt_compat import delete_now
 from app.qt.QtWidgets import QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout, QWidget
 
 _LAYOUT = GroupId.LAYOUT
@@ -159,7 +160,9 @@ class LayoutBody:
     def _drop(self, widget: QWidget) -> None:
         widget.hide()
         self._column.removeWidget(widget)
-        widget.deleteLater()
+        # Now, not deleteLater: until Qt deletes the row, PySide keeps the wrappers
+        # of its layout items, and they go stale once it does.
+        delete_now(widget)
 
     def _paint_edges(self) -> None:
         self._edges.setVisible(_root_layout_selected(self._host))
