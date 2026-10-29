@@ -26,8 +26,18 @@ class _Host(QWidget):
         self.calls.append(ui_path)
         return self.message
 
+    def _form_builder_add_pictures(self, ui_path: str) -> str:
+        self.calls.append("pictures:" + ui_path)
+        return self.message
 
-def test_save_the_form_now_drops_the_stale_issue(qapp) -> None:  # type: ignore[no-untyped-def]
+
+@pytest.mark.parametrize(
+    ("fix_action", "fix_label", "call_prefix"),
+    [("save_form", "Save the form now", ""), ("add_pictures", "Add to project pictures", "pictures:")],
+)
+def test_the_fix_button_runs_its_action_and_drops_the_issue(  # type: ignore[no-untyped-def]
+    qapp, fix_action: str, fix_label: str, call_prefix: str
+) -> None:
     host = _Host()
     tokens = tokens_from_palette(qapp.palette(), force_mode="light")
     ui_path = "/tmp/project/forms/invoice.ui"
@@ -44,8 +54,8 @@ def test_save_the_form_now_drops_the_stale_issue(qapp) -> None:  # type: ignore[
                 next_steps=["Save the form now"],
                 evidence={
                     "ui_path": ui_path,
-                    "fix_action": "save_form",
-                    "fix_label": "Save the form now",
+                    "fix_action": fix_action,
+                    "fix_label": fix_label,
                     "source_file": "forms/invoice.ui",
                     "report_row": "ui_invoice.py is older than invoice.ui.",
                 },
@@ -63,10 +73,10 @@ def test_save_the_form_now_drops_the_stale_issue(qapp) -> None:  # type: ignore[
     button = dialog.findChild(QPushButton, "shell.runtimeCenterDialog.saveFormButton")
     assert button is not None
     assert not button.isHidden()
-    assert button.text() == "Save the form now"
+    assert button.text() == fix_label
     button.click()
     qapp.processEvents()
-    assert host.calls == [ui_path]
+    assert host.calls == [call_prefix + ui_path]
     assert dialog.issue_list.count() == 0
     assert host._latest_package_issue_report is not None
     assert host._latest_package_issue_report.issues == []

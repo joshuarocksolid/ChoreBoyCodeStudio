@@ -23,11 +23,16 @@ from app.features.form_builder.engine.project.fs import (
     inside_project,
     relative_posix,
 )
-from app.features.form_builder.engine.project.save import resource_destination, write_generated
+from app.features.form_builder.engine.project.picture_checks import raw_picture_message
+from app.features.form_builder.engine.project.pictures import raw_pictures
+from app.features.form_builder.engine.project.save import (
+    project_ui_files,
+    resource_destination,
+    write_generated,
+)
 from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
 
 CONNECTIONS_FILENAME = "cbcs_connections.py"
-_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git", "vendor", "node_modules"})
 
 FileRole = str
 FileState = str
@@ -79,16 +84,60 @@ def save_form_now(
     return write_generated(scope, document, ui_bytes, files)
 
 
+def adopt_pictures_now(
+    project_root: str,
+    ui_path: str,
+    fs: Optional[OsFileSystem] = None,
+) -> Tuple[int, str]:
+    """The packaging fix for FB031 (UX-RES-005): add each file-path picture of one form to the project's
+    pictures, point the property at it, write the ``.ui`` and regenerate its Python.
+
+    Returns ``(pictures fixed, sentence)``; the sentence is ``""`` when every file-path picture was fixed,
+    else the reason the first one was not. Nothing is changed for a picture whose file is missing.
+    """
+    from app.features.form_builder.engine.project.fs import ProjectOpError
+    from app.features.form_builder.engine.project.picture_adopt import adopt_raw_picture
+    from app.features.form_builder.engine.session import FormSession
+    from app.features.form_builder.engine.ui4.writer import write_ui
+
+    files = fs if fs is not None else OsFileSystem()
+    root = os.path.abspath(project_root)
+    text = files.read_text(ui_path)
+    session = FormSession.open(text, path=ui_path, scope=scope_for(ui_path, root, files))
+    fixed = 0
+    reason = ""
+    tried = set()
+    try:
+        while True:
+            pending = [
+                item
+                for item in raw_pictures(session.document)
+                if (item.node_id, item.property_name, item.state) not in tried
+            ]
+            if not pending:
+                break
+            item = pending[0]
+            tried.add((item.node_id, item.property_name, item.state))
+            try:
+                plan = adopt_raw_picture(session.document, ui_path, root, item, files)
+            except ProjectOpError as exc:
+                reason = reason or str(exc)
+                continue
+            with session.log.transaction(plan.label) as txn:
+                for command in plan.commands:
+                    txn.execute(command)
+            fixed += 1
+        if fixed:
+            files.write_text(ui_path, write_ui(session.document).text)
+    finally:
+        session.dispose()
+    if fixed:
+        save_form_now(root, ui_path, files)
+    return fixed, reason
+
+
 def _ui_files(root: str) -> List[str]:
-    found: List[str] = []
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = sorted(
-            name for name in dirnames if name not in _SKIP_DIRS and not name.startswith(".")
-        )
-        for name in sorted(filenames):
-            if name.endswith(".ui"):
-                found.append(os.path.join(dirpath, name))
-    return found
+    return list(project_ui_files(root))
 
 
 def _rows_for_form(
@@ -129,7 +178,25 @@ def _rows_for_form(
             fs,
         )
     )
+    rows.extend(_picture_rows(document, ui_rel))
     return rows, mentions
+
+
+def _picture_rows(document: object, ui_rel: str) -> List[GeneratedFile]:
+    """A packaging error for each pixmap or icon that stores a file path (UX-RES-005)."""
+    rows: List[GeneratedFile] = []
+    for item in raw_pictures(document):
+        name = item.object_name or "A widget"
+        rows.append(
+            GeneratedFile(
+                relative_path=item.path,
+                role="picture",
+                state="raw_path",
+                source_relative=ui_rel,
+                message=raw_picture_message(name, item.path),
+            )
+        )
+    return rows
 
 
 def _module_row(

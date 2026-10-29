@@ -58,7 +58,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     from app.features.form_builder.engine.shell_commands import shortcut_rows
     from app.features.form_builder.integration.keys_ext import extra_shortcut_rows
     from app.features.form_builder.integration.form_menu import register_form_menu
-    from app.packaging.form_files import save_packaged_form
+    from app.packaging.form_files import add_packaged_pictures, save_packaged_form
     from app.shell.shell_composition_context import bind_private_attrs
     from app.shell.shortcut_preferences import ShortcutCommand, register_shortcut_commands
 
@@ -70,6 +70,13 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         if not root:
             return "Open a project before saving the form."
         return save_packaged_form(str(root), ui_path)
+
+    def add_pictures(ui_path: str) -> str:
+        project = getattr(window, "_loaded_project", None)
+        root = getattr(project, "project_root", None)
+        if not root:
+            return "Open a project before adding pictures."
+        return add_packaged_pictures(str(root), ui_path)
 
     def adopt(ui_path: str) -> None:
         adopt_from_tree(window, ui_path)
@@ -98,6 +105,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         window,
         {
             "_form_builder_save_form": save_form,
+            "_form_builder_add_pictures": add_pictures,
             "_form_builder_adopt_form": adopt,
             "_form_builder_go_to_widget": go_to_widget,
             "_form_builder_start_entries": START_ENTRIES,

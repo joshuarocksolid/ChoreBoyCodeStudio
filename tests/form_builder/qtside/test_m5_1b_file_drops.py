@@ -47,9 +47,9 @@ def test_a_dropped_file_reaches_the_registered_handler_with_the_node_under_the_p
         host.said.clear()
         drop()  # no handler: ignored
         assert host.said == []
-        remove = file_drops.register_file_drop(lambda target, paths: seen.append((target, paths)) or "Added logo.png")
+        remove = file_drops.register_file_drop(lambda owner, target, paths: seen.append((owner, target, paths)) or "Added logo.png")
         drop()
-        assert seen and seen[0][1] == ("/tmp/logo.png",) and host.said == ["Added logo.png"]
+        assert seen and seen[0][0] is session and seen[0][2] == ("/tmp/logo.png",) and host.said == ["Added logo.png"]
         remove()
         drop()
         assert len(seen) == 1
@@ -58,10 +58,10 @@ def test_a_dropped_file_reaches_the_registered_handler_with_the_node_under_the_p
 
 
 def test_a_handler_that_does_not_know_the_files_lets_the_next_one_answer() -> None:
-    remove_a = file_drops.register_file_drop(lambda target, paths: None)
-    remove_b = file_drops.register_file_drop(lambda target, paths: "second")
+    remove_a = file_drops.register_file_drop(lambda owner, target, paths: None)
+    remove_b = file_drops.register_file_drop(lambda owner, target, paths: "second")
     try:
-        assert file_drops.dispatch(1, ("/x",)) == "second"  # type: ignore[arg-type]
+        assert file_drops.dispatch(object(), 1, ("/x",)) == "second"  # type: ignore[arg-type]
     finally:
         remove_a()
         remove_b()
