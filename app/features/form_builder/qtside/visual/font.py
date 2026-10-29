@@ -445,7 +445,8 @@ class FontEditor:
             self._size.setValue(font.pointsize or app_point_size())
             self._size.blockSignals(False)
         for key, button in self._toggles.items():
-            button.setChecked(bool(getattr(font, key)))
+            own = getattr(font, key)
+            button.setChecked(self._inherited(key) if own is None else bool(own))
         self._select(self._weight, font.fontweight or "")
         if self._kerning is not None:
             self._kerning.blockSignals(True)
@@ -485,9 +486,25 @@ class FontEditor:
         self._font = replace(self._font, pointsize=int(number))
         self._commit()
 
+    def _inherited(self, name: str) -> bool:
+        """Whether a parent's font already sets ``name`` (bold, italic, ...) for this widget."""
+        try:
+            document = self._host.document()
+            owner = self._host.owner_ids()[0]
+            for ancestor in document.ancestors(owner):
+                value = document.node(ancestor).value("font")
+                if isinstance(value, FontValue) and getattr(value, name) is not None:
+                    return bool(getattr(value, name))
+        except (AttributeError, IndexError, KeyError, RuntimeError, TypeError):
+            pass
+        return False
+
     def _toggle(self, name: str) -> None:
+        # Match the parent's setting by writing nothing; differ from it by writing the opposite,
+        # so a bold parent's child can be made not bold.
         button = self._toggles[name]
-        self._font = replace(self._font, **{name: True if button.isChecked() else None})
+        wanted = button.isChecked()
+        self._font = replace(self._font, **{name: None if wanted == self._inherited(name) else wanted})
         self._commit()
 
     def _kerning_clicked(self, checked: bool) -> None:

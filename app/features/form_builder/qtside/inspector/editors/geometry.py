@@ -393,6 +393,9 @@ def _policy_caption(parent: QWidget, host: EditorHost) -> QLabel:
     return caption
 
 
+_WIDEST_TITLE = "Horizontal share"
+
+
 def _policy_block(parent: QWidget, title: str, combo: QWidget, caption: QLabel) -> QWidget:
     block = QWidget(parent)
     layout = QVBoxLayout(block)
@@ -408,7 +411,10 @@ def _labeled(parent: QWidget, title: str, field: QWidget) -> QWidget:
     layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 0, 0, 0)
     layout.setSpacing(6)
-    layout.addWidget(QLabel(title, row), 0)
+    label = QLabel(title, row)
+    # One label column for all four rows, as wide as the longest title.
+    label.setMinimumWidth(label.fontMetrics().horizontalAdvance(_WIDEST_TITLE) + 2)
+    layout.addWidget(label, 0)
     layout.addWidget(field, 1)
     return row
 

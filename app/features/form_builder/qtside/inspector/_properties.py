@@ -801,6 +801,8 @@ class _Row(QWidget):
         self._caption: Optional[QLabel] = None
         self._extra_caption: Optional[QWidget] = None
         self._label = QLabel(self)
+        self._elided_key: Optional[Tuple[str, int, str]] = None
+        self._elided_text = ""
         self._label.setWordWrap(False)
         self._label_col = QWidget(self)
         self._label_px = _LABEL_WIDE
@@ -1229,11 +1231,18 @@ class _Row(QWidget):
                 self._label.setText(full)
             self._label.setToolTip(_tip(view))
             return
-        mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
-        elided = self._label.fontMetrics().elidedText(full, mode, width)
+        # Measure only when the label text or its width changed.
+        key = (full, width, _tip(view))
+        if self._elided_key == key:
+            elided = self._elided_text
+        else:
+            mode = getattr(getattr(Qt, "TextElideMode", Qt), "ElideRight")
+            elided = self._label.fontMetrics().elidedText(full, mode, width)
+            self._elided_key = key
+            self._elided_text = elided
         if self._label.text() != elided:
             self._label.setText(elided)
-        tip = _tip(view)
+        tip = key[2]
         if elided != full:
             self._label.setToolTip(full if not tip or tip == full else "%s\n%s" % (full, tip))
         else:

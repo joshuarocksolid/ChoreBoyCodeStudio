@@ -246,6 +246,32 @@ def test_font_parts_round_trip_and_reset(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
+def test_bold_can_turn_off_a_parents_bold(qapp: QApplication) -> None:
+    text = _FORM.replace(
+        '<widget class="QWidget" name="Form">',
+        '<widget class="QWidget" name="Form">\n  <property name="font"><font><bold>true</bold></font></property>',
+        1,
+    )
+    window, pane, session, realizer = _pane(qapp, text)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.font", qapp)
+        bold = _widget("formBuilder.fontBold")
+        assert bold.isChecked(), "the parent's bold shows as on"
+        bold.click()
+        qapp.processEvents()
+        stored = session.document.node(session.document.by_name("title")[0]).prop("font")
+        assert stored is not None and isinstance(stored.value, FontValue)
+        assert stored.value.bold is False
+        bold.click()
+        qapp.processEvents()
+        stored = session.document.node(session.document.by_name("title")[0]).prop("font")
+        assert stored is not None and isinstance(stored.value, FontValue) and stored.value.bold is None
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 @pytest.mark.parity("R3-160")
 def test_colour_with_and_without_alpha_round_trips(qapp: QApplication) -> None:
     window, pane, session, realizer = _pane(qapp)
@@ -703,6 +729,35 @@ def test_palette_state_edit_writes_only_that_group(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
+def test_palette_disabled_state_is_reachable_with_arrow_keys(qapp: QApplication) -> None:
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.palette", qapp)
+        _widget("formBuilder.paletteStates").setChecked(True)
+        qapp.processEvents()
+        roles = _widget("formBuilder.paletteRoles")
+        roles.setFocus()
+        _press(roles, Qt.Key.Key_Right)
+        _press(roles, Qt.Key.Key_Right)
+        _press(roles, Qt.Key.Key_Return)
+        qapp.processEvents()
+        field = _widget("formBuilder.colorHex")
+        field.setText("#FF0000")
+        _press(field, Qt.Key.Key_Return)
+        qapp.processEvents()
+        _press(field, Qt.Key.Key_Escape)
+        qapp.processEvents()
+        _done(qapp)
+        stored = session.document.node(session.document.by_name("title")[0]).prop("palette")
+        assert stored is not None and isinstance(stored.value, PaletteValue)
+        assert [role.role for role in stored.value.disabled] == ["Window"]
+        assert stored.value.active == () and stored.value.inactive == ()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def test_gradient_type_change_writes_that_types_geometry_and_sorted_stops(qapp: QApplication) -> None:
     window, pane, session, realizer = _pane(qapp)
     try:
@@ -866,5 +921,26 @@ def test_popover_check_boxes_read_on_the_dark_popover(qapp: QApplication) -> Non
             light, deep = sorted((_luminance(ink), _luminance(panel)), reverse=True)
             assert (light + 0.05) / (deep + 0.05) >= 4.5, text
             _done(qapp)
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_an_open_popover_restyles_on_a_live_theme_switch(qapp: QApplication) -> None:
+    dark = chrome_from_values(
+        window="#1f2328", panel="#262c33", text="#e9ecef", muted="#adb5bd", faint="#8b949e",
+        border="#3d444d", accent="#4c8dff", row_hover="#2d333b", input_bg="#1f2328",
+        error="#ff6b6b", focus_width=1,
+    )
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.font", qapp)
+        popover = _widget("formBuilder.rowPopover")
+        assert dark.fb.popup not in popover.styleSheet()
+        pane.apply_chrome(dark)
+        qapp.processEvents()
+        assert dark.fb.popup in popover.styleSheet()
+        _done(qapp)
     finally:
         _close(window, pane, realizer, session, qapp)

@@ -193,16 +193,26 @@ class PictureGrid(QWidget):
     def move_by(self, dx: int, dy: int) -> None:
         if not self._cells:
             return
-        columns = max(1, max(self.width(), _CELL_W) // _CELL_W)
         index = 0 if self._selected < 0 else self._selected
         if dx:
-            index += dx
-        if dy:
-            index += dy * columns
-        self._selected = max(0, min(len(self._cells) - 1, index))
+            index = max(0, min(len(self._cells) - 1, index + dx))
+        if dy and self._selected >= 0:
+            index = self._row_neighbour(index, dy)
+        self._selected = index
         self._describe()
         self._reveal()
         self.update()
+
+    def _row_neighbour(self, index: int, dy: int) -> int:
+        """The cell one painted row up or down, nearest in column. Group headers break rows,
+        so index arithmetic would land beside the wrong cell after the first group."""
+        here = self._cells[index]
+        rows = sorted({slot.y for slot in self._cells})
+        at = rows.index(here.y) + (1 if dy > 0 else -1)
+        if at < 0 or at >= len(rows):
+            return index
+        row = [slot for slot in self._cells if slot.y == rows[at]]
+        return min(row, key=lambda slot: abs(slot.x - here.x)).cell_index
 
     def select_path(self, stored: str) -> None:
         for slot in self._cells:
@@ -271,6 +281,20 @@ class PictureGrid(QWidget):
     def _describe(self) -> None:
         picture = self.selected_picture()
         self.setAccessibleDescription("" if picture is None else picture.resource_path)
+        # The cells are painted, so the grid speaks for the current one: its file and place.
+        if picture is None:
+            self.setAccessibleName("Picture: pictures")
+        else:
+            self.setAccessibleName(
+                "Picture: %s, %d of %d" % (picture.file_name, self._selected + 1, len(self._cells))
+            )
+        try:
+            from app.qt.QtGui import QAccessible, QAccessibleEvent
+
+            if QAccessible.isActive():
+                QAccessible.updateAccessibility(QAccessibleEvent(self, QAccessible.Event.NameChanged))
+        except (ImportError, AttributeError, TypeError, RuntimeError):
+            pass
 
     def paintEvent(self, event: QEvent) -> None:  # noqa: N802
         chrome = self._chrome

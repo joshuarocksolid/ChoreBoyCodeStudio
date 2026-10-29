@@ -327,7 +327,7 @@ class IconEditor(_PictureRow):
             body,
             self._host,
             self._pick,
-            on_close=popover.done,
+            on_close=self._picked_close,
             grid_height=180,
         )
         layout.addWidget(self._picker)
@@ -389,6 +389,13 @@ class IconEditor(_PictureRow):
         popover.open_popover()
         if self._picker is not None:
             self._picker.focus_first()
+
+    def _picked_close(self) -> None:
+        """Enter closes the popover after the Normal picture; a state picture keeps it open so Esc can revert."""
+        popover = self._popover
+        if popover is None or popover.closed or self._target != "normaloff":
+            return
+        popover.done()
 
     def _sync_open(self) -> None:
         theme = self._theme

@@ -64,6 +64,12 @@ class Swatch(QWidget):
         self._checker_a = QColor(255, 255, 255)
         self._checker_b = QColor(211, 216, 223)
         self._fill: Optional[QBrush] = None
+        self._mark: Optional[QColor] = None
+
+    def set_mark(self, color: Optional[str]) -> None:
+        """A 2 px ring in ``color`` (the keyboard's current swatch), or none."""
+        self._mark = QColor(color) if color else None
+        self.update()
 
     def set_tokens(self, chrome: FormChrome) -> None:
         tokens = chrome.fb
@@ -101,6 +107,9 @@ class Swatch(QWidget):
         painter.drawRect(rect)
         if self._mixed:
             painter.drawLine(rect.topLeft(), rect.bottomRight())
+        if self._mark is not None:
+            painter.setPen(QPen(self._mark, 2))
+            painter.drawRect(self.rect().adjusted(1, 1, -1, -1))
         painter.end()
 
 

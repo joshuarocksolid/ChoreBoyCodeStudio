@@ -22,7 +22,7 @@ the summary button, whatever closed it.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, List, Optional, Tuple
 
 from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt, QTimer
 from app.features.form_builder.qtside.theme.chrome import apply_level2_shadow, control_qss
@@ -48,6 +48,7 @@ from app.qt.qt_compat import event_global_pos, wrapper_is_valid
 
 if TYPE_CHECKING:
     from app.features.form_builder.qtside.inspector.api import EditorHost, EditSession
+    from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 #: UX-PED-003 widths: the inspector content width, clamped; large editors 320-480 and grow left.
 MIN_WIDTH = 236
@@ -116,6 +117,8 @@ class SummaryButton(QPushButton):
         self._row_label = row_label
         self._full = ""
         self._opener: Optional[Callable[[], None]] = None
+        self._elided_for: Optional[Tuple[str, int]] = None
+        self._named_for: Optional[Tuple[str, str]] = None
         self.setMinimumWidth(0)
         self.clicked.connect(self._open)
         self.set_summary("")
@@ -129,10 +132,16 @@ class SummaryButton(QPushButton):
         self._name()
 
     def set_summary(self, text: str) -> None:
-        self._full = text
-        self.setToolTip(text)
+        if text != self._full or self._elided_for is None:
+            self._full = text
+            self.setToolTip(text)
         self._elide()
         self._name()
+
+    def changeEvent(self, event: QEvent) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() in (_event("FontChange"), _event("StyleChange")):
+            self._elided_for = None
 
     def set_opener(self, opener: Optional[Callable[[], None]]) -> None:
         self._opener = opener
@@ -158,11 +167,18 @@ class SummaryButton(QPushButton):
 
     def _elide(self) -> None:
         available = max(0, self.width() - 28)
+        # Eliding measures the text; skip it when neither the text nor the width changed.
+        if self._elided_for == (self._full, available):
+            return
+        self._elided_for = (self._full, available)
         shown = QFontMetrics(self.font()).elidedText(self._full, _elide_right(), available) if self._full else ""
         self.setText(("%s %s" % (shown, ARROW)).strip() if self._full else ARROW)
 
     def _name(self) -> None:
         summary = self._full or "Default"
+        if self._named_for == (self._row_label, summary):
+            return
+        self._named_for = (self._row_label, summary)
         self.setAccessibleName("%s: %s" % (self._row_label, summary))
 
 
@@ -180,6 +196,11 @@ class _Guard(QObject):
 _TEXT_KINDS = (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox)
 _MULTILINE = (QPlainTextEdit, QTextEdit)
 _ENTER_COMMITS = (QLineEdit, QAbstractSpinBox)
+
+
+def _keeps_tab(widget: object) -> bool:
+    """A multi-line box that types a tab. One that hands Tab on (tabChangesFocus) cycles with the popover."""
+    return isinstance(widget, _MULTILINE) and not widget.tabChangesFocus()
 
 
 class RowPopover(QFrame):
@@ -325,6 +346,18 @@ class RowPopover(QFrame):
         else:
             y = max(0, min(below, window.height() - height))
         self.move(x, y)
+
+    @property
+    def row(self) -> QWidget:
+        return self._row
+
+    def restyle(self, chrome: "FormChrome") -> None:
+        """A live theme switch while the popover is open: new colours, same content."""
+        if self._closed or chrome is self._chrome:
+            return
+        self._chrome = chrome
+        self._apply_style()
+        self._paint_wells()
 
     def apply_chrome_shadow(self) -> None:
         """UX-ELEV-001 level 2: a soft shadow. High contrast has none (a 2 px border instead)."""
@@ -557,7 +590,7 @@ class RowPopover(QFrame):
             self.revert()
             return True
         if key in (_key("Key_Tab"), _key("Key_Backtab")):
-            if bool(mods & _modifier("ControlModifier")) or isinstance(QApplication.focusWidget(), _MULTILINE):
+            if bool(mods & _modifier("ControlModifier")) or _keeps_tab(QApplication.focusWidget()):
                 return False
             self._cycle(backward=key == _key("Key_Backtab") or bool(mods & _modifier("ShiftModifier")))
             return True
@@ -584,8 +617,8 @@ class RowPopover(QFrame):
         elif key == _key("Key_Escape"):
             accept = True
         elif key in (_key("Key_Tab"), _key("Key_Backtab")):
-            accept = not bool(mods & _modifier("ControlModifier")) and not isinstance(
-                QApplication.focusWidget(), _MULTILINE
+            accept = not bool(mods & _modifier("ControlModifier")) and not _keeps_tab(
+                QApplication.focusWidget()
             )
         elif key in (_key("Key_Return"), _key("Key_Enter")):
             accept = not self._enter_stays()

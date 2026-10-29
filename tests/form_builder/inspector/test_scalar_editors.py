@@ -881,6 +881,28 @@ def test_size_policy_summary_names_the_policy() -> None:
             _close(window, pane)
 
 
+def test_size_policy_popover_fields_start_in_one_column() -> None:
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            _select(session, pane, "email")
+            _summary(_row(pane, "sizePolicy")).click()
+            _events()
+            popover = _popover()
+            starts = set()
+            for label in popover.findChildren(QLabel):
+                if label.text() in ("Horizontal", "Vertical", "Horizontal share", "Vertical share"):
+                    field = label.parentWidget().layout().itemAt(1).widget()
+                    starts.add(field.mapTo(popover, field.rect().topLeft()).x())
+            assert len(starts) == 1, starts
+            done = popover.findChild(QPushButton, "formBuilder.popoverDone")
+            assert isinstance(done, QPushButton)
+            done.click()
+            _events()
+        finally:
+            _close(window, pane)
+
+
 def test_unset_size_policy_shows_the_live_policy() -> None:
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)

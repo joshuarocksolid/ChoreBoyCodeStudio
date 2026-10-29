@@ -913,3 +913,25 @@ def run(tmp_path_factory: pytest.TempPathFactory, qapp: QApplication) -> _Run:
 def test_k9_to_k15_in_one_session_keys_only(run: _Run) -> None:
     assert run.failure == "", run.failure
     assert run.mouse == []
+
+
+def _open_finding(run: _Run, name: str) -> None:
+    assert name not in run.findings, "%s: %s" % (name, run.findings[name])
+
+
+@pytest.mark.xfail(strict=False, reason="K12-1 (app-state dependent: passes after other suites set the app style; fails alone on macOS): Enter on the Translation button does not open its panel (QToolButton takes Space only)")
+def test_k12_enter_opens_the_translation_panel(run: _Run) -> None:
+    _open_finding(run, "K12-1")
+
+
+@pytest.mark.xfail(strict=False, reason="K12-2 (app-state dependent, as K12-1): Tab does not reach 'Translate this text' after the Translation panel opens")
+def test_k12_tab_reaches_translate_this_text(run: _Run) -> None:
+    _open_finding(run, "K12-2")
+
+
+def test_k12_tab_leaves_the_formatted_text_editor(run: _Run) -> None:
+    _open_finding(run, "K12-3")
+
+
+def test_k15_esc_reverts_a_disabled_state_pick(run: _Run) -> None:
+    _open_finding(run, "K15-1")
