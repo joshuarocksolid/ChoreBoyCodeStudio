@@ -184,6 +184,38 @@ def test_dialog_button_box_keeps_the_layout_qt_created() -> None:
         assert realizer.problems() == ()
 
 
+def test_an_out_of_range_tab_index_matches_a_fresh_build() -> None:
+    """Moving a page off a tab can leave currentIndex past the last page.
+
+    Qt ignores setCurrentIndex when the index is outside the pages. A fresh
+    build therefore stays on page 0. Seed 1022 step 42 left the patched tab
+    on page 1.
+    """
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <layout class="QVBoxLayout" name="box">
+   <item>
+    <widget class="QTabWidget" name="tabs">
+     <property name="currentIndex"><number>2</number></property>
+     <widget class="QWidget" name="t1"/>
+     <widget class="QWidget" name="t2"/>
+     <widget class="QWidget" name="b"/>
+    </widget>
+   </item>
+  </layout>
+""",
+    )
+    with opened(text) as (session, realizer):
+        tabs = realizer.widget_for(_named(session, "tabs"))
+        assert isinstance(tabs, QTabWidget)
+        assert tabs.currentIndex() == 2
+        session.log.execute(MoveNodes((_named(session, "t1"),), InBoxLayout(_layout_of(session, "Form"), 0)))
+        assert tabs.count() == 2
+        assert realizer.last_stats.fallback_rebuilds == 0
+        _same(realizer, session, "move page off a tab")
+
+
 def test_move_into_an_earlier_container_keeps_the_widget() -> None:
     with opened(_BOXES) as (session, realizer):
         button = _named(session, "moved")
