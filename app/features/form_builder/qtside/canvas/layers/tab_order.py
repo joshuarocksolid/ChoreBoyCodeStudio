@@ -1,8 +1,10 @@
 """The Tab order overlay (UX-OVL-002 .. 005, UX-MODE-002).
 
-One 16 px ``ov.tab`` badge per stop, seated outside its widget by the chip
-solver (above left first), never inside it. A 1.5 px dashed flow line joins the
-badge centres in order. While the user numbers widgets, the stops already
+One 16 px ``ov.tab`` badge per stop, seated at an outside corner of its widget
+by the chip solver (above left first). When any stop has no free corner, as in
+packed layout rows, every badge sits just inside its widget's top-left corner
+instead of in a gutter with a leader. A 1.5 px dashed flow line joins the badge centres in
+order, under the badges and fainter than them. While the user numbers widgets, the stops already
 numbered are solid and the others hollow. A hover chip says "Click to make it 4".
 The state is ``TabOrderState``; the host (``integration/overlays.py``) switches
 this layer on with ``canvas.show_layer("tab_order", state)``.
@@ -17,9 +19,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.qtside.canvas.core.chips import (
     ChipRequest,
     CornerSeat,
-    Leader,
     Obstacle,
-    corner_rect,
     place_chips,
 )
 from app.features.form_builder.qtside.canvas.core.frame import Chip
@@ -29,11 +29,13 @@ from app.features.form_builder.qtside.canvas.core.structure import ancestors
 from app.features.form_builder.qtside.canvas.layers import CanvasLayer
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
 from app.qt.QtCore import QPointF, QRectF, Qt
-from app.qt.QtGui import QColor, QFont, QPainter, QPen
+from app.qt.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 
 NAME = "tab_order"
 _SEATED: Optional[Tuple[Hashable, Dict[Hashable, object]]] = None
 BADGE = 16
+#: Gap between a badge seated inside its widget and the widget's left and top edges.
+INSET = 3
 HINT_HEIGHT = 18
 HINT_PAD = 12
 _CORNERS = ("above_left", "below_left", "above_right", "below_right")
@@ -83,15 +85,9 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
             for name, node in ids.items()
         ]
         _SEATED = (key, {seat.key: seat for seat in place_chips(requests, content, chrome, page, viewport, None)})
-    seated = dict(_SEATED[1])
-    if state.hover and state.hover in ids:
-        text = hint_text(state.assigned + 1)
-        size = CanvasSize(int(measure(text)) + HINT_PAD, HINT_HEIGHT)
-        node = ids[state.hover]
-        hint = ChipRequest("\0hint", placed[node], size, _HINT_CORNERS, ancestors(document, node))
-        taken = chrome + tuple(seat.rect for seat in seated.values())
-        for seat in place_chips([hint], content, taken, page, viewport, None):
-            seated[seat.key] = seat
+    seated = _SEATED[1]
+    # One rule for the whole form: when any stop has no free corner, every badge goes inside.
+    outside = all(isinstance(seated.get(name), CornerSeat) for name in ids)
     badges: List[LayerItem] = []
     centres: List[Tuple[int, int]] = []
     for number, name in enumerate(state.order, 1):
@@ -99,16 +95,13 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
             continue
         target = placed[ids[name]]
         seat = seated.get(name)
-        if seat is None:
-            rect = corner_rect(target, CanvasSize(BADGE, BADGE), "above_left")
-            leader: Optional[Leader] = None
-        else:
-            rect = seat.rect
-            leader = None if isinstance(seat, CornerSeat) else getattr(seat, "leader", None)
+        # A badge sits at its widget's outside corner. When corners are taken (rows
+        # packed in a layout) badges go just inside the top-left corner: a badge in a
+        # side gutter with a leader, or a mix of above, inside and below, reads as
+        # belonging to the wrong widget.
+        rect = seat.rect if outside and seat is not None else inside_corner(target)
         solid = state.assigned == 0 or number <= state.assigned
         line = ()
-        if leader is not None:
-            line = (leader.start.x, leader.start.y, leader.end.x, leader.end.y)
         badges.append(LayerItem(rect=rect, role="tab", layer=NAME, data=("badge", number, solid, line)))
         centres.append((rect.x + rect.width // 2, rect.y + rect.height // 2))
     items: List[object] = []
@@ -122,14 +115,55 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
                 rect=CanvasRect(left, top, max(1, right - left), max(1, bottom - top)),
                 role="tab",
                 layer=NAME,
-                data=("flow", tuple(centres)),
+                data=("flow", flow_segments(tuple(centres))),
             )
         )
     items.extend(badges)
-    seat = seated.get("\0hint")
-    if seat is not None and state.hover in ids:
-        items.append(Chip(seat.rect, hint_text(state.assigned + 1), "tab", None))
+    if state.hover and state.hover in ids:
+        text = hint_text(state.assigned + 1)
+        size = CanvasSize(int(measure(text)) + HINT_PAD, HINT_HEIGHT)
+        node = ids[state.hover]
+        hint = ChipRequest("\0hint", placed[node], size, _HINT_CORNERS, ancestors(document, node))
+        taken = chrome + tuple(badge.rect for badge in badges)
+        for seat in place_chips([hint], content, taken, page, viewport, None):
+            items.append(Chip(seat.rect, text, "tab", None))
     return LayerOutput(tuple(items))  # type: ignore[arg-type]
+
+
+def flow_segments(centres: Tuple[Tuple[int, int], ...]) -> Tuple[Tuple[float, float, float, float, float, float], ...]:
+    """``(x1, y1, cx, cy, x2, y2)`` per step: a straight line, or a bow when the straight
+    line would run through another badge (stacked rows), so 1 -> 2 never reads as 1 -> 3 -> 2.
+
+    Upward steps bow left and downward steps right, so a step back up never lies on a step down.
+    """
+    found = []
+    for index in range(len(centres) - 1):
+        (x1, y1), (x2, y2) = centres[index], centres[index + 1]
+        dx, dy = float(x2 - x1), float(y2 - y1)
+        length = (dx * dx + dy * dy) ** 0.5 or 1.0
+        mid_x, mid_y = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        crossed = False
+        for other, (ox, oy) in enumerate(centres):
+            if other in (index, index + 1):
+                continue
+            t = ((ox - x1) * dx + (oy - y1) * dy) / (length * length)
+            if 0.0 < t < 1.0 and abs((ox - x1) * dy - (oy - y1) * dx) / length < BADGE:
+                crossed = True
+                break
+        if not crossed:
+            found.append((float(x1), float(y1), mid_x, mid_y, float(x2), float(y2)))
+            continue
+        bow = min(2.0 * BADGE, 0.35 * length)
+        # (dy, -dx) turned to unit length: left of an upward step, right of a downward one.
+        found.append((float(x1), float(y1), mid_x + dy / length * bow, mid_y - dx / length * bow, float(x2), float(y2)))
+    return tuple(found)
+
+
+def inside_corner(target: CanvasRect) -> CanvasRect:
+    """A badge just inside the widget's top-left corner, centred on a one-line field."""
+    inset_y = max(0, min(INSET, (target.height - BADGE) // 2))
+    inset_x = INSET if target.width >= BADGE + 2 * INSET else 0
+    return CanvasRect(target.x + inset_x, target.y + inset_y, BADGE, BADGE)
 
 
 def _color(raw: str, alpha: float = 1.0) -> QColor:
@@ -148,12 +182,15 @@ def paint(painter: QPainter, item: LayerItem, palette: CanvasPalette) -> None:
     painter.save()
     try:
         if data[0] == "flow":
-            pen = QPen(_color(over.tab, 0.9), max(1.5, over.min_stroke))
+            pen = QPen(_color(over.tab, 0.55), max(1.5, over.min_stroke))
             pen.setStyle(Qt.PenStyle.DashLine)
             painter.setPen(pen)
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            points = [QPointF(x, y) for x, y in data[1]]
-            painter.drawPolyline(points)
+            path = QPainterPath()
+            for x1, y1, cx, cy, x2, y2 in data[1]:
+                path.moveTo(x1, y1)
+                path.quadTo(cx, cy, x2, y2)
+            painter.drawPath(path)
             return
         if data[0] != "badge":
             return

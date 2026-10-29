@@ -14,7 +14,11 @@ from app.features.form_builder.qtside.keys_page.model import (
 )
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QKeyEvent
-from app.qt.QtWidgets import QLineEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+from app.qt.QtWidgets import QHeaderView, QLineEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
+
+
+#: Widest a Keys, Where or In Qt Designer column grows before its text wraps.
+_MAX_SIDE_COLUMN = 200
 
 
 class KeysPage(QWidget):
@@ -38,7 +42,16 @@ class KeysPage(QWidget):
         self.table.setColumnCount(len(COLUMNS))
         self.table.setHeaderLabels(list(COLUMNS))
         self.table.setRootIsDecorated(False)
-        self.table.setUniformRowHeights(True)
+        # "Where Designer's keys went" rows carry a sentence: it wraps in the stretched
+        # "What it does" column instead of widening the page into a sideways scroll.
+        self.table.setUniformRowHeights(False)
+        self.table.setWordWrap(True)
+        self.table.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        header = self.table.header()
+        header.setStretchLastSection(False)
+        for index in range(len(COLUMNS)):
+            header.setSectionResizeMode(index, QHeaderView.ResizeMode.Interactive)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.setAlternatingRowColors(False)
         column = QVBoxLayout(self)
         column.setContentsMargins(12, 12, 12, 12)
@@ -72,8 +85,9 @@ class KeysPage(QWidget):
                 item = QTreeWidgetItem(head, [row.keys, row.what, row.where, row.designer])
                 item.setData(0, Qt.ItemDataRole.UserRole, row.command_id)
             head.setExpanded(True)
-        for index in range(len(COLUMNS)):
+        for index in (0, 2, 3):
             self.table.resizeColumnToContents(index)
+            self.table.setColumnWidth(index, min(self.table.columnWidth(index), _MAX_SIDE_COLUMN))
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:

@@ -17,6 +17,7 @@ pytest.importorskip("app.qt.QtWidgets", exc_type=ImportError)
 from app.features.form_builder.engine.commands.catalog import InsertFragment  # noqa: E402
 from app.features.form_builder.engine.commands.placement import InFormRow  # noqa: E402
 from app.features.form_builder.engine.query import tab_stops as q  # noqa: E402
+from app.features.form_builder.engine.query.tree import effective_tab_order  # noqa: E402
 from app.features.form_builder.engine.ui4.spec import Fragment  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.frame import Chip  # noqa: E402
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem  # noqa: E402
@@ -94,7 +95,7 @@ def test_clicking_fields_numbers_them_and_shift_click_continues(tmp_path: Path, 
         _close(window, qapp, guard)
 
 
-def test_the_tab_order_marks_sit_outside_their_widgets_with_a_flow_line(tmp_path: Path, qapp: QApplication) -> None:
+def test_each_tab_order_badge_sits_on_its_own_widget_with_a_flow_line(tmp_path: Path, qapp: QApplication) -> None:
     window, kb, guard = _open(tmp_path, qapp)
     try:
         modes = kb.surface.modes
@@ -103,28 +104,29 @@ def test_the_tab_order_marks_sit_outside_their_widgets_with_a_flow_line(tmp_path
         badges = [item for item in items if item.data[0] == "badge"]
         flows = [item for item in items if item.data[0] == "flow"]
         assert sorted(item.data[1] for item in badges) == [1, 2, 3]
-        assert len(flows) == 1 and len(flows[0].data[1]) == 3
+        assert len(flows) == 1 and len(flows[0].data[1]) == 2
         document = kb.session.document
         canvas = _canvas(kb)
         frame = canvas.overlay()
-        placed = {}
+        order = effective_tab_order(document)
+        boxes = {}
         for name in ("nameEdit", "emailEdit", "phoneEdit"):
-            rect = canvas.viewport_rect((document.by_name(name)[0],))
-            placed[name] = canvas.mapToScene(rect.topLeft())
+            box = canvas.viewport_rect((document.by_name(name)[0],))
+            top_left = canvas.mapToScene(box.topLeft())
+            bottom_right = canvas.mapToScene(box.bottomRight())
+            boxes[name] = (top_left.x(), top_left.y(), bottom_right.x(), bottom_right.y())
         for item in badges:
             assert item.rect.width == 16 and item.rect.height == 16
-            for name in ("nameEdit", "emailEdit", "phoneEdit"):
-                widget = document.by_name(name)[0]
-                box = canvas.viewport_rect((widget,))
-                top_left = canvas.mapToScene(box.topLeft())
-                bottom_right = canvas.mapToScene(box.bottomRight())
-                inside = (
-                    top_left.x() < item.rect.x + item.rect.width
-                    and item.rect.x < bottom_right.x()
-                    and top_left.y() < item.rect.y + item.rect.height
-                    and item.rect.y < bottom_right.y()
-                )
-                assert not inside, "badge %s sits over %s" % (item.data[1], name)
+            own = order[item.data[1] - 1]
+            centre_x, centre_y = item.rect.x + 8, item.rect.y + 8
+            left, top, right, bottom = boxes[own]
+            # Packed rows: every badge sits just inside its own field's top-left corner.
+            assert left <= item.rect.x <= left + 4 and top <= item.rect.y <= top + 4, own
+            for name, (left, top, right, bottom) in boxes.items():
+                if name == own:
+                    continue
+                overlaps = left < item.rect.x + 16 and item.rect.x < right and top < item.rect.y + 16 and item.rect.y < bottom
+                assert not overlaps, "badge %s sits over %s" % (item.data[1], name)
         assert frame is not None
         # The hover chip says which number a click would give.
         modes._hover = "phoneEdit"

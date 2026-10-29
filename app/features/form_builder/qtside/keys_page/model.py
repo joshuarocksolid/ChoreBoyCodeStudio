@@ -178,7 +178,7 @@ def build_groups(commands: Sequence[FormCommand], effective: Mapping[str, str]) 
     groups.append(
         KeyGroup(
             DESIGNER_GROUP,
-            tuple(KeyRow("designer:" + rows, now, "Designer: " + was, "", was, bound=False) for rows, was, now in DESIGNER_MOVES),
+            tuple(KeyRow("designer:" + rows, "", now, "", was, bound=False) for rows, was, now in DESIGNER_MOVES),
         )
     )
     return tuple(groups)

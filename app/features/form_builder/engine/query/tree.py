@@ -72,7 +72,19 @@ _FOCUSABLE = frozenset(
         "QTreeView",
         "QTableView",
         "QTextBrowser",
-        "QDialogButtonBox",
+        # Containers whose default policy has the Tab bit (Qt 6.8 and 5.15 agree).
+        "QScrollArea",
+        "QAbstractScrollArea",
+        "QTabWidget",
+        "QGraphicsView",
+        "QCalendarWidget",
+        "QColumnView",
+        "QUndoView",
+        "QAbstractSpinBox",
+        "QMdiSubWindow",
+        # QDialogButtonBox is NoFocus: Tab lands on its buttons, which Designer does
+        # not number, and QWidget::setTabOrder ignores a NoFocus widget, so a
+        # buttonBox <tabstop> would break the chain at runtime.
     }
 )
 

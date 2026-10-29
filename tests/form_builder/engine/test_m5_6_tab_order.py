@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.features.form_builder.engine.commands.catalog import InsertFragment
+from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment
 from app.features.form_builder.engine.commands.catalog_ext.tab_order import ChangeTabOrder, PairLabels, SetLabelBuddy
 from app.features.form_builder.engine.commands.placement import InBoxLayout
 from app.features.form_builder.engine.query import tab_stops as q
@@ -150,7 +150,8 @@ def test_pairing_sets_only_labels_without_a_buddy_and_counts_them() -> None:
     assert saved(doc) == original
 
 
-def test_a_button_box_is_one_stop_and_a_widget_that_cannot_tab_is_not_a_stop() -> None:
+def test_a_button_box_and_a_widget_that_cannot_tab_are_not_stops() -> None:
+    # QDialogButtonBox is NoFocus, as in Designer: QWidget::setTabOrder ignores it.
     form = ROWS.replace(
         '<item row="3" column="0" colspan="2"><widget class="QLabel" name="note">',
         '<item row="3" column="0" colspan="2"><widget class="QDialogButtonBox" name="buttonBox"/></item>\n   <item row="4" column="0" colspan="2"><widget class="QLabel" name="note">',
@@ -159,4 +160,50 @@ def test_a_button_box_is_one_stop_and_a_widget_that_cannot_tab_is_not_a_stop() -
         '<widget class="QLineEdit" name="phoneEdit"><property name="focusPolicy"><enum>Qt::NoFocus</enum></property></widget>',
     )
     doc = open_log(form).document
-    assert reading_order(doc) == ("nameEdit", "emailEdit", "buttonBox")
+    assert reading_order(doc) == ("nameEdit", "emailEdit")
+
+
+def _inputs_form(names: "list[str]", order: "list[str]") -> str:
+    items = "".join('   <item><widget class="QLineEdit" name="%s"/></item>\n' % name for name in names)
+    stops = "".join("  <tabstop>%s</tabstop>\n" % name for name in order)
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n<ui version="4.0">\n <class>Form</class>\n'
+        ' <widget class="QWidget" name="Form">\n  <layout class="QVBoxLayout" name="verticalLayout">\n'
+        + items
+        + "  </layout>\n </widget>\n <tabstops>\n"
+        + stops
+        + " </tabstops>\n <resources/>\n <connections/>\n</ui>\n"
+    )
+
+
+@pytest.mark.pain("P-20")
+def test_random_inserts_into_permuted_orders_keep_the_order_and_undo_exactly() -> None:
+    import random
+
+    rng = random.Random(5606)
+    for _ in range(150):
+        count = rng.randint(1, 7)
+        names = ["edit%d" % index for index in range(count)]
+        order = names[:]
+        rng.shuffle(order)
+        log = open_log(_inputs_form(names, order))
+        doc = log.document
+        original = saved(doc)
+        layout = doc.root.layout
+        assert layout is not None
+        slot = rng.randint(0, count)
+        log.execute(InsertFragment(InBoxLayout(layout.id, slot), Fragment(nodes=(button_spec("newButton"),))))
+        after = list(effective_tab_order(doc))
+        # The custom order of the old stops is kept.
+        assert [name for name in after if name != "newButton"] == order
+        # The new stop follows the stop just above it on the form; the first row goes in front of the one below.
+        at = after.index("newButton")
+        if slot > 0:
+            assert after[at - 1] == names[slot - 1]
+        else:
+            assert after[at + 1] == names[0]
+        log.undo()
+        assert saved(doc) == original
+        log.redo()
+        log.execute(DeleteNodes((nid(doc, "newButton"),)))
+        assert saved(doc) == original

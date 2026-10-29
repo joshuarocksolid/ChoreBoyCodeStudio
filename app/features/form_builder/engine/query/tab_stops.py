@@ -1,7 +1,7 @@
 """Tab order and buddy queries (UX-OVL-004 .. 008, UX-MODE-002 .. 004). Qt-free.
 
-A *stop* is a widget Tab can land on (``tree.takes_tab_focus``): a QDialogButtonBox
-is one stop. The *order* is the saved ``<tabstops>`` while the form has them and
+A *stop* is a widget Tab can land on (``tree.takes_tab_focus``). A QDialogButtonBox
+is not one (NoFocus, as in Designer): its buttons keep their own place. The *order* is the saved ``<tabstops>`` while the form has them and
 the reading order otherwise. Everything here is O(form).
 """
 
