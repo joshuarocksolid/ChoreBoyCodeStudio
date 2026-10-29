@@ -78,6 +78,19 @@ def module_parts(module: str) -> Optional[Tuple[str, ...]]:
     return parts
 
 
+#: Stock classes that can hold other widgets, for the "Holds other widgets" check box (UX-CUST-002).
+CONTAINER_BASES = frozenset(
+    {
+        "QWidget", "QFrame", "QGroupBox", "QScrollArea", "QTabWidget", "QStackedWidget", "QToolBox",
+        "QSplitter", "QDockWidget", "QMdiArea", "QDialog", "QMainWindow", "QWizardPage",
+    }
+)
+
+
+def is_container_base(extends: str) -> bool:
+    return extends in CONTAINER_BASES
+
+
 def header_for_module(module: str) -> str:
     """``widgets.till_display`` -> ``widgets/till_display.h``, as Designer and uic expect."""
     parts = module_parts(module)
@@ -504,6 +517,7 @@ __all__ = [
     "BAD_CLASS",
     "BAD_MODULE",
     "BLOCKING",
+    "CONTAINER_BASES",
     "ClassFacts",
     "CustomWidgetRegistry",
     "DEFAULT_SIZE",
@@ -524,6 +538,7 @@ __all__ = [
     "entry_from_declaration",
     "entry_from_json",
     "header_for_module",
+    "is_container_base",
     "module_file",
     "module_for_header",
     "module_parts",

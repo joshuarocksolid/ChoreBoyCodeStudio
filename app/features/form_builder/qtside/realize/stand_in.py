@@ -8,7 +8,7 @@ here creates a GL context or a QML engine.
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 from app.qt.QtCore import QRectF, QSize, Qt
 from app.qt.QtGui import QColor, QFont, QPainter, QPen
@@ -49,10 +49,14 @@ class StandInWidget(QWidget):
         *,
         friendly: str = "OpenGL widget",
         high_contrast: bool = False,
+        caption: str = "",
+        hint: Optional[QSize] = None,
     ) -> None:
         super().__init__(parent)
         self._friendly = friendly
         self._forced_contrast = high_contrast
+        self._caption = caption
+        self._hint = hint
 
     @property
     def _palette(self) -> OverlayPalette:
@@ -62,10 +66,11 @@ class StandInWidget(QWidget):
         return OVERLAY_HIGH_CONTRAST if self._forced_contrast else OVERLAY
 
     def text(self) -> str:
-        return "%s · drawn by your code" % self._friendly
+        return self._caption or "%s · drawn by your code" % self._friendly
 
     def sizeHint(self) -> QSize:  # noqa: N802
-        return QSize(max(_MIN_WIDTH, _DEFAULT_HINT.width()), max(_MIN_HEIGHT, _DEFAULT_HINT.height()))
+        base = self._hint if self._hint is not None else _DEFAULT_HINT
+        return QSize(max(_MIN_WIDTH, base.width()), max(_MIN_HEIGHT, base.height()))
 
     def minimumSizeHint(self) -> QSize:  # noqa: N802
         return QSize(_MIN_WIDTH, _MIN_HEIGHT)
@@ -92,4 +97,32 @@ class StandInWidget(QWidget):
             painter.end()
 
 
-__all__ = ["STAND_IN_NAMES", "StandInWidget", "stand_in_name"]
+#: Stock bases whose own classes draw as a stand-in: they have no look of their own (UX-CUST-007).
+PLAIN_BASES = frozenset({"QWidget", "QFrame"})
+
+
+def own_class_caption(class_name: str, module: str) -> str:
+    """The stand-in's words for your own class: "TillDisplay · from widgets.till_display"."""
+    return "%s \u00b7 from %s" % (class_name, module)
+
+
+def own_class_stand_in(
+    parent: Optional[QWidget], *, class_name: str, module: str, size: Tuple[int, int]
+) -> StandInWidget:
+    """A sized stand-in for a plain QWidget or QFrame class of the project. It never runs the module."""
+    return StandInWidget(
+        parent,
+        friendly=class_name,
+        caption=own_class_caption(class_name, module),
+        hint=QSize(size[0], size[1]),
+    )
+
+
+__all__ = [
+    "PLAIN_BASES",
+    "STAND_IN_NAMES",
+    "StandInWidget",
+    "own_class_caption",
+    "own_class_stand_in",
+    "stand_in_name",
+]
