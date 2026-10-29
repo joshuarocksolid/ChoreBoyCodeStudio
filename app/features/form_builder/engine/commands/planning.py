@@ -1052,14 +1052,6 @@ def set_resource_includes(doc: UiDocument, ctx: PlanContext, locations: Tuple[st
         place_nodes(doc, ctx, keep, doc.ui.id, "resources", 0)
 
 
-def set_form_field(doc: UiDocument, ctx: PlanContext, field: str, value: object) -> None:
-    if field == "includes":
-        specs = value if isinstance(value, tuple) else ()
-        _replace_slot(doc, ctx, doc.ui.id, "includes", specs)
-        return
-    set_field(doc, ctx, doc.ui.id, field, value)
-
-
 def replace_document_text(
     doc: UiDocument,
     ctx: PlanContext,

@@ -636,19 +636,6 @@ class SetResourceIncludes(_CommandBase):
         planning.set_resource_includes(doc, ctx, self.locations)
 
 
-@dataclass(frozen=True)
-class SetFormField(_CommandBase):
-    """Set one field of the ui node."""
-
-    command_type: ClassVar[str] = "set_form_field"
-    _label_text: ClassVar[str] = "Form settings"
-    field: str
-    value: object
-
-    def apply(self, doc: UiDocument, ctx: PlanContext) -> None:
-        planning.set_form_field(doc, ctx, self.field, self.value)
-
-
 _REPLACE_LABELS = {
     "xml_edit": "Edit XML",
     "draft": "Restore draft",

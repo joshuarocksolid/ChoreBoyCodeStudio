@@ -35,7 +35,6 @@ from app.features.form_builder.engine.commands.catalog import (
     SetBuddy,
     SetButtonGroup,
     SetCustomWidget,
-    SetFormField,
     SetFormSlots,
     SetGeometry,
     SetItems,
@@ -51,6 +50,7 @@ from app.features.form_builder.engine.commands.catalog import (
     Unwrap,
     Wrap,
 )
+from app.features.form_builder.engine.commands.catalog_ext.form_fields import SetFormField
 from app.features.form_builder.engine.commands.placement import (
     InActionList,
     InBoxLayout,
