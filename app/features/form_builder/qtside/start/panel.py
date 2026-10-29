@@ -15,12 +15,14 @@ from app.qt.QtGui import (
     QPainter,
     QPalette,
     QPen,
+    QPixmap,
 )
 from app.qt.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMenu,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -40,22 +42,35 @@ from app.features.form_builder.engine.project.templates import (
     GROUP_BLANK,
     GROUP_FROM_EXISTING,
     GROUP_TEMPLATES,
+    GROUP_YOURS,
     FormTemplate,
     template_catalog,
     template_for,
 )
+from app.features.form_builder.engine.project.user_templates import SCOPE_PROJECT, TemplateInfo
 from app.features.form_builder.qtside.start.cards import CARD_WIDTH, StartCard
 from app.features.form_builder.qtside.start.wizard import WIZARD_CARD, WIZARD_KEY
 
 from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 _GROUP_TITLES = (
+    (GROUP_YOURS, "Your templates"),
     (GROUP_TEMPLATES, "Templates"),
     (GROUP_BLANK, "Start blank"),
     (GROUP_FROM_EXISTING, "From what you have"),
 )
 _COLUMN_MAX = 960
 _CARD_GAP = 12
+#: UX-START-002: the recent forms move to a 240 px rail at this tab width.
+RAIL_MIN_WIDTH = 1180
+RAIL_WIDTH = 240
+_RAIL_GAP = 24
+#: What the context menu of a saved template offers (UX-TMPL-004), as ``(action id, text)``.
+TEMPLATE_ACTIONS = (
+    ("rename", "Rename\u2026"),
+    ("describe", "Change description\u2026"),
+    ("delete", "Delete template\u2026"),
+)
 
 
 def _catalog() -> Tuple[FormTemplate, ...]:
@@ -74,6 +89,11 @@ def _template_for(key: str):  # type: ignore[no-untyped-def]
     return template_for(key)
 
 
+def _user_spec(info: TemplateInfo) -> FormTemplate:
+    """The card record of a saved template. It creates at once, like the built-in cards."""
+    return FormTemplate(info.card_key, info.title, info.description, GROUP_YOURS, info.root_class or "QWidget", not info.error, None)
+
+
 class NewFormPanel(QWidget):
     """Name row, template cards, and the recent-forms list."""
 
@@ -81,6 +101,8 @@ class NewFormPanel(QWidget):
     from_table_requested = Signal()
     adopt_requested = Signal()
     open_recent_requested = Signal(str)
+    #: A saved template's menu choice: ``("rename" | "describe" | "delete", card key)``.
+    template_action_requested = Signal(str, str)
 
     def __init__(
         self,
@@ -101,6 +123,10 @@ class NewFormPanel(QWidget):
         self._cards: List[StartCard] = []
         self._card_by_key: Dict[str, StartCard] = {}
         self._recent_rows: List[QWidget] = []
+        self._user_specs: Dict[str, FormTemplate] = {}
+        self._user_infos: Dict[str, TemplateInfo] = {}
+        self._template_menu: Optional[QMenu] = None
+        self._rail = False
         self._build()
         self.set_folder_choices(_default_folders(self._project_root, directory))
         self.apply_chrome(chrome)
@@ -237,9 +263,124 @@ class NewFormPanel(QWidget):
             self._recent_list.addWidget(row)
             self._recent_rows.append(row)
         self._paint_recent_rows()
+        self._apply_tab_order()
 
     def card(self, key: str) -> StartCard:
         return self._card_by_key[key]
+
+    def _spec(self, key: str) -> Optional[FormTemplate]:
+        found = self._user_specs.get(key)
+        if found is not None:
+            return found
+        return _template_for(key)
+
+    def set_user_templates(self, templates: Sequence[TemplateInfo]) -> None:
+        """Show ``templates`` as the "Your templates" group, first on the tab; none hides the group.
+
+        A template that can't be read gets a card named "Can't open {name}"
+        whose tooltip gives the reason and whose menu offers Delete only.
+        """
+        keep = {info.card_key for info in templates}
+        for key in [key for key in self._user_specs if key not in keep]:
+            card = self._card_by_key.pop(key, None)
+            if card is not None:
+                self._cards.remove(card)
+                card.setParent(None)
+                card.deleteLater()
+            del self._user_specs[key]
+        for info in templates:
+            key = info.card_key
+            self._user_infos[key] = info
+            self._user_specs[key] = _user_spec(info)
+            old = self._card_by_key.pop(key, None)
+            if old is not None:
+                self._cards.remove(old)
+                old.setParent(None)
+                old.deleteLater()
+            self._add_user_card(info)
+        self._user_infos = {key: value for key, value in self._user_infos.items() if key in keep}
+        ordered = [card for card in self._cards if card.key not in keep]
+        by_key = {card.key: card for card in self._cards}
+        self._cards = [by_key[info.card_key] for info in templates] + ordered
+        self._reflow()
+        self._refresh_name_state()
+        self.apply_chrome(self._chrome)
+
+    def user_template_keys(self) -> Tuple[str, ...]:
+        return tuple(card.key for card in self._cards if card.key in self._user_specs)
+
+    def open_template_menu(self, key: str, at: Optional[object] = None) -> Optional[QMenu]:
+        """The menu of a saved template (UX-TMPL-004). A template that can't be read offers Delete only."""
+        info = self._user_infos.get(key)
+        card = self._card_by_key.get(key)
+        if info is None or card is None:
+            return None
+        self.close_template_menu()
+        menu = QMenu(card)
+        menu.setObjectName("formBuilder.newForm.templateMenu")
+        for action_id, text in TEMPLATE_ACTIONS:
+            if info.error and action_id != "delete":
+                continue
+            action = menu.addAction(text)
+            action.setObjectName("formBuilder.newForm.templateMenu." + action_id)
+            action.triggered.connect(lambda _checked=False, a=action_id, k=key: self.template_action_requested.emit(a, k))
+        self._template_menu = menu
+        menu.popup(at if at is not None else card.mapToGlobal(card.rect().center()))  # type: ignore[arg-type]
+        return menu
+
+    def close_template_menu(self) -> None:
+        menu, self._template_menu = self._template_menu, None
+        if menu is not None:
+            menu.close()
+            menu.deleteLater()
+
+    def _add_user_card(self, info: TemplateInfo) -> None:
+        pixmap = QPixmap(info.thumbnail_path) if not info.error else None
+        tooltip = info.error if info.error else info.title + (("\n" + info.description) if info.description else "")
+        card = StartCard(
+            info.card_key,
+            info.title,
+            info.description,
+            self._chrome,
+            self._grids[GROUP_YOURS],
+            thumbnail=pixmap,
+            tag="This project" if info.scope == SCOPE_PROJECT else "",
+            tooltip=tooltip,
+            has_menu=True,
+        )
+        card.activated.connect(self._on_card)
+        card.move_requested.connect(self.move_card)
+        card.group_requested.connect(self.move_group)
+        card.menu_requested.connect(self.open_template_menu)
+        card.setEnabled(not info.error and self.name_reason() is None)
+        self._cards.append(card)
+        self._card_by_key[info.card_key] = card
+
+    def focus_card_near(self, key: str) -> None:
+        """After a change to the saved templates: focus ``key`` if it is still there, else the first card shown."""
+        card = self._card_by_key.get(key)
+        if card is None:
+            rows = self._card_rows()
+            card = rows[0][0] if rows and rows[0] else None
+        if card is not None:
+            card.setFocus()
+
+    def move_group(self, key: str, direction: int) -> None:
+        """Ctrl+Down and Ctrl+Up: focus the first card of the next or previous group that has one (UX-CAT-010)."""
+        order = [group for group, _title in _GROUP_TITLES]
+        here = self._group_of(key)
+        if here not in order:
+            return
+        index = order.index(here)
+        step = 1 if direction > 0 else -1
+        cursor = index + step
+        while 0 <= cursor < len(order):
+            for row in self._card_rows():
+                if row and self._group_of(row[0].key) == order[cursor]:
+                    target = next((card for card in row if card.isEnabled()), row[0])
+                    target.setFocus()
+                    return
+            cursor += step
 
     def columns(self) -> int:
         width = self._column.width()
@@ -286,7 +427,7 @@ class NewFormPanel(QWidget):
             cursor_row += step
 
     def _group_of(self, key: str) -> str:
-        spec = _template_for(key)
+        spec = self._spec(key)
         if spec is None:
             return ""
         return spec.group
@@ -297,7 +438,7 @@ class NewFormPanel(QWidget):
         for group, _title in _GROUP_TITLES:
             cards = []
             for card in self._cards:
-                spec = _template_for(card.key)
+                spec = self._spec(card.key)
                 if spec is not None and spec.group == group:
                     cards.append(card)
             for start in range(0, len(cards), columns):
@@ -308,6 +449,7 @@ class NewFormPanel(QWidget):
 
     def resizeEvent(self, event: object) -> None:  # type: ignore[override]
         super().resizeEvent(event)  # type: ignore[arg-type]
+        self._place_recents()
         self._fit_column()
         self._reflow()
 
@@ -322,6 +464,8 @@ class NewFormPanel(QWidget):
     def _fit_column(self) -> None:
         """The centred column uses the width it has, up to 960 px."""
         available = self.width() - 48
+        if self._rail:
+            available -= RAIL_WIDTH + _RAIL_GAP
         if available < CARD_WIDTH:
             available = CARD_WIDTH
         target = min(_COLUMN_MAX, available)
@@ -337,6 +481,8 @@ class NewFormPanel(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        # The cards and fields take focus and the area scrolls them into view; the area itself is no Tab stop.
+        scroll.setFocusPolicy(Qt.NoFocus)
         outer.addWidget(scroll)
         self._scroll = scroll
         host = QWidget()
@@ -398,11 +544,13 @@ class NewFormPanel(QWidget):
 
         self._grids: Dict[str, QWidget] = {}
         self._group_labels: List[QLabel] = []
+        self._group_label_for: Dict[str, QLabel] = {}
         catalog = _catalog()
         for group, title in _GROUP_TITLES:
             label = QLabel(title, self._column)
             label.setObjectName("formBuilder.newForm.group." + group)
             self._group_labels.append(label)
+            self._group_label_for[group] = label
             column.addWidget(label)
             grid_host = QWidget(self._column)
             grid_host.setObjectName("formBuilder.newForm.grid." + group)
@@ -414,18 +562,27 @@ class NewFormPanel(QWidget):
                     continue
                 self._add_card(spec)
 
-        recent_title = QLabel("Recent forms", self._column)
+        self._recent_box = QWidget(self._column)
+        self._recent_box.setObjectName("formBuilder.newForm.recentBox")
+        box_layout = QVBoxLayout(self._recent_box)
+        box_layout.setContentsMargins(0, 0, 0, 0)
+        box_layout.setSpacing(12)
+        recent_title = QLabel("Recent forms", self._recent_box)
         recent_title.setObjectName("formBuilder.newForm.recentTitle")
         self._group_labels.append(recent_title)
-        column.addWidget(recent_title)
-        self._recent_host = QWidget(self._column)
+        box_layout.addWidget(recent_title)
+        self._recent_host = QWidget(self._recent_box)
         self._recent_host.setObjectName("formBuilder.newForm.recent")
         self._recent_list = QVBoxLayout(self._recent_host)
         self._recent_list.setContentsMargins(0, 0, 0, 0)
         self._empty = QLabel(EMPTY_RECENT_TEXT, self._recent_host)
         self._empty.setObjectName("formBuilder.newForm.recentEmpty")
         self._recent_list.addWidget(self._empty)
-        column.addWidget(self._recent_host)
+        box_layout.addWidget(self._recent_host)
+        box_layout.addStretch(1)
+        self._column_layout = column
+        self._host_layout = host_layout
+        column.addWidget(self._recent_box)
 
         self._status = QLabel("", self._column)
         self._status.setObjectName("formBuilder.newForm.status")
@@ -435,10 +592,41 @@ class NewFormPanel(QWidget):
         column.addStretch(1)
         self._reflow()
 
+    def rail_shown(self) -> bool:
+        """True when the recent forms sit in the 240 px rail beside the cards (UX-START-002)."""
+        return self._rail
+
+    def _place_recents(self) -> None:
+        """Recent forms: a rail at the right from 1180 px, else a list under the cards."""
+        wide = self.width() >= RAIL_MIN_WIDTH
+        if wide == self._rail:
+            return
+        self._rail = wide
+        if wide:
+            self._column_layout.removeWidget(self._recent_box)
+            self._recent_box.setFixedWidth(RAIL_WIDTH)
+            self._host_layout.insertWidget(2, self._recent_box, 0, Qt.AlignTop)
+        else:
+            self._host_layout.removeWidget(self._recent_box)
+            self._recent_box.setMinimumWidth(0)
+            self._recent_box.setMaximumWidth(16777215)
+            self._column_layout.insertWidget(self._column_layout.indexOf(self._status), self._recent_box)
+        self._recent_box.show()
+
+    def _apply_tab_order(self) -> None:
+        """Name row, then the cards group by group as drawn, then the recent forms (Qt's default is creation order)."""
+        chain: List[QWidget] = [self._name, self._folder]
+        for row in self._card_rows():
+            chain.extend(row)
+        chain.extend(self._recent_rows)
+        for first, second in zip(chain, chain[1:]):
+            QWidget.setTabOrder(first, second)
+
     def _add_card(self, spec: FormTemplate) -> None:
         card = StartCard(spec.key, spec.title, spec.description, self._chrome, self._grids[spec.group])
         card.activated.connect(self._on_card)
         card.move_requested.connect(self.move_card)
+        card.group_requested.connect(self.move_group)
         self._cards.append(card)
         self._card_by_key[spec.key] = card
 
@@ -446,6 +634,9 @@ class NewFormPanel(QWidget):
         columns = self.columns()
         for group, _title in _GROUP_TITLES:
             host = self._grids[group]
+            has_cards = any(self._group_of(card.key) == group for card in self._cards)
+            host.setVisible(has_cards)
+            self._group_label_for[group].setVisible(has_cards)
             layout = host.layout()
             if not isinstance(layout, QVBoxLayout):
                 continue
@@ -461,7 +652,7 @@ class NewFormPanel(QWidget):
                 widget.deleteLater()
             cards = []
             for card in self._cards:
-                spec = _template_for(card.key)
+                spec = self._spec(card.key)
                 if spec is not None and spec.group == group:
                     cards.append(card)
             for start in range(0, len(cards), columns):
@@ -474,9 +665,10 @@ class NewFormPanel(QWidget):
                     row_layout.addWidget(card)
                 row_layout.addStretch(1)
                 layout.addWidget(row)
+        self._apply_tab_order()
 
     def _on_card(self, key: str) -> None:
-        spec = _template_for(key)
+        spec = self._spec(key)
         if spec is None:
             return
         if key == "from_table":
@@ -517,7 +709,7 @@ class NewFormPanel(QWidget):
         self._caption.setText(creation_caption(self.folder_display(), self.stem()))
         blocked = reason is not None
         for card in self._cards:
-            spec = _template_for(card.key)
+            spec = self._spec(card.key)
             if spec is not None and spec.creates_immediately:
                 card.setEnabled(not blocked)
 

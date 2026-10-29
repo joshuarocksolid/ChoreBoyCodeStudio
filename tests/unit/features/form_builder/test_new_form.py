@@ -95,7 +95,10 @@ def test_arrow_keys_move_between_cards(tmp_path: Path, qapp: object) -> None:
     QTest.keyClick(panel.card("data_entry"), Qt.Key_Right)
     assert app.focusWidget() is panel.card("list_detail")
     assert panel.columns() == 4
+    # Five templates wrap to a second row at four columns (M5.5c adds the side-buttons dialog).
     QTest.keyClick(panel.card("data_entry"), Qt.Key_Down)
+    assert app.focusWidget() is panel.card("dialog_buttons_right")
+    QTest.keyClick(panel.card("dialog_buttons_right"), Qt.Key_Down)
     assert app.focusWidget() is panel.card("widget")
     panel.close()
     del qapp
@@ -220,6 +223,23 @@ def test_create_writes_the_form_and_opens_it(tmp_path: Path, qapp: object) -> No
     assert surface.selected == "nameEdit"
     QApplication.processEvents()
     assert workflow.closed == [new_form_tab_path(str(root))]
+    del qapp
+
+
+def test_a_blank_form_opens_with_the_root_selected(tmp_path: Path, qapp: object) -> None:
+    """UX-START-004: the root for blank forms."""
+    root = tmp_path / "proj"
+    (root / "forms").mkdir(parents=True)
+    surface = _Surface()
+    window = type("Window", (), {})()
+    window._loaded_project = _Project(str(root))
+    window._editor_tab_factory = _Factory()
+    window._editor_tab_workflow = _Workflow()
+    window._tab_content_registry = _Registry(surface)
+    result = perform_create(window, template="dialog", stem="shop_window", directory=str(root / "forms"))
+    assert result.refused is None
+    assert surface.selected == "ShopWindow"
+    QApplication.processEvents()
     del qapp
 
 
