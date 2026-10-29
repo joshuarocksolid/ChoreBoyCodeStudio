@@ -405,6 +405,7 @@ def test_list_editor_keys_and_timing(qapp: QApplication) -> None:
 
 @pytest.mark.parity("R3-149")
 def test_custom_properties(qapp: QApplication) -> None:
+    """UX-PED-061: the + Add custom property form."""
     window, pane, session, realizer = _pane(qapp, _LABEL)
     try:
         _select(session, "titleLabel")
@@ -542,6 +543,7 @@ def test_custom_properties(qapp: QApplication) -> None:
 
 @pytest.mark.parity("R3-150")
 def test_tab_title_is_an_attribute(qapp: QApplication) -> None:
+    """UX-CONT-018 and UX-PED-063: the tab title is an attribute (the other page rows are not checked)."""
     window, pane, session, realizer = _pane(qapp, _LABEL)
     try:
         _select(session, "firstPage")
@@ -570,6 +572,7 @@ def test_tab_title_is_an_attribute(qapp: QApplication) -> None:
 
 @pytest.mark.parity("R3-148")
 def test_sort_and_search(qapp: QApplication) -> None:
+    """UX-PED-064 (sort A-Z) and UX-PED-065 (search finds enum words and attribute names)."""
     window, pane, session, realizer = _pane(qapp, _LABEL)
     try:
         _select(session, "nameEdit")

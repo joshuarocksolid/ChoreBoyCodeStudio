@@ -17,8 +17,11 @@ import pytest
 
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
+from app.features.form_builder.engine.query.drop_target import DropPayload
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.qtside.canvas.core.gesture import PlaceAsked
+from app.features.form_builder.qtside.canvas.core.space import CanvasPoint
 from app.features.form_builder.qtside.inspector import InspectorPane
 from app.features.form_builder.qtside.inspector.api import GROUP_ORDER, GroupId
 from app.features.form_builder.qtside.realize.api import Realizer
@@ -65,6 +68,36 @@ _GROUP = form(
    <property name="title"><string>Details</string></property>
    <property name="checkable"><bool>true</bool></property>
    <property name="checked"><bool>true</bool></property>
+  </widget>
+""",
+)
+
+_REFUSED = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>260</height></rect></property>
+  <widget class="QGroupBox" name="box">
+   <property name="geometry"><rect><x>40</x><y>40</y><width>260</width><height>150</height></rect></property>
+   <property name="title"><string>Details</string></property>
+  </widget>
+""",
+)
+
+_PAGES = form(
+    'class="QWidget" name="Form"',
+    """
+  <property name="geometry"><rect><x>0</x><y>0</y><width>400</width><height>300</height></rect></property>
+  <widget class="QTabWidget" name="tabs">
+   <property name="currentIndex"><number>0</number></property>
+   <widget class="QWidget" name="general">
+    <attribute name="title"><string>General</string></attribute>
+   </widget>
+   <widget class="QWidget" name="advanced">
+    <attribute name="title"><string>Advanced</string></attribute>
+   </widget>
+   <widget class="QWidget" name="about">
+    <attribute name="title"><string>About this form</string></attribute>
+   </widget>
   </widget>
 """,
 )
@@ -140,6 +173,8 @@ def _shoot(qapp: QApplication, folder: Path, scale: int) -> None:
         _canvas_shot(tokens, folder, "dock-bands", _DOCK, mode, scale, _bands)
         _canvas_shot(tokens, folder, "mdi-windows", MDI, mode, scale, _second_window)
         _canvas_shot(tokens, folder, "wizard-root", _WIZARD_ROOT, mode, scale, None)
+        _canvas_shot(tokens, folder, "insert-refused-wizard-page", _REFUSED, mode, scale, _refuse_wizard_page)
+        _inspector_shot(qapp, tokens, folder, "inspector-pages", _PAGES, "tabs", (GroupId.PAGES,), mode, scale)
         _inspector_shot(qapp, tokens, folder, "rows-dock", _DOCK, "dock", (GroupId.PLACEMENT, GroupId.CONTENT), mode, scale)
         _inspector_shot(qapp, tokens, folder, "rows-panel", _PANEL, "dock", (GroupId.PLACEMENT,), mode, scale)
         _inspector_shot(qapp, tokens, folder, "rows-group", _GROUP, "box", (GroupId.CONTENT, GroupId.APPEARANCE), mode, scale)
@@ -172,6 +207,20 @@ def _canvas_shot(
         canvas.dispose()
         parent.deleteLater()
         _flush()
+
+
+def _refuse_wizard_page(session: FormSession, canvas: FormCanvas) -> None:
+    """UX-CAT-014: a wizard page held over a group box shows the refusal sentence."""
+    canvas._controller._index.ensure_fresh()
+    box = session.document.by_name("box")[0]
+    rect = canvas._controller._index.rect_of(box)
+    assert rect is not None
+    view = canvas._controller._stage.view_map()
+    point = CanvasPoint(
+        int(view.page_origin.x + (rect.x + rect.width // 2) * view.factor),
+        int(view.page_origin.y + (rect.y + rect.height // 2) * view.factor),
+    )
+    canvas.send(PlaceAsked(point, DropPayload("widget", wizard_page=True), "QWizardPage"))
 
 
 def _second_window(session: FormSession, canvas: FormCanvas) -> None:

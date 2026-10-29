@@ -38,11 +38,17 @@ _STUBS = frozenset(
 )
 _MILESTONE = re.compile(r"\bM[0-9]+(\.[0-9]+)?[a-z]?\b")
 _BANNED = re.compile(r"\bphase\b|later release|coming soon|form\.action\.|formBuilder\.", re.IGNORECASE)
+# UX-M4-005: ui4 element and attribute names belong to the Qt-name line and the XML view only.
+_UI4_WORDS = re.compile(
+    r"\b(?:stdset|notr|iconset|cstring|extracomment|stringlist|sizepolicy|sizehint|"
+    r"horstretch|verstretch|connectionhints|customwidgets?|layoutstretch)\b",
+    re.IGNORECASE,
+)
 _NODE_ID = re.compile(r"\b(?:node[_ -]?id|nid)\b|\bn\d{2,}\b", re.IGNORECASE)
 
 
 def test_user_visible_strings_hide_milestones_and_internal_ids() -> None:
-    """UX-COPY-002. UX-EMPTY-006 is the only stub allowed to name a milestone."""
+    """UX-COPY-002 and UX-M4-005 (no ui4 element names). UX-EMPTY-006 is the only stub allowed to name a milestone."""
     hits = list(_scan())
     assert hits == [], "\n".join("%s:%s: %s" % item for item in hits)
 
@@ -69,6 +75,7 @@ def _banned(text: str) -> bool:
         _MILESTONE.search(text) is not None
         or _BANNED.search(text) is not None
         or _NODE_ID.search(text) is not None
+        or _UI4_WORDS.search(text) is not None
     )
 
 

@@ -177,6 +177,7 @@ def test_every_catalog_entry_saves_loads_and_matches_uic(key: str, tmp_path: Pat
 
 @pytest.mark.parametrize("key", _FREECAD)
 def test_a_freecad_declaration_lands_once_per_form(key: str) -> None:
+    """UX-CAT-016: inserting a FreeCAD widget adds its declaration once per form."""
     session = open_session(_host_text(key), "/tmp/cbcs-m41-freecad.ui")
     try:
         _insert(session, key)

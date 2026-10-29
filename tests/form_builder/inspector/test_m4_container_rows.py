@@ -33,6 +33,7 @@ def test_wizard_step_rows_are_for_wizard_pages_only() -> None:
 @pytest.mark.parity("R3-124")
 @pytest.mark.parity("R3-125")
 def test_group_box_and_frame_rows_have_the_spec_labels() -> None:
+    """UX-CONT-014 and UX-CONT-015: row labels (the Line widget's reduced rows are not checked)."""
     rows = {row.key: row for row in default_catalog().rows()}
     assert rows["checkable"].label == "Can be switched off"
     assert rows["checkable"].classes == ("QGroupBox",)

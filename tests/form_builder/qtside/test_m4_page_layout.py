@@ -57,6 +57,7 @@ _KEYS = (
 @pytest.mark.parity("R3-132")
 @pytest.mark.parametrize("target", ["page", "scrollAreaWidgetContents", "dockWidgetContents"])
 def test_ctrl_1_through_6_lay_out_a_page_scroll_content_and_dock_content(tmp_path: Path, target: str) -> None:
+    """UX-CONT-016: Ctrl+1 to Ctrl+6 on a page."""
     parent = QWidget()
     parent.resize(900, 640)
     surface = _open(parent, _UI, tmp_path / "pages.ui")
