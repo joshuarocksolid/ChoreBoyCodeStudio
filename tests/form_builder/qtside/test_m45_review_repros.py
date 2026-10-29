@@ -71,3 +71,30 @@ def test_a_combo_starts_on_an_item_chosen_by_its_text(qapp: QApplication, tmp_pa
         assert "<number>1</number>" in session.text()
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_selecting_a_widget_on_a_hidden_page_from_the_outline_shows_that_page() -> None:
+    """UX-CONT-006. The shop owner built a whole page while the canvas showed the other one."""
+    from app.features.form_builder.engine.query.selection import SelectionSource
+    from app.features.form_builder.engine.ui4.writer import write_ui
+    from app.features.form_builder.integration.canvas import FormCanvas
+    from tests.form_builder.qtside.support import opened
+    from tests.form_builder.qtside.test_m4_pages_canvas import TABS, _Host, _shown_index
+
+    with opened(TABS) as (session, realizer):
+        parent = QWidget()
+        parent.resize(640, 480)
+        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas.resize(640, 480)
+        parent.show()
+        QApplication.processEvents()
+        before = write_ui(session.document).text
+        assert _shown_index(canvas, "tabs") == 0
+        hidden = session.document.by_name("inside_b")[0]
+        session.selection.set((hidden,), current=hidden, source=SelectionSource.OUTLINE)
+        for _ in range(4):
+            QApplication.processEvents()
+        assert _shown_index(canvas, "tabs") == 1
+        assert write_ui(session.document).text == before, "showing a page never writes the file"
+        canvas.dispose()
+        parent.deleteLater()
