@@ -8,7 +8,7 @@ for the life of the workbench.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, Tuple, cast
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
@@ -172,5 +172,7 @@ class _Controller:
         from app.features.form_builder.qtside.style.picture import pick_picture
 
         step = getattr(parent, "visit_step", None)
-        label, token = step() if callable(step) else ("Add picture", "")
+        label, token = ("Add picture", "")
+        if callable(step):
+            label, token = cast(Tuple[str, str], step())
         return pick_picture(self._session, self._chrome(), parent, label=label, token=token)
