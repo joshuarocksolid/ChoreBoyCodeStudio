@@ -7,6 +7,7 @@ keeps one QApplication, so each test puts the style and font back.
 
 from __future__ import annotations
 
+import sys
 import uuid
 from typing import List
 
@@ -62,7 +63,12 @@ def session(qapp: QApplication):  # type: ignore[no-untyped-def]
     child = ChildSession(writer, qapp)
     yield child, writer
     for view_id in list(child._views):  # noqa: SLF001
-        child._views.pop(view_id).widget.deleteLater()  # noqa: SLF001
+        widget = child._views.pop(view_id).widget  # noqa: SLF001
+        widget.hide()
+        widget.deleteLater()
+    qapp.processEvents()
+    for name in ("forms.ui_main", "ui_preview"):
+        sys.modules.pop(name, None)
     qapp.setStyle(QStyleFactory.create(style))
     qapp.setFont(font)
     qapp.removeEventFilter(child._user_close)  # noqa: SLF001
