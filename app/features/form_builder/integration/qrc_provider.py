@@ -64,6 +64,12 @@ class _ShellUndo:
         self._filter = _ShowHideFilter(surface, self.bind, self.unbind)
         surface.installEventFilter(self._filter)  # type: ignore[attr-defined]
         surface.source.subscribe_changed(self.sync)  # type: ignore[attr-defined]
+        surface.released_hook = self.release  # type: ignore[attr-defined]
+
+    def release(self) -> None:
+        """Before Qt deletes the surface: hand back the menu items and stop hearing its events."""
+        self.unbind()
+        self._surface.removeEventFilter(self._filter)  # type: ignore[attr-defined]
 
     def _window(self) -> object:
         return self._surface.window()  # type: ignore[attr-defined]
@@ -80,6 +86,8 @@ class _ShellUndo:
         )
 
     def bind(self) -> None:
+        if self._surface.released:  # type: ignore[attr-defined]
+            return
         window = self._window()
         undo, redo = self._actions()
         if undo is None or redo is None:
@@ -106,6 +114,8 @@ class _ShellUndo:
         if getattr(window, "_qrc_undo_surface", None) is not self._surface:
             return
         if getattr(window, "_form_undo_surface", None) is not None:
+            return
+        if self._surface.released:  # type: ignore[attr-defined]
             return
         source = self._surface.source  # type: ignore[attr-defined]
         if source.mode != "pictures":

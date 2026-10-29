@@ -82,6 +82,8 @@ class QrcSurface(QWidget):
         self._editor: Optional[QWidget] = None
         self._released = False
         self._loading = False
+        #: Called once from ``release``, before Qt deletes the widget.
+        self.released_hook: Callable[[], None] = lambda: None
         self.setObjectName("formBuilder.qrcSurface")
         self.setAccessibleName("Pictures file")
         root = QVBoxLayout(self)
@@ -231,6 +233,7 @@ class QrcSurface(QWidget):
             return
         self._released = True
         self._unsubscribe()
+        self.released_hook()
         self.deleteLater()
 
     # ----- state -----
@@ -238,6 +241,11 @@ class QrcSurface(QWidget):
     @property
     def source(self) -> QrcEditSource:
         return self._source
+
+    @property
+    def released(self) -> bool:
+        """True once the tab let go of the surface; Qt may be deleting it."""
+        return self._released
 
     @property
     def grid(self) -> QrcGrid:
