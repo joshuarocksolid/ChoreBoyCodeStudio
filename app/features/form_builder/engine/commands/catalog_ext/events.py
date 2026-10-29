@@ -16,7 +16,7 @@ steps need is inserted, removed or moved. The whole change is one log entry.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import ClassVar, Dict, Hashable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.commands import planning
@@ -36,7 +36,7 @@ from app.features.form_builder.engine.logic.events import (
 from app.features.form_builder.engine.logic.events_codec import EventStep, WriteError, write_list
 from app.features.form_builder.engine.logic.codec import marker_read_only
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.schema import SlotsDecl
+from app.features.form_builder.engine.ui4.schema import ConnectionHint, SlotsDecl
 
 Overloads = Tuple[Tuple[str, Tuple[str, ...]], ...]
 
@@ -157,6 +157,7 @@ def _plan_event(
     existing_keys = {step_key(doc, step) for step in state.steps if step.verb in ("slot", "call")}
     for step in steps:
         _check_step(doc, step, overloads, existing_keys)
+    steps = tuple(_with_d7_hints(state.steps, step) for step in steps)
     if not steps:
         _remove_natives(ctx, state.native)
         _write_list(doc, ctx, state, node.id, (), None)
@@ -243,12 +244,7 @@ def _write_native(
     used: Dict[NodeId, int] = {}
     matched: List[Optional[NativeRef]] = []
     for step in steps:
-        key = step_key(doc, step)
-        found: Optional[NativeRef] = None
-        for ref in existing:
-            if ref.node_id not in used and step_key(doc, ref.step) == key:
-                found = ref
-                break
+        found = _take_existing(doc, step, existing, used)
         if found is not None:
             used[found.node_id] = len(used)
         matched.append(found)
@@ -269,9 +265,59 @@ def _write_native(
         signal, receiver, slot = _new_connection(doc, step, overloads)
         at = _slot_index(doc, live, previous, kept_ids, sender, None)
         added = planning.add_connection(doc, ctx, sender, signal, receiver, slot, at)
+        if step.hints:
+            planning.set_field(
+                doc,
+                ctx,
+                added,
+                "hints",
+                tuple(ConnectionHint(kind, x, y) for kind, x, y in step.hints),
+            )
         live.insert(at, added)
         kept_ids.append(added)
         previous = added
+
+
+def _arrow_end(step: EventStep) -> Tuple[str, str]:
+    name, params = compat.split_signature(step.slot)
+    return step.target, compat.signature_text(name, params)
+
+
+def _with_d7_hints(old: Sequence[EventStep], step: EventStep) -> EventStep:
+    """Drop hint points that were copied onto a different receiver or slot (UX D7).
+
+    The same points on the same arrow end stay. Points that no previous step
+    carried are new and stay too.
+    """
+    if step.verb != "slot" or not step.hints:
+        return step
+    end = _arrow_end(step)
+    same = False
+    copied = False
+    for prior in old:
+        if prior.verb != "slot" or prior.hints != step.hints:
+            continue
+        if _arrow_end(prior) == end:
+            same = True
+        else:
+            copied = True
+    if copied and not same:
+        return replace(step, hints=())
+    return step
+
+
+def _take_existing(
+    doc: UiDocument, step: EventStep, existing: Sequence[NativeRef], used: Dict[NodeId, int]
+) -> Optional[NativeRef]:
+    """The element for ``step``. Prefer the one whose hint points already match."""
+    key = step_key(doc, step)
+    candidates = [ref for ref in existing if ref.node_id not in used and step_key(doc, ref.step) == key]
+    if not candidates:
+        return None
+    for ref in candidates:
+        if ref.step.hints == step.hints:
+            return ref
+    return candidates[0]
 
 
 def _stay_set(matched_ids: Sequence[NodeId], live: Sequence[NodeId]) -> set:
