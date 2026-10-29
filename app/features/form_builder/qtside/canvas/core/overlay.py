@@ -568,7 +568,7 @@ def build_frame(static: StaticLayer, inputs: FrameInputs) -> OverlayFrame:
 def _dimmed(items: Sequence[Item]) -> List[Item]:
     dimmed: List[Item] = []
     for item in items:
-        if isinstance(item, (Stroke, Fill)) and item.role in _DIMMED_ROLES and not isinstance(item, LayerItem):
+        if isinstance(item, (Stroke, Fill, Caption)) and item.role in _DIMMED_ROLES and not isinstance(item, LayerItem):
             dimmed.append(replace(item, alpha=item.alpha * _DIM))
         else:
             dimmed.append(item)

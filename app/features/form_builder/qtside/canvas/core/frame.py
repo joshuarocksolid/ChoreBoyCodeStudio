@@ -93,6 +93,8 @@ class Caption:
     rect: CanvasRect
     lines: Tuple[str, ...]
     role: Role = "layout"
+    #: Under a mode overlay (tab order, buddies) "Drop widgets here" fades with the layout frames (UX-OVL-003).
+    alpha: float = 1.0
 
 
 @dataclass(frozen=True)

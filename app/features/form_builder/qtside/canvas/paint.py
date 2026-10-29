@@ -240,7 +240,7 @@ def _badge(painter: QPainter, item: Badge, palette: CanvasPalette) -> None:
 
 
 def _caption(painter: QPainter, item: Caption, palette: CanvasPalette) -> None:
-    painter.setPen(_ink(palette, item.role, 1.0))
+    painter.setPen(_ink(palette, item.role, item.alpha))
     painter.setFont(_semibold(11))
     line_height = 14.0
     total = line_height * len(item.lines)
