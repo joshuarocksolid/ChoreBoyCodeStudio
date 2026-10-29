@@ -180,6 +180,13 @@ def _draw_dialog(painter: QPainter, chrome: FormChrome, x: int, y: int, width: i
     painter.fillRect(x + width - 38, button_y, 38, 14, QColor(chrome.accent))
 
 
+def _draw_dialog_right(painter: QPainter, chrome: FormChrome, x: int, y: int, width: int, height: int) -> None:
+    side = 34
+    _draw_fields(painter, chrome, x, y, width - side - 8, height, 0)
+    painter.fillRect(x + width - side, y, side, 14, QColor(chrome.accent))
+    painter.drawRect(x + width - side, y + 20, side, 14)
+
+
 def _draw_blank(painter: QPainter, chrome: FormChrome, x: int, y: int, width: int, height: int) -> None:
     del chrome
     painter.drawRect(x, y, width, height)
@@ -219,6 +226,7 @@ _WIREFRAMES = {
     "list_detail": _draw_list_detail,
     "table_search": _draw_table_search,
     "dialog_ok_cancel": _draw_dialog,
+    "dialog_buttons_right": _draw_dialog_right,
     "widget": _draw_blank,
     "main_window": _draw_main_window,
     "dialog": _draw_blank,

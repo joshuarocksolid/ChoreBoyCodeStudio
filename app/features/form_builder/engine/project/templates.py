@@ -73,6 +73,15 @@ def _templates() -> Tuple[FormTemplate, ...]:
             "nameEdit",
         ),
         FormTemplate(
+            "dialog_buttons_right",
+            "Dialog with buttons on the right",
+            "Fields, buttons at the side.",
+            GROUP_TEMPLATES,
+            "QDialog",
+            True,
+            "nameEdit",
+        ),
+        FormTemplate(
             "widget",
             "Widget",
             "Empty vertical layout.",
@@ -248,6 +257,44 @@ def _dialog_ok_cancel(class_name: str) -> str:
     )
 
 
+def _dialog_buttons_right(class_name: str) -> str:
+    """UX-TMPL-005: the content area, then a vertical OK and Cancel box wired to accept and reject."""
+    rows = (
+        ("nameLabel", "Name", "nameEdit", "QLineEdit"),
+        ("emailLabel", "Email", "emailEdit", "QLineEdit"),
+    )
+    buttons = (
+        "    <widget class=\"QDialogButtonBox\" name=\"buttonBox\">\n"
+        "     <property name=\"orientation\">\n"
+        "      <enum>Qt::Orientation::Vertical</enum>\n"
+        "     </property>\n"
+        "     <property name=\"standardButtons\">\n"
+        "      <set>QDialogButtonBox::StandardButton::Cancel|QDialogButtonBox::StandardButton::Ok</set>\n"
+        "     </property>\n"
+        "    </widget>\n"
+    )
+    inner = (
+        '  <layout class="QHBoxLayout" name="horizontalLayout">\n'
+        "   <item>\n"
+        "%s"
+        "   </item>\n"
+        "   <item>\n"
+        "%s"
+        "   </item>\n"
+        "  </layout>\n"
+    ) % (_form("formLayout", rows, indent="  "), buttons)
+    return form_document(
+        class_name,
+        "QDialog",
+        inner,
+        tabstops=tabstop_block(("nameEdit", "emailEdit", "buttonBox")),
+        connections=(
+            ("buttonBox", "accepted()", class_name, "accept()"),
+            ("buttonBox", "rejected()", class_name, "reject()"),
+        ),
+    )
+
+
 def _blank(root_class: str):
     def build(class_name: str) -> str:
         inner = '  <layout class="QVBoxLayout" name="verticalLayout"/>\n'
@@ -360,6 +407,7 @@ _BUILDERS = {
     "list_detail": _list_detail,
     "table_search": _table_search,
     "dialog_ok_cancel": _dialog_ok_cancel,
+    "dialog_buttons_right": _dialog_buttons_right,
     "widget": _blank("QWidget"),
     "dialog": _blank("QDialog"),
     "main_window": _main_window,
