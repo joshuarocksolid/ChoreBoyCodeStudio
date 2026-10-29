@@ -1011,6 +1011,8 @@ class _Emitter:
             if rows:
                 self.add("%s.setRowCount(%s)" % (ref, len(rows)))
             for index, header in enumerate(columns):
+                if not _item_entries(header):
+                    continue  # uic makes no header item for an empty <column/>
                 self.add("item = QTableWidgetItem()")
                 self.add("%s.setHorizontalHeaderItem(%s, item)" % (ref, index))
                 self._emit_item_properties(
@@ -1021,6 +1023,8 @@ class _Emitter:
                     fallback_ref="%s.horizontalHeaderItem(%s)" % (ref, index),
                 )
             for index, header in enumerate(rows):
+                if not _item_entries(header):
+                    continue
                 self.add("item = QTableWidgetItem()")
                 self.add("%s.setVerticalHeaderItem(%s, item)" % (ref, index))
                 self._emit_item_properties(
@@ -1075,18 +1079,16 @@ class _Emitter:
             self._emit_item_properties(item, ref, tree=False, column=0)
 
     def _emit_tree_items(self, widget: WidgetNode, ref: str, items: Sequence[Node], path: Tuple[int, ...]) -> None:
+        """One variable per depth: a nested item must not rebind its parent's name."""
         self.note_class("QTreeWidgetItem")
+        var = _tree_var(len(path))
+        parent = ref if not path else _tree_var(len(path) - 1)
         for index, item in enumerate(items):
-            parent_expr = ref if not path else "item"
-            if not path:
-                self.add("item = QTreeWidgetItem(%s)" % ref)
-            else:
-                self.add("item = QTreeWidgetItem(item)")
+            self.add("%s = QTreeWidgetItem(%s)" % (var, parent))
             item_path = path + (index,)
             lookup = _tree_lookup(ref, item_path)
-            self._emit_item_properties(item, "item", tree=True, column=None, fallback_ref=lookup)
+            self._emit_item_properties(item, var, tree=True, column=None, fallback_ref=lookup)
             self._emit_tree_items(widget, ref, item.children("subitems"), item_path)
-            del parent_expr
 
     def _emit_item_properties(
         self,
@@ -1097,26 +1099,37 @@ class _Emitter:
         column: Optional[int],
         fallback_ref: str = "",
     ) -> None:
-        texts = _text_values(item)
-        for index, value in enumerate(texts):
-            if not isinstance(value, StringValue):
-                continue
-            expr = self.string_expr(value)
-            if tree:
-                statement = "%s.setText(%s, %s)" % (ref, index if column is None else column + index, expr)
-                later_ref = fallback_ref or ref
-                later = "%s.setText(%s, %s)" % (later_ref, index if column is None else column + index, expr)
-            else:
-                statement = "%s.setText(%s)" % (ref, expr)
-                later = "%s.setText(%s)" % (fallback_ref or ref, expr)
-            if value.notr is True:
-                self.add(statement)
-            else:
-                self.later(later)
-        for prop in item.properties():
-            if prop.name == "text":
-                continue
-            self._emit_one_property(item, ref, prop, copy_hfw=False)
+        """Item properties, as uic writes them.
+
+        Strings that need a translator go to ``retranslateUi`` through
+        ``fallback_ref`` (a lookup that still names this item there); the rest
+        is applied to ``ref`` while the item is the current variable. A tree
+        item's properties belong to the column of the ``text`` before them.
+        """
+        later_ref = fallback_ref or ref
+        for col, props in _item_groups(_item_entries(item), tree, column):
+            for name, value in props.items():
+                if name == "text":
+                    if not isinstance(value, StringValue):
+                        continue
+                    expr = self.string_expr(value)
+                    args = "%s, %s" % (col, expr) if tree else expr
+                    if value.notr is True:
+                        self.add("%s.setText(%s)" % (ref, args))
+                    else:
+                        self.later("%s.setText(%s)" % (later_ref, args))
+                    continue
+                if name not in _ITEM_PROPERTIES:
+                    continue
+                lines, expr = self._lower(value, ref, copy_hfw=False)
+                for line in lines:
+                    self.add(line)
+                args = "%s, %s" % (col, expr) if tree and name != "flags" else expr
+                setter = "set" + name[:1].upper() + name[1:]
+                if _translated(value):
+                    self.later("%s.%s(%s)" % (later_ref, setter, args))
+                else:
+                    self.add("%s.%s(%s)" % (ref, setter, args))
 
     def _emit_members(
         self, node: Node, ref: str, skip_attrs: frozenset, *, attributes: bool = True
@@ -1761,6 +1774,8 @@ def _parameter_clash(name: str) -> bool:
         return True
     if name == "brush" or (name.startswith("brush") and name[5:].isdigit()):
         return True
+    if name == "item" or (name.startswith("item") and name[4:].isdigit()):
+        return True
     if name.startswith("___q") and "item" in name:
         return True
     return qt_symbol(name)
@@ -2000,22 +2015,72 @@ def _scoped(owner: str, enum: str, text: str) -> str:
     return "%s.%s.%s" % (owner, enum, leaf)
 
 
-def _text_values(node: Node) -> List[Value]:
-    found: List[Value] = []
+_ITEM_PROPERTIES = frozenset(
+    (
+        "icon",
+        "font",
+        "textAlignment",
+        "background",
+        "foreground",
+        "toolTip",
+        "statusTip",
+        "whatsThis",
+        "checkState",
+        "flags",
+    )
+)
+
+
+def _tree_var(depth: int) -> str:
+    return "item" if depth == 0 else "item%d" % depth
+
+
+def _item_entries(node: Node) -> List[Tuple[str, Value]]:
+    """Typed and preserved ``<property>`` entries of an item, in document order.
+
+    A repeated name (one per tree column) keeps its earlier copies as opaque
+    elements anchored after the typed entries that precede them.
+    """
+    typed = [(prop.name, prop.value) for prop in node.properties()]
+    extra: List[Tuple[int, str, Value]] = []
     for opaque in node.opaque():
         element = opaque.element
         if element.tag != "property":
             continue
-        if dict(element.attrs).get("name") != "text":
-            continue
+        name = dict(element.attrs).get("name")
         text = _opaque_string(element)
-        if text is None:
+        if not name or text is None:
             continue
-        found.append(StringValue(text=text[0], notr=text[1]))
-    prop = node.prop("text")
-    if prop is not None:
-        found.append(prop.value)
-    return found
+        extra.append((opaque.anchor[1], name, StringValue(text=text[0], notr=text[1])))
+    merged: List[Tuple[str, Value]] = []
+    for position in range(len(typed) + 1):
+        for where, name, value in extra:
+            if min(where, len(typed)) == position:
+                merged.append((name, value))
+        if position < len(typed):
+            merged.append(typed[position])
+    return merged
+
+
+def _item_groups(
+    entries: Sequence[Tuple[str, Value]], tree_item: bool, column: Optional[int]
+) -> List[Tuple[int, Dict[str, Value]]]:
+    """Split an item's entries by column; the last value of a name wins (as in uic)."""
+    if not tree_item or column is not None:
+        return [(column or 0, dict(entries))]
+    groups: List[Tuple[int, Dict[str, Value]]] = []
+    current: Dict[str, Value] = {}
+    col = -1
+    for name, value in entries:
+        if name == "text":
+            if current:
+                groups.append((max(col, 0), current))
+                current = {}
+            col += 1
+        current[name] = value
+    if current:
+        groups.append((max(col, 0), current))
+    return groups
 
 
 def _opaque_string(element: OpaqueElement) -> Optional[Tuple[str, Optional[bool]]]:

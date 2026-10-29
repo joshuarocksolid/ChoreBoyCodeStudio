@@ -244,7 +244,6 @@ def test_item_properties_round_trip_through_uic(tmp_path) -> None:
     assert outcome[0] == "ok", outcome
 
 
-@pytest.mark.xfail(strict=True, reason="codegen lane owns engine/codegen/emit.py: an item toolTip is emitted as item.setToolTip after the nested item rebinds that name")
 def test_item_tooltip_matches_uic(tmp_path) -> None:
     import os
     from pathlib import Path

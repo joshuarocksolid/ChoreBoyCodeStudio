@@ -292,10 +292,11 @@ def test_escape_cancels_a_rename_and_a_text_edit(tmp_path: Path, qapp: QApplicat
             _show(surface, qapp, "email")
             search = surface.findChild(QLineEdit, "formBuilder.inspectorSearch")
             assert search is not None
-            search.setText("tool" if searching else "")
+            search.setText("mask" if searching else "")
             pane.flush()
             qapp.processEvents()
-            editor = _row(surface, "toolTip").findChild(QLineEdit)
+            # Tooltip opens a popover since M4.3d; Input mask is still an inline field.
+            editor = _row(surface, "inputMask").findChild(QLineEdit)
             assert editor is not None
             _key_into(editor, "typed")
             QTest.keyClick(editor, Qt.Key_Escape)
@@ -303,10 +304,10 @@ def test_escape_cancels_a_rename_and_a_text_edit(tmp_path: Path, qapp: QApplicat
             assert editor.text() == ""
             assert qapp.focusWidget() is editor
             if searching:
-                assert search.text() == "tool"
+                assert search.text() == "mask"
             QTest.keyClick(editor, Qt.Key_Escape)
             qapp.processEvents()
-            assert session.document.node(email).prop("toolTip") is None
+            assert session.document.node(email).prop("inputMask") is None
             search.setText("")
 
         # A spin box: typed digits are not committed until Enter, and Esc drops them.
