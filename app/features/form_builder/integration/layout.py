@@ -147,6 +147,7 @@ def _fit_canvas(
 
 
 BESIDE_MIN = 300
+READABLE_CHARS = 60
 
 
 @dataclass(frozen=True)
@@ -171,25 +172,33 @@ def fit_beside(
     min_beside: int = BESIDE_MIN,
     left_gain: int = 0,
     right_gain: int = 0,
+    readable: int = 0,
 ) -> "BesideFit | None":
     """Fit a split of ``share`` of the canvas row (at least ``min_beside``), keeping ``min_canvas`` for the canvas.
 
     When the row is too narrow for both, the
     Outline pane goes to its rail (``left_gain`` px back), then the inspector
-    (``right_gain``). None when even that leaves too little room.
+    (``right_gain``). None when even that leaves too little room. When ``readable``
+    is given, the split also asks for that many px (about 60 characters of code):
+    a step that gives it wins over an earlier one that only fits, and when no
+    step gives it the most railed one that fits wins.
     """
     steps = [(False, False)]
     if left_gain > 0:
         steps.append((True, False))
     if right_gain > 0:
         steps.append((left_gain > 0, True))
+    best = None
     for rail_left, rail_right in steps:
         width = row + (left_gain if rail_left else 0) + (right_gain if rail_right else 0)
         room = width - handle - min_canvas
         if room < min_beside:
             continue
-        return BesideFit(max(min_beside, min(int(width * share), room)), rail_left, rail_right)
-    return None
+        wanted = max(int(width * share), min(readable, room))
+        best = BesideFit(max(min_beside, min(wanted, room)), rail_left, rail_right)
+        if best.beside >= readable:
+            return best
+    return best
 
 
 def _clamp(value: int, low: int, high: int) -> int:
@@ -202,6 +211,7 @@ def _clamp(value: int, low: int, high: int) -> int:
 
 __all__ = [
     "BESIDE_MIN",
+    "READABLE_CHARS",
     "BesideFit",
     "CANVAS_MIN",
     "COMPACT_INSPECTOR",

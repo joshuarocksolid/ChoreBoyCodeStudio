@@ -195,3 +195,22 @@ def test_a_rename_rewrites_every_selector_that_names_the_widget_in_the_same_undo
     assert log.undo()
     assert document.root.value("styleSheet").text.startswith("#okButton")
     assert saved(document) == before
+
+
+def test_one_sheet_text_is_read_once_however_many_rows_and_checks_ask(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An apply asks for the same sheet from the colour rows, the override check and the drawer: one read (the 100 ms budget)."""
+    from app.features.form_builder.engine.style import sheet as sheet_module
+
+    reads: List[str] = []
+    real = sheet_module.tokenize
+
+    def counting(text: str):  # noqa: ANN202
+        reads.append(text)
+        return real(text)
+
+    monkeypatch.setattr(sheet_module, "tokenize", counting)
+    sheet_module.parse_sheet.cache_clear()
+    text = "QPushButton { color: #1A7F37; }\n#okButton { background: #fff; }"
+    for _ in range(5):
+        read_color(text, "okButton")
+    assert reads == [text]

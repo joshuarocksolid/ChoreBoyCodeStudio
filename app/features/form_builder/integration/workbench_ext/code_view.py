@@ -28,6 +28,7 @@ from app.qt.QtWidgets import QPlainTextEdit, QWidget
 logger = logging.getLogger(__name__)
 
 KEY = "code"
+READABLE_CHARS = 60
 CHANGE_MS = 300
 TOO_NARROW = "Make the window wider to see the code beside the form."
 RAILED_LEFT = "The Outline is on the left rail while the code is open."
@@ -140,7 +141,7 @@ class CodeViewController:
         if self.is_open():
             return True
         panel = self._ensure()
-        if not self._workbench.open_beside_canvas(KEY, panel):
+        if not self._workbench.open_beside_canvas(KEY, panel, readable=panel.readable_width(READABLE_CHARS)):
             self._say(TOO_NARROW)
             return False
         rails = getattr(self._workbench, "beside_rails", lambda: (False, False))()
@@ -149,6 +150,7 @@ class CodeViewController:
         elif rails[0]:
             self._say(RAILED_LEFT)
         self._retheme(panel)
+        panel.fit_font(READABLE_CHARS, self._workbench.beside_width())
         self.refresh()
         self._mark_selection(scroll=True)
         panel.setFocus()
@@ -159,6 +161,8 @@ class CodeViewController:
             return
         self._timer.stop()
         self._workbench.close_beside_canvas()
+        if self._panel is not None:
+            self._panel.restore_font()
         if focus_canvas:
             self._workbench.canvas.setFocus()
 
