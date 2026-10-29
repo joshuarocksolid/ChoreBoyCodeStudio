@@ -9,6 +9,7 @@ from app.editors.editor_manager import EditorManager
 from app.editors.editor_tab import DISK_CONFLICT_CHANGED, DISK_CONFLICT_MISSING, EditorTabState
 from app.shell.editor_tab_host_protocols import EditorTabWorkflowHost
 from app.shell.status_bar import EDITOR_DISK_STATE_MISSING, EDITOR_DISK_STATE_STALE
+from app.shell.tab_content_providers import focus_primary_surface
 
 
 def editor_disk_state(tab_state: object) -> str | None:
@@ -168,6 +169,11 @@ class EditorTabBufferWorkflow:
         self._host.render_lint_diagnostics_for_file(tab_path, trigger="tab_change")
         self._outline_workflow.handle_active_tab_changed()
         self._host.reveal_project_tree_path(tab_path)
+        tab_state = self._editor_manager.get_tab(tab_path)
+        if tab_state is not None and not tab_state.is_preview:
+            registry_getter = getattr(self._host, "tab_content_registry", None)
+            registry = registry_getter() if callable(registry_getter) else None
+            focus_primary_surface(registry, tab_state.file_path)
 
     def _editor_status_sentence(self, file_path: str) -> str | None:
         """A tab surface may replace the line and column with its own sentence."""
