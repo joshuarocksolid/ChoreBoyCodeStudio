@@ -4,13 +4,11 @@
 * Generated step code is Python 3.9 source and, run under PySide6, runs steps in list order: native steps first,
   off steps never, ``call`` steps get ``args`` values, a call answering False stops the list.
 * Connections the engine writes behave like uic's own (oracle; needs ``CBCS_FB_UIC``).
-* ``Method.params`` is M6.0s's; until it merges the tests use a shim (``params_shim``) and a strict xfail names the owner.
 """
 
 from __future__ import annotations
 
 import ast
-import dataclasses
 import importlib.util
 import os
 import sys
@@ -20,10 +18,7 @@ from typing import Any, List, Tuple
 
 import pytest
 
-from app.features.form_builder.engine.codegen import emit
 from app.features.form_builder.engine.codegen.api import generate_form_module
-from app.features.form_builder.engine.codegen.expanders import steps as steps_module
-from app.features.form_builder.engine.codegen.logic_hooks import Method
 from app.features.form_builder.engine.commands.catalog_ext.events import SetEventSteps
 from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.logic.events_codec import call_step, read_list, slot_step
@@ -45,28 +40,6 @@ _SPEC.loader.exec_module(_uic)
 
 CLEAR = slot_step("nameEdit", "clear()")
 FOCUS = slot_step("phoneEdit", "setFocus()")
-
-
-@pytest.fixture
-def params_shim(monkeypatch):  # type: ignore[no-untyped-def]
-    """Stand in for M6.0s's ``Method.params`` until that lane merges (strict xfail below names it)."""
-    if "params" in Method.__dataclass_fields__:
-        return
-
-    @dataclasses.dataclass(frozen=True)
-    class ShimMethod(Method):
-        params: str = ""
-
-    original = emit._render_method  # noqa: SLF001
-
-    def render(method: Any) -> str:
-        text = original(method)
-        params = getattr(method, "params", "")
-        head = "    def %s(self):" % method.name
-        return text.replace(head, "    def %s(self, %s):" % (method.name, params), 1) if params else text
-
-    monkeypatch.setattr(steps_module, "Method", ShimMethod)
-    monkeypatch.setattr(emit, "_render_method", render)
 
 
 def generate(text: str, tmp_path: Path) -> str:
@@ -121,8 +94,7 @@ def window(source: str, calls: List[Tuple[str, Tuple[Any, ...]]], answers: Any =
     return Window()
 
 
-def test_a_step_list_generates_python_39_with_one_handler_and_one_connect(tmp_path: Path, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del params_shim
+def test_a_step_list_generates_python_39_with_one_handler_and_one_connect(tmp_path: Path) -> None:
     off = slot_step("phoneEdit", "setFocus()", enabled=False)
     source = generate(with_list(CLEAR, call_step("m_one", 1), off, call_step("m_none", 0)), tmp_path)
     ast.parse(source, feature_version=(3, 9))
@@ -142,8 +114,8 @@ def test_a_form_without_lists_generates_exactly_what_it_did(tmp_path: Path) -> N
     assert "_cbcs" not in source and "self._form" not in source
 
 
-def test_steps_run_in_list_order_off_steps_never_and_call_gets_its_values(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del qapp, params_shim
+def test_steps_run_in_list_order_off_steps_never_and_call_gets_its_values(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    del qapp
     off = slot_step("phoneEdit", "setFocus()", enabled=False)
     text = with_list(call_step("m_none", 0), CLEAR, off, call_step("m_one", 1), slot_step("giftCheck", "toggle()"))
     calls: List[Tuple[str, Tuple[Any, ...]]] = []
@@ -156,8 +128,8 @@ def test_steps_run_in_list_order_off_steps_never_and_call_gets_its_values(tmp_pa
     assert not win.ui.phoneEdit.hasFocus()
 
 
-def test_a_call_that_answers_false_stops_the_steps_after_it(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del qapp, params_shim
+def test_a_call_that_answers_false_stops_the_steps_after_it(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    del qapp
     text = with_list(call_step("m_check", 0), CLEAR, slot_step("giftCheck", "toggle()", enabled=False))
     source = generate(text, tmp_path)
     assert "if self._form.m_check() is False:" in source
@@ -170,8 +142,8 @@ def test_a_call_that_answers_false_stops_the_steps_after_it(tmp_path: Path, qapp
         assert (win.ui.nameEdit.text() == "") is cleared, answer
 
 
-def test_slot_steps_get_only_the_values_their_parameters_take(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del qapp, params_shim
+def test_slot_steps_get_only_the_values_their_parameters_take(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    del qapp
     log = open_log(form())
     off = slot_step("giftCheck", "toggle()", enabled=False)
     log.execute(SetEventSteps("discountCheck", "toggled", (slot_step("giftCheck", "setChecked(bool)"), off)))
@@ -182,8 +154,8 @@ def test_slot_steps_get_only_the_values_their_parameters_take(tmp_path: Path, qa
     assert win.ui.giftCheck.isChecked() is False
 
 
-def test_native_steps_run_before_the_list_when_an_event_is_in_two_places(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del qapp, params_shim
+def test_native_steps_run_before_the_list_when_an_event_is_in_two_places(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    del qapp
     text = with_list(call_step("m_list", 0), slot_step("giftCheck", "toggle()", enabled=False))
     text = text.replace(
         " <connections/>\n",
@@ -195,8 +167,7 @@ def test_native_steps_run_before_the_list_when_an_event_is_in_two_places(tmp_pat
     assert [name for name, _ in calls] == ["m_native", "m_list"]
 
 
-def test_a_list_this_build_cannot_run_generates_nothing(tmp_path: Path, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del params_shim
+def test_a_list_this_build_cannot_run_generates_nothing(tmp_path: Path) -> None:
     message = read_list('[{"do": "message", "text": "hi"}]').steps[0]
     source = generate(with_list(CLEAR, message), tmp_path)  # one unknown verb: the event does nothing
     assert "_cbcs" not in source
@@ -204,8 +175,8 @@ def test_a_list_this_build_cannot_run_generates_nothing(tmp_path: Path, params_s
     assert "_cbcs" not in generate(broken.replace("[\n", "[\n  not json,\n", 1), tmp_path)
 
 
-def test_a_step_whose_target_left_the_form_is_a_comment_not_a_crash(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
-    del qapp, params_shim
+def test_a_step_whose_target_left_the_form_is_a_comment_not_a_crash(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    del qapp
     text = with_list(CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False), call_step("m_none", 0))
     text = text.replace("&quot;target&quot;: &quot;nameEdit&quot;", "&quot;target&quot;: &quot;gone&quot;")
     source = generate(text, tmp_path)
@@ -216,9 +187,9 @@ def test_a_step_whose_target_left_the_form_is_a_comment_not_a_crash(tmp_path: Pa
 
 
 @pytest.mark.logic("L-runtime-connect")
-def test_a_call_reaches_the_window_method_natively_and_from_a_list(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
+def test_a_call_reaches_the_window_method_natively_and_from_a_list(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
     """LOGIC_DESIGN 3.5: the form object is the receiver, so a method of the window class is there when ``setupUi`` runs."""
-    del qapp, params_shim
+    del qapp
     from PySide6.QtWidgets import QDialog
 
     seen: List[str] = []
@@ -251,11 +222,6 @@ def test_a_call_reaches_the_window_method_natively_and_from_a_list(tmp_path: Pat
     second.ui.clearButton.click()
     assert seen == ["save_invoice()", "save_invoice(False,)"]
 
-
-@pytest.mark.xfail(strict=True, reason="M6.0s: Method.params (codegen/logic_hooks.py and emit.py rendering) has not merged")
-def test_m6_0s_method_params_render_the_handler_signature(tmp_path: Path) -> None:
-    source = generate(with_list(CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False)), tmp_path)
-    assert "def _cbcs_clearButton_clicked(self, *args):" in source
 
 
 # --- native connections against uic (oracle) ------------------------------------------------

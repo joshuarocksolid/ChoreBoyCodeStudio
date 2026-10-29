@@ -682,29 +682,33 @@ def test_events_over_a_promoted_class_read_declarations_only(tmp_path: Path) -> 
     assert "till_button" not in sys.modules and "till_button" not in recorder.names
 
 
-# --- the codec and the neighbours' APIs (strict xfails for other lanes) -------------------
+# --- the neighbours' APIs --------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="M6.0b: engine/logic/codec.py (parse_steps, write_steps) has not merged")
-def test_m6_0b_codec_api_is_present() -> None:
-    from app.features.form_builder.engine.logic import codec  # type: ignore[attr-defined]
-
-    read = codec.parse_steps(write_list((CLEAR, FOCUS)))
-    assert read.error is None and len(read.steps) == 2
-    assert codec.write_steps(read.steps) == write_list((CLEAR, FOCUS))
-
-
-@pytest.mark.xfail(strict=True, reason="M6.0b: storage.signal_property / signal_of_property are not in logic/storage.py yet")
-def test_m6_0b_storage_owns_the_signal_property_names() -> None:
-    from app.features.form_builder.engine.logic import storage
-
-    assert storage.signal_property("clicked") == "cbcsOnClicked"  # type: ignore[attr-defined]
-
-
-@pytest.mark.xfail(strict=True, reason="M6.0b: new cbcsOn* entries of one owner are inserted among themselves by name (CONTRACTS 15.1)")
-def test_m6_0b_cbcs_on_entries_rank_by_name_when_inserted() -> None:
+def test_new_cbcs_on_entries_rank_among_themselves_by_name() -> None:
     log = open_log(form())
-    log.execute(SetEventSteps("nameEdit", "textChanged", (CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False))))
-    log.execute(SetEventSteps("nameEdit", "editingFinished", (CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False))))
+    off = (CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False))
+    log.execute(SetEventSteps("nameEdit", "textChanged", off))
+    log.execute(SetEventSteps("nameEdit", "editingFinished", off))
     names = [entry.name for entry in log.document.node(log.document.by_name("nameEdit")[0]).properties()]
     assert names == ["cbcsOnEditingFinished", "cbcsOnTextChanged"]
+
+
+def test_the_intents_register_through_the_intents_package() -> None:
+    from app.features.form_builder.engine.logic.intents import default_registry
+
+    registry = default_registry()
+    assert [i.intent_id for i in registry.all()][:3] == ["close-form", "accept", "reject"]
+    keep = registry.get("keep-in-step")
+    assert keep is not None and keep.needs_target and [m["event"] for m in keep.steps("qtySpin", "qtySlider")] == ["valueChanged"] * 2
+
+
+def test_a_list_the_codec_cannot_write_is_refused_as_fb401() -> None:
+    log = open_log(form())
+    before = saved(log.document)
+    raw = read_list('[{"do": "message", "n": 1}]').steps[0]
+    assert raw.raw is not None
+    nan = type(raw.raw)(raw.raw.verb, None, True, (("n", float("nan")),), ())
+    with pytest.raises(CommandRejected) as caught:
+        log.execute(SetEventSteps("clearButton", "clicked", (CLEAR, EventStep("message", raw=nan))))
+    assert caught.value.code == "FB401" and saved(log.document) == before

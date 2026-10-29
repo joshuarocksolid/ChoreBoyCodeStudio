@@ -34,7 +34,7 @@ from app.features.form_builder.engine.logic.events import (
     signal_property,
     step_key,
 )
-from app.features.form_builder.engine.logic.events_codec import EventStep, write_list
+from app.features.form_builder.engine.logic.events_codec import EventStep, WriteError, write_list
 from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
@@ -225,7 +225,11 @@ def _write_list(
         return
     if state.list_property is not None and state.list_steps == steps and state.list_signal == signal:
         return  # the same steps: keep the text exactly as it was read
-    planning.set_logic(doc, ctx, owner, key, write_list(steps, signal))
+    try:
+        text = write_list(steps, signal, state.list_extra)
+    except WriteError as error:
+        raise CommandRejected("This step list can't be written: %s" % error, code="FB401") from error
+    planning.set_logic(doc, ctx, owner, key, text)
 
 
 def _write_native(

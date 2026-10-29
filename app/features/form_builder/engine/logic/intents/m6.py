@@ -3,18 +3,19 @@
 An intent is a picker line that means "when this happens, do that": it adds one
 or two plain steps (a Qt slot on a widget or the form). The rule intents of M7.2
 register beside these. The package that discovers intents is M6.0s's
-(``engine/logic/intents/__init__.py``); until it merges this module defines the
-``Intent`` record of CONTRACTS 1.4 itself and exposes ``INTENTS`` and
-``register(registry)``.
+(``engine/logic/intents/__init__.py``) discovers ``register(registry)``. ``IntentSpec`` is
+this lane's richer record (target filters, dialog-only); ``register`` turns each into the
+registry's ``Intent``.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Mapping, Optional, Tuple
 
 from app.features.form_builder.engine.commands.catalog_ext.events import EventEdit, SetEventSteps, steps_added
 from app.features.form_builder.engine.logic import compat
+from app.features.form_builder.engine.logic.intents import Intent
 from app.features.form_builder.engine.logic.events_catalog import class_chain, event_words, step_words
 from app.features.form_builder.engine.logic.events_codec import EventStep, slot_step
 from app.features.form_builder.engine.query.tree import effective_tab_order, reading_order, takes_tab_focus
@@ -36,7 +37,7 @@ class IntentEdit:
 
 
 @dataclass(frozen=True)
-class Intent:
+class IntentSpec:
     """``sender_classes``: the intent is offered to a sender whose class chain holds one of these.
     ``event``: the signal the intent attaches to ("" when it names its own events).
     ``target_slot``: what a target must have ("" when no target is needed).
@@ -54,53 +55,88 @@ class Intent:
     target_title: str = ""
 
 
-def _event_of(intent: Intent, sender_chain: Tuple[str, ...]) -> str:
+def _event_of(intent: IntentSpecSpec, sender_chain: Tuple[str, ...]) -> str:
     if intent.event == "clicked" and "QAction" in sender_chain:
         return "triggered"
     return intent.event
 
 
-INTENTS: Tuple[Intent, ...] = (
-    Intent("close-form", "Close this form", _BUTTON_OR_ACTION, "clicked"),
-    Intent("accept", "Accept (OK)", _BUTTON_OR_ACTION, "clicked", dialog_only=True),
-    Intent("reject", "Cancel", _BUTTON_OR_ACTION, "clicked", dialog_only=True),
-    Intent(
+INTENTS: Tuple[IntentSpec, ...] = (
+    IntentSpec("close-form", "Close this form", _BUTTON_OR_ACTION, "clicked"),
+    IntentSpec("accept", "Accept (OK)", _BUTTON_OR_ACTION, "clicked", dialog_only=True),
+    IntentSpec("reject", "Cancel", _BUTTON_OR_ACTION, "clicked", dialog_only=True),
+    IntentSpec(
         "clear-field", "Clear a field…", _BUTTON_OR_ACTION, "clicked",
         needs_target=True, target_slot="clear()", target_title="Clear which field?",
     ),
-    Intent(
+    IntentSpec(
         "move-focus", "Move focus to…", _BUTTON_OR_ACTION, "clicked",
         needs_target=True, target_slot="setFocus()", target_title="Move focus to which field?",
     ),
-    Intent(
+    IntentSpec(
         "check-same-way", "Check another box the same way…", ("QCheckBox",), "toggled",
         needs_target=True, target_slot="setChecked(bool)", target_classes=("QCheckBox",),
         target_title="Which widget?",
     ),
-    Intent(
+    IntentSpec(
         "next-field", "Go to the next field when Enter is pressed…", ("QLineEdit",), "returnPressed",
         needs_target=True, target_slot="setFocus()", target_title="Move focus to which field?",
     ),
-    Intent(
+    IntentSpec(
         "show-page", "Show the matching page of…", ("QComboBox",), "currentIndexChanged",
         needs_target=True, target_slot="setCurrentIndex(int)",
         target_classes=("QTabWidget", "QStackedWidget"), target_title="Which widget?",
     ),
-    Intent(
+    IntentSpec(
         "keep-in-step", "Keep another one in step…", _STEP_WIDGETS, "valueChanged",
         needs_target=True, target_slot="setValue(int)", target_classes=_STEP_WIDGETS,
         target_title="Which widget?",
     ),
-    Intent("buttons-accept-reject", "OK accepts, Cancel closes", ("QDialogButtonBox",), "", dialog_only=True),
+    IntentSpec("buttons-accept-reject", "OK accepts, Cancel closes", ("QDialogButtonBox",), "", dialog_only=True),
 )
 
 
+def _plain_steps(spec: IntentSpec):  # type: ignore[no-untyped-def]
+    """The registry's ``steps(sender, target)``: mappings of the logic schema, each with its ``event``.
+    A step with no ``target`` key acts on the form."""
+
+    def steps(sender: str, target: Optional[str]) -> Tuple[Mapping[str, Any], ...]:
+        form = {"close-form": "close()", "accept": "accept()", "reject": "reject()"}
+        if spec.intent_id in form:
+            return ({"do": "slot", "slot": form[spec.intent_id], "event": spec.event},)
+        if spec.intent_id == "buttons-accept-reject":
+            return (
+                {"do": "slot", "slot": "accept()", "event": "accepted"},
+                {"do": "slot", "slot": "reject()", "event": "rejected"},
+            )
+        if target is None:
+            return ()
+        if spec.intent_id == "keep-in-step":
+            return (
+                {"do": "slot", "target": target, "slot": "setValue(int)", "event": "valueChanged"},
+                {"do": "slot", "target": sender, "slot": "setValue(int)", "event": "valueChanged", "sender": target},
+            )
+        return ({"do": "slot", "target": target, "slot": spec.target_slot, "event": spec.event},)
+
+    return steps
+
+
 def register(registry: object) -> None:
+    """Register the M6 intents with ``engine/logic/intents`` (M6.0s)."""
     add = getattr(registry, "add", None)
     if add is None:
         return
-    for intent in INTENTS:
-        add(intent)
+    for spec in INTENTS:
+        add(
+            Intent(
+                spec.intent_id,
+                spec.words,
+                _plain_steps(spec),
+                sender_classes=spec.sender_classes,
+                event=spec.event,
+                needs_target=spec.needs_target,
+            )
+        )
 
 
 def _sender_chain(doc: UiDocument, classes: QtClassTable, sender: str) -> Tuple[str, ...]:
@@ -117,7 +153,7 @@ def _root_is_dialog(doc: UiDocument, classes: QtClassTable) -> bool:
 
 def intents_for(
     doc: UiDocument, classes: QtClassTable, sender: str, event: Optional[str] = None
-) -> Tuple[Intent, ...]:
+) -> Tuple[IntentSpec, ...]:
     """The intents offered for ``sender``, in table order.
 
     From "+ Then…" (``event`` given) only intents of that event are listed; from
@@ -139,7 +175,7 @@ def intents_for(
     return tuple(found)
 
 
-def target_candidates(doc: UiDocument, classes: QtClassTable, intent: Intent, sender: str) -> Tuple[str, ...]:
+def target_candidates(doc: UiDocument, classes: QtClassTable, intent: IntentSpec, sender: str) -> Tuple[str, ...]:
     """Object names that fit the intent's target page (UX-PICK-005): reading order, the form first when it fits."""
     if not intent.needs_target:
         return ()
@@ -167,7 +203,7 @@ def target_candidates(doc: UiDocument, classes: QtClassTable, intent: Intent, se
     return tuple(names)
 
 
-def default_target(doc: UiDocument, intent: Intent, sender: str) -> Optional[str]:
+def default_target(doc: UiDocument, intent: IntentSpec, sender: str) -> Optional[str]:
     """The target page starts on the next field in tab order (UX-PICK-004 "next field")."""
     if intent.intent_id != "next-field":
         return None
@@ -178,7 +214,7 @@ def default_target(doc: UiDocument, intent: Intent, sender: str) -> Optional[str
     return order[index + 1] if index + 1 < len(order) else None
 
 
-def edits(doc: UiDocument, classes: QtClassTable, intent: Intent, sender: str, target: Optional[str] = None) -> Tuple[IntentEdit, ...]:
+def edits(doc: UiDocument, classes: QtClassTable, intent: IntentSpec, sender: str, target: Optional[str] = None) -> Tuple[IntentEdit, ...]:
     """The plain steps an intent adds, each on its event."""
     chain = _sender_chain(doc, classes, sender)
     root = doc.root.object_name
@@ -207,7 +243,7 @@ def edits(doc: UiDocument, classes: QtClassTable, intent: Intent, sender: str, t
 def command(
     doc: UiDocument,
     classes: QtClassTable,
-    intent: Intent,
+    intent: IntentSpec,
     sender: str,
     target: Optional[str] = None,
     display: Callable[[str], str] = lambda name: name,
@@ -225,7 +261,7 @@ def command(
 
 
 def _caption(
-    doc: UiDocument, classes: QtClassTable, intent: Intent, planned: Tuple[IntentEdit, ...], display: Callable[[str], str]
+    doc: UiDocument, classes: QtClassTable, intent: IntentSpec, planned: Tuple[IntentEdit, ...], display: Callable[[str], str]
 ) -> str:
     if intent.intent_id == "keep-in-step":
         return "Keep %s and %s in step" % (display(planned[0].sender), display(planned[1].sender))

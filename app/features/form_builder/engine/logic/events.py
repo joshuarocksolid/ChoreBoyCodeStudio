@@ -11,34 +11,16 @@ is the only writer.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.logic.compat import signature_text, split_signature
 from app.features.form_builder.engine.logic.events_codec import EventStep, StepList, read_list
+from app.features.form_builder.engine.logic.storage import signal_of_property, signal_property
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import Node
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
 from app.features.form_builder.engine.ui4.values import StringValue
-
-try:  # M6.0b owns these two; the stand-ins follow CONTRACTS 15.1 until it merges.
-    from app.features.form_builder.engine.logic.storage import (  # type: ignore[attr-defined]
-        signal_of_property,
-        signal_property,
-    )
-except ImportError:  # pragma: no cover - exercised until M6.0b merges
-    PREFIX = "cbcsOn"
-
-    def signal_property(name: str) -> str:
-        """``clicked`` -> ``cbcsOnClicked``."""
-        return PREFIX + name[:1].upper() + name[1:]
-
-    def signal_of_property(key: str) -> Optional[str]:
-        """``cbcsOnClicked`` -> ``clicked``; None when ``key`` is not a ``cbcsOn<Signal>`` name."""
-        if not key.startswith(PREFIX) or len(key) == len(PREFIX) or not key[len(PREFIX)].isupper():
-            return None
-        return key[len(PREFIX)].lower() + key[len(PREFIX) + 1 :]
-
 
 @dataclass(frozen=True)
 class NativeRef:
@@ -62,6 +44,7 @@ class EventState:
     list_steps: Tuple[EventStep, ...]
     list_signal: Optional[str]
     list_error: Optional[Tuple[int, str]]
+    list_extra: Tuple[Tuple[str, Any], ...] = ()
 
     @property
     def steps(self) -> Tuple[EventStep, ...]:
@@ -143,6 +126,7 @@ def read_event(doc: UiDocument, sender: str, signal_name: str) -> EventState:
         list_steps=parsed.steps if parsed is not None else (),
         list_signal=parsed.signal if parsed is not None else None,
         list_error=parsed.error if parsed is not None else None,
+        list_extra=parsed.extra if parsed is not None else (),
     )
 
 
