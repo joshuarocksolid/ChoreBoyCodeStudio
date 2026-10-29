@@ -67,8 +67,8 @@ def test_a_fix_module_adds_buttons_for_its_code_and_they_ride_in_the_problem_row
     assert fixes_for(_diagnostic("FB032"), registry) == ()
     rows = code_diagnostics_for_form("/work/a.ui", (_diagnostic("FB031"), _diagnostic("FB032")), registry)
     first, second = rows[0].detail or {}, rows[1].detail or {}
-    assert json.loads(first["fb_fixes"])[0] == ["add-picture", "Add logo to project pictures"]
-    assert "fb_fixes" not in second
+    assert json.loads(first["fixes"])[0] == ["add-picture", "Add logo to project pictures"]
+    assert "fixes" not in second
 
 
 def test_running_a_fix_goes_through_its_code_only(fixes) -> None:  # type: ignore[no-untyped-def]
@@ -100,3 +100,42 @@ def test_the_product_codes_are_all_declared_after_discovery() -> None:
     names = diagnostic_codes.discover()
     assert {"fb0xx", "fb5xx", "fb6xx"} <= set(names)
     assert {"FB001", "FB601"} <= set(CODES)
+
+
+def test_a_fix_chosen_on_a_problems_row_runs_in_the_form_tab_with_its_diagnostic(  # type: ignore[no-untyped-def]
+    fixes, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, qapp
+) -> None:
+    import app.shell.problems_panel as panel_module
+    from app.qt.QtWidgets import QWidget
+    from app.shell.main_window_panels import _run_problem_fix
+    from tests.unit.features.form_builder.test_workbench import _FORM, _open
+
+    registry = problem_fixes.load_fixes(fixes)
+    monkeypatch.setattr(problem_fixes, "_DEFAULT", registry)
+    host = QWidget()
+    surface = _open(host, _FORM, tmp_path / "invoice.ui", project_root=str(tmp_path))
+    try:
+        found = _diagnostic("FB031")
+        monkeypatch.setattr(surface.session.diagnostics, "all", lambda: (found,))
+        rows = code_diagnostics_for_form(surface.form_path(), (found,))
+        panel = panel_module.ProblemsPanel()
+        panel.set_diagnostics(rows)
+        child = panel.tree_widget().topLevelItem(0).child(0)
+        assert "Fix: Add logo to project pictures" in child.toolTip(1)
+
+        class _Registry:
+            def surface_for_path(self, _path: str) -> object:
+                return surface
+
+        window = QWidget()
+        window._problems_panel = panel
+        window._tab_content_registry = _Registry()
+        panel.fix_requested.connect(lambda path, fix_id: _run_problem_fix(window, path, fix_id))
+        # Choose the first entry of the row's context menu.
+        monkeypatch.setattr(panel_module, "exec_qt", lambda menu, _at: menu.actions()[0])
+        panel._on_context_menu(panel.tree_widget().visualItemRect(child).center())
+        assert fixes.resources.RAN == ["logo"]
+        assert not surface.run_problem_fix("add-picture", {"fb_key": "gone"})
+    finally:
+        surface.release()
+        host.close()

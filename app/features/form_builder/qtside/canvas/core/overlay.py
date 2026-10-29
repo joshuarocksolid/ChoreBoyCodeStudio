@@ -166,8 +166,22 @@ class LayerOutput:
     targets: Tuple[Tuple[CanvasRect, Target], ...] = ()
 
 
-#: ``(static layer, frame inputs) -> LayerOutput``. Qt-free, like the rest of this module.
-OverlayLayer = Callable[["StaticLayer", "FrameInputs"], LayerOutput]
+#: ``(static layer, frame inputs, state) -> LayerOutput``. Qt-free, like the
+#: rest of this module. ``state`` is what the layer was switched on with.
+OverlayLayer = Callable[["StaticLayer", "FrameInputs", Hashable], LayerOutput]
+
+
+@dataclass(frozen=True)
+class ActiveLayer:
+    """A layer switched on for one canvas, with the state it was switched on with.
+
+    ``state`` is the layer's own per-canvas input (the node ids a style rule
+    matches, say), hashable so two frames compare equal when nothing changed.
+    """
+
+    name: str
+    build: OverlayLayer
+    state: Hashable = True
 
 
 @dataclass(frozen=True)
@@ -231,7 +245,7 @@ class FrameInputs:
     refusals: Tuple[Tuple[NodeId, str], ...] = ()
     #: Canvas layers switched on for this canvas, in paint order. The empty
     #: tuple costs one truth test per frame (M5.0s).
-    layers: Tuple[OverlayLayer, ...] = ()
+    layers: Tuple[ActiveLayer, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -546,9 +560,9 @@ def _run_layers(
     targets: List[Tuple[CanvasRect, Target]] = []
     for layer in inputs.layers:
         try:
-            output = layer(static, inputs)
+            output = layer.build(static, inputs, layer.state)
         except Exception:
-            logger.exception("canvas layer failed")
+            logger.exception("canvas layer %s failed", layer.name)
             continue
         items.extend(output.items)
         targets.extend(output.targets)

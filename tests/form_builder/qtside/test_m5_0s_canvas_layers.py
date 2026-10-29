@@ -33,9 +33,9 @@ _PROBE = """
 
     PAINTED = []
 
-    def _build(static, inputs):
+    def _build(static, inputs, state):
         root = inputs.document.root.id
-        box = CanvasRect(10, 10, 40, 40)
+        box = CanvasRect(10, 10, 40, 40) if state is True else CanvasRect(*state)
         return LayerOutput(
             (Stroke(box, "problem", 2, "solid"), LayerItem(box, "select", 1.0, "probe", ("tag",))),
             ((box, OnSpace(root, root)),),
@@ -51,7 +51,7 @@ _PROBE = """
 _BROKEN = """
     from app.features.form_builder.qtside.canvas.layers import CanvasLayer
 
-    def _build(static, inputs):
+    def _build(static, inputs, state):
         raise RuntimeError("lane bug")
 
     def register(registry):
@@ -79,15 +79,15 @@ def _frame(registry: layers.LayerRegistry, names):  # type: ignore[no-untyped-de
         static = build_static(session.document, index, view)
         inputs = _inputs(session, view, SelectionState(), Idle())
         plain = build_frame(static, inputs)
-        layered = build_frame(static, replace(inputs, layers=registry.resolve(names)))
+        layered = build_frame(static, replace(inputs, layers=registry.resolve(dict.fromkeys(names, True))))
         return plain, layered, form
 
 
 def test_discovery_orders_layers_and_a_name_nobody_registered_is_skipped(registry: layers.LayerRegistry) -> None:
     assert registry.names() == ("broken", "probe")
-    assert len(registry.resolve(("probe", "nobody"))) == 1
+    assert len(registry.resolve({"probe": True, "nobody": True})) == 1
     with pytest.raises(ValueError):
-        registry.add(layers.CanvasLayer("probe", lambda static, inputs: layers.LayerOutput()))
+        registry.add(layers.CanvasLayer("probe", lambda static, inputs, state: layers.LayerOutput()))
 
 
 def test_an_active_layer_adds_items_above_the_built_in_marks_and_wins_the_hit(  # type: ignore[no-untyped-def]
@@ -137,3 +137,33 @@ def test_a_layer_item_is_painted_by_its_layer_and_a_layer_with_no_painter_draws_
     finally:
         painter.end()
     assert image.pixelColor(30, 30).alpha() > 0
+
+
+def test_a_lane_switches_its_layer_on_and_off_for_one_canvas_with_its_own_state(  # type: ignore[no-untyped-def]
+    registry: layers.LayerRegistry, qapp, tmp_path: Path
+) -> None:
+    from app.qt.QtWidgets import QWidget
+    from tests.unit.features.form_builder.test_workbench import _FORM, _open
+
+    host = QWidget()
+    surface = _open(host, _FORM, tmp_path / "invoice.ui")
+    try:
+        canvas = surface.workbench.canvas
+        controller = canvas._controller
+
+        def drawn():  # type: ignore[no-untyped-def]
+            controller._pre_paint()
+            return [item for item in controller.frame.items if isinstance(item, LayerItem)]
+
+        assert drawn() == [] and controller._layers == ()
+        canvas.show_layer("probe", (5, 6, 7, 8))
+        assert canvas.layer_state("probe") == (5, 6, 7, 8)
+        found = drawn()
+        assert len(found) == 1 and (found[0].rect.x, found[0].rect.y) == (5, 6)
+        canvas.show_layer("probe", (9, 9, 7, 8))
+        assert [(item.rect.x, item.rect.y) for item in drawn()] == [(9, 9)]
+        canvas.hide_layer("probe")
+        assert drawn() == [] and controller._layers == () and canvas.layer_state("probe") is None
+    finally:
+        surface.release()
+        host.close()

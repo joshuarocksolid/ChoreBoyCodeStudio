@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 import dataclasses
-import importlib
 import logging
-import pkgutil
 from collections import OrderedDict
 from types import ModuleType
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
+from app.features.form_builder.engine.contributors import run_contributors
 from app.features.form_builder.engine.commands.base import Command
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.document import UiDocument
@@ -143,17 +142,9 @@ def load_form_groups(*packages: ModuleType) -> FormGroupRegistry:
     needs no import from the inspector. A module that fails is logged and skipped.
     """
     registry = FormGroupRegistry()
-    for package in packages:
-        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
-            if info.name.startswith("_"):
-                continue
-            try:
-                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
-                register = getattr(module, "register_form_groups", None)
-                if callable(register):
-                    register(registry.scope(module.__name__))
-            except Exception:
-                logger.exception("form group contributor %s failed", info.name)
+    run_contributors(
+        "inspector form group", packages, "register_form_groups", lambda module, hook: hook(registry.scope(module.__name__))
+    )
     return registry
 
 

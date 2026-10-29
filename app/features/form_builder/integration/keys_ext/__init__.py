@@ -14,17 +14,31 @@ reserved inert key, and a repeated command id. A lane never edits the table.
 
 Order: by module name, then registration order. That only decides which of two
 rows with the same key is named first in a problem line.
+
+Binding. A row is bound by the form tab (``FormSurface``) when it has a
+handler: ``registry.key(..., run=callable)``, where ``run(surface)`` receives
+the active form tab, or, without ``run``, the Form menu item
+(``form_menu_ext``) with the same ``command_id``, which then runs only while
+it is offered and enabled. A row whose contexts are all of canvas, outline
+and inspector gets one ``QShortcut`` per focus host; any other row gets one
+on the form tab. Settings can rebind every lane row
+(``extra_shortcut_rows``). A row with no handler stays a listed key only,
+like a table row whose gesture does not exist yet.
+
+Left sections declare their key in ``LeftSection.keys`` (``workbench_ext``);
+this package makes their row (``form.action.focusSection.<key>``, label
+"Focus <title>"), so a lane writes the key once and the collision test and
+Settings see it.
 """
 
 from __future__ import annotations
 
-import importlib
 import logging
-import pkgutil
 import sys
 from types import ModuleType
-from typing import List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from app.features.form_builder.engine.contributors import run_contributors
 from app.features.form_builder.engine.layout_actions import request_for
 from app.features.form_builder.engine.shell_commands import (
     _WM_FORBIDDEN,  # pyright: ignore[reportPrivateUsage]
@@ -39,13 +53,25 @@ from app.features.form_builder.engine.shell_commands import (
 
 logger = logging.getLogger(__name__)
 
+#: ``run(surface)``: what a lane key does in the active form tab.
+KeyHandler = Callable[[Any], None]
+
+SECTION_PREFIX = "form.action.focusSection."
+
 
 class KeyRegistry:
     def __init__(self) -> None:
         self._rows: List[Tuple[str, FormCommand]] = []
+        self._handlers: Dict[str, KeyHandler] = {}
 
-    def add(self, command: FormCommand, *, module: str = "") -> None:
+    def add(self, command: FormCommand, *, module: str = "", run: Optional[KeyHandler] = None) -> None:
         self._rows.append((module, command))
+        if run is not None:
+            self._handlers[command.command_id] = run
+
+    def handler(self, command_id: str) -> Optional[KeyHandler]:
+        """The ``run`` given with the row, if any."""
+        return self._handlers.get(command_id)
 
     def key(
         self,
@@ -59,8 +85,9 @@ class KeyRegistry:
         kind: str = "new",
         shell_action_id: str = "",
         module: str = "",
+        run: Optional[KeyHandler] = None,
     ) -> None:
-        """One key row. ``available`` stays False until the gesture exists, as in the table."""
+        """One key row. ``available`` is True when ``run`` is given or the gesture exists."""
         self.add(
             FormCommand(
                 command_id=command_id,
@@ -68,11 +95,12 @@ class KeyRegistry:
                 shortcut=shortcut,
                 contexts=contexts,
                 menu_path=menu,
-                available=available or request_for(command_id) is not None,
+                available=available or run is not None or request_for(command_id) is not None,
                 kind=kind,
                 shell_action_id=shell_action_id,
             ),
             module=module,
+            run=run,
         )
 
     def scope(self, module: str) -> "_ModuleScope":
@@ -88,8 +116,8 @@ class _ModuleScope:
         self._registry = registry
         self._module = module
 
-    def add(self, command: FormCommand) -> None:
-        self._registry.add(command, module=self._module)
+    def add(self, command: FormCommand, *, run: Optional[KeyHandler] = None) -> None:
+        self._registry.add(command, module=self._module, run=run)
 
     def key(
         self,
@@ -102,6 +130,7 @@ class _ModuleScope:
         available: bool = False,
         kind: str = "new",
         shell_action_id: str = "",
+        run: Optional[KeyHandler] = None,
     ) -> None:
         self._registry.key(
             command_id,
@@ -113,22 +142,13 @@ class _ModuleScope:
             kind=kind,
             shell_action_id=shell_action_id,
             module=self._module,
+            run=run,
         )
 
 
 def load_keys(*packages: ModuleType) -> KeyRegistry:
     registry = KeyRegistry()
-    for package in packages:
-        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
-            if info.name.startswith("_"):
-                continue
-            try:
-                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
-                register = getattr(module, "register", None)
-                if callable(register):
-                    register(registry.scope(module.__name__))
-            except Exception:
-                logger.exception("form key module %s failed", info.name)
+    run_contributors("keys", packages, "register", lambda module, hook: hook(registry.scope(module.__name__)))
     return registry
 
 
@@ -142,9 +162,70 @@ def default_registry() -> KeyRegistry:
     return _DEFAULT
 
 
+def _section_rows() -> Tuple[Tuple[FormCommand, KeyHandler], ...]:
+    """One row per left section that declares ``keys``, read fresh from ``workbench_ext``."""
+    from app.features.form_builder.integration.workbench_ext import default_slots
+
+    rows = []
+    for section in default_slots().sections():
+        if not section.keys:
+            continue
+        command = FormCommand(
+            command_id=SECTION_PREFIX + section.key,
+            label="Focus %s" % section.title,
+            shortcut=section.keys,
+            contexts=("form_tab",),
+            menu_path=(),
+            available=True,
+            kind="new",
+        )
+        rows.append((command, _focus_section(section.key)))
+    return tuple(rows)
+
+
+def _focus_section(key: str) -> KeyHandler:
+    def run(surface: Any) -> None:
+        surface.workbench.focus_section(key)
+
+    return run
+
+
 def extra_commands(registry: Optional[KeyRegistry] = None) -> Tuple[FormCommand, ...]:
-    """The lanes' rows, after the command table's."""
-    return (registry or default_registry()).commands()
+    """The lanes' rows, after the command table's, then the left sections' keys."""
+    return (registry or default_registry()).commands() + tuple(row for row, _run in _section_rows())
+
+
+def handler_for(command_id: str, registry: Optional[KeyRegistry] = None) -> Optional[KeyHandler]:
+    """What a lane row runs in a form tab, or None when it only lists a key.
+
+    The row's own ``run`` first, then a left section's focus, then the Form
+    menu item with the same id (asked whether it is offered and enabled).
+    """
+    found = (registry or default_registry()).handler(command_id)
+    if found is not None:
+        return found
+    for command, run in _section_rows():
+        if command.command_id == command_id:
+            return run
+    from app.features.form_builder.integration import form_menu_ext
+
+    for _module, item in form_menu_ext.default_registry().items():
+        if item.command_id == command_id:
+            return _menu_item_runner(item)
+    return None
+
+
+def _menu_item_runner(item: Any) -> KeyHandler:
+    def run(surface: Any) -> None:
+        try:
+            if not (item.offered(surface) and item.enabled(surface)):
+                return
+        except Exception:
+            logger.exception("form menu item %s could not answer", item.command_id)
+            return
+        item.run(surface)
+
+    return run
 
 
 def all_commands(registry: Optional[KeyRegistry] = None) -> Tuple[FormCommand, ...]:
@@ -222,5 +303,8 @@ __all__: Sequence[str] = [
     "default_registry",
     "extra_commands",
     "extra_shortcut_rows",
+    "handler_for",
     "load_keys",
+    "KeyHandler",
+    "SECTION_PREFIX",
 ]

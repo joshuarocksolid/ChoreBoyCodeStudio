@@ -22,13 +22,13 @@ the same order.
 
 from __future__ import annotations
 
-import importlib
 import logging
-import pkgutil
 import sys
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Callable, List, Optional, Sequence, Tuple
+
+from app.features.form_builder.engine.contributors import run_contributors
 
 logger = logging.getLogger(__name__)
 
@@ -49,8 +49,9 @@ class LeftSection:
     cheap; a section that is not shown takes no room, has no tab and no rail
     button. ``weight`` is its share, in percent, of the pane's height when the
     pane is split (Outline and Insert share the rest, 40 and 35 by default).
-    ``keys`` is the key that focuses it (``"Alt+5"``); the same key must have a
-    row in ``keys_ext`` so Settings and the collision test know it. ``focus``
+    ``keys`` is the key that focuses it (``"Alt+5"``). ``keys_ext`` turns it
+    into the row ``form.action.focusSection.<key>`` ("Focus <title>"), which
+    the form tab binds and Settings lists; the lane writes no key row. ``focus``
     receives the widget and defaults to ``widget.setFocus()``. ``glyph`` names
     a painted glyph for the rail button; empty shows the title's first letter.
     """
@@ -103,17 +104,7 @@ class WorkbenchSlots:
 
 def load_workbench_contributors(*packages: ModuleType) -> WorkbenchSlots:
     slots = WorkbenchSlots()
-    for package in packages:
-        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
-            if info.name.startswith("_"):
-                continue
-            try:
-                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
-                register = getattr(module, "register", None)
-                if callable(register):
-                    register(slots)
-            except Exception:
-                logger.exception("workbench contributor %s failed", info.name)
+    run_contributors("workbench", packages, "register", lambda _module, hook: hook(slots))
     return slots
 
 

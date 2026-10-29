@@ -5,29 +5,32 @@ calls ``registry.add(CanvasLayer(...))``. Modules are discovered in sorted
 name order; a module whose name starts with an underscore is a helper. A lane
 adds its file and edits neither ``paint.py`` nor ``core/overlay.py``.
 
-A layer has a Qt-free ``build(static, inputs) -> LayerOutput`` that returns
+A layer has a Qt-free ``build(static, inputs, state) -> LayerOutput`` that returns
 items and hit targets, and optionally a ``paint(painter, item, palette)`` for
 a ``LayerItem`` it made. Plain ``Stroke``, ``Fill``, ``Chip``, ``Badge`` and
 ``Caption`` items need no painter. Items sit above the built-in marks and below
 the chips; a layer's targets win over the built-in ones.
 
-A canvas runs only the layers switched on for it: its controller passes
-``registry.resolve(names)`` to ``FrameInputs.layers``. With no layer on, a
-frame pays one empty-tuple test and ``paint_frame`` pays nothing. Order of
-layers: ``(order, name)``.
+A canvas runs only the layers switched on for it. A lane switches its layer
+on for one canvas with ``canvas.show_layer(name, state)`` (``FormCanvas``, or
+the ``CanvasController`` behind it) and off with ``canvas.hide_layer(name)``;
+calling ``show_layer`` again with a new state redraws the overlay. ``state``
+is any hashable value the layer's ``build`` needs (``True`` when it needs
+none). The controller passes ``registry.resolve(states)`` to
+``FrameInputs.layers``. With no layer on, a frame pays one empty-tuple test
+and ``paint_frame`` pays nothing. Order of layers: ``(order, name)``.
 """
 
 from __future__ import annotations
 
-import importlib
 import logging
-import pkgutil
 import sys
 from dataclasses import dataclass
 from types import ModuleType
-from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Callable, Dict, Hashable, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from app.features.form_builder.qtside.canvas.core.overlay import LayerItem, LayerOutput, OverlayLayer
+from app.features.form_builder.engine.contributors import run_contributors
+from app.features.form_builder.qtside.canvas.core.overlay import ActiveLayer, LayerItem, LayerOutput, OverlayLayer
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
 from app.qt.QtGui import QPainter
 
@@ -58,10 +61,10 @@ class LayerRegistry:
     def names(self) -> Tuple[str, ...]:
         return tuple(layer.name for layer in self._ordered(self._layers.values()))
 
-    def resolve(self, names: Iterable[str]) -> Tuple[OverlayLayer, ...]:
-        """The builders for ``names``, in layer order. A name nobody registered is skipped."""
-        wanted = [self._layers[name] for name in set(names) if name in self._layers]
-        return tuple(layer.build for layer in self._ordered(wanted))
+    def resolve(self, states: Mapping[str, Hashable]) -> Tuple[ActiveLayer, ...]:
+        """The layers named in ``states`` with their state, in layer order. A name nobody registered is skipped."""
+        wanted = [self._layers[name] for name in states if name in self._layers]
+        return tuple(ActiveLayer(layer.name, layer.build, states[layer.name]) for layer in self._ordered(wanted))
 
     def painter(self, name: str) -> Optional[LayerPaint]:
         layer = self._layers.get(name)
@@ -74,17 +77,7 @@ class LayerRegistry:
 
 def load_layers(*packages: ModuleType) -> LayerRegistry:
     registry = LayerRegistry()
-    for package in packages:
-        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
-            if info.name.startswith("_"):
-                continue
-            try:
-                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
-                register = getattr(module, "register", None)
-                if callable(register):
-                    register(registry)
-            except Exception:
-                logger.exception("canvas layer module %s failed", info.name)
+    run_contributors("canvas layer", packages, "register", lambda _module, hook: hook(registry))
     return registry
 
 
@@ -116,6 +109,7 @@ def paint_layer_item(
 
 
 __all__: Sequence[str] = [
+    "ActiveLayer",
     "CanvasLayer",
     "LayerItem",
     "LayerOutput",

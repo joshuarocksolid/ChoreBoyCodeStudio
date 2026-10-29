@@ -10,7 +10,7 @@ import os
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeySequence
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
 from app.qt.QtWidgets import (
     QApplication,
     QPlainTextEdit,
@@ -23,7 +23,6 @@ from app.qt.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
-    QShortcut,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -2931,10 +2930,8 @@ class FormWorkbench(QWidget):
                 button.setToolButtonStyle(_button_style("ToolButtonTextOnly"))
                 button.setText(spec.title[:1])
             button.hide()
-            if spec.keys:
-                shortcut = QShortcut(QKeySequence(spec.keys), self)
-                shortcut.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
-                shortcut.activated.connect(lambda key=spec.key: self.focus_section(key))
+            # ``spec.keys`` becomes a keys_ext row; the form tab binds it, so
+            # Settings can rebind it and the collision test sees it.
         self._sync_sections()
 
     def _rail_button(self, key: str) -> QToolButton:

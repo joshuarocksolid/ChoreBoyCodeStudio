@@ -5,6 +5,7 @@ One tab owns one ``FormSession``. Closing the tab disposes that session.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Callable, Dict, Mapping, Optional, Sequence, Tuple
@@ -75,7 +76,9 @@ from app.features.form_builder.integration.clipboard_actions import (
 from app.features.form_builder.integration.context_menu import build_context_menu, paint_menu
 from app.features.form_builder.integration.menu_ext import default_registry
 from app.features.form_builder.integration.popover import ProblemPopover, open_layout_menu, tree_contains
-from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form
+from app.features.form_builder.integration import keys_ext
+from app.features.form_builder.integration.problem_fixes import FixContext
+from app.features.form_builder.integration.problems_bridge import code_diagnostics_for_form, run_fix
 from app.features.form_builder.integration.content_source import (
     FormContentSource,
     form_scope,
@@ -114,6 +117,8 @@ from app.shell.theme_tokens import ShellThemeTokens
 XML_APPLY_HINT = "Edits here apply to the design when you switch back."
 XML_DISCARD_LABEL = "Discard XML edits"
 VIEW_XML_TOOLTIP = "View XML (Ctrl+Shift+V)"
+
+_logger = logging.getLogger(__name__)
 
 _RESTORE_REASON = {
     "draft": "draft",
@@ -301,6 +306,11 @@ class FormSurface(QWidget):
     @property
     def session(self) -> FormSession:
         return self._session
+
+    @property
+    def workbench(self) -> FormWorkbench:
+        """The tab's workbench: left sections, the canvas, the drawer and split slots (M5.0s)."""
+        return self._workbench
 
     def __init__(
         self,
@@ -1468,6 +1478,7 @@ class FormSurface(QWidget):
                 if live and handler is not None:
                     shortcut.activated.connect(handler)
                 self._widget_shortcuts.append(shortcut)
+        self._install_lane_shortcuts(hosts, keys)
         self._key_guard = _ShellKeyGuard(
             frozenset(normalize_form_shortcut(key) for key in INERT_SHORTCUTS),
             self._note_inert,
@@ -1479,6 +1490,55 @@ class FormSurface(QWidget):
             root.installEventFilter(self._key_guard)
             for child in root.findChildren(QWidget):
                 child.installEventFilter(self._key_guard)
+
+    def _install_lane_shortcuts(self, hosts: Mapping[str, QWidget], keys: Mapping[str, str]) -> None:
+        """Bind the ``keys_ext`` rows that have a handler (M5.0s).
+
+        A row for canvas, outline or inspector gets one shortcut per host;
+        any other row gets one on this tab. A row without a handler only
+        lists its key, as a table row without a gesture does.
+        """
+        context = getattr(Qt, "WidgetWithChildrenShortcut")
+        for command in keys_ext.extra_commands():
+            if command.kind != "new" or not command.shortcut:
+                continue
+            run = keys_ext.handler_for(command.command_id)
+            if run is None:
+                continue
+            key = keys.get(command.command_id, command.shortcut)
+            if not key:
+                continue
+            owners = [hosts[name] for name in command.contexts if name in hosts]
+            if is_widget_shortcut(command) and owners:
+                targets: Sequence[QWidget] = owners
+            else:
+                targets = (self,)
+            for host in targets:
+                shortcut = QShortcut(QKeySequence(key), host)
+                shortcut.setContext(context)
+                shortcut.setObjectName(command.command_id)
+                shortcut.activated.connect(lambda found=run, command_id=command.command_id: self._run_lane_key(command_id, found))
+                self._widget_shortcuts.append(shortcut)
+
+    def _run_lane_key(self, command_id: str, run: Callable[[object], None]) -> None:
+        if self._released:
+            return
+        try:
+            run(self)
+        except Exception:
+            _logger.exception("form key %s failed", command_id)
+
+    def run_problem_fix(self, fix_id: str, detail: Optional[Mapping[str, str]]) -> bool:
+        """Run a Problems fix button for the row ``detail`` names (M5.0s). False when it is gone."""
+        if self._released or not detail:
+            return False
+        key = detail.get("fb_key") or ""
+        for diagnostic in self._session.diagnostics.all():
+            if diagnostic.key != key:
+                continue
+            context = FixContext(diagnostic, self._session, self._request.project_root or "", self)
+            return run_fix(diagnostic, fix_id, context)
+        return False
 
     def _widget_handlers(self) -> Mapping[str, Callable[[], None]]:
         """Gestures behind canvas, outline, and inspector keys."""

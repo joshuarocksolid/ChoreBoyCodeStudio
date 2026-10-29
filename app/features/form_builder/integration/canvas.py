@@ -7,7 +7,7 @@ The page caption, shadow and toast stay view chrome.
 
 from __future__ import annotations
 
-from typing import List, Optional, Sequence, Tuple
+from typing import Hashable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QPoint, QPointF, QRect, QRectF, Qt, QTimer
 from app.qt.QtGui import QColor, QContextMenuEvent, QCursor, QDrag, QFont, QImage, QPainter, QPen, QPixmap
@@ -252,6 +252,16 @@ class FormCanvas(QGraphicsView):
     @property
     def preview(self) -> FormPreview:
         return self._preview
+
+    def show_layer(self, name: str, state: Hashable = True) -> None:
+        """Switch a ``qtside/canvas/layers`` layer on for this canvas (M5.0s); see that package."""
+        self._controller.show_layer(name, state)
+
+    def hide_layer(self, name: str) -> None:
+        self._controller.hide_layer(name)
+
+    def layer_state(self, name: str) -> Optional[Hashable]:
+        return self._controller.layer_state(name)
 
     def _page_resized(self) -> None:
         proxy = self._stage.proxy

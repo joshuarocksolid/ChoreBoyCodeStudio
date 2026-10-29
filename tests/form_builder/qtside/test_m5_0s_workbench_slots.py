@@ -75,8 +75,8 @@ def test_a_left_section_shows_with_the_form_takes_a_share_and_answers_alt_5(  # 
         sizes = split.sizes()
         assert abs(sizes[2] * 100 // sum(sizes) - 25) <= 3
         assert abs(sizes[0] * 100 // sum(sizes) - 40) <= 3
-        keys = [shortcut for shortcut in bench.findChildren(QShortcut) if shortcut.key().toString() == "Alt+5"]
-        assert len(keys) == 1
+        keys = [shortcut for shortcut in surface.findChildren(QShortcut) if shortcut.key().toString() == "Alt+5"]
+        assert [shortcut.objectName() for shortcut in keys] == ["form.action.focusSection.actions"]
         keys[0].activated.emit()
         focus = qapp.focusWidget()
         assert widget.hasFocus() or (focus is not None and widget.isAncestorOf(focus))

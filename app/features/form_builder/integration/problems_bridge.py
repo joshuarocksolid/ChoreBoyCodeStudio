@@ -60,8 +60,9 @@ def code_diagnostics_for_form(
 ) -> List[CodeDiagnostic]:
     """Map form diagnostics onto the shell row. FB9xx stays hidden unless debug is on.
 
-    A diagnostic with registered fixes carries them in ``detail["fb_fixes"]``
-    as JSON ``[[fix id, button text], ...]``.
+    A diagnostic with registered fixes carries them in ``detail["fixes"]``
+    as JSON ``[[fix id, button text], ...]``; the shell's Problems panel lists
+    them on the row and calls ``FormSurface.run_problem_fix`` with the choice.
     """
     show_internal = os.environ.get("CBCS_FB_DEBUG") == "1"
     rows: List[CodeDiagnostic] = []
@@ -76,7 +77,7 @@ def code_diagnostics_for_form(
         detail["source_label"] = "Form"
         fixes = fixes_for(item, registry)
         if fixes:
-            detail["fb_fixes"] = json.dumps([list(pair) for pair in fixes], ensure_ascii=True)
+            detail["fixes"] = json.dumps([list(pair) for pair in fixes], ensure_ascii=True)
         message = item.message
         if obj and not message.startswith("%s:" % obj):
             message = "%s: %s" % (obj, message)

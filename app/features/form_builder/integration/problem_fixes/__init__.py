@@ -15,14 +15,13 @@ they list in module order, then registration order.
 
 from __future__ import annotations
 
-import importlib
 import logging
-import pkgutil
 import sys
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+from app.features.form_builder.engine.contributors import run_contributors
 from app.features.form_builder.engine.diagnostics import FormDiagnostic
 
 logger = logging.getLogger(__name__)
@@ -99,17 +98,7 @@ class _ModuleScope:
 
 def load_fixes(*packages: ModuleType) -> FixRegistry:
     registry = FixRegistry()
-    for package in packages:
-        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
-            if info.name.startswith("_"):
-                continue
-            try:
-                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
-                register = getattr(module, "register", None)
-                if callable(register):
-                    register(registry.scope(module.__name__))
-            except Exception:
-                logger.exception("problem fix module %s failed", info.name)
+    run_contributors("problem fix", packages, "register", lambda module, hook: hook(registry.scope(module.__name__)))
     return registry
 
 

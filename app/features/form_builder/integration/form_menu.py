@@ -78,7 +78,7 @@ def _build(window: Any, ctx: Any, registry: FormMenuRegistry) -> None:
     menu.setObjectName("formBuilder.menu")
     ctx.menus["formBuilder.menu"] = menu
     state = _State(ctx, registry)
-    contributed = registry.items(FORM)
+    contributed = tuple(pair for pair in registry.items(FORM) if _free(ctx, pair[1]))
     claimed = {item.command_id for _module, item in contributed}
     entries: list = [
         MenuEntry(command.menu_path, index, "", command)
@@ -99,6 +99,14 @@ def _build(window: Any, ctx: Any, registry: FormMenuRegistry) -> None:
     if state.help_items:
         # The shell builds Help after this menu, so its items join on the next turn.
         QTimer.singleShot(0, lambda: _qt_alive(menu) and _sync(window, menu, state))
+
+
+def _free(ctx: Any, item: FormMenuItem) -> bool:
+    """False, and logged, when another menu already registered this action id."""
+    if item.command_id in ctx.actions:
+        logger.error("form menu item %s left out: the id is already a menu action", item.command_id)
+        return False
+    return True
 
 
 class _TabWatcher(QObject):
@@ -129,8 +137,9 @@ def _fill(window: Any, ctx: Any, menu: Any, nodes: Sequence[MenuNode], state: _S
 
 def _add_item(window: Any, ctx: Any, menu: Any, item: FormMenuItem, state: _State) -> None:
     label = item.path[-1]
-    if item.hint:
-        label = "%s\t%s" % (label, item.hint)
+    hint = item.hint or _key_hint(item.command_id)
+    if hint:
+        label = "%s\t%s" % (label, hint)
     action = register_menu_action(
         qt_widgets=ctx.qt_widgets,
         menu=menu,
@@ -142,11 +151,22 @@ def _add_item(window: Any, ctx: Any, menu: Any, item: FormMenuItem, state: _Stat
         callback=lambda _checked=False, found=item: _run_item(window, found),
         shortcut_overrides=ctx.shortcut_overrides,
     )
-    if item.hint:
-        action.setShortcut(QKeySequence())
-        action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+    # A contributed item's key is a keys_ext row the form tab binds. Settings
+    # re-applies keys to actions by id, so keep this one off the window.
+    action.setShortcut(QKeySequence())
+    action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
     state.actions[item.command_id] = action
     state.items[item.command_id] = item
+
+
+def _key_hint(command_id: str) -> str:
+    """The key of the keys_ext row with this id, shown in the menu."""
+    from app.features.form_builder.integration.keys_ext import extra_commands
+
+    for command in extra_commands():
+        if command.command_id == command_id:
+            return command.shortcut
+    return ""
 
 
 def _run_item(window: Any, item: FormMenuItem) -> None:

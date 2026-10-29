@@ -283,6 +283,21 @@ def _preview_form_problem(window: Any, file_path: str, detail: dict, line_number
         preview(detail, line_number)
 
 
+def _run_problem_fix(window: Any, file_path: str, fix_id: str) -> None:
+    """A fix chosen on a Problems row runs in the tab that owns the file, opening it if needed."""
+    detail = window._problems_panel.last_fix_detail()
+    surface = _surface_for_path(window, file_path)
+    if not callable(getattr(surface, "run_problem_fix", None)):
+        factory = getattr(window, "_editor_tab_factory", None)
+        open_file = getattr(factory, "open_file_in_editor", None)
+        if not callable(open_file) or not open_file(file_path, preview=False):
+            return
+        surface = _surface_for_path(window, file_path)
+    run = getattr(surface, "run_problem_fix", None)
+    if callable(run):
+        run(fix_id, detail)
+
+
 def _on_problem_preview(window: Any, file_path: str, line_number: int) -> None:
     detail = window._problems_panel.last_preview_detail()
     surface = _surface_for_path(window, file_path)
@@ -366,6 +381,9 @@ def build_bottom_panel(window: Any) -> QWidget:
     )
     window._problems_panel.context_menu_requested.connect(
         lambda fp, _code: window._python_style_workflow.apply_safe_fixes_for_file(fp)
+    )
+    window._problems_panel.fix_requested.connect(
+        lambda file_path, fix_id: _run_problem_fix(window, file_path, fix_id)
     )
     window._problems_tab_widget = tabs
     problems_index = tabs.addTab(window._problems_panel, "Problems")

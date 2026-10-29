@@ -15,8 +15,10 @@ Order (deterministic, from UX-M5-010):
 * Inside a submenu, items sort by ``(rank, module name, registration order)``.
   The command table's own rows have ranks 0, 1, 2 ... so a contributor with
   the default rank (1000) comes after them. Give a smaller rank to go earlier.
-* A contributor item whose ``command_id`` is also a row of the command table
-  replaces that row (Form settings, for example).
+* A contributor item whose ``command_id`` is also a Form menu row of the
+  command table replaces that row (Form settings, for example). It can never
+  replace a shell action: an id in the ``shell.`` namespace is refused here,
+  and an id the shell already registered is logged and left out of the menu.
 
 Items a runtime can't offer are absent, not disabled: ``offered(surface)`` is
 asked each time the menu opens, and a ``False`` hides the item, its empty
@@ -28,13 +30,13 @@ tab is active.
 
 from __future__ import annotations
 
-import importlib
 import logging
-import pkgutil
 import sys
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Any, Callable, Dict, Generic, List, Optional, Sequence, Tuple, TypeVar
+
+from app.features.form_builder.engine.contributors import run_contributors
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +99,8 @@ class FormMenuItem:
     target: str = FORM
 
     def __post_init__(self) -> None:
+        if not self.command_id or self.command_id.startswith("shell."):
+            raise ValueError("%r is not a form menu id; shell ids belong to the shell" % (self.command_id,))
         if not self.path or not all(self.path):
             raise ValueError("a menu item needs a path of non-empty titles")
         if self.target not in (FORM, HELP):
@@ -138,17 +142,7 @@ def load_form_menu_contributors(*packages: ModuleType) -> FormMenuRegistry:
     lane's mistake never removes the Form menu.
     """
     registry = FormMenuRegistry()
-    for package in packages:
-        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
-            if info.name.startswith("_"):
-                continue
-            try:
-                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
-                register = getattr(module, "register", None)
-                if callable(register):
-                    register(registry.scope(module.__name__))
-            except Exception:
-                logger.exception("form menu contributor %s failed", info.name)
+    run_contributors("form menu", packages, "register", lambda module, hook: hook(registry.scope(module.__name__)))
     return registry
 
 

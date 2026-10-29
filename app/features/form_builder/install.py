@@ -56,6 +56,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
         bind_adopt_entry,
     )
     from app.features.form_builder.engine.shell_commands import shortcut_rows
+    from app.features.form_builder.integration.keys_ext import extra_shortcut_rows
     from app.features.form_builder.integration.form_menu import register_form_menu
     from app.packaging.form_files import save_packaged_form
     from app.shell.shell_composition_context import bind_private_attrs
@@ -88,7 +89,7 @@ def install_form_builder(ctx: "ShellCompositionContext") -> None:
     register_shortcut_commands(
         tuple(
             ShortcutCommand(action_id, label, shortcut, category)
-            for action_id, label, shortcut, category in shortcut_rows()
+            for action_id, label, shortcut, category in shortcut_rows() + extra_shortcut_rows()
         )
     )
     _refresh_shortcut_maps(window)
