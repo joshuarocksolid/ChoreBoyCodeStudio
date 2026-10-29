@@ -54,3 +54,23 @@ def test_the_form_lists_its_button_groups_and_exclusive_is_written_only_when_off
         del name
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_the_form_groups_show_when_the_root_widget_is_selected_and_hide_for_a_child(qapp) -> None:  # type: ignore[no-untyped-def]
+    window, pane, session, realizer = _pane(qapp, _TWO)
+    try:
+        doc = session.document
+        buttons = tuple(w.id for w in doc.iter_widgets() if w.class_name == "QRadioButton")[:2]
+        session.log.execute(MakeButtonGroup(buttons))
+        session.selection.set((doc.root.id,), source=SelectionSource.PROGRAM)
+        pane.flush()
+        group = pane.findChild(QWidget, "formBuilder.formGroup.buttonGroups")
+        assert group is not None and group.isVisibleTo(pane)
+        # The body the group builds is shown, not just its header.
+        qapp.processEvents()
+        assert group.findChild(QCheckBox).isVisibleTo(pane)
+        session.selection.set((buttons[0],), source=SelectionSource.PROGRAM)
+        pane.flush()
+        assert not group.isVisibleTo(pane)
+    finally:
+        _close(window, pane, realizer, session, qapp)
