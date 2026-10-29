@@ -16,10 +16,12 @@ from app.features.form_builder.engine.commands.catalog_ext.actions import (
 )
 from app.features.form_builder.engine.commands.catalog_ext.main_window import AddMainWindowPart, RemoveMainWindowPart
 from app.features.form_builder.engine.query import actions as q
+from app.features.form_builder.engine.layout_actions import NeedsConfirm
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.integration.menu_ext import MenuContext
-from app.qt.QtWidgets import QMessageBox
+from app.features.form_builder.qtside.layout_gestures import ask
+from app.qt.QtCore import QPoint, QRect
 
 _BUTTONS = frozenset({"QPushButton", "QToolButton", "QRadioButton", "QCheckBox", "QCommandLinkButton"})
 _REMOVE = {"QMenuBar": "Remove menu bar…", "QToolBar": "Remove toolbar", "QStatusBar": "Remove status bar"}
@@ -59,14 +61,19 @@ def _remove(ctx: MenuContext, node: WidgetNode) -> None:
     if node.class_name == "QMenuBar":
         count = len([e for e in q.entries(doc, node.id) if e.kind == "menu"])
         if count:
-            box = QMessageBox(ctx.menu)
-            box.setIcon(QMessageBox.Icon.Question)
-            box.setText("Remove the menu bar and its %d menus? Actions stay in the Actions list." % count)
-            accept = box.addButton("Remove menu bar", QMessageBox.ButtonRole.AcceptRole)
-            cancel = box.addButton("Cancel", QMessageBox.ButtonRole.RejectRole)
-            box.setDefaultButton(cancel)
-            box.exec()
-            if box.clickedButton() is not accept:
+            parent = ctx.menu.window() or ctx.menu
+            at = ctx.at
+            if at is None:
+                at = parent.mapToGlobal(QPoint(parent.width() // 2, 12))
+            subject = QRect(at.x(), at.y(), 8, 8)
+            bounds = parent.frameGeometry()
+            question = ask(parent, None, lambda: (subject, bounds))
+            if not question(
+                NeedsConfirm(
+                    _remove_bar_question(count),
+                    "Remove menu bar",
+                )
+            ):
                 return
     ctx.run(RemoveMainWindowPart.for_part(doc, node.id))
 
@@ -107,3 +114,9 @@ def _widget_actions(ctx: MenuContext, node: WidgetNode) -> None:
         item.triggered.connect(
             lambda checked, name=info.name: ctx.run(SetWidgetAction(node.id, name, bool(checked), node.object_name))
         )
+
+
+def _remove_bar_question(count: int) -> str:
+    """UX-MAIN-002. "its menu" for one, "its 3 menus" for more."""
+    menus = "its menu" if count == 1 else "its %d menus" % count
+    return "Remove the menu bar and %s? Actions stay in the Actions list." % menus

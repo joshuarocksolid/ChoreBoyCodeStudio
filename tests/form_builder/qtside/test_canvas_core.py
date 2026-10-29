@@ -90,7 +90,13 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
 )
 from app.features.form_builder.qtside.canvas.core.place import payload_for
 from app.features.form_builder.qtside.canvas.core.structure import Free, free_origin, nearest_in_direction, positioning_of
-from app.features.form_builder.qtside.canvas.core.overlay import FrameInputs, build_frame, build_static
+from app.features.form_builder.qtside.canvas.core.overlay import (
+    ActiveLayer,
+    FrameInputs,
+    LayerOutput,
+    build_frame,
+    build_static,
+)
 from app.features.form_builder.qtside.canvas.core.snap import snap_move, snap_page
 from app.features.form_builder.qtside.canvas.core.space import (
     CanvasPoint,
@@ -1141,6 +1147,45 @@ def test_the_selected_form_does_not_add_an_overlay_chip() -> None:
             _inputs(session, view, SelectionState((form,), form), Idle()),
         )
         assert not any(isinstance(item, Chip) and item.role == "select" for item in frame.items)
+
+
+def test_tab_order_dims_the_layout_frames_and_leaves_overlay_marks_full() -> None:
+    def build(static: object, inputs: object, state: object) -> LayerOutput:
+        del static, inputs, state
+        return LayerOutput()
+
+    with _opened(LAID) as session:
+        view = _view()
+        form = _nid(session, "Form")
+        layout = _nid(session, "verticalLayout")
+        ok = _nid(session, "ok")
+        index = _index(
+            (
+                _entry(form, "widget", (0, 0, 400, 300), None),
+                _entry(layout, "layout", (9, 9, 382, 282), form),
+                _entry(ok, "widget", (20, 20, 100, 30), layout),
+            )
+        )
+        static = build_static(session.document, index, view)
+        selection = SelectionState((layout,), layout)
+        plain = build_frame(static, _inputs(session, view, selection, Idle()))
+        dimmed = build_frame(
+            static,
+            replace(
+                _inputs(session, view, selection, Idle()),
+                layers=(ActiveLayer("tab_order", build),),
+            ),
+        )
+
+        def solid(frame: object) -> list:
+            return [
+                item
+                for item in frame.items  # type: ignore[attr-defined]
+                if isinstance(item, Stroke) and item.role == "layout" and item.width >= 1.5
+            ]
+
+        assert solid(plain) and all(item.alpha == 1.0 for item in solid(plain))
+        assert solid(dimmed) and all(item.alpha <= 0.3 for item in solid(dimmed))
 
 
 def test_importing_canvas_core_does_not_import_qt() -> None:
