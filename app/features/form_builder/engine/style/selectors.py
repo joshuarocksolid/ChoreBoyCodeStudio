@@ -17,6 +17,7 @@ from app.features.form_builder.engine.style.tokenizer import COMMENT, DELIM, HAS
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.style.classes import effective_class, widget_chain
+from app.features.form_builder.engine.style.properties import is_known_state
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import (
     BoolValue,
@@ -328,7 +329,8 @@ class StyleIndex:
         for test in compound.attrs:
             if not self._attr(test, node_id):
                 return False
-        return True
+        # Qt matches a state it doesn't know never, negated or not.
+        return all(is_known_state(state) for state in compound.states)
 
     def _attr(self, test: AttrTest, node_id: NodeId) -> bool:
         actual = self.attribute_text(node_id, test.name)

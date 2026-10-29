@@ -63,6 +63,7 @@ def test_a_missing_brace_and_a_missing_semicolon_say_which_line() -> None:
         "Line 3: a ; is missing after the value."
     )
     assert check_sheet("QLabel {\n  colr: red;\n}").message == "Line 2: “colr” isn't a property Qt knows."
+    assert check_sheet("QLabel,\nQPushButton:hovr { color: red; }").message == "Line 2: “hovr” isn't a state Qt knows."
     assert check_sheet("QLabel { color: red; }").message == LOOKS_RIGHT
     assert check_sheet("").message == LOOKS_RIGHT
 

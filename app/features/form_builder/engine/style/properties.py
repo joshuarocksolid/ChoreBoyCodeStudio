@@ -126,3 +126,20 @@ QPROPERTY_PREFIX = "qproperty-"
 def is_known_property(name: str) -> bool:
     lowered = name.lower()
     return lowered in KNOWN_PROPERTIES or (lowered.startswith(QPROPERTY_PREFIX) and len(lowered) > len(QPROPERTY_PREFIX))
+
+
+#: Qt 5's pseudo-states (``qcssparser.cpp``). A selector with any other state
+#: matches nothing in Qt, with or without ``!`` (checked by pixels under Fusion).
+KNOWN_STATES: FrozenSet[str] = frozenset(
+    (
+        "active adjoins-item alternate bottom checked closable closed default disabled edit-focus editable "
+        "enabled exclusive first flat floatable focus has-children has-siblings horizontal hover indeterminate "
+        "last left maximized middle minimized movable next-selected no-frame non-exclusive off on only-one open "
+        "pressed previous-selected read-only right selected top unchecked vertical window"
+    ).split()
+)
+
+
+def is_known_state(state: str) -> bool:
+    """``state`` without or with its ``!``."""
+    return state.lstrip("!").lower() in KNOWN_STATES

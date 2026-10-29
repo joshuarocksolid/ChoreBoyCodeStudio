@@ -82,7 +82,11 @@ class StyleProblems:
         self.publish()
 
     def dispose(self) -> None:
-        self._timer.stop()
+        try:
+            self._timer.stop()
+        except RuntimeError:
+            # The tab's destroyed signal can arrive after Qt has deleted the timer at shutdown.
+            pass
         self._subscription.close()
 
     def _changed(self, _change: object) -> None:

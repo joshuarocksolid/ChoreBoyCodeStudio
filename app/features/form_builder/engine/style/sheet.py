@@ -19,7 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Tuple
 
-from app.features.form_builder.engine.style.properties import is_known_property
+from app.features.form_builder.engine.style.properties import is_known_property, is_known_state
 from app.features.form_builder.engine.style.tokenizer import AT, DELIM, IDENT, Token, tokenize
 
 ERROR = "error"
@@ -32,6 +32,7 @@ COLON = "colon"
 SEMICOLON = "semicolon"
 PROPERTY = "property"
 SELECTOR = "selector"
+STATE = "state"
 
 _OPEN = {"{": "}", "(": ")", "[": "]"}
 _CLOSE = {"}": "{", ")": "(", "]": "["}
@@ -184,6 +185,7 @@ def _structure(
         if stop.text == "{":
             close = _matching_brace(tokens, index)
             body = tokens[index + 1 : close if close >= 0 else count]
+            _states(prelude, problems)
             rule_declarations = _declarations(text, body, problems)
             first_token = prelude[0] if prelude else stop
             selector = text[first_token.start : prelude[-1].end] if prelude else ""
@@ -207,6 +209,23 @@ def _structure(
             index += 1
         else:
             index += 1
+
+
+def _states(prelude: List[Token], problems: List[Problem]) -> None:
+    """A warning for each pseudo-state Qt doesn't know: the rule then matches nothing (UX-STYLE-004)."""
+    for position, token in enumerate(prelude):
+        if not _is(token, ":") or (position > 0 and _is(prelude[position - 1], ":")):
+            continue
+        after = position + 1
+        if after < len(prelude) and _is(prelude[after], ":"):
+            continue
+        if after < len(prelude) and _is(prelude[after], "!"):
+            after += 1
+        if after < len(prelude) and prelude[after].kind == IDENT and not is_known_state(prelude[after].text):
+            word = prelude[after]
+            problems.append(
+                Problem(WARNING, STATE, word.line, word.column, "%s isn't a state Qt knows." % _quoted(word.text), word.text)
+            )
 
 
 def _matching_brace(tokens: List[Token], opening: int) -> int:

@@ -170,6 +170,8 @@ _SELECTORS = [
     "QLineEdit, QToolButton",
     "QFrame QLabel, #saveButton",
     "Line",
+    "QPushButton:hovr",
+    "QPushButton:!hovr",
 ]
 
 
