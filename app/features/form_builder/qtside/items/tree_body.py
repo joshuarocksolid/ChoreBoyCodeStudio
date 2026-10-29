@@ -145,8 +145,10 @@ class _Items(QWidget):
         width = view.width() if view.width() > 80 else 320
         height = view.height() if view.height() > _ROW_H * 3 else 420
         shown = min(self._columns, _VISIBLE)
-        self._col_w = max(_MIN_COL, (width - 8 - _GAP * shown) // shown)
         depth = max((len(path) for path in self._paths), default=1) - 1
+        # The deepest row's indent comes out of the columns, so the fields fit
+        # without a sideways scroll until there are more than _VISIBLE columns.
+        self._col_w = max(_MIN_COL, (width - 8 - depth * _INDENT - _GAP * shown) // shown)
         need = 8 + depth * _INDENT + self._columns * (self._col_w + _GAP)
         self._canvas.setFixedSize(max(width, need), max(len(self._paths), 1) * _ROW_H)
         top = self._scroll.verticalScrollBar().value()
@@ -173,6 +175,7 @@ class _Items(QWidget):
         for row in free:
             row.release()
         for index, row in bound.items():
+            row.fit(self._col_w)
             row.setGeometry(0, index * _ROW_H, self._canvas.width(), _ROW_H)
             row.show()
 
@@ -250,6 +253,12 @@ class _Row(QWidget):
             edit.setFixedWidth(col_w)
             edit.setText(item.text_at(column))
             edit.setAccessibleName("Row %d, column %d" % (index + 1, column + 1))
+
+    def fit(self, col_w: int) -> None:
+        """A bound row keeps up with the viewport width."""
+        for edit in self._fields:
+            if edit.width() != col_w:
+                edit.setFixedWidth(col_w)
 
     def release(self) -> None:
         self.path = None
