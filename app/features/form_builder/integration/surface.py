@@ -409,6 +409,10 @@ class FormSurface(QWidget):
         self._toolbar.tab_order.clicked.connect(lambda _checked=False: self._modes.toggle(TAB_ORDER))
         self._toolbar.buddies.clicked.connect(lambda _checked=False: self._modes.toggle(BUDDIES))
         self._toolbar.attach_preview(self._workbench.canvas.preview)
+        options = getattr(self, "preview_control", None)
+        if options is not None:
+            # M5.5a: the control was made when the workbench was built; Style, Screen and the Preview button join the toolbar.
+            self._toolbar.attach_preview_options(options, self.preview_form)
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
         self._layout_popover: Optional[QWidget] = None

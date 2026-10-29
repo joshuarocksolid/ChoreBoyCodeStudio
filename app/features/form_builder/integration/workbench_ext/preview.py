@@ -29,10 +29,6 @@ def _attach(workbench: Any) -> None:
     control = PreviewControl(surface, notices)
     surface.preview_control = control
     surface._preview_listener = control.preview
-    toolbar = getattr(surface, "_toolbar", None)
-    attach = getattr(toolbar, "attach_preview_options", None)
-    if callable(attach):
-        attach(control, surface.preview_form)
     workbench.destroyed.connect(lambda *_args: control.close())
 
 

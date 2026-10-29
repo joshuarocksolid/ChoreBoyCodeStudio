@@ -545,14 +545,17 @@ class FormToolbar(QWidget):
         self.preview.setToolTip("Preview (Ctrl+Shift+R)")
         self.preview.setAccessibleName("Preview")
         self.preview.clicked.connect(lambda _checked=False: on_preview())
-        style_menu = menu.addMenu("Style")
-        style_menu.setObjectName("formBuilder.previewStyleMenu")
-        screen_menu = menu.addMenu("Screen")
-        screen_menu.setObjectName("formBuilder.previewScreenMenu")
+        menu.addMenu("Style").setObjectName("formBuilder.previewStyleMenu")
+        menu.addMenu("Screen").setObjectName("formBuilder.previewScreenMenu")
 
         def rebuild() -> None:
-            _fill_style_menu(style_menu, control)
-            _fill_screen_menu(screen_menu, control)
+            # Looked up each time: the menus belong to Qt, and a Python wrapper kept from addMenu can go stale.
+            style_menu = menu.findChild(QMenu, "formBuilder.previewStyleMenu")
+            screen_menu = menu.findChild(QMenu, "formBuilder.previewScreenMenu")
+            if style_menu is not None:
+                _fill_style_menu(style_menu, control)
+            if screen_menu is not None:
+                _fill_screen_menu(screen_menu, control)
 
         menu.aboutToShow.connect(rebuild)
         rebuild()
