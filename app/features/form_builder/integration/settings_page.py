@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Mapping, Optional, cast
 
-from app.qt.QtCore import Qt
+from app.qt.QtCore import Qt, QTimer
 from app.qt.QtGui import QShowEvent
 from app.qt.QtWidgets import (
     QCheckBox,
@@ -272,6 +272,10 @@ def _apply(page: QWidget, payload: Dict[str, Any]) -> Mapping[str, Any]:
         return payload
     # The Insert pane caches its state; it reads "Insert shows" again after the shell saves.
     insert_memory.forget_cached()
+    # Open inspectors read "Show Qt names" again once the shell has saved the payload.
+    from app.features.form_builder.qtside.inspector._properties import reread_qt_names
+
+    QTimer.singleShot(0, reread_qt_names)
     return page.write_into(payload)
 
 
