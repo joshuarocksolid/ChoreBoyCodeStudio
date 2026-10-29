@@ -167,7 +167,8 @@ def _install_import_stubs(source: str) -> None:
             setattr(parent, imported, type(imported, (_QWidget,), {}))
 
 
-_SET_MARGIN = re.compile(r"\.setMargin\((.*)\)$", re.M)
+#: Only a function call: ``QLabel.setMargin(3)`` is a real PySide6 method and stays.
+_SET_MARGIN = re.compile(r"\.setMargin\(([A-Za-z_][\w.]*\(\))\)$", re.M)
 
 
 def _legacy_set_margin(source: str) -> str:
