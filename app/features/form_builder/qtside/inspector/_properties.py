@@ -2,7 +2,11 @@
 from __future__ import annotations
 
 import dataclasses
+import importlib
+import logging
+import pkgutil
 from collections import OrderedDict
+from types import ModuleType
 from typing import Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
 
 from app.features.form_builder.engine.commands.base import Command
@@ -61,9 +65,110 @@ from app.qt.QtWidgets import (
     QWidget,
 )
 
+logger = logging.getLogger(__name__)
+
 _DRAG = "Drag the page's right or bottom edge to try other sizes."
 _LABEL_WIDE = 104
 _LABEL_COMPACT = 96
+
+@dataclasses.dataclass(frozen=True)
+class FormGroupSpec:
+    """A group shown in the inspector while the form itself is selected (M5.0s).
+
+    ``factory(host, parent)`` returns a ``GroupBody`` (the type in ``api``),
+    once per inspector. ``host.document`` is the form, ``host.owners`` is
+    ``(root id,)`` and ``host.run(label, commands)`` is one undo step. The
+    body's ``show(rows)`` is called with an empty tuple after every change to
+    the form. ``applies(document)`` hides the group when it is False.
+    """
+
+    key: str
+    title: str
+    factory: GroupBodyFactory
+    order: int = 100
+    applies: Optional[Callable[[UiDocument], bool]] = None
+    module: str = ""
+
+
+class FormGroupRegistry:
+    """Form groups in ``(order, key)`` order. Groups follow the built-in Window ... Files sections."""
+
+    def __init__(self) -> None:
+        self._specs: List[FormGroupSpec] = []
+
+    def add(
+        self,
+        key: str,
+        title: str,
+        factory: GroupBodyFactory,
+        *,
+        order: int = 100,
+        applies: Optional[Callable[[UiDocument], bool]] = None,
+        module: str = "",
+    ) -> None:
+        if not key or not title:
+            raise ValueError("a form group needs a key and a title")
+        if any(spec.key == key for spec in self._specs):
+            raise ValueError("form group %s is already registered" % key)
+        self._specs.append(FormGroupSpec(key, title, factory, order, applies, module))
+
+    def scope(self, module: str) -> "_FormGroupScope":
+        return _FormGroupScope(self, module)
+
+    def groups(self) -> Tuple[FormGroupSpec, ...]:
+        return tuple(sorted(self._specs, key=lambda spec: (spec.order, spec.key)))
+
+
+class _FormGroupScope:
+    def __init__(self, registry: FormGroupRegistry, module: str) -> None:
+        self._registry = registry
+        self._module = module
+
+    def add(
+        self,
+        key: str,
+        title: str,
+        factory: GroupBodyFactory,
+        *,
+        order: int = 100,
+        applies: Optional[Callable[[UiDocument], bool]] = None,
+    ) -> None:
+        self._registry.add(key, title, factory, order=order, applies=applies, module=self._module)
+
+
+def load_form_groups(*packages: ModuleType) -> FormGroupRegistry:
+    """Call ``register_form_groups(registry)`` in each public module of ``packages``, in sorted name order.
+
+    A module opts in by defining that function next to its ``register``; it
+    needs no import from the inspector. A module that fails is logged and skipped.
+    """
+    registry = FormGroupRegistry()
+    for package in packages:
+        for info in sorted(pkgutil.iter_modules(package.__path__), key=lambda found: found.name):
+            if info.name.startswith("_"):
+                continue
+            try:
+                module = importlib.import_module("%s.%s" % (package.__name__, info.name))
+                register = getattr(module, "register_form_groups", None)
+                if callable(register):
+                    register(registry.scope(module.__name__))
+            except Exception:
+                logger.exception("form group contributor %s failed", info.name)
+    return registry
+
+
+_FORM_GROUPS: Optional[FormGroupRegistry] = None
+
+
+def default_form_groups() -> FormGroupRegistry:
+    """Form groups of the ``editors`` package, loaded once."""
+    global _FORM_GROUPS
+    if _FORM_GROUPS is None:
+        from app.features.form_builder.qtside.inspector import editors
+
+        _FORM_GROUPS = load_form_groups(editors)
+    return _FORM_GROUPS
+
 
 class PropertiesPage(QWidget):
 
@@ -125,6 +230,12 @@ class PropertiesPage(QWidget):
         self._content_layout.setSpacing(4)
         self._form = _FormSection(services, self._content)
         self._content_layout.addWidget(self._form)
+        self._form_groups: List[_FormGroup] = []
+        for spec in default_form_groups().groups():
+            box = _FormGroup(services, spec, self._content)
+            self._form_groups.append(box)
+            self._content_layout.addWidget(box)
+            box.hide()
         self._groups: Dict[GroupId, _Group] = {}
         for group in GROUP_ORDER:
             widget = _Group(services, group, self, self._content)
@@ -314,9 +425,14 @@ class PropertiesPage(QWidget):
             self._form.paint(body, self._match_color)
             for group in self._groups.values():
                 group.hide()
+            document = self._services.session.document
+            for box in self._form_groups:
+                box.paint(document)
             self._chain_dirty = True
             return
         self._form.hide()
+        for box in self._form_groups:
+            box.hide()
         present = {view.group: view for view in body.groups}
         for group_id in GROUP_ORDER:
             group = self._groups[group_id]
@@ -537,6 +653,69 @@ class _FormSection(QWidget):
         if row is not None and (focus is row or row.isAncestorOf(focus)):
             return row
         return None
+
+class _FormGroup(QWidget):
+    """One registered form group: an overline toggle over the contributor's body."""
+
+    def __init__(self, services: Services, spec: FormGroupSpec, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setObjectName("formBuilder.formGroup.%s" % spec.key)
+        self._services = services
+        self._spec = spec
+        self._expanded = True
+        self._custom: Optional[GroupBody] = None
+        self._host = _GroupHost(services, ())
+        self._toggle = QToolButton(self)
+        self._toggle.setObjectName("formBuilder.group.%s" % spec.key)
+        self._toggle.setProperty("fbFlat", "true")
+        self._toggle.setText(spec.title.upper())
+        self._toggle.setFont(_overline_font())
+        self._toggle.setCheckable(True)
+        self._toggle.setChecked(True)
+        self._toggle.setAccessibleName("%s group" % spec.title)
+        self._toggle.setToolButtonStyle(_beside())
+        self._toggle.setArrowType(_arrow(True))
+        self._toggle.clicked.connect(self._toggled)
+        self._body = QWidget(self)
+        self._body_layout = QVBoxLayout(self._body)
+        self._body_layout.setContentsMargins(0, 0, 0, 4)
+        self._body_layout.setSpacing(2)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addWidget(self._toggle)
+        layout.addWidget(self._body)
+
+    def paint(self, document: UiDocument) -> None:
+        applies = self._spec.applies
+        try:
+            wanted = applies is None or bool(applies(document))
+        except Exception:
+            logger.exception("form group %s could not say if it applies", self._spec.key)
+            wanted = False
+        if not wanted:
+            self.hide()
+            return
+        self.show()
+        self._body.setVisible(self._expanded)
+        if not self._expanded:
+            return
+        try:
+            if self._custom is None:
+                self._host.set_frame((document.root.id,), False)
+                self._custom = self._spec.factory(self._host, self._body)
+                self._body_layout.addWidget(self._custom.widget)
+            self._host.set_frame((document.root.id,), False)
+            self._custom.show(())
+        except Exception:
+            logger.exception("form group %s failed", self._spec.key)
+            self.hide()
+
+    def _toggled(self, checked: bool) -> None:
+        self._expanded = bool(checked)
+        self._toggle.setArrowType(_arrow(self._expanded))
+        self._body.setVisible(self._expanded)
+
 
 class _Group(QWidget):
 
