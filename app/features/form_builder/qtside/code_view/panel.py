@@ -157,7 +157,7 @@ class CodeViewPanel(QFrame):
 
     def _apply_marks(self) -> None:
         chrome = self._chrome
-        fill = QColor(chrome.selected if chrome is not None else "#cfe3ff")
+        fill = QColor(chrome.selected) if chrome is not None else QColor(207, 227, 255)
         selections: List[QTextEdit.ExtraSelection] = []
         document = self.editor.document()
         for number in self._marked:
