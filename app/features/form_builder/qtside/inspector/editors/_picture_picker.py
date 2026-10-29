@@ -519,6 +519,9 @@ def _paint_checker(painter: QPainter, rect: QRect, first: QColor, second: QColor
         row += 1
 
 
+paint_checker = _paint_checker
+
+
 class _SearchKeys(QObject):
     """Down from the search field moves onto the current picture. It does not skip it."""
 

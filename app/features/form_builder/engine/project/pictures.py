@@ -337,8 +337,8 @@ def project_pictures(
 
 
 @dataclass(frozen=True)
-class RawPicture:
-    """A picture or icon state that holds a file path instead of a ``:/`` resource path."""
+class PictureUse:
+    """One pixmap, icon state or icon text a widget holds, with the path it stores."""
 
     node_id: object
     object_name: str
@@ -348,28 +348,37 @@ class RawPicture:
     path: str
 
 
-def raw_pictures(document: object) -> Tuple[RawPicture, ...]:
-    """Every pixmap and icon state of ``document`` that stores a file path."""
+#: A picture or icon that holds a file path instead of a ``:/`` resource path.
+RawPicture = PictureUse
+
+
+def picture_uses(document: object) -> Tuple[PictureUse, ...]:
+    """Every pixmap and icon state of ``document`` with a path, resource or file."""
     from app.features.form_builder.engine.ui4.values import ICON_STATES, IconSetValue, ResourcePixmap
 
-    found: List[RawPicture] = []
+    found: List[PictureUse] = []
     for node in document.iter_preorder():  # type: ignore[attr-defined]
         for entry in node.properties():
             value = entry.value
             name = getattr(node, "object_name", "") or ""
             if isinstance(value, ResourcePixmap):
-                if _is_raw(value.path):
-                    found.append(RawPicture(node.id, name, entry.name, "", value.path))
+                if value.path:
+                    found.append(PictureUse(node.id, name, entry.name, "", value.path))
             elif isinstance(value, IconSetValue):
                 seen = set()
                 for state in ICON_STATES:
                     pixmap = getattr(value, state)
-                    if isinstance(pixmap, ResourcePixmap) and _is_raw(pixmap.path) and pixmap.path not in seen:
+                    if isinstance(pixmap, ResourcePixmap) and pixmap.path and pixmap.path not in seen:
                         seen.add(pixmap.path)
-                        found.append(RawPicture(node.id, name, entry.name, state, pixmap.path))
-                if value.text and _is_raw(value.text) and value.text not in seen:
-                    found.append(RawPicture(node.id, name, entry.name, "text", value.text))
+                        found.append(PictureUse(node.id, name, entry.name, state, pixmap.path))
+                if value.text and value.text not in seen:
+                    found.append(PictureUse(node.id, name, entry.name, "text", value.text))
     return tuple(found)
+
+
+def raw_pictures(document: object) -> Tuple[PictureUse, ...]:
+    """The uses that store a file path."""
+    return tuple(use for use in picture_uses(document) if _is_raw(use.path))
 
 
 def _is_raw(path: str) -> bool:
@@ -393,6 +402,7 @@ def missing_listed(qrc_path: str) -> Tuple[str, ...]:
 __all__ = [
     "IMAGE_EXTENSIONS",
     "PictureIndex",
+    "PictureUse",
     "ProjectPictures",
     "QrcIssue",
     "QrcPicture",
@@ -408,6 +418,7 @@ __all__ = [
     "load_pictures",
     "lookup_stored",
     "missing_listed",
+    "picture_uses",
     "project_pictures",
     "project_qrc_files",
     "raw_pictures",

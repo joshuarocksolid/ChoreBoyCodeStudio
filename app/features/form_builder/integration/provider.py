@@ -10,6 +10,7 @@ from app.features.form_builder.integration.content_source import (
     form_scope,
     plain_read_error,
 )
+from app.features.form_builder.integration.qrc_provider import QrcTabProvider, attach_picture_checks, is_qrc
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.tab_content_providers import ProviderDeclined, TabMatchContext, TabSurfaceRequest
 
@@ -23,9 +24,11 @@ class FormTabProvider:
     def matches(self, file_path: str, context: TabMatchContext) -> bool:
         if context.forced_text:
             return False
-        return file_path.lower().endswith(".ui")
+        return file_path.lower().endswith(".ui") or is_qrc(file_path)
 
-    def create_surface(self, request: TabSurfaceRequest) -> FormSurface:
+    def create_surface(self, request: TabSurfaceRequest) -> object:
+        if is_qrc(request.file_path):
+            return QrcTabProvider().create_surface(request)
         try:
             scope = form_scope(request.file_path, request.project_root)
             session = FormSession.open(request.initial_text, path=request.file_path, scope=scope)
@@ -40,6 +43,8 @@ class FormTabProvider:
             scope=session.scope,
             diagnostics=session.diagnostics,
         )
+        if request.project_root:
+            attach_picture_checks(session, request.project_root)
         return FormSurface(request, session, source)
 
 

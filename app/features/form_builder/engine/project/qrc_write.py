@@ -86,6 +86,8 @@ class AddOutcome:
     copied: Tuple[str, ...]
     #: Project-relative paths of the files written by this call, ``.qrc`` first.
     written: Tuple[str, ...]
+    #: The layout after the add. With ``write=False`` it is only in memory.
+    layout: "QrcLayout" = QrcLayout()
 
 
 def new_layout() -> QrcLayout:
@@ -241,6 +243,8 @@ def add_pictures(
     fs: Optional[OsFileSystem] = None,
     *,
     prefix: str = DEFAULT_PREFIX,
+    layout: Optional[QrcLayout] = None,
+    write: bool = True,
 ) -> AddOutcome:
     """List ``sources`` in ``qrc_path``, creating the file when it is missing (UX-RES-002).
 
@@ -259,7 +263,8 @@ def add_pictures(
     if not sources:
         raise ProjectOpError("Choose a picture first.")
     existed = files.is_file(qrc)
-    layout = read_layout(qrc, files) if existed else new_layout()
+    if layout is None:
+        layout = read_layout(qrc, files) if existed else new_layout()
     original = layout
     folder = os.path.dirname(qrc)
     journal = Journal(files)
@@ -283,7 +288,7 @@ def add_pictures(
             layout, resource = _list_entry(layout, prefix, relative)
             resource_paths.append(resource)
             file_names.append(os.path.basename(relative))
-        if not existed or layout != original:
+        if write and (not existed or layout != original):
             journal.put(qrc, render_qrc(layout).encode("utf-8"))
     except ProjectOpError:
         _undo(journal, made_dirs, files)
@@ -301,6 +306,7 @@ def add_pictures(
         file_names=tuple(file_names),
         copied=tuple(copied),
         written=written,
+        layout=layout,
     )
 
 
