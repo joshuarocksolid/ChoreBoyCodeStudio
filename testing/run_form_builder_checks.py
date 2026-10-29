@@ -43,8 +43,9 @@ TEST_PATHS = (
     "tests/unit/shell/test_form_status_sentence.py",
     "tests/unit/shell/test_form_tab_shell_keys.py",
 )
-# The unit lane is ~1490 tests (~280 s at load 20 on the Mac after M3.7); keep headroom.
-PYTEST_TIMEOUT_SECONDS = 480
+# The unit lane is ~2650 tests after M5 (~300 s on a quiet Mac, ~700 s at load 30
+# with several lanes running); keep headroom so a loaded machine is not a failure.
+PYTEST_TIMEOUT_SECONDS = 900
 FAST_SHARD_TIMEOUT_SECONDS = 400
 COMMAND_TIMEOUT_SECONDS = 180
 
