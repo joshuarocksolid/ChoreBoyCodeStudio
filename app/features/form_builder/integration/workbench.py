@@ -5,11 +5,12 @@ Widths come from a ``LayoutPlan``. This module does not decide breakpoints.
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Callable, Dict, FrozenSet, List, Optional, Sequence, Set, Tuple
 
 from app.qt.QtCore import QEvent, QItemSelectionModel, QMimeData, QObject, QPoint, QRect, QSize, Qt, QTimer
-from app.qt.QtGui import QBrush, QColor, QDrag, QIcon
+from app.qt.QtGui import QBrush, QColor, QDrag, QIcon, QKeySequence
 from app.qt.QtWidgets import (
     QApplication,
     QPlainTextEdit,
@@ -22,6 +23,7 @@ from app.qt.QtWidgets import (
     QListWidgetItem,
     QMenu,
     QPushButton,
+    QShortcut,
     QSizePolicy,
     QSpinBox,
     QSplitter,
@@ -98,6 +100,7 @@ from app.features.form_builder.qtside.icons import paint_glyph
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.integration.canvas import FormCanvas, _drop_payload
 from app.features.form_builder.integration.clipboard_actions import publish_xml
+from app.features.form_builder.integration.workbench_ext import LeftSection, WorkbenchSlots, default_slots
 from app.features.form_builder.integration.pieces import (
     piece_for_ids,
     renamed_pieces,
@@ -130,6 +133,8 @@ from app.features.form_builder.qtside.inspector.api import GroupId
 from app.features.form_builder.qtside.realize.api import Realizer
 from app.shell.theme_tokens import ShellThemeTokens
 from app.shell.toolbar_style import flat_tool_button_qss, mode_group_qss
+
+logger = logging.getLogger(__name__)
 
 Choice = Tuple[str, Callable[[], None]]
 
@@ -238,6 +243,9 @@ _TOOL_GLYPHS = (
     ("tab_order", "tab_order"),
     ("buddies", "buddy"),
 )
+_SHORT_HEIGHT = 560
+_UNDER_MIN = 160
+_CANVAS_MIN = 200
 _RAIL_GLYPHS = {
     "formBuilder.leftRail.outline": "outline",
     "formBuilder.leftRail.insert": "insert",
@@ -2380,6 +2388,7 @@ class FormWorkbench(QWidget):
         on_collapsed: Callable[[str, bool], None],
         host: CanvasHost,
         parent: QWidget,
+        slots: Optional[WorkbenchSlots] = None,
     ) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.workbench")
@@ -2393,6 +2402,16 @@ class FormWorkbench(QWidget):
         self._left_open = False
         self._right_open = False
         self._drawer_listener: Optional[Callable[[], None]] = None
+        self._slots = slots if slots is not None else default_slots()
+        self._stacked = False
+        self._sections: List[Tuple[LeftSection, QWidget]] = []
+        self._section_shown: Tuple[str, ...] = ()
+        self._under_key = ""
+        self._under_widget: Optional[QWidget] = None
+        self._under_height = 0
+        self._under_listener: Optional[Callable[[int], None]] = None
+        self._beside_key = ""
+        self._beside_widget: Optional[QWidget] = None
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         self._splitter = QSplitter(self)
@@ -2439,7 +2458,28 @@ class FormWorkbench(QWidget):
         self._left_stack.addWidget(self._left_body)
         self._left_stack.addWidget(self._left_rail)
 
-        self.canvas = FormCanvas(session, realizer, host, self._splitter)
+        # The canvas column: the canvas with an optional split beside it (a
+        # horizontal row), and an optional drawer under both.
+        self._canvas_col = QSplitter(self._splitter)
+        self._canvas_col.setObjectName("formBuilder.canvasColumn")
+        self._canvas_col.setOrientation(getattr(orient, "Vertical"))
+        self._canvas_col.setHandleWidth(6)
+        self._canvas_col.setChildrenCollapsible(False)
+        self._canvas_col.splitterMoved.connect(self._under_moved)
+        self._canvas_row = QSplitter(self._canvas_col)
+        self._canvas_row.setObjectName("formBuilder.canvasRow")
+        self._canvas_row.setOrientation(getattr(orient, "Horizontal"))
+        self._canvas_row.setHandleWidth(6)
+        self._canvas_row.setChildrenCollapsible(False)
+        self._canvas_col.addWidget(self._canvas_row)
+        self.canvas = FormCanvas(session, realizer, host, self._canvas_row)
+        self._canvas_row.addWidget(self.canvas)
+        self._under = QFrame(self._canvas_col)
+        self._under.setObjectName("formBuilder.underCanvas")
+        under_layout = QVBoxLayout(self._under)
+        under_layout.setContentsMargins(0, 0, 0, 0)
+        self._under_layout = under_layout
+        self._under.hide()
         self.outline.set_hover_target(self.canvas.send)
         self.outline.set_drop_bridge(self.canvas.send, self.canvas.place_payload)
         self.insert.set_place(self._place_tile)
@@ -2479,7 +2519,7 @@ class FormWorkbench(QWidget):
         self._right_stack.addWidget(self.inspector)
         self._right_stack.addWidget(self._right_rail)
         self._splitter.addWidget(self._left_stack)
-        self._splitter.addWidget(self.canvas)
+        self._splitter.addWidget(self._canvas_col)
         self._splitter.addWidget(self._right_stack)
 
         self._drawer = QFrame(self)
@@ -2499,6 +2539,8 @@ class FormWorkbench(QWidget):
         drawer_layout.addWidget(self._drawer_host, 1)
         self._drawer.hide()
         self._drawer_side = ""
+        self._build_sections()
+        self._slots.attach(self)
 
     def canvas_view(self) -> FormCanvas:
         return self.canvas
@@ -2521,6 +2563,7 @@ class FormWorkbench(QWidget):
             self.outline.rebuild(document, selected)
         self.canvas.refresh_chip()
         self.insert.refresh_custom()
+        self._sync_sections()
 
     def set_drawer_listener(self, callback: Callable[[], None]) -> None:
         self._drawer_listener = callback
@@ -2541,6 +2584,7 @@ class FormWorkbench(QWidget):
             self._show_rail("right")
         self._size_panes(plan)
         self._place_drawer()
+        self._place_under()
 
     def apply_theme(self, tokens: ShellThemeTokens) -> None:
         self.outline.set_hover_fill(tokens.tree_hover_bg)
@@ -2550,6 +2594,10 @@ class FormWorkbench(QWidget):
             button = self.findChild(QToolButton, name)
             if isinstance(button, QToolButton):
                 _paint_glyph(button, glyph, tokens, 16 if name == "formBuilder.pin" else 20)
+        for spec, _widget in self._sections:
+            button = self.findChild(QToolButton, "formBuilder.leftRail.%s" % spec.key)
+            if isinstance(button, QToolButton) and spec.glyph:
+                _paint_glyph(button, spec.glyph, tokens, 20)
         width = tokens.focus_border_width
         self.setStyleSheet(
             "QWidget#formBuilder\\.workbench, QWidget#formBuilder\\.outline,"
@@ -2805,27 +2853,245 @@ class FormWorkbench(QWidget):
         if self._plan is not None:
             self._size_panes(self._plan)
         self._place_drawer()
+        self._place_under()
 
     def _apply_short(self, stacked: bool) -> None:
-        if stacked:
+        self._stacked = stacked
+        self._arrange_left()
+
+    def _arrange_left(self) -> None:
+        """Outline, Insert and the shown sections: split panes, or tabs at short heights."""
+        shown = [(spec, widget) for spec, widget in self._sections if spec.key in self._section_shown]
+        for spec, widget in self._sections:
+            if spec.key not in self._section_shown:
+                self._park_section(widget)
+            self._rail_button(spec.key).setVisible(spec.key in self._section_shown)
+        if self._stacked:
             if self._left_tabs.count() == 0:
                 self._left_tabs.addTab(self.outline, "Outline")
                 self._left_tabs.addTab(self.insert, "Insert")
+            for position, (spec, widget) in enumerate(shown):
+                if self._left_tabs.indexOf(widget) < 0:
+                    self._left_tabs.insertTab(2 + position, widget, spec.title)
             self._left_split.hide()
             self._left_tabs.show()
             return
         if self._left_split.indexOf(self.outline) < 0:
+            for spec, widget in shown:
+                self._left_tabs.removeTab(self._left_tabs.indexOf(widget))
             self._left_tabs.removeTab(self._left_tabs.indexOf(self.outline))
             self._left_tabs.removeTab(self._left_tabs.indexOf(self.insert))
             self._left_split.addWidget(self.outline)
             self._left_split.addWidget(self.insert)
+        for position, (spec, widget) in enumerate(shown):
+            if self._left_split.indexOf(widget) < 0:
+                self._left_tabs.removeTab(self._left_tabs.indexOf(widget))
+                self._left_split.insertWidget(2 + position, widget)
+            widget.show()
         self.outline.show()
         self.insert.show()
         self._left_tabs.hide()
         self._left_split.show()
         height = max(self._left_split.height(), 240)
-        top = height * 55 // 100
-        self._left_split.setSizes([top, max(80, height - top)])
+        extra = sum(spec.weight for spec, _widget in shown)
+        if extra:
+            rest = 100 - extra
+            top = height * rest * 40 // (75 * 100)
+            middle = height * rest * 35 // (75 * 100)
+            sizes = [top, middle] + [height * spec.weight // 100 for spec, _widget in shown]
+        else:
+            top = height * 55 // 100
+            sizes = [top, max(80, height - top)]
+        self._left_split.setSizes(sizes)
+
+    def _park_section(self, widget: QWidget) -> None:
+        index = self._left_tabs.indexOf(widget)
+        if index >= 0:
+            self._left_tabs.removeTab(index)
+        if self._left_split.indexOf(widget) >= 0:
+            widget.setParent(self._left_body)
+        widget.hide()
+
+    def _build_sections(self) -> None:
+        for spec in self._slots.sections():
+            try:
+                widget = spec.build(self)
+            except Exception:
+                logger.exception("left section %s could not be built", spec.key)
+                continue
+            widget.setParent(self._left_body)
+            widget.hide()
+            self._sections.append((spec, widget))
+            button = self._left_rail.add_button(
+                "formBuilder.leftRail.%s" % spec.key,
+                spec.title,
+                lambda key=spec.key: self.focus_section(key),
+            )
+            if not spec.glyph:
+                button.setToolButtonStyle(_button_style("ToolButtonTextOnly"))
+                button.setText(spec.title[:1])
+            button.hide()
+            if spec.keys:
+                shortcut = QShortcut(QKeySequence(spec.keys), self)
+                shortcut.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
+                shortcut.activated.connect(lambda key=spec.key: self.focus_section(key))
+        self._sync_sections()
+
+    def _rail_button(self, key: str) -> QToolButton:
+        button = self._left_rail.findChild(QToolButton, "formBuilder.leftRail.%s" % key)
+        assert isinstance(button, QToolButton)
+        return button
+
+    def _sync_sections(self) -> None:
+        """Ask each section if it shows for this form. Rearranges only when the answer changed."""
+        if not self._sections:
+            return
+        shown = []
+        for spec, _widget in self._sections:
+            try:
+                if spec.shown(self._session):
+                    shown.append(spec.key)
+            except Exception:
+                logger.exception("left section %s could not say if it shows", spec.key)
+        wanted = tuple(shown)
+        if wanted == self._section_shown:
+            return
+        self._section_shown = wanted
+        self._arrange_left()
+
+    def section_widget(self, key: str) -> Optional[QWidget]:
+        """The widget of a registered left section, shown or not."""
+        for spec, widget in self._sections:
+            if spec.key == key:
+                return widget
+        return None
+
+    def focus_section(self, key: str) -> bool:
+        """Alt+N for a lane section. False when the section is absent for this form."""
+        if key not in self._section_shown:
+            return False
+        found = [(spec, widget) for spec, widget in self._sections if spec.key == key]
+        spec, widget = found[0]
+        if self._plan is not None and not self._plan.left_docked:
+            self.open_left()
+        if self._stacked:
+            self._left_tabs.setCurrentWidget(widget)
+        if spec.focus is not None:
+            spec.focus(widget)
+        else:
+            widget.setFocus()
+        return True
+
+    def open_under_canvas(self, key: str, widget: QWidget, *, height: int = 240) -> bool:
+        """The drawer under the canvas (UX-STYLE-002). One at a time; ``key`` names its owner.
+
+        The height is clamped to 160 px through 60% of the workbench. The
+        canvas keeps 200 px: when it could not, or at heights under 560 (the
+        short layout), the drawer covers the canvas instead of pushing it.
+        Returns False when the workbench has no room to show it at all.
+        """
+        if self.height() < _UNDER_MIN * 2 and self.height() > 0:
+            return False
+        self.close_under_canvas()
+        self._under_key = key
+        self._under_widget = widget
+        self._under_height = max(_UNDER_MIN, min(height, self.height() * 6 // 10 or height))
+        self._under_layout.addWidget(widget)
+        widget.show()
+        self._under.show()
+        self._place_under()
+        return True
+
+    def close_under_canvas(self) -> None:
+        widget = self._under_widget
+        if widget is None:
+            return
+        self._under.hide()
+        self._under_layout.removeWidget(widget)
+        widget.hide()
+        widget.setParent(self)
+        self._under_widget = None
+        self._under_key = ""
+
+    def under_canvas_key(self) -> str:
+        return self._under_key
+
+    def under_canvas_height(self) -> int:
+        return self._under_height
+
+    def set_under_canvas_listener(self, callback: Optional[Callable[[int], None]]) -> None:
+        """Called with the new height after the user drags the drawer's top edge."""
+        self._under_listener = callback
+
+    def _under_covers(self) -> bool:
+        column = self._canvas_col.height()
+        return self.height() < _SHORT_HEIGHT or column - self._under_height - self._canvas_col.handleWidth() < _CANVAS_MIN
+
+    def _place_under(self) -> None:
+        if self._under_widget is None:
+            return
+        column = self._canvas_col
+        if self._under_covers():
+            if self._under.parentWidget() is not self:
+                self._under.setParent(self)
+            height = min(self._under_height, column.height())
+            origin = column.mapTo(self, QPoint(0, 0))
+            self._under.setMinimumHeight(0)
+            self._under.setMaximumHeight(16777215)
+            self._under.setGeometry(origin.x(), origin.y() + column.height() - height, column.width(), height)
+            self._under.show()
+            self._under.raise_()
+            return
+        if column.indexOf(self._under) < 0:
+            column.addWidget(self._under)
+        self._under.setMinimumHeight(_UNDER_MIN)
+        self._under.setMaximumHeight(max(_UNDER_MIN, column.height() * 6 // 10))
+        self._under.show()
+        total = max(column.height(), self._under_height + _CANVAS_MIN)
+        column.setSizes([total - self._under_height, self._under_height])
+
+    def _under_moved(self, _pos: int, _index: int) -> None:
+        if self._under_widget is None or self._under_covers():
+            return
+        sizes = self._canvas_col.sizes()
+        if len(sizes) < 2:
+            return
+        self._under_height = max(_UNDER_MIN, sizes[1])
+        if self._under_listener is not None:
+            self._under_listener(self._under_height)
+
+    def open_beside_canvas(
+        self, key: str, widget: QWidget, *, share: float = 0.45, min_canvas: int = 360
+    ) -> bool:
+        """The split at the right of the canvas (UX-PREV-004). One at a time.
+
+        Returns False, and opens nothing, when the canvas would be left with
+        fewer than ``min_canvas`` px. The caller says why in its own words.
+        """
+        row = self._canvas_row
+        width = row.width()
+        beside = int(width * share)
+        if width - beside - row.handleWidth() < min_canvas:
+            return False
+        self.close_beside_canvas()
+        self._beside_key = key
+        self._beside_widget = widget
+        row.addWidget(widget)
+        widget.show()
+        row.setSizes([width - beside, beside])
+        return True
+
+    def close_beside_canvas(self) -> None:
+        widget = self._beside_widget
+        if widget is None:
+            return
+        widget.hide()
+        widget.setParent(self)
+        self._beside_widget = None
+        self._beside_key = ""
+
+    def beside_canvas_key(self) -> str:
+        return self._beside_key
 
     def _show_rail(self, side: str) -> None:
         if side == "left" and not self._left_open:
