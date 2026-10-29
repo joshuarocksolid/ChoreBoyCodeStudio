@@ -22,7 +22,7 @@ from app.features.form_builder.engine.diagnostics import CODES
 from app.features.form_builder.engine.project import custom_widgets as cw
 from app.features.form_builder.engine.project.adoption import FormScope
 from app.features.form_builder.engine.ui4.writer import write_ui
-from tests.form_builder.engine.commands._support import BOX, open_log, nid
+from tests.support.form_builder.command_fixtures import BOX, nid, open_log
 
 pytestmark = pytest.mark.unit
 

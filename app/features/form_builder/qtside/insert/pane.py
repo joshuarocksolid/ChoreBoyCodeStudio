@@ -6,7 +6,7 @@ integration side arrives through constructor ports (``ports.py``) and setters.
 
 from __future__ import annotations
 
-from typing import Callable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QMimeData, QSize, Qt
 from app.qt.QtGui import QAction, QActionGroup, QDrag, QIcon, QKeyEvent, QMouseEvent
@@ -166,6 +166,7 @@ class InsertPane(QWidget):
         self._entries: Tuple[Entry, ...] = load_catalog().entries
         self._windows: Tuple[Entry, ...] = load_catalog().windows
         self._custom: Tuple[Entry, ...] = ()
+        self._registry: Optional[Any] = None
         self._query = ""
         self._chrome: Optional[FormChrome] = None
         self._session: Optional[FormSession] = None
@@ -265,6 +266,11 @@ class InsertPane(QWidget):
         self._session = session
         self.refresh_custom()
 
+    def bind_registry(self, registry: Optional[object]) -> None:
+        """The project's own classes (UX-CUST-006): anything with ``entries()``. None clears it."""
+        self._registry = registry  # type: ignore[assignment]
+        self.refresh_custom()
+
     def apply_chrome(self, chrome: FormChrome) -> None:
         self._chrome = chrome
         self._delegate.set_chrome(chrome)
@@ -314,7 +320,8 @@ class InsertPane(QWidget):
                             header_text,
                         )
                     )
-        found = custom_entries(declared)
+        listed = self._registry.entries() if self._registry is not None else ()
+        found = custom_entries(declared, listed)
         if found != self._custom:
             self._custom = found
             self._refill()
