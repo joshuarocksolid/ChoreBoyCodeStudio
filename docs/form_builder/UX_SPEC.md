@@ -2076,9 +2076,9 @@ The `ast` read does not follow imports and caches by path and mtime.
 
 **UX-TMPL-004** `M5.5c` `[S K]` Start v2 (UX-START-002 layout, built here). Amends UX-START-007: "Your templates" is the **first** group when at least one template exists, before Templates. Its cards use the thumbnail, the name, the description and, for project templates, a faint "This project" tag. Shift+F10 or right-click on a card: "Rename…", "Change description…", "Delete template…" (asks "Delete the template “{name}”? Forms made from it don't change." [Delete template] [Cancel]). Ctrl+Down and Ctrl+Up move to the next or previous group (UX-CAT-010). A template that fails to read shows a card "Can't open {name}" with the reason in its tooltip and only "Delete template…".
 
-**UX-TMPL-005** `M5.5c` `[S T]` Built-in templates (R3 183). Templates adds "Dialog with buttons on the right" (a horizontal layout: the content area, then a vertical button box with OK and Cancel connected to accept and reject). The Designer templates map to cards: Dialog with Buttons Bottom → "Dialog with OK and Cancel"; Dialog without Buttons → blank "Dialog"; Main Window → blank "Main window" (UX-MAIN-001); Widget → blank "Widget". Every built-in is already laid out (UX-START-002's sentence), unlike Designer's.
+**UX-TMPL-005** `M5.5c` `[S T]` Built-in templates (R3 183). Templates adds "Dialog with side buttons" (Designer's Dialog with Buttons Right; the name fits the 200 px card title; a horizontal layout: the content area, then a vertical button box with OK and Cancel connected to accept and reject). The Designer templates map to cards: Dialog with Buttons Bottom → "Dialog with OK and Cancel"; Dialog without Buttons → blank "Dialog"; Main Window → blank "Main window" (UX-MAIN-001); Widget → blank "Widget". Every built-in is already laid out (UX-START-002's sentence), unlike Designer's.
 
-**UX-TMPL-006** `M5.5c` `[S K]` Settings > Form designer (R3 182) is a page in the CBCS settings dialog: "Preview style" and "Preview screen" defaults (UX-PREV-001), "Start the preview process when a form opens" (pre-warm, CONTRACTS §10.3), "Insert shows" (Icons, List, Automatic), "Show Qt names in the inspector" (UX-INSP-005), "Where new templates go" (All my projects, This project only), and a link "Keyboard shortcuts…" to Settings > Keyboard filtered to "Form designer".
+**UX-TMPL-006** `M5.5c` `[S K]` Settings > Form designer (R3 182) is a page in the CBCS settings dialog: "Preview style" and "Preview screen" defaults (UX-PREV-001), "Start the preview process when a form opens" (pre-warm, CONTRACTS §10.3), "Insert shows" (Icons, List, Automatic), "Show Qt names in the inspector" (UX-INSP-005), "Where new templates go" (All my projects, This project only), and a link "Keyboard shortcuts…" to Settings > Keyboard filtered to "Form designer". The keys and their defaults are in CONTRACTS §14; the page joins the dialog through the shell's settings-page registry and saves in the same write as the shell.
 
 #### 13.2.9 One editing mode, overlays and keys (MODE)
 
@@ -2185,6 +2185,16 @@ The `ast` read does not follow imports and caches by path and mtime.
 | Tab order banner | "Click fields in the order Tab should visit them." | overlay banner |
 | Buddies banner | "Drag from a label to its field." | overlay banner |
 | Pair labels | "Paired {n} labels" ("Paired 1 label") | status |
+| Template card menu, Rename… | input dialog titled "Rename template", label "Name", filled with the current name | dialog |
+| Template card menu, Change description… | input dialog titled "Change description", label "Description", filled with the current description | dialog |
+| Template name in use (rename) | "A template named “{name}” already exists." | status |
+| Template name empty / too long | "A template needs a name." / "Use a shorter name for the template." (80 characters) | status |
+| Template that can't be read, Rename or Change description | "That template can't be read, so it can only be deleted." | status |
+| Template card for a folder that can't be read | title "Can't open {folder}", tooltip one of "template.json is missing." / "template.json can't be read." / "template.json has no name." / "template.json is too large to be a template description." / "form.ui is missing." | `fb.muted` |
+| New form from a template that can't be read | "That template can't be opened: {reason}" | status |
+| Template file errors | "Code Studio couldn't save the template." / "Code Studio couldn't change the template." / "Code Studio couldn't delete the template." / "That folder is not one of your templates." | status |
+| Template scope | "Open a project to keep a template for this project only." / "Code Studio has no settings folder to keep templates in." | status |
+| Form too large or unreadable for a template | "This form is too large to keep as a template." / "The form can't be read, so it can't be kept as a template: {reason}" | status |
 
 **FB codes.** FB031–FB037 are new in this version (CONTRACTS §7.2 gains them through the lanes' `engine/diagnostic_codes/` modules). FB031, FB032 belong to M5.2; FB033, FB034 to M5.3; FB035 to M5.4; FB036, FB037 to M5.1.
 
