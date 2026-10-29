@@ -309,8 +309,17 @@ class StyleDrawer(QFrame):
             "QFrame#formBuilder\\.styleDrawer { background: %(panel)s; color: %(text)s; border-top: 1px solid %(border)s; }"
             "QWidget#formBuilder\\.styleHeader { background: %(panel)s; border-bottom: 1px solid %(border)s; }"
             "QWidget#formBuilder\\.styleHeader QLabel { color: %(muted)s; background: transparent; }"
-            "QToolButton { color: %(text)s; }"
-            % {"panel": chrome.panel, "text": chrome.text, "border": chrome.border, "muted": chrome.muted}
+            "QToolButton#formBuilder\\.styleInsert, QPushButton#formBuilder\\.styleDone, QComboBox#formBuilder\\.styleScope {"
+            " color: %(text)s; background: %(input)s; border: 1px solid %(border)s; border-radius: 3px; padding: 2px 10px; }"
+            "QToolButton#formBuilder\\.styleInsert::menu-indicator { image: none; width: 0px; }"
+            "QPlainTextEdit#formBuilder\\.styleEditor { background: %(input)s; color: %(text)s; border: none; }"
+            % {
+                "panel": chrome.panel,
+                "text": chrome.text,
+                "border": chrome.border,
+                "muted": chrome.muted,
+                "input": chrome.input,
+            }
         )
         self._paint_status()
 

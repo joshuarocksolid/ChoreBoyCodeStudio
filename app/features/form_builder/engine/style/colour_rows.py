@@ -242,7 +242,7 @@ def _sheet_command(owner: NodeId, node: WidgetNode, text: str, label: str) -> Se
     if not text.strip():
         return SetProperty(owner, "styleSheet", None, undo_label=label)
     entry = node.prop("styleSheet")
-    base = entry.value if entry is not None and isinstance(entry.value, StringValue) else StringValue("")
+    base = entry.value if entry is not None and isinstance(entry.value, StringValue) else StringValue("", notr=True)
     return SetProperty(owner, "styleSheet", replace(base, text=text), undo_label=label)
 
 

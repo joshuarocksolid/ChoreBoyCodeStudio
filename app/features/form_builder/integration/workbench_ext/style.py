@@ -15,6 +15,7 @@ from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.integration.workbench_ext._style_memory import DrawerHeight
 from app.features.form_builder.qtside.style import gateway
 from app.features.form_builder.qtside.style.drawer import DrawerHooks, StyleDrawer
+from app.features.form_builder.qtside.style.problems import StyleProblems
 from app.features.form_builder.qtside.theme.chrome import default_chrome
 from app.qt.QtCore import QTimer
 from app.qt.QtWidgets import QPlainTextEdit, QWidget
@@ -36,6 +37,7 @@ def attach(workbench: Any) -> None:
         return
     controller = _Controller(workbench, session)
     gateway.register_opener(session, controller.open)
+    controller.start_problems()
     workbench.destroyed.connect(lambda *_args: controller.dispose())
 
 
@@ -62,9 +64,16 @@ class _Controller:
         self._session = session
         self._drawer: Optional[StyleDrawer] = None
         self._memory: Optional[DrawerHeight] = None
+        self._problems: Optional[StyleProblems] = None
+
+    def start_problems(self) -> None:
+        self._problems = StyleProblems(self._session)
 
     def dispose(self) -> None:
         gateway.forget_opener(self._session)
+        problems, self._problems = self._problems, None
+        if problems is not None:
+            problems.dispose()
         drawer, self._drawer = self._drawer, None
         if drawer is not None:
             drawer.dispose()
@@ -83,6 +92,7 @@ class _Controller:
             if not workbench.open_under_canvas(KEY, drawer, height=self._height().load()):
                 return False
             workbench.set_under_canvas_listener(self._height().save)
+        self._retheme(drawer)
         drawer.show_for(target)
         return True
 
@@ -118,14 +128,30 @@ class _Controller:
         else:
             canvas.hide_layer(LAYER)
 
-    def _narrate(self, sentence: str) -> None:
-        widget: Optional[QWidget] = self._workbench
+    def _surface(self) -> Optional[QWidget]:
+        widget: Optional[QWidget] = self._workbench.parentWidget()
         while widget is not None:
-            narrate = getattr(widget, "narrate", None)
-            if callable(narrate) and widget is not self._workbench:
-                narrate(sentence)
-                return
+            if callable(getattr(widget, "narrate", None)):
+                return widget
             widget = widget.parentWidget()
+        return None
+
+    def _narrate(self, sentence: str) -> None:
+        surface = self._surface()
+        if surface is not None:
+            surface.narrate(sentence)  # type: ignore[attr-defined]
+
+    def _retheme(self, drawer: StyleDrawer) -> None:
+        """The drawer follows the shell theme of the tab it is shown in."""
+        drawer.apply_chrome()
+        surface = self._surface()
+        tokens = getattr(surface, "_tokens", None)
+        apply = getattr(drawer.editor, "apply_theme", None)
+        if tokens is not None and callable(apply):
+            try:
+                apply(tokens)
+            except Exception:
+                logger.exception("style sheet drawer could not apply the theme to its editor")
 
     def _closed(self, target: Optional[NodeId]) -> None:
         del target

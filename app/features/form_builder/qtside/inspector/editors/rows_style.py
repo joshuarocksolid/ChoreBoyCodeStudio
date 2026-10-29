@@ -46,6 +46,7 @@ from app.features.form_builder.qtside.style.verdict import summary_text
 from app.features.form_builder.qtside.visual.color_picker import ColorPicker, Swatch, colour_summary
 from app.features.form_builder.qtside.visual.common import RowSummary, begin_popover, owner_name, refit
 from app.qt.QtCore import Qt
+from app.qt.QtGui import QColor, QPalette
 from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -58,8 +59,11 @@ from app.qt.QtWidgets import (
 
 TEXT_COLOUR_KEY = EditorKey("textcolour")
 BACKGROUND_KEY = EditorKey("background")
+ACCENT_KEY = EditorKey("accentcolour")
 TEXT_SIZE_KEY = EditorKey("textsize")
 
+ACCENT_CAPTION = "Colour of selections, progress bars and links."
+SIZE_CAPTION = "Every widget that doesn't set its own size follows this."
 _NO_SHEET_EDIT = "The style sheet can't be read, so it can't be changed here."
 _EDIT_LINK = "Edit style sheet"
 
@@ -68,9 +72,14 @@ def _visible(document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
     return colour_rows.shows_rows(document, owners)
 
 
+def _is_form(document: UiDocument, owners: Tuple[NodeId, ...]) -> bool:
+    return owners == (document.root.id,)
+
+
 def register(registrar: Registrar) -> None:
     registrar.editor(TEXT_COLOUR_KEY, TextColourEditor)
     registrar.editor(BACKGROUND_KEY, BackgroundEditor)
+    registrar.editor(ACCENT_KEY, AccentColourEditor)
     registrar.editor(TEXT_SIZE_KEY, TextSizeEditor)
     registrar.editor(STYLESHEET, StyleSheetEditor)
     registrar.row(
@@ -97,6 +106,32 @@ def register(registrar: Registrar) -> None:
             visible=_visible,
         )
     )
+    # The form's Look rows (UX-STYLE-012) also sit in Appearance while the form's own root widget is the
+    # selection, which is how a form is selected on the canvas and in the outline.
+    registrar.row(
+        RowSpec(
+            key="lookAccent",
+            group=GroupId.APPEARANCE,
+            label="Accent colour",
+            help=ACCENT_CAPTION,
+            source=Summary(),
+            editor=str(ACCENT_KEY),
+            after="backgroundColour",
+            visible=_is_form,
+        )
+    )
+    registrar.row(
+        RowSpec(
+            key="lookTextSize",
+            group=GroupId.APPEARANCE,
+            label="Text size",
+            help=SIZE_CAPTION,
+            source=Summary(),
+            editor=str(TEXT_SIZE_KEY),
+            after="lookAccent",
+            visible=_is_form,
+        )
+    )
     registrar.row(
         RowSpec(
             key="styleSheet",
@@ -105,7 +140,7 @@ def register(registrar: Registrar) -> None:
             help="Rules that restyle this widget and everything inside it.",
             source=Prop("styleSheet"),
             editor=str(STYLESHEET),
-            after="backgroundColour",
+            after="lookTextSize",
         )
     )
 
@@ -326,6 +361,9 @@ class _ColourRow:
             self._caption.setTextFormat(Qt.TextFormat.RichText)
             self._caption.setText('%s <a href="#edit">[%s]</a>' % (text, _EDIT_LINK))
             self._caption.setOpenExternalLinks(False)
+            palette = self._caption.palette()
+            palette.setColor(QPalette.ColorRole.Link, QColor(chrome.accent))
+            self._caption.setPalette(palette)
         else:
             self._caption.setTextFormat(Qt.TextFormat.PlainText)
             self._caption.setText(text)
@@ -340,7 +378,7 @@ class _ColourRow:
     # writing -------------------------------------------------------------
 
     def _label(self) -> str:
-        return self.undo_words % owner_name(self._host)
+        return self.undo_words % owner_name(self._host) if "%s" in self.undo_words else self.undo_words
 
     def _run(self, commands: Sequence[Command], session: Optional[object]) -> bool:
         if not commands:
@@ -487,6 +525,28 @@ class BackgroundEditor(_ColourRow):
         return colour_rows.clear_background_commands(document, owner, "Edit")
 
 
+class AccentColourEditor(_ColourRow):
+    """The form's accent colour: the root palette's Highlight and Link roles (UX-STYLE-012)."""
+
+    row_label = "Accent colour"
+    undo_words = "Change accent colour"
+    object_name = "formBuilder.accentColour"
+
+    def _read(self, document: UiDocument, owner: NodeId) -> Tuple[Optional[Rgb], bool, str]:
+        color = colour_rows.accent_color(document)
+        return color, color is not None, ""
+
+    def _caption_for(self, document: UiDocument, owners: Tuple[NodeId, ...], palette_only: bool) -> Tuple[str, bool]:
+        del document, owners, palette_only
+        return ACCENT_CAPTION, False
+
+    def _write_commands(self, document: UiDocument, owner: NodeId, rgb: Rgb) -> Tuple[Command, ...]:
+        return colour_rows.accent_commands(document, rgb, "Edit")
+
+    def _clear_commands(self, document: UiDocument, owner: NodeId) -> Tuple[Command, ...]:
+        return colour_rows.accent_commands(document, None, "Edit")
+
+
 def _sheet(node: object) -> str:
     entry = node.prop("styleSheet")  # type: ignore[attr-defined]
     if entry is not None and isinstance(entry.value, StringValue):
@@ -497,34 +557,18 @@ def _sheet(node: object) -> str:
 # The form's Look group ----------------------------------------------------
 
 
-class _AccentWrite:
-    def __init__(self, host: GroupHost) -> None:
-        self._host = host
+class _FormOwner:
+    """A row write for rows that write through their own editor: it only says which nodes the row shows."""
+
+    def __init__(self) -> None:
         self.owners: Tuple[NodeId, ...] = ()
 
     def edit(self, value: Value, token: Optional[str]) -> Tuple[Command, ...]:
-        del token
-        if not isinstance(value, ColorValue):
-            return ()
-        return colour_rows.accent_commands(self._host.document, (value.red, value.green, value.blue), "Edit")
+        del value, token
+        return ()
 
     def reset(self) -> Tuple[Command, ...]:
-        return colour_rows.accent_commands(self._host.document, None, "Edit")
-
-
-class _SizeWrite:
-    def __init__(self, host: GroupHost) -> None:
-        self._host = host
-        self.owners: Tuple[NodeId, ...] = ()
-
-    def edit(self, value: Value, token: Optional[str]) -> Tuple[Command, ...]:
-        del token
-        if not isinstance(value, NumberValue):
-            return ()
-        return colour_rows.text_size_commands(self._host.document, value.value, "Edit")
-
-    def reset(self) -> Tuple[Command, ...]:
-        return colour_rows.text_size_commands(self._host.document, None, "Edit")
+        return ()
 
 
 class LookBody:
@@ -537,73 +581,41 @@ class LookBody:
         layout = QVBoxLayout(self._root)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(2)
-        self._accent_write = _AccentWrite(host)
-        self._size_write = _SizeWrite(host)
-        self._accent = host.editor_for(self._accent_row(Unset()), self._root)
-        self._accent_caption = _caption("Colour of selections, progress bars and links.", self._root)
-        self._size = host.editor_for(self._size_row(Unset()), self._root)
-        self._size_caption = _caption("Every widget that doesn't set its own size follows this.", self._root)
+        self._write = _FormOwner()
+        self._accent = host.editor_for(self._row("look.accent", "Accent colour", ACCENT_CAPTION, ACCENT_KEY), self._root)
+        self._size = host.editor_for(self._row("look.size", "Text size", SIZE_CAPTION, TEXT_SIZE_KEY), self._root)
         layout.addWidget(self._accent.widget)
-        layout.addWidget(self._accent_caption)
         layout.addWidget(self._size.widget)
-        layout.addWidget(self._size_caption)
 
     @property
     def widget(self) -> QWidget:
         return self._root
 
-    def _accent_row(self, value: RowValue) -> OpenRow:
-        self._accent_write.owners = self._host.owners
-        return OpenRow(
-            "look.accent",
-            "Accent colour",
-            "palette",
-            "Colour of selections, progress bars and links.",
-            value,
-            ValueSpec(ColorValue.ELEMENT),
-            EditorKey(ColorValue.ELEMENT),
-            self._accent_write,
-        )
-
-    def _size_row(self, value: RowValue) -> OpenRow:
-        self._size_write.owners = self._host.owners
-        return OpenRow(
-            "look.size",
-            "Text size",
-            "font",
-            "Every widget that doesn't set its own size follows this.",
-            value,
-            ValueSpec(NumberValue.ELEMENT),
-            TEXT_SIZE_KEY,
-            self._size_write,
-        )
+    def _row(self, key: str, label: str, help_text: str, editor: EditorKey) -> OpenRow:
+        self._write.owners = self._host.owners
+        return OpenRow(key, label, "", help_text, Unset(), ValueSpec("summary"), editor, self._write)
 
     def show(self, rows: Sequence[object]) -> None:
         del rows
-        document = self._host.document
-        accent = colour_rows.accent_color(document)
-        size = colour_rows.text_size(document)
-        self._accent.show(Written(ColorValue(*accent)) if accent is not None else Unset())
-        self._size.show(Written(NumberValue(size)) if size is not None else Unset())
-        chrome_muted = self._root.palette().color(self._root.foregroundRole()).name()
-        for caption in (self._accent_caption, self._size_caption):
-            caption.setStyleSheet("color: %s; background: transparent;" % chrome_muted)
-
-
-def _caption(text: str, parent: QWidget) -> QLabel:
-    label = QLabel(text, parent)
-    label.setWordWrap(True)
-    label.setContentsMargins(8, 0, 0, 4)
-    return label
+        # The form-group slot adds this widget to a body that is already shown
+        # and does not show it, so the group's rows would be skipped by Tab.
+        self._root.show()
+        self._write.owners = self._host.owners
+        self._accent.show(Unset())
+        self._size.show(Unset())
 
 
 class TextSizeEditor:
-    """A point size from 8 to 24 on the form's font. Empty means every widget keeps Qt's default."""
+    """A point size from 8 to 24 on the form's font. "Default" means every widget keeps Qt's own size."""
 
     def __init__(self, spec: ValueSpec, host: EditorHost, parent: QWidget) -> None:
         del spec
         self._host = host
-        self._box = QSpinBox(parent)
+        self._root = QWidget(parent)
+        row = QHBoxLayout(self._root)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self._box = QSpinBox(self._root)
         self._box.setObjectName("formBuilder.textSize")
         self._box.setAccessibleName("Text size")
         self._box.setRange(colour_rows.TEXT_SIZE_MIN - 1, colour_rows.TEXT_SIZE_MAX)
@@ -611,30 +623,61 @@ class TextSizeEditor:
         self._box.setSuffix(" pt")
         self._box.setKeyboardTracking(False)
         self._box.setMinimumWidth(0)
+        self._reset = QToolButton(self._root)
+        self._reset.setText("\u21ba")
+        self._reset.setAutoRaise(True)
+        self._reset.setAccessibleName("Reset text size")
+        self._reset.clicked.connect(self._clear)
+        self._reset.hide()
+        row.addWidget(self._box, 1)
+        row.addWidget(self._reset)
+        self._caption = _faint_label(self._root, host.chrome.muted)
+        self._caption.setText(SIZE_CAPTION)
+        self._caption.show()
         self._showing = False
         self._box.valueChanged.connect(self._changed)
 
     @property
     def widget(self) -> QWidget:
-        return self._box
+        return self._root
+
+    @property
+    def caption_widget(self) -> QWidget:
+        return self._caption
 
     def show(self, value: RowValue) -> None:
-        mark(self._box, value)
-        shown = value.value.value if isinstance(value, Written) and isinstance(value.value, NumberValue) else self._box.minimum()
+        del value
+        size = colour_rows.text_size(self._host.document())
+        mark(self._box, Written(NumberValue(size)) if size is not None else Unset())
+        shown = size if size is not None else self._box.minimum()
         self._showing = True
         try:
             if self._box.value() != shown:
                 self._box.setValue(shown)
         finally:
             self._showing = False
+        self._reset.setVisible(size is not None)
+
+    def _run(self, points: Optional[int]) -> None:
+        commands = colour_rows.text_size_commands(self._host.document(), points, "Edit")
+        if not commands:
+            return
+        session = self._host.begin_session("Change text size")
+        try:
+            result = session.run(commands)
+        finally:
+            session.close()
+        message = getattr(result, "message", "")
+        if message:
+            self._host.invalid(message)
+
+    def _clear(self) -> None:
+        self._run(None)
 
     def _changed(self, number: int) -> None:
         if self._showing:
             return
-        if number < colour_rows.TEXT_SIZE_MIN:
-            self._host.reset()
-            return
-        self._host.commit(NumberValue(number))
+        self._run(number if number >= colour_rows.TEXT_SIZE_MIN else None)
 
 
 __all__: Sequence[str] = ["register", "register_form_groups"]
