@@ -28,6 +28,7 @@ from app.features.form_builder.engine.project.window_facts import WindowRead
 from app.features.form_builder.engine.project.window_file import (
     file_label,
     method_source_hash,
+    source_lines,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import ConnectionNode, CustomWidgetNode, WidgetNode
@@ -236,7 +237,12 @@ def plan_stub(
             "%s can't be read, so Code Studio won't change it: the file is missing."
             % label
         )
-    raw = source.splitlines(keepends=True)
+    if not facts.indent:
+        raise ValueError(
+            "%s can't be read, so Code Studio won't change it: "
+            "the body of %s is on its class line." % (label, facts.class_name)
+        )
+    raw = source_lines(source, keepends=True)
     ending = facts.newline
     start, opened = _insertion_offset(source, raw, facts.end_line)
     blanks = facts.blank_lines
@@ -276,10 +282,13 @@ def plan_unstub(
     method = facts.method(method_name)
     if method is None or method.source_hash != stub_hash:
         return None
+    if method.decorators or method.kind != "method":
+        # A decorator added above the stub would be left behind on its own.
+        return None
     source = _source_of(read)
     if source is None:
         return None
-    raw = source.splitlines(keepends=True)
+    raw = source_lines(source, keepends=True)
     if method.line < 1 or method.end_line > len(raw):
         return None
     first = method.line
@@ -331,5 +340,5 @@ def _insertion_offset(source: str, raw: list, last_line: int) -> Tuple[int, bool
     """The line after the class, and whether the file is missing a final newline."""
     if last_line < len(raw):
         return _offset_of(raw, last_line + 1), False
-    opened = bool(source) and not source.endswith("\n")
+    opened = bool(source) and not source.endswith(("\n", "\r"))
     return len(source), opened

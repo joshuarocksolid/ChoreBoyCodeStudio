@@ -11,6 +11,7 @@ import ast
 import hashlib
 import io
 import os
+import re
 import stat
 import threading
 import tokenize
@@ -32,15 +33,48 @@ _BRACKET_LIMIT = 100
 _INDENT_LIMIT = 100
 _CACHE_LIMIT = 64
 _CHAIN_LIMIT = 3
+_FOLLOW_LIMIT = 8
+_FIELD_LIMIT = 2000
+_DECORATOR_TEXT = 200
+_LINE_BREAK = re.compile(r"\r\n|\r|\n")
 _PYSIDE = ("PySide6", "PySide2", "PySide", "shiboken6", "shiboken2")
 
 _CACHE_LOCK = threading.Lock()
-_FILE_CACHE: Dict[Tuple[str, int, int], "WindowRead"] = {}
-_TEXT_CACHE: Dict[str, "WindowRead"] = {}
+_FILE_CACHE: Dict[Tuple[str, int, int], Tuple["WindowRead", Tuple[object, ...]]] = {}
+_TEXT_CACHE: Dict[str, Tuple["WindowRead", Tuple[object, ...]]] = {}
+
+
+class _Follow:
+    """Base files one read may still open, and the ones it opened.
+
+    Without a total, a class with hundreds of project bases, each with
+    hundreds more, would read the same 1 MB file over and over.
+    """
+
+    def __init__(self) -> None:
+        self.left = _FOLLOW_LIMIT
+        self.files: List[str] = []
 
 
 def _empty(status: ReadStatus, reason: str, line: int, relative: str) -> WindowRead:
     return WindowRead(status, reason, line, WindowFacts(), relative)
+
+
+def source_lines(text: str, keepends: bool = False) -> List[str]:
+    """Lines as Python numbers them: split on CRLF, CR and LF only.
+
+    ``str.splitlines`` also splits on form feed, NEL and U+2028, which would
+    put a stub inside the last method of a file with one of those in it.
+    """
+    lines: List[str] = []
+    start = 0
+    for match in _LINE_BREAK.finditer(text):
+        end = match.end() if keepends else match.start()
+        lines.append(text[start:end])
+        start = match.end()
+    if start < len(text):
+        lines.append(text[start:])
+    return lines
 
 
 def file_label(relative: str) -> str:
@@ -63,17 +97,20 @@ def read_window(project_root: str, relative: str, text: Optional[str] = None) ->
         cached = _cached_file(project_root, relative)
         if cached is not None:
             return cached
-        read = _read_path(project_root, relative, chain=())
-        _store_file(project_root, relative, read)
+        follow = _Follow()
+        read = _read_path(project_root, relative, chain=(), budget=follow)
+        _store_file(project_root, relative, read, follow.files)
         return read
-    digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    digest = hashlib.sha256(text.encode("utf-8", "surrogatepass")).hexdigest()
+    key = "%s\0%s\0%s" % (project_root, relative, digest)
     with _CACHE_LOCK:
-        cached_text = _TEXT_CACHE.get(digest)
-    if cached_text is not None and cached_text.relative == relative:
-        return cached_text
-    read = _read_text(project_root, relative, text, chain=())
+        cached_text = _TEXT_CACHE.get(key)
+    if cached_text is not None and _fresh(project_root, cached_text[1]):
+        return cached_text[0]
+    follow = _Follow()
+    read = _read_text(project_root, relative, text, chain=(), budget=follow)
     with _CACHE_LOCK:
-        _remember(_TEXT_CACHE, digest, read)
+        _remember(_TEXT_CACHE, key, (read, _stamps(project_root, follow.files)))
     return read
 
 
@@ -87,10 +124,37 @@ def _cached_file(project_root: str, relative: str) -> Optional[WindowRead]:
         return None
     key = (os.path.abspath(full), info.st_mtime_ns, info.st_size)
     with _CACHE_LOCK:
-        return _FILE_CACHE.get(key)
+        entry = _FILE_CACHE.get(key)
+    if entry is None:
+        return None
+    read, stamps = entry
+    if not _fresh(project_root, stamps):
+        return None
+    return read
 
 
-def _store_file(project_root: str, relative: str, read: WindowRead) -> None:
+def _fresh(project_root: str, stamps: Tuple[object, ...]) -> bool:
+    files = [str(item[0]) for item in stamps if isinstance(item, tuple)]
+    return stamps == _stamps(project_root, files)
+
+
+def _stamps(project_root: str, files: Sequence[str]) -> Tuple[object, ...]:
+    """``(relative, mtime_ns, size)`` of followed base files, so editing one
+    misses the cache of the window file that inherits from it."""
+    found: List[object] = []
+    for relative in files:
+        full = os.path.join(project_root, *relative.split("/"))
+        try:
+            info = os.stat(full)
+            found.append((relative, info.st_mtime_ns, info.st_size))
+        except OSError:
+            found.append((relative, 0, -1))
+    return tuple(found)
+
+
+def _store_file(
+    project_root: str, relative: str, read: WindowRead, files: Sequence[str] = ()
+) -> None:
     full = os.path.join(project_root, *relative.split("/"))
     try:
         info = os.stat(full)
@@ -98,10 +162,10 @@ def _store_file(project_root: str, relative: str, read: WindowRead) -> None:
         return
     key = (os.path.abspath(full), getattr(info, "st_mtime_ns", 0), info.st_size)
     with _CACHE_LOCK:
-        _remember(_FILE_CACHE, key, read)
+        _remember(_FILE_CACHE, key, (read, _stamps(project_root, files)))
 
 
-def _remember(cache: Dict, key: object, read: WindowRead) -> None:
+def _remember(cache: Dict, key: object, read: object) -> None:
     if key in cache:
         cache.pop(key)
     cache[key] = read
@@ -114,14 +178,14 @@ def _read_path(
     relative: str,
     chain: Tuple[str, ...],
     focus: Optional[str] = None,
+    budget: Optional["_Follow"] = None,
 ) -> WindowRead:
-    label = file_label(relative)
     full = os.path.join(project_root, *relative.split("/")) if project_root else relative
     if not project_root or not inside_project(full, project_root):
         return _empty("refused", "it is outside the project", 0, relative)
     if not os.path.lexists(full):
         return _empty("missing", "the file is missing", 0, relative)
-    data = _read_regular(full)
+    data = _read_regular(full, project_root)
     if data is None:
         if os.path.islink(full) and not inside_project(os.path.realpath(full), project_root):
             return _empty("refused", "it is outside the project", 0, relative)
@@ -137,10 +201,10 @@ def _read_path(
     if decoded is None:
         return _empty("refused", "it isn't UTF-8 text", 0, relative)
     text, _encoding = decoded
-    return _read_text(project_root, relative, text, chain, focus)
+    return _read_text(project_root, relative, text, chain, focus, budget)
 
 
-def _read_regular(full: str) -> Optional[bytes]:
+def _read_regular(full: str, project_root: str = "") -> Optional[bytes]:
     """Bytes of a regular file of at most 1 MB, opened non-blocking.
 
     Same rules as the custom-widget reader. This copy does not use that
@@ -154,6 +218,8 @@ def _read_regular(full: str) -> Optional[bytes]:
     try:
         info = os.fstat(fd)
         if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
+            return None
+        if project_root and not _same_file_inside(full, project_root, info):
             return None
         chunks: List[bytes] = []
         size = 0
@@ -170,6 +236,22 @@ def _read_regular(full: str) -> Optional[bytes]:
         return None
     finally:
         os.close(fd)
+
+
+def _same_file_inside(full: str, project_root: str, info: os.stat_result) -> bool:
+    """The opened file is the one the path names now, and that is in the project.
+
+    Closes the gap between the symlink check and the open: a link swapped to
+    point outside the project in between is refused.
+    """
+    real = os.path.realpath(full)
+    if not inside_project(real, os.path.realpath(project_root)):
+        return False
+    try:
+        now = os.stat(real)
+    except OSError:
+        return False
+    return (now.st_dev, now.st_ino) == (info.st_dev, info.st_ino)
 
 
 def _decode(data: bytes) -> Optional[Tuple[str, str]]:
@@ -195,7 +277,10 @@ def _read_text(
     text: str,
     chain: Tuple[str, ...],
     focus: Optional[str] = None,
+    budget: Optional["_Follow"] = None,
 ) -> WindowRead:
+    if budget is None:
+        budget = _Follow()
     if "\0" in text:
         return _empty("refused", "it contains a NUL byte", 0, relative)
     scanned = _prescan(text)
@@ -209,17 +294,22 @@ def _read_text(
         return _empty("syntax_error", "", line, relative)
     except (RecursionError, MemoryError):
         return _empty("refused", "the file is too deeply nested to read", 0, relative)
-    lines = text.splitlines()
+    except Exception:
+        return _empty("refused", "it can't be read", 0, relative)
+    lines = source_lines(text)
     ending = _line_ending(text)
-    classes = tuple(
-        _class_facts(node, lines, ending)
-        for node in tree.body
-        if isinstance(node, ast.ClassDef)
-    )
     window = _find_window(tree, lines, ending)
     target = window
     if focus:
-        target = next((item for item in classes if item.class_name == focus), None)
+        node = next(
+            (
+                item
+                for item in tree.body
+                if isinstance(item, ast.ClassDef) and item.name == focus
+            ),
+            None,
+        )
+        target = _class_facts(node, lines, ending) if node is not None else None
     base_methods: List[MethodFacts] = []
     unread: List[str] = []
     if target is not None and len(chain) + 1 < _CHAIN_LIMIT:
@@ -227,7 +317,7 @@ def _read_text(
         seen = chain + (relative,)
         for base in target.bases:
             _follow_base(
-                project_root, base, imports, seen, base_methods, unread,
+                project_root, base, imports, seen, base_methods, unread, budget,
             )
     elif target is not None:
         imports = _top_imports(tree)
@@ -252,6 +342,7 @@ def _follow_base(
     seen: Tuple[str, ...],
     methods: List[MethodFacts],
     unread: List[str],
+    budget: "_Follow",
 ) -> None:
     binding = imports.get(base)
     if binding is None:
@@ -260,10 +351,12 @@ def _follow_base(
     if module.split(".", 1)[0] in _PYSIDE:
         return
     relative = module_file(project_root, module)
-    if not relative or relative in seen:
+    if not relative or relative in seen or budget.left <= 0:
         unread.append(base)
         return
-    read = _read_path(project_root, relative, seen, focus=class_name)
+    budget.left -= 1
+    budget.files.append(relative)
+    read = _read_path(project_root, relative, seen, focus=class_name, budget=budget)
     facts = read.facts
     if read.status != "ok" or facts.class_name != class_name:
         unread.append(base)
@@ -284,7 +377,10 @@ def _is_project_base(base: str, imports: Dict[str, Tuple[str, str]]) -> bool:
 
 def _prescan(text: str) -> Optional[Tuple[ReadStatus, int, str]]:
     try:
-        tokens = tokenize.generate_tokens(io.StringIO(text).readline)
+        # The C tokenizer ends a line at a lone CR; ``tokenize`` would read on
+        # (inside a comment, say) and miss what the parser will see.
+        flat = text.replace("\r\n", "\n").replace("\r", "\n")
+        tokens = tokenize.generate_tokens(io.StringIO(flat).readline)
         count = 0
         depth = 0
         level = 0
@@ -305,6 +401,8 @@ def _prescan(text: str) -> Optional[Tuple[ReadStatus, int, str]]:
                     return ("refused", line, "the brackets are nested too deeply")
             elif tok.type == tokenize.OP and tok.string in ")]}":
                 depth = max(0, depth - 1)
+            elif tok.type == tokenize.STRING and _field_chars(tok.string) > _FIELD_LIMIT:
+                return ("refused", line, "an f-string holds too much code")
             if tok.type in (
                 tokenize.NEWLINE,
                 tokenize.ENDMARKER,
@@ -329,6 +427,55 @@ def _prescan(text: str) -> Optional[Tuple[ReadStatus, int, str]]:
     return None
 
 
+def _field_chars(token: str) -> int:
+    """Characters of code inside an f-string's ``{}`` fields; 0 for other strings.
+
+    Python 3.9 parses those fields with no stack limit, and ``tokenize`` sees
+    the whole f-string as one token, so a long ``{a.b.b...}`` would crash
+    ``ast.parse``. Quotes inside a field are skipped so a ``'}'`` there can't
+    end the count early; an unclosed quote counts the rest of the token.
+    """
+    head = 0
+    while head < len(token) and token[head] not in "'\"":
+        head += 1
+    if "f" not in token[:head].lower():
+        return 0
+    body = token[head:]
+    quote = body[:3] if body[:3] in ('"""', "'''") else body[:1]
+    body = body[len(quote) : len(body) - len(quote)]
+    total = 0
+    depth = 0
+    index = 0
+    size = len(body)
+    while index < size:
+        ch = body[index]
+        if depth == 0:
+            if body.startswith("{{", index):
+                index += 2
+                continue
+            if ch == "{":
+                depth = 1
+            index += 1
+            continue
+        if ch in "'\"":
+            inner = body[index : index + 3] if body[index : index + 3] in ('"""', "'''") else ch
+            close = body.find(inner, index + len(inner))
+            stop = size if close < 0 else close + len(inner)
+            total += stop - index
+            index = stop
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                index += 1
+                continue
+        total += 1
+        index += 1
+    return total
+
+
 def _token_line(exc: tokenize.TokenError) -> int:
     if len(exc.args) > 1 and isinstance(exc.args[1], tuple) and exc.args[1]:
         line = exc.args[1][0]
@@ -338,12 +485,10 @@ def _token_line(exc: tokenize.TokenError) -> int:
 
 
 def _line_ending(text: str) -> str:
-    newline = text.find("\n")
-    if newline < 0:
+    match = _LINE_BREAK.search(text)
+    if match is None:
         return "\n"
-    if newline > 0 and text[newline - 1] == "\r":
-        return "\r\n"
-    return "\n"
+    return match.group(0)
 
 
 def _find_window(tree: ast.AST, lines: Sequence[str], ending: str) -> Optional[WindowFacts]:
@@ -379,16 +524,17 @@ def _ui_stems(tree: ast.AST) -> Tuple[str, ...]:
 
 def _calls_setup_ui(node: ast.ClassDef, stems: Sequence[str]) -> bool:
     assigned = set()
+    calls: List[ast.Call] = []
     for child in ast.walk(node):
-        if isinstance(child, ast.Assign):
+        if isinstance(child, ast.Call):
+            calls.append(child)
+        elif isinstance(child, ast.Assign):
             if _is_ui_call(child.value, stems):
                 for target in child.targets:
                     assigned.add(_expr_key(target))
         elif isinstance(child, ast.AnnAssign) and _is_ui_call(child.value, stems):
             assigned.add(_expr_key(child.target))
-    for child in ast.walk(node):
-        if not isinstance(child, ast.Call):
-            continue
+    for child in calls:
         func = child.func
         if not isinstance(func, ast.Attribute) or func.attr != "setupUi":
             continue
@@ -420,11 +566,19 @@ def _call_name(func: ast.AST) -> str:
 
 
 def _expr_key(node: Optional[ast.AST]) -> str:
+    """``self.ui`` for that expression; "" for anything but names and dots.
+
+    A loop, not recursion: a 1,000-deep ``a.b.b...`` passes the pre-scan.
+    """
+    parts: List[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
     if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return "%s.%s" % (_expr_key(node.value), node.attr)
-    return ""
+        parts.append(node.id)
+    else:
+        parts.append("")
+    return ".".join(reversed(parts))
 
 
 def _class_facts(node: ast.ClassDef, lines: Sequence[str], ending: str) -> WindowFacts:
@@ -474,7 +628,7 @@ def _method_facts(node: ast.AST, lines: Sequence[str]) -> MethodFacts:
     end_line = node.end_lineno or node.lineno
     start = node.lineno
     chunk = "\n".join(lines[start - 1 : end_line])
-    decorators = tuple(_decorator_text(item) for item in node.decorator_list)
+    decorators = tuple(_decorator_text(item, lines) for item in node.decorator_list)
     return MethodFacts(
         name=node.name,
         line=start,
@@ -499,20 +653,30 @@ def _kind(node: ast.AST) -> str:
 
 
 def _decorator_name(node: ast.AST) -> str:
+    while isinstance(node, ast.Call):
+        node = node.func
     if isinstance(node, ast.Name):
         return node.id
     if isinstance(node, ast.Attribute):
         return node.attr
-    if isinstance(node, ast.Call):
-        return _decorator_name(node.func)
     return ""
 
 
-def _decorator_text(node: ast.AST) -> str:
-    try:
-        return "@%s" % ast.unparse(node)
-    except Exception:
-        return "@%s" % _decorator_name(node)
+def _decorator_text(node: ast.AST, lines: Sequence[str]) -> str:
+    """The decorator as written when it is one short line, else ``@name``.
+
+    Taken from the source, not ``ast.unparse``, which is recursive and slow
+    on thousands of deep decorators.
+    """
+    number = getattr(node, "lineno", 0)
+    end = getattr(node, "end_lineno", None)
+    if number and end == number and 1 <= number <= len(lines):
+        raw = lines[number - 1].encode("utf-8", "surrogatepass")
+        start = getattr(node, "col_offset", 0)
+        stop = getattr(node, "end_col_offset", None)
+        if stop is not None and 0 <= start < stop <= len(raw) and stop - start <= _DECORATOR_TEXT:
+            return "@%s" % raw[start:stop].decode("utf-8", "replace")
+    return "@%s" % _decorator_name(node)
 
 
 def _slot_types(node: ast.AST) -> Optional[Tuple[str, ...]]:
@@ -565,7 +729,8 @@ def _params(node: ast.AST, kind: str) -> Tuple[Tuple[str, ...], int, bool]:
     defaulted = len(args.defaults)
     required_positional = len(positional) - defaulted
     for index, arg in enumerate(positional):
-        if index == 0 and skip_first and arg.arg in ("self", "cls"):
+        if index == 0 and skip_first:
+            # The instance, whatever it is called (``this``, ``window``).
             continue
         names.append(arg.arg)
         if index < required_positional:
@@ -613,15 +778,19 @@ def _comment_follows(lines: Sequence[str], start: int, class_indent: int) -> boo
 
 
 def _indent_unit(node: ast.ClassDef, lines: Sequence[str]) -> str:
-    end = node.end_lineno or node.lineno
-    class_indent = _indent_len(lines[node.lineno - 1] if node.lineno <= len(lines) else "")
-    for number in range(node.lineno + 1, end + 1):
-        if number > len(lines):
-            break
-        line = lines[number - 1]
-        if line.strip() and _indent_len(line) > class_indent:
-            return line[: len(line) - len(line.lstrip(" \t"))]
-    return "    "
+    """The leading whitespace of the class's first statement.
+
+    "" when that statement sits on the ``class`` line, where no method can go.
+    A continued header (``class A(\\n        QWidget):``) or a string's inner
+    lines must not set it, or a stub would land inside the last method.
+    """
+    first = node.body[0]
+    decorators = getattr(first, "decorator_list", None) or []
+    number = min([first.lineno] + [item.lineno for item in decorators])
+    if number <= node.lineno or number > len(lines):
+        return ""
+    line = lines[number - 1]
+    return line[: len(line) - len(line.lstrip(" \t"))]
 
 
 def _blank_style(node: ast.ClassDef, lines: Sequence[str]) -> int:

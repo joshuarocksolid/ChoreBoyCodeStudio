@@ -36,6 +36,10 @@ _KIND_WORDS = {
     "classmethod": "class method",
     "property": "property",
 }
+#: Names longer than this are never compared for spelling. A window file can
+#: hold one-line identifiers of hundreds of kilobytes.
+_FUZZY_CHARS = 128
+
 _TYPE_ALIAS = {
     "str": "QString",
     "QString": "QString",
@@ -86,6 +90,10 @@ def check_handlers(
     rows: List[FormDiagnostic] = []
     shadowed = set()
     for method in methods.values():
+        # Only methods the form calls: overriding closeEvent or keyPressEvent
+        # in the window class is ordinary Qt code, not a naming mistake.
+        if method.name not in called:
+            continue
         if method.name in stock and method.name not in shadowed:
             shadowed.add(method.name)
             rows.append(_shadow(method.name, qt_base, None, method.line))
@@ -266,8 +274,9 @@ def _by_name_rows(
 ) -> List[FormDiagnostic]:
     rows: List[FormDiagnostic] = []
     names = tuple(objects)
+    near = _NearNames(names)
     for method in methods.values():
-        parsed = _parse_on(method.name, names)
+        parsed = _parse_on(method.name, names, near)
         if parsed is None:
             continue
         obj, signal, fuzzy = parsed
@@ -548,29 +557,77 @@ def _same_type(left: str, right: str) -> bool:
     return _TYPE_ALIAS.get(left, left) == _TYPE_ALIAS.get(right, right)
 
 
+class _NearNames:
+    """Widget names within two letters of a word, found without comparing all.
+
+    Each name is filed under every string left after deleting up to two of
+    its letters; two words within two edits share one of those strings. The
+    exact distance is then checked on the few names found.
+    """
+
+    def __init__(self, names: Sequence[str]) -> None:
+        self.names = tuple(names)
+        self.longest_first = tuple(sorted(self.names, key=len, reverse=True))
+        self._index: Dict[str, List[int]] = {}
+        for number, name in enumerate(self.names):
+            if len(name) > _FUZZY_CHARS:
+                continue
+            for key in _deletions(name):
+                self._index.setdefault(key, []).append(number)
+
+    def closest(self, word: str) -> Optional[str]:
+        """The first name (in form order) at the smallest distance, at most 2."""
+        if len(word) > _FUZZY_CHARS:
+            return None
+        found = set()
+        for key in _deletions(word):
+            found.update(self._index.get(key, ()))
+        best: Optional[Tuple[int, int]] = None
+        for number in sorted(found):
+            name = self.names[number]
+            if name == word:
+                continue
+            distance = _edits(word, name, 2)
+            if distance <= 2 and (best is None or distance < best[0]):
+                best = (distance, number)
+        return None if best is None else self.names[best[1]]
+
+
+def _deletions(word: str) -> set:
+    found = {word}
+    for _round in range(2):
+        found |= {item[:index] + item[index + 1 :] for item in found for index in range(len(item))}
+    return found
+
+
 def _parse_on(
     method: str,
     names: Sequence[str],
+    near: Optional[_NearNames] = None,
 ) -> Optional[Tuple[str, str, Optional[str]]]:
     """``(object, signal, fuzzy object)``. Fuzzy is set when the object is a near miss."""
     if not method.startswith("on_"):
         return None
+    if near is None:
+        near = _NearNames(names)
     rest = method[3:]
-    for name in sorted(names, key=len, reverse=True):
+    for name in near.longest_first:
         prefix = name + "_"
         if rest.startswith(prefix) and rest[len(prefix) :]:
             return name, rest[len(prefix) :], None
     best: Optional[Tuple[str, str, str, int]] = None
+    if len(rest) > _FUZZY_CHARS:
+        return None
     parts = rest.split("_")
     for cut in range(1, len(parts)):
         obj = "_".join(parts[:cut])
         signal = "_".join(parts[cut:])
         if not obj or not signal:
             continue
-        close = _closest(obj, list(names), 2)
+        close = near.closest(obj)
         if close is None:
             continue
-        distance = _edits(obj, close)
+        distance = _edits(obj, close, 2)
         if best is None or distance < best[3]:
             best = (obj, signal, close, distance)
     if best is None:
@@ -669,10 +726,14 @@ def _with_code(item: FormDiagnostic, path: str) -> FormDiagnostic:
 def _closest(name: str, options: Sequence[str], limit: int) -> Optional[str]:
     best = None
     best_distance = limit + 1
+    if len(name) > _FUZZY_CHARS:
+        return None
     for option in options:
-        if option == name:
+        if option == name or abs(len(option) - len(name)) > limit:
             continue
-        distance = _edits(name, option)
+        if len(option) > _FUZZY_CHARS:
+            continue
+        distance = _edits(name, option, limit)
         if distance < best_distance:
             best = option
             best_distance = distance
@@ -681,16 +742,35 @@ def _closest(name: str, options: Sequence[str], limit: int) -> Optional[str]:
     return best
 
 
-def _edits(left: str, right: str) -> int:
-    if abs(len(left) - len(right)) > 8:
-        return 9
-    previous = list(range(len(right) + 1))
+def _edits(left: str, right: str, limit: int = 8) -> int:
+    """Edit distance, or ``limit + 1`` once it is known to be larger.
+
+    Only the diagonal band of width ``limit`` is filled and a row whose best
+    cell is past ``limit`` stops early, so a check over hundreds of widgets
+    and methods stays well under a second on ChoreBoy.
+    """
+    if left == right:
+        return 0
+    if abs(len(left) - len(right)) > limit:
+        return limit + 1
+    big = limit + 1
+    previous = [j if j <= limit else big for j in range(len(right) + 1)]
     for i, ch in enumerate(left, 1):
-        current = [i]
-        for j, other in enumerate(right, 1):
-            insert = current[j - 1] + 1
-            delete = previous[j] + 1
-            replace = previous[j - 1] + (ch != other)
-            current.append(min(insert, delete, replace))
+        low = max(1, i - limit)
+        high = min(len(right), i + limit)
+        current = [big] * (len(right) + 1)
+        current[0] = i if i <= limit else big
+        best = current[0]
+        for j in range(low, high + 1):
+            cost = previous[j - 1] + (ch != right[j - 1])
+            if current[j - 1] + 1 < cost:
+                cost = current[j - 1] + 1
+            if previous[j] + 1 < cost:
+                cost = previous[j] + 1
+            current[j] = cost if cost <= limit else big
+            if current[j] < best:
+                best = current[j]
+        if best > limit:
+            return big
         previous = current
-    return previous[-1]
+    return previous[-1] if previous[-1] <= limit else big

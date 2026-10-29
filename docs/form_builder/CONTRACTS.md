@@ -943,11 +943,11 @@ FB401 (Error): a logic property that is not valid JSON, not the expected top-lev
 `read_window(project_root, relative, text=None) -> WindowRead`:
 
 1. **Source.** `text` when the file is open in a tab (its current buffer), else the file: a regular file inside the project, at most 1 MB, opened non-blocking and checked with `fstat` (M5.4's `_read_regular` rules; a symlink that leaves the project is refused), decoded with `tokenize.detect_encoding`; a NUL byte or an undecodable file is refused.
-2. **Pre-scan.** One pass of `tokenize.generate_tokens` over the text. Refused when a logical line has more than 2,000 tokens, when bracket depth exceeds 100, or when indentation exceeds 100 levels. A `TokenError` or `IndentationError` is a syntax error at that line. The pre-scan is linear and runs no parser.
+2. **Pre-scan.** One pass of `tokenize.generate_tokens` over the text. Refused when a logical line has more than 2,000 tokens, when bracket depth exceeds 100, when indentation exceeds 100 levels, or when the code inside one f-string's `{}` fields is longer than 2,000 characters (`tokenize` sees an f-string as one token, and Python 3.9 parses its fields with no stack limit). Lines end at CRLF, CR or LF, as the parser counts them (never `str.splitlines`, which also splits at form feed, NEL and U+2028). A `TokenError` or `IndentationError` is a syntax error at that line. The pre-scan is linear and runs no parser.
 3. **Parse.** `ast.parse(text, type_comments=False)` only after the pre-scan passed. `SyntaxError`, `ValueError`, `RecursionError` and `MemoryError` become a refusal with the line.
 4. **Result.** `WindowRead(status, reason, line, facts)`: `status` is `ok`, `missing`, `refused`, `syntax_error`; `facts` is a frozen `WindowFacts` (M6.0s stub `engine/project/window_facts.py`): the window class (name, line, base names, the class's last line per UX-CODE-005, indent unit, blank-line style, line ending), and per method `MethodFacts(name, line, end_line, params, required, has_varargs, decorators, slot_types, kind ("method", "staticmethod", "classmethod", "property"), body_is_empty, source_hash)`.
 5. **Cache** by `(abs path, mtime_ns, size)` for files and by sha256 of `text` for buffers; at most 64 entries.
-6. Base classes named by `from <module> import <Name>` at the top of the file are read the same way, up to three files deep; anything else is unknown (FB212).
+6. Base classes named by `from <module> import <Name>` at the top of the file are read the same way, up to three files deep and at most eight base files per read; anything else is unknown (FB212). A cached read is used only while the base files it followed are unchanged.
 
 Nothing here imports, executes or `compile()`s user code. The window class rule is UX-CODE-010.
 

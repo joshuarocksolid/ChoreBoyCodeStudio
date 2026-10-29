@@ -94,11 +94,34 @@ def test_fb203_an_empty_method_is_info_and_a_body_is_clean() -> None:
 
 def test_fb204_a_method_that_replaces_a_qt_method_and_its_clean_twin() -> None:
     shadow = _HEAD + "    def close(self):\n        return 1\n"
-    doc = _doc()
+    doc = _doc(
+        tail=(
+            "<connections><connection>"
+            "<sender>okButton</sender><signal>clicked()</signal>"
+            "<receiver>Invoice</receiver><slot>close()</slot>"
+            "</connection></connections>"
+        )
+    )
     found = _codes(shadow, doc=doc)
     assert "FB204" in found
     assert "QDialog" in found["FB204"].message
     assert "FB204" not in _codes(_HEAD + "    def save_invoice(self):\n        return 1\n")
+
+
+def test_fb204_ignores_qt_overrides_the_form_does_not_call() -> None:
+    overrides = (
+        _HEAD
+        + "    def save_invoice(self):\n        return 1\n"
+        + "    def accept(self):\n        super().accept()\n"
+        + "    def closeEvent(self, event):\n        event.accept()\n"
+    )
+    found = _codes(overrides, inherited=_INHERITED | {"closeEvent"})
+    assert "FB204" not in found
+
+
+def test_fb202_counts_the_first_parameter_whatever_its_name() -> None:
+    window = _HEAD + "    def save_invoice(this):\n        return 1\n"
+    assert "FB202" not in _codes(window)
 
 
 @pytest.mark.logic("L-connect-slots-by-name")
@@ -128,6 +151,31 @@ def test_fb206_a_by_name_method_without_slot_and_the_decorated_twin() -> None:
     assert "FB206" in _codes(bare, doc=_doc())
     decorated = _HEAD + "    @Slot()\n    def on_okButton_clicked(self):\n        return 1\n"
     assert "FB206" not in _codes(decorated, doc=_doc())
+
+
+@pytest.mark.logic("L-connect-slots-by-name")
+def test_fb205_needs_a_slot_that_connects_and_fb206_checks_its_types() -> None:
+    doc = _doc(
+        tail=(
+            "<connections><connection>"
+            "<sender>okButton</sender><signal>clicked()</signal>"
+            "<receiver>Invoice</receiver><slot>on_okButton_clicked()</slot>"
+            "</connection></connections>"
+        )
+    )
+    bare = _HEAD + "    def on_okButton_clicked(self):\n        return 1\n"
+    rows = _codes(bare, doc=doc)
+    assert "FB205" not in rows, "without @Slot Qt does not connect it by name, so it runs once"
+    assert "FB206" in rows
+    assert "FB205" not in _codes(
+        _HEAD + "    @Slot()\n    def on_okButton_clicked(self):\n        return 1\n",
+        doc=doc,
+        connect_by_name=False,
+    )
+    wrong = _HEAD + "    @Slot(str)\n    def on_okButton_clicked(self, text):\n        return 1\n"
+    assert "FB206" in _codes(wrong, doc=_doc())
+    right = _HEAD + "    @Slot(bool)\n    def on_okButton_clicked(self, checked):\n        return 1\n"
+    assert "FB206" not in _codes(right, doc=_doc())
 
 
 @pytest.mark.pain("P-22")

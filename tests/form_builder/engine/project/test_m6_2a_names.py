@@ -78,3 +78,9 @@ def test_a_suggested_name_is_a_short_identifier() -> None:
 
 def test_docstring_words_for_a_check_box() -> None:
     assert docstring_words("toggled(bool)") == "checked or unchecked"
+
+
+def test_a_clipped_name_never_lands_on_a_qt_name() -> None:
+    name = _name(text="Show " + "x" * 60)
+    assert name not in _INHERITED
+    assert name.isidentifier() and not keyword.iskeyword(name)

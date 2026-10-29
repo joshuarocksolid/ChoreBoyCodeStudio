@@ -284,14 +284,16 @@ def _finish(name: str, taken: frozenset, inherited: frozenset, stem: str) -> str
         name = "do_" + name
     if not name[0].isalpha():
         name = "do_" + name
+    # Clip first: a cut at the last "_" can leave a bare Qt name or keyword
+    # ("show_" + a long word clips to "show").
+    name = _clip(name)
     if keyword.iskeyword(name):
         name = name + "_"
     if name in inherited:
-        name = "%s_%s" % (name, stem)
-        if keyword.iskeyword(name):
-            name = name + "_"
-    name = _clip(name)
-    return _unique(name, taken)
+        name = _clip("%s_%s" % (name, stem))
+        if name in inherited or keyword.iskeyword(name):
+            name = "do_" + name
+    return _unique(name, taken | inherited)
 
 
 def _clip(name: str) -> str:
