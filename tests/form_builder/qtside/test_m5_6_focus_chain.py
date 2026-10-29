@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false
 """The tab stops the builder shows are the ones Qt tabs through (UX-MODE-003, UX-OVL-006).
 
 A form edited with the M5.6 commands is loaded by Qt and its focus chain walked:

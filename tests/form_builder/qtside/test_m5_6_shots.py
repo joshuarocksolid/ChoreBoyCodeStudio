@@ -122,6 +122,12 @@ def _shoot(qapp: QApplication, folder: Path, suffix: str, tmp_path: Path) -> Non
         document = surface.session.document
         modes = surface.modes
         canvas = surface.workbench.canvas
+        # The notice bar above the canvas (a file changed on disk): text on the theme's panel.
+        surface._notice.show_choices(
+            "contact.ui changed on disk.", (("Reload from disk", lambda: None), ("Keep mine", lambda: None))
+        )
+        _grab(qapp, surface._notice, folder, "notice-bar-%s" % tag)
+        surface._notice.dismiss()
         # The Tab order overlay: two numbers given, the hover chip on the next field.
         modes.open("tab_order")
         modes.assign("phoneEdit")
