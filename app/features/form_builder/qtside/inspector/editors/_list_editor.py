@@ -122,6 +122,9 @@ class ListEditor(QWidget):
         self._line.hide()
         self._keys = _KeyFilter(self)
         self.installEventFilter(self._keys)
+        # A scrollbar appearing narrows the canvas after rows were placed; place again.
+        self._canvas_resize = _CanvasResize(self)
+        self._canvas.installEventFilter(self._canvas_resize)
         self._pool: List[_ListRow] = []
         for _index in range(_POOL):
             row = _ListRow(self._canvas, self)
@@ -374,6 +377,9 @@ class ListEditor(QWidget):
 
     def delete_clicked(self, index: int) -> None:
         self._delete(index)
+
+    def replace_rows(self) -> None:
+        self._place()
 
     def _place(self) -> None:
         count = len(self._texts)
@@ -683,6 +689,21 @@ class _Grip(QObject):
         if kind == getattr(mouse, "MouseButtonRelease"):
             self._editor.end_drag()
             return True
+        return False
+
+
+class _CanvasResize(QObject):
+    def __init__(self, editor: ListEditor) -> None:
+        super().__init__(editor)
+        self._editor = editor
+        self._width = -1
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        kinds = getattr(QEvent, "Type", QEvent)
+        if event.type() == getattr(kinds, "Resize") and isinstance(watched, QWidget):
+            if watched.width() != self._width:
+                self._width = watched.width()
+                self._editor.replace_rows()
         return False
 
 

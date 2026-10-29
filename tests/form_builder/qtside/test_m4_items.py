@@ -68,6 +68,68 @@ def test_combo_session_is_one_step_and_escape_reverts(qapp) -> None:
     session.dispose()
 
 
+def test_the_file_never_holds_the_blank_row_the_editor_keeps_for_typing(qapp) -> None:
+    session = open_session(_form())
+    combo = session.document.by_name("combo")[0]
+    editor = open_editor(session, combo, None)
+    assert editor is not None
+    edit = editor.findChild(QLineEdit)
+    QTest.keyClicks(edit, "Small")
+    QTest.keyClick(edit, Qt.Key.Key_Return)
+    assert len([e for e in editor.findChildren(QLineEdit) if e.isVisible()]) >= 2
+    saved = load_draft(session.document, combo)
+    assert [item.text_at(0) for item in saved.items] == ["Small"]
+    editor.close_keep()
+    assert len(session.log.entries()) == 1
+    session.dispose()
+
+
+def test_row_details_stay_left_of_the_scrollbar(qapp) -> None:
+    from app.qt.QtWidgets import QScrollArea, QStyleFactory, QToolButton, QWidget
+
+    previous = qapp.style().objectName()
+    qapp.setStyle(QStyleFactory.create("Fusion"))  # a scrollbar that takes room
+    session = open_session(_form())
+    try:
+        editor = open_editor(session, session.document.by_name("choices")[0], None)
+        editor.resize(360, 240)
+        qapp.processEvents()
+        next(b for b in editor.findChildren(QToolButton) if b.accessibleName() == "Details of row 1").click()
+        qapp.processEvents()
+        scroll = editor.findChild(QScrollArea, "formBuilder.listScroll")
+        details = editor.findChild(QWidget, "formBuilder.itemDetails")
+        assert scroll.verticalScrollBar().isVisible()
+        assert details.width() <= scroll.viewport().width()
+        editor.revert()
+    finally:
+        qapp.setStyle(QStyleFactory.create(previous))
+        session.dispose()
+
+
+def test_an_open_item_editor_restyles_on_a_theme_switch(qapp) -> None:
+    from app.core import constants
+    from app.features.form_builder.integration.chrome import chrome_for
+    from app.qt.QtGui import QPalette
+    from app.qt.QtWidgets import QWidget
+    from app.shell.theme_tokens import tokens_from_palette
+    from tests.form_builder.inspector.test_m43c_pictures import _close, _pane, _select
+
+    text = form('class="QWidget" name="Form"', '<widget class="QListWidget" name="choices"/>')
+    window, pane, session, realizer = _pane(qapp, text, "/tmp/cbcs-form.ui")
+    try:
+        _select(session, "choices")
+        pane.flush()
+        next(item for item in pane.findChildren(QWidget, "formBuilder.itemsRow") if item.isVisible()).click()
+        qapp.processEvents()
+        editor = next(item for item in window.findChildren(ItemEditor) if item.isVisible())
+        dark = chrome_for(tokens_from_palette(QPalette(), force_mode=constants.UI_THEME_MODE_HIGH_CONTRAST_DARK))
+        pane.apply_chrome(dark)
+        assert editor.chrome is dark
+        assert dark.panel in editor.styleSheet()
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 def test_item_icon_is_picked_in_the_session_and_matches_uic(qapp, tmp_path, monkeypatch) -> None:
     """The item details Icon row is the inspector icon editor; a pick is part of the one item step."""
     import os
