@@ -419,6 +419,17 @@ class RowPopover(QFrame):
             "%(frame)s QPushButton:!flat:hover { background: %(hover)s; }"
             "%(frame)s QPushButton:!flat:checked { background: %(accent)s; color: %(on_accent)s; }"
             "%(frame)s QPushButton[fbGlyph=\"true\"] { padding: 2px 6px; }"
+            # Tool buttons (font B I U S, size presets, resets) and the drop-down
+            # lists of combos would otherwise be native, light in a dark theme.
+            "%(frame)s QToolButton { color: %(text)s; background: %(input)s; border: 1px solid %(line)s;"
+            " border-radius: 4px; padding: 2px 6px; }"
+            "%(frame)s QToolButton::menu-indicator { image: none; width: 0px; }"
+            "%(frame)s QToolButton:hover { background: %(hover)s; }"
+            "%(frame)s QToolButton:checked { background: %(accent)s; color: %(on_accent)s; }"
+            "%(frame)s QToolButton:focus { border: %(focus)dpx solid %(accent)s; }"
+            "%(frame)s QComboBox QAbstractItemView { background: %(input)s; color: %(text)s;"
+            " border: 1px solid %(line)s; selection-background-color: %(accent)s;"
+            " selection-color: %(on_accent)s; }"
             "%(frame)s QPushButton#formBuilder\\.popoverDone { background: %(accent)s; color: %(on_accent)s;"
             " border: none; font-weight: 600; }"
             % {

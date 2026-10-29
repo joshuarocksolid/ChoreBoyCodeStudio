@@ -399,6 +399,32 @@ def field_qss(chrome: FormChrome, ancestor: str = "") -> str:
     )
 
 
+def scrollbar_qss(chrome: FormChrome, ancestor: str = "") -> str:
+    """Scroll bars from the tokens: a native bar keeps a light track in a dark theme."""
+    bar = _under(ancestor, "QScrollBar:vertical")
+    bar_h = _under(ancestor, "QScrollBar:horizontal")
+    handle = _under(ancestor, "QScrollBar::handle")
+    rest = _under(ancestor, "QScrollBar::add-line, QScrollBar::sub-line")
+    pages = _under(ancestor, "QScrollBar::add-page, QScrollBar::sub-page")
+    edge = edge_on(chrome, chrome.panel) if chrome.is_high_contrast else chrome.border
+    return (
+        "%(bar)s { background: %(track)s; width: 12px; margin: 0px; border: none; }"
+        "%(bar_h)s { background: %(track)s; height: 12px; margin: 0px; border: none; }"
+        "%(handle)s { background: %(edge)s; border-radius: 4px; min-height: 24px; min-width: 24px; margin: 2px; }"
+        "%(rest)s { width: 0px; height: 0px; background: transparent; border: none; }"
+        "%(pages)s { background: transparent; }"
+        % {
+            "bar": bar,
+            "bar_h": bar_h,
+            "handle": handle,
+            "rest": rest,
+            "pages": pages,
+            "track": chrome.input or chrome.panel,
+            "edge": edge,
+        }
+    )
+
+
 def item_editor_qss(chrome: FormChrome) -> str:
     """Level-2 popover frame for the item editor (UX-ITEM-002, UX-ELEV-001)."""
     frame_px = 2 if chrome.is_high_contrast else 1
