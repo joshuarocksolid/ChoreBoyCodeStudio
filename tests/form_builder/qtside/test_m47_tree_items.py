@@ -55,3 +55,22 @@ def test_large_tree_builds_only_rows_in_view_and_scrolled_rows_edit_their_own_it
     assert sum(1 for text in texts if text.endswith("!")) == 1
     assert len(session.log.entries()) == 1
     session.dispose()
+
+
+def test_tree_columns_past_the_third_are_reachable_and_editable(qapp) -> None:
+    session = open_session(_tree(5, 1))
+    tree = session.document.by_name("tree")[0]
+    editor = open_editor(session, tree, None)
+    assert editor is not None
+    fields = _fields(editor)
+    assert len(fields) == 5
+    qapp.processEvents()
+    scroll = editor.findChild(QScrollArea, "formBuilder.treeItemsScroll")
+    assert scroll.horizontalScrollBar().maximum() > 0
+    last = fields[4]
+    QTest.keyClick(fields[3], Qt.Key.Key_Right)
+    QTest.keyClicks(last, "fifth")
+    editor.close_keep()
+    assert load_draft(session.document, tree).items[0].texts[-1] == "fifth"
+    assert len(load_draft(session.document, tree).items[0].texts) == 5
+    session.dispose()
