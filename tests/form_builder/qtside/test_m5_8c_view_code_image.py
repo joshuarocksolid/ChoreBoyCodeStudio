@@ -60,6 +60,8 @@ def test_save_image_is_the_page_at_its_logical_size_on_a_200_percent_screen(tmp_
         env = os.environ.copy()
         env["QT_SCALE_FACTOR"] = "2"
         env["CBCS_FB_SCALE_CHILD"] = "1"
+        # The gate runs pytest from a payload that puts vendor/ on sys.path; the child needs the same one.
+        env["PYTHONPATH"] = os.pathsep.join(entry for entry in sys.path if entry)
         env.setdefault("QT_QPA_PLATFORM", "offscreen")
         env.setdefault("CBCS_DISABLE_BACKGROUND_RUNTIME", "1")
         done = subprocess.run(
