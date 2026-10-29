@@ -104,6 +104,7 @@ from app.features.form_builder.integration.toast import (
 )
 from app.features.form_builder.integration.workbench import FormToolbar, FormWorkbench, NoticeBar
 from app.features.form_builder.integration.go_to_widget import GoToWidgetPicker
+from app.features.form_builder.integration.overlays import BUDDIES, TAB_ORDER, OverlayModes
 from app.features.form_builder.integration.wrap_popover import WrapPopover
 from app.features.form_builder.qtside.canvas.core.gesture import EditTextAsked, ZoomAsked
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
@@ -403,6 +404,10 @@ class FormSurface(QWidget):
             self,
         )
         layout.addWidget(self._stack, 1)
+        self._overlay_sentence = ""
+        self._modes = OverlayModes(self)
+        self._toolbar.tab_order.clicked.connect(lambda _checked=False: self._modes.toggle(TAB_ORDER))
+        self._toolbar.buddies.clicked.connect(lambda _checked=False: self._modes.toggle(BUDDIES))
         self._toolbar.attach_preview(self._workbench.canvas.preview)
         self._command_toast = CommandToast(self)
         self._problem_popover = ProblemPopover(self)
@@ -416,7 +421,6 @@ class FormSurface(QWidget):
         self._source_unsub = source.subscribe_changed(self._on_source_changed)
         self._inert_note = ""
         self._gesture_sentence = ""
-        self._overlay_sentence = ""
         self._hover_sentence = ""
         self._hover_node: Optional[NodeId] = None
         self._problem_timer = QTimer(self)
@@ -449,11 +453,7 @@ class FormSurface(QWidget):
         self._rename_key = QShortcut(QKeySequence("F2"), self)
         self._rename_key.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._rename_key.activated.connect(self._rename_inert)
-        quiet: Tuple[Tuple[str, Callable[[], str]], ...] = (
-            ("F7", lambda: "Set a label's buddy in All properties > buddy."),
-            ("F8", self._tab_order_sentence),
-            ("Ctrl+Shift+R", lambda: "Run the form with F5."),
-        )
+        quiet: Tuple[Tuple[str, Callable[[], str]], ...] = (("Ctrl+Shift+R", lambda: "Run the form with F5."),)
         self._quiet_keys: list[QShortcut] = []
         for key, sentence in quiet:
             shortcut = QShortcut(QKeySequence(key), self)
@@ -466,7 +466,7 @@ class FormSurface(QWidget):
         self._esc = QShortcut(QKeySequence("Esc"), self)
         self._esc.setContext(getattr(Qt, "WidgetWithChildrenShortcut"))
         self._esc.setEnabled(False)
-        self._esc.activated.connect(self._workbench.close_drawers)
+        self._esc.activated.connect(self._escape)
         # The Menu key arrives as a context menu event. Qt does not turn Shift+F10 into one on X11.
         outline = self._workbench.outline
         outline.set_menu_target(self._open_outline_menu)
@@ -535,6 +535,7 @@ class FormSurface(QWidget):
         if callable(theme):
             theme(tokens)
         self._paint_banner()
+        self.style_banner()
         self._toolbar.set_save(
             self._toolbar.save_state.text(),
             error=self._source.save_notice.error and not self._source.is_dirty(),
@@ -725,6 +726,7 @@ class FormSurface(QWidget):
                 app.focusChanged.disconnect(self._on_focus_changed)
             except (RuntimeError, TypeError):
                 pass
+        self._modes.dispose()
         self._menu_edit.dispose()
         self._clear_shell_undo()
         self._selection_unsub()
@@ -828,6 +830,7 @@ class FormSurface(QWidget):
 
     def hideEvent(self, event: object) -> None:  # noqa: N802
         super().hideEvent(event)  # type: ignore[arg-type]
+        self._modes.close()
         self._clear_shell_undo()
 
     def resizeEvent(self, event: object) -> None:  # noqa: N802
@@ -1308,11 +1311,84 @@ class FormSurface(QWidget):
         self._inert_note = "F2 renames the selected outline row."
         self._refresh_shell_status()
 
-    def _tab_order_sentence(self) -> str:
-        """F8 before the tab-order overlay exists. True for this form's file."""
-        if self._session.document.tabstops():
-            return "This form keeps its own tab order. It is listed under tabstops in the XML view."
-        return "Tab order follows the order of widgets in the outline."
+    # -- overlays (M5.6) ----------------------------------------------------
+
+    @property
+    def modes(self) -> OverlayModes:
+        """The Tab order and Buddies overlays of this tab (UX-OVL-001)."""
+        return self._modes
+
+    @property
+    def realizer(self) -> Realizer:
+        return self._realizer
+
+    def can_use_overlays(self) -> bool:
+        return not self._released and self._source.mode == "visual"
+
+    def open_overlay(self, kind: str) -> bool:
+        return self._modes.open(kind)
+
+    def toggle_overlay(self, kind: str) -> None:
+        if self._source.mode == "visual":
+            self._modes.toggle(kind)
+
+    def leave_overlay(self) -> bool:
+        """F3: back to plain editing. True when an overlay was open."""
+        if not self._modes.active:
+            return False
+        self._modes.close()
+        self._workbench.canvas.setFocus()
+        return True
+
+    def set_overlay_status(self, sentence: str) -> None:
+        self._overlay_sentence = sentence
+        self._refresh_shell_status()
+
+    def sync_overlay_toggles(self, active: str) -> None:
+        self._toolbar.tab_order.setChecked(active == TAB_ORDER)
+        self._toolbar.buddies.setChecked(active == BUDDIES)
+        self._sync_drawer_escape()
+
+    def style_banner(self) -> None:
+        tokens = self._tokens
+        if tokens is None:
+            return
+        self._workbench.canvas.banner.apply_colors(
+            tokens.editor_bg,
+            tokens.border,
+            tokens.text_primary,
+            tokens.text_muted,
+            tokens.input_bg,
+            tokens.accent,
+            tokens.focus_border_width,
+        )
+
+    def show_widget_help(self) -> None:
+        """F1 (UX-MODE-007)."""
+        from app.features.form_builder.integration.widget_help import open_widget_help
+
+        if self._source.mode == "visual" and not self._released:
+            open_widget_help(self)
+
+    def place_for(self, ids: Sequence[NodeId]) -> Tuple[QRect, QRect]:
+        """``ids`` on screen and the visible canvas, both global, for a popover beside them."""
+        return self._place(ids)
+
+    def focus_tab_order_list(self) -> None:
+        """Form > Overlays > Tab order list…: the form inspector's Tab order group (UX-MODE-003)."""
+        if self._source.mode != "visual":
+            return
+        from app.features.form_builder.qtside.inspector.pane import TabId
+
+        inspector = self._workbench.inspector
+        self._session.selection.set((), source=SelectionSource.PROGRAM)
+        inspector.flush()
+        inspector.focus_tab(TabId.PROPERTIES)
+        inspector.properties.focus_tab_order()
+
+    def about_connections(self) -> None:
+        """F4 until the Connections overlay arrives with M6 (R3 212)."""
+        self.narrate("Connections are in the Behavior tab. Alt+4 goes there.")
 
     def _insert_from_canvas(self) -> None:
         if self._source.mode != "visual":
@@ -1816,7 +1892,13 @@ class FormSurface(QWidget):
             self._bind_shell_undo()
 
     def _sync_drawer_escape(self) -> None:
-        self._esc.setEnabled(self._workbench.drawer_open())
+        self._esc.setEnabled(self._workbench.drawer_open() or bool(self._modes.active))
+
+    def _escape(self) -> None:
+        """Esc away from the canvas: the overlay first (UX-PRIN-005), else the drawers."""
+        if self._modes.escape():
+            return
+        self._workbench.close_drawers()
 
     def _bind_shell_undo(self) -> None:
         window = self.window()

@@ -137,6 +137,9 @@ def insert_fragment(
     renames = tuple(mapping.items())
     if renames:
         _participant_renames(ctx, doc, renames, scope)
+    from app.features.form_builder.engine.commands.catalog_ext.tab_order import join_order
+
+    join_order(doc, ctx, scope)
     current = top_ids[0] if top_ids else None
     ctx.select(tuple(top_ids), current)
     return tuple(top_ids), renames, conflicts, tuple(dangling)

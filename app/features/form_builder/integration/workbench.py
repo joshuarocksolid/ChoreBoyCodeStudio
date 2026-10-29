@@ -362,15 +362,10 @@ class FormToolbar(QWidget):
         self._divider.setFixedHeight(18)
         row.addWidget(self._divider)
 
-        self.tab_order = _tool(
-            "Tab order",
-            "formBuilder.tabOrder",
-            "Tab order. Press F8 to see where this form's order comes from.",
-            self,
-        )
-        self.tab_order.setEnabled(False)
-        self.buddies = _tool("Buddies", "formBuilder.buddies", "Set a label's buddy in All properties > buddy.", self)
-        self.buddies.setEnabled(False)
+        self.tab_order = _tool("Tab order", "formBuilder.tabOrder", "Tab order (F8)", self)
+        self.tab_order.setCheckable(True)
+        self.buddies = _tool("Buddies", "formBuilder.buddies", "Buddies (F7)", self)
+        self.buddies.setCheckable(True)
         row.addWidget(self.tab_order)
         row.addWidget(self.buddies)
 

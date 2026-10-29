@@ -257,6 +257,9 @@ class PropertiesPage(QWidget):
     ) -> None:
         self._form.set_problem_link(count, on_show, color)
 
+    def focus_tab_order(self) -> None:
+        self._form.focus_tab_order()
+
     def set_match_color(self, color: str) -> None:
         self._match_color = color
 
@@ -553,8 +556,9 @@ class _FormSection(QWidget):
         self._drag = QLabel(_DRAG, self)
         self._drag.setWordWrap(True)
         self._layout_name = QLabel(self)
-        self._order = QLabel(self)
-        self._order.setWordWrap(True)
+        from app.features.form_builder.qtside.inspector.editors.tab_order_list import TabOrderBody
+
+        self._tab_body = TabOrderBody(_GroupHost(services, ()), self)
         self._problems = QLabel(self)
         self._problems.setObjectName("formBuilder.inspectorProblems")
         self._problems.setAccessibleName("Problems")
@@ -580,7 +584,7 @@ class _FormSection(QWidget):
         layout.addWidget(_caption(self, "layout", "Layout"))
         layout.addWidget(self._layout_name)
         layout.addWidget(_caption(self, "tabOrder", "Tab order"))
-        layout.addWidget(self._order)
+        layout.addWidget(self._tab_body.widget)
         layout.addWidget(_caption(self, "problems", "Problems"))
         layout.addWidget(self._problems)
         layout.addWidget(_caption(self, "files", "Files"))
@@ -597,13 +601,17 @@ class _FormSection(QWidget):
             self._order_title()
         self._size.setText(body.design_size)
         self._layout_name.setText(body.root_layout)
-        self._order.setText("\n".join(body.tab_order))
+        self._tab_body.show(())
         self._last_problems = body.problems
         self._paint_problems()
         self._files.setText(body.files)
 
     def set_label_width(self, width: int) -> None:
         self._window.set_label_width(width)
+
+    def focus_tab_order(self) -> None:
+        """Form > Overlays > Tab order list… (UX-MODE-003)."""
+        self._tab_body.focus_list()
 
     def note_focus(self, focus: object) -> None:
         self._window.note_focus(focus)
