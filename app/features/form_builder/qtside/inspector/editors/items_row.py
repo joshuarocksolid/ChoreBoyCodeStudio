@@ -5,10 +5,14 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.ui4.values import NumberValue
 from app.features.form_builder.qtside.inspector.api import (
+    Choice,
     EditorHost,
     EditorKey,
     GroupId,
+    Prop,
     Registrar,
     RowSpec,
     RowValue,
@@ -35,6 +39,19 @@ def register(registrar: Registrar) -> None:
             classes=_CLASSES,
             editor="items",
             after="toolTip",
+        )
+    )
+    # UX-ITEM-003: the combo's "Starts on" is an inspector row over its item texts.
+    registrar.row(
+        RowSpec(
+            key="comboStartsOn",
+            group=GroupId.CONTENT,
+            label="Starts on",
+            help="The item shown when the form opens.",
+            source=Prop("currentIndex"),
+            classes=("QComboBox",),
+            after="items",
+            choices=_combo_start_choices,
         )
     )
 
@@ -71,6 +88,18 @@ class ItemsEditor:
         origin = self._button.mapToGlobal(rect.topLeft())
         anchor = QRect(origin, rect.size())
         open_editor(session, owners[0], self._button.window(), under=anchor, chrome=self._host.chrome)
+
+
+def _combo_start_choices(document: UiDocument, owners: Tuple[NodeId, ...]) -> Tuple[Choice, ...]:
+    if len(owners) != 1:
+        return ()
+    draft = load_draft(document, owners[0])
+    if draft is None:
+        return ()
+    return tuple(
+        Choice(item.text_at(0) or "Item %d" % (index + 1), NumberValue(index))
+        for index, item in enumerate(draft.items)
+    )
 
 
 def _session_of(host: object) -> object:
