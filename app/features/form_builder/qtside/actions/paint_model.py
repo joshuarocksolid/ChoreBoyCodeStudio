@@ -7,8 +7,8 @@ from typing import Tuple
 
 #: Item kinds. ``hint`` is a "Type here" box, ``box`` an open menu's panel, ``row`` an entry,
 #: ``separator`` a rule, ``edit`` the in-place editor, ``reuse`` a row of the reuse list,
-#: ``caption`` the mnemonic caption under the editor.
-KINDS = ("hint", "box", "row", "separator", "edit", "reuse", "caption")
+#: ``caption`` the mnemonic caption under the editor, ``drop`` the landing line of a drag (``ov.menu_drop``).
+KINDS = ("hint", "box", "row", "separator", "edit", "reuse", "caption", "drop")
 
 ROW_HEIGHT = 24
 MIN_MENU_WIDTH = 180

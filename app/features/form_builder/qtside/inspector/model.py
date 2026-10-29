@@ -25,7 +25,9 @@ from app.features.form_builder.engine.query.tree import effective_tab_order
 from app.features.form_builder.engine.session import FormSession
 from app.features.form_builder.engine.ui4.defaults import PropertyInfo, QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
+from app.features.form_builder.engine.query import actions as action_query
 from app.features.form_builder.engine.ui4.nodes import (
+    ActionGroupNode,
     ActionNode,
     ConnectionNode,
     LayoutItemNode,
@@ -289,6 +291,8 @@ class OneHeader:
     qt_class: str
     glyph: str
     crumbs: Tuple[Crumb, ...]
+    #: For an action: the menus and toolbars it is on, as links (UX-MAIN-012). None for other nodes.
+    used_in: Optional[Tuple[Crumb, ...]] = None
 
 @dataclass(frozen=True)
 class ManyHeader:
@@ -375,7 +379,8 @@ def inspected_ids(document: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, 
     A connection shows as its sender, so adding, removing or redoing one keeps
     the sender's Behavior list. Other nodes that are not widgets, layouts or
     spacers (the ``<ui>`` node, actions, items) have no inspector page of
-    their own and fall back to the form.
+    their own and fall back to the form. Actions and action groups are shown
+    (UX-MAIN-012, 019).
     """
     found: List[NodeId] = []
     for node_id in ids:
@@ -389,7 +394,7 @@ def inspected_ids(document: UiDocument, ids: Sequence[NodeId]) -> Tuple[NodeId, 
             if not senders:
                 continue
             node_id = senders[0]
-        elif not isinstance(node, (WidgetNode, LayoutNode, SpacerNode)):
+        elif not isinstance(node, (WidgetNode, LayoutNode, SpacerNode, ActionNode, ActionGroupNode)):
             continue
         if node_id not in found:
             found.append(node_id)
@@ -408,7 +413,21 @@ def project_header(session: FormSession) -> HeaderView:
         crumbs = _crumbs(document, node)
     name, qt_class = _name_and_class(node)
     words = class_words(qt_class)
-    return OneHeader(node.id, name, words.friendly, qt_class, words.glyph, crumbs)
+    used_in: Optional[Tuple[Crumb, ...]] = None
+    if isinstance(node, ActionNode):
+        crumbs = ()
+        used_in = _used_in(document, node)
+    elif isinstance(node, ActionGroupNode):
+        crumbs = ()
+    return OneHeader(node.id, name, words.friendly, qt_class, words.glyph, crumbs, used_in)
+
+def _used_in(document: UiDocument, node: ActionNode) -> Tuple[Crumb, ...]:
+    """Where an action is used, one link per menu or toolbar (each selects that host)."""
+    found: List[Crumb] = []
+    for place in action_query.places_of(document, node.name):
+        if all(crumb.node != place.host for crumb in found):
+            found.append(Crumb(place.host, place.label))
+    return tuple(found)
 
 def project(
     session: FormSession,
@@ -600,7 +619,10 @@ def _node_body(
     sort_properties: bool = False,
 ) -> NodeBody:
     curated: Dict[GroupId, List[Row]] = {}
+    on_actions = all(isinstance(facts.document.node(owner), (ActionNode, ActionGroupNode)) for owner in owners)
     for spec in catalog.rows():
+        if on_actions and not spec.classes:
+            continue
         if spec.classes and not all(_admits(facts, owner, spec.classes) for owner in owners):
             continue
         if spec.parent_classes and not all(_parent_admits(facts, owner, spec.parent_classes) for owner in owners):
@@ -802,7 +824,39 @@ _PAGE_ATTRIBUTES: Mapping[str, str] = MappingProxyType(
 )
 
 
+_BOOL_FALSE = BoolValue(False)
+_BOOL_TRUE = BoolValue(True)
+#: The class table has no QAction or QActionGroup, so the properties the action rows show are listed here.
+_ACTION_PROPERTIES: Mapping[str, Tuple[str, Optional[Value], Optional[str]]] = MappingProxyType(
+    {
+        "text": ("string", None, None),
+        "icon": ("iconset", None, None),
+        "shortcut": ("string", None, None),
+        "toolTip": ("string", None, None),
+        "statusTip": ("string", None, None),
+        "whatsThis": ("string", None, None),
+        "checkable": ("bool", _BOOL_FALSE, None),
+        "checked": ("bool", _BOOL_FALSE, None),
+        "enabled": ("bool", _BOOL_TRUE, None),
+        "visible": ("bool", _BOOL_TRUE, None),
+        "exclusive": ("bool", _BOOL_TRUE, None),
+        "shortcutContext": ("enum", EnumValue("Qt::WindowShortcut"), "Qt::ShortcutContext"),
+    }
+)
+
+
+def _action_property(node: Node, name: str) -> Optional[PropertyInfo]:
+    found = _ACTION_PROPERTIES.get(name)
+    if found is None:
+        return None
+    kind, default, enum = found
+    declared = "QActionGroup" if isinstance(node, ActionGroupNode) else "QAction"
+    return PropertyInfo(name, kind, default, True, True, False, enum, 0, declared)
+
+
 def _table_property(facts: Facts, node: Node, name: str, kind: PropKind) -> Optional[PropertyInfo]:
+    if isinstance(node, (ActionNode, ActionGroupNode)):
+        return _action_property(node, name) if kind == "property" else None
     if kind == "attribute" and isinstance(node, WidgetNode) and name in _PAGE_ATTRIBUTES:
         return PropertyInfo(name, _PAGE_ATTRIBUTES[name], None, True, True, False, None, 0, "")
     if kind != "property" or not isinstance(node, (WidgetNode, LayoutNode)):
@@ -920,6 +974,10 @@ def _name_and_class(node: Node) -> Tuple[str, str]:
         return node.object_name, node.class_name
     if isinstance(node, SpacerNode):
         return node.name, "Spacer"
+    if isinstance(node, ActionNode):
+        return node.name, "QAction"
+    if isinstance(node, ActionGroupNode):
+        return node.name, "QActionGroup"
     return node.kind, node.kind
 
 def _crumbs(document: UiDocument, node: Node) -> Tuple[Crumb, ...]:

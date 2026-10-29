@@ -6,8 +6,9 @@ from typing import Optional
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.layout_actions import MIXED_PARENT
+from app.features.form_builder.engine.query import actions as action_query
 from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import LayoutItemNode, LayoutNode, WidgetNode
+from app.features.form_builder.engine.ui4.nodes import ActionNode, LayoutItemNode, LayoutNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import RectValue, StringValue
 
 _LAYOUT_PHRASE = {
@@ -136,6 +137,10 @@ def selection_sentence(document: UiDocument, current: Optional[NodeId], count: i
         name = node.object_name or "Layout"
         phrase = _LAYOUT_PHRASE.get(node.class_name or "", node.class_name or "Layout")
         return "%s · %s" % (name, phrase)
+    if isinstance(node, ActionNode):
+        info = action_query.action_info(document, node.id)
+        used = info.used_line if info is not None else ""
+        return "%s · action · %s" % (node.name, used) if used else "%s · action" % node.name
     if not isinstance(node, WidgetNode):
         return _form_sentence(document)
     name = node.object_name or "Widget"
@@ -144,9 +149,18 @@ def selection_sentence(document: UiDocument, current: Optional[NodeId], count: i
     if contained:
         return "%s · %s · %s" % (name, kind, contained)
     place = _place_phrase(document, node)
+    grouped = _group_phrase(node)
     if place:
-        return "%s · %s · %s" % (name, kind, place)
-    return "%s · %s" % (name, kind)
+        return "%s · %s · %s%s" % (name, kind, place, grouped)
+    return "%s · %s%s" % (name, kind, grouped)
+
+
+def _group_phrase(node: WidgetNode) -> str:
+    """UX-MAIN-019: a button in a group ends its summary "· in button group {name}"."""
+    entry = node.attr("buttonGroup")
+    if entry is not None and isinstance(entry.value, StringValue) and entry.value.text:
+        return " · in button group %s" % entry.value.text
+    return ""
 
 
 def _form_sentence(document: UiDocument) -> str:
