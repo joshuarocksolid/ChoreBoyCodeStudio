@@ -2620,8 +2620,8 @@ def _sizing_preview_rows(
 #: docs/form_builder/PLAN.md, M9.4 "Known M3 misses".
 KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 known misses)"
 KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
-KNOWN_M45_MISS = "known M4 miss: tree item editor builds one widget per row; M4.5 fix list"
-KNOWN_M45_POINTS = frozenset({"m4 open item editor tree 500"})
+KNOWN_M45_MISS = "known M4 miss; M4.5 fix list"
+KNOWN_M45_POINTS: frozenset = frozenset()
 
 
 def _known_miss(row: Row) -> Row:
