@@ -11,7 +11,9 @@ from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.integration.canvas import FormCanvas
 from app.features.form_builder.qtside.actions.glue import MenuEditGlue
 from app.features.form_builder.qtside.actions.paint_model import PaintState
+from app.features.form_builder.qtside.canvas.layers.menu_edit import build, menu_font
 from app.qt.QtCore import Qt
+from app.qt.QtGui import QFont
 from app.qt.QtTest import QTest
 from app.qt.QtWidgets import QApplication, QWidget
 from tests.form_builder.qtside.support import opened
@@ -29,6 +31,47 @@ def _pump() -> None:
     assert app is not None
     for _ in range(4):
         app.processEvents()
+
+
+def test_painted_menus_use_the_form_font_scaled_by_zoom() -> None:
+    with opened(build_template_ui("main_window", "shop_window")) as (session, realizer):
+        parent = QWidget()
+        parent.resize(900, 700)
+        canvas = FormCanvas(session, realizer, _Host(), parent)
+        canvas.resize(900, 700)
+        parent.show()
+        _pump()
+        root = realizer.root_widget
+        font = QFont(root.font())
+        font.setPointSize(18)
+        root.setFont(font)
+        glue = MenuEditGlue(session, realizer, canvas, lambda _s: None, lambda _s: None, lambda s, o: True, parent)
+        glue.refresh()
+        _pump()
+        state = canvas.layer_state("menu_edit")
+        assert isinstance(state, PaintState)
+        assert state.font_family == root.font().family()
+        assert state.font_point_size == 18
+        scaled = menu_font(QFont(), 2.0, state.font_family, state.font_point_size, state.font_pixel_size)
+        assert scaled.family() == root.font().family()
+        assert scaled.pointSizeF() == 36
+
+        class _View:
+            factor = 2.0
+
+            def to_canvas(self, rect):  # type: ignore[no-untyped-def]
+                return rect
+
+        painted = build(type("Static", (), {"view": _View()})(), None, state)
+        assert painted.items
+        assert painted.items[0].data[2:] == (
+            state.font_family,
+            state.font_point_size,
+            state.font_pixel_size,
+        )
+        glue.dispose()
+        canvas.dispose()
+        parent.deleteLater()
 
 
 @pytest.mark.parity("R3-135", "R3-136")

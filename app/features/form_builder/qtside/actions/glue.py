@@ -29,6 +29,7 @@ from app.features.form_builder.qtside.actions.paint_model import (
 )
 from app.features.form_builder.qtside.canvas import mime_hooks
 from app.features.form_builder.qtside.canvas.layers.menu_edit import NAME as LAYER
+from app.features.form_builder.qtside.canvas.layers.menu_edit import menu_font
 from app.qt.QtCore import QEvent, QObject, QPoint, Qt, QTimer
 from app.qt.QtGui import QColor, QFont, QFontMetrics, QKeyEvent, QPalette
 from app.qt.QtWidgets import QApplication, QLineEdit, QMenuBar, QToolBar, QWidget
@@ -433,8 +434,13 @@ class MenuEditGlue(QObject):
         assert line is not None
         self._syncing = True
         try:
-            font = QFont(QApplication.font())
-            font.setPixelSize(max(8, int(round(12 * factor))))
+            font = menu_font(
+                QFont(),
+                factor,
+                state.font_family,
+                state.font_point_size,
+                state.font_pixel_size,
+            )
             line.setFont(font)
             pal = line.palette()
             pal.setColor(QPalette.ColorRole.Text, self._ink())
@@ -521,6 +527,13 @@ class MenuEditGlue(QObject):
         self._hints = []
         if root is None:
             return PaintState()
+        font = root.font()
+        points = float(font.pointSizeF())
+        pixels = int(font.pixelSize())
+        if points < 0:
+            points = 0.0
+        if pixels < 0:
+            pixels = 0
         if not self._editor.active:
             items = self._idle_hints(root)
         else:
@@ -529,7 +542,7 @@ class MenuEditGlue(QObject):
         if landing is not None:
             line = landing.line
             items.append(PaintItem("drop", line.x, line.y, line.width, line.height))
-        return PaintState(tuple(items))
+        return PaintState(tuple(items), font.family(), points, pixels)
 
     def _bar_widgets(self, node_id: NodeId) -> Optional[QWidget]:
         return getattr(self._realizer, "widget_for")(node_id)
@@ -557,7 +570,7 @@ class MenuEditGlue(QObject):
 
     def _idle_hints(self, root: QWidget) -> List[PaintItem]:
         doc = self._session.document
-        metrics = QFontMetrics(QApplication.font())
+        metrics = QFontMetrics(root.font())
         out: List[PaintItem] = []
         parts = q.parts(doc)
         for node in tuple(parts["menubar"]) + tuple(parts["toolbar"]):
@@ -579,7 +592,7 @@ class MenuEditGlue(QObject):
         self._maps.append(HostMap(host, kind, q.host_phrase(doc, host), True, Rect(*own), tuple(boxes)))
 
     def _open_items(self, root: QWidget, view: EditView) -> List[PaintItem]:
-        metrics = QFontMetrics(QApplication.font())
+        metrics = QFontMetrics(root.font())
         items: List[PaintItem] = []
         anchor: Optional[Tuple[int, int, int, int]] = None
         page_width = root.width()

@@ -34,3 +34,7 @@ class PaintItem:
 @dataclass(frozen=True)
 class PaintState:
     items: Tuple[PaintItem, ...] = ()
+    #: The form root's font, so painted menus match the page rather than a fixed 12 px.
+    font_family: str = ""
+    font_point_size: float = 0.0
+    font_pixel_size: int = 0
