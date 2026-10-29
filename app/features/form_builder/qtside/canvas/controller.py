@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import time
 from dataclasses import replace
-from typing import Dict, FrozenSet, Hashable, List, Optional, Protocol, Tuple, cast
+from typing import Callable, Dict, FrozenSet, Hashable, List, Optional, Protocol, Tuple, cast
 
 from app.qt.QtCore import QEvent, QPoint, QPointF, QRect, Qt, QTimer
 from app.qt.QtGui import QFont, QFontMetrics, QPixmap
@@ -90,6 +90,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     PlaceAsked,
     Placing,
     Narrate,
+    Activate,
     OpenEditor,
     OpenItems,
     Press,
@@ -106,6 +107,7 @@ from app.features.form_builder.qtside.canvas.core.gesture import (
     Toggle,
     World,
     Zoom,
+    no_claim,
     needs_fresh_geometry,
     previewing,
     step,
@@ -378,7 +380,13 @@ class CanvasController:
             self._stage.page_minimum(),
             str(self._serial),
             defaults,
+            self._claims(),
         )
+
+    def _claims(self) -> Callable[[UiDocument, NodeId], Optional[str]]:
+        """The host's double-click contributors (M6.0s). A host without them claims nothing."""
+        found = getattr(self._host, "activation_claim", None)
+        return found if callable(found) else no_claim
 
     def _run(self, effect: Effect) -> None:
         if isinstance(effect, Select):
@@ -405,6 +413,11 @@ class CanvasController:
             return
         if isinstance(effect, OpenItems):
             self._open_items(effect.node)
+            return
+        if isinstance(effect, Activate):
+            activate = getattr(self._host, "activate_node", None)
+            if callable(activate):
+                activate(effect.node)
             return
         if isinstance(effect, CloseEditor):
             self._editor.close(True)
