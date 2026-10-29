@@ -174,6 +174,13 @@ def _popover() -> QWidget:
     raise AssertionError("popover")
 
 
+def _note(row: QWidget) -> str:
+    label = row.findChild(QLabel, "formBuilder.rowNote")
+    if not isinstance(label, QLabel) or not label.isVisible():
+        return ""
+    return label.text()
+
+
 def _caption(row: QWidget) -> str:
     label = row.findChild(QLabel, "formBuilder.rowError")
     if not isinstance(label, QLabel) or not label.isVisible():
@@ -234,21 +241,24 @@ def test_unknown_enumerator_is_byte_identical_after_save() -> None:
             _close(window, pane)
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "M4.2: realizer.problems() is one flat list, so a row cannot show "
-        "'Saved in the file. The canvas can't show this value.' for one property. "
-        "M4.3d owns the caption widget."
-    ),
-)
+@pytest.mark.pain("P-18")
 def test_canvas_refusal_names_the_saved_value() -> None:
+    from app.features.form_builder.engine.commands.catalog import SetProperty
+    from app.features.form_builder.engine.ui4.values import StringValue
+
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
+            amount = session.document.by_name("amount")[0]
+            _select(session, pane, "amount")
+            session.log.execute(SetProperty(amount, "minimum", StringValue("lots")))
+            pane.flush()
+            assert "lots" in _xml(session)
+            row = _row(pane, "minimum")
+            assert "Saved in the file. The canvas can't show this value." in _note(row)
             _select(session, pane, "email")
-            row = _row(pane, "echoMode")
-            assert "Saved in the file. The canvas can't show this value." in _caption(row)
+            _select(session, pane, "amount")
+            assert "Saved in the file" in _note(_row(pane, "minimum"))
         finally:
             _close(window, pane)
 
