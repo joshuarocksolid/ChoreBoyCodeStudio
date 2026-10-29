@@ -171,4 +171,6 @@ class _Controller:
     def _pick_picture(self, parent: QWidget) -> str:
         from app.features.form_builder.qtside.style.picture import pick_picture
 
-        return pick_picture(self._session, self._chrome(), parent)
+        step = getattr(parent, "visit_step", None)
+        label, token = step() if callable(step) else ("Add picture", "")
+        return pick_picture(self._session, self._chrome(), parent, label=label, token=token)

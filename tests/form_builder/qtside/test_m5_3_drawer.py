@@ -214,3 +214,44 @@ def test_p8_the_rule_colours_the_button_a_no_match_rule_saves_and_reopening_keep
     finally:
         realizer.dispose()
         reopened.dispose()
+
+
+def test_a_picture_added_from_the_drawer_joins_the_visit_and_its_url_shows_on_the_canvas(qapp, tmp_path: Path) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.qtside.inspector.editors._picture_picker import PicturePicker
+    from app.features.form_builder.qtside.style.insert import picture_text
+    from app.features.form_builder.qtside.style.picture import _Anchor, _Host
+    from tests.form_builder.inspector.test_m43c_pictures import _png_bytes
+
+    root = tmp_path / "shop"
+    (root / "forms").mkdir(parents=True)
+    (tmp_path / "logo.png").write_bytes(_png_bytes())
+    host = QWidget()
+    surface = _open(host, _FORM, root / "forms" / "invoice.ui", str(root))
+    host.show()
+    surface.show()
+    host.resize(1200, 800)
+    qapp.processEvents()
+    try:
+        session = surface.session
+        label = session.document.by_name("nameLabel")[0]
+        assert gateway.open_drawer(session, label)
+        drawer = _drawer(surface)
+        step, token = drawer.visit_step()
+        anchor = _Anchor(session, drawer)
+        picker = PicturePicker(drawer, _Host(session, drawer.chrome(), anchor, step, token), lambda stored: None)  # type: ignore[arg-type]
+        stored = picker.add_pictures([str(tmp_path / "logo.png")])
+        assert stored.startswith(":/") and (root / "forms" / "pictures" / "logo.png").is_file()
+        drawer.editor.setPlainText("QLabel { background-image: %s; }" % picture_text(stored))
+        QTest.qWait(400)
+        QApplication.processEvents()
+        drawer.close_drawer()
+        # The include and the sheet are one step, named for the visit (UX-STYLE-007).
+        assert session.log.undo_label() == "Change style sheet of nameLabel" and len(session.log.entries()) == 1
+        # Qt resolves the url(:/...) through the form's .qrc on the canvas.
+        widget = surface.realized_object(label)
+        color = widget.grab().toImage().pixelColor(2, 2)
+        assert (color.red(), color.green(), color.blue()) == (20, 120, 200)
+        picker.deleteLater()
+    finally:
+        surface.release()
+        host.close()

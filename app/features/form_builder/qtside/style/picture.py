@@ -2,22 +2,64 @@
 
 from __future__ import annotations
 
-from typing import Any, List, Optional
+import math
+from typing import Any, List, Optional, Sequence, Tuple, Union
+
+from app.features.form_builder.engine.commands.base import CommandRejected
 
 from app.features.form_builder.qtside.inspector.editors._picture_picker import PicturePicker
 from app.qt.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QWidget
 
 
-class _Host:
-    """Just enough of an editor host for the picker: the document, the chrome and the session's folder."""
+class _Rejected:
+    def __init__(self, message: str) -> None:
+        self.message = message
 
-    def __init__(self, session: Any, chrome: Any, anchor: QWidget) -> None:
+
+class _Step:
+    """The picker's edit session: its include commands join the drawer visit's one undo step (UX-STYLE-007)."""
+
+    def __init__(self, session: Any, label: str, token: str) -> None:
+        self._session = session
+        self._label = label
+        self._token = token
+
+    def set_label(self, label: str) -> None:
+        # The step is the drawer visit's; it keeps the visit's name.
+        del label
+
+    def run(self, commands: Sequence[Any]) -> Union[Tuple[object, ...], _Rejected]:
+        try:
+            results = []
+            with self._session.log.transaction(
+                self._label, merge_token=self._token or None, merge_within_s=math.inf if self._token else 0.0
+            ) as txn:
+                for command in commands:
+                    results.append(txn.execute(command))
+            return tuple(results)
+        except CommandRejected as exc:
+            return _Rejected(str(exc))
+
+    def close(self) -> None:
+        pass
+
+
+class _Host:
+    """Just enough of an editor host for the picker (M5.2's ``PicturePicker``): document, chrome, anchor and steps."""
+
+    def __init__(self, session: Any, chrome: Any, anchor: QWidget, label: str, token: str) -> None:
         self._session = session
         self.chrome = chrome
         self.row_widget = anchor
+        self._label = label
+        self._token = token
 
     def document(self) -> Any:
         return self._session.document
+
+    def begin_session(self, label: str) -> _Step:
+        del label
+        return _Step(self._session, self._label, self._token)
 
 
 class _Anchor(QWidget):
@@ -28,9 +70,9 @@ class _Anchor(QWidget):
         self._services = type("_Services", (), {"session": session})()
 
 
-def pick_picture(session: Any, chrome: Any, parent: QWidget) -> str:
+def pick_picture(session: Any, chrome: Any, parent: QWidget, *, label: str = "Add picture", token: str = "") -> str:
     anchor = _Anchor(session, parent)
-    host = _Host(session, chrome, anchor)
+    host = _Host(session, chrome, anchor, label, token)
     dialog = QDialog(parent)
     dialog.setObjectName("formBuilder.stylePictureDialog")
     dialog.setWindowTitle("Picture")

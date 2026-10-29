@@ -413,6 +413,15 @@ class StyleDrawer(QFrame):
             return
         self._write(target, text)
 
+    def visit_step(self) -> Tuple[str, str]:
+        """``(undo label, merge token)`` of this visit, so a picture's include joins the visit's one step."""
+        target = self._target
+        node = self._session.document.get(target) if target is not None else None
+        label = "Change style sheet of %s" % (getattr(node, "object_name", "") or "widget")
+        if not self._token:
+            self._token = "style-%d" % next(_TOKENS)
+        return label, self._token
+
     def _write(self, target: NodeId, text: str) -> None:
         document = self._session.document
         node = document.node(target)

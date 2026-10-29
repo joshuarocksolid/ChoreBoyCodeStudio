@@ -159,6 +159,7 @@ class Realizer(_Structure):
         self._pending_containers: set = set()
         self._morph_buddies: set = set()
         self._registered: List[object] = []
+        self._stamped_resources: Tuple[Tuple[str, int, int], ...] = ()
         self._problems: List[str] = []
         # (node id, property) -> why Qt did not take the value (UX-PED-009).
         self._refusals: Refusals = {}
@@ -466,6 +467,8 @@ class Realizer(_Structure):
         entry = node.prop(name)
         if name == "cbcsSplitterSizes" and entry is not None:
             self._splitter_at_preview.pop(owner, None)
+        if name == "styleSheet":
+            self._refresh_resources_for_sheet(entry)
         self._put(node, obj, name, entry)
         if entry is not None and name == "buddy" and isinstance(node, WidgetNode):
             self._note_buddy(node)
@@ -901,8 +904,36 @@ class Realizer(_Structure):
             kind = "layout"
         return (kind, None if child_id is None else int(child_id), align, position)
 
+    def _resource_paths(self) -> List[str]:
+        found: List[str] = []
+        for node in self._session.document.ui.children("resources"):
+            if isinstance(node, ResourceNode) and node.location:
+                path = node.location
+                found.append(path if os.path.isabs(path) else os.path.join(self._base_dir, path))
+        return found
+
+    def _resource_stamp(self) -> Tuple[Tuple[str, int, int], ...]:
+        """The included ``.qrc`` files and their mtimes: a picture added to one, or a new include, changes it."""
+        stamp = []
+        for path in self._resource_paths():
+            try:
+                info = os.stat(path)
+                stamp.append((path, info.st_mtime_ns, info.st_size))
+            except OSError:
+                stamp.append((path, -1, -1))
+        return tuple(stamp)
+
+    def _refresh_resources_for_sheet(self, entry: Optional[PropertyEntry]) -> None:
+        """A style sheet with ``url(:/...)`` needs the pictures registered as they are now (UX-STYLE-006, M5.2)."""
+        if not self._own_resources or entry is None:
+            return
+        text = getattr(entry.value, "text", "")
+        if isinstance(text, str) and ":/" in text and self._resource_stamp() != self._stamped_resources:
+            self._register_resources()
+
     def _register_resources(self) -> None:
         self._unregister_resources()
+        self._stamped_resources = self._resource_stamp()
         for node in self._session.document.ui.children("resources"):
             if not isinstance(node, ResourceNode) or not node.location:
                 continue
