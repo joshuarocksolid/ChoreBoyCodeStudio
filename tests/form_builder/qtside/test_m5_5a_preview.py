@@ -20,7 +20,7 @@ from app.features.form_builder.engine.ipc.timing import DirectorConfig  # noqa: 
 from app.features.form_builder.engine.query.selection import SelectionSource  # noqa: E402
 from app.features.form_builder.integration import image_export  # noqa: E402
 from app.features.form_builder.integration.memory import PreviewOptionsStore  # noqa: E402
-from app.features.form_builder.integration.preview_options import CAPTION, clean_profile  # noqa: E402
+from app.features.form_builder.engine.preview_options import CAPTION, clean_profile  # noqa: E402
 from app.features.form_builder.qtside.preview.launch import (  # noqa: E402
     current_runtime_python,
     python_preview_command,

@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, List, Mapping, Optional, Tuple
 
 from app.features.form_builder.integration.layout import WorkbenchMemory
-from app.features.form_builder.integration.preview_options import (
+from app.features.form_builder.engine.preview_options import (
     DEFAULT_SCREEN,
     DEFAULT_STYLE,
     PreviewChoices,

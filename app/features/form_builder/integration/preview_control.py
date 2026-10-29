@@ -32,7 +32,7 @@ from app.features.form_builder.engine.ipc.protocol import (
     ViewClosed,
 )
 from app.features.form_builder.integration.memory import PreviewOptionsStore
-from app.features.form_builder.integration.preview_options import (
+from app.features.form_builder.engine.preview_options import (
     DEFAULT_SCREEN,
     DEFAULT_STYLE,
     PreviewChoices,

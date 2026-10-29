@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from app.features.form_builder.integration.preview_options import (
+from app.features.form_builder.engine.preview_options import (
     ADD_SCREEN,
     MAX_FONT,
     MAX_HEIGHT,

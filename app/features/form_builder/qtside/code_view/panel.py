@@ -14,7 +14,6 @@ Esc anywhere inside the split asks to close it (``close_requested``).
 
 from __future__ import annotations
 
-import logging
 from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.qt.QtCore import QEvent, QObject, Qt, Signal
@@ -29,9 +28,7 @@ from app.qt.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
-from app.shell.theme_tokens import ShellThemeTokens
-
-logger = logging.getLogger(__name__)
+from app.features.form_builder.qtside.theme.chrome import FormChrome
 
 OPEN_FILE = "Open file"
 
@@ -39,19 +36,6 @@ OPEN_FILE = "Open file"
 def header_text(module_file: str) -> str:
     """``ui_invoice.py · as it will be saved``."""
     return "%s · as it will be saved" % module_file
-
-
-def _make_editor(parent: QWidget) -> QPlainTextEdit:
-    """The shell's code editor, or a plain text edit when the shell's cannot be made."""
-    try:
-        from app.editors.code_editor_widget import CodeEditorWidget
-
-        editor = CodeEditorWidget(parent)
-        editor.set_language_for_path("ui_form.py")
-        return editor
-    except Exception:
-        logger.exception("the code view could not make the code editor")
-        return QPlainTextEdit(parent)
 
 
 class _EscapeFilter(QObject):
@@ -72,11 +56,11 @@ class CodeViewPanel(QFrame):
     open_file_requested: "Signal" = Signal()
     line_clicked: "Signal" = Signal(int)
 
-    def __init__(self, parent: QWidget) -> None:
+    def __init__(self, parent: QWidget, editor: QPlainTextEdit) -> None:
         super().__init__(parent)
         self.setObjectName("formBuilder.codeView")
         self.setAccessibleName("Python code")
-        self._tokens: Optional[ShellThemeTokens] = None
+        self._chrome: Optional[FormChrome] = None
         self._marked: Tuple[int, ...] = ()
         self._error = ""
         self._marking = False
@@ -97,7 +81,8 @@ class CodeViewPanel(QFrame):
         self._open.hide()
         row.addWidget(self._open, 0)
         outer.addWidget(self._header)
-        self.editor = _make_editor(self)
+        editor.setParent(self)
+        self.editor = editor
         self.editor.setObjectName("formBuilder.codeViewBody")
         self.editor.setReadOnly(True)
         self.editor.setAccessibleName("Generated Python")
@@ -171,8 +156,8 @@ class CodeViewPanel(QFrame):
         return block.blockNumber()
 
     def _apply_marks(self) -> None:
-        tokens = self._tokens
-        fill = QColor(tokens.tree_selected_bg if tokens is not None else "#cfe3ff")
+        chrome = self._chrome
+        fill = QColor(chrome.selected if chrome is not None else "#cfe3ff")
         selections: List[QTextEdit.ExtraSelection] = []
         document = self.editor.document()
         for number in self._marked:
@@ -195,31 +180,26 @@ class CodeViewPanel(QFrame):
 
     # ---- look
 
-    def apply_theme(self, tokens: ShellThemeTokens) -> None:
-        self._tokens = tokens
-        apply = getattr(self.editor, "apply_theme", None)
-        if callable(apply):
-            try:
-                apply(tokens)
-            except Exception:
-                logger.exception("the code view could not theme its editor")
+    def apply_chrome(self, chrome: FormChrome) -> None:
+        self._chrome = chrome
         self._header.setStyleSheet(
             "QFrame#formBuilder\\.codeViewHeader { background: %s; border-bottom: 1px solid %s; }"
             "QLabel#formBuilder\\.codeViewTitle { color: %s; background: transparent; border: none; }"
-            "QPushButton#formBuilder\\.codeViewOpen { color: %s; background: transparent;"
-            " border: 1px solid %s; border-radius: 4px; padding: 2px 8px; }"
+            "QPushButton#formBuilder\\.codeViewOpen { color: %s; background: %s;"
+            " border: 1px solid %s; border-radius: 3px; padding: 2px 10px; }"
             "QPushButton#formBuilder\\.codeViewOpen:focus { border: %dpx solid %s; }"
             % (
-                tokens.panel_bg,
-                tokens.border,
-                tokens.text_primary,
-                tokens.text_primary,
-                tokens.border,
-                tokens.focus_border_width or 2,
-                tokens.accent,
+                chrome.panel,
+                chrome.border,
+                chrome.text,
+                chrome.text,
+                chrome.input,
+                chrome.border,
+                chrome.focus_width or 2,
+                chrome.accent,
             )
         )
-        self.setStyleSheet("QFrame#formBuilder\\.codeView { border-left: 1px solid %s; }" % tokens.border)
+        self.setStyleSheet("QFrame#formBuilder\\.codeView { border-left: 1px solid %s; }" % chrome.border)
         self._apply_marks()
 
 

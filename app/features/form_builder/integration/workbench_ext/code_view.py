@@ -20,9 +20,10 @@ from app.features.form_builder.engine.codegen.names import ui_basename_ok
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.code_view.lines import CodeIndex
+from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.code_view.panel import CodeViewPanel
 from app.qt.QtCore import QTimer
-from app.qt.QtWidgets import QWidget
+from app.qt.QtWidgets import QPlainTextEdit, QWidget
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,19 @@ def attach(workbench: Any) -> None:
     controller = CodeViewController(workbench, session)
     workbench.code_view = controller
     workbench.destroyed.connect(lambda *_args: controller.dispose())
+
+
+def make_editor(parent: QWidget) -> QPlainTextEdit:
+    """The shell's code editor with Python highlighting, or a plain text edit when the shell's cannot be made."""
+    try:
+        from app.editors.code_editor_widget import CodeEditorWidget
+
+        editor = CodeEditorWidget(parent)
+        editor.set_language_for_path("ui_form.py")
+        return editor
+    except Exception:
+        logger.exception("the code view could not make the code editor")
+        return QPlainTextEdit(parent)
 
 
 def view_scope(scope: FormScope, form_path: str) -> FormScope:
@@ -216,7 +230,7 @@ class CodeViewController:
     def _ensure(self) -> CodeViewPanel:
         if self._panel is not None:
             return self._panel
-        panel = CodeViewPanel(self._workbench)
+        panel = CodeViewPanel(self._workbench, make_editor(self._workbench))
         panel.close_requested.connect(self.close)
         panel.open_file_requested.connect(self._open_file)
         panel.line_clicked.connect(self._line_clicked)
@@ -247,14 +261,20 @@ class CodeViewController:
     def _retheme(self, panel: CodeViewPanel) -> None:
         tokens = getattr(self._surface(), "_tokens", None)
         if tokens is not None:
-            try:
-                panel.apply_theme(tokens)
-            except Exception:
-                logger.exception("the code view could not apply the theme")
+            self.apply_theme(tokens)
 
     def apply_theme(self, tokens: Any) -> None:
-        if self._panel is not None:
-            self._panel.apply_theme(tokens)
+        """The tab's theme: the editor takes the shell tokens, the header and the marks take the form chrome."""
+        panel = self._panel
+        if panel is None:
+            return
+        apply = getattr(panel.editor, "apply_theme", None)
+        if callable(apply):
+            try:
+                apply(tokens)
+            except Exception:
+                logger.exception("the code view could not apply the theme to its editor")
+        panel.apply_chrome(chrome_for(tokens))
 
 
 __all__ = ["CHANGE_MS", "CodeViewController", "TOO_NARROW", "generate_view", "view_scope"]

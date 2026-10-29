@@ -13,7 +13,7 @@ import time
 from typing import Any, Callable, Tuple
 
 from app.features.form_builder.integration.form_menu_ext import FormMenuItem
-from app.features.form_builder.integration.preview_options import ADD_SCREEN, BUILT_IN, DEFAULT_STYLE, style_label
+from app.features.form_builder.engine.preview_options import ADD_SCREEN, BUILT_IN, DEFAULT_STYLE, style_label
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +42,7 @@ def _preview(surface: Any) -> None:
 
 
 def _style_names() -> Tuple[str, ...]:
-    from app.features.form_builder.integration.preview_options import ordered_styles
+    from app.features.form_builder.engine.preview_options import ordered_styles
     from app.qt.QtWidgets import QStyleFactory
 
     return ordered_styles(str(name) for name in QStyleFactory.keys())

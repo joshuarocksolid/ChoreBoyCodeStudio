@@ -651,7 +651,7 @@ def _toolbar_qss(tokens: ShellThemeTokens) -> str:
 
 def _fill_style_menu(menu: QMenu, control: Any) -> None:
     """Fusion first (checked by default), then every style the preview runtime reports."""
-    from app.features.form_builder.integration.preview_options import CAPTION, style_label
+    from app.features.form_builder.engine.preview_options import CAPTION, style_label
 
     menu.clear()
     menu.addSection(CAPTION)
@@ -669,7 +669,7 @@ def _fill_style_menu(menu: QMenu, control: Any) -> None:
 
 def _fill_screen_menu(menu: QMenu, control: Any) -> None:
     """The built-in and the user's screens, then Add a screen\u2026."""
-    from app.features.form_builder.integration.preview_options import ADD_SCREEN, CAPTION
+    from app.features.form_builder.engine.preview_options import ADD_SCREEN, CAPTION
 
     menu.clear()
     menu.addSection(CAPTION)

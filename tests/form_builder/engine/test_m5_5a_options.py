@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from app.features.form_builder.integration import preview_options as po
+from app.features.form_builder.engine import preview_options as po
 from app.features.form_builder.integration.memory import PreviewOptionsStore, payload_with_preview, preview_from_payload
 from app.features.form_builder.qtside.code_view.lines import CodeIndex
 
@@ -30,13 +30,19 @@ _GENERATED = """class Ui_Till(object):
 """
 
 
+def _profile(name: str, width: int, height: int, font: str = "", size: int = 0, scale: int = 100) -> po.ScreenProfile:
+    found = po.clean_profile(name, width, height, font, size, scale)
+    assert found is not None
+    return found
+
+
 @pytest.mark.parity("R3-178")
 def test_the_window_title_names_only_the_choices_that_are_not_the_default() -> None:
     plain = po.PreviewChoices()
     assert po.window_title("invoice.ui", plain, ()) == "Preview · invoice.ui"
     both = po.PreviewChoices(style="Windows", screen="Small screen")
     assert po.window_title("invoice.ui", both, ()) == "Preview · invoice.ui · Windows style · Small screen"
-    mine = po.clean_profile("Till 2", 800, 600)
+    mine = _profile("Till 2", 800, 600)
     chosen = po.PreviewChoices(screen="Till 2")
     assert po.window_title("a.ui", chosen, (mine,)) == "Preview · a.ui · Till 2"
 
@@ -66,13 +72,13 @@ def test_a_profile_is_held_to_its_ranges_and_a_built_in_name_cannot_be_reused() 
     )
     assert po.clean_profile("   ", 800, 600) is None
     assert po.name_is_built_in("small SCREEN")
-    again = po.with_profile((profile,), po.clean_profile("old laptop", 1280, 720))
+    again = po.with_profile((profile,), _profile("old laptop", 1280, 720))
     assert [(item.name, item.width) for item in again] == [("old laptop", 1280)]
 
 
 @pytest.mark.parity("R3-178", "R3-179")
 def test_the_appearance_carries_the_profile_and_the_title() -> None:
-    mine = po.clean_profile("Tablet", 1280, 800, "Courier", 14, 150)
+    mine = _profile("Tablet", 1280, 800, "Courier", 14, 150)
     appearance = po.appearance_for("invoice.ui", po.PreviewChoices(style="Windows", screen="Tablet"), (mine,))
     assert appearance.style == "Windows" and appearance.scale == 1.5
     assert (appearance.screen_width, appearance.screen_height) == (1280, 800)
@@ -85,7 +91,7 @@ def test_the_appearance_carries_the_profile_and_the_title() -> None:
 @pytest.mark.parity("R3-179")
 def test_choices_and_profiles_are_kept_per_user_outside_the_form(tmp_path: Path) -> None:
     store = PreviewOptionsStore(str(tmp_path))
-    mine = po.clean_profile("Tablet", 1280, 800, "Courier", 14, 150)
+    mine = _profile("Tablet", 1280, 800, "Courier", 14, 150)
     store.save(po.PreviewChoices(style="Windows", screen="Tablet"), (mine,))
     other = PreviewOptionsStore(str(tmp_path))
     choices, profiles = other.load()
