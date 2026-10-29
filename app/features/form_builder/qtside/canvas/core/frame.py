@@ -84,6 +84,8 @@ class Badge:
     glyph: GlyphName
     role: Role
     leader: Optional[Leader]
+    #: Hover text. Also the accessible description. Empty for a badge with no sentence.
+    tip: str = ""
 
 
 @dataclass(frozen=True)

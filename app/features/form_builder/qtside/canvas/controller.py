@@ -57,6 +57,7 @@ from app.features.form_builder.engine.ui4.values import SizePolicyValue, SizeVal
 from app.features.form_builder.qtside.canvas import _input
 from app.features.form_builder.qtside.canvas.core.frame import (
     AddPage,
+    Badge,
     Chip,
     FocusShare,
     OpenLayoutPopover,
@@ -124,6 +125,7 @@ from app.features.form_builder.qtside.canvas.core.space import ViewMap
 from app.features.form_builder.qtside.canvas.core.structure import effective_selection
 from app.features.form_builder.qtside.canvas.core.text import TextTarget, page_title_target, text_target
 from app.features.form_builder.qtside.canvas.core.words import describe_selection, zoom_label
+from app.features.form_builder.qtside.inspector.editors import default_catalog
 from app.features.form_builder.qtside.sizing_live import class_default_policies, class_phrase
 from app.features.form_builder.qtside.canvas.editor import InPlaceEditor
 from app.features.form_builder.qtside.canvas.geometry import survey_live
@@ -225,6 +227,8 @@ class CanvasController:
         self._refused_open = False
         self._shown_page: Dict[NodeId, int] = {}
         self._mdi_cache: Optional[Tuple[object, int, Tuple[NodeId, ...]]] = None
+        self._property_labels: Optional[Dict[str, str]] = None
+        self._refusal_holders: List[QtWidgets.QLabel] = []
         self._preview_key: Optional[str] = None
         self._pending_edit: Optional[Commit] = None
         self._pending_page: Optional[NodeId] = None
@@ -324,6 +328,10 @@ class CanvasController:
         if previewing(self._gesture):
             self._stage.run(EndPreview())
         self._editor.close(False)
+        for holder in self._refusal_holders:
+            holder.hide()
+            holder.deleteLater()
+        self._refusal_holders = []
         self._gesture = Idle()
         self._detach_sub.close()
         self._view_sub.close()
@@ -1044,7 +1052,7 @@ class CanvasController:
             return
         tip = ""
         for item in self._frame.items:
-            if isinstance(item, Chip) and item.tip and item.rect.contains(event.at):
+            if isinstance(item, (Chip, Badge)) and item.tip and item.rect.contains(event.at):
                 tip = item.tip
                 break
         if tip != self._tip:
@@ -1251,9 +1259,59 @@ class CanvasController:
                 self._shown_for_frame(),
                 knobs=self._knob_set(self._static, selection),
                 readout=self._readout,
-                refusals=self._realizer.refusal_marks(),
+                refusals=self._refusal_tips(),
             ),
         )
+        self._sync_refusal_access()
+
+    def _refusal_tips(self) -> Tuple[Tuple[NodeId, str], ...]:
+        """Tooltip lines for refused properties. O(1) when Qt accepted everything."""
+        marks = self._realizer.refusal_marks()
+        if not marks:
+            return ()
+        return tuple((node_id, self._refusal_text(names)) for node_id, names in marks)
+
+    def _refusal_text(self, names: Tuple[str, ...]) -> str:
+        return "\n".join(
+            "%s: saved in the file. The canvas can't show this value." % self._property_label(name)
+            for name in names
+        )
+
+    def _property_label(self, name: str) -> str:
+        labels = self._property_labels
+        if labels is None:
+            found: Dict[str, str] = {}
+            for spec in default_catalog().rows():
+                prop = getattr(spec.source, "name", None)
+                if isinstance(prop, str) and prop not in found:
+                    found[prop] = spec.label
+            labels = found
+            self._property_labels = labels
+        return labels.get(name, name)
+
+    def _sync_refusal_access(self) -> None:
+        """A transparent widget carries the badge sentence for assistive tech."""
+        badges = [item for item in self._frame.items if isinstance(item, Badge) and item.tip]
+        viewport = self._view.viewport()
+        while len(self._refusal_holders) < len(badges):
+            label = QtWidgets.QLabel(viewport)
+            label.setObjectName("formBuilder.refusalBadge")
+            label.setAccessibleName("Problem")
+            policy = getattr(Qt, "FocusPolicy", Qt)
+            label.setFocusPolicy(getattr(policy, "NoFocus"))
+            attribute = getattr(Qt, "WidgetAttribute", Qt)
+            label.setAttribute(getattr(attribute, "WA_TransparentForMouseEvents"), True)
+            self._refusal_holders.append(label)
+        for index, label in enumerate(self._refusal_holders):
+            if index >= len(badges):
+                label.hide()
+                continue
+            badge = badges[index]
+            origin = self._view.mapFromScene(QPoint(badge.rect.x, badge.rect.y))
+            label.setGeometry(int(origin.x()), int(origin.y()), badge.rect.width, badge.rect.height)
+            label.setAccessibleDescription(badge.tip)
+            label.setToolTip(badge.tip)
+            label.show()
 
     def _knob_set(self, static: StaticLayer, selection: SelectionState) -> KnobSet:
         """Survey on a new scope or a new index epoch. A preview keeps the epoch, so it reuses the survey."""

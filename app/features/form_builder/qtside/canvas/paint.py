@@ -263,7 +263,7 @@ def _glyph(painter: QPainter, name: str, rect: CanvasRect, colour: QColor, text:
         painter.setBrush(colour)
         painter.drawEllipse(_box(rect))
         painter.setPen(text)
-        painter.setFont(_semibold(11))
+        painter.setFont(_semibold(9 if rect.width < 16 else 11))
         painter.drawText(_box(rect), _align("AlignCenter"), "!")
         return
     if name == "grip":
