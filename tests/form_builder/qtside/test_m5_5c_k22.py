@@ -97,7 +97,6 @@ def _form_action(window: QWidget, text: str) -> object:
 
 
 @pytest.mark.parity("R3-184")
-@pytest.mark.logic("O-logic")
 def test_k22_templates(tmp_path: Path, qapp: QApplication) -> None:
     root = tmp_path / "shop"
     (root / "forms" / "pictures").mkdir(parents=True)

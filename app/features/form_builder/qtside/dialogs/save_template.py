@@ -23,13 +23,44 @@ from app.qt.QtWidgets import (
 )
 
 from app.features.form_builder.engine.project.user_templates import SCOPE_PROJECT, SCOPE_USER
-from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_level2_shadow, popover_style
+from app.features.form_builder.qtside.theme.chrome import FormChrome, apply_level2_shadow, edge_on, popover_style
 
 OBJECT_NAME = "formBuilder.saveTemplate"
 DESCRIPTION_PLACEHOLDER = "What this form is for"
 CAPTION = "Saves a copy of this form's design and pictures. Your code and data are not included."
 SAVE_LABEL = "Save template"
 WIDTH = 380
+
+
+def _field_style(chrome: FormChrome) -> str:
+    """Line edits and the two radio buttons, painted from the chrome (a style sheet drops the native look)."""
+    frame = "QFrame#%s" % OBJECT_NAME.replace(".", "\\.")
+    edge = edge_on(chrome, chrome.panel)
+    focus = max(1, chrome.focus_width)
+    return (
+        "%(f)s QLineEdit { background: %(input)s; color: %(text)s; border: 1px solid %(border)s;"
+        " border-radius: 4px; padding: 5px 6px; }"
+        "%(f)s QLineEdit:focus { border: %(focus)dpx solid %(accent)s; }"
+        "%(f)s QRadioButton { color: %(text)s; spacing: 6px; background: transparent; }"
+        "%(f)s QRadioButton:disabled { color: %(muted)s; }"
+        "%(f)s QRadioButton::indicator { width: 13px; height: 13px; border: 1px solid %(edge)s;"
+        " border-radius: 7px; background: %(panel)s; }"
+        "%(f)s QRadioButton::indicator:checked { border: 1px solid %(accent)s; background: qradialgradient("
+        "cx:0.5, cy:0.5, radius:0.5, fx:0.5, fy:0.5, stop:0 %(accent)s, stop:0.5 %(accent)s,"
+        " stop:0.56 %(panel)s, stop:1 %(panel)s); }"
+        "%(f)s QRadioButton::indicator:focus { border: %(focus)dpx solid %(accent)s; }"
+        "%(f)s QRadioButton::indicator:disabled { border: 1px solid %(muted)s; }"
+    ) % {
+        "f": frame,
+        "input": chrome.input,
+        "text": chrome.text,
+        "border": chrome.border,
+        "focus": focus,
+        "accent": chrome.accent,
+        "muted": chrome.muted,
+        "edge": edge,
+        "panel": chrome.panel,
+    }
 
 
 class SaveTemplatePopover(QFrame):
@@ -48,14 +79,7 @@ class SaveTemplatePopover(QFrame):
         self.setObjectName(OBJECT_NAME)
         self.setAccessibleName("Save as template")
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, True)
-        self.setStyleSheet(
-            popover_style(OBJECT_NAME, chrome)
-            + "QFrame#%s QLineEdit { background: %s; color: %s; border: 1px solid %s; border-radius: 4px; padding: 5px 6px; }"
-            % (OBJECT_NAME.replace(".", "\\."), chrome.input, chrome.text, chrome.border)
-            + "QFrame#%s QLineEdit:focus { border: %dpx solid %s; }"
-            % (OBJECT_NAME.replace(".", "\\."), chrome.focus_width, chrome.accent)
-            + "QFrame#%s QRadioButton { color: %s; spacing: 6px; }" % (OBJECT_NAME.replace(".", "\\."), chrome.text)
-        )
+        self.setStyleSheet(popover_style(OBJECT_NAME, chrome) + _field_style(chrome))
         self._on_save = on_save
         self._chrome = chrome
         column = QVBoxLayout(self)

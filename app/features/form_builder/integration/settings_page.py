@@ -28,9 +28,10 @@ the page's keys). A real registration seam in the shell replaces ``install``.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Mapping, Optional, cast
 
 from app.qt.QtCore import QEvent, QObject, Qt, QTimer
+from app.qt.QtGui import QShowEvent
 from app.qt.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -39,6 +40,7 @@ from app.qt.QtWidgets import (
     QFormLayout,
     QLabel,
     QPushButton,
+    QSizePolicy,
     QStyleFactory,
     QTabWidget,
     QVBoxLayout,
@@ -47,7 +49,10 @@ from app.qt.QtWidgets import (
 
 from app.features.form_builder.engine.project import user_templates as ut
 from app.features.form_builder.integration import template_store
+from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.qtside.theme.chrome import link_ink
 from app.persistence.settings_service import SettingsService
+from app.shell.theme_tokens import tokens_from_palette
 
 SETTINGS_KEY = "form_builder"
 DIALOG_NAME = "shell.settingsDialog"
@@ -164,10 +169,24 @@ class FormDesignerSettingsPage(QWidget):
         self.keyboard_link.setObjectName("formBuilder.settings.keyboardLink")
         self.keyboard_link.setFlat(True)
         self.keyboard_link.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.keyboard_link.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         self.keyboard_link.clicked.connect(self.show_keyboard_shortcuts)
-        column.addWidget(self.keyboard_link)
+        column.addWidget(self.keyboard_link, 0, Qt.AlignmentFlag.AlignLeft)
         column.addStretch(1)
         self.load()
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._style_link()
+
+    def _style_link(self) -> None:
+        """The link reads as a link: underlined, in the builder's link colour for the dialog's theme."""
+        tokens = getattr(self.window(), "_tokens", None) or tokens_from_palette(self.palette())
+        colour = link_ink(chrome_for(tokens))
+        self.keyboard_link.setStyleSheet(
+            "QPushButton#formBuilder\\.settings\\.keyboardLink { border: none; background: transparent;"
+            " padding: 2px 0; text-align: left; text-decoration: underline; font-weight: normal; color: %s; }" % colour
+        )
 
     # -- values ---------------------------------------------------------
     def values(self) -> Dict[str, Any]:
@@ -206,10 +225,12 @@ class FormDesignerSettingsPage(QWidget):
     def show_keyboard_shortcuts(self) -> bool:
         """Go to the dialog's Keyboard tab with its search box reading "Form designer"."""
         dialog = self.window()
-        tabs = getattr(dialog, "_tabs_widget", None)
+        tabs = cast(Optional[QTabWidget], getattr(dialog, "_tabs_widget", None))
         index = getattr(dialog, "_keybindings_tab_index", None)
         search = getattr(dialog, "_shortcut_search_input", None)
-        if not isinstance(tabs, QTabWidget) or index is None:
+        if tabs is None:
+            return False
+        if index is None:
             return False
         tabs.setCurrentIndex(int(index))
         if search is not None:
@@ -232,8 +253,10 @@ class FormDesignerSettingsPage(QWidget):
 
 def attach_to_dialog(dialog: QDialog, *, service: Optional[SettingsService] = None) -> Optional[FormDesignerSettingsPage]:
     """Add the "Form designer" tab to a settings dialog once, and apply it after the dialog is accepted."""
-    tabs = getattr(dialog, "_tabs_widget", None)
-    if not isinstance(tabs, QTabWidget) or dialog.property("formBuilder.settingsPageAttached"):
+    tabs = cast(Optional[QTabWidget], getattr(dialog, "_tabs_widget", None))
+    if tabs is None:
+        return None
+    if dialog.property("formBuilder.settingsPageAttached"):
         return None
     dialog.setProperty("formBuilder.settingsPageAttached", True)
     page = FormDesignerSettingsPage(tabs, service=service)
