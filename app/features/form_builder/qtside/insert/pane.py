@@ -31,7 +31,7 @@ from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode
 from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.qtside.canvas.core.palette import MIME_INSERT
 from app.features.form_builder.qtside.icons.glyphs import paint_glyph
-from app.features.form_builder.qtside.insert.catalog import load_catalog
+from app.features.form_builder.qtside.insert.catalog import in_sentence, load_catalog
 from app.features.form_builder.qtside.insert.catalog._custom import custom_entries
 from app.features.form_builder.qtside.insert.catalog._model import CATEGORY_ORDER, Entry
 from app.features.form_builder.qtside.insert.delegate import ROW_ROLE, EntryDelegate
@@ -614,7 +614,7 @@ class InsertPane(QWidget):
                 entries_found += 1
                 item.setData(int(_KEY_ROW), row.key)
                 item.setToolTip(self._tooltip(row))
-                name = "Insert %s" % row.title.lower()
+                name = "Insert %s" % in_sentence(row.title)
                 if row.search and row.category:
                     name = "%s, %s" % (name, row.category)
                 item.setData(int(_ACCESSIBLE), name)
