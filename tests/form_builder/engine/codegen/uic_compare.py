@@ -740,6 +740,84 @@ def _layout(layout: Any):
     return info
 
 
+_ITEM_ROLES = (
+    Qt.ItemDataRole.DisplayRole,
+    Qt.ItemDataRole.ToolTipRole,
+    Qt.ItemDataRole.StatusTipRole,
+    Qt.ItemDataRole.WhatsThisRole,
+    Qt.ItemDataRole.FontRole,
+    Qt.ItemDataRole.TextAlignmentRole,
+    Qt.ItemDataRole.BackgroundRole,
+    Qt.ItemDataRole.ForegroundRole,
+    Qt.ItemDataRole.CheckStateRole,
+)
+
+
+def _item_value(value):
+    """An enum or flag (an alignment, a check state) as its integer."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return int(value)
+    if not isinstance(value, (bool, str, float)) and hasattr(value, "value"):
+        return _as_int(value)
+    return _norm(value)
+
+
+def _cell(item, column: int):
+    """The role data one item holds in one column; unset roles are left out."""
+    found = {}
+    for role in _ITEM_ROLES:
+        value = item.data(column, role) if column >= 0 else item.data(role)
+        if value is None or value == "":
+            continue
+        found[_as_int(role)] = _item_value(value)
+    return found
+
+
+def _tree_item(item, columns: int):
+    return {
+        "flags": _as_int(item.flags()),
+        "cells": [_cell(item, column) for column in range(columns)],
+        "children": [_tree_item(item.child(i), columns) for i in range(item.childCount())],
+    }
+
+
+def _item_view(widget: QWidget, class_name: str):
+    """Item contents of list, combo, tree and table widgets (None for other classes)."""
+    if class_name == "QTreeWidget":
+        columns = widget.columnCount()
+        return {
+            "header": [_cell(widget.headerItem(), column) for column in range(columns)],
+            "items": [_tree_item(widget.topLevelItem(i), columns) for i in range(widget.topLevelItemCount())],
+        }
+    if class_name == "QListWidget":
+        return {"items": [dict(flags=_as_int(widget.item(i).flags()), cell=_cell(widget.item(i), -1)) for i in range(widget.count())]}
+    if class_name == "QComboBox":
+        return {
+            "items": [
+                {_as_int(role): _item_value(widget.itemData(i, role)) for role in _ITEM_ROLES if widget.itemData(i, role) not in (None, "")}
+                for i in range(widget.count())
+            ]
+        }
+    if class_name == "QTableWidget":
+        cells = {}
+        for row in range(widget.rowCount()):
+            for column in range(widget.columnCount()):
+                item = widget.item(row, column)
+                if item is not None:
+                    cells["%d,%d" % (row, column)] = dict(flags=_as_int(item.flags()), cell=_cell(item, -1))
+        header = {}
+        for index in range(widget.columnCount()):
+            item = widget.horizontalHeaderItem(index)
+            if item is not None:
+                header["c%d" % index] = _cell(item, -1)
+        for index in range(widget.rowCount()):
+            item = widget.verticalHeaderItem(index)
+            if item is not None:
+                header["r%d" % index] = _cell(item, -1)
+        return {"cells": cells, "header": header}
+    return None
+
+
 def _widget(widget: QWidget, depth=0):
     if depth > 30:
         return {"truncated": True}
@@ -756,6 +834,9 @@ def _widget(widget: QWidget, depth=0):
     layout = widget.layout()
     if layout is not None:
         info["layout"] = _layout(layout)
+    contents = _item_view(widget, class_name)
+    if contents is not None:
+        info["contents"] = contents
     buddy_fn = getattr(widget, "buddy", None)
     if callable(buddy_fn):
         try:

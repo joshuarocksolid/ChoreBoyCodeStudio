@@ -95,20 +95,22 @@ def load_draft(document: UiDocument, widget: NodeId) -> Optional[Draft]:
 
 def summary(draft: Draft) -> str:
     if draft.kind == "tree":
-        count = _count(draft.items)
+        count = _count(trim_blank_tail(draft.items))
         columns = max(1, len(draft.columns))
         return "%d rows in %d columns" % (count, columns)
     if draft.kind == "table":
         filled = sum(1 for cell in draft.cells if any(text for text in cell.texts))
         return "%d \u00d7 %d, %d cells filled" % (len(draft.rows), len(draft.columns), filled)
-    texts = tuple(item.text_at(0) for item in draft.items if item.text_at(0))
+    # The empty row waiting at the end is not an item yet.
+    items = trim_blank_tail(draft.items)
+    texts = tuple(item.text_at(0) for item in items if item.text_at(0))
     if not texts:
         return "No items"
-    noun = "item" if len(draft.items) == 1 else "items"
-    shown = ", ".join(item.text_at(0) for item in draft.items[:3])
-    if len(draft.items) > 3:
+    noun = "item" if len(items) == 1 else "items"
+    shown = ", ".join(item.text_at(0) for item in items[:3])
+    if len(items) > 3:
         shown += "\u2026"
-    return "%d %s: %s" % (len(draft.items), noun, shown)
+    return "%d %s: %s" % (len(items), noun, shown)
 
 
 def outline_caption(node: WidgetNode) -> str:
@@ -397,20 +399,53 @@ def _opaque_text(element: OpaqueElement) -> Optional[str]:
     return None
 
 
+def _typed_text(base: NodeSpec) -> Optional[PropertyEntry]:
+    return next((entry for entry in base.properties if entry.name == "text" and isinstance(entry.value, StringValue)), None)
+
+
+def _others_first(base: NodeSpec) -> bool:
+    """The file wrote another property before the typed text: it belongs to the column before the last."""
+    for entry in base.properties:
+        if entry.name == "text":
+            return False
+        return True
+    return False
+
+
+def _grows_columns(base: NodeSpec, texts: Tuple[str, ...]) -> bool:
+    """More column texts than the file holds, on an item with other typed properties."""
+    if _typed_text(base) is None or not any(entry.name != "text" for entry in base.properties):
+        return False
+    return len(texts) > len(_texts_of_spec(base))
+
+
 def _properties_with_texts(base: NodeSpec, texts: Tuple[str, ...]) -> Tuple[PropertyEntry, ...]:
     others = tuple(entry for entry in base.properties if entry.name != "text")
     values = texts or ("",)
-    old = next((entry for entry in base.properties if entry.name == "text" and isinstance(entry.value, StringValue)), None)
-    built: List[PropertyEntry] = []
+    old = _typed_text(base)
     # Earlier columns travel as opaque elements, added by the caller via slots.
     # The typed property is the last column so codegen and the writer agree.
     last = values[-1]
     if old is not None and len(values) == 1:
         value = StringValue(last, old.value.notr, old.value.comment, old.value.extracomment, old.value.id)
-        built.append(PropertyEntry("property", "text", value, old.stdset, old.extra_attrs))
+        fresh = PropertyEntry("property", "text", value, old.stdset, old.extra_attrs)
     else:
-        built.append(PropertyEntry("property", "text", StringValue(last)))
-    return tuple(built) + others
+        fresh = PropertyEntry("property", "text", StringValue(last))
+    if _grows_columns(base, values):
+        # The old last column's text moves to an opaque element (the caller),
+        # so its other properties stay behind it and the new text goes last.
+        return others + (fresh,)
+    built: List[PropertyEntry] = []
+    placed = False
+    for entry in base.properties:
+        if entry.name != "text":
+            built.append(entry)
+        elif not placed:
+            built.append(fresh)
+            placed = True
+    if not placed:
+        built.insert(0, fresh)
+    return tuple(built)
 
 
 def _spec_from_item(item: Item) -> NodeSpec:
@@ -624,8 +659,28 @@ def _permute_columns(items: Tuple[Item, ...], origin: Origin) -> Tuple[Item, ...
         texts = [item.text_at(source) if source is not None else "" for source in origin]
         while len(texts) > max(1, len(item.texts)) and texts[-1] == "":
             texts.pop()
-        moved.append(replace(item, texts=tuple(texts) or ("",), children=_permute_columns(item.children, origin)))
+        base = _follow_owner(item, origin, len(texts))
+        moved.append(replace(item, texts=tuple(texts) or ("",), base=base, children=_permute_columns(item.children, origin)))
     return tuple(moved)
+
+
+def _follow_owner(item: Item, origin: Origin, count: int) -> Optional[NodeSpec]:
+    """Put the item's other typed properties (a tooltip) on the side of the typed text their column ends up on."""
+    base = item.base
+    if base is None or _typed_text(base) is None or not any(entry.name != "text" for entry in base.properties):
+        return base
+    last = len(item.texts) - 1
+    owner = last - 1 if _others_first(base) else last
+    if owner < 0 or owner not in origin:
+        return base
+    at = origin.index(owner)
+    others = tuple(entry for entry in base.properties if entry.name != "text")
+    text = tuple(entry for entry in base.properties if entry.name == "text")
+    if at == count - 1:
+        return replace(base, properties=text + others)
+    if at == count - 2:
+        return replace(base, properties=others + text)
+    return base
 
 
 def _with_field(cell: Item, name: str, value: int) -> Item:
