@@ -12,11 +12,16 @@ first *k* values (*k* is the slot's parameter count), a ``call`` step passes
 doesn't type, or a step with a condition (FB403, M7.1), generates nothing, so
 its run order is never silently changed. A step whose target left the form
 (FB405) becomes a comment, because the handler would raise at run time.
+
+Every value from the file that reaches the code is checked first: a target, a
+method and a slot name must be plain names (``compat.is_name``, ``is_signature``)
+or the list generates nothing, and comment text is one line with no line
+break of any kind, so no text in a ``.ui`` file can become a statement.
 """
 
 from __future__ import annotations
 
-import keyword
+import re
 from typing import List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.codegen.logic_hooks import CodegenContext, Contribution, Method
@@ -52,10 +57,10 @@ class StepsExpander:
                 if owner is None or expression is None:
                     continue
                 parsed = read_list(entry.value.text)
-                if not _generates(parsed):
+                if not _generates(parsed) or not compat.is_name(signal_name):
                     continue
                 handler = "_cbcs_%s_%s" % (owner, signal_name)
-                if not handler.isidentifier():
+                if not compat.is_name(handler):
                     continue
                 selector = _selector(doc, classes, node, signal_name, parsed)
                 connects.append("%s.%s%s.connect(self.%s)" % (expression, signal_name, selector, handler))
@@ -63,7 +68,7 @@ class StepsExpander:
                     Method(
                         name=handler,
                         body=_body(doc, classes, ctx, root, parsed.steps),
-                        source_ref="%s: When %s" % (owner, signal_name),
+                        source_ref=_one_line("%s: When %s" % (owner, signal_name)),
                         params="*args",
                     )
                 )
@@ -97,7 +102,29 @@ def _owner_name(node: Node) -> Optional[str]:
 def _generates(parsed: StepList) -> bool:
     if parsed.error is not None or not parsed.steps:
         return False
-    return all(step.verb in ("slot", "call") and step.when is None and step.raw is None for step in parsed.steps)
+    return all(
+        step.verb in ("slot", "call")
+        and step.when is None
+        and step.raw is None
+        and _names_ok(step)
+        for step in parsed.steps
+    )
+
+
+def _names_ok(step: EventStep) -> bool:
+    """Only plain names reach the generated code; anything else keeps the whole list out."""
+    if step.verb == "call":
+        return compat.is_name(step.method) and 0 <= step.args <= 99
+    return compat.is_name(step.target) and compat.is_signature(step.slot)
+
+
+#: Every character Python or ``str.splitlines`` treats as a line break, and other control characters.
+_BREAKS = re.compile("[\x00-\x1f\x7f-\x9f\u2028\u2029]")
+
+
+def _one_line(text: str) -> str:
+    """Text for a ``#`` comment: one line, whatever the file held."""
+    return _BREAKS.sub(" ", text)
 
 
 def _selector(
@@ -142,12 +169,12 @@ def _body(
         words = step_words(step, target, is_form=(target == root), target_chain=chain)
         prefix = "#   %d. " % number
         if not step.enabled:
-            lines.append("%s(off) %s" % (prefix, words))
+            lines.append(_one_line("%s(off) %s" % (prefix, words)))
             continue
         if node is None or (step.verb == "slot" and target != root and target not in ctx.attribute_names):
-            lines.append("%s(missing %s) %s" % (prefix, target, words))
+            lines.append(_one_line("%s(missing %s) %s" % (prefix, target, words)))
             continue
-        lines.append(prefix + words)
+        lines.append(_one_line(prefix + words))
         lines.append(_statement(step, root, later_on))
         # The call/slot statement follows its comment.
     return "\n".join(lines)
@@ -160,8 +187,6 @@ def _statement(step: EventStep, root: str, later_on: bool) -> str:
             return "if %s is False:\n    return" % call
         return call
     name, params = compat.split_signature(step.slot)
-    if keyword.iskeyword(name):
-        name += "_"
     owner = "self._form" if step.target == root else "self.%s" % step.target
     return "%s.%s(%s)" % (owner, name, _args(len(params)))
 

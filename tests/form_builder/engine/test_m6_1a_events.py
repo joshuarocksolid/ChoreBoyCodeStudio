@@ -316,8 +316,12 @@ NEWER = (
 )
 
 
-def test_a_newer_logic_version_refuses_every_event_write() -> None:
-    start = form(connection("clearButton", "clicked()", "nameEdit", "clear()"), extra_root=NEWER)
+UNREADABLE = NEWER.replace('{"version":2}', "soon")
+
+
+@pytest.mark.parametrize("marker", [NEWER, UNREADABLE], ids=["newer", "unreadable"])
+def test_a_newer_logic_version_refuses_every_event_write(marker: str) -> None:
+    start = form(connection("clearButton", "clicked()", "nameEdit", "clear()"), extra_root=marker)
     log = open_log(start)
     before = saved(log.document)
     node_id = log.document.connections()[0].id

@@ -186,6 +186,47 @@ def test_a_step_whose_target_left_the_form_is_a_comment_not_a_crash(tmp_path: Pa
     assert calls == [("m_none", ())]
 
 
+_HOSTILE = (
+    '[{"do": "call", "method": "x(); __import__(\'os\').system(\'echo PWN\'); y"}]',
+    '[{"do": "slot", "target": "gone\\n__import__(\'os\')\\n#", "slot": "clear()"}]',
+    '[{"do": "slot", "target": "nameEdit", "slot": "clear\\n__import__(\'os\')\\nx()"}]',
+    '[{"do": "slot", "target": "nameEdit", "slot": "clear(); __import__(\'os\'); x()"}]',
+    '[{"do": "slot", "target": "gone\\r__import__(\'os\')", "slot": "clear()"}, '
+    '{"do": "slot", "target": "nameEdit", "slot": "clear()", "enabled": false}]',
+)
+
+
+@pytest.mark.parametrize("text", _HOSTILE)
+def test_no_text_in_a_step_list_becomes_code(text: str, tmp_path: Path) -> None:
+    from xml.sax.saxutils import escape
+
+    prop = '<property name="cbcsOnClicked" stdset="0"><string notr="true">%s</string></property>' % escape(text)
+    source = generate(
+        form().replace(
+            '<widget class="QPushButton" name="clearButton"/>',
+            '<widget class="QPushButton" name="clearButton">%s</widget>' % prop,
+        ),
+        tmp_path,
+    )
+    tree = ast.parse(source, feature_version=(3, 9))
+    assert not [n for n in ast.walk(tree) if isinstance(n, ast.Name) and n.id == "__import__"]
+    assert "\r" not in source
+
+
+def test_a_native_clicked_bool_connection_passes_checked_like_uic(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
+    """PySide6 connects bare ``clicked`` as ``clicked()``; uic writes ``clicked["bool"]`` so a slot gets ``checked``."""
+    del qapp
+    log = open_log(form())
+    log.execute(SetEventSteps("clearButton", "clicked", (slot_step("giftCheck", "setChecked(bool)"),)))
+    text = saved(log.document)
+    assert "<signal>clicked(bool)</signal>" in text and "cbcs" not in text
+    source = generate(text.replace('name="clearButton"/>', 'name="clearButton"><property name="checkable"><bool>true</bool></property></widget>'), tmp_path)
+    assert 'self.clearButton.clicked["bool"].connect(self.giftCheck.setChecked)' in source
+    win = window(source, [])
+    win.ui.clearButton.click()
+    assert win.ui.giftCheck.isChecked() is True
+
+
 @pytest.mark.logic("L-runtime-connect")
 def test_a_call_reaches_the_window_method_natively_and_from_a_list(tmp_path: Path, qapp) -> None:  # type: ignore[no-untyped-def]
     """LOGIC_DESIGN 3.5: the form object is the receiver, so a method of the window class is there when ``setupUi`` runs."""

@@ -16,7 +16,6 @@ steps need is inserted, removed or moved. The whole change is one log entry.
 
 from __future__ import annotations
 
-import keyword
 from dataclasses import dataclass
 from typing import ClassVar, Dict, Hashable, List, Optional, Sequence, Tuple
 
@@ -35,7 +34,7 @@ from app.features.form_builder.engine.logic.events import (
     step_key,
 )
 from app.features.form_builder.engine.logic.events_codec import EventStep, WriteError, write_list
-from app.features.form_builder.engine.logic.storage import SUPPORTED_LOGIC_VERSION
+from app.features.form_builder.engine.logic.codec import marker_read_only
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
 
@@ -55,8 +54,7 @@ def register(registry: object) -> None:
 
 def require_logic_writable(doc: UiDocument) -> None:
     """FB402: the form's behavior is from a newer version, so no logic write is allowed (CONTRACTS 15.7)."""
-    version = doc.logic_version()
-    if version is not None and version > SUPPORTED_LOGIC_VERSION:
+    if marker_read_only(doc.root.prop("cbcsLogic")):  # newer, or a marker that can't be read (15.2)
         raise CommandRejected(
             "This form's behavior was saved by a newer version of Code Studio, so it can't be changed here.",
             code="FB402",
@@ -191,7 +189,7 @@ def _check_step(
         return
     if step.verb == "slot":
         name, params = compat.split_signature(step.slot)
-        if not step.target or not name or "(" not in step.slot:
+        if not compat.is_name(step.target) or not compat.is_signature(step.slot):
             raise CommandRejected("A step needs a target and a signature such as clear().")
         known = step_key(doc, step) in existing_keys
         if step.target not in doc.names() and not known:
@@ -199,7 +197,7 @@ def _check_step(
         if not any(compat.fits(params, shown[1]) for shown in overloads):
             raise CommandRejected("%s can't run on this event: it needs more values than the event sends." % step.slot)
         return
-    if not step.method.isidentifier() or keyword.iskeyword(step.method):
+    if not compat.is_name(step.method):
         raise CommandRejected("%s isn't a name a method can have." % step.method)
     if step.args < 0 or not any(len(shown[1]) >= step.args for shown in overloads):
         raise CommandRejected("%s() asks for more values than the event sends." % step.method)

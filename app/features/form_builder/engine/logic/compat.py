@@ -9,6 +9,7 @@ imports or runs project code (UX-PICK-011).
 
 from __future__ import annotations
 
+import keyword
 import re
 from dataclasses import dataclass
 from typing import Iterable, List, Optional, Sequence, Tuple
@@ -27,6 +28,9 @@ from app.features.form_builder.engine.ui4.nodes import (
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
 
 _ALIASES = {"qreal": "double"}
+
+_IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_SIGNATURE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\([A-Za-z0-9_:<>*&, ]*\)\Z")
 
 #: How a type reads in a sentence (UX-PICK-006 "Type words").
 _TYPE_WORDS = {
@@ -52,6 +56,17 @@ def split_signature(signature: str) -> Tuple[str, Tuple[str, ...]]:
     close_at = text.rfind(")")
     inner = text[open_at + 1 : close_at if close_at > open_at else len(text)]
     return name, tuple(normalize_type(item) for item in _split_top_level(inner))
+
+
+def is_name(text: str) -> bool:
+    """True for an ASCII identifier that is not a Python keyword: a name generated code may use."""
+    return bool(_IDENTIFIER.match(text)) and not keyword.iskeyword(text)
+
+
+def is_signature(text: str) -> bool:
+    """True for ``name(types)`` the way Designer writes it, with a usable ``name`` (``clear()``,
+    ``setChecked(bool)``). Nothing else may reach a ``<slot>`` or generated Python."""
+    return bool(_SIGNATURE.match(text)) and is_name(text.split("(", 1)[0])
 
 
 def normalize_type(text: str) -> str:
