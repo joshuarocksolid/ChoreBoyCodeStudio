@@ -5,6 +5,8 @@ Status: draft for approval. Binding for M2 (shell integration) and M3 (canvas an
 
 Version 2 (work package M4.0, 2026-10-28, Opus). Section 13.1 is now the full M4 specification (areas CAT, CONT, PED, ITEM, plus UX-TOK-005 and UX-ICON-005), binding for M4. Section 12 gains the M4 screenshot states, keyboard scripts K9–K15, checks and the M4 persona walkthrough.
 
+Version 3 (work package M5.0, 2026-10-29, Opus). Section 13.2 is now the full M5 specification (areas MAIN, RES, STYLE, CUST, PREV, FSET, TMPL, MODE, plus UX-TOK-006 and the shared rules UX-M5-007 … 010), binding for M5, with 25 design decisions in 13.2.1. Section 12 gains the M5 screenshot states, keyboard scripts K16–K23, checks and the M5 persona walkthrough. UX-KEY-004 gains the M5 keys; UX-START-007 is amended by UX-TMPL-004.
+
 Inputs: `PLAN.md` (§1 fixed decisions, §2a O-UX gate, M2–M5), `SPIKE_DESIGN.md`, `research/P_user_pain_points.md`, `research/R3_designer_parity_checklist.md` ("Where Designer's UX is weak"), `research/A_market_survey.md` ("Patterns the best builders share"), `LOGIC_DESIGN.md` §2, the spike on `feat/form-builder-spike` (README, DESIGN, decisions.tsv, the 22 screenshots, plus five extra offscreen captures of the spike at 1100×640 and 1366×768), and the CBCS shell on `feat/form-builder` (`app/shell/theme_tokens.py`, `theme_dark_chrome_presets.py`, `style_sheet_sections_*.py`, `shortcut_preferences.py`, the menu builders, `status_bar.py`, `features/markdown/markdown_editor_pane.py`).
 
 ---
@@ -44,7 +46,15 @@ PRs list the clause ids they implement. The O-UX gate checks those clauses one b
 | PED | Property editors | 13.1.4 |
 | ITEM | Item editors | 13.1.5 |
 | M4 | M4 shared rules (M4-005 … 007; M4-001 … 004 withdrawn in v2) | 13.1.1 |
-| M5 | Later milestones (structure) | 13.2 |
+| M5 | M5 shared rules (M5-007 … 010; M5-001 … 006 withdrawn in v3) | 13.2.1 |
+| MAIN | Main windows, menus, toolbars and actions | 13.2.2 |
+| RES | Resources and pictures | 13.2.3 |
+| STYLE | Style sheets, colours and theme | 13.2.4 |
+| CUST | Your own classes (promotion) | 13.2.5 |
+| PREV | Preview options, image, print, View code | 13.2.6 |
+| FSET | Form settings | 13.2.7 |
+| TMPL | Templates, Start v2 and settings | 13.2.8 |
+| MODE | One editing mode, overlays and keys | 13.2.9 |
 
 ### 0.3 Words used in this spec
 
@@ -324,6 +334,11 @@ The shell table in `app/shell/shortcut_preferences.py` is authoritative. A form 
 | F8 | form tab | Tab order overlay (toggle) | new |
 | F4 | form tab | Connections overlay (M6; Designer parity) | new |
 | Alt+1 / Alt+2 / Alt+3 / Alt+4 | form tab | Focus Outline / Insert / Canvas / Inspector | new |
+| Alt+5 | form tab | Focus Actions (UX-MAIN-010) | new (M5.1) |
+| Enter | canvas, a selected menu bar, menu or toolbar | Start menu editing (UX-MAIN-004); inside it the keys of UX-MAIN-004 and UX-MAIN-005 | new (M5.1) |
+| Ctrl+K, C | form tab | View Python code beside the canvas (toggle, UX-PREV-004) | new (M5.5a, shell chord prefix) |
+| F1 | canvas, outline, inspector | Help card for the selected widget (UX-MODE-007) | new (M5.6) |
+| Enter / Shift+Enter / Backspace | tab-order overlay | Next number / continue from here / undo the last number (UX-MODE-002) | new (M5.6) |
 | Shift+F10, Menu key | canvas, outline | Context menu for the selection | Qt standard |
 | Ctrl+K, W | form tab | Two-widths view (toggle) | new (shell chord prefix) |
 | Ctrl+H, Ctrl+G, Ctrl+/, Ctrl+Alt+V, Ctrl+Shift+Space, F9 | form tab | Nothing. Status: "Not used in the form designer. Ctrl+R goes to a widget." | inert |
@@ -363,7 +378,7 @@ Clicking a card, or pressing Enter on a focused card, creates the files with the
 
 **UX-START-006** `M2.2` `[S]` Recent forms lists up to 8 forms in this project opened most recently, with folder path in `fb.faint`. Empty: "Forms you open show up here."
 
-**UX-START-007** `M5.5c` `[S]` Saved templates (save-as-template) appear as a fourth group "Your templates" only when at least one exists.
+**UX-START-007** `M5.5c` `[S]` Saved templates (save-as-template) appear as a fourth group "Your templates" only when at least one exists. Amended in v3: it is the first group (UX-TMPL-004).
 
 **UX-START-008** `M2.2` `[S]` The spike's "Keys worth knowing" card moves off Start into the empty-form state (UX-EMPTY-001) and Help > Form designer keys.
 
@@ -985,20 +1000,20 @@ Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, genera
 | 4 | Nested layouts shrink to a line | EMPTY-002, EMPTY-003, DND-008, BOX-003, FRAME-001, OUT-005 | M3.2, M3.5 |
 | 5 | Break layout is required and resizes siblings | WRAP-002, WRAP-003, WRAP-004, WRAP-007 | M3.3 |
 | 6 | Edits in `ui_*.py` disappear | GEN-001, GEN-002, GEN-003 | M2.3 |
-| 7 | Promotion stores a C++ header, draws the base class | RUN-004, M5-004 | M5.4 |
-| 8 | Style sheet on the canvas differs from the app | ISO-001, ISO-002, ISO-004, M5-003 | M2.3, M5.3 |
-| 9 | Icon shows in the designer, gone at run time | M5-002 | M5.2 |
+| 7 | Promotion stores a C++ header, draws the base class | RUN-004, CUST-001 … CUST-011 | M5.4 |
+| 8 | Style sheet on the canvas differs from the app | ISO-001, ISO-002, ISO-004, STYLE-001 … STYLE-009 | M2.3, M5.3 |
+| 9 | Icon shows in the designer, gone at run time | RES-001 … RES-007 (the P-9 test is amended: packaging, not Save, is blocked; 13.2.1 D3) | M5.2 |
 | 10 | Packaged app can't find the form | RUN-005 | M2.4 |
 | 11 | A plugin aborts the designer | RUN-002, RUN-003, RUN-004 | M2.5 |
 | 12 | Raw pixel sizes break on font or scale change | SCALE-001 … SCALE-004, WIDTHS-001 … WIDTHS-003, INSP-016 | M3.6 |
-| 13 | Modes and a dated canvas | PRIN-005, OVL-001 … OVL-003, INSP-013, section 2 | M3, M5.6 |
+| 13 | Modes and a dated canvas | PRIN-005, OVL-001 … OVL-003, INSP-013, MODE-001, section 2 | M3, M5.6 |
 | 14 | Spacers stick, disagree with preview | GAP-001 … GAP-005, FRAME-002, SIZE-005, WRAP-009 | M3.3 |
 | 15 | No completion of widget names | OUT-010 (rename carries to code); completion itself is M1.4 | M1.4, M3.5 |
 | 16 | Signal mode hides new connections | INSP-013, EMPTY-005, OVL-009 | M3.1b, M6.1 |
-| 17 | Menus and toolbars refuse dragged controls | M5-001 | M5.1 |
+| 17 | Menus and toolbars refuse dragged controls | MAIN-004 … MAIN-011, MAIN-016 | M5.1 |
 | 18 | Enum properties don't commit | INSP-009, FEED-007, PED-001, PED-009, PED-022 | M4.3a |
 | 19 | Splitter can't nest, handle doesn't move | SPLIT-001, SPLIT-002, SPLIT-003 | M3.2, M3.3 |
-| 20 | Tab order sticks; new widgets append; page reorder is a thin target | OVL-002, OVL-004 … OVL-006, PAGES-004, OUT-007, GRID-004 | M3.5, M5.6 |
+| 20 | Tab order sticks; new widgets append; page reorder is a thin target | OVL-002, OVL-004 … OVL-006, MODE-002, MODE-003, PAGES-004, OUT-007, GRID-004 | M3.5, M5.6 |
 | 21 | One grid drag moves untouched cells | GRIDL-001 … GRIDL-004, DND-002 | M3.2 |
 | 22 | `connectSlotsByName` misses a slot | PROB-001, PROB-002 (FB codes from M6.2) | M6.2 |
 | 23 | Huge forms freeze | PRIN-007, MOTION-001, FEED-006, DND-008 (cached slot geometry), section 12.5 speed evidence | M3.1, M9.4 |
@@ -1020,8 +1035,8 @@ Every pain is a requirement (PLAN §1). Pains whose fix is mostly engine, genera
 | 9 | Preview in another process | RUN-002, RUN-003 |
 | 10 | Live canvas, same file | XML-001 … XML-005, ISO-001 |
 | 11 | Rows and columns receive the next control | AUTO-003, AUTO-004 |
-| 12 | A theme object for common shapes | M5-003 |
-| 13 | A custom component with a real size | RUN-004, M5-004 |
+| 12 | A theme object for common shapes | STYLE-012 (two roles; 13.2.1 D5) |
+| 13 | A custom component with a real size | RUN-004, CUST-007 |
 | 14 | Reset that deletes the line | INSP-006, RESIZE-003, GAP-003 |
 | 15 | Auto layout by default, with an escape | AUTO-001, WRAP-007 |
 
@@ -1145,6 +1160,39 @@ Tab sizes: **L** = 1440 × 860 tab, **C** = 1080 × 600 tab inside the CBCS shel
 | `picture-picker`, `icon-states`, `picture-missing` | Picker with a resource grid; icon states; a missing file | PED-100 … 104 |
 | `items-combo`, `items-list-details`, `items-tree`, `items-table`, `items-model-view` | Item editors; the model-view status sentence | ITEM-001 … 008 |
 
+**M5 states** (added in v3). Same rules as the M4 states: L and C, light, dark and both high contrast themes, 100% and 200%, and inspector states also at 236 px.
+
+| State | Shows | Clauses |
+| --- | --- | --- |
+| `main-window-new` | Blank main window: empty menu bar with "Type here", central area, status bar | MAIN-001, MAIN-003 |
+| `menu-typing`, `menu-reuse-list` | "Type here" editor in the File menu; the reuse list with an existing action current | MAIN-005 … 007 |
+| `menu-open-submenu` | File open with a submenu open beside it, placeholders in both | MAIN-005, MAIN-015 |
+| `menu-drag-entry`, `toolbar-drop-action` | An entry dragged between two entries; an action from Actions dropped on a toolbar | MAIN-009, TOK-006 |
+| `toolbar-refused-widget` | A line edit dragged over a toolbar, refused | MAIN-016 |
+| `actions-section` (C) | Actions section with a group, used-in captions and "Not used" | MAIN-010 |
+| `action-inspector` (236 px) | An action selected: used-in links, Content and Input rows | MAIN-012 |
+| `toolbar-inspector` (236 px) | Toolbar side segments and break | MAIN-013 |
+| `button-group` | Three radio buttons in a group; the form inspector's Button groups list | MAIN-019 |
+| `picker-project-pictures` | Picker with both sections and the "New pictures go into" footer | RES-001 |
+| `picture-added-toast` | Toast after the first picture made `forms/resources.qrc` | RES-002 |
+| `qrc-editor`, `qrc-editor-missing` | Resource editor tab; a missing file cell | RES-004, RES-007 |
+| `raw-path-problem` | FB031 in Problems and the row warning with its link | RES-005 |
+| `style-drawer-valid`, `style-drawer-error` | Drawer with match chips and matched widgets outlined; an error status with the canvas still styled | STYLE-002 … 005 |
+| `style-insert-menu` | Insert ▸ open | STYLE-006 |
+| `colour-rows` (236 px) | Appearance: Font, Text colour, Background, Style sheet; the overridden warning on one row | STYLE-010, STYLE-011 |
+| `form-look` | Form inspector Look group | STYLE-012 |
+| `own-class-popover`, `own-class-check-lines` | The popover with the registry list; each check line | CUST-002, CUST-003 |
+| `own-class-canvas` | A label drawn as its base with the corner tag; a QWidget-based stand-in | CUST-007, TOK-006 |
+| `own-class-preview-notice`, `own-class-stand-in-toast` | Security info bar; the stand-in toast and Problems row | CUST-008, CUST-009 |
+| `aa-style-screen` | Aa menu with Style and Screen open | PREV-001 |
+| `view-code-split` | Code split beside the canvas, the selected widget's lines marked | PREV-004 |
+| `form-settings` (236 px) | Code, Translation and Free placement groups expanded; the older-file row | FSET-001 … 006 |
+| `save-template`, `start-your-templates` | Save as template popover; Start with Your templates first | TMPL-001, TMPL-004 |
+| `settings-form-designer` | Settings > Form designer page | TMPL-006 |
+| `tab-order-overlay-keys`, `tab-order-list` | Overlay with "Press Enter" status; the inspector list | MODE-002, MODE-003, OVL-004, OVL-006 |
+| `buddy-dropdown`, `buddy-overlay-keys` | Buddy drop-down; overlay link in progress | MODE-004, OVL-007 |
+| `keys-page`, `widget-help-card` | Form designer keys filtered; the F1 card | MODE-005, MODE-007 |
+
 ### 12.3 Keyboard scripts
 
 Each script starts with focus in the form tab and uses only keys. The PR runs the scripts that touch its clauses.
@@ -1167,6 +1215,17 @@ Each script starts with focus in the form tab and uses only keys. The PR runs th
 - **K13 Font, colour and palette** (`M4.3b`). Select a label; Font row, Enter: the popover opens with focus on Family; type "Sans", Enter on the first match; Tab to Size, Up twice; Tab to Bold, Space; Done: one undo step "Change font of …", the summary lists only the parts set. Palette row, Enter; Down to "Window text", Enter: the brush editor opens; Tab to Hex, type "#1A7F37", Enter; Esc: back to the palette list; Esc: closed and reverted; repeat and press Done: kept, one step. Undo all: original bytes.
 - **K14 Items** (`M4.4`). Select a combo box; Enter: the item editor opens with focus in its first row; type "Small", Enter, "Medium", Enter, "Large", Enter, Enter: closed, three items, one undo step "Edit items of …", focus back on the canvas. Enter; Down; Alt+Up: "Medium" first; Esc: the order is back to Small, Medium, Large and no step was added. Select a tree widget; Enter; type "Fruit", Enter, "Apple", Tab: Apple is under Fruit; Done. Select a list view; Enter: no popover, the status sentence of UX-ITEM-008. Undo all: original bytes.
 - **K15 Pictures** (`M4.3c`). In a form that includes a `.qrc`, select a push button; Icon row, Enter; type "save" in the search; arrows to the first match, Enter: icon written as a resource path, one step. Open again, "Other states ▸", pick a Disabled picture; Esc: reverted. Undo all: original bytes.
+
+**M5 scripts** (added in v3). Same rules as K1–K15. The lane named after each script owns its test; M5.R runs them all together. Fixture projects live under `tests/form_builder/fixtures/m5/` (a shop project with no `.qrc`, `logo.png` outside it, `widgets/till_display.py` with `class TillDisplay(QLabel)`, `widgets/broken.py` whose class raises in `__init__`).
+
+- **K16 Main window** (`M5.1`). File > New Form… by keyboard, name "shop_window", arrow to Main window, Enter: the form has `menubar`, `centralwidget`, `statusbar` in that order. Ctrl+R, "menubar", Enter; Enter: menu editing, focus on "Type here". Type "&File", Enter: `menuFile` exists; Down: File opens with focus on its "Type here". Type "New sale", Enter; type "Print receipt", Enter: focus is back on "Type here" each time. Down, Enter: a separator. Up, type "Quit", Enter. Up (on Quit), Alt+Up: Quit is above the separator; Alt+Down: back. Esc: File closes, its title has focus. Right, type "Help", Enter. Esc: menu editing ends. Esc until the window is selected; Shift+F10, Main window ▸ Add toolbar: `toolBar` exists and is selected. Enter; type "Pri": the reuse list shows "New action “Pri”" current and "Print receipt" under it; Down, Enter: the toolbar references `actionPrint_receipt` and the XML has that action in `menuFile` and `toolBar` (pain 17). Alt+5: Actions focused; its Print receipt row says "File menu, toolBar". Back on the toolbar (Alt+3, Enter), Delete on Print receipt: the toast says it's still on the File menu and the action still exists. Assert after each step: one undo step with its 13.2.10 name. Undo all: the bytes the form had when it was created.
+- **K17 Pictures** (`M5.2`). In the shop project, create a blank Widget form and insert a label (`/`, "label", Enter). Alt+4 to Picture, Enter: the picker opens with no sections but the footer; Tab to "Add picture…", Enter; type the fixture path of `logo.png`, Enter. Assert: `forms/resources.qrc` exists with `pictures/logo.png`, `forms/pictures/logo.png` is a byte copy, the form includes the `.qrc`, the label's picture is `:/pictures/logo.png`, one undo step "Add picture logo.png". Ctrl+S: `resources_rc.py` exists and a `QUiLoader` preview shows the picture. Undo: the property and the include are gone, the files stay; Redo. Ctrl+P, "resources.qrc", Enter: the resource editor opens; arrow to the picture, Enter, type "shop_logo.png", Enter, Ctrl+S: the alias is written and the form's `resources_rc.py` is rewritten. Open the fixture form whose button icon is a file path; select the button; Icon row, Tab to "Add to project pictures", Enter: the icon is a resource path and FB031 is gone.
+- **K18 Style** (`M5.3`). Select `okButton`. Alt+4, Ctrl+F, "style", Tab to Style sheet, Enter: the drawer opens with focus in its editor. Type `QPushButton#okButton { background: #1A7F37; }`; after 300 ms the canvas button's pixels are green, the status reads "Looks right" and the chip reads "1 widget". Backspace over the last `}`: the status reads "Line 1: a } is missing." and the button stays green. Type `}`. Esc: the drawer closes, focus is on the Style sheet row, one step "Change style sheet of okButton". Select a label; Text colour, Enter, Hex "#FFFFFF", Enter, Done; Background, Enter, Hex "#1A7F37", Enter, Done: the XML has the two palette roles and `autoFillBackground`. Select the form; Look, Text size, type 12, Enter. Undo all: original bytes.
+- **K19 Your own class** (`M5.4`). In the shop project, select a label. Shift+F10, "Use my own class…", Enter: the popover opens with focus on Class. Type "TillDisplay", Tab, type "widgets.till_display": the line reads "Found TillDisplay in widgets/till_display.py." Enter on [Use TillDisplay]: the XML has the `customwidget` with header `widgets/till_display.h`; the inspector header reads "TillDisplay · your class, based on Label"; no module from `widgets/` was imported in the editor (import hook). Ctrl+Shift+R: the preview child reports `TillDisplay` as that widget's class, and the info bar shows; Esc. Select another label, use "Broken" from "widgets.broken", Ctrl+Shift+R: the stand-in toast and FB602 appear, the preview opens; F2, type a new name, Enter: the rename works. Shift+F10, "Back to label": the Broken declaration is gone. Undo all: original bytes.
+- **K20 Preview options and code** (`M5.5a`). Form > Preview options ▸ Screen ▸ "Small screen · 1024 × 600" by keyboard. Ctrl+Shift+R: the window title ends "· Small screen" and its size is at most 1024 × 600; Esc. Form > Save image…, Enter on the default name: `{stem}.png` exists with the page's size. Ctrl+K, C: the code split opens; Alt+1, Down: the code scrolls to the selected widget's lines; Ctrl+K, C: closed, focus on the canvas. Assert: the undo stack and the file bytes did not change.
+- **K21 Form settings** (`M5.5b`). Form > Form settings…: Code is expanded and Author has focus. Type "Shop", Enter. Tab to Default gaps, Space, Tab, type 6, Enter. Tab to Translation's Translate by ID, Space. Open the fixture with a free container and an `stdsetdef` attribute: Free placement, Step across 16, Enter; select a free widget, Alt+Right: it moves 16 px. Older file setting, Tab to [Remove], Enter. Undo all: original bytes.
+- **K22 Templates** (`M5.5c`). With K16's window plus K17's logo label, Form > Save as template…: type "Shop window", Tab, type "Till and receipts", Enter: the template folder holds `form.ui`, `template.json`, `thumbnail.png`, `pictures/logo.png`. File > New Form…: "Your templates" is the first group; type "back_office" in the name row, Tab to the Shop window card, Enter: `forms/back_office.ui` exists with the root renamed, its picture resolves through `forms/resources.qrc`, and the Workbench is open. File > New Form…, Tab to the card, Shift+F10, "Delete template…", Enter on [Delete template]: the folder is gone and `back_office.ui` is unchanged.
+- **K23 Tab order and buddies** (`M5.6`). In a form with three labels and three fields: F8; Tab to nameEdit, Enter (1), Tab, Enter (2), Shift+Tab twice, Shift+Enter, Tab twice, Enter: the order continues from the first. Backspace undoes the last number. Esc: the overlay closes. Alt+4, Tab order group: Alt+Down on row 1; "Use reading order", Enter: `tabstops` is gone. F7; select the Email label, Enter, Tab to emailEdit, Enter: `buddy` is `emailEdit`. Esc. Select phoneLabel; Buddy drop-down, type "phone", Enter. F1: the help card opens; Esc. Help > Form designer keys: type "wrap": the first row is Ctrl+Shift+G. Undo all: original bytes.
 
 ### 12.4 Interaction traces
 
@@ -1198,6 +1257,25 @@ A trace is a JSON-lines file with one object per step: `{"t": ms, "event": "pres
 | Echo mode set, saved, reopened: still Password; an uneditable property is byte-identical after save (P-18) | PED-009 |
 | After realizing a form with an OpenGL widget and a Qt Quick view, no GL context or QML engine exists | CONT-017 |
 | Each page container writes its title where its loader reads it; a toolbox insert never writes `title` | CONT-001 |
+| Menus, toolbars, status bar, actions and groups build the same tree in our `ui_*.py`, `uic` and `QUiLoader`, in canvas order | MAIN-018 |
+| Removing the last reference removes the action; removing one of two keeps it | MAIN-008 |
+| A widget dropped, pasted or keyboard-inserted on a toolbar, menu or status bar never lands there | MAIN-016 |
+| "Type here" and "Add separator" placeholders never appear in a saved file, a Preview grab or Save image | MAIN-003, PREV-002 |
+| Making and breaking a button group leaves the child order in the file unchanged | MAIN-019 |
+| The written `.qrc` is the same bytes on macOS and Linux and after a second save; our `*_rc.py` and `rcc` register the same map | RES-004, RES-007 |
+| Add picture copies only files outside the `.qrc`'s folder and never overwrites a different file | RES-002 |
+| A raw path never blocks Save, and blocks packaging | RES-005 |
+| For a corpus of sheets, the style check says "Looks right" exactly when Qt's parser accepts the sheet | STYLE-004 |
+| Selector matches equal the widgets Qt styles, for a table of selectors over the reference form (rendered pixels in a clean `QApplication`) | STYLE-005 |
+| Every curated colour row changes the rendered pixels of its class under the runtime look | STYLE-010 |
+| No module of the user's project is imported in the editor process, through promotion, the check line, Insert or the registry | CUST-003, CUST-007, CUST-011 |
+| A class that raises in `__init__` or hangs leaves the editor responsive and the preview open with a stand-in | CUST-008 |
+| The header written for a module path is read back by `header_module` and by uic as the same import | CUST-004 |
+| View code text equals the `ui_*.py` that Save then writes | PREV-004 |
+| Form-setting rows round-trip byte-identically; `stdsetdef` is never written on a new form | FSET-004, FSET-005 |
+| A template made from a form and used again gives the same widget tree under the new name, with every picture resolving | TMPL-002, TMPL-003 |
+| The keys page lists every registered form command and nothing that isn't bound | MODE-005 |
+| Every M5 key added to UX-KEY-004 passes UX-KEY-001 | KEY-001, MODE-006 |
 
 ### 12.6 Persona walkthroughs
 
@@ -1212,11 +1290,17 @@ M4.5 runs one walkthrough on a launched build, after every M4 lane has merged, a
 
 The veteran's M4 checks are K9–K15 plus three spot checks the reviewer does by hand on a FreeCAD corpus form: add a dynamic property and see `setProperty` in `ui_*.py`; edit a palette role and compare with Designer's resave; reorder tree widget columns.
 
+M5.R runs one walkthrough on a launched build, after every M5 lane has merged, and records step counts and every hesitation:
+
+- **Shop owner, M5 tasks.** The owner's nephew has put `widgets/till_display.py` (a `TillDisplay` label that shows a running total) in the shop project and a `logo.png` on the desktop. Starting from File > New Form…, build a "Shop window": a main window with a **File** menu (New sale, Print receipt, a separator, Quit) and a **Help** menu (About); a toolbar with New sale and Print receipt, reusing the menu's actions, each with a picture; a keyboard shortcut for New sale; the status bar kept; in the central area a header label showing the shop logo (from `logo.png`, so the project gets its first pictures file), a heading in the shop's dark green, either through the label's Text colour row or a style sheet rule; the till total label changed to "TillDisplay from widgets.till_display"; preview, and see the real total widget. Then save the window as a template "Shop window" and start a new form "Back office" from that template; preview it and check the logo and the till total came along. The owner names things in their own words ("menu", "logo", "green", "my nephew's widget", "template"). **Pass:** the logo is in place without the owner ever opening a `.qrc` or seeing the word "resource"; the green is set from the Appearance group or the style sheet drawer, without All properties; the toolbar buttons are made by reusing the menu's actions (drag or the reuse list), not by typing them again; the till widget is found through "Use my own class" or Insert's Your widgets; the template appears first on New form; no step needed Undo to escape and no dialog was dismissed by guessing. **Record:** steps per task, every search word and its first result, every Esc and Undo, every sentence that confused, and whether the owner noticed the security info bar and understood it.
+
+The veteran's M5 checks are K16–K23 plus three spot checks by hand: open a Designer-made main window from the corpus and move a menu, add a toolbar, resave and diff with Designer's resave; promote a widget with a C++ header and see FB504; open View code and compare it with `uic -g python` output.
+
 ---
 
 ## 13. Later milestones: structure and key decisions
 
-Section 13.1 is the full M4 specification (version 2). Section 13.2 fixes the decisions M2–M4 must leave room for; it will be expanded into full clauses before M5's first brief.
+Section 13.1 is the full M4 specification (version 2). Section 13.2 is the full M5 specification (version 3).
 
 ### 13.1 M4: widgets, containers and properties
 
@@ -1723,17 +1807,382 @@ Each part is written only when set; each set part has its own ↺ in the popover
 
 ### 13.2 M5: main windows, resources, styling, custom widgets, templates
 
-**UX-M5-001 Main windows (M5.1).** "Type here" on menu bars, menus and toolbars (toolbars too, unlike the spike). An **Actions** tab joins the left pane (Outline | Insert | Actions when the form is a main window); actions drag onto menus and toolbars, and the action inspector lists "Used in File menu, toolbar". A toolbar refuses a widget the `.ui` schema cannot store with a sentence, never silently (pain 17).
+Version 3 (work package M5.0, 2026-10-29). Binding for M5. It replaces the six short decisions that stood here in versions 1 and 2:
 
-**UX-M5-002 Resources (M5.2).** Image properties accept only resources. The icon picker shows the project's resources with thumbnails and an "Add image…" button that copies the file into the project's resource folder and `.qrc`. A raw file path in an older file is a Problems row with the fix "[Add to resources]" (pain 9).
+- **UX-M5-001** Withdrawn in v3. Replaced by the MAIN clauses (13.2.2). Two changes: Actions are a third section of the left pane, not a tab (UX-MAIN-010); toolbars and status bars refuse widgets with a sentence (UX-MAIN-016).
+- **UX-M5-002** Withdrawn in v3. Replaced by the RES clauses (13.2.3). One change: a raw file path warns and blocks packaging, but never blocks Save (UX-RES-005).
+- **UX-M5-003** Withdrawn in v3. Replaced by the STYLE clauses (13.2.4). One change: the theme has two roles, accent colour and text size; corner radius is dropped (UX-STYLE-012).
+- **UX-M5-004** Withdrawn in v3. Replaced by the CUST clauses (13.2.5).
+- **UX-M5-005** Withdrawn in v3. Replaced by the PREV, FSET and TMPL clauses (13.2.6–13.2.8). One change: form settings are groups in the form inspector, not a dialog (UX-FSET-001).
+- **UX-M5-006** Withdrawn in v3. Replaced by the MODE clauses (13.2.9).
 
-**UX-M5-003 Style (M5.3).** "Style sheet…" opens a bottom drawer under the canvas with the CBCS code editor (CSS highlighting, syntax check, resource and colour pickers). Every selector's matches are outlined live on the canvas in dashed `ov.select` with a match count per rule, and "no match" is marked (pain 8). Theme roles are a short list in form settings (accent, base font size, corner radius), not per-widget colours (delighter 12).
+The lane split, owned files and parity rows are in `PLAN.md` (M5 table and "M5 lanes"). Every clause names the lane that builds it. Copy in quotes is the exact on-screen text; `{name}` marks a value filled in at run time. The M5 screenshot states, keyboard scripts K16–K23, automated checks and the persona walkthrough are in section 12 under "M5", like M4's. Clauses that earlier versions already tagged M5 stay where they are and bind as written: UX-START-002, UX-START-007 (amended by UX-TMPL-004), UX-ISO-004, UX-OVL-001 … 008, UX-EMPTY-007, and the M5.6 part of UX-A11Y-001.
 
-**UX-M5-004 Custom widgets (M5.4).** "Use my own class…" asks for class name, base class and Python module path, with validation that the module path looks importable. The canvas draws a sized stand-in (UX-RUN-004); the real class appears only in Preview; a short note explains that the class's code runs only in the preview process.
+#### 13.2.1 Decisions and shared rules
 
-**UX-M5-005 Preview options, settings, templates (M5.5a–c).** The Aa menu gains Style (Fusion and the styles available on the runtime) and device profiles; Preview gets Save image and Print; "View code" shows the generated Python read-only in a split beside the canvas. Form settings is one dialog. Start v2 adds saved templates (UX-START-007).
+**Decisions.** Each open question from the M5 brief, the answer, and why. A lane that wants a different answer asks the orchestrator first; it is not a gate finding.
 
-**UX-M5-006 Shortcut parity and keyboard index (M5.6).** Help > Form designer keys opens a searchable page generated from the shortcut registry (so it can never drift from the real bindings). Designer keys that are remapped here (F3–F6, Ctrl+0, Ctrl+R) are listed with their Code Studio equivalent.
+| # | Question | Decision | Why |
+| --- | --- | --- | --- |
+| D1 | How does a new form get a `.qrc`? | Automatically, on the first "Add picture…": the picture is copied to `forms/pictures/` and listed in `forms/resources.qrc`, which is created if missing, and the form includes it (UX-RES-002). There is no separate "Add pictures to this project" step | The M4.5 persona was blocked on the logo because a new form has no resource file; an extra concept before the first picture is the blocker |
+| D2 | Which pictures does the picker show? | Every picture in every `.qrc` of the project, this form's files first. Picking one from a file the form doesn't include adds the include in the same step (UX-RES-001) | Pictures belong to the project, not to one form |
+| D3 | Pain 9 says "Save is blocked while a pixmap is a raw path." | Save is never blocked. A raw path is a Problems warning with a one-click fix, a warning on the row, and a packaging error (UX-RES-005). The P-9 acceptance test is amended to match | Blocking Save loses work (UX-PRIN, PLAN §1); packaging is where the missing icon actually hurts |
+| D4 | Curated "Text colour" and "Background" rows for common widgets? | Yes, in Appearance right after Font, written as one palette role each (UX-STYLE-010) | The persona needed All properties → Palette for one colour, and font, bold, size and colour lived in three places. A palette role round-trips in Designer and needs no style sheet |
+| D5 | Theme roles | Two: "Accent colour" and "Text size", written as the root widget's palette and font (UX-STYLE-012). Corner radius is dropped | A radius needs a style sheet that takes over every button's look; that is what the style sheet editor is for. Keep the role list short (delighter 12's warning) |
+| D6 | How does "Type here" work with the keyboard only? | A menu-editing grammar entered with Enter on a menu bar, menu or toolbar: arrows move, typing on "Type here" creates, Alt+arrows move entries, Right opens or starts a submenu, Esc leaves one level (UX-MAIN-004 … 006). Typing shows existing actions to reuse, which is the keyboard form of dragging an action onto a menu (UX-MAIN-007) | Pain 17 must be solvable without a mouse (UX-A11Y-001) |
+| D7 | Toolbars | Toolbars get "Type here" too, with the same reuse list. A widget dropped on a toolbar or status bar is refused with a sentence (UX-MAIN-016) | uic and `QUiLoader` don't place widgets inside a toolbar or status bar from a `.ui`; a silent drop is pain 17 |
+| D8 | Where do actions live? | An **Actions** section is the third section of the left pane, under Insert, shown when the form has a main window root or any action. Alt+5 focuses it (UX-MAIN-010) | A drag source must stay visible while the menu is open; tabs would hide it. At short heights it becomes a third tab, as Outline and Insert do |
+| D9 | What does Delete on a menu entry delete? | The entry. The action goes too only when nothing else uses it (UX-MAIN-008) | Owners think "menu item"; a toolbar button made from the same action must survive |
+| D10 | Blank Main window contents | A menu bar `menubar` with "Type here", the central area, and a status bar `statusbar`, as Designer 6.8's template (UX-MAIN-001) | Parity (R3 134) and the persona's first step |
+| D11 | How is a style sheet checked without external tools? | Two layers in the editor process: a Qt-free tokenizer in `engine/style/` for line and column and for selectors, and Qt's own parser (a hidden probe widget and a message handler) as the final verdict (UX-STYLE-004). No `rcc`, `uic` or subprocess | Designer uses `QCss::Parser`; Qt's parser is in AppRun already and AppArmor allows nothing else |
+| D12 | Can an invalid style sheet be saved? | Yes. Problems warns, and the row says Qt ignores the whole sheet (UX-STYLE-008) | No lost work; pain 8's test saves a no-match rule too |
+| D13 | Style sheet surface | A drawer under the canvas with the CBCS code editor; valid text applies to the canvas 300 ms after typing stops; one undo step per drawer session (UX-STYLE-002, 003, 007) | Same editor as code, canvas visible while typing, Designer's modal text box was the complaint |
+| D14 | How is a Python module stored as a promotion header? | Shown as a dotted module ("widgets.till_display"), stored as `widgets/till_display.h` with `location="local"` (UX-CUST-004) | Designer opens it and uic and our generator both turn it into `from widgets.till_display import TillDisplay` (P-7 test) |
+| D15 | How is the module path checked? | By looking for the file in the project and reading it with `ast`, never by importing it in the editor (UX-CUST-003) | CONTRACTS §10.4: user code runs only in the preview child |
+| D16 | How does Preview load the real class safely on ChoreBoy? | In the preview child only (AppRun, no extra installs, no Designer plugins): each own class is imported and built once on a throwaway parent before `setupUi`; a failure installs a stand-in of the base class and reports FB602 with the file and line; a hang is caught by the existing ping (UX-CUST-008). Forms outside a project never import own classes | A class that raises in `__init__` or hangs must not take the editor or the preview down (P-7, pain 11) |
+| D17 | How does a promoted widget look on the canvas? | As its base class when the base draws something (a label, a button); as a sized stand-in when the base is a plain `QWidget` or `QFrame`; either way at least 80 × 24 px on the canvas only (UX-CUST-007) | Truth where the editor can show it, never a collapsed line (R3 "Promoted widgets collapse to a line") |
+| D18 | Custom widget registry | Project settings (`cbcs/project.json`, key `form_builder.custom_widgets`); its fields stand in for Designer's plugin interface (UX-CUST-006, 011) | Plugins can't load on a noexec mount and run code in the editor |
+| D19 | Form settings surface | Groups in the form inspector (Code, Translation, Free placement), opened by Form > Form settings… (UX-FSET-001) | Same editors, undo and keyboard as every other property; no modal dialog (UX-FEED-007) |
+| D20 | Grid settings (R3 222) | Move from M5.6 to M5.5b, as the "Free placement" group (UX-FSET-006) | They are form settings in Designer, and the form inspector is M5.5b's |
+| D21 | Preview style and screen profiles | Apply to Preview only; the canvas keeps the ChoreBoy look (UX-PREV-001) | UX-ISO-001: the canvas is the runtime truth |
+| D22 | View code | A read-only split beside the canvas, updated live from the unsaved form (UX-PREV-004) | Designer's View Code is a modal dialog of a stale file |
+| D23 | Templates | Kept for "All my projects" by default, with their pictures; "Your templates" is the first group on Start (UX-TMPL-001, 004) | The owner's own starting point is the likeliest choice, across every tool they build |
+| D24 | Designer keys the shell already uses | Print has no key (Ctrl+P is Quick Open); F1 opens a help card for the selected widget; Designer's Ctrl+? is Help > Form designer keys (UX-MODE-005 … 007) | UX-KEY-001; F1 is free in the shell table |
+| D25 | Button groups: CONTRACTS lists `SetButtonGroup` under M5.6 | M5.1 builds it, with action groups (UX-MAIN-019) | The ledger puts R3 119 and 142 in M5.1, and the group UI sits next to actions |
+
+**UX-M5-007** `all M5` `[C]` Copy for M5 follows section 9.5 and UX-M4-005. In addition, on-screen text says "picture" (never "pixmap", "resource" or "iconset"), "pictures file" only where the `.qrc` file itself is meant ("forms/resources.qrc"), "your own class" (never "promote" outside tooltips and the Qt-names line), "menu entry" and "toolbar button" (an action is "action" only in the Actions section and the inspector header). Every sentence a lane may show is in the 13.2.10 tables; a new one needs a spec change.
+
+**UX-M5-008** `all M5` `[T]` Undo names. Every M5 command has a plain name, listed in 13.2.10, used by Edit > Undo and by toast Undo. A menu-editing session that creates one entry is one step; a style sheet drawer session is one step (UX-STYLE-007). Files written outside the `.ui` (a copied picture, the `.qrc`, a saved template, the registry) are not on the form's undo stack; the clause that writes them says so on screen.
+
+**UX-M5-009** `all M5` `[A]` Speed. CPU p50 and p95 on the 300-widget reference form (plus, where named, a main window with 40 actions in 6 menus and 2 toolbars, a project with 500 pictures in 3 `.qrc` files, and a 200-rule style sheet), recorded with machine load. M5.R adds the rows to the harness; each lane measures its own path with a local script and reports it.
+
+| Path | Budget (p95) |
+| --- | --- |
+| A keystroke in "Type here", the Actions filter (200 actions) or the reuse list | ≤ 16 ms |
+| Open a menu on the canvas; commit a new entry (Enter) | ≤ 50 ms |
+| Drop an action on a menu or toolbar | ≤ 50 ms |
+| Open the picture picker, warm (index cached) | ≤ 50 ms; first index of 500 pictures ≤ 300 ms, thumbnails filled in after first paint |
+| Add one 1 MB picture (copy, `.qrc` write, include, row set) | ≤ 200 ms |
+| A keystroke in the style sheet drawer | ≤ 16 ms |
+| Check plus selector matches after the 300 ms pause, 200 rules | ≤ 50 ms |
+| Apply a valid style sheet to the canvas | ≤ 100 ms |
+| Open "Use my own class"; check one module path (file lookup and `ast` of a file up to 100 KB) | ≤ 50 ms; ≤ 30 ms |
+| View code refresh after the 300 ms pause | ≤ 100 ms |
+| Change Preview style or screen profile, warm child | ≤ 300 ms until the window shows it |
+| Start with 20 saved templates | ≤ 150 ms to first paint |
+| Open Form designer keys; a keystroke in its filter | ≤ 100 ms; ≤ 16 ms |
+| Open the tab-order or buddies overlay; assign one number | ≤ 50 ms; ≤ 16 ms |
+
+**UX-M5-010** `M5.0s` `[S A]` The Form menu (UX-SHELL-004) after M5, in this order; items come from the form-menu contributor registry, so lanes don't edit `integration/form_menu.py`: Insert widget…, Go to widget…, Layout ▸, Size ▸, Main window ▸ (M5.1; main-window forms only), Overlays ▸ (adds "Tab order list…", M5.6), separator, Preview, Preview options ▸ (adds Style ▸ and Screen ▸, M5.5a), View Python code (M5.5a), View XML, separator, Style sheet of the form… (M5.3), Form settings… (M5.5b), Save as template… (M5.5c), Save image… and Print… (M5.5a), Create window class… Help gains "Form designer keys" (M5.6). Items a runtime can't offer are absent, not disabled.
+
+**UX-TOK-006** `M5.1, M5.3, M5.6` `[S A]` New builder tokens for M5, in `qtside/theme/` (UX-TOK-001). Form-surface tokens are the same in light and dark chrome (UX-TOK-003).
+
+| Token | Normal | High contrast (both) | Use |
+| --- | --- | --- | --- |
+| `ov.type_here` | text `#6B6B6B` italic, 1 px dashed `ov.layout_faint` box | text `#2A2A2A`, 1 px dashed `#5B21B6` | "Type here" placeholders on menu bars, menus and toolbars (M5.1) |
+| `ov.menu_drop` | alias `ov.select` 2 px line | alias | Insertion line for entries and buttons (M5.1) |
+| `ov.style_match` | `ov.select` 1.5 px dashed, 2 px outside the widget | `#0000C0` 2 px dashed | Widgets the rule under the caret matches (M5.3) |
+| `ov.own_class` | `ov.layout` 1 px, 4 px corner tag | `#5B21B6` | The corner tag of a widget using your own class (M5.4) |
+
+#### 13.2.2 Main windows, menus, toolbars and actions (MAIN)
+
+**UX-MAIN-001** `M5.1` `[S T]` The blank **Main window** card (UX-START-004) creates, in this order, `menubar` (`QMenuBar`, empty), `centralwidget` (`QWidget` with a vertical layout) and `statusbar` (`QStatusBar`), the same names and order as Designer 6.8's `Main_Window.ui`. There is no toolbar until the user adds one (R3 134). Existing main-window templates keep their parts.
+
+**UX-MAIN-002** `M5.1` `[S K T]` Adding and removing parts. On a main-window form, the page's context menu, the Form menu's new **Main window ▸** submenu, and Insert search ("menu bar", "toolbar", "status bar") offer: "Add menu bar" (only when there is none; R3 135), "Add toolbar" (any number; named `toolBar`, `toolBar_2`; Top side), "Add status bar" (only when there is none). Each part's own context menu has "Remove menu bar…", "Remove toolbar", "Remove status bar". Removing a menu bar that has menus asks: "Remove the menu bar and its {n} menus? Actions stay in the Actions list." [Remove menu bar] [Cancel]. In Insert search the three rows read "Menu bar · add to this window", "Toolbar · add to this window", "Status bar · add to this window"; Enter runs the command. On a form that is not a main window they insert nothing and the status bar says "Menus, toolbars and status bars go on a main window. This form is a {friendly root class}."
+
+**UX-MAIN-003** `M5.1` `[S]` "Type here" placeholders (`ov.type_here`) are painted by the builder, never realized, never in Preview or the file: the last title of every menu bar, the second-to-last row of every open menu (the last is "Add separator"), and the last button of every toolbar. A placeholder is at least 64 × 20 px. They are drawn only while the form tab shows Design and no overlay is open.
+
+**UX-MAIN-004** `M5.1` `[K T]` **Menu editing** starts with Enter on a selected menu bar, a selected menu or a selected toolbar (or a click on a title, entry, button or placeholder). The status bar shows the grammar: "Left and Right move between menus. Down opens one. Type on Type here to add. Esc leaves." Keys on the bar and on a toolbar:
+
+| Key | Action |
+| --- | --- |
+| Left / Right | Previous / next title (bar) or button (toolbar), "Type here" last |
+| Down | Open the focused menu; focus its first entry (bar only) |
+| Enter | Edit the focused title or button text in place (UX-TEXT-002 editor, text selected) |
+| A printable character on "Type here" | Start the editor with that character |
+| Alt+Left / Alt+Right | Move the focused menu or button one place |
+| Delete | Remove the focused menu (asks when it has entries: "Remove the {title} menu and its {n} entries?" [Remove menu] [Cancel]) or button (UX-MAIN-008) |
+| Esc | Leave menu editing; the bar or toolbar stays selected |
+
+**UX-MAIN-005** `M5.1` `[K T]` Keys inside an open menu:
+
+| Key | Action |
+| --- | --- |
+| Up / Down | Previous / next entry, then "Type here", then "Add separator" |
+| Enter | On an entry: edit its text. On "Type here": start an empty editor. On "Add separator": add a separator above "Type here" |
+| A printable character on "Type here" | Start the editor with that character |
+| `-` then Enter in the editor | Add a separator instead of an entry |
+| Right | Open the entry's submenu; if it has none, open an empty submenu with "Type here" focused (nothing is written until an entry is typed) |
+| Left | Close this submenu (focus its entry), or in a top-level menu close it (focus its title) |
+| Alt+Up / Alt+Down | Move the entry or separator one place |
+| Delete | Remove the entry or separator (UX-MAIN-008) |
+| Esc | Close the open menu, one level at a time; from the bar, leave menu editing |
+
+While an entry has focus, the selection is its action: the inspector shows it, so Alt+4 then Shortcut sets its key (UX-MAIN-012). Focus comes back to the same entry after Alt+3.
+
+**UX-MAIN-006** `M5.1` `[S T]` The in-place editor for a title or entry: Enter keeps, Esc cancels and writes nothing, Tab keeps and moves to the next placeholder (so "File", Tab, "Edit", Tab builds a bar). An `&` before a letter marks the mnemonic; `&&` is a literal ampersand; the canvas underlines the mnemonic as Qt does. Caption under the editor on first use per session: "Put & before a letter to open it with Alt and that letter." A new menu is named `menu` + its text in UpperCamel without symbols (`menuFile`, `menuRecent_files`; suffix rule for repeats) and is written as a `QMenu` child of its bar or parent menu plus an `addaction` with the menu's name, as Designer writes it (R3 114). A new entry creates an action named `action` + its text (`actionPrint_receipt`) with that text, written under the main window and referenced by `addaction` (R3 117, 137). Creating a menu or an entry is one undo step "Add menu {text}" / "Add {text} to the {menu} menu". After a new entry is committed, focus moves to "Type here", so entries can be typed one after another; after "Add separator", focus stays on it.
+
+**UX-MAIN-007** `M5.1` `[S K T]` Reuse list. While the "Type here" editor of a menu or toolbar has text, a list opens under it with at most 6 rows: first "New action “{text}”", then existing actions whose text or name matches (UX-CAT-007 matching rules, without synonyms), each with its icon and shortcut. When an existing action's text equals the typed text (ignoring `&` and case), that row is current instead of the New row. Down and Up move, Enter picks, Esc closes the list and keeps the text. Picking an existing action adds a reference to it (one step "Add {text} to the {menu} menu" / "to {toolbar}"), the keyboard form of dragging it (pain 17).
+
+**UX-MAIN-008** `M5.1` `[T]` Removing an entry or toolbar button removes that reference. If the action is then used nowhere (no menu, toolbar, widget `addaction` or connection), the action is removed too, in the same step "Remove {text}". Otherwise the action stays and the toast says "Removed {text} from the {place}. It's still on {other place}. · Undo". Removing a menu removes its references and its submenus, and actions left unused with it, in one step "Remove the {title} menu".
+
+**UX-MAIN-009** `M5.1` `[S T]` Drags (R3 136–138). A menu title drags along the bar; an entry drags inside a menu, onto another menu (hover a closed title 400 ms to open it) or onto a toolbar; a toolbar button drags along its toolbar or onto another toolbar or a menu. The landing place is an `ov.menu_drop` line, never a tint. A plain drag moves the reference; Ctrl+drag adds a second reference (UX-MOVE-002's copy rule). The status sentence names the place: "Put Print receipt after New sale in the File menu". Dropping outside any menu or toolbar does nothing ("Drop it on a menu or a toolbar.").
+
+**UX-MAIN-010** `M5.1` `[S K]` The **Actions** section (D8). It is the third section of the left pane's vertical splitter (Outline / Insert / Actions, default 40 / 35 / 25), with an Overline header "ACTIONS {n}", a ⌕ filter (placeholder "Search actions"), a [+] button ("New action") and a ⋯ menu ("Show as icons", "Show as list"). It is shown when the root is a main window or the form has at least one action. Rows (24 px): 16 px icon or a blank square, text (mnemonic `&` hidden), shortcut in `fb.faint`, and in Caption `fb.faint` where it's used ("File menu, Main toolbar" or "Not used", which is also FB036 Info). Action groups are rows with their actions indented under them. At H < 560 (UX-RESP-005) the left pane's tabs become "Outline | Insert | Actions"; at 720 ≤ W < 900 the rail gets a third button. Alt+5 focuses it (UX-KEY-004).
+
+**UX-MAIN-011** `M5.1` `[K T]` Keys in the Actions section: Up and Down move; Enter edits the text in place; F2 renames the object name (UX-OUT-008 rules); Delete deletes (asks when used: "Delete the action {text}? It's on {places}." [Delete action] [Cancel]); Ctrl+C and Ctrl+V copy and paste actions, also between forms (R3 139), with the suffix rule for names; a printable character types into the filter; with filter text and no match, the only row is "New action “{text}”" and Enter creates it. A new action is selected, so the inspector shows it at once. Drag a row onto a menu or toolbar (UX-MAIN-009); after a drop, focus goes to the canvas.
+
+**UX-MAIN-012** `M5.1` `[S]` Action inspector (R3 140). Header: the action glyph, object name, "Action · QAction", and the used-in line as links ("Used in File menu and Main toolbar"; each link selects that entry). Content: Text, Icon (UX-PED-102), Shortcut (UX-PED-027), Tooltip, Status tip (caption "Shows in the status bar while the pointer is on it."), Help text (`whatsThis`). Input: "Can be ticked" (`checkable`), "Starts ticked" (`checked`, shown only when Can be ticked), Enabled, Visible, "Shortcut works" (`shortcutContext`: "In this window", "In the focused widget", "Anywhere in the app"), "Group" (drop-down of the form's action groups and "None", UX-MAIN-019). Everything else is in All properties.
+
+**UX-MAIN-013** `M5.1` `[S]` Menu inspector (a selected `QMenu`): Title (with the mnemonic rule), Icon, "Tear-off" (`tearOffEnabled`), "Shows tooltips" (`toolTipsVisible`). Menu bar: "Native menu bar" (`nativeMenuBar`, caption "Only matters on macOS."). Toolbar: "Toolbar side" four segments Top, Bottom, Left, Right (attribute `toolBarArea`, R3 138), "Starts on a new row" (attribute `toolBarBreak`), "Button style" (Icon only, Text only, Text beside icon, Text under icon), "Can move" (`movable`), "Can float" (`floatable`). Status bar: "Size grip" (`sizeGripEnabled`) and the caption "Status tips of actions and widgets show here while the pointer is on them. Your code can show other messages."
+
+**UX-MAIN-014** `M5.1` `[S]` The central widget (R3 143) carries the page chip suffix "· central area" when selected. Delete on it refuses: "The central area belongs to the window. Delete what's inside it instead." Docks and toolbars are its siblings in the outline, never its children (the outline lists, under the window: menu bar, toolbars, central area, docks, status bar).
+
+**UX-MAIN-015** `M5.1` `[S]` Opened menus are drawn on the canvas as real `QMenu` contents painted inside the page's coordinates, attached under their title (submenus to the right of their entry, flipped left near the page edge), at the same zoom as the form. They are content (UX-PRIN-001), so chips are placed around them. A click outside, Esc or switching tabs closes them. They never open as top-level popup windows (which would grab the pointer).
+
+**UX-MAIN-016** `M5.1` `[T]` Refusals (pain 17). A widget dragged or pasted onto a toolbar, a menu, a menu bar or a status bar is refused with the `ov.problem` indicator and a status sentence: toolbar "A toolbar holds actions. Make an action, or put the widget in the window." Menu or menu bar: "Menus hold actions. Type a menu entry instead." Status bar: "A status bar can't hold widgets from the form. It shows messages from your code." A keyboard insert or paste of a widget with one of these selected inserts after it in the central area instead and says "Inserted in the central area." An older file that already has widgets inside a toolbar or status bar keeps them and shows FB037.
+
+**UX-MAIN-017** `M5.1` `[S T]` An action can also go on a tool button's menu or a widget's actions (`addaction` under any widget, used by context menus): the widget's context menu has "Actions ▸" listing the form's actions as check items. Ticking adds a reference; unticking removes it; one step each.
+
+**UX-MAIN-018** `M5.1` `[A]` Generated code and loading. Menus, toolbars, status bar, actions, groups and references produce the same widget tree in our `ui_*.py`, in `uic -g python` and in `QUiLoader` (oracle), with entries in the visual order of the canvas and separators where the canvas shows them (R3 137). Toolbar side and break use the enum spelling of the file (`Qt::TopToolBarArea`), as Designer writes it.
+
+**UX-MAIN-019** `M5.1` `[S K T]` Groups (R3 118, 119, 141, 142, D25). **Action groups:** select two or more actions in the Actions section, context menu "Make a choice group" (one step "Group actions"): creates `actionGroup` with the selected actions, exclusive. Its inspector: "Only one on at a time" (`exclusive`), Enabled, Visible. "Ungroup" removes it. **Button groups:** select two or more buttons (radio, check, push or tool buttons), canvas or outline context menu "Make a button group": creates `buttonGroup` and the `buttonGroup` attribute on each button, without changing their order in the file or on the canvas (R3 "Child order in the file can disagree with the picture"). A button's Content group gains "Button group" (None, the form's groups, "New group"). The form inspector lists button groups under "Button groups": name (F2 renames), member count, "Only one can be on" (`exclusive`); selecting a row selects its buttons; Delete ungroups ("Ungroup buttons"). The status summary of a grouped button ends "· in button group {name}".
+
+#### 13.2.3 Resources and pictures (RES)
+
+**UX-RES-001** `M5.2` `[S K]` The picture picker (UX-PED-100) v2. The grid has two headed sections: "THIS FORM'S PICTURES" (the `.qrc` files the form includes, grouped by file and prefix as today) and "OTHER PICTURES IN THIS PROJECT" (every other `.qrc` under the project root, excluding `cbcs/` and generated folders). Search filters both. Picking a picture from the second section adds the include and sets the property in one step. The footer holds the secondary button "Add picture…" and, when the project has more than one `.qrc`, the Caption "New pictures go into {qrc path}." with a "Change" link (a drop-down of the project's `.qrc` files). Arrow keys cross section headers (the M4 follow-up). The picker never lists a raw file path for a new pick.
+
+**UX-RES-002** `M5.2` `[S T]` "Add picture…" (D1) replaces "From a file…". It opens the file dialog filtered to the image types in `engine/project/pictures.py`, several files allowed. Target `.qrc`: the first file this form includes; else `forms/resources.qrc` (created when missing, with `<!DOCTYPE RCC>`, one `<qresource prefix="/">`). Each picture inside the `.qrc`'s folder is listed where it is; any other is copied to `{qrc folder}/pictures/{file name}` (a different file with the same name gets `_2`). The `.qrc` gains `<file>pictures/logo.png</file>`, the form gains the include, and the row gets `:/pictures/logo.png` (the first picture when several were added). The form part is one undo step "Add picture logo.png"; the copy and the `.qrc` stay on disk after Undo, and the toast says so: "Added logo.png to forms/resources.qrc. Undo keeps the copied file. · Undo". The first time a project gets `forms/resources.qrc`, the toast reads "Made forms/resources.qrc for this project's pictures and added logo.png. · Undo".
+
+**UX-RES-003** `M5.2` `[T]` Image files dragged from the desktop's file manager onto the open picker, or onto a label, push button, tool button or the form on the canvas, should be added (a must once §16.3 confirms the drag reaches the editor) as in UX-RES-002 and set as the label's Picture, the button's Icon, or (on the form) the window icon. A drop of a non-image file is refused: "Only pictures can go here."
+
+**UX-RES-004** `M5.2` `[S K T]` The resource editor. Opening a `.qrc` (project tree, Quick Open, the "Open" link in UX-RES-006) opens a CBCS tab with **Pictures | XML** segments (the UX-XML-001 control and rules: XML edits apply on switching back, invalid XML keeps the XML view). Pictures shows one header per prefix ("/" shown as "No prefix") with a grid of 72 × 80 px cells (thumbnail, alias or file name, "missing" in `fb.error` when the file is gone), and a toolbar: "Add pictures…", "New prefix…", "Remove from this file" (the file on disk stays), "Rename…" (sets an alias), "Show where it's used" (lists the forms and properties using the selected picture; double-click opens one). Keys: arrows move; Enter opens Rename; Delete is "Remove from this file", asking when a form uses it: "{n} forms use this picture. Remove it from resources.qrc anyway?" [Remove] [Cancel]. Undo history is per tab, like a form. Ctrl+S writes the `.qrc` with stable bytes (two-space indent, entries in the order shown, `<!DOCTYPE RCC>` kept) and rewrites the `*_rc.py` of every form in the project that includes it, so a run shows the new pictures without resaving forms (R3 174, 175). Changes made outside the tab are picked up when the tab or a picker is focused (the mtime cache).
+
+**UX-RES-005** `M5.2` `[S T]` Raw file paths (D3, pain 9). A picture or icon property that holds a file path (older files, or the M4 "From a file" path) gets: FB031 Warning in Problems, "{name} uses a picture from a file path ({path}). A packaged app may not find it." with the fix [Add to project pictures]; the row's warning from UX-PED-100 gains the same link; the packaging flow (UX-RUN-005) lists it as a packaging error with the same fix. The fix runs UX-RES-002 on that file and rewrites the property to the resource path (one step "Add picture {file}"). Save is never blocked.
+
+**UX-RES-006** `M5.2` `[S]` The form inspector's Files group (UX-INSP-010) lists the form's resource files: "Pictures from forms/resources.qrc · {n} pictures" with [Open] and a ⋯ "Stop using in this form" (removes the include; asks when properties use its pictures: "{n} properties use pictures from this file. They will show as missing." [Stop using] [Cancel]), and "Use another pictures file…" (a drop-down of the project's `.qrc` files). One step each ("Use pictures file {path}", "Stop using pictures file {path}").
+
+**UX-RES-007** `M5.2` `[A]` A picture listed in a `.qrc` whose file is missing is FB032 Warning: "{qrc} lists {file}, but the file is missing." on each form that includes it, with the fix [Open {qrc}]. The canvas draws it as UX-PED-104. Our `*_rc.py` and `rcc`'s register the same path-to-bytes map (CONTRACTS §15 row `codegen.resources`), and a run of a fixture project shows the icon through our generated import (R3 175).
+
+#### 13.2.4 Style sheets, colours and theme (STYLE)
+
+**UX-STYLE-001** `M5.3` `[S K]` Entry points. Appearance gains a "Style sheet" row on every widget and on the form: a summary ("None", "1 rule", "{n} rules", or "Can't be read" in `fb.warning`) and an [Edit…] button; Enter on the row opens the drawer. The canvas and outline context menu has "Edit style sheet…"; the Form menu has "Style sheet of the form…". The drawer opens on the selected widget's own sheet (the form's when the form is selected).
+
+**UX-STYLE-002** `M5.3` `[S]` The drawer (D13) sits under the canvas inside the canvas column, default 240 px, resizable from 160 px to 60% of the tab height by its top edge (6 px hit area), height remembered per user. Header (32 px): "STYLE SHEET" Overline, then "of {name}" (a drop-down of the form and every widget with a sheet, then the selection), the check status, an "Insert ▸" menu button and [Done]. Body: the CBCS code editor with CSS highlighting, line numbers, the shell's Ctrl+F find bar, no word wrap. A right gutter beside each rule's first line shows its match count chip ("3 widgets", or "No match" in `fb.warning`). The canvas keeps at least 200 px of height; below that the drawer refuses to grow. At H < 560 the drawer covers the canvas (level 2) instead of pushing it, and Esc closes it.
+
+**UX-STYLE-003** `M5.3` `[T A]` Live apply. 300 ms after the last keystroke, a valid text is set on the canvas widget (a `SetProperty styleSheet` in the drawer's session; UX-ISO-004: it applies exactly as at run time). An invalid text keeps the last valid one on the canvas and shows the error; the canvas is never left half-styled. Only the edited widget and its descendants are re-polished.
+
+**UX-STYLE-004** `M5.3` `[S A]` Checking (D11). The status reads "Looks right" (`fb.ok`, ✓ glyph) or the first problem with its place: "Line 3: a } is missing.", "Line 5: “colr” isn't a property Qt knows.", "Line 8: a ; is missing after the value." A click on the status moves the caret there. Errors from the engine tokenizer (unbalanced braces, brackets or quotes, a declaration without a colon, a stray character) mark the sheet invalid. An unknown property name or pseudo-state is a warning (the sheet still applies; Qt skips that line). Then Qt's parser decides: the text is set on a hidden probe widget with a message handler; if Qt reports it can't parse the sheet and the tokenizer found nothing, the status reads "Qt can't read this style sheet." with no line. Qt's verdict is final in both directions. No subprocess and no external tool is used.
+
+**UX-STYLE-005** `M5.3` `[S A]` Selector matches (pain 8). The engine matcher evaluates each rule's selectors against the document: type selectors match the class and its subclasses (stock classes from the class table, own classes through their base, UX-CUST), `.Class` only the exact class, `#name`, `Type#name`, `[property="value"]` against the stored value, `*`, descendant and `>` child combinators, and comma lists. A selector in a widget's own sheet matches only that widget and its descendants, as Qt cascades. Pseudo-states (`:hover`, `:checked`, `:disabled` …) and sub-controls (`::indicator`) match their widget; the count chip adds "· when hovered", "· when checked". While the caret is inside a rule, the canvas outlines its matched widgets in `ov.style_match` and the status bar says "This rule styles saveButton, cancelButton and 1 more." Hover on a count chip lists the names; a click selects them. A rule with no match keeps its "No match" chip and can be saved (FB034 Info).
+
+**UX-STYLE-006** `M5.3` `[S K T]` Insert ▸ (R3 176): "Colour…" (the colour picker of UX-PED-081; inserts `#1A7F37`), "Picture…" (the picker of UX-RES-001, so "Add picture…" works here too; inserts `url(:/pictures/logo.png)`), "Gradient…" (UX-PED-084; inserts `qlineargradient(…)`), "Font…" (UX-PED-080; inserts `font: bold 12pt "Sans Serif";`), "Rule for this widget" (inserts `#{name} {` newline, four spaces, newline `}` with the caret on the middle line). Each inserts at the caret, replacing a selection. With the caret inside a colour value, "Colour…" opens on that colour and replaces it.
+
+**UX-STYLE-007** `M5.3` `[T]` Undo. Inside the drawer Ctrl+Z and Ctrl+Shift+Z are the text editor's own. A drawer session on one widget is one form undo step "Change style sheet of {name}", committed when the drawer closes, when the scope drop-down or the selection changes to another widget (the drawer then shows that widget's sheet), or when the form is saved. Esc in the drawer closes it and keeps the text (typing is never thrown away by a key). An empty text deletes the property.
+
+**UX-STYLE-008** `M5.3` `[S]` A sheet Qt can't read is saved as typed (D12). Problems gets FB033 Warning "The style sheet of {name} can't be read, so Qt ignores all of it." with the fix [Edit style sheet]; the inspector summary reads "Can't be read".
+
+**UX-STYLE-009** `M5.3` `[A]` Preview and run use the same text through the generated module (no editor-only styling), so what the canvas shows is what the app shows (pain 8). The pain test: a `QPushButton#okButton` rule colours that button on the canvas, in Preview and after reopening.
+
+**UX-STYLE-010** `M5.3` `[S T]` Curated colour rows (D4), in Appearance directly after Font, for the classes below. Each is a colour row (UX-PED-082) that writes one palette role in all three state groups and nothing else; Reset removes that role (and the `autoFillBackground` this row set). Background on a label, group box, frame, plain widget or the form also writes `autoFillBackground` true in the same step, because Qt paints no background otherwise.
+
+| Class | Text colour writes | Background writes |
+| --- | --- | --- |
+| Label, check box, radio button, group box, frame, plain widget, the form | Window text | Window (+ fill background) |
+| Push button, tool button, command link | Button text | Button |
+| Line edit, text edit, plain text edit, spin boxes, date and time edits, list, tree and table widgets and views | Text | Base |
+| Combo box | Button text (Text when editable) | Button (Base when editable) |
+
+The lane renders each row's effect under the Fusion runtime look (UX-ISO-001); a class where the colour does not show in that render loses the row (the test is a pixel check per class). When the widget's sheet, or an ancestor's, sets the same thing (`color`, `background`, `background-color` matching this widget), the row keeps its value and shows, in `fb.warning`: "The style sheet sets this colour, so this one has no effect." with an [Edit style sheet] link.
+
+**UX-STYLE-011** `M5.3` `[S]` Appearance order for text-bearing widgets: Font, Text colour, Background, Style sheet, then the M4 rows (alignment, word wrap, frame …). So bold, size and colour are in one place (the M4.5 persona's confusion). The font summary gains the colour swatch when Text colour is set ("Sans Serif, 14 pt, Bold · ■ #1A7F37").
+
+**UX-STYLE-012** `M5.3` `[S T]` Theme (D5, delighter 12). The form inspector gets a "Look" group (through the form-group slot): "Accent colour" (a colour row writing the root palette's Highlight and Link roles; caption "Colour of selections, progress bars and links.") and "Text size" (point size on the root font, 8–24 pt; caption "Every widget that doesn't set its own size follows this."). Both are ordinary root properties, so Designer, uic and `QUiLoader` read them. Reset removes them. One step each, "Change accent colour", "Change text size".
+
+#### 13.2.5 Your own classes (CUST)
+
+**UX-CUST-001** `M5.4` `[S K]` Entry points: the canvas and outline context menu "Use my own class…" (tooltip "Qt Designer calls this Promote to."), and Insert's "Your widgets" category (UX-CAT-002), which now lists the project's registry (UX-CUST-006) as well as this form's declarations. Several selected widgets of the same class are changed together.
+
+**UX-CUST-002** `M5.4` `[S K T]` The "Use my own class" popover (level 2, 360 px, anchored like UX-ITEM-002). Top: "CLASSES IN THIS PROJECT", the registry entries based on the widget's class (or a compatible base), each "TillDisplay · widgets.till_display"; Enter on one fills the fields. Then the fields: "Class" (placeholder "TillDisplay"), "From Python module" (placeholder "widgets.till_display"), "Based on" (the widget's class in friendly words, read-only here), "Holds other widgets" (check box, shown only when the base is a container). Under the fields a live check line (UX-CUST-003). Footer: [Use {Class}] (disabled while the class or module field is empty or not a name) and [Cancel]. Enter on the button, Esc cancels.
+
+**UX-CUST-003** `M5.4` `[S A]` The check line, updated 150 ms after typing, never importing (D15). The module path is resolved under the project root as `{a}/{b}.py` or `{a}/{b}/__init__.py`; the file is read with `ast` and its top-level classes listed:
+
+| Case | Line | Colour |
+| --- | --- | --- |
+| Found, base matches | "Found TillDisplay in widgets/till_display.py." | `fb.ok` |
+| Found, different base | "TillDisplay in widgets/till_display.py is based on {base}, not {expected}. The form may look different when it runs." | `fb.warning` |
+| File found, class missing | "widgets/till_display.py has no class called TillDisplay." | `fb.warning` |
+| File missing | "There's no widgets/till_display.py in this project yet. You can still use the name." | `fb.warning` |
+| Not a module path | "Use a module path like widgets.till_display." | `fb.error` (blocks) |
+| Not a class name | "Use a class name like TillDisplay: letters, digits and _, starting with a letter." | `fb.error` (blocks) |
+| Form outside a project | "This form isn't in a project, so Preview shows a stand-in." | `fb.faint` |
+
+The `ast` read does not follow imports and caches by path and mtime.
+
+**UX-CUST-004** `M5.4` `[T A]` Storage (D14, R3 123, 194). Using a class writes, once per form, `<customwidget><class>TillDisplay</class><extends>QLabel</extends><header location="local">widgets/till_display.h</header></customwidget>` (plus `<container>1</container>` when "Holds other widgets" is on), and sets each widget's `class` to `TillDisplay`. One step "Use class {Class} for {name}" ("for 3 widgets"). Our generator writes `from widgets.till_display import TillDisplay`, as uic does (P-7). Every other `customwidget` child (`sizehint`, `addpagemethod`, `slots`, `propertyspecifications`, `pixmap`) is kept as written (R3 195).
+
+**UX-CUST-005** `M5.4` `[K T]` The context menu of a widget using its own class has "Back to {friendly base}" (Designer's Demote), one step "Use {friendly base} for {name}"; the declaration is removed when nothing uses it (CONTRACTS `Promote`). Changing to another own class uses the same popover.
+
+**UX-CUST-006** `M5.4` `[S T]` The registry (D18): `form_builder.custom_widgets` in `cbcs/project.json`, a list of entries with class, module, base class, "holds other widgets", and optional description, size on the canvas, add-page method, signals and slots (the last two for M6's pickers, LOGIC_DESIGN §2.7 "reads a declaration in the widget registry"). Using a class adds its entry (written at once, not on undo; the popover says "Saved for this project's other forms." the first time). In the popover, each registry row has a ⋯ with "Edit…" (the same fields plus description and size) and "Remove from this list" (forms keep their declarations). Insert's tile for a registry entry inserts the base class with the class applied, one step "Insert {Class}".
+
+**UX-CUST-007** `M5.4` `[S A]` Canvas drawing (D17). A widget using its own class draws as its base class when the base is anything but a plain `QWidget` or `QFrame`. For those two it draws a stand-in (UX-CONT-017 tokens) reading "{Class} · from {module}" at the registry's size on the canvas, else the declaration's `sizehint`, else 120 × 40. Either way its hit area is at least 80 × 24 px on the canvas only (never saved), and it carries an `ov.own_class` corner tag when selected or hovered. The inspector header reads "TillDisplay · your class, based on Label" with the Qt name line "TillDisplay (QLabel)". The editor process never imports the module (CONTRACTS §10.4 test).
+
+**UX-CUST-008** `M5.4` `[S T A]` Preview (D16). The preview child imports each own class from the project, then builds one instance on a throwaway hidden parent and deletes it, before `setupUi`. If the import or that build raises, the child installs a stand-in class of that name based on the declared base and reports FB602; the form still opens. The editor shows the toast "Preview used a plain {friendly base} for {Class}. [Show problem]" and the Problems row "Preview used a stand-in for {Class}: {ExceptionName} in {file} line {n}." A hang inside the class is caught by the existing ping and restart (CONTRACTS §10.3). Editing the module and previewing again re-imports it (the child drops the project's modules before each load). The pain test: a class that raises in `__init__` shows the error, the preview opens with the stand-in, and the editor still renames a widget.
+
+**UX-CUST-009** `M5.4` `[S]` Security note (R3 198). The first Preview of a project form that uses own classes in a session shows an info bar on the form tab: "Preview runs code from this project: {Class} ({file}){, and n more}. Code Studio runs it only in the preview window, never in the editor." [Got it]. It is not shown again for that project in the session. A form outside a project never imports own classes; Preview shows stand-ins and the status bar says "Preview shows stand-ins for your own classes, because this form isn't in a project." Opening any `.ui` never runs code and never loads a Designer plugin, and picture paths in a file are only read, never executed.
+
+**UX-CUST-010** `M5.4` `[S]` Problems: FB035 Warning "{Class} comes from {module}, which isn't in this project." (fix [Use my own class…] opens the popover); FB030 and FB504 keep their meanings. A dotted module that `header_module` can't read stays FB504.
+
+**UX-CUST-011** `M5.4` `[A]` Designer's plugin interface and extensions (R3 196, 197) are met by declarations, never by running code in the editor: name, group ("Your widgets"), tooltip (description), include file (module), icon (the base class glyph), container, default content (an inserted registry entry's fragment), add-page method for containers, and signals and slots for M6. Task-menu, member-sheet and property-sheet extensions that need plugin code are not offered; the editor never loads Designer plugins (CONTRACTS §10.4). R3 196 and 197 are done when the declaration fields round-trip and the Insert, canvas and M6 picker readers use them.
+
+#### 13.2.6 Preview options, image, print and View code (PREV)
+
+**UX-PREV-001** `M5.5a` `[S K]` The **Aa ▾** menu (UX-WB-003) gains, after the M3 rows: "Style ▸" with "Fusion · as on ChoreBoy" (default, checked) and every other style the preview runtime reports, by name; and "Screen ▸" with "ChoreBoy screen · 1366 × 768" (default), "Small screen · 1024 × 600", "Full HD · 1920 × 1080", the user's profiles, and "Add a screen…" (Name, Width, Height, Font, Font size, Scale 100–200 %). A Caption at the top of both submenus: "Preview only. The canvas always shows the ChoreBoy look." (D21). Choices are per user, not in the file (R3 178, 179). The Preview window title adds the choices when not default: "Preview · invoice.ui · Windows style · Small screen". The window opens at the form's size, clamped to the profile's screen size, with the profile's font and scale.
+
+**UX-PREV-002** `M5.5a` `[S T]` Form > "Save image…" (R3 180) opens the shell file dialog in the form's folder with the name `{form stem}.png`. The image is the open Preview of this form when there is one (real classes, chosen style), else the canvas page at 100% without overlays, chips or placeholders. Toast: "Saved invoice.png. · Show". It never writes the `.ui`.
+
+**UX-PREV-003** `M5.5a` `[S]` Form > "Print…" (no key; D24) opens Qt's print dialog with the same image fitted to the page, centred, with "Print to PDF file" available when no printer is set up. Printing never writes the `.ui`.
+
+**UX-PREV-004** `M5.5a` `[S K T]` View code (R3 181, D22). Form > "View Python code" and Ctrl+K, C toggle a read-only split at the right of the canvas column (default 45% of it; the canvas keeps at least 360 px, else the split refuses to open with the status "Make the window wider to see the code beside the form."). Header: "ui_{name}.py · as it will be saved" and [Open file] (when saved). Body: the CBCS code editor, Python highlighting, read only, the shell's find. The text is generated in memory from the current, unsaved form 300 ms after the last change (the preview's generation path); when generation fails the body shows the FB502 sentence. Selecting a widget scrolls the code to the line that creates it and marks its lines with `fb.row_selected`; a click in the code on a line that names a widget selects that widget (should). Ctrl+K, C again or Esc in the split closes it; focus returns to the canvas.
+
+**UX-PREV-005** `M5.5a` `[A]` Preview (R3 177) uses the same generated module as the app (CONTRACTS §10.2). A style or screen change sends `set_appearance` to the warm child; no restart.
+
+#### 13.2.7 Form settings (FSET)
+
+**UX-FSET-001** `M5.5b` `[S K]` Form settings (D19) are groups in the form inspector (UX-INSP-010), after the M3 groups, collapsed by default: **Code**, **Translation**, **Free placement**. Form > "Form settings…" selects the form, opens the inspector (Alt+4), expands Code and focuses its first row. Each change is one step "Change form setting: {label in lower case}". Every row has the reset and changed-state model of UX-INSP-006.
+
+**UX-FSET-002** `M5.5b` `[S]` **Code** group rows (R3 185–190): "Author" (`author`); "Default gaps" (check box, then "Gap" and "Margin" numbers, `layoutdefault`; caption "Used by layouts that don't set their own."); "Gap functions" (check box, then two function names, `layoutfunction`; caption "Python code calls these functions for gaps and margins instead of numbers."); "Picture function" (`pixmapfunction`, a function name); "Extra includes" (the list editor of UX-PED-044, each line with Local or Global, `includes`; caption "Used by C++ code. Python ignores these lines; they are kept for Qt Designer."); "Export macro" (`exportmacro`) and "Comment" (`comment`), each with the caption "Kept for Qt Designer and C++ code." Function names are checked as Python names: "Use a function name like margin_for."
+
+**UX-FSET-003** `M5.5b` `[S]` **Translation** group (R3 191, 192): "Translate by ID" (`idbasedtr`, caption "Each text uses its translation ID instead of the English text."), "Code language" (`language`) and "Display name" (`displayname`), each with the caption "Kept for Qt Designer."
+
+**UX-FSET-004** `M5.5b` `[S]` Legacy defaults (R3 193). When the file has `stdsetdef` or `stdSetDef`, the Code group shows a read-only row "Older file setting" with the value, the caption "Kept as is. Newer forms don't use it." and a [Remove] button (one step). The builder never writes either attribute on a new form, and never drops one it read.
+
+**UX-FSET-005** `M5.5b` `[A]` Every Code and Translation row round-trips byte-identically when unchanged, and our generator matches uic for `layoutdefault`, `layoutfunction` and `pixmapfunction` (oracle).
+
+**UX-FSET-006** `M5.5b` `[S T]` **Free placement** group (R3 222, D20), shown only when the form has a container without a layout: "Show grid" (check box), "Step across" and "Step down" (2–100 px, default 8), "Snap to grid" (check box). Caption: "Only for containers without a layout. Alt+arrows move by one step." Values are written to `designerdata` only when they differ from the defaults, as Designer does. The canvas dot grid inside free containers and the Alt+arrow nudge (UX-NUDGE-001) follow the step.
+
+#### 13.2.8 Templates, Start v2 and settings (TMPL)
+
+**UX-TMPL-001** `M5.5c` `[S K T]` Form > "Save as template…" (R3 184, D23) opens a level 2 popover anchored under the tab toolbar: "Name" (default the window title, else the file stem in words), "Description" (one line, placeholder "What this form is for"), "Keep it for" two radios "All my projects" (default) and "This project only", the Caption "Saves a copy of this form's design and pictures. Your code and data are not included.", and [Save template] [Cancel]. A name in use asks: "Replace the template “{name}”?" [Replace] [Cancel]. Toast: "Saved the template “Shop window”. It's on the New form tab."
+
+**UX-TMPL-002** `M5.5c` `[A]` Storage. A template is a folder: `form.ui` (the form as saved), `template.json` (name, description, root class, created date, builder version), `thumbnail.png` (the canvas page at 200 × 120 without overlays) and, when the form uses pictures, `pictures/` plus a `resources.qrc` holding only those pictures. "All my projects" folders live in `form_templates/` in the Code Studio settings folder; "This project only" in `cbcs/form_builder/templates/` (pruned from packages, PLAN M2.4). Own classes stay as declarations; their code is not copied. These files are not on the form's undo stack.
+
+**UX-TMPL-003** `M5.5c` `[T A]` Creating a form from a saved template copies `form.ui`, renames the root and the form class to the name row's name, keeps every other object name, connection and logic property, copies its pictures into `forms/pictures/` and merges them into `forms/resources.qrc` (creating it per UX-RES-002; a different file with the same name gets `_2` and the properties are rewritten), rewrites the include, and creates `ui_{name}.py` and `{name}_window.py` as any new form. An own class whose module isn't in this project gives FB035 and the toast "{Class} comes from {module}, which isn't in this project. The form shows a stand-in." The result opens in the Workbench with the root selected.
+
+**UX-TMPL-004** `M5.5c` `[S K]` Start v2 (UX-START-002 layout, built here). Amends UX-START-007: "Your templates" is the **first** group when at least one template exists, before Templates. Its cards use the thumbnail, the name, the description and, for project templates, a faint "This project" tag. Shift+F10 or right-click on a card: "Rename…", "Change description…", "Delete template…" (asks "Delete the template “{name}”? Forms made from it don't change." [Delete template] [Cancel]). Ctrl+Down and Ctrl+Up move to the next or previous group (UX-CAT-010). A template that fails to read shows a card "Can't open {name}" with the reason in its tooltip and only "Delete template…".
+
+**UX-TMPL-005** `M5.5c` `[S T]` Built-in templates (R3 183). Templates adds "Dialog with buttons on the right" (a horizontal layout: the content area, then a vertical button box with OK and Cancel connected to accept and reject). The Designer templates map to cards: Dialog with Buttons Bottom → "Dialog with OK and Cancel"; Dialog without Buttons → blank "Dialog"; Main Window → blank "Main window" (UX-MAIN-001); Widget → blank "Widget". Every built-in is already laid out (UX-START-002's sentence), unlike Designer's.
+
+**UX-TMPL-006** `M5.5c` `[S K]` Settings > Form designer (R3 182) is a page in the CBCS settings dialog: "Preview style" and "Preview screen" defaults (UX-PREV-001), "Start the preview process when a form opens" (pre-warm, CONTRACTS §10.3), "Insert shows" (Icons, List, Automatic), "Show Qt names in the inspector" (UX-INSP-005), "Where new templates go" (All my projects, This project only), and a link "Keyboard shortcuts…" to Settings > Keyboard filtered to "Form designer".
+
+#### 13.2.9 One editing mode, overlays and keys (MODE)
+
+**UX-MODE-001** `M5.6` `[T A]` One editing mode (pain 13, R3 1). The canvas has no tool or mode state. Tab order and Buddies are the overlays of UX-OVL-001 … 008, never sticky: Esc, F3, Done, a structural command or a tab switch closes them. Connections are edited in the Behavior tab while the canvas stays as it is. The P-13 test adds a connection with a button selected and asserts the canvas's state object is unchanged.
+
+**UX-MODE-002** `M5.6` `[K T]` Tab order overlay keys (R3 10). With the overlay open, the canvas selection keys work as usual (arrows, Tab). Enter on the selected widget gives it the next number (the status says "Press Enter to make emailEdit number 4."); Shift+Enter makes the selected widget the place to continue from (Shift+click's keyboard form). Backspace undoes the last assignment in this overlay session. Badges follow UX-OVL-004.
+
+**UX-MODE-003** `M5.6` `[S K T]` Tab order list (R3 11, 12). The form inspector's "Tab order" group (UX-OVL-006) is the full list editor: numbered rows "1 · nameEdit · Line edit", Alt+Up and Alt+Down move, Enter selects the widget on the canvas, "Use reading order" resets (deletes `tabstops`). Form > Overlays ▸ "Tab order list…" focuses it. Only widgets that take focus by Tab are listed (focus policy with the Tab bit); a button box is one row. An empty list shows UX-EMPTY-007. New inputs join a custom order by reading position (pain 20).
+
+**UX-MODE-004** `M5.6` `[S K T]` Buddies by keyboard (R3 8, 9). A label's "Buddy" row becomes a drop-down (no longer a text field, UX-M4 deferral): "None", then the form's focusable fields in reading order, "emailEdit · Line edit", type to filter. In the Buddies overlay, Enter on a selected label starts a link, arrows or Tab select a field, Enter sets the buddy (status: "Choose the field for “Email”, then press Enter."); Esc cancels the link. One step "Set buddy of {label}". "Pair labels automatically" stays in the banner (UX-OVL-008).
+
+**UX-MODE-005** `M5.6` `[S K A]` Form designer keys. Help > "Form designer keys" opens a CBCS tab generated from the registered shortcuts (UX-KEY-002), so it can't drift from the real bindings. A filter field (placeholder "Search keys", focused on open), then groups in UX-KEY-004's order; columns "Keys", "What it does", "Where", "In Qt Designer". Rebinding a key in Settings > Keyboard updates the page the next time it is shown. A test fails if any registered form command is missing from the page or the page lists a key that isn't bound.
+
+**UX-MODE-006** `M5.6` `[A]` Designer key mapping (R3 199–221). The "In Qt Designer" column and the test table:
+
+| R3 | Designer | Code Studio |
+| --- | --- | --- |
+| 199 | Ctrl+N new form | File > New Form… (Ctrl+N is New Project) |
+| 200 | Ctrl+O open form | Ctrl+P Quick Open, or the project tree |
+| 201, 202 | Ctrl+S, Ctrl+Shift+S | same |
+| 203, 204 | Ctrl+W, quit | same (Ctrl+W closes the tab or the Preview; Ctrl+Q quits) |
+| 205, 206 | Undo, redo, clipboard, Delete | same (UX-KEY-004) |
+| 207 | Ctrl+R preview | Ctrl+Shift+R (Ctrl+R is Go to widget, §16.1) |
+| 208 | Ctrl+P print | Form > Print… (Ctrl+P is Quick Open) |
+| 209 | F1 help for the widget | F1 (UX-MODE-007) |
+| 210 | Ctrl+? Designer help | Help > Form designer keys |
+| 211 | F3 or Esc widget mode | F3 or Esc leaves an overlay |
+| 212 | F4 signals and slots | F4 (Connections overlay from M6; until then the status says "Connections are in the Behavior tab. Alt+4 goes there.") |
+| 213 | F2 edit text | Enter (F2 renames) |
+| 214 | Ctrl+F find in object inspector | Ctrl+F |
+| 215 | Ctrl+1 … Ctrl+6 layouts | same |
+| 216 | Ctrl+0 break layout | Form > Layout > Remove layout…, or Ctrl+Shift+B to unwrap (Ctrl+0 is 100% zoom) |
+| 217 | Ctrl+J adjust size | same |
+| 218 | Ctrl-drag clone | same |
+| 219 | Arrows snap, Ctrl+arrows 1 px | Alt+arrow by the grid step, Alt+Shift+arrow 1 px (arrows select) |
+| 220 | Shift-click selects the parent layout | Esc |
+| 221 | Shift+Ctrl+drag moves inside a layout | a plain drag |
+
+**UX-MODE-007** `M5.6` `[S K]` F1 with a widget selected opens a help card popover anchored to the selection (level 2, 320 px): the glyph and friendly name, the catalog description, the Qt class, the curated groups it has ("You can set: Text, Echo mode, Maximum length …"), and two links: "All form designer keys" and, when the user manual has a page for it, "Read more". Esc closes it; focus returns. With nothing but the form selected, F1 opens Form designer keys.
+
+**UX-MODE-008** `M5.6` `[K]` UX-A11Y-001's M5.6 part: K23 reorders tab order and sets two buddies with keys only.
+
+#### 13.2.10 Copy tables
+
+**Undo names** (UX-M5-008):
+
+| Action | Undo name |
+| --- | --- |
+| Add / remove menu bar, toolbar, status bar | "Add menu bar", "Add toolbar", "Add status bar", "Remove menu bar", "Remove toolbar", "Remove status bar" |
+| Type a new menu / entry / toolbar button | "Add menu {text}", "Add {text} to the {menu} menu", "Add {text} to {toolbar}" |
+| Separator | "Add separator", "Remove separator" |
+| Edit a title or entry text | "Rename menu {old} to {new}", "Change text of {action}" |
+| Move a menu, entry or button | "Move {text}" |
+| Remove an entry / menu | "Remove {text}", "Remove the {title} menu" |
+| New / delete / paste action | "New action {text}", "Delete action {text}", "Paste {n} actions" |
+| Groups | "Group actions", "Ungroup actions", "Make a button group", "Ungroup buttons", "Change button group of {name}" |
+| Widget actions (UX-MAIN-017) | "Add {action} to {name}", "Remove {action} from {name}" |
+| Add picture / use another pictures file / stop using one | "Add picture {file}", "Use pictures file {path}", "Stop using pictures file {path}" |
+| Style sheet session | "Change style sheet of {name}" |
+| Colour rows and theme | "Change text colour of {name}", "Change background of {name}", "Change accent colour", "Change text size" |
+| Own class | "Use class {Class} for {name}", "Use {friendly base} for {name}", "Insert {Class}" |
+| Form settings | "Change form setting: {label in lower case}", "Remove older file setting" |
+| Tab order, buddies | "Change tab order", "Use reading order", "Set buddy of {label}", "Pair labels" |
+| Resource editor tab | "Add {n} pictures", "Remove {file}", "Rename {file}", "New prefix {prefix}" |
+
+**Refusals, warnings and status sentences** (every sentence a lane may show for M5; the clauses above hold the confirms and toasts):
+
+| Where | Sentence | Colour |
+| --- | --- | --- |
+| Main-window part on another form | "Menus, toolbars and status bars go on a main window. This form is a {friendly root class}." | status |
+| Widget on a toolbar | "A toolbar holds actions. Make an action, or put the widget in the window." | status + `ov.problem` |
+| Widget on a menu or menu bar | "Menus hold actions. Type a menu entry instead." | status + `ov.problem` |
+| Widget on a status bar | "A status bar can't hold widgets from the form. It shows messages from your code." | status + `ov.problem` |
+| Keyboard insert redirected | "Inserted in the central area." | status |
+| Drop outside menus | "Drop it on a menu or a toolbar." | status |
+| Delete the central area | "The central area belongs to the window. Delete what's inside it instead." | status |
+| Menu editing grammar | "Left and Right move between menus. Down opens one. Type on Type here to add. Esc leaves." | status |
+| Mnemonic caption | "Put & before a letter to open it with Alt and that letter." | Caption |
+| Drop picture of another type | "Only pictures can go here." | status |
+| FB031 | "{name} uses a picture from a file path ({path}). A packaged app may not find it." | `fb.warning` |
+| FB032 | "{qrc} lists {file}, but the file is missing." | `fb.warning` |
+| FB033 | "The style sheet of {name} can't be read, so Qt ignores all of it." | `fb.warning` |
+| FB034 | "This rule matches nothing on the form: {selector}." | Info |
+| FB035 | "{Class} comes from {module}, which isn't in this project." | `fb.warning` |
+| FB036 | "The action {text} isn't on any menu, toolbar or widget." | Info |
+| FB037 | "{name} is inside a {toolbar or status bar}. It won't show where you see it here." | `fb.warning` |
+| Style check | "Looks right" / "Line {n}: a } is missing." / "Line {n}: a ; is missing after the value." / "Line {n}: “{word}” isn't a property Qt knows." / "Qt can't read this style sheet." | `fb.ok` / `fb.error` / `fb.error` / `fb.warning` / `fb.error` |
+| Colour row overridden | "The style sheet sets this colour, so this one has no effect." | `fb.warning` |
+| Style matches | "This rule styles {a}, {b} and {n} more." | status |
+| Own class check | the seven lines of UX-CUST-003 | as listed |
+| Preview stand-in | "Preview used a stand-in for {Class}: {ExceptionName} in {file} line {n}." | Problems |
+| Outside a project | "Preview shows stand-ins for your own classes, because this form isn't in a project." | status |
+| Function names | "Use a function name like margin_for." | `fb.error` |
+| View code too narrow | "Make the window wider to see the code beside the form." | status |
+| F4 before M6 | "Connections are in the Behavior tab. Alt+4 goes there." | status |
+| Tab order overlay | "Press Enter to make {name} number {n}." | status |
+| Buddy overlay | "Choose the field for “{label text}”, then press Enter." | status |
+
+**FB codes.** FB031–FB037 are new in this version (CONTRACTS §7.2 gains them through the lanes' `engine/diagnostic_codes/` modules). FB031, FB032 belong to M5.2; FB033, FB034 to M5.3; FB035 to M5.4; FB036, FB037 to M5.1.
+
+#### 13.2.11 Deferred from M5, with owners
+
+| Item | Owner |
+| --- | --- |
+| Connecting an action's `triggered` to a method, and the Connections overlay (F4) | M6.1 (LOGIC_DESIGN §2.2 table already lists `QAction`) |
+| Signal and slot pickers reading the own-class registry | M6.1 |
+| Drops and moves inside the wide copy of Two widths | M9.5 (unchanged) |
+| Task-menu, member-sheet and property-sheet plugin extensions | Not offered: they need plugin code in the editor (UX-CUST-011) |
+| Corner radius as a theme role | Not offered: use the style sheet (D5) |
 
 ---
 
@@ -1790,3 +2239,11 @@ What the spike gets right and this spec keeps: whole-card click targets on Start
 - The default `QStyle`, palette and application font that a CBCS-run app gets on ChoreBoy with FreeCAD 1.1 (UX-ISO-001 follows the probe).
 - Whether the ChoreBoy window manager takes Alt+click, Alt+drag, Alt+F7/F8 and Ctrl+Alt+arrows (UX-KEY-001 already avoids all of them; the probe confirms nothing else is taken, such as F7 or F8).
 - Screen size and device pixel ratio of ChoreBoy installs (the C tab size in 12.2 assumes 1366 × 768 at 1.0).
+
+### 16.3 Facts M5 lanes check on the ChoreBoy VM (not owner decisions)
+
+- That a palette role set on a widget shows in a CBCS-run app on ChoreBoy (UX-STYLE-010 relies on it; if an app-level style sheet in the runtime overrides palettes, the lane reports it and the rows move to the widget's own style sheet by spec change).
+- That `QtPrintSupport` and a print dialog are available in the FreeCAD 1.1 AppRun (UX-PREV-003; without them Print… is absent, not disabled).
+- Which styles `QStyleFactory.keys()` lists in the preview runtime (UX-PREV-001 shows whatever it lists).
+- That files dragged from the ChoreBoy file manager reach the editor as local file URLs (UX-RES-003 is a "should" until confirmed).
+- That the Code Studio settings folder is writable for `form_templates/` (UX-TMPL-002).
