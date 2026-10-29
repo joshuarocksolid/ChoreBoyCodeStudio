@@ -179,3 +179,51 @@ def test_other_keys_leave_the_window_open(session, qapp) -> None:  # type: ignor
     qapp.processEvents()
     assert "v1" in child._views  # noqa: SLF001
     assert not [item for item in writer.sent if isinstance(item, ViewClosed)]
+
+
+_MAIN = """<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>MainWindow</class>
+ <widget class="QMainWindow" name="MainWindow">
+  <property name="geometry"><rect><x>0</x><y>0</y><width>500</width><height>300</height></rect></property>
+  <widget class="QWidget" name="centralwidget">
+   <layout class="QVBoxLayout" name="mainLayout">
+    <item><widget class="QLabel" name="titleLabel"><property name="text"><string>Hello</string></property></widget></item>
+   </layout>
+  </widget>
+  <widget class="QMenuBar" name="menubar"/>
+  <widget class="QStatusBar" name="statusbar"/>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
+"""
+
+
+def test_a_main_window_form_previews_from_its_generated_module(session) -> None:  # type: ignore[no-untyped-def]
+    """Preview of a QMainWindow form used to fail: the child gave setupUi a plain QWidget."""
+    from app.features.form_builder.engine.codegen.api import generate_form_module
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.forms import FormScope
+    from app.features.form_builder.engine.ui4.reader import read_ui
+    from app.qt.QtWidgets import QMainWindow
+
+    child, writer = session
+    document = read_ui(_MAIN, allocator=IdAllocator()).document
+    scope = FormScope(
+        kind="project", ui_path="/p/forms/main.ui", project_root="/p", generated_path="/p/forms/ui_main.py",
+        window_path="/p/forms/main_window.py", module_name="forms.ui_main", window_module_name="forms.main_window",
+    )
+    made = generate_form_module(document, scope=scope, source_bytes=None)
+    assert made.text is not None
+    _send(
+        child,
+        LoadForm(
+            request_id="m1", view_id="v9", form_path="/p/forms/main.ui", module_name="forms.ui_main",
+            module_source=made.text, ui_xml=None, project_root=None, sys_path=(), appearance=Appearance(),
+            keep_values=False, revision=1,
+        ),
+    )
+    answer = writer.responses()[-1]
+    assert answer.ok, answer.detail
+    assert isinstance(child._views["v9"].widget, QMainWindow)  # noqa: SLF001
