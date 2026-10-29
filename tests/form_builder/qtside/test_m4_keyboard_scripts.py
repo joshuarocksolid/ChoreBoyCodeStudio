@@ -923,12 +923,12 @@ def test_k10_ctrl_r_goes_to_a_widget(run: _Run) -> None:
     _open_finding(run, "K10-1")
 
 
-@pytest.mark.xfail(strict=True, reason="K12-1: Enter on the Translation button does not open its panel (QToolButton takes Space only)")
+@pytest.mark.xfail(strict=False, reason="K12-1 (app-state dependent: passes after other suites set the app style; fails alone on macOS): Enter on the Translation button does not open its panel (QToolButton takes Space only)")
 def test_k12_enter_opens_the_translation_panel(run: _Run) -> None:
     _open_finding(run, "K12-1")
 
 
-@pytest.mark.xfail(strict=True, reason="K12-2: Tab does not reach 'Translate this text' after the Translation panel opens")
+@pytest.mark.xfail(strict=False, reason="K12-2 (app-state dependent, as K12-1): Tab does not reach 'Translate this text' after the Translation panel opens")
 def test_k12_tab_reaches_translate_this_text(run: _Run) -> None:
     _open_finding(run, "K12-2")
 
