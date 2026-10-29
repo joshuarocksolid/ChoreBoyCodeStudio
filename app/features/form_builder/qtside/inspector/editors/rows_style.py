@@ -614,6 +614,8 @@ class TextSizeEditor:
 
     def show(self, value: RowValue) -> None:
         del value
+        # The theme can change after the editor is built; the caption follows it like the colour rows' captions.
+        self._caption.setStyleSheet("color: %s; background: transparent;" % self._host.chrome.muted)
         size = colour_rows.text_size(self._host.document())
         mark(self._box, Written(NumberValue(size)) if size is not None else Unset())
         shown = size if size is not None else self._box.minimum()

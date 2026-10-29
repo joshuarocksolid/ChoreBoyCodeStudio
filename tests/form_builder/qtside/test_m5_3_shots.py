@@ -105,7 +105,7 @@ def _shoot(qapp: QApplication, folder: Path, suffix: str, tmp_path: Path) -> Non
                 _fit(qapp, window, pane, width)
                 pane.flush()
                 _grab(qapp, pane, folder, "colour-rows-%s-%s-%d" % (mode, suffix, width))
-                session.selection.clear(source=SelectionSource.PROGRAM)
+                _select(session, "Shop")
                 pane.flush()
                 _fit(qapp, window, pane, width)
                 _grab(qapp, pane, folder, "form-look-%s-%s-%d" % (mode, suffix, width))
@@ -121,11 +121,15 @@ def _shoot(qapp: QApplication, folder: Path, suffix: str, tmp_path: Path) -> Non
         qapp.processEvents()
         try:
             session = surface.session
-            ok = session.document.by_name("okButton")[0]
-            session.selection.set((ok,), source=SelectionSource.PROGRAM)
+            title = session.document.by_name("titleLabel")[0]
+            session.selection.set((title,), source=SelectionSource.PROGRAM)
             gateway.open_drawer(session, session.document.root.id)
             drawer = surface.workbench._under_widget
-            drawer.editor.moveCursor(drawer.editor.textCursor().MoveOperation.Start)
+            # The caret inside the first rule: the canvas outlines OK and Cancel in ov.style_match.
+            cursor = drawer.editor.textCursor()
+            cursor.setPosition(5)
+            drawer.editor.setTextCursor(cursor)
+            drawer.editor.setFocus()
             QTest.qWait(450)
             _grab(qapp, surface, folder, "style-drawer-valid-%s-%s" % (mode, suffix))
             drawer.editor.setPlainText(drawer.editor.toPlainText().rstrip()[:-1] + "\n#okButton { color: red;")
