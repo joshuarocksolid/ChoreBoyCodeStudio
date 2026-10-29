@@ -138,7 +138,7 @@ def test_removing_an_entry_keeps_an_action_used_elsewhere_and_drops_a_lone_one()
     doc, bar, file_menu, tool = _build_shop(log)
     ref_on_tool = q.entries(doc, tool)[0].ref
     still = log.execute(RemoveEntry(ref_on_tool, "Print receipt")).result
-    assert still == ("File menu",)
+    assert still == ("the File menu",)
     assert "actionPrint_receipt" in doc.names()
     quit_ref = q.entries(doc, file_menu)[-1].ref
     assert log.execute(RemoveEntry(quit_ref, "Quit")).result == ()
@@ -267,7 +267,12 @@ def test_the_k16_window_matches_uic(tmp_path: Path, qapp, uic_env) -> None:  # t
     log.execute(AddEntry(tool, 2, action="actionRight"))
     log.execute(SetProperty(doc.by_name("actionLeft")[0], "checkable", BoolValue(True)))
     log.execute(SetProperty(doc.by_name("actionRight")[0], "checkable", BoolValue(True)))
-    log.execute(MakeButtonGroup((doc.by_name("a")[0], doc.by_name("b")[0])))
+    group = log.execute(MakeButtonGroup((doc.by_name("a")[0], doc.by_name("b")[0]))).result
+    log.execute(SetProperty(q.button_groups(doc)[0][1], "exclusive", BoolValue(False)))
+    side = log.execute(AddMainWindowPart("toolbar", "Left")).result
+    log.execute(SetProperty(side, "toolBarBreak", BoolValue(True), "attribute"))
+    log.execute(AddEntry(side, 0, action="actionQuit"))
+    del group
     path = tmp_path / "shop.ui"
     path.write_text(write_ui(doc).text, encoding="utf-8")
     result = uic.compare(path)

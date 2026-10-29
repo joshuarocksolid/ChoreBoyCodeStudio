@@ -95,8 +95,22 @@ def test_k16_menu_editing_by_keys_only() -> None:
     assert info["actionPrint_receipt"].used_line == "File menu, toolBar"
     # Delete on the toolbar button keeps the action; the toast says where it still is.
     _keys(editor, "Left", "Delete")
-    assert toasts and "still on File menu" in toasts[-1] and "actionPrint_receipt" in doc.names()
-    # One undo step per edit, back to the bytes the form had when it was created.
+    assert toasts and "from toolBar. It's still on the File menu." in toasts[-1] and "actionPrint_receipt" in doc.names()
+    # One undo step per edit, each with its 13.2.10 name (UX-M5-008).
+    assert [entry.label for entry in session.log.entries()] == [
+        "Add menu File",
+        "Add New sale to the File menu",
+        "Add Print receipt to the File menu",
+        "Add separator",
+        "Add Quit to the File menu",
+        "Move Quit",
+        "Move Quit",
+        "Add menu Help",
+        "Add toolbar",
+        "Add Print receipt to toolBar",
+        "Remove Print receipt",
+    ]
+    # Undo all: back to the bytes the form had when it was created.
     while session.log.can_undo():
         session.log.undo()
     assert write_ui(session.document).text == initial

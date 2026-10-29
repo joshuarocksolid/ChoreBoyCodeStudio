@@ -496,11 +496,11 @@ class MenuEditor:
                 "Remove the %s menu and its %d entries?" % (q.plain_text(entry.text), inside), "Remove menu"
             ):
                 return
-        place = q.host_label(doc, level.host)
+        place = q.host_phrase(doc, level.host)
         still = self._env.run(RemoveEntry(entry.ref, entry.text or entry.name, entry.kind))
         if still:
             self._env.toast(
-                "Removed %s from the %s. It's still on %s. · Undo"
+                "Removed %s from %s. It's still on %s. · Undo"
                 % (q.plain_text(entry.text), place, " and ".join(still))
             )
         self._clamp(level)

@@ -281,7 +281,7 @@ class RemoveEntry(_CommandBase):
                 planning.delete_nodes(doc, ctx, (ref.id,))
                 if found:
                     if q.is_used(doc, name):
-                        still_on = tuple(sorted({place.label for place in q.places_of(doc, name)}))
+                        still_on = tuple(sorted({q.host_phrase(doc, place.host) for place in q.places_of(doc, name)}))
                     else:
                         _drop_unused(doc, ctx, [name])
         if host_id is not None and doc.contains(host_id):
