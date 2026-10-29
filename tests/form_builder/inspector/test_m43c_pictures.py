@@ -14,7 +14,8 @@ from app.features.form_builder.engine.ids import IdAllocator
 from app.features.form_builder.engine.ui4.reader import read_ui
 from app.features.form_builder.qtside.inspector import InspectorPane
 from app.features.form_builder.qtside.inspector.api import GroupId
-from app.features.form_builder.qtside.inspector.editors._picture_picker import PicturePicker
+from app.features.form_builder.engine.project.pictures import QrcPicture
+from app.features.form_builder.qtside.inspector.editors._picture_picker import PictureGrid, PicturePicker
 from app.features.form_builder.qtside.theme.chrome import chrome_from_values
 from app.qt.QtCore import QBuffer, QIODevice, Qt
 from app.qt.QtGui import QColor, QFontMetrics, QImage
@@ -286,6 +287,27 @@ def test_pixmap_from_a_file_warns_and_esc_reverts(qapp: QApplication, tmp_path: 
         assert len(session.log.entries()) == steps + 1
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_picture_grid_arrows_keep_their_column_across_group_headers(qapp: QApplication) -> None:
+    def picture(qrc: str, name: str) -> QrcPicture:
+        return QrcPicture("/p/%s.qrc" % qrc, qrc, "/icons", name, ":/icons/" + name, "/p/" + name)
+
+    # Two resource files, three pictures each, three columns (168 px wide): Down from
+    # "b1" must land on "b2" in the next group, not on a cell by index.
+    names = [("a", "a1.png"), ("a", "a2.png"), ("a", "a3.png"), ("b", "b1.png"), ("b", "b2.png"), ("b", "b3.png")]
+    holder = QWidget()
+    grid = PictureGrid(holder, lambda _p: None, lambda _p: None)
+    grid.resize(168, 400)
+    grid.set_pictures(tuple(picture(q, n) for q, n in names), "")
+    grid.select_path(":/icons/a2.png")
+    grid.move_by(0, 1)
+    picked = grid.selected_picture()
+    assert picked is not None and picked.file_name == "b2.png"
+    grid.move_by(0, -1)
+    picked = grid.selected_picture()
+    assert picked is not None and picked.file_name == "a2.png"
+    assert "a2.png" in grid.accessibleName()
 
 
 def test_a_missing_pixmap_row_uses_the_error_colour(qapp: QApplication, tmp_path: Path) -> None:
