@@ -53,6 +53,7 @@ from app.features.form_builder.engine.diagnostics import (
 )
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.query.tree import form_item_role
+from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import (
     ActionGroupNode,
@@ -1637,7 +1638,38 @@ class _Emitter:
             if not self._signal_line_kept(node, sender, signal_name):
                 continue
             # uic's own line. A wrong signal raises in setupUi, never silently.
-            self.add("%s.%s.connect(%s.%s)" % (sender_ref, signal_name, receiver_ref, slot_name))
+            selector = self._overload_selector(sender, signal)
+            self.add("%s.%s%s.connect(%s.%s)" % (sender_ref, signal_name, selector, receiver_ref, slot_name))
+
+    def _overload_selector(self, sender: str, signal: str) -> str:
+        """uic's ``["types"]`` after a signal PySide can't pick by itself, else "".
+
+        uic 6.8 writes it for ``clicked(...)`` of a button and ``triggered(...)`` of a tool
+        button or an action, when the signature has arguments (checked against uic for every
+        class of the table). Without it PySide connects ``clicked()``, and a Qt slot that
+        needs ``checked`` raises when the button is clicked.
+        """
+        name, _, rest = signal.partition("(")
+        types = rest.rsplit(")", 1)[0].strip()
+        name = name.strip()
+        if not types or name not in ("clicked", "triggered") or not _SELECTOR_TYPES.match(types):
+            return ""
+        found = self._sender_class(sender)
+        if found is None:
+            return ""
+        class_name, open_class = found
+        if open_class:
+            base = self.base(class_name)
+        elif class_name in self.custom:
+            base = self._fallback(class_name)
+        else:
+            base = class_name
+        chain = {info.name for info in QtClassTable.shared().chain(base)}
+        if name == "clicked" and "QAbstractButton" in chain and base != "QAbstractButton":
+            return '["%s"]' % types
+        if name == "triggered" and ("QAction" in chain or "QToolButton" in chain):
+            return '["%s"]' % types
+        return ""
 
     def _signal_line_kept(self, connection: Node, sender: str, signal_name: str) -> bool:
         """Check a connection's signal against the sender's class.
@@ -2231,6 +2263,10 @@ def _format_import(module: str, names: Sequence[str]) -> str:
     current = current.rstrip() + ")"
     rows.append(current)
     return "\n".join(rows)
+
+
+#: Type lists a ``["..."]`` selector may hold: Qt type names only, never a quote or a backslash.
+_SELECTOR_TYPES = re.compile(r"^[A-Za-z_][A-Za-z0-9_:<>*&, ]*$")
 
 
 def _render_method(method: Method) -> str:

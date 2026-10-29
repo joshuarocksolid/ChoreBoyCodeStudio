@@ -14,6 +14,11 @@ edited), the picker text (``words``), whether it opens the target page
 add as plain JSON-shaped mappings of the logic schema (the ``slot`` and ``call``
 verbs of CONTRACTS 15.3), each mapping also carrying its ``event`` when an
 intent adds steps to two events. It is pure and total on its input.
+
+Routing keys of a mapping (never stored; CONTRACTS 15.6 "Intents"): ``event`` is
+the signal the step goes on; ``sender`` is the object whose event it goes on,
+present only when that is not the picker's sender (the second half of "Keep a
+and b in step"); a ``slot`` step without ``target`` acts on the form.
 """
 
 from __future__ import annotations
