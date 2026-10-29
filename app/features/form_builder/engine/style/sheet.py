@@ -17,6 +17,7 @@ is; Qt applies it to the widget and its children as if it were wrapped in
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import List, Optional, Tuple
 
 from app.features.form_builder.engine.style.properties import is_known_property, is_known_state
@@ -101,7 +102,9 @@ class Sheet:
         return tuple(problem for problem in self.problems if problem.severity == ERROR)
 
 
+@lru_cache(maxsize=16)
 def parse_sheet(text: str) -> Sheet:
+    """The sheet read once per text: an apply asks for the same sheet from every row and check (the result is immutable)."""
     tokens, lex = tokenize(text)
     significant = [token for token in tokens if token.significant]
     problems: List[Problem] = []

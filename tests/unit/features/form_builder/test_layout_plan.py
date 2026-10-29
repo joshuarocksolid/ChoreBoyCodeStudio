@@ -57,3 +57,9 @@ def test_the_code_split_narrows_then_rails_the_outline_then_the_inspector() -> N
     assert fit_beside(400, 6, left_gain=164, right_gain=236) == BesideFit(360, rail_left=True, rail_right=True)
     # Nothing left to give: refused.
     assert fit_beside(600, 6) is None
+    # Asked for a readable 540 px: the inspector goes to its rail too when that is what gives it.
+    assert fit_beside(520, 6, left_gain=164, right_gain=236, readable=540) == BesideFit(540, rail_left=True, rail_right=True)
+    # When no step gives it, the most railed one that fits wins.
+    assert fit_beside(300, 6, left_gain=164, right_gain=236, readable=900) == BesideFit(334, rail_left=True, rail_right=True)
+    # A wide row that already gives it keeps both panes.
+    assert fit_beside(1200, 6, readable=500) == BesideFit(540)
