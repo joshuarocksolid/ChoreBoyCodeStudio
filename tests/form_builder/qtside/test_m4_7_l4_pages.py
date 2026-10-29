@@ -25,8 +25,11 @@ def test_plus_chip_clears_the_last_tab_after_a_longer_title() -> None:
         QTest.keyClicks(edit, "A much longer title here")
         QTest.keyClick(edit, _qt_key("Key_Return"))
         _flush()
-        bar = realizer.widget_for(tabs_id).tabBar()
+        tab_widget = realizer.widget_for(tabs_id)
+        assert tab_widget is not None
+        bar = tab_widget.tabBar()
         controller = canvas._controller
+        assert controller._static is not None
         controller._index.ensure_fresh()
         assert not controller._static_stale()
         mine = [rect for container, rect in controller._static.tabs if container == tabs_id]
