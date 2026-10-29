@@ -246,6 +246,32 @@ def test_font_parts_round_trip_and_reset(qapp: QApplication) -> None:
         _close(window, pane, realizer, session, qapp)
 
 
+def test_bold_can_turn_off_a_parents_bold(qapp: QApplication) -> None:
+    text = _FORM.replace(
+        '<widget class="QWidget" name="Form">',
+        '<widget class="QWidget" name="Form">\n  <property name="font"><font><bold>true</bold></font></property>',
+        1,
+    )
+    window, pane, session, realizer = _pane(qapp, text)
+    try:
+        _select(session, "title")
+        pane.flush()
+        _open_row(pane, "formBuilder.row.font", qapp)
+        bold = _widget("formBuilder.fontBold")
+        assert bold.isChecked(), "the parent's bold shows as on"
+        bold.click()
+        qapp.processEvents()
+        stored = session.document.node(session.document.by_name("title")[0]).prop("font")
+        assert stored is not None and isinstance(stored.value, FontValue)
+        assert stored.value.bold is False
+        bold.click()
+        qapp.processEvents()
+        stored = session.document.node(session.document.by_name("title")[0]).prop("font")
+        assert stored is not None and isinstance(stored.value, FontValue) and stored.value.bold is None
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
 @pytest.mark.parity("R3-160")
 def test_colour_with_and_without_alpha_round_trips(qapp: QApplication) -> None:
     window, pane, session, realizer = _pane(qapp)
