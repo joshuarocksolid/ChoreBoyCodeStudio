@@ -1095,3 +1095,61 @@ def test_form_bar_handles_a_dirty_external_change_without_the_modal(tmp_path: Pa
     assert external_host.compares
     bar.reload()
     assert bar.restored[-1][0] == "<ui new/>\n"
+
+
+def _own_write_workflow(tmp_path: Path, *, content: str) -> tuple:
+    file_path = tmp_path / "forms" / "till.ui"
+    file_path.parent.mkdir()
+    manager = EditorManager()
+    sync_host = _RecordingSyncHost()
+    external_host = _RecordingExternalHost(confirm_reload=False)
+    tab = _open_tab_with_widget(
+        manager,
+        file_path,
+        content=content,
+        sync_host=sync_host,
+        external_host=external_host,
+    )
+    workflow = _build_workflows(
+        manager,
+        sync_host=sync_host,
+        external_host=external_host,
+        save_workflow=_RecordingSaveWorkflow(
+            decision=DocumentSafetyDecision(intent=DocumentCloseIntent.PROCEED, scope=DocumentScope.EXTERNAL_RELOAD)
+        ),
+        local_history=_RecordingLocalHistory(),
+    )
+    return manager, external_host, tab, workflow
+
+
+def test_own_write_reloads_a_clean_tab_without_asking(tmp_path: Path) -> None:
+    """A file this app just wrote reloads a clean open tab and does not ask."""
+    manager, external_host, tab, workflow = _own_write_workflow(tmp_path, content="<ui>old</ui>\n")
+    Path(tab.file_path).write_text("<ui>new</ui>\n", encoding="utf-8")
+
+    outcome = workflow.note_own_write(tab.file_path)
+
+    assert outcome is ExternalFileChangeOutcome.RELOADED
+    assert tab.current_content == "<ui>new</ui>\n"
+    assert external_host.confirm_calls == 0
+    assert external_host.disk_changed_prompts == []
+    assert workflow.check_and_handle(tab.file_path) is ExternalFileChangeOutcome.SKIPPED
+    assert manager.stale_open_paths() == []
+
+
+def test_own_write_leaves_a_dirty_tab_for_the_prompt(tmp_path: Path) -> None:
+    """Unsaved edits still get the disk-changed prompt after an app write."""
+    manager, external_host, tab, workflow = _own_write_workflow(tmp_path, content="<ui>old</ui>\n")
+    tab.update_content("<ui>mine</ui>\n")
+    Path(tab.file_path).write_text("<ui>disk</ui>\n", encoding="utf-8")
+    external_host.disk_changed_choices.append(DiskChangedChoice.KEEP_MY_VERSION)
+
+    noted = workflow.note_own_write(tab.file_path)
+    assert manager.stale_open_paths() == [tab.file_path]
+    asked = workflow.check_and_handle(tab.file_path)
+
+    assert noted is ExternalFileChangeOutcome.SKIPPED
+    assert asked is ExternalFileChangeOutcome.DECLINED
+    assert tab.current_content == "<ui>mine</ui>\n"
+    assert external_host.confirm_calls == 0
+    assert external_host.disk_changed_prompts == [tab.file_path]

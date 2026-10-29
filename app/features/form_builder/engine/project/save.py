@@ -31,6 +31,7 @@ from app.features.form_builder.engine.diagnostics import (
 from app.features.form_builder.engine.project.cache import clear_inference_cache
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.fs import Journal, OsFileSystem, inside_project
+from app.features.form_builder.engine.project.written_files import note_written_files
 from app.features.form_builder.engine.ui4.document import UiDocument
 
 
@@ -143,9 +144,11 @@ def write_generated(
         journal.rollback()
         raise
     clear_inference_cache()
+    written = tuple(path for path, _data in planned)
+    note_written_files(written)
     return WriteResult(
         diagnostics=tuple(diagnostics),
-        files=tuple(path for path, _data in planned),
+        files=written,
         text_written=True,
     )
 
@@ -367,7 +370,9 @@ def rewrite_resource_modules(
         diagnostics.append(_diagnostic("FB509", "could not write the picture module."))
         return WriteResult(tuple(diagnostics), (), False)
     clear_inference_cache()
-    return WriteResult(tuple(diagnostics), tuple(planned), True)
+    written = tuple(planned)
+    note_written_files(written)
+    return WriteResult(tuple(diagnostics), written, True)
 
 
 def resource_destination(project_root: str, ui_path: str, location: str, module: str) -> str:

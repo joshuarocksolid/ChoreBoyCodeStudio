@@ -10,6 +10,7 @@ from app.features.form_builder.engine.diagnostics import CODES
 from app.features.form_builder.engine.project.forms import classify_form
 from app.features.form_builder.engine.project.packaging import inspect_forms
 from app.features.form_builder.engine.project.picture_adopt import adopt_raw_picture, plan_add
+from app.features.form_builder.engine.project.written_files import set_written_file_listener
 from app.features.form_builder.engine.project.picture_checks import picture_diagnostics
 from app.features.form_builder.engine.project.pictures import (
     clear_picture_cache,
@@ -150,6 +151,18 @@ def test_the_icon_fix_changes_only_that_state(tmp_path: Path) -> None:
             txn.execute(command)
     icon = session.document.node(session.document.by_name("payButton")[0]).value("icon")
     assert icon.normaloff.path == ":/art/pay.png" and icon.normalon.path == ":/pictures/ok.png"
+
+
+def test_adding_a_picture_reports_the_pictures_file_it_wrote(tmp_path: Path) -> None:
+    root, ui = _project(tmp_path)
+    session = _open(root, ui)
+    reported: list[str] = []
+    previous = set_written_file_listener(reported.extend)
+    try:
+        plan_add(session.document, str(ui), str(root), [str(root / "forms" / "art" / "logo.png")])
+    finally:
+        set_written_file_listener(previous)
+    assert any(path.endswith("forms/resources.qrc") for path in reported)
 
 
 def test_packaging_lists_each_raw_path_as_an_error_row(tmp_path: Path) -> None:

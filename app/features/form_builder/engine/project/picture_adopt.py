@@ -23,6 +23,7 @@ from app.features.form_builder.engine.project.qrc_write import (
     default_qrc_path,
     include_location,
 )
+from app.features.form_builder.engine.project.written_files import note_written_files
 from app.features.form_builder.engine.ui4.values import (
     ICON_STATES,
     IconSetValue,
@@ -83,6 +84,7 @@ def plan_add(
         raise ProjectOpError("Save the form in a project before adding pictures.")
     qrc = target_qrc or default_target(document, ui_path, project_root)
     outcome = add_pictures(project_root, qrc, sources, fs)
+    note_written_files((outcome.qrc_path, *outcome.copied))
     commands = include_commands(document, ui_path, outcome.qrc_path)
     return PicturePlan(outcome, commands, _label(outcome), _notice(outcome))
 
