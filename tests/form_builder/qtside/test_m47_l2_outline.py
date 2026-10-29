@@ -95,3 +95,13 @@ def test_narrowing_a_selection_drops_the_old_highlight(qapp: QApplication) -> No
         pane.show_current(second)
         names = [item.text(0) for item in pane.tree.selectedItems()]
         assert names == ["field1"]
+
+
+def test_a_page_titled_like_its_number_is_not_repeated(qapp: QApplication) -> None:
+    from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
+
+    with _opened(qapp, _tabs(), "tab-repeat") as (pane, session):
+        session.log.execute(InsertPage(_id(session, "tabs")))
+        pane.note_edited()
+        qapp.processEvents()
+        assert _caption(pane, session, "tab_3") == "Tab 3"

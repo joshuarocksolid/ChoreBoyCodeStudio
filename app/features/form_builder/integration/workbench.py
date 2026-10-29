@@ -2284,7 +2284,9 @@ def _row_caption(row: object) -> str:
         title = str(getattr(row, "visible_text", "") or "")
         if not title:
             title = str(getattr(row, "primary", "") or "")
-        return "%s \u00b7 %s" % (number, title) if title else number
+        if title and title != number:
+            return "%s \u00b7 %s" % (number, title)
+        return number
     bits = []
     friendly = row.friendly  # type: ignore[attr-defined]
     primary = row.primary  # type: ignore[attr-defined]
