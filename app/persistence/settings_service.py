@@ -40,7 +40,13 @@ class SettingsService:
         return saved_path
 
     def update_global(self, updater: Callable[[dict[str, Any]], Mapping[str, Any]]) -> dict[str, Any]:
-        current_payload = self.load_global()
+        """Read the file again, apply ``updater`` and save.
+
+        The read is never served from the cache: other writers of the same file
+        (the form builder's memory, another ``SettingsService``) may have saved
+        keys since this instance last loaded, and a cached read would drop them.
+        """
+        current_payload = self.load_global(force_refresh=True)
         updated_payload = dict(updater(current_payload))
         self.save_global(updated_payload)
         return updated_payload
@@ -62,7 +68,7 @@ class SettingsService:
         project_root: PathInput,
         updater: Callable[[dict[str, Any]], Mapping[str, Any]],
     ) -> dict[str, Any]:
-        current_payload = self.load_project(project_root)
+        current_payload = self.load_project(project_root, force_refresh=True)
         updated_payload = dict(updater(current_payload))
         self.save_project(project_root, updated_payload)
         return updated_payload
