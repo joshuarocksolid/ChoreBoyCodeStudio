@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
 """The canvas draws "Type here" and the open menu, and keys reach the editor (UX-MAIN-003, 004, 015)."""
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ def test_enter_on_the_menu_bar_types_a_menu_and_the_layer_shows_it_open() -> Non
         glue = MenuEditGlue(session, realizer, canvas, said.append, said.append, lambda s, o: True, parent)
         _pump()
         state = canvas.layer_state("menu_edit")
-        assert isinstance(state, PaintState) and [i.text for i in state.items] == ["Type here", "Type here"][:len(state.items)]
-        assert any(i.kind == "hint" for i in state.items)
+        assert isinstance(state, PaintState)
+        assert [i.text for i in state.items if i.kind == "hint"] == ["Type here"]
         doc = session.document
         canvas.setFocus()
         session.selection.set((doc.by_name("menubar")[0],), source=SelectionSource.PROGRAM)

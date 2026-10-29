@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false
 """Menus, toolbars, status bar, actions and groups: commands and uic parity (M5.1, UX-MAIN-*)."""
 
 from __future__ import annotations
