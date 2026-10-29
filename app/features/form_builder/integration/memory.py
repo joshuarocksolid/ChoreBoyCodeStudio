@@ -108,7 +108,7 @@ def preview_from_payload(payload: Mapping[str, Any]) -> Tuple[PreviewChoices, Tu
     section = payload.get(SETTINGS_KEY)
     raw = section.get(PREVIEW_KEY) if isinstance(section, Mapping) else None
     if not isinstance(raw, Mapping):
-        return PreviewChoices(), ()
+        return _settings_defaults(section if isinstance(section, Mapping) else {}), ()
     profiles: List[ScreenProfile] = []
     listed = raw.get("profiles")
     for item in listed if isinstance(listed, list) else ():
@@ -125,6 +125,19 @@ def preview_from_payload(payload: Mapping[str, Any]) -> Tuple[PreviewChoices, Tu
         screen=screen if isinstance(screen, str) and screen.strip() else DEFAULT_SCREEN,
     )
     return choices, tuple(profiles)
+
+
+#: Settings > Form designer (M5.5c) writes these two keys; they are the choice until the user picks one in the Aa menu.
+_SCREEN_DEFAULTS = {"small": "Small screen", "full_hd": "Full HD"}
+
+
+def _settings_defaults(section: Mapping[str, Any]) -> PreviewChoices:
+    style = section.get("preview_style")
+    screen = section.get("preview_screen")
+    return PreviewChoices(
+        style=style if isinstance(style, str) and style.strip() else DEFAULT_STYLE,
+        screen=_SCREEN_DEFAULTS.get(screen, DEFAULT_SCREEN) if isinstance(screen, str) else DEFAULT_SCREEN,
+    )
 
 
 def _profile_from(item: Mapping[str, Any]) -> Optional[ScreenProfile]:

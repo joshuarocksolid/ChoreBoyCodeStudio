@@ -117,3 +117,11 @@ def test_the_index_finds_the_lines_of_a_widget_and_of_the_form() -> None:
     assert index.name_on(4) == "Till"
     assert index.name_on(0) is None
     assert index.lines_of("missing") == () and index.first_line("missing") is None
+
+
+def test_settings_defaults_apply_until_the_user_picks() -> None:
+    payload = {"form_builder": {"preview_style": "Windows", "preview_screen": "small"}}
+    assert preview_from_payload(payload)[0] == po.PreviewChoices(style="Windows", screen="Small screen")
+    assert preview_from_payload({"form_builder": {"preview_screen": "full_hd"}})[0].screen == "Full HD"
+    picked = payload_with_preview(payload, po.PreviewChoices(), ())
+    assert preview_from_payload(picked)[0] == po.PreviewChoices()
