@@ -66,6 +66,17 @@ def test_session_reports_read_only_logic_for_newer_and_unreadable_markers() -> N
     assert open_session(form(marker="{}"), "/tmp/a.ui").logic_read_only() is True
 
 
+def test_a_number_marker_from_qt_designer_is_read() -> None:
+    number = form(marker="").replace(
+        "  <layout class=",
+        '  <property name="cbcsLogic" stdset="0">\n   <number>3</number>\n  </property>\n  <layout class=',
+        1,
+    )
+    assert open_session(number, "/tmp/a.ui").logic_read_only() is True
+    assert [item.code for item in logic_diagnostics(open_log(number).document)] == ["FB402"]
+    assert open_session(number.replace("<number>3", "<number>1"), "/tmp/a.ui").logic_read_only() is False
+
+
 @pytest.mark.xfail(
     strict=True,
     reason="Owner of engine/session.py (wiring lane): FormSession.open publishes only 'reader' and 'connections'; "
