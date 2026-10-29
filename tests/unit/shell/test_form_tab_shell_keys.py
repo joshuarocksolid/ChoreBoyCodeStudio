@@ -533,7 +533,11 @@ def test_first_canvas_focus_states_how_to_leave_and_alt_keys_claim_their_targets
         canvas.setFocus()
         QTest.keyClick(canvas, Qt.Key_F2)
         qapp.processEvents()
-        assert "rename" in _status_label(window).text().lower()  # type: ignore[attr-defined]
+        # F2 renames in place (UX-OUT-008): the outline's name editor takes focus.
+        renaming = qapp.focusWidget()
+        assert renaming is not None and renaming.objectName() == "formBuilder.outlineRename"
+        QTest.keyClick(renaming, Qt.Key_Escape)
+        qapp.processEvents()
         QTest.keyClick(canvas, Qt.Key_4, Qt.AltModifier)
         qapp.processEvents()
         inspector = surface.findChild(QWidget, "formBuilder.inspector")  # type: ignore[attr-defined]
