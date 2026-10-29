@@ -11,11 +11,11 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from app.features.form_builder.engine.commands.catalog_ext.actions import SetActionGroup
+from app.features.form_builder.engine.commands.catalog_ext.actions import ChangeButtonGroup, SetActionGroup
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.query import actions as q
-from app.features.form_builder.engine.ui4.document import UiDocument
-from app.features.form_builder.engine.ui4.nodes import ActionNode
+from app.features.form_builder.engine.ui4.document import UiDocument, next_object_name
+from app.features.form_builder.engine.ui4.nodes import ActionNode, WidgetNode
 from app.features.form_builder.engine.ui4.values import BoolValue, EnumValue
 from app.features.form_builder.qtside.inspector.api import (
     Choice,
@@ -29,7 +29,8 @@ from app.features.form_builder.qtside.inspector.api import (
     RowValue,
     Summary,
 )
-from app.qt.QtWidgets import QComboBox, QWidget
+from app.features.form_builder.qtside.inspector.api import Unset, Written, mark
+from app.qt.QtWidgets import QButtonGroup, QComboBox, QHBoxLayout, QSizePolicy, QToolButton, QWidget
 
 STATUS_BAR_CAPTION = (
     "Status tips of actions and widgets show here while the pointer is on them. "
@@ -39,6 +40,10 @@ _CONTENT = GroupId.CONTENT
 _INPUT = GroupId.INPUT
 STATUS_TIP_CAPTION = "Shows in the status bar while the pointer is on it."
 GROUP_EDITOR = EditorKey("actionGroup")
+SIDE_EDITOR = EditorKey("toolbarSide")
+BUTTON_GROUP_EDITOR = EditorKey("buttonGroupPick")
+NEW_GROUP = "New group"
+_SIDE_NAMES = ("Top", "Bottom", "Left", "Right")
 
 
 def _sides(_document: UiDocument, _owners: Tuple[NodeId, ...]) -> Tuple[Choice, ...]:
@@ -90,10 +95,124 @@ def _action_rows() -> Tuple[RowSpec, ...]:
         RowSpec("action.visible", _INPUT, "Visible", "Off hides it.", Prop("visible"), classes=on),
         RowSpec("action.shortcutContext", _INPUT, "Shortcut works", "Where the key runs it.", Prop("shortcutContext"), classes=on, choices=_contexts),
         RowSpec("action.group", _INPUT, "Group", "A choice group makes the actions in it switch each other off.", Summary(), classes=on, editor=GROUP_EDITOR),
+        RowSpec(
+            "buttonGroup", _CONTENT, "Button group", "Buttons in a group switch each other off.", Summary(),
+            classes=("QAbstractButton",), editor=BUTTON_GROUP_EDITOR,
+        ),
         RowSpec("actionGroup.exclusive", _INPUT, "Only one on at a time", "Ticking one switches the others off.", Prop("exclusive"), classes=("QActionGroup",)),
         RowSpec("actionGroup.enabled", _INPUT, "Enabled", "Off greys out every action in the group.", Prop("enabled"), classes=("QActionGroup",)),
         RowSpec("actionGroup.visible", _INPUT, "Visible", "Off hides every action in the group.", Prop("visible"), classes=("QActionGroup",)),
     )
+
+
+class ToolbarSideEditor:
+    """Top, Bottom, Left, Right as four segments (UX-MAIN-013, R3 138)."""
+
+    def __init__(self, spec: object, host: EditorHost, parent: QWidget) -> None:
+        del spec
+        self._host = host
+        self._root = QWidget(parent)
+        row = QHBoxLayout(self._root)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(2)
+        group = QButtonGroup(self._root)
+        group.setExclusive(True)
+        policy = getattr(QSizePolicy, "Policy", QSizePolicy)
+        self._buttons: List[Tuple[str, QToolButton]] = []
+        for side in _SIDE_NAMES:
+            button = QToolButton(self._root)
+            button.setText(side)
+            button.setCheckable(True)
+            button.setProperty("fbSegment", "true")
+            button.setSizePolicy(getattr(policy, "Expanding"), getattr(policy, "Fixed"))
+            button.setAccessibleName("Toolbar side: %s" % side)
+            button.clicked.connect(self._commit)
+            group.addButton(button)
+            row.addWidget(button)
+            self._buttons.append((side, button))
+
+    @property
+    def widget(self) -> QWidget:
+        return self._root
+
+    def show(self, value: RowValue) -> None:
+        mark(self._root, value)
+        current = "Top"
+        shown = value.value if isinstance(value, Written) else value.default if isinstance(value, Unset) else None
+        if isinstance(shown, EnumValue):
+            current = shown.text.rsplit("::", 1)[-1].replace("ToolBarArea", "") or "Top"
+        for side, button in self._buttons:
+            button.blockSignals(True)
+            button.setChecked(side == current)
+            button.blockSignals(False)
+
+    def _commit(self, _checked: bool = False) -> None:
+        for side, button in self._buttons:
+            if button.isChecked():
+                self._host.commit(EnumValue("Qt::%sToolBarArea" % side))
+                return
+
+
+class ButtonGroupEditor:
+    """A button's Button group drop-down: None, the form's groups, New group (UX-MAIN-019)."""
+
+    def __init__(self, spec: object, host: EditorHost, parent: QWidget) -> None:
+        del spec
+        self._host = host
+        self._box = QComboBox(parent)
+        self._box.setObjectName("formBuilder.buttonGroupPick")
+        self._box.setAccessibleName("Button group")
+        self._names: List[Optional[str]] = []
+        self._shown: Optional[str] = None
+        self._loading = False
+        self._box.activated.connect(self._picked)
+
+    @property
+    def widget(self) -> QWidget:
+        return self._box
+
+    def _current(self) -> Optional[str]:
+        names = set()
+        for owner in self._host.owner_ids():
+            node = self._host.document().get(owner)
+            entry = node.attr("buttonGroup") if node is not None else None
+            names.add(getattr(getattr(entry, "value", None), "text", "") if entry is not None else "")
+        return names.pop() or None if len(names) == 1 else None
+
+    def show(self, value: RowValue) -> None:
+        del value
+        doc = self._host.document()
+        groups = [name for name, _node, _members in q.button_groups(doc)]
+        self._shown = self._current()
+        self._names = [None] + groups + [NEW_GROUP]
+        self._loading = True
+        try:
+            self._box.clear()
+            self._box.addItem("None")
+            for name in groups:
+                self._box.addItem(name)
+            self._box.addItem(NEW_GROUP)
+            self._box.setCurrentIndex(self._names.index(self._shown) if self._shown in self._names else 0)
+        finally:
+            self._loading = False
+
+    def _picked(self, index: int) -> None:
+        owners = self._host.owner_ids()
+        if self._loading or not owners or not 0 <= index < len(self._names):
+            return
+        name = self._names[index]
+        doc = self._host.document()
+        if name == NEW_GROUP:
+            name = next_object_name("buttonGroup", doc.names())
+        if name == self._shown:
+            return
+        first = doc.get(owners[0])
+        label = first.object_name if isinstance(first, WidgetNode) else "button"
+        session = self._host.begin_session("Change button group of %s" % label)
+        try:
+            session.run([ChangeButtonGroup(tuple(owners), name, label)])
+        finally:
+            session.close()
 
 
 class ActionGroupEditor:
@@ -152,6 +271,8 @@ class ActionGroupEditor:
 
 def register(registrar: Registrar) -> None:
     registrar.editor(GROUP_EDITOR, ActionGroupEditor)
+    registrar.editor(SIDE_EDITOR, ToolbarSideEditor)
+    registrar.editor(BUTTON_GROUP_EDITOR, ButtonGroupEditor)
     rows = _action_rows() + (
         RowSpec("menuTitle", _CONTENT, "Title", "The menu's title. Put & before a letter to open it with Alt and that letter.", Prop("title"), classes=("QMenu",)),
         RowSpec("menuIcon", _CONTENT, "Icon", "A picture beside the menu's title in a submenu.", Prop("icon"), classes=("QMenu",)),
@@ -166,6 +287,7 @@ def register(registrar: Registrar) -> None:
             Prop("toolBarArea", "attribute"),
             classes=("QToolBar",),
             choices=_sides,
+            editor=SIDE_EDITOR,
         ),
         RowSpec("toolbarBreak", _CONTENT, "Starts on a new row", "The toolbar starts a new row on its side.", Prop("toolBarBreak", "attribute"), classes=("QToolBar",)),
         RowSpec(

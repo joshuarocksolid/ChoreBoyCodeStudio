@@ -76,3 +76,45 @@ def test_a_menu_shows_one_title_row(qapp) -> None:  # type: ignore[no-untyped-de
         assert [w.objectName() for w in titles] == ["formBuilder.row.menuTitle"]
     finally:
         _close(window, pane, realizer, session, qapp)
+
+
+def test_the_toolbar_side_is_four_segments_that_write_the_attribute(qapp) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.engine.commands.catalog_ext.main_window import AddMainWindowPart
+    from app.qt.QtWidgets import QToolButton
+
+    window, pane, session, realizer = _pane(qapp, build_template_ui("main_window", "shop_window"))
+    try:
+        doc = session.document
+        toolbar = session.log.execute(AddMainWindowPart("toolbar")).result
+        session.selection.set((toolbar,), source=SelectionSource.PROGRAM)
+        pane.flush()
+        qapp.processEvents()
+        row = pane.findChild(QWidget, "formBuilder.row.toolbarSide")
+        segments = {b.text(): b for b in row.findChildren(QToolButton) if b.text() != "\u21ba"}
+        assert list(segments) == ["Top", "Bottom", "Left", "Right"] and segments["Top"].isChecked()
+        segments["Left"].click()
+        assert "Qt::LeftToolBarArea" in write_ui(doc).text
+    finally:
+        _close(window, pane, realizer, session, qapp)
+
+
+def test_a_buttons_group_drop_down_makes_and_clears_a_group_and_the_summary_says_so(qapp) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.integration.chrome_text import selection_sentence
+
+    window, pane, session, realizer = _pane(qapp)
+    try:
+        doc = session.document
+        button = doc.by_name("okButton")[0]
+        session.selection.set((button,), source=SelectionSource.PROGRAM)
+        pane.flush()
+        qapp.processEvents()
+        combo = pane.findChild(QWidget, "formBuilder.row.buttonGroup").findChild(QComboBox)
+        texts = [combo.itemText(i) for i in range(combo.count())]
+        assert texts[0] == "None" and texts[-1] == "New group"
+        combo.setCurrentIndex(len(texts) - 1)
+        combo.activated.emit(len(texts) - 1)
+        assert 'name="buttonGroup"' in write_ui(doc).text
+        assert selection_sentence(doc, button, 1).endswith("· in button group buttonGroup")
+        assert session.log.undo_label() == "Change button group of okButton"
+    finally:
+        _close(window, pane, realizer, session, qapp)

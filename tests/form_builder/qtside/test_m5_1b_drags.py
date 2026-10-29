@@ -137,3 +137,25 @@ def test_hovering_a_title_opens_it_and_a_drop_outside_says_so() -> None:
         glue.dispose()
         canvas.dispose()
         parent.deleteLater()
+
+
+def test_a_submenu_flips_to_the_left_near_the_page_edge() -> None:
+    from app.features.form_builder.qtside.actions.editing import LevelView, RowView
+    from app.qt.QtGui import QFontMetrics
+
+    with opened(build_template_ui("main_window", "shop_window")) as (session, realizer):
+        parent, canvas, glue, said = _setup(session, realizer)
+        rows = (RowView("action", "Print"), RowView("type_here", "Type here"), RowView("add_separator", "Add separator"))
+        level = LevelView(None, "menu", rows)
+        metrics = QFontMetrics(QApplication.font())
+        items = []
+        anchor = (700, 40, 180, 24)  # the entry that opens it, near the right edge of a 800 px page
+        glue._menu_items(level, anchor, metrics, items, 800, True)
+        box = next(item for item in items if item.kind == "box")
+        assert box.x + box.width <= 800 and box.x < anchor[0]  # flipped to the left of its entry
+        items = []
+        glue._menu_items(level, (100, 40, 180, 24), metrics, items, 800, True)
+        assert next(item for item in items if item.kind == "box").x == 280  # room: to the right
+        glue.dispose()
+        canvas.dispose()
+        parent.deleteLater()

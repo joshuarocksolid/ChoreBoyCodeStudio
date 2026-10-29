@@ -42,6 +42,7 @@ from app.features.form_builder.engine.commands.base import CommandRejected
 from app.features.form_builder.engine.commands.catalog import DeleteNodes, InsertFragment, InsertResult
 from app.features.form_builder.engine.commands.participants import default_registry
 from app.features.form_builder.engine.ids import NodeId
+from app.features.form_builder.engine.query import actions as action_query
 from app.features.form_builder.engine.query.drop_target import CENTRAL_NOTE, central_redirect
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.engine.session import FormSession
@@ -176,7 +177,15 @@ def _duplicate(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId])
     _insert(host, session, ids, fragment, undo_label="Duplicate", copied=copied)
 
 
+CENTRAL_REFUSAL = "The central area belongs to the window. Delete what's inside it instead."
+
+
 def _delete(host: ClipboardHost, session: FormSession, ids: Sequence[NodeId]) -> None:
+    document = session.document
+    central = [part.id for part in action_query.parts(document)["central"]] if action_query.is_main_window(document) else []
+    if len(ids) == 1 and ids[0] in central:
+        host.narrate(CENTRAL_REFUSAL)  # UX-MAIN-014, from the outline and the Edit menu too
+        return
     targets = _deletable(session.document, ids)
     if not targets:
         return
