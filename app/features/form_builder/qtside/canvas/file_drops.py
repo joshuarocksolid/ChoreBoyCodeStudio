@@ -1,7 +1,10 @@
 """The canvas hook for files dropped from the desktop (M5.2 registers a handler here).
 
-A handler is ``handler(target_id, paths) -> Optional[str]``. ``target_id`` is the
-node under the pointer (the form's root when the pointer is over the page itself),
+A handler is ``handler(session, target_id, paths) -> Optional[str]``. ``session``
+is the form session of the canvas that got the drop (several forms can be open
+and node ids repeat across documents, so a handler answers only for its own
+session). ``target_id`` is the node under the pointer (the form's root when the
+pointer is over the page itself),
 ``paths`` are the local file paths. A handler that took the files, or refused them,
 returns the sentence to say; one that does not know these files returns None and
 the next handler is asked. With no handler registered the canvas ignores files, as
@@ -14,7 +17,7 @@ from typing import Callable, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 
-FileDropHandler = Callable[[NodeId, Sequence[str]], Optional[str]]
+FileDropHandler = Callable[[object, NodeId, Sequence[str]], Optional[str]]
 
 _HANDLERS: List[FileDropHandler] = []
 
@@ -46,10 +49,10 @@ def local_paths(mime: object) -> Tuple[str, ...]:
     return tuple(found)
 
 
-def dispatch(target_id: NodeId, paths: Sequence[str]) -> Optional[str]:
-    """Ask each handler in turn. The first sentence wins."""
+def dispatch(session: object, target_id: NodeId, paths: Sequence[str]) -> Optional[str]:
+    """Ask each handler in turn. The first answer wins (``""`` means handled, nothing to say)."""
     for handler in tuple(_HANDLERS):
-        sentence = handler(target_id, tuple(paths))
+        sentence = handler(session, target_id, tuple(paths))
         if sentence is not None:
             return sentence
     return None

@@ -335,7 +335,7 @@ class FormCanvas(QGraphicsView):
         if paths:
             event.acceptProposedAction()  # type: ignore[attr-defined]
             target = self.node_at(event_pos(event)) or self._session.document.root.id
-            sentence = file_drops.dispatch(target, paths)
+            sentence = file_drops.dispatch(self._session, target, paths)
             if sentence:
                 self._host.narrate(sentence)
             return

@@ -46,6 +46,11 @@ def notice_for(label: str) -> Optional[str]:
 
 def notice_sentence(label: str, names: Sequence[str] = ()) -> Optional[str]:
     """``Deleted printButton``, ``Deleted 3 widgets``, or ``Changed the layout``."""
+    from app.features.form_builder.qtside.resources.notices import sentence_for
+
+    recorded = sentence_for(label)
+    if recorded is not None:
+        return recorded
     folded = " ".join(label.strip().lower().split())
     if not folded:
         return None

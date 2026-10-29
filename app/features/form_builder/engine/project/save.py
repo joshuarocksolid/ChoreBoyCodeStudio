@@ -285,6 +285,91 @@ def _resource_writes(
     return planned
 
 
+_SKIP_DIRS = frozenset({"cbcs", "__pycache__", ".git", "vendor", "node_modules"})
+
+
+def project_ui_files(root: str) -> Tuple[str, ...]:
+    """Absolute paths of every ``.ui`` under ``root``, sorted, without tool and vendor folders."""
+    found: List[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(name for name in dirnames if name not in _SKIP_DIRS and not name.startswith("."))
+        found.extend(os.path.join(dirpath, name) for name in sorted(filenames) if name.endswith(".ui"))
+    return tuple(found)
+
+
+def forms_including(project_root: str, qrc_path: str, fs: Optional[OsFileSystem] = None) -> Tuple[str, ...]:
+    """Absolute paths of the project's forms whose ``<resources>`` include ``qrc_path``."""
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+
+    files = fs if fs is not None else OsFileSystem()
+    target = os.path.normcase(os.path.abspath(qrc_path))
+    found: List[str] = []
+    for ui_path in project_ui_files(project_root):
+        try:
+            document = read_ui(files.read_text(ui_path), allocator=IdAllocator()).document
+        except (OSError, UnicodeError, UiReadError):
+            continue
+        for node in document.ui.children("resources"):
+            location = node.field("location")
+            if not isinstance(location, str) or not location.strip():
+                continue
+            here = os.path.normcase(os.path.normpath(os.path.join(os.path.dirname(ui_path), location.replace("\\", "/"))))
+            if here == target:
+                found.append(ui_path)
+                break
+    return tuple(found)
+
+
+def rewrite_resource_modules(
+    project_root: str,
+    qrc_path: str,
+    fs: Optional[OsFileSystem] = None,
+) -> WriteResult:
+    """Write the ``*_rc.py`` of every form in the project that includes ``qrc_path`` (UX-RES-004).
+
+    Only the resource modules are written, never a form's ``ui_*.py``. A module
+    whose bytes already match is left alone. Files are written through a
+    ``Journal``, so a failure leaves every one of them as it was.
+    """
+    from app.features.form_builder.engine.ids import IdAllocator
+    from app.features.form_builder.engine.project.adoption import scope_for
+    from app.features.form_builder.engine.ui4.reader import UiReadError, read_ui
+
+    files = fs if fs is not None else OsFileSystem()
+    root = os.path.abspath(project_root)
+    diagnostics: List[FormDiagnostic] = []
+    planned: dict = {}
+    for ui_path in forms_including(root, qrc_path, files):
+        scope = scope_for(ui_path, root, files)
+        if not scope.generates:
+            continue
+        try:
+            ui_bytes = files.read_bytes(ui_path)
+            document = read_ui(ui_bytes.decode("utf-8"), allocator=IdAllocator()).document
+        except (OSError, UnicodeError, UiReadError):
+            continue
+        result = generate_form_module(document, scope=scope, source_bytes=ui_bytes)
+        for path, data in _resource_writes(scope, document, result.resource_modules, files, diagnostics):
+            planned.setdefault(path, data)
+    outside = [path for path in planned if not inside_project(path, root)]
+    if outside:
+        return WriteResult(tuple(diagnostics), (), False)
+    journal = Journal(files)
+    try:
+        for path, data in planned.items():
+            journal.put(path, data)
+    except OSError:
+        try:
+            journal.rollback()
+        except OSError:
+            pass
+        diagnostics.append(_diagnostic("FB509", "could not write the picture module."))
+        return WriteResult(tuple(diagnostics), (), False)
+    clear_inference_cache()
+    return WriteResult(tuple(diagnostics), tuple(planned), True)
+
+
 def resource_destination(project_root: str, ui_path: str, location: str, module: str) -> str:
     """Absolute path of the ``*_rc.py`` written for one ``.qrc`` include."""
     _qrc, dest = _rc_paths(project_root, ui_path, location, module)

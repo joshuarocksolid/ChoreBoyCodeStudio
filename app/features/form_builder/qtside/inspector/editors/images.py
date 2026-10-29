@@ -5,8 +5,11 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import Callable, Dict, Optional
 
+from app.features.form_builder.engine.project.fs import ProjectOpError
+from app.features.form_builder.engine.project.picture_adopt import adopt_raw_picture
 from app.features.form_builder.engine.project.pictures import (
     PictureIndex,
+    RawPicture,
     file_name_of,
     index_for_document,
     label_text_hides_picture,
@@ -35,11 +38,14 @@ from app.features.form_builder.qtside.inspector.editors._editor_kit import (
 )
 from app.features.form_builder.qtside.inspector.editors._picture_picker import (
     PicturePicker,
+    announce,
     cached_thumbnail,
     displayed_name,
     form_directory,
+    form_project,
 )
 from app.features.form_builder.qtside.inspector.editors._popover import RowPopover
+from app.features.form_builder.qtside.resources import notices
 from app.features.form_builder.qtside.visual.color_picker import Swatch
 from app.features.form_builder.qtside.visual.common import RowSummary, begin_popover
 from app.qt.QtCore import QSize, Qt
@@ -49,12 +55,14 @@ from app.qt.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPushButton,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 _FILE_WARNING = "Loaded from a file path. A packaged app may not find it."
+_ADOPT = "Add to project pictures"
 _TEXT_HIDES = "The label's text replaces this picture when the app runs. Clear the text to show it."
 _MISSING_SUFFIX = " (missing)"
 _THEME_HELP = "Uses the desktop's icon with this name when there is one; otherwise the picture."
@@ -163,11 +171,29 @@ class _PictureRow:
         self._summary.set_opener(self._open)
         layout.addWidget(self._swatch)
         layout.addWidget(self._summary, 1)
-        self._warning = QLabel(parent)
+        self._notes = QWidget(parent)
+        notes_layout = QVBoxLayout(self._notes)
+        notes_layout.setContentsMargins(0, 0, 0, 0)
+        notes_layout.setSpacing(2)
+        self._warning = QLabel(self._notes)
         self._warning.setObjectName("formBuilder.pictureWarning")
         self._warning.setWordWrap(True)
         self._warning.setStyleSheet("color: %s;" % warning_color(host.chrome))
-        self._warning.hide()
+        notes_layout.addWidget(self._warning)
+        # UX-RES-005: the warning's fix, one Tab stop under the row.
+        self._adopt = QPushButton(_ADOPT, self._notes)
+        self._adopt.setObjectName("formBuilder.pictureAdopt")
+        self._adopt.setAccessibleName("Picture: add to project pictures")
+        self._adopt.setFlat(True)
+        self._adopt.setCursor(getattr(Qt, "CursorShape", Qt).PointingHandCursor)
+        self._adopt.setStyleSheet(
+            "QPushButton { color: %s; text-decoration: underline; text-align: left; border: none; padding: 0; }"
+            % host.chrome.accent
+        )
+        self._adopt.clicked.connect(self._adopt_clicked)
+        self._adopt.hide()
+        notes_layout.addWidget(self._adopt, 0, getattr(Qt, "AlignmentFlag", Qt).AlignLeft)
+        self._notes.hide()
         self._stored = ""
         self._missing = False
         self._mixed = False
@@ -182,7 +208,7 @@ class _PictureRow:
 
     @property
     def caption_widget(self) -> QWidget:
-        return self._warning
+        return self._notes
 
     def paint_stored(self, stored: str, value: RowValue, *, label: str = "") -> None:
         self._mixed = isinstance(value, Mixed)
@@ -209,6 +235,57 @@ class _PictureRow:
             notes.append(_TEXT_HIDES)
         self._warning.setText("\n".join(notes))
         self._warning.setVisible(bool(notes))
+        self._adopt.setVisible(file_path and self._can_adopt())
+        self._notes.setVisible(bool(notes))
+
+    def _can_adopt(self) -> bool:
+        """Only a single owner in a project: the fix rewrites one property."""
+        if self._mixed:
+            return False
+        _path, root = form_project(self._host)
+        try:
+            return bool(root) and len(self._host.owner_ids()) == 1 and bool(self._host.qt_name)
+        except (AttributeError, RuntimeError, TypeError):
+            return False
+
+    def _raw_picture(self) -> Optional[RawPicture]:
+        owners = self._host.owner_ids()
+        if len(owners) != 1:
+            return None
+        document = self._host.document()
+        node = document.node(owners[0])
+        state = ""
+        if self._kind == "Icon":
+            entry = node.prop(self._host.qt_name)
+            value = entry.value if entry is not None else None
+            if not isinstance(value, IconSetValue):
+                return None
+            state = next(
+                (name for name in ICON_STATES if getattr(getattr(value, name), "path", "") == self._stored),
+                "text" if value.text == self._stored else "",
+            )
+            if not state:
+                return None
+        return RawPicture(owners[0], getattr(node, "object_name", "") or "", self._host.qt_name, state, self._stored)
+
+    def _adopt_clicked(self) -> None:
+        """UX-RES-005: the file joins the project's pictures and the property points at it, in one step."""
+        ui_path, root = form_project(self._host)
+        try:
+            raw = self._raw_picture()
+            if raw is None:
+                return
+            plan = adopt_raw_picture(self._host.document(), ui_path, root, raw)
+        except (ProjectOpError, KeyError, AttributeError, RuntimeError, TypeError) as exc:
+            self._warning.setText(str(exc) if isinstance(exc, ProjectOpError) else _FILE_WARNING)
+            return
+        session = self._host.begin_session(plan.label)
+        try:
+            session.run(plan.commands)
+        finally:
+            session.close()
+        notices.remember(plan.label, plan.notice)
+        announce(self._host, plan.notice)
 
     def _text_hides_picture(self) -> bool:
         if self._kind != "Pixmap":
@@ -270,7 +347,9 @@ class PixmapEditor(_PictureRow):
         if self._popover is not None and not self._popover.closed:
             return
         popover = self._begin(change_label(self._host.label or "pixmap"))
-        picker = PicturePicker(popover, self._host, self._pick, on_close=popover.done)
+        picker = PicturePicker(
+            popover, self._host, self._pick, on_close=popover.done, session=popover.session
+        )
         if self._stored:
             picker.select_path(self._stored)
         popover.body().addWidget(picker)
@@ -329,6 +408,7 @@ class IconEditor(_PictureRow):
             self._pick,
             on_close=self._picked_close,
             grid_height=180,
+            session=popover.session,
         )
         layout.addWidget(self._picker)
         theme_label = QLabel("Theme icon name", body)
