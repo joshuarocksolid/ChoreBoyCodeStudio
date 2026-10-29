@@ -1696,8 +1696,8 @@ def _visible_text(node: Node) -> str:
                 texts.append(columns[0])
         if not texts:
             return ""
-        shown = ", ".join(texts[:3])
-        if len(texts) > 3:
+        shown = ", ".join(texts[:2])
+        if len(texts) > 2:
             shown += ", \u2026"
         return shown
     for key in ("text", "title", "windowTitle", "plainText"):

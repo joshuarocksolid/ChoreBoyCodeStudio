@@ -23,8 +23,8 @@ _COMBO = form(
     """
   <layout class="QVBoxLayout" name="verticalLayout">
    <item><widget class="QComboBox" name="size">
-    <item><property name="text"><string>Small</string></property></item>
-    <item><property name="text"><string>Medium</string></property></item>
+    <item><property name="text"><string>Red</string></property></item>
+    <item><property name="text"><string>Amber</string></property></item>
    </widget></item>
    <item><widget class="QListWidget" name="names">
     <item><property name="text"><string>Ada</string></property></item>
@@ -43,7 +43,7 @@ def _caption(pane, session, name):  # type: ignore[no-untyped-def]
 
 def test_a_combo_and_a_list_show_their_item_text(qapp: QApplication) -> None:
     with _opened(qapp, _COMBO, "items") as (pane, session):
-        assert "Small, Medium" in _caption(pane, session, "size")
+        assert "Red, Amber" in _caption(pane, session, "size")
         assert "Ada" in _caption(pane, session, "names")
 
 
@@ -74,13 +74,13 @@ def test_adding_an_item_updates_the_outline_caption(qapp: QApplication) -> None:
         combo = _id(session, "size")
         draft = load_draft(session.document, combo)
         assert draft is not None
-        extra = replace(draft.items[0], texts=("Large",), id=None)
+        extra = replace(draft.items[0], texts=("Green",), id=None)
         draft = replace(draft, items=draft.items + (extra,))
         items, _rows, _cols = commit_slots(draft)
         session.log.execute(SetItems(combo, items, None, None, merge_token="t2", widget_name="size"))
         pane.note_edited()
         qapp.processEvents()
-        assert "Small, Medium, Large" in _caption(pane, session, "size")
+        assert "\u201cRed, Amber, \u2026\u201d" in _caption(pane, session, "size")
 
 
 def test_narrowing_a_selection_drops_the_old_highlight(qapp: QApplication) -> None:
@@ -163,7 +163,7 @@ def test_outline_item_text_screenshots(qapp: QApplication, tmp_path) -> None:  #
     combo = _id(session, "size")
     draft = load_draft(session.document, combo)
     assert draft is not None
-    extra = tuple(replace(draft.items[0], texts=(word,), id=None) for word in ("Large", "Huge"))
+    extra = tuple(replace(draft.items[0], texts=(word,), id=None) for word in ("Green", "Blue"))
     items, _rows, _cols = commit_slots(replace(draft, items=draft.items + extra))
     session.log.execute(SetItems(combo, items, None, None, merge_token="shot", widget_name="size"))
     _flush()

@@ -2290,6 +2290,10 @@ def _row_caption(row: object) -> str:
     bits = []
     friendly = row.friendly  # type: ignore[attr-defined]
     primary = row.primary  # type: ignore[attr-defined]
+    if row.qt_class in ("QComboBox", "QListWidget", "QTreeWidget", "QTableWidget") and row.visible_text:  # type: ignore[attr-defined]
+        # UX-ITEM-009: a narrow outline drops a caption that does not fit whole, so the items
+        # come first and the class word (the inspector and tooltip carry it) is left out.
+        return "\u201c%s\u201d" % row.visible_text  # type: ignore[attr-defined]
     if friendly and friendly != primary:
         bits.append(friendly)
     visible = row.visible_text  # type: ignore[attr-defined]
