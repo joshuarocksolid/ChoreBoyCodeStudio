@@ -11,7 +11,8 @@ from typing import Dict, List, Tuple
 import pytest
 
 from app.features.form_builder.engine.clipboard import (
-    FRAGMENT_LOGIC_ATTR,
+    FRAGMENT_LOGIC_PROPERTY,
+    fragment_logic_version,
     paste_placement,
     selection_fragment,
 )
@@ -26,6 +27,7 @@ from app.features.form_builder.engine.commands.catalog import (
     SetFormSlots,
     SetLogic,
     SetProperty,
+    SetPropertyMany,
 )
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.reader import read_fragment
@@ -251,6 +253,70 @@ def test_read_only_logic_is_written_back_byte_identical_through_layout_edits() -
     assert saved(doc) == saved(open_log(_newer_form()).document)
 
 
+def _logic_bytes(doc: UiDocument) -> Tuple[Dict[Tuple[str, str], str], object, List[Tuple[object, ...]]]:
+    return (
+        texts(doc),
+        doc.root.prop("cbcsLogic"),
+        [(c.field("sender"), c.field("signal"), c.field("receiver"), c.field("slot")) for c in doc.connections()],
+    )
+
+
+def test_read_only_logic_survives_every_edit_kind_byte_for_byte() -> None:
+    """Delete of a widget the newer logic names, paste in and out, rename of an unmentioned
+    widget and generic property writes: logic text and the marker never change; only the
+    native connections of a deleted widget go (CONTRACTS 15.7)."""
+    log = open_log(_newer_form())
+    doc = log.document
+    logic, marker, connections = _logic_bytes(doc)
+    # Delete nameEdit, which the newer step list targets and the connection receives.
+    log.execute(DeleteNodes((nid(doc, "nameEdit"),)))
+    after, marker_after, connections_after = _logic_bytes(doc)
+    assert marker_after == marker
+    assert {k: v for k, v in after.items()} == {k: v for k, v in logic.items() if k[0] != "nameEdit"}
+    assert connections_after == []  # its native connection went with it, as DeleteNodes does
+    # Paste a copy of the button (it holds newer logic): the copy's text is kept as copied.
+    fragment = selection_fragment(doc, (nid(doc, "clearButton"),))
+    log.execute(InsertFragment(paste_placement(doc, (nid(doc, "total"),)), fragment))
+    assert texts(doc)[("clearButton_2", "cbcsOnClicked")] == logic[("clearButton", "cbcsOnClicked")]
+    assert doc.root.prop("cbcsLogic") == marker
+    # Generic property writes of logic keys are refused like SetLogic.
+    for command in (
+        SetProperty(nid(doc, "total"), "cbcsValue", StringValue("3", notr=True), stdset="0"),
+        SetProperty(nid(doc, "other"), "cbcsOnClicked", StringValue("[]", notr=True), stdset="0"),
+        SetProperty(doc.root.id, "cbcsLogic", None),
+        SetPropertyMany((nid(doc, "other"), nid(doc, "total")), "cbcsVisibleWhen", StringValue("x"), "property", "0"),
+    ):
+        with pytest.raises(CommandRejected) as caught:
+            log.execute(command)
+        assert caught.value.code == "FB402"
+    # Layout keys are not logic and stay editable.
+    log.execute(SetProperty(nid(doc, "other"), "cbcsSplitterSizes", StringValue("1,2"), stdset="0"))
+    while log.undo():
+        pass
+    assert saved(doc) == saved(open_log(_newer_form()).document)
+
+
+def test_read_only_logic_refuses_taking_a_name_the_newer_text_uses() -> None:
+    text = _newer_form().replace("nameEdit + 1", "ghostEdit + 1")
+    log = open_log(text)
+    doc = log.document
+    with pytest.raises(CommandRejected) as caught:
+        log.execute(Rename(nid(doc, "total"), "ghostEdit"))
+    assert caught.value.code == "FB402"
+    assert "no widget can take that name" in str(caught.value)
+    log.execute(Rename(nid(doc, "total"), "grandTotal"))
+
+
+def test_renaming_onto_an_existing_name_is_refused_not_merged() -> None:
+    log = open_log(form())
+    doc = log.document
+    before = saved(doc)
+    with pytest.raises(CommandRejected) as caught:
+        log.execute(Rename(nid(doc, "other"), "nameEdit"))
+    assert caught.value.code == "FB010"
+    assert saved(doc) == before
+
+
 def test_read_only_logic_refuses_renaming_a_widget_its_text_mentions() -> None:
     log = open_log(_newer_form())
     doc = log.document
@@ -276,15 +342,18 @@ def test_paste_with_unreadable_or_newer_versions_makes_the_target_read_only() ->
     target = open_log(form(marker=""))
     src_doc, doc = source.document, target.document
     fragment = selection_fragment(src_doc, (nid(src_doc, "clearButton"), nid(src_doc, "nameEdit")))
-    assert all(dict(spec.extra_attrs)[FRAGMENT_LOGIC_ATTR] == "4" for spec in fragment.nodes)
+    assert fragment_logic_version(fragment) == 4
+    assert all(spec.properties[-1].name == FRAGMENT_LOGIC_PROPERTY for spec in fragment.nodes)
     text = write_fragment(fragment)
-    assert 'cbcslogicversion="4"' in text
+    # A dynamic property, never an XML attribute: Qt's ui4 reader refuses unknown attributes.
+    assert text.count('<property name="cbcsLogic" stdset="0">') == 2 and "cbcslogicversion" not in text
     again = read_fragment(text)
+    assert fragment_logic_version(again) == 4
     before = texts(doc)
     result = target.execute(InsertFragment(paste_placement(doc, (nid(doc, "total"),)), again))
     assert doc.root.prop("cbcsLogic") is not None
     assert doc.root.prop("cbcsLogic").value == StringValue('{"version":4}', notr=True)  # type: ignore[union-attr]
-    assert "cbcslogicversion" not in saved(doc)
+    assert saved(doc).count('name="cbcsLogic"') == 1  # the root's marker only
     new_names = [n for n in doc.names() if n.endswith("_2")]
     assert "nameEdit_2" in new_names and "clearButton_2" in new_names
     # copied as it was: the pasted button still acts on the original nameEdit
@@ -301,7 +370,7 @@ def test_paste_of_a_marker_that_cannot_be_read_counts_as_newer() -> None:
     target = open_log(form(marker=""))
     src_doc, doc = source.document, target.document
     fragment = selection_fragment(src_doc, (nid(src_doc, "total"),))
-    assert dict(fragment.nodes[0].extra_attrs)[FRAGMENT_LOGIC_ATTR] == "2"
+    assert fragment_logic_version(fragment) == 2
     target.execute(InsertFragment(paste_placement(doc, (nid(doc, "total"),)), fragment))
     assert doc.root.prop("cbcsLogic").value == StringValue('{"version":2}', notr=True)  # type: ignore[union-attr]
 

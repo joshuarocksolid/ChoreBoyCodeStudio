@@ -7,7 +7,7 @@ CBCS inserts a new entry, and what kind of text each one holds.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.ui4.values import StringListValue, StringValue, Value
 
@@ -99,25 +99,19 @@ def signal_of_property(key: str) -> Optional[str]:
     return rest[0].lower() + rest[1:]
 
 
-class _LogicOrder(tuple):  # type: ignore[type-arg]
-    """``LOGIC_PROPERTY_ORDER``. Any ``cbcsOn<Signal>`` name counts as a member and
-    ranks at the ``cbcsOn*`` slot, so ``property_rank`` (``ui4/defaults.py``) sorts the
-    step lists of one owner among themselves by name without a change there."""
+#: The known names in rank order. ``cbcsOn*`` stands for every ``cbcsOn<Signal>`` name.
+LOGIC_PROPERTY_ORDER: Tuple[str, ...] = _ORDER
 
-    __slots__ = ()
-
-    def __contains__(self, item: object) -> bool:
-        if isinstance(item, str) and is_signal_property(item):
-            return True
-        return tuple.__contains__(self, item)
-
-    def index(self, value: Any, *args: Any) -> int:  # type: ignore[override]
-        if isinstance(value, str) and is_signal_property(value):
-            value = SIGNAL_RANK_NAME
-        return tuple.index(self, value, *args)
+_RANKS: Dict[str, int] = {name: index for index, name in enumerate(_ORDER)}
 
 
-LOGIC_PROPERTY_ORDER: Tuple[str, ...] = _LogicOrder(_ORDER)
+def logic_rank(name: str) -> Optional[int]:
+    """Where a new ``cbcs*`` entry ranks among the known names (CONTRACTS 15.1), or None for
+    a name that is not known. Every ``cbcsOn<Signal>`` name ranks at the ``cbcsOn*`` slot;
+    ``property_rank`` (``ui4/defaults.py``) then orders them by name."""
+    if is_signal_property(name):
+        return _RANKS[SIGNAL_RANK_NAME]
+    return _RANKS.get(name)
 
 
 def is_logic_key(name: str) -> bool:

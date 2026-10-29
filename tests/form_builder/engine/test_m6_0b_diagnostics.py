@@ -53,6 +53,11 @@ def test_a_newer_or_unreadable_marker_is_one_warning_for_the_form() -> None:
     assert "(version 5)" in newer[0].message and newer[0].severity is Severity.WARNING
     unreadable = logic_diagnostics(open_log(form(marker="soon")).document)
     assert [item.code for item in unreadable] == ["FB401", "FB402"]
+    # newer logic is not interpreted: shapes and verbs this build doesn't know add no rows
+    future = form(marker='{"version":5}').replace(
+        prop_xml("cbcsOnClicked", CLEAR_STEPS), prop_xml("cbcsOnClicked", '{"v2": [{"do": "hyperjump"}]}')
+    )
+    assert [item.code for item in logic_diagnostics(open_log(future).document)] == ["FB402"]
 
 
 def test_event_words() -> None:

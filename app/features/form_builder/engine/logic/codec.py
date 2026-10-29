@@ -93,7 +93,8 @@ class JsonRead:
 class Step:
     """One step of an event (CONTRACTS 15.3).
 
-    ``enabled`` is True unless the step says ``"enabled": false``. ``fields`` are the
+    ``enabled`` is True unless the step says ``"enabled": false``; only ``False`` turns a
+    step off when writing (None counts as on). ``fields`` are the
     verb's fields: for ``slot`` and ``call`` in schema order, for any other verb every
     key but ``do``, ``when`` and ``enabled`` in read order. ``unknown`` are the keys
     of a typed verb this build does not know, in read order.
@@ -112,7 +113,7 @@ class Step:
     @property
     def is_plain(self) -> bool:
         """A typed step with no ``when`` and not turned off: it can be a native connection."""
-        return self.is_typed and self.when is None and self.enabled
+        return self.is_typed and self.when is None and self.enabled is not False
 
     def field(self, name: str, default: JsonValue = None) -> JsonValue:
         for key, value in self.fields:
@@ -326,6 +327,7 @@ def _step_from_object(obj: JsonObject) -> Step:
     when: Optional[str] = None
     enabled = True
     rest: List[Tuple[str, JsonValue]] = []
+    schema = TYPED_VERBS.get(verb)
     for key, value in obj.pairs:
         if key == "do":
             continue
@@ -333,9 +335,12 @@ def _step_from_object(obj: JsonObject) -> Step:
             when = value
         elif key == "enabled" and isinstance(value, bool):
             enabled = value
+        elif schema is not None and key in ("when", "enabled"):
+            # A typed step with a condition it can't read must not pass for a plain step
+            # (it would become a native connection and the condition would be lost).
+            raise _Refused(1, '"when" must be text and "enabled" true or false')
         else:
             rest.append((key, value))
-    schema = TYPED_VERBS.get(verb)
     if schema is None:
         return Step(verb, when, enabled, tuple(rest), ())
     taken = {}
@@ -404,7 +409,7 @@ def _step_object(step: Step) -> JsonObject:
     pairs: List[Tuple[str, JsonValue]] = [("do", step.verb)]
     if step.when is not None:
         pairs.append(("when", step.when))
-    if not step.enabled:
+    if step.enabled is False:
         pairs.append(("enabled", False))
     pairs.extend(step.fields)
     pairs.extend(step.unknown)

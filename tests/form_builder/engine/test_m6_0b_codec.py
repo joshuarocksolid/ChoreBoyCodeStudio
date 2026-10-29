@@ -32,6 +32,7 @@ from app.features.form_builder.engine.logic.codec import (
 )
 from app.features.form_builder.engine.logic.storage import (
     LOGIC_PROPERTY_ORDER,
+    logic_rank,
     signal_of_property,
     signal_property,
 )
@@ -349,11 +350,62 @@ def test_signal_property_names_are_exact_inverses() -> None:
 
 def test_step_lists_rank_at_the_cbcs_on_slot_and_by_name() -> None:
     order = list(LOGIC_PROPERTY_ORDER)
-    assert "cbcsOnClicked" in LOGIC_PROPERTY_ORDER
-    assert LOGIC_PROPERTY_ORDER.index("cbcsOnClicked") == order.index("cbcsOn*")
+    assert logic_rank("cbcsOnClicked") == logic_rank("cbcsOnOpened") == order.index("cbcsOn*")
+    assert logic_rank("cbcsOnline") is None and logic_rank("cbcsFuture") is None
     assert order.index("cbcsErrorSummary") + 1 == order.index("cbcsOn*") == order.index("cbcsData") - 1
 
     table = QtClassTable.shared()
     names = ["cbcsOnToggled", "cbcsData", "cbcsOnClicked", "cbcsValidate", "cbcsFuture", "cbcsErrorLabel", "cbcsChoice"]
     ranked = sorted(names, key=lambda item: table.property_rank("QPushButton", item, dynamic=True))
     assert ranked == ["cbcsValidate", "cbcsErrorLabel", "cbcsOnClicked", "cbcsOnToggled", "cbcsData", "cbcsChoice", "cbcsFuture"]
+
+
+def test_a_typed_step_with_a_condition_it_cannot_read_is_fb401_not_plain() -> None:
+    for text in (
+        '[{"do": "slot", "target": "a", "slot": "clear()", "when": 5}]',
+        '[{"do": "call", "method": "m", "enabled": "no"}]',
+        '[{"do": "call", "method": "m", "enabled": null}]',
+    ):
+        read = parse_steps(text)
+        assert read.error is not None and read.steps == ()
+    # an untyped verb keeps such keys as read (FB403 shows it read-only)
+    read = parse_steps('[{"do": "later", "when": 5}]')
+    assert read.error is None and read.steps[0].fields == (("when", 5),)
+
+
+def test_only_false_turns_a_step_off_when_writing() -> None:
+    on = Step("call", None, None, (("method", "m"),), ())  # type: ignore[arg-type]
+    assert write_steps((on,)) == '[\n  {"do": "call", "method": "m"}\n]'
+    assert on.is_plain
+
+
+@pytest.mark.timeout(60)
+def test_hostile_texts_stay_fast_and_total() -> None:
+    import time
+
+    from app.features.form_builder.engine.logic.refs import opaque_mentions, rename_formula
+
+    hostile = [
+        "[" * (1024 * 1024),
+        "[" * 5000 + "]" * 5000,
+        "1" * (1024 * 1024 - 10),
+        "[" + "1" * 5000 + "]",
+        "[" + "1e" + "9" * 500 + "]",
+        '["' + "\\" * 400000 + '"]',
+        "[" + ", ".join(['{"do": "slot", "target": "a", "slot": "b()"}'] * 20000) + "]",
+        '{"a": ' * 40 + "1" + "}" * 40,
+        "[\ud800]",
+        "\x00" * 1000,
+    ]
+    for text in hostile:
+        started = time.perf_counter()
+        parse_steps(text)
+        parse_json(text)
+        canonical_logic_text("cbcsOnClicked", text)
+        opaque_mentions(text, "a")
+        assert time.perf_counter() - started < 5.0, text[:40]
+    assert parse_json('{"a": ' * 40 + "1" + "}" * 40).error is not None  # deeper than 32
+    for formula in ("(" * 60000, "a+" * 30000 + "a", "'" + "x" * 60000, "a." * 30000 + "a"):
+        started = time.perf_counter()
+        rename_formula(formula, {"a": "b"})
+        assert time.perf_counter() - started < 5.0, formula[:40]

@@ -50,10 +50,21 @@ def _seed() -> int:
         ("f(\n  qtySpin,\n  qtySpin=2)", "f(\n  qty,\n  qtySpin=2)"),
         ("é + qtySpin", "é + qty"),
         ("", ""),
+        # outside the formula language (FB103 and friends), but still exact on 3.9, 3.11 and 3.12+
+        ('f"{qtySpin}" + qtySpin', 'f"{qtySpin}" + qty'),
+        ("(n := qtySpin)", "(n := qty)"),
+        ("{qtySpin: qtySpin}", "{qty: qty}"),
+        ("(qtySpin\r\n+\tqtySpin)", "(qty\r\n+\tqty)"),
     ],
 )
 def test_rename_formula_token_rules(text: str, expected: str) -> None:
     assert rename_formula(text, {"qtySpin": "qty"}) == expected
+
+
+def test_rename_matches_names_as_python_reads_them() -> None:
+    # Python NFKC-normalises identifiers, so M7's evaluator reads the ligature as ``field``.
+    assert rename_formula("\ufb01eld + field", {"field": "amount"}) == "amount + amount"
+    assert formula_mentions("\ufb01eld > 1", "field")
 
 
 @pytest.mark.parametrize("text", ["qtySpin 'unterminated", "qtySpin $ 1", "(qtySpin", "qtySpin ?", '"""qtySpin'])
@@ -118,11 +129,17 @@ def test_json_formulas_in_checks_and_rows() -> None:
 def test_opaque_search_finds_names_in_unknown_structures() -> None:
     assert opaque_mentions('{"version": 9, "later": {"who": ["nameEdit"], "rule": "x > nameEdit.value"}}', "nameEdit")
     assert opaque_mentions('{"rule": "nameEdit.value > 1"}', "nameEdit")
-    assert not opaque_mentions('{"rule": "other.nameEdit", "n": 3}', "nameEdit")
-    # unknown text is searched, not understood, so a sentence that holds the word counts too
+    # unknown text is searched, not understood: any whole-identifier occurrence counts, in a key,
+    # after a dot, in a sentence or in text that doesn't tokenize (it errs towards "mentioned")
+    assert opaque_mentions('{"rule": "other.nameEdit", "n": 3}', "nameEdit")
+    assert opaque_mentions('{"nameEdit": 3}', "nameEdit")
     assert opaque_mentions('{"text": "nameEdit is bad"}', "nameEdit")
     assert opaque_mentions("useName and total", "total")
+    assert opaque_mentions('nameEdit + "unclosed', "nameEdit")
+    assert opaque_mentions("x" * 70000 + " nameEdit", "nameEdit")
+    assert opaque_mentions("\ufb01eld > 1", "field")  # NFKC: Python reads the ligature as field
     assert not opaque_mentions("not json at all {", "nameEdit")
+    assert not opaque_mentions('{"rule": "nameEditor + myNameEdit"}', "nameEdit")
 
 
 # --- the property ----------------------------------------------------------

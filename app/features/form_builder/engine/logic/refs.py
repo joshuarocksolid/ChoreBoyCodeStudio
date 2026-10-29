@@ -17,14 +17,15 @@ from __future__ import annotations
 
 import io
 import keyword
+import re
 import tokenize
+import unicodedata
 from typing import Callable, Dict, List, Mapping, Optional, Tuple
 
 from app.features.form_builder.engine.logic.codec import (
     JsonObject,
     JsonValue,
     Step,
-    iter_strings,
     parse_json,
     parse_steps,
     write_json,
@@ -78,15 +79,47 @@ def declare_name_fields(verb: str, fields: Tuple[str, ...]) -> None:
 # ---------------------------------------------------------------------------
 
 
+#: Python 3.12+ splits f-strings (3.14 t-strings) into parts with NAME tokens inside. Python
+#: 3.9 and 3.11 give one STRING token. Everything from a start to its end is skipped, so a
+#: rename never reaches into a string on any version.
+_STRING_STARTS = frozenset(
+    code for code in (getattr(tokenize, "FSTRING_START", None), getattr(tokenize, "TSTRING_START", None)) if code is not None
+)
+_STRING_ENDS = frozenset(
+    code for code in (getattr(tokenize, "FSTRING_END", None), getattr(tokenize, "TSTRING_END", None)) if code is not None
+)
+
+
+def _same_name(left: str, right: str) -> bool:
+    """Python compares identifiers after NFKC normalisation (``\ufb01eld`` is ``field``)."""
+    if left == right:
+        return True
+    if left.isascii() and right.isascii():
+        return False
+    return unicodedata.normalize("NFKC", left) == unicodedata.normalize("NFKC", right)
+
+
+def _name_key(name: str) -> str:
+    return name if name.isascii() else unicodedata.normalize("NFKC", name)
+
+
 def _tokens(text: str) -> Optional[List[tokenize.TokenInfo]]:
     if len(text) > _MAX_FORMULA_CHARS:
         return None
     try:
         found: List[tokenize.TokenInfo] = []
+        inside = 0
         for token in tokenize.generate_tokens(io.StringIO(text).readline):
             if token.type == tokenize.ERRORTOKEN:
                 return None
-            found.append(token)
+            if token.type in _STRING_STARTS:
+                inside += 1
+                continue
+            if token.type in _STRING_ENDS:
+                inside -= 1
+                continue
+            if inside == 0:
+                found.append(token)
         return found
     except Exception:  # noqa: BLE001 - text that doesn't tokenize is left alone
         return None
@@ -140,7 +173,7 @@ def formula_names(text: str) -> Tuple[str, ...]:
 
 
 def formula_mentions(text: str, name: str) -> bool:
-    return any(token.string == name for token in _name_tokens(text))
+    return any(_same_name(token.string, name) for token in _name_tokens(text))
 
 
 def rename_formula(text: str, mapping: Mapping[str, str]) -> str:
@@ -149,7 +182,8 @@ def rename_formula(text: str, mapping: Mapping[str, str]) -> str:
     Only the token's span changes. Text that doesn't tokenize comes back as it is."""
     if not mapping:
         return text
-    chosen = [token for token in _name_tokens(text) if token.string in mapping]
+    keyed = {_name_key(old): new for old, new in mapping.items()}
+    chosen = [token for token in _name_tokens(text) if _name_key(token.string) in keyed]
     if not chosen:
         return text
     starts: List[int] = []
@@ -167,7 +201,7 @@ def rename_formula(text: str, mapping: Mapping[str, str]) -> str:
         end = starts[row - 1] + end_column
         if text[begin:end] != token.string:
             return text
-        pieces.append((begin, end, mapping[token.string]))
+        pieces.append((begin, end, keyed[_name_key(token.string)]))
     result = text
     for begin, end, replacement in sorted(pieces, reverse=True):
         result = result[:begin] + replacement + result[end:]
@@ -318,17 +352,16 @@ def step_target_names(text: str) -> Tuple[str, ...]:
 
 
 def opaque_mentions(text: str, name: str) -> bool:
-    """True when ``name`` occurs in ``text`` as a NAME token, or, for JSON text, as a whole string
-    value or inside a string that holds a formula. Used where the structure is unknown: the text
-    of a form saved by a newer Code Studio is never interpreted, only searched (CONTRACTS 15.7)."""
-    if formula_mentions(text, name):
-        return True
-    got = parse_json(text)
-    if got.error is None and isinstance(got.value, (tuple, JsonObject)):
-        for item in iter_strings(got.value):
-            if item == name or formula_mentions(item, name):
-                return True
-    return False
+    """True when ``name`` occurs in ``text`` as a whole identifier: in a formula, a string, a
+    key or a message alike. Used where the structure is unknown: the text of a form saved by a
+    newer Code Studio is never interpreted, only searched (CONTRACTS 15.7, UX-LST-001 "any
+    ``cbcs*`` text contains"), and it errs towards "mentioned". Linear in ``text``."""
+    if not name:
+        return False
+    key = _name_key(name)
+    haystack = text if key == name and text.isascii() else _name_key(text)
+    pattern = re.compile(r"(?<![\w])" + re.escape(key) + r"(?![\w])")
+    return pattern.search(haystack) is not None
 
 
 def label_matches(key: str, text: str, name: str) -> bool:

@@ -67,7 +67,8 @@ def unknown_step_message(object_name: str, event: str, verb: str) -> str:
 
 def logic_diagnostics(doc: UiDocument) -> Tuple[FormDiagnostic, ...]:
     """FB402 for the form, FB401 for each property that can't be read, FB403 for each step list
-    that holds a verb this build doesn't type."""
+    that holds a verb this build doesn't type. A read-only form gets FB402 (and FB401 for a
+    marker that can't be read) only."""
     root_entry = doc.root.prop("cbcsLogic")
     found: List[FormDiagnostic] = []
     root_label = identity_name(doc.root) or "the form"
@@ -88,7 +89,9 @@ def logic_diagnostics(doc: UiDocument) -> Tuple[FormDiagnostic, ...]:
                 SOURCE,
             )
         )
-    if doc.logic_property_count() == 0:
+    if found or doc.logic_property_count() == 0:
+        # Newer logic is never interpreted (CONTRACTS 15.7): its texts may use shapes and verbs
+        # this build doesn't know, so FB402 alone speaks for them.
         return tuple(found)
     for node in doc.iter_preorder():
         owner_name = identity_name(node) or "the form"

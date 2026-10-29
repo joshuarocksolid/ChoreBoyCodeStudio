@@ -622,7 +622,13 @@ def set_property(
     value: Optional[Value],
     kind: str = "property",
     stdset: Optional[str] = None,
+    *,
+    logic_checked: bool = False,
 ) -> None:
+    """``logic_checked``: the caller (``set_logic``, the marker rules) already applied the FB402
+    rule. Any other write of a ``cbcs*`` logic key is refused while logic is read-only (15.7)."""
+    if kind == "property" and not logic_checked and is_logic_key(name):
+        require_logic_writable(doc)
     node = _require(doc, owner)
     _ensure(value)
     existing = node.prop(name) if kind == "property" else node.attr(name)
@@ -678,6 +684,14 @@ def rename_node(doc: UiDocument, ctx: PlanContext, node_id: NodeId, new_name: st
     if len(doc.by_name(old)) <= 1 and _newer_logic_uses(doc, old):
         raise CommandRejected(
             "%s is used by behavior from a newer version of Code Studio, so it can't be renamed here." % (old,),
+            code="FB402",
+        )
+    if _newer_logic_uses(doc, new_name):
+        # The newer text already names ``new_name`` (a widget it expects, or one since deleted):
+        # taking that name would silently change what that behavior acts on.
+        raise CommandRejected(
+            "%s is used by behavior from a newer version of Code Studio, so no widget can take that name here."
+            % (new_name,),
             code="FB402",
         )
     set_field(doc, ctx, node_id, NAME_FIELD[node.kind], new_name)
@@ -1158,14 +1172,14 @@ def set_logic(doc: UiDocument, ctx: PlanContext, owner: NodeId, key: str, text: 
             )
         text = canonical.text
     if text is None:
-        set_property(doc, ctx, owner, key, None, stdset="0")
+        set_property(doc, ctx, owner, key, None, stdset="0", logic_checked=True)
     else:
         existing = node.prop(key)
         if existing is not None and isinstance(existing.value, StringValue) and same_logic(key, existing.value.text, text):
             # Same meaning as what is stored: keep the stored bytes (CONTRACTS 15.4 rule 7).
             pass
         else:
-            set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0")
+            set_property(doc, ctx, owner, key, StringValue(text, notr=True), stdset="0", logic_checked=True)
     _sync_logic_marker(doc, ctx)
 
 
@@ -1795,10 +1809,11 @@ def _sync_logic_marker(doc: UiDocument, ctx: PlanContext) -> None:
                 "cbcsLogic",
                 StringValue(logic_version_text(), notr=True),
                 stdset="0",
+                logic_checked=True,
             )
         return
     if existing is not None:
-        set_property(doc, ctx, doc.root.id, "cbcsLogic", None)
+        set_property(doc, ctx, doc.root.id, "cbcsLogic", None, logic_checked=True)
 
 
 def _raise_logic_marker(doc: UiDocument, ctx: PlanContext, version: int) -> None:
@@ -1807,7 +1822,9 @@ def _raise_logic_marker(doc: UiDocument, ctx: PlanContext, version: int) -> None
     current = read_marker(existing)
     if existing is not None and (not current.readable or (current.version or 0) >= version):
         return
-    set_property(doc, ctx, doc.root.id, "cbcsLogic", StringValue(logic_version_text(version), notr=True), stdset="0")
+    set_property(
+        doc, ctx, doc.root.id, "cbcsLogic", StringValue(logic_version_text(version), notr=True), stdset="0", logic_checked=True
+    )
 
 
 def _newer_logic_uses(doc: UiDocument, name: str) -> bool:
