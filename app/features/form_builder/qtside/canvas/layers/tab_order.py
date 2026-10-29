@@ -13,7 +13,7 @@ this layer on with ``canvas.show_layer("tab_order", state)``.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Hashable, List, Optional, Tuple
+from typing import Dict, FrozenSet, Hashable, List, Optional, Tuple
 
 from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.qtside.canvas.core.chips import (
@@ -33,6 +33,7 @@ from app.qt.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 
 NAME = "tab_order"
 _SEATED: Optional[Tuple[Hashable, Dict[Hashable, object]]] = None
+_CROSSINGS: Optional[Tuple[FrozenSet[Tuple[int, int]], Dict[Tuple[int, int, int, int], bool]]] = None
 BADGE = 16
 #: Gap between a badge seated inside its widget and the widget's left and top edges.
 INSET = 3
@@ -77,7 +78,7 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
             ids[name] = found[0]
     chrome = tuple(getattr(inputs, "chrome", ()))
     # Seats depend on where the stops are, not on their numbers, so a click that only renumbers reuses them.
-    key = (getattr(static, "epoch"), view, tuple(sorted(ids)), viewport, chrome)
+    key = (view, tuple((name, placed[ids[name]]) for name in sorted(ids)), content, viewport, chrome)
     global _SEATED
     if _SEATED is None or _SEATED[0] != key:
         requests = [
@@ -136,20 +137,23 @@ def flow_segments(centres: Tuple[Tuple[int, int], ...]) -> Tuple[Tuple[float, fl
 
     Upward steps bow left and downward steps right, so a step back up never lies on a step down.
     """
+    global _CROSSINGS
+    points = frozenset(centres)
+    if _CROSSINGS is None or _CROSSINGS[0] != points:
+        _CROSSINGS = (points, {})
+    # Renumbering keeps the badges where they are, so most steps were already checked.
+    known = _CROSSINGS[1]
     found = []
     for index in range(len(centres) - 1):
         (x1, y1), (x2, y2) = centres[index], centres[index + 1]
         dx, dy = float(x2 - x1), float(y2 - y1)
         length = (dx * dx + dy * dy) ** 0.5 or 1.0
         mid_x, mid_y = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-        crossed = False
-        for other, (ox, oy) in enumerate(centres):
-            if other in (index, index + 1):
-                continue
-            t = ((ox - x1) * dx + (oy - y1) * dy) / (length * length)
-            if 0.0 < t < 1.0 and abs((ox - x1) * dy - (oy - y1) * dx) / length < BADGE:
-                crossed = True
-                break
+        step = (x1, y1, x2, y2)
+        crossed = known.get(step)
+        if crossed is None:
+            crossed = _crosses(points, x1, y1, x2, y2, dx, dy, length)
+            known[step] = crossed
         if not crossed:
             found.append((float(x1), float(y1), mid_x, mid_y, float(x2), float(y2)))
             continue
@@ -157,6 +161,19 @@ def flow_segments(centres: Tuple[Tuple[int, int], ...]) -> Tuple[Tuple[float, fl
         # (dy, -dx) turned to unit length: left of an upward step, right of a downward one.
         found.append((float(x1), float(y1), mid_x + dy / length * bow, mid_y - dx / length * bow, float(x2), float(y2)))
     return tuple(found)
+
+
+def _crosses(
+    points: FrozenSet[Tuple[int, int]], x1: int, y1: int, x2: int, y2: int, dx: float, dy: float, length: float
+) -> bool:
+    """Whether the straight step passes within a badge of another badge's centre."""
+    for ox, oy in points:
+        if (ox, oy) == (x1, y1) or (ox, oy) == (x2, y2):
+            continue
+        t = ((ox - x1) * dx + (oy - y1) * dy) / (length * length)
+        if 0.0 < t < 1.0 and abs((ox - x1) * dy - (oy - y1) * dx) / length < BADGE:
+            return True
+    return False
 
 
 def inside_corner(target: CanvasRect) -> CanvasRect:

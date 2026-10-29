@@ -2623,8 +2623,9 @@ KNOWN_M94_MISS = "known M3 miss, owned by M9.4 (docs/form_builder/PLAN.md, M9.4 
 KNOWN_M94_POINTS = frozenset({"edit total surface", "edit layout spacing", "paste surface"})
 KNOWN_M45_MISS = "known M4 miss; M4.5 fix list"
 KNOWN_M45_POINTS: frozenset = frozenset()
-KNOWN_M5_MISS = "known M5 miss: the tab order layer places every badge with a quadratic scan (qtside/canvas/core/chips.py)"
-KNOWN_M5_POINTS: frozenset = frozenset({"m5 assign tab order number"})
+KNOWN_M5_MISS = "known M5 miss; M5.R fix list"
+#: Empty since M5.R cached the tab-order seats and flow-line crossings (assign was ~47 ms).
+KNOWN_M5_POINTS: frozenset = frozenset()
 
 
 def _known_miss(row: Row) -> Row:
