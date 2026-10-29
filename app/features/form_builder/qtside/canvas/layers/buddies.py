@@ -18,6 +18,7 @@ from app.features.form_builder.engine.query import tab_stops as q
 from app.features.form_builder.qtside.canvas.core.overlay import LayerItem, LayerOutput
 from app.features.form_builder.qtside.canvas.core.space import CanvasRect
 from app.features.form_builder.qtside.canvas.layers import CanvasLayer
+from app.features.form_builder.qtside.theme.modes import BUDDY, BUDDY_HIGH_CONTRAST
 from app.features.form_builder.qtside.theme.overlay import CanvasPalette
 from app.qt.QtCore import QPointF, QRectF, Qt
 from app.qt.QtGui import QColor, QPainter, QPen
@@ -27,8 +28,6 @@ RING = 8
 RING_GAP = 4
 DOT = 4
 LINK_GAP = 2
-_BUDDY = "#047857FF"
-_BUDDY_HIGH_CONTRAST = "#00553AFF"
 
 Point = Tuple[int, int]
 
@@ -126,7 +125,7 @@ def build(static: object, inputs: object, state: Hashable) -> LayerOutput:
 
 
 def _color(palette: CanvasPalette) -> QColor:
-    text = (_BUDDY_HIGH_CONTRAST if palette.overlay.min_stroke >= 2.0 else _BUDDY).lstrip("#")
+    text = (BUDDY_HIGH_CONTRAST if palette.overlay.min_stroke >= 2.0 else BUDDY).lstrip("#")
     return QColor(int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16))
 
 

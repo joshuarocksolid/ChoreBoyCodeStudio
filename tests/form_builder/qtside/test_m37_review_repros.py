@@ -165,16 +165,13 @@ def test_a_button_inserted_into_a_form_has_no_field_label(tmp_path: Path, qapp: 
         _close(window, qapp, guard)
 
 
-def test_f8_says_where_the_tab_order_comes_from(tmp_path: Path, qapp: QApplication) -> None:
-    """Until the M5.6 overlay, F8 explains the order, and must be true for this file."""
-    custom = _ROWS.replace(" <resources/>", " <tabstops>\n  <tabstop>phoneEdit</tabstop>\n  <tabstop>nameEdit</tabstop>\n </tabstops>\n <resources/>")
-    for text, expected in ((_ROWS, "follows the order of widgets"), (custom, "keeps its own tab order")):
-        window, kb, guard = _session(tmp_path / expected.split()[0], qapp, text)
-        try:
-            kb.press("Key_3", "Alt")
-            kb.press("Key_F8")
-            sentence = str(kb.surface.editor_status_sentence())  # type: ignore[attr-defined]
-            assert expected in sentence, sentence
-            assert kb.focus_in("formBuilder.canvas")
-        finally:
-            _close(window, qapp, guard)
+def test_f8_opens_the_tab_order_overlay_on_the_canvas(tmp_path: Path, qapp: QApplication) -> None:
+    """M5.6 replaced the sentence F8 used to say with the overlay itself."""
+    window, kb, guard = _session(tmp_path, qapp, _ROWS)
+    try:
+        kb.press("Key_3", "Alt")
+        kb.press("Key_F8")
+        assert kb.surface.modes.active == "tab_order"  # type: ignore[attr-defined]
+        assert kb.focus_in("formBuilder.canvas")
+    finally:
+        _close(window, qapp, guard)

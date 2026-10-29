@@ -61,7 +61,7 @@ class ModeBanner(QFrame):
         row.addWidget(self._extra)
         row.addWidget(self._done)
         self._glyph_name = ""
-        self._ink = "#000000"
+        self._ink = ""
         self._extra_slot: Optional[Callable[[], None]] = None
         self._extra.clicked.connect(self._run_extra)
         self.hide()
@@ -108,7 +108,7 @@ class ModeBanner(QFrame):
         self._paint_glyph()
 
     def _paint_glyph(self) -> None:
-        if not self._glyph_name:
+        if not self._glyph_name or not self._ink:
             return
         dpr = float(self.devicePixelRatioF()) if hasattr(self, "devicePixelRatioF") else 1.0
         icon = QIcon(paint_glyph(self._glyph_name, self._ink, 16, dpr))
