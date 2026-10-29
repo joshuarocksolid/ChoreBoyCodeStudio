@@ -215,6 +215,43 @@ def test_a_step_whose_target_left_the_form_is_a_comment_not_a_crash(tmp_path: Pa
     assert calls == [("m_none", ())]
 
 
+@pytest.mark.logic("L-runtime-connect")
+def test_a_call_reaches_the_window_method_natively_and_from_a_list(tmp_path: Path, qapp, params_shim) -> None:  # type: ignore[no-untyped-def]
+    """LOGIC_DESIGN 3.5: the form object is the receiver, so a method of the window class is there when ``setupUi`` runs."""
+    del qapp, params_shim
+    from PySide6.QtWidgets import QDialog
+
+    seen: List[str] = []
+
+    def build(text: str) -> Any:
+        namespace: Any = types.ModuleType("generated_sale_3_5")
+        exec(compile(generate(text, tmp_path), "ui_sale.py", "exec"), namespace.__dict__)
+
+        class Window(QDialog):
+            def __init__(self) -> None:
+                super().__init__()
+                self.ui = namespace.Ui_Sale()
+                self.ui.setupUi(self)
+
+            def save_invoice(self, *args: Any) -> None:
+                seen.append("save_invoice%s" % (args,))
+
+        return Window()
+
+    native = open_log(form())
+    native.execute(SetEventSteps("clearButton", "clicked", (call_step("save_invoice", 0),)))
+    assert "cbcs" not in saved(native.document)
+    first = build(saved(native.document))
+    first.ui.clearButton.click()
+    assert seen == ["save_invoice()"]
+    listed = open_log(form())
+    listed.execute(SetEventSteps("clearButton", "clicked", (call_step("save_invoice", 1), slot_step("nameEdit", "clear()", enabled=False))))
+    assert "cbcsOnClicked" in saved(listed.document)
+    second = build(saved(listed.document))
+    second.ui.clearButton.click()
+    assert seen == ["save_invoice()", "save_invoice(False,)"]
+
+
 @pytest.mark.xfail(strict=True, reason="M6.0s: Method.params (codegen/logic_hooks.py and emit.py rendering) has not merged")
 def test_m6_0s_method_params_render_the_handler_signature(tmp_path: Path) -> None:
     source = generate(with_list(CLEAR, slot_step("phoneEdit", "setFocus()", enabled=False)), tmp_path)

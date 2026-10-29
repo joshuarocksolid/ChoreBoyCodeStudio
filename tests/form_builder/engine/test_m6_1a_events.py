@@ -361,6 +361,7 @@ def test_designer_made_native_plus_a_list_is_fb404_and_merge_puts_the_native_ste
     assert state.stored_twice
     assert [d.code for d in event_diagnostics(log.document)] == ["FB404"]
     fix = event_diagnostics(log.document)[0].fixes[0].command
+    assert isinstance(fix, MergeEventStorage)
     entries = len(log.entries())
     log.execute(fix)
     assert len(log.entries()) == entries + 1
@@ -667,6 +668,7 @@ def test_events_over_a_promoted_class_read_declarations_only(tmp_path: Path) -> 
         doc, classes = log.document, QtClassTable.shared()
         node = doc.node(doc.by_name("clearButton")[0])
         class_name, declared = compat.node_class(doc, classes, node)
+        assert declared is not None
         signals = compat.signals_of(classes, class_name, declared)
         assert class_name == "QPushButton" and "tilted(int)" in signals
         assert events_catalog.common_events(classes, class_name, declared.signals) == ("clicked", "tilted")
