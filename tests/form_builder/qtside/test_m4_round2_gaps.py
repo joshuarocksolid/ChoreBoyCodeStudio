@@ -25,7 +25,7 @@ from app.features.form_builder.qtside.inspector.editors import default_catalog
 from app.features.form_builder.qtside.inspector.editors.dock_side import DOCK_SIDE, DockSideEditor
 from app.features.form_builder.qtside.inspector.api import Written
 from app.features.form_builder.qtside.inspector.model import NodeBody, project
-from app.features.form_builder.engine.ui4.values import NumberValue
+from app.features.form_builder.engine.ui4.values import NumberValue, StringValue
 from app.qt.QtWidgets import QMenu, QToolButton, QWidget
 from app.qt.qt_compat import delete_now
 from tests.form_builder.qtside.support import form, open_session, opened
@@ -227,7 +227,9 @@ def test_an_insert_drag_carries_the_dock_and_wizard_page_flags(key: str, dock: b
     assert (payload.dock, payload.wizard_page) == (dock, wizard_page)
 
 
-def test_a_group_box_shows_starts_switched_on_only_when_checkable() -> None:
+@pytest.mark.parametrize("checkable", [True, False])
+def test_a_group_box_shows_starts_switched_on_only_when_checkable(checkable: bool) -> None:
+    """UX-CONT-014: "Starts switched on" follows "Can be switched off"; the plain "Checked" row never shows."""
     from app.features.form_builder.qtside.inspector.api import GroupId
     from app.features.form_builder.qtside.inspector._live import live_classes
 
@@ -236,10 +238,10 @@ def test_a_group_box_shows_starts_switched_on_only_when_checkable() -> None:
         """
   <widget class="QGroupBox" name="box">
    <property name="title"><string>Box</string></property>
-   <property name="checkable"><bool>true</bool></property>
-   <property name="checked"><bool>true</bool></property>
+   <property name="checkable"><bool>%s</bool></property>
   </widget>
-""",
+"""
+        % ("true" if checkable else "false"),
     )
     with opened(text) as (session, realizer):
         box = session.document.by_name("box")[0]
@@ -247,14 +249,62 @@ def test_a_group_box_shows_starts_switched_on_only_when_checkable() -> None:
         live = live_classes(realizer, session.document, (box,))
         body = project(session, default_catalog(), live=live).body
         labels = {row.label for row in body.group(GroupId.CONTENT).rows()}
-        assert "Starts switched on" in labels
+        assert ("Starts switched on" in labels) is checkable
         assert "Checked" not in labels
         align = body.group(GroupId.APPEARANCE).find("titleAlignment")
         assert align is not None and align.label == "Title alignment"
         assert [choice.label for choice in align.spec.choices] == ["Left", "Centre", "Right"]
 
 
+_PAGES = """
+  <widget class="QTabWidget" name="tabs">
+   <widget class="QWidget" name="tabPage"><attribute name="title"><string>A</string></attribute></widget>
+  </widget>
+  <widget class="QToolBox" name="box">
+   <widget class="QWidget" name="boxPage"><attribute name="label"><string>B</string></attribute></widget>
+  </widget>
+"""
+
+
+@pytest.mark.parametrize(
+    ("page", "key", "attribute"),
+    [
+        ("tabPage", "tabTooltip", "toolTip"),
+        ("tabPage", "tabHelp", "whatsThis"),
+        ("boxPage", "pageTooltip", "toolTip"),
+    ],
+)
+def test_an_unwritten_page_attribute_row_shows_and_writes_the_attribute(page: str, key: str, attribute: str) -> None:
+    """UX-CONT-018 and UX-PED-063: a page row shows before the file has the attribute, and writes the attribute."""
+    from app.features.form_builder.qtside.inspector.api import GroupId
+
+    with opened(form('class="QWidget" name="Form"', _PAGES)) as (session, _realizer):
+        node = session.document.by_name(page)[0]
+        session.selection.set((node,), source=SelectionSource.CANVAS)
+        row = project(session, default_catalog()).body.group(GroupId.CONTENT).find(key)
+        assert row is not None
+        session.log.execute(row.write.edit(StringValue("Shown on the tab"), None))
+        written = session.document.node(node)
+        stored = written.attr(attribute)
+        assert stored is not None and stored.value.text == "Shown on the tab"
+        assert written.prop(attribute) is None
+
+
+@pytest.mark.parametrize(("page", "key"), [("tabPage", "tabIcon"), ("boxPage", "pageIcon")])
+def test_a_page_has_an_icon_row(page: str, key: str) -> None:
+    """UX-CONT-018: "Tab icon" and "Page icon" edit the page's icon attribute with the icon editor."""
+    from app.features.form_builder.qtside.inspector.api import GroupId
+
+    with opened(form('class="QWidget" name="Form"', _PAGES)) as (session, _realizer):
+        node = session.document.by_name(page)[0]
+        session.selection.set((node,), source=SelectionSource.CANVAS)
+        row = project(session, default_catalog()).body.group(GroupId.CONTENT).find(key)
+        assert row is not None
+        assert row.spec.element == "iconset"
+
+
 def test_a_line_shows_only_orientation_and_shadow() -> None:
+    """UX-CONT-015: a Line has Orientation and Shadow only; its shape follows the orientation."""
     from app.features.form_builder.qtside.inspector.api import GroupId
 
     text = form(
@@ -366,3 +416,32 @@ def test_dock_feature_rows_start_on_and_change_one_bit() -> None:
         both = rows((a, b))
         assert isinstance(both["canFloat"].value, Mixed)
         assert both["canClose"].value == Unset(BoolValue(True))
+
+
+def test_toolbox_page_tooltip_and_icon_match_uic(tmp_path) -> None:
+    """UX-CONT-018: a toolbox page's tooltip and icon generate QToolBox item calls, as uic writes them."""
+    import os
+    from pathlib import Path
+
+    uic = Path("/Applications/FreeCAD.app/Contents/Resources/lib/qt6/uic")
+    if uic.is_file():
+        os.environ.setdefault("CBCS_FB_UIC", str(uic))
+    text = form(
+        'class="QWidget" name="Form"',
+        """
+  <widget class="QToolBox" name="box">
+   <widget class="QWidget" name="boxPage">
+    <attribute name="label"><string>B</string></attribute>
+    <attribute name="toolTip"><string>tip</string></attribute>
+    <attribute name="whatsThis"><string>help</string></attribute>
+    <attribute name="icon"><iconset theme="edit-copy"/></attribute>
+   </widget>
+  </widget>
+""",
+    )
+    path = tmp_path / "toolbox.ui"
+    path.write_text(text, encoding="utf-8")
+    from tests.form_builder.engine.codegen.uic_compare import compare
+
+    outcome = compare(path)
+    assert outcome[0] == "ok", outcome

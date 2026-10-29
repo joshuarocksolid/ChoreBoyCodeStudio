@@ -221,6 +221,14 @@ def register(registrar: Registrar) -> None:
             parent_classes=("QTabWidget",),
         ),
         RowSpec(
+            "tabIcon",
+            _CONTENT,
+            "Tab icon",
+            "A picture beside the text on this tab.",
+            Prop("icon", "attribute"),
+            parent_classes=("QTabWidget",),
+        ),
+        RowSpec(
             "pageLabel",
             _CONTENT,
             "Page label",
@@ -234,6 +242,14 @@ def register(registrar: Registrar) -> None:
             "Page tooltip",
             "Shown when the pointer rests on this toolbox page.",
             Prop("toolTip", "attribute"),
+            parent_classes=("QToolBox",),
+        ),
+        RowSpec(
+            "pageIcon",
+            _CONTENT,
+            "Page icon",
+            "A picture beside the text on this toolbox page.",
+            Prop("icon", "attribute"),
             parent_classes=("QToolBox",),
         ),
     )

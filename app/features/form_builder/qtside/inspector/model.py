@@ -795,7 +795,16 @@ def _live_property(facts: Facts, owner: NodeId, name: str, kind: PropKind) -> Op
         return None
     return live.find(name)
 
+# Page attributes a container's parent reads (UX-CONT-018). The class table has
+# Qt properties only, so an unwritten attribute row would otherwise not show.
+_PAGE_ATTRIBUTES: Mapping[str, str] = MappingProxyType(
+    {"title": "string", "label": "string", "toolTip": "string", "whatsThis": "string", "icon": "iconset"}
+)
+
+
 def _table_property(facts: Facts, node: Node, name: str, kind: PropKind) -> Optional[PropertyInfo]:
+    if kind == "attribute" and isinstance(node, WidgetNode) and name in _PAGE_ATTRIBUTES:
+        return PropertyInfo(name, _PAGE_ATTRIBUTES[name], None, True, True, False, None, 0, "")
     if kind != "property" or not isinstance(node, (WidgetNode, LayoutNode)):
         return None
     class_name = "QFrame" if node.class_name == "Line" else node.class_name
