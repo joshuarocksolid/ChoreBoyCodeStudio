@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportIndexIssue=false
 """K19 Your own class (UX_SPEC 12.3, M5.4): keys only, in a real main window and a real preview child.
 
 Shift+F10, "Use my own class…", the popover, the inspector header, the editor

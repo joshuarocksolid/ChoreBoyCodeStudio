@@ -65,6 +65,11 @@ class OwnClassPort(Protocol):
     def remove(self, class_name: str) -> bool: ...
 
 
+def friendly_of(qt_class: str) -> str:
+    """The class in friendly words ("Label"), for the integration layer."""
+    return class_words(qt_class).friendly
+
+
 def widget_base(session: FormSession, node_id: NodeId) -> str:
     """The Qt class a widget is, or the base its own class declares."""
     node = session.document.get(node_id)
@@ -520,4 +525,4 @@ def _screen() -> Optional[QRect]:
     return None if screen is None else screen.availableGeometry()
 
 
-__all__ = ["OBJECT_NAME", "OwnClassPopover", "OwnClassPort", "SAVED_NOTE", "open_popover", "widget_base"]
+__all__ = ["friendly_of", "OBJECT_NAME", "OwnClassPopover", "OwnClassPort", "SAVED_NOTE", "open_popover", "widget_base"]

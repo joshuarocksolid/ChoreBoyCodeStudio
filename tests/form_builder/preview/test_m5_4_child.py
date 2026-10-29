@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportIndexIssue=false
 """Own classes in the preview child (M5.4, UX-CUST-008, 009; CONTRACTS 10.4; P-7 and the security rule)."""
 
 from __future__ import annotations

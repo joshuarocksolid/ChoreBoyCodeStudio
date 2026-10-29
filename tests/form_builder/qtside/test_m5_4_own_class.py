@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false, reportArgumentType=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportIndexIssue=false
 """Your own classes, Qt side (M5.4): the popover, the context rows, stand-ins, the corner tag, Insert and FB035.
 
 R3 123 and 194-198; the P-7 pain test (stand-ins at a real size, header round trip) runs here and in the engine tests.

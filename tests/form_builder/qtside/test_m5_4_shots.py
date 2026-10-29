@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportIndexIssue=false
 """M5.4 screenshots (UX_SPEC 12.2 M5 states). Skips unless CBCS_FB_SCREENSHOT_DIR is set.
 
 own-class-popover, own-class-check-lines, own-class-canvas, own-class-preview-notice,

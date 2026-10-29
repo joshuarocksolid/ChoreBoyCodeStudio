@@ -15,7 +15,7 @@ from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, WidgetN
 from app.features.form_builder.integration.custom_registry import registry_of
 from app.features.form_builder.integration.menu_ext import MenuContext
 from app.features.form_builder.qtside.dialogs.promote import open_popover
-from app.features.form_builder.qtside.inspector.words import class_words
+from app.features.form_builder.qtside.dialogs.promote import friendly_of
 from app.qt.QtCore import QRect, QTimer
 
 ROW = "Use my own class…"
@@ -66,7 +66,7 @@ def build(ctx: MenuContext) -> None:
         if doc.custom_widget(doc.get(node_id).class_name) is not None  # type: ignore[union-attr]
     ]
     if using and len(using) == len(ids):
-        friendly = class_words(base).friendly.lower()
+        friendly = friendly_of(base).lower()
         names = tuple(doc.get(node_id).object_name for node_id in ids)  # type: ignore[union-attr]
         back = ctx.menu.addAction("Back to %s" % friendly)
         back.triggered.connect(lambda _checked=False: ctx.run(UseBaseClass(ids, friendly, names)))

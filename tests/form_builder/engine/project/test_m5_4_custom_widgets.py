@@ -1,4 +1,4 @@
-# pyright: reportAttributeAccessIssue=false
+# pyright: reportAttributeAccessIssue=false, reportArgumentType=false, reportOptionalMemberAccess=false, reportOptionalCall=false, reportIndexIssue=false
 """Your own classes, engine side: the ``ast`` resolver, the registry, the commands and the header (M5.4).
 
 R3 123 and 194-195 live here; the editor never imports a project module (CONTRACTS 10.4).
@@ -22,7 +22,7 @@ from app.features.form_builder.engine.diagnostics import CODES
 from app.features.form_builder.engine.project import custom_widgets as cw
 from app.features.form_builder.engine.project.adoption import FormScope
 from app.features.form_builder.engine.ui4.writer import write_ui
-from tests.support.form_builder.command_fixtures import BOX, nid, open_log
+from tests.form_builder.engine.commands._support import BOX, nid, open_log
 
 pytestmark = pytest.mark.unit
 

@@ -40,7 +40,7 @@ from app.features.form_builder.engine.ui4.schema import HeaderDecl
 from app.features.form_builder.engine.ui4.writer import write_ui
 from app.features.form_builder.integration.custom_registry import project_root_of
 from app.features.form_builder.integration.toast import ToastNote
-from app.features.form_builder.qtside.inspector.words import class_words
+from app.features.form_builder.qtside.dialogs.promote import friendly_of
 
 logger = logging.getLogger(__name__)
 
@@ -288,7 +288,7 @@ class PreviewNotices:
     def _toast(self, first: StandIn) -> None:
         declared = {item.class_name: item for item in own_classes(self._session.document)}
         base = declared[first.class_name].extends if first.class_name in declared else "QWidget"
-        text = "Preview used a plain %s for %s." % (class_words(base).friendly.lower(), first.class_name)
+        text = "Preview used a plain %s for %s." % (friendly_of(base).lower(), first.class_name)
         toast = getattr(self._surface, "_command_toast", None)
         show = getattr(toast, "show_note", None)
         if not callable(show):
