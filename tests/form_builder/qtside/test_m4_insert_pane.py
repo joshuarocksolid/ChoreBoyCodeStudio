@@ -67,6 +67,7 @@ def _rows(pane: InsertPane) -> list:
 
 
 def test_recent_entries_move_to_the_front_and_stay_six(tmp_path: Path) -> None:
+    """UX-CAT-006: most recent first, at most six."""
     store = InsertMemoryStore(str(tmp_path))
     for key in ("QLabel", "QComboBox", "QTabWidget"):
         store.note_used(key)
@@ -79,6 +80,7 @@ def test_recent_entries_move_to_the_front_and_stay_six(tmp_path: Path) -> None:
 
 
 def test_recent_entries_survive_a_new_pane_instance(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-CAT-006: the recent list is kept per user."""
     del qapp
     parent = QWidget()
     store = InsertMemoryStore(str(tmp_path))
@@ -92,6 +94,7 @@ def test_recent_entries_survive_a_new_pane_instance(tmp_path: Path, qapp: QAppli
 
 
 def test_clear_recently_used_empties_the_section(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-CAT-006 and UX-CAT-003: the menu's "Clear recently used"."""
     del qapp
     store = InsertMemoryStore(str(tmp_path))
     store.note_used("QComboBox")
@@ -103,6 +106,7 @@ def test_clear_recently_used_empties_the_section(tmp_path: Path, qapp: QApplicat
 
 @pytest.mark.parity("R3-133")
 def test_the_view_toggle_and_folding_persist(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-CAT-003: the icons or list choice and the folding (the header and menu contents are not checked)."""
     del qapp
     store = InsertMemoryStore(str(tmp_path))
     pane = _pane(QWidget(), store)
@@ -127,6 +131,7 @@ def test_freecad_starts_folded_and_the_user_can_open_it(tmp_path: Path, qapp: QA
 
 
 def test_category_headers_and_tiles_have_their_accessible_names(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-CAT-012: accessible names of tiles, category headers and the filter."""
     del qapp
     pane = _pane(QWidget(), InMemoryInsertMemory())
     names = {}
@@ -141,6 +146,7 @@ def test_category_headers_and_tiles_have_their_accessible_names(tmp_path: Path, 
 
 
 def test_a_tile_tooltip_has_name_class_and_description(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-CAT-012: tile tooltip with name, Qt class and description."""
     del qapp
     pane = _pane(QWidget(), InMemoryInsertMemory())
     item = next(pane.body.item(index) for index in range(pane.body.count()) if pane.body.item(index).data(int(Qt.ItemDataRole.UserRole)) == "QComboBox")
@@ -151,6 +157,7 @@ def test_a_tile_tooltip_has_name_class_and_description(tmp_path: Path, qapp: QAp
 
 
 def test_a_filter_with_no_match_says_so_and_offers_clear(tmp_path: Path, qapp: QApplication) -> None:
+    """UX-CAT-009: the no-match sentence and the Clear link."""
     del qapp
     pane = _pane(QWidget(), InMemoryInsertMemory())
     pane.filter.setText("zzqq")

@@ -191,6 +191,7 @@ def _caption(row: QWidget) -> str:
 @pytest.mark.parity("R3-153")
 @pytest.mark.pain("P-18")
 def test_echo_mode_password_stays_written() -> None:
+    """UX-PED-022: enum drop-down."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -265,6 +266,7 @@ def test_canvas_refusal_names_the_saved_value() -> None:
 
 @pytest.mark.parity("R3-151")
 def test_bool_space_commits_and_reset_removes_it() -> None:
+    """UX-PED-020."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -289,6 +291,7 @@ def test_bool_space_commits_and_reset_removes_it() -> None:
 
 @pytest.mark.parity("R3-152")
 def test_number_up_three_times_is_one_undo_step() -> None:
+    """UX-PED-021."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -319,6 +322,7 @@ def test_number_up_three_times_is_one_undo_step() -> None:
 
 
 def test_out_of_range_number_is_refused() -> None:
+    """UX-PED-021: range."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -364,6 +368,7 @@ def test_non_number_is_refused() -> None:
 
 @pytest.mark.parity("R3-158")
 def test_two_characters_in_a_char_field_are_refused() -> None:
+    """UX-PED-024: char field."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -386,6 +391,7 @@ def test_two_characters_in_a_char_field_are_refused() -> None:
 
 @pytest.mark.parity("R3-169")
 def test_bad_date_and_time_are_refused() -> None:
+    """UX-PED-028: date and time field."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -474,6 +480,7 @@ _FREE = form(
 
 @pytest.mark.parity("R3-166")
 def test_rect_fields_pair_above_300_and_stack_below() -> None:
+    """UX-PED-025: size, point and rect fields."""
     with opened(_FREE) as (session, realizer):
         window, pane = _pane(session, realizer, width=236)
         try:
@@ -626,6 +633,7 @@ def test_echo_mode_shows_its_longest_name_unclipped(width: int, stacked: bool) -
 
 @pytest.mark.parity("R3-154")
 def test_flags_escape_keeps_bytes_and_done_is_one_step() -> None:
+    """UX-PED-023: flags popover."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -693,6 +701,7 @@ def test_flags_escape_restores_the_canvas_widget() -> None:
 
 @pytest.mark.parity("R3-168")
 def test_key_sequence_records_cancels_and_clears() -> None:
+    """UX-PED-027: key sequence recorder."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -856,6 +865,7 @@ def test_mixed_size_keeps_both_heights_until_every_field_is_typed() -> None:
 
 @pytest.mark.parity("R3-167")
 def test_size_policy_summary_names_the_policy() -> None:
+    """UX-PED-026: size policy summary."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:
@@ -928,6 +938,7 @@ def test_unset_size_policy_shows_the_live_policy() -> None:
 
 @pytest.mark.parity("R3-171")
 def test_locale_choice_is_written_as_qt_names() -> None:
+    """UX-PED-029: locale."""
     with opened(_FORM) as (session, realizer):
         window, pane = _pane(session, realizer)
         try:

@@ -311,6 +311,7 @@ def test_picture_grid_arrows_keep_their_column_across_group_headers(qapp: QAppli
 
 
 def test_a_missing_pixmap_row_uses_the_error_colour(qapp: QApplication, tmp_path: Path) -> None:
+    """UX-PED-101: a missing picture."""
     _seed(tmp_path, ("gone.png",))
     path = str(tmp_path / "form.ui")
     window, pane, session, realizer = _pane(qapp, _form(photo=":/icons/gone.png"), path)

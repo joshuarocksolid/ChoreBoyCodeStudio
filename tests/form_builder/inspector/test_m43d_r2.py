@@ -419,6 +419,7 @@ _GROUP = """<?xml version="1.0" encoding="UTF-8"?>
 
 
 def test_an_unset_group_box_title_alignment_shows_left(qapp: QApplication) -> None:
+    """UX-CONT-014: Title alignment."""
     # The live default is ``AlignLeft|AlignLeading`` without a scope.
     window, pane, session, realizer = _open(qapp, _GROUP)
     try:
