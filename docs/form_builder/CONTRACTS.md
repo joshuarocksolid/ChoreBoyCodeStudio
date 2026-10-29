@@ -1,6 +1,6 @@
 # Form builder architecture contracts (M1.0)
 
-Status: binding for every M1–M3 work package, and for later WPs where a section names them. Revision 1, 2026-10-21. Author: Opus (architect). Inputs: `PLAN.md` rev 1, `LOGIC_DESIGN.md`, research R1, R3, C, and the spike on `feat/form-builder-spike`.
+Status: binding for every M1–M3 work package, and for later WPs where a section names them. Revision 1, 2026-10-21. Author: Opus (architect). M6.0 (2026-10-29, Opus) adds §15 (logic storage), §16 (handlers and the window file), the M6 commands, codes and registries. Inputs: `PLAN.md` rev 1, `LOGIC_DESIGN.md`, research R1, R3, C, and the spike on `feat/form-builder-spike`.
 
 This document and the typed stubs under `stubs/app/...` are one contract. The stubs hold the exact names, signatures and field lists. This document holds the rules, the reasons, and the tests that prove the rules. When the two disagree, raise it in the PR. Don't pick one quietly.
 
@@ -106,6 +106,12 @@ Registries discover modules in a package in sorted module-name order. Each modul
 | Widget catalog entries | `qtside/insert/catalog/` (Qt-free data) | M4.1 |
 | Context-menu contributors | `integration/menu_ext/` (groups "first", "structure", "last"; `MenuContext.at`, `source` `"canvas"` or `"outline"`, `live(node_id)`, `run(command)`; UX-CONT-020) | M4.0s |
 | Tab-content providers | registered at install (shell registry) | M2.0 |
+| Behavior tab sections | `qtside/inspector/behavior_ext/` (order, predicate on the selection, widget; UX-BEH-001) | M6.0s |
+| Canvas double-click contributors | `integration/activate_ext/` (`claims(doc, node_id) -> Optional[hover words]`, pure; `activate(surface, node_id)`; asked before the canvas's own text and items double-click; never for Enter) | M6.0s |
+| Overlay kinds | `integration/overlays.py` gains a kind registry (`integration/overlay_ext/`): banner text, toolbar toggle, layer name, and an optional link gesture (press-drag or Enter-arrows-Enter from a widget to a widget or the form, ending in `link(source, target)`) | M6.0s |
+| Step intents | `engine/logic/intents/` (Qt-free; `Intent(sender_classes, event, words, needs_target, steps(...))`; rule intents from M7.2) | M6.0s (package), M6.1a (M6 intents) |
+| Codegen expanders | `engine/codegen/expanders/` (package created by M6.0s; `steps.py` M6.1a) | M1.3, M6.0s |
+| Handler service | `integration/handlers.py` protocol (`make_method`, `go_to`, `methods`) with a default that only commits steps and opens files; M6.2b registers `handlers_code.py` | M6.0s |
 
 ---
 
@@ -286,22 +292,24 @@ Owner WP in brackets. The stub `commands/catalog.py` has the fields and full sem
 | `DeletePage` [M4.2] | container, index | Deletes the page and its subtree with DeleteNodes reference rules; keeps `currentIndex` on the same page, else clamps | next page, else previous, else container | — |
 | `SetItems` [M4.4] | widget, items, rows, columns, merge_token | Replaces the whole item list. One item-editor session merges into one entry (UX-ITEM-007) | — | `("set_items", widget)` with the session token |
 | `CreateAction`, `AddActionRef`, `CreateMenu` [M5.1] | spec/placement/name/title | "Type here", dragging an action onto a toolbar (pain 17) | new node | — |
-| `AddConnection`, `EditConnection`, `MoveConnection` [M6.1] | fields | Signatures are normalised the way Designer writes them | connection | — |
+| `AddConnection`, `EditConnection`, `MoveConnection` [M6.1a] | fields | Signatures are normalised the way Designer writes them. Used by `SetEventSteps` planning and by tests; the UI goes through `SetEventSteps` | connection | — |
+| `SetEventSteps` [M6.1a] | sender, signal_name, steps or (), merge_token | §15.6: one event's steps; the planner chooses native connections or a `cbcsOn<Signal>` list, keeps unchanged connection elements and hints, adds `<slots>` declarations, keeps `cbcsLogic` in step. Rejected under FB402 and for layouts and spacers | — | `("event", sender, signal_name)` |
+| `MergeEventStorage` [M6.1a] | sender, signal_name | FB404's fix (§15.6) | — | — |
 | `SetTabStops` [M5.6] | names or None | None removes the element | — | — |
 | `SetBuddy` [M5.6] | label_widget, target | Sets the `buddy` cstring | — | — |
 | `SetButtonGroup` [M5.1] | buttons, group or None | Creates the group, or removes it once it's empty | — | — |
-| `SetFormSlots` [M6.2] | signals, slots | `<slots>` | — | — |
+| `SetFormSlots` [M6.2b] | signals, slots | `<slots>`. Removing a declaration never touches the window file | — | — |
 | `Promote`, `SetCustomWidget` [M5.4] | ids, class_name, declaration | Demoting removes declarations nobody uses | — | — |
 | `SetResourceIncludes` [M5.2] | locations | — | — | — |
 | `SetFormField` [M5.5b] | field, value | Form settings, includes | — | — |
 | `ReplaceDocument` [M2.2] | text, reason | §3.10 | matched by name | — |
-| `SetLogic` [M6.0b] | owner, key, text or None, merge_token | Uses the logic codec. Keeps `cbcsLogic` in step. Rejected with FB402 when the document's logic version is newer than supported | — | `("logic", owner, key)` |
+| `SetLogic` [M6.0b] | owner, key, text or None, merge_token | Uses the logic codec (§15.4): stores the canonical text, rejects text the codec can't read for a typed key, and text outside XML `Char`. Keeps `cbcsLogic` in step. Rejected with FB402 when the logic is read-only (§15.7) | — | `("logic", owner, key)` |
 
-Compound gestures are **transactions** of these commands, not new commands. Examples: "Pair labels with their fields", a double-click stub plus its connection (M6.2, where the user-file edit is a paired text edit outside the log; see §9.5), and a drop that also wraps.
+Compound gestures are **transactions** of these commands, not new commands. Examples: "Pair labels with their fields", a double-click stub plus its connection (M6.2b, where the user-file edit is a paired text edit outside the log; see §16.3), and a drop that also wraps.
 
 ### 3.6 Participants
 
-`RenameParticipant.rename_ops(doc, renames, scope)` and `.references(doc, name)`, plus `DeleteParticipant.delete_ops`. These are discovered from `participants/` and sorted by `participant_id`. M6.0b adds the formula, step-target and error-label participants. Participants are pure and add ops to the same entry.
+`RenameParticipant.rename_ops(doc, renames, scope)` and `.references(doc, name)`, plus `DeleteParticipant.delete_ops`. These are discovered from `participants/` and sorted by `participant_id`. M6.0b adds the formula, step-target and error-label participants (§15.8). Participants are pure and add ops to the same entry.
 
 - `renames` is a tuple of `(old, new)` pairs applied **simultaneously** (one pass, so `x→x_2` and `x_2→x_3` in the same map never chain). `scope: Optional[FrozenSet[NodeId]]` limits the rewrite to owners inside the set; None means the whole document.
 - `Rename` calls participants with a one-pair map and `scope=None`.
@@ -487,6 +495,17 @@ The ranges are in `diagnostics.py`. Codes 101–402 come from LOGIC_DESIGN §2.9
 | FB023 | Warning | Two items share a form cell |
 | FB030 | Warning | A promoted class is used but not declared (Info when declared but unused) |
 | FB106 | Error | A widget uses a name reserved for formulas (`form`, `record`, `window`, `cbcs…`, function names). LOGIC 4.5 said FB101; FB101 stays "unknown name in a formula" |
+| FB203 | Info | (LOGIC §2.9's meaning; severity Info, UX D15) The method is still empty |
+| FB208 | Warning | An `on_{x}_{y}` method looks auto-connected but `{x}` or `{y}` doesn't match (UX-CODE-011) |
+| FB209 | Info | The window file couldn't be read or has a syntax error, so handlers aren't checked |
+| FB210 | Warning | The window file has no window class |
+| FB211 | Info | Connect slots by name is off and `on_` methods exist |
+| FB212 | Info | A method comes from a base class that can't be read |
+| FB213 | Error | A called method is a staticmethod, classmethod or property |
+| FB402 | Warning | (LOGIC §2.9's meaning; severity Warning, UX D15) Logic from a newer version, or an unreadable marker; logic is read-only |
+| FB403 | Error | A step verb this build doesn't know; the event generates nothing |
+| FB404 | Warning | An event stored as native connections and as a step list |
+| FB405 | Error | A step acts on a widget that isn't on the form |
 | FB501 | Warning | `ui_<name>.py` had been edited by hand; a copy was saved before regenerating |
 | FB502 | Error | A construct can't be generated (the node is named) |
 | FB503 | Error | A resource file is missing |
@@ -625,14 +644,14 @@ When a file won't open, the provider declines (§11). The file opens as text wit
 
 ### 9.4 Logic expansion hooks
 
-The core owns everything uic emits, which covers Level 1 and Level 2 native connections. Expanders, discovered from `codegen/expanders/` and ordered by `order` (built-ins: 100 step lists, 200 state rules and values, 300 checks, 400 data), contribute `imports`, `setup_lines`, `methods` and `helpers`. When any expander contributes setup lines, `setupUi` ends with `self._cbcs_setup(<form>)` after `connectSlotsByName`. Generated names start with `cbcs_` or `_cbcs_`. Each method begins with a comment that quotes its source rule (`source_ref`), so tracebacks map back to the rule. Helpers come from a fixed table, are emitted once each, in table order. A rule that errors contributes nothing and reports a diagnostic. Expanders never raise.
+The core owns everything uic emits, which covers Level 1 and Level 2 native connections. Expanders, discovered from `codegen/expanders/` and ordered by `order` (built-ins: 100 step lists, 200 state rules and values, 300 checks, 400 data), contribute `imports`, `setup_lines`, `methods` and `helpers`. When any expander contributes setup lines, `setupUi` ends with `self._cbcs_setup(<form>)` after `connectSlotsByName`. Generated names start with `cbcs_` or `_cbcs_`. Each method begins with a comment that quotes its source rule (`source_ref`), so tracebacks map back to the rule. Helpers come from a fixed table, are emitted once each, in table order. A rule that errors contributes nothing and reports a diagnostic. Expanders never raise. `Method.params` (M6.0s, default empty) lets a generated method take parameters (`*args` for step lists, §15.6).
 
 ### 9.5 Scope, window class, stubs
 
 - Generation runs only when `FormScope.generates` is true: the form is under `<project>/forms/` or adopted (`classify_form`). External forms are edited without writing anything beside them (FB506 Info).
 - The window class file is created once (`render_window_class`) and never overwritten. It uses an absolute import from the project root, and `forms/__init__.py` is created when it's missing.
-- Stub insertion (M6.2) is a `TextEdit` applied through the open code tab's document when there is one (so it lands in that tab's undo), or written to the file otherwise.
-- The M6.2 compound "create handler" pairs a log transaction (the connection) with that text edit. Undo removes the stub only while its text still hashes to `stub_text` (LOGIC 2.13).
+- Stub insertion (M6.2b) is a line-boundary `TextEdit` applied through the code bridge (§16.2, §16.4): the open code tab's document when there is one (so it lands in that tab's undo), or written to the file otherwise.
+- The M6.2b compound "write code for" pairs a log transaction (the step) with that text edit. Undo removes the stub only while its text still hashes to `stub_hash` (§16.3, LOGIC 2.13).
 
 ### 9.6 Save pipeline (integration, M2.2)
 
@@ -757,6 +776,10 @@ These are measured as process CPU time, p95, n = 15 after warmup, on the Mac bas
 | Memory | — | ≤ 30 MB extra per open form, ≤ 60 MB with three forms. The undo log grows O(changed): 500 property edits ≤ 2 MB |
 | Preview warm update (`update_form` → child repaint) | O(patches) | 100 ms wall |
 | Preview cold start | — | Measured and reported against the M0.7 fact; no budget |
+| `SetEventSteps` with a storage conversion (M6) | O(event + its connections) | 2 ms at 300w |
+| Logic codec parse + write, 50 steps | O(text) | 1 ms |
+| `read_window` pre-scan + parse, 100 KB / 1 MB; cached | O(text); O(1) | 30 ms / 250 ms, idle only; 1 ms |
+| `check_handlers` against a cached reading | O(connections + methods) | 5 ms |
 
 **O(form) is allowed only for:** read, build, `ReplaceDocument`, serialize, codegen, `validate`, fingerprints, hit-index refresh, full diagnostic revalidation (on open or replace only), reading-order and effective tab order (tab-order mode and codegen only), and `Rename`/`DeleteNodes` reference scans (3 ms at 1000w). Everything else on the edit path is O(changed). Adding an O(form) step to the edit path is a contract violation even when it fits the budget at 300w.
 
@@ -785,6 +808,11 @@ Generators live in `tests/support/form_builder/gen.py`: random documents over ev
 | `diagnostics` (M1.0 codes, all producers) | Unique codes; no undeclared code emitted; no diagnostic blocks save (save succeeds with every code present); incremental producers equal full revalidation after random sequences |
 | `ipc.protocol` (M2.5) | `decode_line(encode_frame(m)) == m` for random messages; noise lines interleaved at random never break decoding; prefixed garbage gives `ProtocolViolation`; frames are ASCII-only |
 | `preview.pool` (M2.5) | With a fake clock and fake supervisor: the backoff schedule, the circuit, coalescing (one in flight per view), handshake mismatch gives FB603; with a real child: kill -9 mid-session leaves the editor alive and the reaper clean; cold and warm timings recorded |
+| `logic.codec` (M6.0b) | §15.4 rule 7 both ways over random values with unknown keys and every string class (controls, U+FFFE, surrogates, non-ASCII); 20,000 fuzz texts give a result or FB401 and never raise; marker truth table (§15.2); bytes identical across macOS and Linux, `C` and `de_DE` |
+| Logic participants (M6.0b) | Rename and paste rewrite exactly the NAME tokens of §15.8 (a table of formulas with strings, attributes, keyword arguments, comments); `InsertFragment` scope keeps outside references; FB402 refuses renames whose name is in logic text; undo-all equals original |
+| `SetEventSteps` (M6.1a) | Storage invariant after random sequences: all-plain events are native only, others list only; unchanged connection elements (and hints) are the same nodes; other events' connections never move; `<slots>` gains declarations and never loses them; replay equals live |
+| Step-list expander (M6.1a) | 3.9-parseable; under PySide6 offscreen the steps run in order, off steps don't run, `call` gets `args` values, `is False` stops the list; uic tree equality unchanged for forms without lists |
+| `window_file`, `plan_stub`, `plan_unstub`, `check_handlers` (M6.2a) | Never imports (import hook); pre-scan refusals for the crafted-line set, run under the Python 3.9 AppRun lane without a crash; insertion fixture set of UX-CODE-006 (exact line insertion, undo restores bytes); naming over the corpus (UX-CODE-001); one fixture per FB2xx row and its clean twin |
 | Provider seam (M2.0, M2.2) | The Qt import-blocker test (§11.5); Markdown behaviour unchanged (existing tests); dirty comes from the log; `serialize_count == 0` over 200 edits; draft restore and history restore are each one undoable ReplaceDocument; malformed `.ui` opens as text with FB001; AT-32 still passes |
 
 The PR body for any logic WP lists: the invariants touched, the seeds and case counts, the oracle results, double-save hashes from macOS and Linux, and the failure-mode table (malformed input, newer format version, missing method, missing driver, lost connection).
@@ -806,6 +834,144 @@ The form builder's per-user choices live in the `form_builder` object of the glo
 | `preview.profiles` | list of `{name, width, height, font, font_size, scale}` | none | M5.5a Aa menu > Screen > Add a screen… |
 
 Other lanes keep their own keys in the same object (`workbench`, `insert.recent`, …). Writing rules (MUST): every write goes through `SettingsService.update_global` with an updater that changes only its own keys. `update_global` re-reads the file before applying the updater, so a builder write and a shell write never drop each other's keys, whichever `SettingsService` instance makes them. Settings dialog pages register with `app/shell/settings_pages.py` (`SettingsPage(key, title, build, apply)`): the dialog builds them from the payload it opened with and, after OK, passes them the re-read payload it is about to save, so the page's keys and the shell's are one write.
+
+## 15. Logic storage (M6.0b, M6.1a)
+
+Binding for M6 and for every later logic WP. It refines LOGIC_DESIGN §6; where the two differ this section wins, and LOGIC_DESIGN's "Changes recorded by M6.0" lists each difference. UX clauses are in UX_SPEC §13.3.
+
+### 15.1 Property names
+
+Every logic property is a dynamic property on the widget, action or root it belongs to: `PropertyEntry(kind="property", stdset="0", value=StringValue(text, notr=True))` (§2.4 rule 5). The known names, in `logic.storage.LOGIC_PROPERTY_ORDER`:
+
+`cbcsSplitterSizes` (a layout key, not logic, §9.3), `cbcsLogic`, `cbcsEnabledWhen`, `cbcsVisibleWhen`, `cbcsReadOnlyWhen`, `cbcsValue`, `cbcsDefault`, `cbcsKind`, `cbcsFormat`, `cbcsValidate`, `cbcsErrorLabel`, `cbcsErrorSummary`, **`cbcsOn*`**, `cbcsData`, `cbcsBind`, `cbcsBindMode`, `cbcsLookup`, `cbcsRows`, `cbcsChoice`.
+
+- `cbcsOn<Signal>` is `cbcsOn` plus the signal name with its first letter upper-cased (`clicked` → `cbcsOnClicked`); `signal_property(name)` and `signal_of_property(key)` are exact inverses over names that start with a lower-case ASCII letter. All `cbcsOn*` entries of one owner rank at the `cbcsOn*` position, among themselves by property name in code-point order. Form events (`cbcsOnOpened` …, M7.4) use the same position.
+- **Rank** applies only when CBCS inserts a new entry (§2.5). Entries read from a file keep their order on save, and an edited entry is replaced in place (§3.3 `SetPropertyOp`). A save never re-sorts properties (UX D21).
+- An unknown `cbcs*` name (not in the list and not `cbcsOn*`) is kept exactly, ranks after every known name, and is reported by nothing. `is_logic_key` stays the one test of "logic" (§4.2).
+
+### 15.2 The version marker
+
+- The root's `cbcsLogic` holds the logic schema version. CBCS writes the exact text `{"version":1}` (no spaces), as `logic_version_text()` does today. This amends LOGIC_DESIGN §6.1, which said `<number>1</number>`.
+- Readers accept a JSON object with an integer `version` (any whitespace, other keys kept), a bare integer in a `<string>` (`1`), or a `<number>` element (what Qt Designer writes for an int dynamic property). Booleans are not versions.
+- No marker and no logic property: no logic. No marker but a logic property: version 1; the marker is added by the next logic edit (`_sync_logic_marker`). The marker is removed when the last logic property goes.
+- A marker that can't be read (none of the forms above) is treated as **newer**: FB401 on `cbcsLogic` and FB402 for the form. Version > `SUPPORTED_LOGIC_VERSION` is FB402.
+- **When the version goes up.** Only for a change an older editor would misread: a key removed or renamed, a meaning changed, a value form changed. Adding an optional key or a new step verb keeps version 1, because older editors keep unknown keys and show unknown verbs read-only (FB403).
+
+### 15.3 JSON values (schema version 1)
+
+LOGIC_DESIGN §6.2's shapes stand, with these M6 additions to `Step` (LOGIC §4.12):
+
+```ts
+type Step = {do: StepVerb, when?: Formula, enabled?: false, ...verb fields}
+
+// M6 verbs (plain steps when they have no `when` and no `enabled`):
+{do: "slot", target: ObjectName, slot: Signature}       // a Qt slot on a widget, action or the form
+{do: "call", method: Identifier, args?: number}          // your method on the window; args = how many
+                                                         // of the signal's values it gets (default 0)
+
+type StepList = Step[]                                   // cbcsOn<Signal>, the overload with the most arguments
+              | {signal: Signature, steps: Step[]}       // only when another overload is meant (UX D24)
+```
+
+- `target` is an object name or the root's object name. `slot` is written the way Designer writes signatures (`clear()`, `setChecked(bool)`, `setCurrentIndex(int)`): no spaces, Qt type names.
+- A `slot` step passes the first *k* signal values, where *k* is the slot's parameter count. A `call` step passes `args` values.
+- `enabled` is written only as `false`; on is the absence of the key. `when` (M7.1) is a formula string.
+- Keys of a step are known per verb. M6.0b types `slot` and `call`; every other verb (LOGIC §4.12, M7, M8) is parsed as an ordered key/value list and kept exactly, and the editor shows it read-only with FB403 until its lane types it.
+- `Check`, `Data`, `Lookup` and `Rows` are parsed by M6.0b only as far as the codec needs (valid JSON, an array or object at the top); M7 and M8 type them. Unknown keys anywhere are kept.
+
+### 15.4 Canonical text (MUST)
+
+The codec (`engine/logic/codec.py`) writes, and `SetLogic` stores, exactly this:
+
+1. **Arrays of objects** (step lists, checks, grid columns): `[` newline; each item on its own line, indented two spaces, followed by `,` except the last; newline; `]`. One item still takes three lines. An empty array is never written: the property is removed.
+2. **Objects** are written on one line: `{` key `": "` value, joined by `", "`, `}`. Nested arrays of scalars inline: `["a", "b"]`. An object inside an object inline. The `{signal, steps}` wrapper is `{"signal": "valueChanged(int)", "steps": [` newline, items as rule 1, newline, `]}`.
+3. **Key order:** the schema order of LOGIC_DESIGN §6.2 and §15.3 for known keys (`do` first, then `when`, then `enabled`, then the verb's fields in the order listed), then unknown keys in the order they were read.
+4. **Strings:** `json.dumps(..., ensure_ascii=False)` escaping, plus `\uXXXX` for U+007F–U+009F, U+FFFE, U+FFFF and lone surrogates, so the text is always XML 1.0 `Char` data (§8.2 rule 5). No trailing spaces anywhere. Line ends are LF.
+5. **Numbers:** integers without `.0` (an integral float is written as an integer); other floats with `repr()`; `NaN` and infinities are refused (`CommandRejected`). `true`, `false`. `null` is never written: an absent optional key is left out.
+6. **Formulas** are stored as the editor normalised them (LOGIC §6.3, M7.1); the codec never rewrites formula text.
+7. `parse(write(x)) == x` for every value, and `write(parse(t)) == t` for canonical `t`. A non-canonical text read from a file is kept byte-for-byte until CBCS edits that property.
+
+### 15.5 Codec API (`engine/logic/codec.py`, Qt-free)
+
+- `parse_steps(text) -> StepsRead(steps, signal, error)` where `steps` is a tuple of frozen `Step(verb, when, enabled, fields, unknown)` and `error` is None or `(line, message)` for FB401. `write_steps(steps, signal=None) -> str`.
+- `parse_json(text)` / `write_json(value)` for the other list and object properties, over an ordered, frozen JSON model (`JsonObject(pairs)`, tuples for arrays) so key order and unknown keys survive.
+- `read_marker(entry) -> MarkerRead(version, readable)`.
+- All functions are pure, total on any `str` (no exception escapes), and linear in the input. Input larger than 1 MB is FB401, never parsed.
+
+### 15.6 Events: from steps to storage (M6.1a)
+
+An **event** is (sender object name, signal name). Its steps, in run order, are the union of: native connections from that sender with that signal name, in `<connections>` order; methods Qt connects by name (shown, never stored); the `cbcsOn<Signal>` list.
+
+`SetEventSteps(sender, signal_name, steps, merge_token)` is the only command the Events list, the pickers, the canvas link and the method gesture use to change an event:
+
+1. Rejected with FB402 when the form's logic is read-only (§15.2), and when `sender` is a layout or spacer (UX D23).
+2. **Storage choice.** If every step is plain (`slot` or `call`, no `when`, no `enabled`, no unknown verb), the event is written as native connections: one `<connection>` per step, sender `sender`, signal the overload with the fewest arguments that covers the step (a `slot` step's parameter count, a `call` step's `args`), receiver `target` (or the root for `call`), slot `slot` (or `method(` + the first `args` signal types + `)`). Otherwise the event is one `cbcsOn<Signal>` list and all its native connections are removed.
+3. **Minimal diff.** Existing connection elements of the event are matched to the new steps in order by (receiver, slot); a matched element is kept (fields and `<hints>` unchanged) and moved only if its relative order changed (`MoveConnection`); unmatched ones are removed; new ones are inserted after the event's last kept connection, else after the sender's last connection, else at the end of `<connections>`. Connections of other events never move.
+4. **Declarations.** Every method a `call` step names gets a `<slots><slot>` entry with the signature of rule 2 when the form has none of that name. Removing a step never removes a declaration (Designer keeps them); `SetFormSlots` does (UX-BEH-017).
+5. Hints of a connection whose receiver changes are dropped (UX D7).
+6. The whole change is one log entry, with `SetLogic` / `SetPropertyOp` and connection ops mixed; `cbcsLogic` follows §15.2.
+
+`MergeEventStorage(sender, signal_name)` (FB404's fix) is `SetEventSteps` with the native steps first, then the list's steps.
+
+**Signal compatibility** (`engine/logic/compat.py`): a slot or method with parameter types *p* fits a signal overload with types *s* when *p* is a prefix of *s* after normalising (`const T&` → `T`, whitespace removed, Qt 6 aliases `qreal` → `double`). The event's overloads come from the class table; own classes from the registry and `<customwidget><slots>`.
+
+**Step-list code** (expander `codegen/expanders/steps.py`, order 100): `_cbcs_setup` gets `self._form = {form}` once, then one `self.{sender}.{signal}{[types] when not PySide's default}.connect(self._cbcs_{sender}_{signal})` per list, in document order of the senders. Each list becomes `def _cbcs_{sender}_{signal}(self, *args):` (suffixed `_{types}` only when two overloads both have lists), its first comment the source line `# {sender}: When {signal}`, then per step a comment `#   {n}. {words}` and: `slot` → `self.{target}.{slot}(*args[:k])` (the root target is `self._form`); `call` → `self._form.{method}(*args[:args])`, or `if self._form.{method}(...) is False: return` when a later step is on; a turned-off step is a comment `#   {n}. (off) …` only. A list with FB401 or FB403 contributes nothing. `Method` gains `params: str = ""` (M6.0s) so the core renders `def name(self, *args):`.
+
+### 15.7 Read-only logic (FB402)
+
+When `session.logic_read_only()`: `SetLogic`, `SetEventSteps`, `MergeEventStorage`, `AddConnection`, `EditConnection`, `MoveConnection` and `SetFormSlots` are rejected with FB402; `Rename` is rejected when the old name occurs as a NAME token in any `cbcs*` text (§15.8) or in any connection; `DeleteNodes` runs (native references go as usual, logic text is untouched). `InsertFragment` keeps logic text as copied. Every logic entry, `<connections>` and `<slots>` are written back byte-identical.
+
+### 15.8 References across rename, paste and delete (M6.0b participants)
+
+Participants in `engine/commands/participants/` (discovered, §3.6) add ops to the same entry:
+
+- **Step targets:** `target` of `slot` steps, and the object-name fields of later verbs as each lane declares them (`field`, `fields[]`, `grid`, `form` is a module name and is not renamed).
+- **Error labels:** `cbcsErrorLabel`, `cbcsErrorSummary`.
+- **Formula tokens:** in `cbcsEnabledWhen`, `cbcsVisibleWhen`, `cbcsReadOnlyWhen`, `cbcsValue`, `cbcsDefault`, and the `when`, `formula`, `default`, `min` and `max` strings inside JSON. The text is tokenized with the standard library `tokenize`; a `NAME` token equal to the old name is replaced when the previous significant token is not `.` and the next is not `=` inside a call's parentheses (a keyword argument). Strings, comments and attribute names are never changed. Only the token's span is replaced, so spacing is kept. Text that doesn't tokenize is left unchanged.
+- **Paste:** `InsertFragment` calls these with its whole rename map and `scope` = the inserted subtree (§3.6), so references inside the paste follow the copies and references outside stay. A fragment carries its source form's logic version as the attribute `cbcslogicversion` on the fragment's root element (readers of a plain `.ui` never see it); pasting a newer one raises the target's marker in the same entry (UX D20).
+- **Delete:** logic references are kept and show FB405 (steps) or FB101 (formulas, M7).
+- All participants are pure, deterministic, and O(form) only inside `Rename`, `InsertFragment` and `DeleteNodes` (§12).
+
+### 15.9 Diagnostics
+
+FB401 (Error): a logic property that is not valid JSON, not the expected top-level shape, larger than 1 MB, or a marker that can't be read; location `property` and `rule_path`, the line inside the text. FB402 (Warning): logic version newer than supported or unreadable marker; one per form. FB403 (Error): a step verb this build doesn't type; the event generates nothing. FB404 (Warning): an event with both native connections and a step list. FB405 (Error): a step whose `target` is not an object on the form. All come from `diagnostic_codes/fb4xx_logic.py` (M6.0b; FB404 and FB405's producer is M6.1a's). No logic diagnostic blocks saving (§7.3).
+
+## 16. Handlers and the window file (M6.0s, M6.2a, M6.2b)
+
+### 16.1 Reading the window file (`engine/project/window_file.py`, Qt-free)
+
+`read_window(project_root, relative, text=None) -> WindowRead`:
+
+1. **Source.** `text` when the file is open in a tab (its current buffer), else the file: a regular file inside the project, at most 1 MB, opened non-blocking and checked with `fstat` (M5.4's `_read_regular` rules; a symlink that leaves the project is refused), decoded with `tokenize.detect_encoding`; a NUL byte or an undecodable file is refused.
+2. **Pre-scan.** One pass of `tokenize.generate_tokens` over the text. Refused when a logical line has more than 2,000 tokens, when bracket depth exceeds 100, or when indentation exceeds 100 levels. A `TokenError` or `IndentationError` is a syntax error at that line. The pre-scan is linear and runs no parser.
+3. **Parse.** `ast.parse(text, type_comments=False)` only after the pre-scan passed. `SyntaxError`, `ValueError`, `RecursionError` and `MemoryError` become a refusal with the line.
+4. **Result.** `WindowRead(status, reason, line, facts)`: `status` is `ok`, `missing`, `refused`, `syntax_error`; `facts` is a frozen `WindowFacts` (M6.0s stub `engine/project/window_facts.py`): the window class (name, line, base names, the class's last line per UX-CODE-005, indent unit, blank-line style, line ending), and per method `MethodFacts(name, line, end_line, params, required, has_varargs, decorators, slot_types, kind ("method", "staticmethod", "classmethod", "property"), body_is_empty, source_hash)`.
+5. **Cache** by `(abs path, mtime_ns, size)` for files and by sha256 of `text` for buffers; at most 64 entries.
+6. Base classes named by `from <module> import <Name>` at the top of the file are read the same way, up to three files deep; anything else is unknown (FB212).
+
+Nothing here imports, executes or `compile()`s user code. The window class rule is UX-CODE-010.
+
+### 16.2 Planning a method (`engine/codegen/window_template.py`)
+
+`plan_stub(read, *, method_name, params, sender, event_words) -> StubPlan` replaces today's character-offset plan: it returns `TextEdit(start, end, text)` where `start == end` is the offset of a **line start** (the line after the class's last line, or the end of the text with a newline added first when the file doesn't end in one), `text` is whole lines in the file's line ending and indentation (UX-CODE-004, 005), and `stub_hash` = sha256 of the method lines from `def` to the last line, LF-normalised. It refuses (ValueError with the UX-CODE-006 sentence) when `read.status != "ok"`, there is no window class, or the method exists. `plan_unstub(read, method_name, stub_hash, blank_lines) -> Optional[TextEdit]` removes the method's lines and the blank lines before it only when the current method's `source_hash == stub_hash`; else None.
+
+`render_window_class` is unchanged except that its methods use the UX-CODE-004 docstring.
+
+### 16.3 The method gesture (M6.2b, `integration/handlers_code.py`)
+
+Order, all on the GUI thread: (1) `read_window` and `plan_stub`; on refusal stop. (2) Apply the `TextEdit` through `code_bridge.apply(path, edit)` (§16.4). (3) `with log.transaction("Write code for …")`: `SetEventSteps` (and nothing else). (4) On a `CommandRejected` in (3), `code_bridge.apply` the inverse edit (exact, since nothing ran between) and report. (5) Record on the log entry, outside the document, `HandlerMemo(path, method_name, stub_hash, blank_lines, created_file)`. Undo of that entry calls `plan_unstub` against the current text and applies it when not None; redo calls `plan_stub` again when the class lacks the method. The memo is session-only and never written to the `.ui`. When the window file is missing and the form generates (UX D9), step (1) first writes `render_window_class(doc, scope)` through the bridge, `created_file=True`; undo never deletes it.
+
+### 16.4 The code bridge (M6.0s, `integration/code_bridge.py`)
+
+One Qt-side service per window: `text_of(path) -> Optional[str]` (the open tab's buffer or None), `apply(path, edit) -> BridgeResult` (open tab: one edit of its document, one undo step there, and a save when the tab was clean before; closed file: atomic write keeping the mode bits, reported to `external_file_change_workflow.note_own_write`), `open_at(path, line, select=(start_col, end_col) or None)` (the shell's `open_file_at_line`, reusing a tab), and a signal `saved(path)` the checks listen to. It never runs code and never touches files outside the project.
+
+### 16.5 Checks (M6.2a, `engine/project/handler_checks.py`)
+
+`check_handlers(doc, read, *, classes, registry, inherited, connect_by_name) -> Tuple[FormDiagnostic, ...]` is pure. `inherited` is the frozen set of public attribute names of the window's stock Qt base class, computed once per process by the Qt side (`dir()` of the stock class) and passed in, so the engine stays Qt-free (§3.2's rule for Qt-measured inputs). The rules are UX-CODE-011's table. While `read.status` is not `ok`, it returns only FB209 or FB210.
+
+### 16.6 Preview stand-ins (M6.2b)
+
+`load_form` gains the optional field `form_methods: [[name, n_params], …]` (no version bump, §10.2). The child's host class gains a method per name that takes `*args`, does nothing, and sends `log` with `kind="would_call"` and `method`; the editor turns it into UX-CODE-016's status sentence, naming the event when exactly one event of the form calls that method. The child still never imports the window file.
 
 ## Appendix A. Spike: kept, replaced, dropped
 
