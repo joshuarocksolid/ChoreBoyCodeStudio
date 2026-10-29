@@ -123,3 +123,18 @@ def test_the_keyboard_link_opens_the_keyboard_tab_filtered_to_form_designer(tmp_
         assert dialog._shortcut_table.isRowHidden(other)
     finally:
         clear_extra_shortcut_commands()
+
+
+def test_insert_shows_set_on_the_page_survives_the_insert_pane_saving_its_recent_list(tmp_path: Path) -> None:
+    """The Insert pane's cached state must not put the old view back over the page's choice."""
+    from app.features.form_builder.integration.insert_memory import InsertMemoryStore
+
+    root = str((tmp_path / "state").resolve())
+    store = InsertMemoryStore(root)
+    store.set_view("icons")
+    page = settings_page.FormDesignerSettingsPage(service=SettingsService(state_root=root))
+    page.insert_combo.setCurrentIndex(page.insert_combo.findData("list"))
+    page.apply()
+    store.note_used("QLabel")
+    saved = SettingsService(state_root=root).load_global()["form_builder"]["insert"]
+    assert (saved["view"], saved["recent"]) == ("list", ["QLabel"])

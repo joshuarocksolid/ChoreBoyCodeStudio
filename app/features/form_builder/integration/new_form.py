@@ -135,10 +135,11 @@ def perform_create(
         surface = registry.surface_for_path(os.path.abspath(ui_path))
         if saved_template is not None:
             # UX-TMPL-003: the root is selected. Its object name is the class name the stem gives.
-            chosen = class_name_for_stem(stem.strip())
+            chosen: Optional[str] = None
         else:
             chosen = first_widget if ui_text is not None else first_useful_widget(template)
-        select_created_widget(surface, chosen)
+        # UX-START-004: a blank form (and a saved template) opens with the root selected.
+        select_created_widget(surface, chosen or class_name_for_stem(stem.strip()))
         say = getattr(surface, "show_plain", None)
         if notices and callable(say):
             say(notices[0])
@@ -374,7 +375,7 @@ class NewFormSurface:
             else:
                 return
         except ut.TemplateExists as exc:
-            self._panel.show_status('A template named "%s" already exists.' % exc.existing.name)
+            self._panel.show_status("A template named \u201c%s\u201d already exists." % exc.existing.name)
             return
         except ProjectOpError as exc:
             self._panel.show_status(str(exc))

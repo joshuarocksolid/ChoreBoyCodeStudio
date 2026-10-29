@@ -282,3 +282,32 @@ def test_a_template_that_cannot_be_read_is_listed_with_its_reason(tmp_path: Path
         ut.rename_template(listed, "x", state_root=str(state), project_root=None)
     made = create_from_template(str(tmp_path), listed, "new_form", OsFileSystem())
     assert made.result.refused and "can't be opened" in made.result.refused
+
+
+def test_a_template_never_copies_files_from_outside_its_pictures_folder(tmp_path: Path) -> None:
+    """A dropped-in template whose form names ``../`` pictures, or whose picture is a symlink out, copies nothing."""
+    secret = tmp_path / "secret.png"
+    secret.write_bytes(b"not for the project")
+    templates = tmp_path / "state" / "form_templates"
+    for key, form_path in (("climb", ":/pictures/../../../../secret.png"), ("linked", ":/pictures/logo.png")):
+        folder = templates / key
+        (folder / "pictures").mkdir(parents=True)
+        (folder / "template.json").write_text(json.dumps({"name": key}), encoding="utf-8")
+        (folder / "form.ui").write_text(_SHOP.replace(":/pictures/logo.png", form_path), encoding="utf-8")
+    os.symlink(secret, templates / "linked" / "pictures" / "logo.png")
+    for key in ("climb", "linked"):
+        target = tmp_path / ("project_" + key)
+        (target / "forms").mkdir(parents=True)
+        made = create_from_template(str(target), ut.read_template(str(templates / key), ut.SCOPE_USER), "shop", OsFileSystem())
+        assert made.result.refused is None
+        copied = [path.read_bytes() for path in target.rglob("*.png")]
+        assert copied == [], key
+
+
+def test_a_huge_template_json_name_is_cut_to_the_name_limit(tmp_path: Path) -> None:
+    folder = tmp_path / "state" / "form_templates" / "huge"
+    folder.mkdir(parents=True)
+    (folder / "template.json").write_text(json.dumps({"name": "N" * 50000, "description": "d" * 5000}), encoding="utf-8")
+    (folder / "form.ui").write_text(_SHOP, encoding="utf-8")
+    info = ut.read_template(str(folder), ut.SCOPE_USER)
+    assert (len(info.name), len(info.description), info.error) == (ut.NAME_LIMIT, ut.DESCRIPTION_LIMIT, "")

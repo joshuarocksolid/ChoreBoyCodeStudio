@@ -76,7 +76,7 @@ def _templates() -> Tuple[FormTemplate, ...]:
         ),
         FormTemplate(
             "dialog_buttons_right",
-            "Dialog with buttons on the right",
+            "Dialog with side buttons",
             "Fields, buttons at the side.",
             GROUP_TEMPLATES,
             "QDialog",

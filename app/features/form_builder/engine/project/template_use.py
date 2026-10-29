@@ -113,10 +113,11 @@ def _merge_pictures(
     if not wanted:
         return text, []
     sources: List[str] = []
-    for resource in wanted:
-        source = os.path.join(info.folder, PICTURES_FOLDER, resource[len(":/%s/" % PICTURES_FOLDER):])
-        if not os.path.isfile(source):
-            # The form already pointed at a picture that was missing when the template was saved.
+    for resource in list(wanted):
+        source = _template_picture(info.folder, resource[len(":/%s/" % PICTURES_FOLDER):])
+        if source is None:
+            # Missing when the template was saved, or a path that leaves the template's
+            # pictures folder (``../``, a symlink out): nothing is copied for it.
             wanted = [item for item in wanted if item != resource]
             continue
         sources.append(source)
@@ -126,6 +127,24 @@ def _merge_pictures(
     mapping: Dict[str, str] = dict(zip(wanted, outcome.resource_paths))
     edited = rewritten_form(text, rewrite=mapping, includes=(include_location(ui_path, outcome.qrc_path),))
     return edited, list(outcome.copied)
+
+
+def _template_picture(template_folder: str, relative: str) -> Optional[str]:
+    """The file under ``{template}/pictures/`` that ``relative`` names, or None.
+
+    Only a plain file that really lies in that folder counts: no ``..`` or empty
+    parts, and after symlinks are resolved it is still inside. A template is a
+    folder anyone can drop in, so it never gets to copy other files into a project.
+    """
+    parts = relative.split("/")
+    if not relative or any(part in ("", ".", "..") for part in parts):
+        return None
+    pictures = os.path.realpath(os.path.join(template_folder, PICTURES_FOLDER))
+    source = os.path.join(pictures, *parts)
+    real = os.path.realpath(source)
+    if not real.startswith(pictures + os.sep) or not os.path.isfile(real):
+        return None
+    return real
 
 
 def _put_back(fs: OsFileSystem, before: Dict[str, Optional[bytes]], copied: List[str]) -> None:

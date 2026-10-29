@@ -79,7 +79,7 @@ class TemplateExists(ProjectOpError):
     """A template with this name is already kept in that scope. ``existing`` is it."""
 
     def __init__(self, existing: "TemplateInfo") -> None:
-        super().__init__('A template named "%s" already exists.' % existing.name)
+        super().__init__("A template named \u201c%s\u201d already exists." % existing.name)
         self.existing = existing
 
 
@@ -187,8 +187,8 @@ def read_template(folder: str, scope: str) -> TemplateInfo:
     return TemplateInfo(
         scope=scope,
         folder=folder,
-        name=payload["name"].strip(),
-        description=description if isinstance(description, str) else "",
+        name=" ".join(payload["name"].split())[:NAME_LIMIT],
+        description=description.strip()[:DESCRIPTION_LIMIT] if isinstance(description, str) else "",
         root_class=root_class if isinstance(root_class, str) else "",
         created=created if isinstance(created, str) else "",
     ) if key else _broken(scope, folder, "The template folder has no name.")

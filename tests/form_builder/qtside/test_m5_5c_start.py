@@ -180,13 +180,13 @@ def test_recent_forms_sit_in_a_240_px_rail_from_1180_px(tmp_path: Path) -> None:
 def test_the_side_buttons_dialog_is_a_template_card(tmp_path: Path) -> None:
     assert "dialog_buttons_right" in template_keys()
     spec = template_for("dialog_buttons_right")
-    assert spec.title == "Dialog with buttons on the right" and spec.root_class == "QDialog"
+    assert spec.title == "Dialog with side buttons" and spec.root_class == "QDialog"
     from app.features.form_builder.engine.project.templates import build_template_ui
 
     text = build_template_ui("dialog_buttons_right", "Invoice")
     assert 'class="QHBoxLayout"' in text and "Qt::Orientation::Vertical" in text
     assert "<signal>accepted()</signal>" in text and "<signal>rejected()</signal>" in text
-    assert _panel(tmp_path).card("dialog_buttons_right").title() == "Dialog with buttons on the right"
+    assert _panel(tmp_path).card("dialog_buttons_right").title() == "Dialog with side buttons"
 
 
 @pytest.mark.perf

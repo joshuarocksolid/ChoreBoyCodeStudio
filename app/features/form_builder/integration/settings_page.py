@@ -46,7 +46,7 @@ from app.qt.QtWidgets import (
 )
 
 from app.features.form_builder.engine.project import user_templates as ut
-from app.features.form_builder.integration import template_store
+from app.features.form_builder.integration import insert_memory, template_store
 from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.theme.chrome import link_ink
 from app.persistence.settings_service import SettingsService
@@ -232,6 +232,7 @@ class FormDesignerSettingsPage(QWidget):
             self._settings().update_global(lambda payload: payload_with_values(payload, values))
         except OSError:
             return
+        insert_memory.forget_cached()
 
     def show_keyboard_shortcuts(self) -> bool:
         """Go to the dialog's Keyboard tab with its search box reading "Form designer"."""
@@ -267,9 +268,11 @@ def _build(parent: QWidget, payload: Mapping[str, Any]) -> QWidget:
 
 
 def _apply(page: QWidget, payload: Dict[str, Any]) -> Mapping[str, Any]:
-    if isinstance(page, FormDesignerSettingsPage):
-        return page.write_into(payload)
-    return payload
+    if not isinstance(page, FormDesignerSettingsPage):
+        return payload
+    # The Insert pane caches its state; it reads "Insert shows" again after the shell saves.
+    insert_memory.forget_cached()
+    return page.write_into(payload)
 
 
 PAGE = SettingsPage(key=SETTINGS_KEY, title=TAB_TITLE, build=_build, apply=_apply)
