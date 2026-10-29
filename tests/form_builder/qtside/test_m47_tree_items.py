@@ -106,3 +106,16 @@ def test_typing_in_a_new_column_keeps_the_column_two_tooltip_on_column_two(qapp)
     assert apple.index("name tip") < apple.index("Red") < apple.index("colour tip") < apple.index("Rounds")
     assert load_draft(session.document, tree).items[0].texts == ("Apple", "Red", "Rounds")
     session.dispose()
+
+
+def test_summary_does_not_count_the_empty_row_waiting_at_the_end() -> None:
+    session = open_session(form('class="QWidget" name="Form"', '<widget class="QComboBox" name="box"><item>%s</item><item>%s</item><item>%s</item></widget>' % (_prop("a"), _prop("b"), _prop("c"))))
+    box = session.document.by_name("box")[0]
+    draft = load_draft(session.document, box)
+    from dataclasses import replace
+
+    from app.features.form_builder.qtside.items.model import Item
+
+    padded = replace(draft, items=draft.items + (Item(texts=("",)),))
+    assert summary(padded) == summary(draft) == "3 items: a, b, c"
+    session.dispose()

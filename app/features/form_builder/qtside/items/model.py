@@ -95,13 +95,14 @@ def load_draft(document: UiDocument, widget: NodeId) -> Optional[Draft]:
 
 def summary(draft: Draft) -> str:
     if draft.kind == "tree":
-        count = _count(draft.items)
+        count = _count(trim_blank_tail(draft.items))
         columns = max(1, len(draft.columns))
         return "%d rows in %d columns" % (count, columns)
     if draft.kind == "table":
         filled = sum(1 for cell in draft.cells if any(text for text in cell.texts))
         return "%d \u00d7 %d, %d cells filled" % (len(draft.rows), len(draft.columns), filled)
-    items = draft.items
+    # The empty row waiting at the end is not an item yet.
+    items = trim_blank_tail(draft.items)
     texts = tuple(item.text_at(0) for item in items if item.text_at(0))
     if not texts:
         return "No items"
