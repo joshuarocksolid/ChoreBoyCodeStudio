@@ -10,6 +10,7 @@ import pytest
 from app.features.form_builder.engine.commands.catalog import SetItems, SetProperty
 from app.features.form_builder.engine.ui4.values import StringValue
 from app.features.form_builder.qtside.items.model import commit_slots, load_draft
+from app.features.form_builder.engine.query.selection import SelectionSource
 from app.qt.QtWidgets import QApplication
 from app.qt.QtCore import Qt
 from tests.form_builder.qtside.support import form
@@ -80,3 +81,17 @@ def test_adding_an_item_updates_the_outline_caption(qapp: QApplication) -> None:
         pane.note_edited()
         qapp.processEvents()
         assert "Small, Medium, Large" in _caption(pane, session, "size")
+
+
+def test_narrowing_a_selection_drops_the_old_highlight(qapp: QApplication) -> None:
+    from tests.form_builder.qtside.test_outline_pane import _buttons
+
+    with _opened(qapp, _buttons(3), "stale") as (pane, session):
+        first, second = _id(session, "field0"), _id(session, "field1")
+        session.selection.set((first, second), current=second, source=SelectionSource.OUTLINE)
+        pane.show_current(second)
+        assert len(pane.tree.selectedItems()) == 2
+        session.selection.set((second,), current=second, source=SelectionSource.CANVAS)
+        pane.show_current(second)
+        names = [item.text(0) for item in pane.tree.selectedItems()]
+        assert names == ["field1"]

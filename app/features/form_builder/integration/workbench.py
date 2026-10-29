@@ -857,7 +857,7 @@ class OutlinePane(QWidget):
             if item is None:
                 return
         previous = self._current_item
-        if item is previous and (item is None or item.isSelected()):
+        if item is previous and (item is None or item.isSelected()) and self._highlight_matches(item):
             return
         self._blocked = True
         scrolling = self.tree.hasAutoScroll()
@@ -889,6 +889,14 @@ class OutlinePane(QWidget):
             # layout, which must not sit inside the select itself.
             self._reveal_item = item
             QTimer.singleShot(0, self._reveal_current)
+
+    def _highlight_matches(self, item: object) -> bool:
+        """True when the tree lights exactly the selected rows, so no stale row stays lit."""
+        if item is None:
+            return True
+        ids = () if self._session is None else self._session.selection.state.ids
+        lit = self.tree.selectedItems()
+        return len(lit) == max(len(ids), 1)
 
     def _reveal_current(self) -> None:
         """Scroll the current row into view only when it is off screen."""
