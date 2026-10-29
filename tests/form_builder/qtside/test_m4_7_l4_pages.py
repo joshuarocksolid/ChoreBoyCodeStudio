@@ -33,3 +33,33 @@ def test_plus_chip_clears_the_last_tab_after_a_longer_title() -> None:
         assert mine and max(rect.width for rect in mine) == bar.tabRect(0).width()
         canvas.dispose()
         parent.deleteLater()
+
+
+def test_deleting_an_empty_page_from_the_menu_names_its_title(tmp_path) -> None:  # type: ignore[no-untyped-def]
+    from app.features.form_builder.engine.commands.catalog_ext.pages import InsertPage
+    from app.features.form_builder.engine.query.pages import page_title, pages
+    from app.features.form_builder.integration.menu_ext import MenuContext
+    from app.features.form_builder.integration.menu_ext.pages import _delete
+    from app.qt.QtWidgets import QLabel, QMenu
+    from tests.form_builder.qtside.test_m4_pages_keyboard import _close, _surface
+
+    parent, surface = _surface(tmp_path, "toast")
+    try:
+        document = surface.session.document
+        tabs = document.by_name("tabs")[0]
+        surface.session.log.execute(InsertPage(tabs))
+        _flush()
+        index = len(pages(document, tabs)) - 1
+        page = pages(document, tabs)[index]
+        title = page_title(document, page.id)
+        assert title and title != page.object_name
+        ctx = MenuContext(
+            QMenu(surface), (), None, surface.session, lambda _name: None, run=surface.run_menu_request
+        )
+        _delete(ctx, tabs, index, False)
+        _flush()
+        texts = [label.text() for label in surface.findChildren(QLabel) if label.isVisible()]
+        assert any("Deleted page “%s”" % title in text for text in texts), texts
+        assert not any(page.object_name in text for text in texts), texts
+    finally:
+        _close(parent, surface)
