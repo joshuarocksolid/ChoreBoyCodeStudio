@@ -315,7 +315,13 @@ class PreviewNotices:
 
 
 def attach(surface: Any, session: Any, pool: Any = None) -> PreviewNotices:
-    """Route the form tab's preview request to the notices. M5.5a's Preview window calls ``preview`` too."""
+    """Route the form tab's preview request to the notices.
+
+    Hook for M5.5a: ``Ctrl+Shift+R`` (``form.action.preview``, a status sentence in ``surface.py``
+    until then) and the Preview window should call ``surface.request_preview(path)``, which reaches
+    ``PreviewNotices.preview`` through ``_preview_listener``, so the security note, FB602 rows and
+    the stand-in toast come with every preview, however it is started.
+    """
     notices = PreviewNotices(surface, session, pool)
     if hasattr(surface, "_preview_listener"):
         surface._preview_listener = notices.preview
