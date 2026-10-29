@@ -110,3 +110,26 @@ def test_a_picture_cell_keeps_the_number_that_tells_files_apart() -> None:
         shown = cell_name(metrics, name, 52)
         assert metrics.horizontalAdvance(shown) <= 52
         assert name.rsplit(".", 1)[0][-2:] in shown, shown
+
+
+def test_the_canvas_refusal_note_is_in_the_warning_colour() -> None:
+    """UX-PED-009 names fb.warning; the note used the plain row-note colour."""
+    from app.features.form_builder.engine.commands.catalog import SetProperty
+    from app.features.form_builder.engine.ui4.values import StringValue
+    from app.features.form_builder.qtside.inspector.editors._editor_kit import warning_color
+    from app.qt.QtWidgets import QLabel
+    from tests.form_builder.inspector.test_scalar_editors import _FORM, _close, _pane, _row, _select
+    from tests.form_builder.qtside.support import opened
+
+    with opened(_FORM) as (session, realizer):
+        window, pane = _pane(session, realizer)
+        try:
+            amount = session.document.by_name("amount")[0]
+            _select(session, pane, "amount")
+            session.log.execute(SetProperty(amount, "minimum", StringValue("lots")))
+            pane.flush()
+            note = _row(pane, "minimum").findChild(QLabel, "formBuilder.rowNote")
+            assert note is not None and note.isVisible()
+            assert warning_color(pane._services.chrome).lower() in note.styleSheet().lower()  # noqa: SLF001
+        finally:
+            _close(window, pane)
