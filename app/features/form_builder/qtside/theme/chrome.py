@@ -411,6 +411,12 @@ def item_editor_qss(chrome: FormChrome) -> str:
         "%(name)s QWidget { background: transparent; color: %(text)s; }"
         "%(name)s QLabel { color: %(text)s; background: transparent; border: none; }"
         "%(name)s QAbstractScrollArea { background: transparent; border: none; }"
+        # The rows' 16 px ▸ and × buttons: the transparent QWidget rule above
+        # drops their native look, so give them a plain bordered glyph.
+        "%(name)s QToolButton { color: %(text)s; background: transparent;"
+        " border: 1px solid %(control_edge)s; border-radius: 3px; padding: 0px; }"
+        "%(name)s QToolButton:hover { background: %(hover)s; }"
+        "%(name)s QToolButton:focus { border: 2px solid %(accent)s; }"
         "%(name)s QPushButton#formBuilder\\.itemEditorDone {"
         " color: %(on_accent)s; background: %(accent)s; border: none;"
         " border-radius: 4px; padding: 6px 10px; font-weight: 600; }"
@@ -422,6 +428,8 @@ def item_editor_qss(chrome: FormChrome) -> str:
             "edge": edge,
             "on_accent": chrome.on_accent,
             "accent": chrome.accent,
+            "control_edge": chrome.text if chrome.is_high_contrast else chrome.border,
+            "hover": chrome.row_hover,
         }
     )
     return frame + field_qss(chrome, name) + control_qss(chrome, name)
