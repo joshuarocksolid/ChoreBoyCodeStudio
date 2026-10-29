@@ -63,14 +63,15 @@ class LabelMetrics:
         widget = self._realizer.widget_for(found[0]) if found else None
         if not isinstance(widget, QLabel):
             return None
-        text = widget.text().replace("&&", "\0").replace("&", "").replace("\0", "&")
+        label: Any = widget
+        text = label.text().replace("&&", "\0").replace("&", "").replace("\0", "&")
         if not text:
             return None
-        metrics = widget.fontMetrics()
+        metrics = label.fontMetrics()
         longest = max((metrics.horizontalAdvance(line) for line in text.splitlines() or [text]), default=0)
-        area = widget.contentsRect()
+        area = label.contentsRect()
         width = min(longest, area.width())
-        flags = widget.alignment()
+        flags = label.alignment()
         if flags & Qt.AlignmentFlag.AlignRight:
             left = area.right() - width + 1
         elif flags & Qt.AlignmentFlag.AlignHCenter:

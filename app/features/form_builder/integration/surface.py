@@ -626,8 +626,10 @@ class FormSurface(QWidget):
         state = self._session.selection.state
         mixed = mixed_parent_sentence(self._session.document, state.ids)
         selection = mixed or selection_sentence(self._session.document, state.current, len(state.ids))
+        # An open overlay speaks first: its instruction is about the next key, not about the last gesture.
+        gesture = "" if self._modes.active and self._overlay_sentence else self._gesture_sentence
         return status_sentence(
-            self._gesture_sentence,
+            gesture,
             self._overlay_sentence,
             self._inert_note,
             self._hover_sentence,
@@ -1378,7 +1380,7 @@ class FormSurface(QWidget):
         """Form > Overlays > Tab order list…: the form inspector's Tab order group (UX-MODE-003)."""
         if self._source.mode != "visual":
             return
-        from app.features.form_builder.qtside.inspector.pane import TabId
+        from app.features.form_builder.qtside.inspector import TabId
 
         inspector = self._workbench.inspector
         self._session.selection.set((), source=SelectionSource.PROGRAM)

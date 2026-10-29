@@ -12,7 +12,7 @@ from typing import Optional
 from app.features.form_builder.engine.query import tab_stops as q
 from app.features.form_builder.engine.commands.catalog_ext.tab_order import SetLabelBuddy
 from app.features.form_builder.qtside.inspector.api import EditorHost, EditorKey, GroupId, Registrar, RowSpec, Summary
-from app.features.form_builder.qtside.inspector.words import class_words
+from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.qt.QtCore import Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QComboBox, QCompleter, QWidget
@@ -23,7 +23,7 @@ _MISSING = " (not on this form)"
 
 
 def choice_text(name: str, qt_class: str) -> str:
-    return "%s · %s" % (name, class_words(qt_class).friendly)
+    return "%s · %s" % (name, friendly_of(qt_class))
 
 
 class _Combo(QComboBox):
@@ -44,7 +44,6 @@ class BuddyEditor:
     def __init__(self, spec: object, host: EditorHost, parent: QWidget) -> None:
         del spec
         self._host = host
-        self._shown: Optional[str] = None
         self._combo = _Combo(self, parent)
         self._combo.setObjectName("formBuilder.buddyPicker")
         self._combo.setAccessibleName("Buddy")
@@ -66,7 +65,6 @@ class BuddyEditor:
         owners = self._host.owner_ids()
         document = self._host.document()
         current = q.buddy_of(document, owners[0]) if len(owners) == 1 else None
-        self._shown = current
         choices = q.buddy_choices(document)
         self._combo.blockSignals(True)
         self._combo.clear()
@@ -87,26 +85,31 @@ class BuddyEditor:
     def pick_typed(self) -> None:
         """Enter: the first entry that contains the typed words, else the entry already chosen."""
         edit = self._combo.lineEdit()
-        typed = edit.text().strip().lower() if edit is not None else ""
-        if not typed or self._combo.findText(edit.text() if edit is not None else "") >= 0:
-            self._activated(self._combo.currentIndex() if not typed else self._combo.findText(edit.text()))
+        words = edit.text().strip() if edit is not None else ""
+        typed = words.lower()
+        if not typed:
+            self._activated(self._combo.currentIndex())
+            return
+        exact = self._combo.findText(words)
+        if exact >= 0:
+            self._activated(exact)
             return
         for index in range(self._combo.count()):
             if typed in self._combo.itemText(index).lower():
                 self._combo.setCurrentIndex(index)
                 self._activated(index)
                 return
-        self._host.invalid("No widget called \u201c%s\u201d on this form." % edit.text().strip())
+        self._host.invalid("No widget called \u201c%s\u201d on this form." % words)
 
     def _activated(self, index: int) -> None:
         name = self._combo.itemData(index)
-        if name == self._shown:
-            return
         owners = self._host.owner_ids()
         session = _session_of(self._host)
         if len(owners) != 1 or session is None:
             return
         document = self._host.document()
+        if name == q.buddy_of(document, owners[0]):
+            return
         command = SetLabelBuddy(owners[0], None if name is None else str(name), q.caption(document, owners[0]))
         session.log.execute(command)
 

@@ -66,6 +66,12 @@ def caption(doc: UiDocument, node_id: NodeId) -> str:
     return text or node.object_name
 
 
+def caption_name(doc: UiDocument, node_id: NodeId) -> str:
+    """A widget's object name, or an empty string for any other node."""
+    node = doc.get(node_id)
+    return node.object_name if isinstance(node, WidgetNode) else ""
+
+
 def buddy_of(doc: UiDocument, node_id: NodeId) -> Optional[str]:
     node = doc.get(node_id)
     if not isinstance(node, WidgetNode):

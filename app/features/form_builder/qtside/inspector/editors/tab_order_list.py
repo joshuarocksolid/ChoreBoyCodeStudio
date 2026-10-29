@@ -15,7 +15,7 @@ from app.features.form_builder.engine.query import tab_stops as q
 from app.features.form_builder.engine.query.selection import SelectionSource
 from app.features.form_builder.qtside.canvas.banner import EnterButton
 from app.features.form_builder.qtside.inspector.api import GroupBody, GroupHost, Registrar, Row
-from app.features.form_builder.qtside.inspector.words import class_words
+from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.qt.QtCore import QModelIndex, Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QAbstractItemView, QLabel, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
@@ -27,7 +27,7 @@ USE_READING = "Use reading order"
 
 
 def row_text(number: int, name: str, qt_class: str) -> str:
-    return "%d · %s · %s" % (number, name, class_words(qt_class).friendly)
+    return "%d · %s · %s" % (number, name, friendly_of(qt_class))
 
 
 class _List(QListWidget):

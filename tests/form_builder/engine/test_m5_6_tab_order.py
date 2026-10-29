@@ -87,9 +87,11 @@ def test_tab_order_round_trips_byte_identically_and_use_reading_order_removes_it
     original = saved(doc)
     log.execute(ChangeTabOrder(("phoneEdit", "emailEdit", "nameEdit")))
     assert "<tabstop>phoneEdit</tabstop>" in saved(doc)
+    assert log.undo_label() == "Change tab order"
     log.undo()
     assert saved(doc) == original
     log.execute(ChangeTabOrder(None))
+    assert log.undo_label() == "Use reading order"
     assert doc.tabstops() is None
     assert "<tabstops>" not in saved(doc)
     log.undo()
@@ -134,7 +136,7 @@ def test_pairing_sets_only_labels_without_a_buddy_and_counts_them() -> None:
     log = open_log(ROWS)
     doc = log.document
     pairs = q.form_row_pairs(doc)
-    assert [(doc.node(label).object_name, field) for label, field in pairs] == [
+    assert [(q.caption_name(doc, label), field) for label, field in pairs] == [
         ("nameLabel", "nameEdit"),
         ("emailLabel", "emailEdit"),
         ("phoneLabel", "phoneEdit"),

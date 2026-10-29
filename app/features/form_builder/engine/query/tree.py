@@ -13,7 +13,7 @@ from app.features.form_builder.engine.ids import NodeId
 from app.features.form_builder.engine.ui4.defaults import QtClassTable
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import CustomWidgetNode, LayoutItemNode, LayoutNode, WidgetNode
-from app.features.form_builder.engine.ui4.values import CStringValue, StringValue
+from app.features.form_builder.engine.ui4.values import CStringValue, EnumValue, StringValue
 
 # Used when the class table has not been generated yet. A known class trusts
 # its flags and ignores this set.
