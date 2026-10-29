@@ -22,7 +22,6 @@ from app.features.form_builder.engine.style.override import BACKGROUND_NAMES, TE
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import WidgetNode
 from app.features.form_builder.engine.ui4.values import ColorValue, NumberValue, StringValue, Value
-from app.features.form_builder.qtside.inspector._services import Dropped, Rejected, rejection_text
 from app.features.form_builder.qtside.inspector.api import (
     STYLESHEET,
     EditorHost,
@@ -354,10 +353,10 @@ class _ColourRow:
         finally:
             if session is None:
                 own.close()  # type: ignore[attr-defined]
-        if isinstance(result, Dropped):
-            return True
-        if isinstance(result, Rejected):
-            self._host.invalid(rejection_text(result))
+        message = getattr(result, "message", "")
+        if message:
+            code = getattr(result, "code", None)
+            self._host.invalid("%s %s" % (code, message) if code else message)
             return False
         return True
 
