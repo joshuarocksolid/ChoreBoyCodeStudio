@@ -788,16 +788,7 @@ def _k14(kb: Kb) -> None:
     indents[0].triggered.connect(lambda *_: hits.append(1))
     kb.press("Key_Tab")
     nested = [c.text_at(0) for c in ed.draft.items[0].children]
-    kb.soft(
-        nested == ["Apple"],
-        "K14-1",
-        "Tab in the tree-item field (%s) %s: Apple is %s Fruit"
-        % (
-            kb.focus_name(),
-            "fires the shell Edit > Indent shortcut (%d) instead of nesting the row" % len(hits) if hits else "does not nest",
-            "under" if nested == ["Apple"] else "not under",
-        ),
-    )
+    kb.check(nested == ["Apple"], "Tab in the tree-item field nests Apple under Fruit (focus %s, shell Indent hits %d)" % (kb.focus_name(), len(hits)))
     # Tab nests the row, so the tree field has its own way to Done: Ctrl+Tab (tree_body.py).
     kb.press("Key_Tab", "Control")
     kb.check(kb.focus_name() == "formBuilder.itemEditorDone", "Ctrl+Tab reaches Done (focus %s)" % kb.focus_name())
@@ -945,11 +936,6 @@ def test_k12_tab_reaches_translate_this_text(run: _Run) -> None:
 @pytest.mark.xfail(strict=True, reason="K12-3: Tab in the formatted-text editor inserts a tab; Done is reachable only by Shift+Tab around the popover")
 def test_k12_tab_leaves_the_formatted_text_editor(run: _Run) -> None:
     _open_finding(run, "K12-3")
-
-
-@pytest.mark.xfail(strict=True, reason="K14-1: Tab in a tree-item field fires the shell Indent shortcut instead of nesting the row")
-def test_k14_tab_nests_a_tree_item(run: _Run) -> None:
-    _open_finding(run, "K14-1")
 
 
 @pytest.mark.xfail(strict=True, reason="K15-1: Enter on a Disabled-state picture closes the popover, so Esc cannot revert it")
