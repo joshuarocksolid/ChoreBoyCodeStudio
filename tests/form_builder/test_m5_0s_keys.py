@@ -18,7 +18,7 @@ _PACKAGE = "m5_keys_probe"
 
 _GOOD = """
     def register(registry):
-        registry.key("probe.focusActions", "Focus actions", "Alt+5", ("form_tab",))
+        registry.key("probe.focusActions", "Focus actions", "Alt+8", ("form_tab",))
         registry.key("probe.copyLook", "Copy look", "Ctrl+Alt+K", ("canvas",))
 """
 

@@ -16,8 +16,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from tests.form_builder.engine.codegen.uic_status import same_failure
 from PySide6.QtCore import QByteArray, QLocale, QMetaMethod, QObject, QPointF, QRectF, QSize, QSizeF, Qt
-from PySide6.QtGui import QAction, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
-from PySide6.QtWidgets import QApplication, QButtonGroup, QSizePolicy, QWidget
+from PySide6.QtGui import QAction, QActionGroup, QBrush, QColor, QCursor, QFont, QIcon, QPalette, QPixmap, QRegion
+from PySide6.QtWidgets import QApplication, QButtonGroup, QMainWindow, QSizePolicy, QToolBar, QWidget
 
 from app.features.form_builder.engine.codegen.api import generate_form_module
 from app.features.form_builder.engine.codegen.qtmap import class_module
@@ -818,6 +818,14 @@ def _item_view(widget: QWidget, class_name: str):
     return None
 
 
+def _enum_int(value: Any) -> int:
+    raw = getattr(value, "value", value)
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return -1
+
+
 def _widget(widget: QWidget, depth=0):
     if depth > 30:
         return {"truncated": True}
@@ -847,8 +855,20 @@ def _widget(widget: QWidget, depth=0):
         info["buddy"] = name_fn() if callable(name_fn) else ""
     if class_name in _ACTION_CLASSES:
         info["actions"] = [action.objectName() for action in widget.actions()]
+    if isinstance(widget, QMainWindow):
+        # Toolbar side and break (UX-MAIN-018): uic's addToolBar(area, ...) and insertToolBarBreak.
+        info["toolbars"] = sorted(
+            (bar.objectName(), _enum_int(widget.toolBarArea(bar)), bool(widget.toolBarBreak(bar)))
+            for bar in widget.findChildren(QToolBar)
+            if bar.parent() is widget
+        )
     if depth == 0:
         info["focus"] = _focus_chain(widget)
+        # Action groups wherever uic or QUiLoader parents them: name, exclusive, members.
+        info["action_groups"] = sorted(
+            (group.objectName(), bool(group.isExclusive()), sorted(a.objectName() for a in group.actions()))
+            for group in widget.findChildren(QActionGroup)
+        )
     children = []
     try:
         raw_children = list(widget.children())
@@ -861,13 +881,22 @@ def _widget(widget: QWidget, depth=0):
                     continue
                 children.append(_widget(child, depth + 1))
             elif isinstance(child, QAction):
-                children.append({"class": "QAction", "objectName": child.objectName(), "props": _props(child)})
+                group = child.actionGroup()
+                children.append(
+                    {
+                        "class": "QAction",
+                        "objectName": child.objectName(),
+                        "props": _props(child),
+                        "group": group.objectName() if group is not None else "",
+                    }
+                )
             elif isinstance(child, QButtonGroup):
                 children.append(
                     {
                         "class": "QButtonGroup",
                         "objectName": child.objectName(),
                         "buttons": sorted(b.objectName() for b in child.buttons()),
+                        "exclusive": bool(child.exclusive()),
                     }
                 )
         except RuntimeError:
@@ -1267,6 +1296,13 @@ _QUILOADER_IGNORES = (
         "applies it to widgets only and leaves nested layouts and spacers at 0, so "
         "our alignment on those items is not compared.",
     ),
+    (
+        "nested action group",
+        "uic writes setExclusive on an <actiongroup> that holds another one, as ours "
+        "does (kitchen_sink: outerGroup exclusive False). QUiLoader leaves that outer "
+        "group at Qt's default, so action groups of a form with a nested group are "
+        "not compared.",
+    ),
 )
 
 # The values this harness's layout functions return (see ``_load``).
@@ -1333,6 +1369,7 @@ class _QuiLoaderRules:
 
         self.layout_values = {}
         self.float_names = frozenset()
+        self.nested_action_group = False
         try:
             root = ET.fromstring(data)
         except ET.ParseError:
@@ -1348,12 +1385,17 @@ class _QuiLoaderRules:
             for prop in root.iter("property")
             if prop.find("float") is not None
         )
+        self.nested_action_group = any(
+            group.find("actiongroup") is not None for group in root.iter("actiongroup")
+        )
 
     def ignored(self, item: str) -> bool:
         match = _LAYOUT_VALUE.match(item)
         if match is not None:
             return self.layout_values.get(match.group(1)) == match.group(2)
         if item.endswith(".props missing left ._q_zOrder"):
+            return True
+        if self.nested_action_group and item.startswith("$.action_groups"):
             return True
         marker = ".props missing right ."
         if marker in item:
