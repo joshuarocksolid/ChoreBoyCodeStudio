@@ -64,7 +64,8 @@ def test_a_left_section_shows_with_the_form_takes_a_share_and_answers_alt_5(  # 
         bench = surface._workbench
         assert lane.SEEN == [bench]
         widget = bench.section_widget("actions")
-        assert isinstance(widget, QListWidget) and not widget.isVisibleTo(bench)
+        assert widget is not None and isinstance(widget, QListWidget)
+        assert not widget.isVisibleTo(bench)
         assert not bench.focus_section("actions")
         lane.SHOW[0] = True
         bench.refresh(None, "keep")
@@ -77,7 +78,8 @@ def test_a_left_section_shows_with_the_form_takes_a_share_and_answers_alt_5(  # 
         keys = [shortcut for shortcut in bench.findChildren(QShortcut) if shortcut.key().toString() == "Alt+5"]
         assert len(keys) == 1
         keys[0].activated.emit()
-        assert widget.hasFocus() or widget.isAncestorOf(qapp.focusWidget())
+        focus = qapp.focusWidget()
+        assert widget.hasFocus() or (focus is not None and widget.isAncestorOf(focus))
         lane.SHOW[0] = False
         bench.refresh(None, "keep")
         assert not widget.isVisibleTo(bench)

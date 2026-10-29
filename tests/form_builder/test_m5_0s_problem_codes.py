@@ -66,8 +66,9 @@ def test_a_fix_module_adds_buttons_for_its_code_and_they_ride_in_the_problem_row
     assert fixes_for(_diagnostic("FB031", prop="icon"), registry) == (("open-qrc", "Open resources.qrc"),)
     assert fixes_for(_diagnostic("FB032"), registry) == ()
     rows = code_diagnostics_for_form("/work/a.ui", (_diagnostic("FB031"), _diagnostic("FB032")), registry)
-    assert json.loads(rows[0].detail["fb_fixes"])[0] == ["add-picture", "Add logo to project pictures"]
-    assert "fb_fixes" not in rows[1].detail
+    first, second = rows[0].detail or {}, rows[1].detail or {}
+    assert json.loads(first["fb_fixes"])[0] == ["add-picture", "Add logo to project pictures"]
+    assert "fb_fixes" not in second
 
 
 def test_running_a_fix_goes_through_its_code_only(fixes) -> None:  # type: ignore[no-untyped-def]
