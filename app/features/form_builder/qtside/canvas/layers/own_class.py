@@ -1,7 +1,7 @@
 """The corner tag of a widget that uses your own class, and its hit area (UX-CUST-007, ``ov.own_class``).
 
 A selected or hovered widget whose class the form declares from a Python module
-gets a 1 px outline and a 4 px tag in the ``ov.layout`` colour (``#5B21B6`` in
+gets a 1 px outline and a 4 px tag in the ``ov.layout`` colour (violet in
 high contrast). A widget of your own class that is smaller than 80 x 24 px on
 the canvas gets a hit target of that size, so it can be picked. The target is
 never saved. Nothing here reads the module.
