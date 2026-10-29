@@ -84,6 +84,7 @@ def _id(session: FormSession, name: str):  # noqa: ANN202
     return session.document.by_name(name)[0]
 
 
+@pytest.mark.parity("R3-194", "R3-198")
 def test_the_popover_lists_the_registry_fills_a_row_and_checks_without_importing(tmp_path: Path) -> None:
     root, session, realizer = _open(tmp_path)
     try:
@@ -235,6 +236,8 @@ def test_several_widgets_of_one_class_change_together(tmp_path: Path) -> None:
         session.dispose()
 
 
+@pytest.mark.pain("P-7")
+@pytest.mark.parity("R3-123")
 def test_a_label_class_draws_as_a_label_and_a_widget_class_as_a_sized_stand_in(tmp_path: Path) -> None:
     root, session, realizer = _open(tmp_path)
     try:
@@ -294,6 +297,7 @@ def test_the_corner_tag_shows_on_the_selected_widget_and_the_hit_area_is_at_leas
         session.dispose()
 
 
+@pytest.mark.parity("R3-196")
 def test_insert_lists_the_registry_with_its_description_and_inserts_one_named_step(tmp_path: Path) -> None:
     root, session, realizer = _open(tmp_path)
     try:
@@ -366,5 +370,41 @@ def test_the_header_names_the_base_in_plain_words(tmp_path: Path) -> None:
         session.selection.set((_id(session, "payButton"),), source=SelectionSource.PROGRAM)
         assert project_header(session).class_line == ""
     finally:
+        realizer.dispose()
+        session.dispose()
+
+
+@pytest.mark.parity("R3-196")
+def test_the_insert_pane_shows_your_widgets_from_the_registry_and_the_form(tmp_path: Path) -> None:
+    from app.features.form_builder.qtside.insert.pane import InsertPane
+    from app.features.form_builder.qtside.insert.rows import ENTRY, HEADER
+    from app.features.form_builder.integration.insert_memory import InMemoryInsertMemory
+    from app.features.form_builder.integration.workbench import _PieceOps
+    from app.features.form_builder.qtside.insert.delegate import ROW_ROLE
+
+    root, session, realizer = _open(tmp_path)
+    host = QWidget()
+    pane = InsertPane(lambda _collapsed: None, host, memory=InMemoryInsertMemory(), pieces=_PieceOps())  # type: ignore[arg-type]
+    try:
+        pane.bind_session(session)
+
+        def rows() -> list:
+            return [pane.body.item(i).data(int(ROW_ROLE)) for i in range(pane.body.count())]
+
+        assert not any(r.kind == HEADER and r.category == "Your widgets" for r in rows())
+        registry = registry_for(str(root.resolve()))
+        registry.upsert(cw.RegistryEntry("TillDisplay", "widgets.till_display", "QLabel", description="Running total"))
+        pane.bind_registry(registry)
+        pane.filter.setText("till")
+        found = [r for r in rows() if r.kind == ENTRY]
+        assert [r.title for r in found] == ["Till display"] and found[0].category == "Your widgets"
+        assert "Running total" in pane._tooltip(found[0]) or found[0].key == "custom:TillDisplay"
+        pane.filter.setText("")
+        assert any(r.kind == HEADER and r.category == "Your widgets" for r in rows())
+        registry.remove("TillDisplay")
+        pane.refresh_custom()
+        assert not any(r.kind == HEADER and r.category == "Your widgets" for r in rows())
+    finally:
+        pane.deleteLater()
         realizer.dispose()
         session.dispose()

@@ -94,6 +94,7 @@ def test_the_seven_check_lines(tmp_path: Path) -> None:
     assert cw.BAD_CLASS in cw.BLOCKING and cw.BAD_MODULE in cw.BLOCKING
 
 
+@pytest.mark.parity("R3-198")
 def test_the_resolver_never_imports_or_runs_project_code(tmp_path: Path) -> None:
     root = str(_project(tmp_path))
     before = set(sys.modules)
@@ -133,6 +134,33 @@ def test_the_check_is_cached_by_mtime(tmp_path: Path) -> None:
     assert cw.check_module(str(root), "widgets.till_display", "TillDisplay", "QLabel").state == cw.OTHER_BASE
 
 
+@pytest.mark.parity("R3-196", "R3-197")
+def test_declaration_fields_stand_in_for_the_plugin_interface_and_round_trip() -> None:
+    """Name, group, tooltip, include file, container, size hint, add-page method, signals and slots are
+    declarations the editor reads (never plugin code): they round-trip through the registry, the form's
+    declaration and the Insert entry (UX-CUST-011)."""
+    from app.features.form_builder.qtside.insert.catalog._custom import custom_entries
+
+    entry = cw.RegistryEntry(
+        "Wizardish", "widgets.wizardish", "QWidget", container=True, description="Pages of steps",
+        size=(300, 120), add_page_method="addStep", signals=("stepChanged(int)",), slots=("next()", "back()"),
+    )
+    assert cw.entry_from_json(entry.to_json()) == entry
+    spec = cw.declaration_spec(entry)
+    assert spec.field("container") == 1 and spec.field("addpagemethod") == "addStep"
+    assert (spec.field("sizehint").width, spec.field("sizehint").height) == (300, 120)
+    [tile] = custom_entries((), (entry,))
+    assert (tile.category, tile.description, tile.header, tile.base_class) == ("Your widgets", "Pages of steps", "widgets/wizardish.h", "QWidget")
+    log = open_log(BOX)
+    doc = log.document
+    log.execute(UseOwnClass((nid(doc, "label"),), "Wizardish", "widgets.wizardish", "QWidget", container=True, size=(300, 120)))
+    declared = doc.custom_widget("Wizardish")
+    back = cw.entry_from_declaration(declared)
+    assert back is not None and back.container and back.size == (300, 120) and back.module == "widgets.wizardish"
+    # The editor reads declarations, not code: no Designer plugin path is touched and nothing is imported.
+    assert "widgets.wizardish" not in sys.modules
+
+
 def test_the_registry_round_trips_and_ignores_bad_entries() -> None:
     store = cw.MemoryStore()
     registry = cw.CustomWidgetRegistry(store)
@@ -165,6 +193,7 @@ def test_the_header_is_the_module_as_designer_and_uic_read_it() -> None:
     assert "FB035" in CODES
 
 
+@pytest.mark.parity("R3-123", "R3-194")
 def test_use_own_class_declares_once_writes_the_header_and_demotes_to_the_original_bytes() -> None:
     log = open_log(BOX)
     doc = log.document
@@ -192,6 +221,7 @@ def test_use_own_class_declares_once_writes_the_header_and_demotes_to_the_origin
     assert write_ui(doc).text == before
 
 
+@pytest.mark.parity("R3-195")
 def test_container_size_and_other_declaration_children_are_kept() -> None:
     log = open_log(BOX)
     doc = log.document
@@ -245,8 +275,8 @@ def _imports(source: str) -> List[str]:
     )
 
 
-@pytest.mark.parity("R3-123")
-@pytest.mark.parity("R3-194")
+@pytest.mark.pain("P-7")
+@pytest.mark.parity("R3-123", "R3-194")
 def test_generated_code_imports_the_real_module_like_uic(tmp_path: Path) -> None:
     log = open_log(BOX)
     doc = log.document

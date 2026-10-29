@@ -45,6 +45,7 @@ def project(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):  # type: ignore[no
     modules.purge_project_modules(str(tmp_path))
 
 
+@pytest.mark.parity("R3-198")
 def test_a_class_that_raises_becomes_a_stand_in_with_its_file_and_line(project: Path) -> None:
     _write(
         project,
@@ -194,6 +195,8 @@ def _surface() -> object:
     return _Surface()
 
 
+@pytest.mark.pain("P-7")
+@pytest.mark.parity("R3-198")
 def test_a_hanging_class_is_a_stand_in_in_a_real_child_and_the_preview_stays_open(tmp_path: Path) -> None:
     from app.features.form_builder.engine.project.forms import FormScope
     from app.features.form_builder.engine.session import FormSession
@@ -260,6 +263,7 @@ def test_a_hanging_class_is_a_stand_in_in_a_real_child_and_the_preview_stays_ope
         session.dispose()
 
 
+@pytest.mark.parity("R3-198")
 def test_a_form_outside_a_project_sends_no_module_and_says_so(tmp_path: Path) -> None:
     from app.features.form_builder.engine.project.forms import FormScope
     from app.features.form_builder.engine.session import FormSession

@@ -182,6 +182,8 @@ def _select(kb: Kb, name: str) -> None:
     raise AssertionError("Tab does not reach %s" % name)
 
 
+@pytest.mark.pain("P-7")
+@pytest.mark.parity("R3-123", "R3-194", "R3-198")
 def test_k19_your_own_class(tmp_path: Path, qapp: QApplication) -> None:
     _project_files(tmp_path)
     window, kb, guard = _session(tmp_path, qapp, _SHOP)
