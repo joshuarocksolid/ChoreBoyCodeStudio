@@ -127,7 +127,6 @@ def test_layoutdefault_sets_the_same_gaps_as_uic(tmp_path: Path, default: str) -
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: a nested layout gets the default margin, uic gives it none")
 def test_layoutdefault_margin_skips_nested_layouts_like_uic(tmp_path: Path) -> None:
     _need_uic()
     path = _save(tmp_path, "", ' <layoutdefault margin="2"/>\n')
@@ -135,7 +134,6 @@ def test_layoutdefault_margin_skips_nested_layouts_like_uic(tmp_path: Path) -> N
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: idbasedtr writes translate(context, id), uic writes qtTrId(id)")
 def test_idbasedtr_writes_qttrid_like_uic(tmp_path: Path) -> None:
     _need_uic()
     path = _save(tmp_path, ' idbasedtr="true"', "", _FORM.replace("<string>Pay</string>", '<string id="pay_id">Pay</string>'))
@@ -146,7 +144,6 @@ def test_idbasedtr_writes_qttrid_like_uic(tmp_path: Path) -> None:
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: layoutfunction is not generated (UX-FSET-005)")
 def test_layoutfunction_calls_the_named_functions_like_uic(tmp_path: Path) -> None:
     _need_uic()
     path = _save(tmp_path, "", ' <layoutfunction spacing="spacing_for" margin="margin_for"/>\n')
@@ -156,7 +153,6 @@ def test_layoutfunction_calls_the_named_functions_like_uic(tmp_path: Path) -> No
 
 
 @pytest.mark.oracle
-@pytest.mark.xfail(strict=True, reason="M5.4 owns engine/codegen/emit.py: pixmapfunction is not generated (UX-FSET-005)")
 def test_pixmapfunction_wraps_picture_paths_like_uic(tmp_path: Path) -> None:
     _need_uic()
     extra = ' <pixmapfunction>load_picture</pixmapfunction>\n'
