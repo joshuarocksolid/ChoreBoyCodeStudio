@@ -34,7 +34,7 @@ from app.features.form_builder.engine.logic.events import (
     step_key,
 )
 from app.features.form_builder.engine.logic.events_codec import EventStep, WriteError, write_list
-from app.features.form_builder.engine.logic.codec import marker_read_only
+from app.features.form_builder.engine.logic.codec import checked_hint_points, marker_read_only
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.schema import ConnectionHint, SlotsDecl
 
@@ -192,6 +192,8 @@ def _check_step(
         name, params = compat.split_signature(step.slot)
         if not compat.is_name(step.target) or not compat.is_signature(step.slot):
             raise CommandRejected("A step needs a target and a signature such as clear().")
+        if step.hints and checked_hint_points(step.hints) is None:
+            raise CommandRejected("A step's label points aren't ones a .ui file can hold.")
         known = step_key(doc, step) in existing_keys
         if step.target not in doc.names() and not known:
             raise CommandRejected("%s isn't on this form." % step.target)

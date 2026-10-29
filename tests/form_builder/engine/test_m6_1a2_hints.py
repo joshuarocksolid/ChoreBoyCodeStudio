@@ -323,3 +323,17 @@ def test_undo_and_redo_of_each_conversion_restores_exact_bytes() -> None:
     assert log.undo() and saved(log.document) == as_list
     assert log.redo() and saved(log.document) == as_native
     assert log.undo() and log.undo() and saved(log.document) == original
+
+
+@pytest.mark.parametrize(
+    "points",
+    [(("sourcelabel", 2 ** 40, 0),), (('a"b', 1, 2),), (("s", 1, 2), ("s", 3, 4))],
+)
+def test_native_storage_refuses_hints_a_ui_file_cannot_hold(points) -> None:
+    """A caller-built step with bad hints is refused, as list storage already refuses it."""
+    log = open_log(form(""))
+    before = saved(log.document)
+    count = len(log.entries())
+    with pytest.raises(CommandRejected):
+        log.execute(SetEventSteps("clearButton", "clicked", (slot_step("nameEdit", "clear()", hints=points),)))
+    assert saved(log.document) == before and len(log.entries()) == count
