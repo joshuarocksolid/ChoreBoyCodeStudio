@@ -502,7 +502,8 @@ def _stylesheet(chrome: FormChrome) -> str:
         " border: %dpx solid %s; }"
         "QLabel { color: %s; background: transparent; }"
         "QCheckBox { color: %s; background: transparent; }"
-        "QLabel#formBuilder\\.inspectorClass, QLabel#formBuilder\\.rowQtName,"
+        "QLabel#formBuilder\\.inspectorClass { color: %s; }"
+        "QLabel#formBuilder\\.rowQtName,"
         " QWidget#formBuilder\\.inspectorGlyph { color: %s; }"
         "QSpinBox[fbState=\"unset\"], QDoubleSpinBox[fbState=\"unset\"], QComboBox[fbState=\"unset\"],"
         " QLineEdit[fbState=\"unset\"], QFontComboBox[fbState=\"unset\"], QCheckBox[fbState=\"unset\"],"
@@ -536,6 +537,7 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.border,
             width,
             chrome.accent,
+            chrome.text,
             chrome.text,
             chrome.text,
             chrome.muted,

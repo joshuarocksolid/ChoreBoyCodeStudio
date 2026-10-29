@@ -287,6 +287,7 @@ class Header(QWidget):
             text = "Used in %s" % links[0]
         else:
             text = "Used in %s and %s" % (", ".join(links[:-1]), links[-1])
+        text = _ink(self._link_color, text)
         self._crumbs.setToolTip("Used in " + " and ".join(crumb.label for crumb in hosts) if hosts else "Not used")
         if self._crumbs.text() != text:
             self._crumbs.setText(text)
@@ -319,7 +320,7 @@ class Header(QWidget):
                 '<a href="%d"%s>%s</a>' % (int(crumb.node), style, _escape(crumb.label))
             )
         parts.append(_escape(shown[-1].label))
-        text = " \u203a ".join(parts)
+        text = _ink(self._link_color, " \u203a ".join(parts))
         if self._crumbs.text() != text:
             self._crumbs.setText(text)
         self._crumbs_slot.show()
@@ -331,6 +332,13 @@ def _plain_width(label: QLabel, crumbs: list) -> int:
     if callable(advance):
         return int(advance(text))
     return int(metrics.width(text))
+
+def _ink(color: str, text: str) -> str:
+    """Rich text otherwise paints black, which disappears on a dark panel."""
+    if not color:
+        return text
+    return '<span style="color:%s">%s</span>' % (color, text)
+
 
 def _escape(text: str) -> str:
     return (
