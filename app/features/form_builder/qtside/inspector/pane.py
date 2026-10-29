@@ -30,6 +30,7 @@ from app.features.form_builder.qtside.theme.chrome import (
     LAYOUT_CONFIRM_NAME,
     FormChrome,
     control_qss,
+    disabled_field_declaration,
     popover_style,
 )
 from app.qt.QtCore import QEvent, QObject, QTimer, Qt
@@ -513,7 +514,7 @@ def _stylesheet(chrome: FormChrome) -> str:
         "QToolButton[fbSegment=\"true\"]:disabled { background: %s; color: %s; border: none; }"
         "QToolButton[fbSegment=\"true\"]:checked { background: %s; color: %s; border: 1px solid %s; }"
         "QLabel#formBuilder\\.sizeWhy { color: %s; background: %s; }"
-        "%s"
+        "%s%s"
         % (
             chrome.panel,
             chrome.text,
@@ -544,8 +545,21 @@ def _stylesheet(chrome: FormChrome) -> str:
             chrome.muted,
             chrome.row_hover,
             popover_style(LAYOUT_CONFIRM_NAME, chrome),
+            _disabled_fields(chrome),
         )
     ) + control_qss(chrome)
+
+
+def _disabled_fields(chrome: FormChrome) -> str:
+    """High contrast disabled fields dash the border. Colour stays the muted token."""
+    if not chrome.is_high_contrast:
+        return ""
+    kinds = (
+        "QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled, QComboBox:disabled,"
+        " QPlainTextEdit:disabled, QKeySequenceEdit:disabled, QListWidget:disabled,"
+        " QFontComboBox:disabled"
+    )
+    return "%s { %s }" % (kinds, disabled_field_declaration(chrome))
 
 def _inside(pane: QWidget, focus: object) -> bool:
     return isinstance(focus, QWidget) and (focus is pane or pane.isAncestorOf(focus))

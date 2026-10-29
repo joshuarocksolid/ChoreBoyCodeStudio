@@ -283,6 +283,32 @@ def _under(ancestor: str, selector: str) -> str:
     return ", ".join("%s %s" % (ancestor, part.strip()) for part in selector.split(","))
 
 
+def _state(selector: str, pseudo: str) -> str:
+    """Append ``pseudo`` to every comma-separated selector.
+
+    ``"A, B" + ":focus"`` leaves A without the pseudo, so A is painted in
+    that state all the time. Translation's permanent blue box was that bug.
+    """
+    return ", ".join("%s%s" % (part.strip(), pseudo) for part in selector.split(",") if part.strip())
+
+
+# Disclosures and flat adds. A generic push-button rule must not box these.
+_LINK_BUTTONS = (
+    "QToolButton#formBuilder\\.translationToggle",
+    "QToolButton#formBuilder\\.itemMore",
+    "QToolButton#formBuilder\\.iconOtherStates",
+    "QToolButton#formBuilder\\.pagesAdd",
+    "QPushButton#formBuilder\\.addCustomProperty",
+)
+
+
+def disabled_field_declaration(chrome: FormChrome) -> str:
+    """Disabled field text. High contrast also dashes the border, so the state is not colour alone."""
+    if chrome.is_high_contrast:
+        return "color: %s; border: 1px dashed %s;" % (chrome.muted, chrome.muted)
+    return "color: %s;" % chrome.muted
+
+
 def control_qss(chrome: FormChrome, ancestor: str = "") -> str:
     """Summary buttons, empty check boxes, and disclosure links.
 
@@ -298,16 +324,16 @@ def control_qss(chrome: FormChrome, ancestor: str = "") -> str:
     ink = link_ink(chrome)
     summary = _under(ancestor, "QPushButton#formBuilder\\.summary")
     box = _under(ancestor, "QCheckBox")
-    links = _under(
-        ancestor,
-        "QToolButton#formBuilder\\.translationToggle, QToolButton#formBuilder\\.itemMore",
-    )
+    links = _under(ancestor, ", ".join(_LINK_BUTTONS))
+    underline = "underline" if chrome.is_high_contrast else "none"
     return (
         "%(summary)s {"
         " color: %(text)s; background: %(input)s; border: 1px solid %(edge)s;"
         " border-radius: 4px; padding: 2px 8px; text-align: left; }"
-        "%(summary)s:focus { border: %(focus)dpx solid %(accent)s; }"
+        "%(summary_focus)s { border: %(focus)dpx solid %(accent)s; }"
         "%(summary)s[fbIssue=\"missing\"] { color: %(error)s; }"
+        "%(summary)s[fbState=\"set\"] { font-weight: 600; }"
+        "%(summary)s[fbState=\"unset\"], %(summary)s[fbState=\"mixed\"] { font-weight: 400; }"
         "%(box)s { spacing: 6px; background: transparent; }"
         "%(box)s::indicator {"
         " width: 13px; height: 13px; border: 1px solid %(edge)s; background: %(fill)s; image: none; }"
@@ -318,12 +344,16 @@ def control_qss(chrome: FormChrome, ancestor: str = "") -> str:
         "%(box)s::indicator:checked:disabled {"
         " background: %(accent)s; border: 1px solid %(disabled)s; image: url(%(check)s); }"
         "%(links)s {"
-        " color: %(ink)s; background: transparent; border: none; padding: 0px; text-align: left; }"
-        "%(links)s:focus { border: %(focus)dpx solid %(accent)s; }"
+        " color: %(ink)s; background: transparent; border: none; padding: 0px;"
+        " text-align: left; text-decoration: %(underline)s; }"
+        "%(links_focus)s { border: %(focus)dpx solid %(accent)s; background: transparent; }"
         % {
             "summary": summary,
+            "summary_focus": _state(summary, ":focus"),
             "box": box,
             "links": links,
+            "links_focus": _state(links, ":focus"),
+            "underline": underline,
             "text": chrome.text,
             "input": chrome.input,
             "edge": edge,
@@ -350,12 +380,15 @@ def field_qss(chrome: FormChrome, ancestor: str = "") -> str:
     line = _under(ancestor, "QLineEdit")
     return (
         "%(kinds)s { background: %(input)s; color: %(text)s; border: 1px solid %(edge)s; }"
-        "%(kinds)s:disabled { color: %(muted)s; }"
+        "%(disabled)s { %(disabled_decl)s }"
         "%(line)s { padding: 1px 4px; }"
-        "%(kinds)s:focus { border: %(focus)dpx solid %(accent)s; }"
+        "%(focused)s { border: %(focus)dpx solid %(accent)s; }"
         % {
             "kinds": kinds,
+            "disabled": _state(kinds, ":disabled"),
+            "disabled_decl": disabled_field_declaration(chrome),
             "line": line,
+            "focused": _state(kinds, ":focus"),
             "input": background,
             "text": chrome.text,
             "muted": chrome.muted,

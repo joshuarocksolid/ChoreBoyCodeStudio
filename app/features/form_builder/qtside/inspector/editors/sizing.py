@@ -394,8 +394,10 @@ class _AxisRow:
         self._bar.setMinimumHeight(18)
         line.addWidget(self._bar)
         self._label = QLabel(title, self.widget)
-        self._label.setMinimumWidth(0)
-        self._label.setMaximumWidth(52)
+        self._title = title
+        self._line = line
+        self._outer = outer
+        self._fitting = False
         line.addWidget(self._label)
         self._buttons: Dict[str, QToolButton] = {}
         for word in WORDS:
@@ -433,6 +435,14 @@ class _AxisRow:
         self._caption.setObjectName("formBuilder.rowNote")
         self._caption.setWordWrap(True)
         outer.addWidget(self._caption)
+        self._fit_watch = _OnResize(self._fit_label, self.widget)
+        self.widget.installEventFilter(self._fit_watch)
+
+    def _controls_width(self) -> int:
+        width = self._bar.sizeHint().width() + 6
+        for button in self._buttons.values():
+            width += button.sizeHint().width() + 6
+        return width
 
     def paint(self, projections: Sequence[AxisProjection]) -> None:
         if not projections:
@@ -474,6 +484,9 @@ class _AxisRow:
         # An empty wrapped label still takes a line at narrow widths.
         self._caption.setVisible(bool(self._caption.text()))
 
+    def _fit_label(self) -> None:
+        _fit_phrase(self, self.widget, self._outer, self._line, self._label, self._title, self._controls_width())
+
 
 class _ShareRow:
     def __init__(
@@ -493,6 +506,8 @@ class _ShareRow:
         line.setSpacing(6)
         label = QLabel("Share of spare room", self.widget)
         label.setWordWrap(True)
+        longest = max(label.fontMetrics().horizontalAdvance(word) for word in label.text().split())
+        label.setMinimumWidth(longest + 2)
         line.addWidget(label, 1)
         self._box = QSpinBox(self.widget)
         self._box.setObjectName("formBuilder.size.share.%s.value" % axis)
@@ -551,8 +566,10 @@ class _LimitRow:
         self._bar.setFixedWidth(2)
         line.addWidget(self._bar)
         self._label = QLabel(title, self.widget)
-        self._label.setMinimumWidth(0)
-        self._label.setMaximumWidth(52)
+        self._title = title
+        self._line = line
+        self._outer = outer
+        self._fitting = False
         line.addWidget(self._label)
         self._width = _blank_edit(self.widget, "%s width in pixels" % title, "formBuilder.size.%s.width" % name)
         self._height = _blank_edit(self.widget, "%s height in pixels" % title, "formBuilder.size.%s.height" % name)
@@ -575,6 +592,17 @@ class _LimitRow:
         )
         line.addWidget(self._reset)
         outer.addLayout(line)
+        self._fit_watch = _OnResize(self._fit_label, self.widget)
+        self.widget.installEventFilter(self._fit_watch)
+
+    def _controls_width(self) -> int:
+        return (
+            self._bar.sizeHint().width()
+            + self._width.sizeHint().width()
+            + self._height.sizeHint().width()
+            + self._reset.sizeHint().width()
+            + 20
+        )
 
     def paint(
         self,
@@ -596,6 +624,9 @@ class _LimitRow:
         heights = [_component(node, name, False, empty) for node in owners]
         _show_blank(self._width, widths, empty)
         _show_blank(self._height, heights, empty)
+
+    def _fit_label(self) -> None:
+        _fit_phrase(self, self.widget, self._outer, self._line, self._label, self._title, self._controls_width())
 
 
 def _project(host: GroupHost, node: WidgetNode) -> Tuple[AxisProjection, AxisProjection]:
@@ -770,6 +801,66 @@ def _reset_button(
     button.clicked.connect(guard(button, on_click))
     button.hide()
     return button
+
+
+_UNBOUNDED = 16777215
+
+
+def _fit_phrase(
+    row: object,
+    widget: QWidget,
+    outer: QVBoxLayout,
+    line: QHBoxLayout,
+    label: QLabel,
+    title: str,
+    controls: int,
+) -> None:
+    """Put the phrase on its own line when it does not fit beside the controls.
+
+    A single word is never given a width smaller than itself, so the row
+    cannot cut "Height" or "Width" in half.
+    """
+    width = widget.width()
+    if width <= 0 or bool(getattr(row, "_fitting", False)):
+        return
+    setattr(row, "_fitting", True)
+    try:
+        metrics = label.fontMetrics()
+        words = title.split() or [title]
+        longest = max(metrics.horizontalAdvance(word) for word in words) + 2
+        text_w = metrics.horizontalAdvance(title) + 2
+        stack = text_w + controls > width
+        label.setText(title)
+        if stack:
+            label.setWordWrap(True)
+            label.setMinimumWidth(min(longest, width))
+            label.setMaximumWidth(_UNBOUNDED)
+            if line.indexOf(label) >= 0:
+                line.removeWidget(label)
+            if outer.indexOf(label) < 0:
+                outer.insertWidget(0, label)
+        else:
+            label.setWordWrap(False)
+            label.setMaximumWidth(_UNBOUNDED)
+            label.setMinimumWidth(text_w)
+            if outer.indexOf(label) >= 0:
+                outer.removeWidget(label)
+            if line.indexOf(label) < 0:
+                line.insertWidget(1, label)
+    finally:
+        setattr(row, "_fitting", False)
+
+
+class _OnResize(QObject):
+    def __init__(self, refresh: object, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._refresh = refresh
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        resize = getattr(getattr(QEvent, "Type", QEvent), "Resize")
+        if event.type() == resize:
+            self._refresh()
+        return False
 
 
 class _ResizeWatch(QObject):
