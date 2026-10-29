@@ -2,20 +2,22 @@
 
 from __future__ import annotations
 
+from html import escape
 from typing import Callable, List, Sequence, Tuple
 
-from app.qt.QtCore import QEvent, QObject, QPoint, QRect, Qt
+from app.qt.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt
 from app.qt.QtGui import QKeyEvent
 from app.qt.QtWidgets import QFrame, QLabel, QLineEdit, QListWidget, QListWidgetItem, QVBoxLayout, QWidget
 from app.qt.qt_compat import enum_value
 
 from app.features.form_builder.qtside.theme.chrome import FormChrome, popover_style
 
-#: One row of the picker: object name and the friendly class words.
-WidgetEntry = Tuple[str, str]
+#: One row of the picker: object name, visible text (may be empty), friendly class words.
+WidgetEntry = Tuple[str, str, str]
 
 _WIDTH = 360
 _ROWS = 9
+_ROW = 30
 _ENTER = frozenset({enum_value(Qt.Key.Key_Return), enum_value(Qt.Key.Key_Enter)})
 _ESCAPE = enum_value(Qt.Key.Key_Escape)
 _STEPS = {enum_value(Qt.Key.Key_Up): -1, enum_value(Qt.Key.Key_Down): 1}
@@ -23,10 +25,11 @@ _ROLE = enum_value(Qt.ItemDataRole.UserRole)
 
 
 def filter_entries(entries: Sequence[WidgetEntry], query: str) -> List[WidgetEntry]:
-    """Entries whose name or class words contain every word of ``query``.
+    """Entries whose name, visible text or class words contain every word of ``query``.
 
-    Names that start with the first word come first, then other name matches,
-    then class-only matches. Document order is kept inside each group.
+    Order: name starts with the first word, name contains every word, text
+    match (name and text together), then class-only matches. Document order
+    is kept inside each group.
     """
     words = query.lower().split()
     if not words:
@@ -34,15 +37,15 @@ def filter_entries(entries: Sequence[WidgetEntry], query: str) -> List[WidgetEnt
     ranked: List[Tuple[int, int, WidgetEntry]] = []
     for index, entry in enumerate(entries):
         name = entry[0].lower()
-        text = "%s %s" % (name, entry[1].lower())
-        if not all(word in text for word in words):
-            continue
-        if name.startswith(words[0]):
-            rank = 0
-        elif all(word in name for word in words):
-            rank = 1
-        else:
+        named = "%s %s" % (name, entry[1].lower())
+        if all(word in name for word in words):
+            rank = 0 if name.startswith(words[0]) else 1
+        elif all(word in named for word in words):
             rank = 2
+        elif all(word in "%s %s" % (named, entry[2].lower()) for word in words):
+            rank = 3
+        else:
+            continue
         ranked.append((rank, index, entry))
     ranked.sort(key=lambda row: (row[0], row[1]))
     return [row[2] for row in ranked]
@@ -138,15 +141,27 @@ class GoToWidgetPicker(QFrame):
     def _refill(self) -> None:
         shown = filter_entries(self._entries, self.search.text())
         self.rows.clear()
-        for name, kind in shown:
-            item = QListWidgetItem("%s    %s" % (name, kind))
+        for name, text, kind in shown:
+            item = QListWidgetItem()
             item.setData(_ROLE, name)
             self.rows.addItem(item)
+            shown_text = text if len(text) <= 28 else text[:27] + "\u2026"
+            detail = ("\u201c%s\u201d  " % shown_text if shown_text else "") + kind
+            label = QLabel(
+                "%s&nbsp;&nbsp;<span style=\"color:%s\">%s</span>"
+                % (escape(name), self._chrome.muted, escape(detail)),
+                self.rows,
+            )
+            label.setTextFormat(Qt.TextFormat.RichText)
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+            label.setStyleSheet("background: transparent; border: none; padding: 4px 8px;")
+            item.setSizeHint(QSize(label.sizeHint().width(), _ROW))
+            self.rows.setItemWidget(item, label)
         if shown:
             self.rows.setCurrentRow(0)
         self.note.setVisible(not shown)
         rows = min(max(len(shown), 1), _ROWS)
-        self.rows.setFixedHeight(rows * max(self.rows.sizeHintForRow(0), 24) + 6)
+        self.rows.setFixedHeight(rows * _ROW + 6)
         self.adjustSize()
 
     def _choose(self) -> None:

@@ -939,7 +939,7 @@ def test_go_to_widget_picker_selects_a_widget_and_closes(qapp, tmp_path: Path) -
 
     text = _FORM.replace(
         "  </layout>",
-        '   <item><widget class="QLineEdit" name="nameEdit"/></item>\n  </layout>',
+        '   <item><widget class="QLineEdit" name="nameEdit"><property name="placeholderText"><string>Your name</string></property></widget></item>\n  </layout>',
         1,
     )
     out = Path(os.environ.get("CBCS_FB_SCREENSHOT_DIR") or tmp_path)

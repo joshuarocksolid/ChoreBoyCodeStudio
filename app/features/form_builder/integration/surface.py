@@ -64,6 +64,7 @@ from app.features.form_builder.integration.chrome_text import (
     undo_menu_text,
 )
 from app.features.form_builder.integration.chrome import chrome_for
+from app.features.form_builder.engine.query.outline import visible_text
 from app.features.form_builder.qtside.outline.friendly import friendly_of
 from app.features.form_builder.engine.clipboard import command_enabled
 from app.features.form_builder.integration.clipboard_actions import (
@@ -1117,7 +1118,7 @@ class FormSurface(QWidget):
                 pass
         document = self._session.document
         entries = [
-            (node.object_name, friendly_of(node.class_name))
+            (node.object_name, visible_text(node), friendly_of(node.class_name))
             for node in document.iter_widgets()
             if node.object_name
         ]

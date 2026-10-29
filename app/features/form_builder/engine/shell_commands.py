@@ -16,7 +16,7 @@ from app.features.form_builder.engine.layout_actions import request_for
 
 FORM_SHORTCUT_CATEGORY = "Form designer"
 
-#: Names Ctrl+R once Go to widget exists. Until then it would point at a disabled command.
+#: Status text when an inert shell key is pressed in a form tab.
 INERT_STATUS = "Not used in the form designer."
 
 _WIDGET = frozenset({"canvas", "outline", "inspector"})
