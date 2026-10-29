@@ -152,7 +152,7 @@ def _check_arrows(kb: Kb) -> None:
     )
 
 
-_DESIGNER: Dict[int, Callable[[Any, Kb], None]] = {
+_DESIGNER: Dict[int, Callable[[Any, Kb], Any]] = {
     199: lambda window, kb: _check_new_form(window),
     200: lambda window, kb: _check_open(),
     201: lambda window, kb: _check_same_keys(("form.action.save", "Ctrl+S")),
