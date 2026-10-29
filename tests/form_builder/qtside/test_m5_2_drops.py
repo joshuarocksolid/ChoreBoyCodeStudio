@@ -72,6 +72,7 @@ def test_a_widget_that_shows_no_picture_takes_none(tmp_path: Path) -> None:
     "qtside/canvas/file_drops.py register_file_drop(handler) with handler(target_id, paths) -> Optional[str]",
 )
 def test_the_canvas_hands_file_drops_to_a_registered_handler() -> None:
-    from app.features.form_builder.qtside.canvas import file_drops
+    import importlib
 
+    file_drops = importlib.import_module("app.features.form_builder.qtside.canvas.file_drops")
     assert callable(file_drops.register_file_drop)

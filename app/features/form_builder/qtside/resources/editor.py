@@ -23,8 +23,8 @@ from app.features.form_builder.engine.project.qrc_write import (
     resource_of,
     set_alias,
 )
-from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.qtside.resources.grid import QrcGrid
+from app.features.form_builder.qtside.theme.chrome import FormChrome
 from app.features.form_builder.qtside.resources.opening import open_linked_file
 from app.qt.QtCore import QEvent, Qt
 from app.qt.QtWidgets import (
@@ -62,9 +62,15 @@ def used_sentence(use_path: str, count: int) -> str:
 class QrcSurface(QWidget):
     """The tab surface. Implements the shell's ``TabSurface`` protocol."""
 
-    def __init__(self, request: object, source: QrcEditSource) -> None:
+    def __init__(
+        self,
+        request: object,
+        source: QrcEditSource,
+        chrome_for: Callable[[object], FormChrome],
+    ) -> None:
         super().__init__(getattr(request, "parent", None))
         self._request = request
+        self._chrome_for = chrome_for
         self._source = source
         self._tokens: object = None
         self._editor: Optional[QWidget] = None
@@ -150,7 +156,7 @@ class QrcSurface(QWidget):
 
     def apply_theme(self, tokens: object) -> None:
         self._tokens = tokens
-        chrome = chrome_for(tokens)  # type: ignore[arg-type]
+        chrome = self._chrome_for(tokens)
         self._grid.set_tokens(chrome)
         self.setStyleSheet(
             "QWidget#formBuilder\\.qrcSurface { background: %s; color: %s; }"

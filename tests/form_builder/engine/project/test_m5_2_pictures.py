@@ -1,3 +1,4 @@
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false
 """Picture problems and the add-picture plan: FB031, FB032, packaging errors, one undo step."""
 from __future__ import annotations
 

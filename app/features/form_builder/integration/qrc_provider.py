@@ -8,9 +8,9 @@ that knows how.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
-from app.features.form_builder.engine.diagnostics import FormDiagnostic
+from app.features.form_builder.integration.chrome import chrome_for
 from app.features.form_builder.engine.project.picture_checks import SOURCE, picture_diagnostics
 from app.features.form_builder.engine.project.qrc_edit import QrcEditSource
 from app.features.form_builder.engine.session import FormSession
@@ -33,7 +33,7 @@ class QrcTabProvider:
             source = QrcEditSource(request.initial_text, request.file_path, request.project_root or "")
         except Exception as exc:  # a parse failure opens XML, so this is a bug; fall back to text
             raise ProviderDeclined("This pictures file can't be opened as pictures.") from exc
-        return QrcSurface(request, source)
+        return QrcSurface(request, source, chrome_for)  # type: ignore[arg-type]
 
 
 def attach_picture_checks(session: FormSession, project_root: str) -> Callable[[], None]:
