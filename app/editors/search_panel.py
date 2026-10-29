@@ -10,6 +10,7 @@ import threading
 from typing import Callable
 
 from app.editors.search_service import SearchOptions, compile_search_pattern
+from app.persistence.atomic_write import atomic_write_text
 from app.project.file_excludes import EffectiveExcludes, merge_search_exclude_globs
 from app.project.file_inventory import iter_text_file_paths
 
@@ -171,7 +172,7 @@ def replace_in_files(
                 continue
             new_content = "".join(lines)
             if new_content != content:
-                path.write_text(new_content, encoding="utf-8")
+                atomic_write_text(path, new_content)
                 total_replaced += replaced
         except (OSError, UnicodeDecodeError):
             continue
