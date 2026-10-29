@@ -167,17 +167,19 @@ def _install_import_stubs(source: str) -> None:
             setattr(parent, imported, type(imported, (_QWidget,), {}))
 
 
-def _legacy_set_margin() -> None:
-    """uic 6.8 still writes QLayout.setMargin(fn()) for <layoutfunction margin>. Qt 6 dropped it, so give the
-    run the Qt 5 meaning (all four sides) and both modules reach the same state."""
-    from PySide6.QtWidgets import QLayout
+_SET_MARGIN = re.compile(r"\.setMargin\((.*)\)$", re.M)
 
-    if not hasattr(QLayout, "setMargin"):
-        QLayout.setMargin = lambda self, value: self.setContentsMargins(value, value, value, value)  # type: ignore[attr-defined]
+
+def _legacy_set_margin(source: str) -> str:
+    """uic 6.8 still writes ``layout.setMargin(fn())`` for ``<layoutfunction margin>``. PySide6's QLayout has no
+    setMargin, so uic's own module fails there. Only uic's text gets the Qt 5 meaning (all four sides): a
+    setMargin call in our generated code still fails the comparison, as it would fail the user's form."""
+    return _SET_MARGIN.sub(r".setContentsMargins(*[\1] * 4)", source)
 
 
 def _load(source: str, name: str):
-    _legacy_set_margin()
+    if name.startswith("uic_"):
+        source = _legacy_set_margin(source)
     module = types.ModuleType(name)
     module.__file__ = name + ".py"
     # id-based forms call qtTrId. uic 6.8.3 does not import it.

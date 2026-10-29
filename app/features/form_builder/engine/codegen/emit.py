@@ -7,6 +7,7 @@ No Qt library is imported here.
 
 from __future__ import annotations
 
+import keyword
 import os
 import re
 from dataclasses import dataclass
@@ -202,6 +203,18 @@ def emit_module(doc: UiDocument, scope: FormScope, options: CodegenOptions) -> M
     return emitter.build()
 
 
+def _function_name(written: Optional[str]) -> Optional[str]:
+    """A ``layoutfunction`` name the generated code may call (``margin_for``, ``tools.margin_for``), else None.
+
+    The attribute is copied into Python source, so anything but a dotted name would be code.
+    """
+    text = (written or "").strip()
+    parts = text.split(".")
+    if not text or any(not part.isidentifier() or not part.isascii() or keyword.iskeyword(part) for part in parts):
+        return None
+    return text
+
+
 class _Emitter:
     def __init__(self, doc: UiDocument, scope: FormScope, options: CodegenOptions) -> None:
         self.doc = doc
@@ -345,6 +358,17 @@ class _Emitter:
             )
 
     def _check_names(self) -> None:
+        functions = self.doc.ui.field("layoutfunction")
+        if isinstance(functions, LayoutFunction):
+            for written in (functions.spacing, functions.margin):
+                if written and _function_name(written) is None:
+                    self.diag(
+                        "FB502",
+                        'The layout function "%s" can\'t be called from the generated Python. Use a name like '
+                        "margin_for, or clear it in Form settings." % written,
+                        node=self.doc.ui,
+                        object_name=self.context,
+                    )
         if not self.ui_class.isidentifier():
             self.diag(
                 "FB502",
@@ -1204,8 +1228,8 @@ class _Emitter:
             self._emit_one_property(layout, ref, prop, copy_hfw=False)
         default_margin, default_spacing = self._layout_default()
         functions = self.doc.ui.field("layoutfunction")
-        spacing_function = functions.spacing if isinstance(functions, LayoutFunction) else None
-        margin_function = functions.margin if isinstance(functions, LayoutFunction) else None
+        spacing_function = _function_name(functions.spacing) if isinstance(functions, LayoutFunction) else None
+        margin_function = _function_name(functions.margin) if isinstance(functions, LayoutFunction) else None
         # Observed uic behaviour: a layout on a plain child QWidget (Designer's
         # layoutWidget holder, a splitter pane, a widget inside a layout) that is
         # not a page of a page container gets 0 for every side it does not write,
@@ -1229,8 +1253,11 @@ class _Emitter:
                 % (ref, pick("leftMargin"), pick("topMargin"), pick("rightMargin"), pick("bottomMargin"))
             )
         elif margin_function and owner is not None:
-            # uic 6.8 spells the named function's result as setMargin(fn()), as it does for Qt 5.
-            self.add("%s.setMargin(%s())" % (ref, margin_function))
+            # uic 6.8 writes setMargin(fn()), which PySide6's QLayout doesn't have (AttributeError
+            # when the form runs). Call the function once and give all four sides its value.
+            local = "layoutMargin" if margin_function.split(".")[0] == "margin" else "margin"
+            self.add("%s = %s()" % (local, margin_function))
+            self.add("%s.setContentsMargins(%s, %s, %s, %s)" % (ref, local, local, local, local))
         elif default_margin is not None and owner is not None:
             # A layout nested in another layout takes no form-wide margin (observed uic behaviour).
             self.add(

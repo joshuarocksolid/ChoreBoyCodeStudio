@@ -15,6 +15,7 @@ script sends the same preview request the key will send
 from __future__ import annotations
 
 import importlib.abc
+import importlib.machinery
 import json
 import sys
 import time
@@ -91,14 +92,31 @@ class Broken(QLabel):
 
 
 class _ImportRecorder(importlib.abc.MetaPathFinder):
-    """The import hook of K19: records any import of a project module and finds nothing."""
+    """The import hook of K19: fails any import that would load a file of the project, and records it.
 
-    def __init__(self) -> None:
+    It asks the normal path finder where ``fullname`` would come from, so any name counts, not just
+    ``widgets``; the import then raises, so nothing of the project can run in the editor.
+    """
+
+    def __init__(self, project_root: Path) -> None:
         self.seen: List[str] = []
+        self._root = str(project_root.resolve())
 
     def find_spec(self, fullname, path=None, target=None):  # noqa: ANN001, ANN201
-        if fullname.split(".")[0] in ("widgets", "till_display", "broken"):
+        hit = fullname.split(".")[0] in ("widgets", "till_display", "broken")
+        if not hit:
+            try:
+                spec = importlib.machinery.PathFinder.find_spec(fullname, path)
+            except (ImportError, ValueError):
+                spec = None
+            origin = getattr(spec, "origin", None) or ""
+            locations = list(getattr(spec, "submodule_search_locations", None) or ())
+            hit = any(
+                str(Path(item).resolve()).startswith(self._root + "/") for item in [origin, *locations] if item
+            )
+        if hit:
             self.seen.append(fullname)
+            raise ImportError("K19: the editor imported %s from the project" % fullname)
         return None
 
 
@@ -187,7 +205,7 @@ def _select(kb: Kb, name: str) -> None:
 def test_k19_your_own_class(tmp_path: Path, qapp: QApplication) -> None:
     _project_files(tmp_path)
     window, kb, guard = _session(tmp_path, qapp, _SHOP)
-    recorder = _ImportRecorder()
+    recorder = _ImportRecorder(tmp_path / "shop")
     sys.meta_path.insert(0, recorder)
     pool = PreviewPool(
         command=python_preview_command(current_runtime_python(), repo_root()),

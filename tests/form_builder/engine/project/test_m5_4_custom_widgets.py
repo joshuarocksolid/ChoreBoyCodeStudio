@@ -321,3 +321,22 @@ def test_generated_code_imports_the_real_module_like_uic(tmp_path: Path) -> None
     assert "from widgets.till_display import TillDisplay" in ours.text
     assert "self.label = TillDisplay(" in ours.text.replace("self.Form", "Form") or "TillDisplay(" in ours.text
     assert not [d for d in ours.diagnostics if d.code in ("FB504", "FB502")]
+
+
+@pytest.mark.parity("R3-194", "R3-195")
+def test_a_header_as_designer_saves_it_reads_as_the_same_class_and_is_kept() -> None:
+    """Designer writes a local include as ``<header>x.h</header>`` with no ``location`` (see the resaved
+    ``sqlbrowser/browserwidget.ui`` in the corpus); we write ``location="local"``, which Designer and uic
+    read the same. A form saved by Designer keeps its spelling when another widget joins the class."""
+    log = open_log(BOX)
+    log.execute(UseOwnClass((nid(log.document, "label"),), "TillDisplay", "widgets.till_display", "QLabel", names=("label",)))
+    designer = write_ui(log.document).text.replace(
+        '<header location="local">widgets/till_display.h</header>', "<header>widgets/till_display.h</header>"
+    )
+    assert "<header>widgets/till_display.h</header>" in designer
+    again = open_log(designer)
+    entry = cw.entry_from_declaration(again.document.custom_widget("TillDisplay"))
+    assert entry is not None and (entry.module, entry.extends) == ("widgets.till_display", "QLabel")
+    again.execute(UseOwnClass((nid(again.document, "okButton"),), "TillDisplay", "widgets.till_display", "QLabel", names=("okButton",)))
+    text = write_ui(again.document).text
+    assert "<header>widgets/till_display.h</header>" in text and text.count("<customwidget>") == 1
