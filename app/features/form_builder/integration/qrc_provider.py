@@ -50,6 +50,53 @@ def refresh_picture_checks() -> None:
         refresh()
 
 
+def attach_picture_drops(session: FormSession, project_root: str) -> Callable[[], None]:
+    """Picture files dropped on this form's canvas (UX-RES-003). Returns a function that stops.
+
+    The handler answers only for ``session``; a drop on another open form is
+    left to that form's handler. The file work runs first, then the form part as
+    one undo step whose toast carries the "Undo keeps the copied file" sentence.
+    """
+    from app.features.form_builder.engine.project.fs import ProjectOpError
+    from app.features.form_builder.qtside.canvas.file_drops import register_file_drop
+    from app.features.form_builder.qtside.resources import notices
+    from app.features.form_builder.qtside.resources.drops import plan_file_drop
+
+    holder: List[Callable[[], None]] = []
+
+    def handle(owner: object, target_id: object, paths: object) -> object:
+        if session.disposed:
+            stop()
+            return None
+        if owner is not session:
+            return None
+        try:
+            drop = plan_file_drop(session.document, session.path, project_root, target_id, paths)  # type: ignore[arg-type]
+        except ProjectOpError as exc:
+            return str(exc)
+        notices.remember(drop.label, drop.notice)
+        with session.log.transaction(drop.label) as txn:
+            for command in drop.commands:
+                txn.execute(command)
+        return ""  # the toast says it
+
+    def stop() -> None:
+        while holder:
+            holder.pop()()
+
+    holder.append(register_file_drop(handle))  # type: ignore[arg-type]
+    # Sessions have no dispose callback; drop the handlers of closed forms whenever a form opens.
+    for other, other_stop in tuple(_DROP_STOPS):
+        if other.disposed:
+            other_stop()
+            _DROP_STOPS.remove((other, other_stop))
+    _DROP_STOPS.append((session, stop))
+    return stop
+
+
+_DROP_STOPS: List[tuple] = []
+
+
 class _ShellUndo:
     """Edit > Undo and Redo follow the resource editor's own history while its tab is shown.
 
@@ -212,4 +259,4 @@ def attach_picture_checks(session: FormSession, project_root: str) -> Callable[[
 
 
 
-__all__ = ["QrcTabProvider", "attach_picture_checks", "is_qrc", "refresh_picture_checks"]
+__all__ = ["QrcTabProvider", "attach_picture_checks", "attach_picture_drops", "is_qrc", "refresh_picture_checks"]

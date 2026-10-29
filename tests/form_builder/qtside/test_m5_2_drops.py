@@ -66,13 +66,28 @@ def test_a_widget_that_shows_no_picture_takes_none(tmp_path: Path) -> None:
         plan_file_drop(session.document, str(ui), str(root), session.document.by_name("note")[0], [str(tmp_path / "logo.png")])
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M5.1 owns qtside/canvas/**: the canvas exposes no file-drop hook yet. Expected contract: "
-    "qtside/canvas/file_drops.py register_file_drop(handler) with handler(target_id, paths) -> Optional[str]",
-)
-def test_the_canvas_hands_file_drops_to_a_registered_handler() -> None:
-    import importlib
+def test_a_drop_on_a_label_of_one_of_two_open_forms_changes_only_that_form(tmp_path: Path) -> None:
+    from app.features.form_builder.integration.qrc_provider import attach_picture_drops
+    from app.features.form_builder.qtside.canvas import file_drops
+    from app.features.form_builder.qtside.resources import notices
 
-    file_drops = importlib.import_module("app.features.form_builder.qtside.canvas.file_drops")
-    assert callable(file_drops.register_file_drop)
+    root, ui, first = _open(tmp_path)
+    other_ui = root / "forms" / "till2.ui"
+    other_ui.write_text(_FORM, encoding="utf-8")
+    second = FormSession.open(_FORM, path=str(other_ui), scope=classify_form(str(other_ui), project_root=str(root)))
+    stops = [attach_picture_drops(first, str(root)), attach_picture_drops(second, str(root))]
+    try:
+        label = second.document.by_name("logo")[0]
+        assert label == first.document.by_name("logo")[0]  # ids repeat across documents
+        assert file_drops.dispatch(second, label, (str(tmp_path / "logo.png"),)) == ""
+        assert isinstance(second.document.node(label).value("pixmap"), ResourcePixmap)
+        assert second.log.undo_label() == "Add picture logo.png" and len(second.log.entries()) == 1
+        assert first.document.node(label).value("pixmap") is None and not first.log.entries()
+        assert notices.sentence_for("Add picture logo.png") is not None
+        refused = file_drops.dispatch(first, label, (str(tmp_path / "notes.txt"),))
+        assert refused == "Only pictures can go here." and not first.log.entries()
+    finally:
+        for stop in stops:
+            stop()
+        first.dispose()
+        second.dispose()

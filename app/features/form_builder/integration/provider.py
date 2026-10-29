@@ -10,7 +10,12 @@ from app.features.form_builder.integration.content_source import (
     form_scope,
     plain_read_error,
 )
-from app.features.form_builder.integration.qrc_provider import QrcTabProvider, attach_picture_checks, is_qrc
+from app.features.form_builder.integration.qrc_provider import (
+    QrcTabProvider,
+    attach_picture_checks,
+    attach_picture_drops,
+    is_qrc,
+)
 from app.features.form_builder.integration.surface import FormSurface
 from app.shell.tab_content_providers import ProviderDeclined, TabMatchContext, TabSurfaceRequest
 
@@ -45,6 +50,7 @@ class FormTabProvider:
         )
         if request.project_root:
             attach_picture_checks(session, request.project_root)
+            attach_picture_drops(session, request.project_root)
         return FormSurface(request, session, source)
 
 
