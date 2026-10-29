@@ -411,6 +411,22 @@ def item_editor_qss(chrome: FormChrome) -> str:
         "%(name)s QWidget { background: transparent; color: %(text)s; }"
         "%(name)s QLabel { color: %(text)s; background: transparent; border: none; }"
         "%(name)s QAbstractScrollArea { background: transparent; border: none; }"
+        # Tab panes, scroll viewports and table cells: with the transparent
+        # rule alone the style paints them black, so fill them explicitly.
+        "%(name)s QTabWidget::pane { background: %(fill)s; border: 1px solid %(control_edge)s;"
+        " border-radius: 0px; top: -1px; }"
+        "%(name)s QTabBar::tab { color: %(text)s; background: %(panel)s;"
+        " border: 1px solid %(control_edge)s; border-bottom: none;"
+        " padding: 4px 12px; margin-right: 2px; }"
+        "%(name)s QTabBar::tab:selected { background: %(fill)s; font-weight: 600; }"
+        "%(name)s QTabBar::tab:focus { border: 2px solid %(accent)s; border-bottom: none; }"
+        "%(name)s QStackedWidget, %(name)s QStackedWidget > QWidget,"
+        " %(name)s QWidget#qt_scrollarea_viewport { background: %(fill)s; }"
+        "%(name)s QTableWidget { background: %(fill)s; gridline-color: %(control_edge)s; }"
+        "%(name)s QHeaderView::section { color: %(text)s; background: %(panel)s;"
+        " border: 1px solid %(control_edge)s; padding: 2px 4px; }"
+        "%(name)s QTableCornerButton::section { background: %(panel)s;"
+        " border: 1px solid %(control_edge)s; }"
         # The rows' 16 px ▸ and × buttons: the transparent QWidget rule above
         # drops their native look, so give them a plain bordered glyph.
         "%(name)s QToolButton { color: %(text)s; background: transparent;"
@@ -430,6 +446,7 @@ def item_editor_qss(chrome: FormChrome) -> str:
             "accent": chrome.accent,
             "control_edge": chrome.text if chrome.is_high_contrast else chrome.border,
             "hover": chrome.row_hover,
+            "panel": chrome.panel,
         }
     )
     return frame + field_qss(chrome, name) + control_qss(chrome, name)

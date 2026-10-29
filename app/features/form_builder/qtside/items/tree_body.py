@@ -43,6 +43,11 @@ if TYPE_CHECKING:
     from app.features.form_builder.qtside.items.editor import ItemEditor
 
 _VISIBLE = 3
+_ROW_H = 28
+_GAP = 4
+_INDENT = 16
+_MIN_COL = 90
+_MARGIN = 4
 
 
 class TreeBody(QWidget):
@@ -82,25 +87,35 @@ class TreeBody(QWidget):
 
 
 class _Items(QWidget):
+    """The Items tab. Only the rows in view (and a margin) have fields.
+
+    A pool of row widgets is rebound to other rows as the list scrolls, so a
+    500-row tree opens as fast as a 5-row one. A row that holds keyboard focus
+    is never rebound, so typing cannot land in another row.
+    """
+
     def __init__(self, editor: "ItemEditor", parent: QWidget) -> None:
         super().__init__(parent)
         self._editor = editor
-        self._rows: List[_Row] = []
+        self._paths: List[Tuple[int, ...]] = []
+        self._pool: List[_Row] = []
+        self._columns = 1
+        self._col_w = 120
         self._scroll = QScrollArea(self)
-        self._scroll.setWidgetResizable(True)
+        self._scroll.setObjectName("formBuilder.treeItemsScroll")
+        self._scroll.setWidgetResizable(False)
+        self._scroll.viewport().installEventFilter(self)
         self._canvas = QWidget()
-        self._canvas_layout = QVBoxLayout(self._canvas)
-        self._canvas_layout.setContentsMargins(0, 0, 0, 0)
-        self._canvas_layout.addStretch(1)
         self._scroll.setWidget(self._canvas)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self._scroll)
         self._filter = _Keys(self)
+        self._scroll.verticalScrollBar().valueChanged.connect(lambda _value: self._layout())
         self.rebuild()
 
     def focus_first(self) -> None:
-        if not self._rows:
+        if not self._paths:
             draft, path = add_sibling(self._editor.draft, ())
             # empty tree: add a root row so typing has a field
             if not draft.items:
@@ -109,20 +124,70 @@ class _Items(QWidget):
                 draft, path = add_root(self._editor.draft)
             self._editor.replace(draft)
             self.rebuild()
-        if self._rows:
-            self._rows[0].field(0).setFocus()
+        if self._paths:
+            self._focus(self._paths[0])
 
     def rebuild(self) -> None:
-        while self._canvas_layout.count() > 1:
-            item = self._canvas_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-        self._rows = []
-        for path, item in flat_paths(self._editor.draft.items):
-            row = _Row(self, path, item, max(1, len(self._editor.draft.columns)))
-            self._canvas_layout.insertWidget(self._canvas_layout.count() - 1, row)
-            self._rows.append(row)
+        self._paths = [path for path, _item in flat_paths(self._editor.draft.items)]
+        columns = max(1, len(self._editor.draft.columns))
+        if columns != self._columns:
+            self._columns = columns
+            for row in self._pool:
+                row.setParent(None)
+                row.deleteLater()
+            self._pool = []
+        for row in self._pool:
+            row.release()
+        self._layout()
+
+    def _layout(self) -> None:
+        view = self._scroll.viewport()
+        width = view.width() if view.width() > 80 else 320
+        height = view.height() if view.height() > _ROW_H * 3 else 420
+        shown = min(self._columns, _VISIBLE)
+        depth = max((len(path) for path in self._paths), default=1) - 1
+        # The deepest row's indent comes out of the columns, so the fields fit
+        # without a sideways scroll until there are more than _VISIBLE columns.
+        self._col_w = max(_MIN_COL, (width - 8 - depth * _INDENT - _GAP * shown) // shown)
+        need = 8 + depth * _INDENT + self._columns * (self._col_w + _GAP)
+        self._canvas.setFixedSize(max(width, need), max(len(self._paths), 1) * _ROW_H)
+        top = self._scroll.verticalScrollBar().value()
+        first = max(0, top // _ROW_H - _MARGIN)
+        last = min(len(self._paths), (top + height) // _ROW_H + 1 + _MARGIN)
+        bound = {}
+        free: List[_Row] = []
+        for row in self._pool:
+            at = row.index
+            if row.path is not None and (first <= at < last or row.has_focus()) and at not in bound:
+                bound[at] = row
+            else:
+                free.append(row)
+        for index in range(first, last):
+            if index in bound:
+                continue
+            if free:
+                row = free.pop()
+            else:
+                row = _Row(self, self._columns)
+                self._pool.append(row)
+            row.bind(index, self._paths[index], self._item(self._paths[index]), self._col_w)
+            bound[index] = row
+        for row in free:
+            row.release()
+        for index, row in bound.items():
+            row.fit(self._col_w)
+            row.setGeometry(0, index * _ROW_H, self._canvas.width(), _ROW_H)
+            row.show()
+
+    def _item(self, path: Tuple[int, ...]) -> Item:
+        return item_at(self._editor.draft.items, path)
+
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:  # noqa: N802
+        # The viewport knows its size after the scroll area has laid out, which
+        # is later than this widget's own resize.
+        if watched is self._scroll.viewport() and event.type() == getattr(getattr(QEvent, "Type", QEvent), "Resize"):
+            self._layout()
+        return False
 
     def _commit_text(self, path: Tuple[int, ...], column: int, text: str) -> None:
         self._editor.replace(set_text(self._editor.draft, path, column, text))
@@ -130,38 +195,82 @@ class _Items(QWidget):
     def apply(self, draft: Draft, focus: Optional[Tuple[int, ...]] = None) -> None:
         self._editor.replace(draft)
         self.rebuild()
-        if not self._rows:
+        if not self._paths:
             self.focus_first()
             return
         if focus is not None:
             self._focus(focus)
 
     def _focus(self, path: Tuple[int, ...]) -> None:
-        for row in self._rows:
+        row = self.row_at(path)
+        if row is not None:
+            row.field(0).setFocus()
+
+    def row_at(self, path: Tuple[int, ...]) -> Optional["_Row"]:
+        """The row widget for ``path``, scrolled into view and bound."""
+        try:
+            index = self._paths.index(path)
+        except ValueError:
+            return None
+        bar = self._scroll.horizontalScrollBar()
+        self._scroll.ensureVisible(bar.value(), index * _ROW_H + _ROW_H // 2, 0, _ROW_H // 2)
+        self._layout()
+        for row in self._pool:
             if row.path == path:
-                row.field(0).setFocus()
-                return
+                return row
+        return None
+
+    def reveal(self, edit: QLineEdit) -> None:
+        self._scroll.ensureWidgetVisible(edit, 24, 0)
 
 
 class _Row(QWidget):
-    def __init__(self, host: _Items, path: Tuple[int, ...], item: Item, columns: int) -> None:
-        super().__init__(host)
+    def __init__(self, host: _Items, columns: int) -> None:
+        super().__init__(host._canvas)
         self._host = host
-        self.path = path
-        row = QHBoxLayout(self)
-        row.setContentsMargins(16 * (len(path) - 1), 0, 0, 0)
+        self.path: Optional[Tuple[int, ...]] = None
+        self.index = -1
+        self._row = QHBoxLayout(self)
+        self._row.setContentsMargins(0, 0, 0, 0)
+        self._row.setSpacing(_GAP)
         self._fields: List[QLineEdit] = []
-        shown = min(columns, _VISIBLE)
-        for column in range(shown):
-            edit = QLineEdit(item.text_at(column))
+        for column in range(columns):
+            edit = QLineEdit()
             edit.setObjectName("formBuilder.treeItem")
             edit.installEventFilter(host._filter)
             # Live: each keystroke reaches the canvas (UX-ITEM-007).
-            edit.textEdited.connect(lambda text, column=column, path=path: host._commit_text(path, column, text))
-            row.addWidget(edit)
+            edit.textEdited.connect(lambda text, column=column: self._typed(column, text))
+            self._row.addWidget(edit)
             self._fields.append(edit)
-        if columns > _VISIBLE:
-            self.setToolTip("More columns are off to the side")
+        self._row.addStretch(1)
+        self.hide()
+
+    def bind(self, index: int, path: Tuple[int, ...], item: Item, col_w: int) -> None:
+        self.index = index
+        self.path = path
+        self._row.setContentsMargins(8 + _INDENT * (len(path) - 1), 0, 0, 0)
+        for column, edit in enumerate(self._fields):
+            edit.setFixedWidth(col_w)
+            edit.setText(item.text_at(column))
+            edit.setAccessibleName("Row %d, column %d" % (index + 1, column + 1))
+
+    def fit(self, col_w: int) -> None:
+        """A bound row keeps up with the viewport width."""
+        for edit in self._fields:
+            if edit.width() != col_w:
+                edit.setFixedWidth(col_w)
+
+    def release(self) -> None:
+        self.path = None
+        self.index = -1
+        self.hide()
+
+    def has_focus(self) -> bool:
+        return any(edit.hasFocus() for edit in self._fields)
+
+    def _typed(self, column: int, text: str) -> None:
+        if self.path is not None:
+            self._host._commit_text(self.path, column, text)
 
     def field(self, column: int) -> QLineEdit:
         return self._fields[min(column, len(self._fields) - 1)]
@@ -223,6 +332,7 @@ class _Keys(QObject):
         if nxt < 0 or nxt >= len(row._fields):
             return False
         row._fields[nxt].setFocus()
+        self._items.reveal(row._fields[nxt])
         return True
 
     def _row(self, watched: QLineEdit) -> Optional[_Row]:
