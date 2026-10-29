@@ -2,6 +2,16 @@
 
 Created once, never overwritten. After creation the builder only inserts empty
 method stubs on request.
+
+A stub plan is made from the text ``read_window`` saw. An open tab is LF, even
+when the file on disk is CRLF, because the shell normalises the buffer. Pass
+``text_of(path)`` when a tab is open and omit it when the file is closed, so
+the edit's newlines and offsets match the text the bridge will change.
+
+``StubPlan.opened_line`` is not on the bridge edit. M6.2b's undo memo must
+store it beside ``stub_hash`` and ``blank_lines`` and pass it back to
+``plan_unstub``. Without it, undo of a file that had no trailing newline
+leaves one newline behind.
 """
 
 from __future__ import annotations
@@ -14,8 +24,8 @@ from app.features.form_builder.engine.codegen.names import check_cpp_name, pytho
 from app.features.form_builder.engine.codegen.qtmap import base_qt_class, class_module
 from app.features.form_builder.engine.project.forms import FormScope
 from app.features.form_builder.engine.project.handler_names import docstring_words, signal_name
+from app.features.form_builder.engine.project.window_facts import WindowRead
 from app.features.form_builder.engine.project.window_file import (
-    WindowRead,
     file_label,
     method_source_hash,
 )
@@ -148,8 +158,9 @@ class StubPlan:
 
     ``blank_lines`` is how many empty lines were inserted before ``def``.
     ``opened_line`` is true when the file had no trailing newline and the edit
-    adds one so the method starts on its own line. Pass both back to
-    ``plan_unstub`` so undo restores the bytes.
+    adds one so the method starts on its own line. ``edit`` is a bridge edit
+    (``start``, ``end``, ``text``). The memo must also keep ``opened_line``,
+    ``stub_hash`` and ``blank_lines``, and pass all three to ``plan_unstub``.
     """
 
     edit: TextEdit
@@ -210,15 +221,14 @@ def plan_stub(
     label = file_label(read.relative)
     _refuse_unless_readable(read, label, method_name)
     facts = read.facts
-    window = facts.window if facts is not None else None
-    if window is None:
+    if not facts.class_name:
         raise ValueError(
             "%s has no class that calls self.ui.setupUi(self)." % label
         )
-    for method in window.methods:
+    for method in facts.methods:
         if method.name == method_name:
             raise ValueError(
-                "%s already has %s. This event will call it." % (window.name, method_name)
+                "%s already has %s. This event will call it." % (facts.class_name, method_name)
             )
     source = _source_of(read)
     if source is None:
@@ -227,16 +237,16 @@ def plan_stub(
             % label
         )
     raw = source.splitlines(keepends=True)
-    ending = window.line_ending
-    start, opened = _insertion_offset(source, raw, window.last_line)
-    blanks = window.blank_line_style
+    ending = facts.newline
+    start, opened = _insertion_offset(source, raw, facts.end_line)
+    blanks = facts.blank_lines
     body = "".join(
-        _method_lines(window.indent_unit, method_name, params, sender, event_words, ending)
+        _method_lines(facts.indent, method_name, params, sender, event_words, ending)
     )
     prefix = ending if opened else ""
     inserted = prefix + (ending * blanks) + body
     method_text = "".join(
-        _method_lines(window.indent_unit, method_name, params, sender, event_words, "\n")
+        _method_lines(facts.indent, method_name, params, sender, event_words, "\n")
     )
     return StubPlan(
         edit=TextEdit(start=start, end=start, text=inserted),
@@ -261,10 +271,9 @@ def plan_unstub(
     also drops the newline that was added so a file without one gets it back.
     """
     facts = read.facts
-    window = facts.window if facts is not None else None
-    if read.status != "ok" or window is None:
+    if read.status != "ok" or not facts.class_name:
         return None
-    method = next((item for item in window.methods if item.name == method_name), None)
+    method = facts.method(method_name)
     if method is None or method.source_hash != stub_hash:
         return None
     source = _source_of(read)

@@ -51,6 +51,9 @@ class WindowFacts:
     ``end_line`` is the class's last line (UX-CODE-005). ``indent`` is one
     indent unit as written in the file, ``blank_lines`` the blank lines the file
     puts between methods, ``newline`` the file's line ending.
+
+    ``base_methods`` are methods of project base classes the reader could open.
+    ``unread_bases`` are project bases named by ``from`` that it could not.
     """
 
     class_name: str = ""
@@ -61,6 +64,8 @@ class WindowFacts:
     blank_lines: int = 1
     newline: str = "\n"
     methods: Tuple[MethodFacts, ...] = ()
+    base_methods: Tuple[MethodFacts, ...] = ()
+    unread_bases: Tuple[str, ...] = ()
 
     def method(self, name: str) -> Optional[MethodFacts]:
         for found in self.methods:
@@ -71,12 +76,18 @@ class WindowFacts:
 
 @dataclass(frozen=True)
 class WindowRead:
-    """``read_window``'s result. ``line`` is the line of a refusal or syntax error, else 0."""
+    """``read_window``'s result. ``line`` is the line of a refusal or syntax error, else 0.
+
+    ``relative`` is the project path used in problem sentences. ``source`` is the
+    text a stub plan edits, set only when ``status`` is ``ok``.
+    """
 
     status: ReadStatus
     reason: str = ""
     line: int = 0
     facts: WindowFacts = WindowFacts()
+    relative: str = ""
+    source: Optional[str] = None
 
 
 __all__ = ["MethodFacts", "MethodKind", "ReadStatus", "WindowFacts", "WindowRead"]

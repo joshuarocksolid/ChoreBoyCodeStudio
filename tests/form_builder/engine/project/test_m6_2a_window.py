@@ -10,6 +10,7 @@ import pytest
 
 from app.features.form_builder.engine.codegen.window_template import plan_stub, plan_unstub
 from app.features.form_builder.engine.project.window_file import read_window
+from app.features.form_builder.integration.code_bridge import bridge_edit
 
 _CLASS = '''\
 class InvoiceWindow(QDialog):
@@ -37,16 +38,15 @@ def test_the_generated_shape_is_the_window_class() -> None:
     source = _window(_CLASS)
     read = read_window("/proj", "forms/invoice_window.py", text=source)
     assert read.status == "ok"
-    assert read.facts is not None and read.facts.window is not None
-    assert read.facts.window.name == "InvoiceWindow"
-    assert read.facts.window.methods[0].name == "__init__"
+    assert read.facts.class_name == "InvoiceWindow"
+    assert read.facts.methods[0].name == "__init__"
 
 
 def test_a_class_without_setup_ui_is_not_the_window() -> None:
     source = "class InvoiceWindow(QDialog):\n    pass\n"
     read = read_window("/proj", "forms/invoice_window.py", text=source)
     assert read.status == "ok"
-    assert read.facts is not None and read.facts.window is None
+    assert read.facts.class_name == ""
 
 
 @pytest.mark.parametrize(
@@ -189,11 +189,28 @@ def test_an_edited_stub_is_left_in_place() -> None:
     assert plan_unstub(again, "print_receipt", plan.stub_hash, plan.blank_lines, plan.opened_line) is None
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="M6.0s owns engine/project/window_facts.py and has not merged the WindowFacts stub",
-)
-def test_m6_0s_window_facts_module_is_present() -> None:
-    import importlib
-
-    importlib.import_module("app.features.form_builder.engine.project.window_facts")
+def test_a_crlf_file_and_its_lf_tab_each_get_whole_line_edits(tmp_path: Path) -> None:
+    crlf = _window(_CLASS).replace("\n", "\r\n")
+    forms = tmp_path / "forms"
+    forms.mkdir()
+    (forms / "invoice_window.py").write_bytes(crlf.encode("utf-8"))
+    on_disk = read_window(str(tmp_path), "forms/invoice_window.py")
+    disk_plan = plan_stub(
+        on_disk, method_name="print_receipt", params=(), sender="printButton", event_words="clicked"
+    )
+    disk_edit = bridge_edit(disk_plan.edit)
+    assert "\r\n" in disk_edit.text
+    assert "\n" not in disk_edit.text.replace("\r\n", "")
+    disk_updated = _apply(crlf, disk_edit.start, disk_edit.end, disk_edit.text)
+    assert disk_updated.endswith("\r\n")
+    assert "def print_receipt(self):\r\n" in disk_updated
+    tab = crlf.replace("\r\n", "\n")
+    in_tab = read_window(str(tmp_path), "forms/invoice_window.py", text=tab)
+    tab_plan = plan_stub(
+        in_tab, method_name="print_receipt", params=(), sender="printButton", event_words="clicked"
+    )
+    tab_edit = bridge_edit(tab_plan.edit)
+    assert "\r" not in tab_edit.text
+    tab_updated = _apply(tab, tab_edit.start, tab_edit.end, tab_edit.text)
+    ast.parse(tab_updated)
+    assert tab_updated.replace(tab_edit.text, "", 1) == tab

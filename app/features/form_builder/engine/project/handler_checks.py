@@ -22,11 +22,8 @@ from app.features.form_builder.engine.project.handler_names import (
     signature_arg_count,
     signal_name,
 )
-from app.features.form_builder.engine.project.window_file import (
-    MethodFacts,
-    WindowRead,
-    file_label,
-)
+from app.features.form_builder.engine.project.window_facts import MethodFacts, WindowRead
+from app.features.form_builder.engine.project.window_file import file_label
 from app.features.form_builder.engine.ui4.document import UiDocument
 from app.features.form_builder.engine.ui4.nodes import ActionNode, ConnectionNode
 from app.features.form_builder.engine.ui4.schema import SlotsDecl
@@ -64,23 +61,25 @@ def check_handlers(
         raise RuntimeError("FB201–FB213 were not registered")
     label = file_label(read.relative)
     if read.status != "ok":
-        return (_file_problem(read, label),)
+        return (_with_code(_file_problem(read, label), read.relative),)
     facts = read.facts
-    window = facts.window if facts is not None else None
-    if window is None:
+    if not facts.class_name:
         return (
-            _diag(
-                "FB210",
-                Severity.WARNING,
-                "%s has no class that calls self.ui.setupUi(self), so methods can't be added or checked."
-                % label,
-                line=0,
-                fixes=(_go("", 1),),
+            _with_code(
+                _diag(
+                    "FB210",
+                    Severity.WARNING,
+                    "%s has no class that calls self.ui.setupUi(self), so methods can't be added or checked."
+                    % label,
+                    line=0,
+                    fixes=(_go("", 1),),
+                ),
+                read.relative,
             ),
         )
     methods = _method_index(read)
     stock = frozenset(inherited)
-    qt_base = _qt_base(window.base_names, classes)
+    qt_base = _qt_base(facts.bases, classes)
     objects = _objects(doc)
     calls = _calls(doc, objects, classes, registry)
     called = {call.method for call in calls}
@@ -96,9 +95,9 @@ def check_handlers(
                 call,
                 methods,
                 stock,
-                window.name,
+                facts.class_name,
                 label,
-                facts.unread_bases if facts else (),
+                facts.unread_bases,
                 called,
             )
         )
@@ -108,7 +107,7 @@ def check_handlers(
             methods, objects, classes, registry, doc, connect_by_name, called,
         )
     )
-    return tuple(rows)
+    return tuple(_with_code(item, read.relative) for item in rows)
 
 
 class _Call:
@@ -343,10 +342,10 @@ def _by_name_rows(
                 )
             continue
         if not matched:
-            if not method.slot_types:
+            if method.slot_types is None:
                 message = "%s has no @Slot(), so Qt won't run it by its name." % method.name
             else:
-                shown = ", ".join(method.slot_types[0])
+                shown = ", ".join(method.slot_types)
                 message = (
                     "%s's @Slot(%s) doesn't match %s's %s, so Qt won't run it by its name."
                     % (method.name, shown, obj, signal)
@@ -497,9 +496,9 @@ def _signatures(
 def _method_index(read: WindowRead) -> Dict[str, MethodFacts]:
     found: Dict[str, MethodFacts] = {}
     facts = read.facts
-    if facts is None or facts.window is None:
+    if not facts.class_name:
         return found
-    for method in facts.window.methods:
+    for method in facts.methods:
         found[method.name] = method
     for method in facts.base_methods:
         found.setdefault(method.name, method)
@@ -518,13 +517,10 @@ def _qt_base(bases: Tuple[str, ...], classes: object) -> str:
 
 
 def _slot_matches(method: MethodFacts, signatures: Sequence[str], signal: str) -> bool:
-    if not method.slot_types:
+    if method.slot_types is None:
         return False
     overloads = [item for item in signatures if signal_name(item) == signal]
-    for types in method.slot_types:
-        if _types_match(types, overloads):
-            return True
-    return False
+    return _types_match(method.slot_types, overloads)
 
 
 def _types_match(types: Tuple[str, ...], overloads: Sequence[str]) -> bool:
@@ -645,6 +641,28 @@ def _diag(
         ),
         source="handlers",
         fixes=fixes,
+    )
+
+
+def _with_code(item: FormDiagnostic, path: str) -> FormDiagnostic:
+    """Copy the row and name the window file M6.0s's Problems bridge opens."""
+    loc = item.location
+    return FormDiagnostic(
+        code=item.code,
+        severity=item.severity,
+        message=item.message,
+        location=DiagnosticLocation(
+            node_id=loc.node_id,
+            object_name=loc.object_name,
+            property=loc.property,
+            rule_path=loc.rule_path,
+            span=loc.span,
+            line=loc.line,
+            code_path=path,
+            code_line=loc.line,
+        ),
+        source=item.source,
+        fixes=item.fixes,
     )
 
 

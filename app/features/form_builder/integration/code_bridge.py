@@ -72,6 +72,11 @@ class BridgeEdit:
     text: str
 
 
+def bridge_edit(edit: TextEditLike) -> BridgeEdit:
+    """Copy a stub edit into a ``BridgeEdit``. ``opened_line`` stays in the undo memo."""
+    return BridgeEdit(int(edit.start), int(edit.end), str(edit.text))
+
+
 @dataclass(frozen=True)
 class BridgeResult:
     """``mode`` is ``"tab"`` or ``"disk"`` (``""`` when refused). ``inverse`` undoes the edit exactly

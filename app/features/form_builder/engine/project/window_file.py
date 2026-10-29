@@ -14,11 +14,17 @@ import os
 import stat
 import threading
 import tokenize
-from dataclasses import dataclass
+from dataclasses import replace
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.features.form_builder.engine.project.custom_widgets import module_file
 from app.features.form_builder.engine.project.fs import inside_project
+from app.features.form_builder.engine.project.window_facts import (
+    MethodFacts,
+    ReadStatus,
+    WindowFacts,
+    WindowRead,
+)
 
 MAX_BYTES = 1_000_000
 _TOKEN_LIMIT = 2000
@@ -33,63 +39,8 @@ _FILE_CACHE: Dict[Tuple[str, int, int], "WindowRead"] = {}
 _TEXT_CACHE: Dict[str, "WindowRead"] = {}
 
 
-@dataclass(frozen=True)
-class MethodFacts:
-    """One method the reader found. ``source_hash`` ignores line endings."""
-
-    name: str
-    line: int
-    end_line: int
-    params: Tuple[str, ...]
-    required: int
-    has_varargs: bool
-    decorators: Tuple[str, ...]
-    slot_types: Tuple[Tuple[str, ...], ...]
-    kind: str
-    body_is_empty: bool
-    source_hash: str
-
-
-@dataclass(frozen=True)
-class ClassFacts:
-    """The window class, plus the line where a new method is inserted."""
-
-    name: str
-    line: int
-    base_names: Tuple[str, ...]
-    last_line: int
-    indent_unit: str
-    blank_line_style: int
-    line_ending: str
-    methods: Tuple[MethodFacts, ...]
-
-
-@dataclass(frozen=True)
-class WindowFacts:
-    """What ``read_window`` keeps. M6.0s's ``window_facts.py`` is the shared stub.
-
-    Until that module lands, these dataclasses are the types the checks use.
-    ``base_methods`` are methods of project base classes that were read.
-    ``unread_bases`` are project bases that were not.
-    """
-
-    window: Optional[ClassFacts]
-    classes: Tuple[ClassFacts, ...] = ()
-    base_methods: Tuple[MethodFacts, ...] = ()
-    unread_bases: Tuple[str, ...] = ()
-    relative: str = ""
-
-
-@dataclass(frozen=True)
-class WindowRead:
-    """``status`` is ``ok``, ``missing``, ``refused`` or ``syntax_error``."""
-
-    status: str
-    reason: str
-    line: int
-    facts: Optional[WindowFacts]
-    relative: str = ""
-    source: Optional[str] = None
+def _empty(status: ReadStatus, reason: str, line: int, relative: str) -> WindowRead:
+    return WindowRead(status, reason, line, WindowFacts(), relative)
 
 
 def file_label(relative: str) -> str:
@@ -167,24 +118,24 @@ def _read_path(
     label = file_label(relative)
     full = os.path.join(project_root, *relative.split("/")) if project_root else relative
     if not project_root or not inside_project(full, project_root):
-        return WindowRead("refused", "it is outside the project", 0, None, relative)
+        return _empty("refused", "it is outside the project", 0, relative)
     if not os.path.lexists(full):
-        return WindowRead("missing", "the file is missing", 0, None, relative)
+        return _empty("missing", "the file is missing", 0, relative)
     data = _read_regular(full)
     if data is None:
         if os.path.islink(full) and not inside_project(os.path.realpath(full), project_root):
-            return WindowRead("refused", "it is outside the project", 0, None, relative)
+            return _empty("refused", "it is outside the project", 0, relative)
         if os.path.isfile(full):
             try:
                 size = os.path.getsize(full)
             except OSError:
                 size = 0
             if size > MAX_BYTES:
-                return WindowRead("refused", "it is larger than 1 MB", 0, None, relative)
-        return WindowRead("refused", "it is not a regular file", 0, None, relative)
+                return _empty("refused", "it is larger than 1 MB", 0, relative)
+        return _empty("refused", "it is not a regular file", 0, relative)
     decoded = _decode(data)
     if decoded is None:
-        return WindowRead("refused", "it isn't UTF-8 text", 0, None, relative)
+        return _empty("refused", "it isn't UTF-8 text", 0, relative)
     text, _encoding = decoded
     return _read_text(project_root, relative, text, chain, focus)
 
@@ -246,18 +197,18 @@ def _read_text(
     focus: Optional[str] = None,
 ) -> WindowRead:
     if "\0" in text:
-        return WindowRead("refused", "it contains a NUL byte", 0, None, relative)
+        return _empty("refused", "it contains a NUL byte", 0, relative)
     scanned = _prescan(text)
     if scanned is not None:
         status, line, reason = scanned
-        return WindowRead(status, reason, line, None, relative)
+        return _empty(status, reason, line, relative)
     try:
         tree = ast.parse(text, type_comments=False)
     except (SyntaxError, ValueError) as exc:
         line = exc.lineno or 0 if isinstance(exc, SyntaxError) else 0
-        return WindowRead("syntax_error", "", line, None, relative)
+        return _empty("syntax_error", "", line, relative)
     except (RecursionError, MemoryError):
-        return WindowRead("refused", "the file is too deeply nested to read", 0, None, relative)
+        return _empty("refused", "the file is too deeply nested to read", 0, relative)
     lines = text.splitlines()
     ending = _line_ending(text)
     classes = tuple(
@@ -268,28 +219,28 @@ def _read_text(
     window = _find_window(tree, lines, ending)
     target = window
     if focus:
-        target = next((item for item in classes if item.name == focus), None)
+        target = next((item for item in classes if item.class_name == focus), None)
     base_methods: List[MethodFacts] = []
     unread: List[str] = []
     if target is not None and len(chain) + 1 < _CHAIN_LIMIT:
         imports = _top_imports(tree)
         seen = chain + (relative,)
-        for base in target.base_names:
+        for base in target.bases:
             _follow_base(
                 project_root, base, imports, seen, base_methods, unread,
             )
     elif target is not None:
         imports = _top_imports(tree)
-        for base in target.base_names:
+        for base in target.bases:
             if _is_project_base(base, imports):
                 unread.append(base)
     shown = target if focus else window
-    facts = WindowFacts(
-        window=shown,
-        classes=classes,
+    if shown is None:
+        shown = WindowFacts()
+    facts = replace(
+        shown,
         base_methods=tuple(base_methods),
         unread_bases=tuple(unread),
-        relative=relative,
     )
     return WindowRead("ok", "", 0, facts, relative, text)
 
@@ -313,30 +264,15 @@ def _follow_base(
         unread.append(base)
         return
     read = _read_path(project_root, relative, seen, focus=class_name)
-    if read.status != "ok" or read.facts is None:
+    facts = read.facts
+    if read.status != "ok" or facts.class_name != class_name:
         unread.append(base)
         return
-    found = _class_named(read, class_name)
-    if found is None:
-        unread.append(base)
-        return
-    methods.extend(found.methods)
-    methods.extend(read.facts.base_methods)
-    for name in read.facts.unread_bases:
+    methods.extend(facts.methods)
+    methods.extend(facts.base_methods)
+    for name in facts.unread_bases:
         if name not in unread:
             unread.append(name)
-
-
-def _class_named(read: WindowRead, class_name: str) -> Optional[ClassFacts]:
-    if read.facts is None:
-        return None
-    for item in read.facts.classes:
-        if item.name == class_name:
-            return item
-    window = read.facts.window
-    if window is not None and window.name == class_name:
-        return window
-    return None
 
 
 def _is_project_base(base: str, imports: Dict[str, Tuple[str, str]]) -> bool:
@@ -346,7 +282,7 @@ def _is_project_base(base: str, imports: Dict[str, Tuple[str, str]]) -> bool:
     return binding[0].split(".", 1)[0] not in _PYSIDE
 
 
-def _prescan(text: str) -> Optional[Tuple[str, int, str]]:
+def _prescan(text: str) -> Optional[Tuple[ReadStatus, int, str]]:
     try:
         tokens = tokenize.generate_tokens(io.StringIO(text).readline)
         count = 0
@@ -410,7 +346,7 @@ def _line_ending(text: str) -> str:
     return "\n"
 
 
-def _find_window(tree: ast.AST, lines: Sequence[str], ending: str) -> Optional[ClassFacts]:
+def _find_window(tree: ast.AST, lines: Sequence[str], ending: str) -> Optional[WindowFacts]:
     classes = [node for node in tree.body if isinstance(node, ast.ClassDef)]
     stems = _ui_stems(tree)
     for node in classes:
@@ -491,20 +427,20 @@ def _expr_key(node: Optional[ast.AST]) -> str:
     return ""
 
 
-def _class_facts(node: ast.ClassDef, lines: Sequence[str], ending: str) -> ClassFacts:
+def _class_facts(node: ast.ClassDef, lines: Sequence[str], ending: str) -> WindowFacts:
     methods = tuple(
         _method_facts(child, lines)
         for child in node.body
         if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
     )
-    return ClassFacts(
-        name=node.name,
+    return WindowFacts(
+        class_name=node.name,
         line=node.lineno,
-        base_names=_base_names(node),
-        last_line=_class_last_line(node, lines),
-        indent_unit=_indent_unit(node, lines),
-        blank_line_style=_blank_style(node, lines),
-        line_ending=ending,
+        bases=_base_names(node),
+        end_line=_class_last_line(node, lines),
+        indent=_indent_unit(node, lines),
+        blank_lines=_blank_style(node, lines),
+        newline=ending,
         methods=methods,
     )
 
@@ -579,17 +515,18 @@ def _decorator_text(node: ast.AST) -> str:
         return "@%s" % _decorator_name(node)
 
 
-def _slot_types(node: ast.AST) -> Tuple[Tuple[str, ...], ...]:
-    found = []
+def _slot_types(node: ast.AST) -> Optional[Tuple[str, ...]]:
+    """Argument types of the first ``@Slot``, or None when the method has none.
+
+    ``()`` is ``@Slot()``. A later ``@Slot`` on the same method is ignored.
+    """
     for item in node.decorator_list:  # type: ignore[attr-defined]
-        name = _decorator_name(item)
-        if name != "Slot":
+        if _decorator_name(item) != "Slot":
             continue
         if isinstance(item, ast.Call):
-            found.append(tuple(_type_name(arg) for arg in item.args))
-        else:
-            found.append(())
-    return tuple(found)
+            return tuple(_type_name(arg) for arg in item.args)
+        return ()
+    return None
 
 
 def _type_name(node: ast.AST) -> str:
